@@ -86,6 +86,15 @@ Invoke the scribe skill (/.agents/skills/scribe/SKILL.md) to update PRODUCT.md, 
 - Always stop and provide the user with a clear commit message and suggestion to commit
 - Do not auto-commit unless the user explicitly overrides and says the agent can auto-commit
 
+### Example workflow
+
+```
+# User asks for a feature
+1. Write tests for the feature → commit: "Add test for pain point severity enum"
+2. Implement the feature → commit: "Add severity enum to pain point extraction"
+3. Run scribe → commit: "Update docs: add severity enum to ARCHITECTURE.md"
+```
+
 ## Build Requirements
 
 You must run the full build pipeline before declaring any task complete:
