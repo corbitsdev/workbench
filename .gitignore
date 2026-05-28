@@ -4,3 +4,6 @@
 node_modules
 .agents
 .claude/settings.local.json
+tmp
+temporary
+.tmp
