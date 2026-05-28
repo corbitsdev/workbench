@@ -2,3 +2,5 @@
 .pi
 .env
 node_modules
+.agents
+.claude/settings.local.json
