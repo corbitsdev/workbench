@@ -3,7 +3,9 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "interchange/packages/*",
+    "interchange/apps/*"
   ],
   "engines": {
     "bun": ">=1.2.0"
