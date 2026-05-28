@@ -1,28 +1,19 @@
 # AGENTS.md
 
-## Session Initialization
+## Session Start
 
-At the start of every session, before doing any other work:
-
-1. Read this file (`AGENTS.md`) and `CONVENTIONS.md` (or `/.agents/skills/style/SKILL.md` if conventions are not yet extracted)
+1. Read this file and `CONVENTIONS.md` (or `/.agents/skills/style/SKILL.md`)
 2. Scan `/.agents/skills/` for local project skills
 3. Do not proceed with user requests until these steps are complete
 
-## Project Overview
+## Project
 
-**GTM Workbench** (codename: Interchange) is a human-in-the-loop (HITL) tool that turns sales call transcripts into polished, publishable collateral. The agent analyzes transcripts, extracts pain points, and generates targeted collateral. The user reviews, approves, rejects, and refines at every stage.
-
-This is **intentionally not** a fully automated pipeline. The agent handles analysis and first-draft generation; the human handles curation, approval, and refinement.
-
-### Parent Context
-
-- **Workbench Prototype** — Defines goals, stages, acceptance checklist, and recommended stack.
-- **Scaffold Monorepo** — Defines the workspace structure, apps, and local dev environment.
+**GTM Workbench** (Interchange) is a HITL tool that turns sales call transcripts into publishable collateral. The agent handles analysis and first drafts; the human handles curation, approval, and refinement at every stage.
 
 ### Architecture
 
-- `interchange/` — **Dependency, not our application**. Existing Hono/websocket/agent infrastructure. Treated as a git submodule or vendored dependency. Do not modify its internals unless explicitly asked.
-- `apps/web/` — React 19 + Vite + Tailwind CSS + Framer Motion. Human-facing workbench UI.
+- `interchange/` — Dependency, not our application. Do not modify unless explicitly asked.
+- `apps/web/` — React 19 + Vite 8 + Tailwind CSS + Framer Motion. Human-facing UI.
 - `apps/api/` — Hono + TypeScript. Backend runtime, pipeline, and persistence.
 - `packages/` — Shared types, utilities, and schema that cross the web/API boundary.
 - `compose.yml` — PostgreSQL + MinIO for local development.
@@ -30,24 +21,23 @@ This is **intentionally not** a fully automated pipeline. The agent handles anal
 
 ### Stack
 
-- **Package manager**: Bun (1.2+)
-- **Frontend**: React, Vite, Tailwind CSS, Framer Motion
-- **Backend**: Hono, TypeScript, Drizzle ORM
-- **Agent runtime**: `@intx/agent` (from `interchange/`)
-- **Persistence**: PostgreSQL (port 5433 in compose)
-- **Object storage**: MinIO (port 9000/9001 in compose)
-- **Shared types**: `packages/workbench-shared` or equivalent
+- Package manager: Bun (1.2+)
+- Frontend: React, Vite, Tailwind CSS, Framer Motion
+- Backend: Hono, TypeScript, Drizzle ORM
+- Agent runtime: `@intx/agent` (from `interchange/`)
+- Persistence: PostgreSQL (port 5433 in compose)
+- Object storage: MinIO (port 9000/9001 in compose)
+- Shared types: `packages/workbench-shared` or equivalent
 
 ## Version Validation
 
-When using versioned third-party software (Docker images, npm packages, system tools, etc.), **always validate you are using the latest stable version** unless the user explicitly specifies otherwise. Do not assume the version in existing docs or examples is current.
+When using versioned third-party software (Docker images, npm packages, system tools), **always validate you are using the latest stable version** unless explicitly specified otherwise.
 
-### Checklist
 - Check the latest version on the official registry or website before pinning
 - Update docs and configuration files if the version is outdated
 - If a version is intentionally held back, document the reason in the commit or PR
 
-## Code Reuse and Refactoring
+## Code Reuse
 
 Do not reimplement functionality that already exists in the codebase. Before writing new code:
 
@@ -56,11 +46,9 @@ Do not reimplement functionality that already exists in the codebase. Before wri
 3. Look for unexported functions in other packages that could be promoted to a shared location
 4. Check `interchange/` for patterns, utilities, and types that can be reused
 
-When you detect that a refactor might be necessary, prompt the user with specific options and allow them to provide their own answer if none fit.
-
 ## Configuration
 
-Do not modify configuration files (e.g. eslint, prettier, tsconfig, package.json) unless explicitly asked. Focus on writing working software, not changing the conventions that are being used.
+Do not modify configuration files (e.g. eslint, prettier, tsconfig, package.json) unless explicitly asked.
 
 ## Commit Process
 
@@ -98,21 +86,11 @@ Invoke the scribe skill (/.agents/skills/scribe/SKILL.md) to update PRODUCT.md, 
 - Always stop and provide the user with a clear commit message and suggestion to commit
 - Do not auto-commit unless the user explicitly overrides and says the agent can auto-commit
 
-### Example workflow
-
-```
-# User asks for a feature
-1. Write tests for the feature → commit: "Add test for pain point severity enum"
-2. Implement the feature → commit: "Add severity enum to pain point extraction"
-3. Run scribe → commit: "Update docs: add severity enum to ARCHITECTURE.md"
-```
-
 ## Build Requirements
 
 You must run the full build pipeline before declaring any task complete:
 
 ```bash
-# Run all verification: format, lint, type-check, test
 bun run format
 bun run lint
 bun run check
@@ -120,6 +98,7 @@ bun run test
 ```
 
 Or via the Makefile if one is available:
+
 ```bash
 make all
 ```
@@ -143,7 +122,7 @@ If the build fails, report the failure and identify the cause. If the failure is
    ```
 3. Configure environment:
    ```bash
-   cp env.workbench.example .env.workbench
+   cp .env.workbench.example .env.workbench
    # Edit .env.workbench and fill in optional values
    ```
 
@@ -208,20 +187,20 @@ Required in `.env.workbench`:
 - TypeScript strict mode enabled
 - Bun as runtime and package manager
 - No `console.log` in production code; use structured logging
-- Keep `interchange/` untouched — it is a dependency
+- Keep `interchange/` untouched
 
 ## Constraints
 
 - Do **not** make CRM sync (Attio) a dependency for v1
-- Do **not** build fully automated pipeline — preserve human approval at every stage
+- Do **not** build fully automated pipeline
 - Paste-first intake is the primary path; Granola API is optional secondary
 - Session state must be persisted and resumable
 - Auth should be lightweight for the prototype (demo gate or minimal)
-- Export targets can include markdown, clipboard, email draft, Slack, Typefully — but do not block prototype on every integration
+- Export targets can include markdown, clipboard, email draft, Slack, Typefully
 
 ## Personality
 
 - Do not use emojis in code or documentation
 - Act professionally
 - Use plain language. No jargon you haven't earned
-- Be concise — every line earns its place
+- Be concise
