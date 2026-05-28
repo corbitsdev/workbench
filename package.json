@@ -1,0 +1,31 @@
+{
+  "name": "gtm-workbench",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "interchange/packages/*"
+  ],
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "catalog": {
+    "arktype": "^2.1.29"
+  },
+  "dependencies": {
+    "arktype": "catalog:",
+    "better-auth": "^1.6.9",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.10.7",
+    "isomorphic-git": "^1.35.1",
+    "postgres": "^3.4.9",
+    "resend": "^4.0.0"
+  },
+  "scripts": {
+    "dev": "bun --env-file=.env run --parallel --filter @gtm/web --filter @gtm/api dev",
+    "build": "bun run --parallel --filter @gtm/web --filter @gtm/api build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "bun run --filter '*' lint",
+    "test": "bun test"
+  }
+}

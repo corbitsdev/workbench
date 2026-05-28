@@ -1,0 +1,27 @@
+{
+  "name": "@gtm/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@intx/db": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/log": "workspace:*",
+    "@intx/types": "workspace:*",
+    "better-auth": "^1.6.9",
+    "@better-auth/drizzle-adapter": "^1.6.9",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.10.7",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}
