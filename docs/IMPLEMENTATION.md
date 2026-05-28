@@ -6,12 +6,12 @@
 |-------|-----------|---------|
 | Package manager | Bun | 1.2+ |
 | Frontend | React | 19 |
-| Frontend build | Vite | 6 |
+| Frontend build | Vite | 8 |
 | Styling | Tailwind CSS | 4 |
 | Animation | Framer Motion | 12 |
 | Backend | Hono | 4 |
 | ORM | Drizzle ORM | 0.45 |
-| Database | PostgreSQL | 15 |
+| Database | PostgreSQL | 18.2-alpine |
 | Object storage | MinIO | latest |
 | Agent runtime | `@intx/agent` | workspace (via interchange/) |
 | Runtime validation | arktype | 2.x |
