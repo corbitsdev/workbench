@@ -4,8 +4,7 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "interchange/packages/*",
-    "interchange/apps/*"
+    "interchange/packages/*"
   ],
   "engines": {
     "bun": ">=1.2.0"
