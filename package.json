@@ -9,6 +9,9 @@
   "engines": {
     "bun": ">=1.2.0"
   },
+  "catalog": {
+    "arktype": "^2.1.29"
+  },
   "scripts": {
     "dev": "bun --env-file=.env run --parallel --filter @gtm/web --filter @gtm/api dev",
     "build": "bun run --parallel --filter @gtm/web --filter @gtm/api build",
