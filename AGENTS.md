@@ -38,6 +38,15 @@ This is **intentionally not** a fully automated pipeline. The agent handles anal
 - **Object storage**: MinIO (port 9000/9001 in compose)
 - **Shared types**: `packages/workbench-shared` or equivalent
 
+## Version Validation
+
+When using versioned third-party software (Docker images, npm packages, system tools, etc.), **always validate you are using the latest stable version** unless the user explicitly specifies otherwise. Do not assume the version in existing docs or examples is current.
+
+### Checklist
+- Check the latest version on the official registry or website before pinning
+- Update docs and configuration files if the version is outdated
+- If a version is intentionally held back, document the reason in the commit or PR
+
 ## Code Reuse and Refactoring
 
 Do not reimplement functionality that already exists in the codebase. Before writing new code:
