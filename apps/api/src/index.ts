@@ -8,6 +8,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { magicLink } from "better-auth/plugins/magic-link";
 import { createIntakeRouter } from "./routes/intake";
+import { createAnalyzeHandler } from "./routes/analyze";
 
 const log = getLogger(["api"]);
 
@@ -132,9 +133,8 @@ app.route("/", hub);
 const intakeRouter = createIntakeRouter(db);
 app.route("/api", intakeRouter);
 
-app.post("/analyze", (c) => {
-  return c.json({ sessionId: "todo", painPoints: [], status: "analyzing" });
-});
+const analyzeRouter = createAnalyzeHandler(db);
+app.route("/api", analyzeRouter);
 
 app.post("/generate", (c) => {
   return c.json({ collateral: [], status: "generating" });
