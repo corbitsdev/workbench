@@ -48,7 +48,7 @@ const auth = betterAuth({
     magicLink({
       disableSignUp: false,
       sendMagicLink: async ({ email, url }) => {
-        log.info({ email, url }, "Magic link (dev mode — no email provider configured)");
+        log.info("Magic link (dev mode — no email provider configured)", { email, url });
       },
     }),
   ],
@@ -117,11 +117,11 @@ if (corsOrigin) {
 }
 
 // Intercept sidecar-dependent routes
-app.use("/api/sidecars/*", (c) => c.json({ error: "not implemented" }, 501));
-app.use("/api/tenants/:tenantId/agents/instances/*", (c) =>
+app.use("/api/sidecars/*", async (c) => c.json({ error: "not implemented" }, 501));
+app.use("/api/tenants/:tenantId/agents/instances/*", async (c) =>
   c.json({ error: "not implemented" }, 501)
 );
-app.use("/api/tenants/:tenantId/credentials/*", (c) =>
+app.use("/api/tenants/:tenantId/credentials/*", async (c) =>
   c.json({ error: "not implemented" }, 501)
 );
 
@@ -159,14 +159,14 @@ app.get("/health", (c) => {
 
 const port = Number(process.env["PORT"] ?? 4000);
 
-log.info({ port }, "API starting");
+log.info("API starting", { port });
 
 if (import.meta.main) {
   const server = Bun.serve({
     port,
     fetch: app.fetch,
   });
-  log.info({ port: server.port }, "API running");
+  log.info("API running", { port: server.port });
 }
 
 export default app;
