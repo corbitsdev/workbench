@@ -102,7 +102,7 @@ export function createIntakeRouter(db: any): Hono {
 
       return c.json(response, 200);
     } catch (error) {
-      log.error({ error }, "Intake error");
+      log.error("Intake error");
       return c.json({ error: "Internal server error" }, 500);
     }
   });
@@ -116,7 +116,7 @@ export function createIntakeRouter(db: any): Hono {
       const calls = await (granolaClient as GranolaClient).getRecentNotes(3);
       return c.json({ calls });
     } catch (error) {
-      log.error({ error }, "Recent calls error");
+      log.error("Recent calls error");
       return c.json({ error: "Failed to fetch recent calls" }, 500);
     }
   });
