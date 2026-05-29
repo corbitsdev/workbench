@@ -1,6 +1,3 @@
-import { getLogger } from '@intx/log';
-
-const log = getLogger(['api', 'extraction']);
 
 export interface ExtractedPainPoint {
   sessionId: string;
@@ -23,12 +20,12 @@ export async function extractPainPointsWithLLM(
   content: string,
   feedback: string | undefined
 ): Promise<ExtractedPainPoint[]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-  const baseURL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+  const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY;
+  const model = process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini';
+  const baseURL = process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1';
 
   if (!apiKey) {
-    return [];
+    throw new Error('OPENAI_COMPATIBLE_API_KEY is required for pain point extraction');
   }
 
   const systemPrompt = `You are a sales transcript analyst. Extract up to 5 distinct pain points from the transcript. Return exact customer quotes. Respond in JSON format with a "painPoints" array. Each item must have: severity (low, medium, high, or critical), context (a concise summary), and quote (the exact customer words).`;
@@ -60,8 +57,7 @@ export async function extractPainPointsWithLLM(
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      log.warn('LLM extraction failed', { status: res.status, error: err.error });
-      return [];
+      throw new Error(`LLM extraction failed: ${res.status} ${err.error}`);
     }
 
     const data = (await res.json()) as {
@@ -70,12 +66,12 @@ export async function extractPainPointsWithLLM(
 
     const raw = data.choices[0]?.message?.content;
     if (!raw) {
-      return [];
+      throw new Error('LLM response missing content');
     }
 
     const parsed = JSON.parse(raw) as LLMResponse;
     if (!Array.isArray(parsed.painPoints)) {
-      return [];
+      throw new Error('LLM response missing painPoints array');
     }
 
     return parsed.painPoints.map((p) => ({
@@ -86,8 +82,7 @@ export async function extractPainPointsWithLLM(
       selected: true,
     }));
   } catch (err) {
-    log.warn('LLM extraction threw', { error: err instanceof Error ? err.message : String(err) });
-    return [];
+    throw new Error(`LLM extraction failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

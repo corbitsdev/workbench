@@ -17,6 +17,13 @@ function requireEnv(name: string): string {
   return value;
 }
 
+// ─── LLM Configuration ──────────────────────────────────────────────
+
+requireEnv('OPENAI_COMPATIBLE_API_KEY');
+const _llmModel = process.env['OPENAI_COMPATIBLE_MODEL'] || 'gpt-4o-mini';
+
+log.info('LLM configured', { model: _llmModel });
+
 // ─── Database ──────────────────────────────────────────────────────
 
 const dbConfig = {
