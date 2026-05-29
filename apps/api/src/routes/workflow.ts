@@ -13,6 +13,9 @@ import { extractPainPoints } from '../lib/extraction';
 const STEP_ORDER = ['intake', 'analyze', 'generate', 'improve', 'export'] as const;
 type StepName = (typeof STEP_ORDER)[number];
 
+const VALID_EXPORT_TARGETS = ['markdown', 'csv', 'json'] as const;
+type ExportTarget = (typeof VALID_EXPORT_TARGETS)[number];
+
 export function createWorkflowRouter(db: any): Hono {
   const router = new Hono();
 
@@ -155,7 +158,17 @@ export function createWorkflowRouter(db: any): Hono {
       return runImprove(db, id, body.collateralId, body.feedback);
     }
     if (step === 'export') {
-      return c.json({ error: 'Export not implemented' }, 501);
+      const target = body.target ?? 'markdown';
+      if (typeof target !== 'string') {
+        return c.json({ error: 'target must be a string' }, 400);
+      }
+      if (!isValidExportTarget(target)) {
+        return c.json(
+          { error: `Invalid export target. Must be one of: ${VALID_EXPORT_TARGETS.join(', ')}` },
+          400
+        );
+      }
+      return runExport(db, id, target);
     }
 
     return c.json({ error: 'Invalid step' }, 400);
@@ -277,6 +290,44 @@ async function runImprove(db: any, id: string, collateralId: string, feedback: s
   });
 }
 
+async function runExport(db: any, id: string, target: string) {
+  const wf = await db.query.workbenchSession.findFirst({
+    where: eq(workbenchSession.id, id),
+  });
+  if (!wf) return Response.json({ error: 'Workflow not found' }, { status: 404 });
+
+  const points = await db.query.painPoint.findMany({
+    where: eq(painPoint.sessionId, id),
+  });
+  const pointIds = points.map((p: any) => p.id);
+
+  const allCollateral =
+    pointIds.length > 0
+      ? await db.query.collateralItem.findMany({
+          where: inArray(collateralItem.painPointId, pointIds),
+        })
+      : [];
+
+  if (allCollateral.length === 0) {
+    return Response.json({ error: 'No collateral to export' }, { status: 400 });
+  }
+
+  const assembled = assembleExport(allCollateral, target);
+
+  await db.update(workbenchSession).set({ status: 'done' }).where(eq(workbenchSession.id, id));
+
+  return Response.json({
+    id,
+    status: 'done',
+    currentStep: 'export',
+    export: {
+      target,
+      content: assembled,
+      collateral: allCollateral.map(serializeCollateral),
+    },
+  });
+}
+
 // ─── Serialization helpers ──────────────────────────────────────────
 
 function serializePainPoint(p: any) {
@@ -329,4 +380,34 @@ function applyFeedback(text: string, feedback: string): string {
     return text + '\n\n(Hooked for impact)';
   }
   return text + '\n\n(Updated per feedback: ' + feedback + ')';
+}
+
+function isValidExportTarget(target: string): target is ExportTarget {
+  return (VALID_EXPORT_TARGETS as unknown as string[]).includes(target);
+}
+
+function escapeForCsv(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function escapeForMarkdown(text: string): string {
+  return text.replace(/[*#`[\]\\]/g, '\\$&');
+}
+
+function assembleExport(collateral: any[], target: string): string {
+  if (target === 'json') {
+    return JSON.stringify(collateral, null, 2);
+  }
+
+  if (target === 'csv') {
+    const header = 'Type,Title,Body';
+    const rows = collateral.map((c) =>
+      [escapeForCsv(c.type), escapeForCsv(c.title), escapeForCsv(c.body)].join(',')
+    );
+    return [header, ...rows].join('\n');
+  }
+
+  return collateral
+    .map((c) => `## ${escapeForMarkdown(c.title)}\n\n${c.body}\n\n*(${c.type} collateral)*`)
+    .join('\n\n---\n\n');
 }

@@ -155,6 +155,7 @@ Or via `make all` if Makefile is available.
 Implemented in `apps/api/src/lib/extraction.ts`. Two-path approach:
 
 **LLM Path** (when `OPENAI_API_KEY` is configured):
+
 - **Model**: Configurable via `OPENAI_MODEL` (default: `gpt-4o-mini`)
 - **Endpoint**: Configurable via `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
 - **Format**: JSON response with `response_format: { type: 'json_object' }`
@@ -171,6 +172,7 @@ Implemented in `apps/api/src/lib/extraction.ts`. Two-path approach:
 - **Error handling**: HTTP errors and parse failures are logged as warnings; extraction returns empty array and triggers fallback
 
 **Fallback Path** (no API key or LLM failure):
+
 - **Strategy**: Keyword heuristic on transcript lines
 - **Keywords** with mapped severity:
   - High severity: `difficult`, `frustrat*`, `pain`, `generic`, `waste`, `never`, `always`, `every`
@@ -193,12 +195,14 @@ All agent outputs are runtime-validated with `arktype` before persistence.
 Located in `apps/web/src/components/StepSidebar.tsx`.
 
 **Behavior:**
+
 - Displays 5 workflow steps with numeric indicators (or checkmarks for completed steps)
 - Current step highlighted with white background and shadow
 - Completed steps show green checkmark instead of number
 - Pending steps dimmed (opacity 50%)
 
 **Collapse/Expand:**
+
 - Toggle button in header (chevron icon that rotates)
 - Collapsed width: 64px; expanded width: 224px
 - Spring transition: `stiffness: 300, damping: 30`
@@ -206,6 +210,7 @@ Located in `apps/web/src/components/StepSidebar.tsx`.
 - Selection count displayed at bottom when expanded
 
 **Dynamic Step Derivation:**
+
 - Steps are not hardcoded per page. Instead, each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` from `apps/web/src/lib/steps.ts`
 - `buildSteps()` returns array of steps with status (`completed` | `current` | `pending`) based on current workflow step index
 - This ensures all pages show consistent progression without duplication
@@ -213,6 +218,7 @@ Located in `apps/web/src/components/StepSidebar.tsx`.
 ### Page Transitions
 
 **Cross-page animation** (when moving between workflow stages):
+
 - Triggered in `apps/web/src/App.tsx` when `stage` state changes
 - Uses `AnimatePresence mode="wait"` to ensure outgoing page exits before incoming page enters
 - Each page wrapped in `motion.div` with:
@@ -221,6 +227,7 @@ Located in `apps/web/src/components/StepSidebar.tsx`.
   - Duration: 0.3s
 
 **Panel animations** (within a page):
+
 - Left panels (transcript, context) animate in from left: `x: -40, opacity: 0` → `x: 0, opacity: 1`
 - Right panels (analysis, collateral) animate in from right: `x: 40, opacity: 0` → `x: 0, opacity: 1`
 - Spring transition: `type: 'spring', stiffness: 300, damping: 30`
@@ -229,6 +236,7 @@ Located in `apps/web/src/components/StepSidebar.tsx`.
 ### Feedback Input
 
 **LiveAnalysisReview** feedback textarea:
+
 - 20-line textarea for user notes to refine pain point extraction
 - Sent to API as `feedback` parameter in `/workflows/:id/steps` call with `step: 'analyze'`
 - LLM prompt conditions on this feedback to prioritize matching pain points

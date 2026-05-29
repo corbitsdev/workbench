@@ -27,6 +27,7 @@ Root monorepo
 **State Management**: The frontend uses TanStack Query for all server state. Each stage page queries the session endpoint (`GET /workflows/:id`) and mutates via step endpoints (`POST /workflows/:id/steps`). No local session state is held in React context.
 
 **Step Derivation**: The workflow state includes a derived `currentStep` field that maps the workflow `status` to the active step name (`intake`, `analyze`, `generate`, `improve`, `export`). Mapping is defined in `apps/api/src/routes/workflow.ts:deriveCurrentStep()`. Each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` to derive the sidebar step list dynamically. This ensures:
+
 - All pages show consistent step progression
 - Step status (completed/current/pending) is always accurate
 - No hardcoded STEPS constants per page

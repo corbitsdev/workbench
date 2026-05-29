@@ -29,6 +29,7 @@ Content-Type: application/json
 ```
 
 **Response** (201 Created):
+
 ```json
 {
   "id": "uuid",
@@ -40,6 +41,7 @@ Content-Type: application/json
 ```
 
 **Status codes:**
+
 - `201`: Workflow created successfully
 - `400`: Invalid source or missing required fields
 - `413`: Transcript exceeds maximum length (500KB)
@@ -54,6 +56,7 @@ GET /workflows/:id
 ```
 
 **Response** (200 OK):
+
 ```json
 {
   "id": "uuid",
@@ -90,6 +93,7 @@ GET /workflows/:id
 ```
 
 **Fields:**
+
 - `currentStep`: Derived from `status`. Maps to step name: `intake`, `analyze`, `generate`, `improve`, `export`
 - `status`: Internal state value (see Status Mapping below)
 - `steps`: Keyed by step name. Each step has:
@@ -97,6 +101,7 @@ GET /workflows/:id
   - Step-specific payload (painPoints, collateral, etc.)
 
 **Status codes:**
+
 - `200`: Success
 - `404`: Workflow not found
 
@@ -117,6 +122,7 @@ Content-Type: application/json
 ```
 
 **Response** (200 OK):
+
 ```json
 {
   "id": "uuid",
@@ -129,6 +135,7 @@ Content-Type: application/json
 **Step Behaviors:**
 
 #### Analyze
+
 - Extracts pain points from the transcript
 - Accepts optional `feedback` to refine the LLM prompt
 - **Feedback example**: "Focus on automation pain" → LLM prioritizes pain points related to automation
@@ -136,12 +143,14 @@ Content-Type: application/json
 - Sets workflow status to `reviewing`
 
 #### Generate
+
 - Requires array of pain point IDs (`painPointIds`)
 - Creates collateral items (email, LinkedIn, one-pager, battlecard) for each selected pain point
 - Returns updated `steps.generate.collateral` array
 - Sets workflow status to `generating`
 
 #### Improve
+
 - Requires specific collateral ID and feedback text
 - Applies feedback to refine the collateral (e.g., "make it shorter", "more executive tone")
 - Archives previous version in `collateral_version` table
@@ -149,9 +158,11 @@ Content-Type: application/json
 - If no more collateral to improve, moves workflow to `exporting`
 
 #### Export
+
 - Not yet implemented (returns 501)
 
 **Error responses:**
+
 - `400`: Invalid step or missing required parameters
 - `404`: Workflow or resource not found
 - `501`: Step not implemented
@@ -167,6 +178,7 @@ GET /recent-calls
 Fetches recent calls from Granola API (if configured).
 
 **Response** (200 OK):
+
 ```json
 {
   "calls": [
@@ -181,6 +193,7 @@ Fetches recent calls from Granola API (if configured).
 ```
 
 **Status codes:**
+
 - `200`: Success
 - `503`: Granola API not configured
 
@@ -193,6 +206,7 @@ GET /health
 ```
 
 **Response** (200 OK):
+
 ```json
 {
   "status": "ok",
@@ -206,14 +220,14 @@ GET /health
 
 Internal `status` values map to frontend `currentStep`:
 
-| Status      | Current Step | Meaning                              |
-| ----------- | ------------ | ------------------------------------ |
-| analyzing   | analyze      | Extracting pain points               |
-| reviewing   | generate     | User selecting pain points           |
-| generating  | generate     | Generating collateral                |
-| improving   | improve      | User improving selected collateral   |
-| exporting   | export       | Assembling final output              |
-| done        | export       | Workflow complete                    |
+| Status     | Current Step | Meaning                            |
+| ---------- | ------------ | ---------------------------------- |
+| analyzing  | analyze      | Extracting pain points             |
+| reviewing  | generate     | User selecting pain points         |
+| generating | generate     | Generating collateral              |
+| improving  | improve      | User improving selected collateral |
+| exporting  | export       | Assembling final output            |
+| done       | export       | Workflow complete                  |
 
 Mapping is defined in `apps/api/src/routes/workflow.ts:deriveCurrentStep()`.
 
@@ -225,13 +239,13 @@ Mapping is defined in `apps/api/src/routes/workflow.ts:deriveCurrentStep()`.
 
 ```typescript
 {
-  id: string;              // UUID
-  workflowId: string;      // UUID (same as sessionId)
-  severity: "low" | "medium" | "high" | "critical";
-  context: string;         // Summary of the pain
-  quote: string;           // Exact customer words
-  selected: boolean;       // User-selected for collateral generation
-  createdAt: string;       // ISO 8601 timestamp
+  id: string; // UUID
+  workflowId: string; // UUID (same as sessionId)
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  context: string; // Summary of the pain
+  quote: string; // Exact customer words
+  selected: boolean; // User-selected for collateral generation
+  createdAt: string; // ISO 8601 timestamp
 }
 ```
 
@@ -239,15 +253,15 @@ Mapping is defined in `apps/api/src/routes/workflow.ts:deriveCurrentStep()`.
 
 ```typescript
 {
-  id: string;                                          // UUID
-  painPointId: string;                                 // UUID
-  type: "email" | "linkedin" | "one-pager" | "battlecard";
+  id: string; // UUID
+  painPointId: string; // UUID
+  type: 'email' | 'linkedin' | 'one-pager' | 'battlecard';
   title: string;
   body: string;
-  status: "draft" | "approved" | "rejected";
-  version: number;                                     // Incremented on feedback
-  createdAt: string;                                   // ISO 8601 timestamp
-  updatedAt: string;                                   // ISO 8601 timestamp
+  status: 'draft' | 'approved' | 'rejected';
+  version: number; // Incremented on feedback
+  createdAt: string; // ISO 8601 timestamp
+  updatedAt: string; // ISO 8601 timestamp
 }
 ```
 
