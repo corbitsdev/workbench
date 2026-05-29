@@ -6,7 +6,11 @@
     "dev": "bun --hot src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "bun test",
+    "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
+    "db:migrate:script": "bun src/db/migrate.ts"
   },
   "dependencies": {
     "@intx/db": "workspace:*",
@@ -18,10 +22,12 @@
     "@better-auth/drizzle-adapter": "^1.6.9",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.10.7",
+    "@gtm/workbench-shared": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "drizzle-kit": "^0.31.1",
     "typescript": "^5.9.0"
   }
 }

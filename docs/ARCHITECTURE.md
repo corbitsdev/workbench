@@ -32,6 +32,18 @@ Root monorepo
 - **Persistence Layer**: PostgreSQL + Drizzle ORM for session state
 - **Object Storage**: MinIO / S3-compatible for large export artifacts
 
+### Database Schema
+
+Defined in `apps/api/src/db/schema.ts` using Drizzle ORM.
+
+| Table | Key Columns |
+|-------|-------------|
+| `transcript` | `id` (UUID PK), `content` (text), `source` (enum: paste, granola), `createdAt` |
+| `workbench_session` | `id` (UUID PK), `transcriptId` (UUID FK), `status` (enum: analyzing, reviewing, generating, improving, exporting, done), `createdAt`, `updatedAt` |
+| `pain_point` | `id` (UUID PK), `sessionId` (UUID FK), `severity` (enum: low, medium, high, critical), `context`, `quote`, `selected` (boolean), `createdAt` |
+| `collateral_item` | `id` (UUID PK), `painPointId` (UUID FK), `type` (enum: email, linkedin, one-pager, battlecard), `title`, `body`, `status` (enum: draft, approved, rejected), `version`, `createdAt`, `updatedAt` |
+| `collateral_version` | `id` (UUID PK), `collateralId` (UUID FK), `title`, `body`, `version`, `createdAt` |
+
 ### Shared Packages (`packages/`)
 
 - **workbench-shared**: Types crossing the web/API boundary (PainPoint, CollateralItem, TranscriptInput, WorkbenchSession)
