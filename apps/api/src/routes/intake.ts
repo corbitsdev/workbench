@@ -1,6 +1,9 @@
 import { Hono } from "hono";
+import { getLogger } from "@intx/log";
 import { transcript, workbenchSession } from "../db/schema";
 import { GranolaClient } from "../lib/granola";
+
+const log = getLogger(["api", "intake"]);
 
 interface IntakeRequest {
   transcript?: string;
@@ -40,6 +43,9 @@ export function createIntakeRouter(db: any): Hono {
         }
         if (body.transcript.trim().length === 0) {
           return c.json({ error: "transcript cannot be empty" }, 400);
+        }
+        if (body.transcript.length > 500000) {
+          return c.json({ error: "transcript exceeds maximum length (500k characters)" }, 413);
         }
         transcriptContent = body.transcript;
       } else if (body.source === "granola") {
@@ -96,7 +102,7 @@ export function createIntakeRouter(db: any): Hono {
 
       return c.json(response, 200);
     } catch (error) {
-      console.error("Intake error:", error);
+      log.error({ error }, "Intake error");
       return c.json({ error: "Internal server error" }, 500);
     }
   });
@@ -110,7 +116,7 @@ export function createIntakeRouter(db: any): Hono {
       const calls = await (granolaClient as GranolaClient).getRecentNotes(3);
       return c.json({ calls });
     } catch (error) {
-      console.error("Recent calls error:", error);
+      log.error({ error }, "Recent calls error");
       return c.json({ error: "Failed to fetch recent calls" }, 500);
     }
   });

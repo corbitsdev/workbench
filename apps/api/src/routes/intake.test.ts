@@ -68,6 +68,25 @@ describe("Intake router", () => {
     expect((json as any).error).toContain("cannot be empty");
   });
 
+  it("POST /intake rejects oversized transcript", async () => {
+    const router = createIntakeRouter(mockDb);
+    const largeTranscript = "x".repeat(500001);
+    const req = new Request("http://localhost:4000/intake", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript: largeTranscript,
+        source: "paste",
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(413);
+
+    const json = await res.json();
+    expect((json as any).error).toContain("exceeds maximum");
+  });
+
   it("POST /intake rejects invalid source", async () => {
     const router = createIntakeRouter(mockDb);
     const req = new Request("http://localhost:4000/intake", {
