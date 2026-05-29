@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { IntakeRequest, IntakeResponse } from "./intake";
+import type { IntakeRequest, IntakeResponse } from "./intake";
 
 describe("Intake types", () => {
   it("exports IntakeRequest type", () => {

@@ -46,6 +46,9 @@ export function createIntakeRouter(db: any): Hono {
         if (!body.granolaId) {
           return c.json({ error: "granolaId is required for granola source" }, 400);
         }
+        if (!granolaClient) {
+          return c.json({ error: "Granola API not configured" }, 503);
+        }
         try {
           const note = await granolaClient.getNoteWithTranscript(body.granolaId);
           transcriptContent = note.transcript || note.title || "";
@@ -104,7 +107,7 @@ export function createIntakeRouter(db: any): Hono {
         return c.json({ error: "Granola API not configured" }, 503);
       }
 
-      const calls = await granolaClient.getRecentNotes(3);
+      const calls = await (granolaClient as GranolaClient).getRecentNotes(3);
       return c.json({ calls });
     } catch (error) {
       console.error("Recent calls error:", error);

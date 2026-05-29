@@ -58,7 +58,8 @@ describe("GranolaClient", () => {
     const note = await client.getNoteWithTranscript("n1");
 
     expect(note.transcript).toBe("Speaker 1: Hello");
-    expect((fetchMock.mock.calls[0][0] as string).includes("include=transcript")).toBe(true);
+    const calls = fetchMock.mock.calls as unknown as any[][];
+    expect(String(calls[0]?.[0]).includes("include=transcript")).toBe(true);
   });
 
   it("throws when API returns non-200 status", async () => {
