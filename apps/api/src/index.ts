@@ -7,6 +7,7 @@ import { getLogger } from "@intx/log";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { magicLink } from "better-auth/plugins/magic-link";
+import { createIntakeRouter } from "./routes/intake";
 
 const log = getLogger(["api"]);
 
@@ -127,6 +128,9 @@ app.use("/api/tenants/:tenantId/credentials/*", (c) =>
 app.route("/", hub);
 
 // ─── Workbench routes ──────────────────────────────────────────────
+
+const intakeRouter = createIntakeRouter(db);
+app.route("/", intakeRouter);
 
 app.post("/analyze", (c) => {
   return c.json({ sessionId: "todo", painPoints: [], status: "analyzing" });
