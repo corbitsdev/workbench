@@ -18,15 +18,25 @@ Root monorepo
 ### Frontend (`apps/web/`)
 
 - **Call Selection**: Single-panel input. Transcript paste or recent-call picker.
-- **Live Analysis**: Two-panel layout. Left = transcript (collapsible sidebar), Right = live agent analysis with pain point summary.
-- **Collateral Review**: Sidebar + main window. Card-stack review pattern per pain point.
-- **Improvement**: Approved pieces with per-item feedback and regeneration.
+- **Live Analysis**: Two-panel layout. Left = transcript (collapsible sidebar), Right = live agent analysis with pain point summary. Fetches real pain points via TanStack Query.
+- **Collateral Review**: Sidebar + main window. Card-stack review pattern per pain point. Reads collateral from the backend session state.
+- **Improvement**: Approved pieces with per-item feedback and regeneration. Calls `/improve` per item with feedback.
 - **Final Export**: Full-screen panel. Assembled collateral with copy/export actions.
 - **Dashboard**: Entry point. New call, resume session, processed calls view.
 
+**State Management**: The frontend uses TanStack Query for all server state. Each stage page queries the session endpoint (`GET /workflows/:id`) and mutates via step endpoints (`POST /workflows/:id/steps`). No local session state is held in React context.
+
+**Step Derivation**: The workflow state includes a derived `currentStep` field that maps the workflow `status` to the active step name (`intake`, `analyze`, `generate`, `improve`, `export`). Mapping is defined in `apps/api/src/routes/workflow.ts:deriveCurrentStep()`. Each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` to derive the sidebar step list dynamically. This ensures:
+- All pages show consistent step progression
+- Step status (completed/current/pending) is always accurate
+- No hardcoded STEPS constants per page
+- Single source of truth: `workflow.status` → `currentStep` → sidebar UI
+
 ### Backend (`apps/api/`)
 
-- **Pipeline Routes**: `POST /analyze`, `POST /generate`, `POST /improve`
+- **Workflow Routes**: `POST /workflows`, `GET /workflows/:id`, `POST /workflows/:id/steps`
+- **Steps**: `analyze`, `generate`, `improve`, `export` — each advances the workflow state machine
+- **Pain Point Extraction**: Implemented in `lib/extraction.ts`. Uses OpenAI LLM when configured, falls back to keyword heuristic. Accepts optional feedback to refine prompts.
 - **Session Service**: Orchestrates stage transitions, persists state
 - **Agent Runtime**: Uses `@intx/agent` (from `interchange/`) with structured JSON outputs
 - **Persistence Layer**: PostgreSQL + Drizzle ORM for session state
@@ -36,13 +46,13 @@ Root monorepo
 
 Defined in `apps/api/src/db/schema.ts` using Drizzle ORM.
 
-| Table | Key Columns |
-|-------|-------------|
-| `transcript` | `id` (UUID PK), `content` (text), `source` (enum: paste, granola), `createdAt` |
-| `workbench_session` | `id` (UUID PK), `transcriptId` (UUID FK), `status` (enum: analyzing, reviewing, generating, improving, exporting, done), `createdAt`, `updatedAt` |
-| `pain_point` | `id` (UUID PK), `sessionId` (UUID FK), `severity` (enum: low, medium, high, critical), `context`, `quote`, `selected` (boolean), `createdAt` |
-| `collateral_item` | `id` (UUID PK), `painPointId` (UUID FK), `type` (enum: email, linkedin, one-pager, battlecard), `title`, `body`, `status` (enum: draft, approved, rejected), `version`, `createdAt`, `updatedAt` |
-| `collateral_version` | `id` (UUID PK), `collateralId` (UUID FK), `title`, `body`, `version`, `createdAt` |
+| Table                | Key Columns                                                                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `transcript`         | `id` (UUID PK), `content` (text), `source` (enum: paste, granola), `createdAt`                                                                                                                   |
+| `workbench_session`  | `id` (UUID PK), `transcriptId` (UUID FK), `status` (enum: analyzing, reviewing, generating, improving, exporting, done), `createdAt`, `updatedAt`                                                |
+| `pain_point`         | `id` (UUID PK), `sessionId` (UUID FK), `severity` (enum: low, medium, high, critical), `context`, `quote`, `selected` (boolean), `createdAt`                                                     |
+| `collateral_item`    | `id` (UUID PK), `painPointId` (UUID FK), `type` (enum: email, linkedin, one-pager, battlecard), `title`, `body`, `status` (enum: draft, approved, rejected), `version`, `createdAt`, `updatedAt` |
+| `collateral_version` | `id` (UUID PK), `collateralId` (UUID FK), `title`, `body`, `version`, `createdAt`                                                                                                                |
 
 ### Shared Packages (`packages/`)
 
@@ -53,9 +63,10 @@ Defined in `apps/api/src/db/schema.ts` using Drizzle ORM.
 
 1. **Transcript submitted** → API persists session, begins analysis
 2. **Analysis** → Agent extracts pain points → API saves to PostgreSQL
+   - **With feedback refinement**: User can optionally provide feedback (e.g., "focus on automation pain"). This feedback is passed to the LLM as a prompt condition, refining which pain points are extracted and their prioritization.
 3. **User selects pain points** → Frontend sends selection → API updates session
 4. **Generation** → Agent creates collateral per pain point → API saves to PostgreSQL
-5. **Review/Improvement** → Frontend sends feedback → API archives old version, saves new
+5. **Review/Improvement** → Frontend sends per-item feedback → API applies feedback (archiving old version, saving new)
 6. **Export** → API assembles final output, uploads to MinIO if large, returns reference
 
 ## Design Decisions
@@ -65,3 +76,7 @@ Defined in `apps/api/src/db/schema.ts` using Drizzle ORM.
 - **Human-in-the-loop**: Every major stage requires human approval. No fully automated pipeline.
 - **Persistent sessions**: Full session state is saved to PostgreSQL. Resumable.
 - **S3 for exports**: Large artifacts stored in MinIO, with references in the database.
+
+---
+
+**API Reference**: See [API.md](./API.md) for detailed endpoint documentation and data type specifications.

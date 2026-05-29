@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { IntakeRequest } from "../types/intake";
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { IntakeRequest } from '../types/intake';
 
 interface CallIntakeFormProps {
   onSubmit: (data: IntakeRequest) => void;
@@ -8,26 +8,26 @@ interface CallIntakeFormProps {
 }
 
 export default function CallIntakeForm({ onSubmit, isLoading = false }: CallIntakeFormProps) {
-  const [transcript, setTranscript] = useState("");
-  const [error, setError] = useState("");
+  const [transcript, setTranscript] = useState('');
+  const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
+    setError('');
 
     if (!transcript.trim()) {
-      setError("Please paste a transcript or notes from your call");
+      setError('Please paste a transcript or notes from your call');
       return;
     }
 
     if (transcript.trim().length < 10) {
-      setError("Transcript seems too short. Please add more content.");
+      setError('Transcript seems too short. Please add more content.');
       return;
     }
 
     onSubmit({
       transcript: transcript.trim(),
-      source: "paste",
+      source: 'paste',
     });
   };
 
@@ -50,7 +50,7 @@ export default function CallIntakeForm({ onSubmit, isLoading = false }: CallInta
           value={transcript}
           onChange={(e) => {
             setTranscript(e.target.value);
-            setError("");
+            setError('');
           }}
           placeholder="Speaker 1: Hello, thanks for taking the call..."
           className="w-full h-48 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono text-sm"
@@ -73,7 +73,7 @@ export default function CallIntakeForm({ onSubmit, isLoading = false }: CallInta
         disabled={isLoading || !transcript.trim()}
         className="w-full px-4 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {isLoading ? "Analyzing..." : "Analyze Call"}
+        {isLoading ? 'Analyzing...' : 'Analyze Call'}
       </button>
     </motion.form>
   );

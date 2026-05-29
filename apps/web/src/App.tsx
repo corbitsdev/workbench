@@ -1,27 +1,61 @@
-import { useState } from "react";
-import CallSelectionIntake from "./pages/CallSelectionIntake";
-import { IntakeResponse } from "./types/intake";
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import CallSelectionIntake from './pages/CallSelectionIntake';
+import LiveAnalysisReview from './pages/LiveAnalysisReview';
+import CollateralReview from './pages/CollateralReview';
+import CollateralImprovement from './pages/CollateralImprovement';
+import FinalExport from './pages/FinalExport';
+
+export type Stage = 'intake' | 'analyze' | 'review' | 'improvement' | 'export';
 
 export default function App() {
-  const [session, setSession] = useState<IntakeResponse | null>(null);
+  const [stage, setStage] = useState<Stage>('intake');
+  const [workflowId, setWorkflowId] = useState<string | null>(null);
 
-  if (session) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Session Created</h1>
-          <p className="mt-2 text-gray-600">Session ID: {session.sessionId}</p>
-          <p className="mt-1 text-sm text-gray-500">Status: {session.status}</p>
-          <button
-            onClick={() => setSession(null)}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Start New Session
-          </button>
-        </div>
-      </div>
-    );
+  const handleWorkflowCreated = (id: string) => {
+    setWorkflowId(id);
+    setStage('analyze');
+  };
+
+  const handleStageChange = (nextStage: Stage) => {
+    setStage(nextStage);
+  };
+
+  const handleNewWorkflow = () => {
+    setStage('intake');
+    setWorkflowId(null);
+  };
+
+  if (!workflowId) {
+    return <CallSelectionIntake onWorkflowCreated={handleWorkflowCreated} />;
   }
 
-  return <CallSelectionIntake onSessionCreated={setSession} />;
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={stage}
+        className="h-screen"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        transition={{ duration: 0.3 }}
+      >
+        {stage === 'analyze' && (
+          <LiveAnalysisReview workflowId={workflowId} onStageChange={handleStageChange} />
+        )}
+
+        {stage === 'review' && (
+          <CollateralReview workflowId={workflowId} onStageChange={handleStageChange} />
+        )}
+
+        {stage === 'improvement' && (
+          <CollateralImprovement workflowId={workflowId} onStageChange={handleStageChange} />
+        )}
+
+        {stage === 'export' && (
+          <FinalExport workflowId={workflowId} onNewWorkflow={handleNewWorkflow} />
+        )}
+      </motion.div>
+    </AnimatePresence>
+  );
 }

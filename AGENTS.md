@@ -122,42 +122,70 @@ If the build fails, report the failure and identify the cause. If the failure is
 ## Setup Commands
 
 1. Start infrastructure:
+
    ```bash
    docker compose up -d
    ```
+
+   The healthcheck waits for PostgreSQL and MinIO to be ready.
+
 2. Install dependencies:
+
    ```bash
    bun install
    ```
+
 3. Configure environment:
+
    ```bash
    cp .env.workbench.example .env.workbench
    # Edit .env.workbench and fill in optional values
    ```
 
+4. Initialize the database:
+   ```bash
+   bun run db:setup
+   ```
+   This script waits for Postgres, creates the database if needed, and runs all migrations (Interchange + custom).
+
 ## Development Workflow
 
-- **Run API** (port 4000):
-  ```bash
-  bun run --filter @gtm/api dev
-  ```
-- **Run Web** (port 5174):
-  ```bash
-  bun run --filter @gtm/web dev
-  ```
-- Web Vite config proxies `/api` to `http://localhost:4000`.
-- PostgreSQL runs on `localhost:5433` (mapped from 5432 to avoid collision with any existing `interchange` services).
-- MinIO console is at `http://localhost:9001` (login: `minioadmin` / `minioadmin-password`).
+**Run everything at once from the root:**
+
+```bash
+bun run dev
+```
+
+This starts API (port 4000) and Web (port 5174) in parallel using `bun --parallel`.
+
+**Or individually:**
+
+- API: `bun run --filter @gtm/api dev`
+- Web: `bun run --filter @gtm/web dev`
+
+**Service locations:**
+
+- Web: `http://localhost:5174` (proxies `/api` to `http://localhost:4000`)
+- API: `http://localhost:4000`
+- PostgreSQL: `localhost:5433`
+- MinIO console: `http://localhost:9001` (credentials: `minioadmin` / `minioadmin-password`)
+
+**Reset the database:**
+
+```bash
+bun run db:reset
+bun run db:setup
+```
 
 ## Pipeline API Surface
 
 Implemented in `apps/api`. Placeholder routes are acceptable until the backend pipeline is built.
 
-| Method | Route | Description |
-|--------|-------|-------------|
-| `POST` | `/analyze` | Extract pain points with severity, context, and quote |
-| `POST` | `/generate` | Create collateral per selected pain point |
-| `POST` | `/improve` | Regenerate a specific collateral item from feedback |
+| Method | Route       | Description                                           |
+| ------ | ----------- | ----------------------------------------------------- |
+| `POST` | `/analyze`  | Extract pain points with severity, context, and quote |
+| `POST` | `/generate` | Create collateral per selected pain point             |
+| `POST` | `/improve`  | Regenerate a specific collateral item from feedback   |
 
 ## Prototype Stages
 
@@ -172,24 +200,24 @@ Implemented in `apps/api`. Placeholder routes are acceptable until the backend p
 
 Required in `.env.workbench`:
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `DB_HOST` | `localhost` | Postgres host |
-| `DB_PORT` | `5433` | Postgres port |
-| `DB_NAME` | `workbench` | Database name |
-| `DB_USER` | `workbench` | Database user |
-| `DB_PASSWORD` | `workbench-dev-password` | Database password |
-| `S3_ENDPOINT` | `127.0.0.1:9000` | MinIO endpoint |
-| `S3_ACCESS_KEY` | `minioadmin` | MinIO access key |
-| `S3_SECRET_KEY` | `minioadmin-password` | MinIO secret key |
-| `S3_BUCKET` | `gtm-workbench-exports` | Default bucket |
-| `S3_FORCE_PATH_STYLE` | `true` | MinIO compatibility |
-| `PORT` | `4000` | API server port |
-| `GRANOLA_API_KEY` | — | Optional Granola API key |
-| `GRANOLA_API_URL` | — | Optional Granola API URL |
-| `OPENAI_API_KEY` | — | Optional LLM key |
-| `OPENAI_BASE_URL` | — | Optional LLM endpoint |
-| `OPENAI_MODEL` | — | Optional model name |
+| Variable              | Default                  | Purpose                  |
+| --------------------- | ------------------------ | ------------------------ |
+| `DB_HOST`             | `localhost`              | Postgres host            |
+| `DB_PORT`             | `5433`                   | Postgres port            |
+| `DB_NAME`             | `workbench`              | Database name            |
+| `DB_USER`             | `workbench`              | Database user            |
+| `DB_PASSWORD`         | `workbench-dev-password` | Database password        |
+| `S3_ENDPOINT`         | `127.0.0.1:9000`         | MinIO endpoint           |
+| `S3_ACCESS_KEY`       | `minioadmin`             | MinIO access key         |
+| `S3_SECRET_KEY`       | `minioadmin-password`    | MinIO secret key         |
+| `S3_BUCKET`           | `gtm-workbench-exports`  | Default bucket           |
+| `S3_FORCE_PATH_STYLE` | `true`                   | MinIO compatibility      |
+| `PORT`                | `4000`                   | API server port          |
+| `GRANOLA_API_KEY`     | —                        | Optional Granola API key |
+| `GRANOLA_API_URL`     | —                        | Optional Granola API URL |
+| `OPENAI_API_KEY`      | —                        | Optional LLM key         |
+| `OPENAI_BASE_URL`     | —                        | Optional LLM endpoint    |
+| `OPENAI_MODEL`        | —                        | Optional model name      |
 
 ## Code Style
 

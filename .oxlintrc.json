@@ -7,7 +7,7 @@
   "globals": {
     "Bun": "readonly"
   },
-  "ignorePatterns": ["dist", "node_modules", "interchange"],
+  "ignorePatterns": ["dist", "node_modules", "interchange", "temporary"],
   "rules": {
     "no-console": "error",
     "no-unused-vars": "error"

@@ -1,7 +1,7 @@
 export interface IntakeRequest {
   transcript?: string;
   granolaId?: string;
-  source: "paste" | "granola";
+  source: 'paste' | 'granola';
 }
 
 export interface IntakeResponse {

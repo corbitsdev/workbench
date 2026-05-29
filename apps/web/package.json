@@ -10,16 +10,19 @@
     "lint": "oxlint ."
   },
   "dependencies": {
+    "@gtm/workbench-shared": "workspace:*",
+    "@tanstack/react-query": "5.100.14",
+    "framer-motion": "^12.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "framer-motion": "^12.0.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/bun": "latest",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.0",
     "tailwindcss": "^4.0.0",
-    "@tailwindcss/vite": "^4.0.0",
     "typescript": "^6.0.0",
     "vite": "^8.0.0"
   }

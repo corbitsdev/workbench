@@ -1,20 +1,20 @@
-export type Severity = "low" | "medium" | "high" | "critical";
+export type Severity = 'low' | 'medium' | 'high' | 'critical';
 
 export type SessionStatus =
-  | "analyzing"
-  | "reviewing"
-  | "generating"
-  | "improving"
-  | "exporting"
-  | "done";
+  | 'analyzing'
+  | 'reviewing'
+  | 'generating'
+  | 'improving'
+  | 'exporting'
+  | 'done';
 
-export type CollateralType = "email" | "linkedin" | "one-pager" | "battlecard";
+export type CollateralType = 'email' | 'linkedin' | 'one-pager' | 'battlecard';
 
-export type CollateralStatus = "draft" | "approved" | "rejected";
+export type CollateralStatus = 'draft' | 'approved' | 'rejected';
 
 export interface PainPoint {
   id: string;
-  sessionId: string;
+  workflowId: string;
   severity: Severity;
   context: string;
   quote: string;
@@ -45,7 +45,7 @@ export interface CollateralVersion {
 
 export interface TranscriptInput {
   transcript: string;
-  source?: "paste" | "granola";
+  source?: 'paste' | 'granola';
 }
 
 export interface WorkbenchSession {
@@ -56,22 +56,30 @@ export interface WorkbenchSession {
   updatedAt: string;
 }
 
+export interface WorkflowState {
+  id: string;
+  status: SessionStatus;
+  currentStep: string;
+  steps: Record<string, unknown>;
+}
+
 export interface AnalyzeRequest {
   transcript: string;
 }
 
 export interface AnalyzeResponse {
-  sessionId: string;
+  workflowId: string;
   painPoints: PainPoint[];
   status: SessionStatus;
 }
 
 export interface GenerateRequest {
-  sessionId: string;
+  workflowId: string;
   painPointIds: string[];
 }
 
 export interface GenerateResponse {
+  workflowId: string;
   collateral: CollateralItem[];
   status: SessionStatus;
 }

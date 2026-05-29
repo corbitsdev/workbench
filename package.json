@@ -3,14 +3,17 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*",
-    "interchange/packages/*"
+    "packages/*"
   ],
-  "engines": {
-    "bun": ">=1.2.0"
-  },
-  "catalog": {
-    "arktype": "^2.1.29"
+  "scripts": {
+    "db:setup": "bun --env-file=.env.workbench run scripts/db-setup.ts",
+    "db:reset": "bun --env-file=.env.workbench run scripts/db-reset.ts",
+    "dev": "bun --env-file=.env.workbench run --parallel --filter @gtm/web --filter @gtm/api dev",
+    "build": "bun run --parallel --filter @gtm/web --filter @gtm/api build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "format": "oxfmt --write . '!interchange' '!temporary'",
+    "lint": "bun run --filter '*' lint",
+    "test": "bun test --ignore='**/interchange/**' --ignore='**/temporary/**'"
   },
   "dependencies": {
     "arktype": "catalog:",
@@ -25,12 +28,10 @@
     "oxfmt": "^0.52.0",
     "oxlint": "^1.67.0"
   },
-  "scripts": {
-    "dev": "bun --env-file=.env run --parallel --filter @gtm/web --filter @gtm/api dev",
-    "build": "bun run --parallel --filter @gtm/web --filter @gtm/api build",
-    "typecheck": "bun run --filter '*' typecheck",
-    "format": "oxfmt --write .",
-    "lint": "bun run --filter '*' lint",
-    "test": "bun test"
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "catalog": {
+    "arktype": "^2.1.29"
   }
 }

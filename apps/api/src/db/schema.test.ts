@@ -1,15 +1,21 @@
-import { describe, expect, it } from "bun:test";
-import { collateralItem, collateralVersion, painPoint, transcript, workbenchSession } from "./schema";
+import { describe, expect, it } from 'bun:test';
+import {
+  collateralItem,
+  collateralVersion,
+  painPoint,
+  transcript,
+  workbenchSession,
+} from './schema';
 
-describe("database schema", () => {
-  it("has transcript table", () => {
+describe('database schema', () => {
+  it('has transcript table', () => {
     expect(transcript).toBeDefined();
     expect(transcript.content).toBeDefined();
     expect(transcript.source).toBeDefined();
     expect(transcript.createdAt).toBeDefined();
   });
 
-  it("has workbenchSession table", () => {
+  it('has workbenchSession table', () => {
     expect(workbenchSession).toBeDefined();
     expect(workbenchSession.transcriptId).toBeDefined();
     expect(workbenchSession.status).toBeDefined();
@@ -17,7 +23,7 @@ describe("database schema", () => {
     expect(workbenchSession.updatedAt).toBeDefined();
   });
 
-  it("has painPoint table", () => {
+  it('has painPoint table', () => {
     expect(painPoint).toBeDefined();
     expect(painPoint.sessionId).toBeDefined();
     expect(painPoint.severity).toBeDefined();
@@ -27,7 +33,7 @@ describe("database schema", () => {
     expect(painPoint.createdAt).toBeDefined();
   });
 
-  it("has collateralItem table", () => {
+  it('has collateralItem table', () => {
     expect(collateralItem).toBeDefined();
     expect(collateralItem.painPointId).toBeDefined();
     expect(collateralItem.type).toBeDefined();
@@ -39,7 +45,7 @@ describe("database schema", () => {
     expect(collateralItem.updatedAt).toBeDefined();
   });
 
-  it("has collateralVersion table", () => {
+  it('has collateralVersion table', () => {
     expect(collateralVersion).toBeDefined();
     expect(collateralVersion.collateralId).toBeDefined();
     expect(collateralVersion.title).toBeDefined();

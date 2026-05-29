@@ -13,4 +13,3 @@ Then reload plugins:
 ```bash
 /reload-plugins
 ```
-

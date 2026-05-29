@@ -1,40 +1,40 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import CallIntakeForm from "../components/CallIntakeForm";
-import RecentCallsPicker from "../components/RecentCallsPicker";
-import { IntakeRequest, IntakeResponse } from "../types/intake";
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import CallIntakeForm from '../components/CallIntakeForm';
+import RecentCallsPicker from '../components/RecentCallsPicker';
+import { IntakeRequest } from '../types/intake';
 
-type IntakeMode = "paste" | "recent";
+type IntakeMode = 'paste' | 'recent';
 
 interface CallSelectionIntakeProps {
-  onSessionCreated?: (response: IntakeResponse) => void;
+  onWorkflowCreated?: (id: string) => void;
 }
 
-export default function CallSelectionIntake({ onSessionCreated }: CallSelectionIntakeProps) {
-  const [mode, setMode] = useState<IntakeMode>("paste");
+export default function CallSelectionIntake({ onWorkflowCreated }: CallSelectionIntakeProps) {
+  const [mode, setMode] = useState<IntakeMode>('paste');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   const handleSubmitIntake = async (data: IntakeRequest) => {
     try {
       setIsLoading(true);
-      setError("");
+      setError('');
 
-      const response = await fetch("/api/intake", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch('/api/v1/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to create session");
+        throw new Error(errorData.error || 'Failed to create workflow');
       }
 
-      const session: IntakeResponse = await response.json();
-      onSessionCreated?.(session);
+      const workflow = await response.json();
+      onWorkflowCreated?.(workflow.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit transcript");
+      setError(err instanceof Error ? err.message : 'Failed to submit transcript');
     } finally {
       setIsLoading(false);
     }
@@ -63,24 +63,22 @@ export default function CallSelectionIntake({ onSessionCreated }: CallSelectionI
         >
           {/* Mode Selector */}
           <div className="flex gap-2 mb-8 p-1 bg-gray-100 rounded-lg">
-            {["paste", "recent"].map((m) => (
+            {['paste', 'recent'].map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m as IntakeMode)}
                 className={`flex-1 px-4 py-2 rounded font-medium transition-colors ${
-                  mode === m
-                    ? "bg-white text-blue-600 shadow"
-                    : "text-gray-600 hover:text-gray-900"
+                  mode === m ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                {m === "paste" ? "Paste Transcript" : "Recent Calls"}
+                {m === 'paste' ? 'Paste Transcript' : 'Recent Calls'}
               </button>
             ))}
           </div>
 
           {/* Content */}
           <AnimatePresence mode="wait">
-            {mode === "paste" ? (
+            {mode === 'paste' ? (
               <motion.div
                 key="paste"
                 initial={{ opacity: 0, y: 10 }}

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import { GranolaNote, IntakeRequest } from "../types/intake";
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { GranolaNote, IntakeRequest } from '../types/intake';
 
 interface RecentCallsPickerProps {
   onSelect: (data: IntakeRequest) => void;
@@ -9,7 +9,7 @@ interface RecentCallsPickerProps {
 
 export default function RecentCallsPicker({ onSelect, isLoading = false }: RecentCallsPickerProps) {
   const [calls, setCalls] = useState<GranolaNote[]>([]);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -20,21 +20,21 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
   const fetchRecentCalls = async () => {
     try {
       setLoading(true);
-      setError("");
+      setError('');
 
-      const response = await fetch("/api/recent-calls", {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch('/api/v1/recent-calls', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch recent calls");
+        throw new Error('Failed to fetch recent calls');
       }
 
       const data = await response.json();
       setCalls(data.calls || []);
     } catch (err) {
-      setError((err instanceof Error ? err.message : "Failed to load recent calls"));
+      setError(err instanceof Error ? err.message : 'Failed to load recent calls');
       setCalls([]);
     } finally {
       setLoading(false);
@@ -45,17 +45,13 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
     setSelectedId(callId);
     onSelect({
       granolaId: callId,
-      source: "granola",
+      source: 'granola',
     });
   };
 
   if (loading) {
     return (
-      <motion.div
-        className="space-y-3"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
+      <motion.div className="space-y-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         {[1, 2, 3].map((i) => (
           <div key={i} className="h-20 bg-gray-100 rounded-lg animate-pulse" />
         ))}
@@ -89,11 +85,7 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
   }
 
   return (
-    <motion.div
-      className="space-y-2"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-    >
+    <motion.div className="space-y-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       {calls.map((call) => (
         <motion.button
           key={call.id}
@@ -101,8 +93,8 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
           disabled={isLoading || selectedId !== null}
           className={`w-full p-4 text-left border rounded-lg transition-colors ${
             selectedId === call.id
-              ? "bg-blue-50 border-blue-300 ring-2 ring-blue-500"
-              : "border-gray-200 hover:bg-gray-50"
+              ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-500'
+              : 'border-gray-200 hover:bg-gray-50'
           } disabled:opacity-50 disabled:cursor-not-allowed`}
           whileHover={{ y: -2 }}
           whileTap={{ y: 0 }}
@@ -110,7 +102,9 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
           <p className="font-medium text-gray-900">{call.title}</p>
           <p className="text-sm text-gray-500 mt-1">
             {new Date(call.created_at).toLocaleDateString()}
-            {call.participants && call.participants.length > 0 && ` • ${call.participants.length} participants`}
+            {call.participants &&
+              call.participants.length > 0 &&
+              ` • ${call.participants.length} participants`}
           </p>
         </motion.button>
       ))}
