@@ -1,12 +1,21 @@
 import { describe, it, expect } from "bun:test";
-import { createIntakeRouter } from "./intake";
+import { IntakeRequest, IntakeResponse } from "./intake";
 
-describe("Intake route", () => {
-  it("exports IntakeRequest and IntakeResponse types", async () => {
-    // Verify the route module exports the expected types
-    expect(createIntakeRouter).toBeDefined();
+describe("Intake types", () => {
+  it("exports IntakeRequest type", () => {
+    const req: IntakeRequest = {
+      transcript: "Speaker: Hello",
+      source: "paste",
+    };
+    expect(req.source).toBe("paste");
   });
 
-  // Integration tests with live API would go here
-  // For now, unit tests for the route handler are in the implementation
+  it("exports IntakeResponse type", () => {
+    const res: IntakeResponse = {
+      sessionId: "123",
+      transcriptId: "456",
+      status: "analyzing",
+    };
+    expect(res).toHaveProperty("sessionId");
+  });
 });

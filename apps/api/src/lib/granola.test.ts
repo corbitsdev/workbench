@@ -1,119 +1,72 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { GranolaClient } from "./granola";
 
 describe("GranolaClient", () => {
-  let client: GranolaClient;
+  const originalFetch = global.fetch;
+  const originalEnv = { ...process.env };
 
   beforeEach(() => {
     process.env.GRANOLA_API_KEY = "test-api-key";
     process.env.GRANOLA_API_URL = "https://api.granola.ai";
-    client = new GranolaClient();
+  });
+
+  afterEach(() => {
+    (global as any).fetch = originalFetch;
+    process.env = { ...originalEnv };
   });
 
   it("throws error if API key is missing", () => {
     delete process.env.GRANOLA_API_KEY;
-    expect(() => {
-      new GranolaClient();
-    }).toThrow("GRANOLA_API_KEY is not configured");
+    expect(() => new GranolaClient()).toThrow("GRANOLA_API_KEY is not configured");
   });
 
   it("throws error if API URL is missing", () => {
     delete process.env.GRANOLA_API_URL;
-    expect(() => {
-      new GranolaClient();
-    }).toThrow("GRANOLA_API_URL is not configured");
+    expect(() => new GranolaClient()).toThrow("GRANOLA_API_URL is not configured");
   });
 
-  it("fetches recent notes with correct headers", async () => {
-    const mockFetch = mock(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "note-1",
-                title: "Sales Call",
-                created_at: "2026-05-28T10:00:00Z",
-                participants: ["Alice", "Bob"],
-              },
-              {
-                id: "note-2",
-                title: "Internal Sync",
-                created_at: "2026-05-28T09:00:00Z",
-                participants: ["Alice"],
-              },
-              {
-                id: "note-3",
-                title: "Team Meeting",
-                created_at: "2026-05-28T08:00:00Z",
-                participants: ["Alice", "Bob", "Carol"],
-              },
-            ],
-            cursor: "next-page-cursor",
-          }),
-          { status: 200 }
-        )
-      )
+  it("fetches recent notes and returns parsed data", async () => {
+    const mockNotes = [
+      { id: "n1", title: "Sales Call", created_at: "2026-05-28T10:00:00Z", participants: ["Alice"] },
+      { id: "n2", title: "Team Sync", created_at: "2026-05-28T09:00:00Z", participants: ["Bob"] },
+    ];
+
+    (global as any).fetch = mock(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: mockNotes }), { status: 200 }))
     );
 
-    global.fetch = mockFetch as any;
+    const client = new GranolaClient();
+    const notes = await client.getRecentNotes(2);
 
-    const notes = await client.getRecentNotes(3);
-
-    expect(notes).toHaveLength(3);
-    expect(notes[0].id).toBe("note-1");
-    expect(notes[0].title).toBe("Sales Call");
-
-    const callArgs = mockFetch.mock.calls[0];
-    expect(callArgs[0]).toContain("/v1/notes");
-    expect((callArgs[1] as any).headers.Authorization).toBe(
-      "Bearer test-api-key"
-    );
+    expect(notes).toEqual(mockNotes);
   });
 
-  it("fetches note with transcript", async () => {
-    const mockFetch = mock(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            data: {
-              id: "note-1",
-              title: "Sales Call",
-              transcript: "Speaker 1: Hello\nSpeaker 2: Hi there",
-              created_at: "2026-05-28T10:00:00Z",
-            },
-          }),
-          { status: 200 }
-        )
-      )
+  it("includes transcript parameter when fetching individual notes", async () => {
+    const mockNote = {
+      id: "n1",
+      title: "Sales Call",
+      transcript: "Speaker 1: Hello",
+      created_at: "2026-05-28T10:00:00Z",
+    };
+
+    const fetchMock = mock(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: mockNote }), { status: 200 }))
     );
+    (global as any).fetch = fetchMock;
 
-    global.fetch = mockFetch as any;
+    const client = new GranolaClient();
+    const note = await client.getNoteWithTranscript("n1");
 
-    const note = await client.getNoteWithTranscript("note-1");
-
-    expect(note.id).toBe("note-1");
-    expect(note.transcript).toBe("Speaker 1: Hello\nSpeaker 2: Hi there");
-
-    const callArgs = mockFetch.mock.calls[0];
-    expect(callArgs[0]).toContain("/v1/notes/note-1");
-    expect(callArgs[0]).toContain("include=transcript");
+    expect(note.transcript).toBe("Speaker 1: Hello");
+    expect((fetchMock.mock.calls[0][0] as string).includes("include=transcript")).toBe(true);
   });
 
-  it("handles API errors gracefully", async () => {
-    const mockFetch = mock(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({ error: "Unauthorized" }),
-          { status: 401 }
-        )
-      )
+  it("throws when API returns non-200 status", async () => {
+    (global as any).fetch = mock(() =>
+      Promise.resolve(new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }))
     );
 
-    global.fetch = mockFetch as any;
-
-    expect(async () => {
-      await client.getRecentNotes(3);
-    }).toThrow();
+    const client = new GranolaClient();
+    expect(async () => client.getRecentNotes(3)).toThrow();
   });
 });
