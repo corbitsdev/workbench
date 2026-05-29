@@ -7,6 +7,7 @@ import { getLogger } from "@intx/log";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { magicLink } from "better-auth/plugins/magic-link";
+import { createIntakeRouter } from "./routes/intake";
 import { createAnalyzeHandler } from "./routes/analyze";
 
 const log = getLogger(["api"]);
@@ -129,7 +130,11 @@ app.route("/", hub);
 
 // ─── Workbench routes ──────────────────────────────────────────────
 
-app.post("/analyze", createAnalyzeHandler(db));
+const intakeRouter = createIntakeRouter(db);
+app.route("/api", intakeRouter);
+
+const analyzeRouter = createAnalyzeHandler(db);
+app.route("/api", analyzeRouter);
 
 app.post("/generate", (c) => {
   return c.json({ collateral: [], status: "generating" });
