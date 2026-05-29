@@ -177,15 +177,15 @@ bun run db:reset
 bun run db:setup
 ```
 
-## Pipeline API Surface
+## Workflow API Surface
 
-Implemented in `apps/api`. Placeholder routes are acceptable until the backend pipeline is built.
+Implemented in `apps/api` as a unified step-based workflow engine.
 
-| Method | Route       | Description                                           |
-| ------ | ----------- | ----------------------------------------------------- |
-| `POST` | `/analyze`  | Extract pain points with severity, context, and quote |
-| `POST` | `/generate` | Create collateral per selected pain point             |
-| `POST` | `/improve`  | Regenerate a specific collateral item from feedback   |
+| Method | Route                  | Description                                                |
+| ------ | ---------------------- | ---------------------------------------------------------- |
+| `POST` | `/workflows`           | Create a new workflow (intake transcript)                  |
+| `GET`  | `/workflows/:id`       | Get workflow state and history                             |
+| `POST` | `/workflows/:id/steps` | Execute a workflow step (analyze, review, improve, export) |
 
 ## Prototype Stages
 

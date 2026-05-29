@@ -9,6 +9,7 @@ import {
 } from '../db/schema';
 import { GranolaClient } from '../lib/granola';
 import { extractPainPoints } from '../lib/extraction';
+import { refineFeedbackWithLLM } from '../lib/feedback';
 
 const STEP_ORDER = ['intake', 'analyze', 'generate', 'improve', 'export'] as const;
 type StepName = (typeof STEP_ORDER)[number];
@@ -262,8 +263,12 @@ async function runImprove(db: any, id: string, collateralId: string, feedback: s
   if (!item) return Response.json({ error: 'Collateral not found' }, { status: 404 });
 
   const nextVersion = item.version + 1;
-  const improvedTitle = applyFeedback(item.title, feedback);
-  const improvedBody = applyFeedback(item.body, feedback);
+  const [improvedTitle, improvedBody] = await Promise.all([
+    refineFeedbackWithLLM(item.title, feedback),
+    refineFeedbackWithLLM(item.body, feedback),
+  ]);
+
+  const sanitizedFeedback = sanitizeHtml(feedback).substring(0, 200);
 
   await db.insert(collateralVersion).values({
     collateralId: item.id,
@@ -272,9 +277,12 @@ async function runImprove(db: any, id: string, collateralId: string, feedback: s
     version: item.version,
   });
 
+  const improvedBodyWithFeedback =
+    improvedBody + '\n\n(Updated per feedback: ' + sanitizedFeedback + ')';
+
   const updated = await db
     .update(collateralItem)
-    .set({ title: improvedTitle, body: improvedBody, version: nextVersion })
+    .set({ title: improvedTitle, body: improvedBodyWithFeedback, version: nextVersion })
     .where(eq(collateralItem.id, collateralId))
     .returning();
 
