@@ -152,7 +152,8 @@ Or via `make all` if Makefile is available.
 
 ### Pain Point Extraction
 
-Implemented in `apps/api/src/lib/extraction.ts`. Two-path approach:
+Implemented in `apps/api/src/lib/extraction.ts`:
+
 
 **LLM Path** (when `OPENAI_API_KEY` is configured):
 
@@ -169,7 +170,7 @@ Implemented in `apps/api/src/lib/extraction.ts`. Two-path approach:
   - `severity`: one of `low`, `medium`, `high`, `critical`
   - `context`: summary (truncated to 500 chars)
   - `quote`: exact customer words (truncated to 500 chars)
-- **Error handling**: HTTP errors and parse failures are logged as warnings; extraction returns empty array and triggers fallback
+- **Error handling**: HTTP errors and parse failures throw; errors bubble up to global error handler for observability
 
 **Fallback Path** (no API key or LLM failure):
 
