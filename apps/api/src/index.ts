@@ -130,7 +130,7 @@ app.route("/", hub);
 // ─── Workbench routes ──────────────────────────────────────────────
 
 const intakeRouter = createIntakeRouter(db);
-app.route("/", intakeRouter);
+app.route("/api", intakeRouter);
 
 app.post("/analyze", (c) => {
   return c.json({ sessionId: "todo", painPoints: [], status: "analyzing" });

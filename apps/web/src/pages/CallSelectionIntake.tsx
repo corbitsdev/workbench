@@ -20,7 +20,7 @@ export default function CallSelectionIntake({ onSessionCreated }: CallSelectionI
       setIsLoading(true);
       setError("");
 
-      const response = await fetch("/intake", {
+      const response = await fetch("/api/intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
