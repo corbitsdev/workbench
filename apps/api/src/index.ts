@@ -7,6 +7,7 @@ import { getLogger } from "@intx/log";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { magicLink } from "better-auth/plugins/magic-link";
+import { createAnalyzeHandler } from "./routes/analyze";
 
 const log = getLogger(["api"]);
 
@@ -46,7 +47,7 @@ const auth = betterAuth({
     magicLink({
       disableSignUp: false,
       sendMagicLink: async ({ email, url }) => {
-        log.info({ email, url }, "Magic link (dev mode — no email provider configured)");
+        log.info("Magic link (dev mode — no email provider configured)", { email, url });
       },
     }),
   ],
@@ -115,11 +116,11 @@ if (corsOrigin) {
 }
 
 // Intercept sidecar-dependent routes
-app.use("/api/sidecars/*", (c) => c.json({ error: "not implemented" }, 501));
-app.use("/api/tenants/:tenantId/agents/instances/*", (c) =>
+app.use("/api/sidecars/*", async (c) => c.json({ error: "not implemented" }, 501));
+app.use("/api/tenants/:tenantId/agents/instances/*", async (c) =>
   c.json({ error: "not implemented" }, 501)
 );
-app.use("/api/tenants/:tenantId/credentials/*", (c) =>
+app.use("/api/tenants/:tenantId/credentials/*", async (c) =>
   c.json({ error: "not implemented" }, 501)
 );
 
@@ -128,9 +129,7 @@ app.route("/", hub);
 
 // ─── Workbench routes ──────────────────────────────────────────────
 
-app.post("/analyze", (c) => {
-  return c.json({ sessionId: "todo", painPoints: [], status: "analyzing" });
-});
+app.post("/analyze", createAnalyzeHandler(db));
 
 app.post("/generate", (c) => {
   return c.json({ collateral: [], status: "generating" });
@@ -155,14 +154,14 @@ app.get("/health", (c) => {
 
 const port = Number(process.env["PORT"] ?? 4000);
 
-log.info({ port }, "API starting");
+log.info("API starting", { port });
 
 if (import.meta.main) {
   const server = Bun.serve({
     port,
     fetch: app.fetch,
   });
-  log.info({ port: server.port }, "API running");
+  log.info("API running", { port: server.port });
 }
 
 export default app;

@@ -59,6 +59,13 @@
 
 ## Database Schema
 
+### Transcripts
+
+- `id` (UUID, primary key)
+- `content` (text)
+- `source` (enum: paste, granola)
+- `createdAt` (timestamp)
+
 ### Sessions
 
 - `id` (UUID, primary key)
