@@ -4,8 +4,8 @@
 node_modules
 .agents
 .claude/settings.local.json
+.claude/worktrees
 tmp
 temporary
 .tmp
-.claude
 *.tsbuildinfo

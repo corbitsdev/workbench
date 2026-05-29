@@ -1,0 +1,15 @@
+{
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2024": true
+  },
+  "globals": {
+    "Bun": "readonly"
+  },
+  "ignorePatterns": ["dist", "node_modules", "interchange"],
+  "rules": {
+    "no-console": "error",
+    "no-unused-vars": "error"
+  }
+}

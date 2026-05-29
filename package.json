@@ -21,10 +21,15 @@
     "postgres": "^3.4.9",
     "resend": "^4.0.0"
   },
+  "devDependencies": {
+    "oxfmt": "^0.52.0",
+    "oxlint": "^1.67.0"
+  },
   "scripts": {
     "dev": "bun --env-file=.env run --parallel --filter @gtm/web --filter @gtm/api dev",
     "build": "bun run --parallel --filter @gtm/web --filter @gtm/api build",
     "typecheck": "bun run --filter '*' typecheck",
+    "format": "oxfmt --write .",
     "lint": "bun run --filter '*' lint",
     "test": "bun test"
   }
