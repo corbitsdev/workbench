@@ -16,7 +16,13 @@ interface IntakeResponse {
 
 export function createIntakeRouter(db: any): Hono {
   const router = new Hono();
-  const granolaClient = new GranolaClient();
+
+  let granolaClient: GranolaClient | null = null;
+  try {
+    granolaClient = new GranolaClient();
+  } catch {
+    // Granola not configured, endpoints will return appropriate errors
+  }
 
   router.post("/intake", async (c) => {
     try {
@@ -89,6 +95,20 @@ export function createIntakeRouter(db: any): Hono {
     } catch (error) {
       console.error("Intake error:", error);
       return c.json({ error: "Internal server error" }, 500);
+    }
+  });
+
+  router.get("/recent-calls", async (c) => {
+    try {
+      if (!granolaClient) {
+        return c.json({ error: "Granola API not configured" }, 503);
+      }
+
+      const calls = await granolaClient.getRecentNotes(3);
+      return c.json({ calls });
+    } catch (error) {
+      console.error("Recent calls error:", error);
+      return c.json({ error: "Failed to fetch recent calls" }, 500);
     }
   });
 
