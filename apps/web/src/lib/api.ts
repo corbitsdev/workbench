@@ -1,7 +1,10 @@
 import { logger } from './logger';
 
+const apiBase: string | undefined = import.meta.env.VITE_API_BASE_URL;
+if (!apiBase) throw new Error('Missing required env variable: VITE_API_BASE_URL');
+
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const url = `/api/v1${path.startsWith('/') ? path : `/${path}`}`;
+  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, apiBase).toString();
   const init: RequestInit = { method, credentials: 'include' };
   if (body) {
     init.headers = { 'Content-Type': 'application/json' };

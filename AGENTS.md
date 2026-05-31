@@ -221,6 +221,13 @@ Required in `.env.workbench`:
 - No `console.log` in production code; use structured logging
 - Keep `interchange/` untouched
 
+## Environment and Configuration
+
+- **No fallbacks for required environment variables.** If a variable is required, use `requireEnv()` (or equivalent) and fail loudly at startup. Do not use `|| 'default'` or `?? 'default'` to paper over a missing value.
+- All environment validation lives in `apps/api/src/config.ts`. Add new variables there, not inline in `index.ts` or elsewhere.
+- Optional variables (e.g. `GOOGLE_CLIENT_ID`) must be explicitly handled as `string | undefined` — never coerced to empty string silently.
+- The only acceptable default is for variables where the default is part of the API contract (e.g. `VITE_API_BASE_URL` defaults to `''` for same-origin relative URLs).
+
 ## Constraints
 
 - Do **not** make CRM sync (Attio) a dependency for v1

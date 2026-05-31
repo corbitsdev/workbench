@@ -8,24 +8,14 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import { loadConfig } from './config';
 import { createWorkflowRouter } from './routes/workflow';
 import * as workbenchSchema from './db/schema';
 
 await setup({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
-}
-
-// ─── LLM Configuration ──────────────────────────────────────────────
-
-requireEnv('OPENAI_COMPATIBLE_API_KEY');
-const _llmModel = process.env['OPENAI_COMPATIBLE_MODEL'] || 'gpt-4o-mini';
-
-log.info('LLM configured', { model: _llmModel });
+const config = loadConfig();
 
 // ─── Database ──────────────────────────────────────────────────────
 
@@ -48,21 +38,16 @@ log.info('Database connection established');
 
 // ─── Auth ──────────────────────────────────────────────────────────
 
-const corsOrigin = process.env['CORS_ORIGIN'];
-const isCrossOrigin = Boolean(corsOrigin);
-const isDev = process.env['NODE_ENV'] !== 'production';
-
-const allowedDomains = process.env['GOOGLE_ALLOWED_DOMAINS']
-  ? process.env['GOOGLE_ALLOWED_DOMAINS'].split(',').map((d) => d.trim()).filter(Boolean)
-  : [];
+const { isDev, cors: corsConfig, auth: authConfig, google } = config;
+const { origins: corsOrigins, isCrossOrigin } = corsConfig;
 
 const auth = betterAuth({
-  baseURL: process.env['BETTER_AUTH_BASE_URL'] ?? 'http://localhost:4000',
-  secret: requireEnv('BETTER_AUTH_SECRET'),
+  baseURL: authConfig.baseUrl,
+  secret: authConfig.secret,
   trustedOrigins: isDev
     ? Array.from({ length: 10 }, (_, i) => `http://localhost:${5173 + i}`)
-    : corsOrigin
-      ? [corsOrigin]
+    : corsOrigins.length > 0
+      ? corsOrigins
       : undefined,
   database: drizzleAdapter(db, { provider: 'pg' }),
   advanced:
@@ -71,17 +56,17 @@ const auth = betterAuth({
       : undefined,
   socialProviders: {
     google: {
-      clientId: process.env['GOOGLE_CLIENT_ID'] ?? '',
-      clientSecret: process.env['GOOGLE_CLIENT_SECRET'] ?? '',
+      clientId: google.clientId ?? '',
+      clientSecret: google.clientSecret ?? '',
     },
   },
   databaseHooks: {
     user: {
       create: {
         before: async (user) => {
-          if (allowedDomains.length === 0) return;
+          if (google.allowedDomains.length === 0) return;
           const domain = user.email.split('@')[1];
-          if (!domain || !allowedDomains.includes(domain)) {
+          if (!domain || !google.allowedDomains.includes(domain)) {
             throw new Error(`Email domain not allowed`);
           }
         },
@@ -114,12 +99,16 @@ const hub = createApp({
   },
   authHandler: async (c) => {
     const response = await auth.handler(c.req.raw);
-    if (corsOrigin) {
+    if (corsOrigins.length > 0) {
+      const requestOrigin = c.req.raw.headers.get('origin');
+      if (!requestOrigin || !corsOrigins.includes(requestOrigin)) {
+        return new Response('Forbidden', { status: 403 });
+      }
       const headers = new Headers();
       for (const [key, value] of response.headers) {
         headers.append(key, value);
       }
-      headers.set('Access-Control-Allow-Origin', corsOrigin);
+      headers.set('Access-Control-Allow-Origin', requestOrigin);
       headers.set('Access-Control-Allow-Credentials', 'true');
       return new Response(response.body, {
         status: response.status,
@@ -141,10 +130,10 @@ const app = new Hono();
 
 app.use('*', honoLogger());
 
-if (corsOrigin) {
+if (corsOrigins.length > 0) {
   app.use(
     cors({
-      origin: corsOrigin,
+      origin: corsOrigins,
       credentials: true,
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Authorization'],
@@ -190,7 +179,7 @@ app.get('/health', (c) => {
   });
 });
 
-const port = Number(process.env['PORT'] ?? 4000);
+const port = Number(config.port);
 
 if (import.meta.main) {
   log.info('API starting', { port });
