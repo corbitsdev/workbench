@@ -16,7 +16,7 @@
 - `apps/web/` — React 19 + Vite 8 + Tailwind CSS + Framer Motion. Human-facing UI.
 - `apps/api/` — Hono + TypeScript. Backend runtime, pipeline, and persistence.
 - `packages/` — Shared types, utilities, and schema that cross the web/API boundary.
-- `compose.yml` — PostgreSQL + MinIO for local development.
+- `compose.yml` — PostgreSQL for local development.
 - Root is the monorepo. `interchange/` is mounted alongside it.
 
 ### Stack
@@ -26,7 +26,7 @@
 - Backend: Hono, TypeScript, Drizzle ORM
 - Agent runtime: `@intx/agent` (from `interchange/`)
 - Persistence: PostgreSQL (port 5433 in compose)
-- Object storage: MinIO (port 9000/9001 in compose)
+
 - Shared types: `packages/workbench-shared` or equivalent
 
 ## Version Validation
@@ -127,7 +127,7 @@ If the build fails, report the failure and identify the cause. If the failure is
    docker compose up -d
    ```
 
-   The healthcheck waits for PostgreSQL and MinIO to be ready.
+   The healthcheck waits for PostgreSQL to be ready.
 
 2. Install dependencies:
 
@@ -168,7 +168,7 @@ This starts API (port 4000) and Web (port 5174) in parallel using `bun --paralle
 - Web: `http://localhost:5174` (proxies `/api` to `http://localhost:4000`)
 - API: `http://localhost:4000`
 - PostgreSQL: `localhost:5433`
-- MinIO console: `http://localhost:9001` (credentials: `minioadmin` / `minioadmin-password`)
+
 
 **Reset the database:**
 
@@ -203,11 +203,6 @@ Required in `.env.workbench`:
 | Variable              | Default                                                                | Purpose                    |
 | --------------------- | ---------------------------------------------------------------------- | -------------------------- |
 | `DATABASE_URL`        | `postgres://workbench:workbench-dev-password@localhost:5433/workbench` | Postgres connection string |
-| `S3_ENDPOINT`         | `127.0.0.1:9000`                                                       | MinIO endpoint             |
-| `S3_ACCESS_KEY`       | `minioadmin`                                                           | MinIO access key           |
-| `S3_SECRET_KEY`       | `minioadmin-password`                                                  | MinIO secret key           |
-| `S3_BUCKET`           | `gtm-workbench-exports`                                                | Default bucket             |
-| `S3_FORCE_PATH_STYLE` | `true`                                                                 | MinIO compatibility        |
 | `PORT`                | `4000`                                                                 | API server port            |
 | `GRANOLA_API_KEY`     | —                                                                      | Optional Granola API key   |
 | `OPENAI_API_KEY`      | —                                                                      | Optional LLM key           |

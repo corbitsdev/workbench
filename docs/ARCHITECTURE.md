@@ -10,7 +10,7 @@ Root monorepo
 ├── apps/api/          → Hono backend (pipeline, persistence, API)
 ├── packages/          → Shared types, utilities, schema
 ├── interchange/       → Dependency (agent runtime, infrastructure)
-└── compose.yml        → Local dev infrastructure (PostgreSQL + MinIO)
+└── compose.yml        → Local dev infrastructure (PostgreSQL)
 ```
 
 ## Component Diagram
@@ -42,7 +42,7 @@ Root monorepo
 - **Session Service**: Orchestrates stage transitions, persists state, manages user sessions
 - **Agent Runtime**: Uses `@intx/agent` (from `interchange/`) with structured JSON outputs
 - **Persistence Layer**: PostgreSQL + Drizzle ORM for session state
-- **Object Storage**: MinIO / S3-compatible for large export artifacts
+
 
 ### Database Schema
 
@@ -69,7 +69,7 @@ Defined in `apps/api/src/db/schema.ts` using Drizzle ORM.
 3. **User selects pain points** → Frontend sends selection → API updates session
 4. **Generation** → Agent creates collateral per pain point → API saves to PostgreSQL
 5. **Review/Improvement** → Frontend sends per-item feedback → API applies feedback (archiving old version, saving new)
-6. **Export** → API assembles final output, uploads to MinIO if large, returns reference
+6. **Export** → API assembles final output and returns it directly in the response
 
 ## Design Decisions
 
@@ -77,7 +77,7 @@ Defined in `apps/api/src/db/schema.ts` using Drizzle ORM.
 - **Paste-first**: Intake is intentionally lightweight. CRM sync is v2.
 - **Human-in-the-loop**: Every major stage requires human approval. No fully automated pipeline.
 - **Persistent sessions**: Full session state is saved to PostgreSQL. Resumable.
-- **S3 for exports**: Large artifacts stored in MinIO, with references in the database.
+
 
 ---
 
