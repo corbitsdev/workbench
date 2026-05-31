@@ -1,10 +1,10 @@
 [build]
-builder = "railpack"
-buildCommand = "bun install && bun run --filter @gtm/api build"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 preDeployCommand = "bun run scripts/db-setup.ts"
-startCommand = "bun run --filter @gtm/api start"
+startCommand = "bun run apps/api/dist/index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
