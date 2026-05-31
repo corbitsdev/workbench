@@ -1,7 +1,9 @@
 [build]
-builder = "nixpacks"
+builder = "railpack"
+buildCommand = "bun install && bun run --filter @gtm/api build"
 
 [deploy]
+preDeployCommand = "bun run scripts/db-setup.ts"
 startCommand = "bun run --filter @gtm/api start"
 healthcheckPath = "/health"
 healthcheckTimeout = 30

@@ -198,16 +198,45 @@ Implemented in `apps/api` as a unified step-based workflow engine.
 
 ## Environment Variables
 
-Required in `.env.workbench`:
+Required in `.env` (copy from `.env.example`):
 
-| Variable              | Default                                                                | Purpose                    |
-| --------------------- | ---------------------------------------------------------------------- | -------------------------- |
-| `DATABASE_URL`        | `postgres://workbench:workbench-dev-password@localhost:5433/workbench` | Postgres connection string |
-| `PORT`                | `4000`                                                                 | API server port            |
-| `GRANOLA_API_KEY`     | —                                                                      | Optional Granola API key   |
-| `OPENAI_API_KEY`      | —                                                                      | Optional LLM key           |
-| `OPENAI_BASE_URL`     | —                                                                      | Optional LLM endpoint      |
-| `OPENAI_MODEL`        | —                                                                      | Optional model name        |
+| Variable                      | Default                                                                | Purpose                                      |
+| ----------------------------- | ---------------------------------------------------------------------- | -------------------------------------------- |
+| `DATABASE_URL`                | `postgres://workbench:workbench-dev-password@localhost:5433/workbench` | Postgres connection string                   |
+| `PORT`                        | `4000`                                                                 | API server port                              |
+| `BETTER_AUTH_SECRET`          | —                                                                      | Required. Auth signing secret                |
+| `BETTER_AUTH_BASE_URL`        | `http://localhost:4000`                                                | Required. Public URL of the API              |
+| `SUPPORTED_CORS_ORIGINS`      | `http://localhost:5174`                                                | Required in production. Comma-separated      |
+| `OPENAI_COMPATIBLE_API_KEY`   | —                                                                      | Required. LLM API key                        |
+| `OPENAI_COMPATIBLE_BASE_URL`  | `https://api.openai.com/v1`                                            | Optional. LLM endpoint                       |
+| `OPENAI_COMPATIBLE_MODEL`     | `gpt-4o-mini`                                                          | Required. Model name                         |
+| `VITE_API_BASE_URL`           | `http://localhost:4000`                                                | Build-time. Public URL of the API for web    |
+| `GRANOLA_API_KEY`             | —                                                                      | Optional. Granola integration                |
+| `GOOGLE_CLIENT_ID`            | —                                                                      | Optional. Google OAuth                       |
+| `GOOGLE_CLIENT_SECRET`        | —                                                                      | Optional. Google OAuth                       |
+| `GOOGLE_ALLOWED_DOMAINS`      | —                                                                      | Optional. Comma-separated allowed domains    |
+
+## Railway Deployment
+
+Configuration lives in `railway.toml` at the repo root. Do not change these without understanding the implications:
+
+- **Builder:** `railpack` (Railway's current default — not nixpacks, which is legacy)
+- **Build command:** `bun install && bun run --filter @gtm/api build`
+- **Pre-deploy command:** `bun run scripts/db-setup.ts` — runs forward-only migrations before each deploy; safe to re-run (idempotent)
+- **Start command:** `bun run --filter @gtm/api start`
+
+The pre-deploy command calls `scripts/db-setup.ts` directly (not via `bun run db:setup`) because the root `db:setup` script passes `--env-file=.env`, which does not exist on Railway — env vars are injected by the platform.
+
+Required environment variables to set in the Railway dashboard before deploying:
+
+- `DATABASE_URL` — provided by Railway's Postgres plugin
+- `BETTER_AUTH_SECRET` — generate a random secret
+- `BETTER_AUTH_BASE_URL` — public URL of the deployed API service
+- `SUPPORTED_CORS_ORIGINS` — public URL of the deployed web service
+- `OPENAI_COMPATIBLE_API_KEY`
+- `OPENAI_COMPATIBLE_MODEL`
+
+`VITE_API_BASE_URL` must be set on the **web** service (build-time variable), pointing to the deployed API URL.
 
 ## Code Style
 
