@@ -25,7 +25,9 @@ export const workbenchSession = pgTable('workbench_session', {
   transcriptId: uuid('transcript_id')
     .notNull()
     .references(() => transcript.id, { onDelete: 'cascade' }),
+  userId: text('user_id'),
   status: text('status', { enum: sessionStatus }).notNull().default('analyzing'),
+  companyName: text('company_name'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at')
     .notNull()

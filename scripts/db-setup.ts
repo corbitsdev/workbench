@@ -60,28 +60,18 @@ function parseDatabaseUrl(url: string): DBConfig {
 function resolveDBConfig(): DBConfig {
   const databaseUrl = process.env['DATABASE_URL'];
 
-  if (databaseUrl) {
-    try {
-      const config = parseDatabaseUrl(databaseUrl);
-      console.log(
-        `[db-config] Using DATABASE_URL (host=${config.host}, port=${config.port}, db=${config.database})`
-      );
-      return config;
-    } catch (err) {
-      if (err instanceof Error) {
-        console.error(`[db-config] DATABASE_URL failed: ${err.message}`);
-      }
-    }
+  if (!databaseUrl) {
+    throw new Error(
+      'Missing required environment variable: DATABASE_URL. ' +
+        'Example: postgres://workbench:workbench-dev-password@localhost:5433/workbench'
+    );
   }
 
-  return {
-    host: requireEnv('DB_HOST'),
-    port: Number(process.env['DB_PORT'] ?? 5432),
-    user: requireEnv('DB_USER'),
-    password: requireEnv('DB_PASSWORD'),
-    database: requireEnv('DB_NAME'),
-    ssl: process.env['DB_SSL'] === 'true',
-  };
+  const config = parseDatabaseUrl(databaseUrl);
+  console.log(
+    `[db-config] Using DATABASE_URL (host=${config.host}, port=${config.port}, db=${config.database})`
+  );
+  return config;
 }
 
 const DB = resolveDBConfig();

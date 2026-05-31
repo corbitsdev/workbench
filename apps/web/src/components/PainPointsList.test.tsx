@@ -47,4 +47,42 @@ describe('PainPointsList types', () => {
     const points: PainPoint[] = [];
     expect(points.length).toBe(0);
   });
+
+  it('supports loading state prop', () => {
+    interface PainPointsListProps {
+      points: PainPoint[];
+      selectedIds: Set<string>;
+      onToggle: (id: string) => void;
+      isLoading?: boolean;
+      analyzeCompleted?: boolean;
+    }
+    const props: PainPointsListProps = {
+      points: [],
+      selectedIds: new Set(),
+      onToggle: () => {},
+      isLoading: true,
+      analyzeCompleted: false,
+    };
+    expect(props.isLoading).toBe(true);
+    expect(props.analyzeCompleted).toBe(false);
+  });
+
+  it('supports analyzeCompleted state when empty', () => {
+    interface PainPointsListProps {
+      points: PainPoint[];
+      selectedIds: Set<string>;
+      onToggle: (id: string) => void;
+      isLoading?: boolean;
+      analyzeCompleted?: boolean;
+    }
+    const props: PainPointsListProps = {
+      points: [],
+      selectedIds: new Set(),
+      onToggle: () => {},
+      isLoading: false,
+      analyzeCompleted: true,
+    };
+    expect(props.analyzeCompleted).toBe(true);
+    expect(props.points.length).toBe(0);
+  });
 });

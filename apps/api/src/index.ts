@@ -1,14 +1,17 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
-import { createDB } from '@intx/db';
+import { schema as intxSchema } from '@intx/db';
 import { createApp } from '@intx/hub-api';
-import { getLogger } from '@intx/log';
+import { getLogger, setup } from '@intx/log';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { magicLink } from 'better-auth/plugins/magic-link';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
 import { createWorkflowRouter } from './routes/workflow';
+import * as workbenchSchema from './db/schema';
 
+await setup({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
 
 function requireEnv(name: string): string {
@@ -26,38 +29,65 @@ log.info('LLM configured', { model: _llmModel });
 
 // ─── Database ──────────────────────────────────────────────────────
 
-const dbConfig = {
-  host: process.env['DB_HOST'] ?? 'localhost',
-  port: Number(process.env['DB_PORT'] ?? '5433'),
-  user: process.env['DB_USER'] ?? 'workbench',
-  password: process.env['DB_PASSWORD'] ?? 'workbench-dev-password',
-  database: process.env['DB_NAME'] ?? 'workbench',
-};
+import { resolveDatabaseConfig } from './lib/db';
 
-const { db } = createDB(dbConfig);
+const dbConfig = resolveDatabaseConfig();
+
+const sql = postgres({
+  host: dbConfig.host,
+  port: dbConfig.port,
+  user: dbConfig.user,
+  password: dbConfig.password,
+  database: dbConfig.database,
+  max: 10,
+  ...(dbConfig.ssl !== undefined && { ssl: dbConfig.ssl }),
+});
+const db = drizzle(sql, { schema: { ...intxSchema, ...workbenchSchema } });
+
 log.info('Database connection established');
 
 // ─── Auth ──────────────────────────────────────────────────────────
 
 const corsOrigin = process.env['CORS_ORIGIN'];
 const isCrossOrigin = Boolean(corsOrigin);
+const isDev = process.env['NODE_ENV'] !== 'production';
+
+const allowedDomains = process.env['GOOGLE_ALLOWED_DOMAINS']
+  ? process.env['GOOGLE_ALLOWED_DOMAINS'].split(',').map((d) => d.trim()).filter(Boolean)
+  : [];
 
 const auth = betterAuth({
   baseURL: process.env['BETTER_AUTH_BASE_URL'] ?? 'http://localhost:4000',
   secret: requireEnv('BETTER_AUTH_SECRET'),
-  trustedOrigins: corsOrigin ? [corsOrigin] : undefined,
+  trustedOrigins: isDev
+    ? Array.from({ length: 10 }, (_, i) => `http://localhost:${5173 + i}`)
+    : corsOrigin
+      ? [corsOrigin]
+      : undefined,
   database: drizzleAdapter(db, { provider: 'pg' }),
-  advanced: isCrossOrigin
-    ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
-    : undefined,
-  plugins: [
-    magicLink({
-      disableSignUp: false,
-      sendMagicLink: async ({ email, url }) => {
-        log.info('Magic link (dev mode — no email provider configured)', { email, url });
+  advanced:
+    isCrossOrigin && !isDev
+      ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
+      : undefined,
+  socialProviders: {
+    google: {
+      clientId: process.env['GOOGLE_CLIENT_ID'] ?? '',
+      clientSecret: process.env['GOOGLE_CLIENT_SECRET'] ?? '',
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          if (allowedDomains.length === 0) return;
+          const domain = user.email.split('@')[1];
+          if (!domain || !allowedDomains.includes(domain)) {
+            throw new Error(`Email domain not allowed`);
+          }
+        },
       },
-    }),
-  ],
+    },
+  },
 });
 
 // ─── Stubbed sidecar dependencies ─────────────────────────────────
@@ -136,7 +166,14 @@ app.route('/', hub);
 
 // ─── Workbench routes ──────────────────────────────────────────────
 
-const v1 = new Hono();
+const v1 = new Hono<{ Variables: { userId: string } }>();
+
+v1.use('*', async (c, next) => {
+  const result = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (!result) return c.json({ error: 'Unauthorized' }, 401);
+  c.set('userId', result.user.id);
+  await next();
+});
 
 v1.route('/', createWorkflowRouter(db));
 

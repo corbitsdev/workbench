@@ -2,9 +2,10 @@ import { motion } from 'framer-motion';
 
 export interface TranscriptPanelProps {
   transcript: string | undefined;
+  isLoading?: boolean;
 }
 
-export default function TranscriptPanel({ transcript }: TranscriptPanelProps) {
+export default function TranscriptPanel({ transcript, isLoading }: TranscriptPanelProps) {
   const hasTranscript = transcript !== undefined && transcript.trim().length > 0;
 
   return (
@@ -25,7 +26,16 @@ export default function TranscriptPanel({ transcript }: TranscriptPanelProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        {hasTranscript ? (
+        {isLoading ? (
+          <div className="space-y-3">
+            <div className="h-4 bg-amber-100 rounded animate-pulse w-3/4" />
+            <div className="h-4 bg-amber-100 rounded animate-pulse w-full" />
+            <div className="h-4 bg-amber-100 rounded animate-pulse w-5/6" />
+            <div className="h-4 bg-amber-100 rounded animate-pulse w-2/3" />
+            <div className="h-4 bg-amber-100 rounded animate-pulse w-full" />
+            <div className="h-4 bg-amber-100 rounded animate-pulse w-4/5" />
+          </div>
+        ) : hasTranscript ? (
           <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{transcript}</p>
         ) : (
           <div className="flex items-center justify-center h-full">

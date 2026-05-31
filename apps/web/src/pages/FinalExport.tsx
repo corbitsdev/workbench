@@ -1,11 +1,15 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import StepSidebar from '../components/StepSidebar';
+import CollateralBody from '../components/CollateralBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
+import type { CollateralType } from '@gtm/workbench-shared';
 
 interface FinalExportProps {
   workflowId: string;
   onNewWorkflow?: () => void;
+  onDashboard?: () => void;
 }
 
 const STEP_LABELS = {
@@ -16,36 +20,51 @@ const STEP_LABELS = {
   export: 'Final package',
 };
 
-export default function FinalExport({ workflowId, onNewWorkflow }: FinalExportProps) {
+const TYPE_LABELS: Record<CollateralType, string> = {
+  email: 'Follow-up Email',
+  linkedin: 'LinkedIn Post',
+  'one-pager': 'One-Pager',
+  battlecard: 'Paid Ad Copy',
+};
+
+export default function FinalExport({ workflowId, onNewWorkflow, onDashboard }: FinalExportProps) {
   const { data: workflow } = useWorkflow(workflowId);
   const collateral = (workflow?.steps?.generate?.collateral as any[]) ?? [];
 
-  const handleCopy = () => {
-    const text = collateral
-      .map((item) => `${item.title.toUpperCase()}\n\n${item.body}`)
-      .join('\n\n');
-
-    navigator.clipboard.writeText(text).catch(() => {
-      alert('Failed to copy to clipboard. Please try again.');
-    });
-  };
-
-  const getTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      email: 'FOLLOW-UP EMAIL',
-      linkedin: 'SOCIAL POST',
-      'one-pager': 'ONE-PAGER INTRO',
-      battlecard: 'BATTLE CARD',
-    };
-    return labels[type] || type;
-  };
-
-  const isDone = workflow?.status === 'done';
-  const steps = workflow?.currentStep
-    ? buildSteps(workflow.currentStep, STEP_LABELS, isDone)
-    : buildSteps('export', STEP_LABELS, true);
-
+  const steps = buildSteps('export', STEP_LABELS, true);
   const sourceLabel = workflow?.steps?.intake?.transcriptId ? 'Pasted transcript' : undefined;
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const markCopied = (id: string) => {
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleCopyAll = () => {
+    const text = collateral
+      .map(
+        (item) =>
+          `${TYPE_LABELS[item.type as CollateralType] ?? item.type}\n${item.title}\n\n${item.body}`
+      )
+      .join('\n\n---\n\n');
+    navigator.clipboard
+      .writeText(text)
+      .then(() => markCopied('all'))
+      .catch(() => {
+        alert('Failed to copy to clipboard. Please try again.');
+      });
+  };
+
+  const handleCopyItem = (item: any) => {
+    const text = `${item.title}\n\n${item.body}`;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => markCopied(item.id))
+      .catch(() => {
+        alert('Failed to copy. Please try again.');
+      });
+  };
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -65,15 +84,14 @@ export default function FinalExport({ workflowId, onNewWorkflow }: FinalExportPr
             </div>
             <h2 className="text-3xl font-bold text-gray-900">Final collateral package</h2>
             <p className="text-sm text-gray-600 mt-1">
-              Copy this into Typefully, email, or a sales enablement doc with the usage notes
-              attached.
+              Copy individual pieces or grab everything at once.
             </p>
           </div>
           <button
-            onClick={handleCopy}
-            className="px-6 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+            onClick={handleCopyAll}
+            className="px-6 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
           >
-            Copy text
+            {copiedId === 'all' ? 'Copied!' : 'Copy all'}
           </button>
         </div>
 
@@ -87,9 +105,10 @@ export default function FinalExport({ workflowId, onNewWorkflow }: FinalExportPr
           >
             <h3 className="font-bold text-gray-900 mb-3">How to use it</h3>
             <ul className="text-sm text-gray-700 space-y-2 list-disc list-inside">
-              <li>Lead with the pain point in the next customer touch.</li>
-              <li>Keep the buyer's phrasing intact where possible.</li>
-              <li>Use the email version first, then repurpose the post as social proof</li>
+              <li>Lead with the email — it is the most direct follow-up path.</li>
+              <li>Hand the ad copy variants to your paid media contact as-is.</li>
+              <li>Repurpose the LinkedIn post for organic reach after the deal moves.</li>
+              <li>Share the one-pager with internal champions at the prospect.</li>
             </ul>
           </motion.div>
 
@@ -99,28 +118,48 @@ export default function FinalExport({ workflowId, onNewWorkflow }: FinalExportPr
               key={item.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="bg-white border border-gray-200 rounded-lg p-6"
+              transition={{ delay: i * 0.07 }}
+              className="bg-white border border-gray-200 rounded-lg overflow-hidden"
             >
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                {getTypeLabel(item.type)}
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold uppercase tracking-wide mb-1">
+                    {TYPE_LABELS[item.type as CollateralType] ?? item.type}
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900">{item.title}</h3>
+                </div>
+                <button
+                  onClick={() => handleCopyItem(item)}
+                  className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors cursor-pointer shrink-0"
+                >
+                  {copiedId === item.id ? 'Copied!' : 'Copy'}
+                </button>
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">{item.title}</h3>
-              <p className="text-base text-gray-700 leading-relaxed whitespace-pre-wrap">
-                {item.body}
-              </p>
+              <div className="p-6">
+                <CollateralBody body={item.body} type={item.type as CollateralType} />
+              </div>
             </motion.div>
           ))}
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-gray-200 bg-white flex gap-4">
-          <button
-            onClick={onNewWorkflow}
-            className="px-6 py-2 border border-gray-300 text-gray-900 font-medium rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            Start new workflow
-          </button>
+        <div className="p-6 border-t border-gray-200 bg-white flex gap-3">
+          {onDashboard && (
+            <button
+              onClick={onDashboard}
+              className="px-6 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+            >
+              Back to home
+            </button>
+          )}
+          {onNewWorkflow && (
+            <button
+              onClick={onNewWorkflow}
+              className="px-6 py-2 border border-gray-300 text-gray-900 font-medium rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+            >
+              Start new workflow
+            </button>
+          )}
         </div>
       </motion.div>
     </div>

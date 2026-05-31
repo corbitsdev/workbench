@@ -32,10 +32,28 @@ describe('ProgressChecklist logic', () => {
   it('supports optional tasks prop with type safety', () => {
     interface ProgressChecklistProps {
       tasks?: string[];
+      status?: 'idle' | 'running' | 'completed' | 'error';
     }
-    const propsWithTasks: ProgressChecklistProps = { tasks: ['Task 1'] };
+    const propsWithTasks: ProgressChecklistProps = { tasks: ['Task 1'], status: 'running' };
     const propsWithoutTasks: ProgressChecklistProps = {};
     expect(propsWithTasks.tasks?.length).toBe(1);
+    expect(propsWithTasks.status).toBe('running');
     expect(propsWithoutTasks.tasks).toBeUndefined();
+    expect(propsWithoutTasks.status).toBeUndefined();
+  });
+
+  it('supports idle status before analysis starts', () => {
+    const status: 'idle' | 'running' | 'completed' | 'error' = 'idle';
+    expect(status).toBe('idle');
+  });
+
+  it('supports running status during analysis', () => {
+    const status: 'idle' | 'running' | 'completed' | 'error' = 'running';
+    expect(status).toBe('running');
+  });
+
+  it('supports error status on failure', () => {
+    const status: 'idle' | 'running' | 'completed' | 'error' = 'error';
+    expect(status).toBe('error');
   });
 });

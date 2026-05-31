@@ -107,6 +107,29 @@
 - `version` (integer)
 - `createdAt` (timestamp)
 
+## Authentication
+
+### Google OAuth Configuration
+
+Google OAuth is required for all users. Configuration:
+
+- **Client ID / Secret**: Configured via `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env.workbench`
+- **Redirect URI**: `http://localhost:5174/auth/callback` (local) or production equivalent
+- **Domain Allowlist** (optional): `GOOGLE_ALLOWED_DOMAINS` — comma-separated domains (e.g., `example.com,partner.com`). If set, only users with email addresses in these domains can authenticate. If unset, any Google account is allowed.
+- **Session Handling**: Sessions are stored in secure, HTTP-only cookies with CSRF protection. Session expiry is configurable via environment variables.
+- **Trusted Origins**: The API whitelist CORS origins via `TRUSTED_ORIGINS` (comma-separated). Required for local dev and production deployments.
+
+### Token-Based System Prompts (LLM)
+
+When generating collateral, the agent receives **type-aware system prompts** tailored to the output format:
+
+- **Email**: Focus on clarity, call-to-action, and conversational tone. Prompt emphasizes sales urgency and personal tone.
+- **LinkedIn**: Emphasis on thought leadership, industry insight, and shareability. Prompt encourages professional storytelling.
+- **One-Pager**: Structured, scannable format. Prompt specifies bullet points, header hierarchy, and data density.
+- **Battlecard**: Competitive positioning and objection handling. Prompt emphasizes structured comparison and messaging.
+
+Each prompt includes the pain point context and selected quote to ground responses in the actual customer voice. This ensures generated collateral is format-appropriate and maintains consistency in tone per output type.
+
 ## Local Development
 
 ### Infrastructure
@@ -154,7 +177,6 @@ Or via `make all` if Makefile is available.
 
 Implemented in `apps/api/src/lib/extraction.ts`:
 
-
 **LLM Path** (when `OPENAI_API_KEY` is configured):
 
 - **Model**: Configurable via `OPENAI_MODEL` (default: `gpt-4o-mini`)
@@ -184,10 +206,22 @@ Implemented in `apps/api/src/lib/extraction.ts`:
 
 ### Collateral Generation and Improvement
 
-1. **Generate**: Agent takes selected pain points, returns structured collateral (email, LinkedIn, one-pager, battlecard) per point
-2. **Improve**: Agent accepts feedback + existing collateral, returns improved version with applied changes (shortening, tone adjustments, etc.)
+1. **Generate**: Agent takes selected pain points and requested collateral types, returns structured collateral (email, LinkedIn, one-pager, battlecard) per point. Each type receives a **type-aware system prompt** (see Token-Based System Prompts above) to ensure format-appropriate output.
+2. **Improve**: Agent accepts feedback + existing collateral + type context, returns improved version with applied changes (shortening, tone adjustments, etc.)
 
 All agent outputs are runtime-validated with `arktype` before persistence.
+
+### Granola API v1 Integration
+
+**Intake Path** (secondary):
+
+When configured with `GRANOLA_API_KEY`, the workbench can ingest recent sales calls from Granola's public API:
+
+- **Endpoint**: Granola API v1 `/calls` endpoint
+- **Authentication**: Bearer token via `GRANOLA_API_KEY`
+- **Integration**: Call transcripts are fetched and stored as `source: "granola"` in the `transcript` table, distinguishing them from manually pasted transcripts
+- **Usage**: Users can optionally browse and select a recent call instead of pasting a transcript
+- **Scope**: Granola integration is entirely optional; paste-first is the primary intake path
 
 ## UI Components
 

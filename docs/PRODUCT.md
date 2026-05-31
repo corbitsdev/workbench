@@ -37,6 +37,7 @@ This is **intentionally not** a fully automated pipeline. The agent handles anal
 
 ## Acceptance Criteria
 
+- Users must authenticate via Google OAuth (optional domain allowlist for team gating)
 - Transcript can be pasted and submitted
 - Pain point analysis is generated and reviewable
 - Users can select which pain points continue to collateral generation
@@ -45,4 +46,4 @@ This is **intentionally not** a fully automated pipeline. The agent handles anal
 - Users can improve an individual piece with feedback
 - Final output can be copied or exported
 - Session state is persisted and can be resumed
-- Usable without full production auth or CRM sync
+- Usable without full production CRM sync

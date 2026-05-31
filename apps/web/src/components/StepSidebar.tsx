@@ -23,11 +23,11 @@ export default function StepSidebar({ steps, sourceLabel, selectionCount }: Step
       animate={{ width: collapsed ? 64 : 224 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
     >
-      <div className="p-6 border-b border-amber-100 flex items-center justify-between">
+      <div className="p-4 border-b border-amber-100 flex items-center justify-between gap-2 overflow-hidden">
         <AnimatePresence>
           {!collapsed && (
             <motion.h1
-              className="text-2xl font-bold text-gray-900 whitespace-nowrap"
+              className="text-sm font-semibold text-gray-900 truncate min-w-0"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}

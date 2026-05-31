@@ -1,14 +1,30 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import StepSidebar from '../components/StepSidebar';
+import CollateralBody from '../components/CollateralBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
+import type { CollateralType } from '@gtm/workbench-shared';
 import type { Stage } from '../App';
 
 interface CollateralReviewProps {
   workflowId: string;
   onStageChange?: (stage: Stage) => void;
 }
+
+const TYPE_LABELS: Record<CollateralType, string> = {
+  email: 'Follow-up Email',
+  linkedin: 'LinkedIn Post',
+  'one-pager': 'One-Pager',
+  battlecard: 'Paid Ad Copy',
+};
+
+const TYPE_DESCRIPTIONS: Record<CollateralType, string> = {
+  email: 'Sales follow-up to send after the call',
+  linkedin: 'Organic post from the seller perspective',
+  'one-pager': 'Shareable doc for internal champions',
+  battlecard: '4-variant ad copy for paid channels',
+};
 
 const STEP_LABELS = {
   intake: 'Call source',
@@ -109,14 +125,16 @@ export default function CollateralReview({ workflowId, onStageChange }: Collater
                 {current?.title || 'Loading...'}
               </h2>
             </div>
-            <div className="text-right">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                {current?.type}
+            {current?.type && (
+              <div className="text-right">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold uppercase tracking-wide">
+                  {TYPE_LABELS[current.type as CollateralType] ?? current.type}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {TYPE_DESCRIPTIONS[current.type as CollateralType]}
+                </div>
               </div>
-              <div className="text-sm font-medium text-gray-700 mt-1">
-                {currentPainPoint?.context.split(' ').slice(0, 5).join(' ')}
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-6">
@@ -128,18 +146,16 @@ export default function CollateralReview({ workflowId, onStageChange }: Collater
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.3 }}
-                  className="bg-gray-50 rounded-lg p-6"
+                  className="space-y-4"
                 >
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                    Pain point
+                  <div className="bg-amber-50 border border-amber-100 rounded-lg px-4 py-3 flex items-start gap-2">
+                    <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mt-0.5 shrink-0">
+                      Pain point
+                    </div>
+                    <div className="text-sm text-gray-700">{currentPainPoint?.context}</div>
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-6">
-                    {currentPainPoint?.context}
-                  </h3>
 
-                  <p className="text-base text-gray-700 leading-relaxed whitespace-pre-wrap">
-                    {current.body}
-                  </p>
+                  <CollateralBody body={current.body} type={current.type as CollateralType} />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -151,7 +167,7 @@ export default function CollateralReview({ workflowId, onStageChange }: Collater
               onClick={handleReject}
               disabled={isLoading}
               aria-label="Reject this collateral item"
-              className="w-12 h-12 rounded-full border-2 border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50"
+              className="w-12 h-12 rounded-full border-2 border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 cursor-pointer"
               title="Reject"
             >
               ✕
@@ -160,7 +176,7 @@ export default function CollateralReview({ workflowId, onStageChange }: Collater
               onClick={handleApprove}
               disabled={isLoading}
               aria-label="Approve this collateral item"
-              className="w-12 h-12 rounded-full bg-green-500 text-white font-bold hover:bg-green-600 transition-colors disabled:opacity-50 flex items-center justify-center"
+              className="w-12 h-12 rounded-full bg-green-500 text-white font-bold hover:bg-green-600 transition-colors disabled:opacity-50 flex items-center justify-center cursor-pointer"
               title="Approve"
             >
               ✓

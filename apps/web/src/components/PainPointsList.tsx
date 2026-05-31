@@ -13,6 +13,8 @@ interface PainPointsListProps {
   points: PainPoint[];
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
+  isLoading?: boolean;
+  analyzeCompleted?: boolean;
 }
 
 const getSeverityColor = (severity?: SeverityLevel): string => {
@@ -30,14 +32,43 @@ const getSeverityColor = (severity?: SeverityLevel): string => {
   }
 };
 
-export default function PainPointsList({ points, selectedIds, onToggle }: PainPointsListProps) {
-  if (points.length === 0) {
+export default function PainPointsList({
+  points,
+  selectedIds,
+  onToggle,
+  isLoading,
+  analyzeCompleted,
+}: PainPointsListProps) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-8 px-4 border border-dashed border-gray-300 rounded-lg bg-gray-50">
-        <p className="text-sm text-gray-600">No pain points extracted</p>
+      <div className="space-y-3">
+        <div className="h-24 border border-gray-200 rounded-lg bg-gray-50 animate-pulse" />
+        <div className="h-24 border border-gray-200 rounded-lg bg-gray-50 animate-pulse" />
+        <div className="h-24 border border-gray-200 rounded-lg bg-gray-50 animate-pulse" />
       </div>
     );
   }
+
+  if (points.length === 0 && !analyzeCompleted) {
+    return (
+      <div className="flex items-center justify-center py-8 px-4 border border-dashed border-gray-300 rounded-lg bg-gray-50">
+        <p className="text-sm text-gray-600">
+          Click "Run analysis" to extract pain points from your transcript
+        </p>
+      </div>
+    );
+  }
+
+  if (points.length === 0 && analyzeCompleted) {
+    return (
+      <div className="flex items-center justify-center py-8 px-4 border border-dashed border-gray-300 rounded-lg bg-gray-50">
+        <p className="text-sm text-gray-600">
+          No pain points found. Try adding feedback or check the transcript.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       {points.map((point) => (

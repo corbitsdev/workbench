@@ -35,10 +35,11 @@ Root monorepo
 
 ### Backend (`apps/api/`)
 
+- **Authentication**: Google OAuth with optional domain allowlisting. Session state stored in secure HTTP-only cookies. CORS origins configurable via trusted origins.
 - **Workflow Routes**: `POST /workflows`, `GET /workflows/:id`, `POST /workflows/:id/steps`
 - **Steps**: `analyze`, `generate`, `improve`, `export` — each advances the workflow state machine
 - **Pain Point Extraction**: Implemented in `lib/extraction.ts`. Uses OpenAI LLM when configured, falls back to keyword heuristic. Accepts optional feedback to refine prompts.
-- **Session Service**: Orchestrates stage transitions, persists state
+- **Session Service**: Orchestrates stage transitions, persists state, manages user sessions
 - **Agent Runtime**: Uses `@intx/agent` (from `interchange/`) with structured JSON outputs
 - **Persistence Layer**: PostgreSQL + Drizzle ORM for session state
 - **Object Storage**: MinIO / S3-compatible for large export artifacts

@@ -200,24 +200,19 @@ Implemented in `apps/api` as a unified step-based workflow engine.
 
 Required in `.env.workbench`:
 
-| Variable              | Default                  | Purpose                  |
-| --------------------- | ------------------------ | ------------------------ |
-| `DB_HOST`             | `localhost`              | Postgres host            |
-| `DB_PORT`             | `5433`                   | Postgres port            |
-| `DB_NAME`             | `workbench`              | Database name            |
-| `DB_USER`             | `workbench`              | Database user            |
-| `DB_PASSWORD`         | `workbench-dev-password` | Database password        |
-| `S3_ENDPOINT`         | `127.0.0.1:9000`         | MinIO endpoint           |
-| `S3_ACCESS_KEY`       | `minioadmin`             | MinIO access key         |
-| `S3_SECRET_KEY`       | `minioadmin-password`    | MinIO secret key         |
-| `S3_BUCKET`           | `gtm-workbench-exports`  | Default bucket           |
-| `S3_FORCE_PATH_STYLE` | `true`                   | MinIO compatibility      |
-| `PORT`                | `4000`                   | API server port          |
-| `GRANOLA_API_KEY`     | —                        | Optional Granola API key |
-| `GRANOLA_API_URL`     | —                        | Optional Granola API URL |
-| `OPENAI_API_KEY`      | —                        | Optional LLM key         |
-| `OPENAI_BASE_URL`     | —                        | Optional LLM endpoint    |
-| `OPENAI_MODEL`        | —                        | Optional model name      |
+| Variable              | Default                                                                | Purpose                    |
+| --------------------- | ---------------------------------------------------------------------- | -------------------------- |
+| `DATABASE_URL`        | `postgres://workbench:workbench-dev-password@localhost:5433/workbench` | Postgres connection string |
+| `S3_ENDPOINT`         | `127.0.0.1:9000`                                                       | MinIO endpoint             |
+| `S3_ACCESS_KEY`       | `minioadmin`                                                           | MinIO access key           |
+| `S3_SECRET_KEY`       | `minioadmin-password`                                                  | MinIO secret key           |
+| `S3_BUCKET`           | `gtm-workbench-exports`                                                | Default bucket             |
+| `S3_FORCE_PATH_STYLE` | `true`                                                                 | MinIO compatibility        |
+| `PORT`                | `4000`                                                                 | API server port            |
+| `GRANOLA_API_KEY`     | —                                                                      | Optional Granola API key   |
+| `OPENAI_API_KEY`      | —                                                                      | Optional LLM key           |
+| `OPENAI_BASE_URL`     | —                                                                      | Optional LLM endpoint      |
+| `OPENAI_MODEL`        | —                                                                      | Optional model name        |
 
 ## Code Style
 
@@ -237,7 +232,7 @@ Required in `.env.workbench`:
 
 ## Personality
 
-- Do not use emojis in code or documentation
+- Do not use emojis in code, documentation, or messages (unless explicitly requested)
 - Act professionally
 - Use plain language. No jargon you haven't earned
 - Be concise

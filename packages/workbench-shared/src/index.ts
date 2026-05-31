@@ -52,6 +52,7 @@ export interface WorkbenchSession {
   id: string;
   transcriptId: string;
   status: SessionStatus;
+  companyName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +61,7 @@ export interface WorkflowState {
   id: string;
   status: SessionStatus;
   currentStep: string;
+  companyName: string | null;
   steps: Record<string, unknown>;
 }
 

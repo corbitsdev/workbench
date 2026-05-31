@@ -1,6 +1,23 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { createWorkflowRouter } from './workflow';
 
+mock.module('../lib/extraction', () => ({
+  extractPainPoints: mock(() =>
+    Promise.resolve({
+      companyName: 'Acme Corp',
+      painPoints: [
+        {
+          sessionId: 'wf-1',
+          severity: 'high' as const,
+          context: 'Manual data entry is painful',
+          quote: 'We spend hours copying data between sheets',
+          selected: true,
+        },
+      ],
+    })
+  ),
+}));
+
 describe('Workflow router', () => {
   function createMockDb() {
     return {
@@ -12,10 +29,10 @@ describe('Workflow router', () => {
           findFirst: mock(() => ({ content: 'Test transcript content' })),
         },
         painPoint: {
-          findMany: mock(() => []),
+          findMany: mock(() => [] as any[]),
         },
         collateralItem: {
-          findMany: mock(() => []),
+          findMany: mock(() => [] as any[]),
           findFirst: mock(() => null),
         },
       },
@@ -103,6 +120,8 @@ describe('Workflow router', () => {
         body: 'Automating workflows saves 10 hours/week',
         status: 'approved',
         version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
     ]);
     mockDb.query.painPoint.findMany = mock(() => [{ id: 'p-1' }]);
@@ -135,6 +154,8 @@ describe('Workflow router', () => {
         body: 'Test body',
         status: 'approved',
         version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
     ]);
     mockDb.query.painPoint.findMany = mock(() => [{ id: 'p-1' }]);
@@ -164,6 +185,8 @@ describe('Workflow router', () => {
         body: 'Multi\nline\nbody',
         status: 'approved',
         version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
     ]);
     mockDb.query.painPoint.findMany = mock(() => [{ id: 'p-1' }]);
@@ -193,6 +216,8 @@ describe('Workflow router', () => {
         body: 'Body with\nnewlines\nand "quotes"',
         status: 'approved',
         version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
     ]);
     mockDb.query.painPoint.findMany = mock(() => [{ id: 'p-1' }]);
@@ -224,6 +249,8 @@ describe('Workflow router', () => {
         body: 'Body',
         status: 'approved',
         version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
     ]);
     mockDb.query.painPoint.findMany = mock(() => [{ id: 'p-1' }]);

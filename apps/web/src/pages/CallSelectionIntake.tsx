@@ -1,126 +1,131 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import CallIntakeForm from '../components/CallIntakeForm';
+import { AnimatePresence, motion } from 'framer-motion';
+import StepSidebar from '../components/StepSidebar';
 import RecentCallsPicker from '../components/RecentCallsPicker';
-import { IntakeRequest } from '../types/intake';
+import { useCreateWorkflow } from '../hooks/use-workflow';
+import { buildSteps } from '../lib/steps';
+import type { IntakeRequest } from '../types/intake';
+
+const STEP_LABELS = {
+  intake: 'Call source',
+  analyze: 'Agent review',
+  generate: 'Approve collateral',
+  improve: 'Improve approved',
+  export: 'Final package',
+};
+
+const steps = buildSteps('intake', STEP_LABELS);
 
 type IntakeMode = 'paste' | 'recent';
 
 interface CallSelectionIntakeProps {
-  onWorkflowCreated?: (id: string) => void;
+  onWorkflowCreated: (id: string) => void;
 }
 
 export default function CallSelectionIntake({ onWorkflowCreated }: CallSelectionIntakeProps) {
   const [mode, setMode] = useState<IntakeMode>('paste');
-  const [isLoading, setIsLoading] = useState(false);
+  const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
+  const createWorkflow = useCreateWorkflow();
 
-  const handleSubmitIntake = async (data: IntakeRequest) => {
+  const handleSubmit = async (data: IntakeRequest) => {
+    setError('');
     try {
-      setIsLoading(true);
-      setError('');
-
-      const response = await fetch('/api/v1/workflows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create workflow');
-      }
-
-      const workflow = await response.json();
-      onWorkflowCreated?.(workflow.id);
+      const workflow = await createWorkflow.mutateAsync(data);
+      onWorkflowCreated(workflow.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit transcript');
-    } finally {
-      setIsLoading(false);
+      setError(err instanceof Error ? err.message : 'Failed to create workflow');
     }
   };
 
+  const handlePasteSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transcript.trim() || transcript.trim().length < 10) {
+      setError('Paste a transcript of at least a few lines.');
+      return;
+    }
+    handleSubmit({ transcript: transcript.trim(), source: 'paste' });
+  };
+
+  const isLoading = createWorkflow.isPending;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
-      <motion.div
-        className="w-full max-w-2xl"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-      >
-        {/* Header */}
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">GTM Workbench</h1>
-          <p className="text-gray-600">Turn your sales calls into polished collateral</p>
+    <div className="flex h-screen bg-gray-50">
+      <StepSidebar steps={steps} />
+
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="p-6 border-b border-gray-200 bg-white">
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Step 1
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900">Select a call</h2>
+          <p className="text-sm text-gray-600 mt-1">Paste a transcript or pick from recent calls</p>
         </div>
 
-        {/* Main Card */}
-        <motion.div
-          className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100"
-          initial={{ scale: 0.95 }}
-          animate={{ scale: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          {/* Mode Selector */}
-          <div className="flex gap-2 mb-8 p-1 bg-gray-100 rounded-lg">
-            {['paste', 'recent'].map((m) => (
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* Mode tabs */}
+          <div className="flex gap-2 mb-6 p-1 bg-gray-100 rounded-lg w-64">
+            {(['paste', 'recent'] as IntakeMode[]).map((m) => (
               <button
                 key={m}
-                onClick={() => setMode(m as IntakeMode)}
-                className={`flex-1 px-4 py-2 rounded font-medium transition-colors ${
-                  mode === m ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:text-gray-900'
+                onClick={() => setMode(m)}
+                className={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                  mode === m
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                {m === 'paste' ? 'Paste Transcript' : 'Recent Calls'}
+                {m === 'paste' ? 'Paste' : 'Recent calls'}
               </button>
             ))}
           </div>
 
-          {/* Content */}
           <AnimatePresence mode="wait">
             {mode === 'paste' ? (
-              <motion.div
+              <motion.form
                 key="paste"
-                initial={{ opacity: 0, y: 10 }}
+                onSubmit={handlePasteSubmit}
+                className="space-y-4 max-w-2xl"
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
               >
-                <CallIntakeForm onSubmit={handleSubmitIntake} isLoading={isLoading} />
-              </motion.div>
+                <textarea
+                  value={transcript}
+                  onChange={(e) => {
+                    setTranscript(e.target.value);
+                    setError('');
+                  }}
+                  placeholder="Speaker 1: Thanks for taking the time today..."
+                  className="w-full h-72 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none font-mono text-sm"
+                  disabled={isLoading}
+                />
+                {error && <p className="text-sm text-red-600">{error}</p>}
+                <button
+                  type="submit"
+                  disabled={isLoading || !transcript.trim()}
+                  className="px-6 py-2.5 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isLoading ? 'Starting...' : 'Start'}
+                </button>
+              </motion.form>
             ) : (
               <motion.div
                 key="recent"
-                initial={{ opacity: 0, y: 10 }}
+                className="max-w-2xl"
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
               >
-                <RecentCallsPicker onSelect={handleSubmitIntake} isLoading={isLoading} />
+                {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
+                <RecentCallsPicker onSelect={handleSubmit} isLoading={isLoading} />
               </motion.div>
             )}
           </AnimatePresence>
-
-          {/* Error Message */}
-          <AnimatePresence>
-            {error && (
-              <motion.div
-                className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-              >
-                {error}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        {/* Footer */}
-        <div className="mt-8 text-center text-sm text-gray-500">
-          <p>Transcripts are private and stored securely</p>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

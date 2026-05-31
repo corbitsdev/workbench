@@ -2,17 +2,11 @@ import path from 'node:path';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { createDB } from '@intx/db';
 import { getLogger } from '@intx/log';
+import { resolveDatabaseConfig } from '../lib/db';
 
 const log = getLogger(['api', 'migrate']);
 
-const dbConfig = {
-  host: process.env['DB_HOST'] ?? 'localhost',
-  port: Number(process.env['DB_PORT'] ?? '5433'),
-  user: process.env['DB_USER'] ?? 'workbench',
-  password: process.env['DB_PASSWORD'] ?? 'workbench-dev-password',
-  database: process.env['DB_NAME'] ?? 'workbench',
-};
-
+const dbConfig = resolveDatabaseConfig();
 const { db, close } = createDB(dbConfig);
 
 async function runMigrations() {

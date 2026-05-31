@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
-import { eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { getLogger } from '@intx/log';
 import {
   workbenchSession,
   transcript,
@@ -10,6 +11,9 @@ import {
 import { GranolaClient } from '../lib/granola';
 import { extractPainPoints } from '../lib/extraction';
 import { refineFeedbackWithLLM } from '../lib/feedback';
+import { generateCollateralWithLLM } from '../lib/generation';
+
+const log = getLogger(['api', 'workflow']);
 
 const STEP_ORDER = ['intake', 'analyze', 'generate', 'improve', 'export'] as const;
 type StepName = (typeof STEP_ORDER)[number];
@@ -17,8 +21,8 @@ type StepName = (typeof STEP_ORDER)[number];
 const VALID_EXPORT_TARGETS = ['markdown', 'csv', 'json'] as const;
 type ExportTarget = (typeof VALID_EXPORT_TARGETS)[number];
 
-export function createWorkflowRouter(db: any): Hono {
-  const router = new Hono();
+export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: string } }> {
+  const router = new Hono<{ Variables: { userId: string } }>();
 
   let granolaClient: GranolaClient | null = null;
   try {
@@ -35,7 +39,10 @@ export function createWorkflowRouter(db: any): Hono {
       source?: string;
     };
 
+    log.info('Creating workflow', { source: body.source });
+
     if (!body.source || !['paste', 'granola'].includes(body.source)) {
+      log.warn('Invalid source', { source: body.source });
       return c.json({ error: 'Invalid source' }, 400);
     }
 
@@ -43,26 +50,42 @@ export function createWorkflowRouter(db: any): Hono {
 
     if (body.source === 'paste') {
       if (!body.transcript || body.transcript.trim().length === 0) {
+        log.warn('Missing transcript for paste source');
         return c.json({ error: 'transcript is required' }, 400);
       }
       if (body.transcript.length > 500000) {
+        log.warn('Transcript too long', { length: body.transcript.length });
         return c.json({ error: 'transcript exceeds maximum length' }, 413);
       }
       content = body.transcript;
+      log.info('Transcript received', { length: content.length });
     } else {
       if (!body.granolaId) {
+        log.warn('Missing granolaId for granola source');
         return c.json({ error: 'granolaId is required' }, 400);
       }
       if (!granolaClient) {
+        log.warn('Granola API not configured');
         return c.json({ error: 'Granola API not configured' }, 503);
       }
       try {
         const note = await (granolaClient as GranolaClient).getNoteWithTranscript(body.granolaId);
-        content = note.transcript || note.title || '';
-      } catch {
+        content = GranolaClient.transcriptToText(note) || note.summary || note.title || '';
+        log.info('Granola note fetched', { granolaId: body.granolaId, length: content.length });
+      } catch (err) {
+        log.error('Failed to fetch from Granola', {
+          granolaId: body.granolaId,
+          error: err instanceof Error ? err.message : String(err),
+        });
         return c.json({ error: 'Failed to fetch from Granola' }, 400);
       }
+      if (content.trim().length === 0) {
+        log.warn('Granola note has no usable content', { granolaId: body.granolaId });
+        return c.json({ error: 'Granola note has no usable content' }, 400);
+      }
     }
+
+    const userId = c.get('userId');
 
     const [txRow] = await db
       .insert(transcript)
@@ -70,8 +93,14 @@ export function createWorkflowRouter(db: any): Hono {
       .returning();
     const [wfRow] = await db
       .insert(workbenchSession)
-      .values({ transcriptId: txRow.id, status: 'analyzing' })
+      .values({ transcriptId: txRow.id, userId, status: 'analyzing' })
       .returning();
+
+    log.info('Workflow created', {
+      workflowId: wfRow.id,
+      transcriptId: txRow.id,
+      status: wfRow.status,
+    });
 
     return c.json(
       {
@@ -85,14 +114,53 @@ export function createWorkflowRouter(db: any): Hono {
     );
   });
 
+  // ─── List workflows ─────────────────────────────────────────────────
+  router.get('/workflows', async (c) => {
+    const userId = c.get('userId');
+    const sessions = await db.query.workbenchSession.findMany({
+      where: eq(workbenchSession.userId, userId),
+      orderBy: [desc(workbenchSession.createdAt)],
+      limit: 50,
+    });
+
+    const rows = await Promise.all(
+      sessions.map(async (s: (typeof sessions)[number]) => {
+        const tx = await db.query.transcript.findFirst({
+          where: eq(transcript.id, s.transcriptId),
+        });
+        const points = await db.query.painPoint.findMany({
+          where: eq(painPoint.sessionId, s.id),
+          columns: { id: true, context: true },
+        });
+        return {
+          id: s.id,
+          status: s.status,
+          createdAt: s.createdAt,
+          transcriptId: s.transcriptId,
+          companyName: s.companyName ?? null,
+          transcriptPreview: tx?.content?.slice(0, 80) ?? null,
+          painPointCount: points.length,
+          firstPainPoint: points[0]?.context ?? null,
+        };
+      })
+    );
+
+    return c.json(rows);
+  });
+
   // ─── Read workflow ──────────────────────────────────────────────────
   router.get('/workflows/:id', async (c) => {
     const id = c.req.param('id');
+    const userId = c.get('userId');
+    log.info('Fetching workflow', { workflowId: id });
 
     const wf = await db.query.workbenchSession.findFirst({
-      where: eq(workbenchSession.id, id),
+      where: and(eq(workbenchSession.id, id), eq(workbenchSession.userId, userId)),
     });
-    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+    if (!wf) {
+      log.warn('Workflow not found', { workflowId: id });
+      return c.json({ error: 'Workflow not found' }, 404);
+    }
 
     const tx = await db.query.transcript.findFirst({
       where: eq(transcript.id, wf.transcriptId),
@@ -111,11 +179,18 @@ export function createWorkflowRouter(db: any): Hono {
         : [];
 
     const currentStep = deriveCurrentStep(wf.status);
+    log.info('Workflow fetched', {
+      workflowId: id,
+      currentStep,
+      painPointsCount: points.length,
+      collateralCount: allCollateral.length,
+    });
 
     return c.json({
       id,
       status: wf.status,
       currentStep,
+      companyName: wf.companyName ?? null,
       steps: {
         intake: { completed: true, transcriptId: wf.transcriptId, transcript: tx?.content },
         analyze: { completed: points.length > 0, painPoints: points.map(serializePainPoint) },
@@ -132,47 +207,74 @@ export function createWorkflowRouter(db: any): Hono {
   // ─── Run step ───────────────────────────────────────────────────────
   router.post('/workflows/:id/steps', async (c) => {
     const id = c.req.param('id');
+    const userId = c.get('userId');
     const body = (await c.req.json().catch(() => ({}))) as {
       step?: StepName;
       painPointIds?: string[];
       collateralId?: string;
       feedback?: string;
+      target?: string;
     };
 
+    log.info('Running step', { workflowId: id, step: body.step });
+
     const wf = await db.query.workbenchSession.findFirst({
-      where: eq(workbenchSession.id, id),
+      where: and(eq(workbenchSession.id, id), eq(workbenchSession.userId, userId)),
     });
-    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+    if (!wf) {
+      log.warn('Workflow not found for step', { workflowId: id });
+      return c.json({ error: 'Workflow not found' }, 404);
+    }
 
     const step = body.step ?? deriveCurrentStep(wf.status);
 
     if (step === 'analyze') {
-      return runAnalyze(db, id, body.feedback);
+      return runAnalyze(db, id, userId, body.feedback);
     }
     if (step === 'generate') {
       return runGenerate(db, id, body.painPointIds ?? []);
     }
     if (step === 'improve') {
       if (!body.collateralId || !body.feedback) {
+        log.warn('Missing collateralId or feedback for improve step', { workflowId: id });
         return c.json({ error: 'collateralId and feedback are required' }, 400);
       }
       return runImprove(db, id, body.collateralId, body.feedback);
     }
     if (step === 'export') {
       const target = body.target ?? 'markdown';
-      if (typeof target !== 'string') {
-        return c.json({ error: 'target must be a string' }, 400);
-      }
       if (!isValidExportTarget(target)) {
+        log.warn('Invalid export target', { workflowId: id, target });
         return c.json(
           { error: `Invalid export target. Must be one of: ${VALID_EXPORT_TARGETS.join(', ')}` },
           400
         );
       }
-      return runExport(db, id, target);
+      return runExport(db, id, userId, target);
     }
 
+    log.warn('Invalid step', { workflowId: id, step });
     return c.json({ error: 'Invalid step' }, 400);
+  });
+
+  // ─── Update company name ────────────────────────────────────────────
+  router.patch('/workflows/:id/company', async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const body = (await c.req.json().catch(() => ({}))) as { companyName?: string };
+
+    const companyName =
+      typeof body.companyName === 'string' ? body.companyName.trim().slice(0, 200) : null;
+
+    const wf = await db.query.workbenchSession.findFirst({
+      where: and(eq(workbenchSession.id, id), eq(workbenchSession.userId, userId)),
+    });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    await db.update(workbenchSession).set({ companyName }).where(eq(workbenchSession.id, id));
+
+    log.info('Company name updated', { workflowId: id, companyName });
+    return c.json({ id, companyName });
   });
 
   // ─── Granola helper ─────────────────────────────────────────────────
@@ -180,8 +282,13 @@ export function createWorkflowRouter(db: any): Hono {
     if (!granolaClient) {
       return c.json({ error: 'Granola API not configured' }, 503);
     }
-    const calls = await (granolaClient as GranolaClient).getRecentNotes(3);
-    return c.json({ calls });
+    try {
+      const calls = await (granolaClient as GranolaClient).getRecentNotes(3);
+      return c.json({ calls });
+    } catch (err) {
+      log.error('Granola fetch failed', { error: String(err) });
+      return c.json({ error: 'Failed to fetch recent calls from Granola' }, 502);
+    }
   });
 
   return router;
@@ -193,7 +300,6 @@ function deriveCurrentStep(status: string): StepName {
   const map: Record<string, StepName> = {
     analyzing: 'analyze',
     reviewing: 'generate',
-    generating: 'generate',
     improving: 'improve',
     exporting: 'export',
     done: 'export',
@@ -201,19 +307,28 @@ function deriveCurrentStep(status: string): StepName {
   return map[status] ?? 'intake';
 }
 
-async function runAnalyze(db: any, id: string, feedback?: string) {
+async function runAnalyze(db: any, id: string, userId: string, feedback?: string) {
+  log.info('Starting analyze step', { workflowId: id, hasFeedback: Boolean(feedback) });
+
   const wf = await db.query.workbenchSession.findFirst({
-    where: eq(workbenchSession.id, id),
+    where: and(eq(workbenchSession.id, id), eq(workbenchSession.userId, userId)),
   });
   const tx = await db.query.transcript.findFirst({
     where: eq(transcript.id, wf.transcriptId),
   });
 
-  const extracted = await extractPainPoints(id, tx.content, feedback);
+  log.info('Extracting pain points', { workflowId: id, transcriptLength: tx.content.length });
+  const { painPoints: extracted, companyName } = await extractPainPoints(id, tx.content, feedback);
+  log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
+
   const inserted =
     extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
 
-  await db.update(workbenchSession).set({ status: 'reviewing' }).where(eq(workbenchSession.id, id));
+  const sessionUpdate: Record<string, unknown> = { status: 'reviewing' };
+  if (companyName) sessionUpdate.companyName = companyName;
+  await db.update(workbenchSession).set(sessionUpdate).where(eq(workbenchSession.id, id));
+
+  log.info('Analyze step complete', { workflowId: id, insertedCount: inserted.length });
 
   return Response.json({
     id,
@@ -226,29 +341,53 @@ async function runAnalyze(db: any, id: string, feedback?: string) {
 }
 
 async function runGenerate(db: any, id: string, painPointIds: string[]) {
-  const points = await db.query.painPoint.findMany({
-    where: inArray(painPoint.id, painPointIds),
-  });
+  log.info('Starting generate step', { workflowId: id, painPointCount: painPointIds.length });
+
+  const [points, wf] = await Promise.all([
+    db.query.painPoint.findMany({ where: inArray(painPoint.id, painPointIds) }),
+    db.query.workbenchSession.findFirst({ where: eq(workbenchSession.id, id) }),
+  ]);
+
+  const tx = wf?.transcriptId
+    ? await db.query.transcript.findFirst({ where: eq(transcript.id, wf.transcriptId) })
+    : null;
+  const transcriptContent: string = tx?.content ?? '';
 
   await db.update(painPoint).set({ selected: true }).where(inArray(painPoint.id, painPointIds));
 
-  const toInsert = points.map((p: any, i: number) => ({
-    painPointId: p.id,
-    type: i === 0 ? 'email' : 'linkedin',
-    title: generateTitle(p.context),
-    body: generateBody(p.context, p.quote),
-    status: 'draft',
-    version: 1,
-  }));
+  const COLLATERAL_TYPES = ['email', 'linkedin', 'one-pager', 'battlecard'] as const;
+
+  const results = await Promise.allSettled(
+    points.flatMap((p: any) =>
+      COLLATERAL_TYPES.map((type) =>
+        generateCollateralWithLLM(id, transcriptContent, p, type).then(({ title, body }) => ({
+          painPointId: p.id,
+          type,
+          title,
+          body,
+          status: 'draft',
+          version: 1,
+        }))
+      )
+    )
+  );
+
+  const generated = results.flatMap((r) => {
+    if (r.status === 'fulfilled') return [r.value];
+    log.error('Collateral generation failed for one item', { workflowId: id, error: String(r.reason) });
+    return [];
+  });
 
   const inserted =
-    toInsert.length > 0 ? await db.insert(collateralItem).values(toInsert).returning() : [];
+    generated.length > 0 ? await db.insert(collateralItem).values(generated).returning() : [];
 
-  await db.update(workbenchSession).set({ status: 'reviewing' }).where(eq(workbenchSession.id, id));
+  await db.update(workbenchSession).set({ status: 'improving' }).where(eq(workbenchSession.id, id));
+
+  log.info('Generate step complete', { workflowId: id, collateralCount: inserted.length });
 
   return Response.json({
     id,
-    status: 'reviewing',
+    status: 'improving',
     currentStep: 'improve',
     steps: {
       generate: { completed: true, collateral: inserted.map(serializeCollateral) },
@@ -257,18 +396,25 @@ async function runGenerate(db: any, id: string, painPointIds: string[]) {
 }
 
 async function runImprove(db: any, id: string, collateralId: string, feedback: string) {
+  log.info('Starting improve step', {
+    workflowId: id,
+    collateralId,
+    feedbackLength: feedback.length,
+  });
+
   const item = await db.query.collateralItem.findFirst({
     where: eq(collateralItem.id, collateralId),
   });
-  if (!item) return Response.json({ error: 'Collateral not found' }, { status: 404 });
+  if (!item) {
+    log.warn('Collateral not found for improve', { workflowId: id, collateralId });
+    return Response.json({ error: 'Collateral not found' }, { status: 404 });
+  }
 
   const nextVersion = item.version + 1;
   const [improvedTitle, improvedBody] = await Promise.all([
-    refineFeedbackWithLLM(item.title, feedback),
-    refineFeedbackWithLLM(item.body, feedback),
+    refineFeedbackWithLLM(item.title, feedback, item.type),
+    refineFeedbackWithLLM(item.body, feedback, item.type),
   ]);
-
-  const sanitizedFeedback = sanitizeHtml(feedback).substring(0, 200);
 
   await db.insert(collateralVersion).values({
     collateralId: item.id,
@@ -277,32 +423,35 @@ async function runImprove(db: any, id: string, collateralId: string, feedback: s
     version: item.version,
   });
 
-  const improvedBodyWithFeedback =
-    improvedBody + '\n\n(Updated per feedback: ' + sanitizedFeedback + ')';
-
   const updated = await db
     .update(collateralItem)
-    .set({ title: improvedTitle, body: improvedBodyWithFeedback, version: nextVersion })
+    .set({ title: improvedTitle, body: improvedBody, version: nextVersion })
     .where(eq(collateralItem.id, collateralId))
     .returning();
 
   const row = updated[0];
+  log.info('Improve step complete', { workflowId: id, collateralId, newVersion: nextVersion });
 
   return Response.json({
     id,
     status: 'improving',
-    currentStep: 'export',
+    currentStep: 'improve',
     steps: {
       improve: { completed: true, collateral: serializeCollateral(row) },
     },
   });
 }
 
-async function runExport(db: any, id: string, target: string) {
+async function runExport(db: any, id: string, userId: string, target: string) {
+  log.info('Starting export step', { workflowId: id, target });
+
   const wf = await db.query.workbenchSession.findFirst({
-    where: eq(workbenchSession.id, id),
+    where: and(eq(workbenchSession.id, id), eq(workbenchSession.userId, userId)),
   });
-  if (!wf) return Response.json({ error: 'Workflow not found' }, { status: 404 });
+  if (!wf) {
+    log.warn('Workflow not found for export', { workflowId: id });
+    return Response.json({ error: 'Workflow not found' }, { status: 404 });
+  }
 
   const points = await db.query.painPoint.findMany({
     where: eq(painPoint.sessionId, id),
@@ -317,12 +466,19 @@ async function runExport(db: any, id: string, target: string) {
       : [];
 
   if (allCollateral.length === 0) {
+    log.warn('No collateral to export', { workflowId: id });
     return Response.json({ error: 'No collateral to export' }, { status: 400 });
   }
 
   const assembled = assembleExport(allCollateral, target);
 
   await db.update(workbenchSession).set({ status: 'done' }).where(eq(workbenchSession.id, id));
+
+  log.info('Export step complete', {
+    workflowId: id,
+    target,
+    collateralCount: allCollateral.length,
+  });
 
   return Response.json({
     id,
@@ -346,7 +502,10 @@ function serializePainPoint(p: any) {
     context: p.context,
     quote: p.quote,
     selected: p.selected,
-    createdAt: typeof p.createdAt === 'string' ? p.createdAt : p.createdAt.toISOString(),
+    createdAt:
+      typeof p.createdAt === 'string'
+        ? p.createdAt
+        : (p.createdAt?.toISOString?.() ?? new Date().toISOString()),
   };
 }
 
@@ -359,35 +518,21 @@ function serializeCollateral(c: any) {
     body: c.body,
     status: c.status,
     version: c.version,
-    createdAt: typeof c.createdAt === 'string' ? c.createdAt : c.createdAt.toISOString(),
-    updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : c.updatedAt.toISOString(),
+    createdAt:
+      typeof c.createdAt === 'string'
+        ? c.createdAt
+        : (c.createdAt?.toISOString?.() ?? new Date().toISOString()),
+    updatedAt:
+      typeof c.updatedAt === 'string'
+        ? c.updatedAt
+        : (c.updatedAt?.toISOString?.() ?? new Date().toISOString()),
   };
 }
 
 // ─── Content generation helpers ─────────────────────────────────────
 
-function generateTitle(context: string): string {
-  const first = context.split(' ').slice(0, 6).join(' ');
-  return first.charAt(0).toUpperCase() + first.slice(1);
-}
-
-function generateBody(context: string, quote: string): string {
-  return `${context}
-
-Buyer said: "${quote}"
-
-Use this phrasing in your next follow-up to show you heard them.`;
-}
-
-function applyFeedback(text: string, feedback: string): string {
-  const lower = feedback.toLowerCase();
-  if (lower.includes('shorter') || lower.includes('brief')) {
-    return text.split('\n').slice(0, 2).join('\n');
-  }
-  if (lower.includes('punch') || lower.includes('sharp') || lower.includes('hook')) {
-    return text + '\n\n(Hooked for impact)';
-  }
-  return text + '\n\n(Updated per feedback: ' + feedback + ')';
+function stripHtml(text: string): string {
+  return text.replace(/<[^>]*>/g, '');
 }
 
 function isValidExportTarget(target: string): target is ExportTarget {
