@@ -2,6 +2,8 @@ FROM oven/bun:1.2 AS builder
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Clone interchange as HTTPS (public repo, avoids SSH key requirement)
 RUN git clone --depth=1 https://github.com/faremeter/interchange.git interchange
 
