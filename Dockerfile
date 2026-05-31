@@ -6,7 +6,7 @@ WORKDIR /app
 RUN git clone --depth=1 https://github.com/faremeter/interchange.git interchange
 
 # Copy workspace manifests for dependency install layer caching
-COPY package.json bun.lock bunfig.toml ./
+COPY package.json bun.lock ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
