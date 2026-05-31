@@ -223,6 +223,30 @@ Required in `.env.workbench`:
 - Optional variables (e.g. `GOOGLE_CLIENT_ID`) must be explicitly handled as `string | undefined` — never coerced to empty string silently.
 - The only acceptable default is for variables where the default is part of the API contract (e.g. `VITE_API_BASE_URL` defaults to `''` for same-origin relative URLs).
 
+## Dependency Injection vs. Direct Imports
+
+Use one pattern consistently — do not mix them.
+
+**Inject stateful resources** (database connections, HTTP clients, queues). These may have multiple instances in future (e.g. read/write replicas) and need to be controlled in tests.
+
+```ts
+// correct
+export function createWorkflowRouter(db: Database): Hono { ... }
+```
+
+**Import stateless singletons directly** (config, loggers, constants). They have one instance, never need to be swapped, and injecting them just adds boilerplate.
+
+```ts
+// correct
+import { loadConfig } from '../config';
+const { granola } = loadConfig();
+
+// wrong — config is not a stateful resource
+export function createWorkflowRouter(db: Database, config: Config): Hono { ... }
+```
+
+**In tests**, mock stateless modules at the module boundary (`mock.module(...)`) rather than injecting fakes through function arguments.
+
 ## Constraints
 
 - Do **not** make CRM sync (Attio) a dependency for v1

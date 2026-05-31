@@ -8,7 +8,7 @@ import {
   collateralItem,
   collateralVersion,
 } from '../db/schema';
-import { GranolaClient } from '../lib/granola';
+import { isGranolaConfigured, getNoteWithTranscript, getRecentNotes, transcriptToText } from '../lib/granola';
 import { extractPainPoints } from '../lib/extraction';
 import { refineFeedbackWithLLM } from '../lib/feedback';
 import { generateCollateralWithLLM } from '../lib/generation';
@@ -23,13 +23,6 @@ type ExportTarget = (typeof VALID_EXPORT_TARGETS)[number];
 
 export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
-
-  let granolaClient: GranolaClient | null = null;
-  try {
-    granolaClient = new GranolaClient();
-  } catch {
-    // Granola not configured
-  }
 
   // ─── Create workflow (intake) ─────────────────────────────────────
   router.post('/workflows', async (c) => {
@@ -64,13 +57,13 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
         log.warn('Missing granolaId for granola source');
         return c.json({ error: 'granolaId is required' }, 400);
       }
-      if (!granolaClient) {
+      if (!isGranolaConfigured()) {
         log.warn('Granola API not configured');
         return c.json({ error: 'Granola API not configured' }, 503);
       }
       try {
-        const note = await (granolaClient as GranolaClient).getNoteWithTranscript(body.granolaId);
-        content = GranolaClient.transcriptToText(note) || note.summary || note.title || '';
+        const note = await getNoteWithTranscript(body.granolaId);
+        content = transcriptToText(note) || note.summary || note.title || '';
         log.info('Granola note fetched', { granolaId: body.granolaId, length: content.length });
       } catch (err) {
         log.error('Failed to fetch from Granola', {
@@ -279,11 +272,11 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
 
   // ─── Granola helper ─────────────────────────────────────────────────
   router.get('/recent-calls', async (c) => {
-    if (!granolaClient) {
+    if (!isGranolaConfigured()) {
       return c.json({ error: 'Granola API not configured' }, 503);
     }
     try {
-      const calls = await (granolaClient as GranolaClient).getRecentNotes(3);
+      const calls = await getRecentNotes(3);
       return c.json({ calls });
     } catch (err) {
       log.error('Granola fetch failed', { error: String(err) });
