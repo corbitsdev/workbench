@@ -205,9 +205,12 @@ async function runCustomMigrations(client: import('postgres').Sql<{}>): Promise<
         const constraintName = alterMatch[2];
         const [{ exists }] = await client`
           SELECT EXISTS(
-            SELECT 1 FROM pg_constraint
-            WHERE conname = ${constraintName}
-              AND conrelid = ${tableName}::regclass
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_class cl ON c.conrelid = cl.oid
+            JOIN pg_namespace n ON cl.relnamespace = n.oid
+            WHERE c.conname = ${constraintName}
+              AND cl.relname = ${tableName}
+              AND n.nspname = 'public'
           ) as exists
         `;
         if (exists) {
