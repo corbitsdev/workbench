@@ -50,6 +50,9 @@ const auth = betterAuth({
       ? corsOrigins
       : undefined,
   database: drizzleAdapter(db, { provider: 'pg' }),
+  account: {
+    skipStateCookieCheck: true,
+  },
   advanced:
     isCrossOrigin && !isDev
       ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
