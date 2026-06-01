@@ -19,6 +19,7 @@ RUN bun install --frozen-lockfile
 COPY . .
 
 RUN bun run --filter @gtm/api build
+RUN bun run --filter @gtm/web build
 
 FROM oven/bun:1.2-slim AS runtime
 
@@ -32,6 +33,7 @@ COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/apps/api/migrations ./apps/api/migrations
+COPY --from=builder /app/apps/web/dist ./apps/web/dist
 
 EXPOSE 4000
 
