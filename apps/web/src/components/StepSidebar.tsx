@@ -14,7 +14,7 @@ interface StepSidebarProps {
 }
 
 export default function StepSidebar({ steps, sourceLabel, selectionCount }: StepSidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 768);
 
   return (
     <motion.div

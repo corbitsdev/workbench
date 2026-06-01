@@ -105,17 +105,17 @@ export default function LiveAnalysisReview() {
 
         {/* Right panel */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="p-6 border-b border-amber-100 bg-white">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+          <div className="px-4 py-3 md:p-6 border-b border-amber-100 bg-white">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
               Live Review
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">Agent is extracting pain points</h2>
-            <p className="text-sm text-gray-600 mt-1">
+            <h2 className="text-xl md:text-2xl font-bold text-gray-900">Agent is extracting pain points</h2>
+            <p className="hidden md:block text-sm text-gray-600 mt-1">
               A running view of what the automation is reading, deciding, and preparing for approval
             </p>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
             <ProgressChecklist
               status={
                 stepError
@@ -142,7 +142,7 @@ export default function LiveAnalysisReview() {
           </div>
 
           {analyzeCompleted && (
-            <div className="p-6 border-t border-gray-200 bg-white space-y-3">
+            <div className="px-4 py-3 md:p-6 border-t border-gray-200 bg-white space-y-2 md:space-y-3">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Company name</label>
                 <input
@@ -163,7 +163,7 @@ export default function LiveAnalysisReview() {
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
                 placeholder="Add context, corrections, or a stronger angle..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none h-20"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none h-14 md:h-20"
               />
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-500">

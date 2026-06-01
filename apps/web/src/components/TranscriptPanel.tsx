@@ -10,7 +10,7 @@ export default function TranscriptPanel({ transcript, isLoading }: TranscriptPan
 
   return (
     <motion.div
-      className="w-80 bg-amber-50 border-r border-amber-100 flex flex-col overflow-hidden"
+      className="hidden md:flex w-80 bg-amber-50 border-r border-amber-100 flex-col overflow-hidden"
       initial={{ x: -40, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30, delay: 0.1 }}
