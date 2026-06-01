@@ -31,6 +31,16 @@ export function loadConfig() {
     );
   }
 
+  const googleClientId = optionalEnv('GOOGLE_CLIENT_ID');
+  const googleClientSecret = optionalEnv('GOOGLE_CLIENT_SECRET');
+
+  if (googleClientId && !googleClientSecret) {
+    throw new Error('GOOGLE_CLIENT_SECRET is required when GOOGLE_CLIENT_ID is set');
+  }
+  if (googleClientSecret && !googleClientId) {
+    throw new Error('GOOGLE_CLIENT_ID is required when GOOGLE_CLIENT_SECRET is set');
+  }
+
   const config = {
     isDev,
     port: requireEnv('PORT'),
@@ -48,8 +58,8 @@ export function loadConfig() {
       baseUrl: optionalEnv('OPENAI_COMPATIBLE_BASE_URL'),
     },
     google: {
-      clientId: optionalEnv('GOOGLE_CLIENT_ID'),
-      clientSecret: optionalEnv('GOOGLE_CLIENT_SECRET'),
+      clientId: googleClientId,
+      clientSecret: googleClientSecret,
       allowedDomains: parseOrigins(optionalEnv('GOOGLE_ALLOWED_DOMAINS')),
     },
     granola: {

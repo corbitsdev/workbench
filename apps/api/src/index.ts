@@ -54,12 +54,14 @@ const auth = betterAuth({
     isCrossOrigin && !isDev
       ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
       : undefined,
-  socialProviders: {
-    google: {
-      clientId: google.clientId ?? '',
-      clientSecret: google.clientSecret ?? '',
-    },
-  },
+  socialProviders: google.clientId && google.clientSecret
+    ? {
+        google: {
+          clientId: google.clientId,
+          clientSecret: google.clientSecret,
+        },
+      }
+    : {},
   databaseHooks: {
     user: {
       create: {

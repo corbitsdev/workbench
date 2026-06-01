@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { authClient } from '../lib/auth-client';
 
+const apiBase = import.meta.env.VITE_API_BASE_URL as string;
+
+if (!apiBase) {
+  throw new Error('VITE_API_BASE_URL is required');
+}
+
 function getCallbackUrl(): string {
-  if (typeof window !== 'undefined') {
-    return window.location.origin + '/';
-  }
-  return 'https://localhost';
+  return apiBase + '/';
 }
 
 function AuthLayout({ children }: { children: React.ReactNode }) {
