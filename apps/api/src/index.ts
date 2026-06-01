@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
+import { serveStatic } from 'hono/bun';
 import { schema as intxSchema } from '@intx/db';
 import { createApp } from '@intx/hub-api';
 import { getLogger, setup } from '@intx/log';
@@ -166,6 +167,11 @@ v1.use('*', async (c, next) => {
 v1.route('/', createWorkflowRouter(db));
 
 app.route('/api/v1', v1);
+
+// ─── Web SPA (when built into the container) ────────────────────────
+
+app.use('/*', serveStatic({ root: './apps/web/dist' }));
+app.get('/*', serveStatic({ path: './apps/web/dist/index.html' }));
 
 // ─── Health ─────────────────────────────────────────────────────────
 

@@ -18,7 +18,7 @@ RUN bun install --frozen-lockfile
 # Copy full source
 COPY . .
 
-RUN bun run --filter @gtm/api build
+RUN bun run --filter @gtm/api build && bun run --filter @gtm/web build
 
 FROM oven/bun:1.2-slim AS runtime
 
@@ -27,6 +27,7 @@ WORKDIR /app
 COPY --from=builder /app/interchange ./interchange
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/web/dist ./apps/web/dist
 COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/package.json ./package.json
