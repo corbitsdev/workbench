@@ -54,10 +54,9 @@ const auth = betterAuth({
   account: {
     skipStateCookieCheck: true,
   },
-  advanced:
-    isCrossOrigin && !isDev
-      ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
-      : undefined,
+  advanced: isCrossOrigin
+    ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
+    : undefined,
   socialProviders: google.clientId && google.clientSecret
     ? {
         google: {
