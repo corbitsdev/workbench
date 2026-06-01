@@ -1,6 +1,6 @@
 {
-  "buildCommand": "git submodule update --init --recursive && bun install && bun run --filter @gtm/web build",
+  "buildCommand": "bun run --filter @gtm/web build",
   "outputDirectory": "apps/web/dist",
-  "installCommand": "bun install",
+  "installCommand": "git submodule update --init --recursive && bun install",
   "framework": "vite"
 }
