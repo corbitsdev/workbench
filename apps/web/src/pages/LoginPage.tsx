@@ -41,6 +41,7 @@ export function LoginPage() {
     try {
       await authClient.signIn.social({
         provider: 'google',
+        callbackURL: window.location.origin,
       });
     } catch {
       setError('Failed to sign in with Google. Please try again.');
