@@ -4,6 +4,7 @@ import StepSidebar from '../components/StepSidebar';
 import TranscriptPanel from '../components/TranscriptPanel';
 import ProgressChecklist from '../components/ProgressChecklist';
 import PainPointsList from '../components/PainPointsList';
+import { togglePainPointSelection } from '../components/pain-point-selection';
 import { useWorkflow, useRunStep, useUpdateCompanyName } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
 import { logger } from '../lib/logger';
@@ -52,12 +53,7 @@ export default function LiveAnalysisReview() {
   }, [workflow, analyzeCompleted]);
 
   const handleToggle = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setSelectedIds((prev) => togglePainPointSelection(prev, id));
   };
 
   const handleGenerate = async () => {
@@ -109,7 +105,9 @@ export default function LiveAnalysisReview() {
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
               Live Review
             </div>
-            <h2 className="text-xl md:text-2xl font-bold text-gray-900">Agent is extracting pain points</h2>
+            <h2 className="text-xl md:text-2xl font-bold text-gray-900">
+              Agent is extracting pain points
+            </h2>
             <p className="hidden md:block text-sm text-gray-600 mt-1">
               A running view of what the automation is reading, deciding, and preparing for approval
             </p>

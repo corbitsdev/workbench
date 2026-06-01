@@ -1,5 +1,6 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
+import { togglePainPointSelection } from './pain-point-selection';
 import type { PainPoint, SeverityLevel } from './PainPointsList';
 
 describe('PainPointsList types', () => {
@@ -84,5 +85,24 @@ describe('PainPointsList types', () => {
     };
     expect(props.analyzeCompleted).toBe(true);
     expect(props.points.length).toBe(0);
+  });
+
+  it('toggles a pain point selection once per interaction', () => {
+    const selected = togglePainPointSelection(new Set<string>(), 'point-1');
+    expect(selected.has('point-1')).toBe(true);
+
+    const deselected = togglePainPointSelection(selected, 'point-1');
+    expect(deselected.has('point-1')).toBe(false);
+  });
+
+  it('returns a new set and only updates the targeted id', () => {
+    const initial = new Set<string>(['point-2']);
+    const next = togglePainPointSelection(initial, 'point-1');
+
+    expect(next).not.toBe(initial);
+    expect(initial.has('point-1')).toBe(false);
+    expect(initial.has('point-2')).toBe(true);
+    expect(next.has('point-1')).toBe(true);
+    expect(next.has('point-2')).toBe(true);
   });
 });

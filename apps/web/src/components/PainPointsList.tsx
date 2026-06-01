@@ -82,14 +82,11 @@ export default function PainPointsList({
               : 'border-gray-200 bg-white hover:border-gray-300'
           }`}
         >
-          <div className="flex items-start gap-3 cursor-pointer" onClick={() => onToggle(point.id)}>
+          <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={selectedIds.has(point.id)}
-              onChange={(e) => {
-                e.stopPropagation();
-                onToggle(point.id);
-              }}
+              onChange={() => onToggle(point.id)}
               className="mt-1 w-4 h-4"
             />
             <div className="flex-1 min-w-0">
@@ -105,7 +102,7 @@ export default function PainPointsList({
               </div>
               <p className="text-xs text-gray-600 mt-2 italic">&quot;{point.quote}&quot;</p>
             </div>
-          </div>
+          </label>
         </motion.div>
       ))}
     </div>
