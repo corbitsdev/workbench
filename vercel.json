@@ -1,5 +1,6 @@
 {
   "buildCommand": "bun install && bun run --filter @gtm/web build",
   "outputDirectory": "apps/web/dist",
-  "framework": null
+  "installCommand": "bun install",
+  "framework": "vite"
 }

@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
-import { serveStatic } from 'hono/bun';
 import { schema as intxSchema } from '@intx/db';
 import { createApp } from '@intx/hub-api';
 import { getLogger, setup } from '@intx/log';
@@ -179,19 +178,6 @@ app.get('/health', (c) => {
     timestamp: new Date().toISOString(),
   });
 });
-
-// ─── Static frontend (production) ───────────────────────────────────
-
-if (process.env.NODE_ENV === 'production') {
-  app.use('/*', serveStatic({ root: './apps/web/dist' }));
-  app.get('/*', async (c) => {
-    const file = Bun.file('./apps/web/dist/index.html');
-    if (await file.exists()) {
-      return c.html(await file.text());
-    }
-    return c.notFound();
-  });
-}
 
 const port = Number(config.port);
 
