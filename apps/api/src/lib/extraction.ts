@@ -1,4 +1,9 @@
+import type { InferenceSource } from '@intx/types/runtime';
+import { createAgent } from '@intx/agent';
 import { getLogger } from '@intx/log';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 const log = getLogger(['extraction']);
 
@@ -40,63 +45,47 @@ export async function extractPainPointsWithLLM(
     throw new Error('OPENAI_COMPATIBLE_API_KEY is required for pain point extraction');
   }
 
+  const source: InferenceSource = {
+    id: `extraction-${workflowId}`,
+    provider: 'openai',
+    baseURL,
+    apiKey,
+    model,
+  };
+
   const systemPrompt = `You are a sales transcript analyst. Extract up to 5 distinct pain points from the transcript. Also try to identify the prospect company name if mentioned. Respond in JSON format with: "companyName" (string or null if unknown), and "painPoints" array where each item has: severity (low, medium, high, or critical), context (a concise summary), and quote (the exact customer words).`;
 
   const userMessage = feedback
     ? `Transcript:\n\n${content.slice(0, 100000)}\n\n---\n\nRefinement direction from user: ${feedback}`
     : `Transcript:\n\n${content.slice(0, 100000)}`;
 
-  const body = {
-    model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage },
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.3,
-    max_tokens: 2048,
-  };
-
   try {
-    log.info('Sending LLM request', { url: `${baseURL}/chat/completions` });
-    const res = await fetch(`${baseURL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
+    const contextDir = join(tmpdir(), `gtm-extraction-${randomUUID()}`);
+
+    const agent = await createAgent({
+      contextDir,
+      sources: [source],
+      defaultSource: source.id,
+      systemPrompt,
+      tools: [],
+      closeTimeoutMs: 1000,
     });
 
-    log.info('LLM response received', { status: res.status });
+    const result = await agent.send(userMessage);
+    await agent.close();
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      log.error('LLM request failed', { status: res.status, error: err.error });
-      throw new Error(`LLM extraction failed: ${res.status} ${err.error}`);
-    }
-
-    const data = (await res.json()) as {
-      choices: Array<{ message: { content: string } }>;
-    };
-
-    const raw = data.choices[0]?.message?.content;
-    if (!raw) {
-      log.error('LLM response missing content');
-      throw new Error('LLM response missing content');
-    }
-
-    log.info('LLM raw response received', { length: raw.length });
+    log.info('LLM response received', { length: result.reply.length });
 
     let parsed: LLMResponse;
     try {
-      parsed = JSON.parse(raw) as LLMResponse;
+      parsed = JSON.parse(result.reply) as LLMResponse;
     } catch {
-      log.error('LLM extraction returned invalid JSON', { workflowId, raw });
+      log.error('LLM extraction returned invalid JSON', { workflowId, raw: result.reply });
       throw new Error('LLM returned invalid JSON for pain point extraction');
     }
+
     if (!Array.isArray(parsed.painPoints)) {
-      log.error('LLM response missing painPoints array', { raw });
+      log.error('LLM response missing painPoints array', { raw: result.reply });
       throw new Error('LLM response missing painPoints array');
     }
 
