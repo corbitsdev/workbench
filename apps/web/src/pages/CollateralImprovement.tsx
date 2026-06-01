@@ -52,13 +52,13 @@ export default function CollateralImprovement() {
           animate={{ x: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 300, damping: 30, delay: 0.1 }}
         >
-          <div className="p-6 border-b border-amber-100">
+          <div className="px-4 py-3 md:p-6 border-b border-amber-100">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
               Context
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-3">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3">
             {painPoints.map((point: any) => (
               <motion.div
                 key={point.id}
@@ -80,18 +80,18 @@ export default function CollateralImprovement() {
           animate={{ x: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 300, damping: 30, delay: 0.15 }}
         >
-          <div className="p-6 border-b border-gray-200 bg-white">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+          <div className="px-4 py-3 md:p-6 border-b border-gray-200 bg-white">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
               Approved Collateral
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">Tune the assets you kept</h2>
-            <p className="text-sm text-gray-600 mt-1">
+            <h2 className="text-xl md:text-2xl font-bold text-gray-900">Tune the assets you kept</h2>
+            <p className="hidden md:block text-sm text-gray-600 mt-1">
               Each approved asset can receive targeted feedback before the final package is
               assembled.
             </p>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
             {approvedCollateral.map((item: any, i: number) => (
               <motion.div
                 key={item.id}
@@ -126,7 +126,7 @@ export default function CollateralImprovement() {
           </div>
 
           {/* Actions */}
-          <div className="p-6 border-t border-gray-200 bg-white">
+          <div className="px-4 py-3 md:p-6 border-t border-gray-200 bg-white">
             <button
               onClick={handleAssemble}
               disabled={isLoading}

@@ -81,13 +81,13 @@ export default function CollateralReview() {
           animate={{ x: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 300, damping: 30, delay: 0.1 }}
         >
-          <div className="p-6 border-b border-amber-100">
+          <div className="px-4 py-3 md:p-6 border-b border-amber-100">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
               Context
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
             {painPoints.map((point: any) => (
               <motion.div
                 key={point.id}
@@ -114,7 +114,7 @@ export default function CollateralReview() {
           animate={{ x: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 300, damping: 30, delay: 0.15 }}
         >
-          <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <div className="px-4 py-3 md:p-6 border-b border-gray-200 flex items-center justify-between">
             <div>
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 Card {currentIndex + 1} of {collateral.length}
@@ -135,7 +135,7 @@ export default function CollateralReview() {
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6">
             <AnimatePresence mode="wait">
               {current && (
                 <motion.div
@@ -160,7 +160,7 @@ export default function CollateralReview() {
           </div>
 
           {/* Actions */}
-          <div className="p-6 border-t border-gray-200 bg-white flex items-center justify-center gap-4">
+          <div className="px-4 py-3 md:p-6 border-t border-gray-200 bg-white flex items-center justify-center gap-4">
             <button
               onClick={handleReject}
               disabled={isLoading}
