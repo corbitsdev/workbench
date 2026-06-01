@@ -47,9 +47,7 @@ const auth = betterAuth({
   secret: authConfig.secret,
   trustedOrigins: isDev
     ? Array.from({ length: 10 }, (_, i) => `http://localhost:${5173 + i}`)
-    : corsOrigins.length > 0
-      ? corsOrigins
-      : undefined,
+    : corsOrigins,
   database: drizzleAdapter(db, { provider: 'pg' }),
   account: {
     skipStateCookieCheck: true,
