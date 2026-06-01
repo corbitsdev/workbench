@@ -99,27 +99,7 @@ const hub = createApp({
     const result = await auth.api.getSession({ headers });
     return result ? { user: result.user, session: result.session } : null;
   },
-  authHandler: async (c) => {
-    const response = await auth.handler(c.req.raw);
-    if (corsOrigins.length > 0) {
-      const requestOrigin = c.req.raw.headers.get('origin');
-      if (!requestOrigin || !corsOrigins.includes(requestOrigin)) {
-        return new Response('Forbidden', { status: 403 });
-      }
-      const headers = new Headers();
-      for (const [key, value] of response.headers) {
-        headers.append(key, value);
-      }
-      headers.set('Access-Control-Allow-Origin', requestOrigin);
-      headers.set('Access-Control-Allow-Credentials', 'true');
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers,
-      });
-    }
-    return response;
-  },
+  authHandler: (c) => auth.handler(c.req.raw),
   db,
   sidecarRouter,
   sessionService,
