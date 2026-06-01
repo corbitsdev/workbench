@@ -85,26 +85,25 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
   }
 
   return (
-    <motion.div className="space-y-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div className="grid grid-cols-2 gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       {calls.map((call) => (
         <motion.button
           key={call.id}
           onClick={() => handleSelect(call.id)}
           disabled={isLoading || selectedId !== null}
-          className={`w-full p-4 text-left border rounded-lg transition-colors ${
+          className={`p-3 text-left border rounded-lg transition-colors ${
             selectedId === call.id
               ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-500'
               : 'border-gray-200 hover:bg-gray-50'
           } disabled:opacity-50 disabled:cursor-not-allowed`}
-          whileHover={{ y: -2 }}
-          whileTap={{ y: 0 }}
+          whileTap={{ scale: 0.98 }}
         >
-          <p className="font-medium text-gray-900">{call.title}</p>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">{call.title}</p>
+          <p className="text-xs text-gray-500 mt-1">
             {new Date(call.created_at).toLocaleDateString()}
             {call.participants &&
               call.participants.length > 0 &&
-              ` • ${call.participants.length} participants`}
+              ` • ${call.participants.length}`}
           </p>
         </motion.button>
       ))}

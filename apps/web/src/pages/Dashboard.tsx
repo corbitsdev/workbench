@@ -94,7 +94,7 @@ export default function Dashboard({ onWorkflowCreated, onResumeWorkflow }: Dashb
               exit={{ opacity: 0 }}
             >
               <motion.div
-                className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6"
+                className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] flex flex-col"
                 initial={{ scale: 0.95, y: 10 }}
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.95, y: 10 }}
@@ -117,6 +117,7 @@ export default function Dashboard({ onWorkflowCreated, onResumeWorkflow }: Dashb
                   ))}
                 </div>
 
+                <div className="flex-1 overflow-y-auto min-h-0">
                 <AnimatePresence mode="wait">
                   {importMode === 'paste' ? (
                     <motion.div
@@ -151,6 +152,7 @@ export default function Dashboard({ onWorkflowCreated, onResumeWorkflow }: Dashb
                     </motion.div>
                   )}
                 </AnimatePresence>
+                </div>
 
                 {importError && <p className="text-sm text-red-600 mt-2">{importError}</p>}
 
