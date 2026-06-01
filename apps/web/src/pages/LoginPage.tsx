@@ -1,16 +1,6 @@
 import { useState } from 'react';
 import { authClient } from '../lib/auth-client';
 
-const apiBase = import.meta.env.VITE_API_BASE_URL as string;
-
-if (!apiBase) {
-  throw new Error('VITE_API_BASE_URL is required');
-}
-
-function getCallbackUrl(): string {
-  return apiBase + '/';
-}
-
 function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid min-h-svh lg:grid-cols-2">
@@ -51,7 +41,6 @@ export function LoginPage() {
     try {
       await authClient.signIn.social({
         provider: 'google',
-        callbackURL: getCallbackUrl(),
       });
     } catch {
       setError('Failed to sign in with Google. Please try again.');
