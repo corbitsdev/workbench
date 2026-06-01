@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -17,11 +18,6 @@ interface WorkflowRow {
   firstPainPoint: string | null;
 }
 
-interface DashboardProps {
-  onWorkflowCreated: (id: string) => void;
-  onResumeWorkflow: (id: string, status: string) => void;
-}
-
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', {
     month: 'short',
@@ -30,7 +26,8 @@ function formatDate(iso: string) {
   });
 }
 
-export default function Dashboard({ onWorkflowCreated, onResumeWorkflow }: DashboardProps) {
+export default function Dashboard() {
+  const navigate = useNavigate();
   const [transcript, setTranscript] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [importError, setImportError] = useState('');
@@ -52,7 +49,7 @@ export default function Dashboard({ onWorkflowCreated, onResumeWorkflow }: Dashb
     }
     try {
       const result = await createWorkflow.mutateAsync(payload);
-      onWorkflowCreated(result.id);
+      navigate(`/workflows/${result.id}/analyze`);
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Failed to create workflow.');
     }
@@ -240,7 +237,10 @@ export default function Dashboard({ onWorkflowCreated, onResumeWorkflow }: Dashb
                       <td className="px-6 py-4 text-gray-500">{formatDate(wf.createdAt)}</td>
                       <td className="px-6 py-4 text-right">
                         <button
-                          onClick={() => onResumeWorkflow(wf.id, wf.status)}
+                          onClick={() => {
+                            const stage = (wf.status === 'analyzing' || wf.status === 'reviewing') ? 'analyze' : 'export';
+                            navigate(`/workflows/${wf.id}/${stage}`);
+                          }}
                           className="text-xs font-medium text-gray-900 hover:underline cursor-pointer"
                         >
                           {wf.status === 'done' ? 'View' : 'Resume'}

@@ -1,16 +1,11 @@
 import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router';
 import { motion } from 'framer-motion';
 import StepSidebar from '../components/StepSidebar';
 import CollateralBody from '../components/CollateralBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
 import type { CollateralType } from '@gtm/workbench-shared';
-
-interface FinalExportProps {
-  workflowId: string;
-  onNewWorkflow?: () => void;
-  onDashboard?: () => void;
-}
 
 const STEP_LABELS = {
   intake: 'Call source',
@@ -27,7 +22,10 @@ const TYPE_LABELS: Record<CollateralType, string> = {
   battlecard: 'Paid Ad Copy',
 };
 
-export default function FinalExport({ workflowId, onNewWorkflow, onDashboard }: FinalExportProps) {
+export default function FinalExport() {
+  const { id: workflowId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  if (!workflowId) return null;
   const { data: workflow } = useWorkflow(workflowId);
   const collateral = (workflow?.steps?.generate?.collateral as any[]) ?? [];
 
@@ -144,22 +142,18 @@ export default function FinalExport({ workflowId, onNewWorkflow, onDashboard }: 
 
         {/* Footer */}
         <div className="p-6 border-t border-gray-200 bg-white flex gap-3">
-          {onDashboard && (
-            <button
-              onClick={onDashboard}
-              className="px-6 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
-            >
-              Back to home
-            </button>
-          )}
-          {onNewWorkflow && (
-            <button
-              onClick={onNewWorkflow}
-              className="px-6 py-2 border border-gray-300 text-gray-900 font-medium rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
-            >
-              Start new workflow
-            </button>
-          )}
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="px-6 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+          >
+            Back to home
+          </button>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="px-6 py-2 border border-gray-300 text-gray-900 font-medium rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+          >
+            Start new workflow
+          </button>
         </div>
       </motion.div>
     </div>

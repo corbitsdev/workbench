@@ -1,16 +1,11 @@
 import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import StepSidebar from '../components/StepSidebar';
 import CollateralBody from '../components/CollateralBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
 import type { CollateralType } from '@gtm/workbench-shared';
-import type { Stage } from '../App';
-
-interface CollateralReviewProps {
-  workflowId: string;
-  onStageChange?: (stage: Stage) => void;
-}
 
 const TYPE_LABELS: Record<CollateralType, string> = {
   email: 'Follow-up Email',
@@ -34,7 +29,10 @@ const STEP_LABELS = {
   export: 'Final package',
 };
 
-export default function CollateralReview({ workflowId, onStageChange }: CollateralReviewProps) {
+export default function CollateralReview() {
+  const { id: workflowId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  if (!workflowId) return null;
   const { data: workflow, isLoading } = useWorkflow(workflowId);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
@@ -50,7 +48,7 @@ export default function CollateralReview({ workflowId, onStageChange }: Collater
       const next = new Set(approvedIds).add(current.id);
       setApprovedIds(next);
       if (isLast) {
-        onStageChange?.('improvement');
+        navigate(`/workflows/${workflowId}/improvement`);
       } else {
         setCurrentIndex(currentIndex + 1);
       }
@@ -59,7 +57,7 @@ export default function CollateralReview({ workflowId, onStageChange }: Collater
 
   const handleReject = () => {
     if (isLast) {
-      onStageChange?.('improvement');
+      navigate(`/workflows/${workflowId}/improvement`);
     } else {
       setCurrentIndex(currentIndex + 1);
     }

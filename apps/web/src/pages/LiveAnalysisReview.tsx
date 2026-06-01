@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router';
 import StepSidebar from '../components/StepSidebar';
 import TranscriptPanel from '../components/TranscriptPanel';
 import ProgressChecklist from '../components/ProgressChecklist';
@@ -6,12 +7,6 @@ import PainPointsList from '../components/PainPointsList';
 import { useWorkflow, useRunStep, useUpdateCompanyName } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
 import { logger } from '../lib/logger';
-import type { Stage } from '../App';
-
-interface LiveAnalysisReviewProps {
-  workflowId: string;
-  onStageChange?: (stage: Stage) => void;
-}
 
 const STEP_LABELS = {
   intake: 'Call source',
@@ -21,7 +16,10 @@ const STEP_LABELS = {
   export: 'Final package',
 };
 
-export default function LiveAnalysisReview({ workflowId, onStageChange }: LiveAnalysisReviewProps) {
+export default function LiveAnalysisReview() {
+  const { id: workflowId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  if (!workflowId) return null;
   const { data: workflow, isLoading: isLoadingWorkflow } = useWorkflow(workflowId);
   const runStep = useRunStep(workflowId);
   const updateCompanyName = useUpdateCompanyName(workflowId);
@@ -70,7 +68,7 @@ export default function LiveAnalysisReview({ workflowId, onStageChange }: LiveAn
         step: 'generate',
         painPointIds: Array.from(selectedIds),
       });
-      onStageChange?.('review');
+      navigate(`/workflows/${workflowId}/review`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Generation failed';
       logger.error('Generate step failed', { workflowId, error: message });

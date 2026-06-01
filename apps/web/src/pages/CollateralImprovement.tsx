@@ -1,14 +1,9 @@
 import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router';
 import { motion } from 'framer-motion';
 import StepSidebar from '../components/StepSidebar';
 import { useWorkflow, useRunStep } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
-import type { Stage } from '../App';
-
-interface CollateralImprovementProps {
-  workflowId: string;
-  onStageChange?: (stage: Stage) => void;
-}
 
 const STEP_LABELS = {
   intake: 'Call source',
@@ -18,10 +13,10 @@ const STEP_LABELS = {
   export: 'Final package',
 };
 
-export default function CollateralImprovement({
-  workflowId,
-  onStageChange,
-}: CollateralImprovementProps) {
+export default function CollateralImprovement() {
+  const { id: workflowId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  if (!workflowId) return null;
   const { data: workflow, isLoading: isLoadingWorkflow } = useWorkflow(workflowId);
   const runStep = useRunStep(workflowId);
   const [feedback, setFeedback] = useState<Record<string, string>>({});
@@ -36,7 +31,7 @@ export default function CollateralImprovement({
     for (const [collateralId, text] of pending) {
       await runStep.mutateAsync({ step: 'improve', collateralId, feedback: text });
     }
-    onStageChange?.('export');
+    navigate(`/workflows/${workflowId}/export`);
   };
 
   const steps = workflow?.currentStep
