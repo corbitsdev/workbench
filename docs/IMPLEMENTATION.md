@@ -171,17 +171,72 @@ bun run test      # bun test
 
 Or via `make all` if Makefile is available.
 
-## Agent Pipeline
+## Agent Runtime and LLM Inference
+
+### Architecture
+
+All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agent runtime provides:
+
+- **Unified inference interface** across OpenAI, Anthropic, Google GenAI, and OpenAI-compatible endpoints
+- **Configuration management** via `InferenceSource` (model, API key, base URL, provider)
+- **Error handling and logging** with classified error types and structured output
+- **Conversation history persistence** via pluggable context stores (isogit by default, in-memory for ephemeral tasks)
+- **Tool execution framework** for agent-driven workflows
+
+### Using `@intx/agent` for LLM Inference
+
+**Single-call inference** (extraction, analysis, one-shot generation):
+
+1. Create an `InferenceSource` from environment variables:
+   ```typescript
+   import type { InferenceSource } from '@intx/types/runtime';
+   
+   const source: InferenceSource = {
+     id: `my-task-${id}`,
+     provider: 'openai',  // 'anthropic', 'google-genai', or OpenAI-compatible
+     baseURL: process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1',
+     apiKey: process.env.OPENAI_COMPATIBLE_API_KEY,
+     model: process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini',
+   };
+   ```
+
+2. Create a temporary agent with an ephemeral context directory:
+   ```typescript
+   import { createAgent } from '@intx/agent';
+   import { tmpdir } from 'node:os';
+   import { join } from 'node:path';
+   import { randomUUID } from 'node:crypto';
+   
+   const contextDir = join(tmpdir(), `task-${randomUUID()}`);
+   const agent = await createAgent({
+     contextDir,  // Automatically cleaned up after close()
+     sources: [source],
+     defaultSource: source.id,
+     systemPrompt: 'Your system instructions...',
+     tools: [],  // Add tool definitions if needed
+     closeTimeoutMs: 1000,  // Fast shutdown for ephemeral tasks
+   });
+   ```
+
+3. Send your prompt and extract the response:
+   ```typescript
+   const result = await agent.send(userMessage);
+   await agent.close();
+   
+   // result.reply is the LLM's text response
+   const data = JSON.parse(result.reply);  // or text parsing
+   ```
 
 ### Pain Point Extraction
 
 Implemented in `apps/api/src/lib/extraction.ts`:
 
-**LLM Path** (when `OPENAI_API_KEY` is configured):
+**LLM Path** (when `OPENAI_COMPATIBLE_API_KEY` is configured):
 
-- **Model**: Configurable via `OPENAI_MODEL` (default: `gpt-4o-mini`)
-- **Endpoint**: Configurable via `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
-- **Format**: JSON response with `response_format: { type: 'json_object' }`
+- **Model**: Configurable via `OPENAI_COMPATIBLE_MODEL` (default: `gpt-4o-mini`)
+- **Endpoint**: Configurable via `OPENAI_COMPATIBLE_BASE_URL` (default: `https://api.openai.com/v1`)
+- **Runtime**: Uses `@intx/agent` with temporary context directory (no persistence)
+- **Format**: JSON response with structured pain points
 - **Temperature**: 0.3 (deterministic output, not creative)
 - **Max tokens**: 2048
 - **Prompt structure**:
@@ -192,7 +247,7 @@ Implemented in `apps/api/src/lib/extraction.ts`:
   - `severity`: one of `low`, `medium`, `high`, `critical`
   - `context`: summary (truncated to 500 chars)
   - `quote`: exact customer words (truncated to 500 chars)
-- **Error handling**: HTTP errors and parse failures throw; errors bubble up to global error handler for observability
+- **Error handling**: Agent errors classified and logged via structured logging
 
 **Fallback Path** (no API key or LLM failure):
 

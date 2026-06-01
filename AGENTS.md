@@ -285,6 +285,63 @@ export function createWorkflowRouter(db: Database, config: Config): Hono { ... }
 - Auth should be lightweight for the prototype (demo gate or minimal)
 - Export targets can include markdown, clipboard, email draft, Slack, Typefully
 
+## Interchange Infrastructure
+
+**Do not circumvent or reinvent interchange utilities.** The `interchange/` dependency provides proven infrastructure for agent runtime, inference, logging, and persistence. Use it.
+
+### LLM Inference: Use `@intx/agent`, Never Direct API Calls
+
+**Rule:** Any LLM inference (extraction, generation, analysis, refinement) must use `@intx/agent` from `interchange/packages/agent`. Never make direct `fetch()` calls to LLM endpoints.
+
+**Why:**
+- Direct calls bypass config management, error handling, and logging built into the agent runtime
+- Environment variable handling (API key, model, base URL) is inconsistent and error-prone
+- Failed requests provide no visibility into what URL was called or what the error response contained
+- The agent runtime handles inference source management, context persistence, and retry policy centrally
+
+**How to use `@intx/agent` for LLM inference:**
+
+1. **Create an inference source** from environment variables:
+   ```typescript
+   const source: InferenceSource = {
+     id: `task-${taskId}`,
+     provider: 'openai',  // or 'anthropic', 'google-genai'
+     baseURL: process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1',
+     apiKey: process.env.OPENAI_COMPATIBLE_API_KEY,
+     model: process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini',
+   };
+   ```
+
+2. **Create an agent with minimal config** (use temp directory for context):
+   ```typescript
+   const { tmpdir } = await import('node:os');
+   const { join } = await import('node:path');
+   const { randomUUID } = await import('node:crypto');
+   
+   const contextDir = join(tmpdir(), `task-${randomUUID()}`);
+   const agent = await createAgent({
+     contextDir,  // Auto-managed isogit store, cleaned up after close()
+     sources: [source],
+     defaultSource: source.id,
+     systemPrompt: 'Your system instructions here.',
+     tools: [],
+     closeTimeoutMs: 1000,
+   });
+   ```
+
+3. **Send your prompt and get structured response:**
+   ```typescript
+   const result = await agent.send(userMessage);
+   await agent.close();
+   
+   // result.reply contains the LLM response as a string
+   const parsed = JSON.parse(result.reply);  // or text parsing
+   ```
+
+**Pattern:** For single-call inference (extraction, analysis), create an agent, send one message, close immediately. The temp contextDir is automatically cleaned up. No manual persistence needed unless the inference is part of a multi-turn conversation.
+
+**See also:** Review `interchange/packages/agent/` source and tests for advanced patterns (tools, streaming, multi-turn conversations).
+
 ## Personality
 
 - Do not use emojis in code, documentation, or messages (unless explicitly requested)
