@@ -102,12 +102,12 @@ const hub = createApp({
   authHandler: async (c) => {
     const response = await auth.handler(c.req.raw);
     if (!isCrossOrigin) return response;
-    const headers = new Headers(response.headers);
-    const origin = c.req.header('origin');
-    if (origin && corsOrigins.includes(origin)) {
-      headers.set('Access-Control-Allow-Origin', origin);
-      headers.set('Access-Control-Allow-Credentials', 'true');
+    const headers = new Headers();
+    for (const [key, value] of response.headers) {
+      headers.append(key, value);
     }
+    headers.set('Access-Control-Allow-Origin', corsOrigins[0]);
+    headers.set('Access-Control-Allow-Credentials', 'true');
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
