@@ -29,6 +29,192 @@ export interface ExtractionResult {
   companyName: string | null;
 }
 
+interface TranscriptChunk {
+  index: number;
+  total: number;
+  phase: 'opening' | 'middle' | 'final';
+  content: string;
+}
+
+interface BuildExtractionUserMessageOptions {
+  chunk?: TranscriptChunk;
+  previousPainPoints?: LLMResponse['painPoints'];
+}
+
+const ASSUMED_CONTEXT_WINDOW_TOKENS = 128000;
+const RESERVED_OUTPUT_TOKENS = 4096;
+const APPROX_CHARS_PER_TOKEN = 4;
+const PROMPT_SAFETY_MARGIN_CHARS = 120000;
+const SINGLE_PASS_TRANSCRIPT_CHARS =
+  (ASSUMED_CONTEXT_WINDOW_TOKENS - RESERVED_OUTPUT_TOKENS) * APPROX_CHARS_PER_TOKEN -
+  PROMPT_SAFETY_MARGIN_CHARS;
+const CHUNK_TRANSCRIPT_CHARS = Math.floor(SINGLE_PASS_TRANSCRIPT_CHARS / 2);
+
+export function splitTranscriptForExtraction(content: string): TranscriptChunk[] {
+  if (content.length <= SINGLE_PASS_TRANSCRIPT_CHARS) {
+    return [{ index: 1, total: 1, phase: 'final', content }];
+  }
+
+  const chunks: string[] = [];
+  let offset = 0;
+
+  while (offset < content.length) {
+    let end = Math.min(offset + CHUNK_TRANSCRIPT_CHARS, content.length);
+
+    if (end < content.length) {
+      const boundary = content.lastIndexOf('\n', end);
+      const minBoundary = offset + Math.floor(CHUNK_TRANSCRIPT_CHARS * 0.75);
+      if (boundary > minBoundary) {
+        end = boundary + 1;
+      }
+    }
+
+    chunks.push(content.slice(offset, end));
+    offset = end;
+  }
+
+  const total = chunks.length;
+  return chunks.map((chunk, index) => ({
+    index: index + 1,
+    total,
+    phase: index === 0 ? 'opening' : index === total - 1 ? 'final' : 'middle',
+    content: chunk,
+  }));
+}
+
+export function buildExtractionSystemPrompt(): string {
+  return `You are a sales transcript analyst for a human-in-the-loop GTM collateral workflow.
+
+Your job is recall-oriented extraction: find the highest-signal customer problems, buying triggers, requested collateral, and requested capabilities that should influence follow-up content.
+
+Extraction rules:
+- Read the whole available transcript before deciding. Cover the beginning, middle, and final segment.
+- Prioritize the customer's own words over seller claims.
+- Treat explicit asks near the end of the call as high-signal context, especially requests for a deck, one-pager, demo, technical walkthrough, security details, integration details, or capability list.
+- If the customer asks for a deck or capabilities, include that ask in the relevant pain point context rather than dropping it as logistics.
+- Keep pain points distinct. Do not split the same problem into duplicates.
+- Use exact customer wording for quote. If no exact quote supports a candidate, do not include that candidate.
+
+Return only valid JSON with this shape:
+{
+  "companyName": "string or null",
+  "painPoints": [
+    {
+      "severity": "low | medium | high | critical",
+      "context": "concise summary including requested collateral or capabilities when relevant",
+      "quote": "exact customer words"
+    }
+  ]
+}`;
+}
+
+export function buildExtractionUserMessage(
+  content: string,
+  feedback: string | undefined,
+  options: BuildExtractionUserMessageOptions = {}
+): string {
+  const chunkPosition = options.chunk
+    ? `<chunk_position>
+Chunk ${options.chunk.index} of ${options.chunk.total}: ${options.chunk.phase}
+</chunk_position>
+`
+    : '';
+  const previousPainPoints =
+    options.previousPainPoints !== undefined && options.previousPainPoints.length > 0
+      ? `<previous_candidates>
+${JSON.stringify(options.previousPainPoints)}
+</previous_candidates>
+`
+      : '';
+  const sanitizedFeedback = feedback?.trim().replace(/<\//g, '');
+  const refinement = sanitizedFeedback
+    ? `\n<refinement_direction>\n${sanitizedFeedback}\n</refinement_direction>\n`
+    : '';
+  const task =
+    options.chunk && options.chunk.total > 1
+      ? `Update the candidate set using the current transcript chunk.
+Use previous candidates only to avoid duplicates and to recognize repeated or strengthened evidence.
+Return the top 5 pain points across the previous candidates and current chunk.`
+      : `Extract up to 5 distinct pain points from the transcript.`;
+
+  return `${chunkPosition}${previousPainPoints}<transcript>
+${content}
+</transcript>
+${refinement}
+<task>
+${task}
+Identify the prospect company name if mentioned.
+Return JSON only.
+</task>`;
+}
+
+async function runExtractionAgent(
+  source: InferenceSource,
+  systemPrompt: string,
+  userMessage: string,
+  workflowId: string
+): Promise<LLMResponse> {
+  const contextDir = join(tmpdir(), `gtm-extraction-${randomUUID()}`);
+
+  const agent = await createAgent({
+    contextDir,
+    sources: [source],
+    defaultSource: source.id,
+    systemPrompt,
+    tools: [],
+    closeTimeoutMs: 1000,
+  });
+
+  try {
+    const result = await agent.send(userMessage);
+    log.info('LLM response received', { length: result.reply.length });
+
+    let parsed: LLMResponse;
+    try {
+      parsed = JSON.parse(result.reply) as LLMResponse;
+    } catch {
+      log.error('LLM extraction returned invalid JSON', { workflowId, raw: result.reply });
+      throw new Error('LLM returned invalid JSON for pain point extraction');
+    }
+
+    if (!Array.isArray(parsed.painPoints)) {
+      log.error('LLM response missing painPoints array', { workflowId, raw: result.reply });
+      throw new Error('LLM response missing painPoints array');
+    }
+
+    return parsed;
+  } finally {
+    await agent.close();
+  }
+}
+
+function serializeExtractionResult(
+  workflowId: string,
+  parsed: LLMResponse,
+  companyName: string | null
+): ExtractionResult {
+  log.info('Pain points extracted', { count: parsed.painPoints.length, companyName });
+
+  const VALID_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
+
+  return {
+    companyName,
+    painPoints: parsed.painPoints.map((p) => {
+      if (!VALID_SEVERITIES.includes(p.severity as (typeof VALID_SEVERITIES)[number])) {
+        log.error('Unknown severity from LLM', { workflowId, raw: p.severity });
+        throw new Error(`LLM returned unknown severity: ${p.severity}`);
+      }
+      return {
+        sessionId: workflowId,
+        severity: p.severity as (typeof VALID_SEVERITIES)[number],
+        context: p.context,
+        quote: p.quote,
+        selected: true,
+      };
+    }),
+  };
+}
+
 export async function extractPainPointsWithLLM(
   workflowId: string,
   content: string,
@@ -53,72 +239,44 @@ export async function extractPainPointsWithLLM(
     model,
   };
 
-  const systemPrompt = `You are a sales transcript analyst. Extract up to 5 distinct pain points from the transcript. Also try to identify the prospect company name if mentioned. Respond in JSON format with: "companyName" (string or null if unknown), and "painPoints" array where each item has: severity (low, medium, high, or critical), context (a concise summary), and quote (the exact customer words).`;
+  const systemPrompt = buildExtractionSystemPrompt();
+  const chunks = splitTranscriptForExtraction(content);
+  log.info('Prepared extraction chunks', {
+    workflowId,
+    chunkCount: chunks.length,
+    assumedContextWindowTokens: ASSUMED_CONTEXT_WINDOW_TOKENS,
+  });
 
-  const userMessage = feedback
-    ? `Transcript:\n\n${content.slice(0, 100000)}\n\n---\n\nRefinement direction from user: ${feedback}`
-    : `Transcript:\n\n${content.slice(0, 100000)}`;
+  let parsed: LLMResponse | null = null;
+  let bestCompanyName: string | null = null;
 
-  try {
-    const contextDir = join(tmpdir(), `gtm-extraction-${randomUUID()}`);
-
-    const agent = await createAgent({
-      contextDir,
-      sources: [source],
-      defaultSource: source.id,
-      systemPrompt,
-      tools: [],
-      closeTimeoutMs: 1000,
-    });
-
-    const result = await agent.send(userMessage);
-    await agent.close();
-
-    log.info('LLM response received', { length: result.reply.length });
-
-    let parsed: LLMResponse;
-    try {
-      parsed = JSON.parse(result.reply) as LLMResponse;
-    } catch {
-      log.error('LLM extraction returned invalid JSON', { workflowId, raw: result.reply });
-      throw new Error('LLM returned invalid JSON for pain point extraction');
-    }
-
-    if (!Array.isArray(parsed.painPoints)) {
-      log.error('LLM response missing painPoints array', { raw: result.reply });
-      throw new Error('LLM response missing painPoints array');
-    }
-
-    const companyName =
-      typeof parsed.companyName === 'string' && parsed.companyName.trim()
-        ? parsed.companyName.trim().slice(0, 200)
-        : null;
-
-    log.info('Pain points extracted', { count: parsed.painPoints.length, companyName });
-
-    return {
-      companyName,
-      painPoints: parsed.painPoints.map((p) => {
-        const VALID_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
-        const validSeverity = VALID_SEVERITIES.includes(p.severity as (typeof VALID_SEVERITIES)[number])
-          ? (p.severity as (typeof VALID_SEVERITIES)[number])
-          : null;
-        if (!validSeverity) {
-          log.warn('Unknown severity from LLM, defaulting to medium', { workflowId, raw: p.severity });
-        }
-        return {
-          sessionId: workflowId,
-          severity: validSeverity ?? 'medium',
-          context: p.context.slice(0, 500),
-          quote: p.quote.slice(0, 500),
-          selected: true,
-        };
-      }),
+  for (const chunk of chunks) {
+    const previousPainPoints = chunks.length > 1 ? parsed?.painPoints : undefined;
+    const messageOptions: BuildExtractionUserMessageOptions = {
+      chunk,
+      ...(previousPainPoints !== undefined ? { previousPainPoints } : {}),
     };
-  } catch (err) {
-    log.error('LLM extraction failed', { error: err instanceof Error ? err.message : String(err) });
-    throw new Error(`LLM extraction failed: ${err instanceof Error ? err.message : String(err)}`);
+    const userMessage = buildExtractionUserMessage(chunk.content, feedback, messageOptions);
+    parsed = await runExtractionAgent(source, systemPrompt, userMessage, workflowId);
+    if (parsed.companyName && !bestCompanyName) {
+      bestCompanyName =
+        typeof parsed.companyName === 'string' && parsed.companyName.trim()
+          ? parsed.companyName.trim()
+          : null;
+    }
+    log.info('Extraction chunk processed', {
+      workflowId,
+      chunkIndex: chunk.index,
+      chunkCount: chunk.total,
+      candidateCount: parsed.painPoints.length,
+    });
   }
+
+  if (!parsed) {
+    throw new Error('No extraction chunks were processed');
+  }
+
+  return serializeExtractionResult(workflowId, parsed, bestCompanyName);
 }
 
 export async function extractPainPoints(
