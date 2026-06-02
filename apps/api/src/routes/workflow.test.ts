@@ -36,6 +36,9 @@ describe('Workflow router', () => {
           findFirst: mock(() => null),
         },
       },
+      delete: mock(() => ({
+        where: mock(() => Promise.resolve()),
+      })),
       insert: mock(() => ({
         values: mock(() => ({
           returning: mock(() => [{ id: 'wf-1', status: 'analyzing' }]),
@@ -107,6 +110,30 @@ describe('Workflow router', () => {
     const json = await res.json();
     expect(json.status).toBe('reviewing');
     expect(json.steps.analyze.completed).toBe(true);
+  });
+
+  it('POST /workflows/:id/steps analyze is idempotent (re-run replaces pain points)', async () => {
+    const deletedWhere: unknown[] = [];
+    const mockDb = createMockDb();
+    mockDb.delete = mock(() => ({
+      where: mock((condition: unknown) => {
+        deletedWhere.push(condition);
+        return Promise.resolve();
+      }),
+    }));
+
+    const router = createWorkflowRouter(mockDb);
+    const makeReq = () =>
+      new Request('http://localhost:4000/workflows/wf-1/steps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step: 'analyze' }),
+      });
+
+    await router.fetch(makeReq());
+    await router.fetch(makeReq());
+
+    expect(deletedWhere.length).toBe(2);
   });
 
   it('POST /workflows/:id/steps export assembles collateral', async () => {

@@ -8,7 +8,12 @@ import {
   collateralItem,
   collateralVersion,
 } from '../db/schema';
-import { isGranolaConfigured, getNoteWithTranscript, getRecentNotes, transcriptToText } from '../lib/granola';
+import {
+  isGranolaConfigured,
+  getNoteWithTranscript,
+  getRecentNotes,
+  transcriptToText,
+} from '../lib/granola';
 import { extractPainPoints } from '../lib/extraction';
 import { refineFeedbackWithLLM } from '../lib/feedback';
 import { generateCollateralWithLLM } from '../lib/generation';
@@ -314,6 +319,8 @@ async function runAnalyze(db: any, id: string, userId: string, feedback?: string
   const { painPoints: extracted, companyName } = await extractPainPoints(id, tx.content, feedback);
   log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
 
+  await db.delete(painPoint).where(eq(painPoint.sessionId, id));
+
   const inserted =
     extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
 
@@ -367,7 +374,10 @@ async function runGenerate(db: any, id: string, painPointIds: string[]) {
 
   const generated = results.flatMap((r) => {
     if (r.status === 'fulfilled') return [r.value];
-    log.error('Collateral generation failed for one item', { workflowId: id, error: String(r.reason) });
+    log.error('Collateral generation failed for one item', {
+      workflowId: id,
+      error: String(r.reason),
+    });
     return [];
   });
 
