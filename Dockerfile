@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM oven/bun:1.2-alpine AS builder
 
 WORKDIR /app
@@ -13,13 +14,12 @@ RUN wget -qO interchange.tar.gz "https://github.com/faremeter/interchange/archiv
     && mv "interchange-${INTERCHANGE_COMMIT}" interchange \
     && rm interchange.tar.gz
 
-# Copy workspace manifests for dependency install layer caching
 COPY package.json bun.lock ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 
-RUN bun install --frozen-lockfile
+RUN --mount=type=cache,id=s/03c0cf12-21c5-42ec-a16d-fc952e520627-/root/.bun/install/cache,target=/root/.bun/install/cache bun install --frozen-lockfile
 
 # Copy full source
 COPY . .
