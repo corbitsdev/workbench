@@ -1,7 +1,18 @@
 /// <reference types="bun" />
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, mock } from 'bun:test';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import React from 'react';
 import { togglePainPointSelection } from './pain-point-selection';
 import type { PainPoint, SeverityLevel } from './PainPointsList';
+
+// framer-motion is not compatible with Happy DOM; replace motion.div with a plain div
+mock.module('framer-motion', () => ({
+  motion: {
+    div: ({ children, className }: { children: React.ReactNode; className?: string }) =>
+      React.createElement('div', { className }, children),
+  },
+}));
 
 describe('PainPointsList types', () => {
   it('accepts PainPoint with all required fields', () => {
@@ -104,5 +115,61 @@ describe('PainPointsList types', () => {
     expect(initial.has('point-2')).toBe(true);
     expect(next.has('point-1')).toBe(true);
     expect(next.has('point-2')).toBe(true);
+  });
+});
+
+describe('PainPointsList interactions', () => {
+  const point: PainPoint = {
+    id: 'pp-1',
+    context: 'Slow deployments',
+    quote: 'We spend too much time deploying',
+  };
+
+  function renderWithState(initialSelected: Set<string> = new Set()) {
+    const selected = { current: new Set(initialSelected) };
+    const onToggle = mock((id: string) => {
+      selected.current = togglePainPointSelection(selected.current, id);
+    });
+
+    const { rerender } = render(
+      React.createElement(
+        // Dynamic import resolved at test time after mock.module above
+        require('./PainPointsList').default,
+        { points: [point], selectedIds: selected.current, onToggle }
+      )
+    );
+
+    return { selected, onToggle, rerender };
+  }
+
+  it('clicking the checkbox toggles selection exactly once', async () => {
+    const user = userEvent.setup();
+    const { onToggle } = renderWithState();
+
+    await user.click(screen.getByRole('checkbox'));
+
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onToggle).toHaveBeenCalledWith('pp-1');
+  });
+
+  it('clicking the label toggles selection exactly once', async () => {
+    const user = userEvent.setup();
+    const { onToggle } = renderWithState();
+
+    await user.click(screen.getByText('Slow deployments'));
+
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onToggle).toHaveBeenCalledWith('pp-1');
+  });
+
+  it('no double-toggle: label click does not fire onToggle twice', async () => {
+    const user = userEvent.setup();
+    const { onToggle } = renderWithState();
+
+    // Simulates the PR #14 regression: label click was firing onChange on the
+    // checkbox AND a synthetic click on the input, causing two toggle calls.
+    await user.click(screen.getByLabelText('Select pain point: Slow deployments'));
+
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 });

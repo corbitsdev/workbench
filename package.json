@@ -16,7 +16,7 @@
     "typecheck": "bun run --filter '@gtm/*' typecheck",
     "format": "oxfmt --write . '!interchange' '!temporary'",
     "lint": "bun run --filter '@gtm/*' lint",
-    "test": "bun test ./apps/api/src ./apps/web/src ./packages",
+    "test": "bun run --filter '@gtm/*' test",
     "interchange:check": "bun run scripts/check-interchange-sync.ts"
   },
   "dependencies": {
