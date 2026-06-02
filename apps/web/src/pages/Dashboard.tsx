@@ -63,18 +63,18 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-page">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-8 py-5 flex items-center justify-between">
+      <div className="bg-surface border-b border-border px-8 py-5 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Call Collateral Studio</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-xl font-bold text-text">Call Collateral Studio</h1>
+          <p className="text-sm text-text-2 mt-0.5">
             Turn sales call transcripts into publishable collateral.
           </p>
         </div>
         <button
           onClick={() => setShowImport(true)}
-          className="px-5 py-2 bg-gray-900 text-white font-medium text-sm rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+          className="px-5 py-2 bg-orange text-white font-medium text-sm rounded-lg hover:bg-orange-deep transition-colors cursor-pointer"
         >
           New workflow
         </button>
@@ -91,22 +91,22 @@ export default function Dashboard() {
               exit={{ opacity: 0 }}
             >
               <motion.div
-                className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] flex flex-col"
+                className="bg-surface rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] flex flex-col"
                 initial={{ scale: 0.95, y: 10 }}
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.95, y: 10 }}
               >
-                <h2 className="text-lg font-bold text-gray-900 mb-4">New workflow</h2>
+                <h2 className="text-lg font-bold text-text mb-4">New workflow</h2>
 
-                <div className="flex gap-1 p-1 bg-gray-100 rounded-lg w-56 mb-5">
+                <div className="flex gap-1 p-1 bg-surface-2 rounded-lg w-56 mb-5">
                   {(['paste', 'recent'] as const).map((m) => (
                     <button
                       key={m}
                       onClick={() => setImportMode(m)}
                       className={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors cursor-pointer ${
                         importMode === m
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
+                          ? 'bg-surface text-text shadow-sm'
+                          : 'text-text-2 hover:text-text'
                       }`}
                     >
                       {m === 'paste' ? 'Paste' : 'Recent calls'}
@@ -131,7 +131,7 @@ export default function Dashboard() {
                             setImportError('');
                           }}
                           placeholder="Speaker 1: Thanks for taking the time today..."
-                          className="w-full h-52 text-sm border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-gray-900 font-mono"
+                          className="w-full h-52 text-sm border border-border rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-orange font-mono bg-surface-2 text-text"
                         />
                       </motion.div>
                     ) : (
@@ -151,12 +151,12 @@ export default function Dashboard() {
                   </AnimatePresence>
                 </div>
 
-                {importError && <p className="text-sm text-red-600 mt-2">{importError}</p>}
+                {importError && <p className="text-sm text-orange mt-2">{importError}</p>}
 
                 <div className="flex gap-3 mt-4 justify-end">
                   <button
                     onClick={closeImport}
-                    className="px-4 py-2 text-sm border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                    className="px-4 py-2 text-sm border border-border text-text-2 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -164,7 +164,7 @@ export default function Dashboard() {
                     <button
                       onClick={() => handleSubmit()}
                       disabled={createWorkflow.isPending}
-                      className="px-5 py-2 text-sm bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 cursor-pointer"
+                      className="px-5 py-2 text-sm bg-orange text-white font-medium rounded-lg hover:bg-orange-deep transition-colors disabled:opacity-50 cursor-pointer"
                     >
                       {createWorkflow.isPending ? 'Starting...' : 'Start analysis'}
                     </button>
@@ -177,18 +177,18 @@ export default function Dashboard() {
 
         {/* Recent sessions table */}
         <div>
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+          <h2 className="text-sm font-semibold text-text-3 uppercase tracking-wide mb-4">
             Recent sessions
           </h2>
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="bg-surface border border-border rounded-xl overflow-hidden">
             {isLoading ? (
-              <div className="p-12 text-center text-sm text-gray-400">Loading sessions...</div>
+              <div className="p-12 text-center text-sm text-text-3">Loading sessions...</div>
             ) : !workflows?.length ? (
               <div className="p-12 text-center">
-                <p className="text-sm text-gray-500 mb-4">No sessions yet.</p>
+                <p className="text-sm text-text-2 mb-4">No sessions yet.</p>
                 <button
                   onClick={() => setShowImport(true)}
-                  className="px-5 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+                  className="px-5 py-2 bg-orange text-white text-sm font-medium rounded-lg hover:bg-orange-deep transition-colors cursor-pointer"
                 >
                   Start your first workflow
                 </button>
@@ -197,16 +197,16 @@ export default function Dashboard() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50">
-                      <th className="text-left px-4 py-3 md:px-6 md:py-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    <tr className="border-b border-border-strong bg-surface-2">
+                      <th className="text-left px-4 py-3 md:px-6 md:py-4 text-xs font-semibold text-text-3 uppercase tracking-wide">
                         Transcript
                       </th>
                       {/* Pain Points: only show at md+ (more complex, less critical on small screens) */}
-                      <th className="hidden md:table-cell text-left px-4 py-3 md:px-6 md:py-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      <th className="hidden md:table-cell text-left px-4 py-3 md:px-6 md:py-4 text-xs font-semibold text-text-3 uppercase tracking-wide">
                         Pain Points
                       </th>
                       {/* Date: show from sm+ (secondary but useful info) */}
-                      <th className="hidden sm:table-cell text-left px-4 py-3 md:px-6 md:py-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      <th className="hidden sm:table-cell text-left px-4 py-3 md:px-6 md:py-4 text-xs font-semibold text-text-3 uppercase tracking-wide">
                         Date
                       </th>
                       <th className="px-4 py-3 md:px-6 md:py-4" />
@@ -219,10 +219,10 @@ export default function Dashboard() {
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.04 }}
-                        className="border-b border-gray-50 hover:bg-gray-50 transition-colors"
+                        className="border-b border-border hover:bg-surface-2 transition-colors"
                       >
                         <td className="px-4 py-3 md:px-6 md:py-4">
-                          <div className="font-medium text-gray-900 truncate max-w-xs sm:max-w-sm md:max-w-md">
+                          <div className="font-medium text-text truncate max-w-xs sm:max-w-sm md:max-w-md">
                             {wf.companyName ??
                               (wf.firstPainPoint
                                 ? wf.firstPainPoint.split(' ').slice(0, 8).join(' ') + '...'
@@ -230,14 +230,14 @@ export default function Dashboard() {
                                   ? wf.transcriptPreview + '...'
                                   : 'Untitled session')}
                           </div>
-                          <div className="text-xs text-gray-400 mt-0.5 font-mono">
+                          <div className="text-xs text-text-3 mt-0.5 font-mono">
                             {wf.id.slice(0, 8)}
                           </div>
                         </td>
-                        <td className="hidden md:table-cell px-4 py-3 md:px-6 md:py-4 text-gray-600">
+                        <td className="hidden md:table-cell px-4 py-3 md:px-6 md:py-4 text-text-2">
                           {wf.painPointCount > 0 ? `${wf.painPointCount} extracted` : '—'}
                         </td>
-                        <td className="hidden sm:table-cell px-4 py-3 md:px-6 md:py-4 text-gray-500 text-xs md:text-sm">
+                        <td className="hidden sm:table-cell px-4 py-3 md:px-6 md:py-4 text-text-3 text-xs md:text-sm">
                           {formatDate(wf.createdAt)}
                         </td>
                         <td className="px-4 py-3 md:px-6 md:py-4 text-right">
@@ -249,7 +249,7 @@ export default function Dashboard() {
                                   : 'export';
                               navigate(`/workflows/${wf.id}/${stage}`);
                             }}
-                            className="text-xs font-medium text-gray-900 hover:underline focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-gray-900 rounded px-2 py-1 transition-colors cursor-pointer"
+                            className="text-xs font-medium text-orange hover:underline focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-orange rounded px-2 py-1 transition-colors cursor-pointer"
                           >
                             {wf.status === 'done' ? 'View' : 'Resume'}
                           </button>

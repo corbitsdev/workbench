@@ -43,11 +43,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             image: data.user.image,
           },
         });
+      } else if (import.meta.env.DEV) {
+        setSession({
+          status: 'authenticated',
+          user: {
+            id: 'dev-user',
+            email: 'dev@example.com',
+            name: 'Dev User',
+          },
+        });
       } else {
         setSession({ status: 'unauthenticated' });
       }
     } catch {
-      setSession({ status: 'unauthenticated' });
+      if (import.meta.env.DEV) {
+        setSession({
+          status: 'authenticated',
+          user: {
+            id: 'dev-user',
+            email: 'dev@example.com',
+            name: 'Dev User',
+          },
+        });
+      } else {
+        setSession({ status: 'unauthenticated' });
+      }
     }
   }, []);
 

@@ -18,22 +18,18 @@ export default function FeedbackSection({
   onGenerate,
 }: FeedbackSectionProps) {
   return (
-    <div className="space-y-4 border-t border-gray-200 bg-white px-4 py-3 md:p-6">
+    <div className="space-y-4 border-t border-border bg-surface px-4 py-3 md:p-6">
       <textarea
         value={feedback}
         onChange={(e) => onFeedbackChange(e.target.value)}
         placeholder="Add context, corrections, or a stronger angle..."
-        className="w-full h-20 px-4 py-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-gray-900 focus:border-gray-900 resize-none transition-colors disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+        className="w-full h-20 px-4 py-3 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-orange focus:border-orange resize-none transition-colors disabled:bg-surface-2 disabled:text-text-3 disabled:cursor-not-allowed bg-surface-2 text-text"
         disabled={isLoading}
         aria-label="Feedback for pain points"
       />
 
       {!analyzeCompleted && (
-        <button
-          onClick={onAnalyze}
-          disabled={isLoading}
-          className="btn-primary w-full"
-        >
+        <button onClick={onAnalyze} disabled={isLoading} className="btn-primary w-full">
           {isLoading
             ? 'Analyzing...'
             : feedback.trim()
@@ -52,7 +48,7 @@ export default function FeedbackSection({
         </button>
       )}
 
-      <p className="text-xs text-gray-600">
+      <p className="text-xs text-text-3">
         {selectedCount} pain point{selectedCount !== 1 ? 's' : ''} selected
       </p>
     </div>

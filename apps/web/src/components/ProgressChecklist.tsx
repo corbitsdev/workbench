@@ -17,8 +17,8 @@ export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressCh
 
   if (displayTasks.length === 0) {
     return (
-      <div className="flex items-center justify-center py-6 px-4 bg-gray-50 rounded-lg">
-        <p className="text-sm text-gray-600">No tasks to display</p>
+      <div className="flex items-center justify-center py-6 px-4 bg-surface-2 rounded-lg">
+        <p className="text-sm text-text-3">No tasks to display</p>
       </div>
     );
   }
@@ -34,14 +34,14 @@ export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressCh
             transition={{ delay: i * 0.1 }}
             className="flex items-center gap-3 text-sm"
           >
-            <div className="w-5 h-5 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 text-xs">
+            <div className="w-5 h-5 rounded-full border-2 border-border-strong flex items-center justify-center text-text-3 text-xs">
               {i + 1}
             </div>
-            <span className="text-gray-500">{task}</span>
+            <span className="text-text-2">{task}</span>
           </motion.div>
         ))}
-        <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-          <p className="text-sm text-blue-700">
+        <div className="mt-3 p-3 bg-blue-soft border border-blue text-blue-deep rounded-lg">
+          <p className="text-sm">
             Click "Run analysis" to extract pain points from your transcript.
           </p>
         </div>
@@ -60,20 +60,18 @@ export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressCh
             transition={{ delay: i * 0.1 }}
             className="flex items-center gap-3 text-sm"
           >
-            <div className="w-5 h-5 rounded-full border-2 border-blue-300 flex items-center justify-center">
+            <div className="w-5 h-5 rounded-full border-2 border-blue flex items-center justify-center">
               <motion.div
-                className="w-2 h-2 rounded-full bg-blue-500"
+                className="w-2 h-2 rounded-full bg-blue"
                 animate={{ scale: [1, 0.5, 1] }}
                 transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.2 }}
               />
             </div>
-            <span className="text-gray-700">{task}</span>
+            <span className="text-text">{task}</span>
           </motion.div>
         ))}
-        <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-          <p className="text-sm text-blue-700 animate-pulse">
-            Analyzing transcript... This may take a moment.
-          </p>
+        <div className="mt-3 p-3 bg-blue-soft border border-blue text-blue-deep rounded-lg">
+          <p className="text-sm animate-pulse">Analyzing transcript... This may take a moment.</p>
         </div>
       </div>
     );
@@ -90,16 +88,14 @@ export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressCh
             transition={{ delay: i * 0.1 }}
             className="flex items-center gap-3 text-sm"
           >
-            <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center text-white text-xs">
+            <div className="w-5 h-5 rounded-full bg-orange flex items-center justify-center text-white text-xs">
               ✕
             </div>
-            <span className="text-gray-700 line-through">{task}</span>
+            <span className="text-text line-through">{task}</span>
           </motion.div>
         ))}
-        <div className="mt-3 p-3 bg-red-50 border border-red-100 rounded-lg">
-          <p className="text-sm text-red-700">
-            Analysis failed. Check the console for details and try again.
-          </p>
+        <div className="mt-3 p-3 bg-orange-soft border border-orange text-orange-deep rounded-lg">
+          <p className="text-sm">Analysis failed. Check the console for details and try again.</p>
         </div>
       </div>
     );
@@ -115,10 +111,10 @@ export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressCh
           transition={{ delay: i * 0.1 }}
           className="flex items-center gap-3 text-sm"
         >
-          <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white text-xs">
+          <div className="w-5 h-5 rounded-full bg-green flex items-center justify-center text-white text-xs">
             ✓
           </div>
-          <span className="text-gray-700">{task}</span>
+          <span className="text-text">{task}</span>
         </motion.div>
       ))}
     </div>

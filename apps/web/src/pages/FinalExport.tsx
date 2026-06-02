@@ -5,6 +5,7 @@ import StepSidebar from '../components/StepSidebar';
 import CollateralBody from '../components/CollateralBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
+import { Button } from '../components/ui/Button';
 import type { CollateralType } from '@gtm/workbench-shared';
 
 const STEP_LABELS = {
@@ -65,7 +66,7 @@ export default function FinalExport() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-page">
       <StepSidebar steps={steps} sourceLabel={sourceLabel} />
 
       <motion.div
@@ -75,24 +76,19 @@ export default function FinalExport() {
         transition={{ type: 'spring', stiffness: 300, damping: 30, delay: 0.1 }}
       >
         {/* Header */}
-        <div className="px-4 py-3 md:p-6 border-b border-gray-200 bg-white flex items-center justify-between">
+        <div className="px-4 py-3 md:p-6 border-b border-border bg-surface flex items-center justify-between">
           <div>
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            <div className="text-xs font-semibold text-text-3 uppercase tracking-wide mb-1">
               Ready to use
             </div>
-            <h2 className="text-xl md:text-3xl font-bold text-gray-900">
-              Final collateral package
-            </h2>
-            <p className="hidden md:block text-sm text-gray-600 mt-1">
+            <h2 className="text-xl md:text-3xl font-bold text-text">Final collateral package</h2>
+            <p className="hidden md:block text-sm text-text-2 mt-1">
               Copy individual pieces or grab everything at once.
             </p>
           </div>
-          <button
-            onClick={handleCopyAll}
-            className="px-6 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
-          >
+          <Button variant="primary" size="md" onClick={handleCopyAll}>
             {copiedId === 'all' ? 'Copied!' : 'Copy all'}
-          </button>
+          </Button>
         </div>
 
         {/* Content */}
@@ -101,10 +97,10 @@ export default function FinalExport() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-amber-50 border border-amber-200 rounded-lg p-6"
+            className="bg-orange-soft border border-orange rounded-lg p-6"
           >
-            <h3 className="font-bold text-gray-900 mb-3">How to use it</h3>
-            <ul className="text-sm text-gray-700 space-y-2 list-disc list-inside">
+            <h3 className="font-bold text-orange-deep mb-3">How to use it</h3>
+            <ul className="text-sm text-text space-y-2 list-disc list-inside">
               <li>Lead with the email — it is the most direct follow-up path.</li>
               <li>Hand the ad copy variants to your paid media contact as-is.</li>
               <li>Repurpose the LinkedIn post for organic reach after the deal moves.</li>
@@ -119,18 +115,18 @@ export default function FinalExport() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.07 }}
-              className="bg-white border border-gray-200 rounded-lg overflow-hidden"
+              className="bg-surface border border-border rounded-lg overflow-hidden"
             >
-              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                 <div>
-                  <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold uppercase tracking-wide mb-1">
+                  <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-soft text-orange-deep text-xs font-semibold uppercase tracking-wide mb-1">
                     {TYPE_LABELS[item.type as CollateralType] ?? item.type}
                   </div>
-                  <h3 className="text-lg font-bold text-gray-900">{item.title}</h3>
+                  <h3 className="text-lg font-bold text-text">{item.title}</h3>
                 </div>
                 <button
                   onClick={() => handleCopyItem(item)}
-                  className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors cursor-pointer shrink-0"
+                  className="px-3 py-1.5 text-xs font-medium border border-border text-text-2 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer shrink-0"
                 >
                   {copiedId === item.id ? 'Copied!' : 'Copy'}
                 </button>
@@ -143,19 +139,13 @@ export default function FinalExport() {
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 md:p-6 border-t border-gray-200 bg-white flex gap-3">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="px-6 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
-          >
+        <div className="px-4 py-3 md:p-6 border-t border-border bg-surface flex gap-3">
+          <Button variant="primary" onClick={() => navigate('/dashboard')}>
             Back to home
-          </button>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="px-6 py-2 border border-gray-300 text-gray-900 font-medium rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
-          >
+          </Button>
+          <Button variant="secondary" onClick={() => navigate('/dashboard')}>
             Start new workflow
-          </button>
+          </Button>
         </div>
       </motion.div>
     </div>

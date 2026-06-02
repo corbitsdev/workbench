@@ -46,13 +46,13 @@ function MarkdownBlock({ text }: { text: string }) {
 
     if (line.startsWith('## ')) {
       elements.push(
-        <h3 key={i} className="text-base font-bold text-gray-900 mt-5 mb-2">
+        <h3 key={i} className="text-base font-bold text-text mt-5 mb-2">
           {line.slice(3)}
         </h3>
       );
     } else if (line.startsWith('# ')) {
       elements.push(
-        <h2 key={i} className="text-lg font-bold text-gray-900 mt-4 mb-2">
+        <h2 key={i} className="text-lg font-bold text-text mt-4 mb-2">
           {line.slice(2)}
         </h2>
       );
@@ -65,7 +65,7 @@ function MarkdownBlock({ text }: { text: string }) {
       elements.push(
         <ul key={`ul-${i}`} className="list-disc list-inside space-y-1 mb-3">
           {items.map((item, j) => (
-            <li key={j} className="text-gray-700 text-sm">
+            <li key={j} className="text-text-2 text-sm">
               {renderInline(item)}
             </li>
           ))}
@@ -76,7 +76,7 @@ function MarkdownBlock({ text }: { text: string }) {
       // skip blank lines between blocks
     } else {
       elements.push(
-        <p key={i} className="text-gray-700 text-sm leading-relaxed mb-3">
+        <p key={i} className="text-text-2 text-sm leading-relaxed mb-3">
           {renderInline(line)}
         </p>
       );
@@ -89,7 +89,7 @@ function MarkdownBlock({ text }: { text: string }) {
 
 function EmailBody({ body }: { body: string }) {
   return (
-    <div className="font-mono text-sm text-gray-800 leading-relaxed whitespace-pre-wrap bg-white rounded border border-gray-100 p-5">
+    <div className="font-mono text-sm text-text-2 leading-relaxed whitespace-pre-wrap bg-surface-2 rounded border border-border p-5">
       {body}
     </div>
   );
@@ -97,17 +97,17 @@ function EmailBody({ body }: { body: string }) {
 
 function LinkedInBody({ body }: { body: string }) {
   return (
-    <div className="bg-white rounded border border-gray-200 p-5">
-      <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-        <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-xs font-bold">
+    <div className="bg-surface-2 rounded border border-border p-5">
+      <div className="flex items-center gap-3 mb-4 pb-4 border-b border-border">
+        <div className="w-10 h-10 rounded-full bg-surface border border-border flex items-center justify-center text-text-3 text-xs font-bold">
           YOU
         </div>
         <div>
-          <div className="text-sm font-semibold text-gray-900">Your Name</div>
-          <div className="text-xs text-gray-500">Your Title · 1st</div>
+          <div className="text-sm font-semibold text-text">Your Name</div>
+          <div className="text-xs text-text-3">Your Title · 1st</div>
         </div>
       </div>
-      <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{body}</p>
+      <p className="text-sm text-text-2 leading-relaxed whitespace-pre-wrap">{body}</p>
     </div>
   );
 }
@@ -129,11 +129,11 @@ function TableBody({ headers, rows }: { headers: string[]; rows: string[][] }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm border-collapse">
         <thead>
-          <tr className="bg-gray-50 border-b border-gray-200">
+          <tr className="bg-surface-2 border-b border-border-strong">
             {headers.map((h, i) => (
               <th
                 key={i}
-                className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase tracking-wide"
+                className="text-left px-4 py-2 text-xs font-semibold text-text-3 uppercase tracking-wide"
               >
                 {h}
               </th>
@@ -142,9 +142,9 @@ function TableBody({ headers, rows }: { headers: string[]; rows: string[][] }) {
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+            <tr key={i} className="border-b border-border hover:bg-surface-2">
               {row.map((cell, j) => (
-                <td key={j} className="px-4 py-3 text-gray-700 align-top">
+                <td key={j} className="px-4 py-3 text-text-2 align-top">
                   {cell}
                 </td>
               ))}
@@ -161,7 +161,7 @@ function BattlecardBody({ body }: { body: string }) {
   if (tableData) {
     return <TableBody headers={tableData.headers} rows={tableData.rows} />;
   }
-  return <p className="text-sm text-gray-700 whitespace-pre-wrap">{body}</p>;
+  return <p className="text-sm text-text-2 whitespace-pre-wrap">{body}</p>;
 }
 
 export default function CollateralBody({ body, type }: CollateralBodyProps) {

@@ -6,10 +6,7 @@
   "baseColor": "slate",
   "cssVariables": true,
   "aliases": {
-    "@/*": "./src/*",
-    "@/components": "./src/components",
-    "@/components/ui": "./src/components/ui",
-    "@/lib": "./src/lib",
-    "@/hooks": "./src/hooks"
+    "@/components/ui": "@/components/ui",
+    "@/lib/utils": "@/lib/utils"
   }
 }

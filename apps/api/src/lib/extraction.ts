@@ -95,7 +95,7 @@ Extraction rules:
 - Keep pain points distinct. Do not split the same problem into duplicates.
 - Use exact customer wording for quote. If no exact quote supports a candidate, do not include that candidate.
 
-Return only valid JSON with this shape:
+Output your findings as valid JSON only. No prose, no markdown, no explanation. Return a JSON object with this exact structure:
 {
   "companyName": "string or null",
   "painPoints": [
@@ -171,14 +171,30 @@ async function runExtractionAgent(
 
     let parsed: LLMResponse;
     try {
+      // Try to parse the response directly
       parsed = JSON.parse(result.reply) as LLMResponse;
-    } catch {
-      log.error('LLM extraction returned invalid JSON', { workflowId, raw: result.reply });
-      throw new Error('LLM returned invalid JSON for pain point extraction');
+    } catch (parseError) {
+      // Fallback: extract JSON from response if wrapped in markdown or text
+      const jsonMatch = result.reply.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        log.error('LLM extraction returned no JSON', { workflowId, raw: result.reply.substring(0, 500) });
+        throw new Error('LLM returned no JSON for pain point extraction');
+      }
+
+      try {
+        parsed = JSON.parse(jsonMatch[0]) as LLMResponse;
+      } catch (extractError) {
+        log.error('LLM extraction returned malformed JSON', {
+          workflowId,
+          extracted: jsonMatch[0].substring(0, 500),
+          error: extractError instanceof Error ? extractError.message : String(extractError),
+        });
+        throw new Error('LLM returned malformed JSON for pain point extraction');
+      }
     }
 
     if (!Array.isArray(parsed.painPoints)) {
-      log.error('LLM response missing painPoints array', { workflowId, raw: result.reply });
+      log.error('LLM response missing painPoints array', { workflowId, received: typeof parsed.painPoints });
       throw new Error('LLM response missing painPoints array');
     }
 

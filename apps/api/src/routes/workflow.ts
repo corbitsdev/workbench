@@ -191,7 +191,10 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
       companyName: wf.companyName ?? null,
       steps: {
         intake: { completed: true, transcriptId: wf.transcriptId, transcript: tx?.content },
-        analyze: { completed: points.length > 0, painPoints: points.map(serializePainPoint) },
+        analyze: {
+          completed: wf.status !== 'analyzing',
+          painPoints: points.map(serializePainPoint),
+        },
         generate: {
           completed: allCollateral.length > 0,
           collateral: allCollateral.map(serializeCollateral),
@@ -533,10 +536,6 @@ function serializeCollateral(c: any) {
 }
 
 // ─── Content generation helpers ─────────────────────────────────────
-
-function stripHtml(text: string): string {
-  return text.replace(/<[^>]*>/g, '');
-}
 
 function isValidExportTarget(target: string): target is ExportTarget {
   return (VALID_EXPORT_TARGETS as unknown as string[]).includes(target);

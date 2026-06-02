@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "db:setup": "bun --env-file=.env run scripts/db-setup.ts",
+    "db:seed": "bun --env-file=.env run scripts/db-seed.ts",
     "db:reset": "bun --env-file=.env run scripts/db-reset.ts",
     "dev": "bun --env-file=.env run --parallel --filter @gtm/web --filter @gtm/api dev",
     "build": "bun run --parallel --filter @gtm/web --filter @gtm/api build",

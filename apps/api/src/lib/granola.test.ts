@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, it, expect, afterEach, mock } from 'bun:test';
 
 const mockConfig = {
   granola: { apiKey: 'test-api-key', baseUrl: 'https://public-api.granola.ai/v1' },

@@ -53,7 +53,7 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
     return (
       <motion.div className="space-y-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-20 bg-gray-100 rounded-lg animate-pulse" />
+          <div key={i} className="h-20 bg-surface-2 rounded-lg animate-pulse" />
         ))}
       </motion.div>
     );
@@ -62,7 +62,7 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
   if (error) {
     return (
       <motion.div
-        className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm"
+        className="p-4 bg-cream-deep border border-cream text-charcoal text-sm rounded-lg"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
@@ -75,7 +75,7 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
   if (calls.length === 0) {
     return (
       <motion.div
-        className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-gray-600 text-sm text-center"
+        className="p-4 bg-surface-2 border border-border rounded-lg text-text-2 text-sm text-center"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
@@ -96,17 +96,17 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
           type="button"
           onClick={() => handleSelect(call.id)}
           disabled={isLoading || selectedId !== null}
-          className={`p-4 text-left text-sm border rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-gray-900 ${
+          className={`p-4 text-left text-sm border rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-orange ${
             selectedId === call.id
-              ? 'border-gray-300 bg-gray-50 ring-2 ring-gray-900'
-              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-          } disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed disabled:border-gray-200`}
+              ? 'border-border-strong bg-surface-2 ring-2 ring-orange'
+              : 'border-border bg-surface hover:border-border-strong hover:bg-surface-2'
+          } disabled:bg-surface-2 disabled:text-text-3 disabled:cursor-not-allowed disabled:border-border`}
           whileTap={{ scale: 0.98 }}
           aria-pressed={selectedId === call.id}
           aria-label={`Select call: ${call.title}`}
         >
-          <p className="font-medium text-gray-900 leading-snug line-clamp-2">{call.title}</p>
-          <p className="text-xs text-gray-600 mt-1">
+          <p className="font-medium text-text leading-snug line-clamp-2">{call.title}</p>
+          <p className="text-xs text-text-2 mt-1">
             {new Date(call.created_at).toLocaleDateString()}
             {call.participants &&
               call.participants.length > 0 &&

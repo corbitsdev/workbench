@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, Outlet, useNavigate } from 'react-router';
+import { createBrowserRouter, Navigate, Outlet } from 'react-router';
 import { useAuth } from './components/AuthProvider';
 import { LoginPage } from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
@@ -15,21 +15,8 @@ function ProtectedLayout() {
 }
 
 function AppShell() {
-  const { signOut } = useAuth();
-  const navigate = useNavigate();
   return (
     <div className="h-screen flex flex-col">
-      <header className="border-b border-slate-200 bg-white px-6 py-3 flex justify-end">
-        <button
-          onClick={async () => {
-            await signOut();
-            navigate('/login');
-          }}
-          className="text-sm text-slate-600 hover:text-slate-900 underline"
-        >
-          Sign out
-        </button>
-      </header>
       <div className="flex-1 overflow-hidden">
         <Outlet />
       </div>

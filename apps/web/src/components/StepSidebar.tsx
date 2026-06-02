@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from './AuthProvider';
 
 export interface Step {
   number: number;
@@ -15,19 +17,21 @@ interface StepSidebarProps {
 
 export default function StepSidebar({ steps, sourceLabel, selectionCount }: StepSidebarProps) {
   const [collapsed, setCollapsed] = useState(() => window.innerWidth < 768);
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <motion.div
-      className="bg-amber-50 border-r border-amber-100 flex flex-col h-screen relative"
+      className="bg-surface border-r border-border flex flex-col h-screen relative"
       initial={false}
       animate={{ width: collapsed ? 64 : 224 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
     >
-      <div className="p-4 border-b border-amber-100 flex items-center justify-between gap-2 overflow-hidden">
+      <div className="p-4 border-b border-border flex items-center justify-between gap-2 overflow-hidden">
         <AnimatePresence>
           {!collapsed && (
             <motion.h1
-              className="text-sm font-semibold text-gray-900 truncate min-w-0"
+              className="text-sm font-semibold text-text truncate min-w-0"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -39,7 +43,7 @@ export default function StepSidebar({ steps, sourceLabel, selectionCount }: Step
         </AnimatePresence>
         <button
           onClick={() => setCollapsed((c) => !c)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-amber-100 transition-colors text-gray-600"
+          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-2 transition-colors text-text-2"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
@@ -75,7 +79,7 @@ export default function StepSidebar({ steps, sourceLabel, selectionCount }: Step
               <div
                 className={`rounded-lg p-3 transition-all overflow-hidden ${
                   step.status === 'current'
-                    ? 'bg-white shadow-sm border border-gray-200'
+                    ? 'bg-surface-2 shadow-sm border border-border-strong'
                     : step.status === 'completed'
                       ? 'bg-transparent'
                       : 'bg-transparent opacity-50'
@@ -85,10 +89,10 @@ export default function StepSidebar({ steps, sourceLabel, selectionCount }: Step
                   <div
                     className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0 ${
                       step.status === 'completed'
-                        ? 'bg-green-500 text-white'
+                        ? 'bg-green text-white'
                         : step.status === 'current'
-                          ? 'bg-white border-2 border-gray-300'
-                          : 'bg-gray-200 text-gray-400'
+                          ? 'bg-surface-2 border-2 border-border-strong'
+                          : 'bg-surface text-text-3'
                     }`}
                   >
                     {step.status === 'completed' ? '✓' : step.number}
@@ -97,7 +101,7 @@ export default function StepSidebar({ steps, sourceLabel, selectionCount }: Step
                     {!collapsed && (
                       <motion.span
                         className={`text-sm font-medium truncate min-w-0 ${
-                          step.status === 'current' ? 'text-gray-900' : 'text-gray-600'
+                          step.status === 'current' ? 'text-text' : 'text-text-2'
                         }`}
                         title={step.label}
                         initial={{ opacity: 0, width: 0 }}
@@ -116,30 +120,58 @@ export default function StepSidebar({ steps, sourceLabel, selectionCount }: Step
         </div>
       </div>
 
-      {sourceLabel && (
-        <div className="mt-auto p-6 border-t border-amber-100 overflow-hidden">
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-              >
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  Stage source
-                </div>
-                <div className="text-sm font-medium text-gray-900">{sourceLabel}</div>
-                {selectionCount !== undefined && (
-                  <div className="text-xs text-gray-500 mt-1">
-                    {selectionCount} pain point{selectionCount !== 1 ? 's' : ''} selected
+      <div className="mt-auto border-t border-border">
+        {sourceLabel && (
+          <div className="p-6 border-b border-border overflow-hidden">
+            <AnimatePresence>
+              {!collapsed && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <div className="text-xs font-semibold text-text-3 uppercase tracking-wide mb-2">
+                    Stage source
                   </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  <div className="text-sm font-medium text-text">{sourceLabel}</div>
+                  {selectionCount !== undefined && (
+                    <div className="text-xs text-text-3 mt-1">
+                      {selectionCount} pain point{selectionCount !== 1 ? 's' : ''} selected
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        <div className="p-4 flex flex-col gap-2">
+          <button
+            onClick={async () => {
+              await signOut();
+              navigate('/login');
+            }}
+            className="w-8 h-8 md:w-full flex items-center justify-center md:justify-start gap-2 px-3 py-2 rounded-lg text-text-2 hover:bg-surface-2 transition-colors text-sm font-medium"
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <span className="text-lg">⎙</span>
+            <AnimatePresence>
+              {!collapsed && (
+                <motion.span
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: 'auto' }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  Sign out
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </button>
         </div>
-      )}
+      </div>
     </motion.div>
   );
 }

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import StepSidebar from '../components/StepSidebar';
 import { useWorkflow, useRunStep } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
+import { Button } from '../components/ui/Button';
 
 const STEP_LABELS = {
   intake: 'Call source',
@@ -41,19 +42,19 @@ export default function CollateralImprovement() {
   const sourceLabel = workflow?.steps?.intake?.transcriptId ? 'Pasted transcript' : undefined;
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-page">
       <StepSidebar steps={steps} sourceLabel={sourceLabel} />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel: Context */}
         <motion.div
-          className="w-80 bg-amber-50 border-r border-amber-100 flex flex-col overflow-hidden"
+          className="w-80 bg-surface border-r border-border flex flex-col overflow-hidden"
           initial={{ x: -40, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 300, damping: 30, delay: 0.1 }}
         >
-          <div className="px-4 py-3 md:p-6 border-b border-amber-100">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+          <div className="px-4 py-3 md:p-6 border-b border-border">
+            <div className="text-xs font-semibold text-text-3 uppercase tracking-wide mb-2">
               Context
             </div>
           </div>
@@ -62,12 +63,12 @@ export default function CollateralImprovement() {
             {painPoints.map((point: any) => (
               <motion.div
                 key={point.id}
-                className="border border-amber-200 rounded-lg p-3 bg-white text-sm"
+                className="border border-border rounded-lg p-3 bg-surface-2 text-sm"
                 initial={{ opacity: 0.7 }}
                 animate={{ opacity: 1 }}
               >
-                <h4 className="font-semibold text-gray-900 line-clamp-2">{point.context}</h4>
-                <p className="text-xs text-gray-600 mt-2 line-clamp-2">{point.quote}</p>
+                <h4 className="font-semibold text-text line-clamp-2">{point.context}</h4>
+                <p className="text-xs text-text-2 mt-2 line-clamp-2">{point.quote}</p>
               </motion.div>
             ))}
           </div>
@@ -75,19 +76,17 @@ export default function CollateralImprovement() {
 
         {/* Right Panel: Collateral */}
         <motion.div
-          className="flex-1 flex flex-col overflow-hidden"
+          className="flex-1 flex flex-col overflow-hidden bg-page"
           initial={{ x: 40, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 300, damping: 30, delay: 0.15 }}
         >
-          <div className="px-4 py-3 md:p-6 border-b border-gray-200 bg-white">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+          <div className="px-4 py-3 md:p-6 border-b border-border bg-surface">
+            <div className="text-xs font-semibold text-text-3 uppercase tracking-wide mb-1">
               Approved Collateral
             </div>
-            <h2 className="text-xl md:text-2xl font-bold text-gray-900">
-              Tune the assets you kept
-            </h2>
-            <p className="hidden md:block text-sm text-gray-600 mt-1">
+            <h2 className="text-xl md:text-2xl font-bold text-text">Tune the assets you kept</h2>
+            <p className="hidden md:block text-sm text-text-2 mt-1">
               Each approved asset can receive targeted feedback before the final package is
               assembled.
             </p>
@@ -100,27 +99,27 @@ export default function CollateralImprovement() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
-                className="border border-gray-200 rounded-lg p-6 bg-white"
+                className="border border-border rounded-lg p-6 bg-surface"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    <div className="text-xs font-semibold text-text-3 uppercase tracking-wide">
                       {item.type}
                     </div>
-                    <h3 className="text-lg font-bold text-gray-900 mt-1">{item.title}</h3>
+                    <h3 className="text-lg font-bold text-text mt-1">{item.title}</h3>
                   </div>
-                  <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded">
+                  <span className="text-xs font-semibold text-green bg-green-soft px-2 py-1 rounded">
                     APPROVED
                   </span>
                 </div>
 
-                <p className="text-sm text-gray-700 mb-4 leading-relaxed">{item.body}</p>
+                <p className="text-sm text-text-2 mb-4 leading-relaxed">{item.body}</p>
 
                 <textarea
                   value={feedback[item.id] || ''}
                   onChange={(e) => setFeedback((prev) => ({ ...prev, [item.id]: e.target.value }))}
                   placeholder="Ask for a sharper hook, more executive tone, a shorter version..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange bg-surface-2 text-text resize-none"
                   rows={3}
                 />
               </motion.div>
@@ -128,14 +127,10 @@ export default function CollateralImprovement() {
           </div>
 
           {/* Actions */}
-          <div className="px-4 py-3 md:p-6 border-t border-gray-200 bg-white">
-            <button
-              onClick={handleAssemble}
-              disabled={isLoading}
-              className="px-6 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
-            >
+          <div className="px-4 py-3 md:p-6 border-t border-border bg-surface">
+            <Button variant="primary" onClick={handleAssemble} disabled={isLoading}>
               {isLoading ? 'Assembling...' : 'Assemble final package'}
-            </button>
+            </Button>
           </div>
         </motion.div>
       </div>
