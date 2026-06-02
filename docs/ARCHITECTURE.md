@@ -43,7 +43,6 @@ Root monorepo
 - **Agent Runtime**: Uses `@intx/agent` (from `interchange/`) with structured JSON outputs
 - **Persistence Layer**: PostgreSQL + Drizzle ORM for session state
 
-
 ### Database Schema
 
 Defined in `apps/api/src/db/schema.ts` using Drizzle ORM.
@@ -77,7 +76,6 @@ Defined in `apps/api/src/db/schema.ts` using Drizzle ORM.
 - **Paste-first**: Intake is intentionally lightweight. CRM sync is v2.
 - **Human-in-the-loop**: Every major stage requires human approval. No fully automated pipeline.
 - **Persistent sessions**: Full session state is saved to PostgreSQL. Resumable.
-
 
 ---
 

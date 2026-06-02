@@ -8,7 +8,12 @@ mock.module('../config', () => ({
   loadConfig: () => mockConfig,
 }));
 
-import { isGranolaConfigured, getRecentNotes, getNoteWithTranscript, transcriptToText } from './granola';
+import {
+  isGranolaConfigured,
+  getRecentNotes,
+  getNoteWithTranscript,
+  transcriptToText,
+} from './granola';
 
 describe('granola', () => {
   const originalFetch = global.fetch;
@@ -29,7 +34,12 @@ describe('granola', () => {
 
   it('getRecentNotes returns parsed notes', async () => {
     const mockNotes = [
-      { id: 'n1', title: 'Sales Call', created_at: '2026-05-28T10:00:00Z', participants: ['Alice'] },
+      {
+        id: 'n1',
+        title: 'Sales Call',
+        created_at: '2026-05-28T10:00:00Z',
+        participants: ['Alice'],
+      },
       { id: 'n2', title: 'Team Sync', created_at: '2026-05-28T09:00:00Z', participants: ['Bob'] },
     ];
 
@@ -76,7 +86,9 @@ describe('granola', () => {
       ],
     };
 
-    expect(transcriptToText(note)).toBe('You: We need faster deploys\nThem: Our pipeline takes 40 minutes');
+    expect(transcriptToText(note)).toBe(
+      'You: We need faster deploys\nThem: Our pipeline takes 40 minutes'
+    );
   });
 
   it('getRecentNotes throws on non-200 response', async () => {

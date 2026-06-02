@@ -80,7 +80,9 @@ export default function FinalExport() {
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
               Ready to use
             </div>
-            <h2 className="text-xl md:text-3xl font-bold text-gray-900">Final collateral package</h2>
+            <h2 className="text-xl md:text-3xl font-bold text-gray-900">
+              Final collateral package
+            </h2>
             <p className="hidden md:block text-sm text-gray-600 mt-1">
               Copy individual pieces or grab everything at once.
             </p>

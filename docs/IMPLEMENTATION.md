@@ -188,12 +188,13 @@ All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agen
 **Single-call inference** (extraction, analysis, one-shot generation):
 
 1. Create an `InferenceSource` from environment variables:
+
    ```typescript
    import type { InferenceSource } from '@intx/types/runtime';
-   
+
    const source: InferenceSource = {
      id: `my-task-${id}`,
-     provider: 'openai',  // 'anthropic', 'google-genai', or OpenAI-compatible
+     provider: 'openai', // 'anthropic', 'google-genai', or OpenAI-compatible
      baseURL: process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1',
      apiKey: process.env.OPENAI_COMPATIBLE_API_KEY,
      model: process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini',
@@ -201,30 +202,32 @@ All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agen
    ```
 
 2. Create a temporary agent with an ephemeral context directory:
+
    ```typescript
    import { createAgent } from '@intx/agent';
    import { tmpdir } from 'node:os';
    import { join } from 'node:path';
    import { randomUUID } from 'node:crypto';
-   
+
    const contextDir = join(tmpdir(), `task-${randomUUID()}`);
    const agent = await createAgent({
-     contextDir,  // Automatically cleaned up after close()
+     contextDir, // Automatically cleaned up after close()
      sources: [source],
      defaultSource: source.id,
      systemPrompt: 'Your system instructions...',
-     tools: [],  // Add tool definitions if needed
-     closeTimeoutMs: 1000,  // Fast shutdown for ephemeral tasks
+     tools: [], // Add tool definitions if needed
+     closeTimeoutMs: 1000, // Fast shutdown for ephemeral tasks
    });
    ```
 
 3. Send your prompt and extract the response:
+
    ```typescript
    const result = await agent.send(userMessage);
    await agent.close();
-   
+
    // result.reply is the LLM's text response
-   const data = JSON.parse(result.reply);  // or text parsing
+   const data = JSON.parse(result.reply); // or text parsing
    ```
 
 ### Pain Point Extraction

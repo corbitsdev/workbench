@@ -85,7 +85,11 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
   }
 
   return (
-    <motion.div className="grid grid-cols-2 gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div
+      className="grid grid-cols-2 gap-2"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
       {calls.map((call) => (
         <motion.button
           key={call.id}
@@ -98,12 +102,12 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
           } disabled:opacity-50 disabled:cursor-not-allowed`}
           whileTap={{ scale: 0.98 }}
         >
-          <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">{call.title}</p>
+          <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">
+            {call.title}
+          </p>
           <p className="text-xs text-gray-500 mt-1">
             {new Date(call.created_at).toLocaleDateString()}
-            {call.participants &&
-              call.participants.length > 0 &&
-              ` • ${call.participants.length}`}
+            {call.participants && call.participants.length > 0 && ` • ${call.participants.length}`}
           </p>
         </motion.button>
       ))}

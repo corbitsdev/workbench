@@ -115,40 +115,40 @@ export default function Dashboard() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto min-h-0">
-                <AnimatePresence mode="wait">
-                  {importMode === 'paste' ? (
-                    <motion.div
-                      key="paste"
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.12 }}
-                    >
-                      <textarea
-                        value={transcript}
-                        onChange={(e) => {
-                          setTranscript(e.target.value);
-                          setImportError('');
-                        }}
-                        placeholder="Speaker 1: Thanks for taking the time today..."
-                        className="w-full h-52 text-sm border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-gray-900 font-mono"
-                      />
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="recent"
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.12 }}
-                    >
-                      <RecentCallsPicker
-                        onSelect={handleSubmit}
-                        isLoading={createWorkflow.isPending}
-                      />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                  <AnimatePresence mode="wait">
+                    {importMode === 'paste' ? (
+                      <motion.div
+                        key="paste"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.12 }}
+                      >
+                        <textarea
+                          value={transcript}
+                          onChange={(e) => {
+                            setTranscript(e.target.value);
+                            setImportError('');
+                          }}
+                          placeholder="Speaker 1: Thanks for taking the time today..."
+                          className="w-full h-52 text-sm border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-gray-900 font-mono"
+                        />
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="recent"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.12 }}
+                      >
+                        <RecentCallsPicker
+                          onSelect={handleSubmit}
+                          isLoading={createWorkflow.isPending}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
                 {importError && <p className="text-sm text-red-600 mt-2">{importError}</p>}
@@ -238,7 +238,10 @@ export default function Dashboard() {
                       <td className="px-6 py-4 text-right">
                         <button
                           onClick={() => {
-                            const stage = (wf.status === 'analyzing' || wf.status === 'reviewing') ? 'analyze' : 'export';
+                            const stage =
+                              wf.status === 'analyzing' || wf.status === 'reviewing'
+                                ? 'analyze'
+                                : 'export';
                             navigate(`/workflows/${wf.id}/${stage}`);
                           }}
                           className="text-xs font-medium text-gray-900 hover:underline cursor-pointer"

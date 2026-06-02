@@ -169,7 +169,6 @@ This starts API (port 4000) and Web (port 5174) in parallel using `bun --paralle
 - API: `http://localhost:4000`
 - PostgreSQL: `localhost:5433`
 
-
 **Reset the database:**
 
 ```bash
@@ -200,21 +199,21 @@ Implemented in `apps/api` as a unified step-based workflow engine.
 
 Required in `.env` (copy from `.env.example`):
 
-| Variable                      | Default                                                                | Purpose                                      |
-| ----------------------------- | ---------------------------------------------------------------------- | -------------------------------------------- |
-| `DATABASE_URL`                | `postgres://workbench:workbench-dev-password@localhost:5433/workbench` | Postgres connection string                   |
-| `PORT`                        | `4000`                                                                 | API server port                              |
-| `BETTER_AUTH_SECRET`          | —                                                                      | Required. Auth signing secret                |
-| `BETTER_AUTH_BASE_URL`        | `http://localhost:4000`                                                | Required. Public URL of the API              |
-| `SUPPORTED_CORS_ORIGINS`      | `http://localhost:5174`                                                | Required in production. Comma-separated      |
-| `OPENAI_COMPATIBLE_API_KEY`   | —                                                                      | Required. LLM API key                        |
-| `OPENAI_COMPATIBLE_BASE_URL`  | `https://api.openai.com/v1`                                            | Optional. LLM endpoint                       |
-| `OPENAI_COMPATIBLE_MODEL`     | `gpt-4o-mini`                                                          | Required. Model name                         |
-| `VITE_API_BASE_URL`           | `http://localhost:4000`                                                | Build-time. Public URL of the API for web    |
-| `GRANOLA_API_KEY`             | —                                                                      | Optional. Granola integration                |
-| `GOOGLE_CLIENT_ID`            | —                                                                      | Optional. Google OAuth                       |
-| `GOOGLE_CLIENT_SECRET`        | —                                                                      | Optional. Google OAuth                       |
-| `GOOGLE_ALLOWED_DOMAINS`      | —                                                                      | Optional. Comma-separated allowed domains    |
+| Variable                     | Default                                                                | Purpose                                   |
+| ---------------------------- | ---------------------------------------------------------------------- | ----------------------------------------- |
+| `DATABASE_URL`               | `postgres://workbench:workbench-dev-password@localhost:5433/workbench` | Postgres connection string                |
+| `PORT`                       | `4000`                                                                 | API server port                           |
+| `BETTER_AUTH_SECRET`         | —                                                                      | Required. Auth signing secret             |
+| `BETTER_AUTH_BASE_URL`       | `http://localhost:4000`                                                | Required. Public URL of the API           |
+| `SUPPORTED_CORS_ORIGINS`     | `http://localhost:5174`                                                | Required in production. Comma-separated   |
+| `OPENAI_COMPATIBLE_API_KEY`  | —                                                                      | Required. LLM API key                     |
+| `OPENAI_COMPATIBLE_BASE_URL` | `https://api.openai.com/v1`                                            | Optional. LLM endpoint                    |
+| `OPENAI_COMPATIBLE_MODEL`    | `gpt-4o-mini`                                                          | Required. Model name                      |
+| `VITE_API_BASE_URL`          | `http://localhost:4000`                                                | Build-time. Public URL of the API for web |
+| `GRANOLA_API_KEY`            | —                                                                      | Optional. Granola integration             |
+| `GOOGLE_CLIENT_ID`           | —                                                                      | Optional. Google OAuth                    |
+| `GOOGLE_CLIENT_SECRET`       | —                                                                      | Optional. Google OAuth                    |
+| `GOOGLE_ALLOWED_DOMAINS`     | —                                                                      | Optional. Comma-separated allowed domains |
 
 ## Railway Deployment
 
@@ -294,6 +293,7 @@ export function createWorkflowRouter(db: Database, config: Config): Hono { ... }
 **Rule:** Any LLM inference (extraction, generation, analysis, refinement) must use `@intx/agent` from `interchange/packages/agent`. Never make direct `fetch()` calls to LLM endpoints.
 
 **Why:**
+
 - Direct calls bypass config management, error handling, and logging built into the agent runtime
 - Environment variable handling (API key, model, base URL) is inconsistent and error-prone
 - Failed requests provide no visibility into what URL was called or what the error response contained
@@ -302,10 +302,11 @@ export function createWorkflowRouter(db: Database, config: Config): Hono { ... }
 **How to use `@intx/agent` for LLM inference:**
 
 1. **Create an inference source** from environment variables:
+
    ```typescript
    const source: InferenceSource = {
      id: `task-${taskId}`,
-     provider: 'openai',  // or 'anthropic', 'google-genai'
+     provider: 'openai', // or 'anthropic', 'google-genai'
      baseURL: process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1',
      apiKey: process.env.OPENAI_COMPATIBLE_API_KEY,
      model: process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini',
@@ -313,14 +314,15 @@ export function createWorkflowRouter(db: Database, config: Config): Hono { ... }
    ```
 
 2. **Create an agent with minimal config** (use temp directory for context):
+
    ```typescript
    const { tmpdir } = await import('node:os');
    const { join } = await import('node:path');
    const { randomUUID } = await import('node:crypto');
-   
+
    const contextDir = join(tmpdir(), `task-${randomUUID()}`);
    const agent = await createAgent({
-     contextDir,  // Auto-managed isogit store, cleaned up after close()
+     contextDir, // Auto-managed isogit store, cleaned up after close()
      sources: [source],
      defaultSource: source.id,
      systemPrompt: 'Your system instructions here.',
@@ -330,12 +332,13 @@ export function createWorkflowRouter(db: Database, config: Config): Hono { ... }
    ```
 
 3. **Send your prompt and get structured response:**
+
    ```typescript
    const result = await agent.send(userMessage);
    await agent.close();
-   
+
    // result.reply contains the LLM response as a string
-   const parsed = JSON.parse(result.reply);  // or text parsing
+   const parsed = JSON.parse(result.reply); // or text parsing
    ```
 
 **Pattern:** For single-call inference (extraction, analysis), create an agent, send one message, close immediately. The temp contextDir is automatically cleaned up. No manual persistence needed unless the inference is part of a multi-turn conversation.

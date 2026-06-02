@@ -1,5 +1,6 @@
 {
   "name": "gtm-workbench",
+  "version": "0.1.17",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -34,6 +35,5 @@
   },
   "catalog": {
     "arktype": "^2.1.29"
-  },
-  "version": "0.1.17"
+  }
 }

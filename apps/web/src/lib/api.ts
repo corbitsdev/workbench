@@ -4,7 +4,10 @@ import { logger } from './logger';
 const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, apiBase || window.location.origin).toString();
+  const url = new URL(
+    `/api/v1/${path.replace(/^\//, '')}`,
+    apiBase || window.location.origin
+  ).toString();
   const init: RequestInit = { method, credentials: 'include' };
   if (body) {
     init.headers = { 'Content-Type': 'application/json' };

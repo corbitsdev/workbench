@@ -21,7 +21,10 @@ function AppShell() {
     <div className="h-screen flex flex-col">
       <header className="border-b border-slate-200 bg-white px-6 py-3 flex justify-end">
         <button
-          onClick={async () => { await signOut(); navigate('/login'); }}
+          onClick={async () => {
+            await signOut();
+            navigate('/login');
+          }}
           className="text-sm text-slate-600 hover:text-slate-900 underline"
         >
           Sign out

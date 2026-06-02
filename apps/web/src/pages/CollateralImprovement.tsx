@@ -84,7 +84,9 @@ export default function CollateralImprovement() {
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
               Approved Collateral
             </div>
-            <h2 className="text-xl md:text-2xl font-bold text-gray-900">Tune the assets you kept</h2>
+            <h2 className="text-xl md:text-2xl font-bold text-gray-900">
+              Tune the assets you kept
+            </h2>
             <p className="hidden md:block text-sm text-gray-600 mt-1">
               Each approved asset can receive targeted feedback before the final package is
               assembled.
