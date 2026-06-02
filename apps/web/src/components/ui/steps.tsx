@@ -7,14 +7,10 @@ interface StepsProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const Steps = React.forwardRef<HTMLDivElement, StepsProps>(
-  ({ className, value = 0, orientation = 'horizontal', ...props }, ref) => (
+  ({ className, value: _value = 0, orientation = 'horizontal', ...props }, ref) => (
     <div
       ref={ref}
-      className={cn(
-        'flex',
-        orientation === 'horizontal' ? 'gap-2' : 'flex-col gap-4',
-        className
-      )}
+      className={cn('flex', orientation === 'horizontal' ? 'gap-2' : 'flex-col gap-4', className)}
       {...props}
     />
   )
@@ -27,7 +23,7 @@ interface StepProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const Step = React.forwardRef<HTMLDivElement, StepProps>(
-  ({ className, status = 'incomplete', ...props }, ref) => (
+  ({ className, status: _status = 'incomplete', ...props }, ref) => (
     <div ref={ref} className={cn('flex items-center gap-3', className)} {...props} />
   )
 );
@@ -84,11 +80,4 @@ const StepDescription = React.forwardRef<HTMLParagraphElement, StepDescriptionPr
 );
 StepDescription.displayName = 'StepDescription';
 
-export {
-  Steps,
-  Step,
-  StepIndicator,
-  StepLabel,
-  StepTitle,
-  StepDescription,
-};
+export { Steps, Step, StepIndicator, StepLabel, StepTitle, StepDescription };

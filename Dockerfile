@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM oven/bun:1.2-alpine AS builder
+FROM oven/bun:1.3-alpine AS builder
 
 WORKDIR /app
 
@@ -16,6 +16,7 @@ RUN wget -qO interchange.tar.gz "https://github.com/faremeter/interchange/archiv
 
 COPY package.json bun.lock ./
 COPY apps/api/package.json apps/api/
+COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 
@@ -26,7 +27,7 @@ COPY . .
 
 RUN bun run --filter @gtm/api build && bun run --filter @gtm/web build
 
-FROM oven/bun:1.2-slim AS runtime
+FROM oven/bun:1.3-slim AS runtime
 
 WORKDIR /app
 

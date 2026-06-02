@@ -87,7 +87,9 @@ export function LoginPage() {
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-bold text-text">Sign in</h1>
           <p className="text-sm text-text-2">
-            {useEmailPassword ? 'Sign in with email and password.' : 'Use your Google account to continue.'}
+            {useEmailPassword
+              ? 'Sign in with email and password.'
+              : 'Use your Google account to continue.'}
           </p>
         </div>
 

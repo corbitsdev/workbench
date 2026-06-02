@@ -24,6 +24,7 @@
         "@better-auth/drizzle-adapter": "^1.6.9",
         "@gtm/workbench-shared": "workspace:*",
         "@intx/agent": "workspace:*",
+        "@intx/crypto-node": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
@@ -37,6 +38,26 @@
       "devDependencies": {
         "@types/bun": "latest",
         "drizzle-kit": "^0.31.1",
+        "typescript": "^5.9.0",
+      },
+    },
+    "apps/sidecar": {
+      "name": "@gtm/sidecar",
+      "dependencies": {
+        "@intx/authz": "workspace:*",
+        "@intx/crypto-node": "workspace:*",
+        "@intx/harness": "workspace:*",
+        "@intx/hub-agent": "workspace:*",
+        "@intx/inference": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/mail-memory": "workspace:*",
+        "@intx/storage-isogit": "workspace:*",
+        "@intx/tools-lsp": "workspace:*",
+        "@intx/tools-posix": "workspace:*",
+        "@intx/types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
         "typescript": "^5.9.0",
       },
     },
@@ -417,6 +438,8 @@
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.25.12", "", { "os": "win32", "cpu": "x64" }, "sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA=="],
 
     "@gtm/api": ["@gtm/api@workspace:apps/api"],
+
+    "@gtm/sidecar": ["@gtm/sidecar@workspace:apps/sidecar"],
 
     "@gtm/web": ["@gtm/web@workspace:apps/web"],
 

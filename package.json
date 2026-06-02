@@ -1,6 +1,6 @@
 {
   "name": "gtm-workbench",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -11,7 +11,7 @@
     "db:setup": "bun --env-file=.env run scripts/db-setup.ts",
     "db:seed": "bun --env-file=.env run scripts/db-seed.ts",
     "db:reset": "bun --env-file=.env run scripts/db-reset.ts",
-    "dev": "bun --env-file=.env run --parallel --filter @gtm/web --filter @gtm/api dev",
+    "dev": "bun --env-file=.env run --parallel --filter @gtm/web --filter @gtm/api --filter @gtm/sidecar dev",
     "build": "bun run --parallel --filter @gtm/web --filter @gtm/api build",
     "typecheck": "bun run --filter '@gtm/*' typecheck",
     "format": "oxfmt --write . '!interchange' '!temporary'",

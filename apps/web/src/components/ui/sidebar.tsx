@@ -2,110 +2,83 @@ import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
-const Sidebar = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn(
-      'flex h-full w-full flex-col bg-sidebar text-sidebar-foreground',
-      className
-    )}
-    {...props}
-  />
-));
+const Sidebar = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn('flex h-full w-full flex-col bg-sidebar text-sidebar-foreground', className)}
+      {...props}
+    />
+  )
+);
 Sidebar.displayName = 'Sidebar';
 
-const SidebarHeader = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn('flex flex-col gap-2 border-b border-sidebar-border p-4', className)}
-    {...props}
-  />
-));
+const SidebarHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn('flex flex-col gap-2 border-b border-sidebar-border p-4', className)}
+      {...props}
+    />
+  )
+);
 SidebarHeader.displayName = 'SidebarHeader';
 
-const SidebarFooter = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn('mt-auto flex flex-col gap-2 border-t border-sidebar-border p-4', className)}
-    {...props}
-  />
-));
+const SidebarFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn('mt-auto flex flex-col gap-2 border-t border-sidebar-border p-4', className)}
+      {...props}
+    />
+  )
+);
 SidebarFooter.displayName = 'SidebarFooter';
 
-const SidebarContent = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn('flex-1 overflow-y-auto px-4 py-2', className)}
-    {...props}
-  />
-));
+const SidebarContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn('flex-1 overflow-y-auto px-4 py-2', className)} {...props} />
+  )
+);
 SidebarContent.displayName = 'SidebarContent';
 
-const SidebarGroup = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn('overflow-hidden px-2 py-6', className)}
-    {...props}
-  />
-));
+const SidebarGroup = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn('overflow-hidden px-2 py-6', className)} {...props} />
+  )
+);
 SidebarGroup.displayName = 'SidebarGroup';
 
-const SidebarGroupLabel = React.forwardRef<
-  HTMLSpanElement,
-  React.HTMLAttributes<HTMLSpanElement>
->(({ className, ...props }, ref) => (
-  <span
-    ref={ref}
-    className={cn(
-      'px-2 py-1.5 text-xs font-medium text-sidebar-foreground/70',
-      className
-    )}
-    {...props}
-  />
-));
+const SidebarGroupLabel = React.forwardRef<HTMLSpanElement, React.HTMLAttributes<HTMLSpanElement>>(
+  ({ className, ...props }, ref) => (
+    <span
+      ref={ref}
+      className={cn('px-2 py-1.5 text-xs font-medium text-sidebar-foreground/70', className)}
+      {...props}
+    />
+  )
+);
 SidebarGroupLabel.displayName = 'SidebarGroupLabel';
 
-const SidebarGroupContent = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn('w-full text-sm', className)} {...props} />
-));
+const SidebarGroupContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn('w-full text-sm', className)} {...props} />
+  )
+);
 SidebarGroupContent.displayName = 'SidebarGroupContent';
 
-const SidebarMenu = React.forwardRef<
-  HTMLUListElement,
-  React.HTMLAttributes<HTMLUListElement>
->(({ className, ...props }, ref) => (
-  <ul
-    ref={ref}
-    className={cn('flex w-full min-w-0 flex-col gap-1', className)}
-    {...props}
-  />
-));
+const SidebarMenu = React.forwardRef<HTMLUListElement, React.HTMLAttributes<HTMLUListElement>>(
+  ({ className, ...props }, ref) => (
+    <ul ref={ref} className={cn('flex w-full min-w-0 flex-col gap-1', className)} {...props} />
+  )
+);
 SidebarMenu.displayName = 'SidebarMenu';
 
-const SidebarMenuItem = React.forwardRef<
-  HTMLLIElement,
-  React.HTMLAttributes<HTMLLIElement>
->(({ className, ...props }, ref) => (
-  <li ref={ref} className={cn('group/menu-item relative', className)} {...props} />
-));
+const SidebarMenuItem = React.forwardRef<HTMLLIElement, React.HTMLAttributes<HTMLLIElement>>(
+  ({ className, ...props }, ref) => (
+    <li ref={ref} className={cn('group/menu-item relative', className)} {...props} />
+  )
+);
 SidebarMenuItem.displayName = 'SidebarMenuItem';
 
 const sidebarMenuButtonVariants = cva(
@@ -136,27 +109,16 @@ const SidebarMenuButton = React.forwardRef<
     VariantProps<typeof sidebarMenuButtonVariants> & {
       isActive?: boolean;
     }
->(
-  (
-    {
-      variant = 'default',
-      size = 'default',
-      className,
-      isActive = false,
-      ...props
-    },
-    ref
-  ) => (
-    <button
-      ref={ref}
-      data-sidebar="menu-button"
-      data-size={size}
-      data-active={isActive}
-      className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
-      {...props}
-    />
-  )
-);
+>(({ variant = 'default', size = 'default', className, isActive = false, ...props }, ref) => (
+  <button
+    ref={ref}
+    data-sidebar="menu-button"
+    data-size={size}
+    data-active={isActive}
+    className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
+    {...props}
+  />
+));
 SidebarMenuButton.displayName = 'SidebarMenuButton';
 
 export {

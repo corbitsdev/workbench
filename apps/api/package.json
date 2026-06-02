@@ -17,6 +17,7 @@
     "@better-auth/drizzle-adapter": "^1.6.9",
     "@gtm/workbench-shared": "workspace:*",
     "@intx/agent": "workspace:*",
+    "@intx/crypto-node": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
