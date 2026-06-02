@@ -76,32 +76,32 @@ export default function PainPointsList({
           key={point.id}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className={`border rounded-lg p-4 transition-all ${
+          className={`flex items-start gap-3 border rounded-lg p-4 transition-all cursor-pointer ${
             selectedIds.has(point.id)
-              ? 'border-green-300 bg-green-50 shadow-sm'
+              ? 'border-gray-300 bg-gray-50 shadow-sm'
               : 'border-gray-200 bg-white hover:border-gray-300'
           }`}
         >
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={selectedIds.has(point.id)}
-              onChange={() => onToggle(point.id)}
-              className="mt-1 w-4 h-4"
-            />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-gray-900 text-sm">{point.context}</h3>
-                {point.severity && (
-                  <span
-                    className={`text-xs font-medium px-2 py-1 rounded ${getSeverityColor(point.severity)}`}
-                  >
-                    {point.severity}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-gray-600 mt-2 italic">&quot;{point.quote}&quot;</p>
+          <input
+            id={`pain-point-${point.id}`}
+            type="checkbox"
+            checked={selectedIds.has(point.id)}
+            onChange={() => onToggle(point.id)}
+            className="mt-1 w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-2 focus:ring-offset-0 focus:ring-gray-900 cursor-pointer transition-colors"
+            aria-label={`Select pain point: ${point.context}`}
+          />
+          <label htmlFor={`pain-point-${point.id}`} className="flex-1 min-w-0 cursor-pointer">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-semibold text-gray-900 text-sm">{point.context}</h3>
+              {point.severity && (
+                <span
+                  className={`text-xs font-medium px-2 py-1 rounded ${getSeverityColor(point.severity)}`}
+                >
+                  {point.severity}
+                </span>
+              )}
             </div>
+            <p className="text-xs text-gray-600 mt-2 italic">&quot;{point.quote}&quot;</p>
           </label>
         </motion.div>
       ))}

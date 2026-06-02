@@ -33,13 +33,13 @@
         --radius-xl: 24px;
         --radius-panel: 28px;
         --gap: 14px;
-        --font-body: "Red Hat Display", "Open Sans", Roboto, Arial, sans-serif;
-        --font-mono: "Space Mono", "Fira Code", Monaco, Consolas, monospace;
+        --font-body: 'Red Hat Display', 'Open Sans', Roboto, Arial, sans-serif;
+        --font-mono: 'Space Mono', 'Fira Code', Monaco, Consolas, monospace;
         --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
         --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
       }
       /* Light theme */
-      html[data-theme="light"] {
+      html[data-theme='light'] {
         --page: #efdcbe;
         --bg: #f7ead5;
         --bg-rail: #ffffff;
@@ -51,12 +51,11 @@
         --border: rgba(43, 38, 39, 0.1);
         --border-strong: rgba(43, 38, 39, 0.22);
         --row-hover: rgba(43, 38, 39, 0.05);
-        --shadow:
-          0 2px 6px rgba(43, 38, 39, 0.05), 0 18px 50px rgba(43, 38, 39, 0.1);
+        --shadow: 0 2px 6px rgba(43, 38, 39, 0.05), 0 18px 50px rgba(43, 38, 39, 0.1);
         --tag-text: #2b2627;
       }
       /* Dark theme */
-      html[data-theme="dark"] {
+      html[data-theme='dark'] {
         --page: #151112;
         --bg: #221d1e;
         --bg-rail: #272122;
@@ -389,7 +388,7 @@
         opacity: 0.7;
       }
       .group-h::after {
-        content: "";
+        content: '';
         flex: 1;
         height: 1px;
         background: var(--border);
@@ -421,7 +420,7 @@
         box-shadow: var(--shadow);
       }
       .row.sel::before {
-        content: "";
+        content: '';
         position: absolute;
         left: 0;
         top: 8px;
@@ -442,7 +441,7 @@
         border-color: var(--orange);
       }
       .st.run::after {
-        content: "";
+        content: '';
         position: absolute;
         inset: 2px;
         border-radius: 50%;
@@ -453,7 +452,7 @@
         background: var(--green);
       }
       .st.done::after {
-        content: "";
+        content: '';
         position: absolute;
         left: 4px;
         top: 1.5px;
@@ -464,7 +463,7 @@
         transform: rotate(42deg);
       }
       .st.idle::after {
-        content: "";
+        content: '';
         position: absolute;
         inset: 3px;
         border-radius: 50%;
@@ -527,13 +526,13 @@
       .tag.agent .dot {
         background: var(--green);
       }
-      html[data-theme="light"] .tag.workflow {
+      html[data-theme='light'] .tag.workflow {
         color: var(--orange-deep);
       }
-      html[data-theme="light"] .tag.workbench {
+      html[data-theme='light'] .tag.workbench {
         color: var(--blue-deep);
       }
-      html[data-theme="light"] .tag.agent {
+      html[data-theme='light'] .tag.agent {
         color: var(--green-deep);
       }
       .row .avatar {
@@ -605,7 +604,7 @@
         color: var(--cream);
         border-color: var(--charcoal);
       }
-      html[data-theme="dark"] .chip.solid {
+      html[data-theme='dark'] .chip.solid {
         background: var(--cream);
         color: var(--charcoal);
       }
@@ -1393,37 +1392,20 @@
     <header class="topbar">
       <div class="wordmark"><span class="glyph">C</span>Corbits</div>
       <div class="crumb">
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M9 18l6-6-6-6" />
         </svg>
         Workbench
       </div>
       <div class="spacer"></div>
       <button class="iconbtn" title="Notifications">
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"
-          />
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" />
         </svg>
       </button>
       <div class="toggle" id="themeToggle">
         <button data-set="light" title="Light">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="4" />
             <path
               d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
@@ -1431,21 +1413,12 @@
           </svg>
         </button>
         <button data-set="dark" title="Dark">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
           </svg>
         </button>
       </div>
-      <div
-        class="avatar"
-        style="width: 30px; height: 30px; background: var(--blue)"
-        title="Pontus"
-      >
+      <div class="avatar" style="width: 30px; height: 30px; background: var(--blue)" title="Pontus">
         PA
       </div>
     </header>
@@ -1456,12 +1429,7 @@
         <div class="rail-head">
           <div class="rail-title">Library</div>
           <div class="search">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="7" />
               <path d="M21 21l-4-4" />
             </svg>
@@ -1470,18 +1438,10 @@
           </div>
         </div>
         <div class="segs" id="segs">
-          <button class="seg active" data-f="all">
-            All <span class="count">12</span>
-          </button>
-          <button class="seg" data-f="workflow">
-            Workflows <span class="count">4</span>
-          </button>
-          <button class="seg" data-f="workbench">
-            Workbenches <span class="count">3</span>
-          </button>
-          <button class="seg" data-f="agent">
-            Agents <span class="count">5</span>
-          </button>
+          <button class="seg active" data-f="all">All <span class="count">12</span></button>
+          <button class="seg" data-f="workflow">Workflows <span class="count">4</span></button>
+          <button class="seg" data-f="workbench">Workbenches <span class="count">3</span></button>
+          <button class="seg" data-f="agent">Agents <span class="count">5</span></button>
         </div>
         <div class="rail-scroll" id="railScroll"></div>
       </aside>
@@ -1505,22 +1465,12 @@
           <span class="num" id="artCount">14 items</span>
           <div class="spacer"></div>
           <button class="chip">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 6h18M6 12h12M10 18h4" /></svg
             >Sort
           </button>
           <button class="chip solid">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 5v14M5 12h14" /></svg
             >New
           </button>
@@ -1542,12 +1492,7 @@
           </div>
           <div class="spacer"></div>
           <button class="iconbtn" id="mClose" aria-label="Close">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
@@ -1557,27 +1502,13 @@
         </div>
         <div class="modal-foot">
           <button class="btn">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"
-              /></svg
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg
             >Download
           </button>
           <button class="btn">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"
-              /></svg
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" /></svg
             >Share
           </button>
           <div class="spacer"></div>
@@ -1587,12 +1518,7 @@
     </div>
 
     <!-- ============ INTERCOM-STYLE AGENT ============ -->
-    <div
-      class="chatwin"
-      id="chatwin"
-      role="dialog"
-      aria-label="Workbench agent"
-    >
+    <div class="chatwin" id="chatwin" role="dialog" aria-label="Workbench agent">
       <div class="chat-head">
         <div class="av">A<span class="on"></span></div>
         <div>
@@ -1611,12 +1537,7 @@
           </div>
         </div>
         <button class="x" id="chatX" aria-label="Close chat">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </button>
@@ -1624,82 +1545,55 @@
       <div class="chat-body" id="chatBody"></div>
       <div class="chat-quick" id="chatQuick"></div>
       <div class="chat-foot">
-        <input
-          id="chatInput"
-          placeholder="Ask about your workbench…"
-          autocomplete="off"
-        />
+        <input id="chatInput" placeholder="Ask about your workbench…" autocomplete="off" />
         <button class="send" id="chatSend" aria-label="Send">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
           </svg>
         </button>
       </div>
-      <button
-        class="chat-expand"
-        id="chatExpand"
-        title="Dock below the columns"
-      >
-        <span class="bar"></span
-        ><span class="lbl" id="expandLbl">Dock full width</span>
+      <button class="chat-expand" id="chatExpand" title="Dock below the columns">
+        <span class="bar"></span><span class="lbl" id="expandLbl">Dock full width</span>
       </button>
     </div>
     <button class="launcher" id="launcher" aria-label="Open workbench agent">
       <span class="badge">1</span>
-      <svg
-        class="ic-chat"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-      >
+      <svg class="ic-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path
           d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
         />
       </svg>
-      <svg
-        class="ic-close"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-      >
+      <svg class="ic-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M18 6L6 18M6 6l12 12" />
       </svg>
     </button>
 
     <script>
       /* ---------- resizable panels ---------- */
-      const shell = document.querySelector(".shell"),
-        handle = document.getElementById("handle");
+      const shell = document.querySelector('.shell'),
+        handle = document.getElementById('handle');
       const MIN = 248,
         MAX = 620;
       function setRail(px) {
         const max = Math.min(MAX, shell.clientWidth - 360);
         const w = Math.max(MIN, Math.min(px, max));
-        shell.style.setProperty("--rail-w", w + "px");
+        shell.style.setProperty('--rail-w', w + 'px');
         try {
-          localStorage.setItem("cw-rail", w);
+          localStorage.setItem('cw-rail', w);
         } catch (e) {}
       }
       (() => {
         try {
-          const s = localStorage.getItem("cw-rail");
-          if (s) shell.style.setProperty("--rail-w", s + "px");
+          const s = localStorage.getItem('cw-rail');
+          if (s) shell.style.setProperty('--rail-w', s + 'px');
         } catch (e) {}
       })();
       let drag = false;
       function start(e) {
         drag = true;
-        shell.classList.add("dragging");
-        handle.classList.add("active");
-        if (handle.setPointerCapture && e.pointerId != null)
-          handle.setPointerCapture(e.pointerId);
+        shell.classList.add('dragging');
+        handle.classList.add('active');
+        if (handle.setPointerCapture && e.pointerId != null) handle.setPointerCapture(e.pointerId);
       }
       function move(e) {
         if (!drag) return;
@@ -1708,21 +1602,20 @@
       }
       function end() {
         drag = false;
-        shell.classList.remove("dragging");
-        handle.classList.remove("active");
+        shell.classList.remove('dragging');
+        handle.classList.remove('active');
       }
-      handle.addEventListener("pointerdown", start);
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", end);
-      handle.addEventListener("dblclick", () => setRail(340));
-      handle.addEventListener("keydown", (e) => {
-        const cur =
-          parseInt(getComputedStyle(shell).getPropertyValue("--rail-w")) || 340;
-        if (e.key === "ArrowLeft") {
+      handle.addEventListener('pointerdown', start);
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', end);
+      handle.addEventListener('dblclick', () => setRail(340));
+      handle.addEventListener('keydown', (e) => {
+        const cur = parseInt(getComputedStyle(shell).getPropertyValue('--rail-w')) || 340;
+        if (e.key === 'ArrowLeft') {
           setRail(cur - 24);
           e.preventDefault();
         }
-        if (e.key === "ArrowRight") {
+        if (e.key === 'ArrowRight') {
           setRail(cur + 24);
           e.preventDefault();
         }
@@ -1731,158 +1624,157 @@
       /* ---------- theme ---------- */
       const root = document.documentElement;
       function setTheme(t) {
-        root.setAttribute("data-theme", t);
+        root.setAttribute('data-theme', t);
         document
-          .querySelectorAll("#themeToggle button")
-          .forEach((b) => b.classList.toggle("on", b.dataset.set === t));
+          .querySelectorAll('#themeToggle button')
+          .forEach((b) => b.classList.toggle('on', b.dataset.set === t));
         try {
-          localStorage.setItem("cw-theme", t);
+          localStorage.setItem('cw-theme', t);
         } catch (e) {}
       }
       document
-        .querySelectorAll("#themeToggle button")
+        .querySelectorAll('#themeToggle button')
         .forEach((b) => (b.onclick = () => setTheme(b.dataset.set)));
       setTheme(
         (() => {
           try {
-            return localStorage.getItem("cw-theme");
+            return localStorage.getItem('cw-theme');
           } catch (e) {
             return null;
           }
-        })() || "dark",
+        })() || 'dark'
       );
 
       /* ---------- left rail data ---------- */
       const items = [
         {
-          g: "Pinned",
-          name: "GTM Workbench",
-          type: "workbench",
-          sub: "CL-981 · 6 agents",
-          st: "run",
-          who: "GA",
-          c: "var(--blue)",
+          g: 'Pinned',
+          name: 'GTM Workbench',
+          type: 'workbench',
+          sub: 'CL-981 · 6 agents',
+          st: 'run',
+          who: 'GA',
+          c: 'var(--blue)',
         },
         {
-          g: "Pinned",
-          name: "Revenue & Ad Campaign Analysis",
-          type: "workflow",
-          sub: "CL-857 · runs daily",
-          st: "done",
-          who: "JO",
-          c: "var(--orange)",
+          g: 'Pinned',
+          name: 'Revenue & Ad Campaign Analysis',
+          type: 'workflow',
+          sub: 'CL-857 · runs daily',
+          st: 'done',
+          who: 'JO',
+          c: 'var(--orange)',
         },
         {
-          g: "Pinned",
-          name: "Network Vaults",
-          type: "workbench",
-          sub: "CL-874 · knowledge base",
-          st: "idle",
-          who: "SC",
-          c: "var(--blue)",
+          g: 'Pinned',
+          name: 'Network Vaults',
+          type: 'workbench',
+          sub: 'CL-874 · knowledge base',
+          st: 'idle',
+          who: 'SC',
+          c: 'var(--blue)',
         },
         {
-          g: "Recently active",
-          name: "WhatsApp Rating Agent",
-          type: "agent",
-          sub: "CL-926 · 1.2k msgs",
-          st: "run",
-          who: "GA",
-          c: "var(--green)",
+          g: 'Recently active',
+          name: 'WhatsApp Rating Agent',
+          type: 'agent',
+          sub: 'CL-926 · 1.2k msgs',
+          st: 'run',
+          who: 'GA',
+          c: 'var(--green)',
         },
         {
-          g: "Recently active",
-          name: "BONK Endpoint Deployer",
-          type: "agent",
-          sub: "CL-758 · ABK hosted",
-          st: "done",
-          who: "PA",
-          c: "var(--green)",
+          g: 'Recently active',
+          name: 'BONK Endpoint Deployer',
+          type: 'agent',
+          sub: 'CL-758 · ABK hosted',
+          st: 'done',
+          who: 'PA',
+          c: 'var(--green)',
         },
         {
-          g: "Recently active",
-          name: "Daily Product Usage Chart",
-          type: "workflow",
-          sub: "CL-764 · 09:00 UTC",
-          st: "done",
-          who: "SC",
-          c: "var(--orange)",
+          g: 'Recently active',
+          name: 'Daily Product Usage Chart',
+          type: 'workflow',
+          sub: 'CL-764 · 09:00 UTC',
+          st: 'done',
+          who: 'SC',
+          c: 'var(--orange)',
         },
         {
-          g: "Recently active",
-          name: "Faremeter Release Notes",
-          type: "workflow",
-          sub: "FMTR-453 · v0.22.0",
-          st: "run",
-          who: "GA",
-          c: "var(--orange)",
+          g: 'Recently active',
+          name: 'Faremeter Release Notes',
+          type: 'workflow',
+          sub: 'FMTR-453 · v0.22.0',
+          st: 'run',
+          who: 'GA',
+          c: 'var(--orange)',
         },
         {
-          g: "Recently active",
-          name: "Weekly Link Roundup",
-          type: "agent",
-          sub: "MKT-387 · newsletter",
-          st: "idle",
-          who: "JO",
-          c: "var(--green)",
+          g: 'Recently active',
+          name: 'Weekly Link Roundup',
+          type: 'agent',
+          sub: 'MKT-387 · newsletter',
+          st: 'idle',
+          who: 'JO',
+          c: 'var(--green)',
         },
         {
-          g: "All resources",
-          name: "Brand Review Agent",
-          type: "agent",
-          sub: "QA gate · pre-publish",
-          st: "idle",
-          who: "SC",
-          c: "var(--green)",
+          g: 'All resources',
+          name: 'Brand Review Agent',
+          type: 'agent',
+          sub: 'QA gate · pre-publish',
+          st: 'idle',
+          who: 'SC',
+          c: 'var(--green)',
         },
         {
-          g: "All resources",
-          name: "Content Pipeline",
-          type: "workbench",
-          sub: "tweet → publish",
-          st: "run",
-          who: "GA",
-          c: "var(--blue)",
+          g: 'All resources',
+          name: 'Content Pipeline',
+          type: 'workbench',
+          sub: 'tweet → publish',
+          st: 'run',
+          who: 'GA',
+          c: 'var(--blue)',
         },
         {
-          g: "All resources",
-          name: "Solana Dev Playbook",
-          type: "workflow",
-          sub: "scaffold + test",
-          st: "idle",
-          who: "PA",
-          c: "var(--orange)",
+          g: 'All resources',
+          name: 'Solana Dev Playbook',
+          type: 'workflow',
+          sub: 'scaffold + test',
+          st: 'idle',
+          who: 'PA',
+          c: 'var(--orange)',
         },
         {
-          g: "All resources",
-          name: "Meeting Todo Router",
-          type: "agent",
-          sub: "Granola → Linear",
-          st: "done",
-          who: "JO",
-          c: "var(--green)",
+          g: 'All resources',
+          name: 'Meeting Todo Router',
+          type: 'agent',
+          sub: 'Granola → Linear',
+          st: 'done',
+          who: 'JO',
+          c: 'var(--green)',
         },
       ];
-      const order = ["Pinned", "Recently active", "All resources"];
-      const rail = document.getElementById("railScroll");
-      function renderRail(filter = "all", q = "") {
-        rail.innerHTML = "";
+      const order = ['Pinned', 'Recently active', 'All resources'];
+      const rail = document.getElementById('railScroll');
+      function renderRail(filter = 'all', q = '') {
+        rail.innerHTML = '';
         order.forEach((g) => {
           const inG = items.filter(
             (i) =>
               i.g === g &&
-              (filter === "all" || i.type === filter) &&
-              (i.name.toLowerCase().includes(q) ||
-                i.sub.toLowerCase().includes(q)),
+              (filter === 'all' || i.type === filter) &&
+              (i.name.toLowerCase().includes(q) || i.sub.toLowerCase().includes(q))
           );
           if (!inG.length) return;
-          const h = document.createElement("div");
-          h.className = "group-h";
-          h.innerHTML = g + ' <span class="gc">' + inG.length + "</span>";
+          const h = document.createElement('div');
+          h.className = 'group-h';
+          h.innerHTML = g + ' <span class="gc">' + inG.length + '</span>';
           rail.appendChild(h);
           inG.forEach((i, idx) => {
-            const r = document.createElement("div");
-            r.className = "row" + (g === "Pinned" && idx === 0 ? " sel" : "");
+            const r = document.createElement('div');
+            r.className = 'row' + (g === 'Pinned' && idx === 0 ? ' sel' : '');
             r.innerHTML = `<div class="st ${i.st}"></div>
         <div class="body"><div class="name">${i.name}</div><div class="sub">${i.sub}</div></div>
         <span class="tag ${i.type}"><span class="dot"></span>${i.type}</span>
@@ -1894,231 +1786,227 @@
           rail.innerHTML =
             '<div style="padding:40px 12px;text-align:center;color:var(--text-3);font-size:13px">No matches</div>';
       }
-      let curF = "all";
-      document.getElementById("segs").onclick = (e) => {
-        const b = e.target.closest(".seg");
+      let curF = 'all';
+      document.getElementById('segs').onclick = (e) => {
+        const b = e.target.closest('.seg');
         if (!b) return;
-        document
-          .querySelectorAll(".seg")
-          .forEach((s) => s.classList.remove("active"));
-        b.classList.add("active");
+        document.querySelectorAll('.seg').forEach((s) => s.classList.remove('active'));
+        b.classList.add('active');
         curF = b.dataset.f;
-        renderRail(curF, document.getElementById("search").value.toLowerCase());
+        renderRail(curF, document.getElementById('search').value.toLowerCase());
       };
-      document.getElementById("search").oninput = (e) =>
+      document.getElementById('search').oninput = (e) =>
         renderRail(curF, e.target.value.toLowerCase());
       renderRail();
 
       /* ---------- artifacts (Mondrian masonry) ---------- */
       const TYPECOLOR = {
-        Chart: "var(--orange)",
-        Report: "var(--blue)",
-        Deck: "var(--green)",
-        Document: "var(--charcoal)",
-        Dataset: "var(--blue)",
-        Image: "var(--orange)",
+        Chart: 'var(--orange)',
+        Report: 'var(--blue)',
+        Deck: 'var(--green)',
+        Document: 'var(--charcoal)',
+        Dataset: 'var(--blue)',
+        Image: 'var(--orange)',
       };
       const artifacts = [
         {
-          t: "Q2 Revenue by Product",
-          type: "Chart",
-          span: "s-mid",
-          fill: "fill-orange",
-          viz: "bars",
-          from: "Revenue Analysis",
-          time: "2h ago",
+          t: 'Q2 Revenue by Product',
+          type: 'Chart',
+          span: 's-mid',
+          fill: 'fill-orange',
+          viz: 'bars',
+          from: 'Revenue Analysis',
+          time: '2h ago',
         },
         {
-          t: "GTM Strategy Deck",
-          type: "Deck",
-          span: "s-tall s-w2",
-          fill: "fill-charcoal",
-          viz: "deck",
-          from: "GTM Workbench",
-          time: "4h ago",
+          t: 'GTM Strategy Deck',
+          type: 'Deck',
+          span: 's-tall s-w2',
+          fill: 'fill-charcoal',
+          viz: 'deck',
+          from: 'GTM Workbench',
+          time: '4h ago',
         },
         {
-          t: "Daily Usage Metrics",
-          type: "Dataset",
-          span: "s-sm",
-          fill: "fill-blue",
-          viz: "grid",
-          from: "Usage Chart",
-          time: "today",
+          t: 'Daily Usage Metrics',
+          type: 'Dataset',
+          span: 's-sm',
+          fill: 'fill-blue',
+          viz: 'grid',
+          from: 'Usage Chart',
+          time: 'today',
         },
         {
-          t: "Faremeter v0.22 Notes",
-          type: "Document",
-          span: "s-mid",
-          fill: "fill-cream",
-          viz: "lines",
-          from: "Release Notes",
-          time: "1d ago",
+          t: 'Faremeter v0.22 Notes',
+          type: 'Document',
+          span: 's-mid',
+          fill: 'fill-cream',
+          viz: 'lines',
+          from: 'Release Notes',
+          time: '1d ago',
           dark: 1,
         },
         {
-          t: "Network Map",
-          type: "Image",
-          span: "s-sm",
-          fill: "fill-green",
-          viz: "nodes",
-          from: "Network Vaults",
-          time: "1d ago",
+          t: 'Network Map',
+          type: 'Image',
+          span: 's-sm',
+          fill: 'fill-green',
+          viz: 'nodes',
+          from: 'Network Vaults',
+          time: '1d ago',
         },
         {
-          t: "Ad Spend Breakdown",
-          type: "Chart",
-          span: "s-mid",
-          fill: "fill-blue",
-          viz: "donut",
-          from: "Ad Campaign",
-          time: "2d ago",
+          t: 'Ad Spend Breakdown',
+          type: 'Chart',
+          span: 's-mid',
+          fill: 'fill-blue',
+          viz: 'donut',
+          from: 'Ad Campaign',
+          time: '2d ago',
         },
         {
-          t: "Weekly Link Roundup",
-          type: "Document",
-          span: "s-sm",
-          fill: "fill-paper",
-          viz: "lines",
-          from: "Link Roundup",
-          time: "2d ago",
+          t: 'Weekly Link Roundup',
+          type: 'Document',
+          span: 's-sm',
+          fill: 'fill-paper',
+          viz: 'lines',
+          from: 'Link Roundup',
+          time: '2d ago',
           dark: 1,
         },
         {
-          t: "Sentiment Heatmap",
-          type: "Chart",
-          span: "s-sm",
-          fill: "fill-orange",
-          viz: "heat",
-          from: "WhatsApp Agent",
-          time: "3d ago",
+          t: 'Sentiment Heatmap',
+          type: 'Chart',
+          span: 's-sm',
+          fill: 'fill-orange',
+          viz: 'heat',
+          from: 'WhatsApp Agent',
+          time: '3d ago',
         },
         {
-          t: "Knowledge Base Index",
-          type: "Dataset",
-          span: "s-tall",
-          fill: "fill-charcoal",
-          viz: "grid",
-          from: "Network Vaults",
-          time: "3d ago",
+          t: 'Knowledge Base Index',
+          type: 'Dataset',
+          span: 's-tall',
+          fill: 'fill-charcoal',
+          viz: 'grid',
+          from: 'Network Vaults',
+          time: '3d ago',
         },
         {
-          t: "Brand QA Summary",
-          type: "Report",
-          span: "s-mid",
-          fill: "fill-green",
-          viz: "lines",
-          from: "Brand Review",
-          time: "4d ago",
+          t: 'Brand QA Summary',
+          type: 'Report',
+          span: 's-mid',
+          fill: 'fill-green',
+          viz: 'lines',
+          from: 'Brand Review',
+          time: '4d ago',
         },
         {
-          t: "BONK Deploy Log",
-          type: "Document",
-          span: "s-sm",
-          fill: "fill-cream",
-          viz: "lines",
-          from: "Endpoint Deployer",
-          time: "5d ago",
+          t: 'BONK Deploy Log',
+          type: 'Document',
+          span: 's-sm',
+          fill: 'fill-cream',
+          viz: 'lines',
+          from: 'Endpoint Deployer',
+          time: '5d ago',
           dark: 1,
         },
         {
-          t: "Content Calendar",
-          type: "Deck",
-          span: "s-mid s-w2",
-          fill: "fill-blue",
-          viz: "cal",
-          from: "Content Pipeline",
-          time: "5d ago",
+          t: 'Content Calendar',
+          type: 'Deck',
+          span: 's-mid s-w2',
+          fill: 'fill-blue',
+          viz: 'cal',
+          from: 'Content Pipeline',
+          time: '5d ago',
         },
         {
-          t: "Funnel Conversion",
-          type: "Chart",
-          span: "s-sm",
-          fill: "fill-orange",
-          viz: "bars",
-          from: "Revenue Analysis",
-          time: "6d ago",
+          t: 'Funnel Conversion',
+          type: 'Chart',
+          span: 's-sm',
+          fill: 'fill-orange',
+          viz: 'bars',
+          from: 'Revenue Analysis',
+          time: '6d ago',
         },
         {
-          t: "Engagement Overview",
-          type: "Report",
-          span: "s-mid",
-          fill: "fill-charcoal",
-          viz: "donut",
-          from: "GTM Workbench",
-          time: "1w ago",
+          t: 'Engagement Overview',
+          type: 'Report',
+          span: 's-mid',
+          fill: 'fill-charcoal',
+          viz: 'donut',
+          from: 'GTM Workbench',
+          time: '1w ago',
         },
       ];
       function viz(kind) {
-        const w = "rgba(255,255,255,.9)",
-          w2 = "rgba(255,255,255,.45)";
-        if (kind === "bars")
+        const w = 'rgba(255,255,255,.9)',
+          w2 = 'rgba(255,255,255,.45)';
+        if (kind === 'bars')
           return `<svg class="viz" viewBox="0 0 120 80" preserveAspectRatio="none"><rect x="14" y="44" width="14" height="30" fill="${w2}"/><rect x="36" y="30" width="14" height="44" fill="${w}"/><rect x="58" y="38" width="14" height="36" fill="${w2}"/><rect x="80" y="18" width="14" height="56" fill="${w}"/></svg>`;
-        if (kind === "donut")
+        if (kind === 'donut')
           return `<svg class="viz" viewBox="0 0 120 80"><circle cx="60" cy="40" r="24" fill="none" stroke="${w2}" stroke-width="11"/><circle cx="60" cy="40" r="24" fill="none" stroke="${w}" stroke-width="11" stroke-dasharray="100 150" transform="rotate(-90 60 40)"/></svg>`;
-        if (kind === "grid")
-          return `<svg class="viz" viewBox="0 0 120 80">${[...Array(15)].map((_, i) => `<rect x="${12 + (i % 5) * 20}" y="${14 + Math.floor(i / 5) * 20}" width="15" height="15" rx="2" fill="${i % 3 ? w2 : w}"/>`).join("")}</svg>`;
-        if (kind === "lines")
-          return `<svg class="viz" viewBox="0 0 120 80">${[...Array(5)].map((_, i) => `<rect x="16" y="${16 + i * 11}" width="${i % 2 ? 60 : 88}" height="5" rx="2.5" fill="${i ? w2 : w}"/>`).join("")}</svg>`;
-        if (kind === "nodes")
+        if (kind === 'grid')
+          return `<svg class="viz" viewBox="0 0 120 80">${[...Array(15)].map((_, i) => `<rect x="${12 + (i % 5) * 20}" y="${14 + Math.floor(i / 5) * 20}" width="15" height="15" rx="2" fill="${i % 3 ? w2 : w}"/>`).join('')}</svg>`;
+        if (kind === 'lines')
+          return `<svg class="viz" viewBox="0 0 120 80">${[...Array(5)].map((_, i) => `<rect x="16" y="${16 + i * 11}" width="${i % 2 ? 60 : 88}" height="5" rx="2.5" fill="${i ? w2 : w}"/>`).join('')}</svg>`;
+        if (kind === 'nodes')
           return `<svg class="viz" viewBox="0 0 120 80"><line x1="30" y1="26" x2="70" y2="50" stroke="${w2}" stroke-width="2"/><line x1="70" y1="50" x2="94" y2="24" stroke="${w2}" stroke-width="2"/><line x1="30" y1="26" x2="40" y2="60" stroke="${w2}" stroke-width="2"/><circle cx="30" cy="26" r="7" fill="${w}"/><circle cx="70" cy="50" r="9" fill="${w}"/><circle cx="94" cy="24" r="6" fill="${w2}"/><circle cx="40" cy="60" r="6" fill="${w2}"/></svg>`;
-        if (kind === "heat")
-          return `<svg class="viz" viewBox="0 0 120 80">${[...Array(24)].map((_, i) => `<rect x="${14 + (i % 6) * 16}" y="${16 + Math.floor(i / 6) * 13}" width="13" height="10" rx="2" fill="rgba(255,255,255,${(0.2 + ((i * 37) % 80) / 100).toFixed(2)})"/>`).join("")}</svg>`;
-        if (kind === "deck")
+        if (kind === 'heat')
+          return `<svg class="viz" viewBox="0 0 120 80">${[...Array(24)].map((_, i) => `<rect x="${14 + (i % 6) * 16}" y="${16 + Math.floor(i / 6) * 13}" width="13" height="10" rx="2" fill="rgba(255,255,255,${(0.2 + ((i * 37) % 80) / 100).toFixed(2)})"/>`).join('')}</svg>`;
+        if (kind === 'deck')
           return `<svg class="viz" viewBox="0 0 120 120"><rect x="22" y="20" width="76" height="46" rx="4" fill="${w}"/><rect x="30" y="30" width="40" height="6" rx="3" fill="rgba(43,38,39,.4)"/><rect x="30" y="42" width="56" height="4" rx="2" fill="rgba(43,38,39,.25)"/><rect x="22" y="74" width="36" height="26" rx="4" fill="${w2}"/><rect x="62" y="74" width="36" height="26" rx="4" fill="${w2}"/></svg>`;
-        if (kind === "cal")
-          return `<svg class="viz" viewBox="0 0 120 80">${[...Array(14)].map((_, i) => `<rect x="${12 + (i % 7) * 15}" y="${20 + Math.floor(i / 7) * 22}" width="12" height="18" rx="2" fill="${[2, 5, 9].includes(i) ? w : w2}"/>`).join("")}</svg>`;
-        return "";
+        if (kind === 'cal')
+          return `<svg class="viz" viewBox="0 0 120 80">${[...Array(14)].map((_, i) => `<rect x="${12 + (i % 7) * 15}" y="${20 + Math.floor(i / 7) * 22}" width="12" height="18" rx="2" fill="${[2, 5, 9].includes(i) ? w : w2}"/>`).join('')}</svg>`;
+        return '';
       }
-      const mon = document.getElementById("mondrian");
+      const mon = document.getElementById('mondrian');
       artifacts.forEach((a, i) => {
-        const c = document.createElement("div");
-        c.className = "card " + a.span;
+        const c = document.createElement('div');
+        c.className = 'card ' + a.span;
         c.innerHTML = `<span class="atag">${a.type}</span>
     <button class="open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
-    <div class="thumb ${a.fill}">${viz(a.viz)}<span class="bigletter">${a.type[0]}${(i + 1).toString().padStart(2, "0")}</span></div>
+    <div class="thumb ${a.fill}">${viz(a.viz)}<span class="bigletter">${a.type[0]}${(i + 1).toString().padStart(2, '0')}</span></div>
     <div class="meta"><div class="t">${a.t}</div><div class="s"><span>${a.from}</span>·<span>${a.time}</span></div></div>`;
         c.onclick = () => openModal(a, i);
         mon.appendChild(c);
       });
-      document.getElementById("artCount").textContent =
-        artifacts.length + " items";
+      document.getElementById('artCount').textContent = artifacts.length + ' items';
 
       /* ---------- modal ---------- */
-      const scrim = document.getElementById("scrim");
+      const scrim = document.getElementById('scrim');
       function openModal(a, i) {
-        document.getElementById("mTitle").textContent = a.t;
-        document.getElementById("mSub").textContent =
-          a.type + " · from " + a.from + " · " + a.time;
-        const ic = document.getElementById("mIcon");
+        document.getElementById('mTitle').textContent = a.t;
+        document.getElementById('mSub').textContent = a.type + ' · from ' + a.from + ' · ' + a.time;
+        const ic = document.getElementById('mIcon');
         ic.style.background = TYPECOLOR[a.type];
-        ic.className = "ic";
+        ic.className = 'ic';
         ic.innerHTML =
           '<span style="color:#fff;font-weight:800;font-family:var(--font-mono);font-size:13px">' +
           a.type[0] +
-          (i + 1).toString().padStart(2, "0") +
-          "</span>";
-        document.getElementById("mFrame").innerHTML = previewBody(a);
-        scrim.classList.add("show");
-        document.body.style.overflow = "hidden";
+          (i + 1).toString().padStart(2, '0') +
+          '</span>';
+        document.getElementById('mFrame').innerHTML = previewBody(a);
+        scrim.classList.add('show');
+        document.body.style.overflow = 'hidden';
       }
       function closeModal() {
-        scrim.classList.remove("show");
-        document.body.style.overflow = "";
+        scrim.classList.remove('show');
+        document.body.style.overflow = '';
       }
-      document.getElementById("mClose").onclick = closeModal;
-      document.getElementById("mClose2").onclick = closeModal;
+      document.getElementById('mClose').onclick = closeModal;
+      document.getElementById('mClose2').onclick = closeModal;
       scrim.onclick = (e) => {
         if (e.target === scrim) closeModal();
       };
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") closeModal();
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeModal();
       });
       function previewBody(a) {
         const big = `<div class="thumb ${a.fill}" style="height:230px;border-radius:0 0 0 0">${viz(a.viz)}</div>`;
         return `<div class="fade-up">${big}<div class="pv-pad">
     <h3>${a.t}</h3>
-    <p>Generated by the <strong>${a.from}</strong> ${a.from.includes("Agent") ? "agent" : "workflow"}. This is a sample preview rendered inside the artifact modal — in production it embeds the live ${a.type.toLowerCase()} with full interactivity.</p>
+    <p>Generated by the <strong>${a.from}</strong> ${a.from.includes('Agent') ? 'agent' : 'workflow'}. This is a sample preview rendered inside the artifact modal — in production it embeds the live ${a.type.toLowerCase()} with full interactivity.</p>
     <div class="pv-stats">
       <div class="pv-stat"><div class="v">${a.type}</div><div class="l">Format</div></div>
       <div class="pv-stat"><div class="v">${a.time}</div><div class="l">Updated</div></div>
@@ -2129,21 +2017,21 @@
       }
 
       /* ---------- Intercom-style agent ---------- */
-      const launcher = document.getElementById("launcher"),
-        chatwin = document.getElementById("chatwin");
-      const chatBody = document.getElementById("chatBody"),
-        chatInput = document.getElementById("chatInput");
+      const launcher = document.getElementById('launcher'),
+        chatwin = document.getElementById('chatwin');
+      const chatBody = document.getElementById('chatBody'),
+        chatInput = document.getElementById('chatInput');
       let chatOpen = false;
 
       /* restore saved launcher position */
       (() => {
         try {
-          const p = JSON.parse(localStorage.getItem("cw-launcher") || "null");
+          const p = JSON.parse(localStorage.getItem('cw-launcher') || 'null');
           if (p) {
-            launcher.style.left = p.x + "px";
-            launcher.style.top = p.y + "px";
-            launcher.style.right = "auto";
-            launcher.style.bottom = "auto";
+            launcher.style.left = p.x + 'px';
+            launcher.style.top = p.y + 'px';
+            launcher.style.right = 'auto';
+            launcher.style.bottom = 'auto';
           }
         } catch (e) {}
       })();
@@ -2155,7 +2043,7 @@
         sy,
         ox,
         oy;
-      launcher.addEventListener("pointerdown", (e) => {
+      launcher.addEventListener('pointerdown', (e) => {
         down = true;
         moved = false;
         launcher.setPointerCapture(e.pointerId);
@@ -2165,36 +2053,33 @@
         ox = r.left;
         oy = r.top;
       });
-      launcher.addEventListener("pointermove", (e) => {
+      launcher.addEventListener('pointermove', (e) => {
         if (!down) return;
         const dx = e.clientX - sx,
           dy = e.clientY - sy;
         if (!moved && Math.hypot(dx, dy) > 6) {
           moved = true;
-          launcher.classList.add("dragging");
+          launcher.classList.add('dragging');
         }
         if (moved) {
           const sz = launcher.offsetWidth,
             m = 10;
           const x = Math.max(m, Math.min(ox + dx, innerWidth - sz - m));
           const y = Math.max(m, Math.min(oy + dy, innerHeight - sz - m));
-          launcher.style.left = x + "px";
-          launcher.style.top = y + "px";
-          launcher.style.right = "auto";
-          launcher.style.bottom = "auto";
+          launcher.style.left = x + 'px';
+          launcher.style.top = y + 'px';
+          launcher.style.right = 'auto';
+          launcher.style.bottom = 'auto';
           if (chatOpen && !docked) placePanel();
         }
       });
-      launcher.addEventListener("pointerup", (e) => {
+      launcher.addEventListener('pointerup', (e) => {
         down = false;
-        launcher.classList.remove("dragging");
+        launcher.classList.remove('dragging');
         if (moved) {
           const r = launcher.getBoundingClientRect();
           try {
-            localStorage.setItem(
-              "cw-launcher",
-              JSON.stringify({ x: r.left, y: r.top }),
-            );
+            localStorage.setItem('cw-launcher', JSON.stringify({ x: r.left, y: r.top }));
           } catch (e) {}
         } else toggleChat();
       });
@@ -2208,17 +2093,16 @@
         if (left < m) left = Math.min(r.left, innerWidth - w - m);
         left = Math.max(m, left);
         let top = r.top - h - 14; /* prefer above the launcher */
-        let origin = "bottom";
+        let origin = 'bottom';
         if (top < m) {
           top = r.bottom + 14;
-          origin = "top";
+          origin = 'top';
         } /* else below */
         top = Math.max(m, Math.min(top, innerHeight - h - m));
-        const originX =
-          r.left + r.width / 2 > innerWidth / 2 ? "right" : "left";
-        chatwin.style.left = left + "px";
-        chatwin.style.top = top + "px";
-        chatwin.style.transformOrigin = origin + " " + originX;
+        const originX = r.left + r.width / 2 > innerWidth / 2 ? 'right' : 'left';
+        chatwin.style.left = left + 'px';
+        chatwin.style.top = top + 'px';
+        chatwin.style.transformOrigin = origin + ' ' + originX;
       }
       let docked = false;
       function toggleChat() {
@@ -2226,93 +2110,86 @@
       }
       function openChat() {
         chatOpen = true;
-        chatwin.classList.add("show");
-        launcher.classList.add("open");
+        chatwin.classList.add('show');
+        launcher.classList.add('open');
         if (docked) applyDock(true);
         else placePanel();
         if (!chatBody.dataset.greeted) {
-          chatBody.dataset.greeted = "1";
+          chatBody.dataset.greeted = '1';
           agentSay(
-            "Hi Pontus 👋 I'm Ada, your workbench agent. I can help you find workflows, summarize artifacts, or kick off a run. What are you working on?",
+            "Hi Pontus 👋 I'm Ada, your workbench agent. I can help you find workflows, summarize artifacts, or kick off a run. What are you working on?"
           );
-          showQuick([
-            "What can you do?",
-            "Summarize my artifacts",
-            "How do I resize panels?",
-          ]);
+          showQuick(['What can you do?', 'Summarize my artifacts', 'How do I resize panels?']);
         }
         setTimeout(() => chatInput.focus(), 320);
       }
       function closeChat() {
         chatOpen = false;
-        chatwin.classList.remove("show");
-        launcher.classList.remove("open");
-        document.body.classList.remove("docked");
+        chatwin.classList.remove('show');
+        launcher.classList.remove('open');
+        document.body.classList.remove('docked');
       }
       function applyDock(on) {
         docked = on;
-        document.getElementById("expandLbl").textContent = on
-          ? "Pop out"
-          : "Dock full width";
-        document.getElementById("chatExpand").title = on
-          ? "Pop out as a floating panel"
-          : "Dock below the columns";
+        document.getElementById('expandLbl').textContent = on ? 'Pop out' : 'Dock full width';
+        document.getElementById('chatExpand').title = on
+          ? 'Pop out as a floating panel'
+          : 'Dock below the columns';
         if (on) {
           chatwin.style.left =
             chatwin.style.top =
             chatwin.style.transformOrigin =
-              ""; /* let CSS .docked drive position */
-          chatwin.classList.add("docked");
-          document.body.classList.add("docked");
+              ''; /* let CSS .docked drive position */
+          chatwin.classList.add('docked');
+          document.body.classList.add('docked');
         } else {
-          chatwin.classList.remove("docked");
-          document.body.classList.remove("docked");
+          chatwin.classList.remove('docked');
+          document.body.classList.remove('docked');
           placePanel();
         }
       }
       function toggleDock() {
         applyDock(!docked);
       }
-      document.getElementById("chatExpand").onclick = toggleDock;
-      document.getElementById("chatX").onclick = closeChat;
-      addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && chatOpen) closeChat();
+      document.getElementById('chatExpand').onclick = toggleDock;
+      document.getElementById('chatX').onclick = closeChat;
+      addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && chatOpen) closeChat();
       });
-      addEventListener("resize", () => {
+      addEventListener('resize', () => {
         if (chatOpen && !docked) placePanel();
       });
 
       /* messaging */
       function addMsg(role, html) {
-        const m = document.createElement("div");
-        m.className = "msg " + role;
-        m.innerHTML = `<div class="mav">${role === "user" ? "PA" : "A"}</div><div class="b">${html}</div>`;
+        const m = document.createElement('div');
+        m.className = 'msg ' + role;
+        m.innerHTML = `<div class="mav">${role === 'user' ? 'PA' : 'A'}</div><div class="b">${html}</div>`;
         chatBody.appendChild(m);
         chatBody.scrollTop = chatBody.scrollHeight;
         return m;
       }
       function agentSay(t) {
-        addMsg("agent", t);
+        addMsg('agent', t);
       }
       function showQuick(arr) {
-        const q = document.getElementById("chatQuick");
-        q.innerHTML = "";
+        const q = document.getElementById('chatQuick');
+        q.innerHTML = '';
         arr.forEach((t) => {
-          const b = document.createElement("button");
-          b.className = "qk";
+          const b = document.createElement('button');
+          b.className = 'qk';
           b.textContent = t;
           b.onclick = () => {
-            q.innerHTML = "";
+            q.innerHTML = '';
             sendUser(t);
           };
           q.appendChild(b);
         });
       }
       function typing() {
-        const m = document.createElement("div");
-        m.className = "msg agent typing";
-        m.innerHTML =
-          '<div class="mav">A</div><div class="b"><i></i><i></i><i></i></div>';
+        const m = document.createElement('div');
+        m.className = 'msg agent typing';
+        m.innerHTML = '<div class="mav">A</div><div class="b"><i></i><i></i><i></i></div>';
         chatBody.appendChild(m);
         chatBody.scrollTop = chatBody.scrollHeight;
         return m;
@@ -2320,35 +2197,35 @@
 
       const KB = [
         {
-          k: ["can you do", "help", "what do you", "capab"],
-          r: "I work across everything in this workbench: I can search your <b>workflows, workbenches and agents</b> on the left, open and summarize any <b>artifact</b> on the right, re-run a workflow, or draft a new one. Try asking me to summarize your artifacts.",
+          k: ['can you do', 'help', 'what do you', 'capab'],
+          r: 'I work across everything in this workbench: I can search your <b>workflows, workbenches and agents</b> on the left, open and summarize any <b>artifact</b> on the right, re-run a workflow, or draft a new one. Try asking me to summarize your artifacts.',
         },
         {
-          k: ["summar", "artifact", "artefact"],
+          k: ['summar', 'artifact', 'artefact'],
           r: "You've got <b>14 artifacts</b>. Highlights: <b>Q2 Revenue by Product</b> (chart, 2h ago), the <b>GTM Strategy Deck</b> (4h ago), and <b>Daily Usage Metrics</b> refreshed today. 6 came from the Revenue Analysis workflow. Want me to open one?",
         },
         {
-          k: ["resize", "drag", "panel", "column", "wider", "size"],
-          r: "Grab the orange handle between the two panels and drag — the library and artifact grid resize live, and the tiles reflow on their own. Double-click the handle to reset, or focus it and use ← →.",
+          k: ['resize', 'drag', 'panel', 'column', 'wider', 'size'],
+          r: 'Grab the orange handle between the two panels and drag — the library and artifact grid resize live, and the tiles reflow on their own. Double-click the handle to reset, or focus it and use ← →.',
         },
         {
-          k: ["workflow", "run", "revenue", "campaign"],
-          r: "Your active workflows: <b>Revenue & Ad Campaign Analysis</b> (runs daily), <b>Daily Product Usage Chart</b> (09:00 UTC), and <b>Faremeter Release Notes</b>. Want me to trigger a run or show the latest output?",
+          k: ['workflow', 'run', 'revenue', 'campaign'],
+          r: 'Your active workflows: <b>Revenue & Ad Campaign Analysis</b> (runs daily), <b>Daily Product Usage Chart</b> (09:00 UTC), and <b>Faremeter Release Notes</b>. Want me to trigger a run or show the latest output?',
         },
         {
-          k: ["agent", "whatsapp", "bonk"],
-          r: "5 agents are registered. The <b>WhatsApp Rating Agent</b> is live (1.2k msgs), and the <b>BONK Endpoint Deployer</b> just finished. I can show logs or pause any of them.",
+          k: ['agent', 'whatsapp', 'bonk'],
+          r: '5 agents are registered. The <b>WhatsApp Rating Agent</b> is live (1.2k msgs), and the <b>BONK Endpoint Deployer</b> just finished. I can show logs or pause any of them.',
         },
         {
-          k: ["theme", "dark", "light"],
+          k: ['theme', 'dark', 'light'],
           r: "Use the sun/moon toggle up top to switch themes — it remembers your choice. Everything's built on the Corbits palette either way.",
         },
         {
-          k: ["hi", "hey", "hello", "yo"],
-          r: "Hey! What can I get started for you — a summary, a search, or a new run?",
+          k: ['hi', 'hey', 'hello', 'yo'],
+          r: 'Hey! What can I get started for you — a summary, a search, or a new run?',
         },
         {
-          k: ["thank", "thanks", "cheers"],
+          k: ['thank', 'thanks', 'cheers'],
           r: "Anytime. I'm one click away whenever you need me. 🧡",
         },
       ];
@@ -2362,22 +2239,21 @@
       function sendUser(text) {
         text = text.trim();
         if (!text) return;
-        document.getElementById("chatQuick").innerHTML = "";
-        addMsg("user", text.replace(/</g, "&lt;"));
-        chatInput.value = "";
+        document.getElementById('chatQuick').innerHTML = '';
+        addMsg('user', text.replace(/</g, '&lt;'));
+        chatInput.value = '';
         const ty = typing();
         setTimeout(
           () => {
             ty.remove();
             agentSay(reply(text));
           },
-          700 + Math.random() * 600,
+          700 + Math.random() * 600
         );
       }
-      document.getElementById("chatSend").onclick = () =>
-        sendUser(chatInput.value);
-      chatInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") sendUser(chatInput.value);
+      document.getElementById('chatSend').onclick = () => sendUser(chatInput.value);
+      chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendUser(chatInput.value);
       });
     </script>
   </body>

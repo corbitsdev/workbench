@@ -86,28 +86,31 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
 
   return (
     <motion.div
-      className="grid grid-cols-2 gap-2"
+      className="grid grid-cols-1 sm:grid-cols-2 gap-3"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
       {calls.map((call) => (
         <motion.button
           key={call.id}
+          type="button"
           onClick={() => handleSelect(call.id)}
           disabled={isLoading || selectedId !== null}
-          className={`p-3 text-left border rounded-lg transition-colors ${
+          className={`p-4 text-left text-sm border rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-gray-900 ${
             selectedId === call.id
-              ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-500'
-              : 'border-gray-200 hover:bg-gray-50'
-          } disabled:opacity-50 disabled:cursor-not-allowed`}
+              ? 'border-gray-300 bg-gray-50 ring-2 ring-gray-900'
+              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+          } disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed disabled:border-gray-200`}
           whileTap={{ scale: 0.98 }}
+          aria-pressed={selectedId === call.id}
+          aria-label={`Select call: ${call.title}`}
         >
-          <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">
-            {call.title}
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="font-medium text-gray-900 leading-snug line-clamp-2">{call.title}</p>
+          <p className="text-xs text-gray-600 mt-1">
             {new Date(call.created_at).toLocaleDateString()}
-            {call.participants && call.participants.length > 0 && ` • ${call.participants.length}`}
+            {call.participants &&
+              call.participants.length > 0 &&
+              ` • ${call.participants.length} participant${call.participants.length !== 1 ? 's' : ''}`}
           </p>
         </motion.button>
       ))}

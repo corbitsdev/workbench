@@ -18,19 +18,21 @@ export default function FeedbackSection({
   onGenerate,
 }: FeedbackSectionProps) {
   return (
-    <div className="p-6 border-t border-gray-200 bg-white space-y-4">
+    <div className="space-y-4 border-t border-gray-200 bg-white px-4 py-3 md:p-6">
       <textarea
         value={feedback}
         onChange={(e) => onFeedbackChange(e.target.value)}
         placeholder="Add context, corrections, or a stronger angle..."
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-20"
+        className="w-full h-20 px-4 py-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-gray-900 focus:border-gray-900 resize-none transition-colors disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+        disabled={isLoading}
+        aria-label="Feedback for pain points"
       />
 
       {!analyzeCompleted && (
         <button
           onClick={onAnalyze}
           disabled={isLoading}
-          className="w-full px-4 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="btn-primary w-full"
         >
           {isLoading
             ? 'Analyzing...'
@@ -44,13 +46,13 @@ export default function FeedbackSection({
         <button
           onClick={onGenerate}
           disabled={isLoading || selectedCount === 0}
-          className="w-full px-4 py-2 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="btn-primary w-full"
         >
           {isLoading ? 'Generating...' : 'Generate collateral'}
         </button>
       )}
 
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-600">
         {selectedCount} pain point{selectedCount !== 1 ? 's' : ''} selected
       </p>
     </div>
