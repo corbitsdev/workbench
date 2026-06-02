@@ -194,65 +194,71 @@ export default function Dashboard() {
                 </button>
               </div>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Transcript
-                    </th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Pain Points
-                    </th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Date
-                    </th>
-                    <th className="px-6 py-3" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {workflows.map((wf, i) => (
-                    <motion.tr
-                      key={wf.id}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.04 }}
-                      className="border-b border-gray-50 hover:bg-gray-50 transition-colors"
-                    >
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-gray-900 truncate max-w-xs">
-                          {wf.companyName ??
-                            (wf.firstPainPoint
-                              ? wf.firstPainPoint.split(' ').slice(0, 8).join(' ') + '...'
-                              : wf.transcriptPreview
-                                ? wf.transcriptPreview + '...'
-                                : 'Untitled session')}
-                        </div>
-                        <div className="text-xs text-gray-400 mt-0.5 font-mono">
-                          {wf.id.slice(0, 8)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-gray-600">
-                        {wf.painPointCount > 0 ? `${wf.painPointCount} extracted` : '—'}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">{formatDate(wf.createdAt)}</td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => {
-                            const stage =
-                              wf.status === 'analyzing' || wf.status === 'reviewing'
-                                ? 'analyze'
-                                : 'export';
-                            navigate(`/workflows/${wf.id}/${stage}`);
-                          }}
-                          className="text-xs font-medium text-gray-900 hover:underline cursor-pointer"
-                        >
-                          {wf.status === 'done' ? 'View' : 'Resume'}
-                        </button>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      <th className="text-left px-4 py-3 md:px-6 md:py-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        Transcript
+                      </th>
+                      {/* Pain Points: only show at md+ (more complex, less critical on small screens) */}
+                      <th className="hidden md:table-cell text-left px-4 py-3 md:px-6 md:py-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        Pain Points
+                      </th>
+                      {/* Date: show from sm+ (secondary but useful info) */}
+                      <th className="hidden sm:table-cell text-left px-4 py-3 md:px-6 md:py-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        Date
+                      </th>
+                      <th className="px-4 py-3 md:px-6 md:py-4" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workflows.map((wf, i) => (
+                      <motion.tr
+                        key={wf.id}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.04 }}
+                        className="border-b border-gray-50 hover:bg-gray-50 transition-colors"
+                      >
+                        <td className="px-4 py-3 md:px-6 md:py-4">
+                          <div className="font-medium text-gray-900 truncate max-w-xs sm:max-w-sm md:max-w-md">
+                            {wf.companyName ??
+                              (wf.firstPainPoint
+                                ? wf.firstPainPoint.split(' ').slice(0, 8).join(' ') + '...'
+                                : wf.transcriptPreview
+                                  ? wf.transcriptPreview + '...'
+                                  : 'Untitled session')}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-0.5 font-mono">
+                            {wf.id.slice(0, 8)}
+                          </div>
+                        </td>
+                        <td className="hidden md:table-cell px-4 py-3 md:px-6 md:py-4 text-gray-600">
+                          {wf.painPointCount > 0 ? `${wf.painPointCount} extracted` : '—'}
+                        </td>
+                        <td className="hidden sm:table-cell px-4 py-3 md:px-6 md:py-4 text-gray-500 text-xs md:text-sm">
+                          {formatDate(wf.createdAt)}
+                        </td>
+                        <td className="px-4 py-3 md:px-6 md:py-4 text-right">
+                          <button
+                            onClick={() => {
+                              const stage =
+                                wf.status === 'analyzing' || wf.status === 'reviewing'
+                                  ? 'analyze'
+                                  : 'export';
+                              navigate(`/workflows/${wf.id}/${stage}`);
+                            }}
+                            className="text-xs font-medium text-gray-900 hover:underline focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-gray-900 rounded px-2 py-1 transition-colors cursor-pointer"
+                          >
+                            {wf.status === 'done' ? 'View' : 'Resume'}
+                          </button>
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
