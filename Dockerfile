@@ -4,10 +4,10 @@ WORKDIR /app
 
 # Pin interchange to a specific commit so this layer caches across deploys when interchange hasn't changed.
 # Update both values together when pulling in new interchange changes.
-# To get a new SHA256: curl -fsSL https://github.com/faremeter/interchange/archive/<commit>.tar.gz | sha256sum
+# To get a new SHA256: wget -qO- https://github.com/faremeter/interchange/archive/<commit>.tar.gz | sha256sum
 ARG INTERCHANGE_COMMIT=6d61cd63eb8a966ab8d769e9038eedd89175f5bb
 ARG INTERCHANGE_SHA256=bd1515764796e3331b36903e801039c0a6c836e673200399b219e10c8cd863e3
-RUN curl -fsSL "https://github.com/faremeter/interchange/archive/${INTERCHANGE_COMMIT}.tar.gz" -o interchange.tar.gz \
+RUN wget -qO interchange.tar.gz "https://github.com/faremeter/interchange/archive/${INTERCHANGE_COMMIT}.tar.gz" \
     && echo "${INTERCHANGE_SHA256}  interchange.tar.gz" | sha256sum -c \
     && tar -xz < interchange.tar.gz \
     && mv "interchange-${INTERCHANGE_COMMIT}" interchange \
