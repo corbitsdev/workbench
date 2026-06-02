@@ -63,16 +63,17 @@ export default function StepSidebar({ steps, sourceLabel, selectionCount }: Step
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        <div className="p-6 space-y-4">
+        <div className="p-4 md:p-6 space-y-4">
           {steps.map((step) => (
             <motion.div
               key={step.number}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: step.number * 0.05 }}
+              className="overflow-hidden"
             >
               <div
-                className={`rounded-lg p-3 transition-all ${
+                className={`rounded-lg p-3 transition-all overflow-hidden ${
                   step.status === 'current'
                     ? 'bg-white shadow-sm border border-gray-200'
                     : step.status === 'completed'
@@ -80,7 +81,7 @@ export default function StepSidebar({ steps, sourceLabel, selectionCount }: Step
                       : 'bg-transparent opacity-50'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 min-w-0">
                   <div
                     className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0 ${
                       step.status === 'completed'
@@ -95,9 +96,10 @@ export default function StepSidebar({ steps, sourceLabel, selectionCount }: Step
                   <AnimatePresence>
                     {!collapsed && (
                       <motion.span
-                        className={`text-sm font-medium whitespace-nowrap ${
+                        className={`text-sm font-medium truncate min-w-0 ${
                           step.status === 'current' ? 'text-gray-900' : 'text-gray-600'
                         }`}
+                        title={step.label}
                         initial={{ opacity: 0, width: 0 }}
                         animate={{ opacity: 1, width: 'auto' }}
                         exit={{ opacity: 0, width: 0 }}
