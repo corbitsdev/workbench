@@ -1,5 +1,7 @@
 @import 'tailwindcss';
 
+button { cursor: pointer; }
+
 :root {
   /* Color palette */
   --orange: #e98428;
