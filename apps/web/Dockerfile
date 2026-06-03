@@ -20,4 +20,5 @@ RUN find /app/apps/web/dist -type f | head -20 || echo "NO FILES IN DIST"
 FROM caddy:2.11.3-alpine AS runtime
 
 COPY --from=builder /app/apps/web/dist /usr/share/caddy
+RUN ls -la /usr/share/caddy && find /usr/share/caddy -type f
 COPY apps/web/Caddyfile /etc/caddy/Caddyfile
