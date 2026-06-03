@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.13
+FROM oven/bun:1.3.13 AS builder
 WORKDIR /app
 
 COPY . .
@@ -14,8 +14,8 @@ RUN bun install
 WORKDIR /app/apps/web
 RUN bun run build
 
-ENV NODE_ENV=production
-ENV PORT=3000
-EXPOSE 3000
-
-CMD ["bun", "server.ts"]
+FROM caddy:2.9-alpine
+COPY --from=builder /app/apps/web/dist /usr/share/caddy
+COPY apps/web/Caddyfile /etc/caddy/Caddyfile
+EXPOSE 80
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
