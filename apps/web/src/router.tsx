@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, Outlet } from 'react-router';
+import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router';
 import { useEffect, useState } from 'react';
 import { useAuth } from './components/AuthProvider';
 import { getMyPrincipals } from './lib/hub-api';
@@ -46,7 +46,8 @@ function ProtectedLayout() {
       </div>
     );
   }
-  if (workspaceStatus === 'absent') return <Navigate to="/onboarding" replace />;
+  const location = useLocation();
+  if (workspaceStatus === 'absent' && location.pathname !== '/onboarding') return <Navigate to="/onboarding" replace />;
   return <Outlet />;
 }
 
