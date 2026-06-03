@@ -3,6 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Set the theme before first paint to avoid a flash of the wrong theme.
+         Must stay in sync with use-theme.ts (key "cw-theme", default "dark"). -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('cw-theme');
+          document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
     <title>GTM Workbench</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
