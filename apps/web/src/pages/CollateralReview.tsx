@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import CollateralBody from '../components/CollateralBody';
+import HorizontalStepper from '../components/HorizontalStepper';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
 import type { CollateralType } from '@workbench/shared';
@@ -66,10 +67,9 @@ export default function CollateralReview() {
     ? buildSteps(workflow.currentStep, STEP_LABELS)
     : buildSteps('generate', STEP_LABELS);
 
-  const sourceLabel = workflow?.steps?.intake?.transcriptId ? 'Pasted transcript' : undefined;
-
   return (
-    <div className="flex h-screen bg-page">
+    <div className="flex flex-col h-screen bg-page">
+      <HorizontalStepper steps={steps} />
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel: Context */}
         <motion.div
