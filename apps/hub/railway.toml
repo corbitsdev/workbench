@@ -3,7 +3,6 @@ builder = "dockerfile"
 # Path is relative to the repo root (the build context), not to this file.
 dockerfilePath = "apps/hub/Dockerfile"
 watchPatterns = ["apps/hub/**", "packages/**", "scripts/**", "package.json", "bun.lock"]
-args = { RAILWAY_SERVICE_ID = "$RAILWAY_SERVICE_ID" }
 
 [deploy]
 preDeployCommand = "bun run scripts/db-setup.ts"
