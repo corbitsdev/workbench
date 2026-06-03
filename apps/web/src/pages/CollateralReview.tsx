@@ -143,11 +143,11 @@ export default function CollateralReview() {
                   transition={{ duration: 0.3 }}
                   className="space-y-4"
                 >
-                  <div className="bg-orange-soft border border-orange rounded-lg px-4 py-3 flex items-start gap-2">
-                    <div className="text-xs font-semibold text-orange-deep uppercase tracking-wide mt-0.5 shrink-0">
+                  <div className="bg-orange-deep rounded-lg px-4 py-3 flex items-start gap-2">
+                    <div className="text-xs font-semibold text-white/80 uppercase tracking-wide mt-0.5 shrink-0">
                       Pain point
                     </div>
-                    <div className="text-sm text-text">{currentPainPoint?.context}</div>
+                    <div className="text-sm text-white">{currentPainPoint?.context}</div>
                   </div>
 
                   <CollateralBody body={current.body} type={current.type as CollateralType} />
