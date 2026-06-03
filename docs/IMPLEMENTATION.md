@@ -171,6 +171,55 @@ bun run test      # bun test
 
 Or via `make all` if Makefile is available.
 
+## Railway Deployment
+
+The workbench deploys as two separate Railway services from the same repo, both watching the `staging` branch (or `main` for production).
+
+### Services
+
+| Service | Config file | Dockerfile | Purpose |
+| ------- | ----------- | ---------- | ------- |
+| API + Web | `railway.toml` (repo root) | `Dockerfile` | Hono API, static web assets, DB migrations |
+| Sidecar | `apps/sidecar/railway.toml` | `Dockerfile.sidecar` | Interchange sidecar, agent lifecycle |
+
+### Dockerfiles
+
+Both Dockerfiles follow the same pattern:
+
+1. **Builder stage** (`oven/bun:1.3-alpine`): fetches and verifies `interchange/` from GitHub at a pinned commit + SHA256, installs workspace dependencies, builds the app
+2. **Runtime stage** (`oven/bun:1.3-slim`): copies only what is needed to run
+
+The pinned `INTERCHANGE_COMMIT` and `INTERCHANGE_SHA256` args in both Dockerfiles must be updated together whenever interchange is upgraded.
+
+`Dockerfile.sidecar` skips the API and web build steps and omits their artifacts from the runtime image. The sidecar runs directly from TypeScript source via `bun run`.
+
+### Volumes
+
+Both services require a **persistent volume** mounted in the Railway dashboard. Loss of volume data breaks the sidecar–hub trust relationship and requires re-provisioning.
+
+| Service | Mount path | Env var | Contents |
+| ------- | ---------- | ------- | -------- |
+| Sidecar | `/data` | `SIDECAR_DATA_DIR=/data` | Per-agent git repos, key pairs |
+| Hub (if self-hosted) | `/data` | `HUB_DATA_DIR=/data` | Agent repo mirrors, signing state |
+
+### Sidecar Environment Variables
+
+| Variable | Description |
+| -------- | ----------- |
+| `HUB_WS_URL` | WebSocket URL of the Interchange hub (e.g. `wss://hub.example.com/api/sidecars/ws`) |
+| `SIDECAR_ID` | Stable opaque identifier for this sidecar instance (e.g. `gtm-staging`). Any slug format is valid. |
+| `SIDECAR_TOKEN` | Auth token for hub registration |
+| `SIDECAR_DATA_DIR` | Path on the persistent volume (e.g. `/data`) |
+
+### One-Time Dashboard Setup (per service)
+
+Volumes and env vars cannot be provisioned via `railway.toml` — they must be configured manually in the Railway dashboard once per service:
+
+1. Create the service, point it at the repo and select the appropriate config file path
+2. Add a volume and mount it at `/data`
+3. Set the env vars listed above
+4. Every subsequent push to the watched branch deploys automatically
+
 ## Agent Runtime and LLM Inference
 
 ### Architecture

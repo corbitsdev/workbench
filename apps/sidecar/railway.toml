@@ -1,0 +1,8 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.sidecar"
+
+[deploy]
+startCommand = "bun run /app/apps/sidecar/src/index.ts"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
