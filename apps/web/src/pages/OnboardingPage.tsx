@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
 import { createTenant } from '../lib/hub-api';
 
 function slugify(name: string): string {
@@ -11,7 +10,6 @@ function slugify(name: string): string {
 }
 
 export function OnboardingPage() {
-  const navigate = useNavigate();
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +29,7 @@ export function OnboardingPage() {
     setError(null);
     try {
       await createTenant(trimmed, slug);
-      navigate('/', { replace: true });
+      window.location.replace('/');
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to create workspace. Please try again.'
