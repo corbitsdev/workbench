@@ -17,12 +17,12 @@ interface PainPointsListProps {
   analyzeCompleted?: boolean;
 }
 
-const getSeverityColor = (severity?: SeverityLevel): string => {
+export const getSeverityColor = (severity?: SeverityLevel): string => {
   switch (severity) {
     case 'low':
       return 'bg-blue-soft text-blue-deep';
     case 'medium':
-      return 'bg-cream-deep text-charcoal';
+      return 'bg-yellow-100 text-yellow-800';
     case 'high':
       return 'bg-orange-soft text-orange-deep';
     case 'critical':
