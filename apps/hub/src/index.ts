@@ -274,13 +274,8 @@ app.route('/api/v1', v1);
 
 // ─── Health ─────────────────────────────────────────────────────────
 
-const startTime = Date.now();
-
 app.get('/health', (c) => {
-  return c.json({
-    status: 'connected',
-    uptime: Math.floor((Date.now() - startTime) / 1000),
-  });
+  return c.json({});
 });
 
 const port = Number(config.port);
