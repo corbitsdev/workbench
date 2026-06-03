@@ -8,6 +8,7 @@ WORKDIR /app
 # To get a new SHA256: wget -qO- https://github.com/faremeter/interchange/archive/<commit>.tar.gz | sha256sum
 ARG INTERCHANGE_COMMIT=c03554f38aec306d8bedb12bd5768c88b73913ed
 ARG INTERCHANGE_SHA256=7c5374bd8cd0eef9e440446474e3591e17c84ccbaafc7bbdec8e69371a85dfb2
+ARG RAILWAY_SERVICE_ID
 RUN wget -qO interchange.tar.gz "https://github.com/faremeter/interchange/archive/${INTERCHANGE_COMMIT}.tar.gz" \
     && echo "${INTERCHANGE_SHA256}  interchange.tar.gz" | sha256sum -c \
     && tar -xz < interchange.tar.gz \
@@ -20,7 +21,7 @@ COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 
-RUN --mount=type=cache,id=pkg/bun,target=/root/.bun/install/cache bun install --frozen-lockfile
+RUN --mount=type=cache,id=s/${RAILWAY_SERVICE_ID}-/root/.bun/install/cache,target=/root/.bun/install/cache bun install --frozen-lockfile
 
 COPY . .
 
