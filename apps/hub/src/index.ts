@@ -52,6 +52,8 @@ log.info('Database connection established');
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 const { origins: corsOrigins, isCrossOrigin } = corsConfig;
 
+log.info('CORS config loaded', { corsOrigins, corsCount: corsOrigins.length });
+
 const auth = betterAuth({
   baseURL: authConfig.baseUrl,
   secret: authConfig.secret,
