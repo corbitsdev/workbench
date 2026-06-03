@@ -2,6 +2,5 @@
   "buildCommand": "bun run --filter @workbench/web build",
   "outputDirectory": "apps/web/dist",
   "installCommand": "git submodule update --init --recursive && bun install",
-  "framework": "vite",
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
+  "framework": "vite"
 }
