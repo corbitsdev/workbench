@@ -10,8 +10,7 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
       https://github.com/faremeter/interchange.git interchange
 
 RUN bun install
-RUN bun run --filter @workbench/hub build
 
 EXPOSE 4000
 
-CMD ["bun", "run", "apps/hub/dist/index.js"]
+CMD ["bun", "run", "apps/hub/src/index.ts"]
