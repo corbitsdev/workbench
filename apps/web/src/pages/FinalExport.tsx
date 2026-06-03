@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion } from 'framer-motion';
-import StepSidebar from '../components/StepSidebar';
 import CollateralBody from '../components/CollateralBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
@@ -67,8 +66,6 @@ export default function FinalExport() {
 
   return (
     <div className="flex h-screen bg-page">
-      <StepSidebar steps={steps} sourceLabel={sourceLabel} />
-
       <motion.div
         className="flex-1 flex flex-col overflow-hidden"
         initial={{ x: 40, opacity: 0 }}

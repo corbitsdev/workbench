@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import StepSidebar from '../components/StepSidebar';
 import CollateralBody from '../components/CollateralBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
@@ -71,8 +70,6 @@ export default function CollateralReview() {
 
   return (
     <div className="flex h-screen bg-page">
-      <StepSidebar steps={steps} sourceLabel={sourceLabel} selectionCount={approvedIds.size} />
-
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel: Context */}
         <motion.div

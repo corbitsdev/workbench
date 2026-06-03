@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import StepSidebar from '../components/StepSidebar';
 import RecentCallsPicker from '../components/RecentCallsPicker';
 import { useCreateWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
@@ -51,8 +50,6 @@ export default function CallSelectionIntake({ onWorkflowCreated }: CallSelection
 
   return (
     <div className="flex h-screen bg-page">
-      <StepSidebar steps={steps} />
-
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="p-6 border-b border-border bg-surface">
           <div className="text-xs font-semibold text-text-3 uppercase tracking-wide mb-2">

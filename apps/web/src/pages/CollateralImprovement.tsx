@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion } from 'framer-motion';
-import StepSidebar from '../components/StepSidebar';
 import { useWorkflow, useRunStep } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
 import { Button } from '../components/ui/Button';
@@ -43,8 +42,6 @@ export default function CollateralImprovement() {
 
   return (
     <div className="flex h-screen bg-page">
-      <StepSidebar steps={steps} sourceLabel={sourceLabel} />
-
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel: Context */}
         <motion.div
