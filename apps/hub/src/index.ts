@@ -273,22 +273,13 @@ app.route('/api/v1', v1);
 // not served from here. The hub is API-only.
 
 // ─── Health ─────────────────────────────────────────────────────────
-//
-// Returns 503 until at least one sidecar is connected so Railway won't
-// route traffic during the cold-start window before the sidecar WS
-// handshake completes.
+
+const startTime = Date.now();
 
 app.get('/health', (c) => {
-  const sidecars = sidecarRouter.getConnectedSidecars().length;
-  if (sidecars === 0) {
-    return c.json({ status: 'starting', sidecars: 0 }, 503);
-  }
   return c.json({
-    status: 'ok',
-    db: 'connected',
-    auth: 'ready',
-    sidecars,
-    timestamp: new Date().toISOString(),
+    status: 'connected',
+    uptime: Math.floor((Date.now() - startTime) / 1000),
   });
 });
 
