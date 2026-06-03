@@ -11,6 +11,9 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
 
 RUN bun install
 
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 WORKDIR /app/apps/web
 RUN bun run build
 
