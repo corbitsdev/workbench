@@ -11,7 +11,7 @@
     "skipLibCheck": true,
     "types": ["bun"],
     "paths": {
-      "@gtm/workbench-shared": ["../../packages/workbench-shared/src/index.ts"]
+      "@workbench/shared": ["../../packages/workbench-shared/src/index.ts"]
     }
   },
   "include": ["src/**/*"]

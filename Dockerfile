@@ -25,7 +25,7 @@ RUN --mount=type=cache,id=s/03c0cf12-21c5-42ec-a16d-fc952e520627-/root/.bun/inst
 # Copy full source
 COPY . .
 
-RUN bun run --filter @gtm/hub build && bun run --filter @gtm/web build
+RUN bun run --filter @workbench/hub build && bun run --filter @workbench/web build
 
 FROM oven/bun:1.3-slim AS runtime
 

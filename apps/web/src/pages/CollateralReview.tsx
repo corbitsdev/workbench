@@ -5,7 +5,7 @@ import StepSidebar from '../components/StepSidebar';
 import CollateralBody from '../components/CollateralBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
-import type { CollateralType } from '@gtm/workbench-shared';
+import type { CollateralType } from '@workbench/shared';
 
 const TYPE_LABELS: Record<CollateralType, string> = {
   email: 'Follow-up Email',

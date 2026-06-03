@@ -11,12 +11,12 @@
     "db:setup": "bun --env-file=.env run scripts/db-setup.ts",
     "db:seed": "bun --env-file=.env run scripts/db-seed.ts",
     "db:reset": "bun --env-file=.env run scripts/db-reset.ts",
-    "dev": "bun --env-file=.env run --parallel --filter @gtm/web --filter @gtm/hub --filter @gtm/sidecar dev",
-    "build": "bun run --parallel --filter @gtm/web --filter @gtm/hub build",
-    "typecheck": "bun run --filter '@gtm/*' typecheck",
+    "dev": "bun --env-file=.env run --parallel --filter @workbench/web --filter @workbench/hub --filter @workbench/sidecar dev",
+    "build": "bun run --parallel --filter @workbench/web --filter @workbench/hub build",
+    "typecheck": "bun run --filter '@workbench/*' typecheck",
     "format": "oxfmt --write . '!interchange' '!temporary'",
-    "lint": "bun run --filter '@gtm/*' lint",
-    "test": "bun run --filter '@gtm/*' test",
+    "lint": "bun run --filter '@workbench/*' lint",
+    "test": "bun run --filter '@workbench/*' test",
     "interchange:check": "bun run scripts/check-interchange-sync.ts"
   },
   "dependencies": {

@@ -1,5 +1,5 @@
 {
-  "name": "@gtm/web",
+  "name": "@workbench/web",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "test": "bun test src"
   },
   "dependencies": {
-    "@gtm/workbench-shared": "workspace:*",
+    "@workbench/shared": "workspace:*",
     "@tanstack/react-query": "5.100.14",
     "better-auth": "^1.1.43",
     "class-variance-authority": "^0.7.1",

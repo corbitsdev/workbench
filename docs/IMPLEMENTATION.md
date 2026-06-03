@@ -154,10 +154,10 @@ cp env.workbench.example .env.workbench
 
 ```bash
 # Terminal 1 — API
-bun run --filter @gtm/hub dev
+bun run --filter @workbench/hub dev
 
 # Terminal 2 — Web
-bun run --filter @gtm/web dev
+bun run --filter @workbench/web dev
 ```
 
 ## Build Pipeline

@@ -6,7 +6,7 @@ import CollateralBody from '../components/CollateralBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
 import { Button } from '../components/ui/Button';
-import type { CollateralType } from '@gtm/workbench-shared';
+import type { CollateralType } from '@workbench/shared';
 
 const STEP_LABELS = {
   intake: 'Call source',

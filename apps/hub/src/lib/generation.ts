@@ -1,7 +1,7 @@
 import { createAgent } from '@intx/agent';
 import { getLogger } from '@intx/log';
 import type { InferenceSource } from '@intx/types/runtime';
-import type { CollateralType } from '@gtm/workbench-shared';
+import type { CollateralType } from '@workbench/shared';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

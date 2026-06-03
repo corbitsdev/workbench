@@ -66,6 +66,6 @@ The web app is a static Vite build. Deploy it to **Vercel** (recommended) or as 
 2. Enable public networking and note the URL.
 3. Set environment variables:
    - `VITE_API_BASE_URL` — the hub's public URL
-4. Set build command: `bun install && bun run --filter @gtm/web build`
+4. Set build command: `bun install && bun run --filter @workbench/web build`
 5. Set start command: `bunx serve apps/web/dist`
 6. Add the service's public URL to `SUPPORTED_CORS_ORIGINS` on the hub service.

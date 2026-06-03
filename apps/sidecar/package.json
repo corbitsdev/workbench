@@ -1,5 +1,5 @@
 {
-  "name": "@gtm/sidecar",
+  "name": "@workbench/sidecar",
   "private": true,
   "type": "module",
   "scripts": {

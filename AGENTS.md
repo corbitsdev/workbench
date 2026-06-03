@@ -160,8 +160,8 @@ This starts API (port 4000) and Web (port 5174) in parallel using `bun --paralle
 
 **Or individually:**
 
-- API: `bun run --filter @gtm/hub dev`
-- Web: `bun run --filter @gtm/web dev`
+- API: `bun run --filter @workbench/hub dev`
+- Web: `bun run --filter @workbench/web dev`
 
 **Service locations:**
 
@@ -220,9 +220,9 @@ Required in `.env` (copy from `.env.example`):
 Configuration lives in `railway.toml` at the repo root. Do not change these without understanding the implications:
 
 - **Builder:** `railpack` (Railway's current default — not nixpacks, which is legacy)
-- **Build command:** `bun install && bun run --filter @gtm/hub build`
+- **Build command:** `bun install && bun run --filter @workbench/hub build`
 - **Pre-deploy command:** `bun run scripts/db-setup.ts` — runs forward-only migrations before each deploy; safe to re-run (idempotent)
-- **Start command:** `bun run --filter @gtm/hub start`
+- **Start command:** `bun run --filter @workbench/hub start`
 
 The pre-deploy command calls `scripts/db-setup.ts` directly (not via `bun run db:setup`) because the root `db:setup` script passes `--env-file=.env`, which does not exist on Railway — env vars are injected by the platform.
 
