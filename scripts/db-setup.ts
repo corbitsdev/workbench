@@ -154,7 +154,7 @@ async function runCustomMigrations(client: import('postgres').Sql<{}>): Promise<
   const fs = await import('node:fs');
   const path = await import('node:path');
 
-  const migrationsDir = 'apps/api/migrations';
+  const migrationsDir = 'apps/hub/migrations';
 
   if (!fs.existsSync(migrationsDir)) {
     console.log('\n  → No custom migrations found.');

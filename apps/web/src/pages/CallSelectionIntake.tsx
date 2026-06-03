@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import StepSidebar from '../components/StepSidebar';
 import RecentCallsPicker from '../components/RecentCallsPicker';
 import { useCreateWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
+import HorizontalStepper from '../components/HorizontalStepper';
 import type { IntakeRequest } from '../types/intake';
 
 const STEP_LABELS = {
@@ -50,9 +50,8 @@ export default function CallSelectionIntake({ onWorkflowCreated }: CallSelection
   const isLoading = createWorkflow.isPending;
 
   return (
-    <div className="flex h-screen bg-page">
-      <StepSidebar steps={steps} />
-
+    <div className="flex flex-col h-screen bg-page">
+      <HorizontalStepper steps={steps} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="p-6 border-b border-border bg-surface">
           <div className="text-xs font-semibold text-text-3 uppercase tracking-wide mb-2">

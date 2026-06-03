@@ -173,11 +173,14 @@ async function runExtractionAgent(
     try {
       // Try to parse the response directly
       parsed = JSON.parse(result.reply) as LLMResponse;
-    } catch (parseError) {
+    } catch {
       // Fallback: extract JSON from response if wrapped in markdown or text
       const jsonMatch = result.reply.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        log.error('LLM extraction returned no JSON', { workflowId, raw: result.reply.substring(0, 500) });
+        log.error('LLM extraction returned no JSON', {
+          workflowId,
+          raw: result.reply.substring(0, 500),
+        });
         throw new Error('LLM returned no JSON for pain point extraction');
       }
 
@@ -194,7 +197,10 @@ async function runExtractionAgent(
     }
 
     if (!Array.isArray(parsed.painPoints)) {
-      log.error('LLM response missing painPoints array', { workflowId, received: typeof parsed.painPoints });
+      log.error('LLM response missing painPoints array', {
+        workflowId,
+        received: typeof parsed.painPoints,
+      });
       throw new Error('LLM response missing painPoints array');
     }
 

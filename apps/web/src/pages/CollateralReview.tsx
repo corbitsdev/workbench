@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import StepSidebar from '../components/StepSidebar';
 import CollateralBody from '../components/CollateralBody';
+import HorizontalStepper from '../components/HorizontalStepper';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
-import type { CollateralType } from '@gtm/workbench-shared';
+import type { CollateralType } from '@workbench/shared';
 
 const TYPE_LABELS: Record<CollateralType, string> = {
   email: 'Follow-up Email',
@@ -67,12 +67,9 @@ export default function CollateralReview() {
     ? buildSteps(workflow.currentStep, STEP_LABELS)
     : buildSteps('generate', STEP_LABELS);
 
-  const sourceLabel = workflow?.steps?.intake?.transcriptId ? 'Pasted transcript' : undefined;
-
   return (
-    <div className="flex h-screen bg-page">
-      <StepSidebar steps={steps} sourceLabel={sourceLabel} selectionCount={approvedIds.size} />
-
+    <div className="flex flex-col h-screen bg-page">
+      <HorizontalStepper steps={steps} />
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel: Context */}
         <motion.div
@@ -146,11 +143,11 @@ export default function CollateralReview() {
                   transition={{ duration: 0.3 }}
                   className="space-y-4"
                 >
-                  <div className="bg-orange-soft border border-orange rounded-lg px-4 py-3 flex items-start gap-2">
-                    <div className="text-xs font-semibold text-orange-deep uppercase tracking-wide mt-0.5 shrink-0">
+                  <div className="bg-orange-deep rounded-lg px-4 py-3 flex items-start gap-2">
+                    <div className="text-xs font-semibold text-white/80 uppercase tracking-wide mt-0.5 shrink-0">
                       Pain point
                     </div>
-                    <div className="text-sm text-text">{currentPainPoint?.context}</div>
+                    <div className="text-sm text-white">{currentPainPoint?.context}</div>
                   </div>
 
                   <CollateralBody body={current.body} type={current.type as CollateralType} />

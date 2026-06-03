@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion } from 'framer-motion';
-import StepSidebar from '../components/StepSidebar';
 import CollateralBody from '../components/CollateralBody';
+import HorizontalStepper from '../components/HorizontalStepper';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
 import { Button } from '../components/ui/Button';
-import type { CollateralType } from '@gtm/workbench-shared';
+import type { CollateralType } from '@workbench/shared';
 
 const STEP_LABELS = {
   intake: 'Call source',
@@ -31,8 +31,6 @@ export default function FinalExport() {
   const collateral = (workflow?.steps?.generate?.collateral as any[]) ?? [];
 
   const steps = buildSteps('export', STEP_LABELS, true);
-  const sourceLabel = workflow?.steps?.intake?.transcriptId ? 'Pasted transcript' : undefined;
-
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const markCopied = (id: string) => {
@@ -66,9 +64,8 @@ export default function FinalExport() {
   };
 
   return (
-    <div className="flex h-screen bg-page">
-      <StepSidebar steps={steps} sourceLabel={sourceLabel} />
-
+    <div className="flex flex-col h-screen bg-page">
+      <HorizontalStepper steps={steps} />
       <motion.div
         className="flex-1 flex flex-col overflow-hidden"
         initial={{ x: 40, opacity: 0 }}

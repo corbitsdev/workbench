@@ -28,7 +28,7 @@
 
 ## File Organization
 
-- **Applications**: `apps/web/`, `apps/api/`
+- **Applications**: `apps/web/`, `apps/hub/`
 - **Shared libraries**: `packages/*`
 - **Examples**: `examples/*` (reference consumers, not throwaway)
 - No standalone TypeScript files in repository root
@@ -154,10 +154,10 @@ cp env.workbench.example .env.workbench
 
 ```bash
 # Terminal 1 — API
-bun run --filter @gtm/api dev
+bun run --filter @workbench/hub dev
 
 # Terminal 2 — Web
-bun run --filter @gtm/web dev
+bun run --filter @workbench/web dev
 ```
 
 ## Build Pipeline
@@ -170,6 +170,58 @@ bun run test      # bun test
 ```
 
 Or via `make all` if Makefile is available.
+
+## Railway Deployment
+
+The workbench deploys as three separate Railway services from the same repo, all watching the `staging` branch (or `main` for production). This is a **shared monorepo**: every service builds with the repo root as its Docker build context (Root Directory `/`), because they all depend on the shared lockfile, `packages/*`, and the vendored `interchange/packages/*` workspaces.
+
+### Services
+
+| Service | Config file                 | Dockerfile                | Purpose                                 |
+| ------- | --------------------------- | ------------------------- | --------------------------------------- |
+| Hub     | `apps/hub/railway.toml`     | `apps/hub/Dockerfile`     | Hono API, DB migrations                 |
+| Web     | `apps/web/railway.toml`     | `apps/web/Dockerfile`     | Static SPA (Vite build served by Caddy) |
+| Sidecar | `apps/sidecar/railway.toml` | `apps/sidecar/Dockerfile` | Interchange sidecar, agent lifecycle    |
+
+Per Railway's monorepo model, the config file does **not** follow the Root Directory — set each service's Config-as-Code path to the absolute repo-root path (e.g. `/apps/hub/railway.toml`). `dockerfilePath` inside each config is relative to the build context (repo root). Each config declares `watchPatterns` so a service redeploys only when its own code or shared dependencies change.
+
+### Dockerfiles
+
+The hub and sidecar Dockerfiles follow the same pattern:
+
+1. **Builder stage** (`oven/bun:1.3-alpine`): fetches and verifies `interchange/` from GitHub at a pinned commit + SHA256, installs workspace dependencies, builds the app
+2. **Runtime stage** (`oven/bun:1.3-slim`): copies only what is needed to run
+
+The pinned `INTERCHANGE_COMMIT` and `INTERCHANGE_SHA256` args must be updated together across all three Dockerfiles whenever interchange is upgraded.
+
+`apps/sidecar/Dockerfile` builds nothing and runs directly from TypeScript source via `bun run`. `apps/web/Dockerfile` runs `vite build` in the builder stage (still needing full repo context for `@workbench/shared`) and serves the static output via Caddy with an SPA fallback to `index.html`; it runs no Node/Bun process at runtime. The hub no longer builds or serves the web assets — the web service owns them, and the SPA reaches the API via the build-time `VITE_API_BASE_URL`.
+
+### Volumes
+
+Both services require a **persistent volume** mounted in the Railway dashboard. Loss of volume data breaks the sidecar–hub trust relationship and requires re-provisioning.
+
+| Service              | Mount path | Env var                  | Contents                          |
+| -------------------- | ---------- | ------------------------ | --------------------------------- |
+| Sidecar              | `/data`    | `SIDECAR_DATA_DIR=/data` | Per-agent git repos, key pairs    |
+| Hub (if self-hosted) | `/data`    | `HUB_DATA_DIR=/data`     | Agent repo mirrors, signing state |
+
+### Sidecar Environment Variables
+
+| Variable           | Description                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| `HUB_WS_URL`       | WebSocket URL of the Interchange hub (e.g. `wss://hub.example.com/api/sidecars/ws`)                |
+| `SIDECAR_ID`       | Stable opaque identifier for this sidecar instance (e.g. `gtm-staging`). Any slug format is valid. |
+| `SIDECAR_TOKEN`    | Auth token for hub registration                                                                    |
+| `SIDECAR_DATA_DIR` | Path on the persistent volume (e.g. `/data`)                                                       |
+
+### One-Time Dashboard Setup (per service)
+
+Volumes and env vars cannot be provisioned via `railway.toml` — they must be configured manually in the Railway dashboard once per service:
+
+1. Create the service, point it at the repo and select the appropriate config file path
+2. Add a volume and mount it at `/data`
+3. Set the env vars listed above
+4. Every subsequent push to the watched branch deploys automatically
 
 ## Agent Runtime and LLM Inference
 
@@ -232,7 +284,7 @@ All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agen
 
 ### Pain Point Extraction
 
-Implemented in `apps/api/src/lib/extraction.ts`:
+Implemented in `apps/hub/src/lib/extraction.ts`:
 
 **LLM Path** (when `OPENAI_COMPATIBLE_API_KEY` is configured):
 

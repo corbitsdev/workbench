@@ -1,0 +1,13 @@
+[build]
+builder = "dockerfile"
+# Path is relative to the repo root (the build context), not to this file.
+dockerfilePath = "apps/hub/Dockerfile"
+watchPatterns = ["apps/hub/**", "packages/**", "scripts/**", "package.json", "bun.lock"]
+
+[deploy]
+preDeployCommand = "bun run scripts/db-setup.ts"
+startCommand = "bun run apps/hub/src/index.ts"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

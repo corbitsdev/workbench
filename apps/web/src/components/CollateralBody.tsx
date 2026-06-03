@@ -1,4 +1,4 @@
-import type { CollateralType } from '@gtm/workbench-shared';
+import type { CollateralType } from '@workbench/shared';
 
 interface CollateralBodyProps {
   body: string;

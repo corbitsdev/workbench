@@ -7,7 +7,7 @@ interface HorizontalStepperProps {
 
 export default function HorizontalStepper({ steps }: HorizontalStepperProps) {
   return (
-    <div className="bg-surface border-b border-border px-6 py-4">
+    <div className="bg-surface border-b border-border px-6 py-5">
       <div className="flex items-center gap-2 md:gap-3">
         {steps.map((step, idx) => (
           <motion.div

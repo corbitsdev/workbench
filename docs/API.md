@@ -229,7 +229,7 @@ Internal `status` values map to frontend `currentStep`:
 | exporting  | export       | Assembling final output            |
 | done       | export       | Workflow complete                  |
 
-Mapping is defined in `apps/api/src/routes/workflow.ts:deriveCurrentStep()`.
+Mapping is defined in `apps/hub/src/routes/workflow.ts:deriveCurrentStep()`.
 
 ---
 

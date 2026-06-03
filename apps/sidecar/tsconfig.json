@@ -9,10 +9,7 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["bun"],
-    "paths": {
-      "@gtm/workbench-shared": ["../../packages/workbench-shared/src/index.ts"]
-    }
+    "types": ["bun"]
   },
   "include": ["src/**/*"]
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { GranolaNote, IntakeRequest } from '../types/intake';
+import { api } from '../lib/api';
 
 interface RecentCallsPickerProps {
   onSelect: (data: IntakeRequest) => void;
@@ -21,17 +22,7 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
     try {
       setLoading(true);
       setError('');
-
-      const response = await fetch('/api/v1/recent-calls', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch recent calls');
-      }
-
-      const data = await response.json();
+      const data = await api<{ calls: GranolaNote[] }>('GET', 'recent-calls');
       setCalls(data.calls || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load recent calls');

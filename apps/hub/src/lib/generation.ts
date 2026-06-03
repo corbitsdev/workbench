@@ -1,5 +1,10 @@
+import { createAgent } from '@intx/agent';
 import { getLogger } from '@intx/log';
-import type { CollateralType } from '@gtm/workbench-shared';
+import type { InferenceSource } from '@intx/types/runtime';
+import type { CollateralType } from '@workbench/shared';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const log = getLogger(['generation']);
 
@@ -114,41 +119,45 @@ export async function generateCollateralWithLLM(
 
   log.info('Generating collateral', { workflowId, painPointId: point.id, type });
 
+  const source: InferenceSource = {
+    id: `generation-${workflowId}`,
+    provider: 'openai',
+    baseURL,
+    apiKey,
+    model,
+  };
+
   const userMessage = `Transcript (for context):\n\n${transcript.slice(0, 60000)}\n\n---\n\nPain point to address:\n- Summary: ${point.context}\n- Severity: ${point.severity}\n- Verbatim quote: "${point.quote}"\n\nGenerate the ${type} collateral now.`;
 
-  const res = await fetch(`${baseURL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: buildSystemPrompt(type) },
-        { role: 'user', content: userMessage },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.7,
-      max_tokens: 2048,
-    }),
+  const contextDir = join(tmpdir(), `gtm-generation-${randomUUID()}`);
+  const agent = await createAgent({
+    contextDir,
+    sources: [source],
+    defaultSource: source.id,
+    systemPrompt: buildSystemPrompt(type),
+    tools: [],
+    closeTimeoutMs: 1000,
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    log.error('Collateral generation failed', { workflowId, type, status: res.status });
-    throw new Error(`Collateral generation failed: ${res.status} ${err.error}`);
+  let raw: string;
+  try {
+    const result = await agent.send(userMessage);
+    raw = result.reply;
+  } finally {
+    await agent.close();
   }
 
-  const data = (await res.json()) as { choices: Array<{ message: { content: string } }> };
-  const raw = data.choices[0]?.message?.content;
   if (!raw) throw new Error('LLM returned empty content for collateral generation');
 
   let parsed: { title?: string; body?: string };
   try {
     parsed = JSON.parse(raw) as { title?: string; body?: string };
   } catch {
-    log.error('Collateral generation returned invalid JSON', { workflowId, type, raw });
+    log.error('Collateral generation returned invalid JSON', {
+      workflowId,
+      type,
+      raw: raw.substring(0, 500),
+    });
     throw new Error('LLM returned invalid JSON for collateral generation');
   }
   if (!parsed.title || !parsed.body) {

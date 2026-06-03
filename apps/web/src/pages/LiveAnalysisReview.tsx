@@ -1,14 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import HorizontalStepper from '../components/HorizontalStepper';
 import TranscriptPanel from '../components/TranscriptPanel';
 import ProgressChecklist from '../components/ProgressChecklist';
 import PainPointsList from '../components/PainPointsList';
 import { togglePainPointSelection } from '../components/pain-point-selection';
 import { useWorkflow, useRunStep, useUpdateCompanyName } from '../hooks/use-workflow';
-import { useAuth } from '../components/AuthProvider';
 import { buildSteps } from '../lib/steps';
 import { logger } from '../lib/logger';
 
@@ -27,13 +25,11 @@ export default function LiveAnalysisReview() {
   const { data: workflow, isLoading: isLoadingWorkflow } = useWorkflow(workflowId);
   const runStep = useRunStep(workflowId);
   const updateCompanyName = useUpdateCompanyName(workflowId);
-  const { signOut } = useAuth();
   const [feedback, setFeedback] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [stepError, setStepError] = useState('');
   const [companyNameInput, setCompanyNameInput] = useState<string>('');
   const [showTranscript, setShowTranscript] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const analyzeTriggered = useRef(false);
   const companyNameInitialized = useRef(false);
 
@@ -96,66 +92,6 @@ export default function LiveAnalysisReview() {
 
   return (
     <div className="flex h-screen bg-page text-text">
-      {/* Left Sidebar */}
-      <motion.div
-        className="bg-surface border-r border-border flex flex-col"
-        animate={{ width: sidebarCollapsed ? 64 : 200 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      >
-        {/* Header */}
-        <div className="p-4 border-b border-border flex items-center justify-between gap-2">
-          <AnimatePresence>
-            {!sidebarCollapsed && (
-              <motion.h1
-                className="text-sm font-semibold text-text truncate"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-              >
-                Workbench
-              </motion.h1>
-            )}
-          </AnimatePresence>
-          <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-2 transition-colors text-text-2 flex-shrink-0"
-            title={sidebarCollapsed ? 'Expand' : 'Collapse'}
-          >
-            {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
-        </div>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Sign Out Button */}
-        <div className="p-4 border-t border-border">
-          <button
-            onClick={async () => {
-              await signOut();
-              navigate('/login');
-            }}
-            className="w-full h-8 rounded-lg flex items-center justify-center gap-2 hover:bg-surface-2 transition-colors text-text-2 hover:text-text text-sm font-medium"
-            title="Sign out"
-          >
-            <span>⎙</span>
-            <AnimatePresence>
-              {!sidebarCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: 'auto' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.15 }}
-                >
-                  Sign out
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </button>
-        </div>
-      </motion.div>
-
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Horizontal Stepper */}

@@ -1,0 +1,28 @@
+{
+  "name": "@workbench/sidecar",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint .",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/authz": "workspace:*",
+    "@intx/crypto-node": "workspace:*",
+    "@intx/harness": "workspace:*",
+    "@intx/hub-agent": "workspace:*",
+    "@intx/inference": "workspace:*",
+    "@intx/log": "workspace:*",
+    "@intx/mail-memory": "workspace:*",
+    "@intx/storage-isogit": "workspace:*",
+    "@intx/tools-lsp": "workspace:*",
+    "@intx/tools-posix": "workspace:*",
+    "@intx/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}

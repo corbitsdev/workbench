@@ -1,50 +1,73 @@
 # GTM Workbench
 
-## Setup
+## Railway Deployment
 
-For the full agent loop, install the **ABK Agents** plugin locally:
+The workbench runs as **three standalone Railway services** from the same repo — `hub`, `web`, and `sidecar`. Each has its own `Dockerfile` and `railway.toml` co-located in its app directory. Set up each service once in the Railway dashboard; every subsequent push to `staging` (or `main`) deploys the affected services automatically (each service's `watchPatterns` decides which ones rebuild).
 
-```bash
-/plugin install abklabs-agents
-```
+### Monorepo model — read this first
 
-Then reload plugins:
+This is a **shared monorepo** (one Bun workspace). Every service builds with the **repo root as its Docker build context** because they all depend on the shared lockfile, `packages/*`, and the vendored `interchange/packages/*` workspaces. Two consequences for every service:
 
-```bash
-/reload-plugins
-```
+- **Root Directory must stay `/`.** Do not set a per-service root directory — it would scope the Docker build to one app folder and break the workspace install.
+- **The Railway config file does NOT follow the Root Directory** (per Railway's monorepo docs). You must set each service's **Config-as-Code path** (Settings → Config-as-Code) to its absolute repo-root path, listed per service below.
 
-## Deploying the API (Railway)
+---
 
-1. Create a new Railway project and add a service from this repo.
-2. Add a **Postgres** plugin to the project — Railway injects `DATABASE_URL` automatically.
-3. Enable public networking: **Settings → Networking → Public Networking → Generate Domain**. Note the generated URL (e.g. `https://your-api.up.railway.app`). This step cannot be automated via `railway.toml`.
-4. Set environment variables on the API service:
-   - `BETTER_AUTH_SECRET` — generate a random secret (e.g. `openssl rand -hex 32`)
-   - `BETTER_AUTH_BASE_URL` — the API's public URL from step 3
-   - `SUPPORTED_CORS_ORIGINS` — the web app's public URL (set after deploying the web app)
+### Part 1: Hub (API)
+
+The hub is the API-only backend. It serves the Hono API and runs database migrations on each deploy. It does **not** serve the web app — that is a separate static service.
+
+**In the Railway dashboard:**
+
+1. Create a new Railway project. Add a service from this repo.
+2. Set **Root Directory** to `/` and the **Config-as-Code path** to `/apps/hub/railway.toml`.
+3. Add a **Postgres** plugin — Railway injects `DATABASE_URL` automatically.
+4. Add a **Volume** and mount it at `/data`. Set `HUB_DATA_DIR=/data`. This stores per-agent git repos and signing state — loss of this volume requires re-provisioning all sidecars.
+5. Enable public networking: **Settings → Networking → Public Networking → Generate Domain**. Note the URL (e.g. `https://your-hub.up.railway.app`).
+6. Set environment variables:
+   - `HUB_DATA_DIR` — `/data`
+   - `BETTER_AUTH_SECRET` — `openssl rand -hex 32`
+   - `BETTER_AUTH_BASE_URL` — the hub's public URL from step 5
+   - `SUPPORTED_CORS_ORIGINS` — the web app's public URL (set after deploying the web service)
    - `OPENAI_COMPATIBLE_API_KEY`
    - `OPENAI_COMPATIBLE_MODEL`
-5. Deploy. The `preDeployCommand` in `railway.toml` runs database migrations automatically before each deploy.
+   - `INTERCHANGE_HUB_TOKEN` — shared secret used by the sidecar to register (generate a random value)
+7. Deploy. The pre-deploy command runs database migrations automatically before each deploy.
 
-## Deploying the Web App
+---
 
-The web app is a static Vite build and can be deployed to either Railway or Vercel.
+### Part 2: Web (static)
 
-### Option A: Vercel
+The web app is a static Vite build. `apps/web/Dockerfile` builds the SPA with full repo context (needed for `@workbench/shared`) and serves the output with Caddy — no Node/Bun process runs at runtime. SPA routes fall back to `index.html`.
 
-1. Import the repo in Vercel. Set the root directory to `apps/web`.
-2. Set the build command to `bun run build` and output directory to `dist`.
-3. Set environment variables:
-   - `VITE_API_BASE_URL` — the API's public URL
-4. Deploy. On each push to `main`, Vercel rebuilds and redeploys automatically.
-5. Note the Vercel deployment URL and add it to `SUPPORTED_CORS_ORIGINS` on the Railway API service.
+> The build needs the whole workspace, so Railway's zero-config static auto-detect cannot be used; the bundled Dockerfile is required. Caddy is the same static server Railway's own static provider uses under the hood.
 
-### Option B: Railway
+**In the Railway dashboard:**
 
-1. Add a second service to the same Railway project from this repo.
-2. Enable public networking on the web service and note the URL.
-3. Set environment variables:
-   - `VITE_API_BASE_URL` — the API's public URL
-4. Set the build command to `bun install && bun run --filter @gtm/web build` and start command to serve the `apps/web/dist` directory (e.g. via `bunx serve apps/web/dist`).
-5. Add the web service's public URL to `SUPPORTED_CORS_ORIGINS` on the API service.
+1. Add a service to the same project from this repo.
+2. Set **Root Directory** to `/` and the **Config-as-Code path** to `/apps/web/railway.toml`.
+3. Enable public networking and note the URL.
+4. Set the **build-time** environment variable:
+   - `VITE_API_BASE_URL` — the hub's public URL (baked into the bundle at build time, so a change requires a redeploy)
+5. Deploy.
+6. Add this service's public URL to `SUPPORTED_CORS_ORIGINS` on the **hub** service.
+
+> Alternative: the static `dist` can also be hosted on any static host (e.g. Vercel with root `apps/web`, build `bun run build`, output `dist`). The Railway service above is the supported default.
+
+---
+
+### Part 3: Sidecar
+
+The sidecar connects to the hub via WebSocket and manages the lifecycle of running agents. It requires a persistent volume — loss of this data breaks the sidecar–hub trust relationship.
+
+**In the Railway dashboard:**
+
+1. Add a service to the same project from this repo.
+2. Set **Root Directory** to `/` and the **Config-as-Code path** to `/apps/sidecar/railway.toml`.
+3. Add a **Volume** and mount it at `/data`.
+4. Set environment variables:
+   - `HUB_WS_URL` — WebSocket URL of the hub (e.g. `wss://your-hub.up.railway.app/api/sidecars/ws`)
+   - `SIDECAR_ID` — a stable slug for this instance (e.g. `gtm-staging`)
+   - `SIDECAR_TOKEN` — must match `INTERCHANGE_HUB_TOKEN` set on the hub service
+   - `SIDECAR_DATA_DIR` — `/data`
+5. Deploy.

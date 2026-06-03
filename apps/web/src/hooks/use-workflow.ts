@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { logger } from '../lib/logger';
-import type { WorkflowState } from '@gtm/workbench-shared';
+import type { WorkflowState } from '@workbench/shared';
 
 export type StepName = 'intake' | 'analyze' | 'generate' | 'improve' | 'export';
 

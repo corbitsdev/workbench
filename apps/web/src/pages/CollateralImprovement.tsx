@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion } from 'framer-motion';
-import StepSidebar from '../components/StepSidebar';
 import { useWorkflow, useRunStep } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
 import { Button } from '../components/ui/Button';
+import HorizontalStepper from '../components/HorizontalStepper';
 
 const STEP_LABELS = {
   intake: 'Call source',
@@ -39,12 +39,9 @@ export default function CollateralImprovement() {
     ? buildSteps(workflow.currentStep, STEP_LABELS)
     : buildSteps('improve', STEP_LABELS);
 
-  const sourceLabel = workflow?.steps?.intake?.transcriptId ? 'Pasted transcript' : undefined;
-
   return (
-    <div className="flex h-screen bg-page">
-      <StepSidebar steps={steps} sourceLabel={sourceLabel} />
-
+    <div className="flex flex-col h-screen bg-page">
+      <HorizontalStepper steps={steps} />
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel: Context */}
         <motion.div

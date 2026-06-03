@@ -1,17 +1,29 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
-import { serveStatic } from 'hono/bun';
-import { schema as intxSchema } from '@intx/db';
+import { upgradeWebSocket, websocket } from 'hono/bun';
+import { schema as intxSchema, createGrantStore } from '@intx/db';
 import { createApp } from '@intx/hub-api';
+import {
+  createAgentRepoStore,
+  createEventCollectorRegistry,
+  createHubSessionLookups,
+  createHubSessionOrchestrator,
+  createSessionService,
+  createSidecarRouter,
+  type WsHandle,
+} from '@intx/hub-sessions';
+import { hexEncode } from '@intx/types';
 import { getLogger, setup } from '@intx/log';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { loadConfig } from './config';
+import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
 import * as workbenchSchema from './db/schema';
+import { loadSigningKeyRegistry } from './lib/signing-keys';
 
 await setup({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
@@ -19,8 +31,6 @@ const log = getLogger(['api']);
 const config = loadConfig();
 
 // ─── Database ──────────────────────────────────────────────────────
-
-import { resolveDatabaseConfig } from './lib/db';
 
 const dbConfig = resolveDatabaseConfig();
 
@@ -39,8 +49,10 @@ log.info('Database connection established');
 
 // ─── Auth ──────────────────────────────────────────────────────────
 
-const { isDev, cors: corsConfig, auth: authConfig, google } = config;
+const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 const { origins: corsOrigins, isCrossOrigin } = corsConfig;
+
+log.info('CORS config loaded', { corsOrigins, corsCount: corsOrigins.length });
 
 const auth = betterAuth({
   baseURL: authConfig.baseUrl,
@@ -79,24 +91,72 @@ const auth = betterAuth({
   },
 });
 
-// ─── Stubbed sidecar dependencies ─────────────────────────────────
+// ─── Signing key registry ──────────────────────────────────────────
 
-const sidecarRouter = {
-  getConnectedSidecars: () => [],
-  dispatchAgentEvent: () => {},
-  handleOpen: () => {},
-  handleMessage: () => {},
-  handleClose: () => {},
-  events: { on: () => {} },
-} as any;
+const registry = loadSigningKeyRegistry(hub.signingKeys);
+log.info('Loaded signing key registry: active version {version}', {
+  version: registry.active.version,
+});
 
-const sessionService = {} as any;
+// ─── Agent repo store ──────────────────────────────────────────────
 
-const eventCollectors = {} as any;
+const agentRepoStore = createAgentRepoStore({
+  dataDir: hub.dataDir,
+  signingKey: registry.active,
+});
+
+// ─── Hub services ──────────────────────────────────────────────────
+
+const grantStore = createGrantStore(db);
+
+const lookups = createHubSessionLookups({ db, agentRepoStore });
+
+const sidecarRouter = createSidecarRouter({
+  hubPublicKey: hexEncode(registry.active.publicKey),
+  lookups,
+});
+
+const eventCollectors = createEventCollectorRegistry({
+  db,
+  onTurnFinalized(agentAddress, turn) {
+    sidecarRouter.dispatchAgentEvent(agentAddress, {
+      type: 'turn.committed',
+      data: {
+        turnId: turn.turnId,
+        status: turn.status,
+        text: turn.text,
+        hadReply: turn.hadReply,
+        hadError: turn.hadError,
+        errors: turn.errors,
+        toolCalls: turn.toolCalls,
+        toolErrors: turn.toolErrors,
+      },
+    });
+  },
+});
+
+createHubSessionOrchestrator({
+  events: sidecarRouter.events,
+  router: sidecarRouter,
+  db,
+  eventCollectors,
+  grantStore,
+  agentRepoStore,
+});
+
+const sessionService = createSessionService({
+  sidecarRouter,
+  agentRepoStore,
+});
 
 // ─── Hub app ────────────────────────────────────────────────────────
+//
+// createApp() registers auth routes internally. app.use(cors()) added
+// after createApp() won't intercept OPTIONS because Hono matches the
+// all() route first. The parent `app` wrapping ensures cors() runs
+// before any route dispatch.
 
-const hub = createApp({
+const hubApp = createApp({
   getSession: async (headers) => {
     const result = await auth.api.getSession({ headers });
     return result ? { user: result.user, session: result.session } : null;
@@ -108,7 +168,7 @@ const hub = createApp({
     for (const [key, value] of response.headers) {
       headers.append(key, value);
     }
-    headers.set('Access-Control-Allow-Origin', corsOrigins[0]);
+    if (corsOrigins[0]) headers.set('Access-Control-Allow-Origin', corsOrigins[0]);
     headers.set('Access-Control-Allow-Credentials', 'true');
     return new Response(response.body, {
       status: response.status,
@@ -120,9 +180,33 @@ const hub = createApp({
   sidecarRouter,
   sessionService,
   eventCollectors,
+  sidecarWsHandler: upgradeWebSocket((_c) => {
+    let handle: WsHandle;
+    return {
+      onOpen(_evt, ws) {
+        handle = {
+          send(data: string) {
+            ws.send(data);
+          },
+          close() {
+            ws.close();
+          },
+        };
+        sidecarRouter.handleOpen(handle);
+      },
+      onMessage(evt, _ws) {
+        if (typeof evt.data === 'string') {
+          sidecarRouter.handleMessage(handle, evt.data);
+        }
+      },
+      onClose(_evt, _ws) {
+        sidecarRouter.handleClose(handle);
+      },
+    };
+  }),
 });
 
-// ─── Parent Hono with intercepts ────────────────────────────────────
+// ─── Parent Hono ────────────────────────────────────────────────────
 
 const app = new Hono();
 
@@ -139,17 +223,8 @@ if (corsOrigins.length > 0) {
   );
 }
 
-// Intercept sidecar-dependent routes
-app.use('/api/sidecars/*', async (c) => c.json({ error: 'not implemented' }, 501));
-app.use('/api/tenants/:tenantId/agents/instances/*', async (c) =>
-  c.json({ error: 'not implemented' }, 501)
-);
-app.use('/api/tenants/:tenantId/credentials/*', async (c) =>
-  c.json({ error: 'not implemented' }, 501)
-);
-
 // Mount hub app
-app.route('/', hub);
+app.route('/', hubApp);
 
 // ─── Dev login (for local development without Google OAuth) ──────────
 
@@ -196,20 +271,13 @@ v1.route('/', createWorkflowRouter(db));
 
 app.route('/api/v1', v1);
 
-// ─── Web SPA (when built into the container) ────────────────────────
-
-app.use('/*', serveStatic({ root: './apps/web/dist' }));
-app.get('/*', serveStatic({ path: './apps/web/dist/index.html' }));
+// The web SPA is deployed as its own static Railway service (apps/web),
+// not served from here. The hub is API-only.
 
 // ─── Health ─────────────────────────────────────────────────────────
 
 app.get('/health', (c) => {
-  return c.json({
-    status: 'ok',
-    db: 'connected',
-    auth: 'ready',
-    timestamp: new Date().toISOString(),
-  });
+  return c.json({});
 });
 
 const port = Number(config.port);
@@ -218,8 +286,38 @@ if (import.meta.main) {
   log.info('API starting', { port });
 }
 
+// ─── Graceful shutdown ──────────────────────────────────────────────
+//
+// Stop accepting new connections and wait up to 10 s for in-flight
+// requests to drain before exiting. Railway sends SIGTERM then waits
+// 10 s before SIGKILL — this uses that window rather than dying instantly.
+
+let server: ReturnType<typeof Bun.serve> | undefined;
+
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, async () => {
+    log.info('Received {signal}, draining', { signal });
+    await server?.stop();
+    log.info('Server stopped, exiting');
+    process.exit(0);
+  });
+}
+
+process.on('uncaughtException', (err) => {
+  log.fatal('Uncaught exception', { error: err });
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  log.fatal('Unhandled rejection', { error: err });
+});
+
 export { app };
-export default {
+
+server = Bun.serve({
   port,
   fetch: app.fetch,
-};
+  websocket,
+  idleTimeout: 0,
+});
