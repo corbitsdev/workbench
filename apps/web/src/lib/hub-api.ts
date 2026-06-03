@@ -37,8 +37,8 @@ export type TenantResponse = {
 };
 
 export async function getMyPrincipals(): Promise<Principal[]> {
-  const res = await hubFetch<{ items: Principal[] }>('GET', 'me/principals');
-  return res.items;
+  const res = await hubFetch<{ data: Principal[] }>('GET', 'me/principals');
+  return res.data;
 }
 
 export async function createTenant(name: string, slug: string): Promise<TenantResponse> {
