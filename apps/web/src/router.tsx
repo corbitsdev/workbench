@@ -37,8 +37,8 @@ function ProtectedLayout() {
       });
   }, [session.status]);
 
-  if (session.status === 'loading' || workspaceStatus === 'loading') return null;
   if (session.status === 'unauthenticated') return <Navigate to="/login" replace />;
+  if (session.status === 'loading' || workspaceStatus === 'loading') return null;
   if (workspaceStatus === 'error') {
     return (
       <div className="flex min-h-svh items-center justify-center bg-surface p-6">
