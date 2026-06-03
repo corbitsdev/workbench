@@ -6,7 +6,7 @@ watchPatterns = ["apps/hub/**", "packages/**", "scripts/**", "package.json", "bu
 
 [deploy]
 preDeployCommand = "bun run scripts/db-setup.ts"
-startCommand = "bun run apps/hub/dist/index.js"
+startCommand = "bun run apps/hub/src/index.ts"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
