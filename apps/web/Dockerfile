@@ -11,11 +11,12 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
 
 RUN bun install
 
-# VITE_API_BASE_URL is a build-time variable; set it on the web service in Railway.
-ARG VITE_API_BASE_URL
 RUN bun run --filter @workbench/web build
 
-FROM caddy:2.11.3-alpine AS runtime
+FROM nginx:1.27-alpine
 
-COPY --from=builder /app/apps/web/dist /usr/share/caddy
-COPY apps/web/Caddyfile /etc/caddy/Caddyfile
+COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
+COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
