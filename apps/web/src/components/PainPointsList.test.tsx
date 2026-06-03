@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { togglePainPointSelection } from './pain-point-selection';
+import { getSeverityColor } from './PainPointsList';
 import type { PainPoint, SeverityLevel } from './PainPointsList';
 
 // framer-motion is not compatible with Happy DOM; replace motion.div with a plain div
@@ -42,17 +43,19 @@ describe('PainPointsList types', () => {
     });
   });
 
-  it('maps severity to correct color class', () => {
-    const severityColors: Record<SeverityLevel, string> = {
-      low: 'bg-blue-100',
-      medium: 'bg-yellow-100',
-      high: 'bg-orange-100',
-      critical: 'bg-red-100',
-    };
-    expect(severityColors.high).toBe('bg-orange-100');
-    expect(severityColors.low).toBe('bg-blue-100');
-    expect(severityColors.medium).toBe('bg-yellow-100');
-    expect(severityColors.critical).toBe('bg-red-100');
+  it('maps every severity to a non-empty color class', () => {
+    const severities: SeverityLevel[] = ['low', 'medium', 'high', 'critical'];
+    severities.forEach((level) => {
+      expect(getSeverityColor(level).length).toBeGreaterThan(0);
+    });
+  });
+
+  it('renders the medium badge with a high-contrast color, not invisible cream', () => {
+    // Regression for CL-1222: medium used bg-cream-deep, which is near-invisible
+    // against the dark workflow surface and read as a missing badge.
+    const medium = getSeverityColor('medium');
+    expect(medium).not.toContain('cream');
+    expect(medium).toBe('bg-yellow-100 text-yellow-800');
   });
 
   it('handles empty pain points array', () => {
