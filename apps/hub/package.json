@@ -1,5 +1,5 @@
 {
-  "name": "@gtm/api",
+  "name": "@gtm/hub",
   "private": true,
   "type": "module",
   "scripts": {

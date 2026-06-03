@@ -15,7 +15,7 @@ RUN wget -qO interchange.tar.gz "https://github.com/faremeter/interchange/archiv
     && rm interchange.tar.gz
 
 COPY package.json bun.lock ./
-COPY apps/api/package.json apps/api/
+COPY apps/hub/package.json apps/hub/
 COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
@@ -25,7 +25,7 @@ RUN --mount=type=cache,id=s/03c0cf12-21c5-42ec-a16d-fc952e520627-/root/.bun/inst
 # Copy full source
 COPY . .
 
-RUN bun run --filter @gtm/api build && bun run --filter @gtm/web build
+RUN bun run --filter @gtm/hub build && bun run --filter @gtm/web build
 
 FROM oven/bun:1.3-slim AS runtime
 
@@ -33,14 +33,14 @@ WORKDIR /app
 
 COPY --from=builder /app/interchange ./interchange
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/hub/dist ./apps/hub/dist
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
-COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder /app/apps/hub/package.json ./apps/hub/package.json
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/apps/api/migrations ./apps/api/migrations
+COPY --from=builder /app/apps/hub/migrations ./apps/hub/migrations
 
 EXPOSE 4000
 
-CMD ["bun", "run", "apps/api/dist/index.js"]
+CMD ["bun", "run", "apps/hub/dist/index.js"]

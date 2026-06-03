@@ -7,7 +7,7 @@ The workbench is a monorepo with two runtime applications and shared packages.
 ```
 Root monorepo
 ├── apps/web/          → React frontend (user-facing)
-├── apps/api/          → Hono backend (pipeline, persistence, API)
+├── apps/hub/          → Hono backend (pipeline, persistence, API)
 ├── apps/sidecar/      → Interchange sidecar (agent lifecycle, hub connection)
 ├── packages/          → Shared types, utilities, schema
 ├── interchange/       → Dependency (agent runtime, infrastructure)
@@ -27,14 +27,14 @@ Root monorepo
 
 **State Management**: The frontend uses TanStack Query for all server state. Each stage page queries the session endpoint (`GET /workflows/:id`) and mutates via step endpoints (`POST /workflows/:id/steps`). No local session state is held in React context.
 
-**Step Derivation**: The workflow state includes a derived `currentStep` field that maps the workflow `status` to the active step name (`intake`, `analyze`, `generate`, `improve`, `export`). Mapping is defined in `apps/api/src/routes/workflow.ts:deriveCurrentStep()`. Each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` to derive the sidebar step list dynamically. This ensures:
+**Step Derivation**: The workflow state includes a derived `currentStep` field that maps the workflow `status` to the active step name (`intake`, `analyze`, `generate`, `improve`, `export`). Mapping is defined in `apps/hub/src/routes/workflow.ts:deriveCurrentStep()`. Each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` to derive the sidebar step list dynamically. This ensures:
 
 - All pages show consistent step progression
 - Step status (completed/current/pending) is always accurate
 - No hardcoded STEPS constants per page
 - Single source of truth: `workflow.status` → `currentStep` → sidebar UI
 
-### Backend (`apps/api/`)
+### Backend (`apps/hub/`)
 
 - **Authentication**: Google OAuth with optional domain allowlisting. Session state stored in secure HTTP-only cookies. CORS origins configurable via trusted origins.
 - **Workflow Routes**: `POST /workflows`, `GET /workflows/:id`, `POST /workflows/:id/steps`
@@ -46,7 +46,7 @@ Root monorepo
 
 ### Database Schema
 
-Defined in `apps/api/src/db/schema.ts` using Drizzle ORM.
+Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 
 | Table                | Key Columns                                                                                                                                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -14,7 +14,7 @@
 
 - `interchange/` — Dependency, not our application. Do not modify unless explicitly asked.
 - `apps/web/` — React 19 + Vite 8 + Tailwind CSS + Framer Motion. Human-facing UI.
-- `apps/api/` — Hono + TypeScript. Backend runtime, pipeline, and persistence.
+- `apps/hub/` — Hono + TypeScript. Backend runtime, pipeline, and persistence.
 - `packages/` — Shared types, utilities, and schema that cross the web/API boundary.
 - `compose.yml` — PostgreSQL for local development.
 - Root is the monorepo. `interchange/` is mounted alongside it.
@@ -160,7 +160,7 @@ This starts API (port 4000) and Web (port 5174) in parallel using `bun --paralle
 
 **Or individually:**
 
-- API: `bun run --filter @gtm/api dev`
+- API: `bun run --filter @gtm/hub dev`
 - Web: `bun run --filter @gtm/web dev`
 
 **Service locations:**
@@ -178,7 +178,7 @@ bun run db:setup
 
 ## Workflow API Surface
 
-Implemented in `apps/api` as a unified step-based workflow engine.
+Implemented in `apps/hub` as a unified step-based workflow engine.
 
 | Method | Route                  | Description                                                |
 | ------ | ---------------------- | ---------------------------------------------------------- |
@@ -220,9 +220,9 @@ Required in `.env` (copy from `.env.example`):
 Configuration lives in `railway.toml` at the repo root. Do not change these without understanding the implications:
 
 - **Builder:** `railpack` (Railway's current default — not nixpacks, which is legacy)
-- **Build command:** `bun install && bun run --filter @gtm/api build`
+- **Build command:** `bun install && bun run --filter @gtm/hub build`
 - **Pre-deploy command:** `bun run scripts/db-setup.ts` — runs forward-only migrations before each deploy; safe to re-run (idempotent)
-- **Start command:** `bun run --filter @gtm/api start`
+- **Start command:** `bun run --filter @gtm/hub start`
 
 The pre-deploy command calls `scripts/db-setup.ts` directly (not via `bun run db:setup`) because the root `db:setup` script passes `--env-file=.env`, which does not exist on Railway — env vars are injected by the platform.
 
@@ -247,7 +247,7 @@ Required environment variables to set in the Railway dashboard before deploying:
 ## Environment and Configuration
 
 - **No fallbacks for required environment variables.** If a variable is required, use `requireEnv()` (or equivalent) and fail loudly at startup. Do not use `|| 'default'` or `?? 'default'` to paper over a missing value.
-- All environment validation lives in `apps/api/src/config.ts`. Add new variables there, not inline in `index.ts` or elsewhere.
+- All environment validation lives in `apps/hub/src/config.ts`. Add new variables there, not inline in `index.ts` or elsewhere.
 - Optional variables (e.g. `GOOGLE_CLIENT_ID`) must be explicitly handled as `string | undefined` — never coerced to empty string silently.
 - The only acceptable default is for variables where the default is part of the API contract (e.g. `VITE_API_BASE_URL` defaults to `''` for same-origin relative URLs).
 

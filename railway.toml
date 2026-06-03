@@ -4,7 +4,7 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 preDeployCommand = "bun run scripts/db-setup.ts"
-startCommand = "bun run apps/api/dist/index.js"
+startCommand = "bun run apps/hub/dist/index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"

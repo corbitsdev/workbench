@@ -28,7 +28,7 @@
 
 ## File Organization
 
-- **Applications**: `apps/web/`, `apps/api/`
+- **Applications**: `apps/web/`, `apps/hub/`
 - **Shared libraries**: `packages/*`
 - **Examples**: `examples/*` (reference consumers, not throwaway)
 - No standalone TypeScript files in repository root
@@ -154,7 +154,7 @@ cp env.workbench.example .env.workbench
 
 ```bash
 # Terminal 1 — API
-bun run --filter @gtm/api dev
+bun run --filter @gtm/hub dev
 
 # Terminal 2 — Web
 bun run --filter @gtm/web dev
@@ -281,7 +281,7 @@ All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agen
 
 ### Pain Point Extraction
 
-Implemented in `apps/api/src/lib/extraction.ts`:
+Implemented in `apps/hub/src/lib/extraction.ts`:
 
 **LLM Path** (when `OPENAI_COMPATIBLE_API_KEY` is configured):
 

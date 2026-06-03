@@ -15,7 +15,7 @@ RUN wget -qO interchange.tar.gz "https://github.com/faremeter/interchange/archiv
     && rm interchange.tar.gz
 
 COPY package.json bun.lock ./
-COPY apps/api/package.json apps/api/
+COPY apps/hub/package.json apps/hub/
 COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
