@@ -1,6 +1,5 @@
 [build]
 builder = "dockerfile"
-# Path is relative to the repo root (the build context), not to this file.
 dockerfilePath = "apps/web/Dockerfile"
 watchPatterns = ["apps/web/**", "packages/**", "package.json", "bun.lock"]
 
