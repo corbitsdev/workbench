@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.9",
-    "@workbench/shared": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/crypto-node": "workspace:*",
     "@intx/db": "workspace:*",
@@ -23,6 +22,7 @@
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "workspace:*",
     "@intx/types": "workspace:*",
+    "@workbench/shared": "workspace:*",
     "arktype": "catalog:",
     "better-auth": "^1.6.9",
     "drizzle-orm": "^0.45.1",

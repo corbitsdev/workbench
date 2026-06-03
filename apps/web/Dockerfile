@@ -4,7 +4,8 @@ FROM oven/bun:1.3-alpine AS builder
 WORKDIR /app
 
 # Pin interchange to a specific commit so this layer caches across deploys when interchange hasn't changed.
-# Update both values together when pulling in new interchange changes.
+# Required because the root workspace graph references interchange/packages/*; a frozen install
+# fails if those workspace members are missing. Update together with the other app Dockerfiles.
 # To get a new SHA256: wget -qO- https://github.com/faremeter/interchange/archive/<commit>.tar.gz | sha256sum
 ARG INTERCHANGE_COMMIT=6d61cd63eb8a966ab8d769e9038eedd89175f5bb
 ARG INTERCHANGE_SHA256=bd1515764796e3331b36903e801039c0a6c836e673200399b219e10c8cd863e3
@@ -20,18 +21,15 @@ COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 
-RUN --mount=type=cache,id=s/03c0cf12-21c5-42ec-a16d-fc952e520627-/root/.bun/install/cache,target=/root/.bun/install/cache bun install --frozen-lockfile
+RUN bun install --frozen-lockfile
 
 COPY . .
 
-FROM oven/bun:1.3-slim AS runtime
+# VITE_API_BASE_URL is a build-time variable; set it on the web service in Railway.
+ARG VITE_API_BASE_URL
+RUN bun run --filter @workbench/web build
 
-WORKDIR /app
+FROM caddy:2.11.3-alpine AS runtime
 
-COPY --from=builder /app/interchange ./interchange
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/sidecar ./apps/sidecar
-COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/package.json ./package.json
-
-CMD ["bun", "run", "apps/sidecar/src/index.ts"]
+COPY --from=builder /app/apps/web/dist /usr/share/caddy
+COPY apps/web/Caddyfile /etc/caddy/Caddyfile

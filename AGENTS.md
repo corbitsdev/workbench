@@ -217,25 +217,39 @@ Required in `.env` (copy from `.env.example`):
 
 ## Railway Deployment
 
-Configuration lives in `railway.toml` at the repo root. Do not change these without understanding the implications:
+This is a **shared monorepo** (one Bun workspace, shared root lockfile and `@workbench/*` / `@intx/*` packages). It deploys as **three separate Railway services** — `hub`, `web`, and `sidecar` — all from this one repo. Do not change these without understanding the implications.
 
-- **Builder:** `railpack` (Railway's current default — not nixpacks, which is legacy)
-- **Build command:** `bun install && bun run --filter @workbench/hub build`
-- **Pre-deploy command:** `bun run scripts/db-setup.ts` — runs forward-only migrations before each deploy; safe to re-run (idempotent)
-- **Start command:** `bun run --filter @workbench/hub start`
+### Per-service configuration
 
-The pre-deploy command calls `scripts/db-setup.ts` directly (not via `bun run db:setup`) because the root `db:setup` script passes `--env-file=.env`, which does not exist on Railway — env vars are injected by the platform.
+Each service is Dockerfile-based, with its config and Dockerfile co-located in its app directory:
 
-Required environment variables to set in the Railway dashboard before deploying:
+| Service   | Config file                 | Dockerfile                | Runtime                             |
+| --------- | --------------------------- | ------------------------- | ----------------------------------- |
+| `hub`     | `apps/hub/railway.toml`     | `apps/hub/Dockerfile`     | Bun (Hono API, port 4000)           |
+| `web`     | `apps/web/railway.toml`     | `apps/web/Dockerfile`     | Static (Vite build served by Caddy) |
+| `sidecar` | `apps/sidecar/railway.toml` | `apps/sidecar/Dockerfile` | Bun (agent runtime)                 |
+
+### Critical: build context vs. config path
+
+- **Root Directory must stay `/` for all three services.** The Docker builds need full-repo context to resolve the shared lockfile, `packages/*`, and the vendored `interchange/packages/*` workspace members. Setting a per-service Root Directory would break the workspace install.
+- **The Railway config file does NOT follow the Root Directory** (per Railway's monorepo docs). Set each service's **Config-as-Code path** in the dashboard to its absolute repo-root path: `/apps/hub/railway.toml`, `/apps/web/railway.toml`, `/apps/sidecar/railway.toml`.
+- `dockerfilePath` inside each config is relative to the **build context (repo root)**, e.g. `apps/hub/Dockerfile`, not relative to the config file.
+- Each config declares `watchPatterns` so a service only redeploys when its own code (or shared deps) change.
+
+The hub pre-deploy command calls `scripts/db-setup.ts` directly (not via `bun run db:setup`) because the root `db:setup` script passes `--env-file=.env`, which does not exist on Railway — env vars are injected by the platform.
+
+The `web` service is **static**: its Dockerfile runs `vite build` (with full repo context for `@workbench/shared`) and serves the output via Caddy, with an SPA fallback to `index.html`. It does not run a Node/Bun process at runtime and does not depend on the hub at build time beyond the `VITE_API_BASE_URL` value.
+
+Required environment variables to set in the Railway dashboard before deploying (on the **hub** service unless noted):
 
 - `DATABASE_URL` — provided by Railway's Postgres plugin
 - `BETTER_AUTH_SECRET` — generate a random secret
-- `BETTER_AUTH_BASE_URL` — public URL of the deployed API service
+- `BETTER_AUTH_BASE_URL` — public URL of the deployed hub service
 - `SUPPORTED_CORS_ORIGINS` — public URL of the deployed web service
 - `OPENAI_COMPATIBLE_API_KEY`
 - `OPENAI_COMPATIBLE_MODEL`
 
-`VITE_API_BASE_URL` must be set on the **web** service (build-time variable), pointing to the deployed API URL.
+`VITE_API_BASE_URL` must be set on the **web** service as a **build-time** variable, pointing to the deployed hub URL.
 
 ## Code Style
 

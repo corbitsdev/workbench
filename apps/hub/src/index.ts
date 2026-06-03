@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
-import { serveStatic } from 'hono/bun';
 import { upgradeWebSocket, websocket } from 'hono/bun';
 import { schema as intxSchema, createGrantStore } from '@intx/db';
 import { createApp } from '@intx/hub-api';
@@ -270,10 +269,8 @@ v1.route('/', createWorkflowRouter(db));
 
 app.route('/api/v1', v1);
 
-// ─── Web SPA (when built into the container) ────────────────────────
-
-app.use('/*', serveStatic({ root: './apps/web/dist' }));
-app.get('/*', serveStatic({ path: './apps/web/dist/index.html' }));
+// The web SPA is deployed as its own static Railway service (apps/web),
+// not served from here. The hub is API-only.
 
 // ─── Health ─────────────────────────────────────────────────────────
 //

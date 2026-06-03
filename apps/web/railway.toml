@@ -1,10 +1,11 @@
 [build]
 builder = "dockerfile"
 # Path is relative to the repo root (the build context), not to this file.
-dockerfilePath = "apps/sidecar/Dockerfile"
-watchPatterns = ["apps/sidecar/**", "package.json", "bun.lock"]
+dockerfilePath = "apps/web/Dockerfile"
+watchPatterns = ["apps/web/**", "packages/**", "package.json", "bun.lock"]
 
 [deploy]
-startCommand = "bun run apps/sidecar/src/index.ts"
+healthcheckPath = "/"
+healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
