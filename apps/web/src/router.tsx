@@ -52,8 +52,26 @@ function ProtectedLayout() {
 }
 
 function AppShell() {
+  const { session, signOut } = useAuth();
+  const name = session.status === 'authenticated' ? session.user.name : '';
+
   return (
     <div className="h-screen flex flex-col">
+      <div className="flex items-center justify-between px-6 py-3 bg-surface border-b border-border shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="h-5 w-5 rounded bg-orange" />
+          <span className="text-sm font-semibold tracking-tight text-text">GTM Workbench</span>
+        </div>
+        <div className="flex items-center gap-4">
+          {name && <span className="text-sm text-text-2">{name}</span>}
+          <button
+            onClick={signOut}
+            className="text-sm text-text-3 hover:text-text transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
       <div className="flex-1 overflow-hidden">
         <Outlet />
       </div>
