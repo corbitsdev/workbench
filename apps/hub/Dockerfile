@@ -20,7 +20,7 @@ COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 
-RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache bun install --frozen-lockfile
+RUN --mount=type=cache,id=pkg/bun,target=/root/.bun/install/cache bun install --frozen-lockfile
 
 # Copy full source
 COPY . .
