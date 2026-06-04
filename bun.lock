@@ -66,6 +66,7 @@
       "dependencies": {
         "@tanstack/react-query": "5.100.14",
         "@workbench/artifact": "workspace:*",
+        "@workbench/auth": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/client": "workspace:*",
         "@workbench/settings": "workspace:*",
@@ -362,6 +363,26 @@
       },
       "peerDependencies": {
         "framer-motion": "*",
+        "react": "*",
+      },
+    },
+    "packages/auth": {
+      "name": "@workbench/auth",
+      "dependencies": {
+        "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
+        "@testing-library/react": "^16.3.2",
+        "@testing-library/user-event": "^14.6.1",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "typescript": "^5.9.0",
+      },
+      "peerDependencies": {
         "react": "*",
       },
     },
@@ -838,6 +859,8 @@
     "@vitejs/plugin-react": ["@vitejs/plugin-react@6.0.2", "", { "dependencies": { "@rolldown/pluginutils": "^1.0.0" }, "peerDependencies": { "@rolldown/plugin-babel": "^0.1.7 || ^0.2.0", "babel-plugin-react-compiler": "^1.0.0", "vite": "^8.0.0" }, "optionalPeers": ["@rolldown/plugin-babel", "babel-plugin-react-compiler"] }, "sha512-DlSMqo4WhThw4vB8Mpn0Woe9J+Jfq1geJ61AKW0QEgLzGMNwtIMdxbDUzLxcun8W7NbJO0e2Jg/Nxm3cCSVzzg=="],
 
     "@workbench/artifact": ["@workbench/artifact@workspace:packages/artifact"],
+
+    "@workbench/auth": ["@workbench/auth@workspace:packages/auth"],
 
     "@workbench/chat": ["@workbench/chat@workspace:packages/chat"],
 
