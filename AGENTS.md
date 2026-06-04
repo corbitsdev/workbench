@@ -2,366 +2,161 @@
 
 ## Session Start
 
-1. Read this file and `CONVENTIONS.md` (or `/.agents/skills/style/SKILL.md`)
-2. Scan `/.agents/skills/` for local project skills
-3. Do not proceed with user requests until these steps are complete
+1. Read this file
+2. Read `CONVENTIONS.md` (or `/.agents/skills/style/SKILL.md`) for code style
+3. Read `PRODUCT.md`, `ARCHITECTURE.md`, `IMPLEMENTATION.md` for current project state
+4. Scan `/.agents/skills/` for available local skills
+5. Do not proceed until these steps are complete
 
 ## Project
 
-**GTM Workbench** (Interchange) is a HITL tool that turns sales call transcripts into publishable collateral. The agent handles analysis and first drafts; the human handles curation, approval, and refinement at every stage.
+GTM Workbench is an AI-assisted GTM workspace built on top of Interchange. Users get a personal agent (Myra), shared workspace agents (Oat, others), and workflows for turning call data into publishable collateral. For current product and architecture details, read the scribe-managed docs.
 
-### Architecture
+### Monorepo layout
 
-- `interchange/` — Dependency, not our application. Do not modify unless explicitly asked.
-- `apps/web/` — React 19 + Vite 8 + Tailwind CSS + Framer Motion. Human-facing UI.
-- `apps/hub/` — Hono + TypeScript. Backend runtime, pipeline, and persistence.
-- `packages/` — Shared types, utilities, and schema that cross the web/API boundary.
-- `compose.yml` — PostgreSQL for local development.
-- Root is the monorepo. `interchange/` is mounted alongside it.
+- `interchange/` — Interchange dependency. Do not modify.
+- `apps/web/` — React 19 + Vite + Tailwind CSS. Human-facing UI.
+- `apps/hub/` — Hono + TypeScript. Backend, pipeline, persistence.
+- `apps/sidecar/` — Interchange sidecar runtime.
+- `packages/` — Shared packages (`@workbench/*`).
+- `interchange/packages/` — Interchange packages (`@intx/*`).
 
 ### Stack
 
 - Package manager: Bun (1.2+)
 - Frontend: React, Vite, Tailwind CSS, Framer Motion
 - Backend: Hono, TypeScript, Drizzle ORM
-- Agent runtime: `@intx/agent` (from `interchange/`)
+- Agent runtime: `@intx/agent`
 - Persistence: PostgreSQL (port 5433 in compose)
 
-- Shared types: `packages/workbench-shared` or equivalent
+## Interchange First
 
-## Version Validation
+**Before writing any new code, check if Interchange already does it.**
 
-When using versioned third-party software (Docker images, npm packages, system tools), **always validate you are using the latest stable version** unless explicitly specified otherwise.
+Interchange (`interchange/packages/`) provides: agent runtime, inference, tenant/principal/grant management, credential resolution, session handling, mail transport, git-backed context storage, observability, and more.
 
-- Check the latest version on the official registry or website before pinning
-- Update docs and configuration files if the version is outdated
-- If a version is intentionally held back, document the reason in the commit or PR
+The cost of reimplementing something Interchange already does is high — divergent ID formats, missing invariants, duplicated logic that drifts. The cost of reading the source first is low.
 
-## Code Reuse
+**Mandatory lookup sequence before implementing anything:**
 
-Do not reimplement functionality that already exists in the codebase. Before writing new code:
+1. Check `interchange/docs/` — AUTH.md, ARCHITECTURE.md, CREDENTIALS.md, MESSAGE.md, API.md
+2. Search `interchange/packages/` for the relevant package
+3. Check if `@intx/hub-common`, `@intx/db`, `@intx/types`, or `@intx/hub-api` exports what you need
+4. Only implement from scratch if Interchange genuinely does not cover it
 
-1. Search for existing implementations that could serve the same purpose
-2. If similar functionality exists, prefer refactoring it to meet the new requirements
-3. Look for unexported functions in other packages that could be promoted to a shared location
-4. Check `interchange/` for patterns, utilities, and types that can be reused
+**Specific rules:**
 
-## Configuration
+- `generateId` — import from `@intx/hub-common`, never reimplement
+- LLM inference — use `@intx/agent`, never direct `fetch()` to LLM endpoints
+- Tenant/principal/grant operations — use Interchange's DB schema and resolution functions from `@intx/db`
+- ID formats, table schemas, type definitions — read `@intx/db/schema` and `@intx/types` before defining your own
+- Credential resolution — use `resolveCredentialRequirement` from `@intx/db`
 
-Do not modify configuration files (e.g. eslint, prettier, tsconfig, package.json) unless explicitly asked.
+## Worktree Setup
+
+Every new worktree requires these steps before doing any work:
+
+```bash
+git submodule update --init   # Interchange submodule is not auto-initialized
+bun install                   # node_modules are not shared between worktrees
+```
+
+Missing either step causes `@intx/*` imports to fail at test/build time.
 
 ## Commit Process
 
-Follow this workflow for every change. Each step is a separate, focused commit.
+Follow this workflow. Each step is a separate commit.
 
-### Step 1: Write tests first
-
+### Step 1 — Tests first (red)
 ```
-Write or update tests for the change you are about to make
-→ Run tests to confirm they fail (red)
-→ Commit with message: "Add test for <feature/fix>"
-```
-
-### Step 2: Make the change
-
-```
-Implement the minimal change to make the tests pass
-→ Run tests to confirm they pass (green)
-→ Run the full build pipeline (format, lint, check, test)
-→ Commit with message: "<feature/fix>: <what changed>"
+Write tests for what you are about to change
+→ Confirm they fail
+→ Commit: "Add tests for <feature/fix>"
 ```
 
-### Step 3: Update documentation
-
+### Step 2 — Implement (green)
 ```
-Invoke the scribe skill (/.agents/skills/scribe/SKILL.md) to update PRODUCT.md, ARCHITECTURE.md, or IMPLEMENTATION.md as needed
-→ Commit docs separately with message: "Update docs: <what changed>"
+Make the minimal change to pass the tests
+→ Run full build pipeline
+→ Commit: "<feature/fix>: <what changed>"
+```
+
+### Step 3 — Docs
+```
+Run the scribe skill if the change affects product, architecture, or implementation docs
+→ Commit: "Update docs: <what changed>"
 ```
 
 ### Commit discipline
 
 - One logical change per commit
-- Commit messages should be small, precise, and easily auditable
-- Focus on one thing at a time
-- Always stop and provide the user with a clear commit message and suggestion to commit
-- Do not auto-commit unless the user explicitly overrides and says the agent can auto-commit
-
-### Example workflow
-
-```
-# User asks for a feature
-1. Write tests for the feature → commit: "Add test for pain point severity enum"
-2. Implement the feature → commit: "Add severity enum to pain point extraction"
-3. Run scribe → commit: "Update docs: add severity enum to ARCHITECTURE.md"
-```
+- Messages are precise and auditable — describe the change, not the task
+- Do not auto-commit unless the user explicitly says so
+- Always present the commit message and wait for user confirmation
 
 ## Build Requirements
 
-You must run the full build pipeline before declaring any task complete:
+Run the full pipeline before declaring any task complete:
 
 ```bash
 bun run format
 bun run lint
-bun run check
+bun run check   # tsc -b across the full project graph
 bun run test
 ```
 
-Or via the Makefile if one is available:
+Pre-existing failures must be identified explicitly. Never silently skip a failing step.
 
-```bash
-make all
-```
+## Issue Workflow
 
-- `bun run check` validates the entire TypeScript project graph via `tsc -b`
-- Individual package builds do not guarantee the full tree will build
-- Type exports and imports may not be available until the full tree is built
-- Tests may fail if dependent packages are not rebuilt
+When implementing a Linear issue, follow the `linear-issue-workflow` skill (`/.agents/skills/linear-issue-workflow/SKILL.md`):
 
-If the build fails, report the failure and identify the cause. If the failure is pre-existing and unrelated to your changes, say so explicitly and let the user decide how to proceed. Never silently skip a failing step or substitute a partial build.
-
-## Setup Commands
-
-1. Start infrastructure:
-
-   ```bash
-   docker compose up -d
-   ```
-
-   The healthcheck waits for PostgreSQL to be ready.
-
-2. Install dependencies:
-
-   ```bash
-   bun install
-   ```
-
-3. Configure environment:
-
-   ```bash
-   cp .env.workbench.example .env.workbench
-   # Edit .env.workbench and fill in optional values
-   ```
-
-4. Initialize the database:
-   ```bash
-   bun run db:setup
-   ```
-   This script waits for Postgres, creates the database if needed, and runs all migrations (Interchange + custom).
-
-## Development Workflow
-
-**Run everything at once from the root:**
-
-```bash
-bun run dev
-```
-
-This starts API (port 4000) and Web (port 5174) in parallel using `bun --parallel`.
-
-**Or individually:**
-
-- API: `bun run --filter @workbench/hub dev`
-- Web: `bun run --filter @workbench/web dev`
-
-**Service locations:**
-
-- Web: `http://localhost:5174` (proxies `/api` to `http://localhost:4000`)
-- API: `http://localhost:4000`
-- PostgreSQL: `localhost:5433`
-
-**Reset the database:**
-
-```bash
-bun run db:reset
-bun run db:setup
-```
-
-## Workflow API Surface
-
-Implemented in `apps/hub` as a unified step-based workflow engine.
-
-| Method | Route                  | Description                                                |
-| ------ | ---------------------- | ---------------------------------------------------------- |
-| `POST` | `/workflows`           | Create a new workflow (intake transcript)                  |
-| `GET`  | `/workflows/:id`       | Get workflow state and history                             |
-| `POST` | `/workflows/:id/steps` | Execute a workflow step (analyze, review, improve, export) |
-
-## Prototype Stages
-
-1. **Call Selection** — Paste transcript or pick from Granola API
-2. **Live Analysis** — Extract pain points, review and select
-3. **Collateral Review** — Card-by-card approval/rejection
-4. **Improvement** — Per-item feedback and regeneration
-5. **Final Export** — Copy, download, or deliver assembled collateral
-6. **Session Dashboard** — Resume prior sessions
-
-## Environment Variables
-
-Required in `.env` (copy from `.env.example`):
-
-| Variable                     | Default                                                                | Purpose                                   |
-| ---------------------------- | ---------------------------------------------------------------------- | ----------------------------------------- |
-| `DATABASE_URL`               | `postgres://workbench:workbench-dev-password@localhost:5433/workbench` | Postgres connection string                |
-| `PORT`                       | `4000`                                                                 | API server port                           |
-| `BETTER_AUTH_SECRET`         | —                                                                      | Required. Auth signing secret             |
-| `BETTER_AUTH_BASE_URL`       | `http://localhost:4000`                                                | Required. Public URL of the API           |
-| `SUPPORTED_CORS_ORIGINS`     | `http://localhost:5174`                                                | Required in production. Comma-separated   |
-| `OPENAI_COMPATIBLE_API_KEY`  | —                                                                      | Required. LLM API key                     |
-| `OPENAI_COMPATIBLE_BASE_URL` | `https://api.openai.com/v1`                                            | Optional. LLM endpoint                    |
-| `OPENAI_COMPATIBLE_MODEL`    | `gpt-4o-mini`                                                          | Required. Model name                      |
-| `VITE_API_BASE_URL`          | `http://localhost:4000`                                                | Build-time. Public URL of the API for web |
-| `GRANOLA_API_KEY`            | —                                                                      | Optional. Granola integration             |
-| `GOOGLE_CLIENT_ID`           | —                                                                      | Optional. Google OAuth                    |
-| `GOOGLE_CLIENT_SECRET`       | —                                                                      | Optional. Google OAuth                    |
-| `GOOGLE_ALLOWED_DOMAINS`     | —                                                                      | Optional. Comma-separated allowed domains |
-
-## Railway Deployment
-
-This is a **shared monorepo** (one Bun workspace, shared root lockfile and `@workbench/*` / `@intx/*` packages). It deploys as **three separate Railway services** — `hub`, `web`, and `sidecar` — all from this one repo. Do not change these without understanding the implications.
-
-### Per-service configuration
-
-Each service is Dockerfile-based, with its config and Dockerfile co-located in its app directory:
-
-| Service   | Config file                 | Dockerfile                | Runtime                             |
-| --------- | --------------------------- | ------------------------- | ----------------------------------- |
-| `hub`     | `apps/hub/railway.toml`     | `apps/hub/Dockerfile`     | Bun (Hono API, port 4000)           |
-| `web`     | `apps/web/railway.toml`     | `apps/web/Dockerfile`     | Static (Vite build served by Caddy) |
-| `sidecar` | `apps/sidecar/railway.toml` | `apps/sidecar/Dockerfile` | Bun (agent runtime)                 |
-
-### Critical: build context vs. config path
-
-- **Root Directory must stay `/` for all three services.** The Docker builds need full-repo context to resolve the shared lockfile, `packages/*`, and the vendored `interchange/packages/*` workspace members. Setting a per-service Root Directory would break the workspace install.
-- **The Railway config file does NOT follow the Root Directory** (per Railway's monorepo docs). Set each service's **Config-as-Code path** in the dashboard to its absolute repo-root path: `/apps/hub/railway.toml`, `/apps/web/railway.toml`, `/apps/sidecar/railway.toml`.
-- `dockerfilePath` inside each config is relative to the **build context (repo root)**, e.g. `apps/hub/Dockerfile`, not relative to the config file.
-- Each config declares `watchPatterns` so a service only redeploys when its own code (or shared deps) change.
-
-The hub pre-deploy command calls `scripts/db-setup.ts` directly (not via `bun run db:setup`) because the root `db:setup` script passes `--env-file=.env`, which does not exist on Railway — env vars are injected by the platform.
-
-The `web` service is **static**: its Dockerfile runs `vite build` (with full repo context for `@workbench/shared`) and serves the output via Caddy, with an SPA fallback to `index.html`. It does not run a Node/Bun process at runtime and does not depend on the hub at build time beyond the `VITE_API_BASE_URL` value.
-
-Required environment variables to set in the Railway dashboard before deploying (on the **hub** service unless noted):
-
-- `DATABASE_URL` — provided by Railway's Postgres plugin
-- `BETTER_AUTH_SECRET` — generate a random secret
-- `BETTER_AUTH_BASE_URL` — public URL of the deployed hub service
-- `SUPPORTED_CORS_ORIGINS` — public URL of the deployed web service
-- `OPENAI_COMPATIBLE_API_KEY`
-- `OPENAI_COMPATIBLE_MODEL`
-
-`VITE_API_BASE_URL` must be set on the **web** service as a **build-time** variable, pointing to the deployed hub URL.
+- Mark the issue In Progress before starting
+- Create a worktree off `origin/staging` (not local staging)
+- Run `git submodule update --init && bun install` in the worktree
+- Follow the test → implement → docs commit sequence
+- Self-review before pushing
+- Rebase on `origin/staging` before creating the PR
+- Create the PR targeting `staging`
+- Post self-review summary as a PR comment
+- Mark the issue Done after the PR is created
 
 ## Code Style
 
-- TypeScript strict mode enabled
-- Bun as runtime and package manager
-- No `console.log` in production code; use structured logging
-- Keep `interchange/` untouched
+- TypeScript strict mode
+- No `console.log` — use `@intx/log` structured logging in hub/sidecar, nothing in web
+- No emojis in code, comments, or messages
+- No fallbacks for required env vars — use `requireEnv()` and fail loudly at startup
+- All env var validation lives in `apps/hub/src/config.ts`
 
-## Environment and Configuration
+## Dependency Injection
 
-- **No fallbacks for required environment variables.** If a variable is required, use `requireEnv()` (or equivalent) and fail loudly at startup. Do not use `|| 'default'` or `?? 'default'` to paper over a missing value.
-- All environment validation lives in `apps/hub/src/config.ts`. Add new variables there, not inline in `index.ts` or elsewhere.
-- Optional variables (e.g. `GOOGLE_CLIENT_ID`) must be explicitly handled as `string | undefined` — never coerced to empty string silently.
-- The only acceptable default is for variables where the default is part of the API contract (e.g. `VITE_API_BASE_URL` defaults to `''` for same-origin relative URLs).
-
-## Dependency Injection vs. Direct Imports
-
-Use one pattern consistently — do not mix them.
-
-**Inject stateful resources** (database connections, HTTP clients, queues). These may have multiple instances in future (e.g. read/write replicas) and need to be controlled in tests.
+Inject stateful resources (DB connections, HTTP clients). Import stateless singletons (config, loggers, constants) directly.
 
 ```ts
-// correct
-export function createWorkflowRouter(db: Database): Hono { ... }
+// correct — db is stateful
+export function createWorkflowRouter(db: DB['db']): Hono { ... }
+
+// wrong — config is not stateful
+export function createWorkflowRouter(db: DB['db'], config: Config): Hono { ... }
 ```
 
-**Import stateless singletons directly** (config, loggers, constants). They have one instance, never need to be swapped, and injecting them just adds boilerplate.
+In tests, mock at the module boundary (`mock.module(...)`) — do not inject fakes through function arguments.
 
-```ts
-// correct
-import { loadConfig } from '../config';
-const { granola } = loadConfig();
+## Configuration
 
-// wrong — config is not a stateful resource
-export function createWorkflowRouter(db: Database, config: Config): Hono { ... }
-```
-
-**In tests**, mock stateless modules at the module boundary (`mock.module(...)`) rather than injecting fakes through function arguments.
+Do not modify `eslint`, `prettier`, `tsconfig`, or `package.json` unless explicitly asked.
 
 ## Constraints
 
-- Do **not** make CRM sync (Attio) a dependency for v1
-- Do **not** build fully automated pipeline
-- Paste-first intake is the primary path; Granola API is optional secondary
+- Do not make CRM sync (Attio) a dependency for v1
+- Do not build a fully automated pipeline — keep humans in the loop
+- Do not modify `interchange/` unless explicitly asked
 - Session state must be persisted and resumable
-- Auth should be lightweight for the prototype (demo gate or minimal)
-- Export targets can include markdown, clipboard, email draft, Slack, Typefully
-
-## Interchange Infrastructure
-
-**Do not circumvent or reinvent interchange utilities.** The `interchange/` dependency provides proven infrastructure for agent runtime, inference, logging, and persistence. Use it.
-
-### LLM Inference: Use `@intx/agent`, Never Direct API Calls
-
-**Rule:** Any LLM inference (extraction, generation, analysis, refinement) must use `@intx/agent` from `interchange/packages/agent`. Never make direct `fetch()` calls to LLM endpoints.
-
-**Why:**
-
-- Direct calls bypass config management, error handling, and logging built into the agent runtime
-- Environment variable handling (API key, model, base URL) is inconsistent and error-prone
-- Failed requests provide no visibility into what URL was called or what the error response contained
-- The agent runtime handles inference source management, context persistence, and retry policy centrally
-
-**How to use `@intx/agent` for LLM inference:**
-
-1. **Create an inference source** from environment variables:
-
-   ```typescript
-   const source: InferenceSource = {
-     id: `task-${taskId}`,
-     provider: 'openai', // or 'anthropic', 'google-genai'
-     baseURL: process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1',
-     apiKey: process.env.OPENAI_COMPATIBLE_API_KEY,
-     model: process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini',
-   };
-   ```
-
-2. **Create an agent with minimal config** (use temp directory for context):
-
-   ```typescript
-   const { tmpdir } = await import('node:os');
-   const { join } = await import('node:path');
-   const { randomUUID } = await import('node:crypto');
-
-   const contextDir = join(tmpdir(), `task-${randomUUID()}`);
-   const agent = await createAgent({
-     contextDir, // Auto-managed isogit store, cleaned up after close()
-     sources: [source],
-     defaultSource: source.id,
-     systemPrompt: 'Your system instructions here.',
-     tools: [],
-     closeTimeoutMs: 1000,
-   });
-   ```
-
-3. **Send your prompt and get structured response:**
-
-   ```typescript
-   const result = await agent.send(userMessage);
-   await agent.close();
-
-   // result.reply contains the LLM response as a string
-   const parsed = JSON.parse(result.reply); // or text parsing
-   ```
-
-**Pattern:** For single-call inference (extraction, analysis), create an agent, send one message, close immediately. The temp contextDir is automatically cleaned up. No manual persistence needed unless the inference is part of a multi-turn conversation.
-
-**See also:** Review `interchange/packages/agent/` source and tests for advanced patterns (tools, streaming, multi-turn conversations).
+- Exports: markdown, clipboard, email draft, Slack, Typefully
 
 ## Personality
 
-- Do not use emojis in code, documentation, or messages (unless explicitly requested)
-- Act professionally
-- Use plain language. No jargon you haven't earned
-- Be concise
+- Professional, plain language, no jargon you haven't earned
+- Concise — one clear sentence beats a paragraph
+- No emojis
