@@ -15,6 +15,7 @@
     "@workbench/artifact": "workspace:*",
     "@workbench/chat": "workspace:*",
     "@workbench/client": "workspace:*",
+    "@workbench/settings": "workspace:*",
     "@workbench/shared": "workspace:*",
     "@workbench/transcript": "workspace:*",
     "@workbench/ui": "workspace:*",

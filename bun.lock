@@ -68,6 +68,7 @@
         "@workbench/artifact": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/client": "workspace:*",
+        "@workbench/settings": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
@@ -398,6 +399,24 @@
       },
       "peerDependencies": {
         "@tanstack/react-query": "*",
+        "react": "*",
+      },
+    },
+    "packages/settings": {
+      "name": "@workbench/settings",
+      "dependencies": {
+        "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
+        "@testing-library/react": "^16.3.2",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "react": "^19.0.0",
+        "typescript": "^5.9.0",
+      },
+      "peerDependencies": {
         "react": "*",
       },
     },
@@ -825,6 +844,8 @@
     "@workbench/client": ["@workbench/client@workspace:packages/client"],
 
     "@workbench/hub": ["@workbench/hub@workspace:apps/hub"],
+
+    "@workbench/settings": ["@workbench/settings@workspace:packages/settings"],
 
     "@workbench/shared": ["@workbench/shared@workspace:packages/workbench-shared"],
 

@@ -12,6 +12,7 @@ import LiveAnalysisReview from './pages/LiveAnalysisReview';
 import CollateralReview from './pages/CollateralReview';
 import CollateralImprovement from './pages/CollateralImprovement';
 import FinalExport from './pages/FinalExport';
+import Settings from './pages/Settings';
 
 type WorkspaceStatus = 'loading' | 'present' | 'absent' | 'error';
 
@@ -98,6 +99,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <WorkbenchHome /> },
           { path: '/dashboard', element: <Dashboard /> },
+          { path: '/settings', element: <Settings /> },
           { path: '/workflows/:id/analyze', element: <LiveAnalysisReview /> },
           { path: '/workflows/:id/review', element: <CollateralReview /> },
           { path: '/workflows/:id/improvement', element: <CollateralImprovement /> },
