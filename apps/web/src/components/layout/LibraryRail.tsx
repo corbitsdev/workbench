@@ -137,18 +137,54 @@ function StatusDot({ status }: { status: ResourceStatus }) {
   );
 }
 
-export function LibraryRail() {
+interface LibraryRailProps {
+  /** When provided, renders a close control (used by the mobile full-screen overlay). */
+  onClose?: () => void;
+}
+
+export function LibraryRail({ onClose }: LibraryRailProps = {}) {
   const segments: { label: string; count: number }[] = [
     { label: 'All', count: SAMPLE_ITEMS.length },
-    { label: 'Workflows', count: SAMPLE_ITEMS.filter((i) => i.type === 'workflow').length },
-    { label: 'Workbenches', count: SAMPLE_ITEMS.filter((i) => i.type === 'workbench').length },
-    { label: 'Agents', count: SAMPLE_ITEMS.filter((i) => i.type === 'agent').length },
+    {
+      label: 'Workflows',
+      count: SAMPLE_ITEMS.filter((i) => i.type === 'workflow').length,
+    },
+    {
+      label: 'Workbenches',
+      count: SAMPLE_ITEMS.filter((i) => i.type === 'workbench').length,
+    },
+    {
+      label: 'Agents',
+      count: SAMPLE_ITEMS.filter((i) => i.type === 'agent').length,
+    },
   ];
 
   return (
     <aside className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
       <div className="px-[18px] pb-[10px] pt-[18px]">
-        <div className="text-[13px] font-bold uppercase tracking-[0.04em] text-text-3">Library</div>
+        <div className="flex items-center justify-between">
+          <div className="text-[13px] font-bold uppercase tracking-[0.04em] text-text-3">
+            Library
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close library"
+              className="grid h-[30px] w-[30px] place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="h-[18px] w-[18px]"
+              >
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
         <div className="mt-3 flex items-center gap-[9px] rounded-[12px] border border-border bg-surface px-[11px] py-2 focus-within:border-orange">
           <svg
             viewBox="0 0 24 24"

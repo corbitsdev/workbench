@@ -1,24 +1,57 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
 import { useResizableRail } from '../lib/use-resizable-rail';
+import { useMediaQuery } from '../lib/use-media-query';
 
 /**
- * Workbench home: resizable two-pane layout (library rail | handle | gallery),
- * mirroring workbench.html. Phase 1 scaffold — panels render static sample data;
- * Phase 2/3 wire them to real session + artifact providers (CL-985/986/989).
+ * Workbench home. Full-bleed, mobile-responsive layout.
+ *
+ * Desktop (lg+): resizable two-pane grid (library rail | handle | gallery).
+ * The grid is the page scroll container; the rail and handle are sticky at
+ * full viewport height while the gallery scrolls with the natural page scroll.
+ *
+ * Mobile (<lg): single-column gallery with natural scroll; the library opens
+ * as a full-screen overlay from a button in the gallery header.
+ *
+ * Phase 1 scaffold — panels render static sample data; Phase 2/3 wire them to
+ * real session + artifact providers (CL-985/986/989).
  */
+// Topbar height (74px) reserved so the sticky rail fills the remaining viewport.
+const RAIL_HEIGHT = 'h-[calc(100vh-74px)]';
+
 export default function WorkbenchHome() {
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
   const { width, min, max, dragging, containerRef, handleProps } = useResizableRail();
+  const [railOpen, setRailOpen] = useState(false);
   const navigate = useNavigate();
+
+  if (!isDesktop) {
+    return (
+      <div className="h-full overflow-y-auto px-2 pb-10 pt-1">
+        <ArtifactGallery
+          onNew={() => navigate('/dashboard')}
+          onOpenLibrary={() => setRailOpen(true)}
+        />
+        {railOpen && (
+          <div className="fixed inset-0 z-50 bg-page p-2">
+            <LibraryRail onClose={() => setRailOpen(false)} />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
       ref={containerRef}
-      className={`mx-auto grid h-full max-w-[1180px] gap-0 px-2 pb-10 pt-1 ${dragging ? 'select-none' : ''}`}
+      className={`grid h-full gap-0 overflow-y-auto px-2 pb-10 pt-1 ${dragging ? 'select-none' : ''}`}
       style={{ gridTemplateColumns: `${width}px 16px 1fr` }}
     >
-      <LibraryRail />
+      <div className={`sticky top-0 self-start ${RAIL_HEIGHT}`}>
+        <LibraryRail />
+      </div>
 
       <div
         role="separator"
@@ -28,7 +61,7 @@ export default function WorkbenchHome() {
         aria-valuemin={min}
         aria-valuemax={max}
         tabIndex={0}
-        className="group flex cursor-col-resize touch-none items-center justify-center"
+        className={`group sticky top-0 flex cursor-col-resize touch-none items-center justify-center self-start ${RAIL_HEIGHT}`}
         {...handleProps}
       >
         <div

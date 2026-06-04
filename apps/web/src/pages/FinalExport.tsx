@@ -64,7 +64,7 @@ export default function FinalExport() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-page">
+    <div className="flex flex-col h-full bg-page">
       <HorizontalStepper steps={steps} />
       <motion.div
         className="flex-1 flex flex-col overflow-hidden"

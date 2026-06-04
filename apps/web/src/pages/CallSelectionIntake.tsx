@@ -50,7 +50,7 @@ export default function CallSelectionIntake({ onWorkflowCreated }: CallSelection
   const isLoading = createWorkflow.isPending;
 
   return (
-    <div className="flex flex-col h-screen bg-page">
+    <div className="flex flex-col h-full bg-page">
       <HorizontalStepper steps={steps} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="p-6 border-b border-border bg-surface">

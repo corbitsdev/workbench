@@ -248,12 +248,32 @@ function Viz({ kind }: { kind: VizKind }) {
 interface ArtifactGalleryProps {
   /** Bridge to the working intake flow (real Dashboard) until CL-988/Phase 4 wires it natively. */
   onNew?: () => void;
+  /** When provided, renders a mobile-only control to open the library overlay. */
+  onOpenLibrary?: () => void;
 }
 
-export function ArtifactGallery({ onNew }: ArtifactGalleryProps) {
+export function ArtifactGallery({ onNew, onOpenLibrary }: ArtifactGalleryProps) {
   return (
-    <section className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
-      <div className="flex items-center gap-[14px] px-7 pb-[14px] pt-5">
+    <section className="flex min-h-full flex-col rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
+      <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
+        {onOpenLibrary && (
+          <button
+            type="button"
+            onClick={onOpenLibrary}
+            aria-label="Open library"
+            className="grid h-[34px] w-[34px] flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text lg:hidden"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="h-[18px] w-[18px]"
+            >
+              <path d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        )}
         <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">Artifacts</h1>
         <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
           {SAMPLE_ARTIFACTS.length} items
@@ -292,8 +312,8 @@ export function ArtifactGallery({ onNew }: ArtifactGalleryProps) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-7 pb-10 pt-1.5 [container-type:inline-size]">
-        <div className="grid auto-rows-[88px] grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-[var(--gap)]">
+      <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7 [container-type:inline-size]">
+        <div className="grid auto-rows-[88px] grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
           {/* TODO(CL-986): key by stable artifact id once wired to real data. */}
           {SAMPLE_ARTIFACTS.map((a, i) => (
             <div

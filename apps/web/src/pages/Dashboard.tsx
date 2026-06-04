@@ -63,7 +63,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-page">
+    <div className="h-full overflow-y-auto bg-page">
       {/* Header */}
       <div className="bg-surface border-b border-border px-8 py-5 flex items-center justify-between">
         <div>

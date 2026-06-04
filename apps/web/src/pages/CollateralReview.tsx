@@ -68,7 +68,7 @@ export default function CollateralReview() {
     : buildSteps('generate', STEP_LABELS);
 
   return (
-    <div className="flex flex-col h-screen bg-page">
+    <div className="flex flex-col h-full bg-page">
       <HorizontalStepper steps={steps} />
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel: Context */}

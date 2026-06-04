@@ -91,7 +91,7 @@ export default function LiveAnalysisReview() {
   });
 
   return (
-    <div className="flex h-screen bg-page text-text">
+    <div className="flex h-full bg-page text-text">
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Horizontal Stepper */}
