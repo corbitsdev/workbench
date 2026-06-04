@@ -246,7 +246,9 @@ export default function Dashboard() {
                               const stage =
                                 wf.status === 'analyzing' || wf.status === 'reviewing'
                                   ? 'analyze'
-                                  : 'export';
+                                  : wf.status === 'improving'
+                                    ? 'improvement'
+                                    : 'export';
                               navigate(`/workflows/${wf.id}/${stage}`);
                             }}
                             className="text-xs font-medium text-orange hover:underline focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-orange rounded px-2 py-1 transition-colors cursor-pointer"

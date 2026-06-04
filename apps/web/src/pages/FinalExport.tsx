@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate, Link } from 'react-router';
 import { motion } from 'framer-motion';
 import CollateralBody from '../components/CollateralBody';
 import { useWorkflow } from '../hooks/use-workflow';
@@ -26,7 +26,7 @@ export default function FinalExport() {
   const { id: workflowId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   if (!workflowId) return null;
-  const { data: workflow } = useWorkflow(workflowId);
+  const { data: workflow, isLoading } = useWorkflow(workflowId);
   const artifacts = (workflow?.steps?.generate?.artifacts as any[]) ?? [];
 
   const steps = buildSteps('export', STEP_LABELS, true);
@@ -89,49 +89,71 @@ export default function FinalExport() {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
-          {/* How to use */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-orange-soft border border-orange rounded-lg p-6"
-          >
-            <h3 className="font-bold text-orange-deep mb-3">How to use it</h3>
-            <ul className="text-sm text-text space-y-2 list-disc list-inside">
-              <li>Lead with the email — it is the most direct follow-up path.</li>
-              <li>Hand the ad copy variants to your paid media contact as-is.</li>
-              <li>Repurpose the LinkedIn post for organic reach after the deal moves.</li>
-              <li>Share the one-pager with internal champions at the prospect.</li>
-            </ul>
-          </motion.div>
-
-          {/* Artifacts */}
-          {artifacts.map((item: any, i: number) => (
+          {!isLoading && workflow && artifacts.length === 0 ? (
             <motion.div
-              key={item.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.07 }}
-              className="bg-surface border border-border rounded-lg overflow-hidden"
+              className="bg-surface border border-border rounded-lg p-8 text-center"
             >
-              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-                <div>
-                  <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-soft text-orange-deep text-xs font-semibold uppercase tracking-wide mb-1">
-                    {TYPE_LABELS[item.kind as CollateralType] ?? item.kind}
-                  </div>
-                  <h3 className="text-lg font-bold text-text">{item.title}</h3>
-                </div>
-                <button
-                  onClick={() => handleCopyItem(item)}
-                  className="px-3 py-1.5 text-xs font-medium border border-border text-text-2 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer shrink-0"
-                >
-                  {copiedId === item.id ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-              <div className="p-6">
-                <CollateralBody body={item.content} type={item.kind as CollateralType} />
-              </div>
+              <h3 className="text-lg font-bold text-text mb-2">No collateral found</h3>
+              <p className="text-sm text-text-2 mb-4">
+                The collateral for this workflow is unavailable. Return to the improvement step to
+                regenerate it.
+              </p>
+              <Link
+                to={`/workflows/${workflowId}/improvement`}
+                className="text-sm font-medium text-orange hover:underline"
+              >
+                Back to improvement
+              </Link>
             </motion.div>
-          ))}
+          ) : (
+            <>
+              {/* How to use */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-orange-soft border border-orange rounded-lg p-6"
+              >
+                <h3 className="font-bold text-orange-deep mb-3">How to use it</h3>
+                <ul className="text-sm text-text space-y-2 list-disc list-inside">
+                  <li>Lead with the email — it is the most direct follow-up path.</li>
+                  <li>Hand the ad copy variants to your paid media contact as-is.</li>
+                  <li>Repurpose the LinkedIn post for organic reach after the deal moves.</li>
+                  <li>Share the one-pager with internal champions at the prospect.</li>
+                </ul>
+              </motion.div>
+
+              {/* Artifacts */}
+              {artifacts.map((item: any, i: number) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.07 }}
+                  className="bg-surface border border-border rounded-lg overflow-hidden"
+                >
+                  <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+                    <div>
+                      <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-soft text-orange-deep text-xs font-semibold uppercase tracking-wide mb-1">
+                        {TYPE_LABELS[item.kind as CollateralType] ?? item.kind}
+                      </div>
+                      <h3 className="text-lg font-bold text-text">{item.title}</h3>
+                    </div>
+                    <button
+                      onClick={() => handleCopyItem(item)}
+                      className="px-3 py-1.5 text-xs font-medium border border-border text-text-2 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer shrink-0"
+                    >
+                      {copiedId === item.id ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="p-6">
+                    <CollateralBody body={item.content} type={item.kind as CollateralType} />
+                  </div>
+                </motion.div>
+              ))}
+            </>
+          )}
         </div>
 
         {/* Footer */}
