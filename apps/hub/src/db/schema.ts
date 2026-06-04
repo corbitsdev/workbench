@@ -89,3 +89,19 @@ export const artifactVersion = pgTable('artifact_version', {
   authorId: text('author_id').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// Maps a better-auth user ID to the Interchange tenant and principal IDs
+// provisioned on signup. Nullable until provisioning completes — allows the
+// user record to exist before Interchange provisioning runs (non-blocking
+// signup) and supports a repair path on next login.
+export const workbenchUser = pgTable('workbench_user', {
+  userId: text('user_id').primaryKey(),
+  personalTenantId: text('personal_tenant_id'),
+  workbenchPrincipalId: text('workbench_principal_id'),
+  provisionedAt: timestamp('provisioned_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at')
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});

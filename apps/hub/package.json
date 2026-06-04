@@ -19,6 +19,7 @@
     "@intx/crypto-node": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
+    "@intx/hub-common": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "workspace:*",
     "@intx/types": "workspace:*",

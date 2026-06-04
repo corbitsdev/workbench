@@ -19,11 +19,13 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import { eq } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
 import * as workbenchSchema from './db/schema';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
+import { ensureWorkbenchTenant, provisionUserOnSignup } from './lib/tenant-provisioning';
 
 await setup({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
@@ -47,9 +49,17 @@ const db = drizzle(sql, { schema: { ...intxSchema, ...workbenchSchema } });
 
 log.info('Database connection established');
 
-// ─── Auth ──────────────────────────────────────────────────────────
+// ─── Workbench tenant bootstrap ─────────────────────────────────────
+//
+// Idempotent — creates the shared GTM Workbench Interchange tenant on first
+// boot and returns the existing tenant ID on subsequent boots.
 
-const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
+const { isDev, cors: corsConfig, auth: authConfig, google, hub, workbench } = config;
+
+const { tenantId: workbenchTenantId } = await ensureWorkbenchTenant(db, workbench.tenantSlug);
+log.info('Workbench tenant ready', { workbenchTenantId });
+
+// ─── Auth ──────────────────────────────────────────────────────────
 const { origins: corsOrigins, isCrossOrigin } = corsConfig;
 
 log.info('CORS config loaded', { corsOrigins, corsCount: corsOrigins.length });
@@ -84,6 +94,46 @@ const auth = betterAuth({
           const domain = user.email.split('@')[1];
           if (!domain || !google.allowedDomains.includes(domain)) {
             throw new Error(`Email domain not allowed`);
+          }
+        },
+        after: async (user) => {
+          // Insert a placeholder row immediately so the user record exists
+          // even if Interchange provisioning fails below.
+          await db
+            .insert(workbenchSchema.workbenchUser)
+            .values({ userId: user.id, createdAt: new Date(), updatedAt: new Date() })
+            .onConflictDoNothing();
+
+          try {
+            const { personalTenantId, workbenchPrincipalId } = await provisionUserOnSignup(db, {
+              userId: user.id,
+              userEmail: user.email,
+              workbenchTenantId,
+            });
+
+            await db
+              .update(workbenchSchema.workbenchUser)
+              .set({
+                personalTenantId,
+                workbenchPrincipalId,
+                provisionedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(workbenchSchema.workbenchUser.userId, user.id));
+
+            log.info('User provisioned', {
+              userId: user.id,
+              personalTenantId,
+              workbenchPrincipalId,
+            });
+          } catch (err) {
+            log.error(
+              'Interchange provisioning failed for new user — repair will run on next login',
+              {
+                userId: user.id,
+                error: err instanceof Error ? err : new Error(String(err)),
+              }
+            );
           }
         },
       },
@@ -265,6 +315,19 @@ v1.use('*', async (c, next) => {
 
   c.set('userId', result.user.id);
   await next();
+});
+
+v1.get('/me', async (c) => {
+  const userId = c.get('userId');
+  const row = await db.query.workbenchUser.findFirst({
+    where: eq(workbenchSchema.workbenchUser.userId, userId),
+  });
+  return c.json({
+    userId,
+    personalTenantId: row?.personalTenantId ?? null,
+    workbenchPrincipalId: row?.workbenchPrincipalId ?? null,
+    provisionedAt: row?.provisionedAt ?? null,
+  });
 });
 
 v1.route('/', createWorkflowRouter(db));
