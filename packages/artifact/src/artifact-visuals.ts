@@ -1,21 +1,9 @@
-// Presentation mapping for the artifact gallery. This is deliberately app-side
-// (NOT in @workbench/client): the package returns clean domain data, the app
-// decides how to visualize it. Maps an artifact `kind` to a gallery tile's
-// label, decorative viz, fill color, and grid span.
+// Presentation mapping for the artifact gallery. The package returns clean
+// domain data; this module decides how to visualize it. Maps an artifact
+// `kind` to a gallery tile's label, decorative viz, fill color, and grid span.
 
 import type { ArtifactWithSession } from '@workbench/shared';
-
-export type VizKind = 'bars' | 'donut' | 'grid' | 'lines' | 'nodes' | 'heat' | 'deck' | 'cal';
-
-export interface ArtifactVisual {
-  /** Short type label shown on the tile. */
-  label: string;
-  viz: VizKind;
-  /** Tailwind background utility for the tile's hero area. */
-  fill: string;
-  /** Tailwind grid-span utilities. */
-  span: string;
-}
+import type { ArtifactVisual, GalleryArtifact } from './types';
 
 // Default visuals per known artifact kind. The DB `kind` column is free-form,
 // so unknown kinds fall back to a neutral document tile.
@@ -35,16 +23,6 @@ const FALLBACK_VISUAL: ArtifactVisual = {
 
 export function visualForKind(kind: string): ArtifactVisual {
   return KIND_VISUALS[kind] ?? FALLBACK_VISUAL;
-}
-
-/** A gallery-ready view of a single artifact, combining domain data + visuals. */
-export interface GalleryArtifact extends ArtifactVisual {
-  id: string;
-  title: string;
-  /** "From" label — the originating session/company. */
-  from: string;
-  /** Human-readable relative time. */
-  time: string;
 }
 
 const RELATIVE_TIME = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
