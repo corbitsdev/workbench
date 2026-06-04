@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from './components/AuthProvider';
 import { getMyPrincipals } from './lib/hub-api';
 import { Topbar } from './components/layout/Topbar';
+import { PersonalAgentChat } from './components/PersonalAgentChat';
 import { LoginPage } from './pages/LoginPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import WorkbenchHome from './pages/WorkbenchHome';
@@ -68,9 +69,14 @@ function AppShell() {
   return (
     <div className="flex h-screen flex-col bg-page">
       <Topbar breadcrumb={breadcrumb} />
-      <main className="flex-1 overflow-hidden">
-        <Outlet />
-      </main>
+      <div className="flex flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden">
+          <Outlet />
+        </main>
+        {/* Personal agent (Ada) chat widget — shell mount for CL-1256.
+            Transport is a placeholder stub until CL-991. */}
+        <PersonalAgentChat />
+      </div>
     </div>
   );
 }
