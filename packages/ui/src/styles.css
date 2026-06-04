@@ -98,6 +98,7 @@
   --border-strong: rgba(247, 234, 213, 0.22);
   --row-hover: rgba(247, 234, 213, 0.05);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 22px 60px rgba(0, 0, 0, 0.45);
+  --orange-glow: 0 4px 14px rgba(233, 132, 40, 0.45);
 
   /* Sidebar colors */
   --sidebar: var(--surface);

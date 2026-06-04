@@ -18,8 +18,7 @@ import { useMediaQuery } from '../lib/use-media-query';
  * Phase 1 scaffold — panels render static sample data; Phase 2/3 wire them to
  * real session + artifact providers (CL-985/986/989).
  */
-// Topbar height (74px) reserved so the sticky rail fills the remaining viewport.
-const RAIL_HEIGHT = 'h-[calc(100vh-74px)]';
+const RAIL_HEIGHT = 'h-full';
 
 export default function WorkbenchHome() {
   const isDesktop = useMediaQuery('(min-width: 1024px)');

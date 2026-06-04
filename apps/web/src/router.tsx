@@ -2,7 +2,7 @@ import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router
 import { useEffect, useState } from 'react';
 import { useAuth } from './components/AuthProvider';
 import { getMyPrincipals } from './lib/hub-api';
-import { Topbar } from './components/layout/Topbar';
+import { AppSidebar } from './components/layout/AppSidebar';
 import { PersonalAgentChat } from './components/PersonalAgentChat';
 import { LoginPage } from './pages/LoginPage';
 import { OnboardingPage } from './pages/OnboardingPage';
@@ -56,26 +56,14 @@ function ProtectedLayout() {
   return <Outlet />;
 }
 
-// Maps the active route to the breadcrumb label shown in the topbar.
-function useBreadcrumb(): string {
-  const { pathname } = useLocation();
-  if (pathname.startsWith('/workflows/')) return 'Workflow';
-  if (pathname.startsWith('/dashboard')) return 'Sessions';
-  return 'Workbench';
-}
-
 function AppShell() {
-  const breadcrumb = useBreadcrumb();
-
   return (
-    <div className="flex h-screen flex-col bg-page">
-      <Topbar breadcrumb={breadcrumb} />
-      <div className="flex flex-1 overflow-hidden">
+    <div className="flex h-screen flex-row bg-page">
+      <AppSidebar />
+      <div className="flex flex-1 flex-col overflow-hidden">
         <main className="flex-1 overflow-hidden">
           <Outlet />
         </main>
-        {/* Personal agent (Ada) chat widget — shell mount for CL-1256.
-            Transport is a placeholder stub until CL-991. */}
         <PersonalAgentChat />
       </div>
     </div>
