@@ -4,6 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { MemoryRouter } from 'react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import WorkbenchHome from './WorkbenchHome';
 
 // Force the mobile layout by stubbing matchMedia so the min-width query never
@@ -30,7 +31,14 @@ afterEach(() => {
 });
 
 function renderHome() {
-  return render(React.createElement(MemoryRouter, null, React.createElement(WorkbenchHome)));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    React.createElement(
+      QueryClientProvider,
+      { client },
+      React.createElement(MemoryRouter, null, React.createElement(WorkbenchHome))
+    )
+  );
 }
 
 describe('WorkbenchHome mobile layout', () => {

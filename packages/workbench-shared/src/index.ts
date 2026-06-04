@@ -49,6 +49,31 @@ export interface ArtifactVersion {
   createdAt: string;
 }
 
+/**
+ * An artifact enriched with the session it belongs to. Returned by the
+ * aggregate `GET /artifacts` endpoint so the library can show a "from" label
+ * without a second round-trip.
+ */
+export interface ArtifactWithSession extends Artifact {
+  sessionName: string | null;
+  sessionStatus: SessionStatus;
+}
+
+/**
+ * One row from `GET /workflows` — a summary of a user's session, used to
+ * populate the library rail.
+ */
+export interface WorkflowSummary {
+  id: string;
+  status: SessionStatus;
+  createdAt: string;
+  transcriptId: string;
+  companyName: string | null;
+  transcriptPreview: string | null;
+  painPointCount: number;
+  firstPainPoint: string | null;
+}
+
 export interface TranscriptInput {
   transcript: string;
   source?: 'paste' | 'granola';

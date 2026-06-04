@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "5.100.14",
+    "@workbench/client": "workspace:*",
     "@workbench/shared": "workspace:*",
     "better-auth": "^1.1.43",
     "class-variance-authority": "^0.7.1",

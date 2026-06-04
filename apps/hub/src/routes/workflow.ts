@@ -140,6 +140,46 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
     return c.json(rows);
   });
 
+  // ─── List artifacts (aggregate across the user's sessions) ──────────
+  router.get('/artifacts', async (c) => {
+    const userId = c.get('userId');
+
+    // Scope by userId exactly like the sibling routes. Tenant-path scoping is
+    // CL-1246 and intentionally out of scope here.
+    const sessions = await db.query.workbenchSession.findMany({
+      where: eq(workbenchSession.userId, userId),
+      orderBy: [desc(workbenchSession.createdAt)],
+      limit: 50,
+    });
+
+    if (sessions.length === 0) {
+      return c.json([]);
+    }
+
+    const sessionById = new Map<string, (typeof sessions)[number]>(
+      sessions.map((s: (typeof sessions)[number]) => [s.id, s])
+    );
+
+    const artifacts = await db.query.artifact.findMany({
+      where: inArray(
+        artifact.sessionId,
+        sessions.map((s: (typeof sessions)[number]) => s.id)
+      ),
+      orderBy: [desc(artifact.updatedAt)],
+    });
+
+    const rows = artifacts.map((a: any) => {
+      const session = sessionById.get(a.sessionId);
+      return {
+        ...serializeArtifact(a),
+        sessionName: session?.companyName ?? null,
+        sessionStatus: session?.status ?? null,
+      };
+    });
+
+    return c.json(rows);
+  });
+
   // ─── Read workflow ──────────────────────────────────────────────────
   router.get('/workflows/:id', async (c) => {
     const id = c.req.param('id');

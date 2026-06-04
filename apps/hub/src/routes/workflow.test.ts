@@ -84,6 +84,56 @@ describe('Workflow router', () => {
     expect(json.steps).toBeObject();
   });
 
+  it('GET /artifacts returns the user artifacts enriched with session info', async () => {
+    const mockDb = createMockDb() as ReturnType<typeof createMockDb> & {
+      query: { workbenchSession: { findMany: ReturnType<typeof mock> } };
+    };
+    mockDb.query.workbenchSession.findMany = mock(() => [
+      { id: 'wf-1', status: 'done', companyName: 'Acme Corp', transcriptId: 'tx-1' },
+    ]);
+    mockDb.query.artifact.findMany = mock(() => [
+      {
+        id: 'a-1',
+        sessionId: 'wf-1',
+        painPointId: 'p-1',
+        kind: 'email',
+        title: 'Sales automation ROI',
+        content: 'body',
+        status: 'approved',
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    const router = createWorkflowRouter(mockDb);
+    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(Array.isArray(json)).toBe(true);
+    expect(json).toHaveLength(1);
+    expect(json[0].id).toBe('a-1');
+    expect(json[0].sessionName).toBe('Acme Corp');
+    expect(json[0].sessionStatus).toBe('done');
+  });
+
+  it('GET /artifacts returns an empty array when the user has no sessions', async () => {
+    const mockDb = createMockDb() as ReturnType<typeof createMockDb> & {
+      query: { workbenchSession: { findMany: ReturnType<typeof mock> } };
+    };
+    mockDb.query.workbenchSession.findMany = mock(() => [] as any[]);
+
+    const router = createWorkflowRouter(mockDb);
+    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json).toEqual([]);
+  });
+
   it('POST /workflows/:id/steps runs analyze step', async () => {
     const router = createWorkflowRouter(createMockDb());
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
