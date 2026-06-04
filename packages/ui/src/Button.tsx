@@ -1,6 +1,6 @@
-import { ComponentPropsWithoutRef } from 'react';
+import { type ComponentPropsWithoutRef } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { cn } from '../../lib/utils';
+import { cn } from './utils';
 
 const buttonVariants = cva(
   'px-4 py-2 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-orange disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer',

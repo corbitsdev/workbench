@@ -6,7 +6,7 @@
   "baseColor": "slate",
   "cssVariables": true,
   "aliases": {
-    "@/components/ui": "@/components/ui",
-    "@/lib/utils": "@/lib/utils"
+    "ui": "@workbench/ui",
+    "utils": "@workbench/ui"
   }
 }

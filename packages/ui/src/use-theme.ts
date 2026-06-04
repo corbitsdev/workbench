@@ -21,7 +21,7 @@ function applyTheme(theme: Theme): void {
 
 /**
  * Light/dark theme with localStorage persistence, mirroring workbench.html.
- * Sets `data-theme` on <html>; the palette swap lives in index.css.
+ * Sets `data-theme` on <html>; the palette swap lives in styles.css.
  */
 export function useTheme(): { theme: Theme; setTheme: (theme: Theme) => void } {
   const [theme, setThemeState] = useState<Theme>(readStoredTheme);

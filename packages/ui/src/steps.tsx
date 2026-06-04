@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from './utils';
 
 interface StepsProps extends React.HTMLAttributes<HTMLDivElement> {
   value?: number;

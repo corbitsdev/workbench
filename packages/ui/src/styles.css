@@ -1,0 +1,158 @@
+@import 'tailwindcss';
+
+/*
+ * Scan this package's own source so Tailwind v4 generates the utilities used
+ * inside @workbench/ui components. Consumers (apps/web) are auto-detected from
+ * their own Vite root; their own files do not need to be listed here.
+ */
+@source '.';
+
+/*
+ * Brand tokens as first-class Tailwind v4 theme tokens. Colors are declared
+ * `inline` so the generated utilities reference the runtime CSS variables
+ * (defined in :root below and swapped under [data-theme='light']), giving us
+ * live light/dark theming. Radius/font/easing do not theme-switch, so they
+ * carry literal values.
+ */
+@theme inline {
+  --color-orange: var(--orange);
+  --color-orange-deep: var(--orange-deep);
+  --color-orange-soft: var(--orange-soft);
+  --color-blue: var(--blue);
+  --color-blue-deep: var(--blue-deep);
+  --color-blue-soft: var(--blue-soft);
+  --color-green: var(--green);
+  --color-green-deep: var(--green-deep);
+  --color-green-soft: var(--green-soft);
+  --color-cream: var(--cream);
+  --color-cream-deep: var(--cream-deep);
+  --color-charcoal: var(--charcoal);
+  --color-charcoal-2: var(--charcoal-2);
+  --color-charcoal-deep: var(--charcoal-deep);
+
+  --color-page: var(--page);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-row-hover: var(--row-hover);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@theme {
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-panel: 28px;
+
+  --font-body: 'Red Hat Display', 'Open Sans', Roboto, Arial, sans-serif;
+  --font-mono: 'Space Mono', 'Fira Code', Monaco, Consolas, monospace;
+
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+:root {
+  /* Color palette */
+  --orange: #e98428;
+  --orange-deep: #bf6b20;
+  --orange-soft: #f2b277;
+  --blue: #607c9a;
+  --blue-deep: #2d455c;
+  --blue-soft: #c5d2de;
+  --green: #7b9974;
+  --green-deep: #425a3d;
+  --green-soft: #c1d1be;
+  --cream: #f7ead5;
+  --cream-deep: #e4d5bc;
+  --charcoal: #2b2627;
+  --charcoal-2: #5c5555;
+  --charcoal-deep: #1f1a1b;
+
+  /* Spacing & layout */
+  --gap: 14px;
+
+  /* Animation (non-spring easing used directly via var()) */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Dark theme (default) */
+  --page: #151112;
+  --bg: #221d1e;
+  --surface: #2b2627;
+  --surface-2: #322c2d;
+  --text: #f7ead5;
+  --text-2: #c3b6a3;
+  --text-3: #8a8079;
+  --border: rgba(247, 234, 213, 0.1);
+  --border-strong: rgba(247, 234, 213, 0.22);
+  --row-hover: rgba(247, 234, 213, 0.05);
+  --shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 22px 60px rgba(0, 0, 0, 0.45);
+
+  /* Sidebar colors */
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--text);
+  --sidebar-border: var(--border-strong);
+  --sidebar-accent: var(--orange);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-ring: var(--orange);
+}
+
+html[data-theme='light'] {
+  --page: #efdcbe;
+  --bg: #f7ead5;
+  --surface: #ffffff;
+  --surface-2: #f2f4f5;
+  --text: #2b2627;
+  --text-2: #5c5555;
+  --text-3: #9a8e80;
+  --border: rgba(43, 38, 39, 0.1);
+  --border-strong: rgba(43, 38, 39, 0.22);
+  --row-hover: rgba(43, 38, 39, 0.05);
+  --shadow: 0 2px 6px rgba(43, 38, 39, 0.05), 0 18px 50px rgba(43, 38, 39, 0.1);
+}
+
+button {
+  cursor: pointer;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-body);
+    color: var(--text);
+    background-color: var(--page);
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 text-sm font-semibold text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--orange);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--orange-deep);
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 text-sm font-semibold rounded-lg transition-colors border;
+    background-color: var(--surface);
+    color: var(--text);
+    border-color: var(--border);
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--row-hover);
+    border-color: var(--border-strong);
+  }
+}

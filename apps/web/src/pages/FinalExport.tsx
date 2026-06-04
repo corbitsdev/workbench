@@ -5,7 +5,7 @@ import CollateralBody from '../components/CollateralBody';
 import HorizontalStepper from '../components/HorizontalStepper';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps } from '../lib/steps';
-import { Button } from '../components/ui/Button';
+import { Button } from '@workbench/ui';
 import type { CollateralType } from '@workbench/shared';
 
 const STEP_LABELS = {

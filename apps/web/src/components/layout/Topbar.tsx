@@ -1,6 +1,6 @@
 import { Link } from 'react-router';
 import { useAuth } from '../AuthProvider';
-import { useTheme } from '../../lib/use-theme';
+import { useTheme } from '@workbench/ui';
 
 interface TopbarProps {
   /** Current location shown after the wordmark, e.g. "Workbench". */

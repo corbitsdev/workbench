@@ -14,6 +14,7 @@
     "@tanstack/react-query": "5.100.14",
     "@workbench/client": "workspace:*",
     "@workbench/shared": "workspace:*",
+    "@workbench/ui": "workspace:*",
     "better-auth": "^1.1.43",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -67,6 +67,7 @@
         "@tanstack/react-query": "5.100.14",
         "@workbench/client": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
         "better-auth": "^1.1.43",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -352,6 +353,24 @@
       "peerDependencies": {
         "@tanstack/react-query": "*",
         "react": "*",
+      },
+    },
+    "packages/ui": {
+      "name": "@workbench/ui",
+      "dependencies": {
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "tailwind-merge": "^3.6.0",
+      },
+      "devDependencies": {
+        "@types/react": "^19.0.0",
+        "react": "^19.0.0",
+        "tailwindcss": "^4.0.0",
+        "typescript": "^5.9.0",
+      },
+      "peerDependencies": {
+        "react": "*",
+        "tailwindcss": "*",
       },
     },
     "packages/workbench-shared": {
@@ -720,6 +739,8 @@
     "@workbench/shared": ["@workbench/shared@workspace:packages/workbench-shared"],
 
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
+
+    "@workbench/ui": ["@workbench/ui@workspace:packages/ui"],
 
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
-import { useResizableRail } from '../lib/use-resizable-rail';
+import { useResizableRail } from '@workbench/ui';
 import { useMediaQuery } from '../lib/use-media-query';
 
 /**
