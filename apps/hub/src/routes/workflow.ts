@@ -1,13 +1,7 @@
 import { Hono } from 'hono';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
-import {
-  workbenchSession,
-  transcript,
-  painPoint,
-  collateralItem,
-  collateralVersion,
-} from '../db/schema';
+import { workbenchSession, transcript, painPoint, artifact, artifactVersion } from '../db/schema';
 import {
   isGranolaConfigured,
   getNoteWithTranscript,
@@ -168,20 +162,16 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
       where: eq(painPoint.sessionId, id),
     });
 
-    const pointIds = points.map((p: any) => p.id);
-    const allCollateral =
-      pointIds.length > 0
-        ? await db.query.collateralItem.findMany({
-            where: inArray(collateralItem.painPointId, pointIds),
-          })
-        : [];
+    const allArtifacts = await db.query.artifact.findMany({
+      where: eq(artifact.sessionId, id),
+    });
 
     const currentStep = deriveCurrentStep(wf.status);
     log.info('Workflow fetched', {
       workflowId: id,
       currentStep,
       painPointsCount: points.length,
-      collateralCount: allCollateral.length,
+      artifactCount: allArtifacts.length,
     });
 
     return c.json({
@@ -196,8 +186,8 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
           painPoints: points.map(serializePainPoint),
         },
         generate: {
-          completed: allCollateral.length > 0,
-          collateral: allCollateral.map(serializeCollateral),
+          completed: allArtifacts.length > 0,
+          artifacts: allArtifacts.map(serializeArtifact),
         },
         improve: { completed: false },
         export: { completed: false },
@@ -212,7 +202,7 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
     const body = (await c.req.json().catch(() => ({}))) as {
       step?: StepName;
       painPointIds?: string[];
-      collateralId?: string;
+      artifactId?: string;
       feedback?: string;
       target?: string;
     };
@@ -233,14 +223,14 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
       return runAnalyze(db, id, userId, body.feedback);
     }
     if (step === 'generate') {
-      return runGenerate(db, id, body.painPointIds ?? []);
+      return runGenerate(db, id, body.painPointIds ?? [], userId);
     }
     if (step === 'improve') {
-      if (!body.collateralId || !body.feedback) {
-        log.warn('Missing collateralId or feedback for improve step', { workflowId: id });
-        return c.json({ error: 'collateralId and feedback are required' }, 400);
+      if (!body.artifactId || !body.feedback) {
+        log.warn('Missing artifactId or feedback for improve step', { workflowId: id });
+        return c.json({ error: 'artifactId and feedback are required' }, 400);
       }
-      return runImprove(db, id, body.collateralId, body.feedback);
+      return runImprove(db, id, body.artifactId, body.feedback, userId);
     }
     if (step === 'export') {
       const target = body.target ?? 'markdown';
@@ -343,11 +333,13 @@ async function runAnalyze(db: any, id: string, userId: string, feedback?: string
   });
 }
 
-async function runGenerate(db: any, id: string, painPointIds: string[]) {
+async function runGenerate(db: any, id: string, painPointIds: string[], authorId: string) {
   log.info('Starting generate step', { workflowId: id, painPointCount: painPointIds.length });
 
   const [points, wf] = await Promise.all([
-    db.query.painPoint.findMany({ where: inArray(painPoint.id, painPointIds) }),
+    db.query.painPoint.findMany({
+      where: and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)),
+    }),
     db.query.workbenchSession.findFirst({ where: eq(workbenchSession.id, id) }),
   ]);
 
@@ -356,18 +348,22 @@ async function runGenerate(db: any, id: string, painPointIds: string[]) {
     : null;
   const transcriptContent: string = tx?.content ?? '';
 
-  await db.update(painPoint).set({ selected: true }).where(inArray(painPoint.id, painPointIds));
+  await db
+    .update(painPoint)
+    .set({ selected: true })
+    .where(and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)));
 
-  const COLLATERAL_TYPES = ['email', 'linkedin', 'one-pager', 'battlecard'] as const;
+  const ARTIFACT_KINDS = ['email', 'linkedin', 'one-pager', 'battlecard'] as const;
 
   const results = await Promise.allSettled(
     points.flatMap((p: any) =>
-      COLLATERAL_TYPES.map((type) =>
-        generateCollateralWithLLM(id, transcriptContent, p, type).then(({ title, body }) => ({
+      ARTIFACT_KINDS.map((kind) =>
+        generateCollateralWithLLM(id, transcriptContent, p, kind).then(({ title, body }) => ({
+          sessionId: id,
           painPointId: p.id,
-          type,
+          kind,
           title,
-          body,
+          content: body,
           status: 'draft',
           version: 1,
         }))
@@ -377,73 +373,100 @@ async function runGenerate(db: any, id: string, painPointIds: string[]) {
 
   const generated = results.flatMap((r) => {
     if (r.status === 'fulfilled') return [r.value];
-    log.error('Collateral generation failed for one item', {
+    log.error('Artifact generation failed for one item', {
       workflowId: id,
       error: String(r.reason),
     });
     return [];
   });
 
+  // Insert artifacts and their initial version rows atomically, so an artifact
+  // can never exist without a matching v1 history row.
   const inserted =
-    generated.length > 0 ? await db.insert(collateralItem).values(generated).returning() : [];
+    generated.length > 0
+      ? await db.transaction(async (trx: any) => {
+          const rows = await trx.insert(artifact).values(generated).returning();
+          await trx.insert(artifactVersion).values(
+            rows.map((a: any) => ({
+              artifactId: a.id,
+              version: a.version,
+              title: a.title,
+              content: a.content,
+              authorId,
+            }))
+          );
+          return rows;
+        })
+      : [];
 
   await db.update(workbenchSession).set({ status: 'improving' }).where(eq(workbenchSession.id, id));
 
-  log.info('Generate step complete', { workflowId: id, collateralCount: inserted.length });
+  log.info('Generate step complete', { workflowId: id, artifactCount: inserted.length });
 
   return Response.json({
     id,
     status: 'improving',
     currentStep: 'improve',
     steps: {
-      generate: { completed: true, collateral: inserted.map(serializeCollateral) },
+      generate: { completed: true, artifacts: inserted.map(serializeArtifact) },
     },
   });
 }
 
-async function runImprove(db: any, id: string, collateralId: string, feedback: string) {
+async function runImprove(
+  db: any,
+  id: string,
+  artifactId: string,
+  feedback: string,
+  authorId: string
+) {
   log.info('Starting improve step', {
     workflowId: id,
-    collateralId,
+    artifactId,
     feedbackLength: feedback.length,
   });
 
-  const item = await db.query.collateralItem.findFirst({
-    where: eq(collateralItem.id, collateralId),
+  // Scope to the session from the route (already verified to belong to the
+  // caller) so a user cannot mutate another session's artifact by id.
+  const item = await db.query.artifact.findFirst({
+    where: and(eq(artifact.id, artifactId), eq(artifact.sessionId, id)),
   });
   if (!item) {
-    log.warn('Collateral not found for improve', { workflowId: id, collateralId });
-    return Response.json({ error: 'Collateral not found' }, { status: 404 });
+    log.warn('Artifact not found for improve', { workflowId: id, artifactId });
+    return Response.json({ error: 'Artifact not found' }, { status: 404 });
   }
 
   const nextVersion = item.version + 1;
-  const [improvedTitle, improvedBody] = await Promise.all([
-    refineFeedbackWithLLM(item.title, feedback, item.type),
-    refineFeedbackWithLLM(item.body, feedback, item.type),
+  const [improvedTitle, improvedContent] = await Promise.all([
+    refineFeedbackWithLLM(item.title, feedback, item.kind),
+    refineFeedbackWithLLM(item.content, feedback, item.kind),
   ]);
 
-  await db.insert(collateralVersion).values({
-    collateralId: item.id,
-    title: item.title,
-    body: item.body,
-    version: item.version,
+  // Update the artifact and append its new version row atomically, so the live
+  // version always has a matching history row.
+  const row = await db.transaction(async (trx: any) => {
+    const updated = await trx
+      .update(artifact)
+      .set({ title: improvedTitle, content: improvedContent, version: nextVersion })
+      .where(and(eq(artifact.id, artifactId), eq(artifact.sessionId, id)))
+      .returning();
+    await trx.insert(artifactVersion).values({
+      artifactId: item.id,
+      version: nextVersion,
+      title: improvedTitle,
+      content: improvedContent,
+      authorId,
+    });
+    return updated[0];
   });
-
-  const updated = await db
-    .update(collateralItem)
-    .set({ title: improvedTitle, body: improvedBody, version: nextVersion })
-    .where(eq(collateralItem.id, collateralId))
-    .returning();
-
-  const row = updated[0];
-  log.info('Improve step complete', { workflowId: id, collateralId, newVersion: nextVersion });
+  log.info('Improve step complete', { workflowId: id, artifactId, newVersion: nextVersion });
 
   return Response.json({
     id,
     status: 'improving',
     currentStep: 'improve',
     steps: {
-      improve: { completed: true, collateral: serializeCollateral(row) },
+      improve: { completed: true, artifact: serializeArtifact(row) },
     },
   });
 }
@@ -459,31 +482,23 @@ async function runExport(db: any, id: string, userId: string, target: string) {
     return Response.json({ error: 'Workflow not found' }, { status: 404 });
   }
 
-  const points = await db.query.painPoint.findMany({
-    where: eq(painPoint.sessionId, id),
+  const allArtifacts = await db.query.artifact.findMany({
+    where: eq(artifact.sessionId, id),
   });
-  const pointIds = points.map((p: any) => p.id);
 
-  const allCollateral =
-    pointIds.length > 0
-      ? await db.query.collateralItem.findMany({
-          where: inArray(collateralItem.painPointId, pointIds),
-        })
-      : [];
-
-  if (allCollateral.length === 0) {
-    log.warn('No collateral to export', { workflowId: id });
-    return Response.json({ error: 'No collateral to export' }, { status: 400 });
+  if (allArtifacts.length === 0) {
+    log.warn('No artifacts to export', { workflowId: id });
+    return Response.json({ error: 'No artifacts to export' }, { status: 400 });
   }
 
-  const assembled = assembleExport(allCollateral, target);
+  const assembled = assembleExport(allArtifacts, target);
 
   await db.update(workbenchSession).set({ status: 'done' }).where(eq(workbenchSession.id, id));
 
   log.info('Export step complete', {
     workflowId: id,
     target,
-    collateralCount: allCollateral.length,
+    artifactCount: allArtifacts.length,
   });
 
   return Response.json({
@@ -493,7 +508,7 @@ async function runExport(db: any, id: string, userId: string, target: string) {
     export: {
       target,
       content: assembled,
-      collateral: allCollateral.map(serializeCollateral),
+      artifacts: allArtifacts.map(serializeArtifact),
     },
   });
 }
@@ -515,23 +530,25 @@ function serializePainPoint(p: any) {
   };
 }
 
-function serializeCollateral(c: any) {
+function serializeArtifact(a: any) {
   return {
-    id: c.id,
-    painPointId: c.painPointId,
-    type: c.type,
-    title: c.title,
-    body: c.body,
-    status: c.status,
-    version: c.version,
+    id: a.id,
+    sessionId: a.sessionId,
+    parentId: a.parentId ?? null,
+    painPointId: a.painPointId ?? null,
+    kind: a.kind,
+    title: a.title,
+    content: a.content,
+    status: a.status,
+    version: a.version,
     createdAt:
-      typeof c.createdAt === 'string'
-        ? c.createdAt
-        : (c.createdAt?.toISOString?.() ?? new Date().toISOString()),
+      typeof a.createdAt === 'string'
+        ? a.createdAt
+        : (a.createdAt?.toISOString?.() ?? new Date().toISOString()),
     updatedAt:
-      typeof c.updatedAt === 'string'
-        ? c.updatedAt
-        : (c.updatedAt?.toISOString?.() ?? new Date().toISOString()),
+      typeof a.updatedAt === 'string'
+        ? a.updatedAt
+        : (a.updatedAt?.toISOString?.() ?? new Date().toISOString()),
   };
 }
 
@@ -549,20 +566,20 @@ function escapeForMarkdown(text: string): string {
   return text.replace(/[*#`[\]\\]/g, '\\$&');
 }
 
-function assembleExport(collateral: any[], target: string): string {
+function assembleExport(artifacts: any[], target: string): string {
   if (target === 'json') {
-    return JSON.stringify(collateral, null, 2);
+    return JSON.stringify(artifacts, null, 2);
   }
 
   if (target === 'csv') {
-    const header = 'Type,Title,Body';
-    const rows = collateral.map((c) =>
-      [escapeForCsv(c.type), escapeForCsv(c.title), escapeForCsv(c.body)].join(',')
+    const header = 'Kind,Title,Content';
+    const rows = artifacts.map((a) =>
+      [escapeForCsv(a.kind), escapeForCsv(a.title), escapeForCsv(a.content)].join(',')
     );
     return [header, ...rows].join('\n');
   }
 
-  return collateral
-    .map((c) => `## ${escapeForMarkdown(c.title)}\n\n${c.body}\n\n*(${c.type} collateral)*`)
+  return artifacts
+    .map((a) => `## ${escapeForMarkdown(a.title)}\n\n${a.content}\n\n*(${a.kind} artifact)*`)
     .join('\n\n---\n\n');
 }

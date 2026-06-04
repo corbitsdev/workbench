@@ -8,9 +8,12 @@ export type SessionStatus =
   | 'exporting'
   | 'done';
 
+// The subset of artifact kinds the UI knows how to render exhaustively.
+// The DB `kind` column is free-form text; this union stays closed for the
+// CollateralBody renderer switch.
 export type CollateralType = 'email' | 'linkedin' | 'one-pager' | 'battlecard';
 
-export type CollateralStatus = 'draft' | 'approved' | 'rejected';
+export type ArtifactStatus = 'draft' | 'approved' | 'rejected';
 
 export interface PainPoint {
   id: string;
@@ -22,24 +25,27 @@ export interface PainPoint {
   createdAt: string;
 }
 
-export interface CollateralItem {
+export interface Artifact {
   id: string;
-  painPointId: string;
-  type: CollateralType;
+  sessionId: string;
+  parentId: string | null;
+  painPointId: string | null;
+  kind: string;
   title: string;
-  body: string;
-  status: CollateralStatus;
+  content: string;
+  status: ArtifactStatus;
   version: number;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface CollateralVersion {
+export interface ArtifactVersion {
   id: string;
-  collateralId: string;
-  title: string;
-  body: string;
+  artifactId: string;
   version: number;
+  title: string;
+  content: string;
+  authorId: string;
   createdAt: string;
 }
 
@@ -82,16 +88,16 @@ export interface GenerateRequest {
 
 export interface GenerateResponse {
   workflowId: string;
-  collateral: CollateralItem[];
+  artifacts: Artifact[];
   status: SessionStatus;
 }
 
 export interface ImproveRequest {
-  collateralId: string;
+  artifactId: string;
   feedback: string;
 }
 
 export interface ImproveResponse {
-  collateral: CollateralItem;
+  artifact: Artifact;
   status: SessionStatus;
 }

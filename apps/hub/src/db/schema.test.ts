@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import {
-  collateralItem,
-  collateralVersion,
-  painPoint,
-  transcript,
-  workbenchSession,
-} from './schema';
+import { artifact, artifactVersion, painPoint, transcript, workbenchSession } from './schema';
 
 describe('database schema', () => {
   it('has transcript table', () => {
@@ -33,24 +27,27 @@ describe('database schema', () => {
     expect(painPoint.createdAt).toBeDefined();
   });
 
-  it('has collateralItem table', () => {
-    expect(collateralItem).toBeDefined();
-    expect(collateralItem.painPointId).toBeDefined();
-    expect(collateralItem.type).toBeDefined();
-    expect(collateralItem.title).toBeDefined();
-    expect(collateralItem.body).toBeDefined();
-    expect(collateralItem.status).toBeDefined();
-    expect(collateralItem.version).toBeDefined();
-    expect(collateralItem.createdAt).toBeDefined();
-    expect(collateralItem.updatedAt).toBeDefined();
+  it('has artifact table', () => {
+    expect(artifact).toBeDefined();
+    expect(artifact.sessionId).toBeDefined();
+    expect(artifact.parentId).toBeDefined();
+    expect(artifact.painPointId).toBeDefined();
+    expect(artifact.kind).toBeDefined();
+    expect(artifact.title).toBeDefined();
+    expect(artifact.content).toBeDefined();
+    expect(artifact.status).toBeDefined();
+    expect(artifact.version).toBeDefined();
+    expect(artifact.createdAt).toBeDefined();
+    expect(artifact.updatedAt).toBeDefined();
   });
 
-  it('has collateralVersion table', () => {
-    expect(collateralVersion).toBeDefined();
-    expect(collateralVersion.collateralId).toBeDefined();
-    expect(collateralVersion.title).toBeDefined();
-    expect(collateralVersion.body).toBeDefined();
-    expect(collateralVersion.version).toBeDefined();
-    expect(collateralVersion.createdAt).toBeDefined();
+  it('has artifactVersion table', () => {
+    expect(artifactVersion).toBeDefined();
+    expect(artifactVersion.artifactId).toBeDefined();
+    expect(artifactVersion.version).toBeDefined();
+    expect(artifactVersion.title).toBeDefined();
+    expect(artifactVersion.content).toBeDefined();
+    expect(artifactVersion.authorId).toBeDefined();
+    expect(artifactVersion.createdAt).toBeDefined();
   });
 });

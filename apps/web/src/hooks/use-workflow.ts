@@ -34,7 +34,7 @@ export function useRunStep(workflowId: string) {
     mutationFn: async (step: {
       step: StepName;
       painPointIds?: string[];
-      collateralId?: string;
+      artifactId?: string;
       feedback?: string;
     }) => {
       logger.info('Running step', { workflowId, step: step.step });

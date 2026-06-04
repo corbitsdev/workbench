@@ -28,7 +28,7 @@ export default function FinalExport() {
   const navigate = useNavigate();
   if (!workflowId) return null;
   const { data: workflow } = useWorkflow(workflowId);
-  const collateral = (workflow?.steps?.generate?.collateral as any[]) ?? [];
+  const artifacts = (workflow?.steps?.generate?.artifacts as any[]) ?? [];
 
   const steps = buildSteps('export', STEP_LABELS, true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -39,10 +39,10 @@ export default function FinalExport() {
   };
 
   const handleCopyAll = () => {
-    const text = collateral
+    const text = artifacts
       .map(
         (item) =>
-          `${TYPE_LABELS[item.type as CollateralType] ?? item.type}\n${item.title}\n\n${item.body}`
+          `${TYPE_LABELS[item.kind as CollateralType] ?? item.kind}\n${item.title}\n\n${item.content}`
       )
       .join('\n\n---\n\n');
     navigator.clipboard
@@ -54,7 +54,7 @@ export default function FinalExport() {
   };
 
   const handleCopyItem = (item: any) => {
-    const text = `${item.title}\n\n${item.body}`;
+    const text = `${item.title}\n\n${item.content}`;
     navigator.clipboard
       .writeText(text)
       .then(() => markCopied(item.id))
@@ -105,8 +105,8 @@ export default function FinalExport() {
             </ul>
           </motion.div>
 
-          {/* Collateral Items */}
-          {collateral.map((item: any, i: number) => (
+          {/* Artifacts */}
+          {artifacts.map((item: any, i: number) => (
             <motion.div
               key={item.id}
               initial={{ opacity: 0, y: 20 }}
@@ -117,7 +117,7 @@ export default function FinalExport() {
               <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                 <div>
                   <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-soft text-orange-deep text-xs font-semibold uppercase tracking-wide mb-1">
-                    {TYPE_LABELS[item.type as CollateralType] ?? item.type}
+                    {TYPE_LABELS[item.kind as CollateralType] ?? item.kind}
                   </div>
                   <h3 className="text-lg font-bold text-text">{item.title}</h3>
                 </div>
@@ -129,7 +129,7 @@ export default function FinalExport() {
                 </button>
               </div>
               <div className="p-6">
-                <CollateralBody body={item.body} type={item.type as CollateralType} />
+                <CollateralBody body={item.content} type={item.kind as CollateralType} />
               </div>
             </motion.div>
           ))}

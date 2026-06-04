@@ -1,4 +1,12 @@
-import { boolean, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  type AnyPgColumn,
+  boolean,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 export const sessionStatus = [
   'analyzing',
@@ -9,8 +17,7 @@ export const sessionStatus = [
   'done',
 ] as const;
 export const severity = ['low', 'medium', 'high', 'critical'] as const;
-export const collateralType = ['email', 'linkedin', 'one-pager', 'battlecard'] as const;
-export const collateralStatus = ['draft', 'approved', 'rejected'] as const;
+export const artifactStatus = ['draft', 'approved', 'rejected'] as const;
 export const transcriptSource = ['paste', 'granola'] as const;
 
 export const transcript = pgTable('transcript', {
@@ -47,15 +54,20 @@ export const painPoint = pgTable('pain_point', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-export const collateralItem = pgTable('collateral_item', {
+// A first-class output of any workflow or agent. `kind` is free-form text
+// (validated at the application edge, not a pg enum, so kinds can grow without
+// migrations). Nesting via parent_id; provenance via pain_point_id (nullable).
+export const artifact = pgTable('artifact', {
   id: uuid('id').primaryKey().defaultRandom(),
-  painPointId: uuid('pain_point_id')
+  sessionId: uuid('session_id')
     .notNull()
-    .references(() => painPoint.id, { onDelete: 'cascade' }),
-  type: text('type', { enum: collateralType }).notNull(),
+    .references(() => workbenchSession.id, { onDelete: 'cascade' }),
+  parentId: uuid('parent_id').references((): AnyPgColumn => artifact.id, { onDelete: 'cascade' }),
+  painPointId: uuid('pain_point_id').references(() => painPoint.id, { onDelete: 'set null' }),
+  kind: text('kind').notNull(),
   title: text('title').notNull(),
-  body: text('body').notNull(),
-  status: text('status', { enum: collateralStatus }).notNull().default('draft'),
+  content: text('content').notNull(),
+  status: text('status', { enum: artifactStatus }).notNull().default('draft'),
   version: integer('version').notNull().default(1),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at')
@@ -64,13 +76,16 @@ export const collateralItem = pgTable('collateral_item', {
     .$onUpdate(() => new Date()),
 });
 
-export const collateralVersion = pgTable('collateral_version', {
+// Append-only version history. Every change by an agent or a human writes a row.
+// author_id is the actor's principal id (no agent/human distinction).
+export const artifactVersion = pgTable('artifact_version', {
   id: uuid('id').primaryKey().defaultRandom(),
-  collateralId: uuid('collateral_id')
+  artifactId: uuid('artifact_id')
     .notNull()
-    .references(() => collateralItem.id, { onDelete: 'cascade' }),
-  title: text('title').notNull(),
-  body: text('body').notNull(),
+    .references(() => artifact.id, { onDelete: 'cascade' }),
   version: integer('version').notNull(),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  authorId: text('author_id').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });

@@ -31,7 +31,7 @@ describe('Workflow router', () => {
         painPoint: {
           findMany: mock(() => [] as any[]),
         },
-        collateralItem: {
+        artifact: {
           findMany: mock(() => [] as any[]),
           findFirst: mock(() => null),
         },
@@ -138,13 +138,13 @@ describe('Workflow router', () => {
 
   it('POST /workflows/:id/steps export assembles collateral', async () => {
     const mockDb = createMockDb();
-    mockDb.query.collateralItem.findMany = mock(() => [
+    mockDb.query.artifact.findMany = mock(() => [
       {
         id: 'c-1',
         painPointId: 'p-1',
-        type: 'email',
+        kind: 'email',
         title: 'Sales automation ROI',
-        body: 'Automating workflows saves 10 hours/week',
+        content: 'Automating workflows saves 10 hours/week',
         status: 'approved',
         version: 1,
         createdAt: new Date().toISOString(),
@@ -172,13 +172,13 @@ describe('Workflow router', () => {
 
   it('POST /workflows/:id/steps export rejects invalid target', async () => {
     const mockDb = createMockDb();
-    mockDb.query.collateralItem.findMany = mock(() => [
+    mockDb.query.artifact.findMany = mock(() => [
       {
         id: 'c-1',
         painPointId: 'p-1',
-        type: 'email',
+        kind: 'email',
         title: 'Test',
-        body: 'Test body',
+        content: 'Test body',
         status: 'approved',
         version: 1,
         createdAt: new Date().toISOString(),
@@ -203,13 +203,13 @@ describe('Workflow router', () => {
 
   it('POST /workflows/:id/steps export with markdown format', async () => {
     const mockDb = createMockDb();
-    mockDb.query.collateralItem.findMany = mock(() => [
+    mockDb.query.artifact.findMany = mock(() => [
       {
         id: 'c-1',
         painPointId: 'p-1',
-        type: 'email',
+        kind: 'email',
         title: 'Automation *saves* time',
-        body: 'Multi\nline\nbody',
+        content: 'Multi\nline\nbody',
         status: 'approved',
         version: 1,
         createdAt: new Date().toISOString(),
@@ -234,13 +234,13 @@ describe('Workflow router', () => {
 
   it('POST /workflows/:id/steps export with csv format handles newlines and quotes', async () => {
     const mockDb = createMockDb();
-    mockDb.query.collateralItem.findMany = mock(() => [
+    mockDb.query.artifact.findMany = mock(() => [
       {
         id: 'c-1',
         painPointId: 'p-1',
-        type: 'email',
+        kind: 'email',
         title: 'Test with "quotes"',
-        body: 'Body with\nnewlines\nand "quotes"',
+        content: 'Body with\nnewlines\nand "quotes"',
         status: 'approved',
         version: 1,
         createdAt: new Date().toISOString(),
@@ -262,18 +262,18 @@ describe('Workflow router', () => {
     const json = await res.json();
     const content = json.export.content;
     expect(content).toBeString();
-    expect(content).toContain('Type,Title,Body');
+    expect(content).toContain('Kind,Title,Content');
   });
 
   it('POST /workflows/:id/steps export with json format', async () => {
     const mockDb = createMockDb();
-    mockDb.query.collateralItem.findMany = mock(() => [
+    mockDb.query.artifact.findMany = mock(() => [
       {
         id: 'c-1',
         painPointId: 'p-1',
-        type: 'email',
+        kind: 'email',
         title: 'Test',
-        body: 'Body',
+        content: 'Body',
         status: 'approved',
         version: 1,
         createdAt: new Date().toISOString(),
@@ -296,6 +296,6 @@ describe('Workflow router', () => {
     expect(json.export.content).toBeString();
     const parsed = JSON.parse(json.export.content);
     expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed[0].type).toBe('email');
+    expect(parsed[0].kind).toBe('email');
   });
 });

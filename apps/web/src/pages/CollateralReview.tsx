@@ -38,10 +38,10 @@ export default function CollateralReview() {
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
 
   const painPoints = (workflow?.steps?.analyze?.painPoints as any[]) ?? [];
-  const collateral = (workflow?.steps?.generate?.collateral as any[]) ?? [];
-  const current = collateral[currentIndex];
+  const artifacts = (workflow?.steps?.generate?.artifacts as any[]) ?? [];
+  const current = artifacts[currentIndex];
   const currentPainPoint = painPoints.find((p: any) => p.id === current?.painPointId);
-  const isLast = currentIndex === collateral.length - 1;
+  const isLast = currentIndex === artifacts.length - 1;
 
   const handleApprove = () => {
     if (current) {
@@ -114,19 +114,19 @@ export default function CollateralReview() {
           <div className="px-4 py-3 md:p-6 border-b border-border flex items-center justify-between">
             <div>
               <div className="text-xs font-semibold text-text-3 uppercase tracking-wide">
-                Card {currentIndex + 1} of {collateral.length}
+                Card {currentIndex + 1} of {artifacts.length}
               </div>
               <h2 className="text-2xl font-bold text-text mt-1">
                 {current?.title || 'Loading...'}
               </h2>
             </div>
-            {current?.type && (
+            {current?.kind && (
               <div className="text-right">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-soft text-orange-deep text-xs font-semibold uppercase tracking-wide">
-                  {TYPE_LABELS[current.type as CollateralType] ?? current.type}
+                  {TYPE_LABELS[current.kind as CollateralType] ?? current.kind}
                 </div>
                 <div className="text-xs text-text-3 mt-1">
-                  {TYPE_DESCRIPTIONS[current.type as CollateralType]}
+                  {TYPE_DESCRIPTIONS[current.kind as CollateralType]}
                 </div>
               </div>
             )}
@@ -150,7 +150,7 @@ export default function CollateralReview() {
                     <div className="text-sm text-white">{currentPainPoint?.context}</div>
                   </div>
 
-                  <CollateralBody body={current.body} type={current.type as CollateralType} />
+                  <CollateralBody body={current.content} type={current.kind as CollateralType} />
                 </motion.div>
               )}
             </AnimatePresence>

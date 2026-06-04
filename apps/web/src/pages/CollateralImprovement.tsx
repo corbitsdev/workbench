@@ -23,14 +23,14 @@ export default function CollateralImprovement() {
   const [feedback, setFeedback] = useState<Record<string, string>>({});
 
   const painPoints = (workflow?.steps?.analyze?.painPoints as any[]) ?? [];
-  const approvedCollateral = (workflow?.steps?.generate?.collateral as any[]) ?? [];
+  const approvedArtifacts = (workflow?.steps?.generate?.artifacts as any[]) ?? [];
 
   const isLoading = isLoadingWorkflow || runStep.isPending;
 
   const handleAssemble = async () => {
     const pending = Object.entries(feedback).filter(([, v]) => v.trim().length > 0);
-    for (const [collateralId, text] of pending) {
-      await runStep.mutateAsync({ step: 'improve', collateralId, feedback: text });
+    for (const [artifactId, text] of pending) {
+      await runStep.mutateAsync({ step: 'improve', artifactId, feedback: text });
     }
     navigate(`/workflows/${workflowId}/export`);
   };
@@ -90,7 +90,7 @@ export default function CollateralImprovement() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
-            {approvedCollateral.map((item: any, i: number) => (
+            {approvedArtifacts.map((item: any, i: number) => (
               <motion.div
                 key={item.id}
                 initial={{ opacity: 0, y: 10 }}
@@ -101,7 +101,7 @@ export default function CollateralImprovement() {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <div className="text-xs font-semibold text-text-3 uppercase tracking-wide">
-                      {item.type}
+                      {item.kind}
                     </div>
                     <h3 className="text-lg font-bold text-text mt-1">{item.title}</h3>
                   </div>
@@ -110,7 +110,7 @@ export default function CollateralImprovement() {
                   </span>
                 </div>
 
-                <p className="text-sm text-text-2 mb-4 leading-relaxed">{item.body}</p>
+                <p className="text-sm text-text-2 mb-4 leading-relaxed">{item.content}</p>
 
                 <textarea
                   value={feedback[item.id] || ''}
