@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import type { Step } from './StepSidebar';
+import { type Step } from './types';
 
 interface HorizontalStepperProps {
   steps: Step[];

@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion } from 'framer-motion';
 import { useWorkflow, useRunStep } from '../hooks/use-workflow';
-import { buildSteps } from '../lib/steps';
 import { Button } from '@workbench/ui';
-import HorizontalStepper from '../components/HorizontalStepper';
+import { buildSteps, HorizontalStepper } from '@workbench/workflow';
 
 const STEP_LABELS = {
   intake: 'Call source',

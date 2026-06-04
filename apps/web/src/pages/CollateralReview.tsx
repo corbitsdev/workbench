@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import CollateralBody from '../components/CollateralBody';
-import HorizontalStepper from '../components/HorizontalStepper';
 import { useWorkflow } from '../hooks/use-workflow';
-import { buildSteps } from '../lib/steps';
+import { buildSteps, HorizontalStepper } from '@workbench/workflow';
 import type { CollateralType } from '@workbench/shared';
 
 const TYPE_LABELS: Record<CollateralType, string> = {

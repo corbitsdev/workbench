@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { type ProgressStatus } from './types';
 
 const DEFAULT_ANALYSIS_TASKS = [
   'Reading transcript turns and speaker roles',
@@ -9,7 +10,7 @@ const DEFAULT_ANALYSIS_TASKS = [
 
 export interface ProgressChecklistProps {
   tasks?: string[];
-  status?: 'idle' | 'running' | 'completed' | 'error';
+  status?: ProgressStatus;
 }
 
 export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressChecklistProps) {

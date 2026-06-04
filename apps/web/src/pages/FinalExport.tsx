@@ -2,10 +2,9 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion } from 'framer-motion';
 import CollateralBody from '../components/CollateralBody';
-import HorizontalStepper from '../components/HorizontalStepper';
 import { useWorkflow } from '../hooks/use-workflow';
-import { buildSteps } from '../lib/steps';
 import { Button } from '@workbench/ui';
+import { buildSteps, HorizontalStepper } from '@workbench/workflow';
 import type { CollateralType } from '@workbench/shared';
 
 const STEP_LABELS = {

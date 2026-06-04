@@ -1,10 +1,4 @@
-export type StepName = 'intake' | 'analyze' | 'generate' | 'improve' | 'export';
-
-export interface Step {
-  number: number;
-  label: string;
-  status: 'completed' | 'current' | 'pending';
-}
+import { type Step, type StepName } from './types';
 
 const STEP_ORDER: StepName[] = ['intake', 'analyze', 'generate', 'improve', 'export'];
 

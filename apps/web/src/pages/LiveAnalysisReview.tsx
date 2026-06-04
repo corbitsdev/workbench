@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import HorizontalStepper from '../components/HorizontalStepper';
 import { TranscriptPanel } from '@workbench/transcript';
-import ProgressChecklist from '../components/ProgressChecklist';
 import PainPointsList from '../components/PainPointsList';
 import { togglePainPointSelection } from '../components/pain-point-selection';
 import { useWorkflow, useRunStep, useUpdateCompanyName } from '../hooks/use-workflow';
-import { buildSteps } from '../lib/steps';
+import { buildSteps, HorizontalStepper, ProgressChecklist } from '@workbench/workflow';
 import { logger } from '../lib/logger';
 
 const STEP_LABELS = {

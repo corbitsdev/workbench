@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import RecentCallsPicker from '../components/RecentCallsPicker';
 import { useCreateWorkflow } from '../hooks/use-workflow';
-import { buildSteps } from '../lib/steps';
-import HorizontalStepper from '../components/HorizontalStepper';
+import { buildSteps, HorizontalStepper } from '@workbench/workflow';
 import type { IntakeRequest } from '../types/intake';
 
 const STEP_LABELS = {

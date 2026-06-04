@@ -70,6 +70,7 @@
         "@workbench/shared": "workspace:*",
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
+        "@workbench/workflow": "workspace:*",
         "better-auth": "^1.1.43",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -420,6 +421,26 @@
       "name": "@workbench/shared",
       "devDependencies": {
         "typescript": "^5.9.0",
+      },
+    },
+    "packages/workflow": {
+      "name": "@workbench/workflow",
+      "dependencies": {
+        "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
+        "@testing-library/react": "^16.3.2",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "framer-motion": "^12.0.0",
+        "react": "^19.0.0",
+        "typescript": "^5.9.0",
+      },
+      "peerDependencies": {
+        "framer-motion": "*",
+        "react": "*",
       },
     },
   },
@@ -790,6 +811,8 @@
     "@workbench/ui": ["@workbench/ui@workspace:packages/ui"],
 
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
+
+    "@workbench/workflow": ["@workbench/workflow@workspace:packages/workflow"],
 
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
 
