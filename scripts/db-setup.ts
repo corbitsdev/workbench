@@ -1,12 +1,16 @@
 /**
  * Forward-only database migration runner.
  *
- * Uses drizzle-orm's built-in migrator for Interchange migrations,
- * then applies GTM custom migrations via raw SQL with
- * idempotent guards (CREATE TABLE IF NOT EXISTS, ADD CONSTRAINT
- * IF NOT EXISTS). This avoids the journal-table collision that
- * occurs when two separate migration folders share the same
- * drizzle.__drizzle_migrations schema.
+ * Uses drizzle-orm's built-in migrator for Interchange migrations, then applies
+ * the GTM custom migrations in `apps/hub/migrations/*.sql`. Each custom file is
+ * tracked in a `_workbench_migrations` ledger so it runs exactly once, and each
+ * file's statements run inside a single transaction so a partial failure rolls
+ * back without recording the file (it is retried cleanly on the next run).
+ *
+ * Migration files are still expected to be idempotent (CREATE TABLE IF NOT
+ * EXISTS, ADD COLUMN IF NOT EXISTS, guarded ADD CONSTRAINT) so that a pre-ledger
+ * dev DB bootstraps safely on the first run after the ledger was introduced.
+ * This custom runner owns the hub migrations; the drizzle-kit journal is not used.
  */
 
 interface DBConfig {
@@ -150,6 +154,42 @@ async function runInterchangeMigrations(client: import('postgres').Sql<{}>): Pro
   console.log(`  ✅ Interchange migrations applied in ${Date.now() - start}ms`);
 }
 
+/**
+ * Name of the applied-migrations ledger table. Each row records one custom
+ * migration file that has been applied successfully, so each file runs exactly
+ * once across repeated `db:setup` invocations.
+ */
+const MIGRATIONS_LEDGER_TABLE = '_workbench_migrations';
+
+/**
+ * Ensure the applied-migrations ledger exists. Idempotent (CREATE TABLE IF NOT
+ * EXISTS), so it is safe to call on every run, including pre-ledger dev DBs.
+ */
+async function ensureMigrationsLedger(client: import('postgres').Sql<{}>): Promise<void> {
+  await client.unsafe(`
+    CREATE TABLE IF NOT EXISTS "${MIGRATIONS_LEDGER_TABLE}" (
+      "filename" text PRIMARY KEY,
+      "applied_at" timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+/**
+ * Apply GTM custom migrations from `apps/hub/migrations/*.sql`.
+ *
+ * Migration-authoring convention:
+ *   - The custom runner owns these migrations (NOT drizzle-kit). There is no
+ *     `meta/_journal.json` snapshot; ordering is by sorted filename
+ *     (`NNNN_description.sql`), and each file is applied exactly once.
+ *   - Statements within a file are separated by `--> statement-breakpoint`.
+ *   - Each file is applied inside a single transaction: a partial failure rolls
+ *     back cleanly and the file is NOT recorded, so the next run retries it
+ *     from a clean state. (Postgres DDL is transactional.)
+ *   - Write statements to be idempotent anyway (`CREATE TABLE IF NOT EXISTS`,
+ *     `ADD COLUMN IF NOT EXISTS`, `DO $$ ... EXCEPTION WHEN duplicate_object`).
+ *     This guards the bootstrap run on a dev DB that predates the ledger: every
+ *     file re-runs once as a no-op, then gets recorded.
+ */
 async function runCustomMigrations(client: import('postgres').Sql<{}>): Promise<void> {
   const fs = await import('node:fs');
   const path = await import('node:path');
@@ -171,56 +211,45 @@ async function runCustomMigrations(client: import('postgres').Sql<{}>): Promise<
     return;
   }
 
-  console.log(`\n  → Applying ${files.length} custom migration(s)...`);
+  await ensureMigrationsLedger(client);
+
+  const appliedRows = await client<{ filename: string }[]>`
+    SELECT filename FROM ${client(MIGRATIONS_LEDGER_TABLE)}
+  `;
+  const applied = new Set(appliedRows.map((r) => r.filename));
+
+  const pending = files.filter((f) => !applied.has(f));
+
+  if (pending.length === 0) {
+    console.log(`\n  → All ${files.length} custom migration(s) already applied. No-op.`);
+    return;
+  }
+
+  console.log(
+    `\n  → Applying ${pending.length} pending custom migration(s) (${applied.size} already applied)...`
+  );
   const start = Date.now();
 
-  for (const file of files) {
+  for (const file of pending) {
     const raw = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
     const statements = raw
       .split('--> statement-breakpoint')
       .map((s) => s.trim())
       .filter(Boolean);
 
-    for (const stmt of statements) {
-      // CREATE TABLE — skip if table already exists
-      const createMatch = stmt.match(/CREATE TABLE "([^"]+)"/);
-      if (createMatch) {
-        const tableName = createMatch[1];
-        const [{ exists }] = await client`
-          SELECT EXISTS(
-            SELECT 1 FROM pg_tables
-            WHERE schemaname = 'public' AND tablename = ${tableName}
-          ) as exists
-        `;
-        if (exists) {
-          console.log(`    (skip) Table "${tableName}" already exists`);
-          continue;
-        }
+    // Apply the whole file in one transaction so a partial failure rolls back
+    // cleanly and the file is not recorded as applied.
+    await client.begin(async (tx) => {
+      for (const stmt of statements) {
+        await tx.unsafe(stmt);
       }
+      await tx`
+        INSERT INTO ${tx(MIGRATIONS_LEDGER_TABLE)} (filename)
+        VALUES (${file})
+      `;
+    });
 
-      // ALTER TABLE ADD CONSTRAINT — skip if constraint already exists
-      const alterMatch = stmt.match(/ALTER TABLE "([^"]+)" ADD CONSTRAINT "([^"]+)"/);
-      if (alterMatch) {
-        const tableName = alterMatch[1];
-        const constraintName = alterMatch[2];
-        const [{ exists }] = await client`
-          SELECT EXISTS(
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_class cl ON c.conrelid = cl.oid
-            JOIN pg_namespace n ON cl.relnamespace = n.oid
-            WHERE c.conname = ${constraintName}
-              AND cl.relname = ${tableName}
-              AND n.nspname = 'public'
-          ) as exists
-        `;
-        if (exists) {
-          console.log(`    (skip) Constraint "${constraintName}" already exists`);
-          continue;
-        }
-      }
-
-      await client.unsafe(stmt);
-    }
+    console.log(`    (applied) ${file}`);
   }
 
   console.log(`  ✅ Custom migrations applied in ${Date.now() - start}ms`);
