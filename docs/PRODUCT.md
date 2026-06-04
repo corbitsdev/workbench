@@ -8,6 +8,11 @@ The agent reads a transcript, extracts pain points, and generates targeted colla
 
 This is **intentionally not** a fully automated pipeline. The agent handles analysis and first-draft generation. The human handles curation, approval, and refinement. That is the product.
 
+The broader workbench pattern is source-to-artifact: users bring source material,
+choose an outcome, review the important decisions, approve artifacts, and
+optionally deliver them. Users choose outcomes, not pipeline topology. The
+canonical model lives in [SOURCE_TO_ARTIFACT.md](./SOURCE_TO_ARTIFACT.md).
+
 ## Target Users
 
 - Sales and marketing teams who want to turn call insights into usable content
@@ -28,6 +33,25 @@ This is **intentionally not** a fully automated pipeline. The agent handles anal
 4. **Improvement** — Per-item feedback and regeneration
 5. **Final Export** — Copy, download, or deliver assembled collateral
 6. **Session Dashboard** — Resume prior sessions, re-export, iterate
+
+## Workbench Model
+
+The current transcript workflow is the first concrete version of a more general
+workbench model:
+
+1. **Sources** — Input material such as transcripts, markdown files, uploaded
+   documents, brain/context files, URLs, or prior artifacts reused as inputs
+2. **Jobs** — One run of a workflow against selected sources and options
+3. **Review Gates** — Human decisions that steer the job without exposing the
+   full internal pipeline
+4. **Artifacts** — Generated or curated outputs, including collateral, briefs,
+   summaries, and packages
+5. **Hooks** — Optional delivery actions such as copy, export, draft, schedule,
+   post, or send
+
+The product should surface named outcomes such as "Create sales collateral" or
+"Draft LinkedIn posts" rather than raw internal steps like summarize, extract,
+generate, humanize, and post.
 
 ## Intake Scope
 

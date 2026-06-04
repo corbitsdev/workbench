@@ -14,6 +14,14 @@ Root monorepo
 └── compose.yml        → Local dev infrastructure (PostgreSQL)
 ```
 
+The current shipped workflow is transcript-to-artifact, but the product model is
+expanding toward a source-to-artifact workbench contract: users select Sources,
+launch outcome-oriented Jobs, pass through Review Gates, approve Artifacts, and
+optionally run delivery Hooks. See
+[SOURCE_TO_ARTIFACT.md](./SOURCE_TO_ARTIFACT.md) for the canonical domain terms
+and the boundary between Workbench presentation and Interchange workflow
+execution.
+
 ## Component Diagram
 
 ### Frontend (`apps/web/`)
@@ -82,6 +90,12 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 
 - **Workspace**: The user-facing organizational unit in GTM Workbench. Every user belongs to one workspace. Always use "workspace" in UI copy.
 - **Tenant**: The Interchange concept that a workspace maps to 1:1. Creating a workspace provisions an Interchange tenant. Use "tenant" in backend/API code, "workspace" in UI and product copy.
+- **Source**: Input material selected for a job, such as a transcript, markdown document, uploaded file, brain/context file, URL, or prior artifact reused as input.
+- **Workflow**: A reusable recipe or definition. Workbench owns the product-facing offering; Interchange owns deployable workflow execution as that runtime lands.
+- **Job**: One execution/run of a workflow against selected sources and options. Jobs are what users resume, review, and complete.
+- **Review Gate**: A human decision point in a job, such as selecting pain points, confirming findings, approving artifacts, or confirming delivery.
+- **Artifact**: An output produced or curated by a job. Artifacts can later be selected as sources for new jobs, but remain outputs with provenance.
+- **Hook**: Optional delivery action after review, such as copy/export, draft email, schedule social post, or webhook/custom action.
 
 ## Design Decisions
 
