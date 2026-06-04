@@ -20,87 +20,127 @@ interface GeneratedCollateral {
   body: string;
 }
 
-function buildSystemPrompt(type: CollateralType): string {
+const PUBLIC_KINDS = ['linkedin', 'one-pager', 'battlecard'] as const;
+
+export function isPublicKind(type: CollateralType): boolean {
+  return (PUBLIC_KINDS as readonly CollateralType[]).includes(type);
+}
+
+export function buildRulesBlock(type: CollateralType): string {
+  const piiRules = isPublicKind(type)
+    ? `This is a PUBLIC artifact: it will be published or pasted where anyone can read it.
+- Strip and generalise ALL customer identifying information. Never include customer or company names, people's names, email addresses, domains, account handles, or any detail that could identify who the call was with.
+- Replace specifics with category equivalents: "a mid-market SaaS team", "a VP of Engineering", "a 50-person org". Numbers and patterns are fine only when they cannot be traced back to one company.
+- The result must read as a universal insight, not a case study about a named customer.`
+    : `This is a PRIVATE artifact: a follow-up note sent directly to the customer contact.
+- Keep the real customer contact name and address them by their first name.
+- It is correct to reference their company, their specific numbers, their timeline, and what they said on the call. This message is for them.
+- Do not leak details about other customers or accounts.`;
+
+  return `<rules>
+${piiRules}
+</rules>
+
+<style>
+- No buzzwords: no "synergy", "leverage", "unlock", "streamline", "game-changing", "best-in-class".
+- No em dashes. No superlatives. No hollow adjectives.
+- Sentence case. Vary sentence length. Write how a person talks, not how a copywriter edits.
+</style>
+
+<output>
+Return ONLY valid JSON, with no markdown fences and no prose, in exactly this shape: {"title": "...", "body": "..."} with any newlines inside body written as \\n.
+</output>`;
+}
+
+function buildKindGuidance(type: CollateralType): string {
   switch (type) {
     case 'email':
-      return `You are a senior outbound sales rep. Write a follow-up email from the seller to the primary prospect contact. It must read like a human wrote it — not a template, not a robot.
+      return `<role>
+You are a seller writing a personal follow-up note to the contact you just spoke with. It should read like you typed it yourself right after the call, not a templated company recap.
+</role>
 
-Structure (mandatory):
-- Subject line: 6-10 words, sentence case, references their specific situation — not a generic value prop
-- Greeting: Hi [First Name], on its own line
-- Paragraph 1 (1-2 sentences): One punchy observation grounded in what they said on the call. No intro, no preamble.
-- Paragraph 2 (2 sentences max): What solving this unlocks for them specifically. Use their numbers or timeline if you have them.
-- Paragraph 3 (1-2 sentences): One concrete next step with a specific day or action. Sign off with your name only.
+<structure>
+- Subject line: 6-10 words, sentence case, references their specific situation.
+- Greeting: "Hi [First Name]," on its own line, using the real contact name.
+- Paragraph 1: thank them for the call in one natural line, no preamble.
+- Paragraph 2: "here's what I heard" — reflect back the specific problem they raised, in their terms. Use their numbers or timeline if you have them.
+- Paragraph 3: the next step you actually discussed (for example the Slack channel, the doc, the intro). One concrete action. Sign off with your first name only.
+</structure>
 
-Humanizer rules (non-negotiable):
-- Vary sentence length — mix short punchy lines with one slightly longer one
-- Write how a person talks, not how a copywriter edits
-- No "I hope this finds you well". No "excited to share". No "just reaching out". No "synergy". No "leverage".
-- No em dashes. No superlatives. No hollow adjectives.
-- Use the prospect's exact quote once if it lands a punch — otherwise paraphrase naturally
-- Sentence case everywhere
-
-Return JSON: { "title": "<subject line>", "body": "<full email text, newlines as \\n>" }`;
+<tone>
+- First person, warm, specific to this call. Not a "who we are" recap.
+- Use their exact quote once only if it lands; otherwise paraphrase naturally.
+- No "I hope this finds you well", no "excited to share", no "just reaching out".
+</tone>`;
 
     case 'linkedin':
-      return `You are a senior sales copywriter. Write a short-form LinkedIn post from the seller's first-person perspective.
+      return `<role>
+You are the seller writing a short, paste-ready LinkedIn post in first person.
+</role>
 
-Structure:
-- Open with a specific, concrete observation — a number, a pattern, a situation. Never a question. Never "I'm excited to share."
-- Tell the story in 3-4 short paragraphs. Build to a single sharp category insight about a problem many companies face.
-- End with one sentence that invites reflection. Not a sales pitch. Not a CTA.
+<structure>
+- Hook first: open with a specific, concrete observation — a number, a pattern, a situation. Never a question, never "I'm excited to share".
+- 3-4 short paragraphs that build to one sharp category insight about a problem many teams face.
+- End with one sentence that invites reflection, not a CTA.
+</structure>
 
-Rules (non-negotiable):
-- First person throughout
-- NEVER mention client names, company names, prospect names, or any identifying details. Generalise everything to a category or job function (e.g. "a mid-market SaaS team", "a VP of Sales", "a 50-person org").
-- Use patterns and numbers from the transcript but strip all attribution — make the insight feel universal, not like a case study.
-- No hashtags. No emoji. No "game-changing". No "synergy". No "unlock".
-- Sentences under 20 words each
-- White space between paragraphs — no walls of text
-- The insight should feel earned, not announced
-
-Return JSON: { "title": "<5-8 word post headline>", "body": "<full post text, newlines as \\n>" }`;
+<formatting>
+- Paste-ready: clean single blank line between paragraphs, no walls of text.
+- No hashtags, no emoji, no hashtag spam.
+- Sentences under 20 words each.
+</formatting>`;
 
     case 'one-pager':
-      return `You are a senior sales copywriter. Write a structured one-pager the prospect can share internally or paste into a deck.
+      return `<role>
+You are writing a one-pager the reader can share internally or drop into a deck.
+</role>
 
-Structure (use these exact markdown headers):
+<structure>
+Use these exact markdown headers, in this order:
 ## The Problem
-## The Evidence
-## What We Deliver
-## The Math
+## The Impact
+## How We Help
+## Proof
 ## Next Step
+</structure>
 
-Rules:
-- Every section must use the prospect's specific situation: their numbers, team size, timeline, exact quotes
-- "The Evidence" section: name the incident, the dollar figure, the timeline — make it undeniable
-- "The Math" section: show the savings calculation with their actual spend numbers
-- "What We Deliver": 3-5 bullet points, each one a specific capability tied to their pain — no generic benefits
-- "Next Step": one sentence, one action, specific
-- No buzzwords. No "synergy". No "leverage". No "streamline".
-
-Return JSON: { "title": "<action-oriented title, specific to their situation>", "body": "<full markdown body>" }`;
+<guidance>
+- The Problem: name the problem clearly in one tight paragraph.
+- The Impact: what it costs them — time, money, risk. Quantify with generalised numbers where possible.
+- How We Help: 3-5 bullets, each a specific capability tied to the problem, no generic benefits.
+- Proof: the evidence that this works — a pattern, a result, a credible reference. Keep it customer-agnostic.
+- Next Step: one sentence, one concrete action.
+</guidance>`;
 
     case 'battlecard':
-      return `You are a senior sales copywriter. Write paid ad copy with 4 variants for a paid media handoff (e.g. CircleClick). Each variant takes a different angle on the same pain.
+      return `<role>
+You are writing paid ad copy with 4 variants for a paid media handoff. Each variant takes a different angle on the same pain.
+</role>
 
-Angles (use all four):
-- Variant A: Consequence — what happens if nothing changes
-- Variant B: Social proof — what others in this situation discovered
-- Variant C: Aspiration — what the world looks like when this is solved
-- Variant D: Directness — call out exactly what is broken and name it
+<variants>
+Use all four:
+- Variant A: Consequence — what happens if nothing changes.
+- Variant B: Social proof — what others in this situation discovered.
+- Variant C: Aspiration — what the world looks like when this is solved.
+- Variant D: Directness — call out exactly what is broken.
+</variants>
 
-Each variant: Headline (8 words max, specific — use their numbers or language), Body (2-3 tight sentences), CTA (specific verb, not "Learn more").
+<format>
+- Markdown table with columns: Variant | Headline | Body | CTA.
+- Headline: 8 words max, specific. Body: 2-3 tight sentences. CTA: specific active verb, not "Learn more".
+</format>`;
 
-Format as a markdown table with columns: Variant | Headline | Body | CTA
-
-Rules:
-- Headlines must be specific. Generic headlines get rejected.
-- No em dashes. No superlatives.
-- CTAs: "See how teams ship" / "Get it live" / "Show me the path" — specific, active.
-
-Return JSON: { "title": "<pain point + channel: Paid Ad Copy>", "body": "<full markdown table>" }`;
+    default: {
+      const _exhaustive: never = type;
+      throw new Error(`Unknown collateral type: ${String(_exhaustive)}`);
+    }
   }
+}
+
+function buildSystemPrompt(type: CollateralType): string {
+  return `${buildKindGuidance(type)}
+
+${buildRulesBlock(type)}`;
 }
 
 export async function generateCollateralWithLLM(
