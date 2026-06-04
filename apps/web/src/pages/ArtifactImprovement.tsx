@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { useWorkflow, useRunStep } from '../hooks/use-workflow';
 import { Button } from '@workbench/ui';
 import { buildSteps, HorizontalStepper } from '@workbench/workflow';
+import type { Artifact, PainPoint } from '@workbench/shared';
 
 const STEP_LABELS = {
   intake: 'Call source',
@@ -13,7 +14,7 @@ const STEP_LABELS = {
   export: 'Final package',
 };
 
-export default function CollateralImprovement() {
+export default function ArtifactImprovement() {
   const { id: workflowId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   if (!workflowId) return null;
@@ -21,8 +22,8 @@ export default function CollateralImprovement() {
   const runStep = useRunStep(workflowId);
   const [feedback, setFeedback] = useState<Record<string, string>>({});
 
-  const painPoints = (workflow?.steps?.analyze?.painPoints as any[]) ?? [];
-  const approvedArtifacts = (workflow?.steps?.generate?.artifacts as any[]) ?? [];
+  const painPoints = (workflow?.steps?.analyze?.painPoints as PainPoint[] | undefined) ?? [];
+  const approvedArtifacts = (workflow?.steps?.generate?.artifacts as Artifact[] | undefined) ?? [];
 
   const isLoading = isLoadingWorkflow || runStep.isPending;
 
@@ -56,7 +57,7 @@ export default function CollateralImprovement() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3">
-            {painPoints.map((point: any) => (
+            {painPoints.map((point) => (
               <motion.div
                 key={point.id}
                 className="border border-border rounded-lg p-3 bg-surface-2 text-sm"
@@ -70,7 +71,7 @@ export default function CollateralImprovement() {
           </div>
         </motion.div>
 
-        {/* Right Panel: Collateral */}
+        {/* Right Panel: Artifacts */}
         <motion.div
           className="flex-1 flex flex-col overflow-hidden bg-page"
           initial={{ x: 40, opacity: 0 }}
@@ -89,7 +90,7 @@ export default function CollateralImprovement() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
-            {approvedArtifacts.map((item: any, i: number) => (
+            {approvedArtifacts.map((item, i) => (
               <motion.div
                 key={item.id}
                 initial={{ opacity: 0, y: 10 }}

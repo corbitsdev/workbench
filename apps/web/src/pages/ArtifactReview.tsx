@@ -1,19 +1,19 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import CollateralBody from '../components/CollateralBody';
+import ArtifactBody from '../components/ArtifactBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { buildSteps, HorizontalStepper } from '@workbench/workflow';
-import type { CollateralType } from '@workbench/shared';
+import type { Artifact, ArtifactKind, PainPoint } from '@workbench/shared';
 
-const TYPE_LABELS: Record<CollateralType, string> = {
+const TYPE_LABELS: Record<ArtifactKind, string> = {
   email: 'Follow-up Email',
   linkedin: 'LinkedIn Post',
   'one-pager': 'One-Pager',
   battlecard: 'Paid Ad Copy',
 };
 
-const TYPE_DESCRIPTIONS: Record<CollateralType, string> = {
+const TYPE_DESCRIPTIONS: Record<ArtifactKind, string> = {
   email: 'Sales follow-up to send after the call',
   linkedin: 'Organic post from the seller perspective',
   'one-pager': 'Shareable doc for internal champions',
@@ -28,7 +28,7 @@ const STEP_LABELS = {
   export: 'Final package',
 };
 
-export default function CollateralReview() {
+export default function ArtifactReview() {
   const { id: workflowId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   if (!workflowId) return null;
@@ -36,10 +36,10 @@ export default function CollateralReview() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
 
-  const painPoints = (workflow?.steps?.analyze?.painPoints as any[]) ?? [];
-  const artifacts = (workflow?.steps?.generate?.artifacts as any[]) ?? [];
+  const painPoints = (workflow?.steps?.analyze?.painPoints as PainPoint[] | undefined) ?? [];
+  const artifacts = (workflow?.steps?.generate?.artifacts as Artifact[] | undefined) ?? [];
   const current = artifacts[currentIndex];
-  const currentPainPoint = painPoints.find((p: any) => p.id === current?.painPointId);
+  const currentPainPoint = painPoints.find((p) => p.id === current?.painPointId);
   const isLast = currentIndex === artifacts.length - 1;
 
   const handleApprove = () => {
@@ -84,7 +84,7 @@ export default function CollateralReview() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
-            {painPoints.map((point: any) => (
+            {painPoints.map((point) => (
               <motion.div
                 key={point.id}
                 className="border border-border rounded-lg p-3 bg-surface-2 text-sm"
@@ -122,11 +122,9 @@ export default function CollateralReview() {
             {current?.kind && (
               <div className="text-right">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-soft text-orange-deep text-xs font-semibold uppercase tracking-wide">
-                  {TYPE_LABELS[current.kind as CollateralType] ?? current.kind}
+                  {TYPE_LABELS[current.kind]}
                 </div>
-                <div className="text-xs text-text-3 mt-1">
-                  {TYPE_DESCRIPTIONS[current.kind as CollateralType]}
-                </div>
+                <div className="text-xs text-text-3 mt-1">{TYPE_DESCRIPTIONS[current.kind]}</div>
               </div>
             )}
           </div>
@@ -149,7 +147,7 @@ export default function CollateralReview() {
                     <div className="text-sm text-white">{currentPainPoint?.context}</div>
                   </div>
 
-                  <CollateralBody body={current.content} type={current.kind as CollateralType} />
+                  <ArtifactBody body={current.content} type={current.kind} />
                 </motion.div>
               )}
             </AnimatePresence>

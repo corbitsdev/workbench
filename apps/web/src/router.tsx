@@ -9,8 +9,8 @@ import { OnboardingPage } from './pages/OnboardingPage';
 import WorkbenchHome from './pages/WorkbenchHome';
 import Dashboard from './pages/Dashboard';
 import LiveAnalysisReview from './pages/LiveAnalysisReview';
-import CollateralReview from './pages/CollateralReview';
-import CollateralImprovement from './pages/CollateralImprovement';
+import ArtifactReview from './pages/ArtifactReview';
+import ArtifactImprovement from './pages/ArtifactImprovement';
 import FinalExport from './pages/FinalExport';
 import Settings from './pages/Settings';
 
@@ -101,8 +101,8 @@ export const router = createBrowserRouter([
           { path: '/dashboard', element: <Dashboard /> },
           { path: '/settings', element: <Settings /> },
           { path: '/workflows/:id/analyze', element: <LiveAnalysisReview /> },
-          { path: '/workflows/:id/review', element: <CollateralReview /> },
-          { path: '/workflows/:id/improvement', element: <CollateralImprovement /> },
+          { path: '/workflows/:id/review', element: <ArtifactReview /> },
+          { path: '/workflows/:id/improvement', element: <ArtifactImprovement /> },
           { path: '/workflows/:id/export', element: <FinalExport /> },
         ],
       },

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
 import { motion } from 'framer-motion';
-import CollateralBody from '../components/CollateralBody';
+import ArtifactBody from '../components/ArtifactBody';
 import { useWorkflow } from '../hooks/use-workflow';
 import { Button } from '@workbench/ui';
 import { buildSteps, HorizontalStepper } from '@workbench/workflow';
-import type { CollateralType } from '@workbench/shared';
+import type { Artifact, ArtifactKind } from '@workbench/shared';
 
 const STEP_LABELS = {
   intake: 'Call source',
@@ -15,7 +15,7 @@ const STEP_LABELS = {
   export: 'Final package',
 };
 
-const TYPE_LABELS: Record<CollateralType, string> = {
+const TYPE_LABELS: Record<ArtifactKind, string> = {
   email: 'Follow-up Email',
   linkedin: 'LinkedIn Post',
   'one-pager': 'One-Pager',
@@ -27,7 +27,7 @@ export default function FinalExport() {
   const navigate = useNavigate();
   if (!workflowId) return null;
   const { data: workflow, isLoading } = useWorkflow(workflowId);
-  const artifacts = (workflow?.steps?.generate?.artifacts as any[]) ?? [];
+  const artifacts = (workflow?.steps?.generate?.artifacts as Artifact[] | undefined) ?? [];
 
   const steps = buildSteps('export', STEP_LABELS, true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -39,10 +39,7 @@ export default function FinalExport() {
 
   const handleCopyAll = () => {
     const text = artifacts
-      .map(
-        (item) =>
-          `${TYPE_LABELS[item.kind as CollateralType] ?? item.kind}\n${item.title}\n\n${item.content}`
-      )
+      .map((item) => `${TYPE_LABELS[item.kind]}\n${item.title}\n\n${item.content}`)
       .join('\n\n---\n\n');
     navigator.clipboard
       .writeText(text)
@@ -52,7 +49,7 @@ export default function FinalExport() {
       });
   };
 
-  const handleCopyItem = (item: any) => {
+  const handleCopyItem = (item: Artifact) => {
     const text = `${item.title}\n\n${item.content}`;
     navigator.clipboard
       .writeText(text)
@@ -125,7 +122,7 @@ export default function FinalExport() {
               </motion.div>
 
               {/* Artifacts */}
-              {artifacts.map((item: any, i: number) => (
+              {artifacts.map((item, i) => (
                 <motion.div
                   key={item.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -136,7 +133,7 @@ export default function FinalExport() {
                   <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                     <div>
                       <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-soft text-orange-deep text-xs font-semibold uppercase tracking-wide mb-1">
-                        {TYPE_LABELS[item.kind as CollateralType] ?? item.kind}
+                        {TYPE_LABELS[item.kind]}
                       </div>
                       <h3 className="text-lg font-bold text-text">{item.title}</h3>
                     </div>
@@ -148,7 +145,7 @@ export default function FinalExport() {
                     </button>
                   </div>
                   <div className="p-6">
-                    <CollateralBody body={item.content} type={item.kind as CollateralType} />
+                    <ArtifactBody body={item.content} type={item.kind} />
                   </div>
                 </motion.div>
               ))}

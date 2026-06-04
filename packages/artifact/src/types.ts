@@ -11,7 +11,7 @@ export type {
   ArtifactStatus,
   ArtifactVersion,
   ArtifactWithSession,
-  CollateralType,
+  ArtifactKind,
 } from '@workbench/shared';
 
 /** Decorative chart glyph drawn behind a gallery tile. */

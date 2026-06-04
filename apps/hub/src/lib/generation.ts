@@ -1,7 +1,7 @@
 import { createAgent } from '@intx/agent';
 import { getLogger } from '@intx/log';
 import type { InferenceSource } from '@intx/types/runtime';
-import type { CollateralType } from '@workbench/shared';
+import type { ArtifactKind } from '@workbench/shared';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,11 +22,11 @@ interface GeneratedCollateral {
 
 const PUBLIC_KINDS = ['linkedin', 'one-pager', 'battlecard'] as const;
 
-export function isPublicKind(type: CollateralType): boolean {
-  return (PUBLIC_KINDS as readonly CollateralType[]).includes(type);
+export function isPublicKind(type: ArtifactKind): boolean {
+  return (PUBLIC_KINDS as readonly ArtifactKind[]).includes(type);
 }
 
-export function buildRulesBlock(type: CollateralType): string {
+export function buildRulesBlock(type: ArtifactKind): string {
   const piiRules = isPublicKind(type)
     ? `This is a PUBLIC artifact: it will be published or pasted where anyone can read it.
 - Strip and generalise ALL customer identifying information. Never include customer or company names, people's names, email addresses, domains, account handles, or any detail that could identify who the call was with.
@@ -52,7 +52,7 @@ Return ONLY valid JSON, with no markdown fences and no prose, in exactly this sh
 </output>`;
 }
 
-function buildKindGuidance(type: CollateralType): string {
+function buildKindGuidance(type: ArtifactKind): string {
   switch (type) {
     case 'email':
       return `<role>
@@ -137,7 +137,7 @@ Use all four:
   }
 }
 
-function buildSystemPrompt(type: CollateralType): string {
+function buildSystemPrompt(type: ArtifactKind): string {
   return `${buildKindGuidance(type)}
 
 ${buildRulesBlock(type)}`;
@@ -147,7 +147,7 @@ export async function generateCollateralWithLLM(
   workflowId: string,
   transcript: string,
   point: PainPointInput,
-  type: CollateralType
+  type: ArtifactKind
 ): Promise<GeneratedCollateral> {
   const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY;
   const model = process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini';

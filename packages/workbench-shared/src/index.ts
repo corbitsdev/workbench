@@ -11,7 +11,7 @@ export type SessionStatus =
 // The subset of artifact kinds the UI knows how to render exhaustively.
 // The DB `kind` column is free-form text; this union stays closed for the
 // CollateralBody renderer switch.
-export type CollateralType = 'email' | 'linkedin' | 'one-pager' | 'battlecard';
+export type ArtifactKind = 'email' | 'linkedin' | 'one-pager' | 'battlecard';
 
 export type ArtifactStatus = 'draft' | 'approved' | 'rejected';
 
@@ -30,7 +30,7 @@ export interface Artifact {
   sessionId: string;
   parentId: string | null;
   painPointId: string | null;
-  kind: string;
+  kind: ArtifactKind;
   title: string;
   content: string;
   status: ArtifactStatus;

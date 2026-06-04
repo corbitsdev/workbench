@@ -3,7 +3,7 @@ export type {
   ArtifactStatus,
   ArtifactVersion,
   ArtifactWithSession,
-  CollateralType,
+  ArtifactKind,
   VizKind,
   ArtifactVisual,
   GalleryArtifact,

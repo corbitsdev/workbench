@@ -1,14 +1,14 @@
 import { createAgent } from '@intx/agent';
 import { getLogger } from '@intx/log';
 import type { InferenceSource } from '@intx/types/runtime';
-import type { CollateralType } from '@workbench/shared';
+import type { ArtifactKind } from '@workbench/shared';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const log = getLogger(['feedback']);
 
-function buildFeedbackSystemPrompt(type: CollateralType): string {
+function buildFeedbackSystemPrompt(type: ArtifactKind): string {
   switch (type) {
     case 'linkedin':
       return `You are a sales copywriter editing a LinkedIn post. Apply the user's feedback strictly. Critical rules: never mention client names, company names, prospect names, or any identifying details — generalise to a category or job function. The insight must feel universal. Return only the refined text, no explanations.`;
@@ -24,7 +24,7 @@ function buildFeedbackSystemPrompt(type: CollateralType): string {
 export async function refineFeedbackWithLLM(
   text: string,
   feedback: string,
-  type: CollateralType = 'email'
+  type: ArtifactKind = 'email'
 ): Promise<string> {
   const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY;
   const model = process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini';

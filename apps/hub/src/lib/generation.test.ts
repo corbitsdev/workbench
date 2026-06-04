@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test';
-import type { CollateralType } from '@workbench/shared';
+import type { ArtifactKind } from '@workbench/shared';
 import { buildRulesBlock, isPublicKind } from './generation';
 
-const PUBLIC_KINDS: CollateralType[] = ['linkedin', 'one-pager', 'battlecard'];
+const PUBLIC_KINDS: ArtifactKind[] = ['linkedin', 'one-pager', 'battlecard'];
 
 describe('isPublicKind', () => {
   it('treats linkedin, one-pager, and battlecard as public', () => {
@@ -18,7 +18,7 @@ describe('isPublicKind', () => {
 
 describe('buildRulesBlock', () => {
   it('wraps rules, style, and output in XML section tags with a PII rule for every kind', () => {
-    for (const kind of [...PUBLIC_KINDS, 'email'] as CollateralType[]) {
+    for (const kind of [...PUBLIC_KINDS, 'email'] as ArtifactKind[]) {
       const rules = buildRulesBlock(kind);
       expect(rules).toMatch(/<rules>/);
       expect(rules).toMatch(/<style>/);

@@ -25,7 +25,10 @@ const listArtifacts = mock(
       },
     ])
 );
-mock.module('@workbench/client', () => ({ listArtifacts, listWorkflows: mock(() => Promise.resolve([])) }));
+mock.module('@workbench/client', () => ({
+  listArtifacts,
+  listWorkflows: mock(() => Promise.resolve([])),
+}));
 
 function renderWithClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

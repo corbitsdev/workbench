@@ -1,8 +1,8 @@
-import type { CollateralType } from '@workbench/shared';
+import type { ArtifactKind } from '@workbench/shared';
 
-interface CollateralBodyProps {
+interface ArtifactBodyProps {
   body: string;
-  type: CollateralType;
+  type: ArtifactKind;
 }
 
 function parseMarkdownTable(text: string): { headers: string[]; rows: string[][] } | null {
@@ -164,7 +164,7 @@ function BattlecardBody({ body }: { body: string }) {
   return <p className="text-sm text-text-2 whitespace-pre-wrap">{body}</p>;
 }
 
-export default function CollateralBody({ body, type }: CollateralBodyProps) {
+export default function ArtifactBody({ body, type }: ArtifactBodyProps) {
   switch (type) {
     case 'email':
       return <EmailBody body={body} />;
@@ -174,5 +174,7 @@ export default function CollateralBody({ body, type }: CollateralBodyProps) {
       return <OnePagerBody body={body} />;
     case 'battlecard':
       return <BattlecardBody body={body} />;
+    default:
+      return null;
   }
 }
