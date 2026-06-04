@@ -2,6 +2,7 @@ import {
   type AnyPgColumn,
   boolean,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -59,9 +60,10 @@ export const painPoint = pgTable('pain_point', {
 // migrations). Nesting via parent_id; provenance via pain_point_id (nullable).
 export const artifact = pgTable('artifact', {
   id: uuid('id').primaryKey().defaultRandom(),
-  sessionId: uuid('session_id')
-    .notNull()
-    .references(() => workbenchSession.id, { onDelete: 'cascade' }),
+  sessionId: uuid('session_id').references(() => workbenchSession.id, { onDelete: 'cascade' }),
+  workflowId: uuid('workflow_id').references(() => collateralGenerationWorkflow.id, {
+    onDelete: 'set null',
+  }),
   parentId: uuid('parent_id').references((): AnyPgColumn => artifact.id, { onDelete: 'cascade' }),
   painPointId: uuid('pain_point_id').references(() => painPoint.id, { onDelete: 'set null' }),
   kind: text('kind').notNull(),
@@ -99,6 +101,23 @@ export const workbenchUser = pgTable('workbench_user', {
   personalTenantId: text('personal_tenant_id'),
   workbenchPrincipalId: text('workbench_principal_id'),
   provisionedAt: timestamp('provisioned_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at')
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+// ─── Collateral Generation Workflow ────────────────────────────────
+
+export const collateralGenerationStatus = ['pending', 'generating', 'done', 'failed'] as const;
+
+export const collateralGenerationWorkflow = pgTable('collateral_generation_workflow', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  status: text('status', { enum: collateralGenerationStatus }).notNull().default('pending'),
+  inputArtifactIds: jsonb('input_artifact_ids').notNull().$type<string[]>().default([]),
+  outputTypes: jsonb('output_types').notNull().$type<string[]>().default([]),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at')
     .notNull()

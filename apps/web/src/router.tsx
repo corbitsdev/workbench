@@ -8,10 +8,6 @@ import { LoginPage } from './pages/LoginPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import WorkbenchHome from './pages/WorkbenchHome';
 import Dashboard from './pages/Dashboard';
-import LiveAnalysisReview from './pages/LiveAnalysisReview';
-import ArtifactReview from './pages/ArtifactReview';
-import ArtifactImprovement from './pages/ArtifactImprovement';
-import FinalExport from './pages/FinalExport';
 import Settings from './pages/Settings';
 
 type WorkspaceStatus = 'loading' | 'present' | 'absent' | 'error';
@@ -88,10 +84,6 @@ export const router = createBrowserRouter([
           { index: true, element: <WorkbenchHome /> },
           { path: '/dashboard', element: <Dashboard /> },
           { path: '/settings', element: <Settings /> },
-          { path: '/workflows/:id/analyze', element: <LiveAnalysisReview /> },
-          { path: '/workflows/:id/review', element: <ArtifactReview /> },
-          { path: '/workflows/:id/improvement', element: <ArtifactImprovement /> },
-          { path: '/workflows/:id/export', element: <FinalExport /> },
         ],
       },
     ],

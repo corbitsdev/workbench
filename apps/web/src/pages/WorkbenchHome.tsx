@@ -1,5 +1,6 @@
+import { AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { CollateralGenerationPanel } from '../components/CollateralGenerationPanel';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
 import { useResizableRail } from '@workbench/ui';
@@ -15,8 +16,8 @@ import { useMediaQuery } from '../lib/use-media-query';
  * Mobile (<lg): single-column gallery with natural scroll; the library opens
  * as a full-screen overlay from a button in the gallery header.
  *
- * Phase 1 scaffold — panels render static sample data; Phase 2/3 wire them to
- * real session + artifact providers (CL-985/986/989).
+ * The right pane toggles between the artifact gallery and the inline
+ * collateral-generation panel — no route change, sidebar and Ada remain visible.
  */
 const RAIL_HEIGHT = 'h-full';
 
@@ -24,15 +25,19 @@ export default function WorkbenchHome() {
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const { width, min, max, dragging, containerRef, handleProps } = useResizableRail();
   const [railOpen, setRailOpen] = useState(false);
-  const navigate = useNavigate();
+  const [showGenPanel, setShowGenPanel] = useState(false);
 
   if (!isDesktop) {
     return (
       <div className="h-full overflow-y-auto px-2 pb-10 pt-1">
-        <ArtifactGallery
-          onNew={() => navigate('/dashboard')}
-          onOpenLibrary={() => setRailOpen(true)}
-        />
+        {showGenPanel ? (
+          <CollateralGenerationPanel onClose={() => setShowGenPanel(false)} />
+        ) : (
+          <ArtifactGallery
+            onNew={() => setShowGenPanel(true)}
+            onOpenLibrary={() => setRailOpen(true)}
+          />
+        )}
         {railOpen && (
           <div className="fixed inset-0 z-50 bg-page p-2">
             <LibraryRail onClose={() => setRailOpen(false)} />
@@ -70,7 +75,13 @@ export default function WorkbenchHome() {
         />
       </div>
 
-      <ArtifactGallery onNew={() => navigate('/dashboard')} />
+      <AnimatePresence mode="wait">
+        {showGenPanel ? (
+          <CollateralGenerationPanel key="gen-panel" onClose={() => setShowGenPanel(false)} />
+        ) : (
+          <ArtifactGallery key="gallery" onNew={() => setShowGenPanel(true)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -23,6 +23,7 @@ import { eq } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
+import { createCollateralGenerationRouter } from './routes/collateral-generation';
 import * as workbenchSchema from './db/schema';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import { ensureWorkbenchTenant, provisionUserOnSignup } from './lib/tenant-provisioning';
@@ -331,6 +332,7 @@ v1.get('/me', async (c) => {
 });
 
 v1.route('/', createWorkflowRouter(db));
+v1.route('/', createCollateralGenerationRouter(db));
 
 app.route('/api/v1', v1);
 
