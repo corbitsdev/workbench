@@ -26,7 +26,7 @@ import { createWorkflowRouter } from './routes/workflow';
 import { createCollateralGenerationRouter } from './routes/collateral-generation';
 import * as workbenchSchema from './db/schema';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
-import { ensureWorkbenchTenant, provisionUserOnSignup } from './lib/tenant-provisioning';
+import { provisionUserOnSignup } from './lib/tenant-provisioning';
 
 await setup({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
@@ -55,10 +55,7 @@ log.info('Database connection established');
 // Idempotent — creates the shared GTM Workbench Interchange tenant on first
 // boot and returns the existing tenant ID on subsequent boots.
 
-const { isDev, cors: corsConfig, auth: authConfig, google, hub, workbench } = config;
-
-const { tenantId: workbenchTenantId } = await ensureWorkbenchTenant(db, workbench.tenantSlug);
-log.info('Workbench tenant ready', { workbenchTenantId });
+const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 
 // ─── Auth ──────────────────────────────────────────────────────────
 const { origins: corsOrigins, isCrossOrigin } = corsConfig;
@@ -106,17 +103,15 @@ const auth = betterAuth({
             .onConflictDoNothing();
 
           try {
-            const { personalTenantId, workbenchPrincipalId } = await provisionUserOnSignup(db, {
+            const { personalTenantId } = await provisionUserOnSignup(db, {
               userId: user.id,
               userEmail: user.email,
-              workbenchTenantId,
             });
 
             await db
               .update(workbenchSchema.workbenchUser)
               .set({
                 personalTenantId,
-                workbenchPrincipalId,
                 provisionedAt: new Date(),
                 updatedAt: new Date(),
               })
@@ -125,7 +120,6 @@ const auth = betterAuth({
             log.info('User provisioned', {
               userId: user.id,
               personalTenantId,
-              workbenchPrincipalId,
             });
           } catch (err) {
             log.error(
@@ -326,7 +320,6 @@ v1.get('/me', async (c) => {
   return c.json({
     userId,
     personalTenantId: row?.personalTenantId ?? null,
-    workbenchPrincipalId: row?.workbenchPrincipalId ?? null,
     provisionedAt: row?.provisionedAt ?? null,
   });
 });

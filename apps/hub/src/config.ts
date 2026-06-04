@@ -70,9 +70,6 @@ export function loadConfig() {
       dataDir: requireEnv('HUB_DATA_DIR'),
       signingKeys: requireEnv('HUB_SIGNING_KEYS'),
     },
-    workbench: {
-      tenantSlug: requireEnv('WORKBENCH_TENANT_SLUG'),
-    },
   };
 
   log.info('Configuration loaded', {
