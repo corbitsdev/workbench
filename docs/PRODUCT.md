@@ -2,16 +2,33 @@
 
 ## What We're Building
 
-A human-in-the-loop (HITL) tool that turns sales call transcripts into polished, publishable collateral.
+A human-in-the-loop (HITL) GTM workspace where AI agents and workflows assist users in turning sales call data into publishable collateral assets.
 
-The agent reads a transcript, extracts pain points, and generates targeted collateral (email, LinkedIn, one-pager, battlecard) for each one. The user reviews every step — approving pain points, reviewing collateral, refining selected pieces, and exporting the final output.
+The agent layer handles analysis and first-draft generation. The human handles curation, approval, and refinement at every stage. This is **intentionally not** a fully automated pipeline.
 
-This is **intentionally not** a fully automated pipeline. The agent handles analysis and first-draft generation. The human handles curation, approval, and refinement. That is the product.
+The broader workbench pattern is source-to-artifact: users bring source material, choose an outcome, review the important decisions, approve artifacts, and optionally deliver them. Users choose outcomes, not pipeline topology. The canonical model lives in [SOURCE_TO_ARTIFACT.md](./SOURCE_TO_ARTIFACT.md).
 
-The broader workbench pattern is source-to-artifact: users bring source material,
-choose an outcome, review the important decisions, approve artifacts, and
-optionally deliver them. Users choose outcomes, not pipeline topology. The
-canonical model lives in [SOURCE_TO_ARTIFACT.md](./SOURCE_TO_ARTIFACT.md).
+## Agents
+
+### Myra — Personal AI Agent
+
+Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staff / Executive Assistant, living in the user's personal Interchange tenant. Myra can coordinate across workbenches and serves as the user's persistent, intelligent assistant throughout the platform.
+
+### Oat — Workspace Granola Agent
+
+**Oat** is a shared workspace agent that continuously processes Granola call recordings and surfaces them as call document artifacts in the workbench. Oat runs in the shared GTM Workbench Interchange tenant.
+
+## How It Works
+
+1. **Oat processes calls** — Oat automatically ingests Granola call recordings and creates call document artifacts.
+2. **User triggers Collateral Generation** — The user selects N input artifacts (e.g. call documents) and N output types (e.g. case study, one-pager, email draft). Each combination generates independently.
+3. **Each output is an independent artifact** — Results are stored as artifact rows and can be reviewed, refined, re-used as inputs, or exported.
+
+## Output Types Currently Supported
+
+- Case study
+- One-pager
+- Email draft
 
 ## Target Users
 
@@ -20,54 +37,36 @@ canonical model lives in [SOURCE_TO_ARTIFACT.md](./SOURCE_TO_ARTIFACT.md).
 
 ## Core Value Propositions
 
-- **Fast**: Paste a transcript, get draft collateral in minutes
+- **Fast**: Select call artifacts, get draft collateral in minutes
 - **Reviewable**: Every step is human-approved, not black-box automation
 - **Resumable**: Sessions are saved, so users can return and iterate
 - **Exportable**: Final output is assembled and ready to copy, download, or deliver
 
-## Prototype Stages
-
-1. **Call Selection** — Paste transcript or pick from recent calls
-2. **Live Analysis** — Extract pain points with severity, context, and direct quote
-3. **Collateral Review** — Card-by-card approval, rejection, inline improvement
-4. **Improvement** — Per-item feedback and regeneration
-5. **Final Export** — Copy, download, or deliver assembled collateral
-6. **Session Dashboard** — Resume prior sessions, re-export, iterate
-
 ## Workbench Model
 
-The current transcript workflow is the first concrete version of a more general
-workbench model:
+The current workflow is the first concrete version of a more general workbench model:
 
-1. **Sources** — Input material such as transcripts, markdown files, uploaded
-   documents, brain/context files, URLs, or prior artifacts reused as inputs
+1. **Sources** — Input material such as call documents, uploaded files, brain/context files, URLs, or prior artifacts reused as inputs
 2. **Jobs** — One run of a workflow against selected sources and options
-3. **Review Gates** — Human decisions that steer the job without exposing the
-   full internal pipeline
-4. **Artifacts** — Generated or curated outputs, including collateral, briefs,
-   summaries, and packages
-5. **Hooks** — Optional delivery actions such as copy, export, draft, schedule,
-   post, or send
+3. **Review Gates** — Human decisions that steer the job without exposing the full internal pipeline
+4. **Artifacts** — Generated or curated outputs, including collateral, briefs, summaries, and packages
+5. **Hooks** — Optional delivery actions such as copy, export, draft, schedule, post, or send
 
-The product should surface named outcomes such as "Create sales collateral" or
-"Draft LinkedIn posts" rather than raw internal steps like summarize, extract,
-generate, humanize, and post.
+The product should surface named outcomes such as "Create sales collateral" or "Draft LinkedIn posts" rather than raw internal steps.
 
 ## Intake Scope
 
-- **Primary**: Paste raw transcript, VTT, or rough notes
-- **Secondary**: Optional recent-call picker from Granola API
+- **Primary**: Oat automatically surfaces Granola call recordings as call document artifacts
+- **Secondary**: Manual paste of raw transcript, VTT, or rough notes
 - **Out of scope (v2)**: Full CRM sync (Attio, Salesforce, etc.)
 
 ## Acceptance Criteria
 
 - Users must authenticate via Google OAuth (optional domain allowlist for team gating)
-- Transcript can be pasted and submitted
-- Pain point analysis is generated and reviewable
-- Users can select which pain points continue to collateral generation
-- Collateral is generated per pain point
-- Users can approve / reject pieces during review
-- Users can improve an individual piece with feedback
-- Final output can be copied or exported
+- Oat continuously processes Granola calls into call document artifacts
+- Users can trigger Collateral Generation by selecting input artifacts and output types
+- Each output type generates independently in parallel
+- Results are stored as artifact rows with provenance
+- Users can review, refine, and export generated artifacts
 - Session state is persisted and can be resumed
 - Usable without full production CRM sync

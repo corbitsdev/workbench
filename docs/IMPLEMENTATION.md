@@ -12,7 +12,7 @@
 | State management   | TanStack Query | 5                            |
 | Backend            | Hono           | 4                            |
 | ORM                | Drizzle ORM    | 0.45                         |
-| Database           | PostgreSQL     | 18.2-alpine                  |
+| Database           | PostgreSQL      | 18.2-alpine                  |
 | Object storage     | MinIO          | latest                       |
 | Agent runtime      | `@intx/agent`  | workspace (via interchange/) |
 | Runtime validation | arktype        | 2.x                          |
@@ -33,6 +33,38 @@
 - **Examples**: `examples/*` (reference consumers, not throwaway)
 - No standalone TypeScript files in repository root
 
+## Shared Packages
+
+### `packages/agents` (`@workbench/agents`)
+
+Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter.
+
+```
+src/
+  personal-agent/
+    prompt.ts        — Myra system prompt
+    definition.ts    — Myra agent definition
+    director.ts      — Custom director filtering inbound senders
+  granola/
+    prompt.ts        — Oat system prompt
+    definition.ts    — Oat agent definition
+    director.ts      — Custom director filtering inbound senders
+  adapter.ts         — InstanceEvent → ChatMessage adapter
+  prompt-builder.ts  — Shared prompt formatting utilities
+  index.ts           — Public exports
+```
+
+#### `prompt-builder.ts` exports
+
+- `PromptFormat` — `'xml' | 'markdown'`
+- `formatFromModel(model: string): PromptFormat` — returns `'xml'` for `claude-*` models, `'markdown'` for all others
+- `buildSystemPrompt(sections: PromptSection[], format: PromptFormat): string`
+- `buildContextBlock(context: Record<string, string>, format: PromptFormat): string`
+
+### `packages/chat` (`@workbench/chat`)
+
+Transport-agnostic chat UI components. No dependency on a specific agent transport or WebSocket implementation.
+
 ## Naming Conventions
 
 - **Files**: Lowercase, hyphens for multi-word (`pain-point.ts`, `session-service.ts`)
@@ -41,10 +73,19 @@
 - **Retrieval**: `get*` prefix (`getSessionById`)
 - **Handlers**: `handle*` prefix (`handleAnalyze`)
 - **Variables**: `camelCase` for regular, `SCREAMING_SNAKE_CASE` for constants
+- **ID generation**: Use `generateId` imported from `@intx/hub-common` — do not reimplement
 
 ## API Surface
 
-### Pipeline Routes
+### Collateral Generation
+
+| Method | Route                   | Input                                         | Output                    |
+| ------ | ----------------------- | --------------------------------------------- | ------------------------- |
+| `POST` | `/collateral-generation` | `{ inputArtifactIds: string[], outputTypes: CollateralType[] }` | `{ workflowId, artifacts }` |
+
+Each `outputType` generates independently in parallel via `@intx/agent`. Results are stored as `artifact` rows with `kind = outputType` and `workflowId` FK.
+
+### Workflow Routes
 
 | Method | Route                  | Input                                            | Output                               |
 | ------ | ---------------------- | ------------------------------------------------ | ------------------------------------ |
@@ -61,51 +102,63 @@
 
 ## Database Schema
 
-### Transcripts
+### Artifacts
+
+The `artifact` table is the single store for all workflow and agent outputs.
 
 - `id` (UUID, primary key)
+- `kind` (CollateralType enum: case-study, one-pager, email-draft, call-document, ...)
+- `sessionId` (UUID, foreign key, **nullable** — workflow-level artifacts have no session)
+- `workflowId` (UUID, foreign key, nullable — links to collateral_generation_workflow)
 - `content` (text)
-- `source` (enum: paste, granola)
 - `createdAt` (timestamp)
 
-### Sessions
+### Collateral Generation Workflow
 
 - `id` (UUID, primary key)
-- `transcriptId` (UUID, foreign key)
-- `status` (enum: analyzing, reviewing, generating, improving, exporting, done)
+- `userId` (text)
+- `inputArtifactIds` (UUID array)
+- `outputTypes` (CollateralType array)
+- `status` (enum)
 - `createdAt` (timestamp)
 - `updatedAt` (timestamp)
 
-### Pain Points
+### Workbench User (provisional cache)
 
 - `id` (UUID, primary key)
-- `sessionId` (UUID, foreign key)
-- `severity` (enum: low, medium, high, critical)
-- `context` (text)
-- `quote` (text)
-- `selected` (boolean, default false)
-- `createdAt` (timestamp)
+- `userId` (text)
+- `personalTenantId` (text) — cached personal Interchange tenant ID
+- `workbenchPrincipalId` (text) — cached principal ID in the shared workbench tenant
 
-### Collateral
+> **Pending removal (CL-1245)**: This table is a provisional cache. It will be removed when session/route scoping moves to `tenantId`/`principalId` directly.
 
-- `id` (UUID, primary key)
-- `painPointId` (UUID, foreign key)
-- `type` (enum: email, linkedin, one-pager, battlecard)
-- `title` (text)
-- `body` (text)
-- `status` (enum: draft, approved, rejected)
-- `version` (integer, default 1)
-- `createdAt` (timestamp)
-- `updatedAt` (timestamp)
+### Migration Sequence
 
-### Collateral Versions
+| Migration | Description |
+| --------- | ----------- |
+| `0004_collateral_generation_workflow` | Adds `collateral_generation_workflow` table; makes `artifact.sessionId` nullable; adds `artifact.workflowId` FK |
+| `0005_workbench_user` | Adds provisional `workbench_user` cache table |
 
-- `id` (UUID, primary key)
-- `collateralId` (UUID, foreign key)
-- `title` (text)
-- `body` (text)
-- `version` (integer)
-- `createdAt` (timestamp)
+## Agent Architecture
+
+### Credentials
+
+- **Personal agent (Myra)**: `source: 'invoker'` for openai-compatible inference
+- **Granola agent (Oat)**: `source: 'tenant'` for both granola and openai-compatible credentials
+
+### Deploy Prompts
+
+Agent deploy prompts are currently **static** (no dynamic context injected at deploy time). Dynamic context (current date, operator name, etc.) will be injected at session start via the hub-client layer. See CL-1297 — not yet implemented.
+
+## Environment Configuration
+
+All environment validation lives in `apps/hub/src/config.ts`. Variables are validated at startup via `requireEnv()` — no silent defaults for required values.
+
+### Added Variables
+
+| Variable                | Required | Purpose |
+| ----------------------- | -------- | ------- |
+| `WORKBENCH_TENANT_SLUG` | Yes      | Slug of the shared GTM Workbench Interchange tenant |
 
 ## Authentication
 
@@ -116,19 +169,8 @@ Google OAuth is required for all users. Configuration:
 - **Client ID / Secret**: Configured via `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env.workbench`
 - **Redirect URI**: `http://localhost:5174/auth/callback` (local) or production equivalent
 - **Domain Allowlist** (optional): `GOOGLE_ALLOWED_DOMAINS` — comma-separated domains (e.g., `example.com,partner.com`). If set, only users with email addresses in these domains can authenticate. If unset, any Google account is allowed.
-- **Session Handling**: Sessions are stored in secure, HTTP-only cookies with CSRF protection. Session expiry is configurable via environment variables.
-- **Trusted Origins**: The API whitelist CORS origins via `TRUSTED_ORIGINS` (comma-separated). Required for local dev and production deployments.
-
-### Token-Based System Prompts (LLM)
-
-When generating collateral, the agent receives **type-aware system prompts** tailored to the output format:
-
-- **Email**: Focus on clarity, call-to-action, and conversational tone. Prompt emphasizes sales urgency and personal tone.
-- **LinkedIn**: Emphasis on thought leadership, industry insight, and shareability. Prompt encourages professional storytelling.
-- **One-Pager**: Structured, scannable format. Prompt specifies bullet points, header hierarchy, and data density.
-- **Battlecard**: Competitive positioning and objection handling. Prompt emphasizes structured comparison and messaging.
-
-Each prompt includes the pain point context and selected quote to ground responses in the actual customer voice. This ensures generated collateral is format-appropriate and maintains consistency in tone per output type.
+- **Session Handling**: Sessions are stored in secure, HTTP-only cookies with CSRF protection.
+- **Trusted Origins**: The API whitelists CORS origins via `TRUSTED_ORIGINS` (comma-separated).
 
 ## Local Development
 
@@ -153,10 +195,11 @@ cp env.workbench.example .env.workbench
 ### Running
 
 ```bash
-# Terminal 1 — API
-bun run --filter @workbench/hub dev
+# All services in parallel
+bun run dev
 
-# Terminal 2 — Web
+# Or individually
+bun run --filter @workbench/hub dev
 bun run --filter @workbench/web dev
 ```
 
@@ -173,7 +216,7 @@ Or via `make all` if Makefile is available.
 
 ## Railway Deployment
 
-The workbench deploys as three separate Railway services from the same repo, all watching the `staging` branch (or `main` for production). This is a **shared monorepo**: every service builds with the repo root as its Docker build context (Root Directory `/`), because they all depend on the shared lockfile, `packages/*`, and the vendored `interchange/packages/*` workspaces.
+The workbench deploys as three separate Railway services from the same repo. This is a **shared monorepo**: every service builds with the repo root as its Docker build context (Root Directory `/`), because they all depend on the shared lockfile, `packages/*`, and the vendored `interchange/packages/*` workspaces.
 
 ### Services
 
@@ -194,11 +237,11 @@ The hub and sidecar Dockerfiles follow the same pattern:
 
 The pinned `INTERCHANGE_COMMIT` and `INTERCHANGE_SHA256` args must be updated together across all three Dockerfiles whenever interchange is upgraded.
 
-`apps/sidecar/Dockerfile` builds nothing and runs directly from TypeScript source via `bun run`. `apps/web/Dockerfile` runs `vite build` in the builder stage (still needing full repo context for `@workbench/shared`) and serves the static output via Caddy with an SPA fallback to `index.html`; it runs no Node/Bun process at runtime. The hub no longer builds or serves the web assets — the web service owns them, and the SPA reaches the API via the build-time `VITE_API_BASE_URL`.
+`apps/sidecar/Dockerfile` builds nothing and runs directly from TypeScript source via `bun run`. `apps/web/Dockerfile` runs `vite build` in the builder stage and serves the static output via Caddy with an SPA fallback to `index.html`; it runs no Node/Bun process at runtime.
 
 ### Volumes
 
-Both services require a **persistent volume** mounted in the Railway dashboard. Loss of volume data breaks the sidecar–hub trust relationship and requires re-provisioning.
+Both services require a **persistent volume** mounted in the Railway dashboard.
 
 | Service              | Mount path | Env var                  | Contents                          |
 | -------------------- | ---------- | ------------------------ | --------------------------------- |
@@ -207,25 +250,14 @@ Both services require a **persistent volume** mounted in the Railway dashboard. 
 
 ### Sidecar Environment Variables
 
-| Variable           | Description                                                                                        |
-| ------------------ | -------------------------------------------------------------------------------------------------- |
-| `HUB_WS_URL`       | WebSocket URL of the Interchange hub (e.g. `wss://hub.example.com/api/sidecars/ws`)                |
+| Variable           | Description                                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------- |
+| `HUB_WS_URL`       | WebSocket URL of the Interchange hub (e.g. `wss://hub.example.com/api/sidecars/ws`)                 |
 | `SIDECAR_ID`       | Stable opaque identifier for this sidecar instance (e.g. `gtm-staging`). Any slug format is valid. |
-| `SIDECAR_TOKEN`    | Auth token for hub registration                                                                    |
-| `SIDECAR_DATA_DIR` | Path on the persistent volume (e.g. `/data`)                                                       |
-
-### One-Time Dashboard Setup (per service)
-
-Volumes and env vars cannot be provisioned via `railway.toml` — they must be configured manually in the Railway dashboard once per service:
-
-1. Create the service, point it at the repo and select the appropriate config file path
-2. Add a volume and mount it at `/data`
-3. Set the env vars listed above
-4. Every subsequent push to the watched branch deploys automatically
+| `SIDECAR_TOKEN`    | Auth token for hub registration                                                                     |
+| `SIDECAR_DATA_DIR` | Path on the persistent volume (e.g. `/data`)                                                        |
 
 ## Agent Runtime and LLM Inference
-
-### Architecture
 
 All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agent runtime provides:
 
@@ -246,7 +278,7 @@ All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agen
 
    const source: InferenceSource = {
      id: `my-task-${id}`,
-     provider: 'openai', // 'anthropic', 'google-genai', or OpenAI-compatible
+     provider: 'openai',
      baseURL: process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1',
      apiKey: process.env.OPENAI_COMPATIBLE_API_KEY,
      model: process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini',
@@ -263,12 +295,12 @@ All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agen
 
    const contextDir = join(tmpdir(), `task-${randomUUID()}`);
    const agent = await createAgent({
-     contextDir, // Automatically cleaned up after close()
+     contextDir,
      sources: [source],
      defaultSource: source.id,
      systemPrompt: 'Your system instructions...',
-     tools: [], // Add tool definitions if needed
-     closeTimeoutMs: 1000, // Fast shutdown for ephemeral tasks
+     tools: [],
+     closeTimeoutMs: 1000,
    });
    ```
 
@@ -278,60 +310,17 @@ All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agen
    const result = await agent.send(userMessage);
    await agent.close();
 
-   // result.reply is the LLM's text response
-   const data = JSON.parse(result.reply); // or text parsing
+   const data = JSON.parse(result.reply);
    ```
-
-### Pain Point Extraction
-
-Implemented in `apps/hub/src/lib/extraction.ts`:
-
-**LLM Path** (when `OPENAI_COMPATIBLE_API_KEY` is configured):
-
-- **Model**: Configurable via `OPENAI_COMPATIBLE_MODEL` (default: `gpt-4o-mini`)
-- **Endpoint**: Configurable via `OPENAI_COMPATIBLE_BASE_URL` (default: `https://api.openai.com/v1`)
-- **Runtime**: Uses `@intx/agent` with temporary context directory (no persistence)
-- **Format**: JSON response with structured pain points
-- **Temperature**: 0.3 (deterministic output, not creative)
-- **Max tokens**: 2048
-- **Prompt structure**:
-  - System role: "You are a sales transcript analyst. Extract up to 5 distinct pain points from the transcript."
-  - If feedback provided: "The user provided this feedback to refine the analysis: '[feedback]'. Prioritize pain points that match this feedback."
-  - User role: Transcript content (truncated to 100k chars to respect token limits)
-- **Output validation**: Parsed JSON must contain `painPoints` array with each item having:
-  - `severity`: one of `low`, `medium`, `high`, `critical`
-  - `context`: summary (truncated to 500 chars)
-  - `quote`: exact customer words (truncated to 500 chars)
-- **Error handling**: Agent errors classified and logged via structured logging
-
-**Fallback Path** (no API key or LLM failure):
-
-- **Strategy**: Keyword heuristic on transcript lines
-- **Keywords** with mapped severity:
-  - High severity: `difficult`, `frustrat*`, `pain`, `generic`, `waste`, `never`, `always`, `every`
-  - Medium severity: `problem`, `challenge`, `slow`, `manual`
-- **Deduplication**: Extracted points are deduplicated on first 60 chars of context
-- **Limit**: Returns up to 5 pain points
-- **Selection state**: All extracted points marked `selected: true` by default
-
-### Collateral Generation and Improvement
-
-1. **Generate**: Agent takes selected pain points and requested collateral types, returns structured collateral (email, LinkedIn, one-pager, battlecard) per point. Each type receives a **type-aware system prompt** (see Token-Based System Prompts above) to ensure format-appropriate output.
-2. **Improve**: Agent accepts feedback + existing collateral + type context, returns improved version with applied changes (shortening, tone adjustments, etc.)
-
-All agent outputs are runtime-validated with `arktype` before persistence.
 
 ### Granola API v1 Integration
 
-**Intake Path** (secondary):
-
-When configured with `GRANOLA_API_KEY`, the workbench can ingest recent sales calls from Granola's public API:
+When configured with `GRANOLA_API_KEY`, Oat ingests recent sales calls from Granola's public API:
 
 - **Endpoint**: Granola API v1 `/calls` endpoint
 - **Authentication**: Bearer token via `GRANOLA_API_KEY`
-- **Integration**: Call transcripts are fetched and stored as `source: "granola"` in the `transcript` table, distinguishing them from manually pasted transcripts
-- **Usage**: Users can optionally browse and select a recent call instead of pasting a transcript
-- **Scope**: Granola integration is entirely optional; paste-first is the primary intake path
+- **Integration**: Call recordings are fetched and stored as call document artifacts (kind: `call-document`) in the `artifact` table
+- **Scope**: Entirely optional; Oat runs continuously and surfaces calls automatically
 
 ## UI Components
 
@@ -341,7 +330,7 @@ Located in `apps/web/src/components/StepSidebar.tsx`.
 
 **Behavior:**
 
-- Displays 5 workflow steps with numeric indicators (or checkmarks for completed steps)
+- Displays workflow steps with numeric indicators (or checkmarks for completed steps)
 - Current step highlighted with white background and shadow
 - Completed steps show green checkmark instead of number
 - Pending steps dimmed (opacity 50%)
@@ -352,19 +341,16 @@ Located in `apps/web/src/components/StepSidebar.tsx`.
 - Collapsed width: 64px; expanded width: 224px
 - Spring transition: `stiffness: 300, damping: 30`
 - Labels and source info fade out via `AnimatePresence` when collapsed
-- Selection count displayed at bottom when expanded
 
 **Dynamic Step Derivation:**
 
-- Steps are not hardcoded per page. Instead, each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` from `apps/web/src/lib/steps.ts`
+- Steps are not hardcoded per page. Each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` from `apps/web/src/lib/steps.ts`
 - `buildSteps()` returns array of steps with status (`completed` | `current` | `pending`) based on current workflow step index
-- This ensures all pages show consistent progression without duplication
 
 ### Page Transitions
 
 **Cross-page animation** (when moving between workflow stages):
 
-- Triggered in `apps/web/src/App.tsx` when `stage` state changes
 - Uses `AnimatePresence mode="wait"` to ensure outgoing page exits before incoming page enters
 - Each page wrapped in `motion.div` with:
   - Entry: `opacity: 0, y: 20` → `opacity: 1, y: 0`
@@ -373,19 +359,7 @@ Located in `apps/web/src/components/StepSidebar.tsx`.
 
 **Panel animations** (within a page):
 
-- Left panels (transcript, context) animate in from left: `x: -40, opacity: 0` → `x: 0, opacity: 1`
-- Right panels (analysis, collateral) animate in from right: `x: 40, opacity: 0` → `x: 0, opacity: 1`
+- Left panels animate in from left: `x: -40, opacity: 0` → `x: 0, opacity: 1`
+- Right panels animate in from right: `x: 40, opacity: 0` → `x: 0, opacity: 1`
 - Spring transition: `type: 'spring', stiffness: 300, damping: 30`
-- Staggered delays: left panel 0.1s, right panel 0.15s (for visual cascade)
-
-### Feedback Input
-
-**LiveAnalysisReview** feedback textarea:
-
-- 20-line textarea for user notes to refine pain point extraction
-- Sent to API as `feedback` parameter in `/workflows/:id/steps` call with `step: 'analyze'`
-- LLM prompt conditions on this feedback to prioritize matching pain points
-- Button label changes: "Run analysis" → "Run analysis with feedback" when textarea has text
-- Clears after successful API call
-
-Sidebar step states are derived from `workflow.currentStep` via a `buildSteps` helper, rather than hardcoded per-page constants.
+- Staggered delays: left panel 0.1s, right panel 0.15s
