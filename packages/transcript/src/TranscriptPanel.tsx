@@ -5,7 +5,12 @@ export interface TranscriptPanelProps {
   isLoading?: boolean;
 }
 
-export default function TranscriptPanel({ transcript, isLoading }: TranscriptPanelProps) {
+/**
+ * Sidebar view of a raw transcript blob. Migrated from apps/web; kept
+ * stateless and prop-driven. For structured turn-by-turn review with
+ * pain-point context, prefer {@link TranscriptReview}.
+ */
+export function TranscriptPanel({ transcript, isLoading }: TranscriptPanelProps) {
   const hasTranscript = transcript !== undefined && transcript.trim().length > 0;
 
   return (

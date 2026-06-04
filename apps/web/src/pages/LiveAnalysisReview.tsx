@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import HorizontalStepper from '../components/HorizontalStepper';
-import TranscriptPanel from '../components/TranscriptPanel';
+import { TranscriptPanel } from '@workbench/transcript';
 import ProgressChecklist from '../components/ProgressChecklist';
 import PainPointsList from '../components/PainPointsList';
 import { togglePainPointSelection } from '../components/pain-point-selection';
