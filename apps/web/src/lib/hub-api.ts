@@ -65,6 +65,17 @@ export async function createTenant(name: string, slug: string): Promise<TenantRe
   return hubFetch<TenantResponse>('POST', 'tenants', { name, slug });
 }
 
+export type WorkspaceResponse = {
+  id: string;
+  name: string;
+  slug: string;
+  tenantId: string;
+};
+
+export async function createWorkspace(name: string): Promise<WorkspaceResponse> {
+  return hubFetch<WorkspaceResponse>('POST', 'v1/workspaces', { name });
+}
+
 export async function listWorkbenches(): Promise<WorkbenchEntry[]> {
   const principals = await getMyPrincipals();
   return principals

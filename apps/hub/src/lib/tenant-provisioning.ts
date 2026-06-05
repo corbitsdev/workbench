@@ -39,6 +39,145 @@ export type ProvisioningDB = {
 
 const SYSTEM_ROLES = ['owner', 'admin', 'member'] as const;
 
+type WorkspaceTenantResult = { tenantId: string; principalId: string };
+
+/**
+ * Provision a named workspace tenant for a user and assign them as the owner.
+ * Idempotent by slug — if the tenant exists and the user is already a principal,
+ * returns it with `alreadyExists: true`. If the tenant exists but the user is not
+ * a principal, throws a conflict error so the caller can return 409.
+ *
+ * Role and grant seeding mirrors `provisionPersonalTenant` — the same three system
+ * roles (owner / admin / member) with the same default grants.
+ */
+export async function provisionWorkspaceTenant(
+  db: ProductionDB,
+  opts: { userId: string; name: string; slug: string }
+): Promise<WorkspaceTenantResult & { alreadyExists: boolean }> {
+  const existing = await db.query.tenant.findFirst({
+    where: eq(tenant.slug, opts.slug),
+  });
+
+  if (existing) {
+    const existingPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, existing.id),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, opts.userId)
+      ),
+    });
+    if (existingPrincipal) {
+      return { tenantId: existing.id, principalId: existingPrincipal.id, alreadyExists: true };
+    }
+    throw Object.assign(new Error('Workspace slug conflict'), { code: 'SLUG_CONFLICT' });
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const tenantId = generateId('tenant');
+    const domain = `${opts.slug}.localhost`;
+    const now = new Date();
+
+    const tenantRows = await tx
+      .insert(tenant)
+      .values({
+        id: tenantId,
+        name: opts.name,
+        slug: opts.slug,
+        domain,
+        parentId: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    const tenantRow = tenantRows[0];
+    if (!tenantRow) throw new Error('Failed to insert workspace tenant');
+    const resolvedTenantId = (tenantRow as { id: string }).id;
+
+    const roleIds: Record<string, string> = {};
+    for (const roleName of SYSTEM_ROLES) {
+      const roleId = generateId('role');
+      roleIds[roleName] = roleId;
+      await tx.insert(role).values({
+        id: roleId,
+        tenantId: resolvedTenantId,
+        name: roleName,
+        description: `System ${roleName} role`,
+        isSystem: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    const ownerRoleId = roleIds['owner'];
+    const adminRoleId = roleIds['admin'];
+    const memberRoleId = roleIds['member'];
+    if (!ownerRoleId || !adminRoleId || !memberRoleId) {
+      throw new Error('System roles were not created');
+    }
+
+    await tx.insert(grant).values({
+      id: generateId('grant'),
+      tenantId: resolvedTenantId,
+      roleId: ownerRoleId,
+      resource: '*',
+      action: '*',
+      effect: 'allow',
+      origin: 'system',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    for (const action of ['read', 'create', 'manage'] as const) {
+      await tx.insert(grant).values({
+        id: generateId('grant'),
+        tenantId: resolvedTenantId,
+        roleId: adminRoleId,
+        resource: '*',
+        action,
+        effect: 'allow',
+        origin: 'system',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    await tx.insert(grant).values({
+      id: generateId('grant'),
+      tenantId: resolvedTenantId,
+      roleId: memberRoleId,
+      resource: '*',
+      action: 'read',
+      effect: 'allow',
+      origin: 'system',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const principalId = generateId('principal');
+    await tx.insert(principal).values({
+      id: principalId,
+      tenantId: resolvedTenantId,
+      kind: 'user',
+      refId: opts.userId,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await tx.insert(principalRole).values({
+      principalId,
+      roleId: ownerRoleId,
+      createdAt: now,
+    });
+
+    log.info('Workspace tenant provisioned', { userId: opts.userId, tenantId: resolvedTenantId, slug: opts.slug });
+    return { tenantId: resolvedTenantId, principalId };
+  });
+
+  return { ...result, alreadyExists: false };
+}
+
 export const PERSONAL_AGENT_DEPLOY_PROMPT =
   'You are Myra, a personal GTM assistant. You help the user turn customer conversations into polished sales and marketing collateral. Be concise, direct, and professional.';
 

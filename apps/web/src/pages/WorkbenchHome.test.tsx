@@ -16,7 +16,10 @@ mock.module('../lib/hub-api', () => ({
       paInstanceId: null,
       provisioned: true,
     }),
-  listWorkbenches: () => Promise.resolve([]),
+  listWorkbenches: () =>
+    Promise.resolve([
+      { id: 'p-wb', tenantId: 'tn-wb', tenantSlug: 'acme-corp', tenantName: 'Acme Corp' },
+    ]),
   getMyPrincipals: () => Promise.resolve([]),
   createTenant: () => Promise.resolve({ id: 't1', name: 'Test', slug: 'test', domain: '' }),
 }));

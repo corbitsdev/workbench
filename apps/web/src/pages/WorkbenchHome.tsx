@@ -12,14 +12,12 @@ import { getMe, listWorkbenches } from '../lib/hub-api';
 import type { ProvisionAgentResponse } from '../lib/hub-api';
 
 type ProvisioningState =
-  | { provisioned: false; personalTenantId: null }
-  | { provisioned: true; personalTenantId: string | null };
+  | { status: 'loading' }
+  | { status: 'needs-onboarding' }
+  | { status: 'ready'; personalTenantId: string | null };
 
 function useProvisioningGuard(): ProvisioningState {
-  const [state, setState] = useState<ProvisioningState>({
-    provisioned: false,
-    personalTenantId: null,
-  });
+  const [state, setState] = useState<ProvisioningState>({ status: 'loading' });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -33,10 +31,14 @@ function useProvisioningGuard(): ProvisioningState {
     async function check() {
       try {
         const me = await getMe();
-        if (me.provisioned) {
-          setState({ provisioned: true, personalTenantId: me.personalTenantId });
-          clear();
+        if (!me.provisioned) return; // Keep polling until personal tenant is ready
+        const workbenches = await listWorkbenches();
+        if (workbenches.length === 0) {
+          setState({ status: 'needs-onboarding' });
+        } else {
+          setState({ status: 'ready', personalTenantId: me.personalTenantId });
         }
+        clear();
       } catch {
         // Keep polling — transient errors should not break the guard
       }
@@ -95,7 +97,13 @@ export default function WorkbenchHome() {
   const workspaceTenantId = useFirstWorkspaceTenantId();
   const navigate = useNavigate();
 
-  if (!provisioningState.provisioned) {
+  useEffect(() => {
+    if (provisioningState.status === 'needs-onboarding') {
+      void navigate('/onboarding', { replace: true });
+    }
+  }, [provisioningState, navigate]);
+
+  if (provisioningState.status === 'loading' || provisioningState.status === 'needs-onboarding') {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-[14px] text-text-3">Setting up your workspace…</p>

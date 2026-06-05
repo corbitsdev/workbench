@@ -4,6 +4,7 @@ import { useAuth } from './components/AuthProvider';
 import { AppSidebar } from './components/layout/AppSidebar';
 import { PersonalAgentChat } from './components/PersonalAgentChat';
 import { LoginPage } from './pages/LoginPage';
+import { OnboardingPage } from './pages/OnboardingPage';
 import WorkbenchHome from './pages/WorkbenchHome';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
@@ -42,6 +43,10 @@ export const router = createBrowserRouter([
   {
     element: <ProtectedLayout />,
     children: [
+      {
+        path: '/onboarding',
+        element: <OnboardingPage />,
+      },
       {
         element: <AppShell />,
         children: [

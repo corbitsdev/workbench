@@ -25,6 +25,7 @@ import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
 import { createCollateralGenerationRouter } from './routes/collateral-generation';
 import { createAgentProvisioningRouter } from './routes/agents';
+import { createWorkspacesRouter } from './routes/workspaces';
 import * as workbenchSchema from './db/schema';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
@@ -396,6 +397,7 @@ v1.get('/me', async (c) => {
 v1.route('/', createWorkflowRouter(db));
 v1.route('/', createCollateralGenerationRouter(db));
 v1.route('/', createAgentProvisioningRouter(db));
+v1.route('/', createWorkspacesRouter(db));
 
 app.route('/api/v1', v1);
 
