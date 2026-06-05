@@ -225,7 +225,6 @@ export function createAgentProvisioningRouter(
     );
   });
 
-
   // Create a named LLM credential (provider + encrypted secret) for a tenant.
   app.post('/tenants/:tenantId/credentials', async (c) => {
     const userId = c.get('userId');
@@ -764,4 +763,64 @@ async function launchAgentSession(
   }
 
   throw lastError;
+}
+
+// Relaunch a Myra instance's session if it has no active session but has credentials granted.
+// Called from GET /v1/me so existing users get Myra running automatically on login.
+export async function relaunchInstanceIfNeeded(
+  db: DB['db'],
+  sessionService: SessionService,
+  grantStore: GrantStore,
+  instanceId: string
+): Promise<void> {
+  const instance = await db.query.agentInstance.findFirst({
+    where: eq(agentInstance.id, instanceId),
+  });
+  if (!instance) return;
+
+  // Already has an active session record — sidecar will restore it on reconnect.
+  if (instance.sessionId) {
+    const session = await db.query.agentSession.findFirst({
+      where: eq(agentSession.id, instance.sessionId),
+    });
+    if (session?.status === 'active') return;
+  }
+
+  const tenantRow = await db.query.tenant.findFirst({
+    where: eq(tenant.id, instance.tenantId),
+  });
+  if (!tenantRow?.domain) return;
+
+  const agentRow = await db.query.agent.findFirst({
+    where: eq(agent.id, instance.agentId),
+  });
+  if (!agentRow?.systemPrompt) return;
+
+  // Find credentials already granted to this instance.
+  const credentialGrants = await db.query.grant.findMany({
+    where: and(
+      eq(grant.principalId, instance.principalId),
+      eq(grant.tenantId, instance.tenantId)
+    ),
+  });
+
+  const credentialIds = credentialGrants
+    .map((g) => {
+      const match = /^credential:(.+)$/.exec(g.resource);
+      return match?.[1] ?? null;
+    })
+    .filter((id): id is string => id !== null);
+
+  if (credentialIds.length === 0) return;
+
+  await launchAgentSession(db, sessionService, grantStore, {
+    agentId: instance.agentId,
+    instanceId: instance.id,
+    instancePrincipalId: instance.principalId,
+    tenantId: instance.tenantId,
+    tenantDomain: tenantRow.domain,
+    systemPrompt: agentRow.systemPrompt,
+    credentialIds,
+    now: new Date(),
+  });
 }

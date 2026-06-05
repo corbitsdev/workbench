@@ -24,7 +24,7 @@ import { loadConfig } from './config';
 import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
 import { createCollateralGenerationRouter } from './routes/collateral-generation';
-import { createAgentProvisioningRouter } from './routes/agents';
+import { createAgentProvisioningRouter, relaunchInstanceIfNeeded } from './routes/agents';
 import { createWorkspacesRouter } from './routes/workspaces';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import * as workbenchSchema from './db/schema';
@@ -376,8 +376,6 @@ v1.get('/me', async (c) => {
 
   const personalTenantId = personalTenant?.id ?? null;
 
-  // Ensure Myra instance exists and return its ID.
-  // provisionMyraInstance is idempotent — returns existing instance if already provisioned.
   let paInstanceId: string | null = null;
   if (personalTenantId && personalTenant?.domain) {
     const callerPrincipal = await db.query.principal.findFirst({
@@ -395,6 +393,17 @@ v1.get('/me', async (c) => {
         creatorPrincipalId: callerPrincipal.id,
       });
       paInstanceId = instanceId;
+
+      // If credentials are already granted but no session is running, relaunch automatically.
+      try {
+        await relaunchInstanceIfNeeded(db, sessionService, grantStore, instanceId);
+      } catch (err) {
+        log.warn('Auto-relaunch of Myra session failed — user will need to re-add credentials', {
+          userId,
+          instanceId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
     }
   }
 
