@@ -6,6 +6,8 @@ import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
 import { type } from 'arktype';
 import { PERSONAL_AGENT_DEPLOY_PROMPT } from '../lib/tenant-provisioning';
+import { decryptSecret, encryptSecret } from '@workbench/hub-crypto';
+import { getConfig } from '../config';
 
 const log = getLogger(['api', 'agents']);
 
@@ -293,6 +295,9 @@ async function ensureCredential(
   principalId: string | null,
   now: Date
 ): Promise<string> {
+  const { credentialKeys } = getConfig();
+  const encryptedSecret = encryptSecret(credentialKeys, tenantId, secret);
+
   await db
     .insert(credential)
     .values({
@@ -302,7 +307,7 @@ async function ensureCredential(
       principalId,
       name,
       type: 'api_key',
-      secret,
+      secret: encryptedSecret,
       createdAt: now,
       updatedAt: now,
     })
@@ -314,8 +319,21 @@ async function ensureCredential(
 
   if (!row) throw new Error(`Credential ${name} not found after insert`);
 
-  if (row.secret !== secret) {
-    await db.update(credential).set({ secret, updatedAt: now }).where(eq(credential.id, row.id));
+  // Legacy rows written before encryption was introduced have no enc: prefix.
+  // Detect and re-encrypt them on next touch; log so operators can track migration progress.
+  const isLegacy = !row.secret.startsWith('enc:');
+  if (isLegacy) {
+    log.warn('Re-encrypting legacy plaintext credential {name} for tenant {tenantId}', {
+      name,
+      tenantId,
+    });
+  }
+  const storedPlaintext = isLegacy ? row.secret : decryptSecret(credentialKeys, tenantId, row.secret);
+  if (storedPlaintext !== secret) {
+    await db
+      .update(credential)
+      .set({ secret: encryptedSecret, updatedAt: now })
+      .where(eq(credential.id, row.id));
   }
 
   return row.id;

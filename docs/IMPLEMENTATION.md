@@ -61,6 +61,15 @@ src/
 - `buildSystemPrompt(sections: PromptSection[], format: PromptFormat): string`
 - `buildContextBlock(context: Record<string, string>, format: PromptFormat): string`
 
+### `packages/hub-crypto` (`@workbench/hub-crypto`)
+
+AES-256-GCM credential encryption primitives for Interchange-based hubs. No workbench-specific dependencies — reusable by any hub that stores credentials in Interchange's `credential` table.
+
+Exports:
+- `parseEncryptionKeys(raw: string): CredentialKeyRegistry` — parses `CREDENTIAL_ENCRYPTION_KEYS` format; validates key lengths; selects highest version as active
+- `encryptSecret(keys, tenantId, plaintext): string` — returns `enc:vN:<base64>` ciphertext; throws if input already has `enc:` prefix
+- `decryptSecret(keys, tenantId, ciphertext): string` — parses version from prefix, selects key, decrypts; throws on unknown version or auth tag mismatch
+
 ### `packages/chat` (`@workbench/chat`)
 
 Transport-agnostic chat UI components. No dependency on a specific agent transport or WebSocket implementation.
@@ -220,11 +229,14 @@ Agent deploy prompts are currently **static** (no dynamic context injected at de
 
 All environment validation lives in `apps/hub/src/config.ts`. Variables are validated at startup via `requireEnv()` — no silent defaults for required values.
 
+`loadConfig()` sets a module-level singleton; `getConfig()` returns it. Library modules that need config values import `getConfig()` directly — they do not reach into `process.env` themselves. This keeps validation in one place and makes config access testable via `mock.module('../config', ...)`.
+
 ### Added Variables
 
-| Variable                | Required | Purpose                                             |
-| ----------------------- | -------- | --------------------------------------------------- |
-| `WORKBENCH_TENANT_SLUG` | Yes      | Slug of the shared GTM Workbench Interchange tenant |
+| Variable                      | Required | Purpose                                                                                      |
+| ----------------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| `WORKBENCH_TENANT_SLUG`       | Yes      | Slug of the shared GTM Workbench Interchange tenant                                          |
+| `CREDENTIAL_ENCRYPTION_KEYS`  | Yes      | Versioned AES-256-GCM key registry for credential encryption. Format: `1:<base64_32_bytes>[,2:<base64_32_bytes>...]`. Highest version encrypts new values; all versions decrypt. Generate a new key: `openssl rand -base64 32`. |
 
 ## Authentication
 

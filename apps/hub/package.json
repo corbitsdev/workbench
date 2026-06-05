@@ -23,6 +23,7 @@
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "workspace:*",
     "@intx/types": "workspace:*",
+    "@workbench/hub-crypto": "workspace:*",
     "@workbench/shared": "workspace:*",
     "arktype": "catalog:",
     "better-auth": "^1.6.9",

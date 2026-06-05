@@ -1,4 +1,12 @@
 import { describe, expect, it, mock } from 'bun:test';
+import { parseEncryptionKeys } from '@workbench/hub-crypto';
+
+mock.module('../config', () => ({
+  getConfig: () => ({
+    credentialKeys: parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`),
+  }),
+}));
+
 import { Hono } from 'hono';
 import { createAgentProvisioningRouter } from './agents';
 

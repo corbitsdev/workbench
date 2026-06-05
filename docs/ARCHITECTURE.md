@@ -56,6 +56,18 @@ Credentials and grants follow Interchange's model exactly. The workbench does no
 
 **Agent provisioning flow**: When a user provisions an agent instance (e.g., Oat), they select existing credentials from their accessible tenants using the credential picker. The hub verifies each credential belongs to the target tenant and creates a `grant` row linking each credential to the agent instance's principal. No raw credential values are sent in the provisioning request — only credential IDs. New credentials are created separately via the Settings/tenant credentials UI.
 
+### Credential Encryption at Rest
+
+Credential secrets written by the hub layer are encrypted before storage using AES-256-GCM with per-tenant key derivation. Interchange's `credential` table stores the ciphertext; no `@intx/*` package is modified.
+
+**Encryption boundary**: Only the hub layer encrypts and decrypts. Interchange is unaware of the wrapping — it sees opaque `secret` values. The hub decrypts before passing secrets to agents or making comparisons.
+
+**`enc:` prefix convention**: Encrypted values are stored as `enc:vN:<base64(iv+tag+ciphertext)>`. The version number (`N`) identifies which key was used. Rows without the prefix are treated as legacy plaintext and are re-encrypted on next write.
+
+**Key rotation**: The hub supports multiple simultaneous key versions. All registered versions can decrypt; the highest-numbered version encrypts new values. Rotation is handled by adding a new version to `CREDENTIAL_ENCRYPTION_KEYS` without downtime.
+
+**`@workbench/hub-crypto`**: The encryption primitives (`parseEncryptionKeys`, `encryptSecret`, `decryptSecret`) live in a standalone package with no workbench-specific dependencies. Any Interchange-based hub can adopt the same encryption layer by adding this package and wiring `CREDENTIAL_ENCRYPTION_KEYS` at startup.
+
 ## Component Diagram
 
 ### Frontend (`apps/web/`)

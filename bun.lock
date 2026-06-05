@@ -30,6 +30,7 @@
         "@intx/hub-sessions": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
+        "@workbench/hub-crypto": "workspace:*",
         "@workbench/shared": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "^1.6.9",
@@ -458,6 +459,13 @@
       "peerDependencies": {
         "@tanstack/react-query": "*",
         "react": "*",
+      },
+    },
+    "packages/hub-crypto": {
+      "name": "@workbench/hub-crypto",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
       },
     },
     "packages/settings": {
@@ -910,6 +918,8 @@
     "@workbench/client": ["@workbench/client@workspace:packages/client"],
 
     "@workbench/hub": ["@workbench/hub@workspace:apps/hub"],
+
+    "@workbench/hub-crypto": ["@workbench/hub-crypto@workspace:packages/hub-crypto"],
 
     "@workbench/settings": ["@workbench/settings@workspace:packages/settings"],
 

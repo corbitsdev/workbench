@@ -1,4 +1,5 @@
 import { getLogger } from '@intx/log';
+import { parseEncryptionKeys } from '@workbench/hub-crypto';
 
 const log = getLogger(['api', 'config']);
 
@@ -71,6 +72,7 @@ export function loadConfig() {
       dataDir: requireEnv('HUB_DATA_DIR'),
       signingKeys: requireEnv('HUB_SIGNING_KEYS'),
     },
+    credentialKeys: parseEncryptionKeys(requireEnv('CREDENTIAL_ENCRYPTION_KEYS')),
   };
 
   log.info('Configuration loaded', {
@@ -81,7 +83,15 @@ export function loadConfig() {
     googleAuthEnabled: Boolean(config.google.clientId),
   });
 
+  _config = config;
   return config;
 }
+
+export function getConfig(): Config {
+  if (!_config) throw new Error('Config not loaded — call loadConfig() at startup before use');
+  return _config;
+}
+
+let _config: Config | undefined;
 
 export type Config = ReturnType<typeof loadConfig>;

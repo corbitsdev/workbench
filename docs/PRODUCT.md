@@ -70,3 +70,4 @@ The product should surface named outcomes such as "Create sales collateral" or "
 - Users can review, refine, and export generated artifacts
 - Session state is persisted and can be resumed
 - Usable without full production CRM sync
+- API keys and credentials are encrypted at rest
