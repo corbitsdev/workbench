@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useRef } from 'react';
 
 export type SeverityLevel = 'low' | 'medium' | 'high' | 'critical';
 
@@ -39,6 +40,17 @@ export default function PainPointsList({
   isLoading,
   analyzeCompleted,
 }: PainPointsListProps) {
+  const lastToggleRef = useRef<Map<string, number>>(new Map());
+
+  const debouncedToggle = (id: string) => {
+    const now = Date.now();
+    const lastTime = lastToggleRef.current.get(id) ?? 0;
+    if (now - lastTime < 50) {
+      return;
+    }
+    lastToggleRef.current.set(id, now);
+    onToggle(id);
+  };
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -86,11 +98,15 @@ export default function PainPointsList({
             id={`pain-point-${point.id}`}
             type="checkbox"
             checked={selectedIds.has(point.id)}
-            onChange={() => onToggle(point.id)}
+            onChange={() => debouncedToggle(point.id)}
             className="mt-1 w-4 h-4 rounded border-border text-orange focus:ring-2 focus:ring-offset-0 focus:ring-orange cursor-pointer transition-colors"
             aria-label={`Select pain point: ${point.context}`}
           />
-          <label htmlFor={`pain-point-${point.id}`} className="flex-1 min-w-0 cursor-pointer">
+          <label
+            htmlFor={`pain-point-${point.id}`}
+            onClick={() => debouncedToggle(point.id)}
+            className="flex-1 min-w-0 cursor-pointer"
+          >
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-semibold text-text text-sm">{point.context}</h3>
               {point.severity && (

@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockHubApi } from '../lib/__mocks__/hub-api';
 
 // Mock approvals-api so ReviewGate does not attempt real network requests.
 mock.module('../lib/approvals-api', () => ({
@@ -15,21 +16,23 @@ mock.module('../lib/approvals-api', () => ({
 
 // Mock hub-api before importing WorkbenchHome so the provisioning guard and
 // workbench list fetch resolve without hitting the network.
-mock.module('../lib/hub-api', () => ({
-  getMe: () =>
-    Promise.resolve({
-      userId: 'u1',
-      personalTenantId: 'pt1',
-      paInstanceId: null,
-      provisioned: true,
-    }),
-  listWorkbenches: () =>
-    Promise.resolve([
-      { id: 'p-wb', tenantId: 'tn-wb', tenantSlug: 'acme-corp', tenantName: 'Acme Corp' },
-    ]),
-  getMyPrincipals: () => Promise.resolve([]),
-  createTenant: () => Promise.resolve({ id: 't1', name: 'Test', slug: 'test', domain: '' }),
-}));
+mock.module('../lib/hub-api', () =>
+  createMockHubApi({
+    getMe: () =>
+      Promise.resolve({
+        userId: 'u1',
+        personalTenantId: 'pt1',
+        paInstanceId: null,
+        provisioned: true,
+      }),
+    listWorkbenches: () =>
+      Promise.resolve([
+        { id: 'p-wb', tenantId: 'tn-wb', tenantSlug: 'acme-corp', tenantName: 'Acme Corp' },
+      ]),
+    getMyPrincipals: () => Promise.resolve([]),
+    createTenant: () => Promise.resolve({ id: 't1', name: 'Test', slug: 'test', domain: '' }),
+  })
+);
 
 import WorkbenchHome from './WorkbenchHome';
 

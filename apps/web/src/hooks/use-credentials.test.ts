@@ -4,6 +4,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { Principal, CredentialDetail } from '../lib/hub-api';
+import { createMockHubApi } from '../lib/__mocks__/hub-api';
 
 const mockPrincipals: Principal[] = [
   {
@@ -30,10 +31,12 @@ const mockCredentials: CredentialDetail[] = [
   },
 ];
 
-mock.module('../lib/hub-api', () => ({
-  getMyPrincipals: mock(() => Promise.resolve(mockPrincipals)),
-  listTenantCredentials: mock(() => Promise.resolve(mockCredentials)),
-}));
+mock.module('../lib/hub-api', () =>
+  createMockHubApi({
+    getMyPrincipals: mock(() => Promise.resolve(mockPrincipals)),
+    listTenantCredentials: mock(() => Promise.resolve(mockCredentials)),
+  })
+);
 
 function makeWrapper() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

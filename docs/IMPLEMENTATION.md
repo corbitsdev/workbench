@@ -66,6 +66,7 @@ src/
 AES-256-GCM credential encryption primitives for Interchange-based hubs. No workbench-specific dependencies — reusable by any hub that stores credentials in Interchange's `credential` table.
 
 Exports:
+
 - `parseEncryptionKeys(raw: string): CredentialKeyRegistry` — parses `CREDENTIAL_ENCRYPTION_KEYS` format; validates key lengths; selects highest version as active
 - `encryptSecret(keys, tenantId, plaintext): string` — returns `enc:vN:<base64>` ciphertext; throws if input already has `enc:` prefix
 - `decryptSecret(keys, tenantId, ciphertext): string` — parses version from prefix, selects key, decrypts; throws on unknown version or auth tag mismatch
@@ -233,10 +234,10 @@ All environment validation lives in `apps/hub/src/config.ts`. Variables are vali
 
 ### Added Variables
 
-| Variable                      | Required | Purpose                                                                                      |
-| ----------------------------- | -------- | -------------------------------------------------------------------------------------------- |
-| `WORKBENCH_TENANT_SLUG`       | Yes      | Slug of the shared GTM Workbench Interchange tenant                                          |
-| `CREDENTIAL_ENCRYPTION_KEYS`  | Yes      | Versioned AES-256-GCM key registry for credential encryption. Format: `1:<base64_32_bytes>[,2:<base64_32_bytes>...]`. Highest version encrypts new values; all versions decrypt. Generate a new key: `openssl rand -base64 32`. |
+| Variable                     | Required | Purpose                                                                                                                                                                                                                         |
+| ---------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WORKBENCH_TENANT_SLUG`      | Yes      | Slug of the shared GTM Workbench Interchange tenant                                                                                                                                                                             |
+| `CREDENTIAL_ENCRYPTION_KEYS` | Yes      | Versioned AES-256-GCM key registry for credential encryption. Format: `1:<base64_32_bytes>[,2:<base64_32_bytes>...]`. Highest version encrypts new values; all versions decrypt. Generate a new key: `openssl rand -base64 32`. |
 
 ## Authentication
 

@@ -5,32 +5,24 @@ import React from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 
 import type { PrincipalDetail, GrantDetail } from '../lib/hub-api';
+import { createMockHubApi } from '../lib/__mocks__/hub-api';
 
 const mockGetPrincipal =
   mock<(tenantId: string, principalId: string) => Promise<PrincipalDetail>>();
 const mockListPrincipalGrants =
   mock<(tenantId: string, principalId: string) => Promise<GrantDetail[]>>();
 
-mock.module('../lib/hub-api', () => ({
-  getPrincipal: mockGetPrincipal,
-  listPrincipalGrants: mockListPrincipalGrants,
-  getTenant: mock(() =>
-    Promise.resolve({
-      id: '',
-      name: '',
-      slug: '',
-      domain: '',
-      parentId: null,
-      createdAt: '',
-      updatedAt: '',
-    })
-  ),
-  listTenantCredentials: mock(() => Promise.resolve([])),
-  getMyPrincipals: mock(() => Promise.resolve([])),
-  getMe: mock(() => Promise.resolve({ userId: 'u1', personalTenantId: null, provisionedAt: null })),
-  listWorkbenches: mock(() => Promise.resolve([])),
-  createTenant: mock(() => Promise.resolve({ id: '', name: '', slug: '', domain: '' })),
-}));
+mock.module('../lib/hub-api', () =>
+  createMockHubApi({
+    getPrincipal: mockGetPrincipal,
+    listPrincipalGrants: mockListPrincipalGrants,
+    getMe: mock(() => Promise.resolve({ userId: 'u1', personalTenantId: null, provisionedAt: null })),
+    getMyPrincipals: mock(() => Promise.resolve([])),
+    listWorkbenches: mock(() => Promise.resolve([])),
+    createTenant: mock(() => Promise.resolve({ id: '', name: '', slug: '', domain: '' })),
+    listTenantCredentials: mock(() => Promise.resolve([])),
+  })
+);
 
 const PrincipalSettingsPage = require('./PrincipalSettingsPage').default;
 

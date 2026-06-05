@@ -1,11 +1,15 @@
 /// <reference types="bun" />
-import { describe, expect, it, mock } from 'bun:test';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { togglePainPointSelection } from './pain-point-selection';
 import { getSeverityColor } from './PainPointsList';
 import type { PainPoint, SeverityLevel } from './PainPointsList';
+
+afterEach(() => {
+  cleanup();
+});
 
 // framer-motion is not compatible with Happy DOM; replace motion.div with a plain div
 mock.module('framer-motion', () => ({

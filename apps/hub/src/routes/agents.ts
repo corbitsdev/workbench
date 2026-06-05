@@ -395,7 +395,9 @@ async function ensureCredential(
       tenantId,
     });
   }
-  const storedPlaintext = isLegacy ? row.secret : decryptSecret(credentialKeys, tenantId, row.secret);
+  const storedPlaintext = isLegacy
+    ? row.secret
+    : decryptSecret(credentialKeys, tenantId, row.secret);
   if (storedPlaintext !== secret) {
     await db
       .update(credential)

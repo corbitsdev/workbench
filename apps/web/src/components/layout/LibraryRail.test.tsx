@@ -1,9 +1,10 @@
 /// <reference types="bun" />
-import { describe, expect, it, mock } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { WorkflowSummary } from '@workbench/shared';
+import { createMockHubApi } from '../../lib/__mocks__/hub-api';
 
 const fakeWorkflow: WorkflowSummary = {
   id: 'wf-1',
@@ -21,10 +22,7 @@ mock.module('@workbench/client/react', () => ({
   useArtifacts: () => ({ data: [], isLoading: false, isError: false }),
 }));
 
-mock.module('../../lib/hub-api', () => ({
-  listWorkbenches: mock(() => Promise.resolve([])),
-  listAgentInstances: mock(() => Promise.resolve([])),
-}));
+mock.module('../../lib/hub-api', () => createMockHubApi());
 
 function renderWithClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

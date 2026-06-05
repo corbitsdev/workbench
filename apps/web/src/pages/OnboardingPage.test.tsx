@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, render, screen, fireEvent, act } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter } from 'react-router';
+import { createMockHubApi } from '../lib/__mocks__/hub-api';
 
 const mockNavigate = mock(() => {});
 
@@ -16,9 +17,7 @@ mock.module('react-router', () => {
 
 const mockSetupMyraCredential = mock(() => Promise.resolve());
 
-mock.module('../lib/hub-api', () => ({
-  setupMyraCredential: mockSetupMyraCredential,
-}));
+mock.module('../lib/hub-api', () => createMockHubApi({ setupMyraCredential: mockSetupMyraCredential }));
 
 import { OnboardingPage } from './OnboardingPage';
 

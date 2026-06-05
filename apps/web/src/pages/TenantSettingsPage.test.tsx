@@ -10,22 +10,24 @@ import type {
   CredentialDetail,
   Principal,
 } from '../lib/hub-api';
+import { createMockHubApi } from '../lib/__mocks__/hub-api';
 
 const mockGetTenant = mock<(tenantId: string) => Promise<TenantDetailResponse>>();
 const mockListTenantPrincipals = mock<(tenantId: string) => Promise<PrincipalDetail[]>>();
 const mockListTenantCredentials = mock<(tenantId: string) => Promise<CredentialDetail[]>>();
 const mockGetMyPrincipals = mock<() => Promise<Principal[]>>();
 
-mock.module('../lib/hub-api', () => ({
-  getTenant: mockGetTenant,
-  listTenantPrincipals: mockListTenantPrincipals,
-  listTenantCredentials: mockListTenantCredentials,
-  getMyPrincipals: mockGetMyPrincipals,
-  getMe: mock(() => Promise.resolve({ userId: 'u1', personalTenantId: null, provisionedAt: null })),
-  listWorkbenches: mock(() => Promise.resolve([])),
-  createTenant: mock(() => Promise.resolve({ id: 't1', name: '', slug: '', domain: '' })),
-  listPrincipalGrants: mock(() => Promise.resolve([])),
-}));
+mock.module('../lib/hub-api', () =>
+  createMockHubApi({
+    getTenant: mockGetTenant,
+    listTenantPrincipals: mockListTenantPrincipals,
+    listTenantCredentials: mockListTenantCredentials,
+    getMyPrincipals: mockGetMyPrincipals,
+    getMe: mock(() => Promise.resolve({ userId: 'u1', personalTenantId: null, provisionedAt: null })),
+    listWorkbenches: mock(() => Promise.resolve([])),
+    createTenant: mock(() => Promise.resolve({ id: 't1', name: '', slug: '', domain: '' })),
+  })
+);
 
 const TenantSettingsPage = require('./TenantSettingsPage').default;
 
