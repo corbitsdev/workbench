@@ -38,6 +38,24 @@ On signup, the hub:
 
 Both Myra and Oat use custom directors wrapping `createDefaultDirector` to filter inbound senders before inference.
 
+### Credential and Grant Model
+
+Credentials and grants follow Interchange's model exactly. The workbench does not define its own credential abstraction.
+
+**Credentials** are stored in Interchange's `credential` table. Every credential belongs to a tenant, has a `providerId` (pointing to a `provider` row that names the integration, e.g. `"granola"`), and optionally an owning `principalId` (for personal credentials) or `null` (for tenant-scoped organizational credentials).
+
+**Grants** control which principals can use which credentials. A grant has:
+
+- `resource`: `"credential:{credentialId}"` — the specific credential being granted
+- `action`: `"*"` for full access
+- `effect`: `"allow"`
+- `origin`: `"creator"` when an agent is granted access at provisioning time
+- `principalId`: the agent instance's principal (not the human user)
+
+**Credential resolution at launch time** uses Interchange's walk-up resolver: it looks for credentials by `providerName + source` in the agent's `credentialRequirements`, walking up the tenant hierarchy. The workbench relies entirely on this resolver — it never passes raw secrets to agents at runtime.
+
+**Agent provisioning flow**: When a user provisions an agent instance (e.g., Oat), they select existing credentials from their accessible tenants using the credential picker. The hub verifies each credential belongs to the target tenant and creates a `grant` row linking each credential to the agent instance's principal. No raw credential values are sent in the provisioning request — only credential IDs. New credentials are created separately via the Settings/tenant credentials UI.
+
 ## Component Diagram
 
 ### Frontend (`apps/web/`)

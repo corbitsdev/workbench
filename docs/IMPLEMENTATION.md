@@ -77,6 +77,26 @@ Transport-agnostic chat UI components. No dependency on a specific agent transpo
 
 ## API Surface
 
+### Agent Provisioning
+
+| Method | Route     | Input                                                                          | Output                                             |
+| ------ | --------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `GET`  | `/agents` | `?tenantId=...`                                                                | `{ data: AgentInstance[] }`                        |
+| `POST` | `/agents` | `{ type: "oat", scope: "workspace", tenantId, credentialIds: string[] }` (Oat) | `{ instanceId, agentId, agentName, tenantId }` 201 |
+| `POST` | `/agents` | `{ type: "myra", scope: "personal", tenantId, llm: LLMProviderInput }` (Myra)  | `{ instanceId, agentId, agentName, tenantId }` 201 |
+
+Oat provisioning requires the caller to be an owner or admin of the workspace tenant. `credentialIds` must reference existing credentials that belong to `tenantId`. Grants are created at provisioning time — credentials are not passed again per-run.
+
+Myra provisioning uses raw `llm` config (stored as a personal credential) because Myra is provisioned per-user at signup/login, not through the credential picker UI.
+
+### Workspace Creation
+
+| Method | Route         | Input              | Output                                     |
+| ------ | ------------- | ------------------ | ------------------------------------------ |
+| `POST` | `/workspaces` | `{ name: string }` | `{ tenantId, tenantSlug, tenantName }` 201 |
+
+Creates an Interchange tenant + seeds owner role/principal/grants for the caller. Idempotent by slug.
+
 ### Collateral Generation
 
 | Method | Route                    | Input                                                           | Output                      |
@@ -141,10 +161,56 @@ The `artifact` table is the single store for all workflow and agent outputs.
 
 ## Agent Architecture
 
-### Credentials
+### Credentials and Grants
 
-- **Personal agent (Myra)**: `source: 'invoker'` for openai-compatible inference
-- **Granola agent (Oat)**: `source: 'tenant'` for both granola and openai-compatible credentials
+#### Credential sources by agent
+
+- **Personal agent (Myra)**: `source: 'invoker'` for openai-compatible inference — resolved against the invoking user's principal at session time
+- **Granola agent (Oat)**: `source: 'tenant'` for both `granola` and `openai-compatible` — resolved against the workspace tenant
+
+#### Creating credentials (Settings flow)
+
+Credentials are created via the Interchange hub API (`POST /api/tenants/:tenantId/credentials`), which is mounted by `createApp`. The workbench does not write to the `credential` table directly — it calls Interchange's route. The admin-ui in `interchange/apps/admin-ui` is the reference implementation for this form.
+
+Required fields: `name`, `type` (`"api_key"` | `"oauth_token"` | `"certificate"` | `"other"`), `secret`. Optional: `description`.
+
+#### Provisioning an agent with credentials
+
+When provisioning a workspace agent (Oat), the caller selects existing credential IDs via the credential picker. The hub:
+
+1. Verifies each credential ID belongs to the target tenant (`credential.tenantId = body.tenantId`)
+2. Creates the agent and agent instance (via `ensureAgentInstance` in `apps/hub/src/routes/agents.ts`)
+3. Creates a `grant` row for each credential, linking it to the agent instance's principal:
+
+```typescript
+await db.insert(grant).values({
+  id: generateId('grant'),
+  tenantId,
+  principalId: instancePrincipalId, // agent instance's principal, not the human user
+  resource: `credential:${credentialId}`,
+  action: '*',
+  effect: 'allow',
+  origin: 'creator',
+  createdAt: now,
+  updatedAt: now,
+});
+```
+
+The `grant` table is in `intxSchema` from `@intx/db`. Import `grant` from `intxSchema` alongside other Interchange tables.
+
+**No raw secrets are accepted in the provisioning request.** `POST /api/v1/agents` accepts `credentialIds: string[]` for Oat, not API key strings.
+
+#### Credential picker (frontend)
+
+The `useCredentials` hook (`apps/web/src/hooks/use-credentials.ts`) fetches the caller's accessible principals via `getMyPrincipals()`, then fetches credentials per tenant via `listTenantCredentials(tenantId)`. Returns `{ principals, credentialsByTenant, isLoading }`.
+
+The `CredentialPicker` component (`apps/web/src/components/CredentialPicker.tsx`) renders a checkbox list displaying each credential as `"{cred.name} — {tenantName}"` where tenant name is resolved from the principals list. Controlled via `selectedIds` / `onSelect` props.
+
+#### Route mounts
+
+Interchange's tenant/principal/grant/credential routes are all registered by `createApp` in `@intx/hub-api`. They are available at `/api/tenants/:tenantId/*` automatically. The workbench hub does not re-implement these routes.
+
+Workbench-specific endpoints (agent provisioning, workspace creation, collateral generation) live in `apps/hub/src/routes/` and are mounted under `/api/v1/`.
 
 ### Deploy Prompts
 
