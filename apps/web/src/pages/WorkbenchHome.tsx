@@ -14,7 +14,7 @@ import type { ProvisionAgentResponse } from '../lib/hub-api';
 type ProvisioningState =
   | { status: 'loading' }
   | { status: 'needs-onboarding' }
-  | { status: 'ready'; personalTenantId: string | null };
+  | { status: 'ready' };
 
 function useProvisioningGuard(): ProvisioningState {
   const [state, setState] = useState<ProvisioningState>({ status: 'loading' });
@@ -31,13 +31,9 @@ function useProvisioningGuard(): ProvisioningState {
     async function check() {
       try {
         const me = await getMe();
-        if (!me.provisioned) return; // Keep polling until personal tenant is ready
+        if (!me.provisioned) return;
         const workbenches = await listWorkbenches();
-        if (workbenches.length === 0) {
-          setState({ status: 'needs-onboarding' });
-        } else {
-          setState({ status: 'ready', personalTenantId: me.personalTenantId });
-        }
+        setState(workbenches.length === 0 ? { status: 'needs-onboarding' } : { status: 'ready' });
         clear();
       } catch {
         // Keep polling — transient errors should not break the guard
@@ -111,8 +107,6 @@ export default function WorkbenchHome() {
     );
   }
 
-  const { personalTenantId } = provisioningState;
-
   const handleWorkbenchCreated = (slug: string) => {
     setActiveModal('none');
     void navigate(`/workbenches/${slug}`);
@@ -155,7 +149,6 @@ export default function WorkbenchHome() {
           onClose={() => setActiveModal('none')}
           onCreated={handleAgentCreated}
           workspaceTenantId={workspaceTenantId}
-          personalTenantId={personalTenantId}
         />
       </div>
     );
@@ -208,7 +201,6 @@ export default function WorkbenchHome() {
         onClose={() => setActiveModal('none')}
         onCreated={handleAgentCreated}
         workspaceTenantId={workspaceTenantId}
-        personalTenantId={personalTenantId}
       />
     </>
   );

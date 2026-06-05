@@ -6,6 +6,13 @@ import React from 'react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+// Mock approvals-api so ReviewGate does not attempt real network requests.
+mock.module('../lib/approvals-api', () => ({
+  listApprovals: () => Promise.resolve([]),
+  approveRequest: () => Promise.resolve({}),
+  rejectRequest: () => Promise.resolve({}),
+}));
+
 // Mock hub-api before importing WorkbenchHome so the provisioning guard and
 // workbench list fetch resolve without hitting the network.
 mock.module('../lib/hub-api', () => ({

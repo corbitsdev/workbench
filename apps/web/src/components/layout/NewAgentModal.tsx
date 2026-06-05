@@ -10,8 +10,8 @@ import {
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
-type AgentType = 'oat' | 'myra';
-type DeploymentScope = 'workspace' | 'personal';
+type AgentType = 'oat';
+type DeploymentScope = 'workspace';
 
 interface AgentTypeOption {
   type: AgentType;
@@ -27,12 +27,6 @@ const AGENT_TYPES: AgentTypeOption[] = [
     description: 'Analyzes customer calls and generates GTM collateral for the whole workspace.',
     defaultScope: 'workspace',
   },
-  {
-    type: 'myra',
-    name: 'Myra — Personal Assistant',
-    description: 'Your personal GTM assistant. Credentials stay private to you.',
-    defaultScope: 'personal',
-  },
 ];
 
 export interface NewAgentModalProps {
@@ -41,8 +35,6 @@ export interface NewAgentModalProps {
   onCreated: (response: ProvisionAgentResponse) => void;
   /** Workspace tenant ID for shared (Oat) agents. */
   workspaceTenantId: string | null;
-  /** Personal tenant ID for personal (Myra) agents. */
-  personalTenantId: string | null;
 }
 
 export function NewAgentModal({
@@ -50,7 +42,6 @@ export function NewAgentModal({
   onClose,
   onCreated,
   workspaceTenantId,
-  personalTenantId,
 }: NewAgentModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -131,13 +122,9 @@ export function NewAgentModal({
 
     const scope = agentOption.defaultScope;
 
-    const tenantId = scope === 'workspace' ? workspaceTenantId : personalTenantId;
+    const tenantId = workspaceTenantId;
     if (!tenantId) {
-      setError(
-        scope === 'workspace'
-          ? 'No workspace selected. Create a workspace first.'
-          : 'Personal workspace not provisioned yet.'
-      );
+      setError('No workspace selected. Create a workspace first.');
       return;
     }
 
@@ -170,17 +157,6 @@ export function NewAgentModal({
           scope: 'workspace',
           tenantId,
           granolaApiKey: granolaApiKey.trim(),
-          llm: {
-            baseURL: llmBaseURL.trim(),
-            apiKey: llmApiKey.trim(),
-            model: llmModel.trim(),
-          },
-        };
-      } else {
-        input = {
-          type: 'myra',
-          scope: 'personal',
-          tenantId,
           llm: {
             baseURL: llmBaseURL.trim(),
             apiKey: llmApiKey.trim(),
@@ -273,10 +249,7 @@ export function NewAgentModal({
               <div className="flex flex-col gap-2 px-6 py-5">
                 <p className="mb-1 text-[13px] text-text-2">Choose an agent type to deploy.</p>
                 {AGENT_TYPES.map((option) => {
-                  const tenantAvailable =
-                    option.defaultScope === 'workspace'
-                      ? workspaceTenantId !== null
-                      : personalTenantId !== null;
+                  const tenantAvailable = workspaceTenantId !== null;
                   return (
                     <button
                       key={option.type}
@@ -294,9 +267,7 @@ export function NewAgentModal({
                       <span className="text-[13px] text-text-2">{option.description}</span>
                       {!tenantAvailable && (
                         <span className="text-[12px] text-orange-deep">
-                          {option.defaultScope === 'workspace'
-                            ? 'Create a workspace first.'
-                            : 'Personal tenant not ready.'}
+                          Create a workspace first.
                         </span>
                       )}
                     </button>
