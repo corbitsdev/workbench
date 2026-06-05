@@ -1,6 +1,10 @@
 import type { InstanceEvent } from '@intx/hub-client';
 import type { ChatMessage } from '@workbench/chat';
 
+function stripContextBlock(content: string): string {
+  return content.replace(/^<context>[\s\S]*?<\/context>\n*/u, '');
+}
+
 /**
  * Convert a list of InstanceEvents from the hub-client into ChatMessages
  * suitable for rendering in the web UI.
@@ -18,7 +22,7 @@ export function convertInstanceEvents(events: InstanceEvent[]): ChatMessage[] {
       return {
         id: event.id,
         role: event.role === 'user' ? 'user' : 'agent',
-        content: event.content,
+        content: event.role === 'user' ? stripContextBlock(event.content) : event.content,
         createdAt: event.timestamp,
         ...(event.isError === true ? { status: 'failed' as const } : {}),
       };

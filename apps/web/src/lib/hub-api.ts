@@ -47,6 +47,7 @@ export type TenantResponse = {
 
 export type MeResponse = {
   userId: string;
+  userName: string;
   personalTenantId: string | null;
   paInstanceId: string | null;
   provisioned: boolean;

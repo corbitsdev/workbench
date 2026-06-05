@@ -140,4 +140,21 @@ describe('convertInstanceEvents', () => {
   it('returns empty array for empty input', () => {
     expect(convertInstanceEvents([])).toEqual([]);
   });
+
+  it('strips leading <context> block from user mail content', () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: 'mail',
+        id: 'mail-1',
+        role: 'user',
+        content: '<context>\nDate: 5/6/2026\nHuman Operator: Sawyer\n</context>\n\nHello Myra',
+        sender: { name: 'Sawyer', email: 'sawyer@example.com' },
+        recipients: [{ name: 'Myra', email: 'myra@workbench.example' }],
+        attachments: [],
+        timestamp: '2026-06-05T00:00:00Z',
+      },
+    ];
+    const messages = convertInstanceEvents(events);
+    expect(messages[0]?.content).toBe('Hello Myra');
+  });
 });

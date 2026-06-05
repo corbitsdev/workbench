@@ -5,7 +5,7 @@ import {
   createInstanceSession,
   type InstanceSession,
 } from '@intx/hub-client';
-import { convertInstanceEvents } from '@workbench/agents';
+import { buildContextBlock, convertInstanceEvents } from '@workbench/agents';
 import {
   ChatLauncher,
   ChatPanel,
@@ -50,9 +50,11 @@ export function PersonalAgentChat() {
   const [dockState, setDockState] = useState<ChatDockState>(readDockState);
   const [sessionState, setSessionState] = useState<SessionState>({ phase: 'loading' });
   const [, forceUpdate] = useState(0);
+  const [me, setMe] = useState<{ userName: string } | null>(null);
 
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const contextInjectedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +63,7 @@ export function PersonalAgentChat() {
       try {
         const me = await getMe();
         if (cancelled) return;
+        if (!cancelled) setMe({ userName: me.userName });
 
         if (!me.personalTenantId || !me.paInstanceId) {
           setSessionState({ phase: 'provisioning' });
@@ -189,7 +192,14 @@ export function PersonalAgentChat() {
     const isTyping = !!session.streaming || !!session.activity;
 
     const handleSend = (text: string) => {
-      void session.sendMail(text);
+      if (!contextInjectedRef.current && me !== null) {
+        contextInjectedRef.current = true;
+        const date = new Date().toLocaleDateString('en-GB');
+        const contextBlock = buildContextBlock({ date, 'Human Operator': me.userName }, 'xml');
+        void session.sendMail(`${contextBlock}\n\n${text}`);
+      } else {
+        void session.sendMail(text);
+      }
     };
 
     return (

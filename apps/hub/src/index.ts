@@ -347,7 +347,7 @@ if (isDev && !google.clientId) {
 
 // ─── Workbench routes ──────────────────────────────────────────────
 
-const v1 = new Hono<{ Variables: { userId: string } }>();
+const v1 = new Hono<{ Variables: { userId: string; userName: string } }>();
 
 v1.use('*', async (c, next) => {
   const result = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -355,6 +355,7 @@ v1.use('*', async (c, next) => {
   if (!result) {
     if (isDev && !google.clientId) {
       c.set('userId', 'dev-user');
+      c.set('userName', 'Dev User');
       log.debug('Dev mode: using fake user');
       return next();
     }
@@ -362,6 +363,7 @@ v1.use('*', async (c, next) => {
   }
 
   c.set('userId', result.user.id);
+  c.set('userName', result.user.name ?? result.user.email ?? 'Unknown');
   await next();
 });
 
@@ -387,8 +389,11 @@ v1.get('/me', async (c) => {
     if (instance) paInstanceId = instance.id;
   }
 
+  const userName = c.get('userName');
+
   return c.json({
     userId,
+    userName,
     personalTenantId,
     paInstanceId,
     provisioned: personalTenantId !== null,
