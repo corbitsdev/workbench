@@ -31,10 +31,10 @@ On signup, the hub:
 
 ### Agent Architecture
 
-| Agent | Tenant | Role |
-| ----- | ------ | ---- |
-| **Myra** (personal agent) | User's personal Interchange tenant | Chief of Staff / Executive Assistant for the user |
-| **Oat** (Granola agent) | Shared GTM Workbench tenant | Continuously processes Granola calls into call document artifacts |
+| Agent                     | Tenant                             | Role                                                              |
+| ------------------------- | ---------------------------------- | ----------------------------------------------------------------- |
+| **Myra** (personal agent) | User's personal Interchange tenant | Chief of Staff / Executive Assistant for the user                 |
+| **Oat** (Granola agent)   | Shared GTM Workbench tenant        | Continuously processes Granola calls into call document artifacts |
 
 Both Myra and Oat use custom directors wrapping `createDefaultDirector` to filter inbound senders before inference.
 
@@ -78,10 +78,10 @@ Both Myra and Oat use custom directors wrapping `createDefaultDirector` to filte
 
 Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 
-| Table                            | Key Columns                                                                                                                                                  |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `artifact`                       | `id` (UUID PK), `kind` (CollateralType), `sessionId` (UUID FK, nullable), `workflowId` (UUID FK, nullable), `content`, `createdAt`                          |
-| `collateral_generation_workflow` | `id` (UUID PK), `userId`, `inputArtifactIds[]`, `outputTypes[]`, `status`, `createdAt`, `updatedAt`                                                          |
+| Table                            | Key Columns                                                                                                                                                     |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `artifact`                       | `id` (UUID PK), `kind` (CollateralType), `sessionId` (UUID FK, nullable), `workflowId` (UUID FK, nullable), `content`, `createdAt`                              |
+| `collateral_generation_workflow` | `id` (UUID PK), `userId`, `inputArtifactIds[]`, `outputTypes[]`, `status`, `createdAt`, `updatedAt`                                                             |
 | `workbench_user`                 | `id` (UUID PK), `userId`, `personalTenantId`, `workbenchPrincipalId` — provisional cache, pending removal in CL-1245 when scoping moves to tenantId/principalId |
 
 ### Artifact Model

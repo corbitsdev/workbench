@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   createCollateralGeneration,
   getArtifacts,
@@ -17,6 +18,7 @@ type PanelStep = 'select' | 'generating' | 'results';
 
 interface Props {
   onClose: () => void;
+  onComplete?: () => void;
 }
 
 function Spinner() {
@@ -54,7 +56,8 @@ function ErrorIcon() {
   );
 }
 
-export function CollateralGenerationPanel({ onClose }: Props) {
+export function CollateralGenerationPanel({ onClose, onComplete }: Props) {
+  const queryClient = useQueryClient();
   const [step, setStep] = useState<PanelStep>('select');
 
   // Step 1: select
@@ -91,22 +94,27 @@ export function CollateralGenerationPanel({ onClose }: Props) {
   }, []);
 
   // Poll for workflow completion
-  const startPolling = useCallback((workflowId: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      try {
-        const wf = await getCollateralGeneration(workflowId);
-        setWorkflow(wf);
-        if (wf.status === 'done' || wf.status === 'failed') {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setFinalWorkflow(wf);
-          setStep('results');
+  const startPolling = useCallback(
+    (workflowId: string) => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        try {
+          const wf = await getCollateralGeneration(workflowId);
+          setWorkflow(wf);
+          if (wf.status === 'done' || wf.status === 'failed') {
+            if (pollRef.current) clearInterval(pollRef.current);
+            setFinalWorkflow(wf);
+            setStep('results');
+            void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+            onComplete?.(); // caller-side hook; gallery refresh is handled via queryClient above
+          }
+        } catch {
+          // Transient error — keep polling
         }
-      } catch {
-        // Transient error — keep polling
-      }
-    }, 2000);
-  }, []);
+      }, 2000);
+    },
+    [queryClient, onComplete]
+  );
 
   useEffect(() => {
     return () => {
@@ -325,15 +333,29 @@ export function CollateralGenerationPanel({ onClose }: Props) {
               exit={{ opacity: 0 }}
               className="flex flex-col gap-4"
             >
-              <p className="text-[13px] text-text-2">
-                Generation complete. Review your artifacts below.
-              </p>
+              {(() => {
+                const selected = outputTypeEntries.filter(({ ot }) => selectedOutputTypes.has(ot));
+                const doneCount = selected.filter(({ state }) => state?.status === 'done').length;
+                const total = selected.length;
+                const allDone = doneCount === total;
+                const noneDone = doneCount === 0;
+                return (
+                  <p className="text-[13px] text-text-2">
+                    {allDone
+                      ? 'All outputs generated. Review your artifacts below.'
+                      : noneDone
+                        ? 'Generation failed for all outputs.'
+                        : `${doneCount} of ${total} outputs generated.`}
+                  </p>
+                );
+              })()}
               <div className="flex flex-col gap-3">
                 {outputTypeEntries
                   .filter(({ ot }) => selectedOutputTypes.has(ot))
                   .map(({ ot, label, state }) => {
                     if (!state) return null;
                     const isDone = state.status === 'done';
+                    const isFailed = state.status === 'failed';
                     return (
                       <div key={ot} className="rounded-[12px] border border-border bg-surface p-4">
                         <div className="flex items-center gap-2">
@@ -349,6 +371,11 @@ export function CollateralGenerationPanel({ onClose }: Props) {
                         </div>
                         {isDone && state.title && (
                           <p className="mt-2 truncate text-[13px] text-text-2">{state.title}</p>
+                        )}
+                        {isFailed && (
+                          <p className="mt-2 text-[12px] text-red-400">
+                            This output could not be generated.
+                          </p>
                         )}
                         {isDone && state.artifactId && (
                           <div className="mt-3 flex items-center gap-2">

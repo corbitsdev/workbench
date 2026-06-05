@@ -26,6 +26,7 @@
         "@intx/crypto-node": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
+        "@intx/hub-common": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
@@ -100,7 +101,7 @@
     },
     "interchange/packages/agent": {
       "name": "@intx/agent",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/inference": "workspace:*",
         "@intx/mime": "workspace:*",
@@ -111,21 +112,21 @@
     },
     "interchange/packages/authz": {
       "name": "@intx/authz",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/types": "workspace:*",
       },
     },
     "interchange/packages/crypto-node": {
       "name": "@intx/crypto-node",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/types": "workspace:*",
       },
     },
     "interchange/packages/db": {
       "name": "@intx/db",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
@@ -136,7 +137,7 @@
     },
     "interchange/packages/harness": {
       "name": "@intx/harness",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
@@ -147,7 +148,7 @@
     },
     "interchange/packages/hub-agent": {
       "name": "@intx/hub-agent",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/harness": "workspace:*",
         "@intx/log": "workspace:*",
@@ -166,7 +167,7 @@
     },
     "interchange/packages/hub-api": {
       "name": "@intx/hub-api",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@hono/standard-validator": "^0.2.2",
         "@intx/authz": "workspace:*",
@@ -186,7 +187,7 @@
     },
     "interchange/packages/hub-client": {
       "name": "@intx/hub-client",
-      "version": "0.1.2",
+      "version": "0.0.1",
       "dependencies": {
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
@@ -194,14 +195,14 @@
     },
     "interchange/packages/hub-common": {
       "name": "@intx/hub-common",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/types": "workspace:*",
       },
     },
     "interchange/packages/hub-sessions": {
       "name": "@intx/hub-sessions",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/crypto-node": "workspace:*",
         "@intx/db": "workspace:*",
@@ -216,7 +217,7 @@
     },
     "interchange/packages/inference": {
       "name": "@intx/inference",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
@@ -228,14 +229,14 @@
     },
     "interchange/packages/inference-discovery": {
       "name": "@intx/inference-discovery",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "arktype": "catalog:",
       },
     },
     "interchange/packages/inference-discovery-anthropic": {
       "name": "@intx/inference-discovery-anthropic",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/inference-discovery": "workspace:*",
         "arktype": "catalog:",
@@ -243,7 +244,7 @@
     },
     "interchange/packages/inference-discovery-google-genai": {
       "name": "@intx/inference-discovery-google-genai",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/inference-discovery": "workspace:*",
         "arktype": "catalog:",
@@ -251,7 +252,7 @@
     },
     "interchange/packages/inference-discovery-openai": {
       "name": "@intx/inference-discovery-openai",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/inference-discovery": "workspace:*",
         "arktype": "catalog:",
@@ -259,7 +260,7 @@
     },
     "interchange/packages/inference-testing": {
       "name": "@intx/inference-testing",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/inference": "workspace:*",
         "@intx/inference-discovery": "workspace:*",
@@ -268,7 +269,7 @@
     },
     "interchange/packages/log": {
       "name": "@intx/log",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@logtape/hono": "^2.0.2",
         "@logtape/logtape": "^2.0.2",
@@ -282,7 +283,7 @@
     },
     "interchange/packages/mail-memory": {
       "name": "@intx/mail-memory",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/crypto-node": "workspace:*",
         "@intx/log": "workspace:*",
@@ -292,7 +293,7 @@
     },
     "interchange/packages/mime": {
       "name": "@intx/mime",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/crypto-node": "workspace:*",
         "@intx/types": "workspace:*",
@@ -301,14 +302,14 @@
     },
     "interchange/packages/pack-transport": {
       "name": "@intx/pack-transport",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/types": "workspace:*",
       },
     },
     "interchange/packages/storage-isogit": {
       "name": "@intx/storage-isogit",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
@@ -318,7 +319,7 @@
     },
     "interchange/packages/tools-lsp": {
       "name": "@intx/tools-lsp",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/log": "workspace:*",
         "@intx/tools-posix": "workspace:*",
@@ -331,24 +332,16 @@
         "@types/which": "^3.0.0",
       },
     },
-    "interchange/packages/tools-mail": {
-      "name": "@intx/tools-mail",
-      "version": "0.1.2",
-      "dependencies": {
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-      },
-    },
     "interchange/packages/tools-posix": {
       "name": "@intx/tools-posix",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "@intx/types": "workspace:*",
       },
     },
     "interchange/packages/types": {
       "name": "@intx/types",
-      "version": "0.1.2",
+      "version": "0.0.0",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -670,8 +663,6 @@
     "@intx/storage-isogit": ["@intx/storage-isogit@workspace:interchange/packages/storage-isogit"],
 
     "@intx/tools-lsp": ["@intx/tools-lsp@workspace:interchange/packages/tools-lsp"],
-
-    "@intx/tools-mail": ["@intx/tools-mail@workspace:interchange/packages/tools-mail"],
 
     "@intx/tools-posix": ["@intx/tools-posix@workspace:interchange/packages/tools-posix"],
 

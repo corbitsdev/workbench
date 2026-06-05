@@ -12,7 +12,7 @@
 | State management   | TanStack Query | 5                            |
 | Backend            | Hono           | 4                            |
 | ORM                | Drizzle ORM    | 0.45                         |
-| Database           | PostgreSQL      | 18.2-alpine                  |
+| Database           | PostgreSQL     | 18.2-alpine                  |
 | Object storage     | MinIO          | latest                       |
 | Agent runtime      | `@intx/agent`  | workspace (via interchange/) |
 | Runtime validation | arktype        | 2.x                          |
@@ -79,8 +79,8 @@ Transport-agnostic chat UI components. No dependency on a specific agent transpo
 
 ### Collateral Generation
 
-| Method | Route                   | Input                                         | Output                    |
-| ------ | ----------------------- | --------------------------------------------- | ------------------------- |
+| Method | Route                    | Input                                                           | Output                      |
+| ------ | ------------------------ | --------------------------------------------------------------- | --------------------------- |
 | `POST` | `/collateral-generation` | `{ inputArtifactIds: string[], outputTypes: CollateralType[] }` | `{ workflowId, artifacts }` |
 
 Each `outputType` generates independently in parallel via `@intx/agent`. Results are stored as `artifact` rows with `kind = outputType` and `workflowId` FK.
@@ -134,10 +134,10 @@ The `artifact` table is the single store for all workflow and agent outputs.
 
 ### Migration Sequence
 
-| Migration | Description |
-| --------- | ----------- |
+| Migration                             | Description                                                                                                     |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `0004_collateral_generation_workflow` | Adds `collateral_generation_workflow` table; makes `artifact.sessionId` nullable; adds `artifact.workflowId` FK |
-| `0005_workbench_user` | Adds provisional `workbench_user` cache table |
+| `0005_workbench_user`                 | Adds provisional `workbench_user` cache table                                                                   |
 
 ## Agent Architecture
 
@@ -156,8 +156,8 @@ All environment validation lives in `apps/hub/src/config.ts`. Variables are vali
 
 ### Added Variables
 
-| Variable                | Required | Purpose |
-| ----------------------- | -------- | ------- |
+| Variable                | Required | Purpose                                             |
+| ----------------------- | -------- | --------------------------------------------------- |
 | `WORKBENCH_TENANT_SLUG` | Yes      | Slug of the shared GTM Workbench Interchange tenant |
 
 ## Authentication
@@ -250,12 +250,12 @@ Both services require a **persistent volume** mounted in the Railway dashboard.
 
 ### Sidecar Environment Variables
 
-| Variable           | Description                                                                                         |
-| ------------------ | --------------------------------------------------------------------------------------------------- |
-| `HUB_WS_URL`       | WebSocket URL of the Interchange hub (e.g. `wss://hub.example.com/api/sidecars/ws`)                 |
+| Variable           | Description                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| `HUB_WS_URL`       | WebSocket URL of the Interchange hub (e.g. `wss://hub.example.com/api/sidecars/ws`)                |
 | `SIDECAR_ID`       | Stable opaque identifier for this sidecar instance (e.g. `gtm-staging`). Any slug format is valid. |
-| `SIDECAR_TOKEN`    | Auth token for hub registration                                                                     |
-| `SIDECAR_DATA_DIR` | Path on the persistent volume (e.g. `/data`)                                                        |
+| `SIDECAR_TOKEN`    | Auth token for hub registration                                                                    |
+| `SIDECAR_DATA_DIR` | Path on the persistent volume (e.g. `/data`)                                                       |
 
 ## Agent Runtime and LLM Inference
 
