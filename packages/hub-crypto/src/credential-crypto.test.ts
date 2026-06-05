@@ -22,6 +22,19 @@ describe('parseEncryptionKeys', () => {
   it('rejects keys that are not 32 bytes after base64 decode', () => {
     expect(() => parseEncryptionKeys('1:dG9vc2hvcnQ=')).toThrow();
   });
+
+  it('accepts hex-encoded 32-byte keys', () => {
+    const hexKey = `1:${Buffer.alloc(32, 0x01).toString('hex')}`;
+    const registry = parseEncryptionKeys(hexKey);
+    expect(registry.active.key).toEqual(Buffer.alloc(32, 0x01));
+  });
+
+  it('hex and base64 keys with same bytes produce same registry', () => {
+    const bytes = Buffer.alloc(32, 0xab);
+    const hexRegistry = parseEncryptionKeys(`1:${bytes.toString('hex')}`);
+    const b64Registry = parseEncryptionKeys(`1:${bytes.toString('base64')}`);
+    expect(hexRegistry.active.key).toEqual(b64Registry.active.key);
+  });
 });
 
 describe('encryptSecret / decryptSecret', () => {

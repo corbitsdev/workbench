@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 
-// Format: "1:base64key,2:base64key" — highest version number is active for new encrypts.
+// Format: "1:<key>,2:<key>" — key may be hex (64 chars) or base64 (44 chars for 32 bytes).
+// Highest version number is active for new encrypts.
 // All versions are retained for decryption to support key rotation without downtime.
 
 const ENC_PREFIX = 'enc:';
@@ -28,7 +29,7 @@ export function parseEncryptionKeys(raw: string): CredentialKeyRegistry {
     const colonIdx = entry.indexOf(':');
     if (colonIdx === -1) {
       throw new Error(
-        `Invalid CREDENTIAL_ENCRYPTION_KEYS entry "${entry}": expected "version:base64Key"`
+        `Invalid CREDENTIAL_ENCRYPTION_KEYS entry "${entry}": expected "version:key" (hex or base64)`
       );
     }
 
@@ -40,10 +41,12 @@ export function parseEncryptionKeys(raw: string): CredentialKeyRegistry {
       );
     }
 
-    const key = Buffer.from(entry.slice(colonIdx + 1).trim(), 'base64');
+    const keyStr = entry.slice(colonIdx + 1).trim();
+    const encoding = /^[0-9a-fA-F]{64}$/.test(keyStr) ? 'hex' : 'base64';
+    const key = Buffer.from(keyStr, encoding);
     if (key.length !== KEY_LEN) {
       throw new Error(
-        `Invalid CREDENTIAL_ENCRYPTION_KEYS entry "${entry}": decoded key must be ${KEY_LEN} bytes, got ${key.length}`
+        `Invalid CREDENTIAL_ENCRYPTION_KEYS entry "${entry}": key must decode to ${KEY_LEN} bytes — provide a 64-char hex string or a 44-char base64 string, got ${key.length} bytes`
       );
     }
 
