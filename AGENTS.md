@@ -68,6 +68,7 @@ Missing either step causes `@intx/*` imports to fail at test/build time.
 Follow this workflow. Each step is a separate commit.
 
 ### Step 1 — Tests first (red)
+
 ```
 Write tests for what you are about to change
 → Confirm they fail
@@ -75,6 +76,7 @@ Write tests for what you are about to change
 ```
 
 ### Step 2 — Implement (green)
+
 ```
 Make the minimal change to pass the tests
 → Run full build pipeline
@@ -82,6 +84,7 @@ Make the minimal change to pass the tests
 ```
 
 ### Step 3 — Docs
+
 ```
 Run the scribe skill if the change affects product, architecture, or implementation docs
 → Commit: "Update docs: <what changed>"

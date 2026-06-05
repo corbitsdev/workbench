@@ -6,7 +6,7 @@ import { generateId } from '@intx/hub-common';
 
 const log = getLogger(['api', 'tenant-provisioning']);
 
-const { tenant, principal, role, principalRole, grant } = intxSchema;
+const { tenant, principal, role, principalRole, grant, agent, agentInstance } = intxSchema;
 
 type ProductionDB = DB['db'];
 
@@ -22,6 +22,10 @@ export type ProvisioningDB = {
     role: { findFirst: (opts: any) => Promise<{ id: string } | undefined> };
     // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
     grant: { findFirst: (opts: any) => Promise<{ id: string } | undefined> };
+    // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
+    agent: { findFirst: (opts: any) => Promise<{ id: string; name: string } | undefined> };
+    // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
+    agentInstance: { findFirst: (opts: any) => Promise<{ id: string } | undefined> };
   };
   // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
   insert: (table: any) => {
@@ -35,7 +39,11 @@ export type ProvisioningDB = {
 
 const SYSTEM_ROLES = ['owner', 'admin', 'member'] as const;
 
-type PersonalTenantResult = { tenantId: string };
+const PERSONAL_AGENT_DEPLOY_PROMPT =
+  'You are Myra, a personal GTM assistant. You help the user turn customer conversations into polished sales and marketing collateral. Be concise, direct, and professional.';
+
+type PersonalTenantResult = { tenantId: string; principalId: string };
+type MyraInstanceResult = { paInstanceId: string };
 
 /**
  * Ensure a personal tenant exists for a workbench user. Idempotent — if the
@@ -52,7 +60,15 @@ export async function provisionPersonalTenant(
   });
   if (existing) {
     log.info('Personal tenant already exists', { userId: opts.userId, tenantId: existing.id });
-    return { tenantId: existing.id };
+    const existingPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, existing.id),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, opts.userId)
+      ),
+    });
+    if (!existingPrincipal) throw new Error(`Principal not found for existing tenant ${existing.id}`);
+    return { tenantId: existing.id, principalId: existingPrincipal.id };
   }
 
   return db.transaction(async (tx) => {
@@ -83,7 +99,18 @@ export async function provisionPersonalTenant(
       const existingOnConflict = await tx.query.tenant.findFirst({
         where: eq(tenant.slug, slug),
       });
-      if (existingOnConflict) return { tenantId: existingOnConflict.id };
+      if (existingOnConflict) {
+        const existingPrincipalOnConflict = await tx.query.principal.findFirst({
+          where: and(
+            eq(principal.tenantId, existingOnConflict.id),
+            eq(principal.kind, 'user'),
+            eq(principal.refId, opts.userId)
+          ),
+        });
+        if (!existingPrincipalOnConflict)
+          throw new Error(`Principal not found for existing tenant ${existingOnConflict.id}`);
+        return { tenantId: existingOnConflict.id, principalId: existingPrincipalOnConflict.id };
+      }
       throw err;
     }
 
@@ -108,7 +135,7 @@ export async function provisionPersonalTenant(
     if (!ownerRoleId || !adminRoleId || !memberRoleId)
       throw new Error('System roles were not created');
 
-    const principalId = generateId('principal');
+    let principalId = generateId('principal');
 
     try {
       await tx.insert(principal).values({
@@ -129,6 +156,7 @@ export async function provisionPersonalTenant(
         ),
       });
       if (!existingPrincipal) throw err;
+      principalId = existingPrincipal.id;
     }
 
     await tx.insert(principalRole).values({
@@ -199,23 +227,108 @@ export async function provisionPersonalTenant(
     });
 
     log.info('Personal tenant provisioned', { userId: opts.userId, tenantId: resolvedTenantId });
-    return { tenantId: resolvedTenantId };
+    return { tenantId: resolvedTenantId, principalId };
   });
 }
 
 /**
- * Provision a new user on signup: creates their personal Interchange tenant
- * and assigns them the owner role. Workbench tenants are created separately
- * by the user via the "+ New Workbench" flow.
+ * Ensure a Myra agent and running instance exist in the user's personal tenant.
+ * Idempotent — if both already exist, returns the existing instance ID.
+ */
+export async function provisionMyraInstance(
+  db: ProductionDB,
+  opts: { personalTenantId: string; personalTenantDomain: string; userId: string; creatorPrincipalId: string }
+): Promise<MyraInstanceResult> {
+  const existingAgent = await db.query.agent.findFirst({
+    where: and(eq(agent.tenantId, opts.personalTenantId), eq(agent.name, 'Myra')),
+  });
+
+  if (existingAgent) {
+    const existingInstance = await db.query.agentInstance.findFirst({
+      where: eq(agentInstance.agentId, existingAgent.id),
+    });
+    if (existingInstance) {
+      log.info('Myra instance already exists', {
+        userId: opts.userId,
+        instanceId: existingInstance.id,
+      });
+      return { paInstanceId: existingInstance.id };
+    }
+  }
+
+  const now = new Date();
+  const agentId = existingAgent?.id ?? generateId('agent');
+
+  if (!existingAgent) {
+    const agentRows = await db
+      .insert(agent)
+      .values({
+        id: agentId,
+        tenantId: opts.personalTenantId,
+        creatorPrincipalId: opts.creatorPrincipalId,
+        name: 'Myra',
+        systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
+        status: 'deployed',
+        currentVersion: '1',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    const agentRow = agentRows?.[0];
+    if (!agentRow) throw new Error(`Failed to create Myra agent for user ${opts.userId}`);
+  }
+
+  const instancePrincipalId = generateId('principal');
+  await db.insert(principal).values({
+    id: instancePrincipalId,
+    tenantId: opts.personalTenantId,
+    kind: 'agent',
+    refId: agentId,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const instanceId = generateId('instance');
+  const address = `${instanceId}@${opts.personalTenantDomain}`;
+
+  await db.insert(agentInstance).values({
+    id: instanceId,
+    agentId,
+    tenantId: opts.personalTenantId,
+    principalId: instancePrincipalId,
+    address,
+    status: 'deployed',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  log.info('Myra instance provisioned', { userId: opts.userId, instanceId });
+  return { paInstanceId: instanceId };
+}
+
+/**
+ * Provision a new user on signup: creates their personal Interchange tenant,
+ * assigns them the owner role, and starts their Myra agent instance.
+ * Workbench tenants are created separately by the user via the "+ New Workbench" flow.
  */
 export async function provisionUserOnSignup(
   db: ProductionDB,
   opts: { userId: string; userEmail: string }
-): Promise<{ personalTenantId: string }> {
-  const { tenantId: personalTenantId } = await provisionPersonalTenant(db, {
+): Promise<{ personalTenantId: string; paInstanceId: string }> {
+  const { tenantId: personalTenantId, principalId: creatorPrincipalId } = await provisionPersonalTenant(db, {
     userId: opts.userId,
     userEmail: opts.userEmail,
   });
 
-  return { personalTenantId };
+  const domain = `user-${opts.userId}.localhost`;
+  const { paInstanceId } = await provisionMyraInstance(db, {
+    personalTenantId,
+    personalTenantDomain: domain,
+    userId: opts.userId,
+    creatorPrincipalId,
+  });
+
+  return { personalTenantId, paInstanceId };
 }

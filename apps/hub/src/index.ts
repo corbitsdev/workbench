@@ -19,14 +19,14 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
 import { createCollateralGenerationRouter } from './routes/collateral-generation';
 import * as workbenchSchema from './db/schema';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
-import { provisionUserOnSignup } from './lib/tenant-provisioning';
+import { provisionUserOnSignup, provisionPersonalTenant, provisionMyraInstance } from './lib/tenant-provisioning';
 
 await setup({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
@@ -129,6 +129,67 @@ const auth = betterAuth({
                 error: err instanceof Error ? err : new Error(String(err)),
               }
             );
+          }
+        },
+      },
+    },
+    session: {
+      create: {
+        after: async (session) => {
+          // Repair path: if provisioning failed at signup, retry silently on login.
+          try {
+            const workbenchRow = await db.query.workbenchUser.findFirst({
+              where: eq(workbenchSchema.workbenchUser.userId, session.userId),
+            });
+
+            if (!workbenchRow) return;
+
+            if (!workbenchRow.personalTenantId) {
+              // Full provisioning failed — retry. Look up email from auth user table.
+              const authUser = await db.query.user.findFirst({
+                where: eq(intxSchema.user.id, session.userId),
+              });
+              if (!authUser) return;
+
+              const { personalTenantId } = await provisionUserOnSignup(db, {
+                userId: session.userId,
+                userEmail: authUser.email,
+              });
+              await db
+                .update(workbenchSchema.workbenchUser)
+                .set({ personalTenantId, provisionedAt: new Date(), updatedAt: new Date() })
+                .where(eq(workbenchSchema.workbenchUser.userId, session.userId));
+              log.info('Repaired missing personal tenant on login', { userId: session.userId, personalTenantId });
+              return;
+            }
+
+            // Tenant exists but Myra instance may be missing.
+            const instance = await db.query.agentInstance.findFirst({
+              where: and(
+                eq(intxSchema.agentInstance.tenantId, workbenchRow.personalTenantId),
+                inArray(intxSchema.agentInstance.status, ['deployed', 'running']),
+              ),
+            });
+
+            if (!instance) {
+              const { principalId: creatorPrincipalId } = await provisionPersonalTenant(db, {
+                userId: session.userId,
+                userEmail: session.userId,
+              });
+              const domain = `user-${session.userId}.localhost`;
+              const { paInstanceId } = await provisionMyraInstance(db, {
+                personalTenantId: workbenchRow.personalTenantId,
+                personalTenantDomain: domain,
+                userId: session.userId,
+                creatorPrincipalId,
+              });
+              log.info('Repaired missing Myra instance on login', { userId: session.userId, paInstanceId });
+            }
+          } catch (err) {
+            log.error('Session repair failed — continuing', {
+              userId: session.userId,
+              error: err instanceof Error ? err : new Error(String(err)),
+            });
           }
         },
       },
@@ -317,9 +378,26 @@ v1.get('/me', async (c) => {
   const row = await db.query.workbenchUser.findFirst({
     where: eq(workbenchSchema.workbenchUser.userId, userId),
   });
+
+  const personalTenantId = row?.personalTenantId ?? null;
+
+  // Derive paInstanceId from Interchange at runtime — not stored locally.
+  // The personal tenant contains only Myra, so the first running instance is hers.
+  let paInstanceId: string | null = null;
+  if (personalTenantId) {
+    const instance = await db.query.agentInstance.findFirst({
+      where: and(
+        eq(intxSchema.agentInstance.tenantId, personalTenantId),
+        inArray(intxSchema.agentInstance.status, ['deployed', 'running']),
+      ),
+    });
+    if (instance) paInstanceId = instance.id;
+  }
+
   return c.json({
     userId,
-    personalTenantId: row?.personalTenantId ?? null,
+    personalTenantId,
+    paInstanceId,
     provisionedAt: row?.provisionedAt ?? null,
   });
 });
