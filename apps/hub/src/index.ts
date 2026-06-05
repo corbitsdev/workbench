@@ -100,27 +100,11 @@ const auth = betterAuth({
           }
         },
         after: async (user) => {
-          // Insert a placeholder row immediately so the user record exists
-          // even if Interchange provisioning fails below.
-          await db
-            .insert(workbenchSchema.workbenchUser)
-            .values({ userId: user.id, createdAt: new Date(), updatedAt: new Date() })
-            .onConflictDoNothing();
-
           try {
             const { personalTenantId } = await provisionUserOnSignup(db, {
               userId: user.id,
               userEmail: user.email,
             });
-
-            await db
-              .update(workbenchSchema.workbenchUser)
-              .set({
-                personalTenantId,
-                provisionedAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .where(eq(workbenchSchema.workbenchUser.userId, user.id));
 
             log.info('User provisioned', {
               userId: user.id,
@@ -143,13 +127,11 @@ const auth = betterAuth({
         after: async (session) => {
           // Repair path: if provisioning failed at signup, retry silently on login.
           try {
-            const workbenchRow = await db.query.workbenchUser.findFirst({
-              where: eq(workbenchSchema.workbenchUser.userId, session.userId),
+            const personalTenant = await db.query.tenant.findFirst({
+              where: eq(intxSchema.tenant.slug, `user-${session.userId}`),
             });
 
-            if (!workbenchRow) return;
-
-            if (!workbenchRow.personalTenantId) {
+            if (!personalTenant) {
               // Full provisioning failed — retry. Look up email from auth user table.
               const authUser = await db.query.user.findFirst({
                 where: eq(intxSchema.user.id, session.userId),
@@ -160,22 +142,15 @@ const auth = betterAuth({
                 userId: session.userId,
                 userEmail: authUser.email,
               });
-              await db
-                .update(workbenchSchema.workbenchUser)
-                .set({ personalTenantId, provisionedAt: new Date(), updatedAt: new Date() })
-                .where(eq(workbenchSchema.workbenchUser.userId, session.userId));
-              log.info('Repaired missing personal tenant on login', {
-                userId: session.userId,
-                personalTenantId,
-              });
+              log.info('Repaired missing personal tenant on login', { userId: session.userId, personalTenantId });
               return;
             }
 
             // Tenant exists but Myra instance may be missing.
             const instance = await db.query.agentInstance.findFirst({
               where: and(
-                eq(intxSchema.agentInstance.tenantId, workbenchRow.personalTenantId),
-                inArray(intxSchema.agentInstance.status, ['deployed', 'running'])
+                eq(intxSchema.agentInstance.tenantId, personalTenant.id),
+                inArray(intxSchema.agentInstance.status, ['deployed', 'running']),
               ),
             });
 
@@ -186,7 +161,7 @@ const auth = betterAuth({
               });
               const domain = `user-${session.userId}.localhost`;
               const { paInstanceId } = await provisionMyraInstance(db, {
-                personalTenantId: workbenchRow.personalTenantId,
+                personalTenantId: personalTenant.id,
                 personalTenantDomain: domain,
                 userId: session.userId,
                 creatorPrincipalId,
@@ -386,13 +361,14 @@ v1.use('*', async (c, next) => {
 
 v1.get('/me', async (c) => {
   const userId = c.get('userId');
-  const row = await db.query.workbenchUser.findFirst({
-    where: eq(workbenchSchema.workbenchUser.userId, userId),
+
+  const personalTenant = await db.query.tenant.findFirst({
+    where: eq(intxSchema.tenant.slug, `user-${userId}`),
   });
 
-  const personalTenantId = row?.personalTenantId ?? null;
+  const personalTenantId = personalTenant?.id ?? null;
 
-  // Derive paInstanceId from Interchange at runtime — not stored locally.
+  // Derive paInstanceId from Interchange at runtime.
   // The personal tenant contains only Myra, so the first running instance is hers.
   let paInstanceId: string | null = null;
   if (personalTenantId) {
@@ -405,22 +381,11 @@ v1.get('/me', async (c) => {
     if (instance) paInstanceId = instance.id;
   }
 
-  // Backfill provisionedAt for users provisioned before this column was populated.
-  let provisionedAt = row?.provisionedAt ?? null;
-  if (personalTenantId && !provisionedAt && row) {
-    const now = new Date();
-    await db
-      .update(workbenchSchema.workbenchUser)
-      .set({ provisionedAt: now, updatedAt: now })
-      .where(eq(workbenchSchema.workbenchUser.userId, userId));
-    provisionedAt = now;
-  }
-
   return c.json({
     userId,
     personalTenantId,
     paInstanceId,
-    provisionedAt: provisionedAt?.toISOString() ?? null,
+    provisioned: personalTenantId !== null,
   });
 });
 

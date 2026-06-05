@@ -49,7 +49,7 @@ export type MeResponse = {
   userId: string;
   personalTenantId: string | null;
   paInstanceId: string | null;
-  provisionedAt: string | null;
+  provisioned: boolean;
 };
 
 export async function getMe(): Promise<MeResponse> {

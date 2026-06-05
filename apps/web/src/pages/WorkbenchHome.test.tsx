@@ -13,7 +13,8 @@ mock.module('../lib/hub-api', () => ({
     Promise.resolve({
       userId: 'u1',
       personalTenantId: 'pt1',
-      provisionedAt: new Date().toISOString(),
+      paInstanceId: null,
+      provisioned: true,
     }),
   listWorkbenches: () => Promise.resolve([]),
   getMyPrincipals: () => Promise.resolve([]),

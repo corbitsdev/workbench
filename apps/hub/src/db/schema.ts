@@ -92,21 +92,6 @@ export const artifactVersion = pgTable('artifact_version', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-// Maps a better-auth user ID to the personal Interchange tenant provisioned on
-// signup. Nullable until provisioning completes — allows the user record to
-// exist before Interchange provisioning runs and supports a repair path on
-// next login. Will be removed in CL-1245 when routes become tenant-scoped.
-export const workbenchUser = pgTable('workbench_user', {
-  userId: text('user_id').primaryKey(),
-  personalTenantId: text('personal_tenant_id'),
-  provisionedAt: timestamp('provisioned_at'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at')
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
-
 // ─── Collateral Generation Workflow ────────────────────────────────
 
 export const collateralGenerationStatus = ['pending', 'generating', 'done', 'failed'] as const;

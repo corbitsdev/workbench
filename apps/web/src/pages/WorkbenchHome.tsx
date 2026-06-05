@@ -24,7 +24,7 @@ function useProvisioningGuard(): boolean {
     async function check() {
       try {
         const me = await getMe();
-        if (me.provisionedAt !== null) {
+        if (me.provisioned) {
           setProvisioned(true);
           clear();
         }
