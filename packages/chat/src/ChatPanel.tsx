@@ -1,3 +1,4 @@
+import type React from 'react';
 import { cn } from '@workbench/ui';
 import {
   type ChatAgentIdentity,
@@ -25,6 +26,7 @@ export interface ChatPanelProps {
   onClose?: () => void;
   inputDisabled?: boolean;
   className?: string;
+  notice?: React.ReactNode;
 }
 
 /**
@@ -44,6 +46,7 @@ export function ChatPanel({
   onClose,
   inputDisabled,
   className,
+  notice,
 }: ChatPanelProps) {
   return (
     <div className={cn('flex h-full flex-col overflow-hidden bg-surface', className)}>
@@ -77,6 +80,10 @@ export function ChatPanel({
           )}
         </div>
       </header>
+
+      {notice !== undefined && (
+        <div className="border-b border-border px-4 py-3 text-[13px] text-text-2">{notice}</div>
+      )}
 
       <ChatThread
         messages={messages}

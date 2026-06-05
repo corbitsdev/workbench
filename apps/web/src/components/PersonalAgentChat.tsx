@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import {
   createBrowserTransport,
   createInstanceSession,
@@ -128,6 +129,16 @@ export function PersonalAgentChat() {
     return committed;
   }
 
+  const setupNotice = (
+    <span>
+      Myra isn't set up yet —{' '}
+      <Link to="/onboarding" className="text-orange underline">
+        add an LLM API key to get started
+      </Link>
+      .
+    </span>
+  );
+
   function renderPanel() {
     if (sessionState.phase === 'loading') {
       return (
@@ -144,18 +155,13 @@ export function PersonalAgentChat() {
     }
 
     if (sessionState.phase === 'provisioning') {
-      const provisioning: ChatMessage = {
-        id: 'provisioning',
-        role: 'system',
-        content: 'Myra is not set up yet. Complete onboarding to get started.',
-        createdAt: new Date(0).toISOString(),
-      };
       return (
         <ChatPanel
           agent={MYRA}
-          messages={[provisioning]}
+          messages={[]}
           onSend={() => undefined}
           inputDisabled
+          notice={setupNotice}
           dockState={dockState}
           onToggleDock={toggleDock}
           onClose={() => setOpen(false)}
@@ -164,19 +170,13 @@ export function PersonalAgentChat() {
     }
 
     if (sessionState.phase === 'error') {
-      const errorMsg: ChatMessage = {
-        id: 'error',
-        role: 'system',
-        content: sessionState.message,
-        createdAt: new Date(0).toISOString(),
-        status: 'failed',
-      };
       return (
         <ChatPanel
           agent={MYRA}
-          messages={[errorMsg]}
+          messages={[]}
           onSend={() => undefined}
           inputDisabled
+          notice={setupNotice}
           dockState={dockState}
           onToggleDock={toggleDock}
           onClose={() => setOpen(false)}
