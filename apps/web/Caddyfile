@@ -1,5 +1,9 @@
 # Railway injects PORT; default to 80 for local `docker run`.
+# HUB_URL must be set to the hub service origin (e.g. https://hub.example.com).
+# All /api/* requests are proxied to the hub so that same-origin cookies and
+# the Interchange SSE transport work correctly.
 :{$PORT:80} {
+	reverse_proxy /api/* {$HUB_URL}
 	root * /usr/share/caddy
 	encode gzip
 	# SPA fallback: unknown paths resolve to index.html for client-side routing.
