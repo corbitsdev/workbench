@@ -10,6 +10,7 @@ import Settings from './pages/Settings';
 import { OnboardingPage } from './pages/OnboardingPage';
 
 const WorkbenchPage = lazy(() => import('./pages/WorkbenchPage'));
+const CredentialSettingsPage = lazy(() => import('./pages/CredentialSettingsPage'));
 const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
 const PrincipalSettingsPage = lazy(() => import('./pages/PrincipalSettingsPage'));
 
@@ -50,6 +51,20 @@ export const router = createBrowserRouter([
           { index: true, element: <WorkbenchHome /> },
           { path: '/dashboard', element: <Dashboard /> },
           { path: '/settings', element: <Settings /> },
+          {
+            path: '/settings/credentials',
+            element: (
+              <Suspense
+                fallback={
+                  <div className="flex h-full items-center justify-center">
+                    <span className="text-[13px] text-text-3">Loading...</span>
+                  </div>
+                }
+              >
+                <CredentialSettingsPage />
+              </Suspense>
+            ),
+          },
           {
             path: '/settings/tenants/:tenantId',
             element: (

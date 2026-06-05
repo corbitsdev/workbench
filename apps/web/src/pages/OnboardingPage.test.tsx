@@ -14,7 +14,9 @@ mock.module('react-router', () => {
   };
 });
 
-const mockSetupMyraCredential = mock(() => Promise.resolve());
+const mockSetupMyraCredential = mock(() =>
+  Promise.resolve({ ok: true, credentialId: 'cred-1', launched: true })
+);
 
 mock.module('../lib/hub-api', () => ({
   getMe: mock(() => Promise.resolve({ userId: '', userName: '', personalTenantId: null, paInstanceId: null, provisioned: false })),

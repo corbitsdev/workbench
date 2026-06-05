@@ -21,7 +21,7 @@ function makeRequest(
       'Content-Type': 'application/json',
       'x-test-user-id': userId,
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    ...(body !== undefined && { body: JSON.stringify(body) }),
   });
 }
 
@@ -35,7 +35,11 @@ const mockGrantStore = {
   collectGrants: mock(() => Promise.resolve([])),
 };
 
-function buildApp(db: ReturnType<typeof makeMockDb>, userId = 'user-1') {
+function buildApp(
+  db: ReturnType<typeof makeMockDb>,
+  sessionService = mockSessionService,
+  userId = 'user-1'
+) {
   const parent = new Hono<{ Variables: { userId: string } }>();
   parent.use('*', async (c, next) => {
     c.set('userId', userId);
@@ -43,7 +47,7 @@ function buildApp(db: ReturnType<typeof makeMockDb>, userId = 'user-1') {
   });
   parent.route(
     '/',
-    createAgentProvisioningRouter(db as never, mockSessionService as never, mockGrantStore as never)
+    createAgentProvisioningRouter(db as never, sessionService as never, mockGrantStore as never)
   );
   return parent;
 }
@@ -93,16 +97,24 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
       },
     },
     select: mock(() => makeSelectChain([])),
-    insert: mock(() => ({
-      values: mock(() => ({
+    insert: mock(() => {
+      const onConflictChain = {
         returning: mock(() => Promise.resolve([])),
-        onConflictDoNothing: mock(() => Promise.resolve([])),
-      })),
-    })),
+      };
+      // biome-ignore lint/suspicious/noExplicitAny: test mock
+      const valuesChain: any = {
+        returning: mock(() => Promise.resolve([])),
+        onConflictDoNothing: mock(() => onConflictChain),
+      };
+      return { values: mock(() => valuesChain) };
+    }),
     update: mock(() => ({
       set: mock(() => ({
         where: mock(() => Promise.resolve()),
       })),
+    })),
+    delete: mock(() => ({
+      where: mock(() => Promise.resolve()),
     })),
     ...overrides,
   };
@@ -182,6 +194,7 @@ describe('GET /agents', () => {
       insert: mock(() => ({
         values: mock(() => ({ returning: mock(() => Promise.resolve([])) })),
       })),
+      delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
     };
 
     const app = buildApp(base);
@@ -259,8 +272,8 @@ describe('POST /agents', () => {
     const db = makeMockDb();
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
-    db.query.credential.findMany = mock(() =>
-      Promise.resolve([{ id: 'crd-1', tenantId: 'tenant-1' }])
+    db.query.credential.findFirst = mock(() =>
+      Promise.resolve({ id: 'crd-1', tenantId: 'tenant-1' })
     );
     db.query.agent.findFirst = mock(() => Promise.resolve(conflictingAgent));
     const app = buildApp(db);
@@ -270,14 +283,27 @@ describe('POST /agents', () => {
     expect(res.status).toBe(409);
   });
 
-  it('returns 201 and creates agent instance with grants', async () => {
+  it('returns 201 with launched:true and creates agent instance with grants', async () => {
     const stubAgent = {
       id: 'agt-1',
       name: 'Loop',
       tenantId: 'tenant-1',
       systemPrompt: VALID_BODY.systemPrompt,
     };
-    const stubCredential = { id: 'crd-1', tenantId: 'tenant-1', name: 'llm', secret: 'sk-test' };
+    const stubProvider = {
+      id: 'prov-1',
+      tenantId: 'tenant-1',
+      plugin: 'anthropic',
+      name: 'anthropic',
+      metadata: { baseURL: 'https://api.anthropic.com', model: 'claude-sonnet-4-6' },
+    };
+    const stubCredential = {
+      id: 'crd-1',
+      tenantId: 'tenant-1',
+      name: 'llm',
+      providerId: 'prov-1',
+      secret: 'enc:sk-test',
+    };
     const grantInserts: string[] = [];
 
     // biome-ignore lint/suspicious/noExplicitAny: test mock
@@ -295,7 +321,7 @@ describe('POST /agents', () => {
           findFirst: mock(() => Promise.resolve(stubCredential)),
           findMany: mock(() => Promise.resolve([stubCredential])),
         },
-        provider: { findFirst: mock(() => Promise.resolve(undefined)) },
+        provider: { findFirst: mock(() => Promise.resolve(stubProvider)) },
       },
       // biome-ignore lint/suspicious/noExplicitAny: test mock
       insert: mock((_table: any) => ({
@@ -309,6 +335,7 @@ describe('POST /agents', () => {
         }),
       })),
       update: mock(() => ({ set: mock(() => ({ where: mock(() => Promise.resolve()) })) })),
+      delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
     };
 
     const app = buildApp(base);
@@ -319,7 +346,73 @@ describe('POST /agents', () => {
     const json = await res.json();
     expect(json.agentName).toBe('Loop');
     expect(json.instanceId).toBeTruthy();
+    expect(json.launched).toBe(true);
     expect(grantInserts).toContain('credential:crd-1');
+  });
+
+  it('returns 201 with launched:false and launchError when session launch fails', async () => {
+    const stubAgent = {
+      id: 'agt-1',
+      name: 'Loop',
+      tenantId: 'tenant-1',
+      systemPrompt: VALID_BODY.systemPrompt,
+    };
+    const stubProvider = {
+      id: 'prov-1',
+      tenantId: 'tenant-1',
+      plugin: 'anthropic',
+      name: 'anthropic',
+      metadata: { baseURL: 'https://api.anthropic.com', model: 'claude-sonnet-4-6' },
+    };
+    const stubCredential = {
+      id: 'crd-1',
+      tenantId: 'tenant-1',
+      name: 'llm',
+      providerId: 'prov-1',
+      secret: 'enc:sk-test',
+    };
+
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    let base: any;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
+    base = {
+      transaction: txMock,
+      query: {
+        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
+        tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
+        agent: { findFirst: mock(() => Promise.resolve(stubAgent)) },
+        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
+        credential: {
+          findFirst: mock(() => Promise.resolve(stubCredential)),
+          findMany: mock(() => Promise.resolve([stubCredential])),
+        },
+        provider: { findFirst: mock(() => Promise.resolve(stubProvider)) },
+      },
+      insert: mock(() => ({
+        values: mock(() => ({
+          returning: mock(() => Promise.resolve([])),
+          onConflictDoNothing: mock(() => Promise.resolve([])),
+        })),
+      })),
+      update: mock(() => ({ set: mock(() => ({ where: mock(() => Promise.resolve()) })) })),
+      delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
+    };
+
+    const failingService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.reject(new Error('sidecar not connected'))),
+    };
+
+    const app = buildApp(base, failingService);
+    const res = await app.fetch(
+      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
+    );
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.launched).toBe(false);
+    expect(typeof json.launchError).toBe('string');
+    expect(json.launchError).toContain('sidecar not connected');
   });
 
   it('is idempotent — second call returns the same instance', async () => {
@@ -368,6 +461,7 @@ describe('POST /agents', () => {
         })),
       })),
       update: mock(() => ({ set: mock(() => ({ where: mock(() => Promise.resolve()) })) })),
+      delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
     };
 
     const app = buildApp(base);
@@ -399,7 +493,7 @@ describe('POST /myra/credential', () => {
   };
   const savedProvider = {
     id: 'prov-1',
-    name: 'openai-compatible',
+    name: 'anthropic',
     plugin: 'anthropic',
     tenantId: 'tenant-personal',
   };
@@ -435,7 +529,7 @@ describe('POST /myra/credential', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 200 and creates provider and credential for anthropic', async () => {
+  it('returns 200 with credentialId and launched:true for anthropic', async () => {
     const db = makeMockDb();
     db.query.tenant.findFirst = mock(() => Promise.resolve(personalTenant));
     db.query.principal.findFirst = mock(() => Promise.resolve(callerPrincipal));
@@ -451,6 +545,7 @@ describe('POST /myra/credential', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.ok).toBe(true);
+    expect(typeof json.credentialId).toBe('string');
   });
 
   it('returns 200 for openai-compatible provider with baseURL', async () => {
@@ -485,5 +580,281 @@ describe('POST /myra/credential', () => {
       })
     );
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── POST /tenants/:tenantId/credentials ──────────────────────────
+
+describe('POST /tenants/:tenantId/credentials', () => {
+  const CRED_BODY = {
+    provider: 'anthropic',
+    apiKey: 'sk-test',
+    model: 'claude-sonnet-4-6',
+    name: 'My Anthropic Key',
+  };
+
+  it('returns 400 when body is missing required fields', async () => {
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/credentials', {
+        method: 'POST',
+        body: { provider: 'anthropic', apiKey: 'sk-test' },
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 403 when caller has no principal in the tenant', async () => {
+    const app = buildApp(makeMockDb());
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/credentials', {
+        method: 'POST',
+        body: CRED_BODY,
+      })
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when tenant not found', async () => {
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(undefined));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/credentials', {
+        method: 'POST',
+        body: CRED_BODY,
+      })
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 201 with credentialId and providerId on success', async () => {
+    const savedProvider = {
+      id: 'prov-1',
+      name: 'anthropic',
+      plugin: 'anthropic',
+      tenantId: 'tenant-1',
+    };
+    const savedCredential = {
+      id: 'cred-new',
+      name: 'My Anthropic Key',
+      secret: 'enc:v1:...',
+      tenantId: 'tenant-1',
+    };
+
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.provider.findFirst = mock(() => Promise.resolve(savedProvider));
+    // insert chain: .values().onConflictDoNothing().returning() → [savedCredential] (success)
+    db.insert = mock(() => ({
+      values: mock(() => ({
+        // biome-ignore lint/suspicious/noExplicitAny: test mock
+        onConflictDoNothing: mock((): any => ({
+          returning: mock(() => Promise.resolve([savedCredential])),
+        })),
+      })),
+    }));
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/credentials', {
+        method: 'POST',
+        body: CRED_BODY,
+      })
+    );
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.credentialId).toBe('cred-new');
+    expect(json.providerId).toBe('prov-1');
+  });
+
+  it('returns 409 when a credential with the same name already exists', async () => {
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.provider.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'prov-1',
+        name: 'anthropic',
+        plugin: 'anthropic',
+        tenantId: 'tenant-1',
+      })
+    );
+    // insert chain: .values().onConflictDoNothing().returning() → [] (conflict)
+    db.insert = mock(() => ({
+      values: mock(() => ({
+        // biome-ignore lint/suspicious/noExplicitAny: test mock
+        onConflictDoNothing: mock((): any => ({
+          returning: mock(() => Promise.resolve([])),
+        })),
+      })),
+    }));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/credentials', {
+        method: 'POST',
+        body: CRED_BODY,
+      })
+    );
+    expect(res.status).toBe(409);
+  });
+});
+
+// ─── POST /instances/:instanceId/sessions ────────────────────────
+
+describe('POST /instances/:instanceId/sessions', () => {
+  const INSTANCE = {
+    id: 'ins-1',
+    agentId: 'agt-1',
+    tenantId: 'tenant-1',
+    address: 'ins-1@tenant-1.localhost',
+    status: 'deployed',
+    principalId: 'prn-agent-1',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const AGENT_ROW = {
+    id: 'agt-1',
+    name: 'Loop',
+    tenantId: 'tenant-1',
+    systemPrompt: 'You are Loop.',
+  };
+
+  it('returns 400 when body is invalid', async () => {
+    const app = buildApp(makeMockDb());
+    const res = await app.fetch(
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+        body: {},
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when instance not found', async () => {
+    const app = buildApp(makeMockDb());
+    const res = await app.fetch(
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+        body: { credentialIds: ['crd-1'] },
+      })
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 403 when caller has no principal in the instance tenant', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+    db.query.principal.findFirst = mock(() => Promise.resolve(undefined));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+        body: { credentialIds: ['crd-1'] },
+      })
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 422 when credentials not found in tenant', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+    db.query.credential.findMany = mock(() => Promise.resolve([]));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+        body: { credentialIds: ['crd-missing'] },
+      })
+    );
+    expect(res.status).toBe(422);
+  });
+
+  it('returns 200 with launched:true on successful session start', async () => {
+    const stubProvider = {
+      id: 'prov-1',
+      tenantId: 'tenant-1',
+      plugin: 'anthropic',
+      name: 'anthropic',
+      metadata: { baseURL: 'https://api.anthropic.com', model: 'claude-sonnet-4-6' },
+    };
+    const cred = {
+      id: 'crd-1',
+      tenantId: 'tenant-1',
+      name: 'llm',
+      providerId: 'prov-1',
+      secret: 'enc:sk-test',
+    };
+
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+    db.query.credential.findFirst = mock(() => Promise.resolve(cred));
+    db.query.credential.findMany = mock(() => Promise.resolve([cred]));
+    db.query.provider.findFirst = mock(() => Promise.resolve(stubProvider));
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+        body: { credentialIds: ['crd-1'] },
+      })
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.launched).toBe(true);
+  });
+
+  it('returns 200 with launched:false and launchError when session launch fails', async () => {
+    const stubProvider = {
+      id: 'prov-1',
+      tenantId: 'tenant-1',
+      plugin: 'anthropic',
+      name: 'anthropic',
+      metadata: { baseURL: 'https://api.anthropic.com', model: 'claude-sonnet-4-6' },
+    };
+    const cred = {
+      id: 'crd-1',
+      tenantId: 'tenant-1',
+      name: 'llm',
+      providerId: 'prov-1',
+      secret: 'enc:sk-test',
+    };
+
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+    db.query.credential.findFirst = mock(() => Promise.resolve(cred));
+    db.query.credential.findMany = mock(() => Promise.resolve([cred]));
+    db.query.provider.findFirst = mock(() => Promise.resolve(stubProvider));
+
+    const failingService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.reject(new Error('sidecar offline'))),
+    };
+
+    const app = buildApp(db, failingService);
+    const res = await app.fetch(
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+        body: { credentialIds: ['crd-1'] },
+      })
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.launched).toBe(false);
+    expect(json.launchError).toContain('sidecar offline');
   });
 });

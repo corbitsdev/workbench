@@ -16,6 +16,9 @@ const log = getLogger(['api', 'agents']);
 
 const { agent, agentInstance, agentSession, credential, grant, principal, tenant } = intxSchema;
 
+const LAUNCH_RETRY_DELAY_MS = 1_000;
+const MAX_LAUNCH_ATTEMPTS = 3;
+
 // ─── Request shapes ────────────────────────────────────────────────
 
 const LLMProviderType = type('"anthropic" | "openai" | "google-genai" | "openai-compatible"');
@@ -43,6 +46,18 @@ const ProvisionAgentBody = type({
 });
 
 type ProvisionAgentBodyType = typeof ProvisionAgentBody.infer;
+
+const CreateTenantCredentialBody = type({
+  provider: LLMProviderType,
+  apiKey: 'string',
+  model: 'string',
+  name: 'string',
+  'baseURL?': 'string',
+});
+
+const LaunchInstanceSessionBody = type({
+  credentialIds: 'string[]>=1',
+});
 
 // ─── Route ────────────────────────────────────────────────────────
 
@@ -179,6 +194,9 @@ export function createAgentProvisioningRouter(
 
     const { instanceId, agentId, instancePrincipalId, isNew } = txResult;
 
+    let launched = false;
+    let launchError: string | undefined;
+
     if (isNew) {
       try {
         await launchAgentSession(db, sessionService, grantStore, {
@@ -191,18 +209,31 @@ export function createAgentProvisioningRouter(
           credentialIds: body.credentialIds,
           now,
         });
+        launched = true;
       } catch (err) {
+        launchError = err instanceof Error ? err.message : String(err);
         log.error('Failed to launch agent session after provisioning', {
           instanceId,
-          error: err instanceof Error ? err.message : String(err),
+          error: launchError,
         });
       }
     }
 
-    return c.json({ instanceId, agentId, agentName: body.name, tenantId: body.tenantId }, 201);
+    return c.json(
+      {
+        instanceId,
+        agentId,
+        agentName: body.name,
+        tenantId: body.tenantId,
+        launched,
+        ...(launchError !== undefined ? { launchError } : {}),
+      },
+      201
+    );
   });
 
-  // Configure or update the LLM credential for the caller's Myra instance
+  // Configure or update the LLM credential for the caller's Myra instance.
+  // Uses the general credential flow internally; the Myra instance is auto-granted and launched.
   app.post('/myra/credential', async (c) => {
     const userId = c.get('userId');
     const raw = await c.req.json().catch(() => null);
@@ -244,16 +275,15 @@ export function createAgentProvisioningRouter(
 
     const now = new Date();
 
-    let credentialId: string;
-    let providerId: string;
+    let credentialId!: string;
 
     await db.transaction(async (rawTx) => {
       const tx = rawTx as unknown as DB['db'];
 
-      providerId = await ensureProvider(
+      const providerId = await ensureProvider(
         tx,
         personalTenant.id,
-        'openai-compatible',
+        parsed.provider,
         parsed.provider,
         baseURL,
         parsed.model,
@@ -278,6 +308,9 @@ export function createAgentProvisioningRouter(
       ),
     });
 
+    let launched = false;
+    let launchError: string | undefined;
+
     if (myraInstance) {
       const myraAgentRow = await db.query.agent.findFirst({
         where: eq(agent.id, myraInstance.agentId),
@@ -289,7 +322,7 @@ export function createAgentProvisioningRouter(
           db,
           personalTenant.id,
           myraInstance.principalId,
-          [credentialId!],
+          [credentialId],
           now
         );
         try {
@@ -300,20 +333,225 @@ export function createAgentProvisioningRouter(
             tenantId: personalTenant.id,
             tenantDomain: personalTenant.domain,
             systemPrompt,
-            credentialIds: [credentialId!],
+            credentialIds: [credentialId],
             now,
           });
+          launched = true;
         } catch (err) {
+          launchError = err instanceof Error ? err.message : String(err);
           log.error('Failed to launch Myra session after credential setup', {
             userId,
-            error: err instanceof Error ? err.message : String(err),
+            error: launchError,
           });
         }
       }
     }
 
     log.info('Myra credential configured for user {userId}', { userId });
-    return c.json({ ok: true });
+    return c.json({
+      ok: true,
+      credentialId,
+      launched,
+      ...(launchError !== undefined ? { launchError } : {}),
+    });
+  });
+
+  // Create a named LLM credential (provider + encrypted secret) for a tenant.
+  app.post('/tenants/:tenantId/credentials', async (c) => {
+    const userId = c.get('userId');
+    const tenantId = c.req.param('tenantId');
+
+    const raw = await c.req.json().catch(() => null);
+    if (!raw) {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const parsed = CreateTenantCredentialBody(raw);
+    if (parsed instanceof type.errors) {
+      return c.json({ error: parsed.summary }, 400);
+    }
+
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, tenantId),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const tenantRow = await db.query.tenant.findFirst({
+      where: eq(tenant.id, tenantId),
+    });
+    if (!tenantRow) {
+      return c.json({ error: 'Tenant not found' }, 404);
+    }
+
+    const baseURL =
+      parsed.provider === 'openai-compatible'
+        ? (parsed.baseURL ?? '')
+        : PROVIDER_BASE_URLS[parsed.provider];
+
+    const now = new Date();
+
+    let credentialId!: string;
+    let providerId!: string;
+
+    try {
+      await db.transaction(async (rawTx) => {
+        const tx = rawTx as unknown as DB['db'];
+        // ensureProvider: upsert semantics needed because Interchange's POST /providers returns
+        // 409 on duplicate — we need idempotent get-or-create for repeated provisioning flows.
+        providerId = await ensureProvider(
+          tx,
+          tenantId,
+          parsed.provider,
+          parsed.provider,
+          baseURL,
+          parsed.model,
+          now
+        );
+
+        // Encrypt secret before storage — Interchange stores plaintext; encryption is a workbench
+        // invariant applied at the write boundary.
+        const encryptedSecret = encryptSecret(getConfig().credentialKeys, tenantId, parsed.apiKey);
+
+        const [inserted] = await tx
+          .insert(credential)
+          .values({
+            id: generateId('credential'),
+            tenantId,
+            providerId,
+            principalId: callerPrincipal.id,
+            name: parsed.name,
+            type: 'api_key',
+            secret: encryptedSecret,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoNothing()
+          .returning();
+
+        if (!inserted) {
+          // Conflict detected atomically by empty .returning() — unique(tenantId, name) violated.
+          throw Object.assign(
+            new Error(`Credential named '${parsed.name}' already exists in this tenant`),
+            { status: 409 }
+          );
+        }
+
+        credentialId = inserted.id;
+
+        // Grant the creating principal manage access so Interchange's DELETE/PATCH endpoints work.
+        await tx.insert(grant).values({
+          id: generateId('grant'),
+          tenantId,
+          principalId: callerPrincipal.id,
+          resource: `credential:${credentialId}`,
+          action: '*',
+          effect: 'allow',
+          origin: 'creator',
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+    } catch (err) {
+      const e = err as Error & { status?: number };
+      if (e.status === 409) return c.json({ error: e.message }, 409);
+      throw err;
+    }
+
+    return c.json({ credentialId, providerId }, 201);
+  });
+
+  // Grant credentials to an agent instance and launch (or relaunch) its session.
+  app.post('/instances/:instanceId/sessions', async (c) => {
+    const userId = c.get('userId');
+    const instanceId = c.req.param('instanceId');
+
+    const raw = await c.req.json().catch(() => null);
+    if (!raw) {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const parsed = LaunchInstanceSessionBody(raw);
+    if (parsed instanceof type.errors) {
+      return c.json({ error: parsed.summary }, 400);
+    }
+
+    const instance = await db.query.agentInstance.findFirst({
+      where: eq(agentInstance.id, instanceId),
+    });
+    if (!instance) {
+      return c.json({ error: 'Instance not found' }, 404);
+    }
+
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, instance.tenantId),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const tenantRow = await db.query.tenant.findFirst({
+      where: eq(tenant.id, instance.tenantId),
+    });
+    if (!tenantRow?.domain) {
+      return c.json({ error: 'Tenant configuration missing' }, 500);
+    }
+
+    const agentRow = await db.query.agent.findFirst({
+      where: eq(agent.id, instance.agentId),
+    });
+    if (!agentRow?.systemPrompt) {
+      return c.json({ error: 'Agent configuration missing' }, 500);
+    }
+
+    const credErr = await verifyCredentialsInTenant(db, instance.tenantId, parsed.credentialIds);
+    if (credErr) {
+      return c.json({ error: credErr }, 422);
+    }
+
+    const now = new Date();
+
+    await grantCredentialsToInstance(
+      db,
+      instance.tenantId,
+      instance.principalId,
+      parsed.credentialIds,
+      now
+    );
+
+    let launched = false;
+    let launchError: string | undefined;
+
+    try {
+      await launchAgentSession(db, sessionService, grantStore, {
+        agentId: instance.agentId,
+        instanceId: instance.id,
+        instancePrincipalId: instance.principalId,
+        tenantId: instance.tenantId,
+        tenantDomain: tenantRow.domain,
+        systemPrompt: agentRow.systemPrompt,
+        credentialIds: parsed.credentialIds,
+        now,
+      });
+      launched = true;
+    } catch (err) {
+      launchError = err instanceof Error ? err.message : String(err);
+      log.error('Failed to launch agent session', { instanceId, error: launchError });
+    }
+
+    return c.json({
+      launched,
+      ...(launchError !== undefined ? { launchError } : {}),
+    });
   });
 
   return app;
@@ -505,18 +743,15 @@ async function ensureAgentInstance(
   return { instanceId, agentId, instancePrincipalId, address, isNew: true };
 }
 
+// Uses Interchange's resolveCredentialById which walks the tenant ancestor chain.
 async function verifyCredentialsInTenant(
   db: DB['db'],
   tenantId: string,
   credentialIds: string[]
 ): Promise<string | null> {
-  const rows = await db.query.credential.findMany({
-    where: and(eq(credential.tenantId, tenantId), inArray(credential.id, credentialIds)),
-  });
-  if (rows.length !== credentialIds.length) {
-    const found = new Set(rows.map((r) => r.id));
-    const missing = credentialIds.filter((id) => !found.has(id));
-    return `Credentials not found in tenant: ${missing.join(', ')}`;
+  for (const id of credentialIds) {
+    const row = await resolveCredentialById(db, tenantId, id);
+    if (!row) return `Credential not found in tenant or its ancestors: ${id}`;
   }
   return null;
 }
@@ -622,7 +857,7 @@ async function launchAgentSession(
 
   const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
 
-  await sessionService.launchSession({
+  const launchConfig = {
     agentAddress: address,
     agentId,
     instanceId,
@@ -639,7 +874,21 @@ async function launchAgentSession(
       defaultSource,
     },
     deployContent: { systemPrompt },
-  });
+  };
 
-  log.info('Agent session launched', { instanceId, agentId, tenantId });
+  let lastError: unknown;
+  for (let attempt = 0; attempt < MAX_LAUNCH_ATTEMPTS; attempt++) {
+    try {
+      await sessionService.launchSession(launchConfig);
+      log.info('Agent session launched', { instanceId, agentId, tenantId });
+      return;
+    } catch (err) {
+      lastError = err;
+      if (attempt < MAX_LAUNCH_ATTEMPTS - 1) {
+        await new Promise<void>((resolve) => setTimeout(resolve, LAUNCH_RETRY_DELAY_MS));
+      }
+    }
+  }
+
+  throw lastError;
 }

@@ -75,7 +75,7 @@ export function createMockHubApi(overrides?: Record<string, any>) {
       Promise.resolve()
     ),
     provisionAgent: mock<(input: ProvisionAgentInput) => Promise<ProvisionAgentResponse>>(() =>
-      Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })
+      Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '', launched: false })
     ),
   };
 

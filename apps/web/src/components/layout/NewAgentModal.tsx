@@ -40,11 +40,6 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
 
   const { principals, credentialsByTenant, isLoading: credentialsLoading } = useCredentials();
 
-  const workspaceCredentials =
-    workspaceTenantId !== null
-      ? { [workspaceTenantId]: credentialsByTenant[workspaceTenantId] ?? [] }
-      : {};
-
   const reset = () => {
     setName('');
     setSystemPrompt('');
@@ -121,6 +116,12 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
         systemPrompt: trimmedPrompt,
         credentialIds: selectedCredentialIds,
       });
+      if (!response.launched && response.launchError) {
+        setError(`Agent created but failed to start: ${response.launchError}`);
+        setLoading(false);
+        onCreated(response);
+        return;
+      }
       reset();
       onCreated(response);
     } catch (err) {
@@ -129,8 +130,7 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
     }
   };
 
-  const hasWorkspaceCredentials =
-    workspaceTenantId !== null && (credentialsByTenant[workspaceTenantId] ?? []).length > 0;
+  const hasAvailableCredentials = Object.values(credentialsByTenant).some((c) => c.length > 0);
 
   return (
     <AnimatePresence>
@@ -242,17 +242,20 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
                   <p className="text-[13px] text-text-2">
                     Create a workbench first before deploying agents.
                   </p>
-                ) : !hasWorkspaceCredentials && !credentialsLoading ? (
+                ) : !hasAvailableCredentials && !credentialsLoading ? (
                   <p className="text-[13px] text-text-2">
-                    No credentials found for this workspace.{' '}
-                    <a href="/settings" className="text-orange underline-offset-2 hover:underline">
+                    No credentials found.{' '}
+                    <a
+                      href="/settings/credentials"
+                      className="text-orange underline-offset-2 hover:underline"
+                    >
                       Add credentials in Settings.
                     </a>
                   </p>
                 ) : (
                   <CredentialPicker
                     principals={principals}
-                    credentialsByTenant={workspaceCredentials}
+                    credentialsByTenant={credentialsByTenant}
                     selectedIds={selectedCredentialIds}
                     onSelect={setSelectedCredentialIds}
                     isLoading={credentialsLoading}

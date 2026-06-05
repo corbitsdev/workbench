@@ -66,7 +66,13 @@ export function OnboardingPage() {
         provider === 'openai-compatible'
           ? { provider: 'openai-compatible', apiKey, model, baseURL: baseURL.trim() }
           : { provider, apiKey, model };
-      await setupMyraCredential(input);
+      const result = await setupMyraCredential(input);
+      if (!result.launched && result.launchError) {
+        setError(
+          `Credential saved, but Myra failed to start: ${result.launchError}. You can try again from the dashboard.`
+        );
+        return;
+      }
       void navigate('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save credential. Please try again.');

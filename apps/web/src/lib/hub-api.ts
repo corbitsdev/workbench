@@ -200,8 +200,63 @@ export type SetupMyraCredentialInput =
   | { provider: 'anthropic' | 'openai' | 'google-genai'; apiKey: string; model: string }
   | { provider: 'openai-compatible'; apiKey: string; model: string; baseURL: string };
 
-export async function setupMyraCredential(input: SetupMyraCredentialInput): Promise<void> {
-  await hubFetch<{ ok: boolean }>('POST', 'v1/myra/credential', input);
+export type SetupMyraCredentialResponse = {
+  ok: boolean;
+  credentialId: string;
+  launched: boolean;
+  launchError?: string;
+};
+
+export async function setupMyraCredential(
+  input: SetupMyraCredentialInput
+): Promise<SetupMyraCredentialResponse> {
+  return hubFetch<SetupMyraCredentialResponse>('POST', 'v1/myra/credential', input);
+}
+
+export type CreateTenantCredentialInput =
+  | {
+      provider: 'anthropic' | 'openai' | 'google-genai';
+      name: string;
+      apiKey: string;
+      model: string;
+    }
+  | { provider: 'openai-compatible'; name: string; apiKey: string; model: string; baseURL: string };
+
+export type CreateTenantCredentialResponse = {
+  credentialId: string;
+  providerId: string;
+};
+
+export async function createTenantCredential(
+  tenantId: string,
+  input: CreateTenantCredentialInput
+): Promise<CreateTenantCredentialResponse> {
+  return hubFetch<CreateTenantCredentialResponse>(
+    'POST',
+    `v1/tenants/${tenantId}/credentials`,
+    input
+  );
+}
+
+export async function deleteTenantCredential(
+  tenantId: string,
+  credentialId: string
+): Promise<void> {
+  await hubFetch<void>('DELETE', `tenants/${tenantId}/credentials/${credentialId}`);
+}
+
+export type LaunchInstanceSessionResponse = {
+  launched: boolean;
+  launchError?: string;
+};
+
+export async function launchInstanceSession(
+  instanceId: string,
+  credentialIds: string[]
+): Promise<LaunchInstanceSessionResponse> {
+  return hubFetch<LaunchInstanceSessionResponse>('POST', `v1/instances/${instanceId}/sessions`, {
+    credentialIds,
+  });
 }
 
 export type ProvisionAgentInput = {
@@ -216,6 +271,8 @@ export type ProvisionAgentResponse = {
   agentId: string;
   agentName: string;
   tenantId: string;
+  launched: boolean;
+  launchError?: string;
 };
 
 export async function provisionAgent(input: ProvisionAgentInput): Promise<ProvisionAgentResponse> {
