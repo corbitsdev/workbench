@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCredentials } from '../hooks/use-credentials';
 import {
@@ -122,6 +123,14 @@ export default function CredentialSettingsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-2xl px-6 py-8">
+        <Link
+          to="/settings"
+          className="mb-4 flex items-center gap-1 text-[12px] text-text-3 hover:text-text-2"
+        >
+          <span>←</span>
+          <span>Settings</span>
+        </Link>
+
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-[18px] font-semibold text-text">Credentials</h1>
@@ -133,7 +142,7 @@ export default function CredentialSettingsPage() {
             <button
               type="button"
               onClick={handleShowForm}
-              className="rounded-[8px] bg-orange px-3 py-1.5 text-[13px] font-medium text-text hover:bg-orange-deep"
+              className="rounded-[8px] bg-orange px-3 py-1.5 text-[13px] font-medium text-white hover:bg-orange-deep"
             >
               Add credential
             </button>
@@ -272,7 +281,7 @@ export default function CredentialSettingsPage() {
               <button
                 type="submit"
                 disabled={saving || !name.trim() || !apiKey.trim() || !model.trim()}
-                className="rounded-[8px] bg-orange px-3 py-1.5 text-[13px] font-medium text-text hover:bg-orange-deep disabled:opacity-50"
+                className="rounded-[8px] bg-orange px-3 py-1.5 text-[13px] font-medium text-white hover:bg-orange-deep disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>
@@ -315,7 +324,7 @@ export default function CredentialSettingsPage() {
                         {tenantName(c.tenantId)}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-text-2">{c.providerId}</td>
+                    <td className="px-4 py-2 capitalize text-text-2">{c.providerId.replace(/-/g, ' ')}</td>
                     <td className="px-4 py-2 capitalize text-text-2">{c.status}</td>
                     <td className="px-4 py-2 text-right">
                       <button

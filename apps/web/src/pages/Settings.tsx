@@ -97,7 +97,9 @@ export default function Settings() {
             <p className="text-[14px] font-medium text-text-1">Credentials</p>
             <p className="mt-0.5 text-[12px] text-text-3">Manage LLM API keys for your agents.</p>
           </div>
-          <span className="text-[18px] text-text-3">›</span>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-text-3">
+            <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </Link>
       </div>
       <SettingsPage
