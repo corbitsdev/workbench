@@ -15,7 +15,7 @@ ARG VITE_API_BASE_URL
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 WORKDIR /app/apps/web
-RUN bun run build
+RUN bunx vite build
 
 FROM caddy:2.9-alpine
 COPY --from=builder /app/apps/web/dist /usr/share/caddy
