@@ -33,7 +33,7 @@ function useProvisioningGuard(): ProvisioningState {
     async function check() {
       try {
         const me = await getMe();
-        setState(me.provisioned ? { status: 'ready' } : { status: 'needs-onboarding' });
+        setState(me.provisioned && me.paInstanceId ? { status: 'ready' } : { status: 'needs-onboarding' });
         clear();
       } catch {
         // Keep polling — transient errors should not break the guard

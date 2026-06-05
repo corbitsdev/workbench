@@ -1,13 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { useQueryClient } from '@tanstack/react-query';
-import { useCredentials } from '../hooks/use-credentials';
-import {
-  createTenantCredential,
-  deleteTenantCredential,
-  type LLMProviderType,
-  type CreateTenantCredentialInput,
-} from '../lib/hub-api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { getMyPrincipals, listEnrichedCredentials, createTenantCredential, deleteTenantCredential } from '../lib/hub-api';
+import type { LLMProviderType, CreateTenantCredentialInput, EnrichedCredential } from '../lib/hub-api';
 
 const ANTHROPIC_MODELS = [
   { value: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
@@ -27,6 +22,13 @@ const GEMINI_MODELS = [
   { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
 ];
 
+const PROVIDER_LABELS: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  'google-genai': 'Google Gemini',
+  'openai-compatible': 'OpenAI-compatible',
+};
+
 function modelListForProvider(p: LLMProviderType) {
   if (p === 'anthropic') return ANTHROPIC_MODELS;
   if (p === 'openai') return OPENAI_MODELS;
@@ -34,13 +36,35 @@ function modelListForProvider(p: LLMProviderType) {
   return [];
 }
 
+function providerLabel(plugin: string): string {
+  return PROVIDER_LABELS[plugin] ?? plugin;
+}
+
 const INPUT_CLASS =
   'w-full rounded-[8px] border border-border bg-bg px-3 py-2 text-[13px] text-text outline-none placeholder:text-text-3 focus:border-orange';
 const LABEL_CLASS = 'mb-1 block text-[12px] font-medium text-text-2';
 
 export default function CredentialSettingsPage() {
-  const { principals, credentialsByTenant, isLoading } = useCredentials();
   const queryClient = useQueryClient();
+
+  const principalsQuery = useQuery({
+    queryKey: ['me', 'principals'],
+    queryFn: () => getMyPrincipals(),
+  });
+  const principals = principalsQuery.data ?? [];
+  const tenantIds = [...new Set(principals.map((p) => p.tenantId))];
+
+  const credentialsQuery = useQuery<EnrichedCredential[]>({
+    queryKey: ['credentials', 'enriched', tenantIds],
+    queryFn: async () => {
+      const results = await Promise.all(tenantIds.map((id) => listEnrichedCredentials(id)));
+      return results.flat();
+    },
+    enabled: tenantIds.length > 0,
+  });
+
+  const allCredentials = credentialsQuery.data ?? [];
+  const isLoading = principalsQuery.isLoading || credentialsQuery.isLoading;
 
   const [showForm, setShowForm] = useState(false);
   const [formTenantId, setFormTenantId] = useState('');
@@ -52,8 +76,6 @@ export default function CredentialSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const tenantIds = [...new Set(principals.map((p) => p.tenantId))];
 
   const tenantName = (tenantId: string) => {
     const p = principals.find((pr) => pr.tenantId === tenantId);
@@ -107,22 +129,16 @@ export default function CredentialSettingsPage() {
     try {
       await deleteTenantCredential(tenantId, credentialId);
       await queryClient.invalidateQueries({ queryKey: ['credentials'] });
-    } catch {
-      // Leave deletingId set only during the operation
     } finally {
       setDeletingId(null);
     }
   };
 
-  const allCredentials = tenantIds.flatMap((tenantId) =>
-    (credentialsByTenant[tenantId] ?? []).map((c) => ({ ...c, tenantId }))
-  );
-
   const modelOptions = modelListForProvider(provider);
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-6 py-8">
+      <div className="mx-auto max-w-4xl px-6 py-8">
         <Link
           to="/settings"
           className="mb-4 flex items-center gap-1 text-[12px] text-text-3 hover:text-text-2"
@@ -311,6 +327,7 @@ export default function CredentialSettingsPage() {
                   <th className="px-4 py-2 text-left font-medium text-text-3">Name</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Tenant</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Provider</th>
+                  <th className="px-4 py-2 text-left font-medium text-text-3">Agents</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Status</th>
                   <th className="px-4 py-2" />
                 </tr>
@@ -318,15 +335,22 @@ export default function CredentialSettingsPage() {
               <tbody>
                 {allCredentials.map((c) => (
                   <tr key={c.id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-2 text-text">{c.name}</td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-3 font-medium text-text">{c.name}</td>
+                    <td className="px-4 py-3">
                       <span className="rounded-[4px] bg-surface px-1.5 py-0.5 text-[11px] text-text-3 ring-1 ring-border">
                         {tenantName(c.tenantId)}
                       </span>
                     </td>
-                    <td className="px-4 py-2 capitalize text-text-2">{c.providerId.replace(/-/g, ' ')}</td>
-                    <td className="px-4 py-2 capitalize text-text-2">{c.status}</td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-4 py-3 text-text-2">{providerLabel(c.providerPlugin)}</td>
+                    <td className="px-4 py-3 text-text-2">
+                      {c.agentCount === 0 ? (
+                        <span className="text-text-3">None</span>
+                      ) : (
+                        `${c.agentCount} agent${c.agentCount === 1 ? '' : 's'}`
+                      )}
+                    </td>
+                    <td className="px-4 py-3 capitalize text-text-2">{c.status}</td>
+                    <td className="px-4 py-3 text-right">
                       <button
                         type="button"
                         disabled={deletingId === c.id}
