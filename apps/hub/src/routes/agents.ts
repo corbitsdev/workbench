@@ -9,8 +9,17 @@ import { PERSONAL_AGENT_DEPLOY_PROMPT } from '../lib/tenant-provisioning';
 
 const log = getLogger(['api', 'agents']);
 
-const { agent, agentInstance, credential, provider, principal, tenant, principalRole, role } =
-  intxSchema;
+const {
+  agent,
+  agentInstance,
+  credential,
+  grant,
+  provider,
+  principal,
+  tenant,
+  principalRole,
+  role,
+} = intxSchema;
 
 // ─── Request shapes ────────────────────────────────────────────────
 
@@ -24,8 +33,7 @@ const ProvisionOatBody = type({
   type: '"oat"',
   scope: '"workspace"',
   tenantId: 'string',
-  granolaApiKey: 'string',
-  llm: LLMProviderInput,
+  credentialIds: 'string[]>=1',
 });
 
 const ProvisionMyraBody = type({
@@ -137,7 +145,10 @@ export function createAgentProvisioningRouter(
       // Workspace agents require owner or admin role
       const isAdmin = await callerHasAdminRole(db, creatorPrincipal.id);
       if (!isAdmin) {
-        return c.json({ error: 'Only workspace owners and admins can provision workspace agents' }, 403);
+        return c.json(
+          { error: 'Only workspace owners and admins can provision workspace agents' },
+          403
+        );
       }
       const result = await provisionOat(db, body, creatorPrincipal.id, tenantRow.domain, now);
       return c.json(result, 201);
@@ -238,7 +249,7 @@ async function ensureAgentInstance(
     creatorPrincipalId: string;
     now: Date;
   }
-): Promise<{ instanceId: string; agentId: string }> {
+): Promise<{ instanceId: string; agentId: string; instancePrincipalId: string }> {
   const {
     tenantId,
     tenantDomain,
@@ -279,7 +290,11 @@ async function ensureAgentInstance(
     ),
   });
   if (existingInstance) {
-    return { instanceId: existingInstance.id, agentId };
+    return {
+      instanceId: existingInstance.id,
+      agentId,
+      instancePrincipalId: existingInstance.principalId,
+    };
   }
 
   const instancePrincipalId = generateId('principal');
@@ -308,11 +323,49 @@ async function ensureAgentInstance(
   });
 
   log.info('Agent instance provisioned', { agentName, tenantId, instanceId });
-  return { instanceId, agentId };
+  return { instanceId, agentId, instancePrincipalId };
 }
 
 const OAT_DEPLOY_PROMPT =
   'You are Oat, a shared workspace agent that helps analyze customer calls and generate GTM collateral. Be concise, structured, and professional.';
+
+async function verifyCredentialsInTenant(
+  db: DB['db'],
+  tenantId: string,
+  credentialIds: string[]
+): Promise<void> {
+  const rows = await db.query.credential.findMany({
+    where: and(eq(credential.tenantId, tenantId), inArray(credential.id, credentialIds)),
+  });
+  if (rows.length !== credentialIds.length) {
+    throw new Error('One or more credentials not found in tenant');
+  }
+}
+
+async function grantCredentialsToInstance(
+  db: DB['db'],
+  tenantId: string,
+  instancePrincipalId: string,
+  credentialIds: string[],
+  now: Date
+): Promise<void> {
+  for (const credentialId of credentialIds) {
+    await db
+      .insert(grant)
+      .values({
+        id: generateId('grant'),
+        tenantId,
+        principalId: instancePrincipalId,
+        resource: `credential:${credentialId}`,
+        action: '*',
+        effect: 'allow',
+        origin: 'creator',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing();
+  }
+}
 
 async function provisionOat(
   db: DB['db'],
@@ -321,32 +374,13 @@ async function provisionOat(
   tenantDomain: string,
   now: Date
 ) {
-  const { tenantId, granolaApiKey, llm } = body;
+  const { tenantId, credentialIds } = body;
 
-  return db.transaction(async (tx) => {
-    const granolaProviderId = await ensureProvider(
-      tx,
-      tenantId,
-      'granola',
-      'granola',
-      'https://api.granola.so',
-      '',
-      now
-    );
-    await ensureCredential(tx, tenantId, 'granola', granolaApiKey, granolaProviderId, null, now);
+  return db.transaction(async (rawTx) => {
+    const tx = rawTx as unknown as DB['db'];
+    await verifyCredentialsInTenant(tx, tenantId, credentialIds);
 
-    const llmProviderId = await ensureProvider(
-      tx,
-      tenantId,
-      'openai-compatible',
-      'openai-compatible',
-      llm.baseURL,
-      llm.model,
-      now
-    );
-    await ensureCredential(tx, tenantId, 'oat-llm', llm.apiKey, llmProviderId, null, now);
-
-    const { instanceId, agentId } = await ensureAgentInstance(tx, {
+    const { instanceId, agentId, instancePrincipalId } = await ensureAgentInstance(tx, {
       tenantId,
       tenantDomain,
       agentName: 'Oat',
@@ -358,6 +392,8 @@ async function provisionOat(
       creatorPrincipalId,
       now,
     });
+
+    await grantCredentialsToInstance(tx, tenantId, instancePrincipalId, credentialIds, now);
 
     return { instanceId, agentId, agentName: 'Oat', tenantId };
   });
@@ -372,7 +408,8 @@ async function provisionMyra(
 ) {
   const { tenantId, llm } = body;
 
-  return db.transaction(async (tx) => {
+  return db.transaction(async (rawTx) => {
+    const tx = rawTx as unknown as DB['db'];
     const llmProviderId = await ensureProvider(
       tx,
       tenantId,

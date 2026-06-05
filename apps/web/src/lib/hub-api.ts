@@ -149,7 +149,10 @@ export async function listTenantPrincipals(tenantId: string): Promise<PrincipalD
   return res.data;
 }
 
-export async function getPrincipal(tenantId: string, principalId: string): Promise<PrincipalDetail> {
+export async function getPrincipal(
+  tenantId: string,
+  principalId: string
+): Promise<PrincipalDetail> {
   return hubFetch<PrincipalDetail>('GET', `tenants/${tenantId}/principals/${principalId}`);
 }
 
@@ -200,8 +203,7 @@ export type ProvisionOatInput = {
   type: 'oat';
   scope: 'workspace';
   tenantId: string;
-  granolaApiKey: string;
-  llm: LLMProviderInput;
+  credentialIds: string[];
 };
 
 export type ProvisionMyraInput = {

@@ -1,11 +1,8 @@
-import { type FormEvent, useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Input, Label } from '@workbench/auth';
-import {
-  provisionAgent,
-  type ProvisionAgentInput,
-  type ProvisionAgentResponse,
-} from '../../lib/hub-api';
+import { useCredentials } from '../../hooks/use-credentials';
+import { CredentialPicker } from '../CredentialPicker';
+import { provisionAgent, type ProvisionAgentResponse } from '../../lib/hub-api';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -37,34 +34,27 @@ export interface NewAgentModalProps {
   workspaceTenantId: string | null;
 }
 
-export function NewAgentModal({
-  open,
-  onClose,
-  onCreated,
-  workspaceTenantId,
-}: NewAgentModalProps) {
+export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: NewAgentModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Step: 'pick-type' | 'configure'
   const [step, setStep] = useState<'pick-type' | 'configure'>('pick-type');
   const [selectedType, setSelectedType] = useState<AgentType | null>(null);
-
-  // Credential fields
-  const [granolaApiKey, setGranolaApiKey] = useState('');
-  const [llmBaseURL, setLLMBaseURL] = useState('https://openrouter.ai/api/v1');
-  const [llmApiKey, setLLMApiKey] = useState('');
-  const [llmModel, setLLMModel] = useState('openai/gpt-4o');
-
+  const [selectedCredentialIds, setSelectedCredentialIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const { principals, credentialsByTenant, isLoading: credentialsLoading } = useCredentials();
+
+  // For Oat: only credentials from the workspace tenant are valid
+  const workspaceCredentials =
+    workspaceTenantId !== null
+      ? { [workspaceTenantId]: credentialsByTenant[workspaceTenantId] ?? [] }
+      : {};
 
   const reset = () => {
     setStep('pick-type');
     setSelectedType(null);
-    setGranolaApiKey('');
-    setLLMBaseURL('https://openrouter.ai/api/v1');
-    setLLMApiKey('');
-    setLLMModel('openai/gpt-4o');
+    setSelectedCredentialIds([]);
     setLoading(false);
     setError(null);
   };
@@ -113,35 +103,12 @@ export function NewAgentModal({
     setError(null);
   };
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedType) return;
+    if (!selectedType || !workspaceTenantId) return;
 
-    const agentOption = AGENT_TYPES.find((a) => a.type === selectedType);
-    if (!agentOption) return;
-
-    const scope = agentOption.defaultScope;
-
-    const tenantId = workspaceTenantId;
-    if (!tenantId) {
-      setError('No workspace selected. Create a workspace first.');
-      return;
-    }
-
-    if (!llmApiKey.trim()) {
-      setError('LLM API key is required.');
-      return;
-    }
-    if (!llmBaseURL.trim()) {
-      setError('LLM base URL is required.');
-      return;
-    }
-    if (!llmModel.trim()) {
-      setError('LLM model is required.');
-      return;
-    }
-    if (selectedType === 'oat' && !granolaApiKey.trim()) {
-      setError('Granola API key is required for Oat.');
+    if (selectedCredentialIds.length === 0) {
+      setError('Select at least one credential to grant to this agent.');
       return;
     }
 
@@ -149,23 +116,12 @@ export function NewAgentModal({
     setError(null);
 
     try {
-      let input: ProvisionAgentInput;
-
-      if (selectedType === 'oat') {
-        input = {
-          type: 'oat',
-          scope: 'workspace',
-          tenantId,
-          granolaApiKey: granolaApiKey.trim(),
-          llm: {
-            baseURL: llmBaseURL.trim(),
-            apiKey: llmApiKey.trim(),
-            model: llmModel.trim(),
-          },
-        };
-      }
-
-      const response = await provisionAgent(input);
+      const response = await provisionAgent({
+        type: 'oat',
+        scope: 'workspace',
+        tenantId: workspaceTenantId,
+        credentialIds: selectedCredentialIds,
+      });
       reset();
       onCreated(response);
     } catch (err) {
@@ -175,6 +131,8 @@ export function NewAgentModal({
   };
 
   const selectedOption = AGENT_TYPES.find((a) => a.type === selectedType) ?? null;
+  const hasWorkspaceCredentials =
+    workspaceTenantId !== null && (credentialsByTenant[workspaceTenantId] ?? []).length > 0;
 
   return (
     <AnimatePresence>
@@ -282,69 +240,36 @@ export function NewAgentModal({
                   </p>
                 )}
 
-                {selectedType === 'oat' && (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="granola-api-key">
-                      Granola API key{' '}
-                      <span className="text-[11px] font-normal text-text-3">(workspace-level)</span>
-                    </Label>
-                    <Input
-                      id="granola-api-key"
-                      type="password"
-                      value={granolaApiKey}
-                      onChange={(e) => setGranolaApiKey(e.target.value)}
-                      placeholder="grn_..."
-                      autoFocus
+                <div className="flex flex-col gap-2">
+                  <p className="text-[13px] font-medium text-text">Select credentials to grant</p>
+                  <p className="text-[12px] text-text-3">
+                    These credentials will be accessible to this agent at runtime.
+                  </p>
+
+                  {!hasWorkspaceCredentials && !credentialsLoading ? (
+                    <p className="text-[13px] text-text-2">
+                      No credentials found for this workspace.{' '}
+                      <a
+                        href="/settings"
+                        className="text-orange underline-offset-2 hover:underline"
+                      >
+                        Add credentials in Settings.
+                      </a>
+                    </p>
+                  ) : (
+                    <CredentialPicker
+                      principals={principals}
+                      credentialsByTenant={workspaceCredentials}
+                      selectedIds={selectedCredentialIds}
+                      onSelect={setSelectedCredentialIds}
+                      isLoading={credentialsLoading}
                     />
-                  </div>
-                )}
-
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="llm-base-url">
-                    LLM base URL{' '}
-                    <span className="text-[11px] font-normal text-text-3">
-                      (
-                      {selectedOption?.defaultScope === 'workspace'
-                        ? 'workspace-level'
-                        : 'personal'}
-                      )
-                    </span>
-                  </Label>
-                  <Input
-                    id="llm-base-url"
-                    type="url"
-                    value={llmBaseURL}
-                    onChange={(e) => setLLMBaseURL(e.target.value)}
-                    placeholder="https://openrouter.ai/api/v1"
-                    autoFocus={selectedType !== 'oat'}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="llm-api-key">LLM API key</Label>
-                  <Input
-                    id="llm-api-key"
-                    type="password"
-                    value={llmApiKey}
-                    onChange={(e) => setLLMApiKey(e.target.value)}
-                    placeholder="sk-..."
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="llm-model">Model</Label>
-                  <Input
-                    id="llm-model"
-                    type="text"
-                    value={llmModel}
-                    onChange={(e) => setLLMModel(e.target.value)}
-                    placeholder="openai/gpt-4o"
-                  />
+                  )}
                 </div>
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || selectedCredentialIds.length === 0}
                   className="w-full rounded-md bg-orange px-4 py-2 text-sm font-medium text-text hover:bg-orange-deep disabled:opacity-50"
                 >
                   {loading ? 'Deploying agent...' : `Deploy ${selectedOption?.name ?? 'agent'}`}

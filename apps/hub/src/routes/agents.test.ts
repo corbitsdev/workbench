@@ -170,8 +170,7 @@ describe('POST /agents', () => {
           type: 'oat',
           scope: 'workspace',
           tenantId: 'tenant-nobody',
-          granolaApiKey: 'gk-test',
-          llm: { baseURL: 'https://api.openai.com', apiKey: 'sk-test', model: 'gpt-4o' },
+          credentialIds: ['crd-1'],
         },
       })
     );
@@ -221,7 +220,10 @@ describe('POST /agents', () => {
           findMany: mock(() => Promise.resolve([])),
         },
         provider: { findFirst: mock(() => Promise.resolve(stubProvider)) },
-        credential: { findFirst: mock(() => Promise.resolve(stubCredential)) },
+        credential: {
+          findFirst: mock(() => Promise.resolve(stubCredential)),
+          findMany: mock(() => Promise.resolve([stubCredential])),
+        },
       },
       select: mock(() => makeSelectChain(adminRoleRows)),
       insert: mock(() => ({
@@ -240,8 +242,7 @@ describe('POST /agents', () => {
       type: 'oat',
       scope: 'workspace',
       tenantId: 'tenant-1',
-      granolaApiKey: 'gk-test',
-      llm: { baseURL: 'https://api.openai.com', apiKey: 'sk-test', model: 'gpt-4o' },
+      credentialIds: ['crd-1'],
     };
 
     const res1 = await app.fetch(makeRequest('http://localhost/agents', { method: 'POST', body }));
@@ -280,7 +281,10 @@ describe('POST /agents', () => {
           findMany: mock(() => Promise.resolve([existingInstance])),
         },
         provider: { findFirst: mock(() => Promise.resolve(stubProvider)) },
-        credential: { findFirst: mock(() => Promise.resolve(stubCredential)) },
+        credential: {
+          findFirst: mock(() => Promise.resolve(stubCredential)),
+          findMany: mock(() => Promise.resolve([stubCredential])),
+        },
       },
       select: mock(() => makeSelectChain(adminRoleRows)),
       insert: mock(() => ({
@@ -405,6 +409,150 @@ describe('POST /agents', () => {
     expect(llmCreds[0]).not.toBe(llmCreds[1]);
   });
 
+  it('POST oat with credentialIds creates grants for each credential and does not insert new credentials', async () => {
+    const existingPrincipal = { id: 'prn-1', tenantId: 'tenant-1', kind: 'user', refId: 'user-1' };
+    const existingTenant = {
+      id: 'tenant-1',
+      domain: 'tenant-1.localhost',
+      slug: 'ws-1',
+      name: 'Workspace 1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const existingCredential = { id: 'crd-granola', tenantId: 'tenant-1', name: 'granola' };
+    const stubAgent = { id: 'agt-oat-1', name: 'Oat', tenantId: 'tenant-1' };
+
+    const credentialInserts: string[] = [];
+    const grantInserts: string[] = [];
+
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    let base: any;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
+    base = {
+      transaction: txMock,
+      query: {
+        principal: { findFirst: mock(() => Promise.resolve(existingPrincipal)) },
+        tenant: { findFirst: mock(() => Promise.resolve(existingTenant)) },
+        agent: {
+          findFirst: mock(() => Promise.resolve(stubAgent)),
+          findMany: mock(() => Promise.resolve([stubAgent])),
+        },
+        agentInstance: {
+          findFirst: mock(() => Promise.resolve(undefined)),
+          findMany: mock(() => Promise.resolve([])),
+        },
+        provider: { findFirst: mock(() => Promise.resolve(undefined)) },
+        credential: {
+          findFirst: mock(() => Promise.resolve(existingCredential)),
+          findMany: mock(() => Promise.resolve([existingCredential])),
+        },
+      },
+      select: mock(() => makeSelectChain([{ roleName: 'owner' }])),
+      // biome-ignore lint/suspicious/noExplicitAny: test mock
+      insert: mock((_table: any) => ({
+        // biome-ignore lint/suspicious/noExplicitAny: test mock
+        values: mock((row: any) => {
+          if (row && row.type === 'api_key') credentialInserts.push(row.name as string);
+          if (row && row.resource) grantInserts.push(row.resource as string);
+          return {
+            returning: mock(() => Promise.resolve([])),
+            onConflictDoNothing: mock(() => Promise.resolve([])),
+          };
+        }),
+      })),
+      update: mock(() => ({
+        set: mock(() => ({ where: mock(() => Promise.resolve()) })),
+      })),
+    };
+
+    const app = buildApp(base);
+    const res = await app.fetch(
+      makeRequest('http://localhost/agents', {
+        method: 'POST',
+        body: {
+          type: 'oat',
+          scope: 'workspace',
+          tenantId: 'tenant-1',
+          credentialIds: ['crd-granola'],
+        },
+      })
+    );
+    expect(res.status).toBe(201);
+    // No new credential rows should be inserted
+    expect(credentialInserts).toHaveLength(0);
+    // A grant for the credential should have been written
+    expect(grantInserts).toContain('credential:crd-granola');
+  });
+
+  it('POST oat returns 400 when credentialIds is empty array', async () => {
+    const app = buildApp(makeMockDb());
+    const res = await app.fetch(
+      makeRequest('http://localhost/agents', {
+        method: 'POST',
+        body: {
+          type: 'oat',
+          scope: 'workspace',
+          tenantId: 'tenant-1',
+          credentialIds: [],
+        },
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('POST oat returns 400 when credentialIds is missing', async () => {
+    const existingPrincipal = { id: 'prn-1', tenantId: 'tenant-1', kind: 'user', refId: 'user-1' };
+    const existingTenant = {
+      id: 'tenant-1',
+      domain: 'tenant-1.localhost',
+      slug: 'ws-1',
+      name: 'Workspace 1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    let base: any;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
+    base = {
+      transaction: txMock,
+      query: {
+        principal: { findFirst: mock(() => Promise.resolve(existingPrincipal)) },
+        tenant: { findFirst: mock(() => Promise.resolve(existingTenant)) },
+        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
+        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
+        provider: { findFirst: mock(() => Promise.resolve(undefined)) },
+        credential: { findFirst: mock(() => Promise.resolve(undefined)) },
+      },
+      select: mock(() => makeSelectChain([{ roleName: 'owner' }])),
+      insert: mock(() => ({
+        values: mock(() => ({
+          returning: mock(() => Promise.resolve([])),
+          onConflictDoNothing: mock(() => Promise.resolve([])),
+        })),
+      })),
+      update: mock(() => ({
+        set: mock(() => ({ where: mock(() => Promise.resolve()) })),
+      })),
+    };
+
+    const app = buildApp(base);
+    const res = await app.fetch(
+      makeRequest('http://localhost/agents', {
+        method: 'POST',
+        body: {
+          type: 'oat',
+          scope: 'workspace',
+          tenantId: 'tenant-1',
+          // credentialIds missing — should fail schema validation
+        },
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+
   it('non-admin tenant member gets 403 when provisioning Oat', async () => {
     const existingPrincipal = {
       id: 'prn-member-1',
@@ -457,8 +605,7 @@ describe('POST /agents', () => {
           type: 'oat',
           scope: 'workspace',
           tenantId: 'tenant-1',
-          granolaApiKey: 'gk-test',
-          llm: { baseURL: 'https://api.openai.com', apiKey: 'sk-test', model: 'gpt-4o' },
+          credentialIds: ['crd-1'],
         },
       })
     );
@@ -516,7 +663,10 @@ describe('POST /agents', () => {
           findMany: mock(() => Promise.resolve([existingInstanceRow])),
         },
         provider: { findFirst: mock(() => Promise.resolve(stubProvider)) },
-        credential: { findFirst: mock(() => Promise.resolve(stubCredential)) },
+        credential: {
+          findFirst: mock(() => Promise.resolve(stubCredential)),
+          findMany: mock(() => Promise.resolve([stubCredential])),
+        },
       },
       select: mock(() => makeSelectChain([{ roleName: 'owner' }])),
       insert: mock(() => ({
@@ -539,8 +689,7 @@ describe('POST /agents', () => {
           type: 'oat',
           scope: 'workspace',
           tenantId: 'tenant-2',
-          granolaApiKey: 'gk-x',
-          llm: { baseURL: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o' },
+          credentialIds: ['crd-2'],
         },
       })
     );
