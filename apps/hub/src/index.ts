@@ -376,17 +376,26 @@ v1.get('/me', async (c) => {
 
   const personalTenantId = personalTenant?.id ?? null;
 
-  // Derive paInstanceId from Interchange at runtime.
-  // The personal tenant contains only Myra, so the first running instance is hers.
+  // Ensure Myra instance exists and return its ID.
+  // provisionMyraInstance is idempotent — returns existing instance if already provisioned.
   let paInstanceId: string | null = null;
-  if (personalTenantId) {
-    const instance = await db.query.agentInstance.findFirst({
+  if (personalTenantId && personalTenant?.domain) {
+    const callerPrincipal = await db.query.principal.findFirst({
       where: and(
-        eq(intxSchema.agentInstance.tenantId, personalTenantId),
-        inArray(intxSchema.agentInstance.status, ['deployed', 'running'])
+        eq(intxSchema.principal.tenantId, personalTenantId),
+        eq(intxSchema.principal.kind, 'user'),
+        eq(intxSchema.principal.refId, userId)
       ),
     });
-    if (instance) paInstanceId = instance.id;
+    if (callerPrincipal) {
+      const { paInstanceId: instanceId } = await provisionMyraInstance(db, {
+        personalTenantId,
+        personalTenantDomain: personalTenant.domain,
+        userId,
+        creatorPrincipalId: callerPrincipal.id,
+      });
+      paInstanceId = instanceId;
+    }
   }
 
   const userName = c.get('userName');

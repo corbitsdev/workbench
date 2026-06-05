@@ -232,9 +232,9 @@ export function createAgentProvisioningRouter(
     );
   });
 
-  // Configure or update the LLM credential for the caller's Myra instance.
-  // Uses the general credential flow internally; the Myra instance is auto-granted and launched.
-  app.post('/myra/credential', async (c) => {
+  // REMOVED: POST /myra/credential — onboarding now uses POST /tenants/:tenantId/credentials
+  // followed by POST /instances/:instanceId/sessions. Myra instance is auto-provisioned in GET /v1/me.
+  if (false) app.post('/myra/credential', async (c) => {
     const userId = c.get('userId');
     const raw = await c.req.json().catch(() => null);
     if (!raw) {
