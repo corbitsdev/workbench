@@ -171,7 +171,11 @@ export async function provisionWorkspaceTenant(
       createdAt: now,
     });
 
-    log.info('Workspace tenant provisioned', { userId: opts.userId, tenantId: resolvedTenantId, slug: opts.slug });
+    log.info('Workspace tenant provisioned', {
+      userId: opts.userId,
+      tenantId: resolvedTenantId,
+      slug: opts.slug,
+    });
     return { tenantId: resolvedTenantId, principalId };
   });
 

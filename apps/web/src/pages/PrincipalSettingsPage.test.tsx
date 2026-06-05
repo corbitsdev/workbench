@@ -6,14 +6,25 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 
 import type { PrincipalDetail, GrantDetail } from '../lib/hub-api';
 
-const mockGetPrincipal = mock<(tenantId: string, principalId: string) => Promise<PrincipalDetail>>();
+const mockGetPrincipal =
+  mock<(tenantId: string, principalId: string) => Promise<PrincipalDetail>>();
 const mockListPrincipalGrants =
   mock<(tenantId: string, principalId: string) => Promise<GrantDetail[]>>();
 
 mock.module('../lib/hub-api', () => ({
   getPrincipal: mockGetPrincipal,
   listPrincipalGrants: mockListPrincipalGrants,
-  getTenant: mock(() => Promise.resolve({ id: '', name: '', slug: '', domain: '', parentId: null, createdAt: '', updatedAt: '' })),
+  getTenant: mock(() =>
+    Promise.resolve({
+      id: '',
+      name: '',
+      slug: '',
+      domain: '',
+      parentId: null,
+      createdAt: '',
+      updatedAt: '',
+    })
+  ),
   listTenantCredentials: mock(() => Promise.resolve([])),
   getMyPrincipals: mock(() => Promise.resolve([])),
   getMe: mock(() => Promise.resolve({ userId: 'u1', personalTenantId: null, provisionedAt: null })),

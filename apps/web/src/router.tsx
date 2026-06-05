@@ -43,10 +43,10 @@ export const router = createBrowserRouter([
   {
     element: <ProtectedLayout />,
     children: [
-      { path: '/onboarding', element: <OnboardingPage /> },
       {
         element: <AppShell />,
         children: [
+          { path: '/onboarding', element: <OnboardingPage /> },
           { index: true, element: <WorkbenchHome /> },
           { path: '/dashboard', element: <Dashboard /> },
           { path: '/settings', element: <Settings /> },

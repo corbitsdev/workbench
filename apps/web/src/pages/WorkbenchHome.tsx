@@ -31,13 +31,7 @@ function useProvisioningGuard(): ProvisioningState {
     async function check() {
       try {
         const me = await getMe();
-        if (!me.provisioned) {
-          setState({ status: 'needs-onboarding' });
-          clear();
-          return;
-        }
-        const workbenches = await listWorkbenches();
-        setState(workbenches.length === 0 ? { status: 'needs-onboarding' } : { status: 'ready' });
+        setState(me.provisioned ? { status: 'ready' } : { status: 'needs-onboarding' });
         clear();
       } catch {
         // Keep polling — transient errors should not break the guard
@@ -106,7 +100,7 @@ export default function WorkbenchHome() {
   if (provisioningState.status === 'loading' || provisioningState.status === 'needs-onboarding') {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-[14px] text-text-3">Setting up your workspace…</p>
+        <p className="text-[14px] text-text-3">Setting up your workbench…</p>
       </div>
     );
   }

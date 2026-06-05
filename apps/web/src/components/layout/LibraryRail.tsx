@@ -176,7 +176,12 @@ export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
 
   const visibleItems = items.filter((item) => {
     if (typeFilter !== null && item.type !== typeFilter) return false;
-    if (query !== '' && !item.name.toLowerCase().includes(query) && !item.sub.toLowerCase().includes(query)) return false;
+    if (
+      query !== '' &&
+      !item.name.toLowerCase().includes(query) &&
+      !item.sub.toLowerCase().includes(query)
+    )
+      return false;
     return true;
   });
 

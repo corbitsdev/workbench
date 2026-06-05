@@ -60,7 +60,10 @@ export function createWorkspacesRouter(db: ProductionDB): Hono<{ Variables: { us
     try {
       provisioned = await provisionWorkspaceTenant(db, { userId, name: rawName, slug });
     } catch (err) {
-      if (err instanceof Error && (err as NodeJS.ErrnoException & { code?: string }).code === 'SLUG_CONFLICT') {
+      if (
+        err instanceof Error &&
+        (err as NodeJS.ErrnoException & { code?: string }).code === 'SLUG_CONFLICT'
+      ) {
         log.warn('Workspace slug conflict', { userId, slug });
         return c.json({ error: 'A workspace with this name already exists' }, 409);
       }

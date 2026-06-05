@@ -1,7 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { cleanup, render, screen, fireEvent, act } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter } from 'react-router';
 
@@ -15,20 +14,10 @@ mock.module('react-router', () => {
   };
 });
 
-const mockCreateWorkspace = mock(() =>
-  Promise.resolve({ id: 'ws-1', name: 'Acme Corp', slug: 'acme-corp', tenantId: 'tn-1' })
-);
+const mockSetupMyraCredential = mock(() => Promise.resolve());
 
 mock.module('../lib/hub-api', () => ({
-  getMe: () =>
-    Promise.resolve({
-      userId: 'u1',
-      personalTenantId: 'pt1',
-      paInstanceId: null,
-      provisioned: true,
-    }),
-  createWorkspace: mockCreateWorkspace,
-  listWorkbenches: () => Promise.resolve([]),
+  setupMyraCredential: mockSetupMyraCredential,
 }));
 
 import { OnboardingPage } from './OnboardingPage';
@@ -36,7 +25,7 @@ import { OnboardingPage } from './OnboardingPage';
 afterEach(() => {
   cleanup();
   mockNavigate.mockClear();
-  mockCreateWorkspace.mockClear();
+  mockSetupMyraCredential.mockClear();
 });
 
 function renderPage() {
@@ -44,36 +33,53 @@ function renderPage() {
 }
 
 describe('OnboardingPage', () => {
-  it('renders the workspace name field and submit button', () => {
+  it('renders the provider select, api key field, and submit button', () => {
     renderPage();
-    expect(screen.getByRole('textbox')).toBeDefined();
-    expect(screen.getByRole('button', { name: /create workspace/i })).toBeDefined();
+    expect(screen.getByLabelText(/provider/i)).toBeDefined();
+    expect(screen.getByLabelText(/api key/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /finish setup/i })).toBeDefined();
   });
 
-  it('submits the workspace name and navigates to / on success', async () => {
-    const user = userEvent.setup();
+  it('submit is disabled until an api key is entered', () => {
     renderPage();
+    const btn = screen.getByRole('button', { name: /finish setup/i }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
 
-    const input = screen.getByRole('textbox');
-    await user.type(input, 'Acme Corp');
-    await user.click(screen.getByRole('button', { name: /create workspace/i }));
+  it('enables submit once an api key is typed', () => {
+    renderPage();
+    const input = screen.getByLabelText(/api key/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'sk-test' } });
+    const btn = screen.getByRole('button', { name: /finish setup/i }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+  });
 
-    expect(mockCreateWorkspace).toHaveBeenCalledWith('Acme Corp');
-    // Wait for the async submission to complete and navigate to be called.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+  it('calls setupMyraCredential and navigates to / on success', async () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/api key/i), { target: { value: 'sk-test' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByRole('button', { name: /finish setup/i }).closest('form')!);
+    });
+    expect(mockSetupMyraCredential).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith('/');
   });
 
-  it('shows an error message when creation fails', async () => {
-    mockCreateWorkspace.mockImplementationOnce(() => Promise.reject(new Error('Server error')));
-    const user = userEvent.setup();
+  it('shows an error message when credential setup fails', async () => {
+    mockSetupMyraCredential.mockImplementationOnce(() =>
+      Promise.reject(new Error('Invalid API key'))
+    );
     renderPage();
-
-    const input = screen.getByRole('textbox');
-    await user.type(input, 'Bad Corp');
-    await user.click(screen.getByRole('button', { name: /create workspace/i }));
-
+    fireEvent.change(screen.getByLabelText(/api key/i), { target: { value: 'sk-bad' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByRole('button', { name: /finish setup/i }).closest('form')!);
+    });
     const error = await screen.findByRole('alert');
     expect(error).toBeDefined();
+  });
+
+  it('skip for now navigates to /', () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /skip for now/i }));
+    expect(mockNavigate).toHaveBeenCalledWith('/');
   });
 });

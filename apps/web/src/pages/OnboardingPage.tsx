@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { createWorkspace, setupMyraCredential } from '../lib/hub-api';
+import { setupMyraCredential } from '../lib/hub-api';
 import type { LLMProviderType, SetupMyraCredentialInput } from '../lib/hub-api';
 
 const ANTHROPIC_MODELS = [
@@ -38,17 +38,10 @@ const LABEL_CLASS = 'mb-1 block text-[13px] font-medium text-text-2';
 export function OnboardingPage() {
   const navigate = useNavigate();
 
-  // Step 1 state
-  const [step, setStep] = useState<1 | 2>(1);
-  const [workspaceName, setWorkspaceName] = useState('');
-
-  // Step 2 state
   const [provider, setProvider] = useState<LLMProviderType>('anthropic');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState(ANTHROPIC_MODELS[0].value);
   const [baseURL, setBaseURL] = useState('');
-
-  // Shared state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,25 +52,7 @@ export function OnboardingPage() {
     setModel(models.length > 0 ? models[0].value : '');
   };
 
-  const handleWorkspaceSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = workspaceName.trim();
-    if (!trimmed) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await createWorkspace(trimmed);
-      setStep(2);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to create workspace. Please try again.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCredentialSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (provider === 'openai-compatible' && !baseURL.trim()) {
       setError('Base URL is required for OpenAI-compatible providers.');
@@ -99,57 +74,16 @@ export function OnboardingPage() {
     }
   };
 
-  if (step === 1) {
-    return (
-      <div className="flex h-full items-center justify-center bg-page">
-        <div className="w-full max-w-sm px-4">
-          <p className="mb-1 text-[12px] font-medium text-text-3">Step 1 of 2</p>
-          <h1 className="mb-1 text-[18px] font-semibold text-text-1">Create your workspace</h1>
-          <p className="mb-6 text-[13px] text-text-3">Give your workspace a name to get started.</p>
-          <form onSubmit={(e) => void handleWorkspaceSubmit(e)}>
-            <label className={LABEL_CLASS} htmlFor="workspace-name">
-              Workspace name
-            </label>
-            <input
-              id="workspace-name"
-              type="text"
-              className={`${INPUT_CLASS} mb-4`}
-              placeholder="Acme Corp"
-              value={workspaceName}
-              onChange={(e) => setWorkspaceName(e.target.value)}
-              disabled={loading}
-              autoFocus
-              maxLength={100}
-            />
-            {error !== null && (
-              <p role="alert" className="mb-4 text-[13px] text-red-500">
-                {error}
-              </p>
-            )}
-            <button
-              type="submit"
-              disabled={loading || workspaceName.trim().length === 0}
-              className="w-full rounded-md bg-orange px-4 py-2 text-[14px] font-medium text-white transition-opacity disabled:opacity-50"
-            >
-              {loading ? 'Creating...' : 'Continue'}
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   const modelOptions = modelListForProvider(provider);
 
   return (
-    <div className="flex h-full items-center justify-center bg-page">
+    <div className="flex h-full items-center justify-center">
       <div className="w-full max-w-sm px-4">
-        <p className="mb-1 text-[12px] font-medium text-text-3">Step 2 of 2</p>
         <h1 className="mb-1 text-[18px] font-semibold text-text-1">Set up Myra</h1>
         <p className="mb-6 text-[13px] text-text-3">
           Add an LLM API key so Myra can respond to you.
         </p>
-        <form onSubmit={(e) => void handleCredentialSubmit(e)}>
+        <form onSubmit={(e) => void handleSubmit(e)}>
           <label className={LABEL_CLASS} htmlFor="provider-select">
             Provider
           </label>

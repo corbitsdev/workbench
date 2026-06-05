@@ -24,10 +24,7 @@ describe('Workspaces router', () => {
    * Wraps the workspaces router in a Hono app that sets the `userId` context
    * variable before each request — mirrors what auth middleware does in production.
    */
-  function wrapWithAuth(
-    router: Hono<{ Variables: { userId: string } }>,
-    userId = 'user-1'
-  ): Hono {
+  function wrapWithAuth(router: Hono<{ Variables: { userId: string } }>, userId = 'user-1'): Hono {
     const app = new Hono();
     app.use('*', async (c, next) => {
       c.set('userId' as never, userId);

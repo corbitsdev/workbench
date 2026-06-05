@@ -710,9 +710,24 @@ describe('POST /myra/credential', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
   };
-  const callerPrincipal = { id: 'prn-user-1', tenantId: 'tenant-personal', kind: 'user', refId: 'user-1' };
-  const savedProvider = { id: 'prov-1', name: 'openai-compatible', plugin: 'anthropic', tenantId: 'tenant-personal' };
-  const savedCredential = { id: 'cred-1', name: 'myra-llm-prn-user-1', secret: 'sk-test', tenantId: 'tenant-personal' };
+  const callerPrincipal = {
+    id: 'prn-user-1',
+    tenantId: 'tenant-personal',
+    kind: 'user',
+    refId: 'user-1',
+  };
+  const savedProvider = {
+    id: 'prov-1',
+    name: 'openai-compatible',
+    plugin: 'anthropic',
+    tenantId: 'tenant-personal',
+  };
+  const savedCredential = {
+    id: 'cred-1',
+    name: 'myra-llm-prn-user-1',
+    secret: 'sk-test',
+    tenantId: 'tenant-personal',
+  };
 
   it('returns 404 when personal tenant not found', async () => {
     const db = makeMockDb();
