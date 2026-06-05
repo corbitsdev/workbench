@@ -1,5 +1,5 @@
 {
-  "buildCommand": "bun run --filter @workbench/web build",
+  "buildCommand": "cd apps/web && bunx vite build",
   "outputDirectory": "apps/web/dist",
   "installCommand": "git submodule update --init --recursive && bun install",
   "framework": "vite",
