@@ -7,7 +7,7 @@ import { LoginPage } from './pages/LoginPage';
 import WorkbenchHome from './pages/WorkbenchHome';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
-import OnboardingPage from './pages/OnboardingPage';
+import { OnboardingPage } from './pages/OnboardingPage';
 
 const WorkbenchPage = lazy(() => import('./pages/WorkbenchPage'));
 const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
