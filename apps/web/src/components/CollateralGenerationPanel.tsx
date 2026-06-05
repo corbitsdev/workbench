@@ -82,7 +82,7 @@ export function CollateralGenerationPanel({ onClose, onComplete }: Props) {
     setArtifactsLoading(true);
     getArtifacts()
       .then((res) => {
-        setAvailableArtifacts(res.artifacts);
+        setAvailableArtifacts(res);
       })
       .catch(() => {
         // Not fatal — user can still proceed with external artifact IDs

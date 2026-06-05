@@ -1,8 +1,8 @@
 import { api } from './api';
 import type {
-  ArtifactsResponse,
   CollateralGenerationWorkflow,
   CreateCollateralGenerationRequest,
+  GeneratedArtifact,
   OutputType,
 } from '@workbench/shared';
 
@@ -36,6 +36,6 @@ export async function getCollateralGeneration(id: string): Promise<CollateralGen
   return api('GET', `collateral-generation/${id}`);
 }
 
-export async function getArtifacts(): Promise<ArtifactsResponse> {
+export async function getArtifacts(): Promise<GeneratedArtifact[]> {
   return api('GET', 'artifacts');
 }

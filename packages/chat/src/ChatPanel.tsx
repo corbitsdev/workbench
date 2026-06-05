@@ -92,6 +92,7 @@ export function ChatPanel({
 
       <ChatInput
         onSend={onSend}
+        placeholder={`Message ${agent.name}…`}
         {...(inputDisabled !== undefined ? { disabled: inputDisabled } : {})}
       />
     </div>

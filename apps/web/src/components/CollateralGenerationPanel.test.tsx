@@ -15,7 +15,7 @@ mock.module('framer-motion', () => ({
     React.createElement(React.Fragment, null, children),
 }));
 
-const mockGetArtifacts = mock(() => Promise.resolve({ artifacts: [] }));
+const mockGetArtifacts = mock(() => Promise.resolve([]));
 const mockCreateCollateralGeneration = mock(() =>
   Promise.resolve({ id: 'wf-test-1', status: 'pending' })
 );

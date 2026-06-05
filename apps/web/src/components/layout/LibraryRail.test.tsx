@@ -5,26 +5,24 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { WorkflowSummary } from '@workbench/shared';
 
-// Mock the framework-agnostic data-access layer so the real TanStack hooks run
-// against deterministic data (no network).
-const listWorkflows = mock(
-  (): Promise<WorkflowSummary[]> =>
-    Promise.resolve([
-      {
-        id: 'wf-1',
-        status: 'reviewing',
-        createdAt: new Date().toISOString(),
-        transcriptId: 'tx-1',
-        companyName: 'Acme Corp',
-        transcriptPreview: 'We struggle with manual data entry',
-        painPointCount: 3,
-        firstPainPoint: 'Manual data entry',
-      },
-    ])
-);
-mock.module('@workbench/client', () => ({
-  listWorkflows,
-  listArtifacts: mock(() => Promise.resolve([])),
+const fakeWorkflow: WorkflowSummary = {
+  id: 'wf-1',
+  status: 'reviewing',
+  createdAt: new Date().toISOString(),
+  transcriptId: 'tx-1',
+  companyName: 'Acme Corp',
+  transcriptPreview: 'We struggle with manual data entry',
+  painPointCount: 3,
+  firstPainPoint: 'Manual data entry',
+};
+
+mock.module('@workbench/client/react', () => ({
+  useLibraryResources: () => ({ data: [fakeWorkflow], isLoading: false, isError: false }),
+  useArtifacts: () => ({ data: [], isLoading: false, isError: false }),
+}));
+
+mock.module('../../lib/hub-api', () => ({
+  listWorkbenches: mock(() => Promise.resolve([])),
 }));
 
 function renderWithClient(ui: React.ReactElement) {
@@ -38,7 +36,7 @@ describe('LibraryRail', () => {
     renderWithClient(React.createElement(LibraryRail));
 
     await waitFor(() => {
-      expect(screen.getByText('Acme Corp')).toBeDefined();
+      expect(screen.getAllByText('Acme Corp').length).toBeGreaterThan(0);
     });
     expect(screen.getByText('Sessions')).toBeDefined();
   });

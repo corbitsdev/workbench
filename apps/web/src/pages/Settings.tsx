@@ -5,6 +5,7 @@ import {
   type SettingsSectionDescriptor,
   type SettingsValues,
 } from '@workbench/settings';
+import { useTheme } from '@workbench/ui';
 
 // Static section descriptors. This route is a scaffold: it proves the
 // @workbench/settings package is consumable. Real persistence is out of scope.
@@ -52,10 +53,14 @@ const INITIAL_VALUES: SettingsValues = {
 };
 
 export default function Settings() {
-  const [values, setValues] = useState<SettingsValues>(INITIAL_VALUES);
+  const { theme, setTheme } = useTheme();
+  const [values, setValues] = useState<SettingsValues>({ ...INITIAL_VALUES, theme });
 
   const handleChange = (key: string, value: SettingsFieldValue) => {
     setValues((prev) => ({ ...prev, [key]: value }));
+    if (key === 'theme' && (value === 'light' || value === 'dark' || value === 'system')) {
+      setTheme(value);
+    }
   };
 
   return (
