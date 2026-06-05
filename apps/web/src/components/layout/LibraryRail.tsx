@@ -138,6 +138,13 @@ interface LibraryRailProps {
   onNew?: () => void;
 }
 
+const SEGMENT_FILTER: Record<string, ResourceType | null> = {
+  All: null,
+  Workflows: 'workflow',
+  Workbenches: 'workbench',
+  Agents: 'agent',
+};
+
 export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
   const {
     data: workflows,
@@ -150,6 +157,9 @@ export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
     retry: retryWorkbenches,
   } = useWorkbenches();
 
+  const [activeSegment, setActiveSegment] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState('');
+
   const sessionItems = (workflows ?? []).map(workflowToRailItem);
   const items: RailItem[] = [...sessionItems, ...workbenchItems];
   const isLoading = sessionsLoading;
@@ -161,18 +171,27 @@ export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
     { label: 'Agents', count: items.filter((i) => i.type === 'agent').length },
   ];
 
+  const typeFilter = SEGMENT_FILTER[activeSegment] ?? null;
+  const query = searchQuery.trim().toLowerCase();
+
+  const visibleItems = items.filter((item) => {
+    if (typeFilter !== null && item.type !== typeFilter) return false;
+    if (query !== '' && !item.name.toLowerCase().includes(query) && !item.sub.toLowerCase().includes(query)) return false;
+    return true;
+  });
+
   return (
     <aside className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
       <div className="px-[18px] pb-[10px] pt-[18px]">
         <div className="flex items-center justify-between">
           <div className="text-[13px] font-bold uppercase tracking-[0.04em] text-text-3">
-            Library
+            Workspace
           </div>
           {onClose && (
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close library"
+              aria-label="Close workspace"
               className="grid h-[30px] w-[30px] place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
             >
               <svg
@@ -201,21 +220,26 @@ export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
           <input
             aria-label="Search workflows, agents"
             placeholder="Search workflows, agents…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full border-none bg-transparent text-[14px] text-text outline-none placeholder:text-text-3"
           />
-          <span className="flex-none rounded-[5px] border border-border px-1.5 py-0.5 font-mono text-[11px] text-text-3">
-            ⌘K
-          </span>
+          {searchQuery === '' && (
+            <span className="flex-none rounded-[5px] border border-border px-1.5 py-0.5 font-mono text-[11px] text-text-3">
+              ⌘K
+            </span>
+          )}
         </div>
       </div>
 
       <div className="flex flex-wrap gap-[3px] px-4 pb-1.5 pt-3">
-        {segments.map((seg, idx) => (
+        {segments.map((seg) => (
           <button
             key={seg.label}
             type="button"
+            onClick={() => setActiveSegment(seg.label)}
             className={`flex items-center gap-[5px] whitespace-nowrap rounded-[9px] px-[9px] py-1.5 text-[12px] font-semibold transition-colors ${
-              idx === 0
+              activeSegment === seg.label
                 ? 'bg-surface text-text shadow-[0_2px_6px_rgba(0,0,0,0.2)]'
                 : 'text-text-2 hover:bg-[var(--row-hover)]'
             }`}
@@ -227,7 +251,7 @@ export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
 
       <div className="flex-1 overflow-y-auto px-[10px] pb-[22px] pt-1">
         {isLoading && (
-          <div className="px-[10px] py-6 text-[13px] text-text-3">Loading library…</div>
+          <div className="px-[10px] py-6 text-[13px] text-text-3">Loading workspace…</div>
         )}
         {isError && (
           <div className="px-[10px] py-6 text-[13px] text-text-3">Could not load sessions.</div>
@@ -245,7 +269,7 @@ export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
           </div>
         )}
         {GROUP_ORDER.map((group) => {
-          const inGroup = items.filter((i) => i.group === group);
+          const inGroup = visibleItems.filter((i) => i.group === group);
           if (inGroup.length === 0) return null;
           return (
             <div key={group}>

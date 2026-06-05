@@ -26,8 +26,16 @@ export function AppSidebar() {
     <aside className="flex h-full w-[56px] flex-col items-center border-r border-border bg-surface py-3">
       <div className="flex flex-col items-center gap-0">
         <Link to="/" className="group grid h-[40px] w-[40px] place-items-center" aria-label="Home">
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-[10px] bg-orange text-[16px] font-extrabold text-white shadow-[var(--orange-glow)] will-change-transform transition-transform duration-[400ms] ease-spring group-hover:rotate-[-8deg] group-hover:scale-[1.08]">
-            C
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-[10px] bg-orange shadow-[var(--orange-glow)] will-change-transform transition-transform duration-[400ms] ease-spring group-hover:rotate-[-8deg] group-hover:scale-[1.08]">
+            <svg viewBox="0 0 20 20" fill="none" aria-label="Corbits" className="h-[18px] w-[18px]">
+              <path
+                d="M14.5 6.5A6 6 0 1 0 14.5 13.5"
+                stroke="white"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              />
+              <circle cx="14.5" cy="10" r="1.5" fill="white" />
+            </svg>
           </span>
         </Link>
       </div>

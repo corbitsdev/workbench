@@ -6,9 +6,10 @@ import {
   type SettingsValues,
 } from '@workbench/settings';
 import { useTheme } from '@workbench/ui';
+import { api } from '../lib/api';
 
-// Static section descriptors. This route is a scaffold: it proves the
-// @workbench/settings package is consumable. Real persistence is out of scope.
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
   {
     id: 'profile',
@@ -55,11 +56,32 @@ const INITIAL_VALUES: SettingsValues = {
 export default function Settings() {
   const { theme, setTheme } = useTheme();
   const [values, setValues] = useState<SettingsValues>({ ...INITIAL_VALUES, theme });
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [savedDisplayName, setSavedDisplayName] = useState<string>('');
 
   const handleChange = (key: string, value: SettingsFieldValue) => {
     setValues((prev) => ({ ...prev, [key]: value }));
     if (key === 'theme' && (value === 'light' || value === 'dark' || value === 'system')) {
       setTheme(value);
+    }
+    if (key === 'displayName') {
+      setSaveState('idle');
+    }
+  };
+
+  const displayNameDirty =
+    typeof values.displayName === 'string' && values.displayName !== savedDisplayName;
+
+  const handleSaveDisplayName = async () => {
+    const name = typeof values.displayName === 'string' ? values.displayName.trim() : '';
+    if (!name) return;
+    setSaveState('saving');
+    try {
+      await api('PATCH', '/me/profile', { displayName: name });
+      setSavedDisplayName(name);
+      setSaveState('saved');
+    } catch {
+      setSaveState('error');
     }
   };
 
@@ -71,6 +93,28 @@ export default function Settings() {
         onChange={handleChange}
         description="Manage your workbench preferences."
       />
+      {displayNameDirty && (
+        <div className="mx-auto w-full max-w-2xl px-4 pb-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSaveDisplayName}
+              disabled={saveState === 'saving'}
+              className="rounded-lg bg-orange px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-deep disabled:opacity-50"
+            >
+              {saveState === 'saving' ? 'Saving…' : 'Save display name'}
+            </button>
+            {saveState === 'error' && (
+              <span className="text-sm text-red-500">Failed to save. Please try again.</span>
+            )}
+          </div>
+        </div>
+      )}
+      {saveState === 'saved' && (
+        <div className="mx-auto w-full max-w-2xl px-4 pb-4">
+          <p className="text-sm text-green-600">Display name saved.</p>
+        </div>
+      )}
     </div>
   );
 }
