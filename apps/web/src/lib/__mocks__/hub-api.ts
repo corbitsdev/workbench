@@ -11,7 +11,6 @@ import type {
   CredentialDetail,
   GrantDetail,
   AgentInstance,
-  SetupMyraCredentialInput,
   ProvisionAgentInput,
   ProvisionAgentResponse,
 } from '../hub-api';
@@ -70,9 +69,6 @@ export function createMockHubApi(overrides?: Record<string, any>) {
     ),
     listAgentInstances: mock<(tenantId: string) => Promise<AgentInstance[]>>(() =>
       Promise.resolve([])
-    ),
-    setupMyraCredential: mock<(input: SetupMyraCredentialInput) => Promise<void>>(() =>
-      Promise.resolve()
     ),
     provisionAgent: mock<(input: ProvisionAgentInput) => Promise<ProvisionAgentResponse>>(() =>
       Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '', launched: false })

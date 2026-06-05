@@ -9,12 +9,12 @@ import type { SessionService } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import type { InferenceSource } from '@intx/types/runtime';
 import { type } from 'arktype';
-import { decryptSecret, encryptSecret } from '@workbench/hub-crypto';
+import { encryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
 
 const log = getLogger(['api', 'agents']);
 
-const { agent, agentInstance, agentSession, credential, grant, principal, tenant } = intxSchema;
+const { agent, agentInstance, agentSession, credential, grant, principal, provider: providerTable, tenant } = intxSchema;
 
 const LAUNCH_RETRY_DELAY_MS = 1_000;
 const MAX_LAUNCH_ATTEMPTS = 3;
@@ -30,13 +30,6 @@ const PROVIDER_BASE_URLS: Record<LLMProviderTypeType, string> = {
   'google-genai': 'https://generativelanguage.googleapis.com',
   'openai-compatible': '',
 };
-
-const SetupMyraCredentialBody = type({
-  provider: LLMProviderType,
-  apiKey: 'string',
-  model: 'string',
-  'baseURL?': 'string',
-});
 
 const ProvisionAgentBody = type({
   tenantId: 'string',
@@ -232,129 +225,6 @@ export function createAgentProvisioningRouter(
     );
   });
 
-  // REMOVED: POST /myra/credential — onboarding now uses POST /tenants/:tenantId/credentials
-  // followed by POST /instances/:instanceId/sessions. Myra instance is auto-provisioned in GET /v1/me.
-  if (false) app.post('/myra/credential', async (c) => {
-    const userId = c.get('userId');
-    const raw = await c.req.json().catch(() => null);
-    if (!raw) {
-      return c.json({ error: 'Invalid JSON body' }, 400);
-    }
-
-    const parsed = SetupMyraCredentialBody(raw);
-    if (parsed instanceof type.errors) {
-      return c.json({ error: parsed.summary }, 400);
-    }
-
-    const personalTenant = await db.query.tenant.findFirst({
-      where: eq(tenant.slug, `user-${userId}`),
-    });
-    if (!personalTenant) {
-      return c.json({ error: 'Personal tenant not found' }, 404);
-    }
-
-    if (!personalTenant.domain) {
-      return c.json({ error: 'Personal tenant has no domain configured' }, 500);
-    }
-
-    const callerPrincipal = await db.query.principal.findFirst({
-      where: and(
-        eq(principal.tenantId, personalTenant.id),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, userId)
-      ),
-    });
-    if (!callerPrincipal) {
-      return c.json({ error: 'Principal not found in personal tenant' }, 404);
-    }
-
-    const baseURL =
-      parsed.provider === 'openai-compatible'
-        ? (parsed.baseURL ?? '')
-        : PROVIDER_BASE_URLS[parsed.provider];
-
-    const now = new Date();
-
-    let credentialId!: string;
-
-    await db.transaction(async (rawTx) => {
-      const tx = rawTx as unknown as DB['db'];
-
-      const providerId = await ensureProvider(
-        tx,
-        personalTenant.id,
-        parsed.provider,
-        parsed.provider,
-        baseURL,
-        parsed.model,
-        now
-      );
-
-      credentialId = await ensureCredential(
-        tx,
-        personalTenant.id,
-        `myra-llm-${callerPrincipal.id}`,
-        parsed.apiKey,
-        providerId,
-        callerPrincipal.id,
-        now
-      );
-    });
-
-    const myraInstance = await db.query.agentInstance.findFirst({
-      where: and(
-        eq(agentInstance.tenantId, personalTenant.id),
-        inArray(agentInstance.status, ['deployed', 'running'])
-      ),
-    });
-
-    let launched = false;
-    let launchError: string | undefined;
-
-    if (myraInstance) {
-      const myraAgentRow = await db.query.agent.findFirst({
-        where: eq(agent.id, myraInstance.agentId),
-      });
-      const systemPrompt = myraAgentRow?.systemPrompt;
-
-      if (systemPrompt) {
-        await grantCredentialsToInstance(
-          db,
-          personalTenant.id,
-          myraInstance.principalId,
-          [credentialId],
-          now
-        );
-        try {
-          await launchAgentSession(db, sessionService, grantStore, {
-            agentId: myraInstance.agentId,
-            instanceId: myraInstance.id,
-            instancePrincipalId: myraInstance.principalId,
-            tenantId: personalTenant.id,
-            tenantDomain: personalTenant.domain,
-            systemPrompt,
-            credentialIds: [credentialId],
-            now,
-          });
-          launched = true;
-        } catch (err) {
-          launchError = err instanceof Error ? err.message : String(err);
-          log.error('Failed to launch Myra session after credential setup', {
-            userId,
-            error: launchError,
-          });
-        }
-      }
-    }
-
-    log.info('Myra credential configured for user {userId}', { userId });
-    return c.json({
-      ok: true,
-      credentialId,
-      launched,
-      ...(launchError !== undefined ? { launchError } : {}),
-    });
-  });
 
   // Create a named LLM credential (provider + encrypted secret) for a tenant.
   app.post('/tenants/:tenantId/credentials', async (c) => {
@@ -466,6 +336,67 @@ export function createAgentProvisioningRouter(
     return c.json({ credentialId, providerId }, 201);
   });
 
+  // List enriched credentials for a tenant (includes provider info and agent grant counts).
+  app.get('/tenants/:tenantId/credentials', async (c) => {
+    const userId = c.get('userId');
+    const tenantId = c.req.param('tenantId');
+
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, tenantId),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const credentials = await db.query.credential.findMany({
+      where: eq(credential.tenantId, tenantId),
+    });
+
+    const result = await Promise.all(
+      credentials.map(async (cred) => {
+        const prov = await db.query.provider.findFirst({
+          where: eq(providerTable.id, cred.providerId),
+        });
+
+        const grants = await db.query.grant.findMany({
+          where: and(
+            eq(grant.resource, `credential:${cred.id}`),
+            eq(grant.tenantId, tenantId)
+          ),
+        });
+
+        const agentPrincipals = await Promise.all(
+          grants
+            .filter((g): g is typeof g & { principalId: string } => g.principalId !== null)
+            .map((g) =>
+              db.query.principal.findFirst({
+                where: and(eq(principal.id, g.principalId), eq(principal.kind, 'agent')),
+              })
+            )
+        );
+        const agentCount = agentPrincipals.filter(Boolean).length;
+
+        return {
+          id: cred.id,
+          name: cred.name,
+          tenantId: cred.tenantId,
+          providerPlugin: prov?.plugin ?? '',
+          providerName: prov?.name ?? '',
+          status: cred.status,
+          agentCount,
+          createdAt: cred.createdAt.toISOString(),
+          updatedAt: cred.updatedAt.toISOString(),
+        };
+      })
+    );
+
+    return c.json({ data: result });
+  });
+
   // Grant credentials to an agent instance and launch (or relaunch) its session.
   app.post('/instances/:instanceId/sessions', async (c) => {
     const userId = c.get('userId');
@@ -568,10 +499,8 @@ async function ensureProvider(
   model: string,
   now: Date
 ): Promise<string> {
-  const { provider } = intxSchema;
-
   await db
-    .insert(provider)
+    .insert(providerTable)
     .values({
       id: generateId('provider'),
       tenantId,
@@ -584,65 +513,10 @@ async function ensureProvider(
     .onConflictDoNothing();
 
   const row = await db.query.provider.findFirst({
-    where: and(eq(provider.tenantId, tenantId), eq(provider.name, name)),
+    where: and(eq(providerTable.tenantId, tenantId), eq(providerTable.name, name)),
   });
 
   if (!row) throw new Error(`Provider ${name} not found after insert`);
-  return row.id;
-}
-
-async function ensureCredential(
-  db: DB['db'],
-  tenantId: string,
-  name: string,
-  secret: string,
-  providerId: string,
-  principalId: string | null,
-  now: Date
-): Promise<string> {
-  const { credentialKeys } = getConfig();
-  const encryptedSecret = encryptSecret(credentialKeys, tenantId, secret);
-
-  await db
-    .insert(credential)
-    .values({
-      id: generateId('credential'),
-      tenantId,
-      providerId,
-      principalId,
-      name,
-      type: 'api_key',
-      secret: encryptedSecret,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing();
-
-  const row = await db.query.credential.findFirst({
-    where: and(eq(credential.tenantId, tenantId), eq(credential.name, name)),
-  });
-
-  if (!row) throw new Error(`Credential ${name} not found after insert`);
-
-  // Legacy rows written before encryption was introduced have no enc: prefix.
-  // Detect and re-encrypt them on next touch; log so operators can track migration progress.
-  const isLegacy = !row.secret.startsWith('enc:');
-  if (isLegacy) {
-    log.warn('Re-encrypting legacy plaintext credential {name} for tenant {tenantId}', {
-      name,
-      tenantId,
-    });
-  }
-  const storedPlaintext = isLegacy
-    ? row.secret
-    : decryptSecret(credentialKeys, tenantId, row.secret);
-  if (storedPlaintext !== secret) {
-    await db
-      .update(credential)
-      .set({ secret: encryptedSecret, updatedAt: now })
-      .where(eq(credential.id, row.id));
-  }
-
   return row.id;
 }
 
@@ -786,12 +660,11 @@ async function buildSourcesFromCredentialIds(
   tenantId: string,
   credentialIds: string[]
 ): Promise<InferenceSource[]> {
-  const { provider } = intxSchema;
   const sources: InferenceSource[] = [];
   for (const credId of credentialIds) {
     const cred = await resolveCredentialById(db, tenantId, credId);
     if (!cred) continue;
-    const prov = await db.query.provider.findFirst({ where: eq(provider.id, cred.providerId) });
+    const prov = await db.query.provider.findFirst({ where: eq(providerTable.id, cred.providerId) });
     if (!prov) continue;
     const meta = prov.metadata as { baseURL?: string; model?: string } | null;
     if (!meta?.baseURL || !meta?.model) continue;

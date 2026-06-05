@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { setupMyraCredential } from '../lib/hub-api';
-import type { LLMProviderType, SetupMyraCredentialInput } from '../lib/hub-api';
+import {
+  getMe,
+  createTenantCredential,
+  launchInstanceSession,
+} from '../lib/hub-api';
+import type { LLMProviderType, CreateTenantCredentialInput } from '../lib/hub-api';
 
 const ANTHROPIC_MODELS = [
   { value: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
@@ -62,17 +66,31 @@ export function OnboardingPage() {
     setLoading(true);
     setError(null);
     try {
-      const input: SetupMyraCredentialInput =
+      const me = await getMe();
+      if (!me.personalTenantId) {
+        setError('Personal tenant not provisioned. Please try again.');
+        return;
+      }
+      if (!me.paInstanceId) {
+        setError('Myra instance not provisioned. Please try again.');
+        return;
+      }
+
+      const input: CreateTenantCredentialInput =
         provider === 'openai-compatible'
-          ? { provider: 'openai-compatible', apiKey, model, baseURL: baseURL.trim() }
-          : { provider, apiKey, model };
-      const result = await setupMyraCredential(input);
+          ? { provider: 'openai-compatible', name: 'Myra LLM', apiKey, model, baseURL: baseURL.trim() }
+          : { provider, name: 'Myra LLM', apiKey, model };
+
+      const { credentialId } = await createTenantCredential(me.personalTenantId, input);
+
+      const result = await launchInstanceSession(me.paInstanceId, [credentialId]);
       if (!result.launched && result.launchError) {
         setError(
           `Credential saved, but Myra failed to start: ${result.launchError}. You can try again from the dashboard.`
         );
         return;
       }
+
       void navigate('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save credential. Please try again.');

@@ -196,23 +196,6 @@ export async function listAgentInstances(tenantId: string): Promise<AgentInstanc
 
 export type LLMProviderType = 'anthropic' | 'openai' | 'google-genai' | 'openai-compatible';
 
-export type SetupMyraCredentialInput =
-  | { provider: 'anthropic' | 'openai' | 'google-genai'; apiKey: string; model: string }
-  | { provider: 'openai-compatible'; apiKey: string; model: string; baseURL: string };
-
-export type SetupMyraCredentialResponse = {
-  ok: boolean;
-  credentialId: string;
-  launched: boolean;
-  launchError?: string;
-};
-
-export async function setupMyraCredential(
-  input: SetupMyraCredentialInput
-): Promise<SetupMyraCredentialResponse> {
-  return hubFetch<SetupMyraCredentialResponse>('POST', 'v1/myra/credential', input);
-}
-
 export type CreateTenantCredentialInput =
   | {
       provider: 'anthropic' | 'openai' | 'google-genai';
@@ -277,4 +260,21 @@ export type ProvisionAgentResponse = {
 
 export async function provisionAgent(input: ProvisionAgentInput): Promise<ProvisionAgentResponse> {
   return hubFetch<ProvisionAgentResponse>('POST', 'v1/agents', input);
+}
+
+export type EnrichedCredential = {
+  id: string;
+  name: string;
+  tenantId: string;
+  providerPlugin: string;
+  providerName: string;
+  status: string;
+  agentCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function listEnrichedCredentials(tenantId: string): Promise<EnrichedCredential[]> {
+  const res = await hubFetch<{ data: EnrichedCredential[] }>('GET', `v1/tenants/${tenantId}/credentials`);
+  return res.data;
 }
