@@ -24,6 +24,7 @@ import { loadConfig } from './config';
 import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
 import { createCollateralGenerationRouter } from './routes/collateral-generation';
+import { createAgentProvisioningRouter } from './routes/agents';
 import * as workbenchSchema from './db/schema';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
@@ -142,7 +143,10 @@ const auth = betterAuth({
                 userId: session.userId,
                 userEmail: authUser.email,
               });
-              log.info('Repaired missing personal tenant on login', { userId: session.userId, personalTenantId });
+              log.info('Repaired missing personal tenant on login', {
+                userId: session.userId,
+                personalTenantId,
+              });
               return;
             }
 
@@ -150,7 +154,7 @@ const auth = betterAuth({
             const instance = await db.query.agentInstance.findFirst({
               where: and(
                 eq(intxSchema.agentInstance.tenantId, personalTenant.id),
-                inArray(intxSchema.agentInstance.status, ['deployed', 'running']),
+                inArray(intxSchema.agentInstance.status, ['deployed', 'running'])
               ),
             });
 
@@ -391,6 +395,7 @@ v1.get('/me', async (c) => {
 
 v1.route('/', createWorkflowRouter(db));
 v1.route('/', createCollateralGenerationRouter(db));
+v1.route('/', createAgentProvisioningRouter(db));
 
 app.route('/api/v1', v1);
 

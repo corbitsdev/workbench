@@ -4,13 +4,22 @@ import { useNavigate } from 'react-router';
 import { CollateralGenerationPanel } from '../components/CollateralGenerationPanel';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { NewWorkbenchModal } from '../components/layout/NewWorkbenchModal';
+import { NewAgentModal } from '../components/layout/NewAgentModal';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
 import { useResizableRail } from '@workbench/ui';
 import { useMediaQuery } from '../lib/use-media-query';
-import { getMe } from '../lib/hub-api';
+import { getMe, listWorkbenches } from '../lib/hub-api';
+import type { ProvisionAgentResponse } from '../lib/hub-api';
 
-function useProvisioningGuard(): boolean {
-  const [provisioned, setProvisioned] = useState(false);
+type ProvisioningState =
+  | { provisioned: false; personalTenantId: null }
+  | { provisioned: true; personalTenantId: string | null };
+
+function useProvisioningGuard(): ProvisioningState {
+  const [state, setState] = useState<ProvisioningState>({
+    provisioned: false,
+    personalTenantId: null,
+  });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -25,7 +34,7 @@ function useProvisioningGuard(): boolean {
       try {
         const me = await getMe();
         if (me.provisioned) {
-          setProvisioned(true);
+          setState({ provisioned: true, personalTenantId: me.personalTenantId });
           clear();
         }
       } catch {
@@ -38,7 +47,7 @@ function useProvisioningGuard(): boolean {
     return clear;
   }, []);
 
-  return provisioned;
+  return state;
 }
 
 /**
@@ -56,16 +65,37 @@ function useProvisioningGuard(): boolean {
  */
 const RAIL_HEIGHT = 'h-full';
 
+// Controls which "New" modal is open.
+type NewModal = 'none' | 'workbench' | 'agent';
+
+function useFirstWorkspaceTenantId(): string | null {
+  const [tenantId, setTenantId] = useState<string | null>(null);
+
+  useEffect(() => {
+    listWorkbenches()
+      .then((entries) => {
+        const first = entries[0];
+        if (first) setTenantId(first.tenantId);
+      })
+      .catch(() => {
+        // non-fatal
+      });
+  }, []);
+
+  return tenantId;
+}
+
 export default function WorkbenchHome() {
-  const provisioned = useProvisioningGuard();
+  const provisioningState = useProvisioningGuard();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const { width, min, max, dragging, containerRef, handleProps } = useResizableRail();
   const [railOpen, setRailOpen] = useState(false);
   const [showGenPanel, setShowGenPanel] = useState(false);
-  const [newWorkbenchOpen, setNewWorkbenchOpen] = useState(false);
+  const [activeModal, setActiveModal] = useState<NewModal>('none');
+  const workspaceTenantId = useFirstWorkspaceTenantId();
   const navigate = useNavigate();
 
-  if (!provisioned) {
+  if (!provisioningState.provisioned) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-[14px] text-text-3">Setting up your workspace…</p>
@@ -73,9 +103,22 @@ export default function WorkbenchHome() {
     );
   }
 
+  const { personalTenantId } = provisioningState;
+
   const handleWorkbenchCreated = (slug: string) => {
-    setNewWorkbenchOpen(false);
+    setActiveModal('none');
     void navigate(`/workbenches/${slug}`);
+  };
+
+  const handleAgentCreated = (_response: ProvisionAgentResponse) => {
+    setActiveModal('none');
+  };
+
+  // The "+ New" button in the LibraryRail "Workbenches & agents" section
+  // opens the agent modal by default (the more common creation path once
+  // workspaces exist). If no workspace exists, fall back to the workbench modal.
+  const handleNew = () => {
+    setActiveModal('agent');
   };
 
   if (!isDesktop) {
@@ -91,16 +134,20 @@ export default function WorkbenchHome() {
         )}
         {railOpen && (
           <div className="fixed inset-0 z-50 bg-page p-2">
-            <LibraryRail
-              onClose={() => setRailOpen(false)}
-              onNew={() => setNewWorkbenchOpen(true)}
-            />
+            <LibraryRail onClose={() => setRailOpen(false)} onNew={handleNew} />
           </div>
         )}
         <NewWorkbenchModal
-          open={newWorkbenchOpen}
-          onClose={() => setNewWorkbenchOpen(false)}
+          open={activeModal === 'workbench'}
+          onClose={() => setActiveModal('none')}
           onCreated={handleWorkbenchCreated}
+        />
+        <NewAgentModal
+          open={activeModal === 'agent'}
+          onClose={() => setActiveModal('none')}
+          onCreated={handleAgentCreated}
+          workspaceTenantId={workspaceTenantId}
+          personalTenantId={personalTenantId}
         />
       </div>
     );
@@ -114,7 +161,7 @@ export default function WorkbenchHome() {
         style={{ gridTemplateColumns: `${width}px 16px 1fr` }}
       >
         <div className={`sticky top-0 self-start ${RAIL_HEIGHT}`}>
-          <LibraryRail onNew={() => setNewWorkbenchOpen(true)} />
+          <LibraryRail onNew={handleNew} />
         </div>
 
         <div
@@ -144,9 +191,16 @@ export default function WorkbenchHome() {
         </AnimatePresence>
       </div>
       <NewWorkbenchModal
-        open={newWorkbenchOpen}
-        onClose={() => setNewWorkbenchOpen(false)}
+        open={activeModal === 'workbench'}
+        onClose={() => setActiveModal('none')}
         onCreated={handleWorkbenchCreated}
+      />
+      <NewAgentModal
+        open={activeModal === 'agent'}
+        onClose={() => setActiveModal('none')}
+        onCreated={handleAgentCreated}
+        workspaceTenantId={workspaceTenantId}
+        personalTenantId={personalTenantId}
       />
     </>
   );

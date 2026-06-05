@@ -160,3 +160,55 @@ export async function listPrincipalGrants(
   );
   return res.data;
 }
+
+export type AgentInstance = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  tenantId: string;
+  address: string;
+  status: string;
+  createdAt: string;
+};
+
+export async function listAgentInstances(tenantId: string): Promise<AgentInstance[]> {
+  const res = await hubFetch<{ data: AgentInstance[] }>(
+    'GET',
+    `v1/agents?tenantId=${encodeURIComponent(tenantId)}`
+  );
+  return res.data;
+}
+
+export type LLMProviderInput = {
+  baseURL: string;
+  apiKey: string;
+  model: string;
+};
+
+export type ProvisionOatInput = {
+  type: 'oat';
+  scope: 'workspace';
+  tenantId: string;
+  granolaApiKey: string;
+  llm: LLMProviderInput;
+};
+
+export type ProvisionMyraInput = {
+  type: 'myra';
+  scope: 'personal';
+  tenantId: string;
+  llm: LLMProviderInput;
+};
+
+export type ProvisionAgentInput = ProvisionOatInput | ProvisionMyraInput;
+
+export type ProvisionAgentResponse = {
+  instanceId: string;
+  agentId: string;
+  agentName: string;
+  tenantId: string;
+};
+
+export async function provisionAgent(input: ProvisionAgentInput): Promise<ProvisionAgentResponse> {
+  return hubFetch<ProvisionAgentResponse>('POST', 'v1/agents', input);
+}

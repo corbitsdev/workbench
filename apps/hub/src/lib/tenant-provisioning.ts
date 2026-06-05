@@ -39,7 +39,7 @@ export type ProvisioningDB = {
 
 const SYSTEM_ROLES = ['owner', 'admin', 'member'] as const;
 
-const PERSONAL_AGENT_DEPLOY_PROMPT =
+export const PERSONAL_AGENT_DEPLOY_PROMPT =
   'You are Myra, a personal GTM assistant. You help the user turn customer conversations into polished sales and marketing collateral. Be concise, direct, and professional.';
 
 type PersonalTenantResult = { tenantId: string; principalId: string };
