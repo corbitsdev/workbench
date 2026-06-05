@@ -48,6 +48,7 @@ export type TenantResponse = {
 export type MeResponse = {
   userId: string;
   personalTenantId: string | null;
+  paInstanceId: string | null;
   provisionedAt: string | null;
 };
 

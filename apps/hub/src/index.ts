@@ -26,7 +26,11 @@ import { createWorkflowRouter } from './routes/workflow';
 import { createCollateralGenerationRouter } from './routes/collateral-generation';
 import * as workbenchSchema from './db/schema';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
-import { provisionUserOnSignup, provisionPersonalTenant, provisionMyraInstance } from './lib/tenant-provisioning';
+import {
+  provisionUserOnSignup,
+  provisionPersonalTenant,
+  provisionMyraInstance,
+} from './lib/tenant-provisioning';
 import { startGranolaPoller } from './lib/granola-poller';
 
 await setup({ dev: process.env.NODE_ENV !== 'production' });
@@ -160,7 +164,10 @@ const auth = betterAuth({
                 .update(workbenchSchema.workbenchUser)
                 .set({ personalTenantId, provisionedAt: new Date(), updatedAt: new Date() })
                 .where(eq(workbenchSchema.workbenchUser.userId, session.userId));
-              log.info('Repaired missing personal tenant on login', { userId: session.userId, personalTenantId });
+              log.info('Repaired missing personal tenant on login', {
+                userId: session.userId,
+                personalTenantId,
+              });
               return;
             }
 
@@ -168,7 +175,7 @@ const auth = betterAuth({
             const instance = await db.query.agentInstance.findFirst({
               where: and(
                 eq(intxSchema.agentInstance.tenantId, workbenchRow.personalTenantId),
-                inArray(intxSchema.agentInstance.status, ['deployed', 'running']),
+                inArray(intxSchema.agentInstance.status, ['deployed', 'running'])
               ),
             });
 
@@ -184,7 +191,10 @@ const auth = betterAuth({
                 userId: session.userId,
                 creatorPrincipalId,
               });
-              log.info('Repaired missing Myra instance on login', { userId: session.userId, paInstanceId });
+              log.info('Repaired missing Myra instance on login', {
+                userId: session.userId,
+                paInstanceId,
+              });
             }
           } catch (err) {
             log.error('Session repair failed — continuing', {
@@ -389,7 +399,7 @@ v1.get('/me', async (c) => {
     const instance = await db.query.agentInstance.findFirst({
       where: and(
         eq(intxSchema.agentInstance.tenantId, personalTenantId),
-        inArray(intxSchema.agentInstance.status, ['deployed', 'running']),
+        inArray(intxSchema.agentInstance.status, ['deployed', 'running'])
       ),
     });
     if (instance) paInstanceId = instance.id;

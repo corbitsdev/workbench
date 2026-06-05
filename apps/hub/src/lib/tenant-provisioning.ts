@@ -67,7 +67,8 @@ export async function provisionPersonalTenant(
         eq(principal.refId, opts.userId)
       ),
     });
-    if (!existingPrincipal) throw new Error(`Principal not found for existing tenant ${existing.id}`);
+    if (!existingPrincipal)
+      throw new Error(`Principal not found for existing tenant ${existing.id}`);
     return { tenantId: existing.id, principalId: existingPrincipal.id };
   }
 
@@ -237,7 +238,12 @@ export async function provisionPersonalTenant(
  */
 export async function provisionMyraInstance(
   db: ProductionDB,
-  opts: { personalTenantId: string; personalTenantDomain: string; userId: string; creatorPrincipalId: string }
+  opts: {
+    personalTenantId: string;
+    personalTenantDomain: string;
+    userId: string;
+    creatorPrincipalId: string;
+  }
 ): Promise<MyraInstanceResult> {
   const existingAgent = await db.query.agent.findFirst({
     where: and(eq(agent.tenantId, opts.personalTenantId), eq(agent.name, 'Myra')),
@@ -317,10 +323,11 @@ export async function provisionUserOnSignup(
   db: ProductionDB,
   opts: { userId: string; userEmail: string }
 ): Promise<{ personalTenantId: string; paInstanceId: string }> {
-  const { tenantId: personalTenantId, principalId: creatorPrincipalId } = await provisionPersonalTenant(db, {
-    userId: opts.userId,
-    userEmail: opts.userEmail,
-  });
+  const { tenantId: personalTenantId, principalId: creatorPrincipalId } =
+    await provisionPersonalTenant(db, {
+      userId: opts.userId,
+      userEmail: opts.userEmail,
+    });
 
   const domain = `user-${opts.userId}.localhost`;
   const { paInstanceId } = await provisionMyraInstance(db, {

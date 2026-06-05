@@ -89,7 +89,10 @@ export function NewWorkbenchModal({ open, onClose, onCreated }: NewWorkbenchModa
       reset();
       onCreated(slug);
     } catch (err) {
-      const status = err !== null && typeof err === 'object' && 'status' in err ? (err as { status: unknown }).status : undefined;
+      const status =
+        err !== null && typeof err === 'object' && 'status' in err
+          ? (err as { status: unknown }).status
+          : undefined;
       if (status === 409) {
         setError('That workspace name is already taken. Please choose a different name.');
       } else {

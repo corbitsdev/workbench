@@ -1,4 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  createBrowserTransport,
+  createInstanceSession,
+  type InstanceSession,
+} from '@intx/hub-client';
+import { convertInstanceEvents } from '@workbench/agents';
 import {
   ChatLauncher,
   ChatPanel,
@@ -8,63 +14,196 @@ import {
   type ChatDockState,
   type ChatMessage,
 } from '@workbench/chat';
+import { getMe } from '../lib/hub-api';
 
-const ADA: ChatAgentIdentity = { name: 'Ada', tagline: 'Personal agent' };
+const MYRA: ChatAgentIdentity = { name: 'Myra', tagline: 'Personal agent' };
 
-const WELCOME: ChatMessage = {
-  id: 'welcome',
-  role: 'agent',
-  content: "Hi, I'm Ada. Ask me anything about your workbench.",
-  createdAt: new Date(0).toISOString(),
-};
+const DOCK_STATE_KEY = 'myra-chat-dock-state';
 
-/**
- * App-side mount for the @workbench/chat widget.
- *
- * NOTE: This is a SHELL wiring for CL-1256. The `handleSend` adapter below is a
- * PLACEHOLDER local-echo stub — it just echoes the user's message back as Ada.
- * The real transport (POST /agents/instances/:paId/mail + outbox polling) is
- * CL-991 and must replace `handleSend` without touching the @workbench/chat
- * package, which stays stateless and transport-free.
- */
+function readDockState(): ChatDockState {
+  try {
+    const stored = localStorage.getItem(DOCK_STATE_KEY);
+    if (stored === 'docked' || stored === 'floating') return stored;
+  } catch {
+    // localStorage unavailable
+  }
+  return 'floating';
+}
+
+function writeDockState(state: ChatDockState): void {
+  try {
+    localStorage.setItem(DOCK_STATE_KEY, state);
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+type SessionState =
+  | { phase: 'loading' }
+  | { phase: 'provisioning' }
+  | { phase: 'ready'; session: InstanceSession }
+  | { phase: 'error'; message: string };
+
 export function PersonalAgentChat() {
   const [open, setOpen] = useState(false);
-  const [dockState, setDockState] = useState<ChatDockState>('floating');
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
+  const [dockState, setDockState] = useState<ChatDockState>(readDockState);
+  const [sessionState, setSessionState] = useState<SessionState>({ phase: 'loading' });
+  const [, forceUpdate] = useState(0);
 
-  // PLACEHOLDER transport adapter for CL-991. Local echo only.
-  const handleSend = (text: string) => {
-    const now = Date.now();
-    const userMessage: ChatMessage = {
-      id: `u-${now}`,
-      role: 'user',
-      content: text,
-      createdAt: new Date(now).toISOString(),
-      status: 'sent',
+  const sessionRef = useRef<InstanceSession | null>(null);
+  const stopRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const me = await getMe();
+        if (cancelled) return;
+
+        if (!me.personalTenantId || !me.paInstanceId) {
+          setSessionState({ phase: 'provisioning' });
+          return;
+        }
+
+        const transport = createBrowserTransport();
+        const session = createInstanceSession({
+          tenantId: me.personalTenantId,
+          instanceId: me.paInstanceId,
+          transport,
+          onChange: () => {
+            if (!cancelled) forceUpdate((n) => n + 1);
+          },
+          onError: (err) => {
+            if (!cancelled) setSessionState({ phase: 'error', message: err.message });
+          },
+        });
+
+        sessionRef.current = session;
+        const stop = session.start();
+        stopRef.current = stop;
+
+        if (!cancelled) setSessionState({ phase: 'ready', session });
+      } catch (err) {
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : 'Failed to load Myra.';
+          setSessionState({ phase: 'error', message });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      stopRef.current?.();
+      stopRef.current = null;
+      sessionRef.current?.destroy();
+      sessionRef.current = null;
     };
-    const echo: ChatMessage = {
-      id: `a-${now}`,
-      role: 'agent',
-      content: `(stub) You said: ${text}`,
-      createdAt: new Date(now + 1).toISOString(),
-    };
-    setMessages((prev) => [...prev, userMessage, echo]);
-  };
+  }, []);
 
   const toggleDock = () => {
-    setDockState((prev) => (prev === 'docked' ? 'floating' : 'docked'));
+    setDockState((prev) => {
+      const next = prev === 'docked' ? 'floating' : 'docked';
+      writeDockState(next);
+      return next;
+    });
   };
 
-  const panel = (
-    <ChatPanel
-      agent={ADA}
-      messages={messages}
-      onSend={handleSend}
-      dockState={dockState}
-      onToggleDock={toggleDock}
-      onClose={() => setOpen(false)}
-    />
-  );
+  function buildMessages(session: InstanceSession): ChatMessage[] {
+    const committed = convertInstanceEvents(session.events);
+
+    if (session.streaming) {
+      const streamingMsg: ChatMessage = {
+        id: 'streaming',
+        role: 'agent',
+        content: session.streaming,
+        createdAt: new Date().toISOString(),
+        status: 'sending',
+      };
+      return [...committed, streamingMsg];
+    }
+
+    return committed;
+  }
+
+  function renderPanel() {
+    if (sessionState.phase === 'loading') {
+      return (
+        <ChatPanel
+          agent={MYRA}
+          messages={[]}
+          onSend={() => undefined}
+          inputDisabled
+          dockState={dockState}
+          onToggleDock={toggleDock}
+          onClose={() => setOpen(false)}
+        />
+      );
+    }
+
+    if (sessionState.phase === 'provisioning') {
+      const provisioning: ChatMessage = {
+        id: 'provisioning',
+        role: 'system',
+        content: 'Myra is being set up. This may take a moment.',
+        createdAt: new Date(0).toISOString(),
+      };
+      return (
+        <ChatPanel
+          agent={MYRA}
+          messages={[provisioning]}
+          onSend={() => undefined}
+          inputDisabled
+          dockState={dockState}
+          onToggleDock={toggleDock}
+          onClose={() => setOpen(false)}
+        />
+      );
+    }
+
+    if (sessionState.phase === 'error') {
+      const errorMsg: ChatMessage = {
+        id: 'error',
+        role: 'system',
+        content: sessionState.message,
+        createdAt: new Date(0).toISOString(),
+        status: 'failed',
+      };
+      return (
+        <ChatPanel
+          agent={MYRA}
+          messages={[errorMsg]}
+          onSend={() => undefined}
+          inputDisabled
+          dockState={dockState}
+          onToggleDock={toggleDock}
+          onClose={() => setOpen(false)}
+        />
+      );
+    }
+
+    const { session } = sessionState;
+    const messages = buildMessages(session);
+    const isTyping = !!session.streaming || !!session.activity;
+
+    const handleSend = (text: string) => {
+      void session.sendMail(text);
+    };
+
+    return (
+      <ChatPanel
+        agent={MYRA}
+        messages={messages}
+        onSend={handleSend}
+        typing={isTyping}
+        dockState={dockState}
+        onToggleDock={toggleDock}
+        onClose={() => setOpen(false)}
+      />
+    );
+  }
+
+  const panel = renderPanel();
 
   if (dockState === 'docked') {
     return <DockedChat side="right">{panel}</DockedChat>;

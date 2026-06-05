@@ -11,7 +11,9 @@
     "test": "bun test src"
   },
   "dependencies": {
+    "@intx/hub-client": "workspace:*",
     "@tanstack/react-query": "5.100.14",
+    "@workbench/agents": "workspace:*",
     "@workbench/artifact": "workspace:*",
     "@workbench/auth": "workspace:*",
     "@workbench/chat": "workspace:*",

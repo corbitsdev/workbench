@@ -36,7 +36,12 @@ function workbenchToRailItem(w: WorkbenchEntry): RailItem {
   };
 }
 
-function useWorkbenches(): { items: RailItem[]; isLoading: boolean; error: boolean; retry: () => void } {
+function useWorkbenches(): {
+  items: RailItem[];
+  isLoading: boolean;
+  error: boolean;
+  retry: () => void;
+} {
   const [workbenches, setWorkbenches] = useState<WorkbenchEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -139,7 +144,11 @@ export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
     isLoading: sessionsLoading,
     isError,
   } = useLibraryResources(clientOptions);
-  const { items: workbenchItems, error: workbenchError, retry: retryWorkbenches } = useWorkbenches();
+  const {
+    items: workbenchItems,
+    error: workbenchError,
+    retry: retryWorkbenches,
+  } = useWorkbenches();
 
   const sessionItems = (workflows ?? []).map(workflowToRailItem);
   const items: RailItem[] = [...sessionItems, ...workbenchItems];

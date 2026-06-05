@@ -61,10 +61,7 @@ export function buildCallDocumentMarkdown(note: GranolaNote): string {
 }
 
 // TODO: scope artifacts to tenant when multi-tenant polling is implemented
-export async function processGranolaNote(
-  db: AnyDb,
-  note: GranolaNote
-): Promise<void> {
+export async function processGranolaNote(db: AnyDb, note: GranolaNote): Promise<void> {
   const title = noteTitle(note);
   const titlePattern = `[granola:${note.id}]%`;
 
