@@ -27,6 +27,7 @@ import { createCollateralGenerationRouter } from './routes/collateral-generation
 import * as workbenchSchema from './db/schema';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import { provisionUserOnSignup, provisionPersonalTenant, provisionMyraInstance } from './lib/tenant-provisioning';
+import { startGranolaPoller } from './lib/granola-poller';
 
 await setup({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
@@ -428,11 +429,20 @@ if (import.meta.main) {
 // requests to drain before exiting. Railway sends SIGTERM then waits
 // 10 s before SIGKILL — this uses that window rather than dying instantly.
 
+// ─── Granola poll loop ────────────────────────────────────────────────────────
+//
+// Start only when Granola credentials are present. Uses the workbench shared
+// tenant ID from config (not per-user). Stop is called on graceful shutdown.
+
+// startGranolaPoller is a no-op if GRANOLA_API_KEY is not set.
+const stopGranolaPoller = startGranolaPoller(db, 'workbench');
+
 let server: ReturnType<typeof Bun.serve> | undefined;
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, async () => {
     log.info('Received {signal}, draining', { signal });
+    stopGranolaPoller();
     await server?.stop();
     log.info('Server stopped, exiting');
     process.exit(0);

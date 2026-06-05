@@ -10,7 +10,7 @@ export function buildPersonalAgentGrantRequirements(
   return [
     {
       source: 'invoker',
-      resource: 'tool:mail.send',
+      resource: 'tool:mail_send',
       action: 'invoke',
     },
     {

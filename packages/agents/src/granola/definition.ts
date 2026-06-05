@@ -7,10 +7,16 @@ type CredentialRequirementType = typeof CredentialRequirement.infer;
 /**
  * Grant requirements for the Granola agent.
  *
- * The Granola agent does not send mail and does not need tool:mail.send.
- * It has no grant requirements.
+ * Oat must be able to reply to inbound mail from Myra. It must never
+ * initiate outbound mail — tool:mail.send is not granted.
  */
-export const GRANOLA_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
+export const GRANOLA_GRANT_REQUIREMENTS: GrantRequirementType[] = [
+  {
+    source: 'invoker',
+    resource: 'tool:mail_reply',
+    action: 'invoke',
+  },
+];
 
 /**
  * Credential requirements for the Granola agent.

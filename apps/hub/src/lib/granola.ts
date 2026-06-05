@@ -62,6 +62,11 @@ export async function getNoteWithTranscript(noteId: string): Promise<GranolaNote
   return response.json() as Promise<GranolaNote>;
 }
 
+export async function getRecentNotesSince(since: Date, limit: number = 50): Promise<GranolaNote[]> {
+  const notes = await getRecentNotes(limit);
+  return notes.filter((n) => new Date(n.created_at) > since);
+}
+
 export function transcriptToText(note: GranolaNote): string {
   if (!note.transcript) return '';
   return note.transcript
