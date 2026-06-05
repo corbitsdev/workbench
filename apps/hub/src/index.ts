@@ -395,11 +395,22 @@ v1.get('/me', async (c) => {
     if (instance) paInstanceId = instance.id;
   }
 
+  // Backfill provisionedAt for users provisioned before this column was populated.
+  let provisionedAt = row?.provisionedAt ?? null;
+  if (personalTenantId && !provisionedAt && row) {
+    const now = new Date();
+    await db
+      .update(workbenchSchema.workbenchUser)
+      .set({ provisionedAt: now, updatedAt: now })
+      .where(eq(workbenchSchema.workbenchUser.userId, userId));
+    provisionedAt = now;
+  }
+
   return c.json({
     userId,
     personalTenantId,
     paInstanceId,
-    provisionedAt: row?.provisionedAt ?? null,
+    provisionedAt: provisionedAt?.toISOString() ?? null,
   });
 });
 
