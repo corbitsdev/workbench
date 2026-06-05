@@ -24,9 +24,18 @@ async function hubFetch<T>(method: string, path: string, body?: unknown): Promis
 export type Principal = {
   id: string;
   tenantId: string;
+  tenantSlug: string;
+  tenantName: string;
   kind: 'user' | 'agent';
   status: string;
   roles: { id: string; name: string }[];
+};
+
+export type WorkbenchEntry = {
+  id: string;
+  tenantId: string;
+  tenantSlug: string;
+  tenantName: string;
 };
 
 export type TenantResponse = {
@@ -36,6 +45,16 @@ export type TenantResponse = {
   domain: string;
 };
 
+export type MeResponse = {
+  userId: string;
+  personalTenantId: string | null;
+  provisionedAt: string | null;
+};
+
+export async function getMe(): Promise<MeResponse> {
+  return hubFetch<MeResponse>('GET', 'v1/me');
+}
+
 export async function getMyPrincipals(): Promise<Principal[]> {
   const res = await hubFetch<{ data: Principal[] }>('GET', 'me/principals');
   return res.data;
@@ -43,4 +62,11 @@ export async function getMyPrincipals(): Promise<Principal[]> {
 
 export async function createTenant(name: string, slug: string): Promise<TenantResponse> {
   return hubFetch<TenantResponse>('POST', 'tenants', { name, slug });
+}
+
+export async function listWorkbenches(): Promise<WorkbenchEntry[]> {
+  const principals = await getMyPrincipals();
+  return principals
+    .filter((p) => !p.tenantSlug.startsWith('user-'))
+    .map(({ id, tenantId, tenantSlug, tenantName }) => ({ id, tenantId, tenantSlug, tenantName }));
 }

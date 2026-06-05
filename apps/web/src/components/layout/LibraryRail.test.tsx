@@ -40,8 +40,6 @@ describe('LibraryRail', () => {
     await waitFor(() => {
       expect(screen.getByText('Acme Corp')).toBeDefined();
     });
-    // Mock offerings (CL-911) remain present alongside real sessions.
-    expect(screen.getByText('GTM Workbench')).toBeDefined();
     expect(screen.getByText('Sessions')).toBeDefined();
   });
 });

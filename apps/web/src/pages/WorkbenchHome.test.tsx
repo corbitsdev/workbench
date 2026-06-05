@@ -1,10 +1,25 @@
 /// <reference types="bun" />
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// Mock hub-api before importing WorkbenchHome so the provisioning guard and
+// workbench list fetch resolve without hitting the network.
+mock.module('../lib/hub-api', () => ({
+  getMe: () =>
+    Promise.resolve({
+      userId: 'u1',
+      personalTenantId: 'pt1',
+      provisionedAt: new Date().toISOString(),
+    }),
+  listWorkbenches: () => Promise.resolve([]),
+  getMyPrincipals: () => Promise.resolve([]),
+  createTenant: () => Promise.resolve({ id: 't1', name: 'Test', slug: 'test', domain: '' }),
+}));
+
 import WorkbenchHome from './WorkbenchHome';
 
 // Force the mobile layout by stubbing matchMedia so the min-width query never
@@ -42,17 +57,20 @@ function renderHome() {
 }
 
 describe('WorkbenchHome mobile layout', () => {
-  it('hides the library rail until the open button is pressed', () => {
+  it('hides the library rail until the open button is pressed', async () => {
     renderHome();
+    // Wait for provisioning guard to resolve before checking layout.
+    const openBtn = await screen.findByRole('button', { name: /open library/i });
     expect(screen.queryByLabelText('Search workflows, agents')).toBeNull();
-    expect(screen.getByRole('button', { name: /open library/i })).toBeDefined();
+    expect(openBtn).toBeDefined();
   });
 
   it('opens the full-screen library overlay and closes it again', async () => {
     const user = userEvent.setup();
     renderHome();
 
-    await user.click(screen.getByRole('button', { name: /open library/i }));
+    const openBtn = await screen.findByRole('button', { name: /open library/i });
+    await user.click(openBtn);
     expect(screen.getByLabelText('Search workflows, agents')).toBeDefined();
 
     await user.click(screen.getByRole('button', { name: /close library/i }));

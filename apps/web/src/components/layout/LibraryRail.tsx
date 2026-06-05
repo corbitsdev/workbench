@@ -1,11 +1,13 @@
-// Library rail. Real workflow sessions come from @workbench/client; the
-// workbenches/agents rows are still mock offerings (CL-911) behind the single
-// boundary marked below. Search + segment interactivity is CL-985; this renders
-// the visual rail only.
+// Library rail. Real workflow sessions come from @workbench/client; real
+// workbenches come from hub-api. Search + segment interactivity is CL-985;
+// this renders the visual rail only.
 
 import { useLibraryResources } from '@workbench/client/react';
 import type { SessionStatus, WorkflowSummary } from '@workbench/shared';
 import { clientOptions } from '../../lib/client-options';
+import { listWorkbenches } from '../../lib/hub-api';
+import { useEffect, useState } from 'react';
+import type { WorkbenchEntry } from '../../lib/hub-api';
 
 type ResourceType = 'workflow' | 'workbench' | 'agent';
 type ResourceStatus = 'run' | 'done' | 'idle';
@@ -21,53 +23,45 @@ interface RailItem {
   color: string;
 }
 
-// ─── MOCK: until offerings registry (CL-911) ────────────────────────────────
-// Workbenches and agents have no backing data yet. These decorative rows keep
-// the rail visually complete. Everything in this array is mock data; the
-// "Sessions" group is real (from @workbench/client).
-const MOCK_OFFERINGS: RailItem[] = [
-  {
-    id: 'mock-gtm-workbench',
+function workbenchToRailItem(w: WorkbenchEntry): RailItem {
+  return {
+    id: w.id,
     group: 'Workbenches & agents',
-    name: 'GTM Workbench',
+    name: w.tenantName,
     type: 'workbench',
-    sub: 'CL-981 · 6 agents',
-    status: 'run',
-    who: 'GA',
-    color: 'var(--blue)',
-  },
-  {
-    id: 'mock-network-vaults',
-    group: 'Workbenches & agents',
-    name: 'Network Vaults',
-    type: 'workbench',
-    sub: 'CL-874 · knowledge base',
+    sub: w.tenantSlug,
     status: 'idle',
-    who: 'SC',
+    who: w.tenantName.slice(0, 2).toUpperCase(),
     color: 'var(--blue)',
-  },
-  {
-    id: 'mock-whatsapp-agent',
-    group: 'Workbenches & agents',
-    name: 'WhatsApp Rating Agent',
-    type: 'agent',
-    sub: 'CL-926 · 1.2k msgs',
-    status: 'run',
-    who: 'GA',
-    color: 'var(--green)',
-  },
-  {
-    id: 'mock-todo-router',
-    group: 'Workbenches & agents',
-    name: 'Meeting Todo Router',
-    type: 'agent',
-    sub: 'Granola → Linear',
-    status: 'done',
-    who: 'JO',
-    color: 'var(--green)',
-  },
-];
-// ─── END MOCK ───────────────────────────────────────────────────────────────
+  };
+}
+
+function useWorkbenches(): { items: RailItem[]; isLoading: boolean; error: boolean; retry: () => void } {
+  const [workbenches, setWorkbenches] = useState<WorkbenchEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setError(false);
+    listWorkbenches()
+      .then((data) => {
+        setWorkbenches(data);
+        setError(false);
+      })
+      .catch(() => setError(true))
+      .finally(() => setIsLoading(false));
+  }, [tick]);
+
+  const retry = () => setTick((n) => n + 1);
+
+  return { items: workbenches.map(workbenchToRailItem), isLoading, error, retry };
+}
 
 const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
   analyzing: 'run',
@@ -135,13 +129,21 @@ function StatusDot({ status }: { status: ResourceStatus }) {
 interface LibraryRailProps {
   /** When provided, renders a close control (used by the mobile full-screen overlay). */
   onClose?: () => void;
+  /** When provided, renders a "New" button in the "Workbenches & agents" section header. */
+  onNew?: () => void;
 }
 
-export function LibraryRail({ onClose }: LibraryRailProps = {}) {
-  const { data: workflows, isLoading, isError } = useLibraryResources(clientOptions);
+export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
+  const {
+    data: workflows,
+    isLoading: sessionsLoading,
+    isError,
+  } = useLibraryResources(clientOptions);
+  const { items: workbenchItems, error: workbenchError, retry: retryWorkbenches } = useWorkbenches();
 
   const sessionItems = (workflows ?? []).map(workflowToRailItem);
-  const items: RailItem[] = [...sessionItems, ...MOCK_OFFERINGS];
+  const items: RailItem[] = [...sessionItems, ...workbenchItems];
+  const isLoading = sessionsLoading;
 
   const segments: { label: string; count: number }[] = [
     { label: 'All', count: items.length },
@@ -221,6 +223,18 @@ export function LibraryRail({ onClose }: LibraryRailProps = {}) {
         {isError && (
           <div className="px-[10px] py-6 text-[13px] text-text-3">Could not load sessions.</div>
         )}
+        {workbenchError && (
+          <div className="flex flex-col gap-2 px-[10px] py-6">
+            <p className="text-[13px] text-text-3">Could not load workbenches.</p>
+            <button
+              type="button"
+              onClick={retryWorkbenches}
+              className="self-start rounded-[9px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         {GROUP_ORDER.map((group) => {
           const inGroup = items.filter((i) => i.group === group);
           if (inGroup.length === 0) return null;
@@ -232,6 +246,24 @@ export function LibraryRail({ onClose }: LibraryRailProps = {}) {
                   {inGroup.length}
                 </span>
                 <span className="h-px flex-1 bg-border" />
+                {group === 'Workbenches & agents' && onNew && (
+                  <button
+                    type="button"
+                    onClick={onNew}
+                    aria-label="New workbench"
+                    className="grid h-[18px] w-[18px] flex-none place-items-center rounded-[5px] border border-border text-text-3 transition-colors hover:border-orange hover:text-orange"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      className="h-[11px] w-[11px]"
+                    >
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                  </button>
+                )}
               </div>
               {inGroup.map((item) => (
                 <div
