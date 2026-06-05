@@ -84,10 +84,12 @@ export function PersonalAgentChat() {
         stopRef.current = stop;
 
         if (!cancelled) setSessionState({ phase: 'ready', session });
-      } catch (err) {
+      } catch {
         if (!cancelled) {
-          const message = err instanceof Error ? err.message : 'Failed to load Myra.';
-          setSessionState({ phase: 'error', message });
+          setSessionState({
+            phase: 'error',
+            message: 'Could not connect to Myra. Check your connection and try again.',
+          });
         }
       }
     })();
@@ -145,7 +147,7 @@ export function PersonalAgentChat() {
       const provisioning: ChatMessage = {
         id: 'provisioning',
         role: 'system',
-        content: 'Myra is being set up. This may take a moment.',
+        content: 'Myra is not set up yet. Complete onboarding to get started.',
         createdAt: new Date(0).toISOString(),
       };
       return (

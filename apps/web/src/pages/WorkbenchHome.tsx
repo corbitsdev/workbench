@@ -31,7 +31,11 @@ function useProvisioningGuard(): ProvisioningState {
     async function check() {
       try {
         const me = await getMe();
-        if (!me.provisioned) return;
+        if (!me.provisioned) {
+          setState({ status: 'needs-onboarding' });
+          clear();
+          return;
+        }
         const workbenches = await listWorkbenches();
         setState(workbenches.length === 0 ? { status: 'needs-onboarding' } : { status: 'ready' });
         clear();
