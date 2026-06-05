@@ -1,35 +1,22 @@
 import { eq, and, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { schema as intxSchema } from '@intx/db';
+import { resolveCredentialById } from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
+import type { SessionService } from '@intx/hub-sessions';
+import type { GrantStore } from '@intx/types/authz';
+import type { InferenceSource } from '@intx/types/runtime';
 import { type } from 'arktype';
-import { PERSONAL_AGENT_DEPLOY_PROMPT } from '../lib/tenant-provisioning';
 import { decryptSecret, encryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
 
 const log = getLogger(['api', 'agents']);
 
-const {
-  agent,
-  agentInstance,
-  credential,
-  grant,
-  provider,
-  principal,
-  tenant,
-  principalRole,
-  role,
-} = intxSchema;
+const { agent, agentInstance, agentSession, credential, grant, principal, tenant } = intxSchema;
 
 // ─── Request shapes ────────────────────────────────────────────────
-
-const LLMProviderInput = type({
-  baseURL: 'string',
-  apiKey: 'string',
-  model: 'string',
-});
 
 const LLMProviderType = type('"anthropic" | "openai" | "google-genai" | "openai-compatible"');
 type LLMProviderTypeType = typeof LLMProviderType.infer;
@@ -48,30 +35,21 @@ const SetupMyraCredentialBody = type({
   'baseURL?': 'string',
 });
 
-const ProvisionOatBody = type({
-  type: '"oat"',
-  scope: '"workspace"',
+const ProvisionAgentBody = type({
   tenantId: 'string',
+  name: 'string',
+  systemPrompt: 'string',
   credentialIds: 'string[]>=1',
 });
 
-const ProvisionMyraBody = type({
-  type: '"myra"',
-  scope: '"personal"',
-  tenantId: 'string',
-  llm: LLMProviderInput,
-});
-
-const ProvisionAgentBody = ProvisionOatBody.or(ProvisionMyraBody);
-
-type ProvisionOatBodyType = typeof ProvisionOatBody.infer;
-type ProvisionMyraBodyType = typeof ProvisionMyraBody.infer;
-type ProvisionAgentBodyType = ProvisionOatBodyType | ProvisionMyraBodyType;
+type ProvisionAgentBodyType = typeof ProvisionAgentBody.infer;
 
 // ─── Route ────────────────────────────────────────────────────────
 
 export function createAgentProvisioningRouter(
-  db: DB['db']
+  db: DB['db'],
+  sessionService: SessionService,
+  grantStore: GrantStore
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
@@ -122,7 +100,7 @@ export function createAgentProvisioningRouter(
     return c.json({ data: result });
   });
 
-  // Provision an agent with its required credentials
+  // Provision an agent with existing credentials
   app.post('/agents', async (c) => {
     const userId = c.get('userId');
     const raw = await c.req.json().catch(() => null);
@@ -137,8 +115,7 @@ export function createAgentProvisioningRouter(
 
     const body = parsed as ProvisionAgentBodyType;
 
-    // Resolve the creator principal for this tenant
-    const creatorPrincipal = await db.query.principal.findFirst({
+    const callerPrincipal = await db.query.principal.findFirst({
       where: and(
         eq(principal.tenantId, body.tenantId),
         eq(principal.kind, 'user'),
@@ -146,7 +123,7 @@ export function createAgentProvisioningRouter(
       ),
     });
 
-    if (!creatorPrincipal) {
+    if (!callerPrincipal) {
       return c.json({ error: 'No principal found for this tenant' }, 403);
     }
 
@@ -158,23 +135,71 @@ export function createAgentProvisioningRouter(
       return c.json({ error: 'Tenant not found' }, 404);
     }
 
-    const now = new Date();
-
-    if (body.type === 'oat') {
-      // Workspace agents require owner or admin role
-      const isAdmin = await callerHasAdminRole(db, creatorPrincipal.id);
-      if (!isAdmin) {
-        return c.json(
-          { error: 'Only workspace owners and admins can provision workspace agents' },
-          403
-        );
-      }
-      const result = await provisionOat(db, body, creatorPrincipal.id, tenantRow.domain, now);
-      return c.json(result, 201);
+    if (!tenantRow.domain) {
+      return c.json({ error: 'Tenant has no domain configured' }, 500);
     }
 
-    const result = await provisionMyra(db, body, creatorPrincipal.id, tenantRow.domain, now);
-    return c.json(result, 201);
+    const credentialError = await verifyCredentialsInTenant(db, body.tenantId, body.credentialIds);
+    if (credentialError) {
+      return c.json({ error: credentialError }, 422);
+    }
+
+    const now = new Date();
+
+    const txResult = await db.transaction(async (rawTx) => {
+      const tx = rawTx as unknown as DB['db'];
+
+      const provisionResult = await ensureAgentInstance(tx, {
+        tenantId: body.tenantId,
+        tenantDomain: tenantRow.domain,
+        agentName: body.name,
+        systemPrompt: body.systemPrompt,
+        creatorPrincipalId: callerPrincipal.id,
+        now,
+      });
+
+      if ('conflict' in provisionResult) {
+        return provisionResult;
+      }
+
+      await grantCredentialsToInstance(
+        tx,
+        body.tenantId,
+        provisionResult.instancePrincipalId,
+        body.credentialIds,
+        now
+      );
+
+      return provisionResult;
+    });
+
+    if ('conflict' in txResult) {
+      return c.json({ error: txResult.conflict }, 409);
+    }
+
+    const { instanceId, agentId, instancePrincipalId, isNew } = txResult;
+
+    if (isNew) {
+      try {
+        await launchAgentSession(db, sessionService, grantStore, {
+          agentId,
+          instanceId,
+          instancePrincipalId,
+          tenantId: body.tenantId,
+          tenantDomain: tenantRow.domain,
+          systemPrompt: body.systemPrompt,
+          credentialIds: body.credentialIds,
+          now,
+        });
+      } catch (err) {
+        log.error('Failed to launch agent session after provisioning', {
+          instanceId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return c.json({ instanceId, agentId, agentName: body.name, tenantId: body.tenantId }, 201);
   });
 
   // Configure or update the LLM credential for the caller's Myra instance
@@ -197,6 +222,10 @@ export function createAgentProvisioningRouter(
       return c.json({ error: 'Personal tenant not found' }, 404);
     }
 
+    if (!personalTenant.domain) {
+      return c.json({ error: 'Personal tenant has no domain configured' }, 500);
+    }
+
     const callerPrincipal = await db.query.principal.findFirst({
       where: and(
         eq(principal.tenantId, personalTenant.id),
@@ -215,10 +244,13 @@ export function createAgentProvisioningRouter(
 
     const now = new Date();
 
+    let credentialId: string;
+    let providerId: string;
+
     await db.transaction(async (rawTx) => {
       const tx = rawTx as unknown as DB['db'];
 
-      const llmProviderId = await ensureProvider(
+      providerId = await ensureProvider(
         tx,
         personalTenant.id,
         'openai-compatible',
@@ -228,16 +260,57 @@ export function createAgentProvisioningRouter(
         now
       );
 
-      await ensureCredential(
+      credentialId = await ensureCredential(
         tx,
         personalTenant.id,
         `myra-llm-${callerPrincipal.id}`,
         parsed.apiKey,
-        llmProviderId,
+        providerId,
         callerPrincipal.id,
         now
       );
     });
+
+    const myraInstance = await db.query.agentInstance.findFirst({
+      where: and(
+        eq(agentInstance.tenantId, personalTenant.id),
+        inArray(agentInstance.status, ['deployed', 'running'])
+      ),
+    });
+
+    if (myraInstance) {
+      const myraAgentRow = await db.query.agent.findFirst({
+        where: eq(agent.id, myraInstance.agentId),
+      });
+      const systemPrompt = myraAgentRow?.systemPrompt;
+
+      if (systemPrompt) {
+        await grantCredentialsToInstance(
+          db,
+          personalTenant.id,
+          myraInstance.principalId,
+          [credentialId!],
+          now
+        );
+        try {
+          await launchAgentSession(db, sessionService, grantStore, {
+            agentId: myraInstance.agentId,
+            instanceId: myraInstance.id,
+            instancePrincipalId: myraInstance.principalId,
+            tenantId: personalTenant.id,
+            tenantDomain: personalTenant.domain,
+            systemPrompt,
+            credentialIds: [credentialId!],
+            now,
+          });
+        } catch (err) {
+          log.error('Failed to launch Myra session after credential setup', {
+            userId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
 
     log.info('Myra credential configured for user {userId}', { userId });
     return c.json({ ok: true });
@@ -246,15 +319,7 @@ export function createAgentProvisioningRouter(
   return app;
 }
 
-async function callerHasAdminRole(db: DB['db'], principalId: string): Promise<boolean> {
-  const rows = await db
-    .select({ roleName: role.name })
-    .from(principalRole)
-    .innerJoin(role, eq(principalRole.roleId, role.id))
-    .where(eq(principalRole.principalId, principalId));
-
-  return rows.some((r) => r.roleName === 'owner' || r.roleName === 'admin');
-}
+// ─── Helpers ──────────────────────────────────────────────────────
 
 async function ensureProvider(
   db: DB['db'],
@@ -265,6 +330,8 @@ async function ensureProvider(
   model: string,
   now: Date
 ): Promise<string> {
+  const { provider } = intxSchema;
+
   await db
     .insert(provider)
     .values({
@@ -339,6 +406,16 @@ async function ensureCredential(
   return row.id;
 }
 
+type EnsureAgentResult =
+  | {
+      instanceId: string;
+      agentId: string;
+      instancePrincipalId: string;
+      address: string;
+      isNew: boolean;
+    }
+  | { conflict: string };
+
 async function ensureAgentInstance(
   db: DB['db'],
   opts: {
@@ -346,24 +423,21 @@ async function ensureAgentInstance(
     tenantDomain: string;
     agentName: string;
     systemPrompt: string;
-    credentialRequirements: Array<{ providerName: string; source: string }>;
     creatorPrincipalId: string;
     now: Date;
   }
-): Promise<{ instanceId: string; agentId: string; instancePrincipalId: string }> {
-  const {
-    tenantId,
-    tenantDomain,
-    agentName,
-    systemPrompt,
-    credentialRequirements,
-    creatorPrincipalId,
-    now,
-  } = opts;
+): Promise<EnsureAgentResult> {
+  const { tenantId, tenantDomain, agentName, systemPrompt, creatorPrincipalId, now } = opts;
 
   const existingAgent = await db.query.agent.findFirst({
     where: and(eq(agent.tenantId, tenantId), eq(agent.name, agentName)),
   });
+
+  if (existingAgent && existingAgent.systemPrompt !== systemPrompt) {
+    return {
+      conflict: `An agent named "${agentName}" already exists with a different system prompt. Choose a different name or update the existing agent.`,
+    };
+  }
 
   let agentId: string;
   if (existingAgent) {
@@ -376,7 +450,7 @@ async function ensureAgentInstance(
       creatorPrincipalId,
       name: agentName,
       systemPrompt,
-      credentialRequirements,
+      credentialRequirements: [],
       status: 'deployed',
       currentVersion: '1',
       createdAt: now,
@@ -395,6 +469,8 @@ async function ensureAgentInstance(
       instanceId: existingInstance.id,
       agentId,
       instancePrincipalId: existingInstance.principalId,
+      address: existingInstance.address,
+      isNew: false,
     };
   }
 
@@ -424,23 +500,23 @@ async function ensureAgentInstance(
   });
 
   log.info('Agent instance provisioned', { agentName, tenantId, instanceId });
-  return { instanceId, agentId, instancePrincipalId };
+  return { instanceId, agentId, instancePrincipalId, address, isNew: true };
 }
-
-const OAT_DEPLOY_PROMPT =
-  'You are Oat, a shared workspace agent that helps analyze customer calls and generate GTM collateral. Be concise, structured, and professional.';
 
 async function verifyCredentialsInTenant(
   db: DB['db'],
   tenantId: string,
   credentialIds: string[]
-): Promise<void> {
+): Promise<string | null> {
   const rows = await db.query.credential.findMany({
     where: and(eq(credential.tenantId, tenantId), inArray(credential.id, credentialIds)),
   });
   if (rows.length !== credentialIds.length) {
-    throw new Error('One or more credentials not found in tenant');
+    const found = new Set(rows.map((r) => r.id));
+    const missing = credentialIds.filter((id) => !found.has(id));
+    return `Credentials not found in tenant: ${missing.join(', ')}`;
   }
+  return null;
 }
 
 async function grantCredentialsToInstance(
@@ -468,78 +544,100 @@ async function grantCredentialsToInstance(
   }
 }
 
-async function provisionOat(
+async function buildSourcesFromCredentialIds(
   db: DB['db'],
-  body: ProvisionOatBodyType,
-  creatorPrincipalId: string,
-  tenantDomain: string,
-  now: Date
-) {
-  const { tenantId, credentialIds } = body;
-
-  return db.transaction(async (rawTx) => {
-    const tx = rawTx as unknown as DB['db'];
-    await verifyCredentialsInTenant(tx, tenantId, credentialIds);
-
-    const { instanceId, agentId, instancePrincipalId } = await ensureAgentInstance(tx, {
-      tenantId,
-      tenantDomain,
-      agentName: 'Oat',
-      systemPrompt: OAT_DEPLOY_PROMPT,
-      credentialRequirements: [
-        { providerName: 'granola', source: 'tenant' },
-        { providerName: 'openai-compatible', source: 'tenant' },
-      ],
-      creatorPrincipalId,
-      now,
+  tenantId: string,
+  credentialIds: string[]
+): Promise<InferenceSource[]> {
+  const { provider } = intxSchema;
+  const sources: InferenceSource[] = [];
+  for (const credId of credentialIds) {
+    const cred = await resolveCredentialById(db, tenantId, credId);
+    if (!cred) continue;
+    const prov = await db.query.provider.findFirst({ where: eq(provider.id, cred.providerId) });
+    if (!prov) continue;
+    const meta = prov.metadata as { baseURL?: string; model?: string } | null;
+    if (!meta?.baseURL || !meta?.model) continue;
+    sources.push({
+      id: `${prov.plugin}:${meta.model}`,
+      provider: prov.plugin,
+      baseURL: meta.baseURL,
+      apiKey: cred.secret,
+      model: meta.model,
     });
-
-    await grantCredentialsToInstance(tx, tenantId, instancePrincipalId, credentialIds, now);
-
-    return { instanceId, agentId, agentName: 'Oat', tenantId };
-  });
+  }
+  return sources;
 }
 
-async function provisionMyra(
+async function launchAgentSession(
   db: DB['db'],
-  body: ProvisionMyraBodyType,
-  creatorPrincipalId: string,
-  tenantDomain: string,
-  now: Date
-) {
-  const { tenantId, llm } = body;
+  sessionService: SessionService,
+  grantStore: GrantStore,
+  opts: {
+    agentId: string;
+    instanceId: string;
+    instancePrincipalId: string;
+    tenantId: string;
+    tenantDomain: string;
+    systemPrompt: string;
+    credentialIds: string[];
+    now: Date;
+  }
+): Promise<void> {
+  const {
+    agentId,
+    instanceId,
+    instancePrincipalId,
+    tenantId,
+    tenantDomain,
+    systemPrompt,
+    credentialIds,
+    now,
+  } = opts;
+  const address = `${instanceId}@${tenantDomain}`;
 
-  return db.transaction(async (rawTx) => {
-    const tx = rawTx as unknown as DB['db'];
-    const llmProviderId = await ensureProvider(
-      tx,
-      tenantId,
-      'openai-compatible',
-      'openai-compatible',
-      llm.baseURL,
-      llm.model,
-      now
-    );
-    await ensureCredential(
-      tx,
-      tenantId,
-      `myra-llm-${creatorPrincipalId}`,
-      llm.apiKey,
-      llmProviderId,
-      creatorPrincipalId,
-      now
-    );
+  const sources = await buildSourcesFromCredentialIds(db, tenantId, credentialIds);
+  if (sources.length === 0) {
+    throw new Error('No resolvable inference sources for the provided credentials');
+  }
+  const defaultSource = sources[0]!.id;
 
-    const { instanceId, agentId } = await ensureAgentInstance(tx, {
-      tenantId,
-      tenantDomain,
-      agentName: `myra-${creatorPrincipalId}`,
-      systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
-      credentialRequirements: [{ providerName: 'openai-compatible', source: 'invoker' }],
-      creatorPrincipalId,
-      now,
-    });
-
-    return { instanceId, agentId, agentName: 'Myra', tenantId };
+  const sessionId = generateId('session');
+  await db.insert(agentSession).values({
+    id: sessionId,
+    tenantId,
+    agentId,
+    principalId: instancePrincipalId,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
   });
+
+  await db
+    .update(agentInstance)
+    .set({ sessionId, updatedAt: now })
+    .where(eq(agentInstance.id, instanceId));
+
+  const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
+
+  await sessionService.launchSession({
+    agentAddress: address,
+    agentId,
+    instanceId,
+    config: {
+      sessionId,
+      agentId,
+      tenantId,
+      principalId: instancePrincipalId,
+      agentAddress: address,
+      systemPrompt,
+      tools: [],
+      grants,
+      sources,
+      defaultSource,
+    },
+    deployContent: { systemPrompt },
+  });
+
+  log.info('Agent session launched', { instanceId, agentId, tenantId });
 }

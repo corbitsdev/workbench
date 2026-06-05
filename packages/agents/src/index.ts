@@ -7,6 +7,10 @@ export {
 } from './personal-agent/definition';
 export { createPersonalAgentDirector } from './personal-agent/director';
 
+// Loop agent
+export { buildLoopAgentSystemPrompt } from './loop/prompt';
+export { LOOP_CREDENTIAL_REQUIREMENTS, LOOP_DEPLOY_PROMPT } from './loop/definition';
+
 // Granola agent
 export { buildGranolaSystemPrompt } from './granola/prompt';
 export {

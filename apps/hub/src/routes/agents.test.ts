@@ -10,7 +10,6 @@ mock.module('../config', () => ({
 import { Hono } from 'hono';
 import { createAgentProvisioningRouter } from './agents';
 
-// Build a request with the userId header that the test harness injects via middleware.
 function makeRequest(
   url: string,
   opts: { method?: string; body?: unknown; userId?: string } = {}
@@ -26,19 +25,29 @@ function makeRequest(
   });
 }
 
-// Wrap the router in a parent app that sets the userId context variable,
-// mirroring how the real hub mounts routers behind auth middleware.
+const mockSessionService = {
+  launchSession: mock(() => Promise.resolve()),
+  sendUserMessage: mock(() => Promise.reject(new Error('not implemented'))),
+  endSession: mock(() => Promise.reject(new Error('not implemented'))),
+};
+
+const mockGrantStore = {
+  collectGrants: mock(() => Promise.resolve([])),
+};
+
 function buildApp(db: ReturnType<typeof makeMockDb>, userId = 'user-1') {
   const parent = new Hono<{ Variables: { userId: string } }>();
   parent.use('*', async (c, next) => {
     c.set('userId', userId);
     await next();
   });
-  parent.route('/', createAgentProvisioningRouter(db as never));
+  parent.route(
+    '/',
+    createAgentProvisioningRouter(db as never, mockSessionService as never, mockGrantStore as never)
+  );
   return parent;
 }
 
-// Build a select chain mock that resolves with `rows`.
 // biome-ignore lint/suspicious/noExplicitAny: test mock
 function makeSelectChain(rows: any[] = []) {
   // biome-ignore lint/suspicious/noExplicitAny: test mock
@@ -83,7 +92,6 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
         findMany: mock(() => Promise.resolve([])),
       },
     },
-    // By default, no admin/owner roles
     select: mock(() => makeSelectChain([])),
     insert: mock(() => ({
       values: mock(() => ({
@@ -101,10 +109,31 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
   return base;
 }
 
+// ─── Shared fixtures ──────────────────────────────────────────────
+
+const TENANT = {
+  id: 'tenant-1',
+  domain: 'tenant-1.localhost',
+  slug: 'ws-1',
+  name: 'Workspace 1',
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const PRINCIPAL = { id: 'prn-1', tenantId: 'tenant-1', kind: 'user', refId: 'user-1' };
+
+const VALID_BODY = {
+  tenantId: 'tenant-1',
+  name: 'Loop',
+  systemPrompt: 'You are Loop, a research agent.',
+  credentialIds: ['crd-1'],
+};
+
+// ─── GET /agents ──────────────────────────────────────────────────
+
 describe('GET /agents', () => {
   it('returns 400 when tenantId is missing', async () => {
-    const db = makeMockDb();
-    const app = buildApp(db);
+    const app = buildApp(makeMockDb());
     const res = await app.fetch(makeRequest('http://localhost/agents'));
     expect(res.status).toBe(400);
     const json = await res.json();
@@ -112,16 +141,13 @@ describe('GET /agents', () => {
   });
 
   it('returns 403 when the caller has no principal in the queried tenant', async () => {
-    const db = makeMockDb();
-    // principal.findFirst returns undefined (no principal for this tenant)
-    const app = buildApp(db, 'user-1');
+    const app = buildApp(makeMockDb());
     const res = await app.fetch(makeRequest('http://localhost/agents?tenantId=tenant-other'));
     expect(res.status).toBe(403);
   });
 
   it('returns agent list when the caller has a principal in the tenant', async () => {
-    const existingPrincipal = { id: 'prn-1', tenantId: 'tenant-1', kind: 'user', refId: 'user-1' };
-    const existingInstance = {
+    const instance = {
       id: 'ins-1',
       agentId: 'agt-1',
       tenantId: 'tenant-1',
@@ -131,7 +157,7 @@ describe('GET /agents', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    const existingAgent = { id: 'agt-1', name: 'Oat', tenantId: 'tenant-1' };
+    const agentRow = { id: 'agt-1', name: 'Loop', tenantId: 'tenant-1' };
 
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     let base: any;
@@ -140,15 +166,15 @@ describe('GET /agents', () => {
     base = {
       transaction: txMock,
       query: {
-        principal: { findFirst: mock(() => Promise.resolve(existingPrincipal)) },
+        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         tenant: { findFirst: mock(() => Promise.resolve(undefined)) },
         agent: {
-          findFirst: mock(() => Promise.resolve(existingAgent)),
-          findMany: mock(() => Promise.resolve([existingAgent])),
+          findFirst: mock(() => Promise.resolve(agentRow)),
+          findMany: mock(() => Promise.resolve([agentRow])),
         },
         agentInstance: {
           findFirst: mock(() => Promise.resolve(undefined)),
-          findMany: mock(() => Promise.resolve([existingInstance])),
+          findMany: mock(() => Promise.resolve([instance])),
         },
         provider: { findFirst: mock(() => Promise.resolve(undefined)) },
         credential: { findFirst: mock(() => Promise.resolve(undefined)) },
@@ -163,274 +189,95 @@ describe('GET /agents', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.data).toHaveLength(1);
-    expect(json.data[0].agentName).toBe('Oat');
+    expect(json.data[0].agentName).toBe('Loop');
   });
 });
 
+// ─── POST /agents ─────────────────────────────────────────────────
+
 describe('POST /agents', () => {
-  it('returns 403 when the caller has no principal in the tenantId from the body', async () => {
-    const db = makeMockDb();
-    const app = buildApp(db, 'user-1');
+  it('returns 400 when body is invalid (missing name)', async () => {
+    const app = buildApp(makeMockDb());
     const res = await app.fetch(
       makeRequest('http://localhost/agents', {
         method: 'POST',
-        body: {
-          type: 'oat',
-          scope: 'workspace',
-          tenantId: 'tenant-nobody',
-          credentialIds: ['crd-1'],
-        },
+        body: { tenantId: 'tenant-1', systemPrompt: 'You are Loop.', credentialIds: ['crd-1'] },
       })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when credentialIds is empty', async () => {
+    const app = buildApp(makeMockDb());
+    const res = await app.fetch(
+      makeRequest('http://localhost/agents', {
+        method: 'POST',
+        body: { ...VALID_BODY, credentialIds: [] },
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 403 when caller has no principal in the tenant', async () => {
+    const app = buildApp(makeMockDb());
+    const res = await app.fetch(
+      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
     );
     expect(res.status).toBe(403);
   });
 
-  it('POST oat returns 201 and is idempotent', async () => {
-    const existingPrincipal = { id: 'prn-1', tenantId: 'tenant-1', kind: 'user', refId: 'user-1' };
-    const existingTenant = {
-      id: 'tenant-1',
-      domain: 'tenant-1.localhost',
-      slug: 'ws-1',
-      name: 'Workspace 1',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    let firstInstanceId: string | undefined;
-
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    let base: any;
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
-    const stubAgent = { id: 'agt-oat-1', name: 'Oat', tenantId: 'tenant-1' };
-    const stubProvider = { id: 'prv-1', tenantId: 'tenant-1', name: 'granola' };
-    const stubCredential = {
-      id: 'crd-1',
-      tenantId: 'tenant-1',
-      name: 'granola',
-      secret: 'gk-test',
-    };
-
-    // select chain returns owner role so admin check passes
-    const adminRoleRows = [{ roleName: 'owner' }];
-
-    base = {
-      transaction: txMock,
-      query: {
-        principal: { findFirst: mock(() => Promise.resolve(existingPrincipal)) },
-        tenant: { findFirst: mock(() => Promise.resolve(existingTenant)) },
-        agent: {
-          findFirst: mock(() => Promise.resolve(stubAgent)),
-          findMany: mock(() => Promise.resolve([stubAgent])),
-        },
-        agentInstance: {
-          findFirst: mock(() => Promise.resolve(undefined)),
-          findMany: mock(() => Promise.resolve([])),
-        },
-        provider: { findFirst: mock(() => Promise.resolve(stubProvider)) },
-        credential: {
-          findFirst: mock(() => Promise.resolve(stubCredential)),
-          findMany: mock(() => Promise.resolve([stubCredential])),
-        },
-      },
-      select: mock(() => makeSelectChain(adminRoleRows)),
-      insert: mock(() => ({
-        values: mock(() => ({
-          returning: mock(() => Promise.resolve([])),
-          onConflictDoNothing: mock(() => Promise.resolve([])),
-        })),
-      })),
-      update: mock(() => ({
-        set: mock(() => ({ where: mock(() => Promise.resolve()) })),
-      })),
-    };
-
-    const app = buildApp(base);
-    const body = {
-      type: 'oat',
-      scope: 'workspace',
-      tenantId: 'tenant-1',
-      credentialIds: ['crd-1'],
-    };
-
-    const res1 = await app.fetch(makeRequest('http://localhost/agents', { method: 'POST', body }));
-    expect(res1.status).toBe(201);
-    const json1 = await res1.json();
-    expect(json1.agentName).toBe('Oat');
-    firstInstanceId = json1.instanceId;
-
-    // For idempotency: simulate second call returning the same agent + existing instance
-    const existingAgent = { id: json1.agentId, name: 'Oat', tenantId: 'tenant-1' };
-    const existingInstance = {
-      id: firstInstanceId,
-      agentId: json1.agentId,
-      tenantId: 'tenant-1',
-      address: `${firstInstanceId}@tenant-1.localhost`,
-      status: 'deployed',
-      principalId: 'prn-agent-1',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    let base2: any;
-    const txMock2 = mock((fn: (tx: typeof base2) => Promise<unknown>) => fn(base2));
-    base2 = {
-      transaction: txMock2,
-      query: {
-        principal: { findFirst: mock(() => Promise.resolve(existingPrincipal)) },
-        tenant: { findFirst: mock(() => Promise.resolve(existingTenant)) },
-        agent: {
-          findFirst: mock(() => Promise.resolve(existingAgent)),
-          findMany: mock(() => Promise.resolve([existingAgent])),
-        },
-        agentInstance: {
-          findFirst: mock(() => Promise.resolve(existingInstance)),
-          findMany: mock(() => Promise.resolve([existingInstance])),
-        },
-        provider: { findFirst: mock(() => Promise.resolve(stubProvider)) },
-        credential: {
-          findFirst: mock(() => Promise.resolve(stubCredential)),
-          findMany: mock(() => Promise.resolve([stubCredential])),
-        },
-      },
-      select: mock(() => makeSelectChain(adminRoleRows)),
-      insert: mock(() => ({
-        values: mock(() => ({
-          returning: mock(() => Promise.resolve([])),
-          onConflictDoNothing: mock(() => Promise.resolve([])),
-        })),
-      })),
-      update: mock(() => ({
-        set: mock(() => ({ where: mock(() => Promise.resolve()) })),
-      })),
-    };
-
-    const app2 = buildApp(base2);
-    const res2 = await app2.fetch(makeRequest('http://localhost/agents', { method: 'POST', body }));
-    expect(res2.status).toBe(201);
-    const json2 = await res2.json();
-    expect(json2.instanceId).toBe(firstInstanceId);
+  it('returns 404 when tenant not found', async () => {
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(undefined));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
+    );
+    expect(res.status).toBe(404);
   });
 
-  it('provisionMyra twice for two different principals produces distinct credential names', async () => {
-    const TENANT_ID = 'tenant-shared';
-    const existingTenant = {
-      id: TENANT_ID,
-      domain: 'shared.localhost',
-      slug: 'ws-shared',
-      name: 'Shared Workspace',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    const credentialNames: string[] = [];
-
-    function makeMyraDb(userId: string, principalId: string) {
-      const existingPrincipal = {
-        id: principalId,
-        tenantId: TENANT_ID,
-        kind: 'user',
-        refId: userId,
-      };
-
-      // biome-ignore lint/suspicious/noExplicitAny: test mock
-      let base: any;
-      // biome-ignore lint/suspicious/noExplicitAny: test mock
-      const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
-      const stubMyraAgent = {
-        id: `agt-myra-${principalId}`,
-        name: `myra-${principalId}`,
-        tenantId: TENANT_ID,
-      };
-      const stubMyraProvider = {
-        id: `prv-${principalId}`,
-        tenantId: TENANT_ID,
-        name: 'openai-compatible',
-      };
-      const stubMyraCredential = {
-        id: `crd-${principalId}`,
-        tenantId: TENANT_ID,
-        name: `myra-llm-${principalId}`,
-        secret: 'sk-test',
-      };
-
-      base = {
-        transaction: txMock,
-        query: {
-          principal: { findFirst: mock(() => Promise.resolve(existingPrincipal)) },
-          tenant: { findFirst: mock(() => Promise.resolve(existingTenant)) },
-          agent: {
-            findFirst: mock(() => Promise.resolve(stubMyraAgent)),
-            findMany: mock(() => Promise.resolve([stubMyraAgent])),
-          },
-          agentInstance: {
-            findFirst: mock(() => Promise.resolve(undefined)),
-            findMany: mock(() => Promise.resolve([])),
-          },
-          provider: { findFirst: mock(() => Promise.resolve(stubMyraProvider)) },
-          credential: { findFirst: mock(() => Promise.resolve(stubMyraCredential)) },
-        },
-        // biome-ignore lint/suspicious/noExplicitAny: test mock
-        insert: mock((_table: any) => ({
-          // biome-ignore lint/suspicious/noExplicitAny: test mock
-          values: mock((row: any) => {
-            // Capture credential names when inserting into the credential table
-            if (row && row.type === 'api_key') {
-              credentialNames.push(row.name as string);
-            }
-            return {
-              returning: mock(() => Promise.resolve([])),
-              onConflictDoNothing: mock(() => Promise.resolve([])),
-            };
-          }),
-        })),
-        update: mock(() => ({
-          set: mock(() => ({ where: mock(() => Promise.resolve()) })),
-        })),
-      };
-      return base;
-    }
-
-    const body = {
-      type: 'myra',
-      scope: 'personal',
-      tenantId: TENANT_ID,
-      llm: { baseURL: 'https://api.openai.com', apiKey: 'sk-test', model: 'gpt-4o' },
-    };
-
-    const app1 = buildApp(makeMyraDb('user-1', 'prn-1'), 'user-1');
-    const res1 = await app1.fetch(
-      makeRequest('http://localhost/agents', { method: 'POST', body, userId: 'user-1' })
+  it('returns 422 when a credential is not found in the tenant', async () => {
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.credential.findMany = mock(() => Promise.resolve([]));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
     );
-    expect(res1.status).toBe(201);
-
-    const app2 = buildApp(makeMyraDb('user-2', 'prn-2'), 'user-2');
-    const res2 = await app2.fetch(
-      makeRequest('http://localhost/agents', { method: 'POST', body, userId: 'user-2' })
-    );
-    expect(res2.status).toBe(201);
-
-    // Each user should have their own distinct credential name
-    const llmCreds = credentialNames.filter((n) => n.startsWith('myra-llm-'));
-    expect(llmCreds).toHaveLength(2);
-    expect(llmCreds[0]).not.toBe(llmCreds[1]);
+    expect(res.status).toBe(422);
   });
 
-  it('POST oat with credentialIds creates grants for each credential and does not insert new credentials', async () => {
-    const existingPrincipal = { id: 'prn-1', tenantId: 'tenant-1', kind: 'user', refId: 'user-1' };
-    const existingTenant = {
-      id: 'tenant-1',
-      domain: 'tenant-1.localhost',
-      slug: 'ws-1',
-      name: 'Workspace 1',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+  it('returns 409 when the same agent name exists with a different system prompt', async () => {
+    const conflictingAgent = {
+      id: 'agt-existing',
+      name: 'Loop',
+      tenantId: 'tenant-1',
+      systemPrompt: 'A different prompt entirely.',
     };
-    const existingCredential = { id: 'crd-granola', tenantId: 'tenant-1', name: 'granola' };
-    const stubAgent = { id: 'agt-oat-1', name: 'Oat', tenantId: 'tenant-1' };
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.credential.findMany = mock(() =>
+      Promise.resolve([{ id: 'crd-1', tenantId: 'tenant-1' }])
+    );
+    db.query.agent.findFirst = mock(() => Promise.resolve(conflictingAgent));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
+    );
+    expect(res.status).toBe(409);
+  });
 
-    const credentialInserts: string[] = [];
+  it('returns 201 and creates agent instance with grants', async () => {
+    const stubAgent = {
+      id: 'agt-1',
+      name: 'Loop',
+      tenantId: 'tenant-1',
+      systemPrompt: VALID_BODY.systemPrompt,
+    };
+    const stubCredential = { id: 'crd-1', tenantId: 'tenant-1', name: 'llm', secret: 'sk-test' };
     const grantInserts: string[] = [];
 
     // biome-ignore lint/suspicious/noExplicitAny: test mock
@@ -440,216 +287,58 @@ describe('POST /agents', () => {
     base = {
       transaction: txMock,
       query: {
-        principal: { findFirst: mock(() => Promise.resolve(existingPrincipal)) },
-        tenant: { findFirst: mock(() => Promise.resolve(existingTenant)) },
-        agent: {
-          findFirst: mock(() => Promise.resolve(stubAgent)),
-          findMany: mock(() => Promise.resolve([stubAgent])),
-        },
-        agentInstance: {
-          findFirst: mock(() => Promise.resolve(undefined)),
-          findMany: mock(() => Promise.resolve([])),
+        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
+        tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
+        agent: { findFirst: mock(() => Promise.resolve(stubAgent)) },
+        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
+        credential: {
+          findFirst: mock(() => Promise.resolve(stubCredential)),
+          findMany: mock(() => Promise.resolve([stubCredential])),
         },
         provider: { findFirst: mock(() => Promise.resolve(undefined)) },
-        credential: {
-          findFirst: mock(() => Promise.resolve(existingCredential)),
-          findMany: mock(() => Promise.resolve([existingCredential])),
-        },
       },
-      select: mock(() => makeSelectChain([{ roleName: 'owner' }])),
       // biome-ignore lint/suspicious/noExplicitAny: test mock
       insert: mock((_table: any) => ({
         // biome-ignore lint/suspicious/noExplicitAny: test mock
         values: mock((row: any) => {
-          if (row && row.type === 'api_key') credentialInserts.push(row.name as string);
-          if (row && row.resource) grantInserts.push(row.resource as string);
+          if (row?.resource) grantInserts.push(row.resource as string);
           return {
             returning: mock(() => Promise.resolve([])),
             onConflictDoNothing: mock(() => Promise.resolve([])),
           };
         }),
       })),
-      update: mock(() => ({
-        set: mock(() => ({ where: mock(() => Promise.resolve()) })),
-      })),
+      update: mock(() => ({ set: mock(() => ({ where: mock(() => Promise.resolve()) })) })),
     };
 
     const app = buildApp(base);
     const res = await app.fetch(
-      makeRequest('http://localhost/agents', {
-        method: 'POST',
-        body: {
-          type: 'oat',
-          scope: 'workspace',
-          tenantId: 'tenant-1',
-          credentialIds: ['crd-granola'],
-        },
-      })
+      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
     );
     expect(res.status).toBe(201);
-    // No new credential rows should be inserted
-    expect(credentialInserts).toHaveLength(0);
-    // A grant for the credential should have been written
-    expect(grantInserts).toContain('credential:crd-granola');
+    const json = await res.json();
+    expect(json.agentName).toBe('Loop');
+    expect(json.instanceId).toBeTruthy();
+    expect(grantInserts).toContain('credential:crd-1');
   });
 
-  it('POST oat returns 400 when credentialIds is empty array', async () => {
-    const app = buildApp(makeMockDb());
-    const res = await app.fetch(
-      makeRequest('http://localhost/agents', {
-        method: 'POST',
-        body: {
-          type: 'oat',
-          scope: 'workspace',
-          tenantId: 'tenant-1',
-          credentialIds: [],
-        },
-      })
-    );
-    expect(res.status).toBe(400);
-  });
-
-  it('POST oat returns 400 when credentialIds is missing', async () => {
-    const existingPrincipal = { id: 'prn-1', tenantId: 'tenant-1', kind: 'user', refId: 'user-1' };
-    const existingTenant = {
-      id: 'tenant-1',
-      domain: 'tenant-1.localhost',
-      slug: 'ws-1',
-      name: 'Workspace 1',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    let base: any;
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
-    base = {
-      transaction: txMock,
-      query: {
-        principal: { findFirst: mock(() => Promise.resolve(existingPrincipal)) },
-        tenant: { findFirst: mock(() => Promise.resolve(existingTenant)) },
-        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-        provider: { findFirst: mock(() => Promise.resolve(undefined)) },
-        credential: { findFirst: mock(() => Promise.resolve(undefined)) },
-      },
-      select: mock(() => makeSelectChain([{ roleName: 'owner' }])),
-      insert: mock(() => ({
-        values: mock(() => ({
-          returning: mock(() => Promise.resolve([])),
-          onConflictDoNothing: mock(() => Promise.resolve([])),
-        })),
-      })),
-      update: mock(() => ({
-        set: mock(() => ({ where: mock(() => Promise.resolve()) })),
-      })),
-    };
-
-    const app = buildApp(base);
-    const res = await app.fetch(
-      makeRequest('http://localhost/agents', {
-        method: 'POST',
-        body: {
-          type: 'oat',
-          scope: 'workspace',
-          tenantId: 'tenant-1',
-          // credentialIds missing — should fail schema validation
-        },
-      })
-    );
-    expect(res.status).toBe(400);
-  });
-
-  it('non-admin tenant member gets 403 when provisioning Oat', async () => {
-    const existingPrincipal = {
-      id: 'prn-member-1',
+  it('is idempotent — second call returns the same instance', async () => {
+    const stubAgent = {
+      id: 'agt-loop',
+      name: 'Loop',
       tenantId: 'tenant-1',
-      kind: 'user',
-      refId: 'user-member',
+      systemPrompt: VALID_BODY.systemPrompt,
     };
-    const existingTenant = {
-      id: 'tenant-1',
-      domain: 'tenant-1.localhost',
-      slug: 'ws-1',
-      name: 'Workspace 1',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    let base: any;
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
-    base = {
-      transaction: txMock,
-      query: {
-        principal: { findFirst: mock(() => Promise.resolve(existingPrincipal)) },
-        tenant: { findFirst: mock(() => Promise.resolve(existingTenant)) },
-        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-        provider: { findFirst: mock(() => Promise.resolve(undefined)) },
-        credential: { findFirst: mock(() => Promise.resolve(undefined)) },
-      },
-      // No admin/owner roles
-      select: mock(() => makeSelectChain([])),
-      insert: mock(() => ({
-        values: mock(() => ({
-          returning: mock(() => Promise.resolve([])),
-          onConflictDoNothing: mock(() => Promise.resolve([])),
-        })),
-      })),
-      update: mock(() => ({
-        set: mock(() => ({ where: mock(() => Promise.resolve()) })),
-      })),
-    };
-
-    const app = buildApp(base, 'user-member');
-    const res = await app.fetch(
-      makeRequest('http://localhost/agents', {
-        method: 'POST',
-        userId: 'user-member',
-        body: {
-          type: 'oat',
-          scope: 'workspace',
-          tenantId: 'tenant-1',
-          credentialIds: ['crd-1'],
-        },
-      })
-    );
-    expect(res.status).toBe(403);
-    const json = await res.json();
-    expect(json.error).toContain('admin');
-  });
-
-  it('second POST for same agent type returns the existing instance (idempotent via check-then-insert)', async () => {
-    const existingPrincipal = {
-      id: 'prn-owner-1',
-      tenantId: 'tenant-2',
-      kind: 'user',
-      refId: 'user-owner',
-    };
-    const existingTenant = {
-      id: 'tenant-2',
-      domain: 'tenant-2.localhost',
-      slug: 'ws-2',
-      name: 'Workspace 2',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    const existingAgentRow = { id: 'agt-oat-2', name: 'Oat', tenantId: 'tenant-2' };
-    const existingInstanceRow = {
-      id: 'ins-oat-2',
-      agentId: 'agt-oat-2',
-      tenantId: 'tenant-2',
-      address: 'ins-oat-2@tenant-2.localhost',
+    const existingInstance = {
+      id: 'ins-loop',
+      agentId: 'agt-loop',
+      tenantId: 'tenant-1',
+      address: 'ins-loop@tenant-1.localhost',
       status: 'deployed',
-      principalId: 'prn-agent-oat-2',
+      principalId: 'prn-agent-loop',
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    const stubProvider = { id: 'prv-2', tenantId: 'tenant-2', name: 'granola' };
-    const stubCredential = { id: 'crd-2', tenantId: 'tenant-2', name: 'granola', secret: 'gk-x' };
 
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     let base: any;
@@ -658,56 +347,40 @@ describe('POST /agents', () => {
     base = {
       transaction: txMock,
       query: {
-        principal: { findFirst: mock(() => Promise.resolve(existingPrincipal)) },
-        tenant: { findFirst: mock(() => Promise.resolve(existingTenant)) },
-        // agent.findFirst returns existing agent — simulates second call
-        agent: {
-          findFirst: mock(() => Promise.resolve(existingAgentRow)),
-          findMany: mock(() => Promise.resolve([existingAgentRow])),
-        },
-        // agentInstance.findFirst returns existing instance — no new row inserted
-        agentInstance: {
-          findFirst: mock(() => Promise.resolve(existingInstanceRow)),
-          findMany: mock(() => Promise.resolve([existingInstanceRow])),
-        },
-        provider: { findFirst: mock(() => Promise.resolve(stubProvider)) },
+        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
+        tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
+        agent: { findFirst: mock(() => Promise.resolve(stubAgent)) },
+        agentInstance: { findFirst: mock(() => Promise.resolve(existingInstance)) },
         credential: {
-          findFirst: mock(() => Promise.resolve(stubCredential)),
-          findMany: mock(() => Promise.resolve([stubCredential])),
+          findFirst: mock(() =>
+            Promise.resolve({ id: 'crd-1', tenantId: 'tenant-1', name: 'llm', secret: 'x' })
+          ),
+          findMany: mock(() =>
+            Promise.resolve([{ id: 'crd-1', tenantId: 'tenant-1', name: 'llm', secret: 'x' }])
+          ),
         },
+        provider: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
-      select: mock(() => makeSelectChain([{ roleName: 'owner' }])),
       insert: mock(() => ({
         values: mock(() => ({
           returning: mock(() => Promise.resolve([])),
           onConflictDoNothing: mock(() => Promise.resolve([])),
         })),
       })),
-      update: mock(() => ({
-        set: mock(() => ({ where: mock(() => Promise.resolve()) })),
-      })),
+      update: mock(() => ({ set: mock(() => ({ where: mock(() => Promise.resolve()) })) })),
     };
 
-    const app = buildApp(base, 'user-owner');
+    const app = buildApp(base);
     const res = await app.fetch(
-      makeRequest('http://localhost/agents', {
-        method: 'POST',
-        userId: 'user-owner',
-        body: {
-          type: 'oat',
-          scope: 'workspace',
-          tenantId: 'tenant-2',
-          credentialIds: ['crd-2'],
-        },
-      })
+      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
     );
     expect(res.status).toBe(201);
     const json = await res.json();
-    // Must return the existing instance id, not a new one
-    expect(json.instanceId).toBe('ins-oat-2');
-    expect(json.agentId).toBe('agt-oat-2');
+    expect(json.instanceId).toBe('ins-loop');
   });
 });
+
+// ─── POST /myra/credential ────────────────────────────────────────
 
 describe('POST /myra/credential', () => {
   const personalTenant = {
@@ -738,9 +411,7 @@ describe('POST /myra/credential', () => {
   };
 
   it('returns 404 when personal tenant not found', async () => {
-    const db = makeMockDb();
-    db.query.tenant.findFirst = mock(() => Promise.resolve(undefined));
-    const app = buildApp(db);
+    const app = buildApp(makeMockDb());
     const res = await app.fetch(
       makeRequest('http://localhost/myra/credential', {
         method: 'POST',
@@ -806,8 +477,7 @@ describe('POST /myra/credential', () => {
   });
 
   it('returns 400 for invalid body', async () => {
-    const db = makeMockDb();
-    const app = buildApp(db);
+    const app = buildApp(makeMockDb());
     const res = await app.fetch(
       makeRequest('http://localhost/myra/credential', {
         method: 'POST',

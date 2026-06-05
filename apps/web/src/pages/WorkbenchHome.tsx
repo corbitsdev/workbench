@@ -1,6 +1,7 @@
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { AgentChat } from '../components/AgentChat';
 import { CollateralGenerationPanel } from '../components/CollateralGenerationPanel';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { NewWorkbenchModal } from '../components/layout/NewWorkbenchModal';
@@ -9,6 +10,7 @@ import { ArtifactGallery } from '../components/layout/ArtifactGallery';
 import { useResizableRail } from '@workbench/ui';
 import { useMediaQuery } from '../lib/use-media-query';
 import { getMe, listWorkbenches } from '../lib/hub-api';
+import type { AgentSelection } from '../components/layout/LibraryRail';
 import type { ProvisionAgentResponse } from '../lib/hub-api';
 
 type ProvisioningState =
@@ -56,13 +58,17 @@ function useProvisioningGuard(): ProvisioningState {
  * Mobile (<lg): single-column gallery with natural scroll; the library opens
  * as a full-screen overlay from a button in the gallery header.
  *
- * The right pane toggles between the artifact gallery and the inline
- * collateral-generation panel — no route change, sidebar and Ada remain visible.
+ * The right pane toggles between: artifact gallery, collateral-generation
+ * panel, or agent chat — no route change.
  */
 const RAIL_HEIGHT = 'h-full';
 
-// Controls which "New" modal is open.
 type NewModal = 'none' | 'workbench' | 'agent';
+
+type RightPane =
+  | { view: 'gallery' }
+  | { view: 'gen' }
+  | { view: 'agent'; instanceId: string; tenantId: string; agentName: string };
 
 function useFirstWorkspaceTenantId(): string | null {
   const [tenantId, setTenantId] = useState<string | null>(null);
@@ -86,8 +92,9 @@ export default function WorkbenchHome() {
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const { width, min, max, dragging, containerRef, handleProps } = useResizableRail();
   const [railOpen, setRailOpen] = useState(false);
-  const [showGenPanel, setShowGenPanel] = useState(false);
+  const [rightPane, setRightPane] = useState<RightPane>({ view: 'gallery' });
   const [activeModal, setActiveModal] = useState<NewModal>('none');
+  const [agentRefreshTick, setAgentRefreshTick] = useState(0);
   const workspaceTenantId = useFirstWorkspaceTenantId();
   const navigate = useNavigate();
 
@@ -112,29 +119,78 @@ export default function WorkbenchHome() {
 
   const handleAgentCreated = (_response: ProvisionAgentResponse) => {
     setActiveModal('none');
+    setAgentRefreshTick((n) => n + 1);
   };
 
-  // The "+ New" button in the LibraryRail "Workbenches & agents" section
-  // opens the agent modal by default (the more common creation path once
-  // workspaces exist). If no workspace exists, fall back to the workbench modal.
   const handleNew = () => {
     setActiveModal('agent');
   };
 
+  const handleAgentSelect = (selection: AgentSelection) => {
+    setRightPane({ view: 'agent', ...selection });
+  };
+
+  const paneTransition: Transition = { duration: 0.15, ease: [0.23, 1, 0.32, 1] };
+  const paneFade = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: paneTransition,
+  };
+
+  function renderRightPane() {
+    if (rightPane.view === 'gen') {
+      return (
+        <motion.div key="gen" {...paneFade} className="min-h-0 flex-1">
+          <CollateralGenerationPanel onClose={() => setRightPane({ view: 'gallery' })} />
+        </motion.div>
+      );
+    }
+    if (rightPane.view === 'agent') {
+      return (
+        <motion.div key={`agent-${rightPane.instanceId}`} {...paneFade} className="min-h-0 flex-1">
+          <AgentChat
+            instanceId={rightPane.instanceId}
+            tenantId={rightPane.tenantId}
+            agentName={rightPane.agentName}
+            onClose={() => setRightPane({ view: 'gallery' })}
+          />
+        </motion.div>
+      );
+    }
+    return (
+      <motion.div key="gallery" {...paneFade} className="min-h-0 flex-1">
+        <ArtifactGallery onNew={() => setRightPane({ view: 'gen' })} />
+      </motion.div>
+    );
+  }
+
   if (!isDesktop) {
     return (
       <div className="h-full overflow-y-auto px-2 pb-10 pt-1">
-        {showGenPanel ? (
-          <CollateralGenerationPanel onClose={() => setShowGenPanel(false)} />
+        {rightPane.view === 'gen' ? (
+          <CollateralGenerationPanel onClose={() => setRightPane({ view: 'gallery' })} />
+        ) : rightPane.view === 'agent' ? (
+          <AgentChat
+            instanceId={rightPane.instanceId}
+            tenantId={rightPane.tenantId}
+            agentName={rightPane.agentName}
+            onClose={() => setRightPane({ view: 'gallery' })}
+          />
         ) : (
           <ArtifactGallery
-            onNew={() => setShowGenPanel(true)}
+            onNew={() => setRightPane({ view: 'gen' })}
             onOpenLibrary={() => setRailOpen(true)}
           />
         )}
         {railOpen && (
           <div className="fixed inset-0 z-50 bg-page p-2">
-            <LibraryRail onClose={() => setRailOpen(false)} onNew={handleNew} />
+            <LibraryRail
+              onClose={() => setRailOpen(false)}
+              onNew={handleNew}
+              onAgentSelect={handleAgentSelect}
+              refreshTick={agentRefreshTick}
+            />
           </div>
         )}
         <NewWorkbenchModal
@@ -160,7 +216,11 @@ export default function WorkbenchHome() {
         style={{ gridTemplateColumns: `${width}px 16px 1fr` }}
       >
         <div className={`sticky top-0 self-start ${RAIL_HEIGHT}`}>
-          <LibraryRail onNew={handleNew} />
+          <LibraryRail
+            onNew={handleNew}
+            onAgentSelect={handleAgentSelect}
+            refreshTick={agentRefreshTick}
+          />
         </div>
 
         <div
@@ -175,19 +235,13 @@ export default function WorkbenchHome() {
           {...handleProps}
         >
           <div
-            className={`w-[5px] rounded-full bg-border-strong transition-all duration-300 ease-spring group-hover:bg-orange group-focus:bg-orange ${
+            className={`w-[5px] rounded-full bg-border-strong transition-[background-color,height] duration-200 ease-out group-hover:bg-orange group-focus:bg-orange ${
               dragging ? 'h-20 bg-orange' : 'h-[46px] group-hover:h-20'
             }`}
           />
         </div>
 
-        <AnimatePresence mode="wait">
-          {showGenPanel ? (
-            <CollateralGenerationPanel key="gen-panel" onClose={() => setShowGenPanel(false)} />
-          ) : (
-            <ArtifactGallery key="gallery" onNew={() => setShowGenPanel(true)} />
-          )}
-        </AnimatePresence>
+        <AnimatePresence mode="wait">{renderRightPane()}</AnimatePresence>
       </div>
       <NewWorkbenchModal
         open={activeModal === 'workbench'}

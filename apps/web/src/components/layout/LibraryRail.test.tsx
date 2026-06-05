@@ -23,6 +23,7 @@ mock.module('@workbench/client/react', () => ({
 
 mock.module('../../lib/hub-api', () => ({
   listWorkbenches: mock(() => Promise.resolve([])),
+  listAgentInstances: mock(() => Promise.resolve([])),
 }));
 
 function renderWithClient(ui: React.ReactElement) {

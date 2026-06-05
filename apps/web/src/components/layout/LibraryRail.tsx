@@ -1,13 +1,9 @@
-// Library rail. Real workflow sessions come from @workbench/client; real
-// workbenches come from hub-api. Search + segment interactivity is CL-985;
-// this renders the visual rail only.
-
 import { useLibraryResources } from '@workbench/client/react';
 import type { SessionStatus, WorkflowSummary } from '@workbench/shared';
 import { clientOptions } from '../../lib/client-options';
-import { listWorkbenches } from '../../lib/hub-api';
+import { listAgentInstances, listWorkbenches } from '../../lib/hub-api';
 import { useEffect, useState } from 'react';
-import type { WorkbenchEntry } from '../../lib/hub-api';
+import type { AgentInstance, WorkbenchEntry } from '../../lib/hub-api';
 
 type ResourceType = 'workflow' | 'workbench' | 'agent';
 type ResourceStatus = 'run' | 'done' | 'idle';
@@ -21,12 +17,14 @@ interface RailItem {
   status: ResourceStatus;
   who: string;
   color: string;
+  instanceId?: string;
+  tenantId?: string;
 }
 
 function workbenchToRailItem(w: WorkbenchEntry): RailItem {
   return {
     id: w.id,
-    group: 'Workbenches & agents',
+    group: 'Workbenches and agents',
     name: w.tenantName,
     type: 'workbench',
     sub: w.tenantSlug,
@@ -36,13 +34,28 @@ function workbenchToRailItem(w: WorkbenchEntry): RailItem {
   };
 }
 
-function useWorkbenches(): {
+function agentToRailItem(a: AgentInstance): RailItem {
+  return {
+    id: a.id,
+    group: 'Workbenches and agents',
+    name: a.agentName,
+    type: 'agent',
+    sub: `Agent · ${a.status}`,
+    status: 'idle',
+    who: a.agentName.slice(0, 2).toUpperCase(),
+    color: 'var(--green)',
+    instanceId: a.id,
+    tenantId: a.tenantId,
+  };
+}
+
+function useWorkbenchesAndAgents(externalTick = 0): {
   items: RailItem[];
   isLoading: boolean;
   error: boolean;
   retry: () => void;
 } {
-  const [workbenches, setWorkbenches] = useState<WorkbenchEntry[]>([]);
+  const [items, setItems] = useState<RailItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
   const [tick, setTick] = useState(0);
@@ -54,18 +67,30 @@ function useWorkbenches(): {
     }
     setIsLoading(true);
     setError(false);
-    listWorkbenches()
-      .then((data) => {
-        setWorkbenches(data);
+
+    void (async () => {
+      try {
+        const workbenches = await listWorkbenches();
+        const workbenchItems = workbenches.map(workbenchToRailItem);
+
+        const agentLists = await Promise.all(
+          workbenches.map((w) => listAgentInstances(w.tenantId).catch(() => []))
+        );
+        const agentItems = agentLists.flat().map(agentToRailItem);
+
+        setItems([...workbenchItems, ...agentItems]);
         setError(false);
-      })
-      .catch(() => setError(true))
-      .finally(() => setIsLoading(false));
-  }, [tick]);
+      } catch {
+        setError(true);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [tick, externalTick]);
 
   const retry = () => setTick((n) => n + 1);
 
-  return { items: workbenches.map(workbenchToRailItem), isLoading, error, retry };
+  return { items, isLoading, error, retry };
 }
 
 const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
@@ -95,7 +120,7 @@ function workflowToRailItem(w: WorkflowSummary): RailItem {
   };
 }
 
-const GROUP_ORDER = ['Sessions', 'Workbenches & agents'];
+const GROUP_ORDER = ['Sessions', 'Workbenches and agents'];
 
 const TAG_STYLES: Record<ResourceType, string> = {
   workflow: 'bg-[rgba(233,132,40,0.16)] text-orange',
@@ -131,11 +156,17 @@ function StatusDot({ status }: { status: ResourceStatus }) {
   );
 }
 
+export interface AgentSelection {
+  instanceId: string;
+  tenantId: string;
+  agentName: string;
+}
+
 interface LibraryRailProps {
-  /** When provided, renders a close control (used by the mobile full-screen overlay). */
   onClose?: () => void;
-  /** When provided, renders a "New" button in the "Workbenches & agents" section header. */
   onNew?: () => void;
+  onAgentSelect?: (selection: AgentSelection) => void;
+  refreshTick?: number;
 }
 
 const SEGMENT_FILTER: Record<string, ResourceType | null> = {
@@ -145,23 +176,23 @@ const SEGMENT_FILTER: Record<string, ResourceType | null> = {
   Agents: 'agent',
 };
 
-export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
+export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: LibraryRailProps = {}) {
   const {
     data: workflows,
     isLoading: sessionsLoading,
     isError,
   } = useLibraryResources(clientOptions);
   const {
-    items: workbenchItems,
+    items: workbenchAndAgentItems,
     error: workbenchError,
     retry: retryWorkbenches,
-  } = useWorkbenches();
+  } = useWorkbenchesAndAgents(refreshTick);
 
   const [activeSegment, setActiveSegment] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
 
   const sessionItems = (workflows ?? []).map(workflowToRailItem);
-  const items: RailItem[] = [...sessionItems, ...workbenchItems];
+  const items: RailItem[] = [...sessionItems, ...workbenchAndAgentItems];
   const isLoading = sessionsLoading;
 
   const segments: { label: string; count: number }[] = [
@@ -288,45 +319,80 @@ export function LibraryRail({ onClose, onNew }: LibraryRailProps = {}) {
                   <button
                     type="button"
                     onClick={onNew}
-                    aria-label="New workbench"
-                    className="grid h-[18px] w-[18px] flex-none place-items-center rounded-[5px] border border-border text-text-3 transition-colors hover:border-orange hover:text-orange"
+                    aria-label="New agent"
+                    className="-m-[11px] grid h-[40px] w-[40px] flex-none place-items-center rounded-[5px] text-text-3 transition-colors hover:text-orange"
                   >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      className="h-[11px] w-[11px]"
-                    >
-                      <path d="M12 5v14M5 12h14" />
-                    </svg>
+                    <span className="grid h-[18px] w-[18px] place-items-center rounded-[5px] border border-border transition-colors hover:border-orange">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        className="h-[11px] w-[11px]"
+                      >
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    </span>
                   </button>
                 )}
               </div>
-              {inGroup.map((item) => (
-                <div
-                  key={item.id}
-                  className="group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)]"
-                >
-                  <StatusDot status={item.status} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[14px] font-medium text-text">{item.name}</div>
-                    <div className="mt-px font-mono text-[11.5px] text-text-3">{item.sub}</div>
-                  </div>
-                  <span
-                    className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
-                    {item.type}
-                  </span>
+              {inGroup.map((item) => {
+                const isClickableAgent =
+                  item.type === 'agent' &&
+                  onAgentSelect !== undefined &&
+                  item.instanceId !== undefined &&
+                  item.tenantId !== undefined;
+                return (
                   <div
-                    className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
-                    style={{ background: item.color }}
+                    key={item.id}
+                    role={isClickableAgent ? 'button' : undefined}
+                    tabIndex={isClickableAgent ? 0 : undefined}
+                    onClick={
+                      isClickableAgent
+                        ? () =>
+                            onAgentSelect!({
+                              instanceId: item.instanceId!,
+                              tenantId: item.tenantId!,
+                              agentName: item.name,
+                            })
+                        : undefined
+                    }
+                    onKeyDown={
+                      isClickableAgent
+                        ? (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              onAgentSelect!({
+                                instanceId: item.instanceId!,
+                                tenantId: item.tenantId!,
+                                agentName: item.name,
+                              });
+                            }
+                          }
+                        : undefined
+                    }
+                    className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)] ${isClickableAgent ? 'cursor-pointer' : ''}`}
                   >
-                    {item.who}
+                    <StatusDot status={item.status} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[14px] font-medium text-text">{item.name}</div>
+                      <div className="mt-px font-mono text-[11.5px] text-text-3">{item.sub}</div>
+                    </div>
+                    <span
+                      className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
+                      {item.type}
+                    </span>
+                    <div
+                      className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
+                      style={{ background: item.color }}
+                    >
+                      {item.who}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           );
         })}

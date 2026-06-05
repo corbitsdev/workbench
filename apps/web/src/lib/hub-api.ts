@@ -194,26 +194,6 @@ export async function listAgentInstances(tenantId: string): Promise<AgentInstanc
   return res.data;
 }
 
-export type LLMProviderInput = {
-  baseURL: string;
-  apiKey: string;
-  model: string;
-};
-
-export type ProvisionOatInput = {
-  type: 'oat';
-  scope: 'workspace';
-  tenantId: string;
-  credentialIds: string[];
-};
-
-export type ProvisionMyraInput = {
-  type: 'myra';
-  scope: 'personal';
-  tenantId: string;
-  llm: LLMProviderInput;
-};
-
 export type LLMProviderType = 'anthropic' | 'openai' | 'google-genai' | 'openai-compatible';
 
 export type SetupMyraCredentialInput =
@@ -224,7 +204,12 @@ export async function setupMyraCredential(input: SetupMyraCredentialInput): Prom
   await hubFetch<{ ok: boolean }>('POST', 'v1/myra/credential', input);
 }
 
-export type ProvisionAgentInput = ProvisionOatInput | ProvisionMyraInput;
+export type ProvisionAgentInput = {
+  tenantId: string;
+  name: string;
+  systemPrompt: string;
+  credentialIds: string[];
+};
 
 export type ProvisionAgentResponse = {
   instanceId: string;

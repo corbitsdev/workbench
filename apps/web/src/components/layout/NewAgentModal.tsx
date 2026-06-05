@@ -3,26 +3,22 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useCredentials } from '../../hooks/use-credentials';
 import { CredentialPicker } from '../CredentialPicker';
 import { provisionAgent, type ProvisionAgentResponse } from '../../lib/hub-api';
+import { LOOP_DEPLOY_PROMPT } from '@workbench/agents';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
-type AgentType = 'oat';
-type DeploymentScope = 'workspace';
-
-interface AgentTypeOption {
-  type: AgentType;
+interface PremadeOption {
+  label: string;
   name: string;
-  description: string;
-  defaultScope: DeploymentScope;
+  systemPrompt: string;
 }
 
-const AGENT_TYPES: AgentTypeOption[] = [
+const PREMADE_OPTIONS: PremadeOption[] = [
   {
-    type: 'oat',
-    name: 'Oat — Call Intelligence',
-    description: 'Analyzes customer calls and generates GTM collateral for the whole workspace.',
-    defaultScope: 'workspace',
+    label: 'Loop — Research Intelligence',
+    name: 'Loop',
+    systemPrompt: LOOP_DEPLOY_PROMPT,
   },
 ];
 
@@ -30,30 +26,28 @@ export interface NewAgentModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: (response: ProvisionAgentResponse) => void;
-  /** Workspace tenant ID for shared (Oat) agents. */
   workspaceTenantId: string | null;
 }
 
 export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: NewAgentModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const [step, setStep] = useState<'pick-type' | 'configure'>('pick-type');
-  const [selectedType, setSelectedType] = useState<AgentType | null>(null);
+  const [name, setName] = useState('');
+  const [systemPrompt, setSystemPrompt] = useState('');
   const [selectedCredentialIds, setSelectedCredentialIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { principals, credentialsByTenant, isLoading: credentialsLoading } = useCredentials();
 
-  // For Oat: only credentials from the workspace tenant are valid
   const workspaceCredentials =
     workspaceTenantId !== null
       ? { [workspaceTenantId]: credentialsByTenant[workspaceTenantId] ?? [] }
       : {};
 
   const reset = () => {
-    setStep('pick-type');
-    setSelectedType(null);
+    setName('');
+    setSystemPrompt('');
     setSelectedCredentialIds([]);
     setLoading(false);
     setError(null);
@@ -92,21 +86,26 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
     [onClose]
   );
 
-  const handleSelectType = (agentType: AgentType) => {
-    setSelectedType(agentType);
-    setStep('configure');
-    setError(null);
-  };
-
-  const handleBack = () => {
-    setStep('pick-type');
-    setError(null);
+  const applyPremade = (option: PremadeOption) => {
+    setName(option.name);
+    setSystemPrompt(option.systemPrompt);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedType || !workspaceTenantId) return;
+    if (!workspaceTenantId) return;
 
+    const trimmedName = name.trim();
+    const trimmedPrompt = systemPrompt.trim();
+
+    if (!trimmedName) {
+      setError('Agent name is required.');
+      return;
+    }
+    if (!trimmedPrompt) {
+      setError('System prompt is required.');
+      return;
+    }
     if (selectedCredentialIds.length === 0) {
       setError('Select at least one credential to grant to this agent.');
       return;
@@ -117,9 +116,9 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
 
     try {
       const response = await provisionAgent({
-        type: 'oat',
-        scope: 'workspace',
         tenantId: workspaceTenantId,
+        name: trimmedName,
+        systemPrompt: trimmedPrompt,
         credentialIds: selectedCredentialIds,
       });
       reset();
@@ -130,7 +129,6 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
     }
   };
 
-  const selectedOption = AGENT_TYPES.find((a) => a.type === selectedType) ?? null;
   const hasWorkspaceCredentials =
     workspaceTenantId !== null && (credentialsByTenant[workspaceTenantId] ?? []).length > 0;
 
@@ -156,35 +154,11 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
             initial={{ opacity: 0, scale: 0.97, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
-            transition={{ duration: 0.18 }}
-            className="flex w-full max-w-md flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
+            transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+            className="flex w-full max-w-lg flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
           >
             <div className="flex items-center justify-between border-b border-border px-6 py-4">
-              <div className="flex items-center gap-3">
-                {step === 'configure' && (
-                  <button
-                    type="button"
-                    onClick={handleBack}
-                    aria-label="Back"
-                    className="grid h-7 w-7 flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      className="h-4 w-4"
-                    >
-                      <path d="M15 18l-6-6 6-6" />
-                    </svg>
-                  </button>
-                )}
-                <div className="text-[16px] font-bold text-text">
-                  {step === 'pick-type'
-                    ? 'Create agent'
-                    : `Configure ${selectedOption?.name ?? 'agent'}`}
-                </div>
-              </div>
+              <div className="text-[16px] font-bold text-text">Create agent</div>
               <button
                 type="button"
                 onClick={handleClose}
@@ -203,79 +177,97 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
               </button>
             </div>
 
-            {step === 'pick-type' ? (
-              <div className="flex flex-col gap-2 px-6 py-5">
-                <p className="mb-1 text-[13px] text-text-2">Choose an agent type to deploy.</p>
-                {AGENT_TYPES.map((option) => {
-                  const tenantAvailable = workspaceTenantId !== null;
-                  return (
-                    <button
-                      key={option.type}
-                      type="button"
-                      disabled={!tenantAvailable}
-                      onClick={() => handleSelectType(option.type)}
-                      className="flex flex-col gap-1 rounded-[12px] border border-border px-4 py-3 text-left transition-colors hover:border-orange hover:bg-[var(--row-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[14px] font-semibold text-text">{option.name}</span>
-                        <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium text-text-3">
-                          {option.defaultScope}
-                        </span>
-                      </div>
-                      <span className="text-[13px] text-text-2">{option.description}</span>
-                      {!tenantAvailable && (
-                        <span className="text-[12px] text-orange-deep">
-                          Create a workspace first.
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-6 py-5">
-                {error && (
-                  <p className="rounded-lg border border-orange bg-orange-soft px-3 py-2 text-sm text-orange-deep">
-                    {error}
-                  </p>
-                )}
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-6 py-5">
+              {error && (
+                <p className="rounded-lg border border-orange bg-[rgba(233,132,40,0.16)] px-3 py-2 text-sm text-orange-deep">
+                  {error}
+                </p>
+              )}
 
+              {PREMADE_OPTIONS.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  <p className="text-[13px] font-medium text-text">Select credentials to grant</p>
-                  <p className="text-[12px] text-text-3">
-                    These credentials will be accessible to this agent at runtime.
+                  <p className="text-[12px] font-medium uppercase tracking-[0.04em] text-text-3">
+                    Premade
                   </p>
-
-                  {!hasWorkspaceCredentials && !credentialsLoading ? (
-                    <p className="text-[13px] text-text-2">
-                      No credentials found for this workspace.{' '}
-                      <a
-                        href="/settings"
-                        className="text-orange underline-offset-2 hover:underline"
+                  <div className="flex flex-wrap gap-2">
+                    {PREMADE_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.name}
+                        type="button"
+                        onClick={() => applyPremade(opt)}
+                        className="flex items-center gap-1.5 rounded-[9px] border border-border px-3 py-1.5 text-[13px] text-text-2 transition-colors hover:border-orange hover:text-text"
                       >
-                        Add credentials in Settings.
-                      </a>
-                    </p>
-                  ) : (
-                    <CredentialPicker
-                      principals={principals}
-                      credentialsByTenant={workspaceCredentials}
-                      selectedIds={selectedCredentialIds}
-                      onSelect={setSelectedCredentialIds}
-                      isLoading={credentialsLoading}
-                    />
-                  )}
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              )}
 
-                <button
-                  type="submit"
-                  disabled={loading || selectedCredentialIds.length === 0}
-                  className="w-full rounded-md bg-orange px-4 py-2 text-sm font-medium text-text hover:bg-orange-deep disabled:opacity-50"
-                >
-                  {loading ? 'Deploying agent...' : `Deploy ${selectedOption?.name ?? 'agent'}`}
-                </button>
-              </form>
-            )}
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="agent-name" className="text-[13px] font-medium text-text">
+                  Name
+                </label>
+                <input
+                  id="agent-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Loop"
+                  className="rounded-[10px] border border-border bg-bg px-3 py-2 text-[14px] text-text outline-none placeholder:text-text-3 focus:border-orange"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="agent-prompt" className="text-[13px] font-medium text-text">
+                  System prompt
+                </label>
+                <textarea
+                  id="agent-prompt"
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  placeholder="You are..."
+                  rows={5}
+                  className="resize-none rounded-[10px] border border-border bg-bg px-3 py-2 text-[13px] text-text outline-none placeholder:text-text-3 focus:border-orange"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <p className="text-[13px] font-medium text-text">Credentials</p>
+                <p className="text-[12px] text-text-3">
+                  These credentials will be accessible to this agent at runtime.
+                </p>
+
+                {!workspaceTenantId ? (
+                  <p className="text-[13px] text-text-2">
+                    Create a workbench first before deploying agents.
+                  </p>
+                ) : !hasWorkspaceCredentials && !credentialsLoading ? (
+                  <p className="text-[13px] text-text-2">
+                    No credentials found for this workspace.{' '}
+                    <a href="/settings" className="text-orange underline-offset-2 hover:underline">
+                      Add credentials in Settings.
+                    </a>
+                  </p>
+                ) : (
+                  <CredentialPicker
+                    principals={principals}
+                    credentialsByTenant={workspaceCredentials}
+                    selectedIds={selectedCredentialIds}
+                    onSelect={setSelectedCredentialIds}
+                    isLoading={credentialsLoading}
+                  />
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || !workspaceTenantId || selectedCredentialIds.length === 0}
+                className="w-full rounded-[9px] bg-orange px-4 py-2 text-sm font-medium text-text hover:bg-orange-deep disabled:opacity-50"
+              >
+                {loading ? 'Deploying...' : 'Deploy agent'}
+              </button>
+            </form>
           </motion.div>
         </motion.div>
       )}
