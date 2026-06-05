@@ -29,6 +29,23 @@ const LLMProviderInput = type({
   model: 'string',
 });
 
+const LLMProviderType = type('"anthropic" | "openai" | "google-genai" | "openai-compatible"');
+type LLMProviderTypeType = typeof LLMProviderType.infer;
+
+const PROVIDER_BASE_URLS: Record<LLMProviderTypeType, string> = {
+  anthropic: 'https://api.anthropic.com',
+  openai: 'https://api.openai.com/v1',
+  'google-genai': 'https://generativelanguage.googleapis.com',
+  'openai-compatible': '',
+};
+
+const SetupMyraCredentialBody = type({
+  provider: LLMProviderType,
+  apiKey: 'string',
+  model: 'string',
+  'baseURL?': 'string',
+});
+
 const ProvisionOatBody = type({
   type: '"oat"',
   scope: '"workspace"',
@@ -156,6 +173,72 @@ export function createAgentProvisioningRouter(
 
     const result = await provisionMyra(db, body, creatorPrincipal.id, tenantRow.domain, now);
     return c.json(result, 201);
+  });
+
+  // Configure or update the LLM credential for the caller's Myra instance
+  app.post('/myra/credential', async (c) => {
+    const userId = c.get('userId');
+    const raw = await c.req.json().catch(() => null);
+    if (!raw) {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const parsed = SetupMyraCredentialBody(raw);
+    if (parsed instanceof type.errors) {
+      return c.json({ error: parsed.summary }, 400);
+    }
+
+    const personalTenant = await db.query.tenant.findFirst({
+      where: eq(tenant.slug, `user-${userId}`),
+    });
+    if (!personalTenant) {
+      return c.json({ error: 'Personal tenant not found' }, 404);
+    }
+
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, personalTenant.id),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) {
+      return c.json({ error: 'Principal not found in personal tenant' }, 404);
+    }
+
+    const baseURL =
+      parsed.provider === 'openai-compatible'
+        ? (parsed.baseURL ?? '')
+        : PROVIDER_BASE_URLS[parsed.provider];
+
+    const now = new Date();
+
+    await db.transaction(async (rawTx) => {
+      const tx = rawTx as unknown as DB['db'];
+
+      const llmProviderId = await ensureProvider(
+        tx,
+        personalTenant.id,
+        'openai-compatible',
+        parsed.provider,
+        baseURL,
+        parsed.model,
+        now
+      );
+
+      await ensureCredential(
+        tx,
+        personalTenant.id,
+        `myra-llm-${callerPrincipal.id}`,
+        parsed.apiKey,
+        llmProviderId,
+        callerPrincipal.id,
+        now
+      );
+    });
+
+    log.info('Myra credential configured for user {userId}', { userId });
+    return c.json({ ok: true });
   });
 
   return app;

@@ -214,6 +214,16 @@ export type ProvisionMyraInput = {
   llm: LLMProviderInput;
 };
 
+export type LLMProviderType = 'anthropic' | 'openai' | 'google-genai' | 'openai-compatible';
+
+export type SetupMyraCredentialInput =
+  | { provider: 'anthropic' | 'openai' | 'google-genai'; apiKey: string; model: string }
+  | { provider: 'openai-compatible'; apiKey: string; model: string; baseURL: string };
+
+export async function setupMyraCredential(input: SetupMyraCredentialInput): Promise<void> {
+  await hubFetch<{ ok: boolean }>('POST', 'v1/myra/credential', input);
+}
+
 export type ProvisionAgentInput = ProvisionOatInput | ProvisionMyraInput;
 
 export type ProvisionAgentResponse = {

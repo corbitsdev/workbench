@@ -700,3 +700,97 @@ describe('POST /agents', () => {
     expect(json.agentId).toBe('agt-oat-2');
   });
 });
+
+describe('POST /myra/credential', () => {
+  const personalTenant = {
+    id: 'tenant-personal',
+    slug: 'user-user-1',
+    domain: 'user-1.localhost',
+    name: 'Personal',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const callerPrincipal = { id: 'prn-user-1', tenantId: 'tenant-personal', kind: 'user', refId: 'user-1' };
+  const savedProvider = { id: 'prov-1', name: 'openai-compatible', plugin: 'anthropic', tenantId: 'tenant-personal' };
+  const savedCredential = { id: 'cred-1', name: 'myra-llm-prn-user-1', secret: 'sk-test', tenantId: 'tenant-personal' };
+
+  it('returns 404 when personal tenant not found', async () => {
+    const db = makeMockDb();
+    db.query.tenant.findFirst = mock(() => Promise.resolve(undefined));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/myra/credential', {
+        method: 'POST',
+        body: { provider: 'anthropic', apiKey: 'sk-test', model: 'claude-sonnet-4-6' },
+      })
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when caller principal not found in personal tenant', async () => {
+    const db = makeMockDb();
+    db.query.tenant.findFirst = mock(() => Promise.resolve(personalTenant));
+    db.query.principal.findFirst = mock(() => Promise.resolve(undefined));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/myra/credential', {
+        method: 'POST',
+        body: { provider: 'anthropic', apiKey: 'sk-test', model: 'claude-sonnet-4-6' },
+      })
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 200 and creates provider and credential for anthropic', async () => {
+    const db = makeMockDb();
+    db.query.tenant.findFirst = mock(() => Promise.resolve(personalTenant));
+    db.query.principal.findFirst = mock(() => Promise.resolve(callerPrincipal));
+    db.query.provider.findFirst = mock(() => Promise.resolve(savedProvider));
+    db.query.credential.findFirst = mock(() => Promise.resolve(savedCredential));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/myra/credential', {
+        method: 'POST',
+        body: { provider: 'anthropic', apiKey: 'sk-test', model: 'claude-sonnet-4-6' },
+      })
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+  });
+
+  it('returns 200 for openai-compatible provider with baseURL', async () => {
+    const db = makeMockDb();
+    db.query.tenant.findFirst = mock(() => Promise.resolve(personalTenant));
+    db.query.principal.findFirst = mock(() => Promise.resolve(callerPrincipal));
+    db.query.provider.findFirst = mock(() => Promise.resolve(savedProvider));
+    db.query.credential.findFirst = mock(() => Promise.resolve(savedCredential));
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/myra/credential', {
+        method: 'POST',
+        body: {
+          provider: 'openai-compatible',
+          apiKey: 'sk-test',
+          model: 'llama-3.1-8b',
+          baseURL: 'https://my-endpoint.example.com/v1',
+        },
+      })
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+  });
+
+  it('returns 400 for invalid body', async () => {
+    const db = makeMockDb();
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/myra/credential', {
+        method: 'POST',
+        body: { provider: 'unknown-provider', apiKey: 'sk-test', model: 'gpt-4o' },
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+});
