@@ -5,24 +5,37 @@ import React from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 
 import type { PrincipalDetail, GrantDetail } from '../lib/hub-api';
-import { createMockHubApi } from '../lib/__mocks__/hub-api';
 
 const mockGetPrincipal =
   mock<(tenantId: string, principalId: string) => Promise<PrincipalDetail>>();
 const mockListPrincipalGrants =
   mock<(tenantId: string, principalId: string) => Promise<GrantDetail[]>>();
 
-mock.module('../lib/hub-api', () =>
-  createMockHubApi({
-    getPrincipal: mockGetPrincipal,
-    listPrincipalGrants: mockListPrincipalGrants,
-    getMe: mock(() => Promise.resolve({ userId: 'u1', personalTenantId: null, provisionedAt: null })),
-    getMyPrincipals: mock(() => Promise.resolve([])),
-    listWorkbenches: mock(() => Promise.resolve([])),
-    createTenant: mock(() => Promise.resolve({ id: '', name: '', slug: '', domain: '' })),
-    listTenantCredentials: mock(() => Promise.resolve([])),
-  })
-);
+mock.module('../lib/hub-api', () => ({
+  getMe: mock(() => Promise.resolve({ userId: 'u1', personalTenantId: null, provisionedAt: null })),
+  getMyPrincipals: mock(() => Promise.resolve([])),
+  createTenant: mock(() => Promise.resolve({ id: '', name: '', slug: '', domain: '' })),
+  createWorkspace: mock(() => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' })),
+  listWorkbenches: mock(() => Promise.resolve([])),
+  getTenant: mock(() =>
+    Promise.resolve({
+      id: '',
+      name: '',
+      slug: '',
+      domain: '',
+      parentId: null,
+      createdAt: '',
+      updatedAt: '',
+    })
+  ),
+  listTenantPrincipals: mock(() => Promise.resolve([])),
+  getPrincipal: mockGetPrincipal,
+  listTenantCredentials: mock(() => Promise.resolve([])),
+  listPrincipalGrants: mockListPrincipalGrants,
+  listAgentInstances: mock(() => Promise.resolve([])),
+  setupMyraCredential: mock(() => Promise.resolve()),
+  provisionAgent: mock(() => Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })),
+}));
 
 const PrincipalSettingsPage = require('./PrincipalSettingsPage').default;
 

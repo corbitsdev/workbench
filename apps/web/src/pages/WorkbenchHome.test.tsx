@@ -5,7 +5,6 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockHubApi } from '../lib/__mocks__/hub-api';
 
 // Mock approvals-api so ReviewGate does not attempt real network requests.
 mock.module('../lib/approvals-api', () => ({
@@ -16,23 +15,30 @@ mock.module('../lib/approvals-api', () => ({
 
 // Mock hub-api before importing WorkbenchHome so the provisioning guard and
 // workbench list fetch resolve without hitting the network.
-mock.module('../lib/hub-api', () =>
-  createMockHubApi({
-    getMe: () =>
-      Promise.resolve({
-        userId: 'u1',
-        personalTenantId: 'pt1',
-        paInstanceId: null,
-        provisioned: true,
-      }),
-    listWorkbenches: () =>
-      Promise.resolve([
-        { id: 'p-wb', tenantId: 'tn-wb', tenantSlug: 'acme-corp', tenantName: 'Acme Corp' },
-      ]),
-    getMyPrincipals: () => Promise.resolve([]),
-    createTenant: () => Promise.resolve({ id: 't1', name: 'Test', slug: 'test', domain: '' }),
-  })
-);
+mock.module('../lib/hub-api', () => ({
+  getMe: () =>
+    Promise.resolve({
+      userId: 'u1',
+      personalTenantId: 'pt1',
+      paInstanceId: null,
+      provisioned: true,
+    }),
+  getMyPrincipals: () => Promise.resolve([]),
+  createTenant: () => Promise.resolve({ id: 't1', name: 'Test', slug: 'test', domain: '' }),
+  createWorkspace: () => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' }),
+  listWorkbenches: () =>
+    Promise.resolve([
+      { id: 'p-wb', tenantId: 'tn-wb', tenantSlug: 'acme-corp', tenantName: 'Acme Corp' },
+    ]),
+  getTenant: () => Promise.resolve({ id: '', name: '', slug: '', domain: '', parentId: null, createdAt: '', updatedAt: '' }),
+  listTenantPrincipals: () => Promise.resolve([]),
+  getPrincipal: () => Promise.resolve({ id: '', tenantId: '', kind: 'user', refId: '', displayName: '', status: 'active', roles: [], createdAt: '', updatedAt: '' }),
+  listTenantCredentials: () => Promise.resolve([]),
+  listPrincipalGrants: () => Promise.resolve([]),
+  listAgentInstances: () => Promise.resolve([]),
+  setupMyraCredential: () => Promise.resolve(),
+  provisionAgent: () => Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' }),
+}));
 
 import WorkbenchHome from './WorkbenchHome';
 

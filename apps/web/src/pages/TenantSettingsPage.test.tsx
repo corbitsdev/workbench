@@ -10,24 +10,27 @@ import type {
   CredentialDetail,
   Principal,
 } from '../lib/hub-api';
-import { createMockHubApi } from '../lib/__mocks__/hub-api';
 
 const mockGetTenant = mock<(tenantId: string) => Promise<TenantDetailResponse>>();
 const mockListTenantPrincipals = mock<(tenantId: string) => Promise<PrincipalDetail[]>>();
 const mockListTenantCredentials = mock<(tenantId: string) => Promise<CredentialDetail[]>>();
 const mockGetMyPrincipals = mock<() => Promise<Principal[]>>();
 
-mock.module('../lib/hub-api', () =>
-  createMockHubApi({
-    getTenant: mockGetTenant,
-    listTenantPrincipals: mockListTenantPrincipals,
-    listTenantCredentials: mockListTenantCredentials,
-    getMyPrincipals: mockGetMyPrincipals,
-    getMe: mock(() => Promise.resolve({ userId: 'u1', personalTenantId: null, provisionedAt: null })),
-    listWorkbenches: mock(() => Promise.resolve([])),
-    createTenant: mock(() => Promise.resolve({ id: 't1', name: '', slug: '', domain: '' })),
-  })
-);
+mock.module('../lib/hub-api', () => ({
+  getMe: mock(() => Promise.resolve({ userId: 'u1', personalTenantId: null, provisionedAt: null })),
+  getMyPrincipals: mockGetMyPrincipals,
+  createTenant: mock(() => Promise.resolve({ id: 't1', name: '', slug: '', domain: '' })),
+  createWorkspace: mock(() => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' })),
+  listWorkbenches: mock(() => Promise.resolve([])),
+  getTenant: mockGetTenant,
+  listTenantPrincipals: mockListTenantPrincipals,
+  getPrincipal: mock(() => Promise.resolve({ id: '', tenantId: '', kind: 'user', refId: '', displayName: '', status: 'active', roles: [], createdAt: '', updatedAt: '' })),
+  listTenantCredentials: mockListTenantCredentials,
+  listPrincipalGrants: mock(() => Promise.resolve([])),
+  listAgentInstances: mock(() => Promise.resolve([])),
+  setupMyraCredential: mock(() => Promise.resolve()),
+  provisionAgent: mock(() => Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })),
+}));
 
 const TenantSettingsPage = require('./TenantSettingsPage').default;
 

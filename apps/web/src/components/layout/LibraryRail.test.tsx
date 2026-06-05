@@ -1,10 +1,9 @@
 /// <reference types="bun" />
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, mock } from 'bun:test';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { WorkflowSummary } from '@workbench/shared';
-import { createMockHubApi } from '../../lib/__mocks__/hub-api';
 
 const fakeWorkflow: WorkflowSummary = {
   id: 'wf-1',
@@ -22,7 +21,21 @@ mock.module('@workbench/client/react', () => ({
   useArtifacts: () => ({ data: [], isLoading: false, isError: false }),
 }));
 
-mock.module('../../lib/hub-api', () => createMockHubApi());
+mock.module('../../lib/hub-api', () => ({
+  getMe: mock(() => Promise.resolve({ userId: '', userName: '', personalTenantId: null, paInstanceId: null, provisioned: false })),
+  getMyPrincipals: mock(() => Promise.resolve([])),
+  createTenant: mock(() => Promise.resolve({ id: '', name: '', slug: '', domain: '' })),
+  createWorkspace: mock(() => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' })),
+  listWorkbenches: mock(() => Promise.resolve([])),
+  getTenant: mock(() => Promise.resolve({ id: '', name: '', slug: '', domain: '', parentId: null, createdAt: '', updatedAt: '' })),
+  listTenantPrincipals: mock(() => Promise.resolve([])),
+  getPrincipal: mock(() => Promise.resolve({ id: '', tenantId: '', kind: 'user', refId: '', displayName: '', status: 'active', roles: [], createdAt: '', updatedAt: '' })),
+  listTenantCredentials: mock(() => Promise.resolve([])),
+  listPrincipalGrants: mock(() => Promise.resolve([])),
+  listAgentInstances: mock(() => Promise.resolve([])),
+  setupMyraCredential: mock(() => Promise.resolve()),
+  provisionAgent: mock(() => Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })),
+}));
 
 function renderWithClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
