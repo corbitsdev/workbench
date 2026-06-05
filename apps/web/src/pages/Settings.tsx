@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import {
   SettingsPage,
   type SettingsFieldValue,
@@ -87,6 +88,18 @@ export default function Settings() {
 
   return (
     <div className="h-full overflow-y-auto">
+      <div className="mx-auto w-full max-w-2xl px-4 pt-8 pb-2">
+        <Link
+          to="/settings/credentials"
+          className="flex items-center justify-between rounded-xl border border-border bg-surface px-5 py-4 transition-colors hover:bg-surface-2"
+        >
+          <div>
+            <p className="text-[14px] font-medium text-text-1">Credentials</p>
+            <p className="mt-0.5 text-[12px] text-text-3">Manage LLM API keys for your agents.</p>
+          </div>
+          <span className="text-[18px] text-text-3">›</span>
+        </Link>
+      </div>
       <SettingsPage
         sections={SECTIONS}
         values={values}
