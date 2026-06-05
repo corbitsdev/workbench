@@ -71,3 +71,92 @@ export async function listWorkbenches(): Promise<WorkbenchEntry[]> {
     .filter((p) => !p.tenantSlug.startsWith('user-'))
     .map(({ id, tenantId, tenantSlug, tenantName }) => ({ id, tenantId, tenantSlug, tenantName }));
 }
+
+export type TenantDetailResponse = {
+  id: string;
+  name: string;
+  slug: string;
+  domain: string;
+  parentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PrincipalDetail = {
+  id: string;
+  tenantId: string;
+  kind: 'user' | 'agent';
+  refId: string;
+  displayName: string;
+  email?: string;
+  status: 'active' | 'suspended' | 'invited' | 'deactivated';
+  roles: { id: string; name: string }[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CredentialDetail = {
+  id: string;
+  tenantId: string;
+  providerId: string;
+  principalId?: string | null;
+  name: string;
+  type: 'api_key' | 'oauth_token' | 'certificate' | 'other';
+  description?: string | null;
+  status: 'active' | 'expired' | 'revoked' | 'error';
+  scopes?: string[] | null;
+  expiresAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GrantDetail = {
+  id: string;
+  tenantId: string;
+  roleId?: string | null;
+  roleName?: string | null;
+  principalId?: string | null;
+  principalName?: string | null;
+  resource: string;
+  action: string;
+  effect: 'allow' | 'deny' | 'ask';
+  origin: 'system' | 'role' | 'creator' | 'invoker';
+  expiresAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getTenant(tenantId: string): Promise<TenantDetailResponse> {
+  return hubFetch<TenantDetailResponse>('GET', `tenants/${tenantId}`);
+}
+
+export async function listTenantPrincipals(tenantId: string): Promise<PrincipalDetail[]> {
+  const res = await hubFetch<{ data: PrincipalDetail[] }>(
+    'GET',
+    `tenants/${tenantId}/principals?limit=100`
+  );
+  return res.data;
+}
+
+export async function getPrincipal(tenantId: string, principalId: string): Promise<PrincipalDetail> {
+  return hubFetch<PrincipalDetail>('GET', `tenants/${tenantId}/principals/${principalId}`);
+}
+
+export async function listTenantCredentials(tenantId: string): Promise<CredentialDetail[]> {
+  const res = await hubFetch<{ data: CredentialDetail[] }>(
+    'GET',
+    `tenants/${tenantId}/credentials?limit=100`
+  );
+  return res.data;
+}
+
+export async function listPrincipalGrants(
+  tenantId: string,
+  principalId: string
+): Promise<GrantDetail[]> {
+  const res = await hubFetch<{ data: GrantDetail[] }>(
+    'GET',
+    `tenants/${tenantId}/grants?limit=100&principalId=${encodeURIComponent(principalId)}`
+  );
+  return res.data;
+}

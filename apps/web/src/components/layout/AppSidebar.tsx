@@ -1,5 +1,5 @@
 import { Home, LayoutGrid, Settings, Moon, Sun, LogOut } from 'lucide-react';
-import { NavLink, Link } from 'react-router';
+import { NavLink, Link, useLocation } from 'react-router';
 import { useAuth } from '../AuthProvider';
 import { useTheme } from '@workbench/ui';
 
@@ -14,6 +14,8 @@ export function AppSidebar() {
       .slice(0, 2)
       .toUpperCase() || '··';
   const { theme, setTheme } = useTheme();
+  const location = useLocation();
+  const settingsActive = location.pathname.startsWith('/settings');
 
   const navIconClass = (isActive: boolean) =>
     `grid h-[40px] w-[40px] place-items-center rounded-[10px] transition-colors duration-150 ease-in-out ${
@@ -50,14 +52,14 @@ export function AppSidebar() {
           <LayoutGrid size={18} />
         </NavLink>
 
-        <NavLink
+        <Link
           to="/settings"
           title="Settings"
           aria-label="Settings"
-          className={({ isActive }) => navIconClass(isActive)}
+          className={navIconClass(settingsActive)}
         >
           <Settings size={18} />
-        </NavLink>
+        </Link>
       </nav>
 
       <div className="mt-auto flex flex-col items-center gap-2 pb-1">

@@ -9,6 +9,8 @@ import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 
 const WorkbenchPage = lazy(() => import('./pages/WorkbenchPage'));
+const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
+const PrincipalSettingsPage = lazy(() => import('./pages/PrincipalSettingsPage'));
 
 function ProtectedLayout() {
   const { session } = useAuth();
@@ -46,6 +48,34 @@ export const router = createBrowserRouter([
           { index: true, element: <WorkbenchHome /> },
           { path: '/dashboard', element: <Dashboard /> },
           { path: '/settings', element: <Settings /> },
+          {
+            path: '/settings/tenants/:tenantId',
+            element: (
+              <Suspense
+                fallback={
+                  <div className="flex h-full items-center justify-center">
+                    <span className="text-[13px] text-text-3">Loading...</span>
+                  </div>
+                }
+              >
+                <TenantSettingsPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: '/settings/tenants/:tenantId/principals/:principalId',
+            element: (
+              <Suspense
+                fallback={
+                  <div className="flex h-full items-center justify-center">
+                    <span className="text-[13px] text-text-3">Loading...</span>
+                  </div>
+                }
+              >
+                <PrincipalSettingsPage />
+              </Suspense>
+            ),
+          },
           {
             path: '/workbenches/:slug',
             element: (
