@@ -89,14 +89,14 @@ Transport-agnostic chat UI components. No dependency on a specific agent transpo
 
 ### Agent Provisioning
 
-| Method   | Route                                     | Input                                                                                                            | Output                                                                    |
-| -------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `GET`    | `/agents`                                 | `?tenantId=...`                                                                                                  | `{ data: AgentInstance[] }`                                               |
-| `POST`   | `/agents`                                 | `{ name, systemPrompt, tenantId, credentialIds: string[] }`                                                      | `{ instanceId, agentId, agentName, tenantId, launched, launchError? }` 201 |
-| `POST`   | `/tenants/:tenantId/credentials`          | `{ provider, name, apiKey, model, baseURL? }`                                                                    | `{ credentialId, providerId }` 201                                        |
-| `DELETE` | `/tenants/:tenantId/credentials/:credentialId` | —                                                                                                           | `{ ok: true }` 200                                                        |
-| `POST`   | `/instances/:instanceId/sessions`         | `{ credentialIds: string[] }`                                                                                    | `{ launched, launchError? }` 200                                          |
-| `POST`   | `/myra/credential`                        | `{ provider, apiKey, model, baseURL? }`                                                                          | `{ ok, credentialId, launched, launchError? }` 200                        |
+| Method   | Route                                          | Input                                                       | Output                                                                     |
+| -------- | ---------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `GET`    | `/agents`                                      | `?tenantId=...`                                             | `{ data: AgentInstance[] }`                                                |
+| `POST`   | `/agents`                                      | `{ name, systemPrompt, tenantId, credentialIds: string[] }` | `{ instanceId, agentId, agentName, tenantId, launched, launchError? }` 201 |
+| `POST`   | `/tenants/:tenantId/credentials`               | `{ provider, name, apiKey, model, baseURL? }`               | `{ credentialId, providerId }` 201                                         |
+| `DELETE` | `/tenants/:tenantId/credentials/:credentialId` | — (Interchange-native; manage grant created at write time)  | `{ ok: true }` 200                                                         |
+| `POST`   | `/instances/:instanceId/sessions`              | `{ credentialIds: string[] }`                               | `{ launched, launchError? }` 200                                           |
+| `POST`   | `/myra/credential`                             | `{ provider, apiKey, model, baseURL? }`                     | `{ ok, credentialId, launched, launchError? }` 200                         |
 
 Agent provisioning verifies each credential against the caller's ancestor chain (see Credential Verification below) — credentials from parent tenants are accepted. Grants are created at provisioning time.
 
@@ -212,7 +212,7 @@ When provisioning an agent, the caller selects existing credential IDs via the c
 
 ```typescript
 await db.insert(grant).values({
-  id: generateId('grant'),   // generateId imported from @intx/hub-common
+  id: generateId('grant'), // generateId imported from @intx/hub-common
   tenantId,
   principalId: instancePrincipalId, // agent instance's principal, not the human user
   resource: `credential:${credentialId}`,
@@ -241,14 +241,16 @@ The `CredentialSettingsPage` (**custom**) at `/settings/credentials` shows all c
 #### Route mounts
 
 **Interchange-owned routes** (mounted automatically by `createApp` from `@intx/hub-api`, available at `/api/tenants/:tenantId/*`):
+
 - `GET /api/tenants/:tenantId/credentials` — list credentials (used by frontend)
 - `GET /api/tenants/:tenantId/principals` — list principals
 - `GET /api/tenants/:tenantId/grants` — list grants
 - All other tenant/principal/grant CRUD
 
 **Workbench-owned routes** (in `apps/hub/src/routes/`, mounted under `/api/v1/`):
-- `POST /v1/tenants/:tenantId/credentials` — create with encryption
-- `DELETE /v1/tenants/:tenantId/credentials/:credentialId` — delete (with principal check)
+
+- `POST /v1/tenants/:tenantId/credentials` — create with encryption + manage grant
+- `DELETE /api/tenants/:tenantId/credentials/:credentialId` — Interchange-native (manage grant created at write time enables this)
 - `POST /v1/agents` — provision agent + launch session
 - `POST /v1/instances/:instanceId/sessions` — launch session for existing instance
 - `POST /v1/myra/credential` — Myra-specific credential setup + session launch

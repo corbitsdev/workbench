@@ -30,14 +30,35 @@ mock.module('../lib/hub-api', () => ({
     Promise.resolve([
       { id: 'p-wb', tenantId: 'tn-wb', tenantSlug: 'acme-corp', tenantName: 'Acme Corp' },
     ]),
-  getTenant: () => Promise.resolve({ id: '', name: '', slug: '', domain: '', parentId: null, createdAt: '', updatedAt: '' }),
+  getTenant: () =>
+    Promise.resolve({
+      id: '',
+      name: '',
+      slug: '',
+      domain: '',
+      parentId: null,
+      createdAt: '',
+      updatedAt: '',
+    }),
   listTenantPrincipals: () => Promise.resolve([]),
-  getPrincipal: () => Promise.resolve({ id: '', tenantId: '', kind: 'user', refId: '', displayName: '', status: 'active', roles: [], createdAt: '', updatedAt: '' }),
+  getPrincipal: () =>
+    Promise.resolve({
+      id: '',
+      tenantId: '',
+      kind: 'user',
+      refId: '',
+      displayName: '',
+      status: 'active',
+      roles: [],
+      createdAt: '',
+      updatedAt: '',
+    }),
   listTenantCredentials: () => Promise.resolve([]),
   listPrincipalGrants: () => Promise.resolve([]),
   listAgentInstances: () => Promise.resolve([]),
   setupMyraCredential: () => Promise.resolve(),
-  provisionAgent: () => Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' }),
+  provisionAgent: () =>
+    Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' }),
 }));
 
 import WorkbenchHome from './WorkbenchHome';

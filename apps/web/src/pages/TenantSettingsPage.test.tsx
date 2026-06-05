@@ -24,12 +24,26 @@ mock.module('../lib/hub-api', () => ({
   listWorkbenches: mock(() => Promise.resolve([])),
   getTenant: mockGetTenant,
   listTenantPrincipals: mockListTenantPrincipals,
-  getPrincipal: mock(() => Promise.resolve({ id: '', tenantId: '', kind: 'user', refId: '', displayName: '', status: 'active', roles: [], createdAt: '', updatedAt: '' })),
+  getPrincipal: mock(() =>
+    Promise.resolve({
+      id: '',
+      tenantId: '',
+      kind: 'user',
+      refId: '',
+      displayName: '',
+      status: 'active',
+      roles: [],
+      createdAt: '',
+      updatedAt: '',
+    })
+  ),
   listTenantCredentials: mockListTenantCredentials,
   listPrincipalGrants: mock(() => Promise.resolve([])),
   listAgentInstances: mock(() => Promise.resolve([])),
   setupMyraCredential: mock(() => Promise.resolve()),
-  provisionAgent: mock(() => Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })),
+  provisionAgent: mock(() =>
+    Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })
+  ),
 }));
 
 const TenantSettingsPage = require('./TenantSettingsPage').default;

@@ -34,7 +34,9 @@ mock.module('../lib/hub-api', () => ({
   listPrincipalGrants: mockListPrincipalGrants,
   listAgentInstances: mock(() => Promise.resolve([])),
   setupMyraCredential: mock(() => Promise.resolve()),
-  provisionAgent: mock(() => Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })),
+  provisionAgent: mock(() =>
+    Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })
+  ),
 }));
 
 const PrincipalSettingsPage = require('./PrincipalSettingsPage').default;
