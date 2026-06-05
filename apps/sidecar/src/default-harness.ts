@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { evaluateGrants } from '@intx/authz';
-import { createHarness, readDeployTree } from '@intx/harness';
+import { createHarness, readDeployTree, mergeToolRunners } from '@intx/harness';
 import { hasProvider } from '@intx/inference';
 import { getLogger } from '@intx/log';
 import { createIsogitStore, createMailAuditStore } from '@intx/storage-isogit';
@@ -10,10 +10,24 @@ import { createLSPPlugin } from '@intx/tools-lsp';
 import { createBlobReader } from '@intx/types/runtime';
 import type { InferenceSource } from '@intx/types/runtime';
 import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
+import { createAskPrincipalTool } from '@workbench/approvals';
+import { createToolRunner } from '@intx/agent';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
 
-export function createDefaultHarnessBuilder(): HarnessBuilder {
+export function wsUrlToHttp(wsUrl: string): string {
+  return wsUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+}
+
+type HarnessBuilderOpts = {
+  hubHttpUrl: string;
+  sidecarToken: string;
+};
+
+export function createDefaultHarnessBuilder({
+  hubHttpUrl,
+  sidecarToken,
+}: HarnessBuilderOpts): HarnessBuilder {
   return {
     canBuildSource(source: InferenceSource): void {
       if (!hasProvider(source.provider)) {
@@ -54,6 +68,21 @@ export function createDefaultHarnessBuilder(): HarnessBuilder {
         blobReader,
       });
 
+      const askPrincipalRunner = createToolRunner([
+        createAskPrincipalTool({
+          hubHttpUrl,
+          sidecarToken,
+          tenantId,
+          agentId: agentConfig.agentId,
+          principalId,
+        }),
+      ]);
+
+      const tools = mergeToolRunners([
+        posixTools,
+        askPrincipalRunner as unknown as typeof posixTools,
+      ]);
+
       try {
         const harness = createHarness({
           address: agentAddress,
@@ -64,7 +93,7 @@ export function createDefaultHarnessBuilder(): HarnessBuilder {
           storage,
           authorize,
           auditStore: storage,
-          tools: posixTools,
+          tools,
           onEvent,
           onConnectorStateChanged,
         });

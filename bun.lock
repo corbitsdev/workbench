@@ -45,6 +45,7 @@
     "apps/sidecar": {
       "name": "@workbench/sidecar",
       "dependencies": {
+        "@intx/agent": "workspace:*",
         "@intx/authz": "workspace:*",
         "@intx/crypto-node": "workspace:*",
         "@intx/harness": "workspace:*",
@@ -56,6 +57,7 @@
         "@intx/tools-lsp": "workspace:*",
         "@intx/tools-posix": "workspace:*",
         "@intx/types": "workspace:*",
+        "@workbench/approvals": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -363,6 +365,17 @@
         "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
         "@workbench/chat": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/approvals": {
+      "name": "@workbench/approvals",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -885,6 +898,8 @@
     "@vitejs/plugin-react": ["@vitejs/plugin-react@6.0.2", "", { "dependencies": { "@rolldown/pluginutils": "^1.0.0" }, "peerDependencies": { "@rolldown/plugin-babel": "^0.1.7 || ^0.2.0", "babel-plugin-react-compiler": "^1.0.0", "vite": "^8.0.0" }, "optionalPeers": ["@rolldown/plugin-babel", "babel-plugin-react-compiler"] }, "sha512-DlSMqo4WhThw4vB8Mpn0Woe9J+Jfq1geJ61AKW0QEgLzGMNwtIMdxbDUzLxcun8W7NbJO0e2Jg/Nxm3cCSVzzg=="],
 
     "@workbench/agents": ["@workbench/agents@workspace:packages/agents"],
+
+    "@workbench/approvals": ["@workbench/approvals@workspace:packages/approvals"],
 
     "@workbench/artifact": ["@workbench/artifact@workspace:packages/artifact"],
 

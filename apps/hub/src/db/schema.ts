@@ -92,6 +92,25 @@ export const artifactVersion = pgTable('artifact_version', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
+// ─── Approvals ─────────────────────────────────────────────────────
+
+export const approvalStatus = ['pending', 'approved', 'rejected'] as const;
+
+export const approval = pgTable('approval', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: text('tenant_id').notNull(),
+  principalId: text('principal_id').notNull(),
+  agentId: text('agent_id').notNull(),
+  sessionId: text('session_id'),
+  resource: text('resource').notNull(),
+  action: text('action').notNull(),
+  context: jsonb('context').$type<Record<string, unknown>>(),
+  status: text('status', { enum: approvalStatus }).notNull().default('pending'),
+  message: text('message'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  resolvedAt: timestamp('resolved_at'),
+});
+
 // ─── Collateral Generation Workflow ────────────────────────────────
 
 export const collateralGenerationStatus = ['pending', 'generating', 'done', 'failed'] as const;

@@ -1,0 +1,196 @@
+import { Hono } from 'hono';
+import { eq, and } from 'drizzle-orm';
+import { getLogger } from '@intx/log';
+import { approval } from '../db/schema';
+
+const log = getLogger(['api', 'approvals']);
+
+// ─── User-facing routes (BetterAuth session) ───────────────────────
+// Mounted under /api/v1 with the existing auth middleware.
+
+export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: string } }> {
+  const router = new Hono<{ Variables: { userId: string } }>();
+
+  router.get('/tenants/:tenantId/approvals', async (c) => {
+    const { tenantId } = c.req.param();
+    const rows = await db
+      .select()
+      .from(approval)
+      .where(and(eq(approval.tenantId, tenantId), eq(approval.status, 'pending')));
+    return c.json(rows.map(formatApproval));
+  });
+
+  router.post('/tenants/:tenantId/approvals/:approvalId/approve', async (c) => {
+    const userId = c.get('userId');
+    const { tenantId, approvalId } = c.req.param();
+
+    const [updated] = await db
+      .update(approval)
+      .set({ status: 'approved', resolvedAt: new Date() })
+      .where(
+        and(
+          eq(approval.id, approvalId),
+          eq(approval.tenantId, tenantId),
+          eq(approval.principalId, userId),
+          eq(approval.status, 'pending')
+        )
+      )
+      .returning();
+
+    if (!updated) {
+      const row = await db
+        .select()
+        .from(approval)
+        .where(and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)))
+        .limit(1)
+        .then((r) => r[0]);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      if (row.principalId !== userId) return c.json({ error: 'Forbidden' }, 403);
+      return c.json({ error: 'Already resolved' }, 409);
+    }
+
+    log.info('Approval approved', { approvalId, tenantId });
+    return c.json(formatApproval(updated));
+  });
+
+  router.post('/tenants/:tenantId/approvals/:approvalId/reject', async (c) => {
+    const userId = c.get('userId');
+    const { tenantId, approvalId } = c.req.param();
+    const body = (await c.req.json().catch(() => ({}))) as { message?: string };
+
+    const [updated] = await db
+      .update(approval)
+      .set({
+        status: 'rejected',
+        message: typeof body.message === 'string' ? body.message : null,
+        resolvedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(approval.id, approvalId),
+          eq(approval.tenantId, tenantId),
+          eq(approval.principalId, userId),
+          eq(approval.status, 'pending')
+        )
+      )
+      .returning();
+
+    if (!updated) {
+      const row = await db
+        .select()
+        .from(approval)
+        .where(and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)))
+        .limit(1)
+        .then((r) => r[0]);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      if (row.principalId !== userId) return c.json({ error: 'Forbidden' }, 403);
+      return c.json({ error: 'Already resolved' }, 409);
+    }
+
+    log.info('Approval rejected', { approvalId, tenantId });
+    return c.json(formatApproval(updated));
+  });
+
+  return router;
+}
+
+// ─── Internal routes (sidecar Bearer token) ────────────────────────
+// Mounted under /api/internal — does NOT go through BetterAuth middleware.
+
+export function createInternalApprovalsRouter(db: any, sidecarToken: string): Hono {
+  const router = new Hono();
+
+  router.use('*', async (c, next) => {
+    const auth = c.req.header('Authorization') ?? '';
+    if (auth !== `Bearer ${sidecarToken}`) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    return next();
+  });
+
+  router.post('/approvals', async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON' }, 400);
+    }
+
+    if (
+      typeof body !== 'object' ||
+      body === null ||
+      typeof (body as Record<string, unknown>)['tenantId'] !== 'string' ||
+      typeof (body as Record<string, unknown>)['agentId'] !== 'string' ||
+      typeof (body as Record<string, unknown>)['principalId'] !== 'string' ||
+      typeof (body as Record<string, unknown>)['action'] !== 'string' ||
+      typeof (body as Record<string, unknown>)['resource'] !== 'string'
+    ) {
+      return c.json({ error: 'Missing required fields' }, 400);
+    }
+
+    const validated = body as {
+      tenantId: string;
+      agentId: string;
+      principalId: string;
+      action: string;
+      resource: string;
+      context?: Record<string, unknown> | null;
+    };
+
+    const [row] = await db
+      .insert(approval)
+      .values({
+        tenantId: validated.tenantId,
+        principalId: validated.principalId,
+        agentId: validated.agentId,
+        resource: validated.resource,
+        action: validated.action,
+        context:
+          validated.context && typeof validated.context === 'object'
+            ? validated.context
+            : undefined,
+      })
+      .returning();
+
+    log.info('Approval created', {
+      id: row!.id,
+      tenantId: validated.tenantId,
+      agentId: validated.agentId,
+    });
+    return c.json(formatApproval(row!), 201);
+  });
+
+  router.get('/approvals/:id', async (c) => {
+    const { id } = c.req.param();
+    const tenantId = c.req.query('tenantId');
+    if (!tenantId) return c.json({ error: 'tenantId query param required' }, 400);
+
+    const [row] = await db
+      .select()
+      .from(approval)
+      .where(and(eq(approval.id, id), eq(approval.tenantId, tenantId)))
+      .limit(1);
+
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    return c.json(formatApproval(row));
+  });
+
+  return router;
+}
+
+function formatApproval(row: typeof approval.$inferSelect) {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    principalId: row.principalId,
+    agentId: row.agentId,
+    sessionId: row.sessionId ?? null,
+    resource: row.resource,
+    action: row.action,
+    context: row.context ?? null,
+    status: row.status,
+    message: row.message ?? null,
+    createdAt: row.createdAt.toISOString(),
+    resolvedAt: row.resolvedAt?.toISOString() ?? null,
+  };
+}

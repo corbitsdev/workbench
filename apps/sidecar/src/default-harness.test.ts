@@ -16,11 +16,17 @@ mock.module('@intx/storage-isogit', () => ({
 mock.module('@intx/harness', () => ({
   createHarness: mock(() => ({ type: 'harness' })),
   readDeployTree: mock(async () => ({ systemPrompt: null })),
+  mergeToolRunners: mock((runners: { definitions: unknown[] }[]) => ({
+    definitions: runners.flatMap((r) => r.definitions ?? []),
+    run: mock(async () => ({ callId: 'x', content: '' })),
+  })),
 }));
 
 mock.module('@intx/tools-posix', () => ({
   createPosixTools: mock(() => ({
+    definitions: [],
     dispose: mock(async () => {}),
+    run: mock(async () => ({ callId: 'x', content: '' })),
   })),
 }));
 
@@ -50,12 +56,18 @@ const validSource: InferenceSource = {
 describe('createDefaultHarnessBuilder', () => {
   describe('canBuildSource', () => {
     it('does not throw for a registered provider', () => {
-      const builder = createDefaultHarnessBuilder();
+      const builder = createDefaultHarnessBuilder({
+        hubHttpUrl: 'http://localhost:4000',
+        sidecarToken: 'test-token',
+      });
       expect(() => builder.canBuildSource(validSource)).not.toThrow();
     });
 
     it('throws for an unknown provider', () => {
-      const builder = createDefaultHarnessBuilder();
+      const builder = createDefaultHarnessBuilder({
+        hubHttpUrl: 'http://localhost:4000',
+        sidecarToken: 'test-token',
+      });
       const unknownSource: InferenceSource = { ...validSource, provider: 'unknown-provider-xyz' };
       expect(() => builder.canBuildSource(unknownSource)).toThrow(
         'Source provider "unknown-provider-xyz" is not registered'
@@ -65,7 +77,10 @@ describe('createDefaultHarnessBuilder', () => {
 
   describe('build()', () => {
     it('returns a bundle with harness, mailStore, and disposers', async () => {
-      const builder = createDefaultHarnessBuilder();
+      const builder = createDefaultHarnessBuilder({
+        hubHttpUrl: 'http://localhost:4000',
+        sidecarToken: 'test-token',
+      });
 
       const bundle = await builder.build({
         agentAddress: 'agent@tenant.localhost',

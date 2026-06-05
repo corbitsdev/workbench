@@ -8,7 +8,7 @@ import {
   verifySSHSignature,
 } from '@intx/crypto-node';
 import { createSidecarOrchestrator } from '@intx/hub-agent';
-import { createDefaultHarnessBuilder } from './default-harness';
+import { createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
 
 await setup({ dev: process.env.NODE_ENV !== 'production' });
 
@@ -26,7 +26,10 @@ const orchestrator = createSidecarOrchestrator({
   token: requireEnv('SIDECAR_TOKEN'),
   dataDir: requireEnv('SIDECAR_DATA_DIR'),
   transport: createInMemoryTransport(),
-  buildHarness: createDefaultHarnessBuilder(),
+  buildHarness: createDefaultHarnessBuilder({
+    hubHttpUrl: wsUrlToHttp(requireEnv('HUB_WS_URL')),
+    sidecarToken: requireEnv('SIDECAR_TOKEN'),
+  }),
   createAgentCrypto: createNodeCrypto,
   cryptoOps: {
     generateKeyPair,

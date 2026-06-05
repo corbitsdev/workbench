@@ -9,6 +9,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@intx/agent": "workspace:*",
     "@intx/authz": "workspace:*",
     "@intx/crypto-node": "workspace:*",
     "@intx/harness": "workspace:*",
@@ -19,7 +20,8 @@
     "@intx/storage-isogit": "workspace:*",
     "@intx/tools-lsp": "workspace:*",
     "@intx/tools-posix": "workspace:*",
-    "@intx/types": "workspace:*"
+    "@intx/types": "workspace:*",
+    "@workbench/approvals": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

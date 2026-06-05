@@ -44,6 +44,7 @@ export function loadConfig() {
   const config = {
     isDev,
     port: requireEnv('PORT'),
+    sidecarToken: requireEnv('SIDECAR_TOKEN'),
     auth: {
       secret: requireEnv('BETTER_AUTH_SECRET'),
       baseUrl: requireEnv('BETTER_AUTH_BASE_URL'),
