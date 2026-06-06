@@ -56,7 +56,10 @@ mock.module('../lib/hub-api', () => ({
   listTenantCredentials: () => Promise.resolve([]),
   listPrincipalGrants: () => Promise.resolve([]),
   listAgentInstances: () => Promise.resolve([]),
-  setupMyraCredential: () => Promise.resolve(),
+  createTenantCredential: () => Promise.resolve({ credentialId: '', providerId: '' }),
+  deleteTenantCredential: () => Promise.resolve(),
+  launchInstanceSession: () => Promise.resolve({ launched: true }),
+  listEnrichedCredentials: () => Promise.resolve([]),
   provisionAgent: () =>
     Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' }),
 }));
