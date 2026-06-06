@@ -13,6 +13,7 @@ import {
 } from '@workbench/chat';
 import { getMe, launchInstanceSession } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
+import { useChatLauncher } from '../lib/chat-launcher-context';
 
 const MYRA: ChatAgentIdentity = { name: 'Myra', tagline: 'Personal agent' };
 
@@ -288,6 +289,7 @@ export function PersonalAgentChat() {
     );
   }
 
+  const { hidden: launcherHidden } = useChatLauncher();
   const panel = renderPanel();
 
   if (dockState === 'docked') {
@@ -296,7 +298,7 @@ export function PersonalAgentChat() {
 
   return (
     <>
-      <ChatLauncher onClick={() => setOpen((prev) => !prev)} open={open} />
+      {!launcherHidden && <ChatLauncher onClick={() => setOpen((prev) => !prev)} open={open} />}
       <FloatingChat open={open}>{panel}</FloatingChat>
     </>
   );

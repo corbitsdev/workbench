@@ -9,6 +9,7 @@ import { ArtifactGallery } from '../components/layout/ArtifactGallery';
 import { useResizableRail } from '@workbench/ui';
 import { useMediaQuery } from '../lib/use-media-query';
 import { getMe, listWorkbenches } from '../lib/hub-api';
+import { useChatLauncher } from '../lib/chat-launcher-context';
 import type { AgentSelection } from '../components/layout/LibraryRail';
 import type { ProvisionAgentResponse } from '../lib/hub-api';
 
@@ -97,6 +98,7 @@ export default function WorkbenchHome() {
   const [agentRefreshTick, setAgentRefreshTick] = useState(0);
   const workspaceTenantId = useFirstWorkspaceTenantId();
   const navigate = useNavigate();
+  const { setHidden: setLauncherHidden } = useChatLauncher();
 
   useEffect(() => {
     if (provisioningState.status === 'needs-onboarding') {
@@ -128,6 +130,7 @@ export default function WorkbenchHome() {
 
   const handleAgentSelect = (selection: AgentSelection) => {
     setRightPane({ view: 'agent', ...selection });
+    setLauncherHidden(true);
   };
 
   const paneTransition: Transition = { duration: 0.15, ease: [0.23, 1, 0.32, 1] };
@@ -150,7 +153,10 @@ export default function WorkbenchHome() {
             instanceId={rightPane.instanceId}
             tenantId={rightPane.tenantId}
             agentName={rightPane.agentName}
-            onClose={() => setRightPane({ view: 'gallery' })}
+            onClose={() => {
+              setRightPane({ view: 'gallery' });
+              setLauncherHidden(false);
+            }}
           />
         </motion.div>
       );
@@ -170,7 +176,10 @@ export default function WorkbenchHome() {
             instanceId={rightPane.instanceId}
             tenantId={rightPane.tenantId}
             agentName={rightPane.agentName}
-            onClose={() => setRightPane({ view: 'gallery' })}
+            onClose={() => {
+              setRightPane({ view: 'gallery' });
+              setLauncherHidden(false);
+            }}
           />
         ) : (
           <ArtifactGallery onOpenLibrary={() => setRailOpen(true)} />

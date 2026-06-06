@@ -592,7 +592,7 @@ export default function CredentialSettingsPage() {
         )}
 
         {allCredentials.length > 0 && (
-          <div className="overflow-hidden rounded-[10px] border border-border">
+          <div className="rounded-[10px] border border-border">
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="border-b border-border bg-surface">

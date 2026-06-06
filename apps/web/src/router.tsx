@@ -3,6 +3,7 @@ import { Suspense, lazy } from 'react';
 import { useAuth } from './components/AuthProvider';
 import { AppSidebar } from './components/layout/AppSidebar';
 import { PersonalAgentChat } from './components/PersonalAgentChat';
+import { ChatLauncherProvider } from './lib/chat-launcher-context';
 import { LoginPage } from './pages/LoginPage';
 import WorkbenchHome from './pages/WorkbenchHome';
 import Dashboard from './pages/Dashboard';
@@ -24,15 +25,17 @@ function ProtectedLayout() {
 
 function AppShell() {
   return (
-    <div className="flex h-screen flex-row bg-page">
-      <AppSidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <main className="flex-1 overflow-hidden">
-          <Outlet />
-        </main>
-        <PersonalAgentChat />
+    <ChatLauncherProvider>
+      <div className="flex h-screen flex-row bg-page">
+        <AppSidebar />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <main className="flex-1 overflow-hidden">
+            <Outlet />
+          </main>
+          <PersonalAgentChat />
+        </div>
       </div>
-    </div>
+    </ChatLauncherProvider>
   );
 }
 
