@@ -6,8 +6,16 @@ import type { AgentInstance } from '../lib/hub-api';
 
 const AVAILABLE_TOOLS = [
   { name: 'exa_search', label: 'Exa Search', description: 'Search the web using Exa.' },
-  { name: 'granola_list_notes', label: 'Granola List Notes', description: 'List notes from Granola.' },
-  { name: 'granola_get_note', label: 'Granola Get Note', description: 'Read a specific Granola note.' },
+  {
+    name: 'granola_list_notes',
+    label: 'Granola List Notes',
+    description: 'List notes from Granola.',
+  },
+  {
+    name: 'granola_get_note',
+    label: 'Granola Get Note',
+    description: 'Read a specific Granola note.',
+  },
 ];
 
 function getAgentTools(capabilities: Record<string, unknown> | null): string[] {
@@ -58,9 +66,8 @@ export default function AgentToolsPage() {
     try {
       await updateAgentTools(agent.tenantId, agent.agentId, nextTools);
       await queryClient.invalidateQueries({ queryKey: ['agents', 'instances'] });
-    } catch (err) {
+    } catch {
       setErrorAgentId(agent.agentId);
-      console.error(err);
     } finally {
       setSavingAgentId(null);
     }
@@ -98,10 +105,7 @@ export default function AgentToolsPage() {
               const hasError = errorAgentId === agent.agentId;
 
               return (
-                <div
-                  key={agent.id}
-                  className="rounded-[10px] border border-border bg-surface p-5"
-                >
+                <div key={agent.id} className="rounded-[10px] border border-border bg-surface p-5">
                   <div className="mb-3 flex items-center justify-between">
                     <div>
                       <h2 className="text-[14px] font-medium text-text">{agent.agentName}</h2>
@@ -109,9 +113,7 @@ export default function AgentToolsPage() {
                         {tenantName(agent.tenantId)} · {agent.status}
                       </p>
                     </div>
-                    {hasError && (
-                      <span className="text-[12px] text-red-500">Failed to save</span>
-                    )}
+                    {hasError && <span className="text-[12px] text-red-500">Failed to save</span>}
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

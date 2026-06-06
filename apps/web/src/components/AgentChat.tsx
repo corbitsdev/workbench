@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import {
-  createBrowserTransport,
-  createInstanceSession,
-  type InstanceSession,
-} from '@intx/hub-client';
+import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import { convertInstanceEvents } from '@workbench/agents/browser';
 import { ChatPanel, type ChatAgentIdentity, type ChatMessage } from '@workbench/chat';
 import { launchInstanceSession } from '../lib/hub-api';
+import { createHubTransport } from '../lib/instance-transport';
 
 type SessionState =
   | { phase: 'loading' }
@@ -58,7 +55,7 @@ export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentCha
 
     let cancelled = false;
 
-    const transport = createBrowserTransport();
+    const transport = createHubTransport();
     const session = createInstanceSession({
       tenantId,
       instanceId,

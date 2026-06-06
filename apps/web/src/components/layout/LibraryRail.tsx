@@ -519,8 +519,7 @@ export function LibraryRail({
                 const isClickable = isClickableAgent || isClickableWorkflow;
                 const isActiveAgent =
                   item.type === 'agent' && item.instanceId === activeAgentInstanceId;
-                const isActiveWorkflow =
-                  item.type === 'workflow' && item.id === activeWorkflowId;
+                const isActiveWorkflow = item.type === 'workflow' && item.id === activeWorkflowId;
                 const isEditingCred = editingCredentialFor === item.id;
 
                 const openItem = () => {

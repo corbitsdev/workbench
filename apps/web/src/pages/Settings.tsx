@@ -113,7 +113,9 @@ export default function Settings() {
         >
           <div>
             <p className="text-[14px] font-medium text-text-1">Agent Tools</p>
-            <p className="mt-0.5 text-[12px] text-text-3">Enable or disable tools for your agents.</p>
+            <p className="mt-0.5 text-[12px] text-text-3">
+              Enable or disable tools for your agents.
+            </p>
           </div>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-text-3">
             <path

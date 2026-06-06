@@ -78,7 +78,8 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const currentStep = workflow.currentStep;
   const analyzeStep = workflow.steps.analyze;
   const generateStep = workflow.steps.generate;
-  const painPoints: PainPointData[] = (analyzeStep?.painPoints as PainPointData[] | undefined) ?? [];
+  const painPoints: PainPointData[] =
+    (analyzeStep?.painPoints as PainPointData[] | undefined) ?? [];
   const artifacts: Artifact[] = (generateStep?.artifacts as Artifact[] | undefined) ?? [];
   const analyzeCompleted = Boolean(analyzeStep?.completed);
   const generateCompleted = Boolean(generateStep?.completed);
@@ -151,7 +152,13 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
           aria-label="Close session"
           className="grid h-[28px] w-[28px] flex-none place-items-center rounded-[8px] border border-border text-text-2 hover:text-text hover:bg-surface-2 transition-colors"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-4 w-4"
+          >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </button>

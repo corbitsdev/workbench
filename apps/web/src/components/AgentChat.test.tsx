@@ -23,8 +23,11 @@ mock.module('../lib/hub-api', () => ({
 }));
 
 mock.module('@intx/hub-client', () => ({
-  createBrowserTransport: () => ({}),
   createInstanceSession: mockCreateInstanceSession,
+}));
+
+mock.module('../lib/instance-transport', () => ({
+  createHubTransport: () => ({}),
 }));
 
 import { AgentChat } from './AgentChat';
