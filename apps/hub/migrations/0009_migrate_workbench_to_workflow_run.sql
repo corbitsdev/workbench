@@ -36,3 +36,16 @@ ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 -- Update pain_point FKs to point to workflow_run (via session_id which now references workflow_run).
 -- No data migration needed; IDs are preserved.
+--> statement-breakpoint
+-- Now that workflow_run has data, add the new FK constraints
+DO $$ BEGIN
+ ALTER TABLE "artifact" ADD CONSTRAINT "artifact_session_id_workflow_run_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."workflow_run"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "pain_point" ADD CONSTRAINT "pain_point_session_id_workflow_run_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."workflow_run"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;

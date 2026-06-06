@@ -12,14 +12,15 @@ CREATE TABLE IF NOT EXISTS "workflow_run" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+-- Drop old FKs to workbench_session; new FKs will be added in 0009 after data migration
 DO $$ BEGIN
- ALTER TABLE "artifact" ADD CONSTRAINT "artifact_session_id_workflow_run_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."workflow_run"("id") ON DELETE cascade ON UPDATE no action;
+ ALTER TABLE "artifact" DROP CONSTRAINT IF EXISTS "artifact_session_id_workbench_session_id_fk";
 EXCEPTION
- WHEN duplicate_object THEN null;
+ WHEN undefined_object THEN null;
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "pain_point" ADD CONSTRAINT "pain_point_session_id_workflow_run_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."workflow_run"("id") ON DELETE cascade ON UPDATE no action;
+ ALTER TABLE "pain_point" DROP CONSTRAINT IF EXISTS "pain_point_session_id_workbench_session_id_fk";
 EXCEPTION
- WHEN duplicate_object THEN null;
+ WHEN undefined_object THEN null;
 END $$;
