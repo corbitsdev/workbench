@@ -4,7 +4,8 @@ import { schema as intxSchema, resolveInstanceSources } from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
-import type { SessionService } from '@intx/hub-sessions';
+import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
+import { pushSourceUpdates } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { type } from 'arktype';
 import { encryptSecret, decryptSecret } from '@workbench/hub-crypto';
@@ -60,7 +61,8 @@ const CreateTenantCredentialBody = type({
 export function createAgentProvisioningRouter(
   db: DB['db'],
   sessionService: SessionService,
-  grantStore: GrantStore
+  grantStore: GrantStore,
+  sidecarRouter: SidecarRouter
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
@@ -435,6 +437,8 @@ export function createAgentProvisioningRouter(
           .where(eq(providerTable.id, cred.providerId));
       }
     });
+
+    void pushSourceUpdates(db, sidecarRouter, tenantId);
 
     return c.json({ credentialId }, 200);
   });

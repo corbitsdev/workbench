@@ -1,6 +1,9 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { parseEncryptionKeys } from '@workbench/hub-crypto';
 import * as intxDbReal from '@intx/db';
+import type { DB } from '@intx/db';
+import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
+import type { GrantStore } from '@intx/types/authz';
 
 mock.module('../config', () => ({
   getConfig: () => ({
@@ -39,19 +42,23 @@ function makeRequest(
   });
 }
 
-const mockSessionService = {
+const mockSessionService: SessionService = {
   launchSession: mock(() => Promise.resolve()),
   sendUserMessage: mock(() => Promise.reject(new Error('not implemented'))),
   endSession: mock(() => Promise.reject(new Error('not implemented'))),
-};
+} as unknown as SessionService;
 
-const mockGrantStore = {
+const mockGrantStore: GrantStore = {
   collectGrants: mock(() => Promise.resolve([])),
 };
 
+const mockSidecarRouter: SidecarRouter = {
+  sendSourcesUpdate: mock(() => Promise.resolve()),
+} as unknown as SidecarRouter;
+
 function buildApp(
   db: ReturnType<typeof makeMockDb>,
-  sessionService = mockSessionService,
+  sessionService: SessionService = mockSessionService,
   userId = 'user-1'
 ) {
   const parent = new Hono<{ Variables: { userId: string } }>();
@@ -61,7 +68,7 @@ function buildApp(
   });
   parent.route(
     '/',
-    createAgentProvisioningRouter(db as never, sessionService as never, mockGrantStore as never)
+    createAgentProvisioningRouter(db as unknown as DB['db'], sessionService, mockGrantStore, mockSidecarRouter)
   );
   return parent;
 }
