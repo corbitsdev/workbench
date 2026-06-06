@@ -431,7 +431,8 @@ export function createAgentProvisioningRouter(
           .update(providerTable)
           .set({
             metadata: {
-              baseURL: typeof raw.baseURL === 'string' ? raw.baseURL.trim() : (existingMeta.baseURL ?? ''),
+              baseURL:
+                typeof raw.baseURL === 'string' ? raw.baseURL.trim() : (existingMeta.baseURL ?? ''),
               model: typeof raw.model === 'string' ? raw.model.trim() : (existingMeta.model ?? ''),
             },
             updatedAt: now,
@@ -443,6 +444,73 @@ export function createAgentProvisioningRouter(
     void pushSourceUpdates(db, sidecarRouter, tenantId);
 
     return c.json({ credentialId }, 200);
+  });
+
+  // Assign a tenant credential to an agent's credentialRequirements.
+  // Replaces any existing tenant requirement on the agent with one pointing at
+  // the named credential. Pass credentialId: null to clear the assignment.
+  app.patch('/tenants/:tenantId/agents/:agentId/credential', async (c) => {
+    const userId = c.get('userId');
+    const tenantId = c.req.param('tenantId');
+    const agentId = c.req.param('agentId');
+
+    const raw = await c.req.json().catch(() => null);
+    if (!raw || (typeof raw.credentialId !== 'string' && raw.credentialId !== null)) {
+      return c.json({ error: 'credentialId (string or null) required' }, 400);
+    }
+
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, tenantId),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+
+    const agentRow = await db.query.agent.findFirst({
+      where: and(eq(agent.id, agentId), eq(agent.tenantId, tenantId)),
+    });
+    if (!agentRow) return c.json({ error: 'Agent not found' }, 404);
+
+    const reqs: Array<Record<string, unknown>> = Array.isArray(agentRow.credentialRequirements)
+      ? (agentRow.credentialRequirements as Array<Record<string, unknown>>).filter(
+          (r) => r['source'] !== 'tenant'
+        )
+      : [];
+
+    let modelConfig = agentRow.modelConfig as { defaultModel?: string } | null;
+
+    if (raw.credentialId !== null) {
+      const cred = await db.query.credential.findFirst({
+        where: and(eq(credential.id, raw.credentialId), eq(credential.tenantId, tenantId)),
+      });
+      if (!cred) return c.json({ error: 'Credential not found' }, 404);
+
+      const prov = await db.query.provider.findFirst({
+        where: eq(providerTable.id, cred.providerId),
+      });
+      const meta = prov?.metadata as { model?: string; baseURL?: string } | null;
+
+      reqs.push({ source: 'tenant', name: cred.name, providerName: prov?.name ?? '' });
+
+      if (!modelConfig?.defaultModel && meta?.model) {
+        modelConfig = { defaultModel: meta.model };
+      }
+    }
+
+    await db
+      .update(agent)
+      .set({
+        credentialRequirements: reqs,
+        ...(modelConfig ? { modelConfig } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(agent.id, agentId));
+
+    void pushSourceUpdates(db, sidecarRouter, tenantId);
+
+    return c.json({}, 200);
   });
 
   // Launch (or relaunch) a session for an agent instance.

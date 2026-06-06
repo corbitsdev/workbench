@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,6 +8,7 @@ import {
   createTenantCredential,
   updateTenantCredential,
   deleteTenantCredential,
+  assignCredentialToAgent,
 } from '../lib/hub-api';
 import type {
   LLMProviderType,
@@ -55,6 +56,101 @@ function providerLabel(plugin: string): string {
 const INPUT_CLASS =
   'w-full rounded-[8px] border border-border bg-bg px-3 py-2 text-[13px] text-text outline-none placeholder:text-text-3 focus:border-orange disabled:opacity-50';
 const LABEL_CLASS = 'mb-1 block text-[12px] font-medium text-text-2';
+
+function AssignAgentsPopover({
+  credential,
+  instances,
+  onAssign,
+}: {
+  credential: EnrichedCredential;
+  instances: AgentInstance[];
+  onAssign: (agentId: string, assigned: boolean) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const tenantInstances = instances.filter((i) => i.tenantId === credential.tenantId);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const isAssigned = (inst: AgentInstance) =>
+    inst.credentialRequirements.some((r) => r.source === 'tenant' && r.name === credential.name);
+
+  const toggle = async (inst: AgentInstance) => {
+    setBusy(inst.id);
+    try {
+      await onAssign(inst.agentId, !isAssigned(inst));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const assignedCount = tenantInstances.filter(isAssigned).length;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 rounded-[4px] border border-border px-2 py-0.5 text-[11px] text-text-2 hover:border-orange hover:text-orange"
+      >
+        {assignedCount > 0 ? (
+          <span>
+            {assignedCount} agent{assignedCount !== 1 ? 's' : ''}
+          </span>
+        ) : (
+          <span className="text-text-3">Assign</span>
+        )}
+        <span className="text-text-3">▾</span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] rounded-[8px] border border-border bg-bg shadow-lg">
+          {tenantInstances.length === 0 ? (
+            <p className="px-3 py-2 text-[12px] text-text-3">No agents in this tenant.</p>
+          ) : (
+            <ul className="py-1">
+              {tenantInstances.map((inst) => {
+                const assigned = isAssigned(inst);
+                const loading = busy === inst.id;
+                return (
+                  <li key={inst.id}>
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => void toggle(inst)}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-text hover:bg-surface disabled:opacity-50"
+                    >
+                      <span
+                        className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border ${
+                          assigned
+                            ? 'border-orange bg-orange text-white'
+                            : 'border-border bg-transparent'
+                        }`}
+                      >
+                        {assigned && <span className="text-[9px] leading-none">✓</span>}
+                      </span>
+                      <span>{inst.agentName}</span>
+                      {loading && <span className="ml-auto text-text-3">...</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function EditCredentialForm({
   credential,
@@ -229,17 +325,10 @@ export default function CredentialSettingsPage() {
   });
   const allInstances = agentInstancesQuery.data ?? [];
 
-  function linkedAgentsForCredential(cred: EnrichedCredential): string[] {
-    return allInstances
-      .filter(
-        (inst) =>
-          inst.tenantId === cred.tenantId &&
-          inst.credentialRequirements.some(
-            (r) => r.source === 'tenant' && r.providerName === cred.providerName
-          )
-      )
-      .map((inst) => inst.agentName);
-  }
+  const handleAssign = async (cred: EnrichedCredential, agentId: string, assign: boolean) => {
+    await assignCredentialToAgent(cred.tenantId, agentId, assign ? cred.id : null);
+    await queryClient.invalidateQueries({ queryKey: ['agents', 'instances'] });
+  };
 
   const isLoading = principalsQuery.isLoading || credentialsQuery.isLoading;
 
@@ -456,12 +545,7 @@ export default function CredentialSettingsPage() {
                 Model
               </label>
               {modelOptions.length > 0 ? (
-                <select
-                  id="cred-model"
-                  name="model"
-                  className={INPUT_CLASS}
-                  disabled={saving}
-                >
+                <select id="cred-model" name="model" className={INPUT_CLASS} disabled={saving}>
                   {modelOptions.map((m) => (
                     <option key={m.value} value={m.value}>
                       {m.label}
@@ -533,10 +617,7 @@ export default function CredentialSettingsPage() {
                       </td>
                     </tr>
                   ) : (
-                    <tr
-                      key={c.id}
-                      className="border-b border-border last:border-0"
-                    >
+                    <tr key={c.id} className="border-b border-border last:border-0">
                       <td className="px-4 py-3 font-medium text-text">{c.name}</td>
                       <td className="px-4 py-3">
                         <span className="rounded-[4px] bg-surface px-1.5 py-0.5 text-[11px] text-text-3 ring-1 ring-border">
@@ -545,20 +626,11 @@ export default function CredentialSettingsPage() {
                       </td>
                       <td className="px-4 py-3 text-text-2">{providerLabel(c.providerPlugin)}</td>
                       <td className="px-4 py-3">
-                        {linkedAgentsForCredential(c).length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {linkedAgentsForCredential(c).map((name) => (
-                              <span
-                                key={name}
-                                className="rounded-[4px] bg-orange/10 px-1.5 py-0.5 text-[11px] text-orange ring-1 ring-orange/30"
-                              >
-                                {name}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-[12px] text-text-3">None</span>
-                        )}
+                        <AssignAgentsPopover
+                          credential={c}
+                          instances={allInstances}
+                          onAssign={(agentId, assign) => handleAssign(c, agentId, assign)}
+                        />
                       </td>
                       <td className="px-4 py-3 capitalize text-text-2">{c.status}</td>
                       <td className="px-4 py-3 text-right">

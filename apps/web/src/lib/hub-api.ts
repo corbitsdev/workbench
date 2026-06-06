@@ -197,13 +197,13 @@ export type AgentInstance = {
   createdAt: string;
 };
 
-export async function updateAgentCredentialRequirements(
+export async function assignCredentialToAgent(
   tenantId: string,
   agentId: string,
-  credentialRequirements: CredentialRequirement[]
+  credentialId: string | null
 ): Promise<void> {
-  await hubFetch<unknown>('PATCH', `tenants/${tenantId}/agents/definitions/${agentId}`, {
-    credentialRequirements,
+  await hubFetch<unknown>('PATCH', `v1/tenants/${tenantId}/agents/${agentId}/credential`, {
+    credentialId,
   });
 }
 

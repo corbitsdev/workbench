@@ -5,11 +5,16 @@ import {
   listAgentInstances,
   listWorkbenches,
   listEnrichedCredentials,
-  updateAgentCredentialRequirements,
+  assignCredentialToAgent,
   getMyPrincipals,
 } from '../../lib/hub-api';
 import { useEffect, useState } from 'react';
-import type { AgentInstance, WorkbenchEntry, EnrichedCredential, CredentialRequirement } from '../../lib/hub-api';
+import type {
+  AgentInstance,
+  WorkbenchEntry,
+  EnrichedCredential,
+  CredentialRequirement,
+} from '../../lib/hub-api';
 
 type ResourceType = 'workflow' | 'workbench' | 'agent';
 type ResourceStatus = 'run' | 'done' | 'idle';
@@ -204,18 +209,12 @@ function AgentCredentialEditor({
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const credId = fd.get('credentialId') as string;
-    const chosen = credentials.find((c) => c.id === credId);
-    if (!chosen) return;
+    if (!credId) return;
 
     setSaving(true);
     setError(null);
     try {
-      const req: CredentialRequirement = {
-        providerName: chosen.providerPlugin,
-        source: 'tenant',
-        name: chosen.name,
-      };
-      await updateAgentCredentialRequirements(tenantId, agentId, [req]);
+      await assignCredentialToAgent(tenantId, agentId, credId);
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update credential.');
@@ -237,9 +236,7 @@ function AgentCredentialEditor({
       <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.04em] text-text-3">
         Credential
       </p>
-      {error && (
-        <p className="mb-2 text-[11px] text-orange-deep">{error}</p>
-      )}
+      {error && <p className="mb-2 text-[11px] text-orange-deep">{error}</p>}
       <select
         name="credentialId"
         defaultValue={credentials.find((c) => c.name === currentCredName)?.id ?? ''}
@@ -494,7 +491,9 @@ export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: Libr
                     >
                       <StatusDot status={item.status} />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[14px] font-medium text-text">{item.name}</div>
+                        <div className="truncate text-[14px] font-medium text-text">
+                          {item.name}
+                        </div>
                         <div className="mt-px font-mono text-[11.5px] text-text-3">{item.sub}</div>
                       </div>
                       {item.type === 'agent' && item.agentId && item.tenantId && (
@@ -507,7 +506,13 @@ export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: Libr
                           }}
                           className={`grid h-[22px] w-[22px] flex-none place-items-center rounded-[6px] border border-border text-text-3 opacity-0 transition-opacity hover:text-text group-hover:opacity-100 ${isEditingCred ? 'opacity-100 text-orange' : ''}`}
                         >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-[13px] w-[13px]">
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            className="h-[13px] w-[13px]"
+                          >
                             <circle cx="12" cy="12" r="3" />
                             <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
                           </svg>
