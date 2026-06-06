@@ -266,7 +266,6 @@ export type EnrichedCredential = {
   providerName: string;
   providerId: string;
   status: string;
-  agentCount: number;
   baseURL: string;
   model: string;
   createdAt: string;

@@ -350,21 +350,6 @@ export function createAgentProvisioningRouter(
           where: eq(providerTable.id, cred.providerId),
         });
 
-        const grants = await db.query.grant.findMany({
-          where: and(eq(grant.resource, `credential:${cred.id}`), eq(grant.tenantId, tenantId)),
-        });
-
-        const agentPrincipals = await Promise.all(
-          grants
-            .filter((g): g is typeof g & { principalId: string } => g.principalId !== null)
-            .map((g) =>
-              db.query.principal.findFirst({
-                where: and(eq(principal.id, g.principalId), eq(principal.kind, 'agent')),
-              })
-            )
-        );
-        const agentCount = agentPrincipals.filter(Boolean).length;
-
         const meta = prov?.metadata as { baseURL?: string; model?: string } | null;
         return {
           id: cred.id,
@@ -374,7 +359,6 @@ export function createAgentProvisioningRouter(
           providerName: prov?.name ?? '',
           providerId: cred.providerId,
           status: cred.status,
-          agentCount,
           baseURL: meta?.baseURL ?? '',
           model: meta?.model ?? '',
           createdAt: cred.createdAt.toISOString(),

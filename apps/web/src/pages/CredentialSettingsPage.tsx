@@ -488,7 +488,6 @@ export default function CredentialSettingsPage() {
                   <th className="px-4 py-2 text-left font-medium text-text-3">Name</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Tenant</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Provider</th>
-                  <th className="px-4 py-2 text-left font-medium text-text-3">Agents</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Status</th>
                   <th className="px-4 py-2" />
                 </tr>
@@ -497,7 +496,7 @@ export default function CredentialSettingsPage() {
                 {allCredentials.map((c) =>
                   editingId === c.id ? (
                     <tr key={c.id} className="border-b border-border last:border-0 bg-surface">
-                      <td colSpan={6} className="px-4 py-4">
+                      <td colSpan={5} className="px-4 py-4">
                         <EditCredentialForm
                           credential={c}
                           onSave={(data) => handleSaveEdit(c, data)}
@@ -517,13 +516,6 @@ export default function CredentialSettingsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-text-2">{providerLabel(c.providerPlugin)}</td>
-                      <td className="px-4 py-3 text-text-2">
-                        {c.agentCount === 0 ? (
-                          <span className="text-text-3">None</span>
-                        ) : (
-                          `${c.agentCount} agent${c.agentCount === 1 ? '' : 's'}`
-                        )}
-                      </td>
                       <td className="px-4 py-3 capitalize text-text-2">{c.status}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-3">
