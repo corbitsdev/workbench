@@ -1,10 +1,6 @@
-import { createAgent } from '@intx/agent';
 import { getLogger } from '@intx/log';
-import type { InferenceSource } from '@intx/types/runtime';
 import type { ArtifactKind } from '@workbench/shared';
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { buildInferenceSource, runSingleTurnAgent } from './inference';
 
 const log = getLogger(['feedback']);
 
@@ -26,45 +22,13 @@ export async function refineFeedbackWithLLM(
   feedback: string,
   type: ArtifactKind = 'email'
 ): Promise<string> {
-  const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY;
-  const model = process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini';
-  const baseURL = process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1';
-
-  if (!apiKey) {
-    throw new Error('LLM feedback refinement requires OPENAI_COMPATIBLE_API_KEY');
-  }
-
   log.info('Refining collateral with feedback', { type });
 
-  const source: InferenceSource = {
-    id: `feedback-${randomUUID()}`,
-    provider: 'openai',
-    baseURL,
-    apiKey,
-    model,
-  };
+  const source = buildInferenceSource('feedback');
 
   const userMessage = `Original text:\n\n${text}\n\nFeedback to apply:\n${feedback}\n\nRefined text:`;
 
-  const contextDir = join(tmpdir(), `gtm-feedback-${randomUUID()}`);
-  const agent = await createAgent({
-    contextDir,
-    sources: [source],
-    defaultSource: source.id,
-    systemPrompt: buildFeedbackSystemPrompt(type),
-    tools: [],
-    closeTimeoutMs: 1000,
-  });
-
-  let raw: string;
-  try {
-    const result = await agent.send(userMessage);
-    raw = result.reply;
-  } finally {
-    await agent.close();
-  }
-
-  const refined = raw?.trim();
+  const refined = (await runSingleTurnAgent(source, buildFeedbackSystemPrompt(type), userMessage, 'gtm-feedback')).trim();
   if (!refined || refined.length === 0) {
     throw new Error('LLM returned empty response for feedback refinement');
   }

@@ -1,9 +1,10 @@
-import type { InferenceSource } from '@intx/types/runtime';
 import { createAgent } from '@intx/agent';
 import { getLogger } from '@intx/log';
+import type { InferenceSource } from '@intx/types/runtime';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { buildInferenceSource } from './inference';
 
 const log = getLogger(['extraction']);
 
@@ -242,24 +243,10 @@ export async function extractPainPointsWithLLM(
   content: string,
   feedback: string | undefined
 ): Promise<ExtractionResult> {
-  const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY;
-  const model = process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini';
-  const baseURL = process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1';
+  const source = buildInferenceSource(`extraction-${workflowId}`);
+  const model = source.model;
 
   log.info('Starting LLM extraction', { workflowId, transcriptLength: content.length, model });
-
-  if (!apiKey) {
-    log.error('Missing OPENAI_COMPATIBLE_API_KEY');
-    throw new Error('OPENAI_COMPATIBLE_API_KEY is required for pain point extraction');
-  }
-
-  const source: InferenceSource = {
-    id: `extraction-${workflowId}`,
-    provider: 'openai',
-    baseURL,
-    apiKey,
-    model,
-  };
 
   const systemPrompt = buildExtractionSystemPrompt();
   const chunks = splitTranscriptForExtraction(content);

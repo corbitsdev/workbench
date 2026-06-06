@@ -1,10 +1,6 @@
-import { createAgent } from '@intx/agent';
 import { getLogger } from '@intx/log';
-import type { InferenceSource } from '@intx/types/runtime';
 import type { ArtifactKind } from '@workbench/shared';
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { buildInferenceSource, runSingleTurnAgent } from './inference';
 
 const log = getLogger(['generation']);
 
@@ -149,43 +145,13 @@ export async function generateCollateralWithLLM(
   point: PainPointInput,
   type: ArtifactKind
 ): Promise<GeneratedCollateral> {
-  const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY;
-  const model = process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini';
-  const baseURL = process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1';
-
-  if (!apiKey) {
-    throw new Error('OPENAI_COMPATIBLE_API_KEY is required for collateral generation');
-  }
-
   log.info('Generating collateral', { workflowId, painPointId: point.id, type });
 
-  const source: InferenceSource = {
-    id: `generation-${workflowId}`,
-    provider: 'openai',
-    baseURL,
-    apiKey,
-    model,
-  };
+  const source = buildInferenceSource(`generation-${workflowId}`);
 
   const userMessage = `Transcript (for context):\n\n${transcript.slice(0, 60000)}\n\n---\n\nPain point to address:\n- Summary: ${point.context}\n- Severity: ${point.severity}\n- Verbatim quote: "${point.quote}"\n\nGenerate the ${type} collateral now.`;
 
-  const contextDir = join(tmpdir(), `gtm-generation-${randomUUID()}`);
-  const agent = await createAgent({
-    contextDir,
-    sources: [source],
-    defaultSource: source.id,
-    systemPrompt: buildSystemPrompt(type),
-    tools: [],
-    closeTimeoutMs: 1000,
-  });
-
-  let raw: string;
-  try {
-    const result = await agent.send(userMessage);
-    raw = result.reply;
-  } finally {
-    await agent.close();
-  }
+  const raw = await runSingleTurnAgent(source, buildSystemPrompt(type), userMessage, 'gtm-generation');
 
   if (!raw) throw new Error('LLM returned empty content for collateral generation');
 
