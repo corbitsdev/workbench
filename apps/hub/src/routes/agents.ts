@@ -331,6 +331,8 @@ export function createAgentProvisioningRouter(
       throw err;
     }
 
+    void pushSourceUpdates(db, sidecarRouter, tenantId);
+
     return c.json({ credentialId, providerId }, 201);
   });
 
@@ -533,7 +535,10 @@ async function ensureProvider(
       createdAt: now,
       updatedAt: now,
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: [providerTable.tenantId, providerTable.name],
+      set: { metadata: { baseURL, model }, updatedAt: now },
+    });
 
   const row = await db.query.provider.findFirst({
     where: and(eq(providerTable.tenantId, tenantId), eq(providerTable.name, name)),
@@ -604,7 +609,7 @@ async function ensureAgentInstance(
       credReqs = [{ source: 'tenant', name: 'Myra LLM', providerName: prov?.name ?? '' }];
       modelConfig = meta?.model ? { defaultModel: meta.model } : undefined;
     } else {
-      credReqs = [{ source: 'tenant', name: 'Myra LLM' }];
+      credReqs = [];
     }
 
     await db.insert(agent).values({
