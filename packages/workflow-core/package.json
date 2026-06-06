@@ -1,0 +1,21 @@
+{
+  "name": "@workbench/workflow-core",
+  "version": "0.0.1",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "dependencies": {
+    "@intx/db": "workspace:*",
+    "@intx/log": "workspace:*",
+    "@intx/types": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
+}

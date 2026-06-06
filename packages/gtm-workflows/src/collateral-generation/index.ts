@@ -1,0 +1,1 @@
+export { collateralGenerationWorkflow } from './workflow';

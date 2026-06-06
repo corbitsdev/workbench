@@ -1,7 +1,11 @@
 import { Hono } from 'hono';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
-import { workbenchSession, transcript, painPoint, artifact, artifactVersion } from '../db/schema';
+import { schema as intxSchema } from '@intx/db';
+import { type } from 'arktype';
+import { workflowRegistry } from '@workbench/workflow-core';
+import { collateralGenerationWorkflow } from '@workbench/gtm-workflows';
+import { workflowRun, transcript, painPoint, artifact, artifactVersion } from '../db/schema';
 import {
   isGranolaConfigured,
   getNoteWithTranscript,
@@ -20,8 +24,75 @@ type StepName = (typeof STEP_ORDER)[number];
 const VALID_EXPORT_TARGETS = ['markdown', 'csv', 'json'] as const;
 type ExportTarget = (typeof VALID_EXPORT_TARGETS)[number];
 
+import type { UserContext } from '@workbench/workflow-core';
+
+async function getUserContext(db: any, userId: string): Promise<UserContext | null> {
+  const personalTenant = await db.query.tenant.findFirst({
+    where: eq(intxSchema.tenant.slug, `user-${userId}`),
+  });
+
+  if (!personalTenant) {
+    return null;
+  }
+
+  const principal = await db.query.principal.findFirst({
+    where: and(
+      eq(intxSchema.principal.tenantId, personalTenant.id),
+      eq(intxSchema.principal.kind, 'user'),
+      eq(intxSchema.principal.refId, userId)
+    ),
+  });
+
+  if (!principal) {
+    log.error('Principal not found for user', {
+      userId,
+      tenantId: personalTenant.id,
+    });
+    return null;
+  }
+
+  return {
+    tenantId: personalTenant.id,
+    principalId: principal.id,
+  };
+}
+
+function validateWorkflowInput(
+  workflowKind: string,
+  input: Record<string, unknown>
+): { valid: true } | { valid: false; error: string } {
+  const workflow = workflowRegistry.get(workflowKind);
+  if (!workflow) {
+    return { valid: false, error: `Workflow not found: ${workflowKind}` };
+  }
+
+  if (!workflow.inputSchema) {
+    return { valid: true };
+  }
+
+  try {
+    const schema = type(workflow.inputSchema);
+    const result = schema(input);
+    if (result instanceof type.errors) {
+      return { valid: false, error: `Invalid workflow input: ${result.summary}` };
+    }
+    return { valid: true };
+  } catch (err) {
+    return { valid: false, error: `Workflow input validation failed: ${String(err)}` };
+  }
+}
+
 export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: string } }> {
+  // Register all available workflows
+  workflowRegistry.register(collateralGenerationWorkflow);
+
   const router = new Hono<{ Variables: { userId: string } }>();
+
+  // ─── List available workflow types ───────────────────────────────
+  router.get('/workflows/types', async (c) => {
+    const types = workflowRegistry.list();
+    return c.json(types);
+  });
 
   // ─── Create workflow (intake) ─────────────────────────────────────
   router.post('/workflows', async (c) => {
@@ -29,7 +100,18 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
       transcript?: string;
       granolaId?: string;
       source?: string;
+      workflowKind?: string;
     };
+
+    const workflowKind = body.workflowKind;
+    if (!workflowKind) {
+      log.warn('Workflow kind is required');
+      return c.json({ error: 'workflowKind is required' }, 400);
+    }
+    if (!workflowRegistry.isValid(workflowKind)) {
+      log.warn('Invalid workflow kind', { workflowKind });
+      return c.json({ error: `Invalid workflow kind: ${workflowKind}` }, 400);
+    }
 
     log.info('Creating workflow', { source: body.source });
 
@@ -79,18 +161,42 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
 
     const userId = c.get('userId');
 
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json({ error: 'User context not found' }, 400);
+    }
+
     const [txRow] = await db
       .insert(transcript)
       .values({ content, source: body.source })
       .returning();
+
+    const workflowInput = { transcriptId: txRow.id, transcriptSource: body.source };
+    const inputValidation = validateWorkflowInput(workflowKind, workflowInput);
+    if (!inputValidation.valid) {
+      log.warn('Workflow input validation failed', {
+        workflowKind,
+        error: inputValidation.error,
+      });
+      return c.json({ error: inputValidation.error }, 400);
+    }
+
     const [wfRow] = await db
-      .insert(workbenchSession)
-      .values({ transcriptId: txRow.id, userId, status: 'analyzing' })
+      .insert(workflowRun)
+      .values({
+        tenantId: userContext.tenantId,
+        principalId: userContext.principalId,
+        kind: workflowKind,
+        status: 'pending',
+        input: workflowInput,
+      })
       .returning();
 
     log.info('Workflow created', {
       workflowId: wfRow.id,
       transcriptId: txRow.id,
+      kind: wfRow.kind,
       status: wfRow.status,
     });
 
@@ -109,17 +215,25 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
   // ─── List workflows ─────────────────────────────────────────────────
   router.get('/workflows', async (c) => {
     const userId = c.get('userId');
-    const sessions = await db.query.workbenchSession.findMany({
-      where: eq(workbenchSession.userId, userId),
-      orderBy: [desc(workbenchSession.createdAt)],
+
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json([]);
+    }
+
+    const sessions = await db.query.workflowRun.findMany({
+      where: eq(workflowRun.principalId, userContext.principalId),
+      orderBy: [desc(workflowRun.createdAt)],
       limit: 50,
     });
 
     const rows = await Promise.all(
       sessions.map(async (s: (typeof sessions)[number]) => {
-        const tx = await db.query.transcript.findFirst({
-          where: eq(transcript.id, s.transcriptId),
-        });
+        const transcriptId = (s.input as any)?.transcriptId;
+        const tx = transcriptId
+          ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
+          : null;
         const points = await db.query.painPoint.findMany({
           where: eq(painPoint.sessionId, s.id),
           columns: { id: true, context: true },
@@ -128,8 +242,8 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
           id: s.id,
           status: s.status,
           createdAt: s.createdAt,
-          transcriptId: s.transcriptId,
-          companyName: s.companyName ?? null,
+          transcriptId: transcriptId ?? null,
+          companyName: (s.input as any)?.companyName ?? null,
           transcriptPreview: tx?.content?.slice(0, 80) ?? null,
           painPointCount: points.length,
           firstPainPoint: points[0]?.context ?? null,
@@ -144,11 +258,16 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
   router.get('/artifacts', async (c) => {
     const userId = c.get('userId');
 
-    // Scope by userId exactly like the sibling routes. Tenant-path scoping is
-    // CL-1246 and intentionally out of scope here.
-    const sessions = await db.query.workbenchSession.findMany({
-      where: eq(workbenchSession.userId, userId),
-      orderBy: [desc(workbenchSession.createdAt)],
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json([]);
+    }
+
+    // Scope by principalId. Tenant-path scoping is CL-1246 and intentionally out of scope here.
+    const sessions = await db.query.workflowRun.findMany({
+      where: eq(workflowRun.principalId, userContext.principalId),
+      orderBy: [desc(workflowRun.createdAt)],
       limit: 50,
     });
 
@@ -172,7 +291,7 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
       const session = sessionById.get(a.sessionId);
       return {
         ...serializeArtifact(a),
-        sessionName: session?.companyName ?? null,
+        sessionName: (session?.input as any)?.companyName ?? null,
         sessionStatus: session?.status ?? null,
       };
     });
@@ -186,17 +305,24 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
     const userId = c.get('userId');
     log.info('Fetching workflow', { workflowId: id });
 
-    const wf = await db.query.workbenchSession.findFirst({
-      where: and(eq(workbenchSession.id, id), eq(workbenchSession.userId, userId)),
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json({ error: 'Workflow not found' }, 404);
+    }
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
     });
     if (!wf) {
       log.warn('Workflow not found', { workflowId: id });
       return c.json({ error: 'Workflow not found' }, 404);
     }
 
-    const tx = await db.query.transcript.findFirst({
-      where: eq(transcript.id, wf.transcriptId),
-    });
+    const transcriptId = (wf.input as any)?.transcriptId;
+    const tx = transcriptId
+      ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
+      : null;
 
     const points = await db.query.painPoint.findMany({
       where: eq(painPoint.sessionId, id),
@@ -218,11 +344,11 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
       id,
       status: wf.status,
       currentStep,
-      companyName: wf.companyName ?? null,
+      companyName: (wf.input as any)?.companyName ?? null,
       steps: {
-        intake: { completed: true, transcriptId: wf.transcriptId, transcript: tx?.content },
+        intake: { completed: true, transcriptId: transcriptId ?? null, transcript: tx?.content },
         analyze: {
-          completed: wf.status !== 'analyzing',
+          completed: wf.status !== 'pending',
           painPoints: points.map(serializePainPoint),
         },
         generate: {
@@ -249,8 +375,14 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
 
     log.info('Running step', { workflowId: id, step: body.step });
 
-    const wf = await db.query.workbenchSession.findFirst({
-      where: and(eq(workbenchSession.id, id), eq(workbenchSession.userId, userId)),
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json({ error: 'Workflow not found' }, 404);
+    }
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
     });
     if (!wf) {
       log.warn('Workflow not found for step', { workflowId: id });
@@ -260,17 +392,17 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
     const step = body.step ?? deriveCurrentStep(wf.status);
 
     if (step === 'analyze') {
-      return runAnalyze(db, id, userId, body.feedback);
+      return runAnalyze(db, id, userId, userContext, body.feedback);
     }
     if (step === 'generate') {
-      return runGenerate(db, id, body.painPointIds ?? [], userId);
+      return runGenerate(db, id, body.painPointIds ?? [], userContext.principalId);
     }
     if (step === 'improve') {
       if (!body.artifactId || !body.feedback) {
         log.warn('Missing artifactId or feedback for improve step', { workflowId: id });
         return c.json({ error: 'artifactId and feedback are required' }, 400);
       }
-      return runImprove(db, id, body.artifactId, body.feedback, userId);
+      return runImprove(db, id, body.artifactId, body.feedback, userContext.principalId);
     }
     if (step === 'export') {
       const target = body.target ?? 'markdown';
@@ -281,7 +413,7 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
           400
         );
       }
-      return runExport(db, id, userId, target);
+      return runExport(db, id, userId, userContext, target);
     }
 
     log.warn('Invalid step', { workflowId: id, step });
@@ -297,12 +429,19 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
     const companyName =
       typeof body.companyName === 'string' ? body.companyName.trim().slice(0, 200) : null;
 
-    const wf = await db.query.workbenchSession.findFirst({
-      where: and(eq(workbenchSession.id, id), eq(workbenchSession.userId, userId)),
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json({ error: 'Workflow not found' }, 404);
+    }
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
     });
     if (!wf) return c.json({ error: 'Workflow not found' }, 404);
 
-    await db.update(workbenchSession).set({ companyName }).where(eq(workbenchSession.id, id));
+    const updatedInput = { ...(wf.input as any), companyName };
+    await db.update(workflowRun).set({ input: updatedInput }).where(eq(workflowRun.id, id));
 
     log.info('Company name updated', { workflowId: id, companyName });
     return c.json({ id, companyName });
@@ -329,24 +468,36 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
 
 function deriveCurrentStep(status: string): StepName {
   const map: Record<string, StepName> = {
-    analyzing: 'analyze',
-    reviewing: 'generate',
-    improving: 'improve',
-    exporting: 'export',
+    pending: 'analyze',
+    running: 'generate',
     done: 'export',
+    failed: 'intake',
   };
   return map[status] ?? 'intake';
 }
 
-async function runAnalyze(db: any, id: string, userId: string, feedback?: string) {
+async function runAnalyze(
+  db: any,
+  id: string,
+  userId: string,
+  userContext: UserContext,
+  feedback?: string
+) {
   log.info('Starting analyze step', { workflowId: id, hasFeedback: Boolean(feedback) });
 
-  const wf = await db.query.workbenchSession.findFirst({
-    where: and(eq(workbenchSession.id, id), eq(workbenchSession.userId, userId)),
+  const wf = await db.query.workflowRun.findFirst({
+    where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
   });
-  const tx = await db.query.transcript.findFirst({
-    where: eq(transcript.id, wf.transcriptId),
-  });
+
+  const transcriptId = (wf?.input as any)?.transcriptId;
+  const tx = transcriptId
+    ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
+    : null;
+
+  if (!tx) {
+    log.error('Transcript not found for analyze', { workflowId: id, transcriptId });
+    return Response.json({ error: 'Transcript not found' }, { status: 400 });
+  }
 
   log.info('Extracting pain points', { workflowId: id, transcriptLength: tx.content.length });
   const { painPoints: extracted, companyName } = await extractPainPoints(id, tx.content, feedback);
@@ -357,15 +508,18 @@ async function runAnalyze(db: any, id: string, userId: string, feedback?: string
   const inserted =
     extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
 
-  const sessionUpdate: Record<string, unknown> = { status: 'reviewing' };
-  if (companyName) sessionUpdate.companyName = companyName;
-  await db.update(workbenchSession).set(sessionUpdate).where(eq(workbenchSession.id, id));
+  const updatedInput = { ...(wf?.input as any) };
+  if (companyName) updatedInput.companyName = companyName;
+  await db
+    .update(workflowRun)
+    .set({ status: 'running', input: updatedInput })
+    .where(eq(workflowRun.id, id));
 
   log.info('Analyze step complete', { workflowId: id, insertedCount: inserted.length });
 
   return Response.json({
     id,
-    status: 'reviewing',
+    status: 'running',
     currentStep: 'generate',
     steps: {
       analyze: { completed: true, painPoints: inserted.map(serializePainPoint) },
@@ -380,11 +534,12 @@ async function runGenerate(db: any, id: string, painPointIds: string[], authorId
     db.query.painPoint.findMany({
       where: and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)),
     }),
-    db.query.workbenchSession.findFirst({ where: eq(workbenchSession.id, id) }),
+    db.query.workflowRun.findFirst({ where: eq(workflowRun.id, id) }),
   ]);
 
-  const tx = wf?.transcriptId
-    ? await db.query.transcript.findFirst({ where: eq(transcript.id, wf.transcriptId) })
+  const transcriptId = (wf?.input as any)?.transcriptId;
+  const tx = transcriptId
+    ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
     : null;
   const transcriptContent: string = tx?.content ?? '';
 
@@ -439,13 +594,13 @@ async function runGenerate(db: any, id: string, painPointIds: string[], authorId
         })
       : [];
 
-  await db.update(workbenchSession).set({ status: 'improving' }).where(eq(workbenchSession.id, id));
+  await db.update(workflowRun).set({ status: 'running' }).where(eq(workflowRun.id, id));
 
   log.info('Generate step complete', { workflowId: id, artifactCount: inserted.length });
 
   return Response.json({
     id,
-    status: 'improving',
+    status: 'running',
     currentStep: 'improve',
     steps: {
       generate: { completed: true, artifacts: inserted.map(serializeArtifact) },
@@ -511,11 +666,17 @@ async function runImprove(
   });
 }
 
-async function runExport(db: any, id: string, userId: string, target: string) {
+async function runExport(
+  db: any,
+  id: string,
+  userId: string,
+  userContext: UserContext,
+  target: string
+) {
   log.info('Starting export step', { workflowId: id, target });
 
-  const wf = await db.query.workbenchSession.findFirst({
-    where: and(eq(workbenchSession.id, id), eq(workbenchSession.userId, userId)),
+  const wf = await db.query.workflowRun.findFirst({
+    where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
   });
   if (!wf) {
     log.warn('Workflow not found for export', { workflowId: id });
@@ -533,7 +694,7 @@ async function runExport(db: any, id: string, userId: string, target: string) {
 
   const assembled = assembleExport(allArtifacts, target);
 
-  await db.update(workbenchSession).set({ status: 'done' }).where(eq(workbenchSession.id, id));
+  await db.update(workflowRun).set({ status: 'done' }).where(eq(workflowRun.id, id));
 
   log.info('Export step complete', {
     workflowId: id,

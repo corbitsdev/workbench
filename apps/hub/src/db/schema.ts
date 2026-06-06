@@ -43,11 +43,26 @@ export const workbenchSession = pgTable('workbench_session', {
     .$onUpdate(() => new Date()),
 });
 
+export const workflowRun = pgTable('workflow_run', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: text('tenant_id').notNull(),
+  principalId: text('principal_id').notNull(),
+  kind: text('kind').notNull(),
+  status: text('status').notNull(),
+  input: jsonb('input').$type<Record<string, unknown>>(),
+  output: jsonb('output').$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at')
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
 export const painPoint = pgTable('pain_point', {
   id: uuid('id').primaryKey().defaultRandom(),
   sessionId: uuid('session_id')
     .notNull()
-    .references(() => workbenchSession.id, { onDelete: 'cascade' }),
+    .references(() => workflowRun.id, { onDelete: 'cascade' }),
   severity: text('severity', { enum: severity }).notNull(),
   context: text('context').notNull(),
   quote: text('quote').notNull(),
@@ -60,7 +75,7 @@ export const painPoint = pgTable('pain_point', {
 // migrations). Nesting via parent_id; provenance via pain_point_id (nullable).
 export const artifact = pgTable('artifact', {
   id: uuid('id').primaryKey().defaultRandom(),
-  sessionId: uuid('session_id').references(() => workbenchSession.id, { onDelete: 'cascade' }),
+  sessionId: uuid('session_id').references(() => workflowRun.id, { onDelete: 'cascade' }),
   parentId: uuid('parent_id').references((): AnyPgColumn => artifact.id, { onDelete: 'cascade' }),
   painPointId: uuid('pain_point_id').references(() => painPoint.id, { onDelete: 'set null' }),
   kind: text('kind').notNull(),

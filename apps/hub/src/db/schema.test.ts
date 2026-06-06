@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'bun:test';
-import { artifact, artifactVersion, painPoint, transcript, workbenchSession } from './schema';
+import {
+  artifact,
+  artifactVersion,
+  painPoint,
+  transcript,
+  workbenchSession,
+  workflowRun,
+} from './schema';
 
 describe('database schema', () => {
   it('has transcript table', () => {
@@ -49,5 +56,18 @@ describe('database schema', () => {
     expect(artifactVersion.content).toBeDefined();
     expect(artifactVersion.authorId).toBeDefined();
     expect(artifactVersion.createdAt).toBeDefined();
+  });
+
+  it('has workflowRun table', () => {
+    expect(workflowRun).toBeDefined();
+    expect(workflowRun.id).toBeDefined();
+    expect(workflowRun.tenantId).toBeDefined();
+    expect(workflowRun.principalId).toBeDefined();
+    expect(workflowRun.kind).toBeDefined();
+    expect(workflowRun.status).toBeDefined();
+    expect(workflowRun.input).toBeDefined();
+    expect(workflowRun.output).toBeDefined();
+    expect(workflowRun.createdAt).toBeDefined();
+    expect(workflowRun.updatedAt).toBeDefined();
   });
 });
