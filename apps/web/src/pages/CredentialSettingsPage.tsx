@@ -8,6 +8,7 @@ import {
   createTenantCredential,
   updateTenantCredential,
   deleteTenantCredential,
+  assignCredentialToAgent,
 } from '../lib/hub-api';
 import type {
   LLMProviderType,
@@ -56,6 +57,17 @@ function isInferenceProvider(p: string): p is LLMProviderType {
 
 function providerLabel(plugin: string): string {
   return PROVIDER_LABELS[plugin] ?? plugin;
+}
+
+function requirementMatchesCredential(
+  requirement: AgentInstance['credentialRequirements'][number],
+  credential: EnrichedCredential
+): boolean {
+  return (
+    requirement.source === 'tenant' &&
+    requirement.providerName === credential.providerName &&
+    (requirement.name === undefined || requirement.name === credential.name)
+  );
 }
 
 const INPUT_CLASS =
@@ -236,16 +248,22 @@ export default function CredentialSettingsPage() {
   });
   const allInstances = agentInstancesQuery.data ?? [];
 
-  function linkedAgentsForCredential(cred: EnrichedCredential): string[] {
-    return allInstances
-      .filter(
-        (inst) =>
-          inst.tenantId === cred.tenantId &&
-          inst.credentialRequirements.some(
-            (r) => r.source === 'tenant' && r.providerName === cred.providerName
-          )
-      )
-      .map((inst) => inst.agentName);
+  function linkedAgentsForCredential(cred: EnrichedCredential): AgentInstance[] {
+    return allInstances.filter(
+      (inst) =>
+        inst.tenantId === cred.tenantId &&
+        inst.credentialRequirements.some((r) => requirementMatchesCredential(r, cred))
+    );
+  }
+
+  function linkableAgentsForCredential(cred: EnrichedCredential): AgentInstance[] {
+    if (!isInferenceProvider(cred.providerPlugin)) return [];
+
+    return allInstances.filter(
+      (inst) =>
+        inst.tenantId === cred.tenantId &&
+        !inst.credentialRequirements.some((r) => requirementMatchesCredential(r, cred))
+    );
   }
 
   const isLoading = principalsQuery.isLoading || credentialsQuery.isLoading;
@@ -258,6 +276,7 @@ export default function CredentialSettingsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null);
 
   const tenantName = (tenantId: string) => {
     const p = principals.find((pr) => pr.tenantId === tenantId);
@@ -341,6 +360,27 @@ export default function CredentialSettingsPage() {
       await queryClient.invalidateQueries({ queryKey: ['credentials'] });
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleAssignAgent = async (cred: EnrichedCredential, agentId: string) => {
+    if (!agentId) return;
+    setAssigningAgentId(agentId);
+    try {
+      await assignCredentialToAgent(cred.tenantId, agentId, cred.id);
+      await queryClient.invalidateQueries({ queryKey: ['agents', 'instances'] });
+    } finally {
+      setAssigningAgentId(null);
+    }
+  };
+
+  const handleRemoveAgent = async (cred: EnrichedCredential, agentId: string) => {
+    setAssigningAgentId(agentId);
+    try {
+      await assignCredentialToAgent(cred.tenantId, agentId, null);
+      await queryClient.invalidateQueries({ queryKey: ['agents', 'instances'] });
+    } finally {
+      setAssigningAgentId(null);
     }
   };
 
@@ -624,20 +664,54 @@ export default function CredentialSettingsPage() {
                       </td>
                       <td className="px-4 py-3 text-text-2">{providerLabel(c.providerPlugin)}</td>
                       <td className="px-4 py-3">
-                        {linkedAgentsForCredential(c).length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {linkedAgentsForCredential(c).map((name) => (
-                              <span
-                                key={name}
-                                className="rounded-[4px] bg-orange/10 px-1.5 py-0.5 text-[11px] text-orange ring-1 ring-orange/30"
-                              >
-                                {name}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-[12px] text-text-3">None</span>
-                        )}
+                        <div className="flex flex-col gap-2">
+                          {linkedAgentsForCredential(c).length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {linkedAgentsForCredential(c).map((agent) => (
+                                <span
+                                  key={agent.id}
+                                  className="inline-flex items-center gap-1 rounded-[4px] bg-orange/10 px-1.5 py-0.5 text-[11px] text-orange ring-1 ring-orange/30"
+                                >
+                                  {agent.agentName}
+                                  <button
+                                    type="button"
+                                    aria-label={`Remove ${agent.agentName}`}
+                                    disabled={assigningAgentId === agent.agentId}
+                                    onClick={() => void handleRemoveAgent(c, agent.agentId)}
+                                    className="text-orange hover:text-red-500 disabled:opacity-40"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[12px] text-text-3">None</span>
+                          )}
+
+                          {linkableAgentsForCredential(c).length > 0 && (
+                            <select
+                              aria-label={`Add agent for ${c.name}`}
+                              defaultValue=""
+                              disabled={!!assigningAgentId}
+                              onChange={(e) => {
+                                const agentId = e.currentTarget.value;
+                                e.currentTarget.value = '';
+                                void handleAssignAgent(c, agentId);
+                              }}
+                              className="max-w-[160px] rounded-[6px] border border-border bg-bg px-2 py-1 text-[11px] text-text-2 outline-none focus:border-orange disabled:opacity-50"
+                            >
+                              <option value="" disabled>
+                                Add agent...
+                              </option>
+                              {linkableAgentsForCredential(c).map((agent) => (
+                                <option key={agent.agentId} value={agent.agentId}>
+                                  {agent.agentName}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 capitalize text-text-2">{c.status}</td>
                       <td className="px-4 py-3 text-right">

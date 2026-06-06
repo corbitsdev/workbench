@@ -130,7 +130,17 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
     }
   };
 
-  const hasAvailableCredentials = Object.values(credentialsByTenant).some((c) => c.length > 0);
+  const workspaceCredentials = workspaceTenantId
+    ? credentialsByTenant[workspaceTenantId]
+    : undefined;
+  const workspaceCredentialsLoaded =
+    !workspaceTenantId || credentialsLoading || workspaceCredentials !== undefined;
+  const workspaceCredentialsByTenant =
+    workspaceTenantId && workspaceCredentials !== undefined
+      ? { [workspaceTenantId]: workspaceCredentials }
+      : {};
+  const hasAvailableCredentials =
+    workspaceCredentials !== undefined && workspaceCredentials.length > 0;
 
   return (
     <AnimatePresence>
@@ -242,9 +252,13 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
                   <p className="text-[13px] text-text-2">
                     Create a workbench first before deploying agents.
                   </p>
+                ) : !workspaceCredentialsLoaded ? (
+                  <p className="text-[13px] text-red-500">
+                    Failed to load credentials for this workspace.
+                  </p>
                 ) : !hasAvailableCredentials && !credentialsLoading ? (
                   <p className="text-[13px] text-text-2">
-                    No credentials found.{' '}
+                    No credentials found for this workspace.{' '}
                     <a
                       href="/settings/credentials"
                       className="text-orange underline-offset-2 hover:underline"
@@ -255,7 +269,7 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
                 ) : (
                   <CredentialPicker
                     principals={principals}
-                    credentialsByTenant={credentialsByTenant}
+                    credentialsByTenant={workspaceCredentialsByTenant}
                     selectedIds={selectedCredentialIds}
                     onSelect={setSelectedCredentialIds}
                     isLoading={credentialsLoading}
