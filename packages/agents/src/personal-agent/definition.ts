@@ -24,7 +24,8 @@ export function buildPersonalAgentGrantRequirements(
 export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
     providerName: 'openai-compatible',
-    source: 'invoker',
+    source: 'tenant',
+    name: 'Myra LLM',
   },
 ];
 

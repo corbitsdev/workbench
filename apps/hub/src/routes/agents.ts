@@ -495,10 +495,32 @@ export function createAgentProvisioningRouter(
     });
     if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
 
-    const agentRow = await db.query.agent.findFirst({
+    let effectiveTenantId = tenantId;
+    let agentRow = await db.query.agent.findFirst({
       where: and(eq(agent.id, agentId), eq(agent.tenantId, tenantId)),
     });
-    if (!agentRow) return c.json({ error: 'Agent not found' }, 404);
+
+    // Older web builds sometimes submit the credential tenant in the URL instead
+    // of the agent definition tenant. Keep the endpoint forgiving while still
+    // requiring membership in the actual agent tenant before mutating anything.
+    if (!agentRow) {
+      const agentById = await db.query.agent.findFirst({
+        where: eq(agent.id, agentId),
+      });
+      if (!agentById) return c.json({ error: 'Agent not found' }, 404);
+
+      const effectiveCallerPrincipal = await db.query.principal.findFirst({
+        where: and(
+          eq(principal.tenantId, agentById.tenantId),
+          eq(principal.kind, 'user'),
+          eq(principal.refId, userId)
+        ),
+      });
+      if (!effectiveCallerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+
+      effectiveTenantId = agentById.tenantId;
+      agentRow = agentById;
+    }
 
     const reqs: Array<Record<string, unknown>> = Array.isArray(agentRow.credentialRequirements)
       ? (agentRow.credentialRequirements as Array<Record<string, unknown>>).filter(
@@ -509,7 +531,7 @@ export function createAgentProvisioningRouter(
     let modelConfig = agentRow.modelConfig as { defaultModel?: string } | null;
 
     if (raw.credentialId !== null) {
-      const cred = await resolveCredentialById(db, tenantId, raw.credentialId);
+      const cred = await resolveCredentialById(db, effectiveTenantId, raw.credentialId);
       if (!cred) return c.json({ error: 'Credential not found' }, 404);
 
       const prov = await db.query.provider.findFirst({
@@ -520,10 +542,13 @@ export function createAgentProvisioningRouter(
         return c.json({ error: 'Credential must use an inference provider' }, 400);
       }
       const meta = prov.metadata as { model?: string; baseURL?: string } | null;
+      if (!meta?.model) {
+        return c.json({ error: 'Credential is missing an inference model' }, 400);
+      }
 
       reqs.push({ source: 'tenant', name: cred.name, providerName: prov.name });
 
-      if (!modelConfig?.defaultModel && meta?.model) {
+      if (!modelConfig?.defaultModel) {
         modelConfig = { defaultModel: meta.model };
       }
     }
@@ -537,7 +562,7 @@ export function createAgentProvisioningRouter(
       })
       .where(eq(agent.id, agentId));
 
-    void pushSourceUpdates(db, sidecarRouter, tenantId);
+    void pushSourceUpdates(db, sidecarRouter, effectiveTenantId);
 
     return c.json({}, 200);
   });
