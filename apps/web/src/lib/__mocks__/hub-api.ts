@@ -24,6 +24,7 @@ export function createMockHubApi(overrides?: Record<string, any>) {
         personalTenantId: null,
         paInstanceId: null,
         provisioned: false,
+        credentialResolved: false,
       })
     ),
     getMyPrincipals: mock<() => Promise<Principal[]>>(() => Promise.resolve([])),

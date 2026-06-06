@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
 import { upgradeWebSocket, websocket } from 'hono/bun';
-import { schema as intxSchema, createGrantStore } from '@intx/db';
+import { schema as intxSchema, createGrantStore, resolveInstanceSources } from '@intx/db';
 import { createApp } from '@intx/hub-api';
 import {
   createAgentRepoStore,
@@ -425,12 +425,31 @@ v1.get('/me', async (c) => {
 
   const userName = c.get('userName');
 
+  let credentialResolved = false;
+  if (paInstanceId && personalTenantId) {
+    const paInstance = await db.query.agentInstance.findFirst({
+      where: eq(intxSchema.agentInstance.id, paInstanceId),
+    });
+    if (paInstance) {
+      try {
+        const sources = await resolveInstanceSources(db, personalTenantId, {
+          agentId: paInstance.agentId,
+          sessionId: null,
+        });
+        credentialResolved = sources.length > 0;
+      } catch {
+        credentialResolved = false;
+      }
+    }
+  }
+
   return c.json({
     userId,
     userName,
     personalTenantId,
     paInstanceId,
     provisioned: personalTenantId !== null,
+    credentialResolved,
   });
 });
 

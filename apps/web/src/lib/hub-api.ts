@@ -54,6 +54,7 @@ export type MeResponse = {
   personalTenantId: string | null;
   paInstanceId: string | null;
   provisioned: boolean;
+  credentialResolved: boolean;
 };
 
 export async function getMe(): Promise<MeResponse> {

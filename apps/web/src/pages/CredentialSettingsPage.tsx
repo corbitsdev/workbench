@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getMyPrincipals,
   listEnrichedCredentials,
+  listAgentInstances,
   createTenantCredential,
   updateTenantCredential,
   deleteTenantCredential,
@@ -12,6 +13,7 @@ import type {
   LLMProviderType,
   CreateTenantCredentialInput,
   EnrichedCredential,
+  AgentInstance,
 } from '../lib/hub-api';
 
 const ANTHROPIC_MODELS = [
@@ -216,6 +218,29 @@ export default function CredentialSettingsPage() {
   });
 
   const allCredentials = credentialsQuery.data ?? [];
+
+  const agentInstancesQuery = useQuery<AgentInstance[]>({
+    queryKey: ['agents', 'instances', tenantIds],
+    queryFn: async () => {
+      const results = await Promise.all(tenantIds.map((id) => listAgentInstances(id)));
+      return results.flat();
+    },
+    enabled: tenantIds.length > 0,
+  });
+  const allInstances = agentInstancesQuery.data ?? [];
+
+  function linkedAgentsForCredential(cred: EnrichedCredential): string[] {
+    return allInstances
+      .filter(
+        (inst) =>
+          inst.tenantId === cred.tenantId &&
+          inst.credentialRequirements.some(
+            (r) => r.source === 'tenant' && r.providerName === cred.providerName
+          )
+      )
+      .map((inst) => inst.agentName);
+  }
+
   const isLoading = principalsQuery.isLoading || credentialsQuery.isLoading;
 
   const [showForm, setShowForm] = useState(false);
@@ -490,6 +515,7 @@ export default function CredentialSettingsPage() {
                   <th className="px-4 py-2 text-left font-medium text-text-3">Name</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Tenant</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Provider</th>
+                  <th className="px-4 py-2 text-left font-medium text-text-3">Agents</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Status</th>
                   <th className="px-4 py-2" />
                 </tr>
@@ -498,7 +524,7 @@ export default function CredentialSettingsPage() {
                 {allCredentials.map((c) =>
                   editingId === c.id ? (
                     <tr key={c.id} className="border-b border-border last:border-0 bg-surface">
-                      <td colSpan={5} className="px-4 py-4">
+                      <td colSpan={6} className="px-4 py-4">
                         <EditCredentialForm
                           credential={c}
                           onSave={(data) => handleSaveEdit(c, data)}
@@ -518,6 +544,22 @@ export default function CredentialSettingsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-text-2">{providerLabel(c.providerPlugin)}</td>
+                      <td className="px-4 py-3">
+                        {linkedAgentsForCredential(c).length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {linkedAgentsForCredential(c).map((name) => (
+                              <span
+                                key={name}
+                                className="rounded-[4px] bg-orange/10 px-1.5 py-0.5 text-[11px] text-orange ring-1 ring-orange/30"
+                              >
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-[12px] text-text-3">None</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 capitalize text-text-2">{c.status}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-3">

@@ -39,6 +39,7 @@ function writeDockState(state: ChatDockState): void {
 type SessionState =
   | { phase: 'loading' }
   | { phase: 'provisioning' }
+  | { phase: 'credential-error' }
   | { phase: 'ready'; session: InstanceSession }
   | { phase: 'error'; message: string };
 
@@ -69,6 +70,11 @@ export function PersonalAgentChat() {
 
         if (!me.personalTenantId || !me.paInstanceId) {
           setSessionState({ phase: 'provisioning' });
+          return;
+        }
+
+        if (!me.credentialResolved) {
+          setSessionState({ phase: 'credential-error' });
           return;
         }
 
@@ -137,6 +143,17 @@ export function PersonalAgentChat() {
     return committed;
   }
 
+  // Shown when Myra is provisioned but no credential resolves for her.
+  const credentialErrorNotice = (
+    <span>
+      No API credential is set up for Myra.{' '}
+      <Link to="/settings/credentials" className="text-orange underline">
+        Add a credential in Settings
+      </Link>{' '}
+      to get started.
+    </span>
+  );
+
   // Shown only when Myra has not been provisioned with a credential yet.
   const setupNotice = (
     <span>
@@ -184,6 +201,21 @@ export function PersonalAgentChat() {
           onSend={() => undefined}
           inputDisabled
           notice={setupNotice}
+          dockState={dockState}
+          onToggleDock={toggleDock}
+          onClose={() => setOpen(false)}
+        />
+      );
+    }
+
+    if (sessionState.phase === 'credential-error') {
+      return (
+        <ChatPanel
+          agent={MYRA}
+          messages={[]}
+          onSend={() => undefined}
+          inputDisabled
+          notice={credentialErrorNotice}
           dockState={dockState}
           onToggleDock={toggleDock}
           onClose={() => setOpen(false)}
