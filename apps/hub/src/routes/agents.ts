@@ -9,10 +9,20 @@ import type { GrantStore } from '@intx/types/authz';
 import { type } from 'arktype';
 import { encryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
+import { repairTenantAgentCredentials } from '../lib/agent-credential-repair';
 
 const log = getLogger(['api', 'agents']);
 
-const { agent, agentInstance, agentSession, credential, grant, principal, provider: providerTable, tenant } = intxSchema;
+const {
+  agent,
+  agentInstance,
+  agentSession,
+  credential,
+  grant,
+  principal,
+  provider: providerTable,
+  tenant,
+} = intxSchema;
 
 const LAUNCH_RETRY_DELAY_MS = 1_000;
 const MAX_LAUNCH_ATTEMPTS = 3;
@@ -44,8 +54,6 @@ const CreateTenantCredentialBody = type({
   name: 'string',
   'baseURL?': 'string',
 });
-
-const LaunchInstanceSessionBody = type({});
 
 // ─── Route ────────────────────────────────────────────────────────
 
@@ -294,37 +302,6 @@ export function createAgentProvisioningRouter(
 
         credentialId = inserted.id;
 
-        // Back-patch agent definitions in this tenant that declare a tenant-source credential
-        // named after this credential. This fills in the providerName field (required by
-        // resolveCredentialRequirement) and modelConfig.defaultModel (required by
-        // resolveInstanceSources) which are not known at agent-definition time.
-        const agentRows = await tx.query.agent.findMany({
-          where: eq(agent.tenantId, tenantId),
-        });
-        for (const agentRow of agentRows) {
-          const reqs = (agentRow.credentialRequirements ?? []) as Array<Record<string, unknown>>;
-          const needsPatch = reqs.some(
-            (r) =>
-              r['source'] === 'tenant' &&
-              r['name'] === parsed.name &&
-              !r['providerName']
-          );
-          if (!needsPatch) continue;
-          const patchedReqs = reqs.map((r) =>
-            r['source'] === 'tenant' && r['name'] === parsed.name && !r['providerName']
-              ? { ...r, providerName: parsed.provider }
-              : r
-          );
-          await tx
-            .update(agent)
-            .set({
-              credentialRequirements: patchedReqs,
-              modelConfig: { defaultModel: parsed.model },
-              updatedAt: now,
-            })
-            .where(eq(agent.id, agentRow.id));
-        }
-
         // Grant the creating principal manage access so Interchange's DELETE/PATCH endpoints work.
         await tx.insert(grant).values({
           id: generateId('grant'),
@@ -374,10 +351,7 @@ export function createAgentProvisioningRouter(
         });
 
         const grants = await db.query.grant.findMany({
-          where: and(
-            eq(grant.resource, `credential:${cred.id}`),
-            eq(grant.tenantId, tenantId)
-          ),
+          where: and(eq(grant.resource, `credential:${cred.id}`), eq(grant.tenantId, tenantId)),
         });
 
         const agentPrincipals = await Promise.all(
@@ -646,16 +620,15 @@ async function launchAgentSession(
     now: Date;
   }
 ): Promise<void> {
-  const {
-    agentId,
-    instanceId,
-    instancePrincipalId,
-    tenantId,
-    tenantDomain,
-    systemPrompt,
-    now,
-  } = opts;
+  const { agentId, instanceId, instancePrincipalId, tenantId, tenantDomain, systemPrompt, now } =
+    opts;
   const address = `${instanceId}@${tenantDomain}`;
+
+  // Repair the agent's credential requirements before resolving — this is the
+  // single chokepoint every launch path funnels through, so a definition that
+  // predates these fields (e.g. pre-Myra users) is healed here rather than
+  // failing to resolve. Loud by design: if repair throws, the launch fails.
+  await repairTenantAgentCredentials(db, tenantId);
 
   const sources = await resolveInstanceSources(db, tenantId, {
     agentId,

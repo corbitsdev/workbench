@@ -25,6 +25,7 @@ import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
 import { createCollateralGenerationRouter } from './routes/collateral-generation';
 import { createAgentProvisioningRouter, relaunchInstanceIfNeeded } from './routes/agents';
+import { repairUserAgentCredentials } from './lib/agent-credential-repair';
 import { createWorkspacesRouter } from './routes/workspaces';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import * as workbenchSchema from './db/schema';
@@ -375,6 +376,18 @@ v1.get('/me', async (c) => {
   });
 
   const personalTenantId = personalTenant?.id ?? null;
+
+  // Repair credential requirements across every tenant the user belongs to so
+  // any agent provisioned before these fields were populated can resolve its
+  // inference sources at launch. Best-effort: never block /me on this.
+  try {
+    await repairUserAgentCredentials(db, userId);
+  } catch (err) {
+    log.error('Agent credential repair failed', {
+      userId,
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  }
 
   let paInstanceId: string | null = null;
   if (personalTenantId && personalTenant?.domain) {
