@@ -7,7 +7,7 @@ import { getLogger } from '@intx/log';
 import type { SessionService } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { type } from 'arktype';
-import { encryptSecret } from '@workbench/hub-crypto';
+import { encryptSecret, decryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
 import { repairTenantAgentCredentials } from '../lib/agent-credential-repair';
 
@@ -671,6 +671,14 @@ async function ensureAgentInstance(
   return { instanceId, agentId, instancePrincipalId, address, isNew: true };
 }
 
+function decryptSources<T extends { apiKey?: string }>(sources: T[], tenantId: string): T[] {
+  const keys = getConfig().credentialKeys;
+  return sources.map((s) => {
+    if (!s.apiKey?.startsWith('enc:')) return s;
+    return { ...s, apiKey: decryptSecret(keys, tenantId, s.apiKey) };
+  });
+}
+
 async function launchAgentSession(
   db: DB['db'],
   sessionService: SessionService,
@@ -695,13 +703,14 @@ async function launchAgentSession(
   // failing to resolve. Loud by design: if repair throws, the launch fails.
   await repairTenantAgentCredentials(db, tenantId);
 
-  const sources = await resolveInstanceSources(db, tenantId, {
+  const rawSources = await resolveInstanceSources(db, tenantId, {
     agentId,
     sessionId: null,
   });
-  if (sources.length === 0) {
+  if (rawSources.length === 0) {
     throw new Error('No resolvable inference sources for agent credential requirements');
   }
+  const sources = decryptSources(rawSources, tenantId);
   const defaultSource = sources[0]!.id;
 
   const sessionId = generateId('session');
