@@ -1,12 +1,12 @@
 {
   "name": "@workbench/workflow-core",
   "version": "0.0.1",
-  "files": [
-    "dist"
-  ],
   "type": "module",
   "exports": {
-    ".": "./dist/index.js"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
   },
   "dependencies": {
     "@intx/db": "workspace:*",

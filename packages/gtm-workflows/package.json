@@ -1,13 +1,16 @@
 {
   "name": "@workbench/gtm-workflows",
   "version": "0.0.1",
-  "files": [
-    "dist"
-  ],
   "type": "module",
   "exports": {
-    ".": "./dist/index.js",
-    "./collateral-generation": "./dist/collateral-generation/index.js"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./collateral-generation": {
+      "types": "./src/collateral-generation/index.ts",
+      "default": "./src/collateral-generation/index.ts"
+    }
   },
   "dependencies": {
     "@intx/log": "workspace:*",

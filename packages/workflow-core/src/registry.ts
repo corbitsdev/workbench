@@ -1,6 +1,6 @@
 import type { WorkflowType } from './types';
 
-class WorkflowTypeRegistry {
+export class WorkflowTypeRegistry {
   private workflows: Map<string, WorkflowType> = new Map();
 
   register(workflow: WorkflowType): void {

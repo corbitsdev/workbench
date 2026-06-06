@@ -1,10 +1,17 @@
-import type { CredentialRequirement } from '@intx/types';
+import type { CredentialRequirementSource } from '@intx/types';
+
+export type WorkflowCredentialRequirement = {
+  providerName: string;
+  scopes?: string[];
+  source: CredentialRequirementSource;
+  name?: string;
+};
 
 export type WorkflowType = {
   kind: string;
   name: string;
   description: string;
-  credentialRequirements: CredentialRequirement[];
+  credentialRequirements: WorkflowCredentialRequirement[];
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
 };
