@@ -196,12 +196,12 @@ export async function generateCollateralWithLLM(
     log.error('Collateral generation returned invalid JSON', {
       workflowId,
       type,
-      raw: raw.substring(0, 500),
+      raw: raw.slice(0, 500),
     });
     throw new Error('LLM returned invalid JSON for collateral generation');
   }
   if (!parsed.title || !parsed.body) {
-    log.error('Collateral generation missing title or body', { workflowId, type, raw });
+    log.error('Collateral generation missing title or body', { workflowId, type, raw: raw.slice(0, 500) });
     throw new Error('LLM response missing title or body');
   }
 
