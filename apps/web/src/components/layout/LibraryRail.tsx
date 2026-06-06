@@ -263,9 +263,11 @@ export interface LibraryRailProps {
   onNew?: () => void;
   onNewWorkbench?: () => void;
   onAgentSelect?: (selection: AgentSelection) => void;
+  onWorkflowSelect?: (workflowId: string) => void;
   onWorkbenchSelect?: (slug: string) => void;
   onAgentDeleted?: () => void;
   activeAgentInstanceId?: string;
+  activeWorkflowId?: string;
   activeWorkbenchSlug?: string;
   refreshTick?: number;
 }
@@ -281,9 +283,11 @@ export function LibraryRail({
   onNew,
   onNewWorkbench,
   onAgentSelect,
+  onWorkflowSelect,
   onWorkbenchSelect,
   onAgentDeleted,
   activeAgentInstanceId,
+  activeWorkflowId,
   activeWorkbenchSlug,
   refreshTick,
 }: LibraryRailProps = {}) {
@@ -510,9 +514,13 @@ export function LibraryRail({
                   onAgentSelect !== undefined &&
                   item.instanceId !== undefined &&
                   item.tenantId !== undefined;
-                const isClickable = isClickableAgent;
+                const isClickableWorkflow =
+                  item.type === 'workflow' && onWorkflowSelect !== undefined;
+                const isClickable = isClickableAgent || isClickableWorkflow;
                 const isActiveAgent =
                   item.type === 'agent' && item.instanceId === activeAgentInstanceId;
+                const isActiveWorkflow =
+                  item.type === 'workflow' && item.id === activeWorkflowId;
                 const isEditingCred = editingCredentialFor === item.id;
 
                 const openItem = () => {
@@ -522,6 +530,8 @@ export function LibraryRail({
                       tenantId: item.tenantId!,
                       agentName: item.name,
                     });
+                  } else if (isClickableWorkflow) {
+                    onWorkflowSelect!(item.id);
                   }
                 };
 
@@ -552,7 +562,7 @@ export function LibraryRail({
                             }
                           : undefined
                       }
-                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)] ${isClickable ? 'cursor-pointer' : ''} ${isActiveAgent ? 'bg-surface ring-1 ring-orange/60' : ''}`}
+                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)] ${isClickable ? 'cursor-pointer' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
                     >
                       <StatusDot status={item.status} />
                       <div className="min-w-0 flex-1">

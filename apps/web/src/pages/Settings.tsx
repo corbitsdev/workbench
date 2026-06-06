@@ -88,7 +88,7 @@ export default function Settings() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-4 pt-8 pb-2">
+      <div className="mx-auto w-full max-w-2xl px-4 pt-8 pb-2 space-y-3">
         <Link
           to="/settings/credentials"
           className="flex items-center justify-between rounded-xl border border-border bg-surface px-5 py-4 transition-colors hover:bg-surface-2"
@@ -96,6 +96,24 @@ export default function Settings() {
           <div>
             <p className="text-[14px] font-medium text-text-1">Credentials</p>
             <p className="mt-0.5 text-[12px] text-text-3">Manage LLM API keys for your agents.</p>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-text-3">
+            <path
+              d="M6 4l4 4-4 4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </Link>
+        <Link
+          to="/settings/agents"
+          className="flex items-center justify-between rounded-xl border border-border bg-surface px-5 py-4 transition-colors hover:bg-surface-2"
+        >
+          <div>
+            <p className="text-[14px] font-medium text-text-1">Agent Tools</p>
+            <p className="mt-0.5 text-[12px] text-text-3">Enable or disable tools for your agents.</p>
           </div>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-text-3">
             <path

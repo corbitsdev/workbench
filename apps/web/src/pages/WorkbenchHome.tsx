@@ -2,6 +2,7 @@ import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AgentChat } from '../components/AgentChat';
+import { WorkflowPanel } from '../components/WorkflowPanel';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { NewWorkbenchModal } from '../components/layout/NewWorkbenchModal';
 import { NewAgentModal } from '../components/layout/NewAgentModal';
@@ -70,7 +71,8 @@ type NewModal = 'none' | 'workbench' | 'agent';
 
 type RightPane =
   | { view: 'gallery' }
-  | { view: 'agent'; instanceId: string; tenantId: string; agentName: string };
+  | { view: 'agent'; instanceId: string; tenantId: string; agentName: string }
+  | { view: 'workflow'; workflowId: string };
 
 function useWorkspaceContext(slug: string | undefined): {
   tenantId: string | null;
@@ -155,6 +157,11 @@ export default function WorkbenchHome() {
     setLauncherHidden(true);
   };
 
+  const handleWorkflowSelect = (workflowId: string) => {
+    setRightPane({ view: 'workflow', workflowId });
+    setLauncherHidden(true);
+  };
+
   const handleAgentDeleted = () => {
     setAgentRefreshTick((n) => n + 1);
     setRightPane({ view: 'gallery' });
@@ -181,6 +188,23 @@ export default function WorkbenchHome() {
             instanceId={rightPane.instanceId}
             tenantId={rightPane.tenantId}
             agentName={rightPane.agentName}
+            onClose={() => {
+              setRightPane({ view: 'gallery' });
+              setLauncherHidden(false);
+            }}
+          />
+        </motion.div>
+      );
+    }
+    if (rightPane.view === 'workflow') {
+      return (
+        <motion.div
+          key={`workflow-${rightPane.workflowId}`}
+          {...paneFade}
+          className="min-h-0 flex-1 overflow-hidden"
+        >
+          <WorkflowPanel
+            workflowId={rightPane.workflowId}
             onClose={() => {
               setRightPane({ view: 'gallery' });
               setLauncherHidden(false);
@@ -219,9 +243,11 @@ export default function WorkbenchHome() {
               onNew={handleNew}
               onNewWorkbench={() => setActiveModal('workbench')}
               onAgentSelect={handleAgentSelect}
+              onWorkflowSelect={handleWorkflowSelect}
               onWorkbenchSelect={handleWorkbenchSelect}
               onAgentDeleted={handleAgentDeleted}
               activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
+              activeWorkflowId={rightPane.view === 'workflow' ? rightPane.workflowId : undefined}
               activeWorkbenchSlug={slug}
               refreshTick={agentRefreshTick}
             />
@@ -254,9 +280,11 @@ export default function WorkbenchHome() {
             onNew={handleNew}
             onNewWorkbench={() => setActiveModal('workbench')}
             onAgentSelect={handleAgentSelect}
+            onWorkflowSelect={handleWorkflowSelect}
             onWorkbenchSelect={handleWorkbenchSelect}
             onAgentDeleted={handleAgentDeleted}
             activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
+            activeWorkflowId={rightPane.view === 'workflow' ? rightPane.workflowId : undefined}
             activeWorkbenchSlug={slug}
             refreshTick={agentRefreshTick}
           />

@@ -1,4 +1,4 @@
-import { GrantRequirement, CredentialRequirement } from '@intx/types';
+import type { GrantRequirement, CredentialRequirement } from '@intx/types';
 import { buildGranolaSystemPrompt } from './prompt';
 
 type GrantRequirementType = typeof GrantRequirement.infer;

@@ -194,6 +194,7 @@ export type AgentInstance = {
   address: string;
   status: string;
   credentialRequirements: CredentialRequirement[];
+  capabilities: Record<string, unknown> | null;
   createdAt: string;
 };
 
@@ -204,6 +205,16 @@ export async function assignCredentialToAgent(
 ): Promise<void> {
   await hubFetch<unknown>('PATCH', `v1/tenants/${tenantId}/agents/${agentId}/credential`, {
     credentialId,
+  });
+}
+
+export async function updateAgentTools(
+  tenantId: string,
+  agentId: string,
+  tools: string[]
+): Promise<void> {
+  await hubFetch<unknown>('PATCH', `v1/tenants/${tenantId}/agents/${agentId}/tools`, {
+    tools,
   });
 }
 

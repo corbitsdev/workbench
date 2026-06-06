@@ -131,6 +131,7 @@ export function createAgentProvisioningRouter(
           source: string;
           name?: string;
         }>,
+        capabilities: (agentRow?.capabilities ?? null) as Record<string, unknown> | null,
         createdAt: inst.createdAt.toISOString(),
       };
     });
