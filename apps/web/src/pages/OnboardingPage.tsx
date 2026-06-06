@@ -81,9 +81,14 @@ export function OnboardingPage() {
           ? { provider: 'openai-compatible', name: 'Myra LLM', apiKey, model, baseURL: baseURL.trim() }
           : { provider, name: 'Myra LLM', apiKey, model };
 
-      const { credentialId } = await createTenantCredential(me.personalTenantId, input);
+      try {
+        await createTenantCredential(me.personalTenantId, input);
+      } catch (err) {
+        if (!(err instanceof Error && err.message.includes('already exists'))) throw err;
+        // Credential exists from a prior attempt — Interchange will resolve it by name.
+      }
 
-      const result = await launchInstanceSession(me.paInstanceId, [credentialId]);
+      const result = await launchInstanceSession(me.paInstanceId);
       if (!result.launched && result.launchError) {
         setError(
           `Credential saved, but Myra failed to start: ${result.launchError}. You can try again from the dashboard.`

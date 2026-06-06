@@ -234,19 +234,15 @@ export type LaunchInstanceSessionResponse = {
 };
 
 export async function launchInstanceSession(
-  instanceId: string,
-  credentialIds: string[]
+  instanceId: string
 ): Promise<LaunchInstanceSessionResponse> {
-  return hubFetch<LaunchInstanceSessionResponse>('POST', `v1/instances/${instanceId}/sessions`, {
-    credentialIds,
-  });
+  return hubFetch<LaunchInstanceSessionResponse>('POST', `v1/instances/${instanceId}/sessions`, {});
 }
 
 export type ProvisionAgentInput = {
   tenantId: string;
   name: string;
   systemPrompt: string;
-  credentialIds: string[];
 };
 
 export type ProvisionAgentResponse = {

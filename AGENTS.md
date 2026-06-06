@@ -29,28 +29,60 @@ GTM Workbench is an AI-assisted GTM workspace built on top of Interchange. Users
 - Agent runtime: `@intx/agent`
 - Persistence: PostgreSQL (port 5433 in compose)
 
-## Interchange First
+## Interchange Is the Operating System
 
-**Before writing any new code, check if Interchange already does it.**
+Interchange is not a library we use occasionally. It is the operating system this product runs on. Every agent lifecycle operation, credential flow, session, grant, and inference call goes through Interchange. The workbench hub is a thin product layer on top of it — not a reimplementation of it.
 
-Interchange (`interchange/packages/`) provides: agent runtime, inference, tenant/principal/grant management, credential resolution, session handling, mail transport, git-backed context storage, observability, and more.
+**This has burned us before.** We once wrote a full credential-grant-at-launch flow (passing credentialIds manually, granting them to instance principals, building inference sources by hand) when Interchange already does all of this via `credentialRequirements` on the agent definition + `resolveCredentialRequirement` at launch. The result was a broken onboarding flow, a week of debugging, and code we had to throw away.
 
-The cost of reimplementing something Interchange already does is high — divergent ID formats, missing invariants, duplicated logic that drifts. The cost of reading the source first is low.
+**Do not repeat this. Stop and read Interchange before writing anything.**
 
-**Mandatory lookup sequence before implementing anything:**
+### Mandatory lookup before implementing anything
 
-1. Check `interchange/docs/` — AUTH.md, ARCHITECTURE.md, CREDENTIALS.md, MESSAGE.md, API.md
-2. Search `interchange/packages/` for the relevant package
-3. Check if `@intx/hub-common`, `@intx/db`, `@intx/types`, or `@intx/hub-api` exports what you need
-4. Only implement from scratch if Interchange genuinely does not cover it
+1. `interchange/docs/` — read AUTH.md, ARCHITECTURE.md, CREDENTIALS.md, MESSAGE.md, API.md for the domain you're touching
+2. `interchange/packages/` — search for the relevant package and read its source
+3. Check exports of `@intx/hub-common`, `@intx/db`, `@intx/types`, `@intx/hub-api`, `@intx/hub-sessions`
+4. Only implement from scratch if Interchange genuinely does not cover it — and if so, explain why in the PR
 
-**Specific rules:**
+### What Interchange owns — never reimplement these
+
+| Domain | What Interchange does | Where to look |
+|---|---|---|
+| Credential resolution | Resolves credentials from tenant hierarchy by `providerName` + `source` + optional `name` | `@intx/db` → `resolveCredentialRequirement`, `resolveOneCredential` |
+| Agent launch | Resolves `credentialRequirements` → builds inference sources → launches via sidecar | `@intx/hub-sessions` → `SessionService.launchSession` |
+| Credential requirements | Agent definitions declare what they need; Interchange finds and resolves them at launch | `@intx/types` → `CredentialRequirement`; `source: 'tenant'` means tenant-owned (`principalId: null`) |
+| Grant resolution | Collects all grants for a principal including role-based grants | `@intx/db` → `createGrantStore` → `collectGrants` |
+| Session orchestration | Manages session lifecycle, sidecar registration, reconnect | `@intx/hub-sessions` → `createHubSessionOrchestrator` |
+| ID generation | Typed, prefixed IDs for every entity | `@intx/hub-common` → `generateId` |
+| LLM inference | All inference calls go through the agent runtime | `@intx/agent` — never direct fetch to LLM endpoints |
+| DB schema + types | Tables, ID formats, row types | `@intx/db/schema`, `@intx/types` |
+
+### The correct credential + launch pattern
+
+Credentials are stored **tenant-owned** (`principalId: null`). Agent definitions declare **credential requirements**. Interchange resolves them at launch time by walking the tenant hierarchy.
+
+```ts
+// Agent definition — declare what you need
+credentialRequirements: [{ providerName: 'openai-compatible', source: 'tenant', name: 'Myra LLM' }]
+
+// Credential creation — tenant-owned, not principal-owned
+{ principalId: null, tenantId, providerId, name: 'Myra LLM', ... }
+
+// Launch — no credentialIds; Interchange resolves from requirements
+sessionService.launchSession({ agentId, instanceId, ... }) // sources resolved internally
+```
+
+The frontend's job is to save the credential. The hub's job is to launch the agent. Neither should pass credential IDs through the launch call.
+
+### Specific rules
 
 - `generateId` — import from `@intx/hub-common`, never reimplement
 - LLM inference — use `@intx/agent`, never direct `fetch()` to LLM endpoints
 - Tenant/principal/grant operations — use Interchange's DB schema and resolution functions from `@intx/db`
 - ID formats, table schemas, type definitions — read `@intx/db/schema` and `@intx/types` before defining your own
 - Credential resolution — use `resolveCredentialRequirement` from `@intx/db`
+- Agent launch — use `SessionService.launchSession`; never build inference sources manually
+- Do not modify `interchange/` unless explicitly asked
 
 ## Worktree Setup
 

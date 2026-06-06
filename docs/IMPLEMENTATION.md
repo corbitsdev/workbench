@@ -95,10 +95,9 @@ Transport-agnostic chat UI components. No dependency on a specific agent transpo
 | `POST`   | `/agents`                                      | `{ name, systemPrompt, tenantId, credentialIds: string[] }` | `{ instanceId, agentId, agentName, tenantId, launched, launchError? }` 201 |
 | `POST`   | `/tenants/:tenantId/credentials`               | `{ provider, name, apiKey, model, baseURL? }`               | `{ credentialId, providerId }` 201                                         |
 | `DELETE` | `/tenants/:tenantId/credentials/:credentialId` | — (Interchange-native; manage grant created at write time)  | `{ ok: true }` 200                                                         |
-| `POST`   | `/instances/:instanceId/sessions`              | `{ credentialIds: string[] }`                               | `{ launched, launchError? }` 200                                           |
-| `POST`   | `/myra/credential`                             | `{ provider, apiKey, model, baseURL? }`                     | `{ ok, credentialId, launched, launchError? }` 200                         |
+| `POST`   | `/instances/:instanceId/sessions`              | `{}` (no credential IDs — Interchange resolves from agent's credentialRequirements) | `{ launched, launchError? }` 200              |
 
-Agent provisioning verifies each credential against the caller's ancestor chain (see Credential Verification below) — credentials from parent tenants are accepted. Grants are created at provisioning time.
+Agent launch does not accept credential IDs. The agent definition declares `credentialRequirements`; Interchange resolves them at launch time by walking the tenant ancestor chain. Grants written at credential-creation time are for management access only (delete/update via Settings UI), not for resolution.
 
 All routes that trigger a session launch return `launched: boolean` and an optional `launchError` string. Launch failures are surfaced to callers; they do not cause the route to return an error status (the agent/credential record was still created). Session launch is retried up to 3 times with a 1 s delay before reporting failure.
 
@@ -178,7 +177,7 @@ The `artifact` table is the single store for all workflow and agent outputs.
 
 #### Credential sources by agent
 
-- **Personal agent (Myra)**: `source: 'invoker'` for openai-compatible inference — resolved against the invoking user's principal at session time
+- **Personal agent (Myra)**: `source: 'tenant'`, `name: 'Myra LLM'` for openai-compatible inference — resolved against the user's personal tenant. The credential is stored tenant-owned (`principalId: null`) and created during onboarding.
 - **Granola agent (Oat)**: `source: 'tenant'` for both `granola` and `openai-compatible` — resolved against the workspace tenant
 
 #### Creating credentials (Settings flow)
@@ -189,8 +188,10 @@ Credentials are created via `POST /api/v1/tenants/:tenantId/credentials` (workbe
 
 1. Checks for a name conflict in the tenant — returns 409 if a credential with the same `name` already exists.
 2. Calls `ensureProvider` (**Interchange**: inserts into Interchange's `provider` table in `intxSchema`, or reuses existing by `(tenantId, name)`) to create or reuse a provider record for the given plugin.
-3. Calls `ensureCredential` (**custom**: inserts into Interchange's `credential` table with the secret encrypted via `encryptSecret` from `@workbench/hub-crypto`).
+3. Inserts into Interchange's `credential` table with `principalId: null` (tenant-owned) and the secret encrypted via `encryptSecret` from `@workbench/hub-crypto`.
 4. Returns `{ credentialId, providerId }`.
+
+**Credentials are always tenant-owned** (`principalId: null`). This is required for Interchange's `source: 'tenant'` resolution to find them at agent launch time.
 
 Required fields: `provider` (e.g. `'anthropic'`), `name`, `apiKey`, `model`. `baseURL` is required for `openai-compatible` providers.
 
@@ -204,29 +205,17 @@ When verifying credentials at provisioning or session-launch time, the hub calls
 
 #### Provisioning an agent with credentials
 
-When provisioning an agent, the caller selects existing credential IDs via the credential picker. The hub:
+The workbench does **not** pass credential IDs at agent launch time. Interchange resolves credentials from the tenant automatically using the agent's `credentialRequirements`.
 
-1. Verifies each credential ID belongs to `tenantId` or an ancestor tenant (ancestor-chain lookup — see above).
-2. Creates the agent and agent instance (**Interchange**: `ensureAgentInstance` in `apps/hub/src/routes/agents.ts` uses Interchange's `agent`, `instance`, `tenant`, `principal` tables from `@intx/db`).
-3. Creates a `grant` row for each credential (**Interchange table, custom logic**): written directly via Drizzle into Interchange's `grant` table from `intxSchema`. Interchange resolves these grants at session time; the workbench only writes them at provisioning time.
+When provisioning an agent, the hub:
 
-```typescript
-await db.insert(grant).values({
-  id: generateId('grant'), // generateId imported from @intx/hub-common
-  tenantId,
-  principalId: instancePrincipalId, // agent instance's principal, not the human user
-  resource: `credential:${credentialId}`,
-  action: '*',
-  effect: 'allow',
-  origin: 'creator',
-  createdAt: now,
-  updatedAt: now,
-});
-```
+1. Creates the agent definition with `credentialRequirements` declaring what the agent needs (e.g. `[{ providerName: 'openai-compatible', source: 'tenant', name: 'Myra LLM' }]`).
+2. Creates the agent instance (**Interchange**: uses Interchange's `agent`, `agentInstance`, `tenant`, `principal` tables from `@intx/db`).
+3. Launches the session via `sessionService.launchSession` — Interchange's `resolveCredentialRequirement` walks the tenant hierarchy and builds `InferenceSource[]` from the agent's requirements. No credential IDs are passed to this call.
 
-The `grant` table is in `intxSchema` from `@intx/db`. Import `grant` from `intxSchema` alongside other Interchange tables.
+**No credential IDs in launch calls.** Credentials live on the tenant. The agent declares what it needs. Interchange finds them.
 
-**No raw secrets are accepted in the provisioning request.** `POST /api/v1/agents` accepts `credentialIds: string[]`, not API key strings.
+The `grant` table is still used for one purpose: giving the creating principal manage access to the credential record so the Settings UI can delete/update it (`resource: credential:{id}`, `origin: creator`, `principalId: callerPrincipal.id`). This is a management grant, not a resolution grant.
 
 #### Credential picker (frontend)
 
@@ -252,8 +241,7 @@ The `CredentialSettingsPage` (**custom**) at `/settings/credentials` shows all c
 - `POST /v1/tenants/:tenantId/credentials` — create with encryption + manage grant
 - `DELETE /api/tenants/:tenantId/credentials/:credentialId` — Interchange-native (manage grant created at write time enables this)
 - `POST /v1/agents` — provision agent + launch session
-- `POST /v1/instances/:instanceId/sessions` — launch session for existing instance
-- `POST /v1/myra/credential` — Myra-specific credential setup + session launch
+- `POST /v1/instances/:instanceId/sessions` — launch session for existing instance (no credential IDs; Interchange resolves from agent's credentialRequirements)
 - `POST /v1/workspaces`, `GET /v1/agents`, etc.
 
 ### Deploy Prompts

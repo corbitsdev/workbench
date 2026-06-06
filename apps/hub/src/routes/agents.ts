@@ -1,13 +1,11 @@
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { schema as intxSchema } from '@intx/db';
-import { resolveCredentialById } from '@intx/db';
+import { schema as intxSchema, resolveInstanceSources } from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
 import type { SessionService } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
-import type { InferenceSource } from '@intx/types/runtime';
 import { type } from 'arktype';
 import { encryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
@@ -35,7 +33,6 @@ const ProvisionAgentBody = type({
   tenantId: 'string',
   name: 'string',
   systemPrompt: 'string',
-  credentialIds: 'string[]>=1',
 });
 
 type ProvisionAgentBodyType = typeof ProvisionAgentBody.infer;
@@ -48,9 +45,7 @@ const CreateTenantCredentialBody = type({
   'baseURL?': 'string',
 });
 
-const LaunchInstanceSessionBody = type({
-  credentialIds: 'string[]>=1',
-});
+const LaunchInstanceSessionBody = type({});
 
 // ─── Route ────────────────────────────────────────────────────────
 
@@ -147,11 +142,6 @@ export function createAgentProvisioningRouter(
       return c.json({ error: 'Tenant has no domain configured' }, 500);
     }
 
-    const credentialError = await verifyCredentialsInTenant(db, body.tenantId, body.credentialIds);
-    if (credentialError) {
-      return c.json({ error: credentialError }, 422);
-    }
-
     const now = new Date();
 
     const txResult = await db.transaction(async (rawTx) => {
@@ -169,14 +159,6 @@ export function createAgentProvisioningRouter(
       if ('conflict' in provisionResult) {
         return provisionResult;
       }
-
-      await grantCredentialsToInstance(
-        tx,
-        body.tenantId,
-        provisionResult.instancePrincipalId,
-        body.credentialIds,
-        now
-      );
 
       return provisionResult;
     });
@@ -199,7 +181,6 @@ export function createAgentProvisioningRouter(
           tenantId: body.tenantId,
           tenantDomain: tenantRow.domain,
           systemPrompt: body.systemPrompt,
-          credentialIds: body.credentialIds,
           now,
         });
         launched = true;
@@ -293,7 +274,7 @@ export function createAgentProvisioningRouter(
             id: generateId('credential'),
             tenantId,
             providerId,
-            principalId: callerPrincipal.id,
+            principalId: null,
             name: parsed.name,
             type: 'api_key',
             secret: encryptedSecret,
@@ -312,6 +293,37 @@ export function createAgentProvisioningRouter(
         }
 
         credentialId = inserted.id;
+
+        // Back-patch agent definitions in this tenant that declare a tenant-source credential
+        // named after this credential. This fills in the providerName field (required by
+        // resolveCredentialRequirement) and modelConfig.defaultModel (required by
+        // resolveInstanceSources) which are not known at agent-definition time.
+        const agentRows = await tx.query.agent.findMany({
+          where: eq(agent.tenantId, tenantId),
+        });
+        for (const agentRow of agentRows) {
+          const reqs = (agentRow.credentialRequirements ?? []) as Array<Record<string, unknown>>;
+          const needsPatch = reqs.some(
+            (r) =>
+              r['source'] === 'tenant' &&
+              r['name'] === parsed.name &&
+              !r['providerName']
+          );
+          if (!needsPatch) continue;
+          const patchedReqs = reqs.map((r) =>
+            r['source'] === 'tenant' && r['name'] === parsed.name && !r['providerName']
+              ? { ...r, providerName: parsed.provider }
+              : r
+          );
+          await tx
+            .update(agent)
+            .set({
+              credentialRequirements: patchedReqs,
+              modelConfig: { defaultModel: parsed.model },
+              updatedAt: now,
+            })
+            .where(eq(agent.id, agentRow.id));
+        }
 
         // Grant the creating principal manage access so Interchange's DELETE/PATCH endpoints work.
         await tx.insert(grant).values({
@@ -396,20 +408,11 @@ export function createAgentProvisioningRouter(
     return c.json({ data: result });
   });
 
-  // Grant credentials to an agent instance and launch (or relaunch) its session.
+  // Launch (or relaunch) a session for an agent instance.
+  // Credentials are resolved via Interchange's credential-requirement resolution — no IDs needed.
   app.post('/instances/:instanceId/sessions', async (c) => {
     const userId = c.get('userId');
     const instanceId = c.req.param('instanceId');
-
-    const raw = await c.req.json().catch(() => null);
-    if (!raw) {
-      return c.json({ error: 'Invalid JSON body' }, 400);
-    }
-
-    const parsed = LaunchInstanceSessionBody(raw);
-    if (parsed instanceof type.errors) {
-      return c.json({ error: parsed.summary }, 400);
-    }
 
     const instance = await db.query.agentInstance.findFirst({
       where: eq(agentInstance.id, instanceId),
@@ -443,20 +446,7 @@ export function createAgentProvisioningRouter(
       return c.json({ error: 'Agent configuration missing' }, 500);
     }
 
-    const credErr = await verifyCredentialsInTenant(db, instance.tenantId, parsed.credentialIds);
-    if (credErr) {
-      return c.json({ error: credErr }, 422);
-    }
-
     const now = new Date();
-
-    await grantCredentialsToInstance(
-      db,
-      instance.tenantId,
-      instance.principalId,
-      parsed.credentialIds,
-      now
-    );
 
     let launched = false;
     let launchError: string | undefined;
@@ -469,7 +459,6 @@ export function createAgentProvisioningRouter(
         tenantId: instance.tenantId,
         tenantDomain: tenantRow.domain,
         systemPrompt: agentRow.systemPrompt,
-        credentialIds: parsed.credentialIds,
         now,
       });
       launched = true;
@@ -557,13 +546,40 @@ async function ensureAgentInstance(
     agentId = existingAgent.id;
   } else {
     agentId = generateId('agent');
+
+    // Resolve the tenant credential named 'Myra LLM' eagerly so we can populate
+    // providerName (required by resolveCredentialRequirement) and modelConfig at
+    // definition time. If the credential does not exist yet, these will be filled
+    // in when the credential is created via POST /tenants/:tenantId/credentials.
+    const existingCred = await db.query.credential.findFirst({
+      where: and(
+        eq(credential.tenantId, tenantId),
+        eq(credential.name, 'Myra LLM'),
+        isNull(credential.principalId),
+        eq(credential.status, 'active')
+      ),
+    });
+    let credReqs: Array<Record<string, unknown>>;
+    let modelConfig: { defaultModel: string } | undefined;
+    if (existingCred) {
+      const prov = await db.query.provider.findFirst({
+        where: eq(providerTable.id, existingCred.providerId),
+      });
+      const meta = prov?.metadata as { model?: string } | null;
+      credReqs = [{ source: 'tenant', name: 'Myra LLM', providerName: prov?.name ?? '' }];
+      modelConfig = meta?.model ? { defaultModel: meta.model } : undefined;
+    } else {
+      credReqs = [{ source: 'tenant', name: 'Myra LLM' }];
+    }
+
     await db.insert(agent).values({
       id: agentId,
       tenantId,
       creatorPrincipalId,
       name: agentName,
       systemPrompt,
-      credentialRequirements: [],
+      credentialRequirements: credReqs,
+      ...(modelConfig !== undefined ? { modelConfig } : {}),
       status: 'deployed',
       currentVersion: '1',
       createdAt: now,
@@ -616,68 +632,6 @@ async function ensureAgentInstance(
   return { instanceId, agentId, instancePrincipalId, address, isNew: true };
 }
 
-// Uses Interchange's resolveCredentialById which walks the tenant ancestor chain.
-async function verifyCredentialsInTenant(
-  db: DB['db'],
-  tenantId: string,
-  credentialIds: string[]
-): Promise<string | null> {
-  for (const id of credentialIds) {
-    const row = await resolveCredentialById(db, tenantId, id);
-    if (!row) return `Credential not found in tenant or its ancestors: ${id}`;
-  }
-  return null;
-}
-
-async function grantCredentialsToInstance(
-  db: DB['db'],
-  tenantId: string,
-  instancePrincipalId: string,
-  credentialIds: string[],
-  now: Date
-): Promise<void> {
-  for (const credentialId of credentialIds) {
-    await db
-      .insert(grant)
-      .values({
-        id: generateId('grant'),
-        tenantId,
-        principalId: instancePrincipalId,
-        resource: `credential:${credentialId}`,
-        action: '*',
-        effect: 'allow',
-        origin: 'creator',
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing();
-  }
-}
-
-async function buildSourcesFromCredentialIds(
-  db: DB['db'],
-  tenantId: string,
-  credentialIds: string[]
-): Promise<InferenceSource[]> {
-  const sources: InferenceSource[] = [];
-  for (const credId of credentialIds) {
-    const cred = await resolveCredentialById(db, tenantId, credId);
-    if (!cred) continue;
-    const prov = await db.query.provider.findFirst({ where: eq(providerTable.id, cred.providerId) });
-    if (!prov) continue;
-    const meta = prov.metadata as { baseURL?: string; model?: string } | null;
-    if (!meta?.baseURL || !meta?.model) continue;
-    sources.push({
-      id: `${prov.plugin}:${meta.model}`,
-      provider: prov.plugin,
-      baseURL: meta.baseURL,
-      apiKey: cred.secret,
-      model: meta.model,
-    });
-  }
-  return sources;
-}
-
 async function launchAgentSession(
   db: DB['db'],
   sessionService: SessionService,
@@ -689,7 +643,6 @@ async function launchAgentSession(
     tenantId: string;
     tenantDomain: string;
     systemPrompt: string;
-    credentialIds: string[];
     now: Date;
   }
 ): Promise<void> {
@@ -700,14 +653,16 @@ async function launchAgentSession(
     tenantId,
     tenantDomain,
     systemPrompt,
-    credentialIds,
     now,
   } = opts;
   const address = `${instanceId}@${tenantDomain}`;
 
-  const sources = await buildSourcesFromCredentialIds(db, tenantId, credentialIds);
+  const sources = await resolveInstanceSources(db, tenantId, {
+    agentId,
+    sessionId: null,
+  });
   if (sources.length === 0) {
-    throw new Error('No resolvable inference sources for the provided credentials');
+    throw new Error('No resolvable inference sources for agent credential requirements');
   }
   const defaultSource = sources[0]!.id;
 
@@ -796,22 +751,17 @@ export async function relaunchInstanceIfNeeded(
   });
   if (!agentRow?.systemPrompt) return;
 
-  // Find credentials already granted to this instance.
-  const credentialGrants = await db.query.grant.findMany({
+  // Guard: do not attempt launch if the tenant has no active credential for this agent.
+  // Without this check, every GET /v1/me for a pre-onboarding user fires a launch attempt
+  // that always fails with "No resolvable inference sources".
+  const hasCred = await db.query.credential.findFirst({
     where: and(
-      eq(grant.principalId, instance.principalId),
-      eq(grant.tenantId, instance.tenantId)
+      eq(credential.tenantId, instance.tenantId),
+      isNull(credential.principalId),
+      eq(credential.status, 'active')
     ),
   });
-
-  const credentialIds = credentialGrants
-    .map((g) => {
-      const match = /^credential:(.+)$/.exec(g.resource);
-      return match?.[1] ?? null;
-    })
-    .filter((id): id is string => id !== null);
-
-  if (credentialIds.length === 0) return;
+  if (!hasCred) return;
 
   await launchAgentSession(db, sessionService, grantStore, {
     agentId: instance.agentId,
@@ -820,7 +770,6 @@ export async function relaunchInstanceIfNeeded(
     tenantId: instance.tenantId,
     tenantDomain: tenantRow.domain,
     systemPrompt: agentRow.systemPrompt,
-    credentialIds,
     now: new Date(),
   });
 }

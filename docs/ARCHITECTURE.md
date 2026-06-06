@@ -42,19 +42,17 @@ Both Myra and Oat use custom directors wrapping `createDefaultDirector` to filte
 
 Credentials and grants follow Interchange's model exactly. The workbench does not define its own credential abstraction.
 
-**Credentials** are stored in Interchange's `credential` table. Every credential belongs to a tenant, has a `providerId` (pointing to a `provider` row that names the integration, e.g. `"granola"`), and optionally an owning `principalId` (for personal credentials) or `null` (for tenant-scoped organizational credentials).
+**Credentials** are stored in Interchange's `credential` table. Every credential belongs to a tenant and has a `providerId` (pointing to a `provider` row naming the integration, e.g. `"openai-compatible"`). Credentials intended for agent resolution are stored **tenant-owned** — `principalId: null`. This is required for `source: 'tenant'` resolution to work.
 
-**Grants** control which principals can use which credentials. A grant has:
+**Agent credential requirements**: Each agent definition declares `credentialRequirements` — a list of `{ providerName, source, name? }` entries describing what the agent needs at launch. Interchange resolves these automatically at launch time by walking the tenant hierarchy. The workbench never passes credential IDs to the session launch call.
 
-- `resource`: `"credential:{credentialId}"` — the specific credential being granted
-- `action`: `"*"` for full access
-- `effect`: `"allow"`
-- `origin`: `"creator"` when an agent is granted access at provisioning time
-- `principalId`: the agent instance's principal (not the human user)
+**Credential resolution at launch time**: Interchange's `resolveCredentialRequirement` walks up the tenant ancestor chain looking for a credential matching `providerName + source` (and optionally `name`). The workbench relies entirely on this resolver — it never builds inference sources manually or passes credential IDs through the launch call.
 
-**Credential resolution at launch time** uses Interchange's walk-up resolver: it looks for credentials by `providerName + source` in the agent's `credentialRequirements`, walking up the tenant hierarchy. The workbench relies entirely on this resolver — it never passes raw secrets to agents at runtime.
+**Myra's credential requirement**: `{ providerName: 'openai-compatible', source: 'tenant', name: 'Myra LLM' }`. The user saves a credential named `'Myra LLM'` in their personal tenant during onboarding. Interchange finds it at launch time.
 
-**Agent provisioning flow**: When a user provisions an agent instance (e.g., Oat), they select existing credentials from their accessible tenants using the credential picker. The hub verifies each credential belongs to the target tenant and creates a `grant` row linking each credential to the agent instance's principal. No raw credential values are sent in the provisioning request — only credential IDs. New credentials are created separately via the Settings/tenant credentials UI.
+**Onboarding flow**: The frontend saves the credential via `POST /v1/tenants/:tenantId/credentials`, then calls `POST /v1/instances/:instanceId/sessions` with no credential IDs. The hub launches the session; Interchange resolves the credential from the tenant.
+
+**Grants** (manage access, not resolution): The hub writes a `grant` row giving the creating principal manage access to the credential record (`resource: credential:{id}`, `origin: creator`). This grant enables the Settings UI to delete/update the credential. It is separate from resolution — Interchange resolves credentials from the tenant, not from grants to instance principals.
 
 ### Credential Encryption at Rest
 
