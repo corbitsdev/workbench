@@ -30,9 +30,11 @@
         "@intx/hub-sessions": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
+        "@workbench/gtm-workflows": "workspace:*",
         "@workbench/hub-crypto": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/workflow-core": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "^1.6.9",
         "drizzle-orm": "^0.45.1",
@@ -463,6 +465,18 @@
         "react": "*",
       },
     },
+    "packages/gtm-workflows": {
+      "name": "@workbench/gtm-workflows",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/log": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@workbench/workflow-core": "workspace:*",
+      },
+      "devDependencies": {
+        "typescript": "catalog:",
+      },
+    },
     "packages/hub-crypto": {
       "name": "@workbench/hub-crypto",
       "devDependencies": {
@@ -571,9 +585,26 @@
         "react": "*",
       },
     },
+    "packages/workflow-core": {
+      "name": "@workbench/workflow-core",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/db": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/types": "workspace:*",
+        "drizzle-orm": "catalog:",
+        "hono": "catalog:",
+      },
+      "devDependencies": {
+        "typescript": "catalog:",
+      },
+    },
   },
   "catalog": {
     "arktype": "^2.1.29",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.10.7",
+    "typescript": "^5.9.0",
   },
   "packages": {
     "@ark/schema": ["@ark/schema@0.56.0", "", { "dependencies": { "@ark/util": "0.56.0" } }, "sha512-ECg3hox/6Z/nLajxXqNhgPtNdHWC9zNsDyskwO28WinoFEnWow4IsERNz9AnXRhTZJnYIlAJ4uGn3nlLk65vZA=="],
@@ -1024,6 +1055,8 @@
 
     "@workbench/client": ["@workbench/client@workspace:packages/client"],
 
+    "@workbench/gtm-workflows": ["@workbench/gtm-workflows@workspace:packages/gtm-workflows"],
+
     "@workbench/hub": ["@workbench/hub@workspace:apps/hub"],
 
     "@workbench/hub-crypto": ["@workbench/hub-crypto@workspace:packages/hub-crypto"],
@@ -1045,6 +1078,8 @@
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
 
     "@workbench/workflow": ["@workbench/workflow@workspace:packages/workflow"],
+
+    "@workbench/workflow-core": ["@workbench/workflow-core@workspace:packages/workflow-core"],
 
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
 
