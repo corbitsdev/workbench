@@ -3,6 +3,7 @@ import { parseEncryptionKeys } from '@workbench/hub-crypto';
 import * as intxDbReal from '@intx/db';
 import type { DB } from '@intx/db';
 import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
+import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 
 mock.module('../config', () => ({
@@ -618,6 +619,57 @@ describe('POST /instances/:instanceId/sessions', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.launched).toBe(true);
+  });
+
+  it('returns 200 with launched:true immediately when the instance is already running', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ ...INSTANCE, status: 'running' })
+    );
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+
+    const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
+    const app = buildApp(db, sessionService);
+    const res = await app.fetch(
+      makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.launched).toBe(true);
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 with launched:true when launchSession fails because the agent already exists on the sidecar', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1' }]);
+
+    // In production, the sidecar returns "Agent already exists" wrapped in a
+    // provision-phase SessionLaunchError. Simulate that here.
+    const provisionError = new SessionLaunchError(
+      'provision',
+      new Error(`Agent already exists for address "ins-1@tenant-1.localhost"`),
+      false
+    );
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.reject(provisionError)),
+    };
+    const app = buildApp(db, sessionService);
+    const res = await app.fetch(
+      makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.launched).toBe(true);
+    expect('launchError' in json).toBe(false);
+    // Provision-phase failures must not be retried — one attempt only.
+    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
   });
 
   it('returns 200 with launched:false and launchError when source resolution yields nothing', async () => {

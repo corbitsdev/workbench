@@ -1,22 +1,27 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { createExaTools } from './index';
+import { createToolRunner } from '@intx/agent';
+import { createExaTools, type ExaFetch } from './index';
 
-function makeFetchStub(response: unknown, status = 200): typeof fetch {
-  return mock(() =>
+type FetchStub = ExaFetch & {
+  mock: { calls: [string, RequestInit][] };
+};
+
+function makeFetchStub(response: unknown, status = 200): FetchStub {
+  return mock((_input: string, _init: RequestInit) =>
     Promise.resolve(
       new Response(JSON.stringify(response), {
         status,
         headers: { 'Content-Type': 'application/json' },
       })
     )
-  ) as unknown as typeof fetch;
+  );
 }
 
 describe('createExaTools', () => {
   it('returns one tool', () => {
     const tools = createExaTools({ apiKey: 'test-key' });
     expect(tools).toHaveLength(1);
-    expect(tools[0].definition.name).toBe('exa_search');
+    expect(tools[0]?.definition.name).toBe('exa_search');
   });
 
   it('throws when apiKey is empty', () => {
@@ -46,32 +51,42 @@ describe('exa_search handler', () => {
     };
 
     const fetcher = makeFetchStub(stubResponse);
-    const tools = createExaTools({ apiKey: 'test-key', fetcher });
-    const handler = tools[0].handler;
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
 
-    const result = await handler({ query: 'test query' }, new AbortController().signal);
-    expect(JSON.parse(result)).toEqual(stubResponse);
+    const result = await runner.run(
+      { id: 'call_1', name: 'exa_search', arguments: { query: 'test query' } },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual(stubResponse);
   });
 
   it('respects numResults cap', async () => {
     const fetcher = makeFetchStub({ results: [] });
-    const tools = createExaTools({ apiKey: 'test-key', fetcher });
-    const handler = tools[0].handler;
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
 
-    await handler({ query: 'test', numResults: 100 }, new AbortController().signal);
+    await runner.run(
+      { id: 'call_1', name: 'exa_search', arguments: { query: 'test', numResults: 100 } },
+      new AbortController().signal
+    );
 
     const call = fetcher.mock.calls[0];
-    const body = JSON.parse(call[1].body as string);
+    expect(call).toBeDefined();
+    const body = JSON.parse(String(call?.[1].body));
     expect(body.numResults).toBe(25);
   });
 
   it('surfaces API errors', async () => {
     const fetcher = makeFetchStub({ message: 'Invalid API key' }, 401);
-    const tools = createExaTools({ apiKey: 'test-key', fetcher });
-    const handler = tools[0].handler;
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
 
-    await expect(handler({ query: 'test' }, new AbortController().signal)).rejects.toThrow(
-      'Exa API error: 401 Invalid API key'
+    const result = await runner.run(
+      { id: 'call_1', name: 'exa_search', arguments: { query: 'test' } },
+      new AbortController().signal
     );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Exa API error: 401 Invalid API key');
   });
 });

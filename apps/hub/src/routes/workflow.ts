@@ -222,8 +222,33 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
       return c.json([]);
     }
 
+    const requestedTenantId = c.req.query('tenantId');
+    let workflowPrincipalId = userContext.principalId;
+
+    if (requestedTenantId) {
+      const requestedPrincipal = await db.query.principal.findFirst({
+        where: and(
+          eq(intxSchema.principal.tenantId, requestedTenantId),
+          eq(intxSchema.principal.kind, 'user'),
+          eq(intxSchema.principal.refId, userId)
+        ),
+      });
+
+      if (!requestedPrincipal) {
+        log.warn('User requested workflows for inaccessible tenant', { userId, requestedTenantId });
+        return c.json({ error: 'Tenant not accessible' }, 403);
+      }
+
+      workflowPrincipalId = requestedPrincipal.id;
+    }
+
     const sessions = await db.query.workflowRun.findMany({
-      where: eq(workflowRun.principalId, userContext.principalId),
+      where: requestedTenantId
+        ? and(
+            eq(workflowRun.tenantId, requestedTenantId),
+            eq(workflowRun.principalId, workflowPrincipalId)
+          )
+        : eq(workflowRun.principalId, workflowPrincipalId),
       orderBy: [desc(workflowRun.createdAt)],
       limit: 50,
     });

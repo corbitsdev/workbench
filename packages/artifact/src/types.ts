@@ -31,7 +31,7 @@ export interface ArtifactVisual {
 export interface GalleryArtifact extends ArtifactVisual {
   id: string;
   title: string;
-  /** "From" label — the originating session/company. */
+  /** "From" label — the originating job/company. */
   from: string;
   /** Human-readable relative time. */
   time: string;

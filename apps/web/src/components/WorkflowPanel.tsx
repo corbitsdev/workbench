@@ -62,7 +62,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-[13px] text-text-3">Loading session…</p>
+        <p className="text-[13px] text-text-3">Loading job…</p>
       </div>
     );
   }
@@ -70,7 +70,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   if (isError || !workflow) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-[13px] text-text-3">Could not load session.</p>
+        <p className="text-[13px] text-text-3">Could not load job.</p>
       </div>
     );
   }
@@ -86,9 +86,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const isBusy = runStep.isPending;
 
   const title =
-    (workflow as { companyName?: string | null }).companyName ??
-    painPoints[0]?.context ??
-    'Session';
+    (workflow as { companyName?: string | null }).companyName ?? painPoints[0]?.context ?? 'Job';
 
   const handleToggle = (id: string) => {
     setSelectedIds((prev) => {
@@ -149,7 +147,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close session"
+          aria-label="Close job"
           className="grid h-[28px] w-[28px] flex-none place-items-center rounded-[8px] border border-border text-text-2 hover:text-text hover:bg-surface-2 transition-colors"
         >
           <svg

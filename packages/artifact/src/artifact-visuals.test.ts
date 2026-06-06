@@ -37,7 +37,7 @@ describe('toGalleryArtifact', () => {
   });
 
   it('falls back to a placeholder when session name is null', () => {
-    expect(toGalleryArtifact({ ...base, sessionName: null }).from).toBe('Untitled session');
+    expect(toGalleryArtifact({ ...base, sessionName: null }).from).toBe('Untitled job');
   });
 
   it('returns empty time string for an unparseable timestamp (NaN guard)', () => {

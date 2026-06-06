@@ -1,9 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CredentialPicker } from '../CredentialPicker';
 import {
-  getMyPrincipals,
   listEnrichedCredentials,
   provisionAgent,
   type ProvisionAgentResponse,
@@ -13,22 +11,52 @@ import { LOOP_DEPLOY_PROMPT, GRANOLA_DEPLOY_PROMPT } from '@workbench/agents/bro
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
+type CredentialRequirementKind = 'inference' | 'granola';
+
+type CredentialRequirementOption = {
+  id: CredentialRequirementKind;
+  label: string;
+  description: string;
+};
+
 interface PremadeOption {
   label: string;
   name: string;
   systemPrompt: string;
+  credentialRequirements: CredentialRequirementOption[];
 }
+
+const INFERENCE_PROVIDER_PLUGINS = new Set([
+  'anthropic',
+  'openai',
+  'google-genai',
+  'openai-compatible',
+]);
+
+const INFERENCE_REQUIREMENT: CredentialRequirementOption = {
+  id: 'inference',
+  label: 'Inference Provider',
+  description: 'LLM credential used to run the agent.',
+};
+
+const GRANOLA_REQUIREMENT: CredentialRequirementOption = {
+  id: 'granola',
+  label: 'Granola API Key',
+  description: 'Workspace Granola credential used to read call notes.',
+};
 
 const PREMADE_OPTIONS: PremadeOption[] = [
   {
     label: 'Loop — Research Intelligence',
     name: 'Loop',
     systemPrompt: LOOP_DEPLOY_PROMPT,
+    credentialRequirements: [INFERENCE_REQUIREMENT],
   },
   {
     label: 'Oat — Call Intelligence',
     name: 'Oat',
     systemPrompt: GRANOLA_DEPLOY_PROMPT,
+    credentialRequirements: [INFERENCE_REQUIREMENT, GRANOLA_REQUIREMENT],
   },
 ];
 
@@ -44,15 +72,14 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
 
   const [name, setName] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
-  const [selectedCredentialIds, setSelectedCredentialIds] = useState<string[]>([]);
+  const [credentialRequirements, setCredentialRequirements] = useState<
+    CredentialRequirementOption[]
+  >([INFERENCE_REQUIREMENT]);
+  const [selectedCredentialIdsByRequirement, setSelectedCredentialIdsByRequirement] = useState<
+    Partial<Record<CredentialRequirementKind, string>>
+  >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const principalsQuery = useQuery({
-    queryKey: ['me', 'principals'],
-    queryFn: getMyPrincipals,
-    enabled: open,
-  });
 
   const credentialsQuery = useQuery({
     queryKey: ['credentials', 'enriched', workspaceTenantId],
@@ -63,7 +90,8 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
   const reset = () => {
     setName('');
     setSystemPrompt('');
-    setSelectedCredentialIds([]);
+    setCredentialRequirements([INFERENCE_REQUIREMENT]);
+    setSelectedCredentialIdsByRequirement({});
     setLoading(false);
     setError(null);
   };
@@ -104,6 +132,8 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
   const applyPremade = (option: PremadeOption) => {
     setName(option.name);
     setSystemPrompt(option.systemPrompt);
+    setCredentialRequirements(option.credentialRequirements);
+    setSelectedCredentialIdsByRequirement({});
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -121,8 +151,13 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
       setError('System prompt is required.');
       return;
     }
-    if (selectedCredentialIds.length === 0) {
-      setError('Select at least one credential to grant to this agent.');
+    const selectedCredentialIds = credentialRequirements.flatMap((requirement) => {
+      const credentialId = selectedCredentialIdsByRequirement[requirement.id];
+      return credentialId ? [credentialId] : [];
+    });
+
+    if (selectedCredentialIds.length !== credentialRequirements.length) {
+      setError('Select a credential for each required agent launch need.');
       return;
     }
 
@@ -150,17 +185,43 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
     }
   };
 
-  const principals = principalsQuery.data ?? [];
   const workspaceCredentials = credentialsQuery.data;
-  const credentialsLoading = principalsQuery.isLoading || credentialsQuery.isLoading;
+  const credentialsLoading = credentialsQuery.isLoading;
   const workspaceCredentialsLoaded =
     !workspaceTenantId || credentialsLoading || workspaceCredentials !== undefined;
-  const workspaceCredentialsByTenant =
-    workspaceTenantId && workspaceCredentials !== undefined
-      ? { [workspaceTenantId]: workspaceCredentials }
-      : {};
   const hasAvailableCredentials =
     workspaceCredentials !== undefined && workspaceCredentials.length > 0;
+  const selectedCredentialIds = credentialRequirements.flatMap((requirement) => {
+    const credentialId = selectedCredentialIdsByRequirement[requirement.id];
+    return credentialId ? [credentialId] : [];
+  });
+
+  const credentialsForRequirement = (requirement: CredentialRequirementOption) => {
+    if (workspaceCredentials === undefined) return [];
+    if (requirement.id === 'inference') {
+      return workspaceCredentials.filter((credential) =>
+        INFERENCE_PROVIDER_PLUGINS.has(credential.providerPlugin)
+      );
+    }
+    return workspaceCredentials.filter(
+      (credential) => credential.providerPlugin === requirement.id
+    );
+  };
+
+  const selectCredentialForRequirement = (
+    requirementId: CredentialRequirementKind,
+    credentialId: string
+  ) => {
+    setSelectedCredentialIdsByRequirement((current) => {
+      const next = { ...current };
+      if (credentialId) {
+        next[requirementId] = credentialId;
+      } else {
+        delete next[requirementId];
+      }
+      return next;
+    });
+  };
 
   return (
     <AnimatePresence>
@@ -286,14 +347,42 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
                       Add credentials in Settings.
                     </a>
                   </p>
+                ) : credentialsLoading ? (
+                  <p className="text-sm text-text-2">Loading credentials...</p>
                 ) : (
-                  <CredentialPicker
-                    principals={principals}
-                    credentialsByTenant={workspaceCredentialsByTenant}
-                    selectedIds={selectedCredentialIds}
-                    onSelect={setSelectedCredentialIds}
-                    isLoading={credentialsLoading}
-                  />
+                  <div className="flex flex-col gap-3">
+                    {credentialRequirements.map((requirement) => {
+                      const matchingCredentials = credentialsForRequirement(requirement);
+                      return (
+                        <label key={requirement.id} className="flex flex-col gap-1.5">
+                          <span className="text-[13px] font-medium text-text">
+                            {requirement.label}
+                          </span>
+                          <span className="text-[12px] text-text-3">{requirement.description}</span>
+                          <select
+                            value={selectedCredentialIdsByRequirement[requirement.id] ?? ''}
+                            onChange={(e) =>
+                              selectCredentialForRequirement(requirement.id, e.target.value)
+                            }
+                            className="rounded-[10px] border border-border bg-bg px-3 py-2 text-[14px] text-text outline-none focus:border-orange"
+                            required
+                          >
+                            <option value="">Select {requirement.label.toLowerCase()}</option>
+                            {matchingCredentials.map((credential) => (
+                              <option key={credential.id} value={credential.id}>
+                                {credential.name}
+                              </option>
+                            ))}
+                          </select>
+                          {matchingCredentials.length === 0 && (
+                            <span className="text-[12px] text-red-500">
+                              No matching credential found. Add one in Settings.
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 

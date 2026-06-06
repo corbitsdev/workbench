@@ -83,14 +83,14 @@ function renderWithClient(ui: React.ReactElement) {
 afterEach(cleanup);
 
 describe('LibraryRail', () => {
-  it('renders real workflow sessions from the client', async () => {
+  it('renders real jobs from the client', async () => {
     const { LibraryRail } = await import('./LibraryRail');
     renderWithClient(React.createElement(LibraryRail));
 
     await waitFor(() => {
       expect(screen.getAllByText('Acme Corp').length).toBeGreaterThan(0);
     });
-    expect(screen.getByText('Sessions')).toBeDefined();
+    expect(screen.getAllByText('Jobs').length).toBeGreaterThan(0);
   });
 
   it('renders the + button when onNew is provided and workbenches are present', async () => {

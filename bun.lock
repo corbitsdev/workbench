@@ -35,6 +35,7 @@
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
+        "@workbench/tools-granola": "workspace:*",
         "@workbench/workflow-core": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "^1.6.9",
@@ -520,6 +521,7 @@
       "name": "@workbench/tools-exa",
       "devDependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.0",
       },
@@ -528,6 +530,7 @@
       "name": "@workbench/tools-granola",
       "devDependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.0",
       },

@@ -53,8 +53,8 @@ export function AppSidebar() {
 
         <NavLink
           to="/dashboard"
-          title="Sessions"
-          aria-label="Sessions"
+          title="Jobs"
+          aria-label="Jobs"
           className={({ isActive }) => navIconClass(isActive)}
         >
           <LayoutGrid size={18} />

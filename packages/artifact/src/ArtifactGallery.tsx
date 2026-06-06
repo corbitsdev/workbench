@@ -95,7 +95,7 @@ export function ArtifactGallery({
         {isError && <div className="py-10 text-[13px] text-text-3">Could not load artifacts.</div>}
         {!isLoading && !isError && tiles.length === 0 && (
           <div className="py-10 text-[13px] text-text-3">
-            No artifacts yet. Start a session to generate collateral.
+            No artifacts yet. Start a job to generate collateral.
           </div>
         )}
         <div className="grid auto-rows-[88px] grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">

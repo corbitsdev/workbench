@@ -175,17 +175,17 @@ export default function Dashboard() {
           )}
         </AnimatePresence>
 
-        {/* Recent sessions table */}
+        {/* Recent jobs table */}
         <div>
           <h2 className="text-sm font-semibold text-text-3 uppercase tracking-wide mb-4">
-            Recent sessions
+            Recent jobs
           </h2>
           <div className="bg-surface border border-border rounded-xl overflow-hidden">
             {isLoading ? (
-              <div className="p-12 text-center text-sm text-text-3">Loading sessions...</div>
+              <div className="p-12 text-center text-sm text-text-3">Loading jobs...</div>
             ) : !workflows?.length ? (
               <div className="p-12 text-center">
-                <p className="text-sm text-text-2 mb-4">No sessions yet.</p>
+                <p className="text-sm text-text-2 mb-4">No jobs yet.</p>
                 <button
                   onClick={() => setShowImport(true)}
                   className="px-5 py-2 bg-orange text-white text-sm font-medium rounded-lg hover:bg-orange-deep transition-colors cursor-pointer"
@@ -228,7 +228,7 @@ export default function Dashboard() {
                                 ? wf.firstPainPoint.split(' ').slice(0, 8).join(' ') + '...'
                                 : wf.transcriptPreview
                                   ? wf.transcriptPreview + '...'
-                                  : 'Untitled session')}
+                                  : 'Untitled job')}
                           </div>
                           <div className="text-xs text-text-3 mt-0.5 font-mono">
                             {wf.id.slice(0, 8)}

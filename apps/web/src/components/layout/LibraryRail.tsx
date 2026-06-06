@@ -18,7 +18,7 @@ import { useEffect, useState } from 'react';
 
 type ResourceType = 'workflow' | 'agent';
 type ResourceStatus = 'run' | 'done' | 'idle';
-type RailGroup = 'Agents' | 'Sessions';
+type RailGroup = 'Agents' | 'Jobs';
 
 interface RailItem {
   id: string;
@@ -106,14 +106,14 @@ const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
 };
 
 function workflowToRailItem(w: WorkflowSummary): RailItem {
-  const name = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled session';
+  const name = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled job';
   const sub =
     w.painPointCount > 0
       ? `${w.painPointCount} pain point${w.painPointCount === 1 ? '' : 's'} · ${w.status}`
       : w.status;
   return {
     id: w.id,
-    group: 'Sessions',
+    group: 'Jobs',
     name,
     type: 'workflow',
     sub,
@@ -123,7 +123,7 @@ function workflowToRailItem(w: WorkflowSummary): RailItem {
   };
 }
 
-const GROUP_ORDER: RailGroup[] = ['Agents', 'Sessions'];
+const GROUP_ORDER: RailGroup[] = ['Agents', 'Jobs'];
 
 const TAG_STYLES: Record<ResourceType, string> = {
   workflow: 'bg-[rgba(233,132,40,0.16)] text-orange',
@@ -275,7 +275,7 @@ export interface LibraryRailProps {
 const SEGMENT_FILTER: Record<string, ResourceType | null> = {
   All: null,
   Agents: 'agent',
-  Sessions: 'workflow',
+  Jobs: 'workflow',
 };
 
 export function LibraryRail({
@@ -292,11 +292,6 @@ export function LibraryRail({
   refreshTick,
 }: LibraryRailProps = {}) {
   const {
-    data: workflows,
-    isLoading: sessionsLoading,
-    isError,
-  } = useLibraryResources(clientOptions);
-  const {
     workbenches,
     agentItems: allAgentItems,
     error: workbenchError,
@@ -312,19 +307,27 @@ export function LibraryRail({
   const activeWorkbench = workbenches.find((w) => w.tenantSlug === activeWorkbenchSlug);
   const activeWorkbenchTenantId = activeWorkbench?.tenantId;
 
+  const {
+    data: workflows,
+    isLoading: jobsLoading,
+    isError,
+  } = useLibraryResources(clientOptions, {
+    tenantId: activeWorkbenchSlug ? (activeWorkbenchTenantId ?? null) : undefined,
+  });
+
   // Scope agents to the active workbench; fall back to all agents when no slug is set.
   const agentItems = activeWorkbenchTenantId
     ? allAgentItems.filter((a) => a.tenantId === activeWorkbenchTenantId)
     : allAgentItems;
 
-  const sessionItems = (workflows ?? []).map(workflowToRailItem);
-  const items: RailItem[] = [...agentItems, ...sessionItems];
-  const isLoading = sessionsLoading;
+  const jobItems = (workflows ?? []).map(workflowToRailItem);
+  const items: RailItem[] = [...agentItems, ...jobItems];
+  const isLoading = jobsLoading;
 
   const segments: { label: string; count: number }[] = [
     { label: 'All', count: items.length },
     { label: 'Agents', count: agentItems.length },
-    { label: 'Sessions', count: sessionItems.length },
+    { label: 'Jobs', count: jobItems.length },
   ];
 
   const typeFilter = SEGMENT_FILTER[activeSegment] ?? null;
@@ -458,7 +461,7 @@ export function LibraryRail({
           <div className="px-[10px] py-6 text-[13px] text-text-3">Loading workbench…</div>
         )}
         {isError && (
-          <div className="px-[10px] py-6 text-[13px] text-text-3">Could not load sessions.</div>
+          <div className="px-[10px] py-6 text-[13px] text-text-3">Could not load jobs.</div>
         )}
         {workbenchError && (
           <div className="flex flex-col gap-2 px-[10px] py-6">
@@ -618,7 +621,7 @@ export function LibraryRail({
                         className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
                       >
                         <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
-                        {item.type === 'workflow' ? 'Session' : item.type}
+                        {item.type === 'workflow' ? 'Job' : item.type}
                       </span>
                       <div
                         className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"

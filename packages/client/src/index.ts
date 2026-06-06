@@ -47,14 +47,22 @@ async function request<T>(path: string, options: ClientOptions): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** Fetch the current user's workflow sessions (`GET /workflows`). */
-export function listWorkflows(options: ClientOptions = {}): Promise<WorkflowSummary[]> {
-  return request<WorkflowSummary[]>('workflows', options);
+export interface ListWorkflowsParams {
+  tenantId?: string | null;
+}
+
+/** Fetch the current user's jobs (`GET /workflows`). */
+export function listWorkflows(
+  options: ClientOptions = {},
+  params: ListWorkflowsParams = {}
+): Promise<WorkflowSummary[]> {
+  const search = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  return request<WorkflowSummary[]>(`workflows${search}`, options);
 }
 
 /**
- * Fetch the current user's artifacts across all their sessions, each enriched
- * with the originating session (`GET /artifacts`).
+ * Fetch the current user's artifacts across all their jobs, each enriched
+ * with the originating job (`GET /artifacts`).
  */
 export function listArtifacts(options: ClientOptions = {}): Promise<ArtifactWithSession[]> {
   return request<ArtifactWithSession[]>('artifacts', options);

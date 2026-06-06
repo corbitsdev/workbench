@@ -10,7 +10,7 @@ import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
 import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
-import { pushSourceUpdates } from '@intx/hub-sessions';
+import { pushSourceUpdates, SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { type } from 'arktype';
 import { encryptSecret } from '@workbench/hub-crypto';
@@ -704,6 +704,12 @@ export function createAgentProvisioningRouter(
       return c.json({ error: 'Forbidden' }, 403);
     }
 
+    // If the agent is already running, no launch is needed — return success immediately.
+    // Check this before fetching tenant/agent rows to keep the happy path cheap.
+    if (instance.status === 'running') {
+      return c.json({ launched: true });
+    }
+
     const tenantRow = await db.query.tenant.findFirst({
       where: eq(tenant.id, instance.tenantId),
     });
@@ -735,8 +741,15 @@ export function createAgentProvisioningRouter(
       });
       launched = true;
     } catch (err) {
-      launchError = err instanceof Error ? err.message : String(err);
-      log.error('Failed to launch agent session', { instanceId, error: launchError });
+      // If the sidecar already has the agent provisioned (e.g. a race between
+      // the orchestrator's reconnect path and this explicit launch), treat it
+      // as success. The agent is live; the frontend can proceed.
+      if (isAgentAlreadyExistsError(err)) {
+        launched = true;
+      } else {
+        launchError = err instanceof Error ? err.message : String(err);
+        log.error('Failed to launch agent session', { instanceId, error: launchError });
+      }
     }
 
     return c.json({
@@ -837,20 +850,28 @@ async function ensureAgentInstance(
       if (!prov) {
         return { error: `Credential provider not found for credential: ${credId}`, status: 404 };
       }
+      credReqs.push({ source: 'tenant', name: cred.name, providerName: prov.name });
+
       if (!isInferenceProviderName(prov.plugin)) {
-        return { error: `Credential is not an inference credential: ${cred.name}`, status: 400 };
+        continue;
       }
 
-      const meta = prov.metadata as { model?: string } | null;
-      if (!meta?.model) {
+      const meta = prov.metadata;
+      const model =
+        meta && typeof meta === 'object' && 'model' in meta && typeof meta.model === 'string'
+          ? meta.model
+          : '';
+      if (!model) {
         return { error: `Credential is missing an inference model: ${cred.name}`, status: 400 };
       }
       if (modelConfig) {
         return { error: 'Select exactly one inference credential for this agent.', status: 400 };
       }
 
-      credReqs.push({ source: 'tenant', name: cred.name, providerName: prov.name });
-      modelConfig = { defaultModel: meta.model };
+      modelConfig = { defaultModel: model };
+    }
+    if (!modelConfig) {
+      return { error: 'Select exactly one inference credential for this agent.', status: 400 };
     }
   }
 
@@ -1000,6 +1021,9 @@ async function launchAgentSession(
       return;
     } catch (err) {
       lastError = err;
+      // Provision-phase failures mean the sidecar already has the agent or
+      // rejected the config. Neither condition improves with retries.
+      if (err instanceof SessionLaunchError && err.phase === 'provision') break;
       if (attempt < MAX_LAUNCH_ATTEMPTS - 1) {
         await new Promise<void>((resolve) => setTimeout(resolve, LAUNCH_RETRY_DELAY_MS));
       }
@@ -1062,4 +1086,15 @@ export async function relaunchInstanceIfNeeded(
     systemPrompt: agentRow.systemPrompt,
     now: new Date(),
   });
+}
+
+/**
+ * Returns true when the error indicates the sidecar already has the agent
+ * provisioned. This can happen in a race between the orchestrator's reconnect
+ * path and an explicit launch call — the agent is live and the caller should
+ * treat the situation as success.
+ */
+function isAgentAlreadyExistsError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.message.includes('Agent already exists for address');
 }

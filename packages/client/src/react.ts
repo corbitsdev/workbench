@@ -6,17 +6,23 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
 import { listArtifacts, listWorkflows, type ClientOptions } from './index';
 
-/** Query the current user's workflow sessions for the library rail. */
+export interface UseLibraryResourcesParams {
+  tenantId?: string | null;
+}
+
+/** Query the current user's jobs for the library rail. */
 export function useLibraryResources(
-  options: ClientOptions = {}
+  options: ClientOptions = {},
+  params: UseLibraryResourcesParams = {}
 ): UseQueryResult<WorkflowSummary[]> {
   return useQuery({
-    queryKey: ['workflows'],
-    queryFn: () => listWorkflows(options),
+    queryKey: ['workflows', params.tenantId ?? null],
+    queryFn: () => listWorkflows(options, params),
+    enabled: params.tenantId !== null,
   });
 }
 
-/** Query the current user's artifacts across all sessions for the gallery. */
+/** Query the current user's artifacts across all jobs for the gallery. */
 export function useArtifacts(options: ClientOptions = {}): UseQueryResult<ArtifactWithSession[]> {
   return useQuery({
     queryKey: ['artifacts'],

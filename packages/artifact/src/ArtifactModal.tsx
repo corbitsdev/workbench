@@ -101,7 +101,7 @@ export function ArtifactModal({
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[16px] font-bold text-text">{artifact.title}</div>
                 <div className="mt-0.5 font-mono text-[11px] text-text-3">
-                  {artifact.sessionName ?? 'Untitled session'} · v{artifact.version}
+                  {artifact.sessionName ?? 'Untitled job'} · v{artifact.version}
                 </div>
               </div>
               <button

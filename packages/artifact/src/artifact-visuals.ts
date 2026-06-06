@@ -55,7 +55,7 @@ export function toGalleryArtifact(artifact: ArtifactWithSession): GalleryArtifac
     ...visual,
     id: artifact.id,
     title: artifact.title,
-    from: artifact.sessionName ?? 'Untitled session',
+    from: artifact.sessionName ?? 'Untitled job',
     time: formatRelativeTime(artifact.updatedAt),
   };
 }
