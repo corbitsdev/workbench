@@ -176,6 +176,12 @@ export async function listPrincipalGrants(
   return res.data;
 }
 
+export type CredentialRequirement = {
+  providerName: string;
+  source: 'tenant' | 'creator' | 'invoker';
+  name?: string;
+};
+
 export type AgentInstance = {
   id: string;
   agentId: string;
@@ -183,8 +189,19 @@ export type AgentInstance = {
   tenantId: string;
   address: string;
   status: string;
+  credentialRequirements: CredentialRequirement[];
   createdAt: string;
 };
+
+export async function updateAgentCredentialRequirements(
+  tenantId: string,
+  agentId: string,
+  credentialRequirements: CredentialRequirement[]
+): Promise<void> {
+  await hubFetch<unknown>('PATCH', `tenants/${tenantId}/agents/definitions/${agentId}`, {
+    credentialRequirements,
+  });
+}
 
 export async function listAgentInstances(tenantId: string): Promise<AgentInstance[]> {
   const res = await hubFetch<{ data: AgentInstance[] }>(

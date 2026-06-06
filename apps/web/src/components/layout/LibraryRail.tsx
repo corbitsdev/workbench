@@ -1,9 +1,15 @@
 import { useLibraryResources } from '@workbench/client/react';
 import type { SessionStatus, WorkflowSummary } from '@workbench/shared';
 import { clientOptions } from '../../lib/client-options';
-import { listAgentInstances, listWorkbenches } from '../../lib/hub-api';
+import {
+  listAgentInstances,
+  listWorkbenches,
+  listEnrichedCredentials,
+  updateAgentCredentialRequirements,
+  getMyPrincipals,
+} from '../../lib/hub-api';
 import { useEffect, useState } from 'react';
-import type { AgentInstance, WorkbenchEntry } from '../../lib/hub-api';
+import type { AgentInstance, WorkbenchEntry, EnrichedCredential, CredentialRequirement } from '../../lib/hub-api';
 
 type ResourceType = 'workflow' | 'workbench' | 'agent';
 type ResourceStatus = 'run' | 'done' | 'idle';
@@ -19,6 +25,8 @@ interface RailItem {
   color: string;
   instanceId?: string;
   tenantId?: string;
+  agentId?: string;
+  credentialRequirements?: CredentialRequirement[];
 }
 
 function workbenchToRailItem(w: WorkbenchEntry): RailItem {
@@ -46,6 +54,8 @@ function agentToRailItem(a: AgentInstance): RailItem {
     color: 'var(--green)',
     instanceId: a.id,
     tenantId: a.tenantId,
+    agentId: a.agentId,
+    credentialRequirements: a.credentialRequirements,
   };
 }
 
@@ -156,6 +166,112 @@ function StatusDot({ status }: { status: ResourceStatus }) {
   );
 }
 
+function AgentCredentialEditor({
+  tenantId,
+  agentId,
+  currentRequirements,
+  onSaved,
+  onCancel,
+}: {
+  tenantId: string;
+  agentId: string;
+  currentRequirements: CredentialRequirement[];
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [credentials, setCredentials] = useState<EnrichedCredential[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const principals = await getMyPrincipals();
+        const tenantIds = [...new Set(principals.map((p) => p.tenantId))];
+        const lists = await Promise.all(tenantIds.map((id) => listEnrichedCredentials(id)));
+        setCredentials(lists.flat());
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const currentCredName = currentRequirements[0]?.name ?? '';
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const credId = fd.get('credentialId') as string;
+    const chosen = credentials.find((c) => c.id === credId);
+    if (!chosen) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      const req: CredentialRequirement = {
+        providerName: chosen.providerPlugin,
+        source: 'tenant',
+        name: chosen.name,
+      };
+      await updateAgentCredentialRequirements(tenantId, agentId, [req]);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update credential.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <p className="px-3 py-2 text-[12px] text-text-3">Loading credentials…</p>;
+  }
+
+  return (
+    <form
+      onSubmit={(e) => void handleSubmit(e)}
+      className="mt-1 rounded-[10px] border border-border bg-surface px-3 py-3"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.04em] text-text-3">
+        Credential
+      </p>
+      {error && (
+        <p className="mb-2 text-[11px] text-orange-deep">{error}</p>
+      )}
+      <select
+        name="credentialId"
+        defaultValue={credentials.find((c) => c.name === currentCredName)?.id ?? ''}
+        disabled={saving}
+        className="mb-2 w-full rounded-[8px] border border-border bg-bg px-2 py-1.5 text-[12px] text-text outline-none focus:border-orange disabled:opacity-50"
+      >
+        {credentials.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name} ({c.providerPlugin})
+          </option>
+        ))}
+      </select>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={saving || credentials.length === 0}
+          className="rounded-[7px] bg-orange px-2.5 py-1 text-[12px] font-medium text-white hover:bg-orange-deep disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          className="rounded-[7px] border border-border px-2.5 py-1 text-[12px] text-text-2 hover:text-text disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export interface AgentSelection {
   instanceId: string;
   tenantId: string;
@@ -190,6 +306,7 @@ export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: Libr
 
   const [activeSegment, setActiveSegment] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [editingCredentialFor, setEditingCredentialFor] = useState<string | null>(null);
 
   const sessionItems = (workflows ?? []).map(workflowToRailItem);
   const items: RailItem[] = [...sessionItems, ...workbenchAndAgentItems];
@@ -342,54 +459,83 @@ export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: Libr
                   onAgentSelect !== undefined &&
                   item.instanceId !== undefined &&
                   item.tenantId !== undefined;
+                const isEditingCred = editingCredentialFor === item.id;
                 return (
-                  <div
-                    key={item.id}
-                    role={isClickableAgent ? 'button' : undefined}
-                    tabIndex={isClickableAgent ? 0 : undefined}
-                    onClick={
-                      isClickableAgent
-                        ? () =>
-                            onAgentSelect!({
-                              instanceId: item.instanceId!,
-                              tenantId: item.tenantId!,
-                              agentName: item.name,
-                            })
-                        : undefined
-                    }
-                    onKeyDown={
-                      isClickableAgent
-                        ? (e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
+                  <div key={item.id} className="rounded-[12px]">
+                    <div
+                      role={isClickableAgent ? 'button' : undefined}
+                      tabIndex={isClickableAgent ? 0 : undefined}
+                      onClick={
+                        isClickableAgent
+                          ? () =>
                               onAgentSelect!({
                                 instanceId: item.instanceId!,
                                 tenantId: item.tenantId!,
                                 agentName: item.name,
-                              });
+                              })
+                          : undefined
+                      }
+                      onKeyDown={
+                        isClickableAgent
+                          ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                onAgentSelect!({
+                                  instanceId: item.instanceId!,
+                                  tenantId: item.tenantId!,
+                                  agentName: item.name,
+                                });
+                              }
                             }
-                          }
-                        : undefined
-                    }
-                    className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)] ${isClickableAgent ? 'cursor-pointer' : ''}`}
-                  >
-                    <StatusDot status={item.status} />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[14px] font-medium text-text">{item.name}</div>
-                      <div className="mt-px font-mono text-[11.5px] text-text-3">{item.sub}</div>
-                    </div>
-                    <span
-                      className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
+                          : undefined
+                      }
+                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)] ${isClickableAgent ? 'cursor-pointer' : ''}`}
                     >
-                      <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
-                      {item.type}
-                    </span>
-                    <div
-                      className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
-                      style={{ background: item.color }}
-                    >
-                      {item.who}
+                      <StatusDot status={item.status} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[14px] font-medium text-text">{item.name}</div>
+                        <div className="mt-px font-mono text-[11.5px] text-text-3">{item.sub}</div>
+                      </div>
+                      {item.type === 'agent' && item.agentId && item.tenantId && (
+                        <button
+                          type="button"
+                          aria-label="Configure credential"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingCredentialFor(isEditingCred ? null : item.id);
+                          }}
+                          className={`grid h-[22px] w-[22px] flex-none place-items-center rounded-[6px] border border-border text-text-3 opacity-0 transition-opacity hover:text-text group-hover:opacity-100 ${isEditingCred ? 'opacity-100 text-orange' : ''}`}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-[13px] w-[13px]">
+                            <circle cx="12" cy="12" r="3" />
+                            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                          </svg>
+                        </button>
+                      )}
+                      <span
+                        className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
+                        {item.type}
+                      </span>
+                      <div
+                        className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
+                        style={{ background: item.color }}
+                      >
+                        {item.who}
+                      </div>
                     </div>
+                    {isEditingCred && item.agentId && item.tenantId && (
+                      <div className="px-[11px] pb-2">
+                        <AgentCredentialEditor
+                          tenantId={item.tenantId}
+                          agentId={item.agentId}
+                          currentRequirements={item.credentialRequirements ?? []}
+                          onSaved={() => setEditingCredentialFor(null)}
+                          onCancel={() => setEditingCredentialFor(null)}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}

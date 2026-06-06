@@ -98,15 +98,23 @@ export function createAgentProvisioningRouter(
         : [];
     const agentMap = new Map(agentRows.map((a) => [a.id, a]));
 
-    const result = instances.map((inst) => ({
-      id: inst.id,
-      agentId: inst.agentId,
-      agentName: agentMap.get(inst.agentId)?.name ?? 'Unknown',
-      tenantId: inst.tenantId,
-      address: inst.address,
-      status: inst.status,
-      createdAt: inst.createdAt.toISOString(),
-    }));
+    const result = instances.map((inst) => {
+      const agentRow = agentMap.get(inst.agentId);
+      return {
+        id: inst.id,
+        agentId: inst.agentId,
+        agentName: agentRow?.name ?? 'Unknown',
+        tenantId: inst.tenantId,
+        address: inst.address,
+        status: inst.status,
+        credentialRequirements: (agentRow?.credentialRequirements ?? []) as Array<{
+          providerName: string;
+          source: string;
+          name?: string;
+        }>,
+        createdAt: inst.createdAt.toISOString(),
+      };
+    });
 
     return c.json({ data: result });
   });
