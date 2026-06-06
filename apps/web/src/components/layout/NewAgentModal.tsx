@@ -1,8 +1,13 @@
 import { useCallback, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useCredentials } from '../../hooks/use-credentials';
 import { CredentialPicker } from '../CredentialPicker';
-import { provisionAgent, type ProvisionAgentResponse } from '../../lib/hub-api';
+import {
+  getMyPrincipals,
+  listEnrichedCredentials,
+  provisionAgent,
+  type ProvisionAgentResponse,
+} from '../../lib/hub-api';
 import { LOOP_DEPLOY_PROMPT } from '@workbench/agents/browser';
 
 const FOCUSABLE =
@@ -38,7 +43,17 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { principals, credentialsByTenant, isLoading: credentialsLoading } = useCredentials();
+  const principalsQuery = useQuery({
+    queryKey: ['me', 'principals'],
+    queryFn: getMyPrincipals,
+    enabled: open,
+  });
+
+  const credentialsQuery = useQuery({
+    queryKey: ['credentials', 'enriched', workspaceTenantId],
+    queryFn: () => listEnrichedCredentials(workspaceTenantId!),
+    enabled: open && workspaceTenantId !== null,
+  });
 
   const reset = () => {
     setName('');
@@ -130,9 +145,9 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
     }
   };
 
-  const workspaceCredentials = workspaceTenantId
-    ? credentialsByTenant[workspaceTenantId]
-    : undefined;
+  const principals = principalsQuery.data ?? [];
+  const workspaceCredentials = credentialsQuery.data;
+  const credentialsLoading = principalsQuery.isLoading || credentialsQuery.isLoading;
   const workspaceCredentialsLoaded =
     !workspaceTenantId || credentialsLoading || workspaceCredentials !== undefined;
   const workspaceCredentialsByTenant =

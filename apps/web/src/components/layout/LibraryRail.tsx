@@ -6,7 +6,6 @@ import {
   listWorkbenches,
   listEnrichedCredentials,
   assignCredentialToAgent,
-  getMyPrincipals,
   deleteAgentInstance,
 } from '../../lib/hub-api';
 import { useEffect, useState } from 'react';
@@ -195,16 +194,12 @@ function AgentCredentialEditor({
   useEffect(() => {
     void (async () => {
       try {
-        const principals = await getMyPrincipals();
-        const tenantIds = [...new Set(principals.map((p) => p.tenantId))];
-        const lists = await Promise.all(tenantIds.map((id) => listEnrichedCredentials(id)));
-        const byId = new Map(lists.flat().map((credential) => [credential.id, credential]));
-        setCredentials([...byId.values()]);
+        setCredentials(await listEnrichedCredentials(tenantId));
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [tenantId]);
 
   const currentCredName = currentRequirements[0]?.name ?? '';
 

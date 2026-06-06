@@ -1,8 +1,14 @@
-import type { Principal, CredentialDetail } from '../lib/hub-api';
+import type { Principal } from '../lib/hub-api';
+
+type CredentialPickerCredential = {
+  id: string;
+  tenantId: string;
+  name: string;
+};
 
 export interface CredentialPickerProps {
   principals: Principal[];
-  credentialsByTenant: Record<string, CredentialDetail[]>;
+  credentialsByTenant: Record<string, CredentialPickerCredential[]>;
   selectedIds: string[];
   onSelect: (credentialIds: string[]) => void;
   isLoading?: boolean;

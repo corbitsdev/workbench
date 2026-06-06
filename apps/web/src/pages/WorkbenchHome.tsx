@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 import { AgentChat } from '../components/AgentChat';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { NewWorkbenchModal } from '../components/layout/NewWorkbenchModal';
@@ -71,19 +71,19 @@ type RightPane =
   | { view: 'gallery' }
   | { view: 'agent'; instanceId: string; tenantId: string; agentName: string };
 
-function useFirstWorkspaceTenantId(): string | null {
+function useWorkspaceTenantId(slug: string | undefined): string | null {
   const [tenantId, setTenantId] = useState<string | null>(null);
 
   useEffect(() => {
     listWorkbenches()
       .then((entries) => {
-        const first = entries[0];
-        if (first) setTenantId(first.tenantId);
+        const match = slug ? entries.find((entry) => entry.tenantSlug === slug) : undefined;
+        setTenantId((match ?? entries[0])?.tenantId ?? null);
       })
       .catch(() => {
         // non-fatal
       });
-  }, []);
+  }, [slug]);
 
   return tenantId;
 }
@@ -96,9 +96,11 @@ export default function WorkbenchHome() {
   const [rightPane, setRightPane] = useState<RightPane>({ view: 'gallery' });
   const [activeModal, setActiveModal] = useState<NewModal>('none');
   const [agentRefreshTick, setAgentRefreshTick] = useState(0);
-  const workspaceTenantId = useFirstWorkspaceTenantId();
+  const { slug } = useParams<{ slug?: string }>();
+  const routeWorkspaceTenantId = useWorkspaceTenantId(slug);
   const navigate = useNavigate();
   const { setHidden: setLauncherHidden } = useChatLauncher();
+  const workspaceTenantId = rightPane.view === 'agent' ? rightPane.tenantId : routeWorkspaceTenantId;
 
   useEffect(() => {
     if (provisioningState.status === 'needs-onboarding') {
