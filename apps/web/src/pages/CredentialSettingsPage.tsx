@@ -9,6 +9,7 @@ import {
   updateTenantCredential,
   deleteTenantCredential,
   assignCredentialToAgent,
+  updateAgentTools,
 } from '../lib/hub-api';
 import type {
   LLMProviderType,
@@ -16,6 +17,7 @@ import type {
   EnrichedCredential,
   AgentInstance,
 } from '../lib/hub-api';
+import { PROVIDER_REGISTRY, providerByName } from '../lib/providerRegistry';
 
 const ANTHROPIC_MODELS = [
   { value: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
@@ -43,6 +45,13 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 const INFERENCE_PROVIDER_NAMES = ['anthropic', 'openai', 'google-genai', 'openai-compatible'];
+
+function getAgentTools(capabilities: Record<string, unknown> | null): string[] {
+  if (!capabilities || typeof capabilities !== 'object') return [];
+  const tools = capabilities['tools'];
+  if (!Array.isArray(tools)) return [];
+  return tools.filter((t): t is string => typeof t === 'string');
+}
 
 function modelListForProvider(p: LLMProviderType | string) {
   if (p === 'anthropic') return ANTHROPIC_MODELS;
@@ -277,6 +286,25 @@ export default function CredentialSettingsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null);
+  const [togglingTool, setTogglingTool] = useState<string | null>(null);
+
+  const handleToggleTool = async (
+    agent: AgentInstance,
+    toolName: string,
+    enabled: boolean
+  ) => {
+    const current = getAgentTools(agent.capabilities);
+    const next = enabled
+      ? [...new Set([...current, toolName])]
+      : current.filter((t) => t !== toolName);
+    setTogglingTool(`${agent.agentId}:${toolName}`);
+    try {
+      await updateAgentTools(agent.tenantId, agent.agentId, next);
+      await queryClient.invalidateQueries({ queryKey: ['agents', 'instances'] });
+    } finally {
+      setTogglingTool(null);
+    }
+  };
 
   const tenantName = (tenantId: string) => {
     const p = principals.find((pr) => pr.tenantId === tenantId);
@@ -298,7 +326,7 @@ export default function CredentialSettingsPage() {
 
   const handleProviderCategoryChange = (next: 'inference' | 'other') => {
     setProviderCategory(next);
-    setProvider(next === 'inference' ? 'anthropic' : 'granola');
+    setProvider(next === 'inference' ? 'anthropic' : PROVIDER_REGISTRY[0].name);
     setFormError(null);
   };
 
@@ -523,58 +551,78 @@ export default function CredentialSettingsPage() {
                   <option value="openai-compatible">OpenAI-compatible</option>
                 </select>
               ) : (
-                <>
-                  <input
-                    id="cred-provider"
-                    name="provider"
-                    type="text"
-                    className={INPUT_CLASS}
-                    value={provider}
-                    onChange={(e) => handleProviderChange(e.target.value)}
-                    list="credential-provider-options"
-                    placeholder="e.g. granola"
-                    required
-                    disabled={saving}
-                  />
-                  <datalist id="credential-provider-options">
-                    <option value="granola" />
-                    <option value="linear" />
-                    <option value="slack" />
-                  </datalist>
-                </>
+                <select
+                  id="cred-provider"
+                  name="provider"
+                  className={INPUT_CLASS}
+                  value={provider}
+                  onChange={(e) => handleProviderChange(e.target.value)}
+                  required
+                  disabled={saving}
+                >
+                  {PROVIDER_REGISTRY.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
               )}
             </div>
 
-            <div className="mb-3">
-              <label className={LABEL_CLASS} htmlFor="cred-baseurl">
-                Base URL
-              </label>
-              <input
-                id="cred-baseurl"
-                name="baseURL"
-                type="url"
-                className={INPUT_CLASS}
-                placeholder="https://service.example.com"
-                required={provider === 'openai-compatible'}
-                disabled={saving}
-              />
-            </div>
+            {providerCategory === 'inference' ? (
+              <>
+                <div className="mb-3">
+                  <label className={LABEL_CLASS} htmlFor="cred-baseurl">
+                    Base URL
+                  </label>
+                  <input
+                    id="cred-baseurl"
+                    name="baseURL"
+                    type="url"
+                    className={INPUT_CLASS}
+                    placeholder="https://service.example.com"
+                    required={provider === 'openai-compatible'}
+                    disabled={saving}
+                  />
+                </div>
 
-            <div className="mb-3">
-              <label className={LABEL_CLASS} htmlFor="cred-apikey">
-                API key
-              </label>
-              <input
-                id="cred-apikey"
-                name="apiKey"
-                type="password"
-                autoComplete="new-password"
-                className={INPUT_CLASS}
-                placeholder="sk-..."
-                required
-                disabled={saving}
-              />
-            </div>
+                <div className="mb-3">
+                  <label className={LABEL_CLASS} htmlFor="cred-apikey">
+                    API key
+                  </label>
+                  <input
+                    id="cred-apikey"
+                    name="apiKey"
+                    type="password"
+                    autoComplete="new-password"
+                    className={INPUT_CLASS}
+                    placeholder="sk-..."
+                    required
+                    disabled={saving}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                {providerByName(provider)?.fields.map((field) => (
+                  <div className="mb-3" key={field.key}>
+                    <label className={LABEL_CLASS} htmlFor={`cred-${field.key}`}>
+                      {field.label}
+                    </label>
+                    <input
+                      id={`cred-${field.key}`}
+                      name={field.key}
+                      type={field.type}
+                      autoComplete={field.type === 'password' ? 'new-password' : undefined}
+                      className={INPUT_CLASS}
+                      placeholder={field.placeholder}
+                      required={field.required}
+                      disabled={saving}
+                    />
+                  </div>
+                ))}
+              </>
+            )}
 
             {isInferenceProvider(provider) && (
               <div className="mb-4">
@@ -666,24 +714,59 @@ export default function CredentialSettingsPage() {
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-2">
                           {linkedAgentsForCredential(c).length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {linkedAgentsForCredential(c).map((agent) => (
-                                <span
-                                  key={agent.id}
-                                  className="inline-flex items-center gap-1 rounded-[4px] bg-orange/10 px-1.5 py-0.5 text-[11px] text-orange ring-1 ring-orange/30"
-                                >
-                                  {agent.agentName}
-                                  <button
-                                    type="button"
-                                    aria-label={`Remove ${agent.agentName}`}
-                                    disabled={assigningAgentId === agent.agentId}
-                                    onClick={() => void handleRemoveAgent(c, agent.agentId)}
-                                    className="text-orange hover:text-red-500 disabled:opacity-40"
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              ))}
+                            <div className="flex flex-col gap-2">
+                              {linkedAgentsForCredential(c).map((agent) => {
+                                const providerTools = providerByName(c.providerPlugin)?.tools ?? [];
+                                const currentTools = getAgentTools(agent.capabilities);
+                                return (
+                                  <div key={agent.id}>
+                                    <span className="inline-flex items-center gap-1 rounded-[4px] bg-orange/10 px-1.5 py-0.5 text-[11px] text-orange ring-1 ring-orange/30">
+                                      {agent.agentName}
+                                      <button
+                                        type="button"
+                                        aria-label={`Remove ${agent.agentName}`}
+                                        disabled={assigningAgentId === agent.agentId}
+                                        onClick={() => void handleRemoveAgent(c, agent.agentId)}
+                                        className="text-orange hover:text-red-500 disabled:opacity-40"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                    {providerTools.length > 0 && (
+                                      <div className="mt-1.5 flex flex-wrap gap-2 pl-1">
+                                        {providerTools.map((tool) => {
+                                          const enabled = currentTools.includes(tool.name);
+                                          const key = `${agent.agentId}:${tool.name}`;
+                                          return (
+                                            <label
+                                              key={tool.name}
+                                              title={tool.description}
+                                              className="flex cursor-pointer items-center gap-1.5"
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={enabled}
+                                                disabled={togglingTool === key}
+                                                onChange={(e) =>
+                                                  void handleToggleTool(
+                                                    agent,
+                                                    tool.name,
+                                                    e.target.checked
+                                                  )
+                                                }
+                                                className="accent-orange"
+                                              />
+                                              <span className="text-[11px] text-text-2">
+                                                {tool.label}
+                                              </span>
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           ) : (
                             <span className="text-[12px] text-text-3">None</span>

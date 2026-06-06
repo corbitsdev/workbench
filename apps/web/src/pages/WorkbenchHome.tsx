@@ -71,7 +71,7 @@ type NewModal = 'none' | 'workbench' | 'agent';
 
 type RightPane =
   | { view: 'gallery' }
-  | { view: 'agent'; instanceId: string; tenantId: string; agentName: string }
+  | { view: 'agent'; instanceId: string; tenantId: string; agentName: string; instanceStatus?: string }
   | { view: 'workflow'; workflowId: string };
 
 function useWorkspaceContext(slug: string | undefined): {
@@ -188,6 +188,7 @@ export default function WorkbenchHome() {
             instanceId={rightPane.instanceId}
             tenantId={rightPane.tenantId}
             agentName={rightPane.agentName}
+            instanceStatus={rightPane.instanceStatus}
             onClose={() => {
               setRightPane({ view: 'gallery' });
               setLauncherHidden(false);
@@ -228,6 +229,7 @@ export default function WorkbenchHome() {
             instanceId={rightPane.instanceId}
             tenantId={rightPane.tenantId}
             agentName={rightPane.agentName}
+            instanceStatus={rightPane.instanceStatus}
             onClose={() => {
               setRightPane({ view: 'gallery' });
               setLauncherHidden(false);

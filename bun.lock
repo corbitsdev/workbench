@@ -84,6 +84,8 @@
         "@workbench/client": "workspace:*",
         "@workbench/settings": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tools-exa": "workspace:*",
+        "@workbench/tools-granola": "workspace:*",
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
         "@workbench/workflow": "workspace:*",

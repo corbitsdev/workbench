@@ -12,7 +12,6 @@ import { OnboardingPage } from './pages/OnboardingPage';
 const CredentialSettingsPage = lazy(() => import('./pages/CredentialSettingsPage'));
 const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
 const PrincipalSettingsPage = lazy(() => import('./pages/PrincipalSettingsPage'));
-const AgentToolsPage = lazy(() => import('./pages/AgentToolsPage'));
 
 function ProtectedLayout() {
   const { session } = useAuth();
@@ -92,20 +91,6 @@ export const router = createBrowserRouter([
                 }
               >
                 <PrincipalSettingsPage />
-              </Suspense>
-            ),
-          },
-          {
-            path: '/settings/agents',
-            element: (
-              <Suspense
-                fallback={
-                  <div className="flex h-full items-center justify-center">
-                    <span className="text-[13px] text-text-3">Loading...</span>
-                  </div>
-                }
-              >
-                <AgentToolsPage />
               </Suspense>
             ),
           },

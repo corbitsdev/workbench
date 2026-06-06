@@ -15,13 +15,23 @@ interface AgentChatProps {
   instanceId: string;
   tenantId: string;
   agentName: string;
+  instanceStatus?: string;
   onClose?: () => void;
 }
 
-export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentChatProps) {
+export function AgentChat({
+  instanceId,
+  tenantId,
+  agentName,
+  instanceStatus,
+  onClose,
+}: AgentChatProps) {
   const identity: ChatAgentIdentity = { name: agentName };
 
-  const [sessionState, setSessionState] = useState<SessionState>({ phase: 'loading' });
+  const isRunning = instanceStatus === undefined || instanceStatus === 'running';
+  const [sessionState, setSessionState] = useState<SessionState>(
+    isRunning ? { phase: 'loading' } : { phase: 'error', message: 'Agent is still deploying.' }
+  );
   const [, forceUpdate] = useState(0);
 
   const sessionRef = useRef<InstanceSession | null>(null);
@@ -45,7 +55,7 @@ export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentCha
   const prevInstanceRef = useRef<string | null>(null);
   if (prevInstanceRef.current !== instanceId) {
     prevInstanceRef.current = instanceId;
-    launch();
+    if (isRunning) launch();
   }
 
   // Subscription lifecycle — syncs to the external Interchange session.
@@ -135,7 +145,12 @@ export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentCha
     <ChatPanel
       agent={identity}
       messages={messages}
-      onSend={(text) => void session.sendMail(text)}
+      onSend={(text) => {
+        void session.sendMail(text).catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          setSessionState({ phase: 'error', message });
+        });
+      }}
       typing={isTyping}
       onClose={onClose}
     />

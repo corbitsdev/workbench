@@ -32,22 +32,25 @@ interface RailItem {
   instanceId?: string;
   tenantId?: string;
   agentId?: string;
+  agentStatus?: string;
   credentialRequirements?: CredentialRequirement[];
 }
 
 function agentToRailItem(a: AgentInstance): RailItem {
+  const isRunning = a.status === 'running';
   return {
     id: a.id,
     group: 'Agents',
     name: a.agentName,
     type: 'agent',
-    sub: `Agent · ${a.status}`,
-    status: 'idle',
+    sub: `Agent · ${isRunning ? 'Running' : 'Deploying'}`,
+    status: isRunning ? 'run' : 'idle',
     who: a.agentName.slice(0, 2).toUpperCase(),
     color: 'var(--green)',
     instanceId: a.id,
     tenantId: a.tenantId,
     agentId: a.agentId,
+    agentStatus: a.status,
     credentialRequirements: a.credentialRequirements,
   };
 }
@@ -256,6 +259,7 @@ export interface AgentSelection {
   instanceId: string;
   tenantId: string;
   agentName: string;
+  instanceStatus: string;
 }
 
 export interface LibraryRailProps {
@@ -514,6 +518,7 @@ export function LibraryRail({
               {inGroup.map((item) => {
                 const isClickableAgent =
                   item.type === 'agent' &&
+                  item.agentStatus === 'running' &&
                   onAgentSelect !== undefined &&
                   item.instanceId !== undefined &&
                   item.tenantId !== undefined;
@@ -531,6 +536,7 @@ export function LibraryRail({
                       instanceId: item.instanceId!,
                       tenantId: item.tenantId!,
                       agentName: item.name,
+                      instanceStatus: item.agentStatus!,
                     });
                   } else if (isClickableWorkflow) {
                     onWorkflowSelect!(item.id);
@@ -564,7 +570,7 @@ export function LibraryRail({
                             }
                           : undefined
                       }
-                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)] ${isClickable ? 'cursor-pointer' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
+                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${isClickable ? 'cursor-pointer hover:bg-[var(--row-hover)]' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
                     >
                       <StatusDot status={item.status} />
                       <div className="min-w-0 flex-1">

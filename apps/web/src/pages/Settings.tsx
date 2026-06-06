@@ -107,26 +107,7 @@ export default function Settings() {
             />
           </svg>
         </Link>
-        <Link
-          to="/settings/agents"
-          className="flex items-center justify-between rounded-xl border border-border bg-surface px-5 py-4 transition-colors hover:bg-surface-2"
-        >
-          <div>
-            <p className="text-[14px] font-medium text-text-1">Agent Tools</p>
-            <p className="mt-0.5 text-[12px] text-text-3">
-              Enable or disable tools for your agents.
-            </p>
-          </div>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-text-3">
-            <path
-              d="M6 4l4 4-4 4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </Link>
+
       </div>
       <SettingsPage
         sections={SECTIONS}

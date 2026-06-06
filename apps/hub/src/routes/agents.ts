@@ -745,6 +745,10 @@ export function createAgentProvisioningRouter(
       // the orchestrator's reconnect path and this explicit launch), treat it
       // as success. The agent is live; the frontend can proceed.
       if (isAgentAlreadyExistsError(err)) {
+        await db
+          .update(agentInstance)
+          .set({ status: 'running', updatedAt: new Date() })
+          .where(eq(agentInstance.id, instanceId));
         launched = true;
       } else {
         launchError = err instanceof Error ? err.message : String(err);
@@ -1017,6 +1021,10 @@ async function launchAgentSession(
   for (let attempt = 0; attempt < MAX_LAUNCH_ATTEMPTS; attempt++) {
     try {
       await sessionService.launchSession(launchConfig);
+      await db
+        .update(agentInstance)
+        .set({ status: 'running', updatedAt: new Date() })
+        .where(eq(agentInstance.id, instanceId));
       log.info('Agent session launched', { instanceId, agentId, tenantId });
       return;
     } catch (err) {
