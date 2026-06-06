@@ -264,11 +264,33 @@ export type EnrichedCredential = {
   tenantId: string;
   providerPlugin: string;
   providerName: string;
+  providerId: string;
   status: string;
   agentCount: number;
+  baseURL: string;
+  model: string;
   createdAt: string;
   updatedAt: string;
 };
+
+export type UpdateTenantCredentialInput = {
+  name?: string;
+  apiKey?: string;
+  model?: string;
+  baseURL?: string;
+};
+
+export async function updateTenantCredential(
+  tenantId: string,
+  credentialId: string,
+  input: UpdateTenantCredentialInput
+): Promise<void> {
+  await hubFetch<{ credentialId: string }>(
+    'PATCH',
+    `v1/tenants/${tenantId}/credentials/${credentialId}`,
+    input
+  );
+}
 
 export async function listEnrichedCredentials(tenantId: string): Promise<EnrichedCredential[]> {
   const res = await hubFetch<{ data: EnrichedCredential[] }>(

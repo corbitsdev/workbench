@@ -365,14 +365,18 @@ export function createAgentProvisioningRouter(
         );
         const agentCount = agentPrincipals.filter(Boolean).length;
 
+        const meta = prov?.metadata as { baseURL?: string; model?: string } | null;
         return {
           id: cred.id,
           name: cred.name,
           tenantId: cred.tenantId,
           providerPlugin: prov?.plugin ?? '',
           providerName: prov?.name ?? '',
+          providerId: cred.providerId,
           status: cred.status,
           agentCount,
+          baseURL: meta?.baseURL ?? '',
+          model: meta?.model ?? '',
           createdAt: cred.createdAt.toISOString(),
           updatedAt: cred.updatedAt.toISOString(),
         };
@@ -380,6 +384,67 @@ export function createAgentProvisioningRouter(
     );
 
     return c.json({ data: result });
+  });
+
+  // Update an existing credential: name, API key, and/or provider baseURL + model.
+  app.patch('/tenants/:tenantId/credentials/:credentialId', async (c) => {
+    const userId = c.get('userId');
+    const tenantId = c.req.param('tenantId');
+    const credentialId = c.req.param('credentialId');
+
+    const raw = await c.req.json().catch(() => null);
+    if (!raw) return c.json({ error: 'Invalid JSON body' }, 400);
+
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, tenantId),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+
+    const cred = await db.query.credential.findFirst({
+      where: and(eq(credential.id, credentialId), eq(credential.tenantId, tenantId)),
+    });
+    if (!cred) return c.json({ error: 'Credential not found' }, 404);
+
+    const now = new Date();
+    await db.transaction(async (rawTx) => {
+      const tx = rawTx as unknown as DB['db'];
+
+      const credUpdates: Record<string, unknown> = { updatedAt: now };
+      if (typeof raw.name === 'string' && raw.name.trim()) {
+        credUpdates['name'] = raw.name.trim();
+      }
+      if (typeof raw.apiKey === 'string' && raw.apiKey.trim()) {
+        credUpdates['secret'] = encryptSecret(
+          getConfig().credentialKeys,
+          tenantId,
+          raw.apiKey.trim()
+        );
+      }
+      await tx.update(credential).set(credUpdates).where(eq(credential.id, credentialId));
+
+      if (typeof raw.baseURL === 'string' || typeof raw.model === 'string') {
+        const prov = await tx.query.provider.findFirst({
+          where: eq(providerTable.id, cred.providerId),
+        });
+        const existingMeta = (prov?.metadata as { baseURL?: string; model?: string } | null) ?? {};
+        await tx
+          .update(providerTable)
+          .set({
+            metadata: {
+              baseURL: typeof raw.baseURL === 'string' ? raw.baseURL.trim() : (existingMeta.baseURL ?? ''),
+              model: typeof raw.model === 'string' ? raw.model.trim() : (existingMeta.model ?? ''),
+            },
+            updatedAt: now,
+          })
+          .where(eq(providerTable.id, cred.providerId));
+      }
+    });
+
+    return c.json({ credentialId }, 200);
   });
 
   // Launch (or relaunch) a session for an agent instance.

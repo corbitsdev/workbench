@@ -5,6 +5,7 @@ import {
   getMyPrincipals,
   listEnrichedCredentials,
   createTenantCredential,
+  updateTenantCredential,
   deleteTenantCredential,
 } from '../lib/hub-api';
 import type {
@@ -38,7 +39,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   'openai-compatible': 'OpenAI-compatible',
 };
 
-function modelListForProvider(p: LLMProviderType) {
+function modelListForProvider(p: LLMProviderType | string) {
   if (p === 'anthropic') return ANTHROPIC_MODELS;
   if (p === 'openai') return OPENAI_MODELS;
   if (p === 'google-genai') return GEMINI_MODELS;
@@ -50,8 +51,149 @@ function providerLabel(plugin: string): string {
 }
 
 const INPUT_CLASS =
-  'w-full rounded-[8px] border border-border bg-bg px-3 py-2 text-[13px] text-text outline-none placeholder:text-text-3 focus:border-orange';
+  'w-full rounded-[8px] border border-border bg-bg px-3 py-2 text-[13px] text-text outline-none placeholder:text-text-3 focus:border-orange disabled:opacity-50';
 const LABEL_CLASS = 'mb-1 block text-[12px] font-medium text-text-2';
+
+function EditCredentialForm({
+  credential,
+  onSave,
+  onCancel,
+}: {
+  credential: EnrichedCredential;
+  onSave: (data: { name: string; apiKey: string; model: string; baseURL: string }) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const modelOptions = modelListForProvider(credential.providerPlugin);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const baseURL = (fd.get('baseURL') as string | null) ?? '';
+    if (credential.providerPlugin === 'openai-compatible' && !baseURL.trim()) {
+      setError('Base URL is required for OpenAI-compatible providers.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({
+        name: (fd.get('name') as string).trim(),
+        apiKey: (fd.get('apiKey') as string).trim(),
+        model: (fd.get('model') as string).trim(),
+        baseURL: baseURL.trim(),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update credential.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={(e) => void handleSubmit(e)}>
+      {error && (
+        <p className="mb-3 rounded-lg border border-orange bg-[rgba(233,132,40,0.16)] px-3 py-2 text-[12px] text-orange-deep">
+          {error}
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={LABEL_CLASS} htmlFor={`edit-name-${credential.id}`}>
+            Name
+          </label>
+          <input
+            id={`edit-name-${credential.id}`}
+            name="name"
+            type="text"
+            className={INPUT_CLASS}
+            defaultValue={credential.name}
+            required
+            disabled={saving}
+            autoFocus
+          />
+        </div>
+        <div>
+          <label className={LABEL_CLASS} htmlFor={`edit-apikey-${credential.id}`}>
+            API key (leave blank to keep current)
+          </label>
+          <input
+            id={`edit-apikey-${credential.id}`}
+            name="apiKey"
+            type="password"
+            className={INPUT_CLASS}
+            placeholder="sk-..."
+            disabled={saving}
+          />
+        </div>
+        {credential.providerPlugin === 'openai-compatible' && (
+          <div>
+            <label className={LABEL_CLASS} htmlFor={`edit-baseurl-${credential.id}`}>
+              Base URL
+            </label>
+            <input
+              id={`edit-baseurl-${credential.id}`}
+              name="baseURL"
+              type="url"
+              className={INPUT_CLASS}
+              defaultValue={credential.baseURL}
+              required
+              disabled={saving}
+            />
+          </div>
+        )}
+        <div>
+          <label className={LABEL_CLASS} htmlFor={`edit-model-${credential.id}`}>
+            Model
+          </label>
+          {modelOptions.length > 0 ? (
+            <select
+              id={`edit-model-${credential.id}`}
+              name="model"
+              className={INPUT_CLASS}
+              defaultValue={credential.model}
+              disabled={saving}
+            >
+              {modelOptions.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id={`edit-model-${credential.id}`}
+              name="model"
+              type="text"
+              className={INPUT_CLASS}
+              defaultValue={credential.model}
+              required
+              disabled={saving}
+            />
+          )}
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-[8px] bg-orange px-3 py-1.5 text-[13px] font-medium text-white hover:bg-orange-deep disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          className="rounded-[8px] border border-border px-3 py-1.5 text-[13px] text-text-2 hover:text-text disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
 
 export default function CredentialSettingsPage() {
   const queryClient = useQueryClient();
@@ -78,13 +220,10 @@ export default function CredentialSettingsPage() {
   const [showForm, setShowForm] = useState(false);
   const [formTenantId, setFormTenantId] = useState('');
   const [provider, setProvider] = useState<LLMProviderType>('anthropic');
-  const [name, setName] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState(ANTHROPIC_MODELS[0].value);
-  const [baseURL, setBaseURL] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const tenantName = (tenantId: string) => {
     const p = principals.find((pr) => pr.tenantId === tenantId);
@@ -93,25 +232,21 @@ export default function CredentialSettingsPage() {
 
   const handleProviderChange = (next: LLMProviderType) => {
     setProvider(next);
-    const models = modelListForProvider(next);
-    setModel(models.length > 0 ? models[0].value : '');
     setFormError(null);
   };
 
   const handleShowForm = () => {
     setFormTenantId(tenantIds[0] ?? '');
     setProvider('anthropic');
-    setName('');
-    setApiKey('');
-    setModel(ANTHROPIC_MODELS[0].value);
-    setBaseURL('');
     setFormError(null);
     setShowForm(true);
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formTenantId) return;
+    const fd = new FormData(e.currentTarget);
+    const baseURL = (fd.get('baseURL') as string | null) ?? '';
     if (provider === 'openai-compatible' && !baseURL.trim()) {
       setFormError('Base URL is required for OpenAI-compatible providers.');
       return;
@@ -119,10 +254,13 @@ export default function CredentialSettingsPage() {
     setSaving(true);
     setFormError(null);
     try {
+      const name = (fd.get('name') as string).trim();
+      const apiKey = fd.get('apiKey') as string;
+      const model = (fd.get('model') as string).trim();
       const input: CreateTenantCredentialInput =
         provider === 'openai-compatible'
-          ? { provider, name: name.trim(), apiKey, model, baseURL: baseURL.trim() }
-          : { provider, name: name.trim(), apiKey, model };
+          ? { provider, name, apiKey, model, baseURL: baseURL.trim() }
+          : { provider, name, apiKey, model };
       await createTenantCredential(formTenantId, input);
       await queryClient.invalidateQueries({ queryKey: ['credentials'] });
       setShowForm(false);
@@ -131,6 +269,20 @@ export default function CredentialSettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSaveEdit = async (
+    c: EnrichedCredential,
+    data: { name: string; apiKey: string; model: string; baseURL: string }
+  ) => {
+    await updateTenantCredential(c.tenantId, c.id, {
+      name: data.name || undefined,
+      apiKey: data.apiKey || undefined,
+      model: data.model || undefined,
+      baseURL: c.providerPlugin === 'openai-compatible' ? data.baseURL : undefined,
+    });
+    await queryClient.invalidateQueries({ queryKey: ['credentials'] });
+    setEditingId(null);
   };
 
   const handleDelete = async (tenantId: string, credentialId: string) => {
@@ -212,12 +364,13 @@ export default function CredentialSettingsPage() {
               </label>
               <input
                 id="cred-name"
+                name="name"
                 type="text"
                 className={INPUT_CLASS}
                 placeholder="e.g. My Anthropic Key"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                required
                 disabled={saving}
+                autoFocus
               />
             </div>
 
@@ -246,11 +399,11 @@ export default function CredentialSettingsPage() {
                 </label>
                 <input
                   id="cred-baseurl"
+                  name="baseURL"
                   type="url"
                   className={INPUT_CLASS}
                   placeholder="https://your-endpoint.example.com/v1"
-                  value={baseURL}
-                  onChange={(e) => setBaseURL(e.target.value)}
+                  required
                   disabled={saving}
                 />
               </div>
@@ -262,11 +415,11 @@ export default function CredentialSettingsPage() {
               </label>
               <input
                 id="cred-apikey"
+                name="apiKey"
                 type="password"
                 className={INPUT_CLASS}
                 placeholder="sk-..."
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                required
                 disabled={saving}
               />
             </div>
@@ -278,9 +431,8 @@ export default function CredentialSettingsPage() {
               {modelOptions.length > 0 ? (
                 <select
                   id="cred-model"
+                  name="model"
                   className={INPUT_CLASS}
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
                   disabled={saving}
                 >
                   {modelOptions.map((m) => (
@@ -292,11 +444,11 @@ export default function CredentialSettingsPage() {
               ) : (
                 <input
                   id="cred-model"
+                  name="model"
                   type="text"
                   className={INPUT_CLASS}
                   placeholder="e.g. llama-3.1-8b"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
+                  required
                   disabled={saving}
                 />
               )}
@@ -305,7 +457,7 @@ export default function CredentialSettingsPage() {
             <div className="flex gap-2">
               <button
                 type="submit"
-                disabled={saving || !name.trim() || !apiKey.trim() || !model.trim()}
+                disabled={saving}
                 className="rounded-[8px] bg-orange px-3 py-1.5 text-[13px] font-medium text-white hover:bg-orange-deep disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Save'}
@@ -342,35 +494,60 @@ export default function CredentialSettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {allCredentials.map((c) => (
-                  <tr key={c.id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-3 font-medium text-text">{c.name}</td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-[4px] bg-surface px-1.5 py-0.5 text-[11px] text-text-3 ring-1 ring-border">
-                        {tenantName(c.tenantId)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-text-2">{providerLabel(c.providerPlugin)}</td>
-                    <td className="px-4 py-3 text-text-2">
-                      {c.agentCount === 0 ? (
-                        <span className="text-text-3">None</span>
-                      ) : (
-                        `${c.agentCount} agent${c.agentCount === 1 ? '' : 's'}`
-                      )}
-                    </td>
-                    <td className="px-4 py-3 capitalize text-text-2">{c.status}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        disabled={deletingId === c.id}
-                        onClick={() => void handleDelete(c.tenantId, c.id)}
-                        className="text-[12px] text-text-3 hover:text-red-500 disabled:opacity-40"
-                      >
-                        {deletingId === c.id ? 'Deleting...' : 'Delete'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {allCredentials.map((c) =>
+                  editingId === c.id ? (
+                    <tr key={c.id} className="border-b border-border last:border-0 bg-surface">
+                      <td colSpan={6} className="px-4 py-4">
+                        <EditCredentialForm
+                          credential={c}
+                          onSave={(data) => handleSaveEdit(c, data)}
+                          onCancel={() => setEditingId(null)}
+                        />
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr
+                      key={c.id}
+                      className="border-b border-border last:border-0"
+                    >
+                      <td className="px-4 py-3 font-medium text-text">{c.name}</td>
+                      <td className="px-4 py-3">
+                        <span className="rounded-[4px] bg-surface px-1.5 py-0.5 text-[11px] text-text-3 ring-1 ring-border">
+                          {tenantName(c.tenantId)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-text-2">{providerLabel(c.providerPlugin)}</td>
+                      <td className="px-4 py-3 text-text-2">
+                        {c.agentCount === 0 ? (
+                          <span className="text-text-3">None</span>
+                        ) : (
+                          `${c.agentCount} agent${c.agentCount === 1 ? '' : 's'}`
+                        )}
+                      </td>
+                      <td className="px-4 py-3 capitalize text-text-2">{c.status}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(c.id)}
+                            disabled={!!deletingId}
+                            className="text-[12px] text-text-3 hover:text-text disabled:opacity-40"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingId === c.id}
+                            onClick={() => void handleDelete(c.tenantId, c.id)}
+                            className="text-[12px] text-text-3 hover:text-red-500 disabled:opacity-40"
+                          >
+                            {deletingId === c.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )}
               </tbody>
             </table>
           </div>
