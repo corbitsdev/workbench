@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { cn } from '@workbench/ui';
 import { type ChatMessage } from './types';
 import { MessageBubble } from './MessageBubble';
@@ -13,7 +14,7 @@ export interface ChatThreadProps {
   className?: string;
 }
 
-/** The scrollable list of message bubbles. Pure render from props. */
+/** The scrollable list of message bubbles. */
 export function ChatThread({
   messages,
   typing,
@@ -21,6 +22,12 @@ export function ChatThread({
   emptyState,
   className,
 }: ChatThreadProps) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+  }, [messages.length, typing]);
+
   return (
     <div
       role="log"
@@ -34,6 +41,7 @@ export function ChatThread({
       {typing === true && (
         <TypingIndicator {...(typingLabel !== undefined ? { label: typingLabel } : {})} />
       )}
+      <div ref={bottomRef} />
     </div>
   );
 }
