@@ -86,6 +86,30 @@ describe('repairTenantAgentCredentials', () => {
     expect(updates[0]!.values.modelConfig).toEqual({ defaultModel: 'claude-opus-4-8' });
   });
 
+  it('sets the model for an existing tenant requirement that already has providerName', async () => {
+    const { db, updates } = makeDB({
+      credentials: [{ id: 'cred-1', name: 'Myra LLM', providerId: 'prov-1' }],
+      providers: [{ id: 'prov-1', name: 'openai-compatible', metadata: { model: 'gpt-4o-mini' } }],
+      agents: [
+        {
+          id: 'agent-1',
+          credentialRequirements: [
+            { source: 'tenant', name: 'Myra LLM', providerName: 'openai-compatible' },
+          ],
+          modelConfig: null,
+        },
+      ],
+    });
+
+    await repairTenantAgentCredentials(db, 'tenant-1');
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.values.credentialRequirements).toEqual([
+      { source: 'tenant', name: 'Myra LLM', providerName: 'openai-compatible' },
+    ]);
+    expect(updates[0]!.values.modelConfig).toEqual({ defaultModel: 'gpt-4o-mini' });
+  });
+
   it('does not overwrite a model the agent already has', async () => {
     const { db, updates } = makeDB({
       credentials: [{ id: 'cred-1', name: 'Myra LLM', providerId: 'prov-1' }],

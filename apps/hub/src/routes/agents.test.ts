@@ -15,9 +15,11 @@ mock.module('../config', () => ({
 // to return sources (launch proceeds) or throw (launch fails). Credential
 // repair is exercised in agent-credential-repair.test.ts; stub it here.
 let sourcesImpl: () => Promise<unknown[]> = () => Promise.resolve([{ id: 'src-1' }]);
+let credentialByIdImpl: () => Promise<unknown> = () => Promise.resolve(undefined);
 mock.module('@intx/db', () => ({
   ...intxDbReal,
   resolveInstanceSources: () => sourcesImpl(),
+  resolveCredentialById: () => credentialByIdImpl(),
 }));
 mock.module('../lib/agent-credential-repair', () => ({
   repairTenantAgentCredentials: () => Promise.resolve(),
@@ -468,6 +470,96 @@ describe('POST /tenants/:tenantId/credentials', () => {
       })
     );
     expect(res.status).toBe(409);
+  });
+});
+
+// ─── PATCH /tenants/:tenantId/agents/:agentId/credential ─────────
+
+describe('PATCH /tenants/:tenantId/agents/:agentId/credential', () => {
+  it('assigns a credential using the agent tenant when the URL tenant is stale', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const db = makeMockDb({
+      update: mock(() => ({
+        set: mock((values: Record<string, unknown>) => ({
+          where: mock(() => {
+            updates.push(values);
+            return Promise.resolve();
+          }),
+        })),
+      })),
+    });
+
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    let agentLookup = 0;
+    db.query.agent.findFirst = mock(() => {
+      agentLookup += 1;
+      if (agentLookup === 1) return Promise.resolve(undefined);
+      return Promise.resolve({
+        id: 'agt-1',
+        tenantId: 'tenant-1',
+        credentialRequirements: [],
+        modelConfig: null,
+      });
+    });
+    db.query.provider.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'prov-1',
+        name: 'openai-compatible',
+        plugin: 'openai-compatible',
+        metadata: { model: 'gpt-4o-mini' },
+      })
+    );
+    credentialByIdImpl = () =>
+      Promise.resolve({ id: 'crd-1', name: 'Workbench LLM', providerId: 'prov-1' });
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/wrong-tenant/agents/agt-1/credential', {
+        method: 'PATCH',
+        body: { credentialId: 'crd-1' },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(updates[0]?.credentialRequirements).toEqual([
+      { source: 'tenant', name: 'Workbench LLM', providerName: 'openai-compatible' },
+    ]);
+    expect(updates[0]?.modelConfig).toEqual({ defaultModel: 'gpt-4o-mini' });
+  });
+
+  it('rejects inference credentials that do not define a model', async () => {
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'agt-1',
+        tenantId: 'tenant-1',
+        credentialRequirements: [],
+        modelConfig: null,
+      })
+    );
+    db.query.provider.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'prov-1',
+        name: 'openai-compatible',
+        plugin: 'openai-compatible',
+        metadata: {},
+      })
+    );
+    credentialByIdImpl = () =>
+      Promise.resolve({ id: 'crd-1', name: 'Broken LLM', providerId: 'prov-1' });
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/agents/agt-1/credential', {
+        method: 'PATCH',
+        body: { credentialId: 'crd-1' },
+      })
+    );
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain('model');
   });
 });
 

@@ -135,14 +135,18 @@ export async function repairTenantAgentCredentials(db: RepairDB, tenantId: strin
     let changed = false;
     let model: string | null = existingModel ?? null;
 
-    // 1. Fill providerName on existing tenant requirements that are missing it.
+    // 1. Fill providerName/model on existing tenant requirements. Provider name
+    //    may already be present on newer definitions; modelConfig still has to
+    //    be derived from the selected credential's provider metadata.
     for (const req of reqs) {
-      if (req.source !== 'tenant' || req.providerName) continue;
+      if (req.source !== 'tenant') continue;
       const match = enriched.find((e) => e.name === req.name) ?? soleCredential;
       if (!match) continue;
-      req.providerName = match.providerName;
+      if (!req.providerName) {
+        req.providerName = match.providerName;
+        changed = true;
+      }
       if (!model) model = match.model;
-      changed = true;
     }
 
     // 2. If the agent declares no tenant requirement at all, bind it to the
