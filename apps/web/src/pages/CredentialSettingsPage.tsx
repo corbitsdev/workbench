@@ -122,6 +122,7 @@ function EditCredentialForm({
             id={`edit-apikey-${credential.id}`}
             name="apiKey"
             type="password"
+            autoComplete="new-password"
             className={INPUT_CLASS}
             placeholder="sk-..."
             disabled={saving}
@@ -417,6 +418,7 @@ export default function CredentialSettingsPage() {
                 id="cred-apikey"
                 name="apiKey"
                 type="password"
+                autoComplete="new-password"
                 className={INPUT_CLASS}
                 placeholder="sk-..."
                 required

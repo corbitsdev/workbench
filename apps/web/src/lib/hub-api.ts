@@ -18,6 +18,9 @@ async function hubFetch<T>(method: string, path: string, body?: unknown): Promis
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
     throw Object.assign(new Error(err.error || `HTTP ${res.status}`), { status: res.status });
   }
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return undefined as T;
+  }
   return res.json() as Promise<T>;
 }
 
