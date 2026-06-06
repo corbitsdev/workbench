@@ -15,6 +15,7 @@ export async function initSentry() {
     });
     return sentry;
   } catch (error) {
+    // oxlint-disable-next-line no-console
     console.warn('Failed to initialize Sentry', error);
     return null;
   }

@@ -62,7 +62,7 @@ export default function Settings() {
 
   const handleChange = (key: string, value: SettingsFieldValue) => {
     setValues((prev) => ({ ...prev, [key]: value }));
-    if (key === 'theme' && (value === 'light' || value === 'dark' || value === 'system')) {
+    if (key === 'theme' && (value === 'light' || value === 'dark')) {
       setTheme(value);
     }
     if (key === 'displayName') {

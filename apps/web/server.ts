@@ -47,6 +47,7 @@ async function handleRequest(req: Request): Promise<Response> {
         headers: resHeaders,
       });
     } catch (err) {
+      // oxlint-disable-next-line no-console
       console.error('Proxy error:', err);
       return new Response(
         JSON.stringify({ error: 'Failed to reach API backend', details: String(err) }),
@@ -73,4 +74,5 @@ Bun.serve({
   fetch: handleRequest,
 });
 
+// oxlint-disable-next-line no-console
 console.log(`Web server listening on port ${PORT}, proxying API to ${API_URL}`);
