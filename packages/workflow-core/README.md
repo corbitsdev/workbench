@@ -43,11 +43,13 @@ export const myWorkflow: WorkflowType = {
   kind: 'my-workflow',
   name: 'My Workflow',
   description: 'What this workflow does',
-  credentialRequirements: [
-    { providerName: 'openai-compatible', source: 'tenant', name: 'LLM' },
-  ],
-  inputSchema: { /* workflow-specific input schema */ },
-  outputSchema: { /* workflow-specific output schema */ },
+  credentialRequirements: [{ providerName: 'openai-compatible', source: 'tenant', name: 'LLM' }],
+  inputSchema: {
+    /* workflow-specific input schema */
+  },
+  outputSchema: {
+    /* workflow-specific output schema */
+  },
 };
 ```
 
@@ -63,11 +65,13 @@ export const myWorkflow: WorkflowType = {
 Teams deploying Workbench can:
 
 1. **Use pre-built GTM workflows**
+
    ```
    hub + @workbench/gtm-workflows
    ```
 
 2. **Extend with custom workflows**
+
    ```
    hub + @workbench/gtm-workflows + @acme/workflows
    ```

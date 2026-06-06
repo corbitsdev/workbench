@@ -667,7 +667,15 @@ async function ensureAgentInstance(
     credentialIds?: string[];
   }
 ): Promise<EnsureAgentResult> {
-  const { tenantId, tenantDomain, agentName, systemPrompt, creatorPrincipalId, now, credentialIds } = opts;
+  const {
+    tenantId,
+    tenantDomain,
+    agentName,
+    systemPrompt,
+    creatorPrincipalId,
+    now,
+    credentialIds,
+  } = opts;
 
   const agentId = generateId('agent');
 

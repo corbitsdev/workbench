@@ -7,6 +7,7 @@ Pre-built GTM (go-to-market) workflows for Workbench. Convert call transcripts a
 ### Collateral Generation
 
 Turn call transcripts into ready-to-use sales collateral:
+
 - **Email** - Personalized follow-up emails
 - **LinkedIn Posts** - Social sharing content
 - **One-pagers** - Executive summaries
@@ -50,6 +51,7 @@ POST /workflows
 ## Pre-built GTM Workbench
 
 These workflows enable a **pre-built GTM Workbench** product:
+
 - Teams deploy with zero configuration
 - Workflows are opinionated but extensible
 - Extend with custom workflows as needed

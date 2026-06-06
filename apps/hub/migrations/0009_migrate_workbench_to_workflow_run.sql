@@ -2,11 +2,18 @@
 -- Maps userId to tenant/principal IDs by looking up personal tenant and principal.
 -- This is a one-time migration; existing sessions are preserved as 'collateral-generation' workflows.
 
+-- Older workbench_session rows may predate auth provisioning and therefore have
+-- no matching personal tenant/principal. Preserve those rows under a deterministic
+-- legacy tenant so the NOT NULL workflow_run scope columns are always populated.
+INSERT INTO "tenant" (id, name, slug, domain, config, created_at, updated_at)
+SELECT 'tenant_legacy_workbench', 'Legacy Workbench', 'legacy-workbench', 'legacy-workbench.localhost', '{}'::jsonb, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM "tenant" WHERE slug = 'legacy-workbench');
+--> statement-breakpoint
 INSERT INTO "workflow_run" (id, tenant_id, principal_id, kind, status, input, created_at, updated_at)
 SELECT
   ws.id,
-  t.id as tenant_id,
-  COALESCE(p.id, ws.user_id) as principal_id,
+  COALESCE(t.id, legacy_tenant.id) as tenant_id,
+  COALESCE(p.id, ws.user_id, 'principal_legacy_workbench') as principal_id,
   'collateral-generation'::text as kind,
   CASE ws.status
     WHEN 'analyzing' THEN 'pending'::text
@@ -25,9 +32,11 @@ SELECT
   ws.created_at,
   ws.updated_at
 FROM "workbench_session" ws
+CROSS JOIN "tenant" legacy_tenant
 LEFT JOIN "tenant" t ON t.slug = 'user-' || ws.user_id
 LEFT JOIN "principal" p ON p.tenant_id = t.id AND p.kind = 'user' AND p.ref_id = ws.user_id
-WHERE NOT EXISTS (SELECT 1 FROM "workflow_run" WHERE "workflow_run".id = ws.id)
+WHERE legacy_tenant.slug = 'legacy-workbench'
+  AND NOT EXISTS (SELECT 1 FROM "workflow_run" WHERE "workflow_run".id = ws.id)
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 -- Update artifact FKs to point to workflow_run (via session_id which now references workflow_run).

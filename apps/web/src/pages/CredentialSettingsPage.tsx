@@ -252,6 +252,7 @@ export default function CredentialSettingsPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [formTenantId, setFormTenantId] = useState('');
+  const [providerCategory, setProviderCategory] = useState<'inference' | 'other'>('inference');
   const [provider, setProvider] = useState('anthropic');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -270,9 +271,16 @@ export default function CredentialSettingsPage() {
 
   const handleShowForm = () => {
     setFormTenantId(tenantIds[0] ?? '');
+    setProviderCategory('inference');
     setProvider('anthropic');
     setFormError(null);
     setShowForm(true);
+  };
+
+  const handleProviderCategoryChange = (next: 'inference' | 'other') => {
+    setProviderCategory(next);
+    setProvider(next === 'inference' ? 'anthropic' : 'granola');
+    setFormError(null);
   };
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -416,28 +424,85 @@ export default function CredentialSettingsPage() {
             </div>
 
             <div className="mb-3">
+              <span className={LABEL_CLASS}>Credential type</span>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="flex cursor-pointer gap-3 rounded-[8px] border border-border bg-bg px-3 py-2 has-[:checked]:border-orange has-[:checked]:bg-orange/10">
+                  <input
+                    type="radio"
+                    name="providerCategory"
+                    value="inference"
+                    checked={providerCategory === 'inference'}
+                    onChange={() => handleProviderCategoryChange('inference')}
+                    disabled={saving}
+                    className="mt-1 accent-orange"
+                  />
+                  <span>
+                    <span className="block text-[13px] font-medium text-text">AI Inference</span>
+                    <span className="mt-0.5 block text-[12px] text-text-3">
+                      Model providers agents use for LLM calls.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer gap-3 rounded-[8px] border border-border bg-bg px-3 py-2 has-[:checked]:border-orange has-[:checked]:bg-orange/10">
+                  <input
+                    type="radio"
+                    name="providerCategory"
+                    value="other"
+                    checked={providerCategory === 'other'}
+                    onChange={() => handleProviderCategoryChange('other')}
+                    disabled={saving}
+                    className="mt-1 accent-orange"
+                  />
+                  <span>
+                    <span className="block text-[13px] font-medium text-text">Other</span>
+                    <span className="mt-0.5 block text-[12px] text-text-3">
+                      Service credentials for tools like Granola or Linear.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="mb-3">
               <label className={LABEL_CLASS} htmlFor="cred-provider">
                 Provider
               </label>
-              <input
-                id="cred-provider"
-                name="provider"
-                type="text"
-                className={INPUT_CLASS}
-                value={provider}
-                onChange={(e) => handleProviderChange(e.target.value)}
-                list="credential-provider-options"
-                placeholder="e.g. granola"
-                required
-                disabled={saving}
-              />
-              <datalist id="credential-provider-options">
-                <option value="anthropic" />
-                <option value="openai" />
-                <option value="google-genai" />
-                <option value="openai-compatible" />
-                <option value="granola" />
-              </datalist>
+              {providerCategory === 'inference' ? (
+                <select
+                  id="cred-provider"
+                  name="provider"
+                  className={INPUT_CLASS}
+                  value={provider}
+                  onChange={(e) => handleProviderChange(e.target.value)}
+                  required
+                  disabled={saving}
+                >
+                  <option value="anthropic">Anthropic</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="google-genai">Google GenAI</option>
+                  <option value="openai-compatible">OpenAI-compatible</option>
+                </select>
+              ) : (
+                <>
+                  <input
+                    id="cred-provider"
+                    name="provider"
+                    type="text"
+                    className={INPUT_CLASS}
+                    value={provider}
+                    onChange={(e) => handleProviderChange(e.target.value)}
+                    list="credential-provider-options"
+                    placeholder="e.g. granola"
+                    required
+                    disabled={saving}
+                  />
+                  <datalist id="credential-provider-options">
+                    <option value="granola" />
+                    <option value="linear" />
+                    <option value="slack" />
+                  </datalist>
+                </>
+              )}
             </div>
 
             <div className="mb-3">

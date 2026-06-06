@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import {
-  artifact,
-  artifactVersion,
-  painPoint,
-  transcript,
-  workflowRun,
-} from './schema';
+import { artifact, artifactVersion, painPoint, transcript, workflowRun } from './schema';
 
 describe('database schema', () => {
   it('has transcript table', () => {

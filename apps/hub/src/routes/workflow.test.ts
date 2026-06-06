@@ -23,7 +23,11 @@ describe('Workflow router', () => {
     return {
       query: {
         workflowRun: {
-          findFirst: mock(() => ({ id: 'wf-1', status: 'pending', input: { companyName: 'Test Corp' } })),
+          findFirst: mock(() => ({
+            id: 'wf-1',
+            status: 'pending',
+            input: { companyName: 'Test Corp' },
+          })),
         },
         transcript: {
           findFirst: mock(() => ({ content: 'Test transcript content' })),
@@ -89,7 +93,14 @@ describe('Workflow router', () => {
       query: { workflowRun: { findMany: ReturnType<typeof mock> } };
     };
     mockDb.query.workflowRun.findMany = mock(() => [
-      { id: 'wf-1', status: 'done', input: { companyName: 'Acme Corp' }, tenantId: 't-1', principalId: 'p-1', kind: 'collateral-generation' },
+      {
+        id: 'wf-1',
+        status: 'done',
+        input: { companyName: 'Acme Corp' },
+        tenantId: 't-1',
+        principalId: 'p-1',
+        kind: 'collateral-generation',
+      },
     ]);
     mockDb.query.artifact.findMany = mock(() => [
       {
