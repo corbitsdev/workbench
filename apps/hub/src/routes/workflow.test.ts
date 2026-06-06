@@ -166,8 +166,8 @@ describe('Workflow router', () => {
     const deletedWhere: unknown[] = [];
     const mockDb = createMockDb();
     mockDb.delete = mock(() => ({
-      where: mock((condition: unknown) => {
-        deletedWhere.push(condition);
+      where: mock(() => {
+        deletedWhere.push(true);
         return Promise.resolve();
       }),
     }));
