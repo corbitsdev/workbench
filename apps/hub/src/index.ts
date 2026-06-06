@@ -35,7 +35,9 @@ import {
   provisionMyraInstance,
 } from './lib/tenant-provisioning';
 import { startGranolaPoller } from './lib/granola-poller';
+import { initSentry } from '@workbench/sentry';
 
+await initSentry();
 await setup({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
 

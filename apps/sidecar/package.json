@@ -21,7 +21,8 @@
     "@intx/tools-lsp": "workspace:*",
     "@intx/tools-posix": "workspace:*",
     "@intx/types": "workspace:*",
-    "@workbench/approvals": "workspace:*"
+    "@workbench/approvals": "workspace:*",
+    "@workbench/sentry": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",
