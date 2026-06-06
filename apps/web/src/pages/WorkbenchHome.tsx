@@ -128,9 +128,21 @@ export default function WorkbenchHome() {
     setActiveModal('agent');
   };
 
+  const handleWorkbenchSelect = (slug: string) => {
+    setRightPane({ view: 'gallery' });
+    setLauncherHidden(false);
+    void navigate(`/workbenches/${slug}`);
+  };
+
   const handleAgentSelect = (selection: AgentSelection) => {
     setRightPane({ view: 'agent', ...selection });
     setLauncherHidden(true);
+  };
+
+  const handleAgentDeleted = () => {
+    setAgentRefreshTick((n) => n + 1);
+    setRightPane({ view: 'gallery' });
+    setLauncherHidden(false);
   };
 
   const paneTransition: Transition = { duration: 0.15, ease: [0.23, 1, 0.32, 1] };
@@ -190,6 +202,9 @@ export default function WorkbenchHome() {
               onClose={() => setRailOpen(false)}
               onNew={handleNew}
               onAgentSelect={handleAgentSelect}
+              onWorkbenchSelect={handleWorkbenchSelect}
+              onAgentDeleted={handleAgentDeleted}
+              activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
               refreshTick={agentRefreshTick}
             />
           </div>
@@ -220,6 +235,9 @@ export default function WorkbenchHome() {
           <LibraryRail
             onNew={handleNew}
             onAgentSelect={handleAgentSelect}
+            onWorkbenchSelect={handleWorkbenchSelect}
+            onAgentDeleted={handleAgentDeleted}
+            activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
             refreshTick={agentRefreshTick}
           />
         </div>

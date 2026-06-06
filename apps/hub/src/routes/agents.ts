@@ -1,6 +1,6 @@
 import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { schema as intxSchema, resolveCredentialById, resolveInstanceSources } from '@intx/db';
+import { schema as intxSchema, resolveCredentialById, resolveInstanceSources, getAncestorChain } from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
@@ -8,9 +8,10 @@ import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
 import { pushSourceUpdates } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { type } from 'arktype';
-import { encryptSecret, decryptSecret } from '@workbench/hub-crypto';
+import { encryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
 import { repairTenantAgentCredentials } from '../lib/agent-credential-repair';
+import { decryptSources } from '../lib/source-decryption';
 
 const log = getLogger(['api', 'agents']);
 
@@ -129,6 +130,41 @@ export function createAgentProvisioningRouter(
     });
 
     return c.json({ data: result });
+  });
+
+  app.delete('/tenants/:tenantId/agents/instances/:instanceId', async (c) => {
+    const userId = c.get('userId');
+    const tenantId = c.req.param('tenantId');
+    const instanceId = c.req.param('instanceId');
+
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, tenantId),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+
+    const instance = await db.query.agentInstance.findFirst({
+      where: and(eq(agentInstance.id, instanceId), eq(agentInstance.tenantId, tenantId)),
+    });
+    if (!instance) return c.json({ error: 'Agent instance not found' }, 404);
+
+    const now = new Date();
+    await db.transaction(async (rawTx) => {
+      const tx = rawTx as unknown as DB['db'];
+      await tx
+        .update(agentInstance)
+        .set({ status: 'stopped', endedAt: now, updatedAt: now })
+        .where(eq(agentInstance.id, instanceId));
+      await tx
+        .update(agent)
+        .set({ status: 'stopped', updatedAt: now })
+        .where(eq(agent.id, instance.agentId));
+    });
+
+    return c.body(null, 204);
   });
 
   // Provision an agent with existing credentials
@@ -358,7 +394,7 @@ export function createAgentProvisioningRouter(
       throw err;
     }
 
-    void pushSourceUpdates(db, sidecarRouter, tenantId);
+    void pushDecryptedSourceUpdates(db, sidecarRouter, tenantId);
 
     return c.json({ credentialId, providerId }, 201);
   });
@@ -379,8 +415,9 @@ export function createAgentProvisioningRouter(
       return c.json({ error: 'Forbidden' }, 403);
     }
 
+    const tenantChain = await getAncestorChain(db, tenantId);
     const credentials = await db.query.credential.findMany({
-      where: eq(credential.tenantId, tenantId),
+      where: inArray(credential.tenantId, tenantChain),
     });
 
     const result = await Promise.all(
@@ -468,7 +505,7 @@ export function createAgentProvisioningRouter(
       }
     });
 
-    void pushSourceUpdates(db, sidecarRouter, tenantId);
+    void pushDecryptedSourceUpdates(db, sidecarRouter, tenantId);
 
     return c.json({ credentialId }, 200);
   });
@@ -562,7 +599,7 @@ export function createAgentProvisioningRouter(
       })
       .where(eq(agent.id, agentId));
 
-    void pushSourceUpdates(db, sidecarRouter, effectiveTenantId);
+    void pushDecryptedSourceUpdates(db, sidecarRouter, effectiveTenantId);
 
     return c.json({}, 200);
   });
@@ -784,12 +821,18 @@ async function ensureAgentInstance(
   return { instanceId, agentId, instancePrincipalId, address, isNew: true };
 }
 
-function decryptSources<T extends { apiKey?: string }>(sources: T[], tenantId: string): T[] {
-  const keys = getConfig().credentialKeys;
-  return sources.map((s) => {
-    if (!s.apiKey?.startsWith('enc:')) return s;
-    return { ...s, apiKey: decryptSecret(keys, tenantId, s.apiKey) };
-  });
+async function pushDecryptedSourceUpdates(
+  db: DB['db'],
+  sidecarRouter: SidecarRouter,
+  tenantId: string
+): Promise<void> {
+  const decryptingRouter: SidecarRouter = {
+    ...sidecarRouter,
+    sendSourcesUpdate: (agentAddress, sources, defaultSource) =>
+      sidecarRouter.sendSourcesUpdate(agentAddress, decryptSources(sources, tenantId), defaultSource),
+  };
+
+  await pushSourceUpdates(db, decryptingRouter, tenantId);
 }
 
 async function launchAgentSession(

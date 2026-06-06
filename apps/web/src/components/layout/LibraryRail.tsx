@@ -7,8 +7,10 @@ import {
   listEnrichedCredentials,
   assignCredentialToAgent,
   getMyPrincipals,
+  deleteAgentInstance,
 } from '../../lib/hub-api';
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router';
 import type {
   AgentInstance,
   WorkbenchEntry,
@@ -196,7 +198,8 @@ function AgentCredentialEditor({
         const principals = await getMyPrincipals();
         const tenantIds = [...new Set(principals.map((p) => p.tenantId))];
         const lists = await Promise.all(tenantIds.map((id) => listEnrichedCredentials(id)));
-        setCredentials(lists.flat());
+        const byId = new Map(lists.flat().map((credential) => [credential.id, credential]));
+        setCredentials([...byId.values()]);
       } finally {
         setLoading(false);
       }
@@ -280,6 +283,9 @@ export interface LibraryRailProps {
   onClose?: () => void;
   onNew?: () => void;
   onAgentSelect?: (selection: AgentSelection) => void;
+  onWorkbenchSelect?: (slug: string) => void;
+  onAgentDeleted?: () => void;
+  activeAgentInstanceId?: string;
   refreshTick?: number;
 }
 
@@ -290,7 +296,15 @@ const SEGMENT_FILTER: Record<string, ResourceType | null> = {
   Agents: 'agent',
 };
 
-export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: LibraryRailProps = {}) {
+export function LibraryRail({
+  onClose,
+  onNew,
+  onAgentSelect,
+  onWorkbenchSelect,
+  onAgentDeleted,
+  activeAgentInstanceId,
+  refreshTick,
+}: LibraryRailProps = {}) {
   const {
     data: workflows,
     isLoading: sessionsLoading,
@@ -302,9 +316,11 @@ export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: Libr
     retry: retryWorkbenches,
   } = useWorkbenchesAndAgents(refreshTick);
 
+  const location = useLocation();
   const [activeSegment, setActiveSegment] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingCredentialFor, setEditingCredentialFor] = useState<string | null>(null);
+  const [deletingInstanceId, setDeletingInstanceId] = useState<string | null>(null);
 
   const sessionItems = (workflows ?? []).map(workflowToRailItem);
   const items: RailItem[] = [...sessionItems, ...workbenchAndAgentItems];
@@ -457,37 +473,50 @@ export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: Libr
                   onAgentSelect !== undefined &&
                   item.instanceId !== undefined &&
                   item.tenantId !== undefined;
+                const isClickableWorkbench = item.type === 'workbench' && onWorkbenchSelect !== undefined;
+                const isClickable = isClickableAgent || isClickableWorkbench;
+                const isActiveWorkbench =
+                  item.type === 'workbench' && location.pathname === `/workbenches/${item.sub}`;
+                const isActiveAgent = item.type === 'agent' && item.instanceId === activeAgentInstanceId;
                 const isEditingCred = editingCredentialFor === item.id;
+                const openItem = () => {
+                  if (isClickableAgent) {
+                    onAgentSelect({
+                      instanceId: item.instanceId!,
+                      tenantId: item.tenantId!,
+                      agentName: item.name,
+                    });
+                    return;
+                  }
+                  if (isClickableWorkbench) onWorkbenchSelect(item.sub);
+                };
+                const deleteAgent = async () => {
+                  if (!item.instanceId || !item.tenantId) return;
+                  setDeletingInstanceId(item.instanceId);
+                  try {
+                    await deleteAgentInstance(item.tenantId, item.instanceId);
+                    onAgentDeleted?.();
+                  } finally {
+                    setDeletingInstanceId(null);
+                  }
+                };
                 return (
                   <div key={item.id} className="rounded-[12px]">
                     <div
-                      role={isClickableAgent ? 'button' : undefined}
-                      tabIndex={isClickableAgent ? 0 : undefined}
-                      onClick={
-                        isClickableAgent
-                          ? () =>
-                              onAgentSelect!({
-                                instanceId: item.instanceId!,
-                                tenantId: item.tenantId!,
-                                agentName: item.name,
-                              })
-                          : undefined
-                      }
+                      role={isClickable ? 'button' : undefined}
+                      tabIndex={isClickable ? 0 : undefined}
+                      onClick={isClickable ? openItem : undefined}
                       onKeyDown={
-                        isClickableAgent
+                        isClickable
                           ? (e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
-                                onAgentSelect!({
-                                  instanceId: item.instanceId!,
-                                  tenantId: item.tenantId!,
-                                  agentName: item.name,
-                                });
+                                openItem();
                               }
                             }
                           : undefined
                       }
-                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)] ${isClickableAgent ? 'cursor-pointer' : ''}`}
+                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)] ${isClickable ? 'cursor-pointer' : ''} ${isActiveWorkbench || isActiveAgent ? 'bg-surface ring-1 ring-orange/60' : ''}`}
                     >
                       <StatusDot status={item.status} />
                       <div className="min-w-0 flex-1">
@@ -497,26 +526,48 @@ export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: Libr
                         <div className="mt-px font-mono text-[11.5px] text-text-3">{item.sub}</div>
                       </div>
                       {item.type === 'agent' && item.agentId && item.tenantId && (
-                        <button
-                          type="button"
-                          aria-label="Configure credential"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingCredentialFor(isEditingCred ? null : item.id);
-                          }}
-                          className={`grid h-[22px] w-[22px] flex-none place-items-center rounded-[6px] border border-border text-text-3 opacity-0 transition-opacity hover:text-text group-hover:opacity-100 ${isEditingCred ? 'opacity-100 text-orange' : ''}`}
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            className="h-[13px] w-[13px]"
+                        <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                          <button
+                            type="button"
+                            aria-label="Configure credential"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingCredentialFor(isEditingCred ? null : item.id);
+                            }}
+                            className={`grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text ${isEditingCred ? 'opacity-100 text-orange' : ''}`}
                           >
-                            <circle cx="12" cy="12" r="3" />
-                            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-                          </svg>
-                        </button>
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              className="h-[13px] w-[13px]"
+                            >
+                              <circle cx="12" cy="12" r="3" />
+                              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Delete agent"
+                            disabled={deletingInstanceId === item.instanceId}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Delete ${item.name}?`)) void deleteAgent();
+                            }}
+                            className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              className="h-[13px] w-[13px]"
+                            >
+                              <path d="M3 6h18M8 6V4h8v2M6 6l1 16h10l1-16" />
+                            </svg>
+                          </button>
+                        </div>
                       )}
                       <span
                         className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}

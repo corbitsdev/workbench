@@ -215,6 +215,10 @@ export async function listAgentInstances(tenantId: string): Promise<AgentInstanc
   return res.data;
 }
 
+export async function deleteAgentInstance(tenantId: string, instanceId: string): Promise<void> {
+  await hubFetch<void>('DELETE', `v1/tenants/${tenantId}/agents/instances/${instanceId}`);
+}
+
 export type LLMProviderType = 'anthropic' | 'openai' | 'google-genai' | 'openai-compatible';
 
 export type CreateTenantCredentialInput = {
