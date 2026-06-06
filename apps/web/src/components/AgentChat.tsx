@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import { convertInstanceEvents } from '@workbench/agents/browser';
-import { ChatPanel, type ChatAgentIdentity, type ChatMessage } from '@workbench/chat';
+import {
+  ChatPanel,
+  type ChatAgentIdentity,
+  type ChatMessage,
+  type ChatActivity,
+} from '@workbench/chat';
+import { type AgentActivity } from '@intx/hub-client';
 import { launchInstanceSession } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 
@@ -139,7 +145,13 @@ export function AgentChat({
 
   const { session } = sessionState;
   const messages = buildMessages(session);
-  const isTyping = !!session.streaming || !!session.activity;
+  function toChatActivity(a: AgentActivity | null): ChatActivity | null {
+    if (a === null) return null;
+    if (a.type === 'inferring') return { type: 'thinking' };
+    return a as ChatActivity;
+  }
+
+  const activity: ChatActivity | null = toChatActivity(session.activity);
 
   return (
     <ChatPanel
@@ -151,7 +163,7 @@ export function AgentChat({
           setSessionState({ phase: 'error', message });
         });
       }}
-      typing={isTyping}
+      activity={activity}
       onClose={onClose}
     />
   );

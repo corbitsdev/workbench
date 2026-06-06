@@ -82,6 +82,55 @@ describe('ChatPanel', () => {
     expect(screen.getByText('Ada is typing')).toBeDefined();
   });
 
+  it('shows an activity label instead of typing indicator when activity is present', () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        activity={{ type: 'thinking' }}
+      />
+    );
+    expect(screen.queryByTestId('typing-indicator')).toBeNull();
+    expect(screen.getByText('Ada is thinking')).toBeDefined();
+  });
+
+  it('shows a tool-specific activity label when a tool call is in progress', () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        activity={{ type: 'tool_call', name: 'exa_search' }}
+      />
+    );
+    expect(screen.getByText('Ada is calling exa_search')).toBeDefined();
+  });
+
+  it('shows a tool-running activity label when a tool is executing', () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        activity={{ type: 'tool_running', name: 'exa_search' }}
+      />
+    );
+    expect(screen.getByText('Ada is running exa_search')).toBeDefined();
+  });
+
+  it('shows a rate-limited activity label with retry timing', () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        activity={{ type: 'rate_limited', retryAfterMs: 3500 }}
+      />
+    );
+    expect(screen.getByText('Ada is rate-limited, retrying in 4s')).toBeDefined();
+  });
+
   it('fires onQuickReply when a chip is clicked', async () => {
     const user = userEvent.setup();
     const onQuickReply = mock((_reply: QuickReply) => {});

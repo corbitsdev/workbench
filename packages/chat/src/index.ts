@@ -7,6 +7,7 @@ export {
   type ChatOpenState,
   type ChatLauncherPosition,
   type ChatAgentIdentity,
+  type ChatActivity,
 } from './types';
 
 export { MessageBubble, type MessageBubbleProps } from './MessageBubble';

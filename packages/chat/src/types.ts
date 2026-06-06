@@ -33,6 +33,13 @@ export interface QuickReply {
   value?: string;
 }
 
+/** What the agent is currently doing, shown as a status indicator. */
+export type ChatActivity =
+  | { type: 'thinking' }
+  | { type: 'tool_call'; name: string }
+  | { type: 'tool_running'; name: string }
+  | { type: 'rate_limited'; retryAfterMs: number };
+
 /** Whether the chat is shown as a floating overlay or docked into the layout. */
 export type ChatDockState = 'floating' | 'docked';
 

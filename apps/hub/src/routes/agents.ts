@@ -17,7 +17,11 @@ import { encryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
 import { repairTenantAgentCredentials } from '../lib/agent-credential-repair';
 import { decryptSources } from '../lib/source-decryption';
-import { buildToolDefinitions, getToolNamesFromCapabilities } from '../lib/tool-registry';
+import {
+  buildToolDefinitions,
+  getToolNamesFromCapabilities,
+  KNOWN_TOOL_NAMES,
+} from '../lib/tool-registry';
 
 const log = getLogger(['api', 'agents']);
 
@@ -678,6 +682,11 @@ export function createAgentProvisioningRouter(
       .where(eq(agent.id, agentId));
 
     return c.json({ tools: toolNames }, 200);
+  });
+
+  // List available tools that can be attached to an agent.
+  app.get('/tools', async (c) => {
+    return c.json({ data: KNOWN_TOOL_NAMES });
   });
 
   // Launch (or relaunch) a session for an agent instance.

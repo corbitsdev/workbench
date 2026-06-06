@@ -19,6 +19,9 @@ export const KNOWN_TOOLS: Record<string, ToolDefinition> = {
   granola_get_note: GRANOLA_GET_NOTE_DEFINITION,
 };
 
+/** Names of all tools registered in KNOWN_TOOLS. */
+export const KNOWN_TOOL_NAMES: string[] = Object.keys(KNOWN_TOOLS);
+
 /**
  * Build a ToolDefinition list from an array of tool names, filtering out
  * any names that are not in the known registry.

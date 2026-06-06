@@ -5,6 +5,7 @@ import {
   type ChatDockState,
   type ChatMessage,
   type QuickReply,
+  type ChatActivity,
 } from './types';
 import { ChatThread } from './ChatThread';
 import { QuickReplyChips } from './QuickReplyChips';
@@ -16,6 +17,8 @@ export interface ChatPanelProps {
   /** Committed message text from the input bar. Host handles transport. */
   onSend: (text: string) => void;
   typing?: boolean;
+  /** What the agent is currently doing, shown as a contextual status label. */
+  activity?: ChatActivity | null;
   quickReplies?: QuickReply[];
   onQuickReply?: (reply: QuickReply) => void;
   /** Current dock mode; controls header affordances only. */
@@ -39,6 +42,7 @@ export function ChatPanel({
   messages,
   onSend,
   typing,
+  activity,
   quickReplies,
   onQuickReply,
   dockState = 'floating',
@@ -88,6 +92,8 @@ export function ChatPanel({
       <ChatThread
         messages={messages}
         {...(typing !== undefined ? { typing } : {})}
+        {...(activity !== undefined ? { activity } : {})}
+        agentName={agent.name}
         typingLabel={`${agent.name} is typing`}
       />
 

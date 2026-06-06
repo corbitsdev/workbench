@@ -10,7 +10,9 @@ import {
   type ChatAgentIdentity,
   type ChatDockState,
   type ChatMessage,
+  type ChatActivity,
 } from '@workbench/chat';
+import { type AgentActivity } from '@intx/hub-client';
 import { getMe, launchInstanceSession } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 import { useChatLauncher } from '../lib/chat-launcher-context';
@@ -241,7 +243,13 @@ export function PersonalAgentChat() {
 
     const { session } = sessionState;
     const messages = buildMessages(session);
-    const isTyping = !!session.streaming || !!session.activity;
+    function toChatActivity(a: AgentActivity | null): ChatActivity | null {
+      if (a === null) return null;
+      if (a.type === 'inferring') return { type: 'thinking' };
+      return a as ChatActivity;
+    }
+
+    const activity: ChatActivity | null = toChatActivity(session.activity);
 
     // Send mail, recovering from a dropped session. A hub or sidecar restart
     // leaves the instance not running, so the first send 409s; relaunching the
@@ -281,7 +289,7 @@ export function PersonalAgentChat() {
         agent={MYRA}
         messages={messages}
         onSend={handleSend}
-        typing={isTyping}
+        activity={activity}
         dockState={dockState}
         onToggleDock={toggleDock}
         onClose={() => setOpen(false)}

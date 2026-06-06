@@ -218,6 +218,11 @@ export async function updateAgentTools(
   });
 }
 
+export async function listAvailableTools(): Promise<string[]> {
+  const res = await hubFetch<{ data: string[] }>('GET', 'v1/tools');
+  return res.data;
+}
+
 export async function listAgentInstances(tenantId: string): Promise<AgentInstance[]> {
   const res = await hubFetch<{ data: AgentInstance[] }>(
     'GET',
@@ -231,6 +236,13 @@ export async function deleteAgentInstance(tenantId: string, instanceId: string):
 }
 
 export type LLMProviderType = 'anthropic' | 'openai' | 'google-genai' | 'openai-compatible';
+
+export const INFERENCE_PROVIDER_NAMES: LLMProviderType[] = [
+  'anthropic',
+  'openai',
+  'google-genai',
+  'openai-compatible',
+];
 
 export type CreateTenantCredentialInput = {
   provider: string;

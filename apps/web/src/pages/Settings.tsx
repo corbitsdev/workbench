@@ -107,7 +107,6 @@ export default function Settings() {
             />
           </svg>
         </Link>
-
       </div>
       <SettingsPage
         sections={SECTIONS}

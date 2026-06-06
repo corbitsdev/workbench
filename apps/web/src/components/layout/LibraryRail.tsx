@@ -7,6 +7,9 @@ import {
   listEnrichedCredentials,
   assignCredentialToAgent,
   deleteAgentInstance,
+  listAvailableTools,
+  updateAgentTools,
+  INFERENCE_PROVIDER_NAMES,
 } from '../../lib/hub-api';
 import type {
   AgentInstance,
@@ -34,6 +37,7 @@ interface RailItem {
   agentId?: string;
   agentStatus?: string;
   credentialRequirements?: CredentialRequirement[];
+  capabilities?: Record<string, unknown> | null;
 }
 
 function agentToRailItem(a: AgentInstance): RailItem {
@@ -52,6 +56,7 @@ function agentToRailItem(a: AgentInstance): RailItem {
     agentId: a.agentId,
     agentStatus: a.status,
     credentialRequirements: a.credentialRequirements,
+    capabilities: a.capabilities,
   };
 }
 
@@ -190,6 +195,10 @@ function AgentCredentialEditor({
 
   const currentCredName = currentRequirements[0]?.name ?? '';
 
+  const inferenceCredentials = credentials.filter((c) =>
+    INFERENCE_PROVIDER_NAMES.includes(c.providerPlugin as (typeof INFERENCE_PROVIDER_NAMES)[number])
+  );
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -224,11 +233,11 @@ function AgentCredentialEditor({
       {error && <p className="mb-2 text-[11px] text-orange-deep">{error}</p>}
       <select
         name="credentialId"
-        defaultValue={credentials.find((c) => c.name === currentCredName)?.id ?? ''}
+        defaultValue={inferenceCredentials.find((c) => c.name === currentCredName)?.id ?? ''}
         disabled={saving}
         className="mb-2 w-full rounded-[8px] border border-border bg-bg px-2 py-1.5 text-[12px] text-text outline-none focus:border-orange disabled:opacity-50"
       >
-        {credentials.map((c) => (
+        {inferenceCredentials.map((c) => (
           <option key={c.id} value={c.id}>
             {c.name} ({c.providerPlugin})
           </option>
@@ -237,7 +246,132 @@ function AgentCredentialEditor({
       <div className="flex gap-2">
         <button
           type="submit"
-          disabled={saving || credentials.length === 0}
+          disabled={saving || inferenceCredentials.length === 0}
+          className="rounded-[7px] bg-orange px-2.5 py-1 text-[12px] font-medium text-white hover:bg-orange-deep disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          className="rounded-[7px] border border-border px-2.5 py-1 text-[12px] text-text-2 hover:text-text disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function AgentToolEditor({
+  tenantId,
+  agentId,
+  currentCapabilities,
+  onSaved,
+  onCancel,
+}: {
+  tenantId: string;
+  agentId: string;
+  currentCapabilities: Record<string, unknown> | null;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [availableTools, setAvailableTools] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const currentTools = Array.isArray(currentCapabilities?.tools)
+    ? currentCapabilities.tools.filter((t): t is string => typeof t === 'string')
+    : [];
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const tools = await listAvailableTools();
+        setAvailableTools(tools);
+        setSelected(new Set(currentTools));
+      } catch {
+        setError('Failed to load available tools.');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const toggleTool = (name: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await updateAgentTools(tenantId, agentId, Array.from(selected));
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update tools.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <p className="px-3 py-2 text-[12px] text-text-3">Loading tools…</p>;
+  }
+
+  if (availableTools.length === 0) {
+    return (
+      <div className="mt-1 rounded-[10px] border border-border bg-surface px-3 py-3">
+        <p className="text-[12px] text-text-3">No tools available.</p>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={(e) => void handleSubmit(e)}
+      className="mt-1 rounded-[10px] border border-border bg-surface px-3 py-3"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.04em] text-text-3">Tools</p>
+      {error && <p className="mb-2 text-[11px] text-orange-deep">{error}</p>}
+      <div className="mb-2 flex flex-wrap gap-2">
+        {availableTools.map((name) => (
+          <label
+            key={name}
+            className={`flex cursor-pointer items-center gap-1.5 rounded-[7px] border px-2 py-1 text-[12px] transition-colors ${
+              selected.has(name)
+                ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
+                : 'border-border text-text-2 hover:text-text'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={selected.has(name)}
+              onChange={() => toggleTool(name)}
+              disabled={saving}
+              className="h-3 w-3 accent-orange"
+            />
+            {name}
+          </label>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={saving}
           className="rounded-[7px] bg-orange px-2.5 py-1 text-[12px] font-medium text-white hover:bg-orange-deep disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Save'}
@@ -305,6 +439,7 @@ export function LibraryRail({
   const [activeSegment, setActiveSegment] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingCredentialFor, setEditingCredentialFor] = useState<string | null>(null);
+  const [editingToolsFor, setEditingToolsFor] = useState<string | null>(null);
   const [deletingInstanceId, setDeletingInstanceId] = useState<string | null>(null);
 
   // Resolve the tenantId for the active workbench so agents can be scoped.
@@ -529,6 +664,7 @@ export function LibraryRail({
                   item.type === 'agent' && item.instanceId === activeAgentInstanceId;
                 const isActiveWorkflow = item.type === 'workflow' && item.id === activeWorkflowId;
                 const isEditingCred = editingCredentialFor === item.id;
+                const isEditingTools = editingToolsFor === item.id;
 
                 const openItem = () => {
                   if (isClickableAgent) {
@@ -583,10 +719,31 @@ export function LibraryRail({
                         <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                           <button
                             type="button"
+                            aria-label="Configure tools"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingToolsFor(isEditingTools ? null : item.id);
+                              if (!isEditingTools) setEditingCredentialFor(null);
+                            }}
+                            className={`grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text ${isEditingTools ? 'opacity-100 text-orange' : ''}`}
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              className="h-[13px] w-[13px]"
+                            >
+                              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
                             aria-label="Configure credential"
                             onClick={(e) => {
                               e.stopPropagation();
                               setEditingCredentialFor(isEditingCred ? null : item.id);
+                              if (!isEditingCred) setEditingToolsFor(null);
                             }}
                             className={`grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text ${isEditingCred ? 'opacity-100 text-orange' : ''}`}
                           >
@@ -644,6 +801,17 @@ export function LibraryRail({
                           currentRequirements={item.credentialRequirements ?? []}
                           onSaved={() => setEditingCredentialFor(null)}
                           onCancel={() => setEditingCredentialFor(null)}
+                        />
+                      </div>
+                    )}
+                    {isEditingTools && item.agentId && item.tenantId && (
+                      <div className="px-[11px] pb-2">
+                        <AgentToolEditor
+                          tenantId={item.tenantId}
+                          agentId={item.agentId}
+                          currentCapabilities={item.capabilities ?? null}
+                          onSaved={() => setEditingToolsFor(null)}
+                          onCancel={() => setEditingToolsFor(null)}
                         />
                       </div>
                     )}

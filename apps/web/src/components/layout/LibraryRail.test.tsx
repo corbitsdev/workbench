@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { LibraryRailProps } from './LibraryRail';
@@ -73,6 +73,9 @@ mock.module('../../lib/hub-api', () => ({
   ),
   assignCredentialToAgent: mock(() => Promise.resolve()),
   deleteAgentInstance: mock(() => Promise.resolve()),
+  listAvailableTools: mock(() => Promise.resolve([])),
+  updateAgentTools: mock(() => Promise.resolve()),
+  INFERENCE_PROVIDER_NAMES: ['anthropic', 'openai', 'google-genai', 'openai-compatible'],
 }));
 
 function renderWithClient(ui: React.ReactElement) {
@@ -116,5 +119,83 @@ describe('LibraryRail', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'New agent' })).toBeNull();
     });
+  });
+
+  it('only shows inference credentials in the agent credential editor', async () => {
+    const { listWorkbenches, listAgentInstances, listEnrichedCredentials } =
+      await import('../../lib/hub-api');
+    (listWorkbenches as ReturnType<typeof mock>).mockImplementation(() =>
+      Promise.resolve([{ id: 'wb-1', tenantId: 'tn-1', tenantSlug: 'acme', tenantName: 'Acme' }])
+    );
+    (listAgentInstances as ReturnType<typeof mock>).mockImplementation(() =>
+      Promise.resolve([
+        {
+          id: 'inst-1',
+          agentId: 'ag-1',
+          agentName: 'Loop',
+          tenantId: 'tn-1',
+          address: '',
+          status: 'running',
+          credentialRequirements: [
+            { providerName: 'openai-compatible', source: 'tenant', name: 'Zen Test' },
+          ],
+          capabilities: null,
+          createdAt: new Date().toISOString(),
+        },
+      ])
+    );
+    (listEnrichedCredentials as ReturnType<typeof mock>).mockImplementation(() =>
+      Promise.resolve([
+        {
+          id: 'cred-1',
+          name: 'Zen Test',
+          tenantId: 'tn-1',
+          providerPlugin: 'openai-compatible',
+          providerName: 'openai-compatible',
+          providerId: 'pid-1',
+          status: 'active',
+          baseURL: '',
+          model: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'cred-2',
+          name: 'Exa Key',
+          tenantId: 'tn-1',
+          providerPlugin: 'exa',
+          providerName: 'exa',
+          providerId: 'pid-2',
+          status: 'active',
+          baseURL: '',
+          model: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ])
+    );
+
+    const { LibraryRail } = await import('./LibraryRail');
+    renderWithClient(
+      React.createElement(LibraryRail as React.FC<LibraryRailProps>, {
+        activeWorkbenchSlug: 'acme',
+        onAgentSelect: () => void 0,
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Loop')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configure credential' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox')).toBeDefined();
+    });
+
+    const options = screen.getAllByRole('option');
+    expect(options.length).toBe(1);
+    expect(options[0].textContent).toContain('Zen Test');
+    expect(options[0].textContent).not.toContain('Exa');
   });
 });

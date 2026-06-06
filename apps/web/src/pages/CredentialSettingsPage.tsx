@@ -11,11 +11,12 @@ import {
   assignCredentialToAgent,
   updateAgentTools,
 } from '../lib/hub-api';
-import type {
-  LLMProviderType,
-  CreateTenantCredentialInput,
-  EnrichedCredential,
-  AgentInstance,
+import {
+  INFERENCE_PROVIDER_NAMES,
+  type LLMProviderType,
+  type CreateTenantCredentialInput,
+  type EnrichedCredential,
+  type AgentInstance,
 } from '../lib/hub-api';
 import { PROVIDER_REGISTRY, providerByName } from '../lib/providerRegistry';
 
@@ -44,8 +45,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   'openai-compatible': 'OpenAI-compatible',
 };
 
-const INFERENCE_PROVIDER_NAMES = ['anthropic', 'openai', 'google-genai', 'openai-compatible'];
-
 function getAgentTools(capabilities: Record<string, unknown> | null): string[] {
   if (!capabilities || typeof capabilities !== 'object') return [];
   const tools = capabilities['tools'];
@@ -61,7 +60,7 @@ function modelListForProvider(p: LLMProviderType | string) {
 }
 
 function isInferenceProvider(p: string): p is LLMProviderType {
-  return INFERENCE_PROVIDER_NAMES.includes(p);
+  return (INFERENCE_PROVIDER_NAMES as readonly string[]).includes(p);
 }
 
 function providerLabel(plugin: string): string {
@@ -288,11 +287,7 @@ export default function CredentialSettingsPage() {
   const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null);
   const [togglingTool, setTogglingTool] = useState<string | null>(null);
 
-  const handleToggleTool = async (
-    agent: AgentInstance,
-    toolName: string,
-    enabled: boolean
-  ) => {
+  const handleToggleTool = async (agent: AgentInstance, toolName: string, enabled: boolean) => {
     const current = getAgentTools(agent.capabilities);
     const next = enabled
       ? [...new Set([...current, toolName])]
