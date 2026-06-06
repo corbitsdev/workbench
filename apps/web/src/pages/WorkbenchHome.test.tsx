@@ -119,7 +119,7 @@ describe('WorkbenchHome mobile layout', () => {
     await user.click(openBtn);
     expect(screen.getByLabelText('Search workflows, agents')).toBeDefined();
 
-    await user.click(screen.getByRole('button', { name: /close workspace/i }));
+    await user.click(screen.getByRole('button', { name: /close workbench/i }));
     expect(screen.queryByLabelText('Search workflows, agents')).toBeNull();
   });
 });

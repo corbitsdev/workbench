@@ -141,7 +141,11 @@ export default function WorkbenchHome() {
   function renderRightPane() {
     if (rightPane.view === 'agent') {
       return (
-        <motion.div key={`agent-${rightPane.instanceId}`} {...paneFade} className="min-h-0 flex-1">
+        <motion.div
+          key={`agent-${rightPane.instanceId}`}
+          {...paneFade}
+          className="min-h-0 flex-1 overflow-hidden rounded-panel border border-border"
+        >
           <AgentChat
             instanceId={rightPane.instanceId}
             tenantId={rightPane.tenantId}

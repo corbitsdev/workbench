@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import {
   createBrowserTransport,
   createInstanceSession,
@@ -6,6 +7,7 @@ import {
 } from '@intx/hub-client';
 import { convertInstanceEvents } from '@workbench/agents';
 import { ChatPanel, type ChatAgentIdentity, type ChatMessage } from '@workbench/chat';
+import { launchInstanceSession } from '../lib/hub-api';
 
 type SessionState =
   | { phase: 'loading' }
@@ -28,7 +30,25 @@ export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentCha
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
 
+  // Launch the sidecar session. Errors are silently ignored — the session may
+  // already be running, in which case the subscription below will still hydrate.
+  const { mutate: launch, status: launchStatus } = useMutation({
+    mutationFn: () => launchInstanceSession(instanceId),
+    onError: () => {},
+  });
+
+  // Trigger launch once when the component mounts or instanceId changes.
+  const prevInstanceRef = useRef<string | null>(null);
+  if (prevInstanceRef.current !== instanceId) {
+    prevInstanceRef.current = instanceId;
+    launch();
+  }
+
+  // Subscription lifecycle — syncs to the external Interchange session.
+  // Runs after launch settles (success or error) so the sidecar is ready.
   useEffect(() => {
+    if (launchStatus === 'pending') return;
+
     let cancelled = false;
 
     const transport = createBrowserTransport();
@@ -56,7 +76,7 @@ export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentCha
       sessionRef.current?.destroy();
       sessionRef.current = null;
     };
-  }, [instanceId, tenantId]);
+  }, [instanceId, tenantId, launchStatus]);
 
   function buildMessages(session: InstanceSession): ChatMessage[] {
     const committed = convertInstanceEvents(session.events);

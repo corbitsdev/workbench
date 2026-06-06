@@ -336,13 +336,13 @@ export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: Libr
       <div className="px-[18px] pb-[10px] pt-[18px]">
         <div className="flex items-center justify-between">
           <div className="text-[13px] font-bold uppercase tracking-[0.04em] text-text-3">
-            Workspace
+            Workbench
           </div>
           {onClose && (
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close workspace"
+              aria-label="Close workbench"
               className="grid h-[30px] w-[30px] place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
             >
               <svg
@@ -402,7 +402,7 @@ export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: Libr
 
       <div className="flex-1 overflow-y-auto px-[10px] pb-[22px] pt-1">
         {isLoading && (
-          <div className="px-[10px] py-6 text-[13px] text-text-3">Loading workspace…</div>
+          <div className="px-[10px] py-6 text-[13px] text-text-3">Loading workbench…</div>
         )}
         {isError && (
           <div className="px-[10px] py-6 text-[13px] text-text-3">Could not load sessions.</div>
