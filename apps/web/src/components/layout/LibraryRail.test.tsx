@@ -72,6 +72,7 @@ mock.module('../../lib/hub-api', () => ({
     Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })
   ),
   assignCredentialToAgent: mock(() => Promise.resolve()),
+  deleteAgentInstance: mock(() => Promise.resolve()),
 }));
 
 function renderWithClient(ui: React.ReactElement) {

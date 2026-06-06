@@ -12,6 +12,7 @@ import { getMe, listWorkbenches } from '../lib/hub-api';
 import { useChatLauncher } from '../lib/chat-launcher-context';
 import type { AgentSelection } from '../components/layout/LibraryRail';
 import type { ProvisionAgentResponse } from '../lib/hub-api';
+import type { WorkbenchEntry } from '../lib/hub-api';
 
 type ProvisioningState =
   | { status: 'loading' }
@@ -71,12 +72,17 @@ type RightPane =
   | { view: 'gallery' }
   | { view: 'agent'; instanceId: string; tenantId: string; agentName: string };
 
-function useWorkspaceTenantId(slug: string | undefined): string | null {
+function useWorkspaceContext(slug: string | undefined): {
+  tenantId: string | null;
+  workbenches: WorkbenchEntry[];
+} {
   const [tenantId, setTenantId] = useState<string | null>(null);
+  const [workbenches, setWorkbenches] = useState<WorkbenchEntry[]>([]);
 
   useEffect(() => {
     listWorkbenches()
       .then((entries) => {
+        setWorkbenches(entries);
         const match = slug ? entries.find((entry) => entry.tenantSlug === slug) : undefined;
         setTenantId((match ?? entries[0])?.tenantId ?? null);
       })
@@ -85,7 +91,7 @@ function useWorkspaceTenantId(slug: string | undefined): string | null {
       });
   }, [slug]);
 
-  return tenantId;
+  return { tenantId, workbenches };
 }
 
 export default function WorkbenchHome() {
@@ -97,10 +103,20 @@ export default function WorkbenchHome() {
   const [activeModal, setActiveModal] = useState<NewModal>('none');
   const [agentRefreshTick, setAgentRefreshTick] = useState(0);
   const { slug } = useParams<{ slug?: string }>();
-  const routeWorkspaceTenantId = useWorkspaceTenantId(slug);
   const navigate = useNavigate();
   const { setHidden: setLauncherHidden } = useChatLauncher();
-  const workspaceTenantId = rightPane.view === 'agent' ? rightPane.tenantId : routeWorkspaceTenantId;
+  const { tenantId: workspaceTenantId } = useWorkspaceContext(slug);
+
+  // Auto-redirect from "/" to the first available workbench.
+  useEffect(() => {
+    if (slug) return;
+    listWorkbenches()
+      .then((entries) => {
+        const first = entries[0];
+        if (first) void navigate(`/workbenches/${first.tenantSlug}`, { replace: true });
+      })
+      .catch(() => {});
+  }, [slug, navigate]);
 
   useEffect(() => {
     if (provisioningState.status === 'needs-onboarding') {
@@ -116,9 +132,9 @@ export default function WorkbenchHome() {
     );
   }
 
-  const handleWorkbenchCreated = (slug: string) => {
+  const handleWorkbenchCreated = (newSlug: string) => {
     setActiveModal('none');
-    void navigate(`/workbenches/${slug}`);
+    void navigate(`/workbenches/${newSlug}`);
   };
 
   const handleAgentCreated = (_response: ProvisionAgentResponse) => {
@@ -130,10 +146,8 @@ export default function WorkbenchHome() {
     setActiveModal('agent');
   };
 
-  const handleWorkbenchSelect = (slug: string) => {
-    setRightPane({ view: 'gallery' });
-    setLauncherHidden(false);
-    void navigate(`/workbenches/${slug}`);
+  const handleWorkbenchSelect = (selectedSlug: string) => {
+    void navigate(`/workbenches/${selectedSlug}`);
   };
 
   const handleAgentSelect = (selection: AgentSelection) => {
@@ -203,10 +217,12 @@ export default function WorkbenchHome() {
             <LibraryRail
               onClose={() => setRailOpen(false)}
               onNew={handleNew}
+              onNewWorkbench={() => setActiveModal('workbench')}
               onAgentSelect={handleAgentSelect}
               onWorkbenchSelect={handleWorkbenchSelect}
               onAgentDeleted={handleAgentDeleted}
               activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
+              activeWorkbenchSlug={slug}
               refreshTick={agentRefreshTick}
             />
           </div>
@@ -236,10 +252,12 @@ export default function WorkbenchHome() {
         <div className={`sticky top-0 self-start ${RAIL_HEIGHT}`}>
           <LibraryRail
             onNew={handleNew}
+            onNewWorkbench={() => setActiveModal('workbench')}
             onAgentSelect={handleAgentSelect}
             onWorkbenchSelect={handleWorkbenchSelect}
             onAgentDeleted={handleAgentDeleted}
             activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
+            activeWorkbenchSlug={slug}
             refreshTick={agentRefreshTick}
           />
         </div>

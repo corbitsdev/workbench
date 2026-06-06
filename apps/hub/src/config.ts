@@ -68,6 +68,10 @@ export function loadConfig() {
       apiKey: optionalEnv('GRANOLA_API_KEY'),
       baseUrl: 'https://public-api.granola.ai/v1',
     },
+    exa: {
+      apiKey: optionalEnv('EXA_API_KEY'),
+      baseUrl: 'https://api.exa.ai',
+    },
     hub: {
       dataDir: requireEnv('HUB_DATA_DIR'),
       signingKeys: requireEnv('HUB_SIGNING_KEYS'),

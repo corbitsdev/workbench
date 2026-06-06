@@ -1,6 +1,11 @@
 import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { schema as intxSchema, resolveCredentialById, resolveInstanceSources, getAncestorChain } from '@intx/db';
+import {
+  schema as intxSchema,
+  resolveCredentialById,
+  resolveInstanceSources,
+  getAncestorChain,
+} from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
@@ -12,6 +17,7 @@ import { encryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
 import { repairTenantAgentCredentials } from '../lib/agent-credential-repair';
 import { decryptSources } from '../lib/source-decryption';
+import { buildToolDefinitions, getToolNamesFromCapabilities } from '../lib/tool-registry';
 
 const log = getLogger(['api', 'agents']);
 
@@ -604,6 +610,75 @@ export function createAgentProvisioningRouter(
     return c.json({}, 200);
   });
 
+  // Manage tools attached to an agent.
+  // Pass tools: string[] to replace the entire list, or add/remove arrays to mutate.
+  app.patch('/tenants/:tenantId/agents/:agentId/tools', async (c) => {
+    const userId = c.get('userId');
+    const tenantId = c.req.param('tenantId');
+    const agentId = c.req.param('agentId');
+
+    const raw = await c.req.json().catch(() => null);
+    if (!raw || typeof raw !== 'object') {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const hasTools =
+      Array.isArray(raw.tools) && raw.tools.every((t: unknown) => typeof t === 'string');
+    const hasAdd = Array.isArray(raw.add) && raw.add.every((t: unknown) => typeof t === 'string');
+    const hasRemove =
+      Array.isArray(raw.remove) && raw.remove.every((t: unknown) => typeof t === 'string');
+    if (!hasTools && !hasAdd && !hasRemove) {
+      return c.json({ error: 'tools, add, or remove (string array) required' }, 400);
+    }
+
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, tenantId),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+
+    const agentRow = await db.query.agent.findFirst({
+      where: and(eq(agent.id, agentId), eq(agent.tenantId, tenantId)),
+    });
+    if (!agentRow) return c.json({ error: 'Agent not found' }, 404);
+
+    const capabilities = (agentRow.capabilities as Record<string, unknown> | null) ?? {};
+    let toolNames: string[];
+
+    if (Array.isArray(raw.tools)) {
+      toolNames = raw.tools.filter((t: unknown): t is string => typeof t === 'string');
+    } else {
+      const current = Array.isArray(capabilities['tools'])
+        ? capabilities['tools'].filter((t: unknown): t is string => typeof t === 'string')
+        : [];
+      const toAdd = Array.isArray(raw.add)
+        ? raw.add.filter((t: unknown): t is string => typeof t === 'string')
+        : [];
+      const toRemove = Array.isArray(raw.remove)
+        ? raw.remove.filter((t: unknown): t is string => typeof t === 'string')
+        : [];
+      const removeSet = new Set(toRemove);
+      toolNames = [...new Set([...current, ...toAdd])].filter((t) => !removeSet.has(t));
+    }
+
+    const updatedCapabilities: Record<string, unknown> = {
+      ...capabilities,
+      tools: toolNames,
+    };
+
+    await db
+      .update(agent)
+      .set({
+        capabilities: updatedCapabilities,
+        updatedAt: new Date(),
+      })
+      .where(eq(agent.id, agentId));
+
+    return c.json({ tools: toolNames }, 200);
+  });
+
   // Launch (or relaunch) a session for an agent instance.
   // Credentials are resolved via Interchange's credential-requirement resolution — no IDs needed.
   app.post('/instances/:instanceId/sessions', async (c) => {
@@ -829,7 +904,11 @@ async function pushDecryptedSourceUpdates(
   const decryptingRouter: SidecarRouter = {
     ...sidecarRouter,
     sendSourcesUpdate: (agentAddress, sources, defaultSource) =>
-      sidecarRouter.sendSourcesUpdate(agentAddress, decryptSources(sources, tenantId), defaultSource),
+      sidecarRouter.sendSourcesUpdate(
+        agentAddress,
+        decryptSources(sources, tenantId),
+        defaultSource
+      ),
   };
 
   await pushSourceUpdates(db, decryptingRouter, tenantId);
@@ -887,6 +966,12 @@ async function launchAgentSession(
 
   const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
 
+  const agentRow = await db.query.agent.findFirst({
+    where: eq(agent.id, agentId),
+  });
+  const toolNames = getToolNamesFromCapabilities(agentRow?.capabilities ?? null);
+  const tools = buildToolDefinitions(toolNames);
+
   const launchConfig = {
     agentAddress: address,
     agentId,
@@ -898,7 +983,7 @@ async function launchAgentSession(
       principalId: instancePrincipalId,
       agentAddress: address,
       systemPrompt,
-      tools: [],
+      tools,
       grants,
       sources,
       defaultSource,

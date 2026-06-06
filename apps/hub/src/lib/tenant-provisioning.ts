@@ -3,6 +3,7 @@ import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
 import { generateId } from '@intx/hub-common';
+import { getConfig } from '../config';
 
 const log = getLogger(['api', 'tenant-provisioning']);
 
@@ -408,6 +409,11 @@ export async function provisionMyraInstance(
   const now = new Date();
   const agentId = existingAgent?.id ?? generateId('agent');
 
+  const defaultTools: string[] = [];
+  if (getConfig().exa.apiKey) {
+    defaultTools.push('exa_search');
+  }
+
   if (!existingAgent) {
     const agentRows = await db
       .insert(agent)
@@ -417,6 +423,7 @@ export async function provisionMyraInstance(
         creatorPrincipalId: opts.creatorPrincipalId,
         name: 'Myra',
         systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
+        capabilities: defaultTools.length > 0 ? { tools: defaultTools } : null,
         status: 'deployed',
         currentVersion: '1',
         createdAt: now,

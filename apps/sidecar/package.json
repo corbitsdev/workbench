@@ -22,7 +22,8 @@
     "@intx/tools-posix": "workspace:*",
     "@intx/types": "workspace:*",
     "@workbench/approvals": "workspace:*",
-    "@workbench/sentry": "workspace:*"
+    "@workbench/sentry": "workspace:*",
+    "@workbench/tools-exa": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

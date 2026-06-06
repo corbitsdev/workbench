@@ -12,11 +12,40 @@ import type { InferenceSource } from '@intx/types/runtime';
 import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
 import { createAskPrincipalTool } from '@workbench/approvals';
 import { createToolRunner } from '@intx/agent';
+import { createExaTools } from '@workbench/tools-exa';
+import type { ToolDefinition, ToolRunner } from '@intx/types/runtime';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
 
 export function wsUrlToHttp(wsUrl: string): string {
   return wsUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+}
+
+/**
+ * Filter a merged tool runner to only expose the tool definitions the hub
+ * configured for this agent. The underlying handlers remain available so
+ * that the sidecar can safely add new tools without the hub needing to
+ * know about them at launch time; only the model-visible definitions are
+ * gated.
+ */
+function filterToolRunner(
+  runner: ToolRunner & { definitions: ToolDefinition[] },
+  allowedNames: Set<string>
+): ToolRunner & { definitions: ToolDefinition[] } {
+  const filtered = runner.definitions.filter((d) => allowedNames.has(d.name));
+  return {
+    definitions: filtered,
+    async run(call, signal) {
+      if (!allowedNames.has(call.name)) {
+        return {
+          callId: call.id,
+          content: { error: `Tool "${call.name}" is not enabled for this agent` },
+          isError: true,
+        };
+      }
+      return runner.run(call, signal);
+    },
+  };
 }
 
 type HarnessBuilderOpts = {
@@ -78,10 +107,21 @@ export function createDefaultHarnessBuilder({
         }),
       ]);
 
-      const tools = mergeToolRunners([
+      const exaApiKey = process.env['EXA_API_KEY'];
+      const exaTools = exaApiKey ? createExaTools({ apiKey: exaApiKey }) : [];
+      const exaRunner = exaTools.length > 0 ? createToolRunner(exaTools) : null;
+
+      const runners: (ToolRunner & { definitions: ToolDefinition[] })[] = [
         posixTools,
-        askPrincipalRunner as unknown as typeof posixTools,
-      ]);
+        askPrincipalRunner as unknown as ToolRunner & { definitions: ToolDefinition[] },
+      ];
+      if (exaRunner !== null) {
+        runners.push(exaRunner as unknown as ToolRunner & { definitions: ToolDefinition[] });
+      }
+
+      const allTools = mergeToolRunners(runners);
+      const allowedNames = new Set(agentConfig.tools.map((t) => t.name));
+      const tools = filterToolRunner(allTools, allowedNames);
 
       try {
         const harness = createHarness({

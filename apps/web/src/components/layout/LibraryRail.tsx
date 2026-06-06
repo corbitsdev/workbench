@@ -8,17 +8,17 @@ import {
   assignCredentialToAgent,
   deleteAgentInstance,
 } from '../../lib/hub-api';
-import { useEffect, useState } from 'react';
-import { useLocation } from 'react-router';
 import type {
   AgentInstance,
   WorkbenchEntry,
   EnrichedCredential,
   CredentialRequirement,
 } from '../../lib/hub-api';
+import { useEffect, useState } from 'react';
 
-type ResourceType = 'workflow' | 'workbench' | 'agent';
+type ResourceType = 'workflow' | 'agent';
 type ResourceStatus = 'run' | 'done' | 'idle';
+type RailGroup = 'Agents' | 'Sessions';
 
 interface RailItem {
   id: string;
@@ -35,23 +35,10 @@ interface RailItem {
   credentialRequirements?: CredentialRequirement[];
 }
 
-function workbenchToRailItem(w: WorkbenchEntry): RailItem {
-  return {
-    id: w.id,
-    group: 'Workbenches and agents',
-    name: w.tenantName,
-    type: 'workbench',
-    sub: w.tenantSlug,
-    status: 'idle',
-    who: w.tenantName.slice(0, 2).toUpperCase(),
-    color: 'var(--blue)',
-  };
-}
-
 function agentToRailItem(a: AgentInstance): RailItem {
   return {
     id: a.id,
-    group: 'Workbenches and agents',
+    group: 'Agents',
     name: a.agentName,
     type: 'agent',
     sub: `Agent · ${a.status}`,
@@ -66,12 +53,14 @@ function agentToRailItem(a: AgentInstance): RailItem {
 }
 
 function useWorkbenchesAndAgents(externalTick = 0): {
-  items: RailItem[];
+  workbenches: WorkbenchEntry[];
+  agentItems: RailItem[];
   isLoading: boolean;
   error: boolean;
   retry: () => void;
 } {
-  const [items, setItems] = useState<RailItem[]>([]);
+  const [workbenches, setWorkbenches] = useState<WorkbenchEntry[]>([]);
+  const [agentItems, setAgentItems] = useState<RailItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
   const [tick, setTick] = useState(0);
@@ -86,15 +75,13 @@ function useWorkbenchesAndAgents(externalTick = 0): {
 
     void (async () => {
       try {
-        const workbenches = await listWorkbenches();
-        const workbenchItems = workbenches.map(workbenchToRailItem);
+        const entries = await listWorkbenches();
+        setWorkbenches(entries);
 
         const agentLists = await Promise.all(
-          workbenches.map((w) => listAgentInstances(w.tenantId).catch(() => []))
+          entries.map((w) => listAgentInstances(w.tenantId).catch(() => []))
         );
-        const agentItems = agentLists.flat().map(agentToRailItem);
-
-        setItems([...workbenchItems, ...agentItems]);
+        setAgentItems(agentLists.flat().map(agentToRailItem));
         setError(false);
       } catch {
         setError(true);
@@ -106,7 +93,7 @@ function useWorkbenchesAndAgents(externalTick = 0): {
 
   const retry = () => setTick((n) => n + 1);
 
-  return { items, isLoading, error, retry };
+  return { workbenches, agentItems, isLoading, error, retry };
 }
 
 const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
@@ -136,18 +123,15 @@ function workflowToRailItem(w: WorkflowSummary): RailItem {
   };
 }
 
-const GROUP_ORDER = ['Sessions', 'Workbenches and agents'] as const;
-type RailGroup = (typeof GROUP_ORDER)[number];
+const GROUP_ORDER: RailGroup[] = ['Agents', 'Sessions'];
 
 const TAG_STYLES: Record<ResourceType, string> = {
   workflow: 'bg-[rgba(233,132,40,0.16)] text-orange',
-  workbench: 'bg-[rgba(96,124,154,0.18)] text-blue',
   agent: 'bg-[rgba(123,153,116,0.18)] text-green',
 };
 
 const DOT_STYLES: Record<ResourceType, string> = {
   workflow: 'bg-orange',
-  workbench: 'bg-blue',
   agent: 'bg-green',
 };
 
@@ -277,27 +261,30 @@ export interface AgentSelection {
 export interface LibraryRailProps {
   onClose?: () => void;
   onNew?: () => void;
+  onNewWorkbench?: () => void;
   onAgentSelect?: (selection: AgentSelection) => void;
   onWorkbenchSelect?: (slug: string) => void;
   onAgentDeleted?: () => void;
   activeAgentInstanceId?: string;
+  activeWorkbenchSlug?: string;
   refreshTick?: number;
 }
 
 const SEGMENT_FILTER: Record<string, ResourceType | null> = {
   All: null,
-  Workflows: 'workflow',
-  Workbenches: 'workbench',
   Agents: 'agent',
+  Sessions: 'workflow',
 };
 
 export function LibraryRail({
   onClose,
   onNew,
+  onNewWorkbench,
   onAgentSelect,
   onWorkbenchSelect,
   onAgentDeleted,
   activeAgentInstanceId,
+  activeWorkbenchSlug,
   refreshTick,
 }: LibraryRailProps = {}) {
   const {
@@ -306,26 +293,34 @@ export function LibraryRail({
     isError,
   } = useLibraryResources(clientOptions);
   const {
-    items: workbenchAndAgentItems,
+    workbenches,
+    agentItems: allAgentItems,
     error: workbenchError,
     retry: retryWorkbenches,
   } = useWorkbenchesAndAgents(refreshTick);
 
-  const location = useLocation();
   const [activeSegment, setActiveSegment] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingCredentialFor, setEditingCredentialFor] = useState<string | null>(null);
   const [deletingInstanceId, setDeletingInstanceId] = useState<string | null>(null);
 
+  // Resolve the tenantId for the active workbench so agents can be scoped.
+  const activeWorkbench = workbenches.find((w) => w.tenantSlug === activeWorkbenchSlug);
+  const activeWorkbenchTenantId = activeWorkbench?.tenantId;
+
+  // Scope agents to the active workbench; fall back to all agents when no slug is set.
+  const agentItems = activeWorkbenchTenantId
+    ? allAgentItems.filter((a) => a.tenantId === activeWorkbenchTenantId)
+    : allAgentItems;
+
   const sessionItems = (workflows ?? []).map(workflowToRailItem);
-  const items: RailItem[] = [...sessionItems, ...workbenchAndAgentItems];
+  const items: RailItem[] = [...agentItems, ...sessionItems];
   const isLoading = sessionsLoading;
 
   const segments: { label: string; count: number }[] = [
     { label: 'All', count: items.length },
-    { label: 'Workflows', count: items.filter((i) => i.type === 'workflow').length },
-    { label: 'Workbenches', count: items.filter((i) => i.type === 'workbench').length },
-    { label: 'Agents', count: items.filter((i) => i.type === 'agent').length },
+    { label: 'Agents', count: agentItems.length },
+    { label: 'Sessions', count: sessionItems.length },
   ];
 
   const typeFilter = SEGMENT_FILTER[activeSegment] ?? null;
@@ -344,17 +339,57 @@ export function LibraryRail({
 
   return (
     <aside className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
-      <div className="px-[18px] pb-[10px] pt-[18px]">
-        <div className="flex items-center justify-between">
-          <div className="text-[13px] font-bold uppercase tracking-[0.04em] text-text-3">
-            Workbench
+      {/* Workbench switcher */}
+      <div className="border-b border-border px-[18px] pb-[12px] pt-[16px]">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-[6px]">
+            {workbenches.length === 0 && (
+              <span className="text-[13px] font-bold uppercase tracking-[0.04em] text-text-3">
+                Workbench
+              </span>
+            )}
+            {workbenches.map((wb) => {
+              const isActive = wb.tenantSlug === activeWorkbenchSlug;
+              return (
+                <button
+                  key={wb.id}
+                  type="button"
+                  onClick={() => onWorkbenchSelect?.(wb.tenantSlug)}
+                  className={`rounded-[8px] border px-2.5 py-[5px] text-[12px] font-semibold transition-colors ${
+                    isActive
+                      ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
+                      : 'border-border text-text-2 hover:border-orange/60 hover:text-text'
+                  }`}
+                >
+                  {wb.tenantName}
+                </button>
+              );
+            })}
+            {onNewWorkbench && (
+              <button
+                type="button"
+                onClick={onNewWorkbench}
+                aria-label="New workbench"
+                className="grid h-[27px] w-[27px] place-items-center rounded-[8px] border border-dashed border-border text-text-3 transition-colors hover:border-orange hover:text-orange"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  className="h-[11px] w-[11px]"
+                >
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </button>
+            )}
           </div>
           {onClose && (
             <button
               type="button"
               onClick={onClose}
               aria-label="Close workbench"
-              className="grid h-[30px] w-[30px] place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
+              className="grid h-[30px] w-[30px] flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -368,6 +403,7 @@ export function LibraryRail({
             </button>
           )}
         </div>
+
         <div className="mt-3 flex items-center gap-[9px] rounded-[12px] border border-border bg-surface px-[11px] py-2 focus-within:border-orange">
           <svg
             viewBox="0 0 24 24"
@@ -394,6 +430,7 @@ export function LibraryRail({
         </div>
       </div>
 
+      {/* Filter tabs */}
       <div className="flex flex-wrap gap-[3px] px-4 pb-1.5 pt-3">
         {segments.map((seg) => (
           <button
@@ -411,6 +448,7 @@ export function LibraryRail({
         ))}
       </div>
 
+      {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-[10px] pb-[22px] pt-1">
         {isLoading && (
           <div className="px-[10px] py-6 text-[13px] text-text-3">Loading workbench…</div>
@@ -432,7 +470,11 @@ export function LibraryRail({
         )}
         {GROUP_ORDER.map((group) => {
           const inGroup = visibleItems.filter((i) => i.group === group);
-          if (inGroup.length === 0) return null;
+          // Always render the Agents group header when onNew is provided so the
+          // deploy button is accessible even before any agents exist.
+          const showGroup = inGroup.length > 0 || (group === 'Agents' && onNew !== undefined);
+          if (!showGroup) return null;
+
           return (
             <div key={group}>
               <div className="flex items-center gap-2 px-[10px] pb-[7px] pt-[14px] text-[11.5px] font-bold uppercase tracking-[0.05em] text-text-3">
@@ -441,7 +483,7 @@ export function LibraryRail({
                   {inGroup.length}
                 </span>
                 <span className="h-px flex-1 bg-border" />
-                {group === 'Workbenches and agents' && onNew && (
+                {group === 'Agents' && onNew && (
                   <button
                     type="button"
                     onClick={onNew}
@@ -468,12 +510,11 @@ export function LibraryRail({
                   onAgentSelect !== undefined &&
                   item.instanceId !== undefined &&
                   item.tenantId !== undefined;
-                const isClickableWorkbench = item.type === 'workbench' && onWorkbenchSelect !== undefined;
-                const isClickable = isClickableAgent || isClickableWorkbench;
-                const isActiveWorkbench =
-                  item.type === 'workbench' && location.pathname === `/workbenches/${item.sub}`;
-                const isActiveAgent = item.type === 'agent' && item.instanceId === activeAgentInstanceId;
+                const isClickable = isClickableAgent;
+                const isActiveAgent =
+                  item.type === 'agent' && item.instanceId === activeAgentInstanceId;
                 const isEditingCred = editingCredentialFor === item.id;
+
                 const openItem = () => {
                   if (isClickableAgent) {
                     onAgentSelect({
@@ -481,10 +522,9 @@ export function LibraryRail({
                       tenantId: item.tenantId!,
                       agentName: item.name,
                     });
-                    return;
                   }
-                  if (isClickableWorkbench) onWorkbenchSelect(item.sub);
                 };
+
                 const deleteAgent = async () => {
                   if (!item.instanceId || !item.tenantId) return;
                   setDeletingInstanceId(item.instanceId);
@@ -495,6 +535,7 @@ export function LibraryRail({
                     setDeletingInstanceId(null);
                   }
                 };
+
                 return (
                   <div key={item.id} className="rounded-[12px]">
                     <div
@@ -511,7 +552,7 @@ export function LibraryRail({
                             }
                           : undefined
                       }
-                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)] ${isClickable ? 'cursor-pointer' : ''} ${isActiveWorkbench || isActiveAgent ? 'bg-surface ring-1 ring-orange/60' : ''}`}
+                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors hover:bg-[var(--row-hover)] ${isClickable ? 'cursor-pointer' : ''} ${isActiveAgent ? 'bg-surface ring-1 ring-orange/60' : ''}`}
                     >
                       <StatusDot status={item.status} />
                       <div className="min-w-0 flex-1">
@@ -568,7 +609,7 @@ export function LibraryRail({
                         className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
                       >
                         <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
-                        {item.type}
+                        {item.type === 'workflow' ? 'Session' : item.type}
                       </span>
                       <div
                         className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"

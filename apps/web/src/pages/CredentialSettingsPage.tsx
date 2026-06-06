@@ -430,7 +430,7 @@ export default function CredentialSettingsPage() {
 
             <div className="mb-3">
               <label className={LABEL_CLASS} htmlFor="cred-tenant">
-                Tenant
+                Workbench
               </label>
               <select
                 id="cred-tenant"
@@ -635,7 +635,7 @@ export default function CredentialSettingsPage() {
               <thead>
                 <tr className="border-b border-border bg-surface">
                   <th className="px-4 py-2 text-left font-medium text-text-3">Name</th>
-                  <th className="px-4 py-2 text-left font-medium text-text-3">Tenant</th>
+                  <th className="px-4 py-2 text-left font-medium text-text-3">Workbench</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Provider</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Agents</th>
                   <th className="px-4 py-2 text-left font-medium text-text-3">Status</th>

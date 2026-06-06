@@ -8,7 +8,7 @@ import {
   provisionAgent,
   type ProvisionAgentResponse,
 } from '../../lib/hub-api';
-import { LOOP_DEPLOY_PROMPT } from '@workbench/agents/browser';
+import { LOOP_DEPLOY_PROMPT, GRANOLA_DEPLOY_PROMPT } from '@workbench/agents/browser';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -24,6 +24,11 @@ const PREMADE_OPTIONS: PremadeOption[] = [
     label: 'Loop — Research Intelligence',
     name: 'Loop',
     systemPrompt: LOOP_DEPLOY_PROMPT,
+  },
+  {
+    label: 'Oat — Call Intelligence',
+    name: 'Oat',
+    systemPrompt: GRANOLA_DEPLOY_PROMPT,
   },
 ];
 

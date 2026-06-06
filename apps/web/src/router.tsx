@@ -9,8 +9,6 @@ import WorkbenchHome from './pages/WorkbenchHome';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 import { OnboardingPage } from './pages/OnboardingPage';
-
-const WorkbenchPage = lazy(() => import('./pages/WorkbenchPage'));
 const CredentialSettingsPage = lazy(() => import('./pages/CredentialSettingsPage'));
 const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
 const PrincipalSettingsPage = lazy(() => import('./pages/PrincipalSettingsPage'));
@@ -96,20 +94,7 @@ export const router = createBrowserRouter([
               </Suspense>
             ),
           },
-          {
-            path: '/workbenches/:slug',
-            element: (
-              <Suspense
-                fallback={
-                  <div className="flex h-full items-center justify-center">
-                    <span className="text-[13px] text-text-3">Loading...</span>
-                  </div>
-                }
-              >
-                <WorkbenchPage />
-              </Suspense>
-            ),
-          },
+          { path: '/workbenches/:slug', element: <WorkbenchHome /> },
         ],
       },
     ],

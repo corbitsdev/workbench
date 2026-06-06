@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@workbench/shared": "workspace:*",
-    "@workbench/ui": "workspace:*"
+    "@workbench/ui": "workspace:*",
+    "streamdown": "^2.5.0"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.9.0",

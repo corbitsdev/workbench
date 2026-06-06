@@ -30,11 +30,18 @@ export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentCha
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
 
-  // Launch the sidecar session. Errors are silently ignored — the session may
-  // already be running, in which case the subscription below will still hydrate.
   const { mutate: launch, status: launchStatus } = useMutation({
-    mutationFn: () => launchInstanceSession(instanceId),
-    onError: () => {},
+    mutationFn: async () => {
+      const result = await launchInstanceSession(instanceId);
+      if (!result.launched) {
+        throw new Error(result.launchError ?? 'Failed to launch agent session');
+      }
+      return result;
+    },
+    onError: (err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      setSessionState({ phase: 'error', message });
+    },
   });
 
   // Trigger launch once when the component mounts or instanceId changes.
@@ -45,9 +52,9 @@ export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentCha
   }
 
   // Subscription lifecycle — syncs to the external Interchange session.
-  // Runs after launch settles (success or error) so the sidecar is ready.
+  // Runs after launch succeeds so hydration errors do not hide launch failures.
   useEffect(() => {
-    if (launchStatus === 'pending') return;
+    if (launchStatus !== 'success') return;
 
     let cancelled = false;
 

@@ -1,4 +1,5 @@
 import type { AgentTool } from '@intx/agent';
+import type { ToolDefinition } from '@intx/types/runtime';
 
 const DEFAULT_LIST_LIMIT = 10;
 const MAX_LIST_LIMIT = 50;
@@ -217,48 +218,52 @@ async function getNote(
   return parseNote(await fetchGranolaJSON(config, url, signal));
 }
 
+export const GRANOLA_LIST_NOTES_DEFINITION: ToolDefinition = {
+  name: 'granola_list_notes',
+  description:
+    'List recent Granola notes for the configured workspace. Use this to find calls before fetching a full transcript.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      limit: {
+        type: 'number',
+        description: 'Maximum number of notes to return. Defaults to 10 and caps at 50.',
+      },
+      cursor: {
+        type: 'string',
+        description: 'Pagination cursor returned by a prior Granola list response.',
+      },
+    },
+  },
+};
+
+export const GRANOLA_GET_NOTE_DEFINITION: ToolDefinition = {
+  name: 'granola_get_note',
+  description: 'Fetch a single Granola note, including its transcript, by note ID.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      noteId: {
+        type: 'string',
+        description: 'Granola note ID to fetch.',
+      },
+    },
+    required: ['noteId'],
+  },
+};
+
 export function createGranolaTools(config: GranolaToolsConfig): AgentTool[] {
   validateConfig(config);
 
   return [
     {
       kind: 'string',
-      definition: {
-        name: 'granola_list_notes',
-        description:
-          'List recent Granola notes for the configured workspace. Use this to find calls before fetching a full transcript.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            limit: {
-              type: 'number',
-              description: 'Maximum number of notes to return. Defaults to 10 and caps at 50.',
-            },
-            cursor: {
-              type: 'string',
-              description: 'Pagination cursor returned by a prior Granola list response.',
-            },
-          },
-        },
-      },
+      definition: GRANOLA_LIST_NOTES_DEFINITION,
       handler: async (args, signal) => jsonResult(await listNotes(config, args, signal)),
     },
     {
       kind: 'string',
-      definition: {
-        name: 'granola_get_note',
-        description: 'Fetch a single Granola note, including its transcript, by note ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            noteId: {
-              type: 'string',
-              description: 'Granola note ID to fetch.',
-            },
-          },
-          required: ['noteId'],
-        },
-      },
+      definition: GRANOLA_GET_NOTE_DEFINITION,
       handler: async (args, signal) => jsonResult(await getNote(config, args, signal)),
     },
   ];

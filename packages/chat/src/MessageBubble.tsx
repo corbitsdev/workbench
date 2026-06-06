@@ -1,3 +1,4 @@
+import { Streamdown } from 'streamdown';
 import { cn } from '@workbench/ui';
 import { type ChatMessage } from './types';
 
@@ -8,10 +9,15 @@ export interface MessageBubbleProps {
 /**
  * A single chat bubble. User messages align right with the brand accent;
  * agent and system messages align left on a neutral surface.
+ *
+ * Agent and system messages are rendered as Markdown via Streamdown so that
+ * headings, lists, code blocks and inline formatting are handled correctly.
+ * User messages are kept as plain text.
  */
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
+  const isStreaming = message.status === 'sending';
 
   return (
     <div
@@ -20,13 +26,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     >
       <div
         className={cn(
-          'max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words',
-          isUser && 'bg-orange text-white',
+          'max-w-[80%] rounded-lg px-3 py-2 text-sm break-words',
+          isUser && 'bg-orange text-white whitespace-pre-wrap',
           message.role === 'agent' && 'bg-surface-2 text-text',
           isSystem && 'bg-surface-2 text-text-3 italic'
         )}
       >
-        {message.content}
+        {isUser ? (
+          message.content
+        ) : (
+          <Streamdown mode={isStreaming ? 'streaming' : 'static'}>{message.content}</Streamdown>
+        )}
         {message.status === 'failed' && (
           <span className="mt-1 block text-xs text-orange-soft">Failed to send</span>
         )}
