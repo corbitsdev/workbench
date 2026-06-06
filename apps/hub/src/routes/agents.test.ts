@@ -22,7 +22,7 @@ mock.module('../lib/agent-credential-repair', () => ({
 }));
 
 import { Hono } from 'hono';
-import { createAgentProvisioningRouter } from './agents';
+import { createAgentProvisioningRouter, relaunchInstanceIfNeeded } from './agents';
 
 function makeRequest(
   url: string,
@@ -98,6 +98,10 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
         findMany: mock(() => Promise.resolve([])),
       },
       agentInstance: {
+        findFirst: mock(() => Promise.resolve(undefined)),
+        findMany: mock(() => Promise.resolve([])),
+      },
+      agentSession: {
         findFirst: mock(() => Promise.resolve(undefined)),
         findMany: mock(() => Promise.resolve([])),
       },
@@ -644,5 +648,86 @@ describe('POST /instances/:instanceId/sessions', () => {
     const json = await res.json();
     expect(json.launched).toBe(false);
     expect(json.launchError).toContain('No resolvable inference sources');
+  });
+});
+
+describe('relaunchInstanceIfNeeded', () => {
+  const TENANT_ROW = { id: 'tenant-1', domain: 'tenant-1.localhost' };
+  const AGENT_ROW = { id: 'agt-1', systemPrompt: 'You are Myra.' };
+  const ACTIVE_CREDENTIAL = { id: 'crd-1', tenantId: 'tenant-1', status: 'active' };
+
+  function runningInstance(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'ins-1',
+      agentId: 'agt-1',
+      tenantId: 'tenant-1',
+      address: 'ins-1@tenant-1.localhost',
+      status: 'running',
+      sessionId: 'ses-1',
+      principalId: 'prn-agent-1',
+      ...overrides,
+    };
+  }
+
+  it('does not relaunch when the instance is already running', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(runningInstance()));
+
+    const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
+    await relaunchInstanceIfNeeded(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      'ins-1'
+    );
+
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
+  });
+
+  it('relaunches a deployed instance with a stale active session record', async () => {
+    const db = makeMockDb();
+    // Restart left the row in "deployed" with a stale active session record —
+    // the agent was dropped from the sidecar and must be relaunched.
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve(runningInstance({ status: 'deployed' }))
+    );
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: 'ses-1', status: 'active' })
+    );
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+    db.query.credential.findFirst = mock(() => Promise.resolve(ACTIVE_CREDENTIAL));
+
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1' }]);
+
+    const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
+    await relaunchInstanceIfNeeded(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      'ins-1'
+    );
+
+    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not relaunch a non-running instance without an active credential', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve(runningInstance({ status: 'deployed' }))
+    );
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+    db.query.credential.findFirst = mock(() => Promise.resolve(undefined));
+
+    const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
+    await relaunchInstanceIfNeeded(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      'ins-1'
+    );
+
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
   });
 });
