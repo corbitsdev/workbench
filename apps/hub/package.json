@@ -9,9 +9,7 @@
     "lint": "oxlint .",
     "start": "bun run dist/index.js",
     "test": "bun test",
-    "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
-    "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
-    "db:migrate:script": "bun src/db/migrate.ts"
+    "db:generate": "drizzle-kit generate --config=drizzle.config.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.9",
