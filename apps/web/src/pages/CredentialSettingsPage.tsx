@@ -1,8 +1,17 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMyPrincipals, listEnrichedCredentials, createTenantCredential, deleteTenantCredential } from '../lib/hub-api';
-import type { LLMProviderType, CreateTenantCredentialInput, EnrichedCredential } from '../lib/hub-api';
+import {
+  getMyPrincipals,
+  listEnrichedCredentials,
+  createTenantCredential,
+  deleteTenantCredential,
+} from '../lib/hub-api';
+import type {
+  LLMProviderType,
+  CreateTenantCredentialInput,
+  EnrichedCredential,
+} from '../lib/hub-api';
 
 const ANTHROPIC_MODELS = [
   { value: 'claude-opus-4-8', label: 'Claude Opus 4.8' },

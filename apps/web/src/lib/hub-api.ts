@@ -271,6 +271,9 @@ export type EnrichedCredential = {
 };
 
 export async function listEnrichedCredentials(tenantId: string): Promise<EnrichedCredential[]> {
-  const res = await hubFetch<{ data: EnrichedCredential[] }>('GET', `v1/tenants/${tenantId}/credentials`);
+  const res = await hubFetch<{ data: EnrichedCredential[] }>(
+    'GET',
+    `v1/tenants/${tenantId}/credentials`
+  );
   return res.data;
 }
