@@ -169,9 +169,7 @@ export default function WorkbenchHome() {
             onClose={() => setRightPane({ view: 'gallery' })}
           />
         ) : (
-          <ArtifactGallery
-            onOpenLibrary={() => setRailOpen(true)}
-          />
+          <ArtifactGallery onOpenLibrary={() => setRailOpen(true)} />
         )}
         {railOpen && (
           <div className="fixed inset-0 z-50 bg-page p-2">

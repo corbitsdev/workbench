@@ -15,6 +15,10 @@ import type {
   ProvisionAgentResponse,
 } from '../hub-api';
 
+export const assignCredentialToAgent = mock<
+  (tenantId: string, agentId: string, credentialId: string | null) => Promise<void>
+>(() => Promise.resolve());
+
 export function createMockHubApi(overrides?: Record<string, any>) {
   const defaults = {
     getMe: mock<() => Promise<MeResponse>>(() =>

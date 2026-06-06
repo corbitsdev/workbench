@@ -68,7 +68,12 @@ function buildApp(
   });
   parent.route(
     '/',
-    createAgentProvisioningRouter(db as unknown as DB['db'], sessionService, mockGrantStore, mockSidecarRouter)
+    createAgentProvisioningRouter(
+      db as unknown as DB['db'],
+      sessionService,
+      mockGrantStore,
+      mockSidecarRouter
+    )
   );
   return parent;
 }
@@ -130,6 +135,7 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
       const valuesChain: any = {
         returning: mock(() => Promise.resolve([])),
         onConflictDoNothing: mock(() => onConflictChain),
+        onConflictDoUpdate: mock(() => onConflictChain),
       };
       return { values: mock(() => valuesChain) };
     }),
@@ -525,12 +531,15 @@ describe('POST /tenants/:tenantId/credentials', () => {
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
     db.query.provider.findFirst = mock(() => Promise.resolve(savedProvider));
-    // insert chain: .values().onConflictDoNothing().returning() → [savedCredential] (success)
+    // insert chain: supports both .onConflictDoUpdate (provider upsert) and .onConflictDoNothing().returning() (credential insert)
     db.insert = mock(() => ({
-      values: mock(() => ({
+      values: mock((): any => ({
         // biome-ignore lint/suspicious/noExplicitAny: test mock
         onConflictDoNothing: mock((): any => ({
           returning: mock(() => Promise.resolve([savedCredential])),
+        })),
+        onConflictDoUpdate: mock((): any => ({
+          returning: mock(() => Promise.resolve([])),
         })),
       })),
     }));
@@ -560,11 +569,14 @@ describe('POST /tenants/:tenantId/credentials', () => {
         tenantId: 'tenant-1',
       })
     );
-    // insert chain: .values().onConflictDoNothing().returning() → [] (conflict)
+    // insert chain: supports both .onConflictDoUpdate (provider upsert) and .onConflictDoNothing().returning() → [] (conflict)
     db.insert = mock(() => ({
-      values: mock(() => ({
+      values: mock((): any => ({
         // biome-ignore lint/suspicious/noExplicitAny: test mock
         onConflictDoNothing: mock((): any => ({
+          returning: mock(() => Promise.resolve([])),
+        })),
+        onConflictDoUpdate: mock((): any => ({
           returning: mock(() => Promise.resolve([])),
         })),
       })),
@@ -745,7 +757,9 @@ describe('relaunchInstanceIfNeeded', () => {
     );
 
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
-    const launchArg = (sessionService.launchSession as ReturnType<typeof mock>).mock.calls[0][0] as {
+    const launchArg = (sessionService.launchSession as ReturnType<typeof mock>).mock
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      .calls[0]![0] as {
       config: { sources: { apiKey: string }[] };
     };
     expect(launchArg.config.sources[0]?.apiKey).toBe('sk-real-key');

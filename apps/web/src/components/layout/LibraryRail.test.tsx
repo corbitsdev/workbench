@@ -1,6 +1,6 @@
 /// <reference types="bun" />
-import { describe, expect, it, mock } from 'bun:test';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { LibraryRailProps } from './LibraryRail';
@@ -71,13 +71,15 @@ mock.module('../../lib/hub-api', () => ({
   provisionAgent: mock(() =>
     Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })
   ),
-  updateAgentCredentialRequirements: mock(() => Promise.resolve()),
+  assignCredentialToAgent: mock(() => Promise.resolve()),
 }));
 
 function renderWithClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(React.createElement(QueryClientProvider, { client }, ui));
 }
+
+afterEach(cleanup);
 
 describe('LibraryRail', () => {
   it('renders real workflow sessions from the client', async () => {

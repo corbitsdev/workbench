@@ -20,8 +20,9 @@ mock.module('../lib/hub-api', () => ({
     Promise.resolve({
       userId: 'u1',
       personalTenantId: 'pt1',
-      paInstanceId: null,
+      paInstanceId: 'inst-1',
       provisioned: true,
+      credentialResolved: true,
     }),
   getMyPrincipals: () => Promise.resolve([]),
   createTenant: () => Promise.resolve({ id: 't1', name: 'Test', slug: 'test', domain: '' }),
@@ -62,6 +63,7 @@ mock.module('../lib/hub-api', () => ({
   listEnrichedCredentials: () => Promise.resolve([]),
   provisionAgent: () =>
     Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' }),
+  assignCredentialToAgent: () => Promise.resolve(),
 }));
 
 import WorkbenchHome from './WorkbenchHome';
@@ -117,7 +119,7 @@ describe('WorkbenchHome mobile layout', () => {
     await user.click(openBtn);
     expect(screen.getByLabelText('Search workflows, agents')).toBeDefined();
 
-    await user.click(screen.getByRole('button', { name: /close library/i }));
+    await user.click(screen.getByRole('button', { name: /close workspace/i }));
     expect(screen.queryByLabelText('Search workflows, agents')).toBeNull();
   });
 });

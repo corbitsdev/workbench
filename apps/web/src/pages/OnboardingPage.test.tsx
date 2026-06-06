@@ -68,6 +68,7 @@ mock.module('../lib/hub-api', () => ({
   createTenantCredential: mockCreateTenantCredential,
   deleteTenantCredential: mock(() => Promise.resolve()),
   launchInstanceSession: mockLaunchInstanceSession,
+  assignCredentialToAgent: mock(() => Promise.resolve()),
   provisionAgent: mock(() =>
     Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })
   ),
