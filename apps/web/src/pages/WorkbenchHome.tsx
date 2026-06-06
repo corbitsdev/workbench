@@ -2,7 +2,6 @@ import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { AgentChat } from '../components/AgentChat';
-import { CollateralGenerationPanel } from '../components/CollateralGenerationPanel';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { NewWorkbenchModal } from '../components/layout/NewWorkbenchModal';
 import { NewAgentModal } from '../components/layout/NewAgentModal';
@@ -67,7 +66,6 @@ type NewModal = 'none' | 'workbench' | 'agent';
 
 type RightPane =
   | { view: 'gallery' }
-  | { view: 'gen' }
   | { view: 'agent'; instanceId: string; tenantId: string; agentName: string };
 
 function useFirstWorkspaceTenantId(): string | null {
@@ -139,13 +137,6 @@ export default function WorkbenchHome() {
   };
 
   function renderRightPane() {
-    if (rightPane.view === 'gen') {
-      return (
-        <motion.div key="gen" {...paneFade} className="min-h-0 flex-1">
-          <CollateralGenerationPanel onClose={() => setRightPane({ view: 'gallery' })} />
-        </motion.div>
-      );
-    }
     if (rightPane.view === 'agent') {
       return (
         <motion.div key={`agent-${rightPane.instanceId}`} {...paneFade} className="min-h-0 flex-1">
@@ -160,7 +151,7 @@ export default function WorkbenchHome() {
     }
     return (
       <motion.div key="gallery" {...paneFade} className="min-h-0 flex-1">
-        <ArtifactGallery onNew={() => setRightPane({ view: 'gen' })} />
+        <ArtifactGallery />
       </motion.div>
     );
   }
@@ -168,9 +159,7 @@ export default function WorkbenchHome() {
   if (!isDesktop) {
     return (
       <div className="h-full overflow-y-auto px-2 pb-10 pt-1">
-        {rightPane.view === 'gen' ? (
-          <CollateralGenerationPanel onClose={() => setRightPane({ view: 'gallery' })} />
-        ) : rightPane.view === 'agent' ? (
+        {rightPane.view === 'agent' ? (
           <AgentChat
             instanceId={rightPane.instanceId}
             tenantId={rightPane.tenantId}
@@ -179,7 +168,6 @@ export default function WorkbenchHome() {
           />
         ) : (
           <ArtifactGallery
-            onNew={() => setRightPane({ view: 'gen' })}
             onOpenLibrary={() => setRailOpen(true)}
           />
         )}

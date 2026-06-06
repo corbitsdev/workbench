@@ -23,7 +23,6 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
-import { createCollateralGenerationRouter } from './routes/collateral-generation';
 import { createAgentProvisioningRouter, relaunchInstanceIfNeeded } from './routes/agents';
 import { repairUserAgentCredentials } from './lib/agent-credential-repair';
 import { createWorkspacesRouter } from './routes/workspaces';
@@ -432,7 +431,6 @@ v1.get('/me', async (c) => {
 });
 
 v1.route('/', createWorkflowRouter(db));
-v1.route('/', createCollateralGenerationRouter(db));
 v1.route('/', createAgentProvisioningRouter(db, sessionService, grantStore));
 v1.route('/', createWorkspacesRouter(db));
 v1.route('/', createApprovalsRouter(db));
