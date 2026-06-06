@@ -217,14 +217,13 @@ export async function listAgentInstances(tenantId: string): Promise<AgentInstanc
 
 export type LLMProviderType = 'anthropic' | 'openai' | 'google-genai' | 'openai-compatible';
 
-export type CreateTenantCredentialInput =
-  | {
-      provider: 'anthropic' | 'openai' | 'google-genai';
-      name: string;
-      apiKey: string;
-      model: string;
-    }
-  | { provider: 'openai-compatible'; name: string; apiKey: string; model: string; baseURL: string };
+export type CreateTenantCredentialInput = {
+  provider: string;
+  name: string;
+  apiKey: string;
+  model?: string;
+  baseURL?: string;
+};
 
 export type CreateTenantCredentialResponse = {
   credentialId: string;

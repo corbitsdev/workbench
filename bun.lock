@@ -499,6 +499,14 @@
         "react": "*",
       },
     },
+    "packages/tools-granola": {
+      "name": "@workbench/tools-granola",
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/transcript": {
       "name": "@workbench/transcript",
       "dependencies": {
@@ -1027,6 +1035,8 @@
     "@workbench/shared": ["@workbench/shared@workspace:packages/workbench-shared"],
 
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
+
+    "@workbench/tools-granola": ["@workbench/tools-granola@workspace:packages/tools-granola"],
 
     "@workbench/transcript": ["@workbench/transcript@workspace:packages/transcript"],
 

@@ -71,6 +71,19 @@ Exports:
 - `encryptSecret(keys, tenantId, plaintext): string` — returns `enc:vN:<base64>` ciphertext; throws if input already has `enc:` prefix
 - `decryptSecret(keys, tenantId, ciphertext): string` — parses version from prefix, selects key, decrypts; throws on unknown version or auth tag mismatch
 
+### `packages/tools-granola` (`@workbench/tools-granola`)
+
+Granola API tool package for agents. The package exposes `createGranolaTools(config): AgentTool[]` and no client helpers; callers compose the returned tools into the agent runtime.
+
+Tools:
+
+- `granola_list_notes` — lists recent Granola notes from `/notes`, with optional `limit` and `cursor`
+- `granola_get_note` — fetches one note from `/notes/:noteId` with `include=transcript`
+
+The package does not read `GRANOLA_API_KEY` or other process env vars. Its `apiKey` and `baseUrl` are supplied by the caller.
+
+This package is only the agent-tool adapter. It does not resolve credentials, read Interchange DB rows, decrypt secrets, or migrate the existing env-based hub poller.
+
 ### `packages/chat` (`@workbench/chat`)
 
 Transport-agnostic chat UI components. No dependency on a specific agent transport or WebSocket implementation.
@@ -193,7 +206,7 @@ Credentials are created via `POST /api/v1/tenants/:tenantId/credentials` (workbe
 
 **Credentials are always tenant-owned** (`principalId: null`). This is required for Interchange's `source: 'tenant'` resolution to find them at agent launch time.
 
-Required fields: `provider` (e.g. `'anthropic'`), `name`, `apiKey`, `model`. `baseURL` is required for `openai-compatible` providers.
+Required fields: `provider`, `name`, and `apiKey`. `provider` accepts arbitrary service keys such as `'granola'`; inference providers are restricted to `anthropic`, `openai`, `google-genai`, and `openai-compatible` wherever the UI is selecting an inference source. `model` is required only for inference providers. `baseURL` is optional for service credentials and required for `openai-compatible` inference credentials.
 
 Secrets are stored with an `enc:vN:` prefix — see `@workbench/hub-crypto`. Plain secrets are never written to the DB.
 

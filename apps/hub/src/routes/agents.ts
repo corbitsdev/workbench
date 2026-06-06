@@ -30,15 +30,24 @@ const MAX_LAUNCH_ATTEMPTS = 3;
 
 // ─── Request shapes ────────────────────────────────────────────────
 
-const LLMProviderType = type('"anthropic" | "openai" | "google-genai" | "openai-compatible"');
-type LLMProviderTypeType = typeof LLMProviderType.infer;
+const INFERENCE_PROVIDER_NAMES = [
+  'anthropic',
+  'openai',
+  'google-genai',
+  'openai-compatible',
+] as const;
+type InferenceProviderName = (typeof INFERENCE_PROVIDER_NAMES)[number];
 
-const PROVIDER_BASE_URLS: Record<LLMProviderTypeType, string> = {
+const PROVIDER_BASE_URLS: Record<InferenceProviderName, string> = {
   anthropic: 'https://api.anthropic.com',
   openai: 'https://api.openai.com/v1',
   'google-genai': 'https://generativelanguage.googleapis.com',
   'openai-compatible': '',
 };
+
+function isInferenceProviderName(provider: string): provider is InferenceProviderName {
+  return INFERENCE_PROVIDER_NAMES.includes(provider as InferenceProviderName);
+}
 
 const ProvisionAgentBody = type({
   tenantId: 'string',
@@ -49,10 +58,10 @@ const ProvisionAgentBody = type({
 type ProvisionAgentBodyType = typeof ProvisionAgentBody.infer;
 
 const CreateTenantCredentialBody = type({
-  provider: LLMProviderType,
+  provider: 'string',
   apiKey: 'string',
-  model: 'string',
   name: 'string',
+  'model?': 'string',
   'baseURL?': 'string',
 });
 
@@ -257,10 +266,32 @@ export function createAgentProvisioningRouter(
       return c.json({ error: 'Tenant not found' }, 404);
     }
 
-    const baseURL =
-      parsed.provider === 'openai-compatible'
-        ? (parsed.baseURL ?? '')
-        : PROVIDER_BASE_URLS[parsed.provider];
+    const providerName = parsed.provider.trim();
+    const credentialName = parsed.name.trim();
+    const apiKey = parsed.apiKey.trim();
+    const model = parsed.model?.trim() ?? '';
+    const baseURL = parsed.baseURL?.trim() ?? '';
+    const isInferenceProvider = isInferenceProviderName(providerName);
+
+    if (providerName.length === 0) {
+      return c.json({ error: 'provider is required' }, 400);
+    }
+    if (credentialName.length === 0) {
+      return c.json({ error: 'name is required' }, 400);
+    }
+    if (apiKey.length === 0) {
+      return c.json({ error: 'apiKey is required' }, 400);
+    }
+    if (isInferenceProvider && model.length === 0) {
+      return c.json({ error: 'model is required for inference providers' }, 400);
+    }
+    if (providerName === 'openai-compatible' && baseURL.length === 0) {
+      return c.json({ error: 'baseURL is required for OpenAI-compatible providers' }, 400);
+    }
+
+    const providerBaseURL =
+      baseURL || (isInferenceProvider ? PROVIDER_BASE_URLS[providerName] : '');
+    const providerModel = isInferenceProvider ? model : '';
 
     const now = new Date();
 
@@ -275,16 +306,16 @@ export function createAgentProvisioningRouter(
         providerId = await ensureProvider(
           tx,
           tenantId,
-          parsed.provider,
-          parsed.provider,
-          baseURL,
-          parsed.model,
+          providerName,
+          providerName,
+          providerBaseURL,
+          providerModel,
           now
         );
 
         // Encrypt secret before storage — Interchange stores plaintext; encryption is a workbench
         // invariant applied at the write boundary.
-        const encryptedSecret = encryptSecret(getConfig().credentialKeys, tenantId, parsed.apiKey);
+        const encryptedSecret = encryptSecret(getConfig().credentialKeys, tenantId, apiKey);
 
         const [inserted] = await tx
           .insert(credential)
@@ -293,7 +324,7 @@ export function createAgentProvisioningRouter(
             tenantId,
             providerId,
             principalId: null,
-            name: parsed.name,
+            name: credentialName,
             type: 'api_key',
             secret: encryptedSecret,
             createdAt: now,
@@ -305,7 +336,7 @@ export function createAgentProvisioningRouter(
         if (!inserted) {
           // Conflict detected atomically by empty .returning() — unique(tenantId, name) violated.
           throw Object.assign(
-            new Error(`Credential named '${parsed.name}' already exists in this tenant`),
+            new Error(`Credential named '${credentialName}' already exists in this tenant`),
             { status: 409 }
           );
         }

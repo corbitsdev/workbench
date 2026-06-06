@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,7 +8,6 @@ import {
   createTenantCredential,
   updateTenantCredential,
   deleteTenantCredential,
-  assignCredentialToAgent,
 } from '../lib/hub-api';
 import type {
   LLMProviderType,
@@ -42,11 +41,17 @@ const PROVIDER_LABELS: Record<string, string> = {
   'openai-compatible': 'OpenAI-compatible',
 };
 
+const INFERENCE_PROVIDER_NAMES = ['anthropic', 'openai', 'google-genai', 'openai-compatible'];
+
 function modelListForProvider(p: LLMProviderType | string) {
   if (p === 'anthropic') return ANTHROPIC_MODELS;
   if (p === 'openai') return OPENAI_MODELS;
   if (p === 'google-genai') return GEMINI_MODELS;
   return [];
+}
+
+function isInferenceProvider(p: string): p is LLMProviderType {
+  return INFERENCE_PROVIDER_NAMES.includes(p);
 }
 
 function providerLabel(plugin: string): string {
@@ -56,101 +61,6 @@ function providerLabel(plugin: string): string {
 const INPUT_CLASS =
   'w-full rounded-[8px] border border-border bg-bg px-3 py-2 text-[13px] text-text outline-none placeholder:text-text-3 focus:border-orange disabled:opacity-50';
 const LABEL_CLASS = 'mb-1 block text-[12px] font-medium text-text-2';
-
-function AssignAgentsPopover({
-  credential,
-  instances,
-  onAssign,
-}: {
-  credential: EnrichedCredential;
-  instances: AgentInstance[];
-  onAssign: (agentId: string, assigned: boolean) => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const tenantInstances = instances.filter((i) => i.tenantId === credential.tenantId);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const isAssigned = (inst: AgentInstance) =>
-    inst.credentialRequirements.some((r) => r.source === 'tenant' && r.name === credential.name);
-
-  const toggle = async (inst: AgentInstance) => {
-    setBusy(inst.id);
-    try {
-      await onAssign(inst.agentId, !isAssigned(inst));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const assignedCount = tenantInstances.filter(isAssigned).length;
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 rounded-[4px] border border-border px-2 py-0.5 text-[11px] text-text-2 hover:border-orange hover:text-orange"
-      >
-        {assignedCount > 0 ? (
-          <span>
-            {assignedCount} agent{assignedCount !== 1 ? 's' : ''}
-          </span>
-        ) : (
-          <span className="text-text-3">Assign</span>
-        )}
-        <span className="text-text-3">▾</span>
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] rounded-[8px] border border-border bg-bg shadow-lg">
-          {tenantInstances.length === 0 ? (
-            <p className="px-3 py-2 text-[12px] text-text-3">No agents in this tenant.</p>
-          ) : (
-            <ul className="py-1">
-              {tenantInstances.map((inst) => {
-                const assigned = isAssigned(inst);
-                const loading = busy === inst.id;
-                return (
-                  <li key={inst.id}>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => void toggle(inst)}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-text hover:bg-surface disabled:opacity-50"
-                    >
-                      <span
-                        className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border ${
-                          assigned
-                            ? 'border-orange bg-orange text-white'
-                            : 'border-border bg-transparent'
-                        }`}
-                      >
-                        {assigned && <span className="text-[9px] leading-none">✓</span>}
-                      </span>
-                      <span>{inst.agentName}</span>
-                      {loading && <span className="ml-auto text-text-3">...</span>}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function EditCredentialForm({
   credential,
@@ -164,6 +74,7 @@ function EditCredentialForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const modelOptions = modelListForProvider(credential.providerPlugin);
+  const isInferenceCredential = isInferenceProvider(credential.providerPlugin);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -179,7 +90,7 @@ function EditCredentialForm({
       await onSave({
         name: (fd.get('name') as string).trim(),
         apiKey: (fd.get('apiKey') as string).trim(),
-        model: (fd.get('model') as string).trim(),
+        model: ((fd.get('model') as string | null) ?? '').trim(),
         baseURL: baseURL.trim(),
       });
     } catch (err) {
@@ -226,52 +137,52 @@ function EditCredentialForm({
             disabled={saving}
           />
         </div>
-        {credential.providerPlugin === 'openai-compatible' && (
+        <div>
+          <label className={LABEL_CLASS} htmlFor={`edit-baseurl-${credential.id}`}>
+            Base URL
+          </label>
+          <input
+            id={`edit-baseurl-${credential.id}`}
+            name="baseURL"
+            type="url"
+            className={INPUT_CLASS}
+            defaultValue={credential.baseURL}
+            required={credential.providerPlugin === 'openai-compatible'}
+            disabled={saving}
+          />
+        </div>
+        {isInferenceCredential && (
           <div>
-            <label className={LABEL_CLASS} htmlFor={`edit-baseurl-${credential.id}`}>
-              Base URL
+            <label className={LABEL_CLASS} htmlFor={`edit-model-${credential.id}`}>
+              Model
             </label>
-            <input
-              id={`edit-baseurl-${credential.id}`}
-              name="baseURL"
-              type="url"
-              className={INPUT_CLASS}
-              defaultValue={credential.baseURL}
-              required
-              disabled={saving}
-            />
+            {modelOptions.length > 0 ? (
+              <select
+                id={`edit-model-${credential.id}`}
+                name="model"
+                className={INPUT_CLASS}
+                defaultValue={credential.model}
+                disabled={saving}
+              >
+                {modelOptions.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id={`edit-model-${credential.id}`}
+                name="model"
+                type="text"
+                className={INPUT_CLASS}
+                defaultValue={credential.model}
+                required
+                disabled={saving}
+              />
+            )}
           </div>
         )}
-        <div>
-          <label className={LABEL_CLASS} htmlFor={`edit-model-${credential.id}`}>
-            Model
-          </label>
-          {modelOptions.length > 0 ? (
-            <select
-              id={`edit-model-${credential.id}`}
-              name="model"
-              className={INPUT_CLASS}
-              defaultValue={credential.model}
-              disabled={saving}
-            >
-              {modelOptions.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              id={`edit-model-${credential.id}`}
-              name="model"
-              type="text"
-              className={INPUT_CLASS}
-              defaultValue={credential.model}
-              required
-              disabled={saving}
-            />
-          )}
-        </div>
       </div>
       <div className="mt-3 flex gap-2">
         <button
@@ -325,16 +236,23 @@ export default function CredentialSettingsPage() {
   });
   const allInstances = agentInstancesQuery.data ?? [];
 
-  const handleAssign = async (cred: EnrichedCredential, agentId: string, assign: boolean) => {
-    await assignCredentialToAgent(cred.tenantId, agentId, assign ? cred.id : null);
-    await queryClient.invalidateQueries({ queryKey: ['agents', 'instances'] });
-  };
+  function linkedAgentsForCredential(cred: EnrichedCredential): string[] {
+    return allInstances
+      .filter(
+        (inst) =>
+          inst.tenantId === cred.tenantId &&
+          inst.credentialRequirements.some(
+            (r) => r.source === 'tenant' && r.providerName === cred.providerName
+          )
+      )
+      .map((inst) => inst.agentName);
+  }
 
   const isLoading = principalsQuery.isLoading || credentialsQuery.isLoading;
 
   const [showForm, setShowForm] = useState(false);
   const [formTenantId, setFormTenantId] = useState('');
-  const [provider, setProvider] = useState<LLMProviderType>('anthropic');
+  const [provider, setProvider] = useState('anthropic');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -345,7 +263,7 @@ export default function CredentialSettingsPage() {
     return p?.tenantName ?? tenantId;
   };
 
-  const handleProviderChange = (next: LLMProviderType) => {
+  const handleProviderChange = (next: string) => {
     setProvider(next);
     setFormError(null);
   };
@@ -361,8 +279,13 @@ export default function CredentialSettingsPage() {
     e.preventDefault();
     if (!formTenantId) return;
     const fd = new FormData(e.currentTarget);
+    const providerName = (fd.get('provider') as string).trim();
     const baseURL = (fd.get('baseURL') as string | null) ?? '';
-    if (provider === 'openai-compatible' && !baseURL.trim()) {
+    if (!providerName) {
+      setFormError('Provider is required.');
+      return;
+    }
+    if (providerName === 'openai-compatible' && !baseURL.trim()) {
       setFormError('Base URL is required for OpenAI-compatible providers.');
       return;
     }
@@ -371,11 +294,14 @@ export default function CredentialSettingsPage() {
     try {
       const name = (fd.get('name') as string).trim();
       const apiKey = fd.get('apiKey') as string;
-      const model = (fd.get('model') as string).trim();
-      const input: CreateTenantCredentialInput =
-        provider === 'openai-compatible'
-          ? { provider, name, apiKey, model, baseURL: baseURL.trim() }
-          : { provider, name, apiKey, model };
+      const model = ((fd.get('model') as string | null) ?? '').trim();
+      const input: CreateTenantCredentialInput = {
+        provider: providerName,
+        name,
+        apiKey,
+        ...(isInferenceProvider(providerName) ? { model } : {}),
+        ...(baseURL.trim() ? { baseURL: baseURL.trim() } : {}),
+      };
       await createTenantCredential(formTenantId, input);
       await queryClient.invalidateQueries({ queryKey: ['credentials'] });
       setShowForm(false);
@@ -393,8 +319,8 @@ export default function CredentialSettingsPage() {
     await updateTenantCredential(c.tenantId, c.id, {
       name: data.name || undefined,
       apiKey: data.apiKey || undefined,
-      model: data.model || undefined,
-      baseURL: c.providerPlugin === 'openai-compatible' ? data.baseURL : undefined,
+      model: isInferenceProvider(c.providerPlugin) ? data.model || undefined : undefined,
+      baseURL: data.baseURL || undefined,
     });
     await queryClient.invalidateQueries({ queryKey: ['credentials'] });
     setEditingId(null);
@@ -493,36 +419,41 @@ export default function CredentialSettingsPage() {
               <label className={LABEL_CLASS} htmlFor="cred-provider">
                 Provider
               </label>
-              <select
+              <input
                 id="cred-provider"
+                name="provider"
+                type="text"
                 className={INPUT_CLASS}
                 value={provider}
-                onChange={(e) => handleProviderChange(e.target.value as LLMProviderType)}
+                onChange={(e) => handleProviderChange(e.target.value)}
+                list="credential-provider-options"
+                placeholder="e.g. granola"
+                required
                 disabled={saving}
-              >
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
-                <option value="google-genai">Google Gemini</option>
-                <option value="openai-compatible">OpenAI-compatible (custom)</option>
-              </select>
+              />
+              <datalist id="credential-provider-options">
+                <option value="anthropic" />
+                <option value="openai" />
+                <option value="google-genai" />
+                <option value="openai-compatible" />
+                <option value="granola" />
+              </datalist>
             </div>
 
-            {provider === 'openai-compatible' && (
-              <div className="mb-3">
-                <label className={LABEL_CLASS} htmlFor="cred-baseurl">
-                  Base URL
-                </label>
-                <input
-                  id="cred-baseurl"
-                  name="baseURL"
-                  type="url"
-                  className={INPUT_CLASS}
-                  placeholder="https://your-endpoint.example.com/v1"
-                  required
-                  disabled={saving}
-                />
-              </div>
-            )}
+            <div className="mb-3">
+              <label className={LABEL_CLASS} htmlFor="cred-baseurl">
+                Base URL
+              </label>
+              <input
+                id="cred-baseurl"
+                name="baseURL"
+                type="url"
+                className={INPUT_CLASS}
+                placeholder="https://service.example.com"
+                required={provider === 'openai-compatible'}
+                disabled={saving}
+              />
+            </div>
 
             <div className="mb-3">
               <label className={LABEL_CLASS} htmlFor="cred-apikey">
@@ -540,30 +471,32 @@ export default function CredentialSettingsPage() {
               />
             </div>
 
-            <div className="mb-4">
-              <label className={LABEL_CLASS} htmlFor="cred-model">
-                Model
-              </label>
-              {modelOptions.length > 0 ? (
-                <select id="cred-model" name="model" className={INPUT_CLASS} disabled={saving}>
-                  {modelOptions.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  id="cred-model"
-                  name="model"
-                  type="text"
-                  className={INPUT_CLASS}
-                  placeholder="e.g. llama-3.1-8b"
-                  required
-                  disabled={saving}
-                />
-              )}
-            </div>
+            {isInferenceProvider(provider) && (
+              <div className="mb-4">
+                <label className={LABEL_CLASS} htmlFor="cred-model">
+                  Model
+                </label>
+                {modelOptions.length > 0 ? (
+                  <select id="cred-model" name="model" className={INPUT_CLASS} disabled={saving}>
+                    {modelOptions.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="cred-model"
+                    name="model"
+                    type="text"
+                    className={INPUT_CLASS}
+                    placeholder="e.g. llama-3.1-8b"
+                    required
+                    disabled={saving}
+                  />
+                )}
+              </div>
+            )}
 
             <div className="flex gap-2">
               <button
@@ -592,7 +525,7 @@ export default function CredentialSettingsPage() {
         )}
 
         {allCredentials.length > 0 && (
-          <div className="rounded-[10px] border border-border">
+          <div className="overflow-hidden rounded-[10px] border border-border">
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="border-b border-border bg-surface">
@@ -626,11 +559,20 @@ export default function CredentialSettingsPage() {
                       </td>
                       <td className="px-4 py-3 text-text-2">{providerLabel(c.providerPlugin)}</td>
                       <td className="px-4 py-3">
-                        <AssignAgentsPopover
-                          credential={c}
-                          instances={allInstances}
-                          onAssign={(agentId, assign) => handleAssign(c, agentId, assign)}
-                        />
+                        {linkedAgentsForCredential(c).length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {linkedAgentsForCredential(c).map((name) => (
+                              <span
+                                key={name}
+                                className="rounded-[4px] bg-orange/10 px-1.5 py-0.5 text-[11px] text-orange ring-1 ring-orange/30"
+                              >
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-[12px] text-text-3">None</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 capitalize text-text-2">{c.status}</td>
                       <td className="px-4 py-3 text-right">
