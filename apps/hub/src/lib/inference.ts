@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../config';
 
+const { llm } = loadConfig();
+
 export function buildInferenceSource(prefix: string): InferenceSource {
-  const { llm } = loadConfig();
   return {
     id: `${prefix}-${randomUUID()}`,
     provider: 'openai', // all configured endpoints use OpenAI wire format (OPENAI_COMPATIBLE_*)
