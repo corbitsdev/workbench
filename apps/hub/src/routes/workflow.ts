@@ -380,8 +380,8 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
           completed: allArtifacts.length > 0,
           artifacts: allArtifacts.map(serializeArtifact),
         },
-        improve: { completed: false },
-        export: { completed: false },
+        improve: { completed: wf.status === 'done' || allArtifacts.some((a: { version: number }) => a.version > 1) },
+        export: { completed: wf.status === 'done' },
       },
     });
   });
