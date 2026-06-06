@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import {
-  getMe,
-  createTenantCredential,
-  launchInstanceSession,
-} from '../lib/hub-api';
+import { getMe, createTenantCredential, launchInstanceSession } from '../lib/hub-api';
 import type { LLMProviderType, CreateTenantCredentialInput } from '../lib/hub-api';
 
 const ANTHROPIC_MODELS = [
@@ -78,7 +74,13 @@ export function OnboardingPage() {
 
       const input: CreateTenantCredentialInput =
         provider === 'openai-compatible'
-          ? { provider: 'openai-compatible', name: 'Myra LLM', apiKey, model, baseURL: baseURL.trim() }
+          ? {
+              provider: 'openai-compatible',
+              name: 'Myra LLM',
+              apiKey,
+              model,
+              baseURL: baseURL.trim(),
+            }
           : { provider, name: 'Myra LLM', apiKey, model };
 
       try {
@@ -96,7 +98,10 @@ export function OnboardingPage() {
         return;
       }
 
-      void navigate('/');
+      // Full reload rather than a client-side navigate: the persistent Myra chat
+      // panel only connects on mount, so a soft navigate would leave it showing
+      // its pre-onboarding state. A reload remounts it against the live session.
+      window.location.assign('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save credential. Please try again.');
     } finally {

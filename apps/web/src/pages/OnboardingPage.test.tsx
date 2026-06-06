@@ -14,18 +14,23 @@ mock.module('react-router', () => {
   };
 });
 
-const mockSetupMyraCredential = mock(() =>
-  Promise.resolve({ ok: true, credentialId: 'cred-1', launched: true })
+const mockCreateTenantCredential = mock(() =>
+  Promise.resolve({ credentialId: 'cred-1', providerId: 'prov-1' })
 );
+const mockLaunchInstanceSession = mock(() => Promise.resolve({ launched: true }));
 
+// Bun's mock.module statically reads the returned object's literal keys to build
+// the synthetic module's named exports, and validates every import of hub-api
+// across the test scope — so all exports must be listed literally here, not
+// spread (see commit 75d448f).
 mock.module('../lib/hub-api', () => ({
   getMe: mock(() =>
     Promise.resolve({
-      userId: '',
-      userName: '',
-      personalTenantId: null,
-      paInstanceId: null,
-      provisioned: false,
+      userId: 'user-1',
+      userName: 'User',
+      personalTenantId: 'tnt-1',
+      paInstanceId: 'ins-1',
+      provisioned: true,
     })
   ),
   getMyPrincipals: mock(() => Promise.resolve([])),
@@ -60,18 +65,31 @@ mock.module('../lib/hub-api', () => ({
   listTenantCredentials: mock(() => Promise.resolve([])),
   listPrincipalGrants: mock(() => Promise.resolve([])),
   listAgentInstances: mock(() => Promise.resolve([])),
-  setupMyraCredential: mockSetupMyraCredential,
+  createTenantCredential: mockCreateTenantCredential,
+  deleteTenantCredential: mock(() => Promise.resolve()),
+  launchInstanceSession: mockLaunchInstanceSession,
   provisionAgent: mock(() =>
     Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })
   ),
+  listEnrichedCredentials: mock(() => Promise.resolve([])),
 }));
 
 import { OnboardingPage } from './OnboardingPage';
 
+// On success the page does a full reload (window.location.assign) so the
+// persistent Myra chat panel remounts against the live session.
+const mockAssign = mock(() => {});
+Object.defineProperty(window, 'location', {
+  configurable: true,
+  value: { assign: mockAssign },
+});
+
 afterEach(() => {
   cleanup();
   mockNavigate.mockClear();
-  mockSetupMyraCredential.mockClear();
+  mockCreateTenantCredential.mockClear();
+  mockLaunchInstanceSession.mockClear();
+  mockAssign.mockClear();
 });
 
 function renderPage() {
@@ -100,18 +118,19 @@ describe('OnboardingPage', () => {
     expect(btn.disabled).toBe(false);
   });
 
-  it('calls setupMyraCredential and navigates to / on success', async () => {
+  it('creates the credential, launches the session, and reloads on success', async () => {
     renderPage();
     fireEvent.change(screen.getByLabelText(/api key/i), { target: { value: 'sk-test' } });
     await act(async () => {
       fireEvent.submit(screen.getByRole('button', { name: /finish setup/i }).closest('form')!);
     });
-    expect(mockSetupMyraCredential).toHaveBeenCalledTimes(1);
-    expect(mockNavigate).toHaveBeenCalledWith('/');
+    expect(mockCreateTenantCredential).toHaveBeenCalledTimes(1);
+    expect(mockLaunchInstanceSession).toHaveBeenCalledTimes(1);
+    expect(mockAssign).toHaveBeenCalledWith('/');
   });
 
   it('shows an error message when credential setup fails', async () => {
-    mockSetupMyraCredential.mockImplementationOnce(() =>
+    mockCreateTenantCredential.mockImplementationOnce(() =>
       Promise.reject(new Error('Invalid API key'))
     );
     renderPage();

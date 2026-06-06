@@ -51,6 +51,9 @@ export function PersonalAgentChat() {
   const [sessionState, setSessionState] = useState<SessionState>({ phase: 'loading' });
   const [, forceUpdate] = useState(0);
   const [me, setMe] = useState<{ userName: string } | null>(null);
+  // Bumping this re-runs the connect effect — used by the error-state retry so a
+  // transient hydration/transport failure does not permanently brick the panel.
+  const [attempt, setAttempt] = useState(0);
 
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -58,6 +61,7 @@ export function PersonalAgentChat() {
 
   useEffect(() => {
     let cancelled = false;
+    setSessionState({ phase: 'loading' });
 
     void (async () => {
       try {
@@ -105,7 +109,9 @@ export function PersonalAgentChat() {
       sessionRef.current?.destroy();
       sessionRef.current = null;
     };
-  }, []);
+  }, [attempt]);
+
+  const reconnect = () => setAttempt((n) => n + 1);
 
   const toggleDock = () => {
     setDockState((prev) => {
@@ -132,12 +138,26 @@ export function PersonalAgentChat() {
     return committed;
   }
 
+  // Shown only when Myra has not been provisioned with a credential yet.
   const setupNotice = (
     <span>
       Myra isn't set up yet —{' '}
       <Link to="/onboarding" className="text-orange underline">
         add an LLM API key to get started
       </Link>
+      .
+    </span>
+  );
+
+  // Shown when the session exists but we failed to connect or hydrate it. This
+  // is recoverable — retrying re-runs the connect effect rather than telling the
+  // user to add a key they already have.
+  const errorNotice = (
+    <span>
+      Couldn't reach Myra.{' '}
+      <button type="button" onClick={reconnect} className="text-orange underline">
+        Try again
+      </button>
       .
     </span>
   );
@@ -179,7 +199,7 @@ export function PersonalAgentChat() {
           messages={[]}
           onSend={() => undefined}
           inputDisabled
-          notice={setupNotice}
+          notice={errorNotice}
           dockState={dockState}
           onToggleDock={toggleDock}
           onClose={() => setOpen(false)}
