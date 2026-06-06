@@ -3,6 +3,7 @@ import { describe, expect, it, mock } from 'bun:test';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
+import type { LibraryRailProps } from './LibraryRail';
 import type { WorkflowSummary } from '@workbench/shared';
 
 const fakeWorkflow: WorkflowSummary = {
@@ -70,6 +71,7 @@ mock.module('../../lib/hub-api', () => ({
   provisionAgent: mock(() =>
     Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })
   ),
+  updateAgentCredentialRequirements: mock(() => Promise.resolve()),
 }));
 
 function renderWithClient(ui: React.ReactElement) {
@@ -86,5 +88,30 @@ describe('LibraryRail', () => {
       expect(screen.getAllByText('Acme Corp').length).toBeGreaterThan(0);
     });
     expect(screen.getByText('Sessions')).toBeDefined();
+  });
+
+  it('renders the + button when onNew is provided and workbenches are present', async () => {
+    const { listWorkbenches, listAgentInstances } = await import('../../lib/hub-api');
+    (listWorkbenches as ReturnType<typeof mock>).mockImplementation(() =>
+      Promise.resolve([{ id: 'wb-1', tenantId: 'tn-1', tenantSlug: 'acme', tenantName: 'Acme' }])
+    );
+    (listAgentInstances as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve([]));
+
+    const { LibraryRail } = await import('./LibraryRail');
+    const props: LibraryRailProps = { onNew: () => void 0 };
+    renderWithClient(React.createElement(LibraryRail as React.FC<LibraryRailProps>, props));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'New agent' })).toBeDefined();
+    });
+  });
+
+  it('does not render the + button when onNew is not provided', async () => {
+    const { LibraryRail } = await import('./LibraryRail');
+    renderWithClient(React.createElement(LibraryRail));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'New agent' })).toBeNull();
+    });
   });
 });

@@ -16,7 +16,7 @@ type ResourceStatus = 'run' | 'done' | 'idle';
 
 interface RailItem {
   id: string;
-  group: string;
+  group: RailGroup;
   name: string;
   type: ResourceType;
   sub: string;
@@ -130,7 +130,8 @@ function workflowToRailItem(w: WorkflowSummary): RailItem {
   };
 }
 
-const GROUP_ORDER = ['Sessions', 'Workbenches and agents'];
+const GROUP_ORDER = ['Sessions', 'Workbenches and agents'] as const;
+type RailGroup = (typeof GROUP_ORDER)[number];
 
 const TAG_STYLES: Record<ResourceType, string> = {
   workflow: 'bg-[rgba(233,132,40,0.16)] text-orange',
@@ -278,7 +279,7 @@ export interface AgentSelection {
   agentName: string;
 }
 
-interface LibraryRailProps {
+export interface LibraryRailProps {
   onClose?: () => void;
   onNew?: () => void;
   onAgentSelect?: (selection: AgentSelection) => void;
@@ -432,7 +433,7 @@ export function LibraryRail({ onClose, onNew, onAgentSelect, refreshTick }: Libr
                   {inGroup.length}
                 </span>
                 <span className="h-px flex-1 bg-border" />
-                {group === 'Workbenches & agents' && onNew && (
+                {group === 'Workbenches and agents' && onNew && (
                   <button
                     type="button"
                     onClick={onNew}
