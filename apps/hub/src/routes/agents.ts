@@ -1,6 +1,6 @@
 import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { schema as intxSchema, resolveInstanceSources } from '@intx/db';
+import { schema as intxSchema, resolveCredentialById, resolveInstanceSources } from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
@@ -53,6 +53,7 @@ const ProvisionAgentBody = type({
   tenantId: 'string',
   name: 'string',
   systemPrompt: 'string',
+  'credentialIds?': 'string[]',
 });
 
 type ProvisionAgentBodyType = typeof ProvisionAgentBody.infer;
@@ -174,24 +175,19 @@ export function createAgentProvisioningRouter(
     const txResult = await db.transaction(async (rawTx) => {
       const tx = rawTx as unknown as DB['db'];
 
-      const provisionResult = await ensureAgentInstance(tx, {
+      return await ensureAgentInstance(tx, {
         tenantId: body.tenantId,
         tenantDomain: tenantRow.domain,
         agentName: body.name,
         systemPrompt: body.systemPrompt,
         creatorPrincipalId: callerPrincipal.id,
         now,
+        ...(body.credentialIds !== undefined ? { credentialIds: body.credentialIds } : {}),
       });
-
-      if ('conflict' in provisionResult) {
-        return provisionResult;
-      }
-
-      return provisionResult;
     });
 
-    if ('conflict' in txResult) {
-      return c.json({ error: txResult.conflict }, 409);
+    if ('error' in txResult) {
+      return c.json({ error: txResult.error }, txResult.status);
     }
 
     const { instanceId, agentId, instancePrincipalId, isNew } = txResult;
@@ -513,17 +509,19 @@ export function createAgentProvisioningRouter(
     let modelConfig = agentRow.modelConfig as { defaultModel?: string } | null;
 
     if (raw.credentialId !== null) {
-      const cred = await db.query.credential.findFirst({
-        where: and(eq(credential.id, raw.credentialId), eq(credential.tenantId, tenantId)),
-      });
+      const cred = await resolveCredentialById(db, tenantId, raw.credentialId);
       if (!cred) return c.json({ error: 'Credential not found' }, 404);
 
       const prov = await db.query.provider.findFirst({
         where: eq(providerTable.id, cred.providerId),
       });
-      const meta = prov?.metadata as { model?: string; baseURL?: string } | null;
+      if (!prov) return c.json({ error: 'Credential provider not found' }, 404);
+      if (!isInferenceProviderName(prov.plugin)) {
+        return c.json({ error: 'Credential must use an inference provider' }, 400);
+      }
+      const meta = prov.metadata as { model?: string; baseURL?: string } | null;
 
-      reqs.push({ source: 'tenant', name: cred.name, providerName: prov?.name ?? '' });
+      reqs.push({ source: 'tenant', name: cred.name, providerName: prov.name });
 
       if (!modelConfig?.defaultModel && meta?.model) {
         modelConfig = { defaultModel: meta.model };
@@ -655,7 +653,7 @@ type EnsureAgentResult =
       address: string;
       isNew: boolean;
     }
-  | { conflict: string };
+  | { error: string; status: 400 | 404 };
 
 async function ensureAgentInstance(
   db: DB['db'],
@@ -666,81 +664,63 @@ async function ensureAgentInstance(
     systemPrompt: string;
     creatorPrincipalId: string;
     now: Date;
+    credentialIds?: string[];
   }
 ): Promise<EnsureAgentResult> {
-  const { tenantId, tenantDomain, agentName, systemPrompt, creatorPrincipalId, now } = opts;
+  const { tenantId, tenantDomain, agentName, systemPrompt, creatorPrincipalId, now, credentialIds } = opts;
 
-  const existingAgent = await db.query.agent.findFirst({
-    where: and(eq(agent.tenantId, tenantId), eq(agent.name, agentName)),
-  });
+  const agentId = generateId('agent');
 
-  if (existingAgent && existingAgent.systemPrompt !== systemPrompt) {
-    return {
-      conflict: `An agent named "${agentName}" already exists with a different system prompt. Choose a different name or update the existing agent.`,
-    };
-  }
+  const credReqs: Array<Record<string, unknown>> = [];
+  let modelConfig: { defaultModel: string } | undefined;
 
-  let agentId: string;
-  if (existingAgent) {
-    agentId = existingAgent.id;
-  } else {
-    agentId = generateId('agent');
+  if (credentialIds && credentialIds.length > 0) {
+    const seenCredentialIds = new Set<string>();
+    for (const credId of credentialIds) {
+      if (seenCredentialIds.has(credId)) continue;
+      seenCredentialIds.add(credId);
 
-    // Resolve the tenant credential named 'Myra LLM' eagerly so we can populate
-    // providerName (required by resolveCredentialRequirement) and modelConfig at
-    // definition time. If the credential does not exist yet, these will be filled
-    // in when the credential is created via POST /tenants/:tenantId/credentials.
-    const existingCred = await db.query.credential.findFirst({
-      where: and(
-        eq(credential.tenantId, tenantId),
-        eq(credential.name, 'Myra LLM'),
-        isNull(credential.principalId),
-        eq(credential.status, 'active')
-      ),
-    });
-    let credReqs: Array<Record<string, unknown>>;
-    let modelConfig: { defaultModel: string } | undefined;
-    if (existingCred) {
+      const cred = await resolveCredentialById(db, tenantId, credId);
+      if (!cred) {
+        return { error: `Credential not found: ${credId}`, status: 404 };
+      }
+
       const prov = await db.query.provider.findFirst({
-        where: eq(providerTable.id, existingCred.providerId),
+        where: eq(providerTable.id, cred.providerId),
       });
-      const meta = prov?.metadata as { model?: string } | null;
-      credReqs = [{ source: 'tenant', name: 'Myra LLM', providerName: prov?.name ?? '' }];
-      modelConfig = meta?.model ? { defaultModel: meta.model } : undefined;
-    } else {
-      credReqs = [];
+      if (!prov) {
+        return { error: `Credential provider not found for credential: ${credId}`, status: 404 };
+      }
+      if (!isInferenceProviderName(prov.plugin)) {
+        return { error: `Credential is not an inference credential: ${cred.name}`, status: 400 };
+      }
+
+      const meta = prov.metadata as { model?: string } | null;
+      if (!meta?.model) {
+        return { error: `Credential is missing an inference model: ${cred.name}`, status: 400 };
+      }
+      if (modelConfig) {
+        return { error: 'Select exactly one inference credential for this agent.', status: 400 };
+      }
+
+      credReqs.push({ source: 'tenant', name: cred.name, providerName: prov.name });
+      modelConfig = { defaultModel: meta.model };
     }
-
-    await db.insert(agent).values({
-      id: agentId,
-      tenantId,
-      creatorPrincipalId,
-      name: agentName,
-      systemPrompt,
-      credentialRequirements: credReqs,
-      ...(modelConfig !== undefined ? { modelConfig } : {}),
-      status: 'deployed',
-      currentVersion: '1',
-      createdAt: now,
-      updatedAt: now,
-    });
   }
 
-  const existingInstance = await db.query.agentInstance.findFirst({
-    where: and(
-      eq(agentInstance.agentId, agentId),
-      inArray(agentInstance.status, ['deployed', 'running'])
-    ),
+  await db.insert(agent).values({
+    id: agentId,
+    tenantId,
+    creatorPrincipalId,
+    name: agentName,
+    systemPrompt,
+    credentialRequirements: credReqs,
+    ...(modelConfig !== undefined ? { modelConfig } : {}),
+    status: 'deployed',
+    currentVersion: '1',
+    createdAt: now,
+    updatedAt: now,
   });
-  if (existingInstance) {
-    return {
-      instanceId: existingInstance.id,
-      agentId,
-      instancePrincipalId: existingInstance.principalId,
-      address: existingInstance.address,
-      isNew: false,
-    };
-  }
 
   const instancePrincipalId = generateId('principal');
   await db.insert(principal).values({

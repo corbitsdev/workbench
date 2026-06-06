@@ -4,7 +4,6 @@ import {
   artifactVersion,
   painPoint,
   transcript,
-  workbenchSession,
   workflowRun,
 } from './schema';
 
@@ -14,14 +13,6 @@ describe('database schema', () => {
     expect(transcript.content).toBeDefined();
     expect(transcript.source).toBeDefined();
     expect(transcript.createdAt).toBeDefined();
-  });
-
-  it('has workbenchSession table', () => {
-    expect(workbenchSession).toBeDefined();
-    expect(workbenchSession.transcriptId).toBeDefined();
-    expect(workbenchSession.status).toBeDefined();
-    expect(workbenchSession.createdAt).toBeDefined();
-    expect(workbenchSession.updatedAt).toBeDefined();
   });
 
   it('has painPoint table', () => {

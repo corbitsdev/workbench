@@ -9,14 +9,6 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-export const sessionStatus = [
-  'analyzing',
-  'reviewing',
-  'generating',
-  'improving',
-  'exporting',
-  'done',
-] as const;
 export const severity = ['low', 'medium', 'high', 'critical'] as const;
 export const artifactStatus = ['draft', 'approved', 'rejected'] as const;
 export const transcriptSource = ['paste', 'granola'] as const;
@@ -26,21 +18,6 @@ export const transcript = pgTable('transcript', {
   content: text('content').notNull(),
   source: text('source', { enum: transcriptSource }).notNull().default('paste'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
-});
-
-export const workbenchSession = pgTable('workbench_session', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  transcriptId: uuid('transcript_id')
-    .notNull()
-    .references(() => transcript.id, { onDelete: 'cascade' }),
-  userId: text('user_id'),
-  status: text('status', { enum: sessionStatus }).notNull().default('analyzing'),
-  companyName: text('company_name'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at')
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
 });
 
 export const workflowRun = pgTable('workflow_run', {

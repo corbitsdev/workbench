@@ -263,6 +263,7 @@ export type ProvisionAgentInput = {
   tenantId: string;
   name: string;
   systemPrompt: string;
+  credentialIds?: string[];
 };
 
 export type ProvisionAgentResponse = {

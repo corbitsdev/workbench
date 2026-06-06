@@ -114,6 +114,7 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
         tenantId: workspaceTenantId,
         name: trimmedName,
         systemPrompt: trimmedPrompt,
+        credentialIds: selectedCredentialIds,
       });
       if (!response.launched && response.launchError) {
         setError(`Agent created but failed to start: ${response.launchError}`);

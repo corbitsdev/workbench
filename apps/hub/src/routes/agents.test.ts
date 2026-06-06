@@ -269,35 +269,7 @@ describe('POST /agents', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 409 when the same agent name exists with a different system prompt', async () => {
-    const conflictingAgent = {
-      id: 'agt-existing',
-      name: 'Loop',
-      tenantId: 'tenant-1',
-      systemPrompt: 'A different prompt entirely.',
-    };
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
-    db.query.credential.findFirst = mock(() =>
-      Promise.resolve({ id: 'crd-1', tenantId: 'tenant-1' })
-    );
-    db.query.agent.findFirst = mock(() => Promise.resolve(conflictingAgent));
-    const app = buildApp(db);
-    const res = await app.fetch(
-      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
-    );
-    expect(res.status).toBe(409);
-  });
-
   it('returns 201 with launched:true and creates an agent instance', async () => {
-    const stubAgent = {
-      id: 'agt-1',
-      name: 'Loop',
-      tenantId: 'tenant-1',
-      systemPrompt: VALID_BODY.systemPrompt,
-    };
-
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     let base: any;
     // biome-ignore lint/suspicious/noExplicitAny: test mock
@@ -307,13 +279,6 @@ describe('POST /agents', () => {
       query: {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: { findFirst: mock(() => Promise.resolve(stubAgent)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-        credential: {
-          findFirst: mock(() => Promise.resolve(undefined)),
-          findMany: mock(() => Promise.resolve([])),
-        },
-        provider: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
       insert: mock(() => ({
         values: mock(() => ({
@@ -339,27 +304,6 @@ describe('POST /agents', () => {
   });
 
   it('returns 201 with launched:false and launchError when session launch fails', async () => {
-    const stubAgent = {
-      id: 'agt-1',
-      name: 'Loop',
-      tenantId: 'tenant-1',
-      systemPrompt: VALID_BODY.systemPrompt,
-    };
-    const stubProvider = {
-      id: 'prov-1',
-      tenantId: 'tenant-1',
-      plugin: 'anthropic',
-      name: 'anthropic',
-      metadata: { baseURL: 'https://api.anthropic.com', model: 'claude-sonnet-4-6' },
-    };
-    const stubCredential = {
-      id: 'crd-1',
-      tenantId: 'tenant-1',
-      name: 'llm',
-      providerId: 'prov-1',
-      secret: 'enc:sk-test',
-    };
-
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     let base: any;
     // biome-ignore lint/suspicious/noExplicitAny: test mock
@@ -369,13 +313,6 @@ describe('POST /agents', () => {
       query: {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: { findFirst: mock(() => Promise.resolve(stubAgent)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-        credential: {
-          findFirst: mock(() => Promise.resolve(stubCredential)),
-          findMany: mock(() => Promise.resolve([stubCredential])),
-        },
-        provider: { findFirst: mock(() => Promise.resolve(stubProvider)) },
       },
       insert: mock(() => ({
         values: mock(() => ({
@@ -403,64 +340,6 @@ describe('POST /agents', () => {
     expect(json.launched).toBe(false);
     expect(typeof json.launchError).toBe('string');
     expect(json.launchError).toContain('sidecar not connected');
-  });
-
-  it('is idempotent — second call returns the same instance', async () => {
-    const stubAgent = {
-      id: 'agt-loop',
-      name: 'Loop',
-      tenantId: 'tenant-1',
-      systemPrompt: VALID_BODY.systemPrompt,
-    };
-    const existingInstance = {
-      id: 'ins-loop',
-      agentId: 'agt-loop',
-      tenantId: 'tenant-1',
-      address: 'ins-loop@tenant-1.localhost',
-      status: 'deployed',
-      principalId: 'prn-agent-loop',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    let base: any;
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
-    base = {
-      transaction: txMock,
-      query: {
-        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
-        tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: { findFirst: mock(() => Promise.resolve(stubAgent)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(existingInstance)) },
-        credential: {
-          findFirst: mock(() =>
-            Promise.resolve({ id: 'crd-1', tenantId: 'tenant-1', name: 'llm', secret: 'x' })
-          ),
-          findMany: mock(() =>
-            Promise.resolve([{ id: 'crd-1', tenantId: 'tenant-1', name: 'llm', secret: 'x' }])
-          ),
-        },
-        provider: { findFirst: mock(() => Promise.resolve(undefined)) },
-      },
-      insert: mock(() => ({
-        values: mock(() => ({
-          returning: mock(() => Promise.resolve([])),
-          onConflictDoNothing: mock(() => Promise.resolve([])),
-        })),
-      })),
-      update: mock(() => ({ set: mock(() => ({ where: mock(() => Promise.resolve()) })) })),
-      delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
-    };
-
-    const app = buildApp(base);
-    const res = await app.fetch(
-      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
-    );
-    expect(res.status).toBe(201);
-    const json = await res.json();
-    expect(json.instanceId).toBe('ins-loop');
   });
 });
 

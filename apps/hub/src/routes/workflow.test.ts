@@ -22,8 +22,8 @@ describe('Workflow router', () => {
   function createMockDb() {
     return {
       query: {
-        workbenchSession: {
-          findFirst: mock(() => ({ id: 'wf-1', status: 'analyzing', transcriptId: 'tx-1' })),
+        workflowRun: {
+          findFirst: mock(() => ({ id: 'wf-1', status: 'pending', input: { companyName: 'Test Corp' } })),
         },
         transcript: {
           findFirst: mock(() => ({ content: 'Test transcript content' })),
@@ -86,10 +86,10 @@ describe('Workflow router', () => {
 
   it('GET /artifacts returns the user artifacts enriched with session info', async () => {
     const mockDb = createMockDb() as ReturnType<typeof createMockDb> & {
-      query: { workbenchSession: { findMany: ReturnType<typeof mock> } };
+      query: { workflowRun: { findMany: ReturnType<typeof mock> } };
     };
-    mockDb.query.workbenchSession.findMany = mock(() => [
-      { id: 'wf-1', status: 'done', companyName: 'Acme Corp', transcriptId: 'tx-1' },
+    mockDb.query.workflowRun.findMany = mock(() => [
+      { id: 'wf-1', status: 'done', input: { companyName: 'Acme Corp' }, tenantId: 't-1', principalId: 'p-1', kind: 'collateral-generation' },
     ]);
     mockDb.query.artifact.findMany = mock(() => [
       {
@@ -121,9 +121,9 @@ describe('Workflow router', () => {
 
   it('GET /artifacts returns an empty array when the user has no sessions', async () => {
     const mockDb = createMockDb() as ReturnType<typeof createMockDb> & {
-      query: { workbenchSession: { findMany: ReturnType<typeof mock> } };
+      query: { workflowRun: { findMany: ReturnType<typeof mock> } };
     };
-    mockDb.query.workbenchSession.findMany = mock(() => [] as any[]);
+    mockDb.query.workflowRun.findMany = mock(() => [] as any[]);
 
     const router = createWorkflowRouter(mockDb);
     const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
