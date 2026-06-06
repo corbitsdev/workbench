@@ -280,6 +280,8 @@ const hubApp = createApp({
   sidecarRouter,
   sessionService,
   eventCollectors,
+  assetService: null,
+  repoStore: null,
   sidecarWsHandler: upgradeWebSocket((_c) => {
     let handle: WsHandle;
     return {
