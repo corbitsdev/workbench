@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import {
-  createBrowserTransport,
-  createInstanceSession,
-  type InstanceSession,
-} from '@intx/hub-client';
+import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import { buildContextBlock, convertInstanceEvents } from '@workbench/agents';
 import {
   ChatLauncher,
@@ -16,6 +12,7 @@ import {
   type ChatMessage,
 } from '@workbench/chat';
 import { getMe } from '../lib/hub-api';
+import { createHubTransport } from '../lib/instance-transport';
 
 const MYRA: ChatAgentIdentity = { name: 'Myra', tagline: 'Personal agent' };
 
@@ -74,7 +71,7 @@ export function PersonalAgentChat() {
           return;
         }
 
-        const transport = createBrowserTransport();
+        const transport = createHubTransport();
         const session = createInstanceSession({
           tenantId: me.personalTenantId,
           instanceId: me.paInstanceId,
