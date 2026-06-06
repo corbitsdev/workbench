@@ -43,7 +43,7 @@ export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: stri
         .from(approval)
         .where(and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)))
         .limit(1)
-        .then((r) => r[0]);
+        .then((rows: { id: string }[]) => rows[0]);
       if (!row) return c.json({ error: 'Not found' }, 404);
       if (row.principalId !== userId) return c.json({ error: 'Forbidden' }, 403);
       return c.json({ error: 'Already resolved' }, 409);
@@ -81,7 +81,7 @@ export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: stri
         .from(approval)
         .where(and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)))
         .limit(1)
-        .then((r) => r[0]);
+        .then((rows: { id: string }[]) => rows[0]);
       if (!row) return c.json({ error: 'Not found' }, 404);
       if (row.principalId !== userId) return c.json({ error: 'Forbidden' }, 403);
       return c.json({ error: 'Already resolved' }, 409);
