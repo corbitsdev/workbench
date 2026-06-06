@@ -1,10 +1,6 @@
-import { getLogger } from '@intx/log';
-
-const log = getLogger(['sentry']);
-
 export async function initSentry() {
   const dsn = process.env.SENTRY_DSN;
-  const environment = process.env.SENTRY_ENVIRONMENT;
+  const environment = process.env.SENTRY_ENVIRONMENT ?? 'production';
 
   if (!dsn) {
     return null;
@@ -19,7 +15,7 @@ export async function initSentry() {
     });
     return sentry;
   } catch (error) {
-    log.warn('Failed to initialize Sentry', { error });
+    console.warn('Failed to initialize Sentry', error);
     return null;
   }
 }
