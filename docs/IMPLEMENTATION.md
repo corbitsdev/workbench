@@ -89,13 +89,13 @@ Transport-agnostic chat UI components. No dependency on a specific agent transpo
 
 ### Agent Provisioning
 
-| Method   | Route                                          | Input                                                       | Output                                                                     |
-| -------- | ---------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `GET`    | `/agents`                                      | `?tenantId=...`                                             | `{ data: AgentInstance[] }`                                                |
-| `POST`   | `/agents`                                      | `{ name, systemPrompt, tenantId, credentialIds: string[] }` | `{ instanceId, agentId, agentName, tenantId, launched, launchError? }` 201 |
-| `POST`   | `/tenants/:tenantId/credentials`               | `{ provider, name, apiKey, model, baseURL? }`               | `{ credentialId, providerId }` 201                                         |
-| `DELETE` | `/tenants/:tenantId/credentials/:credentialId` | — (Interchange-native; manage grant created at write time)  | `{ ok: true }` 200                                                         |
-| `POST`   | `/instances/:instanceId/sessions`              | `{}` (no credential IDs — Interchange resolves from agent's credentialRequirements) | `{ launched, launchError? }` 200              |
+| Method   | Route                                          | Input                                                                               | Output                                                                     |
+| -------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `GET`    | `/agents`                                      | `?tenantId=...`                                                                     | `{ data: AgentInstance[] }`                                                |
+| `POST`   | `/agents`                                      | `{ name, systemPrompt, tenantId, credentialIds: string[] }`                         | `{ instanceId, agentId, agentName, tenantId, launched, launchError? }` 201 |
+| `POST`   | `/tenants/:tenantId/credentials`               | `{ provider, name, apiKey, model, baseURL? }`                                       | `{ credentialId, providerId }` 201                                         |
+| `DELETE` | `/tenants/:tenantId/credentials/:credentialId` | — (Interchange-native; manage grant created at write time)                          | `{ ok: true }` 200                                                         |
+| `POST`   | `/instances/:instanceId/sessions`              | `{}` (no credential IDs — Interchange resolves from agent's credentialRequirements) | `{ launched, launchError? }` 200                                           |
 
 Agent launch does not accept credential IDs. The agent definition declares `credentialRequirements`; Interchange resolves them at launch time by walking the tenant ancestor chain. Grants written at credential-creation time are for management access only (delete/update via Settings UI), not for resolution.
 
@@ -247,6 +247,16 @@ The `CredentialSettingsPage` (**custom**) at `/settings/credentials` shows all c
 ### Deploy Prompts
 
 Agent deploy prompts are currently **static** (no dynamic context injected at deploy time). Dynamic context (current date, operator name, etc.) will be injected at session start via the hub-client layer. See CL-1297 — not yet implemented.
+
+### Session Liveness and Relaunch
+
+An instance is reachable for mail only when its row `status` is `running` — Interchange's session orchestrator sets this when the agent's session connects, and the mail route (`POST /tenants/:tenantId/agents/instances/:instanceId/mail`) returns `409` (`Instance is not running`) for any other status.
+
+A hub or sidecar restart drops the in-memory agent — the sidecar re-registers "with 0 agents" — but leaves the DB rows behind: `agentInstance.status` stays `deployed` and the old `agentSession` row stays `active`. The session record is therefore **not** a reliable liveness signal across restarts.
+
+`relaunchInstanceIfNeeded` (`apps/hub/src/routes/agents.ts`, called from `GET /v1/me`) gates on the live instance status, not the stale session record: it returns early only when `instance.status === 'running'`, and otherwise relaunches (subject to the tenant having an active credential). This is what brings Myra back automatically after a deploy or crash — without it, every `/mail` POST kept 409ing on a restarted instance.
+
+The Myra chat (`apps/web/src/components/PersonalAgentChat.tsx`) also self-heals at send time: if `sendMail` throws an `ApiError` with status `409`, it calls `launchInstanceSession(instanceId)` and retries the send once. This covers the window between a restart and the next `/v1/me` relaunch, so a send during that gap heals rather than throwing and dropping the message. A genuine failure surfaces the recoverable error notice instead of crashing the panel.
 
 ## Environment Configuration
 
