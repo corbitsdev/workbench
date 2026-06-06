@@ -5,7 +5,7 @@ import {
   createInstanceSession,
   type InstanceSession,
 } from '@intx/hub-client';
-import { convertInstanceEvents } from '@workbench/agents';
+import { convertInstanceEvents } from '@workbench/agents/browser';
 import { ChatPanel, type ChatAgentIdentity, type ChatMessage } from '@workbench/chat';
 import { launchInstanceSession } from '../lib/hub-api';
 

@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useCredentials } from '../../hooks/use-credentials';
 import { CredentialPicker } from '../CredentialPicker';
 import { provisionAgent, type ProvisionAgentResponse } from '../../lib/hub-api';
-import { LOOP_DEPLOY_PROMPT } from '@workbench/agents';
+import { LOOP_DEPLOY_PROMPT } from '@workbench/agents/browser';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';

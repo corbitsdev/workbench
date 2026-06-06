@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { ApiError, createInstanceSession, type InstanceSession } from '@intx/hub-client';
-import { buildContextBlock, convertInstanceEvents } from '@workbench/agents';
+import { buildContextBlock, convertInstanceEvents } from '@workbench/agents/browser';
 import {
   ChatLauncher,
   ChatPanel,
