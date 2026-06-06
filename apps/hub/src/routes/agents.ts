@@ -706,13 +706,14 @@ export async function relaunchInstanceIfNeeded(
   });
   if (!instance) return;
 
-  // Already has an active session record — sidecar will restore it on reconnect.
-  if (instance.sessionId) {
-    const session = await db.query.agentSession.findFirst({
-      where: eq(agentSession.id, instance.sessionId),
-    });
-    if (session?.status === 'active') return;
-  }
+  // The instance is live only when its status is "running" — the orchestrator
+  // sets this when the agent's session connects. A hub or sidecar restart drops
+  // the in-memory agent (the sidecar re-registers "with 0 agents") and leaves
+  // the row in "deployed" with a stale "active" session record. Trusting that
+  // session record alone meant we never relaunched after a restart, so every
+  // /mail POST kept 409ing with "Instance is not running". Gate on the live
+  // instance status instead, which is exactly what the mail route checks.
+  if (instance.status === 'running') return;
 
   const tenantRow = await db.query.tenant.findFirst({
     where: eq(tenant.id, instance.tenantId),

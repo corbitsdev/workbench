@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
+import { ApiError, createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import { buildContextBlock, convertInstanceEvents } from '@workbench/agents';
 import {
   ChatLauncher,
@@ -11,7 +11,7 @@ import {
   type ChatDockState,
   type ChatMessage,
 } from '@workbench/chat';
-import { getMe } from '../lib/hub-api';
+import { getMe, launchInstanceSession } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 
 const MYRA: ChatAgentIdentity = { name: 'Myra', tagline: 'Personal agent' };
@@ -48,6 +48,7 @@ export function PersonalAgentChat() {
   const [sessionState, setSessionState] = useState<SessionState>({ phase: 'loading' });
   const [, forceUpdate] = useState(0);
   const [me, setMe] = useState<{ userName: string } | null>(null);
+  const instanceIdRef = useRef<string | null>(null);
   // Bumping this re-runs the connect effect — used by the error-state retry so a
   // transient hydration/transport failure does not permanently brick the panel.
   const [attempt, setAttempt] = useState(0);
@@ -71,6 +72,7 @@ export function PersonalAgentChat() {
           return;
         }
 
+        instanceIdRef.current = me.paInstanceId;
         const transport = createHubTransport();
         const session = createInstanceSession({
           tenantId: me.personalTenantId,
@@ -208,15 +210,37 @@ export function PersonalAgentChat() {
     const messages = buildMessages(session);
     const isTyping = !!session.streaming || !!session.activity;
 
+    // Send mail, recovering from a dropped session. A hub or sidecar restart
+    // leaves the instance not running, so the first send 409s; relaunching the
+    // session and retrying once heals it without bouncing the user to an error
+    // state or silently losing their message.
+    const sendWithRecovery = async (content: string) => {
+      try {
+        await session.sendMail(content);
+      } catch (err) {
+        const instanceId = instanceIdRef.current;
+        if (!(err instanceof ApiError && err.status === 409) || instanceId === null) {
+          throw err;
+        }
+        await launchInstanceSession(instanceId);
+        await session.sendMail(content);
+      }
+    };
+
     const handleSend = (text: string) => {
+      let content = text;
       if (!contextInjectedRef.current && me !== null) {
         contextInjectedRef.current = true;
         const date = new Date().toLocaleDateString('en-GB');
         const contextBlock = buildContextBlock({ date, 'Human Operator': me.userName }, 'xml');
-        void session.sendMail(`${contextBlock}\n\n${text}`);
-      } else {
-        void session.sendMail(text);
+        content = `${contextBlock}\n\n${text}`;
       }
+      void sendWithRecovery(content).catch(() => {
+        setSessionState({
+          phase: 'error',
+          message: 'Could not reach Myra. Check your connection and try again.',
+        });
+      });
     };
 
     return (
