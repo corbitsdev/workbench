@@ -296,6 +296,7 @@ const hubApp = createApp({
   sidecarRouter,
   sessionService,
   eventCollectors,
+  grantStore,
   assetService: null,
   repoStore: null,
   sidecarWsHandler: upgradeWebSocket((_c) => {
