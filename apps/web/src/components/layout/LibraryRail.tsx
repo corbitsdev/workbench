@@ -47,6 +47,13 @@ function agentStatusLabel(status: string): string {
   return 'Deploying';
 }
 
+function formatToolName(name: string): string {
+  return name
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 function agentToRailItem(a: AgentInstance): RailItem {
   return {
     id: a.id,
@@ -373,7 +380,7 @@ function AgentToolEditor({
               disabled={saving}
               className="h-3 w-3 accent-orange"
             />
-            {name}
+            {formatToolName(name)}
           </label>
         ))}
       </div>
@@ -706,6 +713,7 @@ export function LibraryRail({
                 const isActiveWorkflow = item.type === 'workflow' && item.id === activeWorkflowId;
                 const isEditingCred = editingCredentialFor === item.id;
                 const isEditingTools = editingToolsFor === item.id;
+                const isRestarting = restartingInstanceId === item.instanceId;
 
                 const openItem = () => {
                   if (isClickableAgent) {
@@ -764,7 +772,9 @@ export function LibraryRail({
                         <div className="truncate text-[14px] font-medium text-text">
                           {item.name}
                         </div>
-                        <div className="mt-px font-mono text-[11.5px] text-text-3">{item.sub}</div>
+                        <div className="mt-px font-mono text-[11.5px] text-text-3">
+                          {isRestarting ? 'Agent · Restarting…' : item.sub}
+                        </div>
                       </div>
                       {item.type === 'agent' && item.agentId && item.tenantId && (
                         <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -887,7 +897,10 @@ export function LibraryRail({
                           tenantId={item.tenantId}
                           agentId={item.agentId}
                           currentCapabilities={item.capabilities ?? null}
-                          onSaved={() => setEditingToolsFor(null)}
+                          onSaved={() => {
+                            setEditingToolsFor(null);
+                            retryWorkbenches();
+                          }}
                           onCancel={() => setEditingToolsFor(null)}
                         />
                       </div>

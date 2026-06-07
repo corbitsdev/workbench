@@ -1,4 +1,5 @@
 @import '@workbench/ui/styles.css';
+@import '@workbench/chat/styles.css';
 @source '../../../packages/artifact/src';
 @source '../../../packages/transcript/src';
 @source '../../../packages/workflow/src';
