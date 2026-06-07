@@ -38,7 +38,17 @@ describe('Workflow router', () => {
           findFirst: mock(() => PERSONAL_PRINCIPAL),
         },
         workflowRun: {
-          findFirst: mock(() => ({
+          findFirst: mock<
+            () =>
+              | {
+                  id: string;
+                  status: string;
+                  principalId: string;
+                  input: { companyName: string; transcriptId: string };
+                }
+              | null
+              | undefined
+          >(() => ({
             id: 'wf-1',
             status: 'pending',
             principalId: PERSONAL_PRINCIPAL.id,

@@ -18,6 +18,8 @@ import { generateCollateralWithLLM } from '../lib/generation';
 
 const log = getLogger(['api', 'workflow']);
 
+workflowRegistry.register(collateralGenerationWorkflow);
+
 const STEP_ORDER = ['intake', 'analyze', 'generate', 'improve', 'export'] as const;
 type StepName = (typeof STEP_ORDER)[number];
 
@@ -39,6 +41,13 @@ const VALID_EXPORT_TARGETS = ['markdown', 'csv', 'json'] as const;
 type ExportTarget = (typeof VALID_EXPORT_TARGETS)[number];
 
 import type { UserContext } from '@workbench/workflow-core';
+
+interface WorkflowInput {
+  transcriptId?: string;
+  transcriptSource?: string;
+  companyName?: string;
+  stepConfig?: WorkflowStepConfig;
+}
 
 async function getUserContext(db: DB['db'], userId: string): Promise<UserContext | null> {
   const personalTenant = await db.query.tenant.findFirst({
@@ -99,9 +108,6 @@ function validateWorkflowInput(
 }
 
 export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: string } }> {
-  // Register all available workflows
-  workflowRegistry.register(collateralGenerationWorkflow);
-
   const router = new Hono<{ Variables: { userId: string } }>();
 
   // ─── List available workflow types ───────────────────────────────
@@ -271,7 +277,7 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
 
     const rows = await Promise.all(
       sessions.map(async (s: (typeof sessions)[number]) => {
-        const transcriptId = (s.input as any)?.transcriptId;
+        const transcriptId = (s.input as WorkflowInput)?.transcriptId;
         const tx = transcriptId
           ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
           : null;
@@ -284,7 +290,7 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
           status: s.status,
           createdAt: s.createdAt,
           transcriptId: transcriptId ?? null,
-          companyName: (s.input as any)?.companyName ?? null,
+          companyName: (s.input as WorkflowInput)?.companyName ?? null,
           transcriptPreview: tx?.content?.slice(0, 80) ?? null,
           painPointCount: points.length,
           firstPainPoint: points[0]?.context ?? null,
@@ -332,7 +338,7 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
       const session = sessionById.get(a.sessionId);
       return {
         ...serializeArtifact(a),
-        sessionName: (session?.input as any)?.companyName ?? null,
+        sessionName: (session?.input as WorkflowInput)?.companyName ?? null,
         sessionStatus: session?.status ?? null,
       };
     });
@@ -360,7 +366,7 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
       return c.json({ error: 'Workflow not found' }, 404);
     }
 
-    const transcriptId = (wf.input as any)?.transcriptId;
+    const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
     const tx = transcriptId
       ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
       : null;
@@ -381,13 +387,13 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
       artifactCount: allArtifacts.length,
     });
 
-    const stepConfig: WorkflowStepConfig = (wf.input as any)?.stepConfig ?? {};
+    const stepConfig: WorkflowStepConfig = (wf.input as WorkflowInput)?.stepConfig ?? {};
 
     return c.json({
       id,
       status: wf.status,
       currentStep,
-      companyName: (wf.input as any)?.companyName ?? null,
+      companyName: (wf.input as WorkflowInput)?.companyName ?? null,
       stepConfig,
       steps: {
         intake: { completed: true, transcriptId: transcriptId ?? null, transcript: tx?.content },
@@ -484,8 +490,12 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
     });
     if (!wf) return c.json({ error: 'Workflow not found' }, 404);
 
-    const updatedInput = { ...(wf.input as any), companyName };
-    await db.update(workflowRun).set({ input: updatedInput }).where(eq(workflowRun.id, id));
+    const updatedInput: WorkflowInput = { ...(wf.input as WorkflowInput) };
+    if (companyName !== null) updatedInput.companyName = companyName;
+    await db
+      .update(workflowRun)
+      .set({ input: updatedInput as Record<string, unknown> })
+      .where(eq(workflowRun.id, id));
 
     log.info('Company name updated', { workflowId: id, companyName });
     return c.json({ id, companyName });
@@ -575,8 +585,14 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
       }
     }
 
-    const updatedInput = { ...(wf.input ?? {}), stepConfig: validatedConfig };
-    await db.update(workflowRun).set({ input: updatedInput }).where(eq(workflowRun.id, id));
+    const updatedInput: WorkflowInput = {
+      ...(wf.input as WorkflowInput),
+      stepConfig: validatedConfig,
+    };
+    await db
+      .update(workflowRun)
+      .set({ input: updatedInput as Record<string, unknown> })
+      .where(eq(workflowRun.id, id));
 
     log.info('Step config updated', { workflowId: id, steps: Object.keys(validatedConfig) });
     return c.json({ id, stepConfig: validatedConfig });
@@ -624,7 +640,7 @@ async function runAnalyze(
     where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
   });
 
-  const transcriptId = (wf?.input as any)?.transcriptId;
+  const transcriptId = (wf?.input as WorkflowInput)?.transcriptId;
   const tx = transcriptId
     ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
     : null;
@@ -643,11 +659,11 @@ async function runAnalyze(
   const inserted =
     extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
 
-  const updatedInput = { ...(wf?.input as any) };
+  const updatedInput: WorkflowInput = { ...(wf?.input as WorkflowInput) };
   if (companyName) updatedInput.companyName = companyName;
   await db
     .update(workflowRun)
-    .set({ status: 'running', input: updatedInput })
+    .set({ status: 'running', input: updatedInput as Record<string, unknown> })
     .where(eq(workflowRun.id, id));
 
   log.info('Analyze step complete', { workflowId: id, insertedCount: inserted.length });
@@ -662,17 +678,30 @@ async function runAnalyze(
   });
 }
 
-async function runGenerate(db: any, id: string, painPointIds: string[], authorId: string) {
+async function runGenerate(
+  db: DB['db'],
+  id: string,
+  painPointIds: string[],
+  principalId: string
+) {
+  const authorId = principalId;
   log.info('Starting generate step', { workflowId: id, painPointCount: painPointIds.length });
 
   const [points, wf] = await Promise.all([
     db.query.painPoint.findMany({
       where: and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)),
     }),
-    db.query.workflowRun.findFirst({ where: eq(workflowRun.id, id) }),
+    db.query.workflowRun.findFirst({
+      where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, principalId)),
+    }),
   ]);
 
-  const transcriptId = (wf?.input as any)?.transcriptId;
+  if (!wf) {
+    log.warn('Workflow not found for generate', { workflowId: id });
+    return Response.json({ error: 'Workflow not found' }, { status: 404 });
+  }
+
+  const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
   const tx = transcriptId
     ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
     : null;
@@ -689,19 +718,20 @@ async function runGenerate(db: any, id: string, painPointIds: string[], authorId
     points.flatMap((p: any) =>
       ARTIFACT_KINDS.map((kind) =>
         generateCollateralWithLLM(id, transcriptContent, p, kind).then(({ title, body }) => ({
-          sessionId: id,
-          painPointId: p.id,
-          kind,
-          title,
-          content: body,
-          status: 'draft',
-          version: 1,
-        }))
+            sessionId: id,
+            painPointId: p.id,
+            kind,
+            title,
+            content: body,
+            status: 'draft',
+            version: 1,
+          })
+        )
       )
     )
   );
 
-  const generated = results.flatMap((r) => {
+  const generated = results.flatMap((r: PromiseSettledResult<unknown>) => {
     if (r.status === 'fulfilled') return [r.value];
     log.error('Artifact generation failed for one item', {
       workflowId: id,
