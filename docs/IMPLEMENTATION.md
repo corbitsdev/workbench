@@ -210,6 +210,34 @@ Required fields: `provider`, `name`, and `apiKey`. `provider` accepts arbitrary 
 
 Secrets are stored with an `enc:vN:` prefix — see `@workbench/hub-crypto`. Plain secrets are never written to the DB.
 
+#### Credential decryption invariant — three paths, all must decrypt
+
+> **Danger zone.** Credentials are stored encrypted (`enc:v1:<ciphertext>`). The sidecar must **always** receive plaintext API keys. Any code path that calls `sidecarRouter.sendSourcesUpdate` is responsible for decrypting first. There are exactly three such paths; all three must be audited whenever the credential or session-launch code changes.
+
+| Path          | Where                                                           | How decryption happens                                                                                                                                                  |
+| ------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Launch**    | `launchAgentSession` in `apps/hub/src/routes/agents.ts`         | Sources resolved via `resolveInstanceSources`, then each `apiKey` passed through `decryptSecret` before `sessionService.launchSession` is called                        |
+| **Rotation**  | `pushDecryptedSourceUpdates` in `apps/hub/src/routes/agents.ts` | Called from `POST /tenants/:tenantId/credentials` and `POST /instances/:instanceId/sessions`; resolves and decrypts sources for all **running** instances in the tenant |
+| **Reconnect** | `agent.reconnected` listener in `apps/hub/src/index.ts`         | Registered **after** `createHubSessionOrchestrator`. Calls `pushDecryptedSourcesForInstance` (single-instance variant, no status filter) and **awaits** it              |
+
+#### Why the reconnect path needs two listeners
+
+Interchange's orchestrator also listens on `agent.reconnected` and calls `sendSourcesUpdate` with the raw (encrypted) DB values — it has no knowledge of the workbench encryption layer. `emitAndAwait` runs listeners sequentially in registration order and **awaits each one** before moving to the next. Because our listener is registered after the orchestrator's, it fires second and overwrites the encrypted sources with decrypted ones.
+
+This is intentional and unavoidable: we cannot modify `interchange/`. Two `sendSourcesUpdate` wire calls per reconnect is the cost of keeping the boundary clean.
+
+#### Why `pushDecryptedSourcesForInstance`, not `pushDecryptedSourceUpdates`, for reconnect
+
+`pushDecryptedSourceUpdates` queries `agentInstance WHERE status = 'running'`. The orchestrator sets `status = 'running'` **inside its own listener**, after `sendSourcesUpdate`. When our listener fires, the reconnecting instance is still `'deployed'` and would be silently skipped. `pushDecryptedSourcesForInstance` takes the specific instance directly and applies no status filter.
+
+#### What must not change
+
+- **Do not `void` the call inside the reconnect listener.** `emitAndAwait` awaits the promise the listener returns. `void` detaches the async body, destroying the sequencing guarantee and causing the push to race with (and likely lose to) Interchange's encrypted push.
+- **Do not reorder listener registration.** Our listener must be registered after `createHubSessionOrchestrator`.
+- **If you add a new caller of `sidecarRouter.sendSourcesUpdate`**, verify it sends decrypted keys.
+
+The reconnect bug was introduced as CL-1396 and fixed in the same ticket.
+
 #### Credential verification (ancestor-chain lookup)
 
 > **Interchange-provided**: `getAncestorChain` is exported from `@intx/db` (`interchange/packages/db/src/credential-resolution.ts`). The workbench calls it; it is not reimplemented.
