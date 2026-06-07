@@ -34,7 +34,12 @@ mock.module('../lib/agent-credential-repair', () => ({
 }));
 
 import { Hono } from 'hono';
-import { createAgentProvisioningRouter, relaunchInstanceIfNeeded } from './agents';
+import {
+  createAgentProvisioningRouter,
+  pushDecryptedSourcesForInstance,
+  pushDecryptedSourceUpdates,
+  relaunchInstanceIfNeeded,
+} from './agents';
 
 function makeRequest(
   url: string,
@@ -1092,5 +1097,97 @@ describe('relaunchInstanceIfNeeded', () => {
     );
 
     expect(sessionService.launchSession).not.toHaveBeenCalled();
+  });
+});
+
+// ─── pushDecryptedSourcesForInstance ─────────────────────────────
+// Used by the agent.reconnected listener in index.ts to push decrypted
+// sources for a specific reconnecting instance. Must work regardless of
+// instance status — the orchestrator sets status='running' inside its own
+// handler, so the row is still 'deployed' when our listener fires.
+
+describe('pushDecryptedSourcesForInstance', () => {
+  it('sends plaintext apiKey to the sidecar, not the encrypted value', async () => {
+    const db = makeMockDb();
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+
+    const capturedSources: unknown[] = [];
+    const capturingSidecarRouter: SidecarRouter = {
+      sendSourcesUpdate: mock((_addr, sources) => {
+        capturedSources.push(...sources);
+        return Promise.resolve();
+      }),
+    } as unknown as SidecarRouter;
+
+    await pushDecryptedSourcesForInstance(db as unknown as DB['db'], capturingSidecarRouter, {
+      tenantId: TEST_TENANT_ID,
+      address: 'ins-reconnect@tenant-1.localhost',
+      agentId: 'agt-1',
+      sessionId: 'ses-1',
+    });
+
+    expect(capturedSources).toHaveLength(1);
+    const source = (capturedSources as Array<{ apiKey: string }>)[0];
+    expect(source?.apiKey).toBe(TEST_API_KEY);
+    expect(source?.apiKey).not.toContain('enc:');
+  });
+
+  it('works when instance status is deployed (reconnect fires before orchestrator sets running)', async () => {
+    const db = makeMockDb();
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+
+    const capturingSidecarRouter: SidecarRouter = {
+      sendSourcesUpdate: mock(() => Promise.resolve()),
+    } as unknown as SidecarRouter;
+
+    await pushDecryptedSourcesForInstance(db as unknown as DB['db'], capturingSidecarRouter, {
+      tenantId: TEST_TENANT_ID,
+      address: 'ins-reconnect@tenant-1.localhost',
+      agentId: 'agt-1',
+      sessionId: 'ses-1',
+    });
+
+    expect(capturingSidecarRouter.sendSourcesUpdate).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── pushDecryptedSourceUpdates ───────────────────────────────────
+// Used by the credential rotation path. Operates on all running instances
+// for a tenant. Status filter is intentional here — only push to live agents.
+
+describe('pushDecryptedSourceUpdates', () => {
+  it('sends plaintext apiKey to all running instances for the tenant', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findMany = mock(() =>
+      Promise.resolve([
+        {
+          id: 'ins-running',
+          agentId: 'agt-1',
+          tenantId: TEST_TENANT_ID,
+          address: 'ins-running@tenant-1.localhost',
+          status: 'running',
+        },
+      ])
+    );
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+
+    const capturedSources: unknown[] = [];
+    const capturingSidecarRouter: SidecarRouter = {
+      sendSourcesUpdate: mock((_addr, sources) => {
+        capturedSources.push(...sources);
+        return Promise.resolve();
+      }),
+    } as unknown as SidecarRouter;
+
+    await pushDecryptedSourceUpdates(
+      db as unknown as DB['db'],
+      capturingSidecarRouter,
+      TEST_TENANT_ID
+    );
+
+    expect(capturedSources).toHaveLength(1);
+    const source = (capturedSources as Array<{ apiKey: string }>)[0];
+    expect(source?.apiKey).toBe(TEST_API_KEY);
+    expect(source?.apiKey).not.toContain('enc:');
   });
 });
