@@ -163,9 +163,14 @@ const auth = betterAuth({
             });
 
             if (!instance) {
+              const repairAuthUser = await db.query.user.findFirst({
+                where: eq(intxSchema.user.id, session.userId),
+              });
+              if (!repairAuthUser) return;
+
               const { principalId: creatorPrincipalId } = await provisionPersonalTenant(db, {
                 userId: session.userId,
-                userEmail: session.userId,
+                userEmail: repairAuthUser.email,
               });
               const domain = `user-${session.userId}.localhost`;
               const { paInstanceId } = await provisionMyraInstance(db, {
