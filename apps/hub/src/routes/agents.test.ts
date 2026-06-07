@@ -717,6 +717,139 @@ describe('PATCH /tenants/:tenantId/agents/:agentId/credential', () => {
   });
 });
 
+// ─── PATCH /tenants/:tenantId/agents/:agentId/tools ──────────────
+
+describe('PATCH /tenants/:tenantId/agents/:agentId/tools', () => {
+  it('relaunches running agent instances so updated tools become visible', async () => {
+    const sessionService: SessionService = {
+      launchSession: mock(() => Promise.resolve()),
+      sendUserMessage: mock(() => Promise.reject(new Error('not implemented'))),
+      endSession: mock(() => Promise.resolve()),
+    } as unknown as SessionService;
+
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'agt-1',
+        tenantId: 'tenant-1',
+        name: 'Loop',
+        systemPrompt: 'You are Loop.',
+        capabilities: null,
+      })
+    );
+    db.query.agentInstance.findMany = mock(() =>
+      Promise.resolve([
+        {
+          id: 'ins-1',
+          agentId: 'agt-1',
+          tenantId: 'tenant-1',
+          address: 'ins-1@tenant-1.localhost',
+          status: 'running',
+          principalId: 'prn-agent-1',
+          sessionId: 'ses-1',
+        },
+      ])
+    );
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+
+    const app = buildApp(db, sessionService);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/agents/agt-1/tools', {
+        method: 'PATCH',
+        body: { tools: ['exa_search'] },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(sessionService.endSession).toHaveBeenCalledWith(
+      'ins-1@tenant-1.localhost',
+      'agent tools updated'
+    );
+    expect(sessionService.launchSession).toHaveBeenCalled();
+  });
+
+  it('skips relaunch when the agent has no systemPrompt', async () => {
+    const sessionService: SessionService = {
+      launchSession: mock(() => Promise.resolve()),
+      sendUserMessage: mock(() => Promise.reject(new Error('not implemented'))),
+      endSession: mock(() => Promise.resolve()),
+    } as unknown as SessionService;
+
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'agt-1',
+        tenantId: 'tenant-1',
+        name: 'Loop',
+        systemPrompt: null,
+        capabilities: null,
+      })
+    );
+    db.query.agentInstance.findMany = mock(() => Promise.resolve([]));
+
+    const app = buildApp(db, sessionService);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/agents/agt-1/tools', {
+        method: 'PATCH',
+        body: { tools: ['exa_search'] },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(sessionService.endSession).not.toHaveBeenCalled();
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
+  });
+
+  it('skips relaunch when the tenant has no domain', async () => {
+    const sessionService: SessionService = {
+      launchSession: mock(() => Promise.resolve()),
+      sendUserMessage: mock(() => Promise.reject(new Error('not implemented'))),
+      endSession: mock(() => Promise.resolve()),
+    } as unknown as SessionService;
+
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve({ id: 'tenant-1', domain: null }));
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'agt-1',
+        tenantId: 'tenant-1',
+        name: 'Loop',
+        systemPrompt: 'You are Loop.',
+        capabilities: null,
+      })
+    );
+    db.query.agentInstance.findMany = mock(() =>
+      Promise.resolve([
+        {
+          id: 'ins-1',
+          agentId: 'agt-1',
+          tenantId: 'tenant-1',
+          address: 'ins-1@tenant-1.localhost',
+          status: 'running',
+          principalId: 'prn-agent-1',
+          sessionId: 'ses-1',
+        },
+      ])
+    );
+
+    const app = buildApp(db, sessionService);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/agents/agt-1/tools', {
+        method: 'PATCH',
+        body: { tools: ['exa_search'] },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(sessionService.endSession).not.toHaveBeenCalled();
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
+  });
+});
+
 // ─── POST /instances/:instanceId/sessions ────────────────────────
 
 describe('POST /instances/:instanceId/sessions', () => {

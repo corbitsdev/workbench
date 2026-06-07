@@ -51,6 +51,10 @@ export interface ListWorkflowsParams {
   tenantId?: string | null;
 }
 
+export interface ListArtifactsParams {
+  tenantId?: string | null;
+}
+
 /** Fetch the current user's jobs (`GET /workflows`). */
 export function listWorkflows(
   options: ClientOptions = {},
@@ -64,6 +68,10 @@ export function listWorkflows(
  * Fetch the current user's artifacts across all their jobs, each enriched
  * with the originating job (`GET /artifacts`).
  */
-export function listArtifacts(options: ClientOptions = {}): Promise<ArtifactWithSession[]> {
-  return request<ArtifactWithSession[]>('artifacts', options);
+export function listArtifacts(
+  options: ClientOptions = {},
+  params: ListArtifactsParams = {}
+): Promise<ArtifactWithSession[]> {
+  const search = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  return request<ArtifactWithSession[]>(`artifacts${search}`, options);
 }

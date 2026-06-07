@@ -1,6 +1,7 @@
 /// <reference types="bun" />
+import '../../test-setup';
 import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { cleanup, render, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { LibraryRailProps } from './LibraryRail';
@@ -88,12 +89,12 @@ afterEach(cleanup);
 describe('LibraryRail', () => {
   it('renders real jobs from the client', async () => {
     const { LibraryRail } = await import('./LibraryRail');
-    renderWithClient(React.createElement(LibraryRail));
+    const view = renderWithClient(React.createElement(LibraryRail));
 
     await waitFor(() => {
-      expect(screen.getAllByText('Acme Corp').length).toBeGreaterThan(0);
+      expect(view.getAllByText('Acme Corp').length).toBeGreaterThan(0);
     });
-    expect(screen.getAllByText('Jobs').length).toBeGreaterThan(0);
+    expect(view.getAllByText('Jobs').length).toBeGreaterThan(0);
   });
 
   it('renders the + button when onNew is provided and workbenches are present', async () => {
@@ -105,19 +106,21 @@ describe('LibraryRail', () => {
 
     const { LibraryRail } = await import('./LibraryRail');
     const props: LibraryRailProps = { onNew: () => void 0 };
-    renderWithClient(React.createElement(LibraryRail as React.FC<LibraryRailProps>, props));
+    const view = renderWithClient(
+      React.createElement(LibraryRail as React.FC<LibraryRailProps>, props)
+    );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'New agent' })).toBeDefined();
+      expect(view.getByRole('button', { name: 'New agent' })).toBeDefined();
     });
   });
 
   it('does not render the + button when onNew is not provided', async () => {
     const { LibraryRail } = await import('./LibraryRail');
-    renderWithClient(React.createElement(LibraryRail));
+    const view = renderWithClient(React.createElement(LibraryRail));
 
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: 'New agent' })).toBeNull();
+      expect(view.queryByRole('button', { name: 'New agent' })).toBeNull();
     });
   });
 
@@ -176,7 +179,7 @@ describe('LibraryRail', () => {
     );
 
     const { LibraryRail } = await import('./LibraryRail');
-    renderWithClient(
+    const view = renderWithClient(
       React.createElement(LibraryRail as React.FC<LibraryRailProps>, {
         activeWorkbenchSlug: 'acme',
         onAgentSelect: () => void 0,
@@ -184,18 +187,96 @@ describe('LibraryRail', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Loop')).toBeDefined();
+      expect(view.getByText('Loop')).toBeDefined();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Configure credential' }));
+    fireEvent.click(view.getByRole('button', { name: 'Configure credential' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('combobox')).toBeDefined();
+      expect(view.getByRole('combobox')).toBeDefined();
     });
 
-    const options = screen.getAllByRole('option');
+    const options = view.getAllByRole('option');
     expect(options.length).toBe(1);
     expect(options[0].textContent).toContain('Zen Test');
     expect(options[0].textContent).not.toContain('Exa');
+  });
+
+  it('opens deployed agents so the chat can launch or show the real error', async () => {
+    const { listWorkbenches, listAgentInstances } = await import('../../lib/hub-api');
+    (listWorkbenches as ReturnType<typeof mock>).mockImplementation(() =>
+      Promise.resolve([{ id: 'wb-1', tenantId: 'tn-1', tenantSlug: 'acme', tenantName: 'Acme' }])
+    );
+    (listAgentInstances as ReturnType<typeof mock>).mockImplementation(() =>
+      Promise.resolve([
+        {
+          id: 'inst-1',
+          agentId: 'ag-1',
+          agentName: 'Loop',
+          tenantId: 'tn-1',
+          address: '',
+          status: 'deployed',
+          credentialRequirements: [],
+          capabilities: null,
+          createdAt: new Date().toISOString(),
+        },
+      ])
+    );
+    const onAgentSelect = mock(() => undefined);
+
+    const { LibraryRail } = await import('./LibraryRail');
+    const view = renderWithClient(
+      React.createElement(LibraryRail as React.FC<LibraryRailProps>, {
+        activeWorkbenchSlug: 'acme',
+        onAgentSelect,
+      })
+    );
+
+    await waitFor(() => {
+      expect(view.getByText('Loop')).toBeDefined();
+    });
+
+    fireEvent.click(view.getByText('Loop'));
+
+    expect(onAgentSelect).toHaveBeenCalledWith({
+      instanceId: 'inst-1',
+      tenantId: 'tn-1',
+      agentName: 'Loop',
+    });
+  });
+
+  it('keeps loaded agents visible and warns when one workbench fails to load agents', async () => {
+    const { listWorkbenches, listAgentInstances } = await import('../../lib/hub-api');
+    (listWorkbenches as ReturnType<typeof mock>).mockImplementation(() =>
+      Promise.resolve([
+        { id: 'wb-1', tenantId: 'tn-ok', tenantSlug: 'acme', tenantName: 'Acme' },
+        { id: 'wb-2', tenantId: 'tn-fail', tenantSlug: 'beta', tenantName: 'Beta' },
+      ])
+    );
+    (listAgentInstances as ReturnType<typeof mock>).mockImplementation((tenantId: string) => {
+      if (tenantId === 'tn-fail') return Promise.reject(new Error('forbidden'));
+      return Promise.resolve([
+        {
+          id: 'inst-1',
+          agentId: 'ag-1',
+          agentName: 'Loop',
+          tenantId,
+          address: '',
+          status: 'running',
+          credentialRequirements: [],
+          capabilities: null,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    });
+
+    const { LibraryRail } = await import('./LibraryRail');
+    const view = renderWithClient(React.createElement(LibraryRail));
+
+    await waitFor(() => {
+      expect(view.getByText('Loop')).toBeDefined();
+    });
+
+    expect(view.getByText('Some agents could not be loaded.')).toBeDefined();
   });
 });

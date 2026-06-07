@@ -24,7 +24,9 @@ export type RepairDB = {
       // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
       findFirst: (
         opts: any
-      ) => Promise<{ id: string; name: string; metadata: unknown } | undefined>;
+      ) => Promise<
+        { id: string; name: string; plugin?: string | null; metadata: unknown } | undefined
+      >;
     };
     agent: {
       // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
@@ -60,8 +62,17 @@ type CredentialRequirement = {
 type TenantCredential = {
   name: string;
   providerName: string;
+  providerPlugin: string;
   model: string | null;
 };
+
+// Must be kept in sync with inference-capable provider plugins registered in Interchange.
+const INFERENCE_PROVIDER_PLUGINS = new Set([
+  'anthropic',
+  'openai',
+  'google-genai',
+  'openai-compatible',
+]);
 
 /**
  * Repair every agent definition in every tenant where the user is a principal.
@@ -113,14 +124,19 @@ export async function repairTenantAgentCredentials(db: RepairDB, tenantId: strin
     enriched.push({
       name: cred.name,
       providerName: prov.name,
+      providerPlugin: prov.plugin ?? prov.name,
       model: meta?.model ?? null,
     });
   }
-  if (enriched.length === 0) return;
+  const inferenceCredentials = enriched.filter((e) =>
+    INFERENCE_PROVIDER_PLUGINS.has(e.providerPlugin)
+  );
+  if (inferenceCredentials.length === 0) return;
 
   // The credential to bind an unconfigured agent to. Only safe when the tenant
-  // has exactly one — with several we cannot guess which the agent wants.
-  const soleCredential = enriched.length === 1 ? enriched[0]! : null;
+  // has exactly one inference credential — with several we cannot guess which
+  // model source the agent wants.
+  const soleCredential = inferenceCredentials.length === 1 ? inferenceCredentials[0]! : null;
 
   const agents = await db.query.agent.findMany({
     where: eq(agent.tenantId, tenantId),
@@ -140,7 +156,7 @@ export async function repairTenantAgentCredentials(db: RepairDB, tenantId: strin
     //    be derived from the selected credential's provider metadata.
     for (const req of reqs) {
       if (req.source !== 'tenant') continue;
-      const match = enriched.find((e) => e.name === req.name) ?? soleCredential;
+      const match = inferenceCredentials.find((e) => e.name === req.name) ?? soleCredential;
       if (!match) continue;
       if (!req.providerName) {
         req.providerName = match.providerName;

@@ -51,7 +51,12 @@ describe('Feedback refinement', () => {
   });
 
   it('routes refinement through the @intx/agent runtime', async () => {
-    const result = await refineFeedbackWithLLM('original', 'make it punchier', 'linkedin', TEST_SOURCE);
+    const result = await refineFeedbackWithLLM(
+      'original',
+      'make it punchier',
+      'linkedin',
+      TEST_SOURCE
+    );
 
     expect(createAgentMock).toHaveBeenCalledTimes(1);
     expect(sendMock).toHaveBeenCalledTimes(1);

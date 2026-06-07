@@ -7,7 +7,7 @@ import type { Principal, CredentialDetail } from '../lib/hub-api';
 
 const mockPrincipals: Principal[] = [
   {
-    id: 'p-1',
+    principalId: 'p-1',
     tenantId: 't-1',
     tenantSlug: 'abk-labs',
     tenantName: 'ABK Labs',

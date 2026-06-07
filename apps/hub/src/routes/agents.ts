@@ -680,6 +680,8 @@ export function createAgentProvisioningRouter(
       })
       .where(eq(agent.id, agentId));
 
+    await relaunchRunningAgentInstancesForToolUpdate(db, sessionService, grantStore, agentRow);
+
     return c.json({ tools: toolNames }, 200);
   });
 
@@ -810,6 +812,57 @@ async function pushDecryptedSourceUpdates(
     if (result.status === 'rejected') {
       log.warn('Failed to push decrypted source update', {
         tenantId,
+        reason: String(result.reason),
+      });
+    }
+  }
+}
+
+async function relaunchRunningAgentInstancesForToolUpdate(
+  db: DB['db'],
+  sessionService: SessionService,
+  grantStore: GrantStore,
+  agentRow: { id: string; tenantId: string; systemPrompt?: string | null }
+): Promise<void> {
+  if (!agentRow.systemPrompt) return;
+
+  const tenantRow = await db.query.tenant.findFirst({
+    where: eq(tenant.id, agentRow.tenantId),
+  });
+  if (!tenantRow?.domain) return;
+
+  const instances = await db.query.agentInstance.findMany({
+    where: and(eq(agentInstance.agentId, agentRow.id), eq(agentInstance.status, 'running')),
+  });
+  if (instances.length === 0) return;
+
+  const results = await Promise.allSettled(
+    instances.map(async (instance) => {
+      await sessionService.endSession(instance.address, 'agent tools updated').catch((err) => {
+        log.warn('Failed to end running agent before tool relaunch', {
+          agentId: agentRow.id,
+          instanceId: instance.id,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      });
+
+      await launchAgentSession(db, sessionService, grantStore, {
+        agentId: agentRow.id,
+        instanceId: instance.id,
+        instancePrincipalId: instance.principalId,
+        tenantId: agentRow.tenantId,
+        tenantDomain: tenantRow.domain,
+        systemPrompt: agentRow.systemPrompt!,
+        now: new Date(),
+      });
+    })
+  );
+
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      log.warn('Failed to relaunch agent after tool update', {
+        agentId: agentRow.id,
+        tenantId: agentRow.tenantId,
         reason: String(result.reason),
       });
     }

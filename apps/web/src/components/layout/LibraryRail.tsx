@@ -65,27 +65,34 @@ function useWorkbenchesAndAgents(externalTick = 0): {
   agentItems: RailItem[];
   isLoading: boolean;
   error: boolean;
+  agentLoadError: boolean;
   retry: () => void;
 } {
   const [workbenches, setWorkbenches] = useState<WorkbenchEntry[]>([]);
   const [agentItems, setAgentItems] = useState<RailItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [agentLoadError, setAgentLoadError] = useState(false);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     setIsLoading(true);
     setError(false);
+    setAgentLoadError(false);
 
     void (async () => {
       try {
         const entries = await listWorkbenches();
         setWorkbenches(entries);
 
-        const agentLists = await Promise.all(
-          entries.map((w) => listAgentInstances(w.tenantId).catch(() => []))
+        const agentResults = await Promise.allSettled(
+          entries.map((w) => listAgentInstances(w.tenantId))
         );
-        setAgentItems(agentLists.flat().map(agentToRailItem));
+        const loadedAgents = agentResults.flatMap((result) =>
+          result.status === 'fulfilled' ? result.value : []
+        );
+        setAgentItems(loadedAgents.map(agentToRailItem));
+        setAgentLoadError(agentResults.some((result) => result.status === 'rejected'));
         setError(false);
       } catch {
         setError(true);
@@ -97,7 +104,7 @@ function useWorkbenchesAndAgents(externalTick = 0): {
 
   const retry = () => setTick((n) => n + 1);
 
-  return { workbenches, agentItems, isLoading, error, retry };
+  return { workbenches, agentItems, isLoading, error, agentLoadError, retry };
 }
 
 const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
@@ -389,7 +396,6 @@ export interface AgentSelection {
   instanceId: string;
   tenantId: string;
   agentName: string;
-  instanceStatus: string;
 }
 
 export interface LibraryRailProps {
@@ -431,6 +437,7 @@ export function LibraryRail({
     workbenches,
     agentItems: allAgentItems,
     error: workbenchError,
+    agentLoadError,
     retry: retryWorkbenches,
   } = useWorkbenchesAndAgents(refreshTick);
 
@@ -612,6 +619,11 @@ export function LibraryRail({
             </button>
           </div>
         )}
+        {agentLoadError && !workbenchError && (
+          <div className="px-[10px] py-3 text-[13px] text-text-3">
+            Some agents could not be loaded.
+          </div>
+        )}
         {GROUP_ORDER.map((group) => {
           const inGroup = visibleItems.filter((i) => i.group === group);
           // Always render the Agents group header when onNew is provided so the
@@ -675,7 +687,6 @@ export function LibraryRail({
               {inGroup.map((item) => {
                 const isClickableAgent =
                   item.type === 'agent' &&
-                  item.agentStatus === 'running' &&
                   onAgentSelect !== undefined &&
                   item.instanceId !== undefined &&
                   item.tenantId !== undefined;
@@ -694,7 +705,6 @@ export function LibraryRail({
                       instanceId: item.instanceId!,
                       tenantId: item.tenantId!,
                       agentName: item.name,
-                      instanceStatus: item.agentStatus!,
                     });
                   } else if (isClickableWorkflow) {
                     onWorkflowSelect!(item.id);

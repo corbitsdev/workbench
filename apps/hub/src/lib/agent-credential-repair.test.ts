@@ -12,7 +12,7 @@ type AgentRow = {
 };
 
 type CredRow = { id: string; name: string; providerId: string };
-type ProvRow = { id: string; name: string; metadata: unknown };
+type ProvRow = { id: string; name: string; plugin?: string; metadata: unknown };
 
 function makeDB(opts: {
   principals?: Array<{ tenantId: string }>;
@@ -148,6 +148,17 @@ describe('repairTenantAgentCredentials', () => {
         { id: 'cred-2', name: 'Other LLM', providerId: 'prov-1' },
       ],
       providers: [{ id: 'prov-1', name: 'anthropic', metadata: { model: 'claude-opus-4-8' } }],
+      agents: [{ id: 'agent-1', credentialRequirements: null, modelConfig: null }],
+    });
+
+    await repairTenantAgentCredentials(db, 'tenant-1');
+    expect(updates).toHaveLength(0);
+  });
+
+  it('does not bind an unconfigured agent to a sole non-inference credential', async () => {
+    const { db, updates } = makeDB({
+      credentials: [{ id: 'cred-1', name: 'Granola Key', providerId: 'prov-1' }],
+      providers: [{ id: 'prov-1', name: 'granola', plugin: 'granola', metadata: {} }],
       agents: [{ id: 'agent-1', credentialRequirements: null, modelConfig: null }],
     });
 

@@ -7,11 +7,12 @@ import type { IntakeRequest } from '../types/intake';
 interface NewWorkflowPaneProps {
   onCreated: (workflowId: string) => void;
   onClose: () => void;
+  tenantId?: string | null;
 }
 
 type IntakeMode = 'paste' | 'recent';
 
-export function NewWorkflowPane({ onCreated, onClose }: NewWorkflowPaneProps) {
+export function NewWorkflowPane({ onCreated, onClose, tenantId }: NewWorkflowPaneProps) {
   const [mode, setMode] = useState<IntakeMode>('paste');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
@@ -22,7 +23,11 @@ export function NewWorkflowPane({ onCreated, onClose }: NewWorkflowPaneProps) {
   const handleSubmit = async (data: IntakeRequest) => {
     setError('');
     try {
-      const workflow = await createWorkflow.mutateAsync({ ...data, workflowKind: selectedKind });
+      const workflow = await createWorkflow.mutateAsync({
+        ...data,
+        workflowKind: selectedKind,
+        ...(tenantId ? { tenantId } : {}),
+      });
       onCreated(workflow.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create job');

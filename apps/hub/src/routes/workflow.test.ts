@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { createWorkflowRouter } from './workflow';
 
 import * as intxDb from '@intx/db';
+import type { DB } from '@intx/db';
 
 mock.module('@intx/db', () => ({
   ...intxDb,
@@ -52,16 +53,43 @@ const PERSONAL_PRINCIPAL = {
   kind: 'user',
   refId: 'test-user',
 };
+const WORKSPACE_PRINCIPAL = {
+  id: 'prn-workspace',
+  tenantId: 'tenant-workspace',
+  kind: 'user',
+  refId: 'test-user',
+};
 
 describe('Workflow router', () => {
-  function createMockDb() {
+  type PrincipalRow = typeof PERSONAL_PRINCIPAL;
+  type WorkflowRunListRow = {
+    id: string;
+    status: string;
+    input: { companyName: string };
+    tenantId: string;
+    principalId: string;
+    kind: string;
+  };
+
+  function createPrincipalSequence(...rows: Array<PrincipalRow | null>) {
+    let index = 0;
+    return mock(() => {
+      const row = rows[index];
+      index += 1;
+      return row ?? null;
+    });
+  }
+
+  function createMockDb(options: { onInsertValues?: (values: unknown) => void } = {}) {
+    let insertCount = 0;
+
     return {
       query: {
         tenant: {
           findFirst: mock(() => PERSONAL_TENANT),
         },
         principal: {
-          findFirst: mock(() => PERSONAL_PRINCIPAL),
+          findFirst: mock<() => PrincipalRow | null>(() => PERSONAL_PRINCIPAL),
         },
         workflowRun: {
           findFirst: mock<
@@ -80,20 +108,20 @@ describe('Workflow router', () => {
             principalId: PERSONAL_PRINCIPAL.id,
             input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
           })),
-          findMany: mock(() => [] as any[]),
+          findMany: mock<() => WorkflowRunListRow[]>(() => []),
         },
         transcript: {
           findFirst: mock(() => ({ content: 'Test transcript content' })),
         },
         painPoint: {
-          findMany: mock(() => [] as any[]),
+          findMany: mock<() => unknown[]>(() => []),
         },
         artifact: {
-          findMany: mock(() => [] as any[]),
+          findMany: mock<() => unknown[]>(() => []),
           findFirst: mock(() => null),
         },
         agentInstance: {
-          findMany: mock(() => [] as any[]),
+          findMany: mock<() => unknown[]>(() => []),
         },
         provider: {
           findFirst: mock(() => ({
@@ -107,9 +135,17 @@ describe('Workflow router', () => {
         where: mock(() => Promise.resolve()),
       })),
       insert: mock(() => ({
-        values: mock(() => ({
-          returning: mock(() => [{ id: 'wf-1', status: 'analyzing' }]),
-        })),
+        values: mock((values: unknown) => {
+          options.onInsertValues?.(values);
+          insertCount += 1;
+          return {
+            returning: mock(() =>
+              insertCount === 1
+                ? [{ id: 'tx-1', status: 'created', kind: 'transcript' }]
+                : [{ id: 'wf-1', status: 'analyzing', kind: 'collateral-generation' }]
+            ),
+          };
+        }),
       })),
       update: mock(() => ({
         set: mock(() => ({
@@ -125,7 +161,7 @@ describe('Workflow router', () => {
       c.set('userId', userId);
       await next();
     });
-    parent.route('/', createWorkflowRouter(db as any));
+    parent.route('/', createWorkflowRouter(db as unknown as DB['db']));
     return parent;
   }
 
@@ -150,6 +186,34 @@ describe('Workflow router', () => {
     expect(json.steps.intake.completed).toBe(true);
   });
 
+  it('POST /workflows stores a workflow under the requested workspace tenant', async () => {
+    const insertedValues: unknown[] = [];
+    const mockDb = createMockDb({ onInsertValues: (values) => insertedValues.push(values) });
+    mockDb.query.principal.findFirst = createPrincipalSequence(
+      PERSONAL_PRINCIPAL,
+      WORKSPACE_PRINCIPAL
+    );
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript: 'Hello workspace world',
+        source: 'paste',
+        workflowKind: 'collateral-generation',
+        tenantId: 'tenant-workspace',
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(201);
+    expect(insertedValues[1]).toMatchObject({
+      tenantId: 'tenant-workspace',
+      principalId: 'prn-workspace',
+    });
+  });
+
   it('GET /workflows/:id returns workflow state', async () => {
     const router = buildApp(createMockDb());
     const req = new Request('http://localhost:4000/workflows/wf-1', {
@@ -166,9 +230,7 @@ describe('Workflow router', () => {
   });
 
   it('GET /artifacts returns the user artifacts enriched with session info', async () => {
-    const mockDb = createMockDb() as ReturnType<typeof createMockDb> & {
-      query: { workflowRun: { findMany: ReturnType<typeof mock> } };
-    };
+    const mockDb = createMockDb();
     mockDb.query.workflowRun.findMany = mock(() => [
       {
         id: 'wf-1',
@@ -207,11 +269,79 @@ describe('Workflow router', () => {
     expect(json[0].sessionStatus).toBe('done');
   });
 
+  it('GET /artifacts checks membership before returning workspace-scoped artifacts', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.principal.findFirst = createPrincipalSequence(
+      PERSONAL_PRINCIPAL,
+      WORKSPACE_PRINCIPAL
+    );
+    mockDb.query.workflowRun.findMany = mock(() => [
+      {
+        id: 'wf-workspace',
+        status: 'done',
+        input: { companyName: 'Workspace Corp' },
+        tenantId: 'tenant-workspace',
+        principalId: 'prn-workspace',
+        kind: 'collateral-generation',
+      },
+    ]);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?tenantId=tenant-workspace', {
+      method: 'GET',
+    });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+    expect(mockDb.query.principal.findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it('GET /artifacts returns 403 when the requested tenant is inaccessible', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.principal.findFirst = createPrincipalSequence(PERSONAL_PRINCIPAL, null);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?tenantId=tenant-other', {
+      method: 'GET',
+    });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(403);
+  });
+
+  it('GET /artifacts returns 403 when the requesting user is deactivated in the workspace', async () => {
+    // DB returns null because the status='active' filter excludes the row
+    const mockDb = createMockDb();
+    mockDb.query.principal.findFirst = createPrincipalSequence(PERSONAL_PRINCIPAL, null);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?tenantId=tenant-workspace', {
+      method: 'GET',
+    });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(403);
+  });
+
+  it('POST /workflows returns 403 when the requesting user is deactivated in the workspace', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.principal.findFirst = createPrincipalSequence(PERSONAL_PRINCIPAL, null);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript: 'Hello',
+        source: 'paste',
+        workflowKind: 'collateral-generation',
+        tenantId: 'tenant-workspace',
+      }),
+    });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(403);
+  });
+
   it('GET /artifacts returns an empty array when the user has no sessions', async () => {
-    const mockDb = createMockDb() as ReturnType<typeof createMockDb> & {
-      query: { workflowRun: { findMany: ReturnType<typeof mock> } };
-    };
-    mockDb.query.workflowRun.findMany = mock(() => [] as any[]);
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
 
     const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });

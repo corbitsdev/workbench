@@ -162,6 +162,7 @@ export function useCreateWorkflow() {
       granolaId?: string;
       source: string;
       workflowKind?: string;
+      tenantId?: string;
     }) => {
       const payload = { workflowKind: 'collateral-generation', ...body };
       logger.info('Creating workflow', {

@@ -1,12 +1,12 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import type { Principal } from './hub-api';
+import { principalToWorkbenchEntry, type Principal } from './hub-api';
 
 describe('listWorkbenches', () => {
   it('filters out personal tenants (user-{id} slug pattern)', () => {
     const principals: Principal[] = [
       {
-        id: 'p-1',
+        principalId: 'p-1',
         tenantId: 'tenant-user',
         tenantSlug: 'user-abc123',
         tenantName: 'Personal',
@@ -15,7 +15,7 @@ describe('listWorkbenches', () => {
         roles: [],
       },
       {
-        id: 'p-2',
+        principalId: 'p-2',
         tenantId: 'tenant-acme',
         tenantSlug: 'acme-sales',
         tenantName: 'Acme Sales',
@@ -24,7 +24,7 @@ describe('listWorkbenches', () => {
         roles: [],
       },
       {
-        id: 'p-3',
+        principalId: 'p-3',
         tenantId: 'tenant-dev',
         tenantSlug: 'user-xyz789',
         tenantName: 'Dev Personal',
@@ -39,14 +39,10 @@ describe('listWorkbenches', () => {
     const isPersonal = (slug: string) => slug.startsWith('user-');
     const workbenches = principals
       .filter((p) => !isPersonal(p.tenantSlug))
-      .map(({ id, tenantId, tenantSlug, tenantName }) => ({
-        id,
-        tenantId,
-        tenantSlug,
-        tenantName,
-      }));
+      .map(principalToWorkbenchEntry);
 
     expect(workbenches).toHaveLength(1);
+    expect(workbenches[0]!.id).toBe('p-2');
     expect(workbenches[0]!.tenantSlug).toBe('acme-sales');
     expect(workbenches[0]!.tenantName).toBe('Acme Sales');
   });
@@ -54,7 +50,7 @@ describe('listWorkbenches', () => {
   it('returns empty array when user only has a personal tenant', () => {
     const principals: Principal[] = [
       {
-        id: 'p-1',
+        principalId: 'p-1',
         tenantId: 'tenant-user',
         tenantSlug: 'user-abc123',
         tenantName: 'Personal',
@@ -67,5 +63,24 @@ describe('listWorkbenches', () => {
     const isPersonal = (slug: string) => slug.startsWith('user-');
     const workbenches = principals.filter((p) => !isPersonal(p.tenantSlug));
     expect(workbenches).toHaveLength(0);
+  });
+
+  it('maps Interchange principalId to the workbench entry id', () => {
+    const principal: Principal = {
+      principalId: 'principal-workspace',
+      tenantId: 'tenant-acme',
+      tenantSlug: 'acme-sales',
+      tenantName: 'Acme Sales',
+      kind: 'user',
+      status: 'active',
+      roles: [],
+    };
+
+    expect(principalToWorkbenchEntry(principal)).toEqual({
+      id: 'principal-workspace',
+      tenantId: 'tenant-acme',
+      tenantSlug: 'acme-sales',
+      tenantName: 'Acme Sales',
+    });
   });
 });

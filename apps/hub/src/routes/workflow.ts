@@ -124,6 +124,36 @@ async function getUserContext(db: DB['db'], userId: string): Promise<UserContext
   };
 }
 
+async function getRequestedUserContext(
+  db: DB['db'],
+  userId: string,
+  requestedTenantId?: string | null
+): Promise<{ context: UserContext | null; forbidden: boolean }> {
+  const userContext = await getUserContext(db, userId);
+  if (!userContext) return { context: null, forbidden: false };
+  if (!requestedTenantId || requestedTenantId === userContext.tenantId) {
+    return { context: userContext, forbidden: false };
+  }
+
+  const requestedPrincipal = await db.query.principal.findFirst({
+    where: and(
+      eq(intxSchema.principal.tenantId, requestedTenantId),
+      eq(intxSchema.principal.kind, 'user'),
+      eq(intxSchema.principal.refId, userId),
+      eq(intxSchema.principal.status, 'active')
+    ),
+  });
+  if (!requestedPrincipal) return { context: null, forbidden: true };
+
+  return {
+    context: {
+      tenantId: requestedTenantId,
+      principalId: requestedPrincipal.id,
+    },
+    forbidden: false,
+  };
+}
+
 function validateWorkflowInput(
   workflowKind: string,
   input: Record<string, unknown>
@@ -162,14 +192,15 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
 
   // ─── Create workflow (intake) ─────────────────────────────────────
   router.post('/workflows', async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as {
-      transcript?: string;
-      granolaId?: string;
-      source?: string;
-      workflowKind?: string;
-    };
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const transcriptText = typeof body.transcript === 'string' ? body.transcript : undefined;
+    const granolaId = typeof body.granolaId === 'string' ? body.granolaId : undefined;
+    const source = typeof body.source === 'string' ? body.source : undefined;
+    const workflowKind = typeof body.workflowKind === 'string' ? body.workflowKind : undefined;
+    const requestedTenantId = typeof body.tenantId === 'string' ? body.tenantId : null;
 
-    const workflowKind = body.workflowKind;
+    const workflowSource = source === 'paste' || source === 'granola' ? source : undefined;
+
     if (!workflowKind) {
       log.warn('Workflow kind is required');
       return c.json({ error: 'workflowKind is required' }, 400);
@@ -179,28 +210,28 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
       return c.json({ error: `Invalid workflow kind: ${workflowKind}` }, 400);
     }
 
-    log.info('Creating workflow', { source: body.source });
+    log.info('Creating workflow', { source });
 
-    if (!body.source || !['paste', 'granola'].includes(body.source)) {
-      log.warn('Invalid source', { source: body.source });
+    if (!workflowSource) {
+      log.warn('Invalid source', { source });
       return c.json({ error: 'Invalid source' }, 400);
     }
 
     let content: string;
 
-    if (body.source === 'paste') {
-      if (!body.transcript || body.transcript.trim().length === 0) {
+    if (workflowSource === 'paste') {
+      if (!transcriptText || transcriptText.trim().length === 0) {
         log.warn('Missing transcript for paste source');
         return c.json({ error: 'transcript is required' }, 400);
       }
-      if (body.transcript.length > 500000) {
-        log.warn('Transcript too long', { length: body.transcript.length });
+      if (transcriptText.length > 500000) {
+        log.warn('Transcript too long', { length: transcriptText.length });
         return c.json({ error: 'transcript exceeds maximum length' }, 413);
       }
-      content = body.transcript;
+      content = transcriptText;
       log.info('Transcript received', { length: content.length });
     } else {
-      if (!body.granolaId) {
+      if (!granolaId) {
         log.warn('Missing granolaId for granola source');
         return c.json({ error: 'granolaId is required' }, 400);
       }
@@ -209,25 +240,35 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
         return c.json({ error: 'Granola API not configured' }, 503);
       }
       try {
-        const note = await getNoteWithTranscript(body.granolaId);
+        const note = await getNoteWithTranscript(granolaId);
         content = transcriptToText(note) || note.summary || note.title || '';
-        log.info('Granola note fetched', { granolaId: body.granolaId, length: content.length });
+        log.info('Granola note fetched', { granolaId, length: content.length });
       } catch (err) {
         log.error('Failed to fetch from Granola', {
-          granolaId: body.granolaId,
+          granolaId,
           error: err instanceof Error ? err.message : String(err),
         });
         return c.json({ error: 'Failed to fetch from Granola' }, 400);
       }
       if (content.trim().length === 0) {
-        log.warn('Granola note has no usable content', { granolaId: body.granolaId });
+        log.warn('Granola note has no usable content', { granolaId });
         return c.json({ error: 'Granola note has no usable content' }, 400);
       }
     }
 
     const userId = c.get('userId');
-
-    const userContext = await getUserContext(db, userId);
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      requestedTenantId
+    );
+    if (forbidden) {
+      log.warn('User requested workflow creation for inaccessible tenant', {
+        userId,
+        requestedTenantId,
+      });
+      return c.json({ error: 'Tenant not accessible' }, 403);
+    }
     if (!userContext) {
       log.warn('User context not found', { userId });
       return c.json({ error: 'User context not found' }, 400);
@@ -235,10 +276,14 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
 
     const [txRow] = await db
       .insert(transcript)
-      .values({ content, source: body.source })
+      .values({ content, source: workflowSource })
       .returning();
+    if (!txRow) {
+      log.error('Failed to create transcript row', { workflowKind });
+      return c.json({ error: 'Failed to create transcript' }, 500);
+    }
 
-    const workflowInput = { transcriptId: txRow.id, transcriptSource: body.source };
+    const workflowInput = { transcriptId: txRow.id, transcriptSource: workflowSource };
     const inputValidation = validateWorkflowInput(workflowKind, workflowInput);
     if (!inputValidation.valid) {
       log.warn('Workflow input validation failed', {
@@ -258,6 +303,14 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
         input: workflowInput,
       })
       .returning();
+    if (!wfRow) {
+      log.error('Failed to create workflow row', {
+        workflowKind,
+        tenantId: userContext.tenantId,
+        principalId: userContext.principalId,
+      });
+      return c.json({ error: 'Failed to create workflow' }, 500);
+    }
 
     log.info('Workflow created', {
       workflowId: wfRow.id,
@@ -349,15 +402,28 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
   router.get('/artifacts', async (c) => {
     const userId = c.get('userId');
 
-    const userContext = await getUserContext(db, userId);
+    const requestedTenantId = c.req.query('tenantId');
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      requestedTenantId
+    );
+    if (forbidden) {
+      log.warn('User requested artifacts for inaccessible tenant', { userId, requestedTenantId });
+      return c.json({ error: 'Tenant not accessible' }, 403);
+    }
     if (!userContext) {
       log.warn('User context not found', { userId });
       return c.json([]);
     }
 
-    // Scope by principalId. Tenant-path scoping is CL-1246 and intentionally out of scope here.
     const sessions = await db.query.workflowRun.findMany({
-      where: eq(workflowRun.principalId, userContext.principalId),
+      where: requestedTenantId
+        ? and(
+            eq(workflowRun.tenantId, userContext.tenantId),
+            eq(workflowRun.principalId, userContext.principalId)
+          )
+        : eq(workflowRun.principalId, userContext.principalId),
       orderBy: [desc(workflowRun.createdAt)],
       limit: 50,
     });
@@ -491,8 +557,7 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
         log.warn('No workflow LLM credential configured', { tenantId: userContext.tenantId });
         return c.json(
           {
-            error:
-              'No LLM credential configured for this workspace. Please add one in Settings.',
+            error: 'No LLM credential configured for this workspace. Please add one in Settings.',
           },
           400
         );
@@ -897,12 +962,7 @@ async function runImprove(
   });
 }
 
-async function runExport(
-  db: DB['db'],
-  id: string,
-  userContext: UserContext,
-  target: string
-) {
+async function runExport(db: DB['db'], id: string, userContext: UserContext, target: string) {
   log.info('Starting export step', { workflowId: id, target });
 
   const wf = await db.query.workflowRun.findFirst({

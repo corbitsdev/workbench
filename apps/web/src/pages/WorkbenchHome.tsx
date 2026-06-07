@@ -97,7 +97,6 @@ type RightPane =
       instanceId: string;
       tenantId: string;
       agentName: string;
-      instanceStatus?: string;
     }
   | { view: 'workflow'; workflowId: string }
   | { view: 'new-workflow' };
@@ -240,7 +239,6 @@ export default function WorkbenchHome() {
             instanceId={rightPane.instanceId}
             tenantId={rightPane.tenantId}
             agentName={rightPane.agentName}
-            instanceStatus={rightPane.instanceStatus}
             onClose={() => {
               setRightPane({ view: 'gallery' });
               setLauncherHidden(false);
@@ -270,6 +268,7 @@ export default function WorkbenchHome() {
       return (
         <motion.div key="new-workflow" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
           <NewWorkflowPane
+            tenantId={workspaceTenantId}
             onCreated={handleWorkflowCreated}
             onClose={() => {
               setRightPane({ view: 'gallery' });
@@ -280,8 +279,13 @@ export default function WorkbenchHome() {
       );
     }
     return (
-      <motion.div key="gallery" {...paneFade} className="min-h-0 flex-1">
-        <ArtifactGallery />
+      <motion.div
+        // key change forces remount when workspace resolves, refreshing the query
+        key={`gallery-${workspaceTenantId ?? 'loading'}`}
+        {...paneFade}
+        className="min-h-0 flex-1"
+      >
+        <ArtifactGallery tenantId={workspaceTenantId} />
       </motion.div>
     );
   }
@@ -294,7 +298,6 @@ export default function WorkbenchHome() {
             instanceId={rightPane.instanceId}
             tenantId={rightPane.tenantId}
             agentName={rightPane.agentName}
-            instanceStatus={rightPane.instanceStatus}
             onClose={() => {
               setRightPane({ view: 'gallery' });
               setLauncherHidden(false);
@@ -310,6 +313,7 @@ export default function WorkbenchHome() {
           />
         ) : rightPane.view === 'new-workflow' ? (
           <NewWorkflowPane
+            tenantId={workspaceTenantId}
             onCreated={handleWorkflowCreated}
             onClose={() => {
               setRightPane({ view: 'gallery' });
@@ -317,7 +321,7 @@ export default function WorkbenchHome() {
             }}
           />
         ) : (
-          <ArtifactGallery onOpenLibrary={() => setRailOpen(true)} />
+          <ArtifactGallery tenantId={workspaceTenantId} onOpenLibrary={() => setRailOpen(true)} />
         )}
         {railOpen && (
           <div className="fixed inset-0 z-50 bg-page p-2">

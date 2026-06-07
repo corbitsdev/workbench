@@ -8,7 +8,7 @@ afterEach(() => cleanup());
 
 const principals: Principal[] = [
   {
-    id: 'p-1',
+    principalId: 'p-1',
     tenantId: 't-1',
     tenantSlug: 'abk-labs',
     tenantName: 'ABK Labs',
@@ -17,7 +17,7 @@ const principals: Principal[] = [
     roles: [],
   },
   {
-    id: 'p-2',
+    principalId: 'p-2',
     tenantId: 't-2',
     tenantSlug: 'user-sawyer',
     tenantName: 'Sawyer',

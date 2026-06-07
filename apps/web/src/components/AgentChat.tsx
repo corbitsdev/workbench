@@ -21,23 +21,13 @@ interface AgentChatProps {
   instanceId: string;
   tenantId: string;
   agentName: string;
-  instanceStatus?: string;
   onClose?: () => void;
 }
 
-export function AgentChat({
-  instanceId,
-  tenantId,
-  agentName,
-  instanceStatus,
-  onClose,
-}: AgentChatProps) {
+export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentChatProps) {
   const identity: ChatAgentIdentity = { name: agentName };
 
-  const isRunning = instanceStatus === undefined || instanceStatus === 'running';
-  const [sessionState, setSessionState] = useState<SessionState>(
-    isRunning ? { phase: 'loading' } : { phase: 'error', message: 'Agent is still deploying.' }
-  );
+  const [sessionState, setSessionState] = useState<SessionState>({ phase: 'loading' });
   const [, forceUpdate] = useState(0);
 
   const sessionRef = useRef<InstanceSession | null>(null);
@@ -57,12 +47,12 @@ export function AgentChat({
     },
   });
 
-  // Trigger launch once when the component mounts or instanceId changes.
-  const prevInstanceRef = useRef<string | null>(null);
-  if (prevInstanceRef.current !== instanceId) {
-    prevInstanceRef.current = instanceId;
-    if (isRunning) launch();
-  }
+  // Reset state and trigger launch when instanceId changes (or on mount).
+  useEffect(() => {
+    setSessionState({ phase: 'loading' });
+    launch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instanceId]);
 
   // Subscription lifecycle — syncs to the external Interchange session.
   // Runs after launch succeeds so hydration errors do not hide launch failures.

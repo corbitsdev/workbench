@@ -18,14 +18,22 @@ export function useLibraryResources(
   return useQuery({
     queryKey: ['workflows', params.tenantId ?? null],
     queryFn: () => listWorkflows(options, params),
-    enabled: params.tenantId !== null,
+    enabled: params.tenantId != null,
   });
 }
 
+export interface UseArtifactsParams {
+  tenantId?: string | null;
+}
+
 /** Query the current user's artifacts across all jobs for the gallery. */
-export function useArtifacts(options: ClientOptions = {}): UseQueryResult<ArtifactWithSession[]> {
+export function useArtifacts(
+  options: ClientOptions = {},
+  params: UseArtifactsParams = {}
+): UseQueryResult<ArtifactWithSession[]> {
   return useQuery({
-    queryKey: ['artifacts'],
-    queryFn: () => listArtifacts(options),
+    queryKey: ['artifacts', params.tenantId ?? null],
+    queryFn: () => listArtifacts(options, params),
+    enabled: params.tenantId != null,
   });
 }

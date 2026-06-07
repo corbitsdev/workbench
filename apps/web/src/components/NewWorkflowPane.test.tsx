@@ -1,4 +1,5 @@
 /// <reference types="bun" />
+import '../test-setup';
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -50,13 +51,13 @@ mock.module('../hooks/use-workflow', () => ({
 
 import { NewWorkflowPane } from './NewWorkflowPane';
 
-function renderPane(onCreated = mock(), onClose = mock()) {
+function renderPane(onCreated = mock(), onClose = mock(), tenantId?: string | null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     React.createElement(
       QueryClientProvider,
       { client },
-      React.createElement(NewWorkflowPane, { onCreated, onClose })
+      React.createElement(NewWorkflowPane, { onCreated, onClose, tenantId })
     )
   );
 }
@@ -121,6 +122,21 @@ describe('NewWorkflowPane — paste submission', () => {
     const call = mockMutateAsync.mock.calls[0][0] as { source: string; transcript: string };
     expect(call.source).toBe('paste');
     expect(call.transcript).toBe(longText);
+  });
+
+  it('passes tenantId when creating a workflow for a workspace', async () => {
+    const user = userEvent.setup();
+    renderPane(mock(), mock(), 'tenant-workspace');
+    const longText = 'Speaker 1: Thanks for taking the time today to discuss your challenges.';
+    await user.type(screen.getByPlaceholderText(/speaker 1/i), longText);
+    await user.click(screen.getByRole('button', { name: /start analysis/i }));
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+    });
+    expect(mockMutateAsync.mock.calls[0][0]).toMatchObject({
+      source: 'paste',
+      tenantId: 'tenant-workspace',
+    });
   });
 
   it('calls onCreated with the workflow id on success', async () => {

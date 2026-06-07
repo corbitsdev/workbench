@@ -58,7 +58,7 @@ export default function TenantSettingsPage() {
     getMyPrincipals()
       .then((all) => {
         const match = all.find((p) => p.tenantId === tenantId);
-        if (match) setMyPrincipalId(match.id);
+        if (match) setMyPrincipalId(match.principalId);
       })
       .catch(() => {
         // Non-fatal — principal link is optional

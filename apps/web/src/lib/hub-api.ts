@@ -25,7 +25,7 @@ async function hubFetch<T>(method: string, path: string, body?: unknown): Promis
 }
 
 export type Principal = {
-  id: string;
+  principalId: string;
   tenantId: string;
   tenantSlug: string;
   tenantName: string;
@@ -40,6 +40,15 @@ export type WorkbenchEntry = {
   tenantSlug: string;
   tenantName: string;
 };
+
+export function principalToWorkbenchEntry({
+  principalId,
+  tenantId,
+  tenantSlug,
+  tenantName,
+}: Principal): WorkbenchEntry {
+  return { id: principalId, tenantId, tenantSlug, tenantName };
+}
 
 export type TenantResponse = {
   id: string;
@@ -83,9 +92,7 @@ export async function createWorkspace(name: string): Promise<WorkspaceResponse> 
 
 export async function listWorkbenches(): Promise<WorkbenchEntry[]> {
   const principals = await getMyPrincipals();
-  return principals
-    .filter((p) => !p.tenantSlug.startsWith('user-'))
-    .map(({ id, tenantId, tenantSlug, tenantName }) => ({ id, tenantId, tenantSlug, tenantName }));
+  return principals.filter((p) => !p.tenantSlug.startsWith('user-')).map(principalToWorkbenchEntry);
 }
 
 export type TenantDetailResponse = {

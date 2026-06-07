@@ -3,10 +3,11 @@ import '../test-setup';
 import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { LaunchInstanceSessionResponse } from '../lib/hub-api';
 
-const mockLaunchInstanceSession = mock(() =>
-  Promise.resolve({ launched: false, launchError: 'sidecar not connected' })
-);
+const mockLaunchInstanceSession = mock<
+  (instanceId: string) => Promise<LaunchInstanceSessionResponse>
+>(() => Promise.resolve({ launched: false, launchError: 'sidecar not connected' }));
 const mockStart = mock(() => () => undefined);
 const mockCreateInstanceSession = mock(() => ({
   events: [],
@@ -41,6 +42,15 @@ function renderAgentChat() {
   );
 }
 
+function renderDeployedAgentChat() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <AgentChat instanceId="ins_deployed" tenantId="tnt_123" agentName="Loop" />
+    </QueryClientProvider>
+  );
+}
+
 afterEach(() => {
   cleanup();
   mockLaunchInstanceSession.mockClear();
@@ -59,5 +69,18 @@ describe('AgentChat', () => {
     expect(view.getByText(/sidecar not connected/)).toBeTruthy();
     expect(mockCreateInstanceSession).not.toHaveBeenCalled();
     expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it('attempts to launch deployed agents instead of treating them as dead', async () => {
+    mockLaunchInstanceSession.mockImplementationOnce(() => Promise.resolve({ launched: true }));
+
+    renderDeployedAgentChat();
+
+    await waitFor(() => {
+      expect(mockLaunchInstanceSession).toHaveBeenCalledWith('ins_deployed');
+    });
+
+    expect(mockCreateInstanceSession).toHaveBeenCalled();
+    expect(mockStart).toHaveBeenCalled();
   });
 });
