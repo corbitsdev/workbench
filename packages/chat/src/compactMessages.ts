@@ -83,11 +83,11 @@ export function compactMessages(
     if (groupBuffer.length === 0) return;
     if (groupBuffer.length === 1) {
       // Single-item groups don't add value; show the message directly.
-      result.push({ type: 'message', message: groupBuffer[0] as ChatMessage });
+      result.push({ type: 'message', message: groupBuffer[0]! });
     } else {
       result.push({
         type: 'collapsed_group',
-        id: groupBuffer[0]?.id ?? 'group',
+        id: groupBuffer[0]!.id,
         count: groupBuffer.length,
         messages: [...groupBuffer],
       });
