@@ -101,6 +101,26 @@ Credential secrets written by the hub layer are encrypted before storage using A
 - **workbench-shared**: Types crossing the web/API boundary
 - **agents** (`@workbench/agents`): Agent definitions, system prompts, custom directors, `InstanceEvent` → `ChatMessage` adapter
 - **chat** (`@workbench/chat`): Transport-agnostic chat UI components
+- **tools-\*** (`@workbench/tools-*`): Self-contained tool packages. Each exports tool definitions, AgentTool handlers, and a `*_HUB_TOOLS` registry entry. The hub spreads these entries into its registry — no tool logic lives in the hub or sidecar themselves.
+
+### Hub-Proxied Tool Execution
+
+Tool execution is split across three layers with a strict separation of concerns:
+
+| Layer | Responsibility |
+|---|---|
+| **Tool package** (`packages/tools-*`) | Tool definition (model-visible schema), AgentTool handlers, hub registry entry |
+| **Hub** (`/api/internal/tools/run`) | Credential resolution from Interchange, dispatches to tool package handler |
+| **Sidecar** (`HubToolRunner`) | Generic proxy — forwards all tool calls to hub; zero tool-specific code |
+
+**Adding a new tool** requires only:
+1. Create `@workbench/tools-<name>` — export `*_HUB_TOOLS` with definition + providerName + `createTools` factory
+2. Spread `*_HUB_TOOLS` into hub's `KNOWN_TOOLS` in `apps/hub/src/lib/tool-registry.ts`
+3. Register the provider + credential in Interchange
+
+No sidecar changes. No hub execution logic changes. Credentials come from Interchange's tenant credential store at execution time.
+
+**Tool visibility per agent** is controlled by `agent.capabilities.tools` — a list of tool names set when the agent is provisioned or updated. The hub builds `HarnessConfig.tools` from this list at launch time. An agent only sees tools explicitly listed in its capabilities, regardless of what credentials the tenant has configured.
 
 ## Database Schema
 

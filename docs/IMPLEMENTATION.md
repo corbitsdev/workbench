@@ -35,6 +35,18 @@
 
 ## Shared Packages
 
+### `apps/sidecar/` — Tool Runner
+
+The sidecar carries three tool runners merged via `mergeToolRunners` before `filterToolRunner` gates model-visible definitions to whatever the hub configured in `HarnessConfig.tools`:
+
+| Runner | Source | What it covers |
+|---|---|---|
+| `posixTools` | `@intx/tools-posix` | File system, shell, LSP |
+| `askPrincipalRunner` | `@workbench/approvals` | Human approval flow (calls hub `/api/internal/approvals`) |
+| `hubToolRunner` | `apps/sidecar/src/hub-tool-runner.ts` | All hub-managed tools (exa, granola, etc.) |
+
+`HubToolRunner` is generic — it forwards every tool call to `POST /api/internal/tools/run` using `sidecarToken` auth. It has no knowledge of specific tools. Adding a new tool package never requires a sidecar change.
+
 ### `packages/agents` (`@workbench/agents`)
 
 Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter.
@@ -71,18 +83,48 @@ Exports:
 - `encryptSecret(keys, tenantId, plaintext): string` — returns `enc:vN:<base64>` ciphertext; throws if input already has `enc:` prefix
 - `decryptSecret(keys, tenantId, ciphertext): string` — parses version from prefix, selects key, decrypts; throws on unknown version or auth tag mismatch
 
-### `packages/tools-granola` (`@workbench/tools-granola`)
+### `packages/tools-*` — Tool Packages
 
-Granola API tool package for agents. The package exposes `createGranolaTools(config): AgentTool[]` and no client helpers; callers compose the returned tools into the agent runtime.
+Each tool package is self-contained and follows the same shape:
 
-Tools:
+```
+packages/tools-<name>/
+  src/
+    index.ts    — tool definitions, AgentTool handlers, *_HUB_TOOLS registry entry
+  package.json
+  tsconfig.json
+```
 
-- `granola_list_notes` — lists recent Granola notes from `/notes`, with optional `limit` and `cursor`
-- `granola_get_note` — fetches one note from `/notes/:noteId` with `include=transcript`
+Every tool package exports:
 
-The package does not read `GRANOLA_API_KEY` or other process env vars. Its `apiKey` and `baseUrl` are supplied by the caller.
+- `create<Name>Tools(config): AgentTool[]` — returns AgentTool handlers for use in an agent runtime
+- `*_HUB_TOOLS: Record<string, ToolEntry>` — hub registry entries; spread into `KNOWN_TOOLS` in `apps/hub/src/lib/tool-registry.ts` to register
 
-This package is only the agent-tool adapter. It does not resolve credentials, read Interchange DB rows, decrypt secrets, or migrate the existing env-based hub poller.
+No tool package reads env vars or resolves credentials. Config (`apiKey`, `baseURL`) is always supplied by the caller.
+
+**`packages/tools-exa`** (`@workbench/tools-exa`): Exa search API. Exports `EXA_HUB_TOOLS` with `exa_search` (providerName: `'exa'`).
+
+**`packages/tools-granola`** (`@workbench/tools-granola`): Granola notes API. Exports `GRANOLA_HUB_TOOLS` with `granola_list_notes` and `granola_get_note` (providerName: `'granola'`).
+
+#### `packages/tool-template` (scaffold)
+
+A minimal `@workbench/tools-*` package skeleton for quickly duplicating. Contains:
+- `src/index.ts` with stub definition, stub `createTools`, and stub `*_HUB_TOOLS`
+- `package.json` with correct deps (`@intx/agent` devDep, `@intx/types` devDep)
+- `tsconfig.json` extending the workspace base
+
+Copy the directory, rename, replace stubs. No other files needed to ship a new tool.
+
+#### `packages/tool-agent` (scaffold)
+
+A minimal agent package skeleton for agents that primarily expose tool-based capabilities. Contains:
+- `src/definition.ts` — `credentialRequirements` (openai-compatible only), `capabilities.tools: []`
+- `src/prompt.ts` — stub system prompt using `buildSystemPrompt`
+- `src/director.ts` — stub director wrapping `createDefaultDirector`
+- `src/index.ts` — public exports
+- `package.json` and `tsconfig.json`
+
+Copy, rename, fill in the tool list and prompt. Wire provisioning in `tenant-provisioning.ts`.
 
 ### `packages/chat` (`@workbench/chat`)
 
@@ -284,6 +326,11 @@ The `CredentialSettingsPage` (**custom**) at `/settings/credentials` shows all c
 - `POST /v1/agents` — provision agent + launch session
 - `POST /v1/instances/:instanceId/sessions` — launch session for existing instance (no credential IDs; Interchange resolves from agent's credentialRequirements)
 - `POST /v1/workspaces`, `GET /v1/agents`, etc.
+
+**Internal routes** (sidecarToken auth, mounted under `/api/internal/`):
+
+- `POST /api/internal/approvals` — human approval callback from sidecar (ask_principal tool)
+- `POST /api/internal/tools/run` — hub-proxied tool execution. Body: `{ tenantId, toolName, args }`. Hub resolves the tenant credential for the tool's provider from Interchange, calls the tool package handler, returns `{ result: string, isError: boolean }`. Credentials are decrypted before use; never stored in sidecar.
 
 ### Deploy Prompts
 
