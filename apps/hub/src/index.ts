@@ -382,9 +382,30 @@ v1.use('*', async (c, next) => {
 v1.get('/me', async (c) => {
   const userId = c.get('userId');
 
-  const personalTenant = await db.query.tenant.findFirst({
+  let personalTenant = await db.query.tenant.findFirst({
     where: eq(intxSchema.tenant.slug, `user-${userId}`),
   });
+
+  // Repair path: if provisioning failed at signup or session-create, retry here.
+  if (!personalTenant) {
+    try {
+      const authUser = await db.query.user.findFirst({
+        where: eq(intxSchema.user.id, userId),
+      });
+      if (authUser) {
+        await provisionUserOnSignup(db, { userId, userEmail: authUser.email });
+        personalTenant = await db.query.tenant.findFirst({
+          where: eq(intxSchema.tenant.slug, `user-${userId}`),
+        });
+        log.info('Repaired missing personal tenant on /me', { userId });
+      }
+    } catch (err) {
+      log.error('Failed to repair personal tenant on /me', {
+        userId,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
+  }
 
   const personalTenantId = personalTenant?.id ?? null;
 
