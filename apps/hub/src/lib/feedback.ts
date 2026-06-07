@@ -28,6 +28,8 @@ export async function refineFeedbackWithLLM(
 ): Promise<string> {
   log.info('Refining collateral with feedback', { type });
 
+  // TODO(CL-1373): resolve via resolveCredentialRequirement from @intx/db once workflows
+  // are tenant-aware (blocked by CL-1246). Currently uses platform operator key for all tenants.
   const source = buildInferenceSource('feedback');
 
   const userMessage = `Original text:\n\n${text}\n\nFeedback to apply:\n${feedback}\n\nRefined text:`;

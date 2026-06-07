@@ -243,6 +243,8 @@ export async function extractPainPointsWithLLM(
   content: string,
   feedback: string | undefined
 ): Promise<ExtractionResult> {
+  // TODO(CL-1373): resolve via resolveCredentialRequirement from @intx/db once workflows
+  // are tenant-aware (blocked by CL-1246). Currently uses platform operator key for all tenants.
   const source = buildInferenceSource(`extraction-${workflowId}`);
   const model = source.model;
 
