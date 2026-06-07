@@ -293,7 +293,9 @@ export async function launchInstanceSession(
   return hubFetch<LaunchInstanceSessionResponse>('POST', `v1/instances/${instanceId}/sessions`, {});
 }
 
-export async function restartAgentInstance(instanceId: string): Promise<LaunchInstanceSessionResponse> {
+export async function restartAgentInstance(
+  instanceId: string
+): Promise<LaunchInstanceSessionResponse> {
   return hubFetch<LaunchInstanceSessionResponse>('POST', `v1/instances/${instanceId}/sessions`, {});
 }
 

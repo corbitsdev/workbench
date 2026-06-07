@@ -93,7 +93,7 @@ export function OnboardingPage() {
       const result = await launchInstanceSession(me.paInstanceId);
       if (!result.launched && result.launchError) {
         setError(
-          `Credential saved, but Myra failed to start: ${result.launchError}. You can try again from the dashboard.`
+          `Credential saved, but Myra failed to start: ${result.launchError}. You can try again from Settings.`
         );
         return;
       }

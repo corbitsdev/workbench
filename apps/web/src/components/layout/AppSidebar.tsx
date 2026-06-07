@@ -1,4 +1,4 @@
-import { Home, LayoutGrid, Settings, Moon, Sun, LogOut } from 'lucide-react';
+import { Home, Settings, Moon, Sun, LogOut } from 'lucide-react';
 import { NavLink, Link, useLocation } from 'react-router';
 import { useAuth } from '../AuthProvider';
 import { useTheme } from '@workbench/ui';
@@ -49,15 +49,6 @@ export function AppSidebar() {
           className={({ isActive }) => navIconClass(isActive)}
         >
           <Home size={18} />
-        </NavLink>
-
-        <NavLink
-          to="/dashboard"
-          title="Jobs"
-          aria-label="Jobs"
-          className={({ isActive }) => navIconClass(isActive)}
-        >
-          <LayoutGrid size={18} />
         </NavLink>
 
         <Link

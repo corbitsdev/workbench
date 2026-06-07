@@ -6,7 +6,6 @@ import { PersonalAgentChat } from './components/PersonalAgentChat';
 import { ChatLauncherProvider } from './lib/chat-launcher-context';
 import { LoginPage } from './pages/LoginPage';
 import WorkbenchHome from './pages/WorkbenchHome';
-import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 import { OnboardingPage } from './pages/OnboardingPage';
 const CredentialSettingsPage = lazy(() => import('./pages/CredentialSettingsPage'));
@@ -50,7 +49,7 @@ export const router = createBrowserRouter([
         children: [
           { path: '/onboarding', element: <OnboardingPage /> },
           { index: true, element: <WorkbenchHome /> },
-          { path: '/dashboard', element: <Dashboard /> },
+          { path: '/dashboard', element: <Navigate to="/" replace /> },
           { path: '/settings', element: <Settings /> },
           {
             path: '/settings/credentials',
