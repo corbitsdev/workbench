@@ -16,7 +16,6 @@ import { type } from 'arktype';
 import { encryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
 import { repairTenantAgentCredentials } from '../lib/agent-credential-repair';
-import { decryptSources } from '../lib/source-decryption';
 import {
   buildToolDefinitions,
   getToolNamesFromCapabilities,
@@ -405,7 +404,7 @@ export function createAgentProvisioningRouter(
       throw err;
     }
 
-    void pushDecryptedSourceUpdates(db, sidecarRouter, tenantId);
+    void pushSourceUpdates(db, sidecarRouter, tenantId);
 
     return c.json({ credentialId, providerId }, 201);
   });
@@ -516,7 +515,7 @@ export function createAgentProvisioningRouter(
       }
     });
 
-    void pushDecryptedSourceUpdates(db, sidecarRouter, tenantId);
+    void pushSourceUpdates(db, sidecarRouter, tenantId);
 
     return c.json({ credentialId }, 200);
   });
@@ -610,7 +609,7 @@ export function createAgentProvisioningRouter(
       })
       .where(eq(agent.id, agentId));
 
-    void pushDecryptedSourceUpdates(db, sidecarRouter, effectiveTenantId);
+    void pushSourceUpdates(db, sidecarRouter, effectiveTenantId);
 
     return c.json({}, 200);
   });
@@ -931,23 +930,6 @@ async function ensureAgentInstance(
   return { instanceId, agentId, instancePrincipalId, address, isNew: true };
 }
 
-async function pushDecryptedSourceUpdates(
-  db: DB['db'],
-  sidecarRouter: SidecarRouter,
-  tenantId: string
-): Promise<void> {
-  const decryptingRouter: SidecarRouter = {
-    ...sidecarRouter,
-    sendSourcesUpdate: (agentAddress, sources, defaultSource) =>
-      sidecarRouter.sendSourcesUpdate(
-        agentAddress,
-        decryptSources(sources, tenantId),
-        defaultSource
-      ),
-  };
-
-  await pushSourceUpdates(db, decryptingRouter, tenantId);
-}
 
 async function launchAgentSession(
   db: DB['db'],
@@ -973,14 +955,13 @@ async function launchAgentSession(
   // failing to resolve. Loud by design: if repair throws, the launch fails.
   await repairTenantAgentCredentials(db, tenantId);
 
-  const rawSources = await resolveInstanceSources(db, tenantId, {
+  const sources = await resolveInstanceSources(db, tenantId, {
     agentId,
     sessionId: null,
   });
-  if (rawSources.length === 0) {
+  if (sources.length === 0) {
     throw new Error('No resolvable inference sources for agent credential requirements');
   }
-  const sources = decryptSources(rawSources, tenantId);
   const defaultSource = sources[0]!.id;
 
   const sessionId = generateId('session');

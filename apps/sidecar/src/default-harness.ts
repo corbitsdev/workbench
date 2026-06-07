@@ -11,6 +11,7 @@ import { createBlobReader } from '@intx/types/runtime';
 import type { InferenceSource } from '@intx/types/runtime';
 import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
 import { createAskPrincipalTool } from '@workbench/approvals';
+import { decryptSecret, type CredentialKeyRegistry } from '@workbench/hub-crypto';
 import { createToolRunner } from '@intx/agent';
 import { createExaTools } from '@workbench/tools-exa';
 import type { ToolDefinition, ToolRunner } from '@intx/types/runtime';
@@ -48,14 +49,21 @@ function filterToolRunner(
   };
 }
 
+function decryptSource(source: InferenceSource, keys: CredentialKeyRegistry, tenantId: string): InferenceSource {
+  if (!source.apiKey?.startsWith('enc:')) return source;
+  return { ...source, apiKey: decryptSecret(keys, tenantId, source.apiKey) };
+}
+
 type HarnessBuilderOpts = {
   hubHttpUrl: string;
   sidecarToken: string;
+  credentialKeys: CredentialKeyRegistry;
 };
 
 export function createDefaultHarnessBuilder({
   hubHttpUrl,
   sidecarToken,
+  credentialKeys,
 }: HarnessBuilderOpts): HarnessBuilder {
   return {
     canBuildSource(source: InferenceSource): void {
@@ -123,11 +131,13 @@ export function createDefaultHarnessBuilder({
       const allowedNames = new Set(agentConfig.tools.map((t) => t.name));
       const tools = filterToolRunner(allTools, allowedNames);
 
+      const decryptedSource = decryptSource(source, credentialKeys, tenantId);
+
       try {
         const harness = createHarness({
           address: agentAddress,
           systemPrompt,
-          source,
+          source: decryptedSource,
           transport: agentTransport,
           crypto,
           storage,

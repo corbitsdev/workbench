@@ -64,6 +64,7 @@
         "@intx/tools-posix": "workspace:*",
         "@intx/types": "workspace:*",
         "@workbench/approvals": "workspace:*",
+        "@workbench/hub-crypto": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
       },

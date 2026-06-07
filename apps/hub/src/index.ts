@@ -27,7 +27,6 @@ import { createAgentProvisioningRouter, relaunchInstanceIfNeeded } from './route
 import { repairUserAgentCredentials } from './lib/agent-credential-repair';
 import { createWorkspacesRouter } from './routes/workspaces';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
-import { decryptSources } from './lib/source-decryption';
 import * as workbenchSchema from './db/schema';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
@@ -236,24 +235,9 @@ const eventCollectors = createEventCollectorRegistry({
   },
 });
 
-const decryptingSidecarRouter = {
-  ...sidecarRouter,
-  sendSourcesUpdate: async (agentAddress, sources, defaultSource) => {
-    const instance = await db.query.agentInstance.findFirst({
-      where: eq(intxSchema.agentInstance.address, agentAddress),
-    });
-    const tenantId = instance?.tenantId;
-    await sidecarRouter.sendSourcesUpdate(
-      agentAddress,
-      tenantId ? decryptSources(sources, tenantId) : sources,
-      defaultSource
-    );
-  },
-} satisfies typeof sidecarRouter;
-
 createHubSessionOrchestrator({
-  events: decryptingSidecarRouter.events,
-  router: decryptingSidecarRouter,
+  events: sidecarRouter.events,
+  router: sidecarRouter,
   db,
   eventCollectors,
   grantStore,

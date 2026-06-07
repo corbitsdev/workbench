@@ -755,7 +755,7 @@ describe('relaunchInstanceIfNeeded', () => {
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
   });
 
-  it('decrypts encrypted apiKey in sources before passing to launchSession', async () => {
+  it('passes encrypted apiKey in sources to launchSession without decrypting', async () => {
     const { encryptSecret, parseEncryptionKeys } = await import('@workbench/hub-crypto');
     const keys = parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`);
     const encrypted = encryptSecret(keys, 'tenant-1', 'sk-real-key');
@@ -787,7 +787,7 @@ describe('relaunchInstanceIfNeeded', () => {
       .calls[0]![0] as {
       config: { sources: { apiKey: string }[] };
     };
-    expect(launchArg.config.sources[0]?.apiKey).toBe('sk-real-key');
+    expect(launchArg.config.sources[0]?.apiKey).toBe(encrypted);
   });
 
   it('does not relaunch a non-running instance without an active credential', async () => {
