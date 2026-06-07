@@ -40,3 +40,12 @@ export const GRANOLA_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
  * Static deploy prompt for the Granola agent definition.
  */
 export const GRANOLA_DEPLOY_PROMPT: string = buildGranolaSystemPrompt('Oat', 'xml');
+
+/**
+ * Capabilities bag for the Granola agent. Consumed by the hub at launch time
+ * to configure tools and the per-instance scheduler interval.
+ */
+export const GRANOLA_CAPABILITIES = {
+  tools: ['granola_list_notes', 'granola_get_note'],
+  schedulerIntervalMs: 60_000,
+} as const;

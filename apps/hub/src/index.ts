@@ -38,7 +38,6 @@ import {
   provisionPersonalTenant,
   provisionMyraInstance,
 } from './lib/tenant-provisioning';
-import { startOatScheduler } from './lib/oat-scheduler';
 import { initSentry } from '@workbench/sentry';
 
 await initSentry();
@@ -474,7 +473,13 @@ v1.get('/me', async (c) => {
 
       // If credentials are already granted but no session is running, relaunch automatically.
       try {
-        await relaunchInstanceIfNeeded(db, sessionService, grantStore, instanceId);
+        await relaunchInstanceIfNeeded(
+          db,
+          sessionService,
+          grantStore,
+          instanceId,
+          sidecarRouter.events
+        );
       } catch (err) {
         log.warn('Auto-relaunch of Myra session failed — user will need to re-add credentials', {
           userId,
@@ -547,19 +552,11 @@ if (import.meta.main) {
 // requests to drain before exiting. Railway sends SIGTERM then waits
 // 10 s before SIGKILL — this uses that window rather than dying instantly.
 
-// ─── Oat scheduler ───────────────────────────────────────────────────────────
-//
-// Sends a sync trigger to every running Oat instance every 60 s so that each
-// Oat agent fetches Granola notes via its own credential requirements and writes
-// artifacts through the standard pipeline. Stop is called on graceful shutdown.
-const stopOatScheduler = startOatScheduler(db, sessionService);
-
 let server: ReturnType<typeof Bun.serve> | undefined;
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, async () => {
     log.info('Received {signal}, draining', { signal });
-    stopOatScheduler();
     await server?.stop();
     log.info('Server stopped, exiting');
     process.exit(0);

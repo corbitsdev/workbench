@@ -21,6 +21,7 @@
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "workspace:*",
     "@intx/types": "workspace:*",
+    "@workbench/agent-scheduler": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/gtm-workflows": "workspace:*",
     "@workbench/hub-crypto": "workspace:*",

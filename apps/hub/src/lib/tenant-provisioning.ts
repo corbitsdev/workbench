@@ -7,6 +7,7 @@ import { getConfig } from '../config';
 import {
   GRANOLA_DEPLOY_PROMPT,
   GRANOLA_CREDENTIAL_REQUIREMENTS,
+  GRANOLA_CAPABILITIES,
 } from '@workbench/agents/granola-definition';
 
 const log = getLogger(['api', 'tenant-provisioning']);
@@ -514,7 +515,7 @@ export async function provisionOatInstance(
           creatorPrincipalId: opts.creatorPrincipalId,
           name: 'Oat',
           systemPrompt: GRANOLA_DEPLOY_PROMPT,
-          capabilities: null,
+          capabilities: GRANOLA_CAPABILITIES,
           credentialRequirements: GRANOLA_CREDENTIAL_REQUIREMENTS,
           status: 'deployed',
           currentVersion: '1',

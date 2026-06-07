@@ -42,3 +42,14 @@ export function getToolNamesFromCapabilities(capabilities: unknown): string[] {
   if (!Array.isArray(tools)) return [];
   return tools.filter((t): t is string => typeof t === 'string');
 }
+
+/**
+ * Extract the scheduler interval from an agent's capabilities JSON bag.
+ * Returns undefined if not set — callers should only start a scheduler when
+ * a value is present.
+ */
+export function getSchedulerIntervalMs(capabilities: unknown): number | undefined {
+  if (typeof capabilities !== 'object' || capabilities === null) return undefined;
+  const v = (capabilities as Record<string, unknown>)['schedulerIntervalMs'];
+  return typeof v === 'number' && v > 0 ? v : undefined;
+}

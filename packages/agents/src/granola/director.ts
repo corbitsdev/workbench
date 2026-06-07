@@ -9,24 +9,19 @@ import type {
 } from '@intx/types/runtime';
 
 /**
- * Trusted system scheduler address. Messages from this sender are treated as
- * authorised without appearing in the per-user allowedSenders list.
- */
-export const SCHEDULER_ADDRESS = 'scheduler@system';
-
-/**
  * Create a custom director for the Granola agent.
  *
- * The Granola agent only accepts inbound messages from Myra (or another
- * explicitly listed allowed sender). Any other sender receives "Not authorised"
- * and the agent returns to waiting.
+ * The Granola agent only accepts inbound messages from an explicitly listed
+ * set of allowed senders. Any other sender receives "Not authorised" and the
+ * agent returns to waiting.
  *
  * All other events delegate to the default director.
  *
  * @param systemPrompt      Granola agent's system prompt.
  * @param toolDefinitions   Tool definitions the agent has access to.
- * @param allowedSenders    Addresses the agent accepts mail from (typically
- *                          Myra's address in the user's personal tenant).
+ * @param allowedSenders    Addresses the agent accepts mail from. The hub's
+ *                          per-instance scheduler sends from
+ *                          'scheduler@system'; include it here if needed.
  */
 export function createGranolaDirector(
   systemPrompt: string,
@@ -43,8 +38,7 @@ export function createGranolaDirector(
     ): Promise<ReactorAction | ReactorAction[]> {
       if (event.type === 'message.received') {
         const sender = event.message.headers.from;
-        const trusted = sender === SCHEDULER_ADDRESS || allowedSenders.includes(sender);
-        if (!trusted) {
+        if (!allowedSenders.includes(sender)) {
           return [capabilities.reply('Not authorised'), capabilities.wait()];
         }
       }

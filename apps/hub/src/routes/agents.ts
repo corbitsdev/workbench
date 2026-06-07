@@ -14,11 +14,13 @@ import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { type } from 'arktype';
 import { decryptSecret, encryptSecret } from '@workbench/hub-crypto';
+import { startInstanceScheduler } from '@workbench/agent-scheduler';
 import { getConfig } from '../config';
 import { repairTenantAgentCredentials } from '../lib/agent-credential-repair';
 import {
   buildToolDefinitions,
   getToolNamesFromCapabilities,
+  getSchedulerIntervalMs,
   KNOWN_TOOL_NAMES,
 } from '../lib/tool-registry';
 
@@ -243,7 +245,7 @@ export function createAgentProvisioningRouter(
 
     if (isNew) {
       try {
-        await launchAgentSession(db, sessionService, grantStore, {
+        const session = await launchAgentSession(db, sessionService, grantStore, {
           agentId,
           instanceId,
           instancePrincipalId,
@@ -252,6 +254,18 @@ export function createAgentProvisioningRouter(
           systemPrompt: body.systemPrompt,
           now,
         });
+        const newAgentRow = await db.query.agent.findFirst({ where: eq(agent.id, agentId) });
+        const intervalMs = getSchedulerIntervalMs(newAgentRow?.capabilities ?? null);
+        if (intervalMs !== undefined) {
+          startInstanceScheduler({
+            agentAddress: session.address,
+            sessionId: session.sessionId,
+            tenantId: body.tenantId,
+            sessionService,
+            events: sidecarRouter.events,
+            intervalMs,
+          });
+        }
         launched = true;
       } catch (err) {
         launchError = err instanceof Error ? err.message : String(err);
@@ -680,7 +694,7 @@ export function createAgentProvisioningRouter(
       })
       .where(eq(agent.id, agentId));
 
-    await relaunchRunningAgentInstancesForToolUpdate(db, sessionService, grantStore, agentRow);
+    await relaunchRunningAgentInstancesForToolUpdate(db, sessionService, grantStore, agentRow, sidecarRouter.events);
 
     return c.json({ tools: toolNames }, 200);
   });
@@ -753,7 +767,7 @@ export function createAgentProvisioningRouter(
     let launchError: string | undefined;
 
     try {
-      await launchAgentSession(db, sessionService, grantStore, {
+      const session = await launchAgentSession(db, sessionService, grantStore, {
         agentId: instance.agentId,
         instanceId: instance.id,
         instancePrincipalId: instance.principalId,
@@ -762,6 +776,17 @@ export function createAgentProvisioningRouter(
         systemPrompt: agentRow.systemPrompt,
         now,
       });
+      const intervalMs = getSchedulerIntervalMs(agentRow.capabilities);
+      if (intervalMs !== undefined) {
+        startInstanceScheduler({
+          agentAddress: session.address,
+          sessionId: session.sessionId,
+          tenantId: instance.tenantId,
+          sessionService,
+          events: sidecarRouter.events,
+          intervalMs,
+        });
+      }
       launched = true;
     } catch (err) {
       // If the sidecar already has the agent provisioned (e.g. a race between
@@ -856,7 +881,8 @@ async function relaunchRunningAgentInstancesForToolUpdate(
   db: DB['db'],
   sessionService: SessionService,
   grantStore: GrantStore,
-  agentRow: { id: string; tenantId: string; systemPrompt?: string | null }
+  agentRow: { id: string; tenantId: string; systemPrompt?: string | null; capabilities?: unknown },
+  sidecarEvents: import('@intx/hub-sessions').SidecarEventEmitter
 ): Promise<void> {
   if (!agentRow.systemPrompt) return;
 
@@ -880,7 +906,7 @@ async function relaunchRunningAgentInstancesForToolUpdate(
         });
       });
 
-      await launchAgentSession(db, sessionService, grantStore, {
+      const session = await launchAgentSession(db, sessionService, grantStore, {
         agentId: agentRow.id,
         instanceId: instance.id,
         instancePrincipalId: instance.principalId,
@@ -889,6 +915,17 @@ async function relaunchRunningAgentInstancesForToolUpdate(
         systemPrompt: agentRow.systemPrompt!,
         now: new Date(),
       });
+      const intervalMs = getSchedulerIntervalMs(agentRow.capabilities);
+      if (intervalMs !== undefined) {
+        startInstanceScheduler({
+          agentAddress: session.address,
+          sessionId: session.sessionId,
+          tenantId: agentRow.tenantId,
+          sessionService,
+          events: sidecarEvents,
+          intervalMs,
+        });
+      }
     })
   );
 
@@ -1071,7 +1108,7 @@ async function launchAgentSession(
     systemPrompt: string;
     now: Date;
   }
-): Promise<void> {
+): Promise<{ address: string; sessionId: string }> {
   const { agentId, instanceId, instancePrincipalId, tenantId, tenantDomain, systemPrompt, now } =
     opts;
   const address = `${instanceId}@${tenantDomain}`;
@@ -1164,7 +1201,7 @@ async function launchAgentSession(
         .set({ status: 'running', updatedAt: new Date() })
         .where(eq(agentInstance.id, instanceId));
       log.info('Agent session launched', { instanceId, agentId, tenantId });
-      return;
+      return { address, sessionId };
     } catch (err) {
       lastError = err;
       // Provision-phase failures mean the sidecar already has the agent or
@@ -1196,7 +1233,8 @@ export async function relaunchInstanceIfNeeded(
   db: DB['db'],
   sessionService: SessionService,
   grantStore: GrantStore,
-  instanceId: string
+  instanceId: string,
+  sidecarEvents: import('@intx/hub-sessions').SidecarEventEmitter
 ): Promise<void> {
   const instance = await db.query.agentInstance.findFirst({
     where: eq(agentInstance.id, instanceId),
@@ -1234,7 +1272,7 @@ export async function relaunchInstanceIfNeeded(
   });
   if (!hasCred) return;
 
-  await launchAgentSession(db, sessionService, grantStore, {
+  const launched = await launchAgentSession(db, sessionService, grantStore, {
     agentId: instance.agentId,
     instanceId: instance.id,
     instancePrincipalId: instance.principalId,
@@ -1243,6 +1281,18 @@ export async function relaunchInstanceIfNeeded(
     systemPrompt: agentRow.systemPrompt,
     now: new Date(),
   });
+
+  const intervalMs = getSchedulerIntervalMs(agentRow.capabilities);
+  if (intervalMs !== undefined) {
+    startInstanceScheduler({
+      agentAddress: launched.address,
+      sessionId: launched.sessionId,
+      tenantId: instance.tenantId,
+      sessionService,
+      events: sidecarEvents,
+      intervalMs,
+    });
+  }
 }
 
 /**

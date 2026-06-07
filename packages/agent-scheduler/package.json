@@ -1,0 +1,26 @@
+{
+  "name": "@workbench/agent-scheduler",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint .",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@intx/crypto-node": "workspace:*",
+    "@intx/hub-common": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/log": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}

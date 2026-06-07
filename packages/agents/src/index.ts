@@ -18,7 +18,7 @@ export {
   GRANOLA_CREDENTIAL_REQUIREMENTS,
   GRANOLA_DEPLOY_PROMPT,
 } from './granola/definition';
-export { createGranolaDirector, SCHEDULER_ADDRESS } from './granola/director';
+export { createGranolaDirector } from './granola/director';
 
 // Shared adapter
 export { convertInstanceEvents } from './adapter';

@@ -1011,7 +1011,8 @@ describe('relaunchInstanceIfNeeded', () => {
       db as never,
       sessionService as never,
       mockGrantStore as never,
-      'ins-1'
+      'ins-1',
+      { on: () => () => {} } as never
     );
 
     expect(sessionService.launchSession).not.toHaveBeenCalled();
@@ -1038,7 +1039,8 @@ describe('relaunchInstanceIfNeeded', () => {
       db as never,
       sessionService as never,
       mockGrantStore as never,
-      'ins-1'
+      'ins-1',
+      { on: () => () => {} } as never
     );
 
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
@@ -1067,7 +1069,8 @@ describe('relaunchInstanceIfNeeded', () => {
       db as never,
       sessionService as never,
       mockGrantStore as never,
-      'ins-1'
+      'ins-1',
+      { on: () => () => {} } as never
     );
 
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
@@ -1093,7 +1096,8 @@ describe('relaunchInstanceIfNeeded', () => {
       db as never,
       sessionService as never,
       mockGrantStore as never,
-      'ins-1'
+      'ins-1',
+      { on: () => () => {} } as never
     );
 
     expect(sessionService.launchSession).not.toHaveBeenCalled();

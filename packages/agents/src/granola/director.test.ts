@@ -99,8 +99,8 @@ describe('createGranolaDirector', () => {
     expect(cap.replyArg).toBe('Not authorised');
   });
 
-  it('allows messages from the system scheduler address', async () => {
-    const director = createGranolaDirector(systemPrompt, tools, [adaAddress]);
+  it('allows messages from the system scheduler address when included in allowedSenders', async () => {
+    const director = createGranolaDirector(systemPrompt, tools, [adaAddress, 'scheduler@system']);
     const cap = makeCapabilities();
     const event = makeMessageEvent('scheduler@system');
 
