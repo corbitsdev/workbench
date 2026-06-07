@@ -794,7 +794,7 @@ export function createAgentProvisioningRouter(
 // each apiKey (workbench encrypts secrets at write time), and pushes plaintext
 // sources to the sidecar. Mirrors the decrypt step in launchAgentSession.
 // Errors are logged per-instance and do not propagate.
-async function pushDecryptedSourceUpdates(
+export async function pushDecryptedSourceUpdates(
   db: DB['db'],
   sidecarRouter: SidecarRouter,
   tenantId: string
@@ -829,6 +829,27 @@ async function pushDecryptedSourceUpdates(
       });
     }
   }
+}
+
+// Single-instance variant used by the reconnect listener. Does not filter by
+// status — the reconnecting instance is still 'deployed' when the listener
+// fires; the orchestrator sets 'running' after sendSourcesUpdate in its own
+// handler.
+export async function pushDecryptedSourcesForInstance(
+  db: DB['db'],
+  sidecarRouter: SidecarRouter,
+  instance: { tenantId: string; address: string; agentId: string; sessionId: string | null }
+): Promise<void> {
+  const { credentialKeys } = getConfig();
+  const rawSources = await resolveInstanceSources(db, instance.tenantId, instance);
+  if (rawSources.length === 0) return;
+  const sources = rawSources.map((s) => ({
+    ...s,
+    apiKey: decryptSecret(credentialKeys, instance.tenantId, s.apiKey),
+  }));
+  const [first] = sources;
+  if (first === undefined) return;
+  await sidecarRouter.sendSourcesUpdate(instance.address, sources, first.id);
 }
 
 async function relaunchRunningAgentInstancesForToolUpdate(
