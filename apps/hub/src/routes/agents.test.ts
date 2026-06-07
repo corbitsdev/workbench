@@ -1,21 +1,27 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { parseEncryptionKeys } from '@workbench/hub-crypto';
+import { encryptSecret, parseEncryptionKeys } from '@workbench/hub-crypto';
 import * as intxDbReal from '@intx/db';
 import type { DB } from '@intx/db';
 import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
 import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 
+const TEST_CREDENTIAL_KEYS = parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`);
+const TEST_TENANT_ID = 'tenant-1';
+const TEST_API_KEY = 'sk-test-key';
+const TEST_ENCRYPTED_API_KEY = encryptSecret(TEST_CREDENTIAL_KEYS, TEST_TENANT_ID, TEST_API_KEY);
+
 mock.module('../config', () => ({
   getConfig: () => ({
-    credentialKeys: parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`),
+    credentialKeys: TEST_CREDENTIAL_KEYS,
   }),
 }));
 
 // Launch outcome is driven by resolveInstanceSources: tests set `sourcesImpl`
 // to return sources (launch proceeds) or throw (launch fails). Credential
 // repair is exercised in agent-credential-repair.test.ts; stub it here.
-let sourcesImpl: () => Promise<unknown[]> = () => Promise.resolve([{ id: 'src-1' }]);
+let sourcesImpl: () => Promise<unknown[]> = () =>
+  Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
 let credentialByIdImpl: () => Promise<unknown> = () => Promise.resolve(undefined);
 mock.module('@intx/db', () => ({
   ...intxDbReal,
@@ -294,7 +300,7 @@ describe('POST /agents', () => {
       delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
     };
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1' }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
 
     const app = buildApp(base);
     const res = await app.fetch(
@@ -334,7 +340,7 @@ describe('POST /agents', () => {
       launchSession: mock(() => Promise.reject(new Error('sidecar not connected'))),
     };
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1' }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
 
     const app = buildApp(base, failingService);
     const res = await app.fetch(
@@ -612,7 +618,7 @@ describe('POST /instances/:instanceId/sessions', () => {
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1' }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
 
     const app = buildApp(db);
     const res = await app.fetch(
@@ -649,7 +655,7 @@ describe('POST /instances/:instanceId/sessions', () => {
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1' }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
 
     // In production, the sidecar returns "Agent already exists" wrapped in a
     // provision-phase SessionLaunchError. Simulate that here.
@@ -742,7 +748,7 @@ describe('relaunchInstanceIfNeeded', () => {
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
     db.query.credential.findFirst = mock(() => Promise.resolve(ACTIVE_CREDENTIAL));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1' }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
 
     const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
     await relaunchInstanceIfNeeded(
@@ -755,7 +761,7 @@ describe('relaunchInstanceIfNeeded', () => {
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
   });
 
-  it('passes encrypted apiKey in sources to launchSession without decrypting', async () => {
+  it('decrypts apiKey before passing sources to launchSession', async () => {
     const { encryptSecret, parseEncryptionKeys } = await import('@workbench/hub-crypto');
     const keys = parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`);
     const encrypted = encryptSecret(keys, 'tenant-1', 'sk-real-key');
@@ -787,7 +793,7 @@ describe('relaunchInstanceIfNeeded', () => {
       .calls[0]![0] as {
       config: { sources: { apiKey: string }[] };
     };
-    expect(launchArg.config.sources[0]?.apiKey).toBe(encrypted);
+    expect(launchArg.config.sources[0]?.apiKey).toBe('sk-real-key');
   });
 
   it('does not relaunch a non-running instance without an active credential', async () => {

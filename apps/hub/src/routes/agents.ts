@@ -13,7 +13,7 @@ import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
 import { pushSourceUpdates, SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { type } from 'arktype';
-import { encryptSecret } from '@workbench/hub-crypto';
+import { decryptSecret, encryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
 import { repairTenantAgentCredentials } from '../lib/agent-credential-repair';
 import {
@@ -954,13 +954,21 @@ async function launchAgentSession(
   // failing to resolve. Loud by design: if repair throws, the launch fails.
   await repairTenantAgentCredentials(db, tenantId);
 
-  const sources = await resolveInstanceSources(db, tenantId, {
+  const rawSources = await resolveInstanceSources(db, tenantId, {
     agentId,
     sessionId: null,
   });
-  if (sources.length === 0) {
+  if (rawSources.length === 0) {
     throw new Error('No resolvable inference sources for agent credential requirements');
   }
+
+  // Workbench encrypts credential secrets at write time. Interchange returns
+  // the raw DB value, so we must decrypt here before the sources reach the sidecar.
+  const { credentialKeys } = getConfig();
+  const sources = rawSources.map((s) => ({
+    ...s,
+    apiKey: decryptSecret(credentialKeys, tenantId, s.apiKey),
+  }));
   const defaultSource = sources[0]!.id;
 
   const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
