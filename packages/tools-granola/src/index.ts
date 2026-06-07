@@ -268,3 +268,22 @@ export function createGranolaTools(config: GranolaToolsConfig): AgentTool[] {
     },
   ];
 }
+
+/**
+ * Hub tool registry entries for granola. Import and spread into the hub's
+ * KNOWN_TOOLS to register. No hub logic changes needed when entries are added here.
+ */
+export const GRANOLA_HUB_TOOLS = {
+  granola_list_notes: {
+    definition: GRANOLA_LIST_NOTES_DEFINITION,
+    providerName: 'granola' as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createGranolaTools({ apiKey: config.apiKey, baseUrl: config.baseURL }),
+  },
+  granola_get_note: {
+    definition: GRANOLA_GET_NOTE_DEFINITION,
+    providerName: 'granola' as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createGranolaTools({ apiKey: config.apiKey, baseUrl: config.baseURL }),
+  },
+};

@@ -13,7 +13,7 @@ import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
 import { createAskPrincipalTool } from '@workbench/approvals';
 import { decryptSecret, type CredentialKeyRegistry } from '@workbench/hub-crypto';
 import { createToolRunner } from '@intx/agent';
-import { createExaTools } from '@workbench/tools-exa';
+import { createHubToolRunner } from './hub-tool-runner';
 import type { ToolDefinition, ToolRunner } from '@intx/types/runtime';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
@@ -119,17 +119,18 @@ export function createDefaultHarnessBuilder({
         }),
       ]);
 
-      const exaApiKey = process.env['EXA_API_KEY'];
-      const exaTools = exaApiKey ? createExaTools({ apiKey: exaApiKey }) : [];
-      const exaRunner = exaTools.length > 0 ? createToolRunner(exaTools) : null;
+      const hubToolRunner = createHubToolRunner({
+        hubHttpUrl,
+        sidecarToken,
+        tenantId,
+        toolDefinitions: agentConfig.tools,
+      });
 
       const runners: (ToolRunner & { definitions: ToolDefinition[] })[] = [
         posixTools,
         askPrincipalRunner as unknown as ToolRunner & { definitions: ToolDefinition[] },
+        hubToolRunner,
       ];
-      if (exaRunner !== null) {
-        runners.push(exaRunner as unknown as ToolRunner & { definitions: ToolDefinition[] });
-      }
 
       const allTools = mergeToolRunners(runners);
       const allowedNames = new Set(agentConfig.tools.map((t) => t.name));

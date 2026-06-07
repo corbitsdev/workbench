@@ -1,22 +1,23 @@
+import type { AgentTool } from '@intx/agent';
 import type { ToolDefinition } from '@intx/types/runtime';
-import { EXA_SEARCH_DEFINITION } from '@workbench/tools-exa';
-import {
-  GRANOLA_LIST_NOTES_DEFINITION,
-  GRANOLA_GET_NOTE_DEFINITION,
-} from '@workbench/tools-granola';
+import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
+import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
 
 /**
- * Registry of known tool definitions that the hub can attach to an agent.
- * The sidecar must also register the corresponding tool runners; the hub
- * only controls which definitions the model sees.
+ * All hub-managed tools, assembled from tool packages.
  *
- * Definitions are imported from the tool packages themselves so there is a
- * single source of truth.
+ * To add a new tool: create a @workbench/tools-* package that exports a
+ * *_HUB_TOOLS object and spread it here. No other hub or sidecar changes needed.
  */
-export const KNOWN_TOOLS: Record<string, ToolDefinition> = {
-  exa_search: EXA_SEARCH_DEFINITION,
-  granola_list_notes: GRANOLA_LIST_NOTES_DEFINITION,
-  granola_get_note: GRANOLA_GET_NOTE_DEFINITION,
+export const KNOWN_TOOLS: Record<string, ToolEntry> = {
+  ...EXA_HUB_TOOLS,
+  ...GRANOLA_HUB_TOOLS,
+};
+
+export type ToolEntry = {
+  definition: ToolDefinition;
+  providerName: string;
+  createTools: (config: { apiKey: string; baseURL: string }) => AgentTool[];
 };
 
 /** Names of all tools registered in KNOWN_TOOLS. */
@@ -24,11 +25,11 @@ export const KNOWN_TOOL_NAMES: string[] = Object.keys(KNOWN_TOOLS);
 
 /**
  * Build a ToolDefinition list from an array of tool names, filtering out
- * any names that are not in the known registry.
+ * any names not in the registry.
  */
 export function buildToolDefinitions(names: string[]): ToolDefinition[] {
   return names
-    .map((name) => KNOWN_TOOLS[name])
+    .map((name) => KNOWN_TOOLS[name]?.definition)
     .filter((def): def is ToolDefinition => def !== undefined);
 }
 

@@ -223,3 +223,20 @@ export function createExaTools(config: ExaToolsConfig): AgentTool[] {
     },
   ];
 }
+
+/**
+ * Hub tool registry entries for exa. Each entry declares the tool definition,
+ * the Interchange provider name for credential resolution, and a factory that
+ * returns the AgentTool handlers given resolved credentials.
+ *
+ * Import and spread into the hub's KNOWN_TOOLS to register. No hub logic changes
+ * are needed when new entries are added here.
+ */
+export const EXA_HUB_TOOLS = {
+  exa_search: {
+    definition: EXA_SEARCH_DEFINITION,
+    providerName: 'exa' as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createExaTools({ apiKey: config.apiKey }),
+  },
+};

@@ -3,12 +3,12 @@ import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
 import { generateId } from '@intx/hub-common';
-import { getConfig } from '../config';
 import {
   GRANOLA_DEPLOY_PROMPT,
   GRANOLA_CREDENTIAL_REQUIREMENTS,
   GRANOLA_CAPABILITIES,
 } from '@workbench/agents/granola-definition';
+import { LOOP_CREDENTIAL_REQUIREMENTS } from '@workbench/agents';
 
 const log = getLogger(['api', 'tenant-provisioning']);
 
@@ -415,11 +415,6 @@ export async function provisionMyraInstance(
   const now = new Date();
   const agentId = existingAgent?.id ?? generateId('agent');
 
-  const defaultTools: string[] = [];
-  if (getConfig().exa.apiKey) {
-    defaultTools.push('exa_search');
-  }
-
   return db.transaction(async (tx) => {
     if (!existingAgent) {
       const agentRows = await tx
@@ -430,7 +425,8 @@ export async function provisionMyraInstance(
           creatorPrincipalId: opts.creatorPrincipalId,
           name: 'Myra',
           systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
-          capabilities: defaultTools.length > 0 ? { tools: defaultTools } : null,
+          credentialRequirements: LOOP_CREDENTIAL_REQUIREMENTS,
+          capabilities: null,
           status: 'deployed',
           currentVersion: '1',
           createdAt: now,
