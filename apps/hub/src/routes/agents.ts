@@ -109,7 +109,7 @@ export function createAgentProvisioningRouter(
     const instances = await db.query.agentInstance.findMany({
       where: and(
         eq(agentInstance.tenantId, tenantId),
-        inArray(agentInstance.status, ['deployed', 'running'])
+        inArray(agentInstance.status, ['deployed', 'running', 'stopped'])
       ),
     });
 
@@ -720,6 +720,19 @@ export function createAgentProvisioningRouter(
       return c.json({ launched: true });
     }
 
+    // Reset a stopped instance so the sidecar treats it as a fresh launch.
+    if (instance.status === 'stopped') {
+      const resetNow = new Date();
+      await db
+        .update(agentInstance)
+        .set({ status: 'deployed', endedAt: null, updatedAt: resetNow })
+        .where(eq(agentInstance.id, instanceId));
+      await db
+        .update(agent)
+        .set({ status: 'deployed', updatedAt: resetNow })
+        .where(eq(agent.id, instance.agentId));
+    }
+
     const tenantRow = await db.query.tenant.findFirst({
       where: eq(tenant.id, instance.tenantId),
     });
@@ -934,26 +947,7 @@ async function ensureAgentInstance(
     credentialIds,
   } = opts;
 
-  const existingAgent = await db.query.agent.findFirst({
-    where: and(eq(agent.tenantId, tenantId), eq(agent.name, agentName)),
-  });
-
-  if (existingAgent) {
-    const existingInstance = await db.query.agentInstance.findFirst({
-      where: eq(agentInstance.agentId, existingAgent.id),
-    });
-    if (existingInstance) {
-      return {
-        instanceId: existingInstance.id,
-        agentId: existingAgent.id,
-        instancePrincipalId: existingInstance.principalId,
-        address: existingInstance.address,
-        isNew: false,
-      };
-    }
-  }
-
-  const agentId = existingAgent?.id ?? generateId('agent');
+  const agentId = generateId('agent');
 
   const credReqs: Array<Record<string, unknown>> = [];
   let modelConfig: { defaultModel: string } | undefined;
@@ -1000,21 +994,19 @@ async function ensureAgentInstance(
     }
   }
 
-  if (!existingAgent) {
-    await db.insert(agent).values({
-      id: agentId,
-      tenantId,
-      creatorPrincipalId,
-      name: agentName,
-      systemPrompt,
-      credentialRequirements: credReqs,
-      ...(modelConfig !== undefined ? { modelConfig } : {}),
-      status: 'deployed',
-      currentVersion: '1',
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
+  await db.insert(agent).values({
+    id: agentId,
+    tenantId,
+    creatorPrincipalId,
+    name: agentName,
+    systemPrompt,
+    credentialRequirements: credReqs,
+    ...(modelConfig !== undefined ? { modelConfig } : {}),
+    status: 'deployed',
+    currentVersion: '1',
+    createdAt: now,
+    updatedAt: now,
+  });
 
   const instancePrincipalId = generateId('principal');
   await db.insert(principal).values({

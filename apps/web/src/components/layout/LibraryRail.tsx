@@ -6,7 +6,8 @@ import {
   listWorkbenches,
   listEnrichedCredentials,
   assignCredentialToAgent,
-  deleteAgentInstance,
+  stopAgentInstance,
+  restartAgentInstance,
   listAvailableTools,
   updateAgentTools,
   INFERENCE_PROVIDER_NAMES,
@@ -40,17 +41,22 @@ interface RailItem {
   capabilities?: Record<string, unknown> | null;
 }
 
+function agentStatusLabel(status: string): string {
+  if (status === 'running') return 'Running';
+  if (status === 'stopped') return 'Stopped';
+  return 'Deploying';
+}
+
 function agentToRailItem(a: AgentInstance): RailItem {
-  const isRunning = a.status === 'running';
   return {
     id: a.id,
     group: 'Agents',
     name: a.agentName,
     type: 'agent',
-    sub: `Agent · ${isRunning ? 'Running' : 'Deploying'}`,
-    status: isRunning ? 'run' : 'idle',
+    sub: `Agent · ${agentStatusLabel(a.status)}`,
+    status: a.status === 'running' ? 'run' : 'idle',
     who: a.agentName.slice(0, 2).toUpperCase(),
-    color: 'var(--green)',
+    color: a.status === 'stopped' ? 'var(--text-3)' : 'var(--green)',
     instanceId: a.id,
     tenantId: a.tenantId,
     agentId: a.agentId,
@@ -445,7 +451,8 @@ export function LibraryRail({
   const [searchQuery, setSearchQuery] = useState('');
   const [editingCredentialFor, setEditingCredentialFor] = useState<string | null>(null);
   const [editingToolsFor, setEditingToolsFor] = useState<string | null>(null);
-  const [deletingInstanceId, setDeletingInstanceId] = useState<string | null>(null);
+  const [stoppingInstanceId, setStoppingInstanceId] = useState<string | null>(null);
+  const [restartingInstanceId, setRestartingInstanceId] = useState<string | null>(null);
 
   // Resolve the tenantId for the active workbench so agents can be scoped.
   const activeWorkbench = workbenches.find((w) => w.tenantSlug === activeWorkbenchSlug);
@@ -687,6 +694,7 @@ export function LibraryRail({
               {inGroup.map((item) => {
                 const isClickableAgent =
                   item.type === 'agent' &&
+                  item.agentStatus !== 'stopped' &&
                   onAgentSelect !== undefined &&
                   item.instanceId !== undefined &&
                   item.tenantId !== undefined;
@@ -711,14 +719,25 @@ export function LibraryRail({
                   }
                 };
 
-                const deleteAgent = async () => {
+                const stopAgent = async () => {
                   if (!item.instanceId || !item.tenantId) return;
-                  setDeletingInstanceId(item.instanceId);
+                  setStoppingInstanceId(item.instanceId);
                   try {
-                    await deleteAgentInstance(item.tenantId, item.instanceId);
+                    await stopAgentInstance(item.tenantId, item.instanceId);
                     onAgentDeleted?.();
                   } finally {
-                    setDeletingInstanceId(null);
+                    setStoppingInstanceId(null);
+                  }
+                };
+
+                const restartAgent = async () => {
+                  if (!item.instanceId) return;
+                  setRestartingInstanceId(item.instanceId);
+                  try {
+                    await restartAgentInstance(item.instanceId);
+                    onAgentDeleted?.();
+                  } finally {
+                    setRestartingInstanceId(null);
                   }
                 };
 
@@ -749,67 +768,93 @@ export function LibraryRail({
                       </div>
                       {item.type === 'agent' && item.agentId && item.tenantId && (
                         <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                          <button
-                            type="button"
-                            aria-label="Configure tools"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingToolsFor(isEditingTools ? null : item.id);
-                              if (!isEditingTools) setEditingCredentialFor(null);
-                            }}
-                            className={`grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text ${isEditingTools ? 'opacity-100 text-orange' : ''}`}
-                          >
-                            <svg
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              className="h-[13px] w-[13px]"
+                          {item.agentStatus === 'stopped' ? (
+                            <button
+                              type="button"
+                              aria-label="Restart agent"
+                              disabled={restartingInstanceId === item.instanceId}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void restartAgent();
+                              }}
+                              className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text disabled:opacity-50"
                             >
-                              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="Configure credential"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingCredentialFor(isEditingCred ? null : item.id);
-                              if (!isEditingCred) setEditingToolsFor(null);
-                            }}
-                            className={`grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text ${isEditingCred ? 'opacity-100 text-orange' : ''}`}
-                          >
-                            <svg
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              className="h-[13px] w-[13px]"
-                            >
-                              <circle cx="12" cy="12" r="3" />
-                              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="Delete agent"
-                            disabled={deletingInstanceId === item.instanceId}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (window.confirm(`Delete ${item.name}?`)) void deleteAgent();
-                            }}
-                            className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
-                          >
-                            <svg
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              className="h-[13px] w-[13px]"
-                            >
-                              <path d="M3 6h18M8 6V4h8v2M6 6l1 16h10l1-16" />
-                            </svg>
-                          </button>
+                              <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                className="h-[13px] w-[13px]"
+                              >
+                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                <path d="M3 3v5h5" />
+                              </svg>
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                aria-label="Configure tools"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingToolsFor(isEditingTools ? null : item.id);
+                                  if (!isEditingTools) setEditingCredentialFor(null);
+                                }}
+                                className={`grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text ${isEditingTools ? 'opacity-100 text-orange' : ''}`}
+                              >
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  className="h-[13px] w-[13px]"
+                                >
+                                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Configure credential"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingCredentialFor(isEditingCred ? null : item.id);
+                                  if (!isEditingCred) setEditingToolsFor(null);
+                                }}
+                                className={`grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text ${isEditingCred ? 'opacity-100 text-orange' : ''}`}
+                              >
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  className="h-[13px] w-[13px]"
+                                >
+                                  <circle cx="12" cy="12" r="3" />
+                                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Stop agent"
+                                disabled={stoppingInstanceId === item.instanceId}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (window.confirm(`Stop ${item.name}?`)) void stopAgent();
+                                }}
+                                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
+                              >
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  className="h-[13px] w-[13px]"
+                                >
+                                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                                </svg>
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                       <span
