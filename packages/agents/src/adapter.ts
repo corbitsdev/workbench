@@ -17,7 +17,10 @@ function stripContextBlock(content: string): string {
  *   - otherwise                    → status omitted
  */
 export function convertInstanceEvents(events: InstanceEvent[]): ChatMessage[] {
-  return events.map((event): ChatMessage => {
+  const sorted = [...events].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+  return sorted.map((event): ChatMessage => {
     if (event.kind === 'mail') {
       return {
         id: event.id,

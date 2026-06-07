@@ -137,6 +137,33 @@ describe('convertInstanceEvents', () => {
     expect(messages[1]?.id).toBe('b');
   });
 
+  it('sorts out-of-order events by timestamp', () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: 'turn',
+        turnId: 'turn-2',
+        content: 'Second',
+        timestamp: '2024-01-01T00:01:00.000Z',
+      },
+      {
+        kind: 'mail',
+        id: 'msg-1',
+        role: 'user',
+        content: 'First',
+        sender: { name: null, email: 'u@example.com' },
+        recipients: [],
+        timestamp: '2024-01-01T00:00:00.000Z',
+        attachments: [],
+      },
+    ];
+
+    const messages = convertInstanceEvents(events);
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.id).toBe('msg-1');
+    expect(messages[1]?.id).toBe('turn-2');
+  });
+
   it('returns empty array for empty input', () => {
     expect(convertInstanceEvents([])).toEqual([]);
   });
