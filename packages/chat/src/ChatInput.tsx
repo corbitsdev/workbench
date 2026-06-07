@@ -6,6 +6,8 @@ export interface ChatInputProps {
   onSend: (text: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  /** When true the agent is processing; submission is blocked and a visual indicator is shown. */
+  busy?: boolean;
   className?: string;
 }
 
@@ -13,12 +15,14 @@ export interface ChatInputProps {
  * A minimal stateless input bar. It owns only presentational draft state; the
  * committed message is handed to the host via `onSend`. No transport here.
  */
-export function ChatInput({ onSend, placeholder, disabled, className }: ChatInputProps) {
+export function ChatInput({ onSend, placeholder, disabled, busy, className }: ChatInputProps) {
   const [draft, setDraft] = useState('');
+
+  const isBlocked = disabled === true || busy === true;
 
   const submit = () => {
     const text = draft.trim();
-    if (text.length === 0 || disabled === true) return;
+    if (text.length === 0 || isBlocked) return;
     onSend(text);
     setDraft('');
   };
@@ -36,7 +40,7 @@ export function ChatInput({ onSend, placeholder, disabled, className }: ChatInpu
         aria-label="Message"
         rows={1}
         value={draft}
-        disabled={disabled}
+        disabled={isBlocked}
         placeholder={placeholder ?? 'Message Ada…'}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={handleKeyDown}
@@ -45,10 +49,20 @@ export function ChatInput({ onSend, placeholder, disabled, className }: ChatInpu
       <Button
         type="button"
         size="sm"
+        aria-label={busy === true ? 'Waiting for agent' : 'Send'}
         onClick={submit}
-        disabled={disabled === true || draft.trim().length === 0}
+        disabled={isBlocked || draft.trim().length === 0}
+        className={cn(busy === true && 'opacity-60')}
       >
-        Send
+        {busy === true ? (
+          <span className="flex items-center gap-1" aria-hidden="true">
+            <span className="block h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+            <span className="block h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+            <span className="block h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+          </span>
+        ) : (
+          'Send'
+        )}
       </Button>
     </div>
   );

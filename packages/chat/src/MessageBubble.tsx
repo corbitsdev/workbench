@@ -22,7 +22,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   return (
     <div
       data-role={message.role}
-      className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}
+      className={cn('flex w-full flex-col gap-1', isUser ? 'items-end' : 'items-start')}
     >
       <div
         className={cn(
@@ -37,10 +37,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         ) : (
           <Streamdown mode={isStreaming ? 'streaming' : 'static'}>{message.content}</Streamdown>
         )}
-        {message.status === 'failed' && (
-          <span className="mt-1 block text-xs text-orange-soft">Failed to send</span>
-        )}
       </div>
+      {message.status === 'failed' && (
+        <span className="text-xs text-orange-soft">Failed to send</span>
+      )}
     </div>
   );
 }

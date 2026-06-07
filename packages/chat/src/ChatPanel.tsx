@@ -52,8 +52,16 @@ export function ChatPanel({
   className,
   notice,
 }: ChatPanelProps) {
+  const busy = typing === true || (activity !== undefined && activity !== null);
+
   return (
-    <div className={cn('flex h-full flex-col overflow-hidden bg-surface', className)}>
+    <div
+      className={cn(
+        'flex h-full flex-col overflow-hidden bg-surface border-t-2 transition-colors',
+        busy ? 'border-orange' : 'border-transparent',
+        className
+      )}
+    >
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex flex-col">
           <span className="text-sm font-medium text-text">{agent.name}</span>
@@ -106,6 +114,7 @@ export function ChatPanel({
       <ChatInput
         onSend={onSend}
         placeholder={`Message ${agent.name}…`}
+        busy={busy}
         {...(inputDisabled !== undefined ? { disabled: inputDisabled } : {})}
       />
     </div>

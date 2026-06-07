@@ -168,6 +168,75 @@ describe('ChatPanel', () => {
   });
 });
 
+describe('ChatPanel empty state', () => {
+  it('shows default empty state when there are no messages', () => {
+    render(<ChatPanel agent={agent} messages={[]} onSend={() => {}} />);
+    expect(screen.getByText('Send a message to get started.')).toBeDefined();
+  });
+
+  it('does not show the empty state once messages exist', () => {
+    render(<ChatPanel agent={agent} messages={messages} onSend={() => {}} />);
+    expect(screen.queryByText('Send a message to get started.')).toBeNull();
+  });
+});
+
+describe('ChatPanel busy state', () => {
+  it('disables the Send button while the agent is thinking', () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        activity={{ type: 'thinking' }}
+      />
+    );
+    const sendButton = screen.getByRole('button', { name: 'Waiting for agent' });
+    expect(sendButton).toBeDefined();
+    expect((sendButton as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('disables the Send button while typing indicator is active', () => {
+    render(<ChatPanel agent={agent} messages={messages} onSend={() => {}} typing />);
+    expect((screen.getByRole('button', { name: 'Waiting for agent' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows the activity pill with the agent name while a tool is running', () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        activity={{ type: 'tool_running', name: 'draft_email' }}
+      />
+    );
+    expect(screen.getByText('Ada is running draft_email')).toBeDefined();
+  });
+
+  it('does not block Send after activity clears', () => {
+    render(<ChatPanel agent={agent} messages={messages} onSend={() => {}} />);
+    const sendButton = screen.getByRole('button', { name: 'Send' });
+    expect(sendButton).toBeDefined();
+  });
+});
+
+describe('ChatPanel composer interaction', () => {
+  it('does not fire onSend when busy', async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={onSend}
+        activity={{ type: 'thinking' }}
+      />
+    );
+    const input = screen.getByLabelText('Message') as HTMLTextAreaElement;
+    expect(input.disabled).toBe(true);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+});
+
 describe('ChatLauncher', () => {
   it('fires onClick when pressed', async () => {
     const user = userEvent.setup();

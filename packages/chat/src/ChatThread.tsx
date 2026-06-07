@@ -64,13 +64,22 @@ export function ChatThread({
       aria-label="Chat messages"
       className={cn('flex flex-1 flex-col gap-3 overflow-y-auto p-4', className)}
     >
-      {messages.length === 0 && typing !== true && !hasActivity && emptyState}
+      {messages.length === 0 && typing !== true && !hasActivity && (
+        emptyState ?? (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-text-3">Send a message to get started.</p>
+          </div>
+        )
+      )}
       {messages.map((message) => (
         <MessageBubble key={message.id} message={message} />
       ))}
       {hasActivity && agentName !== undefined && (
-        <div className="flex items-center gap-2 text-xs text-text-3" aria-live="polite">
-          <span>{formatActivityLabel(activity, agentName)}</span>
+        <div className="flex items-start" aria-live="polite">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">
+            <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-orange" />
+            {formatActivityLabel(activity, agentName)}
+          </span>
         </div>
       )}
       {typing === true && !hasActivity && (
