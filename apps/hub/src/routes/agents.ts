@@ -963,22 +963,6 @@ async function launchAgentSession(
   }
   const defaultSource = sources[0]!.id;
 
-  const sessionId = generateId('session');
-  await db.insert(agentSession).values({
-    id: sessionId,
-    tenantId,
-    agentId,
-    principalId: instancePrincipalId,
-    status: 'active',
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  await db
-    .update(agentInstance)
-    .set({ sessionId, updatedAt: now })
-    .where(eq(agentInstance.id, instanceId));
-
   const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
 
   const agentRow = await db.query.agent.findFirst({
@@ -987,27 +971,56 @@ async function launchAgentSession(
   const toolNames = getToolNamesFromCapabilities(agentRow?.capabilities ?? null);
   const tools = buildToolDefinitions(toolNames);
 
-  const launchConfig = {
-    agentAddress: address,
-    agentId,
-    instanceId,
-    config: {
-      sessionId,
-      agentId,
-      tenantId,
-      principalId: instancePrincipalId,
-      agentAddress: address,
-      systemPrompt,
-      tools,
-      grants,
-      sources,
-      defaultSource,
-    },
-    deployContent: { systemPrompt },
-  };
-
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_LAUNCH_ATTEMPTS; attempt++) {
+    // Clean up any orphaned session rows from a previous failed attempt before
+    // creating a new one. Without this, each retry leaves an active session row
+    // pointing at a sidecar agent that was never started successfully.
+    const existing = await db.query.agentInstance.findFirst({
+      where: eq(agentInstance.id, instanceId),
+    });
+    if (existing?.sessionId) {
+      await db
+        .update(agentSession)
+        .set({ status: 'ended', updatedAt: new Date() })
+        .where(and(eq(agentSession.id, existing.sessionId), eq(agentSession.status, 'active')));
+    }
+
+    const sessionId = generateId('session');
+    await db.insert(agentSession).values({
+      id: sessionId,
+      tenantId,
+      agentId,
+      principalId: instancePrincipalId,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db
+      .update(agentInstance)
+      .set({ sessionId, updatedAt: now })
+      .where(eq(agentInstance.id, instanceId));
+
+    const launchConfig = {
+      agentAddress: address,
+      agentId,
+      instanceId,
+      config: {
+        sessionId,
+        agentId,
+        tenantId,
+        principalId: instancePrincipalId,
+        agentAddress: address,
+        systemPrompt,
+        tools,
+        grants,
+        sources,
+        defaultSource,
+      },
+      deployContent: { systemPrompt },
+    };
+
     try {
       await sessionService.launchSession(launchConfig);
       await db
@@ -1025,6 +1038,17 @@ async function launchAgentSession(
         await new Promise<void>((resolve) => setTimeout(resolve, LAUNCH_RETRY_DELAY_MS));
       }
     }
+  }
+
+  // Mark the last session row as ended since the launch ultimately failed.
+  const finalInstance = await db.query.agentInstance.findFirst({
+    where: eq(agentInstance.id, instanceId),
+  });
+  if (finalInstance?.sessionId) {
+    await db
+      .update(agentSession)
+      .set({ status: 'ended', updatedAt: new Date() })
+      .where(and(eq(agentSession.id, finalInstance.sessionId), eq(agentSession.status, 'active')));
   }
 
   throw lastError;
