@@ -54,11 +54,6 @@ export function loadConfig() {
       origins: corsOrigins,
       isCrossOrigin: corsOrigins.length > 0,
     },
-    llm: {
-      apiKey: requireEnv('OPENAI_COMPATIBLE_API_KEY'),
-      model: requireEnv('OPENAI_COMPATIBLE_MODEL'),
-      baseUrl: optionalEnv('OPENAI_COMPATIBLE_BASE_URL'),
-    },
     google: {
       clientId: googleClientId,
       clientSecret: googleClientSecret,
@@ -83,7 +78,6 @@ export function loadConfig() {
     isDev,
     port: config.port,
     corsOrigins: config.cors.origins,
-    llmModel: config.llm.model,
     googleAuthEnabled: Boolean(config.google.clientId),
   });
 

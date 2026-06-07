@@ -4,7 +4,6 @@ import type { InferenceSource } from '@intx/types/runtime';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { buildInferenceSource } from './inference';
 
 const log = getLogger(['extraction']);
 
@@ -241,11 +240,9 @@ function serializeExtractionResult(
 export async function extractPainPointsWithLLM(
   workflowId: string,
   content: string,
-  feedback: string | undefined
+  feedback: string | undefined,
+  source: InferenceSource
 ): Promise<ExtractionResult> {
-  // TODO(CL-1373): resolve via resolveCredentialRequirement from @intx/db once workflows
-  // are tenant-aware (blocked by CL-1246). Currently uses platform operator key for all tenants.
-  const source = buildInferenceSource(`extraction-${workflowId}`);
   const model = source.model;
 
   log.info('Starting LLM extraction', { workflowId, transcriptLength: content.length, model });
@@ -293,7 +290,8 @@ export async function extractPainPointsWithLLM(
 export async function extractPainPoints(
   workflowId: string,
   content: string,
-  feedback?: string
+  feedback: string | undefined,
+  source: InferenceSource
 ): Promise<ExtractionResult> {
-  return extractPainPointsWithLLM(workflowId, content, feedback);
+  return extractPainPointsWithLLM(workflowId, content, feedback, source);
 }

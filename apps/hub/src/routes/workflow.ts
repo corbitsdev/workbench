@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
-import { schema as intxSchema } from '@intx/db';
+import { resolveCredentialRequirement, schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
+import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry } from '@workbench/workflow-core';
 import { collateralGenerationWorkflow } from '@workbench/gtm-workflows';
 import { workflowRun, transcript, painPoint, artifact, artifactVersion } from '../db/schema';
@@ -15,7 +16,9 @@ import {
 import { extractPainPoints } from '../lib/extraction';
 import { refineFeedbackWithLLM } from '../lib/feedback';
 import { generateCollateralWithLLM } from '../lib/generation';
-
+import { decryptSecret } from '@workbench/hub-crypto';
+import { getConfig } from '../config';
+import { randomUUID } from 'node:crypto';
 const log = getLogger(['api', 'workflow']);
 
 workflowRegistry.register(collateralGenerationWorkflow);
@@ -47,6 +50,45 @@ interface WorkflowInput {
   transcriptSource?: string;
   companyName?: string;
   stepConfig?: WorkflowStepConfig;
+}
+
+const WORKFLOW_LLM_REQUIREMENT = {
+  providerName: 'openai-compatible',
+  source: 'tenant' as const,
+  name: 'Myra LLM',
+};
+
+async function resolveWorkflowInferenceSource(
+  db: DB['db'],
+  tenantId: string
+): Promise<InferenceSource | null> {
+  const resolved = await resolveCredentialRequirement(
+    db,
+    tenantId,
+    WORKFLOW_LLM_REQUIREMENT,
+    null,
+    null
+  );
+  if (!resolved) return null;
+
+  const providerRow = await db.query.provider.findFirst({
+    where: eq(intxSchema.provider.id, resolved.providerId),
+  });
+  if (!providerRow) return null;
+
+  const meta = providerRow.metadata as { baseURL?: string; model?: string } | null;
+  if (!meta?.baseURL || !meta.model) return null;
+
+  const { credentialKeys } = getConfig();
+  const apiKey = decryptSecret(credentialKeys, tenantId, resolved.secret);
+
+  return {
+    id: `workflow-llm-${randomUUID()}`,
+    provider: providerRow.plugin,
+    baseURL: meta.baseURL,
+    apiKey,
+    model: meta.model,
+  };
 }
 
 async function getUserContext(db: DB['db'], userId: string): Promise<UserContext | null> {
@@ -441,19 +483,33 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
 
     const step = body.step ?? deriveCurrentStep(wf.status);
 
-    if (step === 'analyze') {
-      return runAnalyze(db, id, userId, userContext, body.feedback);
-    }
-    if (step === 'generate') {
-      return runGenerate(db, id, body.painPointIds ?? [], userContext.principalId);
-    }
-    if (step === 'improve') {
+    if (step === 'analyze' || step === 'generate' || step === 'improve') {
+      const source = await resolveWorkflowInferenceSource(db, userContext.tenantId);
+      if (!source) {
+        log.warn('No workflow LLM credential configured', { tenantId: userContext.tenantId });
+        return c.json(
+          {
+            error:
+              'No LLM credential configured for this workspace. Please add one in Settings.',
+          },
+          400
+        );
+      }
+
+      if (step === 'analyze') {
+        return runAnalyze(db, id, userContext, source, body.feedback);
+      }
+      if (step === 'generate') {
+        return runGenerate(db, id, body.painPointIds ?? [], userContext.principalId, source);
+      }
+      // step === 'improve'
       if (!body.artifactId || !body.feedback) {
         log.warn('Missing artifactId or feedback for improve step', { workflowId: id });
         return c.json({ error: 'artifactId and feedback are required' }, 400);
       }
-      return runImprove(db, id, body.artifactId, body.feedback, userContext.principalId);
+      return runImprove(db, id, body.artifactId, body.feedback, userContext.principalId, source);
     }
+
     if (step === 'export') {
       const target = body.target ?? 'markdown';
       if (!isValidExportTarget(target)) {
@@ -463,7 +519,7 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
           400
         );
       }
-      return runExport(db, id, userId, userContext, target);
+      return runExport(db, id, userContext, target);
     }
 
     log.warn('Invalid step', { workflowId: id, step });
@@ -630,8 +686,8 @@ function deriveCurrentStep(status: string): StepName {
 async function runAnalyze(
   db: DB['db'],
   id: string,
-  userId: string,
   userContext: UserContext,
+  source: InferenceSource,
   feedback?: string
 ) {
   log.info('Starting analyze step', { workflowId: id, hasFeedback: Boolean(feedback) });
@@ -651,7 +707,12 @@ async function runAnalyze(
   }
 
   log.info('Extracting pain points', { workflowId: id, transcriptLength: tx.content.length });
-  const { painPoints: extracted, companyName } = await extractPainPoints(id, tx.content, feedback);
+  const { painPoints: extracted, companyName } = await extractPainPoints(
+    id,
+    tx.content,
+    feedback,
+    source
+  );
   log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
 
   await db.delete(painPoint).where(eq(painPoint.sessionId, id));
@@ -682,7 +743,8 @@ async function runGenerate(
   db: DB['db'],
   id: string,
   painPointIds: string[],
-  principalId: string
+  principalId: string,
+  source: InferenceSource
 ) {
   const authorId = principalId;
   log.info('Starting generate step', { workflowId: id, painPointCount: painPointIds.length });
@@ -717,7 +779,8 @@ async function runGenerate(
   const results = await Promise.allSettled(
     points.flatMap((p: any) =>
       ARTIFACT_KINDS.map((kind) =>
-        generateCollateralWithLLM(id, transcriptContent, p, kind).then(({ title, body }) => ({
+        generateCollateralWithLLM(id, transcriptContent, p, kind, source).then(
+          ({ title, body }) => ({
             sessionId: id,
             painPointId: p.id,
             kind,
@@ -731,7 +794,7 @@ async function runGenerate(
     )
   );
 
-  const generated = results.flatMap((r: PromiseSettledResult<unknown>) => {
+  const generated = results.flatMap((r) => {
     if (r.status === 'fulfilled') return [r.value];
     log.error('Artifact generation failed for one item', {
       workflowId: id,
@@ -778,7 +841,8 @@ async function runImprove(
   id: string,
   artifactId: string,
   feedback: string,
-  authorId: string
+  authorId: string,
+  source: InferenceSource
 ) {
   log.info('Starting improve step', {
     workflowId: id,
@@ -798,8 +862,8 @@ async function runImprove(
 
   const nextVersion = item.version + 1;
   const [improvedTitle, improvedContent] = await Promise.all([
-    refineFeedbackWithLLM(item.title, feedback, item.kind),
-    refineFeedbackWithLLM(item.content, feedback, item.kind),
+    refineFeedbackWithLLM(item.title, feedback, item.kind, source),
+    refineFeedbackWithLLM(item.content, feedback, item.kind, source),
   ]);
 
   // Update the artifact and append its new version row atomically, so the live
@@ -834,7 +898,6 @@ async function runImprove(
 async function runExport(
   db: DB['db'],
   id: string,
-  userId: string,
   userContext: UserContext,
   target: string
 ) {

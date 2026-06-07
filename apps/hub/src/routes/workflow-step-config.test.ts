@@ -2,13 +2,6 @@ import { describe, expect, it, mock } from 'bun:test';
 
 // Mock inference lib before any module that loads it at module-evaluation time
 mock.module('../lib/inference', () => ({
-  buildInferenceSource: mock(() => ({
-    id: 'src-1',
-    provider: 'openai',
-    baseURL: '',
-    apiKey: '',
-    model: '',
-  })),
   runSingleTurnAgent: mock(() => Promise.resolve('')),
 }));
 mock.module('../lib/extraction', () => ({

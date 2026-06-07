@@ -1,6 +1,7 @@
 import { getLogger } from '@intx/log';
+import type { InferenceSource } from '@intx/types/runtime';
 import type { ArtifactKind } from '@workbench/shared';
-import { buildInferenceSource, runSingleTurnAgent } from './inference';
+import { runSingleTurnAgent } from './inference';
 
 const log = getLogger(['generation']);
 
@@ -143,13 +144,10 @@ export async function generateCollateralWithLLM(
   workflowId: string,
   transcript: string,
   point: PainPointInput,
-  type: ArtifactKind
+  type: ArtifactKind,
+  source: InferenceSource
 ): Promise<GeneratedCollateral> {
   log.info('Generating collateral', { workflowId, painPointId: point.id, type });
-
-  // TODO(CL-1373): resolve via resolveCredentialRequirement from @intx/db once workflows
-  // are tenant-aware (blocked by CL-1246). Currently uses platform operator key for all tenants.
-  const source = buildInferenceSource(`generation-${workflowId}`);
 
   const userMessage = `Transcript (for context):\n\n${transcript.slice(0, 60000)}\n\n---\n\nPain point to address:\n- Summary: ${point.context}\n- Severity: ${point.severity}\n- Verbatim quote: "${point.quote}"\n\nGenerate the ${type} collateral now.`;
 

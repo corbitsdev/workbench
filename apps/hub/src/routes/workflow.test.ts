@@ -2,6 +2,32 @@ import { describe, expect, it, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { createWorkflowRouter } from './workflow';
 
+import * as intxDb from '@intx/db';
+
+mock.module('@intx/db', () => ({
+  ...intxDb,
+  resolveCredentialRequirement: mock(async () => ({
+    id: 'cred-1',
+    providerId: 'prov-1',
+    secret: 'enc:v1:test',
+    tenantId: 'tenant-personal',
+    principalId: null,
+    name: 'Workflow LLM',
+  })),
+}));
+
+mock.module('@workbench/hub-crypto', () => ({
+  decryptSecret: mock(() => 'sk-test-key'),
+  parseEncryptionKeys: mock(() => ({})),
+}));
+
+mock.module('../config', () => ({
+  getConfig: mock(() => ({
+    credentialKeys: {},
+  })),
+  loadConfig: mock(() => {}),
+}));
+
 mock.module('../lib/extraction', () => ({
   extractPainPoints: mock(() =>
     Promise.resolve({
@@ -68,6 +94,13 @@ describe('Workflow router', () => {
         },
         agentInstance: {
           findMany: mock(() => [] as any[]),
+        },
+        provider: {
+          findFirst: mock(() => ({
+            id: 'prov-1',
+            plugin: 'openai',
+            metadata: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o' },
+          })),
         },
       },
       delete: mock(() => ({

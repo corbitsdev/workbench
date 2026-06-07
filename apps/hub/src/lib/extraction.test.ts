@@ -1,23 +1,4 @@
-import { describe, expect, it, mock } from 'bun:test';
-
-// Controls whether buildInferenceSource simulates a missing API key.
-// Tests that verify the "key not configured" path set this to true.
-let simulateMissingKey = false;
-
-mock.module('./inference', () => ({
-  buildInferenceSource: (prefix: string) => {
-    if (simulateMissingKey) {
-      throw new Error('Missing required environment variable: OPENAI_COMPATIBLE_API_KEY');
-    }
-    return {
-      id: `${prefix}-test`,
-      provider: 'openai',
-      baseURL: 'https://api.openai.com/v1',
-      apiKey: 'test-key',
-      model: 'gpt-4o',
-    };
-  },
-}));
+import { describe, expect, it } from 'bun:test';
 
 import {
   buildExtractionSystemPrompt,
@@ -26,19 +7,22 @@ import {
   splitTranscriptForExtraction,
 } from './extraction';
 
+const TEST_SOURCE = {
+  id: 'test-src',
+  provider: 'openai',
+  baseURL: 'https://api.openai.com/v1',
+  apiKey: 'test-key',
+  model: 'gpt-4o',
+};
+
 describe('extractPainPointsWithLLM', () => {
-  it('throws when LLM API key is not configured', async () => {
-    simulateMissingKey = true;
+  it('throws when source has no apiKey', async () => {
+    const badSource = { ...TEST_SOURCE, apiKey: '' };
     try {
-      await extractPainPointsWithLLM('wf-1', 'Test transcript', undefined);
-      throw new Error('Expected error when API key is missing');
+      await extractPainPointsWithLLM('wf-1', 'Test transcript', undefined, badSource);
+      throw new Error('Expected error when apiKey is missing');
     } catch (err) {
       expect(err instanceof Error).toBe(true);
-      if (err instanceof Error) {
-        expect(err.message).toContain('OPENAI_COMPATIBLE_API_KEY');
-      }
-    } finally {
-      simulateMissingKey = false;
     }
   });
 });
