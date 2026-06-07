@@ -229,6 +229,30 @@ describe('PATCH /workflows/:id/step-config', () => {
     expect(res.status).toBe(404);
   });
 
+  it('returns 400 when stepConfig contains an agentId from a different tenant', async () => {
+    const db = createMockDb();
+    // Override agentInstance.findMany to return empty — simulates cross-tenant agentId
+    // that does not appear in the user's tenant.
+    (db.query.agentInstance.findMany as ReturnType<typeof mock>).mockImplementation(() =>
+      Promise.resolve([])
+    );
+
+    const app = wrapRouter(db);
+    const req = makeRequest('http://localhost/workflows/wf-1/step-config', {
+      method: 'PATCH',
+      body: {
+        stepConfig: {
+          analyze: { agentId: 'agent-from-other-tenant' },
+        },
+      },
+    });
+
+    const res = await app.fetch(req);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain('agentId');
+  });
+
   it('returns 400 when user context cannot be resolved', async () => {
     const db = createMockDb();
     (db.query.tenant.findFirst as ReturnType<typeof mock>).mockImplementation(() =>

@@ -352,6 +352,56 @@ describe('provisionOatInstance', () => {
   });
 });
 
+describe('provisionPersonalTenant — tenant name uses email not userId', () => {
+  it('creates the tenant with name set to userEmail, not userId', async () => {
+    const insertedValues: unknown[] = [];
+    const insertMock = mock(() => ({
+      values: mock((row: unknown) => {
+        insertedValues.push(row);
+        return {
+          returning: mock(() =>
+            Promise.resolve([
+              {
+                id: 'tenant-abc',
+                slug: 'user-abc',
+                name: 'alice@example.com',
+                domain: 'user-abc.localhost',
+                parentId: null,
+                config: null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+            ])
+          ),
+          onConflictDoNothing: mock(() => Promise.resolve([])),
+        };
+      }),
+    }));
+
+    const db = makeMockDB({
+      query: {
+        tenant: { findFirst: mock(() => Promise.resolve(undefined)) },
+        principal: { findFirst: mock(() => Promise.resolve(undefined)) },
+        role: { findFirst: mock(() => Promise.resolve(undefined)) },
+        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
+        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
+        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
+      },
+      insert: insertMock,
+    });
+
+    await provisionPersonalTenant(db as never, {
+      userId: 'user-abc',
+      userEmail: 'alice@example.com',
+    });
+
+    // The first insert is the tenant row. Verify its name field is the email address.
+    const tenantInsert = insertedValues[0] as Record<string, unknown>;
+    expect(tenantInsert.name).toBe('alice@example.com');
+    expect(tenantInsert.name).not.toBe('user-abc');
+  });
+});
+
 describe('provisionUserOnSignup', () => {
   it('returns personalTenantId and paInstanceId', async () => {
     const insertMock = mock(() => ({

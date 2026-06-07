@@ -179,6 +179,22 @@ describe('Workflow router', () => {
     expect(json).toEqual([]);
   });
 
+  it('POST /workflows/:id/steps generate returns 404 when workflow belongs to another user', async () => {
+    const mockDb = createMockDb();
+    // Simulate no matching workflow for this user's principalId
+    mockDb.query.workflowRun.findFirst = mock(() => null);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows/wf-other/steps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 'generate' }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(404);
+  });
+
   it('POST /workflows/:id/steps runs analyze step', async () => {
     const router = buildApp(createMockDb());
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
