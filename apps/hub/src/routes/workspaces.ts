@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
-import { provisionWorkspaceTenant } from '../lib/tenant-provisioning';
+import { provisionWorkspaceTenant, provisionOatInstance } from '../lib/tenant-provisioning';
 
 const log = getLogger(['api', 'workspaces']);
 
@@ -76,11 +76,40 @@ export function createWorkspacesRouter(db: ProductionDB): Hono<{ Variables: { us
       const existingTenant = await db.query.tenant.findFirst({
         where: eq(intxSchema.tenant.id, provisioned.tenantId),
       });
+
+      // Ensure Oat is provisioned even on idempotent workspace requests.
+      try {
+        await provisionOatInstance(db, {
+          workspaceTenantId: provisioned.tenantId,
+          workspaceTenantDomain: existingTenant?.domain ?? `${slug}.localhost`,
+          creatorPrincipalId: provisioned.principalId,
+        });
+      } catch (err) {
+        log.error('Oat provisioning failed for existing workspace', {
+          tenantId: provisioned.tenantId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+
       return c.json({
         id: provisioned.principalId,
         name: existingTenant?.name ?? rawName,
         slug: existingTenant?.slug ?? slug,
         tenantId: provisioned.tenantId,
+      });
+    }
+
+    // Provision Oat for the newly created workspace.
+    try {
+      await provisionOatInstance(db, {
+        workspaceTenantId: provisioned.tenantId,
+        workspaceTenantDomain: `${slug}.localhost`,
+        creatorPrincipalId: provisioned.principalId,
+      });
+    } catch (err) {
+      log.error('Oat provisioning failed for new workspace', {
+        tenantId: provisioned.tenantId,
+        error: err instanceof Error ? err : new Error(String(err)),
       });
     }
 

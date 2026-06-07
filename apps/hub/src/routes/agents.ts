@@ -930,7 +930,6 @@ async function ensureAgentInstance(
   return { instanceId, agentId, instancePrincipalId, address, isNew: true };
 }
 
-
 async function launchAgentSession(
   db: DB['db'],
   sessionService: SessionService,

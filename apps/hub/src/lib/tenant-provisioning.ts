@@ -4,6 +4,10 @@ import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
 import { generateId } from '@intx/hub-common';
 import { getConfig } from '../config';
+import {
+  GRANOLA_DEPLOY_PROMPT,
+  GRANOLA_CREDENTIAL_REQUIREMENTS,
+} from '@workbench/agents/granola-definition';
 
 const log = getLogger(['api', 'tenant-provisioning']);
 
@@ -188,6 +192,7 @@ export const PERSONAL_AGENT_DEPLOY_PROMPT =
 
 type PersonalTenantResult = { tenantId: string; principalId: string };
 type MyraInstanceResult = { paInstanceId: string };
+type OatInstanceResult = { oatInstanceId: string };
 
 /**
  * Ensure a personal tenant exists for a workbench user. Idempotent — if the
@@ -462,6 +467,93 @@ export async function provisionMyraInstance(
 
   log.info('Myra instance provisioned', { userId: opts.userId, instanceId });
   return { paInstanceId: instanceId };
+}
+
+/**
+ * Ensure an Oat agent and running instance exist on the workspace tenant.
+ * Oat is a workspace-scoped Granola integration agent — one instance per workspace.
+ * Idempotent — if both already exist, returns the existing instance ID.
+ */
+export async function provisionOatInstance(
+  db: ProductionDB,
+  opts: {
+    workspaceTenantId: string;
+    workspaceTenantDomain: string;
+    creatorPrincipalId: string;
+  }
+): Promise<OatInstanceResult> {
+  const existingAgent = await db.query.agent.findFirst({
+    where: and(eq(agent.tenantId, opts.workspaceTenantId), eq(agent.name, 'Oat')),
+  });
+
+  if (existingAgent) {
+    const existingInstance = await db.query.agentInstance.findFirst({
+      where: eq(agentInstance.agentId, existingAgent.id),
+    });
+    if (existingInstance) {
+      log.info('Oat instance already exists', {
+        tenantId: opts.workspaceTenantId,
+        instanceId: existingInstance.id,
+      });
+      return { oatInstanceId: existingInstance.id };
+    }
+  }
+
+  const now = new Date();
+  const agentId = existingAgent?.id ?? generateId('agent');
+
+  if (!existingAgent) {
+    const agentRows = await db
+      .insert(agent)
+      .values({
+        id: agentId,
+        tenantId: opts.workspaceTenantId,
+        creatorPrincipalId: opts.creatorPrincipalId,
+        name: 'Oat',
+        systemPrompt: GRANOLA_DEPLOY_PROMPT,
+        capabilities: null,
+        credentialRequirements: GRANOLA_CREDENTIAL_REQUIREMENTS,
+        status: 'deployed',
+        currentVersion: '1',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    const agentRow = agentRows?.[0];
+    if (!agentRow) throw new Error('Failed to create Oat agent for workspace');
+  }
+
+  const instancePrincipalId = generateId('principal');
+  await db.insert(principal).values({
+    id: instancePrincipalId,
+    tenantId: opts.workspaceTenantId,
+    kind: 'agent',
+    refId: agentId,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const instanceId = generateId('instance');
+  const address = `${instanceId}@${opts.workspaceTenantDomain}`;
+
+  await db.insert(agentInstance).values({
+    id: instanceId,
+    agentId,
+    tenantId: opts.workspaceTenantId,
+    principalId: instancePrincipalId,
+    address,
+    status: 'deployed',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  log.info('Oat instance provisioned', {
+    tenantId: opts.workspaceTenantId,
+    instanceId,
+  });
+  return { oatInstanceId: instanceId };
 }
 
 /**

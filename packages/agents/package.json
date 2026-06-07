@@ -10,6 +10,10 @@
     "./browser": {
       "types": "./src/browser.ts",
       "default": "./src/browser.ts"
+    },
+    "./granola-definition": {
+      "types": "./src/granola/definition.ts",
+      "default": "./src/granola/definition.ts"
     }
   },
   "scripts": {

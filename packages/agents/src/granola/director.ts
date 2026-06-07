@@ -9,6 +9,12 @@ import type {
 } from '@intx/types/runtime';
 
 /**
+ * Trusted system scheduler address. Messages from this sender are treated as
+ * authorised without appearing in the per-user allowedSenders list.
+ */
+export const SCHEDULER_ADDRESS = 'scheduler@system';
+
+/**
  * Create a custom director for the Granola agent.
  *
  * The Granola agent only accepts inbound messages from Myra (or another
@@ -37,7 +43,8 @@ export function createGranolaDirector(
     ): Promise<ReactorAction | ReactorAction[]> {
       if (event.type === 'message.received') {
         const sender = event.message.headers.from;
-        if (!allowedSenders.includes(sender)) {
+        const trusted = sender === SCHEDULER_ADDRESS || allowedSenders.includes(sender);
+        if (!trusted) {
           return [capabilities.reply('Not authorised'), capabilities.wait()];
         }
       }

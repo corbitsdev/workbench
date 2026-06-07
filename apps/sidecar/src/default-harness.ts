@@ -49,7 +49,11 @@ function filterToolRunner(
   };
 }
 
-function decryptSource(source: InferenceSource, keys: CredentialKeyRegistry, tenantId: string): InferenceSource {
+function decryptSource(
+  source: InferenceSource,
+  keys: CredentialKeyRegistry,
+  tenantId: string
+): InferenceSource {
   if (!source.apiKey?.startsWith('enc:')) return source;
   return { ...source, apiKey: decryptSecret(keys, tenantId, source.apiKey) };
 }

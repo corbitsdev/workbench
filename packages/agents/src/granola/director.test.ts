@@ -98,4 +98,17 @@ describe('createGranolaDirector', () => {
     expect(arr.some((a) => a.type === 'reply')).toBe(true);
     expect(cap.replyArg).toBe('Not authorised');
   });
+
+  it('allows messages from the system scheduler address', async () => {
+    const director = createGranolaDirector(systemPrompt, tools, [adaAddress]);
+    const cap = makeCapabilities();
+    const event = makeMessageEvent('scheduler@system');
+
+    const actions = await director.decide(event, makeState(), cap);
+    const arr = Array.isArray(actions) ? actions : [actions];
+
+    // Should delegate to base director (infer), not reject.
+    expect(arr.some((a) => a.type === 'infer')).toBe(true);
+    expect(cap.replyArg).toBeUndefined();
+  });
 });

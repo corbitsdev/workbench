@@ -34,7 +34,7 @@ import {
   provisionPersonalTenant,
   provisionMyraInstance,
 } from './lib/tenant-provisioning';
-import { startGranolaPoller } from './lib/granola-poller';
+import { startOatScheduler } from './lib/oat-scheduler';
 import { initSentry } from '@workbench/sentry';
 
 await initSentry();
@@ -486,20 +486,19 @@ if (import.meta.main) {
 // requests to drain before exiting. Railway sends SIGTERM then waits
 // 10 s before SIGKILL — this uses that window rather than dying instantly.
 
-// ─── Granola poll loop ────────────────────────────────────────────────────────
+// ─── Oat scheduler ───────────────────────────────────────────────────────────
 //
-// Start only when Granola credentials are present. Uses the workbench shared
-// tenant ID from config (not per-user). Stop is called on graceful shutdown.
-
-// startGranolaPoller is a no-op if GRANOLA_API_KEY is not set.
-const stopGranolaPoller = startGranolaPoller(db, 'workbench');
+// Sends a sync trigger to every running Oat instance every 60 s so that each
+// Oat agent fetches Granola notes via its own credential requirements and writes
+// artifacts through the standard pipeline. Stop is called on graceful shutdown.
+const stopOatScheduler = startOatScheduler(db, sessionService);
 
 let server: ReturnType<typeof Bun.serve> | undefined;
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, async () => {
     log.info('Received {signal}, draining', { signal });
-    stopGranolaPoller();
+    stopOatScheduler();
     await server?.stop();
     log.info('Server stopped, exiting');
     process.exit(0);
