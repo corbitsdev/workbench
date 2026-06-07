@@ -1,12 +1,61 @@
-.chat-md p { margin-bottom: 0.5rem; }
-.chat-md p:last-child { margin-bottom: 0; }
-.chat-md ul { list-style-type: disc; padding-left: 1.25rem; margin-bottom: 0.5rem; }
-.chat-md ol { list-style-type: decimal; padding-left: 1.25rem; margin-bottom: 0.5rem; }
-.chat-md li { margin-bottom: 0.125rem; }
-.chat-md h1, .chat-md h2, .chat-md h3 { font-weight: 600; margin-bottom: 0.25rem; margin-top: 0.75rem; }
-.chat-md h1:first-child, .chat-md h2:first-child, .chat-md h3:first-child { margin-top: 0; }
-.chat-md code { font-family: ui-monospace, monospace; font-size: 0.8em; background: rgba(0,0,0,0.2); border-radius: 3px; padding: 0.1em 0.3em; }
-.chat-md pre { background: rgba(0,0,0,0.2); border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; overflow-x: auto; }
-.chat-md pre code { background: transparent; padding: 0; font-size: 0.8em; }
-.chat-md blockquote { border-left: 2px solid currentColor; padding-left: 0.75rem; opacity: 0.7; margin-bottom: 0.5rem; }
-.chat-md hr { border-color: currentColor; opacity: 0.2; margin: 0.5rem 0; }
+.chat-md p {
+  margin-bottom: 0.5rem;
+}
+.chat-md p:last-child {
+  margin-bottom: 0;
+}
+.chat-md ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.chat-md ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.chat-md li {
+  margin-bottom: 0.125rem;
+}
+.chat-md h1,
+.chat-md h2,
+.chat-md h3 {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  margin-top: 0.75rem;
+}
+.chat-md h1:first-child,
+.chat-md h2:first-child,
+.chat-md h3:first-child {
+  margin-top: 0;
+}
+.chat-md code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8em;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+}
+.chat-md pre {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  overflow-x: auto;
+}
+.chat-md pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.8em;
+}
+.chat-md blockquote {
+  border-left: 2px solid currentColor;
+  padding-left: 0.75rem;
+  opacity: 0.7;
+  margin-bottom: 0.5rem;
+}
+.chat-md hr {
+  border-color: currentColor;
+  opacity: 0.2;
+  margin: 0.5rem 0;
+}
