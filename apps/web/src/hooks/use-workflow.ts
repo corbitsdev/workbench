@@ -3,6 +3,12 @@ import { api } from '../lib/api';
 import { logger } from '../lib/logger';
 import type { WorkflowState } from '@workbench/shared';
 
+export interface WorkflowTypeDefinition {
+  kind: string;
+  name: string;
+  description: string;
+}
+
 export type StepName = 'intake' | 'analyze' | 'generate' | 'improve' | 'export';
 
 export interface WorkflowStep {
@@ -13,6 +19,14 @@ export interface WorkflowStep {
 export interface FrontendWorkflowState extends WorkflowState {
   currentStep: StepName;
   steps: Record<StepName, WorkflowStep>;
+}
+
+export function useWorkflowTypes() {
+  return useQuery<WorkflowTypeDefinition[]>({
+    queryKey: ['workflow-types'],
+    queryFn: () => api<WorkflowTypeDefinition[]>('GET', '/workflows/types'),
+    staleTime: 5 * 60 * 1000,
+  });
 }
 
 export function useWorkflow(workflowId: string) {
@@ -28,6 +42,23 @@ export function useWorkflow(workflowId: string) {
   });
 }
 
+export interface ExportStepResult {
+  id: string;
+  status: string;
+  currentStep: 'export';
+  export: {
+    target: string;
+    content: string;
+    artifacts: unknown[];
+  };
+}
+
+export type RunStepResult = FrontendWorkflowState | ExportStepResult;
+
+export function isExportStepResult(r: RunStepResult): r is ExportStepResult {
+  return 'export' in r && typeof (r as ExportStepResult).export?.content === 'string';
+}
+
 export function useRunStep(workflowId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -38,8 +69,8 @@ export function useRunStep(workflowId: string) {
       feedback?: string;
     }) => {
       logger.info('Running step', { workflowId, step: step.step });
-      const res = await api<FrontendWorkflowState>('POST', `/workflows/${workflowId}/steps`, step);
-      logger.info('Step completed', { workflowId, step: step.step, currentStep: res.currentStep });
+      const res = await api<RunStepResult>('POST', `/workflows/${workflowId}/steps`, step);
+      logger.info('Step completed', { workflowId, step: step.step });
       return res;
     },
     onSuccess: () => {
@@ -74,9 +105,18 @@ export function useUpdateCompanyName(workflowId: string) {
 export function useCreateWorkflow() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { transcript?: string; granolaId?: string; source: string }) => {
-      logger.info('Creating workflow', { source: body.source });
-      const res = await api<FrontendWorkflowState>('POST', '/workflows', body);
+    mutationFn: async (body: {
+      transcript?: string;
+      granolaId?: string;
+      source: string;
+      workflowKind?: string;
+    }) => {
+      const payload = { workflowKind: 'collateral-generation', ...body };
+      logger.info('Creating workflow', {
+        source: payload.source,
+        workflowKind: payload.workflowKind,
+      });
+      const res = await api<FrontendWorkflowState>('POST', '/workflows', payload);
       logger.info('Workflow created', { workflowId: res.id });
       return res;
     },

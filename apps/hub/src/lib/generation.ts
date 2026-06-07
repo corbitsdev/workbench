@@ -151,7 +151,12 @@ export async function generateCollateralWithLLM(
 
   const userMessage = `Transcript (for context):\n\n${transcript.slice(0, 60000)}\n\n---\n\nPain point to address:\n- Summary: ${point.context}\n- Severity: ${point.severity}\n- Verbatim quote: "${point.quote}"\n\nGenerate the ${type} collateral now.`;
 
-  const raw = await runSingleTurnAgent(source, buildSystemPrompt(type), userMessage, 'gtm-generation');
+  const raw = await runSingleTurnAgent(
+    source,
+    buildSystemPrompt(type),
+    userMessage,
+    'gtm-generation'
+  );
 
   if (!raw) throw new Error('LLM returned empty content for collateral generation');
 
@@ -167,7 +172,11 @@ export async function generateCollateralWithLLM(
     throw new Error('LLM returned invalid JSON for collateral generation');
   }
   if (!parsed.title || !parsed.body) {
-    log.error('Collateral generation missing title or body', { workflowId, type, raw: raw.slice(0, 500) });
+    log.error('Collateral generation missing title or body', {
+      workflowId,
+      type,
+      raw: raw.slice(0, 500),
+    });
     throw new Error('LLM response missing title or body');
   }
 

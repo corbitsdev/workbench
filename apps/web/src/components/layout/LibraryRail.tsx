@@ -400,6 +400,7 @@ export interface LibraryRailProps {
   onClose?: () => void;
   onNew?: () => void;
   onNewWorkbench?: () => void;
+  onNewWorkflow?: () => void;
   onAgentSelect?: (selection: AgentSelection) => void;
   onWorkflowSelect?: (workflowId: string) => void;
   onWorkbenchSelect?: (slug: string) => void;
@@ -420,6 +421,7 @@ export function LibraryRail({
   onClose,
   onNew,
   onNewWorkbench,
+  onNewWorkflow,
   onAgentSelect,
   onWorkflowSelect,
   onWorkbenchSelect,
@@ -617,8 +619,12 @@ export function LibraryRail({
         {GROUP_ORDER.map((group) => {
           const inGroup = visibleItems.filter((i) => i.group === group);
           // Always render the Agents group header when onNew is provided so the
-          // deploy button is accessible even before any agents exist.
-          const showGroup = inGroup.length > 0 || (group === 'Agents' && onNew !== undefined);
+          // deploy button is accessible even before any agents exist. Do the same
+          // for Jobs when onNewWorkflow is provided.
+          const showGroup =
+            inGroup.length > 0 ||
+            (group === 'Agents' && onNew !== undefined) ||
+            (group === 'Jobs' && onNewWorkflow !== undefined);
           if (!showGroup) return null;
 
           return (
@@ -634,6 +640,26 @@ export function LibraryRail({
                     type="button"
                     onClick={onNew}
                     aria-label="New agent"
+                    className="-m-[11px] grid h-[40px] w-[40px] flex-none place-items-center rounded-[5px] text-text-3 transition-colors hover:text-orange"
+                  >
+                    <span className="grid h-[18px] w-[18px] place-items-center rounded-[5px] border border-border transition-colors hover:border-orange">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        className="h-[11px] w-[11px]"
+                      >
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    </span>
+                  </button>
+                )}
+                {group === 'Jobs' && onNewWorkflow && (
+                  <button
+                    type="button"
+                    onClick={onNewWorkflow}
+                    aria-label="New job"
                     className="-m-[11px] grid h-[40px] w-[40px] flex-none place-items-center rounded-[5px] text-text-3 transition-colors hover:text-orange"
                   >
                     <span className="grid h-[18px] w-[18px] place-items-center rounded-[5px] border border-border transition-colors hover:border-orange">

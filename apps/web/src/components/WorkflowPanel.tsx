@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { useWorkflow, useRunStep } from '../hooks/use-workflow';
+import { useWorkflow, useRunStep, isExportStepResult } from '../hooks/use-workflow';
 import PainPointsList from './PainPointsList';
 import FeedbackSection from './FeedbackSection';
 import ArtifactBody from './ArtifactBody';
+import { HorizontalStepper, buildSteps } from '@workbench/workflow';
 import type { ArtifactKind } from '@workbench/shared';
+import type { StepName } from '@workbench/workflow';
 
 interface WorkflowPanelProps {
   workflowId: string;
@@ -85,8 +87,17 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const generateCompleted = Boolean(generateStep?.completed);
   const isBusy = runStep.isPending;
 
-  const title =
-    (workflow as { companyName?: string | null }).companyName ?? painPoints[0]?.context ?? 'Job';
+  const title = workflow.companyName ?? painPoints[0]?.context ?? 'Job';
+
+  const STEP_LABELS: Record<StepName, string> = {
+    intake: 'Intake',
+    analyze: 'Analyze',
+    generate: 'Generate',
+    improve: 'Improve',
+    export: 'Export',
+  };
+
+  const steps = buildSteps(currentStep, STEP_LABELS, workflow.status === 'done');
 
   const handleToggle = (id: string) => {
     setSelectedIds((prev) => {
@@ -118,8 +129,9 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
 
   const handleExport = async () => {
     const result = await runStep.mutateAsync({ step: 'export' });
-    const exportData = (result as { export?: { content?: string } }).export;
-    if (exportData?.content) setExportContent(exportData.content);
+    if (isExportStepResult(result)) {
+      setExportContent(result.export.content);
+    }
   };
 
   const handleCopy = () => {
@@ -161,6 +173,9 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
           </svg>
         </button>
       </div>
+
+      {/* Step progress */}
+      <HorizontalStepper steps={steps} />
 
       {/* Export view */}
       {exportContent ? (

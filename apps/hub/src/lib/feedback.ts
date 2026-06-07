@@ -32,7 +32,9 @@ export async function refineFeedbackWithLLM(
 
   const userMessage = `Original text:\n\n${text}\n\nFeedback to apply:\n${feedback}\n\nRefined text:`;
 
-  const refined = (await runSingleTurnAgent(source, buildFeedbackSystemPrompt(type), userMessage, 'gtm-feedback')).trim();
+  const refined = (
+    await runSingleTurnAgent(source, buildFeedbackSystemPrompt(type), userMessage, 'gtm-feedback')
+  ).trim();
   if (!refined || refined.length === 0) {
     throw new Error('LLM returned empty response for feedback refinement');
   }

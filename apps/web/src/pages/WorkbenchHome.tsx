@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AgentChat } from '../components/AgentChat';
 import { WorkflowPanel } from '../components/WorkflowPanel';
+import { NewWorkflowPane } from '../components/NewWorkflowPane';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { NewWorkbenchModal } from '../components/layout/NewWorkbenchModal';
 import { NewAgentModal } from '../components/layout/NewAgentModal';
@@ -78,7 +79,8 @@ type RightPane =
       agentName: string;
       instanceStatus?: string;
     }
-  | { view: 'workflow'; workflowId: string };
+  | { view: 'workflow'; workflowId: string }
+  | { view: 'new-workflow' };
 
 function useWorkspaceContext(slug: string | undefined): {
   tenantId: string | null;
@@ -168,6 +170,15 @@ export default function WorkbenchHome() {
     setLauncherHidden(true);
   };
 
+  const handleNewWorkflow = () => {
+    setRightPane({ view: 'new-workflow' });
+    setLauncherHidden(true);
+  };
+
+  const handleWorkflowCreated = (workflowId: string) => {
+    setRightPane({ view: 'workflow', workflowId });
+  };
+
   const handleAgentDeleted = () => {
     setAgentRefreshTick((n) => n + 1);
     setRightPane({ view: 'gallery' });
@@ -220,6 +231,19 @@ export default function WorkbenchHome() {
         </motion.div>
       );
     }
+    if (rightPane.view === 'new-workflow') {
+      return (
+        <motion.div key="new-workflow" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
+          <NewWorkflowPane
+            onCreated={handleWorkflowCreated}
+            onClose={() => {
+              setRightPane({ view: 'gallery' });
+              setLauncherHidden(false);
+            }}
+          />
+        </motion.div>
+      );
+    }
     return (
       <motion.div key="gallery" {...paneFade} className="min-h-0 flex-1">
         <ArtifactGallery />
@@ -241,6 +265,22 @@ export default function WorkbenchHome() {
               setLauncherHidden(false);
             }}
           />
+        ) : rightPane.view === 'workflow' ? (
+          <WorkflowPanel
+            workflowId={rightPane.workflowId}
+            onClose={() => {
+              setRightPane({ view: 'gallery' });
+              setLauncherHidden(false);
+            }}
+          />
+        ) : rightPane.view === 'new-workflow' ? (
+          <NewWorkflowPane
+            onCreated={handleWorkflowCreated}
+            onClose={() => {
+              setRightPane({ view: 'gallery' });
+              setLauncherHidden(false);
+            }}
+          />
         ) : (
           <ArtifactGallery onOpenLibrary={() => setRailOpen(true)} />
         )}
@@ -250,6 +290,7 @@ export default function WorkbenchHome() {
               onClose={() => setRailOpen(false)}
               onNew={handleNew}
               onNewWorkbench={() => setActiveModal('workbench')}
+              onNewWorkflow={handleNewWorkflow}
               onAgentSelect={handleAgentSelect}
               onWorkflowSelect={handleWorkflowSelect}
               onWorkbenchSelect={handleWorkbenchSelect}
@@ -287,6 +328,7 @@ export default function WorkbenchHome() {
           <LibraryRail
             onNew={handleNew}
             onNewWorkbench={() => setActiveModal('workbench')}
+            onNewWorkflow={handleNewWorkflow}
             onAgentSelect={handleAgentSelect}
             onWorkflowSelect={handleWorkflowSelect}
             onWorkbenchSelect={handleWorkbenchSelect}
