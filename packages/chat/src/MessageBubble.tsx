@@ -35,7 +35,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {isUser ? (
           message.content
         ) : (
-          <Streamdown mode={isStreaming ? 'streaming' : 'static'}>{message.content}</Streamdown>
+          <div className="chat-md">
+            <Streamdown mode={isStreaming ? 'streaming' : 'static'}>{message.content}</Streamdown>
+          </div>
         )}
       </div>
       {message.status === 'failed' && (
