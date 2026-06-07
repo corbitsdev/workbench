@@ -273,7 +273,9 @@ const hubApp = createApp({
     for (const [key, value] of response.headers) {
       headers.append(key, value);
     }
-    if (corsOrigins[0]) headers.set('Access-Control-Allow-Origin', corsOrigins[0]);
+    const requestOrigin = c.req.header('Origin') ?? '';
+    const allowedOrigin = corsOrigins.includes(requestOrigin) ? requestOrigin : corsOrigins[0];
+    if (allowedOrigin) headers.set('Access-Control-Allow-Origin', allowedOrigin);
     headers.set('Access-Control-Allow-Credentials', 'true');
     return new Response(response.body, {
       status: response.status,

@@ -283,12 +283,22 @@ describe('POST /agents', () => {
     let base: any;
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
+    // ensureAgentInstance queries agent by (tenantId, name) first; launchAgentSession
+    // queries agent by id second. Return undefined on the first call so a fresh
+    // instance is created, then return a capabilities row on subsequent calls.
+    let agentFindCount = 0;
     base = {
       transaction: txMock,
       query: {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: { findFirst: mock(() => Promise.resolve({ capabilities: null })) },
+        agent: {
+          findFirst: mock(() => {
+            agentFindCount += 1;
+            if (agentFindCount === 1) return Promise.resolve(undefined);
+            return Promise.resolve({ id: 'agt-new', capabilities: null });
+          }),
+        },
         agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
       insert: mock(() => ({
@@ -319,12 +329,19 @@ describe('POST /agents', () => {
     let base: any;
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
+    let agentFindCount = 0;
     base = {
       transaction: txMock,
       query: {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: { findFirst: mock(() => Promise.resolve({ capabilities: null })) },
+        agent: {
+          findFirst: mock(() => {
+            agentFindCount += 1;
+            if (agentFindCount === 1) return Promise.resolve(undefined);
+            return Promise.resolve({ id: 'agt-new', capabilities: null });
+          }),
+        },
         agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
       insert: mock(() => ({
@@ -353,6 +370,65 @@ describe('POST /agents', () => {
     expect(json.launched).toBe(false);
     expect(typeof json.launchError).toBe('string');
     expect(json.launchError).toContain('sidecar not connected');
+  });
+
+  it('is idempotent — calling twice for the same (tenantId, agentName) returns the same instanceId', async () => {
+    const existingAgent = {
+      id: 'agt-loop',
+      name: 'Loop',
+      tenantId: 'tenant-1',
+      capabilities: null,
+    };
+    const existingInstance = {
+      id: 'ins-loop-existing',
+      agentId: 'agt-loop',
+      tenantId: 'tenant-1',
+      principalId: 'prn-agent-loop',
+      address: 'ins-loop-existing@tenant-1.localhost',
+      status: 'deployed',
+    };
+
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    let base: any;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
+    base = {
+      transaction: txMock,
+      query: {
+        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
+        tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
+        agent: { findFirst: mock(() => Promise.resolve(existingAgent)) },
+        agentInstance: { findFirst: mock(() => Promise.resolve(existingInstance)) },
+      },
+      insert: mock(() => ({
+        values: mock(() => ({
+          returning: mock(() => Promise.resolve([])),
+          onConflictDoNothing: mock(() => Promise.resolve([])),
+        })),
+      })),
+      update: mock(() => ({ set: mock(() => ({ where: mock(() => Promise.resolve()) })) })),
+      delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
+    };
+
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+
+    const app = buildApp(base);
+
+    const res1 = await app.fetch(
+      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
+    );
+    expect(res1.status).toBe(201);
+    const json1 = await res1.json();
+
+    const res2 = await app.fetch(
+      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
+    );
+    expect(res2.status).toBe(201);
+    const json2 = await res2.json();
+
+    expect(json1.instanceId).toBe('ins-loop-existing');
+    expect(json2.instanceId).toBe('ins-loop-existing');
+    expect(json1.instanceId).toBe(json2.instanceId);
   });
 });
 

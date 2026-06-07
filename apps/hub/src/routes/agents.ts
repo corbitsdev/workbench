@@ -881,7 +881,26 @@ async function ensureAgentInstance(
     credentialIds,
   } = opts;
 
-  const agentId = generateId('agent');
+  const existingAgent = await db.query.agent.findFirst({
+    where: and(eq(agent.tenantId, tenantId), eq(agent.name, agentName)),
+  });
+
+  if (existingAgent) {
+    const existingInstance = await db.query.agentInstance.findFirst({
+      where: eq(agentInstance.agentId, existingAgent.id),
+    });
+    if (existingInstance) {
+      return {
+        instanceId: existingInstance.id,
+        agentId: existingAgent.id,
+        instancePrincipalId: existingInstance.principalId,
+        address: existingInstance.address,
+        isNew: false,
+      };
+    }
+  }
+
+  const agentId = existingAgent?.id ?? generateId('agent');
 
   const credReqs: Array<Record<string, unknown>> = [];
   let modelConfig: { defaultModel: string } | undefined;
@@ -928,19 +947,21 @@ async function ensureAgentInstance(
     }
   }
 
-  await db.insert(agent).values({
-    id: agentId,
-    tenantId,
-    creatorPrincipalId,
-    name: agentName,
-    systemPrompt,
-    credentialRequirements: credReqs,
-    ...(modelConfig !== undefined ? { modelConfig } : {}),
-    status: 'deployed',
-    currentVersion: '1',
-    createdAt: now,
-    updatedAt: now,
-  });
+  if (!existingAgent) {
+    await db.insert(agent).values({
+      id: agentId,
+      tenantId,
+      creatorPrincipalId,
+      name: agentName,
+      systemPrompt,
+      credentialRequirements: credReqs,
+      ...(modelConfig !== undefined ? { modelConfig } : {}),
+      status: 'deployed',
+      currentVersion: '1',
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
 
   const instancePrincipalId = generateId('principal');
   await db.insert(principal).values({

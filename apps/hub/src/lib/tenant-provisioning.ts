@@ -419,54 +419,56 @@ export async function provisionMyraInstance(
     defaultTools.push('exa_search');
   }
 
-  if (!existingAgent) {
-    const agentRows = await db
-      .insert(agent)
-      .values({
-        id: agentId,
-        tenantId: opts.personalTenantId,
-        creatorPrincipalId: opts.creatorPrincipalId,
-        name: 'Myra',
-        systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
-        capabilities: defaultTools.length > 0 ? { tools: defaultTools } : null,
-        status: 'deployed',
-        currentVersion: '1',
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
+  return db.transaction(async (tx) => {
+    if (!existingAgent) {
+      const agentRows = await tx
+        .insert(agent)
+        .values({
+          id: agentId,
+          tenantId: opts.personalTenantId,
+          creatorPrincipalId: opts.creatorPrincipalId,
+          name: 'Myra',
+          systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
+          capabilities: defaultTools.length > 0 ? { tools: defaultTools } : null,
+          status: 'deployed',
+          currentVersion: '1',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
 
-    const agentRow = agentRows?.[0];
-    if (!agentRow) throw new Error(`Failed to create Myra agent for user ${opts.userId}`);
-  }
+      const agentRow = agentRows?.[0];
+      if (!agentRow) throw new Error(`Failed to create Myra agent for user ${opts.userId}`);
+    }
 
-  const instancePrincipalId = generateId('principal');
-  await db.insert(principal).values({
-    id: instancePrincipalId,
-    tenantId: opts.personalTenantId,
-    kind: 'agent',
-    refId: agentId,
-    status: 'active',
-    createdAt: now,
-    updatedAt: now,
+    const instancePrincipalId = generateId('principal');
+    await tx.insert(principal).values({
+      id: instancePrincipalId,
+      tenantId: opts.personalTenantId,
+      kind: 'agent',
+      refId: agentId,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const instanceId = generateId('instance');
+    const address = `${instanceId}@${opts.personalTenantDomain}`;
+
+    await tx.insert(agentInstance).values({
+      id: instanceId,
+      agentId,
+      tenantId: opts.personalTenantId,
+      principalId: instancePrincipalId,
+      address,
+      status: 'deployed',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    log.info('Myra instance provisioned', { userId: opts.userId, instanceId });
+    return { paInstanceId: instanceId };
   });
-
-  const instanceId = generateId('instance');
-  const address = `${instanceId}@${opts.personalTenantDomain}`;
-
-  await db.insert(agentInstance).values({
-    id: instanceId,
-    agentId,
-    tenantId: opts.personalTenantId,
-    principalId: instancePrincipalId,
-    address,
-    status: 'deployed',
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  log.info('Myra instance provisioned', { userId: opts.userId, instanceId });
-  return { paInstanceId: instanceId };
 }
 
 /**
@@ -502,58 +504,60 @@ export async function provisionOatInstance(
   const now = new Date();
   const agentId = existingAgent?.id ?? generateId('agent');
 
-  if (!existingAgent) {
-    const agentRows = await db
-      .insert(agent)
-      .values({
-        id: agentId,
-        tenantId: opts.workspaceTenantId,
-        creatorPrincipalId: opts.creatorPrincipalId,
-        name: 'Oat',
-        systemPrompt: GRANOLA_DEPLOY_PROMPT,
-        capabilities: null,
-        credentialRequirements: GRANOLA_CREDENTIAL_REQUIREMENTS,
-        status: 'deployed',
-        currentVersion: '1',
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
+  return db.transaction(async (tx) => {
+    if (!existingAgent) {
+      const agentRows = await tx
+        .insert(agent)
+        .values({
+          id: agentId,
+          tenantId: opts.workspaceTenantId,
+          creatorPrincipalId: opts.creatorPrincipalId,
+          name: 'Oat',
+          systemPrompt: GRANOLA_DEPLOY_PROMPT,
+          capabilities: null,
+          credentialRequirements: GRANOLA_CREDENTIAL_REQUIREMENTS,
+          status: 'deployed',
+          currentVersion: '1',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
 
-    const agentRow = agentRows?.[0];
-    if (!agentRow) throw new Error('Failed to create Oat agent for workspace');
-  }
+      const agentRow = agentRows?.[0];
+      if (!agentRow) throw new Error('Failed to create Oat agent for workspace');
+    }
 
-  const instancePrincipalId = generateId('principal');
-  await db.insert(principal).values({
-    id: instancePrincipalId,
-    tenantId: opts.workspaceTenantId,
-    kind: 'agent',
-    refId: agentId,
-    status: 'active',
-    createdAt: now,
-    updatedAt: now,
+    const instancePrincipalId = generateId('principal');
+    await tx.insert(principal).values({
+      id: instancePrincipalId,
+      tenantId: opts.workspaceTenantId,
+      kind: 'agent',
+      refId: agentId,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const instanceId = generateId('instance');
+    const address = `${instanceId}@${opts.workspaceTenantDomain}`;
+
+    await tx.insert(agentInstance).values({
+      id: instanceId,
+      agentId,
+      tenantId: opts.workspaceTenantId,
+      principalId: instancePrincipalId,
+      address,
+      status: 'deployed',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    log.info('Oat instance provisioned', {
+      tenantId: opts.workspaceTenantId,
+      instanceId,
+    });
+    return { oatInstanceId: instanceId };
   });
-
-  const instanceId = generateId('instance');
-  const address = `${instanceId}@${opts.workspaceTenantDomain}`;
-
-  await db.insert(agentInstance).values({
-    id: instanceId,
-    agentId,
-    tenantId: opts.workspaceTenantId,
-    principalId: instancePrincipalId,
-    address,
-    status: 'deployed',
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  log.info('Oat instance provisioned', {
-    tenantId: opts.workspaceTenantId,
-    instanceId,
-  });
-  return { oatInstanceId: instanceId };
 }
 
 /**
