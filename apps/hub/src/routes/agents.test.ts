@@ -484,6 +484,73 @@ describe('POST /tenants/:tenantId/credentials', () => {
   });
 });
 
+// ─── PATCH /tenants/:tenantId/credentials/:credentialId ──────────
+
+describe('PATCH /tenants/:tenantId/credentials/:credentialId', () => {
+  it('pushes plaintext apiKey (not enc:v1: ciphertext) to the sidecar after credential update', async () => {
+    const capturedSendArgs: Parameters<SidecarRouter['sendSourcesUpdate']>[] = [];
+    const capturingSidecarRouter: SidecarRouter = {
+      ...mockSidecarRouter,
+      sendSourcesUpdate: mock((...args: Parameters<SidecarRouter['sendSourcesUpdate']>) => {
+        capturedSendArgs.push(args);
+        return Promise.resolve();
+      }),
+    } as unknown as SidecarRouter;
+
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.credential.findFirst = mock(() =>
+      Promise.resolve({ id: 'crd-1', tenantId: 'tenant-1', providerId: 'prov-1' })
+    );
+    db.query.agentInstance.findMany = mock(() =>
+      Promise.resolve([
+        {
+          id: 'ins-1',
+          agentId: 'agt-1',
+          tenantId: 'tenant-1',
+          address: 'ins-1@tenant-1.localhost',
+          status: 'running',
+        },
+      ])
+    );
+
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+
+    const parent = new Hono<{ Variables: { userId: string } }>();
+    parent.use('*', async (c, next) => {
+      c.set('userId', 'user-1');
+      await next();
+    });
+    parent.route(
+      '/',
+      createAgentProvisioningRouter(
+        db as unknown as DB['db'],
+        mockSessionService,
+        mockGrantStore,
+        capturingSidecarRouter
+      )
+    );
+
+    const res = await parent.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/credentials/crd-1', {
+        method: 'PATCH',
+        body: { apiKey: 'sk-new-plaintext-key' },
+      })
+    );
+
+    expect(res.status).toBe(200);
+
+    // Wait a tick for the void-fired promise to settle.
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+    expect(capturedSendArgs.length).toBeGreaterThan(0);
+    const [, pushedSources] = capturedSendArgs[0]!;
+    const firstSource = (pushedSources as { apiKey: string }[])[0];
+    expect(firstSource?.apiKey).toBe(TEST_API_KEY);
+    expect(firstSource?.apiKey).not.toMatch(/^enc:v1:/);
+  });
+});
+
 // ─── PATCH /tenants/:tenantId/agents/:agentId/credential ─────────
 
 describe('PATCH /tenants/:tenantId/agents/:agentId/credential', () => {

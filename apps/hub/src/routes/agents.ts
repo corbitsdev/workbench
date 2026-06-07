@@ -10,7 +10,7 @@ import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
 import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
-import { pushSourceUpdates, SessionLaunchError } from '@intx/hub-sessions';
+import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { type } from 'arktype';
 import { decryptSecret, encryptSecret } from '@workbench/hub-crypto';
@@ -404,7 +404,7 @@ export function createAgentProvisioningRouter(
       throw err;
     }
 
-    void pushSourceUpdates(db, sidecarRouter, tenantId);
+    void pushDecryptedSourceUpdates(db, sidecarRouter, tenantId);
 
     return c.json({ credentialId, providerId }, 201);
   });
@@ -515,7 +515,7 @@ export function createAgentProvisioningRouter(
       }
     });
 
-    void pushSourceUpdates(db, sidecarRouter, tenantId);
+    void pushDecryptedSourceUpdates(db, sidecarRouter, tenantId);
 
     return c.json({ credentialId }, 200);
   });
@@ -609,7 +609,7 @@ export function createAgentProvisioningRouter(
       })
       .where(eq(agent.id, agentId));
 
-    void pushSourceUpdates(db, sidecarRouter, effectiveTenantId);
+    void pushDecryptedSourceUpdates(db, sidecarRouter, effectiveTenantId);
 
     return c.json({}, 200);
   });
@@ -774,6 +774,47 @@ export function createAgentProvisioningRouter(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────
+
+// Resolves inference sources for every running instance in the tenant, decrypts
+// each apiKey (workbench encrypts secrets at write time), and pushes plaintext
+// sources to the sidecar. Mirrors the decrypt step in launchAgentSession.
+// Errors are logged per-instance and do not propagate.
+async function pushDecryptedSourceUpdates(
+  db: DB['db'],
+  sidecarRouter: SidecarRouter,
+  tenantId: string
+): Promise<void> {
+  const instances = await db.query.agentInstance.findMany({
+    where: and(eq(agentInstance.tenantId, tenantId), eq(agentInstance.status, 'running')),
+  });
+
+  if (instances.length === 0) return;
+
+  const { credentialKeys } = getConfig();
+
+  const results = await Promise.allSettled(
+    instances.map(async (instance) => {
+      const rawSources = await resolveInstanceSources(db, tenantId, instance);
+      if (rawSources.length === 0) return;
+      const sources = rawSources.map((s) => ({
+        ...s,
+        apiKey: decryptSecret(credentialKeys, tenantId, s.apiKey),
+      }));
+      const [first] = sources;
+      if (first === undefined) return;
+      await sidecarRouter.sendSourcesUpdate(instance.address, sources, first.id);
+    })
+  );
+
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      log.warn('Failed to push decrypted source update', {
+        tenantId,
+        reason: String(result.reason),
+      });
+    }
+  }
+}
 
 async function ensureProvider(
   db: DB['db'],
