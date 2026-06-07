@@ -1,18 +1,34 @@
 import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
+import { schema as intxSchema } from '@intx/db';
+import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
 import { approval } from '../db/schema';
 
 const log = getLogger(['api', 'approvals']);
 
+const { principal } = intxSchema;
+
 // ─── User-facing routes (BetterAuth session) ───────────────────────
 // Mounted under /api/v1 with the existing auth middleware.
 
-export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: string } }> {
+export function createApprovalsRouter(db: DB['db']): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
   router.get('/tenants/:tenantId/approvals', async (c) => {
+    const userId = c.get('userId');
     const { tenantId } = c.req.param();
+
+    // Verify the calling user belongs to this tenant before returning approvals.
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, tenantId),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+
     const rows = await db
       .select()
       .from(approval)
@@ -24,6 +40,19 @@ export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: stri
     const userId = c.get('userId');
     const { tenantId, approvalId } = c.req.param();
 
+    // Resolve the BetterAuth userId to an Interchange principalId before
+    // comparing against approval.principalId, which stores the Interchange ID.
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, tenantId),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+
+    const principalId = callerPrincipal.id;
+
     const [updated] = await db
       .update(approval)
       .set({ status: 'approved', resolvedAt: new Date() })
@@ -31,7 +60,7 @@ export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: stri
         and(
           eq(approval.id, approvalId),
           eq(approval.tenantId, tenantId),
-          eq(approval.principalId, userId),
+          eq(approval.principalId, principalId),
           eq(approval.status, 'pending')
         )
       )
@@ -43,9 +72,9 @@ export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: stri
         .from(approval)
         .where(and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)))
         .limit(1)
-        .then((rows: { id: string }[]) => rows[0]);
+        .then((rows: { id: string; principalId: string }[]) => rows[0]);
       if (!row) return c.json({ error: 'Not found' }, 404);
-      if (row.principalId !== userId) return c.json({ error: 'Forbidden' }, 403);
+      if (row.principalId !== principalId) return c.json({ error: 'Forbidden' }, 403);
       return c.json({ error: 'Already resolved' }, 409);
     }
 
@@ -58,6 +87,19 @@ export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: stri
     const { tenantId, approvalId } = c.req.param();
     const body = (await c.req.json().catch(() => ({}))) as { message?: string };
 
+    // Resolve the BetterAuth userId to an Interchange principalId before
+    // comparing against approval.principalId, which stores the Interchange ID.
+    const callerPrincipal = await db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, tenantId),
+        eq(principal.kind, 'user'),
+        eq(principal.refId, userId)
+      ),
+    });
+    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+
+    const principalId = callerPrincipal.id;
+
     const [updated] = await db
       .update(approval)
       .set({
@@ -69,7 +111,7 @@ export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: stri
         and(
           eq(approval.id, approvalId),
           eq(approval.tenantId, tenantId),
-          eq(approval.principalId, userId),
+          eq(approval.principalId, principalId),
           eq(approval.status, 'pending')
         )
       )
@@ -81,9 +123,9 @@ export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: stri
         .from(approval)
         .where(and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)))
         .limit(1)
-        .then((rows: { id: string }[]) => rows[0]);
+        .then((rows: { id: string; principalId: string }[]) => rows[0]);
       if (!row) return c.json({ error: 'Not found' }, 404);
-      if (row.principalId !== userId) return c.json({ error: 'Forbidden' }, 403);
+      if (row.principalId !== principalId) return c.json({ error: 'Forbidden' }, 403);
       return c.json({ error: 'Already resolved' }, 409);
     }
 
@@ -97,7 +139,7 @@ export function createApprovalsRouter(db: any): Hono<{ Variables: { userId: stri
 // ─── Internal routes (sidecar Bearer token) ────────────────────────
 // Mounted under /api/internal — does NOT go through BetterAuth middleware.
 
-export function createInternalApprovalsRouter(db: any, sidecarToken: string): Hono {
+export function createInternalApprovalsRouter(db: DB['db'], sidecarToken: string): Hono {
   const router = new Hono();
 
   router.use('*', async (c, next) => {
