@@ -1,9 +1,8 @@
 /**
- * Database seeder - creates demo users for development.
+ * Database seeder - creates the dev user for local development.
  * Called after migrations in db-setup.ts
  */
 
-import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 
 interface DBConfig {
@@ -80,28 +79,21 @@ async function seedDatabase(): Promise<void> {
     max: 1,
   });
 
-  console.log('Seeding database with demo user...');
+  console.log('Seeding database...');
 
   try {
-    // Check if user already exists
-    console.log('  → Checking for existing user...');
     const existing = await client`
-      SELECT id FROM "user" WHERE email = 'alice@example.com'
+      SELECT id FROM "user" WHERE id = 'dev-user'
     `;
 
     if (existing.length > 0) {
-      console.log('  (skip) Demo user "alice@example.com" already exists');
+      console.log('  (skip) Dev user already exists');
     } else {
-      // Create demo user
-      console.log('  → Creating new user...');
-      const userId = randomUUID();
-      console.log(`  → User ID: ${userId}`);
       await client`
         INSERT INTO "user" (id, name, email, email_verified, image, created_at, updated_at)
-        VALUES (${userId}, 'Alice Demo', 'alice@example.com', true, null, NOW(), NOW())
+        VALUES ('dev-user', 'Dev User', 'dev@example.com', true, null, NOW(), NOW())
       `;
-
-      console.log('  ✅ Demo user created: alice@example.com');
+      console.log('  ✅ Dev user created: dev@example.com');
     }
   } catch (err) {
     console.error('  Database error:', err);
