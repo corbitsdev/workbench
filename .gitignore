@@ -11,3 +11,4 @@ temporary
 *.tsbuildinfo
 dist
 interchange
+apps/hub/data
