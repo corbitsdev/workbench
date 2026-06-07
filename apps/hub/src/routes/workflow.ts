@@ -55,6 +55,12 @@ interface WorkflowInput {
 const WORKFLOW_LLM_REQUIREMENT = {
   providerName: 'openai-compatible',
   source: 'tenant' as const,
+  name: 'Workflow LLM',
+};
+
+const WORKFLOW_LLM_FALLBACK = {
+  providerName: 'openai-compatible',
+  source: 'tenant' as const,
   name: 'Myra LLM',
 };
 
@@ -62,13 +68,9 @@ async function resolveWorkflowInferenceSource(
   db: DB['db'],
   tenantId: string
 ): Promise<InferenceSource | null> {
-  const resolved = await resolveCredentialRequirement(
-    db,
-    tenantId,
-    WORKFLOW_LLM_REQUIREMENT,
-    null,
-    null
-  );
+  const resolved =
+    (await resolveCredentialRequirement(db, tenantId, WORKFLOW_LLM_REQUIREMENT, null, null)) ??
+    (await resolveCredentialRequirement(db, tenantId, WORKFLOW_LLM_FALLBACK, null, null));
   if (!resolved) return null;
 
   const providerRow = await db.query.provider.findFirst({
