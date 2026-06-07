@@ -289,6 +289,7 @@ describe('POST /agents', () => {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
         agent: { findFirst: mock(() => Promise.resolve({ capabilities: null })) },
+        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
       insert: mock(() => ({
         values: mock(() => ({
@@ -324,6 +325,7 @@ describe('POST /agents', () => {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
         agent: { findFirst: mock(() => Promise.resolve({ capabilities: null })) },
+        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
       insert: mock(() => ({
         values: mock(() => ({

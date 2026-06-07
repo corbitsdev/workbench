@@ -3,7 +3,6 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
-import { type } from 'arktype';
 import { workflowRegistry } from '@workbench/workflow-core';
 import { collateralGenerationWorkflow } from '@workbench/gtm-workflows';
 import { workflowRun, transcript, painPoint, artifact, artifactVersion } from '../db/schema';
@@ -85,16 +84,18 @@ function validateWorkflowInput(
     return { valid: true };
   }
 
-  try {
-    const schema = type(workflow.inputSchema);
-    const result = schema(input);
-    if (result instanceof type.errors) {
-      return { valid: false, error: `Invalid workflow input: ${result.summary}` };
-    }
-    return { valid: true };
-  } catch (err) {
-    return { valid: false, error: `Workflow input validation failed: ${String(err)}` };
+  // inputSchema is a JSON schema object. Validate required fields explicitly
+  // rather than passing to arktype, which uses its own definition syntax.
+  const schema = workflow.inputSchema as { required?: string[] };
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  const missing = required.filter((key) => input[key] === undefined || input[key] === null);
+  if (missing.length > 0) {
+    return {
+      valid: false,
+      error: `Invalid workflow input: missing required fields: ${missing.join(', ')}`,
+    };
   }
+  return { valid: true };
 }
 
 export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: string } }> {

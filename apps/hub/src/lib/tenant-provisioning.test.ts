@@ -1,4 +1,16 @@
 import { describe, expect, it, mock } from 'bun:test';
+
+mock.module('../config', () => ({
+  getConfig: () => ({
+    exa: { apiKey: undefined },
+    credentialKeys: [],
+  }),
+  loadConfig: () => ({
+    exa: { apiKey: undefined },
+    credentialKeys: [],
+  }),
+}));
+
 import {
   provisionPersonalTenant,
   provisionMyraInstance,

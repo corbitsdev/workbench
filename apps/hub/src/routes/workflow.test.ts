@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test';
+import { Hono } from 'hono';
 import { createWorkflowRouter } from './workflow';
 
 mock.module('../lib/extraction', () => ({
@@ -18,16 +19,32 @@ mock.module('../lib/extraction', () => ({
   ),
 }));
 
+const PERSONAL_TENANT = { id: 'tenant-personal', slug: 'user-test-user' };
+const PERSONAL_PRINCIPAL = {
+  id: 'prn-personal',
+  tenantId: 'tenant-personal',
+  kind: 'user',
+  refId: 'test-user',
+};
+
 describe('Workflow router', () => {
   function createMockDb() {
     return {
       query: {
+        tenant: {
+          findFirst: mock(() => PERSONAL_TENANT),
+        },
+        principal: {
+          findFirst: mock(() => PERSONAL_PRINCIPAL),
+        },
         workflowRun: {
           findFirst: mock(() => ({
             id: 'wf-1',
             status: 'pending',
-            input: { companyName: 'Test Corp' },
+            principalId: PERSONAL_PRINCIPAL.id,
+            input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
           })),
+          findMany: mock(() => [] as any[]),
         },
         transcript: {
           findFirst: mock(() => ({ content: 'Test transcript content' })),
@@ -38,6 +55,9 @@ describe('Workflow router', () => {
         artifact: {
           findMany: mock(() => [] as any[]),
           findFirst: mock(() => null),
+        },
+        agentInstance: {
+          findMany: mock(() => [] as any[]),
         },
       },
       delete: mock(() => ({
@@ -56,12 +76,26 @@ describe('Workflow router', () => {
     };
   }
 
+  function buildApp(db: ReturnType<typeof createMockDb>, userId = 'test-user') {
+    const parent = new Hono<{ Variables: { userId: string } }>();
+    parent.use('*', async (c, next) => {
+      c.set('userId', userId);
+      await next();
+    });
+    parent.route('/', createWorkflowRouter(db as any));
+    return parent;
+  }
+
   it('POST /workflows creates a workflow', async () => {
-    const router = createWorkflowRouter(createMockDb());
+    const router = buildApp(createMockDb());
     const req = new Request('http://localhost:4000/workflows', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript: 'Hello world', source: 'paste' }),
+      body: JSON.stringify({
+        transcript: 'Hello world',
+        source: 'paste',
+        workflowKind: 'collateral-generation',
+      }),
     });
 
     const res = await router.fetch(req);
@@ -74,7 +108,7 @@ describe('Workflow router', () => {
   });
 
   it('GET /workflows/:id returns workflow state', async () => {
-    const router = createWorkflowRouter(createMockDb());
+    const router = buildApp(createMockDb());
     const req = new Request('http://localhost:4000/workflows/wf-1', {
       method: 'GET',
     });
@@ -117,7 +151,7 @@ describe('Workflow router', () => {
       },
     ]);
 
-    const router = createWorkflowRouter(mockDb);
+    const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
@@ -136,7 +170,7 @@ describe('Workflow router', () => {
     };
     mockDb.query.workflowRun.findMany = mock(() => [] as any[]);
 
-    const router = createWorkflowRouter(mockDb);
+    const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
@@ -146,7 +180,7 @@ describe('Workflow router', () => {
   });
 
   it('POST /workflows/:id/steps runs analyze step', async () => {
-    const router = createWorkflowRouter(createMockDb());
+    const router = buildApp(createMockDb());
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -158,7 +192,7 @@ describe('Workflow router', () => {
   });
 
   it('POST /workflows/:id/steps analyze accepts feedback', async () => {
-    const router = createWorkflowRouter(createMockDb());
+    const router = buildApp(createMockDb());
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -169,7 +203,7 @@ describe('Workflow router', () => {
     expect(res.status).toBe(200);
 
     const json = await res.json();
-    expect(json.status).toBe('reviewing');
+    expect(json.status).toBe('running');
     expect(json.steps.analyze.completed).toBe(true);
   });
 
@@ -183,7 +217,7 @@ describe('Workflow router', () => {
       }),
     }));
 
-    const router = createWorkflowRouter(mockDb);
+    const router = buildApp(mockDb);
     const makeReq = () =>
       new Request('http://localhost:4000/workflows/wf-1/steps', {
         method: 'POST',
@@ -214,7 +248,7 @@ describe('Workflow router', () => {
     ]);
     mockDb.query.painPoint.findMany = mock(() => [{ id: 'p-1' }]);
 
-    const router = createWorkflowRouter(mockDb);
+    const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -248,7 +282,7 @@ describe('Workflow router', () => {
     ]);
     mockDb.query.painPoint.findMany = mock(() => [{ id: 'p-1' }]);
 
-    const router = createWorkflowRouter(mockDb);
+    const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -279,7 +313,7 @@ describe('Workflow router', () => {
     ]);
     mockDb.query.painPoint.findMany = mock(() => [{ id: 'p-1' }]);
 
-    const router = createWorkflowRouter(mockDb);
+    const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -310,7 +344,7 @@ describe('Workflow router', () => {
     ]);
     mockDb.query.painPoint.findMany = mock(() => [{ id: 'p-1' }]);
 
-    const router = createWorkflowRouter(mockDb);
+    const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -343,7 +377,7 @@ describe('Workflow router', () => {
     ]);
     mockDb.query.painPoint.findMany = mock(() => [{ id: 'p-1' }]);
 
-    const router = createWorkflowRouter(mockDb);
+    const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

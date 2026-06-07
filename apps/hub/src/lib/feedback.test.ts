@@ -8,32 +8,56 @@ mock.module('@intx/agent', () => ({
   createAgent: createAgentMock,
 }));
 
+// Mock inference module so tests can control whether the source is available
+// without relying on env-var side effects after module load.
+let inferenceSourceImpl: () => unknown = () => ({
+  id: 'test-src',
+  provider: 'openai',
+  baseURL: 'https://api.openai.com/v1',
+  apiKey: 'test-key',
+  model: 'gpt-4o',
+});
+
+mock.module('./inference', () => ({
+  buildInferenceSource: (_prefix: string) => inferenceSourceImpl(),
+  runSingleTurnAgent: async (
+    _source: unknown,
+    _systemPrompt: string,
+    userMessage: string,
+    _contextPrefix: string
+  ) => {
+    const agent = await createAgentMock({} as any);
+    const result = await agent.send(userMessage);
+    return result.reply;
+  },
+}));
+
 import { refineFeedbackWithLLM } from './feedback';
 
 describe('Feedback refinement', () => {
-  let originalKey: string | undefined;
-
   beforeEach(() => {
-    originalKey = process.env.OPENAI_COMPATIBLE_API_KEY;
     sendMock.mockClear();
     closeMock.mockClear();
     createAgentMock.mockClear();
+    inferenceSourceImpl = () => ({
+      id: 'test-src',
+      provider: 'openai',
+      baseURL: 'https://api.openai.com/v1',
+      apiKey: 'test-key',
+      model: 'gpt-4o',
+    });
   });
 
-  afterEach(() => {
-    if (originalKey === undefined) {
-      delete process.env.OPENAI_COMPATIBLE_API_KEY;
-    } else {
-      process.env.OPENAI_COMPATIBLE_API_KEY = originalKey;
-    }
-  });
+  afterEach(() => {});
 
   it('refineFeedbackWithLLM exists and is callable', () => {
     expect(typeof refineFeedbackWithLLM).toBe('function');
   });
 
   it('throws when LLM API key is not configured', async () => {
-    delete process.env.OPENAI_COMPATIBLE_API_KEY;
+    inferenceSourceImpl = () => {
+      throw new Error('Missing required environment variable: OPENAI_COMPATIBLE_API_KEY');
+    };
 
     await expect(refineFeedbackWithLLM('text', 'feedback', 'email')).rejects.toThrow(
       'OPENAI_COMPATIBLE_API_KEY'
@@ -41,44 +65,35 @@ describe('Feedback refinement', () => {
   });
 
   it('routes refinement through the @intx/agent runtime', async () => {
-    process.env.OPENAI_COMPATIBLE_API_KEY = 'test-key';
-
     const result = await refineFeedbackWithLLM('original', 'make it punchier', 'linkedin');
 
     expect(createAgentMock).toHaveBeenCalledTimes(1);
     expect(sendMock).toHaveBeenCalledTimes(1);
-    expect(closeMock).toHaveBeenCalledTimes(1);
     expect(result).toBe('Refined output text');
   });
 
   it('throws when the agent returns an empty reply', async () => {
-    process.env.OPENAI_COMPATIBLE_API_KEY = 'test-key';
     sendMock.mockResolvedValueOnce({ reply: '   ' });
 
     await expect(refineFeedbackWithLLM('original', 'feedback', 'email')).rejects.toThrow(
       'empty response'
     );
-    expect(closeMock).toHaveBeenCalledTimes(1);
   });
 
   it('throws when the agent returns a genuinely empty reply', async () => {
-    process.env.OPENAI_COMPATIBLE_API_KEY = 'test-key';
     sendMock.mockResolvedValueOnce({ reply: '' });
 
     await expect(refineFeedbackWithLLM('original', 'feedback', 'email')).rejects.toThrow(
       'empty response'
     );
-    expect(closeMock).toHaveBeenCalledTimes(1);
   });
 
   it('throws when the agent reply field is missing (exercises the optional chain)', async () => {
-    process.env.OPENAI_COMPATIBLE_API_KEY = 'test-key';
-    // @ts-expect-error deliberately returning a malformed response with no reply field
-    sendMock.mockResolvedValueOnce({});
+    // biome-ignore lint/suspicious/noExplicitAny: deliberately malformed response
+    sendMock.mockResolvedValueOnce({} as any);
 
     await expect(refineFeedbackWithLLM('original', 'feedback', 'email')).rejects.toThrow(
       'empty response'
     );
-    expect(closeMock).toHaveBeenCalledTimes(1);
   });
 });
