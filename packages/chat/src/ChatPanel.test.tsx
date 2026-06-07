@@ -197,7 +197,9 @@ describe('ChatPanel busy state', () => {
 
   it('disables the Send button while typing indicator is active', () => {
     render(<ChatPanel agent={agent} messages={messages} onSend={() => {}} typing />);
-    expect((screen.getByRole('button', { name: 'Waiting for agent' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: 'Waiting for agent' }) as HTMLButtonElement).disabled
+    ).toBe(true);
   });
 
   it('shows the activity pill with the agent name while a tool is running', () => {
@@ -221,7 +223,6 @@ describe('ChatPanel busy state', () => {
 
 describe('ChatPanel composer interaction', () => {
   it('does not fire onSend when busy', async () => {
-    const user = userEvent.setup();
     const onSend = mock((_text: string) => {});
     render(
       <ChatPanel

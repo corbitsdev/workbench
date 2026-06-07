@@ -13,6 +13,14 @@ export type ChatRole = 'user' | 'agent' | 'system';
 /** Delivery state of a message, used to render ticks / spinners / retries. */
 export type ChatMessageStatus = 'sending' | 'sent' | 'failed';
 
+/**
+ * Optional classification of a message's purpose.
+ * - `tool` — intermediate tool call / result (eligible for compaction)
+ * - `artifact` — a final output (never compacted)
+ * Absent means a regular conversational message.
+ */
+export type ChatMessageKind = 'tool' | 'artifact';
+
 /** A single message in a chat thread. */
 export interface ChatMessage {
   id: string;
@@ -23,6 +31,11 @@ export interface ChatMessage {
   createdAt: string;
   /** Delivery state. Absent means delivered/no tracking needed. */
   status?: ChatMessageStatus;
+  /**
+   * Optional classification. Tool messages are eligible for compaction in long
+   * threads; artifact messages are always fully visible.
+   */
+  kind?: ChatMessageKind;
 }
 
 /** A tappable suggested reply offered by the agent. */

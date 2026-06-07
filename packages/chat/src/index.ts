@@ -2,6 +2,7 @@ export {
   type ChatRole,
   type ChatMessageStatus,
   type ChatMessage,
+  type ChatMessageKind,
   type QuickReply,
   type ChatDockState,
   type ChatOpenState,
@@ -9,6 +10,13 @@ export {
   type ChatAgentIdentity,
   type ChatActivity,
 } from './types';
+export {
+  compactMessages,
+  type CompactedItem,
+  type MessageItem,
+  type CollapsedGroupItem,
+} from './compactMessages';
+export { CollapsedGroup, type CollapsedGroupProps } from './CollapsedGroup';
 
 export { MessageBubble, type MessageBubbleProps } from './MessageBubble';
 export { TypingIndicator, type TypingIndicatorProps } from './TypingIndicator';
