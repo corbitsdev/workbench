@@ -73,11 +73,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     checkSession();
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') checkSession();
+    }
     window.addEventListener('focus', checkSession);
-    window.addEventListener('visibilitychange', checkSession);
+    window.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       window.removeEventListener('focus', checkSession);
-      window.removeEventListener('visibilitychange', checkSession);
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [checkSession]);
 

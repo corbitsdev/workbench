@@ -65,7 +65,7 @@ export function PersonalAgentChat() {
     let cancelled = false;
     setSessionState({ phase: 'loading' });
 
-    void (async () => {
+    async function connect() {
       try {
         const me = await getMe();
         if (cancelled) return;
@@ -108,7 +108,9 @@ export function PersonalAgentChat() {
           });
         }
       }
-    })();
+    }
+
+    void connect();
 
     return () => {
       cancelled = true;

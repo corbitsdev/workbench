@@ -16,16 +16,23 @@ import type { AgentSelection } from '../components/layout/LibraryRail';
 import type { ProvisionAgentResponse } from '../lib/hub-api';
 import type { WorkbenchEntry } from '../lib/hub-api';
 
+const PROVISIONING_MAX_RETRIES = 10;
+
 type ProvisioningState =
   | { status: 'loading' }
   | { status: 'needs-onboarding' }
-  | { status: 'ready' };
+  | { status: 'ready' }
+  | { status: 'error'; message: string };
 
-function useProvisioningGuard(): ProvisioningState {
+function useProvisioningGuard(): { state: ProvisioningState; retry: () => void } {
   const [state, setState] = useState<ProvisioningState>({ status: 'loading' });
+  const [attempt, setAttempt] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryCountRef = useRef(0);
 
   useEffect(() => {
+    retryCountRef.current = 0;
+
     function clear() {
       if (intervalRef.current !== null) {
         clearInterval(intervalRef.current);
@@ -41,16 +48,29 @@ function useProvisioningGuard(): ProvisioningState {
         );
         clear();
       } catch {
-        // Keep polling — transient errors should not break the guard
+        retryCountRef.current += 1;
+        if (retryCountRef.current >= PROVISIONING_MAX_RETRIES) {
+          clear();
+          setState({
+            status: 'error',
+            message:
+              'Could not reach the server while setting up your workbench. Check your connection and try again.',
+          });
+        }
       }
     }
 
     void check();
     intervalRef.current = setInterval(() => void check(), 3000);
     return clear;
-  }, []);
+  }, [attempt]);
 
-  return state;
+  const retry = () => {
+    setState({ status: 'loading' });
+    setAttempt((n) => n + 1);
+  };
+
+  return { state, retry };
 }
 
 /**
@@ -105,7 +125,7 @@ function useWorkspaceContext(slug: string | undefined): {
 }
 
 export default function WorkbenchHome() {
-  const provisioningState = useProvisioningGuard();
+  const { state: provisioningState, retry: retryProvisioning } = useProvisioningGuard();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const { width, min, max, dragging, containerRef, handleProps } = useResizableRail();
   const [railOpen, setRailOpen] = useState(false);
@@ -133,6 +153,21 @@ export default function WorkbenchHome() {
       void navigate('/onboarding', { replace: true });
     }
   }, [provisioningState, navigate]);
+
+  if (provisioningState.status === 'error') {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4">
+        <p className="text-[14px] text-text-3">{provisioningState.message}</p>
+        <button
+          type="button"
+          onClick={retryProvisioning}
+          className="rounded-[9px] border border-border px-4 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface hover:text-text"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   if (provisioningState.status === 'loading' || provisioningState.status === 'needs-onboarding') {
     return (

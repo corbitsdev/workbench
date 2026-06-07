@@ -74,10 +74,6 @@ function useWorkbenchesAndAgents(externalTick = 0): {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    if (import.meta.env.DEV) {
-      setIsLoading(false);
-      return;
-    }
     setIsLoading(true);
     setError(false);
 
