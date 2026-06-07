@@ -1,7 +1,22 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { logger } from '../lib/logger';
+import { listWorkbenches, listAgentInstances } from '../lib/hub-api';
+import type { AgentInstance } from '../lib/hub-api';
 import type { WorkflowState } from '@workbench/shared';
+
+export type { AgentInstance };
+
+export interface StepConfig {
+  agentId?: string;
+  toolIds?: string[];
+}
+
+export interface WorkflowStepConfig {
+  analyze?: StepConfig;
+  generate?: StepConfig;
+  improve?: StepConfig;
+}
 
 export interface WorkflowTypeDefinition {
   kind: string;
@@ -19,6 +34,7 @@ export interface WorkflowStep {
 export interface FrontendWorkflowState extends WorkflowState {
   currentStep: StepName;
   steps: Record<StepName, WorkflowStep>;
+  stepConfig: WorkflowStepConfig;
 }
 
 export function useWorkflowTypes() {
@@ -99,6 +115,42 @@ export function useUpdateCompanyName(workflowId: string) {
       queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
       queryClient.invalidateQueries({ queryKey: ['workflows'] });
     },
+  });
+}
+
+export function useUpdateStepConfig(workflowId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (stepConfig: WorkflowStepConfig) => {
+      return api<{ id: string; stepConfig: WorkflowStepConfig }>(
+        'PATCH',
+        `/workflows/${workflowId}/step-config`,
+        { stepConfig }
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+    },
+    onError: (error) => {
+      logger.error('Step config update failed', {
+        workflowId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
+}
+
+export function useWorkspaceAgents() {
+  return useQuery<AgentInstance[]>({
+    queryKey: ['workspace-agents'],
+    queryFn: async () => {
+      const workbenches = await listWorkbenches();
+      const agentLists = await Promise.all(
+        workbenches.map((w) => listAgentInstances(w.tenantId).catch((): AgentInstance[] => []))
+      );
+      return agentLists.flat();
+    },
+    staleTime: 60 * 1000,
   });
 }
 

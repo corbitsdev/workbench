@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import { schema as intxSchema } from '@intx/db';
+import type { DB } from '@intx/db';
 import { type } from 'arktype';
 import { workflowRegistry } from '@workbench/workflow-core';
 import { collateralGenerationWorkflow } from '@workbench/gtm-workflows';
@@ -21,12 +22,26 @@ const log = getLogger(['api', 'workflow']);
 const STEP_ORDER = ['intake', 'analyze', 'generate', 'improve', 'export'] as const;
 type StepName = (typeof STEP_ORDER)[number];
 
+const CONFIGURABLE_STEPS = ['analyze', 'generate', 'improve'] as const;
+type ConfigurableStep = (typeof CONFIGURABLE_STEPS)[number];
+
+export interface StepConfig {
+  agentId?: string;
+  toolIds?: string[];
+}
+
+export interface WorkflowStepConfig {
+  analyze?: StepConfig;
+  generate?: StepConfig;
+  improve?: StepConfig;
+}
+
 const VALID_EXPORT_TARGETS = ['markdown', 'csv', 'json'] as const;
 type ExportTarget = (typeof VALID_EXPORT_TARGETS)[number];
 
 import type { UserContext } from '@workbench/workflow-core';
 
-async function getUserContext(db: any, userId: string): Promise<UserContext | null> {
+async function getUserContext(db: DB['db'], userId: string): Promise<UserContext | null> {
   const personalTenant = await db.query.tenant.findFirst({
     where: eq(intxSchema.tenant.slug, `user-${userId}`),
   });
@@ -82,7 +97,7 @@ function validateWorkflowInput(
   }
 }
 
-export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: string } }> {
+export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: string } }> {
   // Register all available workflows
   workflowRegistry.register(collateralGenerationWorkflow);
 
@@ -365,11 +380,14 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
       artifactCount: allArtifacts.length,
     });
 
+    const stepConfig: WorkflowStepConfig = (wf.input as any)?.stepConfig ?? {};
+
     return c.json({
       id,
       status: wf.status,
       currentStep,
       companyName: (wf.input as any)?.companyName ?? null,
+      stepConfig,
       steps: {
         intake: { completed: true, transcriptId: transcriptId ?? null, transcript: tx?.content },
         analyze: {
@@ -472,6 +490,97 @@ export function createWorkflowRouter(db: any): Hono<{ Variables: { userId: strin
     return c.json({ id, companyName });
   });
 
+  // ─── Update step config ─────────────────────────────────────────────
+  router.patch('/workflows/:id/step-config', async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const body = (await c.req.json().catch(() => ({}))) as { stepConfig?: unknown };
+
+    if (!body.stepConfig || typeof body.stepConfig !== 'object' || Array.isArray(body.stepConfig)) {
+      log.warn('Missing or invalid stepConfig in request body', { workflowId: id });
+      return c.json({ error: 'stepConfig object is required' }, 400);
+    }
+
+    // Validate that all keys are configurable step names
+    const keys = Object.keys(body.stepConfig as object);
+    const invalidKeys = keys.filter((k) => !CONFIGURABLE_STEPS.includes(k as ConfigurableStep));
+    if (invalidKeys.length > 0) {
+      log.warn('stepConfig contains unknown step keys', { workflowId: id, invalidKeys });
+      return c.json(
+        {
+          error: `Unknown step keys: ${invalidKeys.join(', ')}. Valid steps: ${CONFIGURABLE_STEPS.join(', ')}`,
+        },
+        400
+      );
+    }
+
+    // Validate per-step structure
+    const rawConfig = body.stepConfig as Record<string, unknown>;
+    const validatedConfig: WorkflowStepConfig = {};
+    for (const step of CONFIGURABLE_STEPS) {
+      const stepVal = rawConfig[step];
+      if (stepVal === undefined) continue;
+      if (typeof stepVal !== 'object' || stepVal === null || Array.isArray(stepVal)) {
+        return c.json({ error: `stepConfig.${step} must be an object` }, 400);
+      }
+      const s = stepVal as Record<string, unknown>;
+      const agentId = s['agentId'] !== undefined ? s['agentId'] : undefined;
+      const toolIds = s['toolIds'] !== undefined ? s['toolIds'] : undefined;
+      if (agentId !== undefined && typeof agentId !== 'string') {
+        return c.json({ error: `stepConfig.${step}.agentId must be a string` }, 400);
+      }
+      if (
+        toolIds !== undefined &&
+        (!Array.isArray(toolIds) || !toolIds.every((t) => typeof t === 'string'))
+      ) {
+        return c.json({ error: `stepConfig.${step}.toolIds must be an array of strings` }, 400);
+      }
+      const entry: StepConfig = {};
+      if (typeof agentId === 'string') entry.agentId = agentId;
+      if (Array.isArray(toolIds)) entry.toolIds = toolIds as string[];
+      validatedConfig[step] = entry;
+    }
+
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json({ error: 'User context not found' }, 400);
+    }
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
+    });
+    if (!wf) {
+      log.warn('Workflow not found for step-config update', { workflowId: id });
+      return c.json({ error: 'Workflow not found' }, 404);
+    }
+
+    // Validate that any provided agentId belongs to the user's tenant
+    const agentIds = Object.values(validatedConfig)
+      .map((s) => s?.agentId)
+      .filter((id): id is string => typeof id === 'string');
+    if (agentIds.length > 0) {
+      const instances = await db.query.agentInstance.findMany({
+        where: and(
+          inArray(intxSchema.agentInstance.id, agentIds),
+          eq(intxSchema.agentInstance.tenantId, userContext.tenantId)
+        ),
+      });
+      const foundIds = new Set(instances.map((i) => i.id));
+      const unauthorized = agentIds.filter((aid) => !foundIds.has(aid));
+      if (unauthorized.length > 0) {
+        log.warn('agentId not found in tenant', { workflowId: id, unauthorized });
+        return c.json({ error: 'One or more agentIds not found' }, 400);
+      }
+    }
+
+    const updatedInput = { ...(wf.input ?? {}), stepConfig: validatedConfig };
+    await db.update(workflowRun).set({ input: updatedInput }).where(eq(workflowRun.id, id));
+
+    log.info('Step config updated', { workflowId: id, steps: Object.keys(validatedConfig) });
+    return c.json({ id, stepConfig: validatedConfig });
+  });
+
   // ─── Granola helper ─────────────────────────────────────────────────
   router.get('/recent-calls', async (c) => {
     if (!isGranolaConfigured()) {
@@ -502,7 +611,7 @@ function deriveCurrentStep(status: string): StepName {
 }
 
 async function runAnalyze(
-  db: any,
+  db: DB['db'],
   id: string,
   userId: string,
   userContext: UserContext,
@@ -634,7 +743,7 @@ async function runGenerate(db: any, id: string, painPointIds: string[], authorId
 }
 
 async function runImprove(
-  db: any,
+  db: DB['db'],
   id: string,
   artifactId: string,
   feedback: string,
@@ -692,7 +801,7 @@ async function runImprove(
 }
 
 async function runExport(
-  db: any,
+  db: DB['db'],
   id: string,
   userId: string,
   userContext: UserContext,

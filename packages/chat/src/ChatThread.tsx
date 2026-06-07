@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { cn } from '@workbench/ui';
 import { type ChatMessage, type ChatActivity } from './types';
 import { MessageBubble } from './MessageBubble';
 import { TypingIndicator } from './TypingIndicator';
-import { compactMessages } from './compactMessages';
-import { CollapsedGroup } from './CollapsedGroup';
 
 function formatActivityLabel(activity: ChatActivity, agentName: string): string {
   switch (activity.type) {
@@ -30,16 +28,6 @@ export interface ChatThreadProps {
   typingLabel?: string;
   /** Shown when there are no messages yet. */
   emptyState?: React.ReactNode;
-  /**
-   * Minimum message count before compaction activates. Defaults to 10.
-   * Set to 0 to disable compaction entirely.
-   */
-  compactionThreshold?: number;
-  /**
-   * How many of the most-recent messages are always fully visible.
-   * Defaults to 5.
-   */
-  compactionRecentWindow?: number;
   className?: string;
 }
 
@@ -51,8 +39,6 @@ export function ChatThread({
   agentName,
   typingLabel,
   emptyState,
-  compactionThreshold = 10,
-  compactionRecentWindow = 5,
   className,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -64,11 +50,6 @@ export function ChatThread({
       el.scrollTop = el.scrollHeight;
     }
   });
-
-  const compacted = useMemo(
-    () => compactMessages(messages, compactionThreshold, compactionRecentWindow),
-    [messages, compactionThreshold, compactionRecentWindow]
-  );
 
   const hasActivity = activity !== undefined && activity !== null;
 
@@ -91,13 +72,9 @@ export function ChatThread({
             <p className="text-sm text-text-3">Send a message to get started.</p>
           </div>
         ))}
-      {compacted.map((item) =>
-        item.type === 'collapsed_group' ? (
-          <CollapsedGroup key={item.id} group={item} />
-        ) : (
-          <MessageBubble key={item.message.id} message={item.message} />
-        )
-      )}
+      {messages.map((message) => (
+        <MessageBubble key={message.id} message={message} />
+      ))}
       {hasActivity && agentName !== undefined && (
         <div className="flex items-start" aria-live="polite">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">

@@ -31,6 +31,14 @@ mock.module('../hooks/use-workflow', () => ({
   useWorkflow: mockUseWorkflow,
   useRunStep: mockRunStep,
   useUpdateCompanyName: mock(() => ({ mutateAsync: mock(() => Promise.resolve({})) })),
+  useUpdateStepConfig: mock(() => ({
+    mutate: mock(() => {}),
+    isPending: false,
+    isError: false,
+    error: null,
+  })),
+  useWorkspaceAgents: mock(() => ({ data: [], isLoading: false })),
+  isExportStepResult: mock((r: unknown) => typeof r === 'object' && r !== null && 'export' in r),
 }));
 
 import { WorkflowPanel } from './WorkflowPanel';
@@ -41,6 +49,7 @@ function makeWorkflow(overrides: Record<string, unknown> = {}) {
     status: 'pending',
     currentStep: 'analyze',
     companyName: 'Acme Corp',
+    stepConfig: {},
     steps: {
       intake: { completed: true, transcriptId: 'tx-1' },
       analyze: { completed: false, painPoints: [] },
