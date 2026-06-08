@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { X, Plus } from 'lucide-react';
 import { useEnabledWorkflows } from '../../hooks/use-workflow';
 import { WorkflowCatalogModal } from './WorkflowCatalogModal';
 
@@ -16,21 +17,31 @@ export function WorkflowPicker({ onSelectKind, onClose }: WorkflowPickerProps) {
 
   if (!hasWorkflows && !isLoading) {
     return (
-      <>
-        <WorkflowCatalogModal
-          open={true}
-          onClose={onClose}
-          onInstalled={(kind) => {
-            onSelectKind(kind);
-          }}
-        />
-      </>
+      <WorkflowCatalogModal
+        open={true}
+        onClose={onClose}
+        onInstalled={(kind) => {
+          onSelectKind(kind);
+        }}
+      />
     );
   }
 
   return (
-    <>
-      <div className="flex flex-col gap-1 py-1">
+    <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-surface">
+      <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <span className="text-[15px] font-semibold text-text">New workflow</span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="grid h-7 w-7 place-items-center rounded-[5px] text-text-3 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-2">
         {isLoading && <p className="px-3 py-2 text-[12px] text-text-3">Loading workflows...</p>}
         {workflows.map((wf) => (
           <button
@@ -49,15 +60,7 @@ export function WorkflowPicker({ onSelectKind, onClose }: WorkflowPickerProps) {
             onClick={() => setCatalogOpen(true)}
             className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-[12px] text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              className="h-3.5 w-3.5"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
+            <Plus className="h-3.5 w-3.5" />
             Add workflow
           </button>
         </div>
@@ -71,6 +74,6 @@ export function WorkflowPicker({ onSelectKind, onClose }: WorkflowPickerProps) {
           onSelectKind(kind);
         }}
       />
-    </>
+    </div>
   );
 }

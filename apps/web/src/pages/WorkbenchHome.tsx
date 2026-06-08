@@ -89,7 +89,7 @@ function useProvisioningGuard(): { state: ProvisioningState; retry: () => void }
  */
 const RAIL_HEIGHT = 'h-full';
 
-type NewModal = 'none' | 'workbench' | 'agent' | 'workflow-picker';
+type NewModal = 'none' | 'workbench' | 'agent';
 
 type RightPane =
   | { view: 'gallery' }
@@ -100,7 +100,8 @@ type RightPane =
       agentName: string;
     }
   | { view: 'workflow'; workflowId: string }
-  | { view: 'new-workflow'; workflowKind: string };
+  | { view: 'new-workflow'; workflowKind: string }
+  | { view: 'workflow-picker' };
 
 function useWorkspaceContext(slug: string | undefined): {
   tenantId: string | null;
@@ -206,7 +207,7 @@ export default function WorkbenchHome() {
   };
 
   const handleNewWorkflow = () => {
-    setActiveModal('workflow-picker');
+    setRightPane({ view: 'workflow-picker' });
     setLauncherHidden(true);
   };
 
@@ -277,6 +278,19 @@ export default function WorkbenchHome() {
             workflowKind={rightPane.workflowKind}
             tenantId={workspaceTenantId}
             onCreated={handleWorkflowCreated}
+            onClose={() => {
+              setRightPane({ view: 'gallery' });
+              setLauncherHidden(false);
+            }}
+          />
+        </motion.div>
+      );
+    }
+    if (rightPane.view === 'workflow-picker') {
+      return (
+        <motion.div key="workflow-picker" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
+          <WorkflowPicker
+            onSelectKind={handleWorkflowKindSelected}
             onClose={() => {
               setRightPane({ view: 'gallery' });
               setLauncherHidden(false);
@@ -360,15 +374,6 @@ export default function WorkbenchHome() {
           onCreated={handleAgentCreated}
           workspaceTenantId={workspaceTenantId}
         />
-        {activeModal === 'workflow-picker' && (
-          <WorkflowPicker
-            onSelectKind={handleWorkflowKindSelected}
-            onClose={() => {
-              setActiveModal('none');
-              setLauncherHidden(false);
-            }}
-          />
-        )}
       </div>
     );
   }
@@ -427,12 +432,6 @@ export default function WorkbenchHome() {
         onCreated={handleAgentCreated}
         workspaceTenantId={workspaceTenantId}
       />
-      {activeModal === 'workflow-picker' && (
-        <WorkflowPicker
-          onSelectKind={handleWorkflowKindSelected}
-          onClose={() => setActiveModal('none')}
-        />
-      )}
     </>
   );
 }
