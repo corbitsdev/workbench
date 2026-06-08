@@ -74,11 +74,17 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
   const live = streaming.trim() !== '';
 
   let nextRetained: RetainedAgentText;
-  if (live) {
+  if (hasAgentReply) {
+    // The durable reply has landed. Never show streamed/retained text now — it
+    // only duplicates the durable message. Interchange does not reliably clear
+    // its streaming buffer across multi-reply sessions (it appends a later
+    // reply's deltas onto leftover text), so `streaming` may still be non-empty
+    // and stale here; checking `live` first would render that garbage.
+    nextRetained = EMPTY_RETAINED;
+  } else if (live) {
     nextRetained = { text: streaming, afterUserId: lastUserId };
-  } else if (hasAgentReply || retained.afterUserId !== lastUserId) {
-    // Either the durable reply landed, or a newer user message arrived and the
-    // retained text is now stale.
+  } else if (retained.afterUserId !== lastUserId) {
+    // A newer user message arrived and the retained text is now stale.
     nextRetained = EMPTY_RETAINED;
   } else {
     nextRetained = retained;
