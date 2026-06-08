@@ -10,7 +10,7 @@ export const collateralGenerationWorkflow: WorkflowType = {
   kind: 'collateral-generation',
   name: 'Collateral Generation',
   description:
-    'Turn call transcripts into sales collateral (emails, LinkedIn posts, one-pagers, battercards)',
+    'Turn call transcripts into sales collateral (emails, LinkedIn posts, one-pagers, battlecards)',
   steps: [
     {
       name: 'intake',

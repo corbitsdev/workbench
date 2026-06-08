@@ -1,1 +1,6 @@
-export { collateralGenerationWorkflow } from './collateral-generation';
+export {
+  collateralGenerationWorkflow,
+  collateralTypeOptions,
+  isCollateralKind,
+  selectCollateralTypeIds,
+} from './collateral-generation';

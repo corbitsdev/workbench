@@ -755,14 +755,14 @@ describe('Workflow router', () => {
       body: JSON.stringify({
         step: 'generate',
         painPointIds: ['p-1'],
-        collateralTypes: ['pain-points-linkedin-post', 'pain-points-blog'],
+        collateralTypes: ['linkedin-post', 'blog'],
       }),
     });
 
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
-    expect(generatedKinds).toEqual(['pain-points-linkedin-post', 'pain-points-blog']);
+    expect(generatedKinds).toEqual(['linkedin-post', 'blog']);
     const json = await res.json();
     expect(json.steps.generate.artifacts).toHaveLength(2);
   });

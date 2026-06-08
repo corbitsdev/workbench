@@ -5,6 +5,7 @@ export {
   createTranscriptArtifacts,
   deriveCollateralRunTitle,
   formatPainPointsDocument,
+  isCollateralKind,
   selectCollateralTypeIds,
   type CollateralPainPoint,
   type WorkflowArtifactDraft,

@@ -27,6 +27,12 @@ export const collateralTypeOptions = [
 
 const defaultCollateralTypeIds = ['email', 'linkedin-post', 'one-pager', 'battlecard'] as const;
 
+const BOOKKEEPING_KINDS = new Set(['call-transcript', 'pain-points']);
+
+export function isCollateralKind(kind: string): boolean {
+  return !BOOKKEEPING_KINDS.has(kind);
+}
+
 export function selectCollateralTypeIds(requested: string[] | undefined): string[] {
   const allowed = new Set(collateralTypeOptions.map((option) => option.id));
   const selected = requested?.filter((id) =>

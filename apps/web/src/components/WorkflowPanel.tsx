@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useWorkflow, useRunStep } from '../hooks/use-workflow';
+import { useWorkflow, useRunStep, useApproveArtifact } from '../hooks/use-workflow';
 import PainPointsList from './PainPointsList';
 import FeedbackSection from './FeedbackSection';
 import ArtifactBody from './ArtifactBody';
 import { WorkflowStepConfig } from './WorkflowStepConfig';
 import { HorizontalStepper, buildSteps } from '@workbench/workflow';
+import { collateralTypeOptions } from '@workbench/gtm-workflows';
 import type { ArtifactKind } from '@workbench/shared';
 import type { StepName } from '@workbench/workflow';
 
@@ -29,24 +30,12 @@ interface PainPointData {
   selected?: boolean;
 }
 
-const COLLATERAL_OPTIONS = [
-  { id: 'email', label: 'Follow-up Email' },
-  { id: 'linkedin-post', label: 'LinkedIn Post' },
-  { id: 'one-pager', label: 'Sales One-Pager' },
-  { id: 'battlecard', label: 'Battlecard' },
-  { id: 'twitter-post', label: 'Twitter Post' },
-  { id: 'blog', label: 'Blog' },
-  { id: 'founder-pov-post', label: 'Founder POV Post' },
-  { id: 'case-study', label: 'Case Study' },
-  { id: 'objection-handling', label: 'Objection Handling' },
-  { id: 'customer-quotes', label: 'Customer Quotes' },
-];
-
 const DEFAULT_COLLATERAL_TYPES = ['email', 'linkedin-post', 'one-pager', 'battlecard'];
 
 export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const { data: workflow, isLoading, isError } = useWorkflow(workflowId);
   const runStep = useRunStep(workflowId);
+  const approveArtifact = useApproveArtifact(workflowId);
 
   const [feedback, setFeedback] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -209,8 +198,44 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
                 ))}
               </div>
             )}
-            <div className="p-5">
+            <div className="p-5 space-y-4">
               <ArtifactBody body={displayArtifact.content} type={displayArtifact.kind} />
+              {displayArtifact.status === 'draft' && (
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={approveArtifact.isPending}
+                    onClick={() =>
+                      void approveArtifact.mutate({
+                        artifactId: displayArtifact.id,
+                        status: 'approved',
+                      })
+                    }
+                    className="btn-primary flex-1"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    disabled={approveArtifact.isPending}
+                    onClick={() =>
+                      void approveArtifact.mutate({
+                        artifactId: displayArtifact.id,
+                        status: 'rejected',
+                      })
+                    }
+                    className="btn-secondary flex-1"
+                  >
+                    Deny
+                  </button>
+                </div>
+              )}
+              {displayArtifact.status === 'approved' && (
+                <p className="text-[12px] text-text-3">Approved</p>
+              )}
+              {displayArtifact.status === 'rejected' && (
+                <p className="text-[12px] text-text-3">Denied</p>
+              )}
             </div>
           </div>
         )}
@@ -239,7 +264,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
                   Collateral types ({collateralTypes.size} selected)
                 </h3>
                 <div className="flex flex-wrap gap-2">
-                  {COLLATERAL_OPTIONS.map((option) => {
+                  {collateralTypeOptions.map((option) => {
                     const active = collateralTypes.has(option.id);
                     return (
                       <button
