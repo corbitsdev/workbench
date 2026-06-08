@@ -14,7 +14,6 @@ mock.module('../config', () => ({
 import {
   provisionPersonalTenant,
   provisionMyraInstance,
-  provisionOatInstance,
   provisionUserOnSignup,
   type ProvisioningDB,
 } from './tenant-provisioning';
@@ -240,114 +239,6 @@ describe('provisionMyraInstance', () => {
     });
 
     expect(result.paInstanceId).toBe('ins-myra-existing');
-    expect(insertMock).not.toHaveBeenCalled();
-  });
-});
-
-describe('provisionOatInstance', () => {
-  const WORKSPACE_TENANT_ID = 'tenant-ws';
-  const WORKSPACE_TENANT_DOMAIN = 'ws.localhost';
-
-  function makeInsertMockReturningAgent() {
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    const insertMock: any = mock(() => {
-      // biome-ignore lint/suspicious/noExplicitAny: test mock
-      const valuesMock: any = mock((row: any) => {
-        return {
-          returning: mock(() =>
-            Promise.resolve([
-              {
-                id: row.id ?? 'agt-oat',
-                tenantId: WORKSPACE_TENANT_ID,
-                name: 'Oat',
-                status: 'deployed',
-                currentVersion: '1',
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
-            ])
-          ),
-          onConflictDoNothing: mock(() => Promise.resolve([])),
-        };
-      });
-      return { values: valuesMock };
-    });
-    return insertMock;
-  }
-
-  it('creates agent, principal, and agentInstance on the workbench tenant', async () => {
-    const insertMock = makeInsertMockReturningAgent();
-
-    const db = makeMockDB({
-      query: {
-        tenant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        principal: { findFirst: mock(() => Promise.resolve(undefined)) },
-        role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-      },
-      insert: insertMock,
-    });
-
-    const result = await provisionOatInstance(db as never, {
-      workbenchTenantId: WORKSPACE_TENANT_ID,
-      workbenchTenantDomain: WORKSPACE_TENANT_DOMAIN,
-      creatorPrincipalId: 'prn-owner',
-    });
-
-    expect(result.oatInstanceId).toBeDefined();
-    expect(insertMock).toHaveBeenCalled();
-  });
-
-  it('is idempotent — returns existing instance if Oat already exists', async () => {
-    const existingAgent = {
-      id: 'agt-oat-existing',
-      tenantId: WORKSPACE_TENANT_ID,
-      name: 'Oat',
-      status: 'deployed',
-      currentVersion: '1',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    const existingInstance = {
-      id: 'ins-oat-existing',
-      agentId: 'agt-oat-existing',
-      tenantId: WORKSPACE_TENANT_ID,
-      address: `ins-oat-existing@${WORKSPACE_TENANT_DOMAIN}`,
-      status: 'deployed',
-      principalId: 'prn-oat',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      endedAt: null,
-    };
-
-    const insertMock = mock(() => ({
-      values: mock(() => ({
-        returning: mock(() => Promise.resolve([])),
-        onConflictDoNothing: mock(() => Promise.resolve([])),
-      })),
-    }));
-
-    const db = makeMockDB({
-      query: {
-        tenant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        principal: { findFirst: mock(() => Promise.resolve(undefined)) },
-        role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agent: { findFirst: mock(() => Promise.resolve(existingAgent)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(existingInstance)) },
-      },
-      insert: insertMock,
-    });
-
-    const result = await provisionOatInstance(db as never, {
-      workbenchTenantId: WORKSPACE_TENANT_ID,
-      workbenchTenantDomain: WORKSPACE_TENANT_DOMAIN,
-      creatorPrincipalId: 'prn-owner',
-    });
-
-    expect(result.oatInstanceId).toBe('ins-oat-existing');
     expect(insertMock).not.toHaveBeenCalled();
   });
 });

@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
-import { provisionWorkbenchTenant, provisionOatInstance } from '../lib/tenant-provisioning';
+import { provisionWorkbenchTenant } from '../lib/tenant-provisioning';
 
 const log = getLogger(['api', 'workbenches']);
 
@@ -77,39 +77,11 @@ export function createWorkbenchesRouter(db: ProductionDB): Hono<{ Variables: { u
         where: eq(intxSchema.tenant.id, provisioned.tenantId),
       });
 
-      // Ensure Oat is provisioned even on idempotent workbench requests.
-      try {
-        await provisionOatInstance(db, {
-          workbenchTenantId: provisioned.tenantId,
-          workbenchTenantDomain: existingTenant?.domain ?? `${slug}.localhost`,
-          creatorPrincipalId: provisioned.principalId,
-        });
-      } catch (err) {
-        log.error('Oat provisioning failed for existing workbench', {
-          tenantId: provisioned.tenantId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-
       return c.json({
         id: provisioned.principalId,
         name: existingTenant?.name ?? rawName,
         slug: existingTenant?.slug ?? slug,
         tenantId: provisioned.tenantId,
-      });
-    }
-
-    // Provision Oat for the newly created workbench.
-    try {
-      await provisionOatInstance(db, {
-        workbenchTenantId: provisioned.tenantId,
-        workbenchTenantDomain: `${slug}.localhost`,
-        creatorPrincipalId: provisioned.principalId,
-      });
-    } catch (err) {
-      log.error('Oat provisioning failed for new workbench', {
-        tenantId: provisioned.tenantId,
-        error: err instanceof Error ? err : new Error(String(err)),
       });
     }
 
