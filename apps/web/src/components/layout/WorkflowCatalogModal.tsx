@@ -1,10 +1,14 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   useWorkflowCatalog,
   useEnabledWorkflows,
   useInstallWorkflow,
+  useWorkflowTools,
+  type WorkflowCatalogEntry,
+  type WorkflowAssignments,
 } from '../../hooks/use-workflow';
+import { CredentialField } from '../CredentialField';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -25,7 +29,16 @@ export function WorkflowCatalogModal({
   const panelRef = useRef<HTMLDivElement>(null);
   const catalogQuery = useWorkflowCatalog();
   const enabledQuery = useEnabledWorkflows(tenantId);
+  const toolsQuery = useWorkflowTools();
   const installMutation = useInstallWorkflow(tenantId);
+
+  // Phase 2 state: the workflow being configured before install.
+  const [configuring, setConfiguring] = useState<WorkflowCatalogEntry | null>(null);
+  // credential selection keyed by `${stepName}:${requirementIndex}`.
+  const [credByReq, setCredByReq] = useState<Record<string, string | undefined>>({});
+  // tool selection keyed by stepName.
+  const [toolsByStep, setToolsByStep] = useState<Record<string, string[]>>({});
+  const [error, setError] = useState<string | null>(null);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -54,13 +67,72 @@ export function WorkflowCatalogModal({
     [onClose]
   );
 
-  const enabledKinds = new Set((enabledQuery.data ?? []).map((e) => e.kind));
+  const enabledByKind = new Map((enabledQuery.data ?? []).map((e) => [e.kind, e]));
   const catalog = catalogQuery.data ?? [];
+  const toolMeta = new Map((toolsQuery.data ?? []).map((t) => [t.name, t]));
 
-  const handleInstall = async (kind: string) => {
-    await installMutation.mutateAsync(kind);
-    onInstalled(kind);
-    onClose();
+  const startConfigure = (entry: WorkflowCatalogEntry) => {
+    const existing = enabledByKind.get(entry.kind);
+    const cred: Record<string, string | undefined> = {};
+    const tools: Record<string, string[]> = {};
+    for (const step of entry.steps) {
+      const assigned = existing?.assignments?.[step.name];
+      step.credentialRequirements.forEach((_req, i) => {
+        cred[`${step.name}:${i}`] = assigned?.credentialIds?.[i];
+      });
+      // Default to the step's full tool set, or the previously saved selection.
+      tools[step.name] = assigned?.toolIds ?? step.tools ?? [];
+    }
+    setCredByReq(cred);
+    setToolsByStep(tools);
+    setError(null);
+    setConfiguring(entry);
+  };
+
+  const cancelConfigure = () => {
+    setConfiguring(null);
+    setError(null);
+  };
+
+  const toggleTool = (stepName: string, tool: string) => {
+    setToolsByStep((cur) => {
+      const set = new Set(cur[stepName] ?? []);
+      if (set.has(tool)) set.delete(tool);
+      else set.add(tool);
+      return { ...cur, [stepName]: [...set] };
+    });
+  };
+
+  const handleConfirm = async () => {
+    if (!configuring) return;
+    setError(null);
+
+    const assignments: WorkflowAssignments = {};
+    for (const step of configuring.steps) {
+      const credentialIds: string[] = [];
+      for (let i = 0; i < step.credentialRequirements.length; i++) {
+        const credId = credByReq[`${step.name}:${i}`];
+        if (!credId) {
+          setError(`Select a credential for ${step.label}.`);
+          return;
+        }
+        credentialIds.push(credId);
+      }
+      const toolIds = toolsByStep[step.name] ?? [];
+      if (credentialIds.length > 0 || toolIds.length > 0) {
+        assignments[step.name] = { credentialIds, toolIds };
+      }
+    }
+
+    try {
+      await installMutation.mutateAsync({ kind: configuring.kind, assignments });
+      const kind = configuring.kind;
+      setConfiguring(null);
+      onInstalled(kind);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add workflow');
+    }
   };
 
   return (
@@ -86,10 +158,12 @@ export function WorkflowCatalogModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
             transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
-            className="flex w-full max-w-lg flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
+            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
           >
             <div className="flex items-center justify-between border-b border-border px-6 py-4">
-              <div className="text-[16px] font-bold text-text">Add workflow</div>
+              <div className="text-[16px] font-bold text-text">
+                {configuring ? `Configure ${configuring.name}` : 'Add workflow'}
+              </div>
               <button
                 type="button"
                 onClick={onClose}
@@ -108,58 +182,123 @@ export function WorkflowCatalogModal({
               </button>
             </div>
 
-            <div className="flex flex-col gap-3 px-6 py-5">
-              {catalogQuery.isLoading && (
-                <p className="text-[13px] text-text-3">Loading catalog...</p>
-              )}
-              {catalogQuery.isError && (
-                <p className="text-[13px] text-orange">Failed to load workflow catalog.</p>
-              )}
-              {catalog.map((entry) => {
-                const isInstalled = enabledKinds.has(entry.kind);
-                const isInstalling =
-                  installMutation.isPending && installMutation.variables === entry.kind;
-                return (
-                  <div
-                    key={entry.kind}
-                    className="flex items-start justify-between gap-4 rounded-[10px] border border-border px-4 py-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[14px] font-medium text-text">{entry.name}</p>
-                      {entry.description && (
-                        <p className="mt-0.5 text-[12px] text-text-3">{entry.description}</p>
+            {configuring ? (
+              <div className="flex flex-col gap-4 overflow-y-auto px-6 py-5">
+                {error && (
+                  <p className="rounded-lg border border-orange bg-[rgba(233,132,40,0.16)] px-3 py-2 text-[13px] text-orange-deep">
+                    {error}
+                  </p>
+                )}
+                {!tenantId && <p className="text-[13px] text-text-2">Select a workbench first.</p>}
+                {configuring.steps
+                  .filter(
+                    (step) =>
+                      step.credentialRequirements.length > 0 || (step.tools?.length ?? 0) > 0
+                  )
+                  .map((step) => (
+                    <div
+                      key={step.name}
+                      className="flex flex-col gap-3 rounded-[10px] border border-border p-4"
+                    >
+                      <div>
+                        <p className="text-[14px] font-medium text-text">{step.label}</p>
+                        {step.description && (
+                          <p className="mt-0.5 text-[12px] text-text-3">{step.description}</p>
+                        )}
+                      </div>
+
+                      {tenantId &&
+                        step.credentialRequirements.map((req, i) => (
+                          <CredentialField
+                            key={`${step.name}:${i}`}
+                            tenantId={tenantId}
+                            providerName={req.providerName}
+                            label={req.name ?? req.providerName}
+                            value={credByReq[`${step.name}:${i}`]}
+                            onChange={(credentialId) =>
+                              setCredByReq((cur) => ({
+                                ...cur,
+                                [`${step.name}:${i}`]: credentialId,
+                              }))
+                            }
+                          />
+                        ))}
+
+                      {(step.tools?.length ?? 0) > 0 && (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[13px] font-medium text-text">Tools</span>
+                          {(step.tools ?? []).map((tool) => (
+                            <label
+                              key={tool}
+                              className="flex items-center gap-2 text-[13px] text-text-2"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={(toolsByStep[step.name] ?? []).includes(tool)}
+                                onChange={() => toggleTool(step.name, tool)}
+                              />
+                              <span>{toolMeta.get(tool)?.description ?? tool}</span>
+                            </label>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    {isInstalled ? (
-                      <span className="flex flex-none items-center gap-1.5 rounded-full bg-[rgba(123,153,116,0.18)] px-2.5 py-1 text-[11px] font-medium text-green">
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          className="h-3 w-3"
-                        >
-                          <path d="M20 6L9 17l-5-5" />
-                        </svg>
-                        Installed
-                      </span>
-                    ) : (
+                  ))}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={installMutation.isPending || !tenantId}
+                    onClick={() => void handleConfirm()}
+                    className="flex-1 rounded-[9px] bg-orange px-4 py-2 text-[13px] font-medium text-white hover:bg-orange-deep disabled:opacity-50"
+                  >
+                    {installMutation.isPending ? 'Adding…' : 'Add to workbench'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelConfigure}
+                    className="rounded-[9px] border border-border px-4 py-2 text-[13px] text-text-2 hover:text-text"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 overflow-y-auto px-6 py-5">
+                {catalogQuery.isLoading && (
+                  <p className="text-[13px] text-text-3">Loading catalog...</p>
+                )}
+                {catalogQuery.isError && (
+                  <p className="text-[13px] text-orange">Failed to load workflow catalog.</p>
+                )}
+                {catalog.map((entry) => {
+                  const isInstalled = enabledByKind.has(entry.kind);
+                  return (
+                    <div
+                      key={entry.kind}
+                      className="flex items-start justify-between gap-4 rounded-[10px] border border-border px-4 py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[14px] font-medium text-text">{entry.name}</p>
+                        {entry.description && (
+                          <p className="mt-0.5 text-[12px] text-text-3">{entry.description}</p>
+                        )}
+                      </div>
                       <button
                         type="button"
-                        disabled={isInstalling || installMutation.isPending}
-                        onClick={() => void handleInstall(entry.kind)}
-                        className="flex-none rounded-[9px] bg-orange px-3 py-1.5 text-[12px] font-medium text-white hover:bg-orange-deep disabled:opacity-50"
+                        onClick={() => startConfigure(entry)}
+                        className="flex-none rounded-[9px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 hover:border-orange hover:text-text"
                       >
-                        {isInstalling ? 'Installing...' : 'Install'}
+                        {isInstalled ? 'Edit' : 'Configure'}
                       </button>
-                    )}
-                  </div>
-                );
-              })}
-              {!catalogQuery.isLoading && catalog.length === 0 && (
-                <p className="text-[13px] text-text-3">No workflows available.</p>
-              )}
-            </div>
+                    </div>
+                  );
+                })}
+                {!catalogQuery.isLoading && catalog.length === 0 && (
+                  <p className="text-[13px] text-text-3">No workflows available.</p>
+                )}
+              </div>
+            )}
           </motion.div>
         </motion.div>
       )}

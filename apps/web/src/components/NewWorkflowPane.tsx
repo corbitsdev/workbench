@@ -133,6 +133,7 @@ export function NewWorkflowPane({
                 onSelect={handleSubmit}
                 isLoading={isLoading}
                 tenantId={tenantId}
+                kind={workflowKind}
               />
             </motion.div>
           )}

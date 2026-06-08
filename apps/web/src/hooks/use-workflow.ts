@@ -140,11 +140,35 @@ export function useUpdateStepConfig(workflowId: string) {
   });
 }
 
+export interface WorkflowCredentialRequirement {
+  providerName: string;
+  source: string;
+  name?: string;
+  scopes?: string[];
+}
+
+export interface WorkflowStepDefinition {
+  name: string;
+  label: string;
+  description?: string;
+  credentialRequirements: WorkflowCredentialRequirement[];
+  tools?: string[];
+}
+
 export interface WorkflowCatalogEntry {
   kind: string;
   name: string;
   description: string;
+  steps: WorkflowStepDefinition[];
+  credentialRequirements: WorkflowCredentialRequirement[];
 }
+
+export interface StepAssignment {
+  credentialIds: string[];
+  toolIds: string[];
+}
+
+export type WorkflowAssignments = Record<string, StepAssignment>;
 
 export interface EnabledWorkflowEntry {
   id: string;
@@ -153,12 +177,27 @@ export interface EnabledWorkflowEntry {
   enabledAt: string;
   name: string;
   description: string;
+  assignments: WorkflowAssignments;
+}
+
+export interface WorkflowToolMeta {
+  name: string;
+  providerName: string;
+  description: string;
 }
 
 export function useWorkflowCatalog() {
   return useQuery<WorkflowCatalogEntry[]>({
     queryKey: ['workflow-catalog'],
     queryFn: () => api<WorkflowCatalogEntry[]>('GET', '/workflows/catalog'),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useWorkflowTools() {
+  return useQuery<WorkflowToolMeta[]>({
+    queryKey: ['workflow-tools'],
+    queryFn: () => api<WorkflowToolMeta[]>('GET', '/workflows/tools'),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -180,9 +219,10 @@ export function useEnabledWorkflows(tenantId?: string | null) {
 export function useInstallWorkflow(tenantId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (kind: string) => {
+    mutationFn: async (input: { kind: string; assignments: WorkflowAssignments }) => {
       return api<EnabledWorkflowEntry>('POST', '/workflows/enabled', {
-        kind,
+        kind: input.kind,
+        assignments: input.assignments,
         ...(tenantId ? { tenantId } : {}),
       });
     },

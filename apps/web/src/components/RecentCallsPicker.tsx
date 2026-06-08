@@ -7,12 +7,14 @@ interface RecentCallsPickerProps {
   onSelect: (data: IntakeRequest) => void;
   isLoading?: boolean;
   tenantId?: string | null;
+  kind?: string;
 }
 
 export default function RecentCallsPicker({
   onSelect,
   isLoading = false,
   tenantId,
+  kind,
 }: RecentCallsPickerProps) {
   const [calls, setCalls] = useState<GranolaNote[]>([]);
   const [error, setError] = useState('');
@@ -21,15 +23,19 @@ export default function RecentCallsPicker({
 
   useEffect(() => {
     fetchRecentCalls();
-  }, [tenantId]);
+  }, [tenantId, kind]);
 
   const fetchRecentCalls = async () => {
     try {
       setLoading(true);
       setError('');
+      const params = new URLSearchParams();
+      if (tenantId) params.set('tenantId', tenantId);
+      if (kind) params.set('kind', kind);
+      const qs = params.toString();
       const data = await api<{ calls: GranolaNote[] }>(
         'GET',
-        tenantId ? `recent-calls?tenantId=${encodeURIComponent(tenantId)}` : 'recent-calls'
+        qs ? `recent-calls?${qs}` : 'recent-calls'
       );
       setCalls(data.calls || []);
     } catch (err) {
@@ -66,7 +72,7 @@ export default function RecentCallsPicker({
         animate={{ opacity: 1 }}
       >
         <p className="font-medium">{error}</p>
-        <p className="mt-2 text-xs">Add a Granola credential for this workspace to load calls</p>
+        <p className="mt-2 text-xs">Add a Granola credential for this workbench to load calls</p>
       </motion.div>
     );
   }
