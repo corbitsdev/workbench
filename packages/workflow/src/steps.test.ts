@@ -8,8 +8,6 @@ describe('buildSteps', () => {
     intake: 'Call source',
     analyze: 'Agent review',
     generate: 'Approve collateral',
-    improve: 'Improve approved',
-    export: 'Final package',
   };
 
   it('marks intake as current for intake step', () => {
@@ -33,7 +31,7 @@ describe('buildSteps', () => {
   });
 
   it('marks all completed when workflow is done', () => {
-    const steps = buildSteps('export', allLabels, true);
+    const steps = buildSteps('generate', allLabels, true);
     expect(steps.every((s) => s.status === 'completed')).toBe(true);
   });
 });

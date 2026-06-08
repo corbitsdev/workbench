@@ -18,8 +18,6 @@ const LABELS: Record<StepName, string> = {
   intake: 'Call source',
   analyze: 'Agent review',
   generate: 'Approve collateral',
-  improve: 'Improve approved',
-  export: 'Final package',
 };
 
 describe('HorizontalStepper', () => {
@@ -39,7 +37,7 @@ describe('HorizontalStepper', () => {
   });
 
   it('renders all checkmarks when the workflow is done', () => {
-    render(<HorizontalStepper steps={buildSteps('export', LABELS, true)} />);
-    expect(screen.getAllByText('✓').length).toBe(5);
+    render(<HorizontalStepper steps={buildSteps('generate', LABELS, true)} />);
+    expect(screen.getAllByText('✓').length).toBe(3);
   });
 });
