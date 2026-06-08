@@ -4,7 +4,6 @@ import {
   provisionAgent,
   listAvailableTools,
   updateAgentTools,
-  createTenantCredential,
   INFERENCE_PROVIDER_NAMES,
   type ProvisionAgentResponse,
   type ToolSummary,
@@ -59,9 +58,8 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
 
   const [availableTools, setAvailableTools] = useState<ToolSummary[]>([]);
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set());
-  const [pendingToolCreds, setPendingToolCreds] = useState<Record<string, Record<string, string>>>(
-    {}
-  );
+  // Tools the selected premade agent cannot run without — locked on, non-toggleable.
+  const [requiredTools, setRequiredTools] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!open) return;
@@ -78,7 +76,7 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     setLoading(false);
     setError(null);
     setSelectedTools(new Set());
-    setPendingToolCreds({});
+    setRequiredTools(new Set());
   };
 
   const handleClose = () => {
@@ -120,23 +118,11 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     setCredentialProviderNames(descriptor.credentialProviderNames);
     setSelectedCredentialIdsByProvider({});
     setSelectedTools(new Set(descriptor.defaultTools));
+    setRequiredTools(new Set(descriptor.requiredTools));
   };
 
-  // Non-inference tool providers that are needed but have no pending credential.
-  const selectedToolProviders = [
-    ...new Set(
-      availableTools
-        .filter((t) => selectedTools.has(t.name))
-        .map((t) => t.providerName)
-        .filter((p) => !INFERENCE_PROVIDER_SET.has(p))
-    ),
-  ];
-
-  const missingToolProviders = selectedToolProviders
-    .map((providerName) => PROVIDER_REGISTRY.find((p) => p.name === providerName))
-    .filter((p): p is NonNullable<typeof p> => p !== undefined);
-
   const toggleTool = (toolName: string) => {
+    if (requiredTools.has(toolName)) return;
     setSelectedTools((prev) => {
       const next = new Set(prev);
       if (next.has(toolName)) {
@@ -174,30 +160,10 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
       return;
     }
 
-    for (const provider of missingToolProviders) {
-      const fields = pendingToolCreds[provider.name] ?? {};
-      for (const field of provider.fields) {
-        if (field.required && !fields[field.key]) {
-          setError(`${field.label} is required for ${provider.label}.`);
-          return;
-        }
-      }
-    }
-
     setLoading(true);
     setError(null);
 
     try {
-      for (const provider of missingToolProviders) {
-        const fields = pendingToolCreds[provider.name] ?? {};
-        await createTenantCredential(workbenchTenantId, {
-          provider: provider.name,
-          name: provider.label,
-          apiKey: fields['apiKey'] ?? '',
-          ...(fields['baseURL'] ? { baseURL: fields['baseURL'] } : {}),
-        });
-      }
-
       const response = await provisionAgent({
         tenantId: workbenchTenantId,
         name: trimmedName,
@@ -335,67 +301,38 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
                 <div className="flex flex-col gap-2">
                   <p className="text-[13px] font-medium text-text">Tools</p>
                   <div className="flex flex-wrap gap-2">
-                    {availableTools.map((tool) => (
-                      <label
-                        key={tool.name}
-                        title={tool.description}
-                        className={`flex cursor-pointer items-center gap-1.5 rounded-[9px] border px-3 py-1.5 text-[13px] transition-colors ${
-                          selectedTools.has(tool.name)
-                            ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
-                            : 'border-border text-text-2 hover:text-text'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedTools.has(tool.name)}
-                          onChange={() => toggleTool(tool.name)}
-                          disabled={loading}
-                          className="h-3 w-3 accent-orange"
-                        />
-                        {formatToolName(tool.name)}
-                      </label>
-                    ))}
-                  </div>
-
-                  {missingToolProviders.length > 0 && (
-                    <div className="flex flex-col gap-3">
-                      {missingToolProviders.map((provider) => (
-                        <div
-                          key={provider.name}
-                          className="rounded-[10px] border border-border bg-bg px-3 py-3"
+                    {availableTools.map((tool) => {
+                      const isRequired = requiredTools.has(tool.name);
+                      const isSelected = selectedTools.has(tool.name);
+                      return (
+                        <label
+                          key={tool.name}
+                          title={isRequired ? `${tool.description} (required)` : tool.description}
+                          className={`flex items-center gap-1.5 rounded-[9px] border px-3 py-1.5 text-[13px] transition-colors ${
+                            isRequired ? 'cursor-default' : 'cursor-pointer'
+                          } ${
+                            isSelected
+                              ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
+                              : 'border-border text-text-2 hover:text-text'
+                          }`}
                         >
-                          <p className="mb-2 text-[12px] font-medium text-text-2">
-                            {provider.label} credentials
-                          </p>
-                          {provider.fields.map((field) => (
-                            <div key={field.key} className="mb-2">
-                              <label className="mb-1 block text-[12px] text-text-3">
-                                {field.label}
-                                {!field.required && ' (optional)'}
-                              </label>
-                              <input
-                                type={field.type === 'password' ? 'password' : 'text'}
-                                placeholder={field.placeholder}
-                                value={pendingToolCreds[provider.name]?.[field.key] ?? ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setPendingToolCreds((prev) => ({
-                                    ...prev,
-                                    [provider.name]: {
-                                      ...prev[provider.name],
-                                      [field.key]: val,
-                                    },
-                                  }));
-                                }}
-                                disabled={loading}
-                                className="w-full rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] text-text outline-none placeholder:text-text-3 focus:border-orange"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleTool(tool.name)}
+                            disabled={loading || isRequired}
+                            className="h-3 w-3 accent-orange"
+                          />
+                          {formatToolName(tool.name)}
+                          {isRequired && (
+                            <span className="text-[11px] uppercase tracking-[0.04em] text-text-3">
+                              Required
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 

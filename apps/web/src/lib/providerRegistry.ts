@@ -40,6 +40,8 @@ const GRANOLA: ProviderMeta = {
   name: 'granola',
   label: 'Granola',
   description: 'Access call notes and transcripts from Granola.',
+  // Base URL is owned by @workbench/tools-granola (GRANOLA_DEFAULT_BASE_URL);
+  // the credential only needs an API key.
   fields: [
     {
       key: 'apiKey',
@@ -47,13 +49,6 @@ const GRANOLA: ProviderMeta = {
       type: 'password',
       required: true,
       placeholder: 'gran_...',
-    },
-    {
-      key: 'baseURL',
-      label: 'Base URL',
-      type: 'url',
-      required: true,
-      placeholder: 'https://api.granola.ai',
     },
   ],
   tools: [
