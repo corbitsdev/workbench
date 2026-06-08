@@ -4,11 +4,9 @@ import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
 import { generateId } from '@intx/hub-common';
 import {
-  GRANOLA_DEPLOY_PROMPT,
-  GRANOLA_CREDENTIAL_REQUIREMENTS,
-  GRANOLA_CAPABILITIES,
-} from '@workbench/agents/granola-definition';
-import { LOOP_CREDENTIAL_REQUIREMENTS } from '@workbench/agents';
+  PERSONAL_AGENT_DEPLOY_PROMPT,
+  PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
+} from '@workbench/agents';
 
 const log = getLogger(['api', 'tenant-provisioning']);
 
@@ -188,12 +186,8 @@ export async function provisionWorkbenchTenant(
   return { ...result, alreadyExists: false };
 }
 
-export const PERSONAL_AGENT_DEPLOY_PROMPT =
-  'You are Myra, a personal GTM assistant. You help the user turn customer conversations into polished sales and marketing collateral. Be concise, direct, and professional.';
-
 type PersonalTenantResult = { tenantId: string; principalId: string };
 type MyraInstanceResult = { paInstanceId: string };
-type OatInstanceResult = { oatInstanceId: string };
 
 /**
  * Ensure a personal tenant exists for a workbench user. Idempotent — if the
@@ -425,7 +419,7 @@ export async function provisionMyraInstance(
           creatorPrincipalId: opts.creatorPrincipalId,
           name: 'Myra',
           systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
-          credentialRequirements: LOOP_CREDENTIAL_REQUIREMENTS,
+          credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
           capabilities: null,
           status: 'deployed',
           currentVersion: '1',
@@ -465,95 +459,6 @@ export async function provisionMyraInstance(
 
     log.info('Myra instance provisioned', { userId: opts.userId, instanceId });
     return { paInstanceId: instanceId };
-  });
-}
-
-/**
- * Ensure an Oat agent and running instance exist on the workbench tenant.
- * Oat is a workbench-scoped Granola integration agent — one instance per workbench.
- * Idempotent — if both already exist, returns the existing instance ID.
- */
-export async function provisionOatInstance(
-  db: ProductionDB,
-  opts: {
-    workbenchTenantId: string;
-    workbenchTenantDomain: string;
-    creatorPrincipalId: string;
-  }
-): Promise<OatInstanceResult> {
-  const existingAgent = await db.query.agent.findFirst({
-    where: and(eq(agent.tenantId, opts.workbenchTenantId), eq(agent.name, 'Oat')),
-  });
-
-  if (existingAgent) {
-    const existingInstance = await db.query.agentInstance.findFirst({
-      where: eq(agentInstance.agentId, existingAgent.id),
-    });
-    if (existingInstance) {
-      log.info('Oat instance already exists', {
-        tenantId: opts.workbenchTenantId,
-        instanceId: existingInstance.id,
-      });
-      return { oatInstanceId: existingInstance.id };
-    }
-  }
-
-  const now = new Date();
-  const agentId = existingAgent?.id ?? generateId('agent');
-
-  return db.transaction(async (tx) => {
-    if (!existingAgent) {
-      const agentRows = await tx
-        .insert(agent)
-        .values({
-          id: agentId,
-          tenantId: opts.workbenchTenantId,
-          creatorPrincipalId: opts.creatorPrincipalId,
-          name: 'Oat',
-          systemPrompt: GRANOLA_DEPLOY_PROMPT,
-          capabilities: GRANOLA_CAPABILITIES,
-          credentialRequirements: GRANOLA_CREDENTIAL_REQUIREMENTS,
-          status: 'deployed',
-          currentVersion: '1',
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning();
-
-      const agentRow = agentRows?.[0];
-      if (!agentRow) throw new Error('Failed to create Oat agent for workbench');
-    }
-
-    const instancePrincipalId = generateId('principal');
-    await tx.insert(principal).values({
-      id: instancePrincipalId,
-      tenantId: opts.workbenchTenantId,
-      kind: 'agent',
-      refId: agentId,
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const instanceId = generateId('instance');
-    const address = `${instanceId}@${opts.workbenchTenantDomain}`;
-
-    await tx.insert(agentInstance).values({
-      id: instanceId,
-      agentId,
-      tenantId: opts.workbenchTenantId,
-      principalId: instancePrincipalId,
-      address,
-      status: 'deployed',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    log.info('Oat instance provisioned', {
-      tenantId: opts.workbenchTenantId,
-      instanceId,
-    });
-    return { oatInstanceId: instanceId };
   });
 }
 
