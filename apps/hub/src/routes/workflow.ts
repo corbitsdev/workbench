@@ -802,17 +802,21 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const userId = c.get('userId');
     log.info('Fetching workflow', { workflowId: id });
 
-    const userContext = await getUserContext(db, userId);
-    if (!userContext) {
-      log.warn('User context not found', { userId });
-      return c.json({ error: 'Workflow not found' }, 404);
-    }
-
     const wf = await db.query.workflowRun.findFirst({
-      where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
+      where: eq(workflowRun.id, id),
     });
     if (!wf) {
       log.warn('Workflow not found', { workflowId: id });
+      return c.json({ error: 'Workflow not found' }, 404);
+    }
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) {
+      log.warn('User does not have access to workflow tenant', { userId, workflowId: id });
       return c.json({ error: 'Workflow not found' }, 404);
     }
 
@@ -875,17 +879,21 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 
     log.info('Running step', { workflowId: id, step: body.step });
 
-    const userContext = await getUserContext(db, userId);
-    if (!userContext) {
-      log.warn('User context not found', { userId });
-      return c.json({ error: 'Workflow not found' }, 404);
-    }
-
     const wf = await db.query.workflowRun.findFirst({
-      where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
+      where: eq(workflowRun.id, id),
     });
     if (!wf) {
       log.warn('Workflow not found for step', { workflowId: id });
+      return c.json({ error: 'Workflow not found' }, 404);
+    }
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) {
+      log.warn('User does not have access to workflow tenant', { userId, workflowId: id });
       return c.json({ error: 'Workflow not found' }, 404);
     }
 
@@ -942,16 +950,17 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const companyName =
       typeof body.companyName === 'string' ? body.companyName.trim().slice(0, 200) : null;
 
-    const userContext = await getUserContext(db, userId);
-    if (!userContext) {
-      log.warn('User context not found', { userId });
-      return c.json({ error: 'Workflow not found' }, 404);
-    }
-
     const wf = await db.query.workflowRun.findFirst({
-      where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
+      where: eq(workflowRun.id, id),
     });
     if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
 
     const updatedInput: WorkflowInput = { ...(wf.input as WorkflowInput) };
     if (companyName !== null) updatedInput.companyName = companyName;
@@ -1015,18 +1024,22 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       validatedConfig[step] = entry;
     }
 
-    const userContext = await getUserContext(db, userId);
-    if (!userContext) {
-      log.warn('User context not found', { userId });
-      return c.json({ error: 'User context not found' }, 400);
-    }
-
     const wf = await db.query.workflowRun.findFirst({
-      where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
+      where: eq(workflowRun.id, id),
     });
     if (!wf) {
       log.warn('Workflow not found for step-config update', { workflowId: id });
       return c.json({ error: 'Workflow not found' }, 404);
+    }
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) {
+      log.warn('User context not found', { userId });
+      return c.json({ error: 'User context not found' }, 400);
     }
 
     // Validate that any provided agentId belongs to the user's tenant
@@ -1123,7 +1136,7 @@ async function runAnalyze(
   log.info('Starting analyze step', { workflowId: id, hasFeedback: Boolean(feedback) });
 
   const wf = await db.query.workflowRun.findFirst({
-    where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
+    where: eq(workflowRun.id, id),
   });
 
   const transcriptId = (wf?.input as WorkflowInput)?.transcriptId;
@@ -1184,7 +1197,7 @@ async function runGenerate(
       where: and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)),
     }),
     db.query.workflowRun.findFirst({
-      where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, principalId)),
+      where: eq(workflowRun.id, id),
     }),
   ]);
 
@@ -1351,7 +1364,7 @@ async function runExport(db: HubDb, id: string, userContext: UserContext, target
   log.info('Starting export step', { workflowId: id, target });
 
   const wf = await db.query.workflowRun.findFirst({
-    where: and(eq(workflowRun.id, id), eq(workflowRun.principalId, userContext.principalId)),
+    where: eq(workflowRun.id, id),
   });
   if (!wf) {
     log.warn('Workflow not found for export', { workflowId: id });
