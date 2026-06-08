@@ -18,8 +18,16 @@ import type { ToolDefinition, ToolRunner } from '@intx/types/runtime';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
 
+/**
+ * Derive the hub's HTTP origin from its websocket URL. Returns origin only —
+ * HUB_WS_URL carries the sidecar websocket path (e.g. /api/sidecars/ws), which
+ * must not leak into HTTP endpoint URLs the sidecar builds (e.g. the internal
+ * tool-run endpoint mounted at /api/internal/tools/run).
+ */
 export function wsUrlToHttp(wsUrl: string): string {
-  return wsUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+  const url = new URL(wsUrl);
+  const protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+  return `${protocol}//${url.host}`;
 }
 
 /**

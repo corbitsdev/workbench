@@ -15,6 +15,16 @@ type HubToolRunnerOpts = {
  * To add a new hub-managed tool, register it in apps/hub/src/lib/tool-registry.ts.
  * No sidecar changes required.
  */
+/** Extract an `error` message from a JSON error body, or null if it is not JSON. */
+function parseError(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { error?: string };
+    return parsed.error ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function createHubToolRunner({
   hubHttpUrl,
   sidecarToken,
@@ -25,10 +35,11 @@ export function createHubToolRunner({
     definitions: toolDefinitions,
 
     async run(call: ToolCall, signal: AbortSignal): Promise<ToolResult> {
-      let data: { result: string; isError: boolean };
+      let response: Response;
+      let body: string;
 
       try {
-        const response = await fetch(`${hubHttpUrl}/api/internal/tools/run`, {
+        response = await fetch(`${hubHttpUrl}/api/internal/tools/run`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -37,19 +48,31 @@ export function createHubToolRunner({
           body: JSON.stringify({ tenantId, toolName: call.name, args: call.arguments }),
           signal,
         });
-
-        data = (await response.json()) as { result: string; isError: boolean };
-
-        if (!response.ok) {
-          return {
-            callId: call.id,
-            content: (data as unknown as { error?: string }).error ?? 'Tool execution failed',
-            isError: true,
-          };
-        }
+        body = await response.text();
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return { callId: call.id, content: message, isError: true };
+      }
+
+      // Read status before parsing: an infra error (e.g. a 404 with an HTML or
+      // empty body) must surface the real status, not a misleading JSON parse error.
+      if (!response.ok) {
+        const detail = parseError(body) ?? body.trim();
+        const content = detail
+          ? `Tool execution failed (${response.status}): ${detail}`
+          : `Tool execution failed (${response.status})`;
+        return { callId: call.id, content, isError: true };
+      }
+
+      let data: { result: string; isError: boolean };
+      try {
+        data = JSON.parse(body) as { result: string; isError: boolean };
+      } catch {
+        return {
+          callId: call.id,
+          content: `Tool returned an unparseable response: ${body.slice(0, 200)}`,
+          isError: true,
+        };
       }
 
       return { callId: call.id, content: data.result, isError: data.isError };

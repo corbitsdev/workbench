@@ -5,7 +5,7 @@ import { createHubToolRunner } from './hub-tool-runner';
 const HUB_HTTP_URL = 'http://hub.example.com:8080';
 
 const definitions: ToolDefinition[] = [
-  { name: 'exa_search', description: 'search', parameters: { type: 'object', properties: {} } },
+  { name: 'exa_search', description: 'search', inputSchema: { type: 'object', properties: {} } },
 ];
 
 const call: ToolCall = { id: 'call-1', name: 'exa_search', arguments: { query: 'hello' } };
@@ -27,8 +27,8 @@ afterEach(() => {
 
 describe('createHubToolRunner', () => {
   it('targets the hub internal tool-run endpoint', async () => {
-    const fetchMock = mock(async () =>
-      new Response(JSON.stringify({ result: 'ok', isError: false }), { status: 200 })
+    const fetchMock = mock(
+      async () => new Response(JSON.stringify({ result: 'ok', isError: false }), { status: 200 })
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
@@ -41,8 +41,9 @@ describe('createHubToolRunner', () => {
   });
 
   it('returns the tool result on a successful response', async () => {
-    globalThis.fetch = mock(async () =>
-      new Response(JSON.stringify({ result: 'search results', isError: false }), { status: 200 })
+    globalThis.fetch = mock(
+      async () =>
+        new Response(JSON.stringify({ result: 'search results', isError: false }), { status: 200 })
     ) as unknown as typeof fetch;
 
     const res = await makeRunner().run(call, new AbortController().signal);
@@ -51,8 +52,8 @@ describe('createHubToolRunner', () => {
   });
 
   it('surfaces the status on a non-OK non-JSON response instead of a parse error', async () => {
-    globalThis.fetch = mock(async () =>
-      new Response('Not Found', { status: 404, statusText: 'Not Found' })
+    globalThis.fetch = mock(
+      async () => new Response('Not Found', { status: 404, statusText: 'Not Found' })
     ) as unknown as typeof fetch;
 
     const res = await makeRunner().run(call, new AbortController().signal);
