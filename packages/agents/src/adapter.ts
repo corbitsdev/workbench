@@ -1,5 +1,5 @@
 import type { InstanceEvent } from '@intx/hub-client';
-import type { ChatMessage } from '@workbench/chat';
+import type { ChatMessage, ToolCall } from '@workbench/chat';
 
 function stripContextBlock(content: string): string {
   return content.replace(/^<context>[\s\S]*?<\/context>\n*/u, '');
@@ -17,10 +17,12 @@ function stripContextBlock(content: string): string {
  *   - otherwise                    → status omitted
  */
 export function convertInstanceEvents(events: InstanceEvent[]): ChatMessage[] {
-  const sorted = [...events].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  );
-  return sorted.map((event): ChatMessage => {
+  // Do not re-sort. The session maintains correct insertion order:
+  // hydration sorts by server timestamps, then live SSE events are appended
+  // in arrival order. Re-sorting corrupts order when turn events carry
+  // client-side timestamps that land after a subsequent user mail's server
+  // timestamp.
+  return events.map((event): ChatMessage => {
     if (event.kind === 'mail') {
       return {
         id: event.id,
@@ -32,11 +34,19 @@ export function convertInstanceEvents(events: InstanceEvent[]): ChatMessage[] {
     }
 
     // kind === "turn"
+    const toolCalls: ToolCall[] | undefined = event.toolCalls?.map((tc, i) => ({
+      id: `${event.turnId}-${i}`,
+      name: tc.name,
+      result: tc.result,
+      isError: tc.isError === true,
+    }));
+
     return {
       id: event.turnId,
       role: 'agent',
       content: event.content,
       createdAt: event.timestamp,
+      ...(toolCalls !== undefined && toolCalls.length > 0 ? { toolCalls } : {}),
       ...(event.isError === true ? { status: 'failed' as const } : {}),
     };
   });
