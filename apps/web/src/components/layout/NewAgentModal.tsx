@@ -9,7 +9,7 @@ import {
   type ToolSummary,
 } from '../../lib/hub-api';
 import { CredentialField } from '../CredentialField';
-import { PROVIDER_REGISTRY } from '../../lib/providerRegistry';
+import { PROVIDER_REGISTRY, providerByName } from '../../lib/providerRegistry';
 import { PREMADE_AGENTS, type AgentDeployDescriptor } from '@workbench/agents/browser';
 
 const FOCUSABLE =
@@ -32,6 +32,23 @@ function labelForProvider(providerName: string): string {
 function matchNamesForProvider(providerName: string): string[] {
   if (INFERENCE_PROVIDER_SET.has(providerName)) return [...INFERENCE_PROVIDER_NAMES];
   return [providerName];
+}
+
+function toolProviderLabel(providerName: string): string {
+  return providerByName(providerName)?.label ?? formatToolName(providerName);
+}
+
+function groupToolsByProvider(
+  tools: ToolSummary[]
+): Array<{ providerName: string; tools: ToolSummary[] }> {
+  const groups = new Map<string, ToolSummary[]>();
+  for (const tool of tools) {
+    groups.set(tool.providerName, [...(groups.get(tool.providerName) ?? []), tool]);
+  }
+  return Array.from(groups, ([providerName, providerTools]) => ({
+    providerName,
+    tools: providerTools,
+  }));
 }
 
 export interface NewAgentModalProps {
@@ -60,6 +77,7 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set());
   // Tools the selected premade agent cannot run without — locked on, non-toggleable.
   const [requiredTools, setRequiredTools] = useState<Set<string>>(new Set());
+  const [expandedToolProviders, setExpandedToolProviders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!open) return;
@@ -77,6 +95,7 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     setError(null);
     setSelectedTools(new Set());
     setRequiredTools(new Set());
+    setExpandedToolProviders(new Set());
   };
 
   const handleClose = () => {
@@ -119,6 +138,18 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     setSelectedCredentialIdsByProvider({});
     setSelectedTools(new Set(descriptor.defaultTools));
     setRequiredTools(new Set(descriptor.requiredTools));
+  };
+
+  const toggleToolProvider = (providerName: string) => {
+    setExpandedToolProviders((prev) => {
+      const next = new Set(prev);
+      if (next.has(providerName)) {
+        next.delete(providerName);
+      } else {
+        next.add(providerName);
+      }
+      return next;
+    });
   };
 
   const toggleTool = (toolName: string) => {
@@ -193,6 +224,7 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     const id = selectedCredentialIdsByProvider[providerName];
     return id ? [id] : [];
   });
+  const toolGroups = groupToolsByProvider(availableTools);
 
   return (
     <AnimatePresence>
@@ -297,39 +329,78 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
                 />
               </div>
 
-              {availableTools.length > 0 && (
+              {toolGroups.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <p className="text-[13px] font-medium text-text">Tools</p>
-                  <div className="flex flex-wrap gap-2">
-                    {availableTools.map((tool) => {
-                      const isRequired = requiredTools.has(tool.name);
-                      const isSelected = selectedTools.has(tool.name);
+                  <div className="flex flex-col gap-2">
+                    {toolGroups.map(({ providerName, tools }) => {
+                      const expanded = expandedToolProviders.has(providerName);
+                      const requiredCount = tools.filter((tool) =>
+                        requiredTools.has(tool.name)
+                      ).length;
+                      const optionalCount = tools.length - requiredCount;
                       return (
-                        <label
-                          key={tool.name}
-                          title={isRequired ? `${tool.description} (required)` : tool.description}
-                          className={`flex items-center gap-1.5 rounded-[9px] border px-3 py-1.5 text-[13px] transition-colors ${
-                            isRequired ? 'cursor-default' : 'cursor-pointer'
-                          } ${
-                            isSelected
-                              ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
-                              : 'border-border text-text-2 hover:text-text'
-                          }`}
+                        <div
+                          key={providerName}
+                          className="rounded-[10px] border border-border bg-bg/40"
                         >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleTool(tool.name)}
-                            disabled={loading || isRequired}
-                            className="h-3 w-3 accent-orange"
-                          />
-                          {formatToolName(tool.name)}
-                          {isRequired && (
-                            <span className="text-[11px] uppercase tracking-[0.04em] text-text-3">
-                              Required
+                          <button
+                            type="button"
+                            onClick={() => toggleToolProvider(providerName)}
+                            className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[13px] text-text-2 transition-colors hover:text-text"
+                            aria-expanded={expanded}
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="text-text-3">{expanded ? '▾' : '▸'}</span>
+                              <span className="font-medium text-text">
+                                {toolProviderLabel(providerName)}
+                              </span>
                             </span>
+                            <span className="text-[11px] text-text-3">
+                              {requiredCount} required · {optionalCount} optional
+                            </span>
+                          </button>
+
+                          {expanded && (
+                            <div className="flex flex-wrap gap-2 border-t border-border px-3 py-3">
+                              {tools.map((tool) => {
+                                const isRequired = requiredTools.has(tool.name);
+                                const isSelected = selectedTools.has(tool.name);
+                                return (
+                                  <label
+                                    key={tool.name}
+                                    title={
+                                      isRequired
+                                        ? `${tool.description} (required)`
+                                        : tool.description
+                                    }
+                                    className={`flex items-center gap-1.5 rounded-[9px] border px-3 py-1.5 text-[13px] transition-colors ${
+                                      isRequired ? 'cursor-default' : 'cursor-pointer'
+                                    } ${
+                                      isSelected
+                                        ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
+                                        : 'border-border text-text-2 hover:text-text'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleTool(tool.name)}
+                                      disabled={loading || isRequired}
+                                      className="h-3 w-3 accent-orange"
+                                    />
+                                    {formatToolName(tool.name)}
+                                    {isRequired && (
+                                      <span className="text-[11px] uppercase tracking-[0.04em] text-text-3">
+                                        Required
+                                      </span>
+                                    )}
+                                  </label>
+                                );
+                              })}
+                            </div>
                           )}
-                        </label>
+                        </div>
                       );
                     })}
                   </div>
