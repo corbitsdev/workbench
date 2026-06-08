@@ -1,9 +1,9 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { describe, expect, it, mock, afterEach } from 'bun:test';
 import * as intxDbReal from '@intx/db';
 import type { DB } from '@intx/db';
 import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
 import { SessionLaunchError } from '@intx/hub-sessions';
-import type { GrantStore } from '@intx/types/authz';
+import type { GrantStore, GrantRule } from '@intx/types/authz';
 
 const TEST_API_KEY = 'sk-test-key';
 
@@ -569,6 +569,24 @@ describe('POST /tenants/:tenantId/credentials', () => {
 describe('PATCH /tenants/:tenantId/credentials/:credentialId', () => {
   it('stores credential with plaintext apiKey (CL-1521: no encryption)', async () => {
     const updatedRows: Array<Record<string, unknown>> = [];
+
+    // The caller owns crd-1 (creator grant), so the CL-1449 ownership check passes.
+    mockGrantStore.collectGrants = mock(() =>
+      Promise.resolve([
+        {
+          id: 'g-crd-1',
+          resource: 'credential:crd-1',
+          action: '*',
+          effect: 'allow',
+          origin: 'creator',
+          principalId: 'prn-1',
+          roleId: null,
+          conditions: null,
+          expiresAt: null,
+        },
+      ] satisfies GrantRule[])
+    );
+
     const db = makeMockDb();
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
     db.query.credential.findFirst = mock(() =>
@@ -595,6 +613,139 @@ describe('PATCH /tenants/:tenantId/credentials/:credentialId', () => {
     expect(updatedRows).toHaveLength(1);
     expect(updatedRows[0]?.secret).toBe('sk-new-plaintext-key');
     expect((updatedRows[0]?.secret as string).startsWith('enc:')).toBe(false);
+  });
+});
+
+// ─── Credential listing owner-scoping (CL-1449) ──────────────────
+
+describe('GET/PATCH /tenants/:tenantId/credentials — owner scoping (CL-1449)', () => {
+  const CRED_A = {
+    id: 'crd-a',
+    tenantId: 'tenant-1',
+    providerId: 'prov-1',
+    name: 'Alice key',
+    status: 'active',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const CRED_B = {
+    id: 'crd-b',
+    tenantId: 'tenant-1',
+    providerId: 'prov-1',
+    name: 'Bob key',
+    status: 'active',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const PROVIDER = {
+    id: 'prov-1',
+    name: 'openai-compatible',
+    plugin: 'openai-compatible',
+    metadata: { baseURL: 'https://api', model: 'gpt' },
+  };
+
+  // A creator grant as written at POST /credentials (agents.ts:419-429).
+  function creatorGrant(credId: string, principalId: string): GrantRule {
+    return {
+      id: `g-${credId}`,
+      resource: `credential:${credId}`,
+      action: '*',
+      effect: 'allow',
+      origin: 'creator',
+      principalId,
+      roleId: null,
+      conditions: null,
+      expiresAt: null,
+    };
+  }
+
+  afterEach(() => {
+    mockGrantStore.collectGrants = mock(() => Promise.resolve([]));
+  });
+
+  it('member A cannot see member B credential in the list (proof-of-fix)', async () => {
+    // Alice owns only crd-a (member, no wildcard grant).
+    mockGrantStore.collectGrants = mock(() => Promise.resolve([creatorGrant('crd-a', 'prn-1')]));
+
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.credential.findMany = mock(() => Promise.resolve([CRED_A, CRED_B]));
+    db.query.provider.findFirst = mock(() => Promise.resolve(PROVIDER));
+
+    const app = buildApp(db);
+    const res = await app.fetch(makeRequest('http://localhost/tenants/tenant-1/credentials'));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<{ id: string }> };
+    const ids = body.data.map((c) => c.id);
+    expect(ids).toContain('crd-a');
+    expect(ids).not.toContain('crd-b');
+  });
+
+  it('owner/admin sees all credentials', async () => {
+    mockGrantStore.collectGrants = mock(() =>
+      Promise.resolve([
+        {
+          id: 'g-owner',
+          resource: '*',
+          action: '*',
+          effect: 'allow',
+          origin: 'system',
+          principalId: null,
+          roleId: 'rol-owner',
+          conditions: null,
+          expiresAt: null,
+        },
+      ] satisfies GrantRule[])
+    );
+
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.credential.findMany = mock(() => Promise.resolve([CRED_A, CRED_B]));
+    db.query.provider.findFirst = mock(() => Promise.resolve(PROVIDER));
+
+    const app = buildApp(db);
+    const res = await app.fetch(makeRequest('http://localhost/tenants/tenant-1/credentials'));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<{ id: string }> };
+    const ids = body.data.map((c) => c.id);
+    expect(ids).toContain('crd-a');
+    expect(ids).toContain('crd-b');
+  });
+
+  it('member A cannot PATCH member B credential', async () => {
+    mockGrantStore.collectGrants = mock(() => Promise.resolve([creatorGrant('crd-a', 'prn-1')]));
+
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.credential.findFirst = mock(() => Promise.resolve(CRED_B));
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/credentials/crd-b', {
+        method: 'PATCH',
+        body: { name: 'hijacked' },
+      })
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('member A can PATCH their own credential', async () => {
+    mockGrantStore.collectGrants = mock(() => Promise.resolve([creatorGrant('crd-a', 'prn-1')]));
+
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.credential.findFirst = mock(() => Promise.resolve(CRED_A));
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/credentials/crd-a', {
+        method: 'PATCH',
+        body: { name: 'renamed' },
+      })
+    );
+    expect(res.status).toBe(200);
   });
 });
 
@@ -818,6 +969,77 @@ describe('PATCH /tenants/:tenantId/agents/:agentId/tools', () => {
     expect(res.status).toBe(200);
     expect(sessionService.endSession).not.toHaveBeenCalled();
     expect(sessionService.launchSession).not.toHaveBeenCalled();
+  });
+
+  it("only relaunches the edited user's Myra — query is scoped to the patched agent id", async () => {
+    // With per-user Myra definitions (CL-1448) each user owns a distinct
+    // agentId. The relaunch query filters by that agentId, so editing user A's
+    // tools cannot end or relaunch user B's Myra instance.
+    function referencesColumn(
+      // biome-ignore lint/suspicious/noExplicitAny: where-clause introspection
+      node: any,
+      columnName: string,
+      seen = new Set()
+    ): boolean {
+      if (!node || typeof node !== 'object' || seen.has(node)) return false;
+      seen.add(node);
+      if (node.name === columnName && node.columnType) return true;
+      const children = Array.isArray(node) ? node : (node.queryChunks ?? []);
+      return children.some((child: unknown) => referencesColumn(child, columnName, seen));
+    }
+
+    const sessionService: SessionService = {
+      launchSession: mock(() => Promise.resolve()),
+      sendUserMessage: mock(() => Promise.reject(new Error('not implemented'))),
+      endSession: mock(() => Promise.resolve()),
+    } as unknown as SessionService;
+
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'agt-alice',
+        tenantId: 'tenant-1',
+        name: 'Myra',
+        systemPrompt: 'You are Myra.',
+        capabilities: null,
+      })
+    );
+    // The real query filters by agentId+status, so it returns only Alice's instance.
+    db.query.agentInstance.findMany = mock(() =>
+      Promise.resolve([
+        {
+          id: 'ins-alice',
+          agentId: 'agt-alice',
+          tenantId: 'tenant-1',
+          address: 'ins-alice@tenant-1.localhost',
+          status: 'running',
+          principalId: 'prn-agent-alice',
+          sessionId: 'ses-alice',
+        },
+      ])
+    );
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
+
+    const app = buildApp(db, sessionService);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/agents/agt-alice/tools', {
+        method: 'PATCH',
+        body: { tools: ['exa_search'] },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    // The relaunch query is scoped to a specific agent id, never all agents.
+    const findManyArgs = db.query.agentInstance.findMany.mock.calls.at(-1)?.[0];
+    expect(referencesColumn(findManyArgs.where, 'agent_id')).toBe(true);
+    // Only Alice's instance is ended/relaunched.
+    expect(sessionService.endSession).toHaveBeenCalledTimes(1);
+    expect(sessionService.endSession).toHaveBeenCalledWith(
+      'ins-alice@tenant-1.localhost',
+      'agent tools updated'
+    );
   });
 });
 

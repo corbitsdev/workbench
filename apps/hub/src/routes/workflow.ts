@@ -226,10 +226,15 @@ export type WorkflowAssignments = Record<string, StepAssignment>;
 async function getWorkflowAssignments(
   db: HubDb,
   tenantId: string,
+  principalId: string,
   kind: string
 ): Promise<WorkflowAssignments> {
   const row = await db.query.enabledWorkflow.findFirst({
-    where: and(eq(enabledWorkflow.tenantId, tenantId), eq(enabledWorkflow.kind, kind)),
+    where: and(
+      eq(enabledWorkflow.tenantId, tenantId),
+      eq(enabledWorkflow.principalId, principalId),
+      eq(enabledWorkflow.kind, kind)
+    ),
   });
   const raw = (row?.assignments ?? null) as WorkflowAssignments | null;
   return raw ?? {};
@@ -243,10 +248,11 @@ async function getWorkflowAssignments(
 async function resolveStepInferenceSource(
   db: HubDb,
   tenantId: string,
+  principalId: string,
   kind: string,
   step: string
 ): Promise<InferenceSource | null> {
-  const assignments = await getWorkflowAssignments(db, tenantId, kind);
+  const assignments = await getWorkflowAssignments(db, tenantId, principalId, kind);
   const credentialIds = assignments[step]?.credentialIds ?? [];
   for (const credentialId of credentialIds) {
     const cred = await resolveCredentialById(db, tenantId, credentialId);
@@ -329,10 +335,11 @@ async function resolveAgentStepInferenceSource(
 async function resolveStepGranolaApiKey(
   db: HubDb,
   tenantId: string,
+  principalId: string,
   kind: string,
   step = 'intake'
 ): Promise<string | null> {
-  const assignments = await getWorkflowAssignments(db, tenantId, kind);
+  const assignments = await getWorkflowAssignments(db, tenantId, principalId, kind);
   const credentialIds = assignments[step]?.credentialIds ?? [];
   const { credentialKeys } = getConfig();
   for (const credentialId of credentialIds) {
@@ -423,32 +430,37 @@ async function validateAssignments(
 }
 
 async function getUserContext(db: HubDb, userId: string): Promise<UserContext | null> {
-  const personalTenant = await db.query.tenant.findFirst({
-    where: eq(intxSchema.tenant.slug, `user-${userId}`),
+  // Resolve the caller's working context in the shared global org tenant
+  // (CL-1452 cutover). Was the per-user `user-${userId}` personal tenant; now
+  // every same-domain user is a member principal in the one global tenant.
+  const { slug } = getConfig().globalTenant;
+  const globalTenant = await db.query.tenant.findFirst({
+    where: eq(intxSchema.tenant.slug, slug),
   });
 
-  if (!personalTenant) {
+  if (!globalTenant) {
+    log.error('Global tenant not found — is it seeded?', { slug });
     return null;
   }
 
   const principal = await db.query.principal.findFirst({
     where: and(
-      eq(intxSchema.principal.tenantId, personalTenant.id),
+      eq(intxSchema.principal.tenantId, globalTenant.id),
       eq(intxSchema.principal.kind, 'user'),
       eq(intxSchema.principal.refId, userId)
     ),
   });
 
   if (!principal) {
-    log.error('Principal not found for user', {
+    log.error('Member principal not found for user in global tenant', {
       userId,
-      tenantId: personalTenant.id,
+      tenantId: globalTenant.id,
     });
     return null;
   }
 
   return {
-    tenantId: personalTenant.id,
+    tenantId: globalTenant.id,
     principalId: principal.id,
   };
 }
@@ -563,7 +575,10 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     }
 
     const rows = await db.query.enabledWorkflow.findMany({
-      where: eq(enabledWorkflow.tenantId, userContext.tenantId),
+      where: and(
+        eq(enabledWorkflow.tenantId, userContext.tenantId),
+        eq(enabledWorkflow.principalId, userContext.principalId)
+      ),
     });
 
     const result = rows.map((row) => {
@@ -633,16 +648,21 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       .values({
         id,
         tenantId: userContext.tenantId,
+        principalId: userContext.principalId,
         kind,
         assignments: validation.assignments,
       })
       .onConflictDoUpdate({
-        target: [enabledWorkflow.tenantId, enabledWorkflow.kind],
+        target: [enabledWorkflow.tenantId, enabledWorkflow.principalId, enabledWorkflow.kind],
         set: { kind, assignments: validation.assignments },
       })
       .returning();
 
-    log.info('Workflow kind enabled', { tenantId: userContext.tenantId, kind });
+    log.info('Workflow kind enabled', {
+      tenantId: userContext.tenantId,
+      principalId: userContext.principalId,
+      kind,
+    });
 
     return c.json({
       id: row!.id,
@@ -697,6 +717,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const enabledRow = await db.query.enabledWorkflow.findFirst({
       where: and(
         eq(enabledWorkflow.tenantId, userContext.tenantId),
+        eq(enabledWorkflow.principalId, userContext.principalId),
         eq(enabledWorkflow.kind, workflowKind)
       ),
     });
@@ -735,7 +756,12 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         log.warn('Missing granolaId for granola source');
         return c.json({ error: 'granolaId is required' }, 400);
       }
-      const granolaApiKey = await resolveStepGranolaApiKey(db, userContext.tenantId, workflowKind);
+      const granolaApiKey = await resolveStepGranolaApiKey(
+        db,
+        userContext.tenantId,
+        userContext.principalId,
+        workflowKind
+      );
       if (!granolaApiKey) {
         log.warn('Granola credential not configured for tenant', {
           tenantId: userContext.tenantId,
@@ -833,6 +859,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       const stepSource = await resolveStepInferenceSource(
         db,
         userContext.tenantId,
+        userContext.principalId,
         wfRow.kind,
         firstStep
       );
@@ -1121,7 +1148,13 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       const assignedAgentId = (wf.input as WorkflowInput)?.stepConfig?.[step]?.agentId;
       const source = assignedAgentId
         ? await resolveAgentStepInferenceSource(db, userContext.tenantId, assignedAgentId)
-        : await resolveStepInferenceSource(db, userContext.tenantId, wf.kind, step);
+        : await resolveStepInferenceSource(
+            db,
+            userContext.tenantId,
+            userContext.principalId,
+            wf.kind,
+            step
+          );
       if (!source) {
         if (assignedAgentId) {
           log.warn('Assigned agent has no resolvable inference source', {
@@ -1419,7 +1452,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const limitParam = c.req.query('limit');
     const limit = limitParam ? parseInt(limitParam, 10) : 10;
     const granolaApiKey = kind
-      ? await resolveStepGranolaApiKey(db, userContext.tenantId, kind)
+      ? await resolveStepGranolaApiKey(db, userContext.tenantId, userContext.principalId, kind)
       : await resolveGranolaApiKey(db, userContext.tenantId);
     if (!granolaApiKey) {
       return c.json({ error: 'No Granola credential configured for this workbench' }, 400);

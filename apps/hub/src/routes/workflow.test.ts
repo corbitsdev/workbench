@@ -42,6 +42,7 @@ mock.module('@workbench/hub-crypto', () => ({
 mock.module('../config', () => ({
   getConfig: mock(() => ({
     credentialKeys: {},
+    globalTenant: { slug: 'global-org', name: 'Global Org', domain: 'global.example.com' },
   })),
   loadConfig: mock(() => {}),
 }));
@@ -190,6 +191,7 @@ describe('Workflow router', () => {
           findFirst: mock(() => ({
             id: 'ew-1',
             tenantId: 'tenant-personal',
+            principalId: 'prn-personal',
             kind: 'collateral-generation',
             enabledAt: new Date().toISOString(),
             assignments: {
@@ -197,6 +199,7 @@ describe('Workflow router', () => {
               generate: { credentialIds: ['llm-cred'], toolIds: [] },
             },
           })),
+          findMany: mock<() => unknown[]>(() => []),
         },
         provider: {
           findFirst: mock(() => ({
@@ -345,6 +348,33 @@ describe('Workflow router', () => {
       tenantId: 'tenant-workbench',
       principalId: 'prn-workbench',
     });
+  });
+
+  it('resolves user context via the global tenant slug, not the user- slug (CL-1452)', async () => {
+    // Collect every string/param value referenced in a drizzle where clause.
+    function collectValues(node: unknown, out: string[], seen = new Set()): void {
+      if (!node || typeof node !== 'object' || seen.has(node)) return;
+      seen.add(node);
+      // biome-ignore lint/suspicious/noExplicitAny: drizzle SQL introspection
+      const n = node as any;
+      if (typeof n.value === 'string') out.push(n.value);
+      const children = Array.isArray(n) ? n : (n.queryChunks ?? Object.values(n));
+      for (const child of children) collectValues(child, out, seen);
+    }
+
+    const mockDb = createMockDb();
+    const res = await buildApp(mockDb).fetch(
+      new Request('http://localhost:4000/workflows/enabled', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+
+    // The first tenant lookup is getUserContext resolving the working tenant.
+    // biome-ignore lint/suspicious/noExplicitAny: test mock introspection
+    const where = (mockDb.query.tenant.findFirst as any).mock.calls[0][0].where;
+    const values: string[] = [];
+    collectValues(where, values);
+    expect(values).toContain('global-org');
+    expect(values).not.toContain('user-test-user');
   });
 
   it('GET /workflows/:id returns workflow state', async () => {
@@ -904,6 +934,58 @@ describe('Workflow router', () => {
       createMockDb({ providerNameQueue: [...COLLATERAL_PROVIDER_QUEUE] })
     ).fetch(makeReq());
     expect(res2.status).toBe(200);
+  });
+
+  it('POST /workflows/enabled scopes the enablement row to the caller principal (CL-1450)', async () => {
+    // Proof-of-fix: enablement is keyed per-principal, so member A's row carries
+    // their principalId and cannot be a tenant-global row another member shares.
+    const insertedValues: unknown[] = [];
+    const mockDb = createMockDb({
+      onInsertValues: (values) => insertedValues.push(values),
+      providerNameQueue: [...COLLATERAL_PROVIDER_QUEUE],
+    });
+    const res = await buildApp(mockDb).fetch(
+      new Request('http://localhost:4000/workflows/enabled', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'collateral-generation',
+          assignments: VALID_COLLATERAL_ASSIGNMENTS,
+        }),
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(insertedValues).toContainEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-personal',
+        principalId: 'prn-personal',
+        kind: 'collateral-generation',
+      })
+    );
+  });
+
+  it('GET /workflows/enabled filters by the caller principal (CL-1450)', async () => {
+    function referencesColumn(
+      // biome-ignore lint/suspicious/noExplicitAny: where-clause introspection
+      node: any,
+      columnName: string,
+      seen = new Set()
+    ): boolean {
+      if (!node || typeof node !== 'object' || seen.has(node)) return false;
+      seen.add(node);
+      if (node.name === columnName && node.columnType) return true;
+      const children = Array.isArray(node) ? node : (node.queryChunks ?? []);
+      return children.some((child: unknown) => referencesColumn(child, columnName, seen));
+    }
+
+    const mockDb = createMockDb();
+    const res = await buildApp(mockDb).fetch(
+      new Request('http://localhost:4000/workflows/enabled', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    // biome-ignore lint/suspicious/noExplicitAny: test mock introspection
+    const args = (mockDb.query.enabledWorkflow.findMany as any).mock.calls[0][0];
+    expect(referencesColumn(args.where, 'principal_id')).toBe(true);
   });
 
   it('POST /workflows/enabled rejects install when a required credential is missing', async () => {

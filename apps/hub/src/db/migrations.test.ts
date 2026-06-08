@@ -30,3 +30,30 @@ describe('migrations cover the schema', () => {
     expect(migrationSql).toMatch(createPattern);
   });
 });
+
+describe('0015 scopes workbench_workflows per principal (CL-1450)', () => {
+  const sql = readFileSync(
+    join(import.meta.dir, '../../migrations/0015_workbench_workflows_per_principal.sql'),
+    'utf-8'
+  );
+
+  it('adds the principal_id column', () => {
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "principal_id"/i);
+  });
+
+  it('backfills principal_id from the tenant user principal', () => {
+    // Maps each existing row to its tenant's user principal (unambiguous today).
+    expect(sql).toMatch(/UPDATE "workbench_workflows"/i);
+    expect(sql).toMatch(/FROM "principal" p/i);
+    expect(sql).toMatch(/p\.tenant_id = ew\.tenant_id/i);
+    expect(sql).toMatch(/p\.kind = 'user'/i);
+  });
+
+  it('makes principal_id NOT NULL and swaps the unique key to include it', () => {
+    expect(sql).toMatch(/ALTER COLUMN "principal_id" SET NOT NULL/i);
+    expect(sql).toMatch(/DROP CONSTRAINT IF EXISTS "workbench_workflows_tenant_kind_uniq"/i);
+    expect(sql).toMatch(
+      /ADD CONSTRAINT "workbench_workflows_tenant_principal_kind_uniq"\s+UNIQUE \("tenant_id", "principal_id", "kind"\)/i
+    );
+  });
+});

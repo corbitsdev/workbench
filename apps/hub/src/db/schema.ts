@@ -85,14 +85,18 @@ export const artifactVersion = pgTable('artifact_version', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-// Tracks which workflow kinds a tenant has opted into. Each row represents a
-// single enabled workflow kind for a tenant. Unique constraint on (tenant_id,
-// kind) makes upserts safe and idempotent.
+// Tracks which workflow kinds a principal has opted into within a tenant. Each
+// row represents a single enabled workflow kind for one principal. Scoped
+// per-principal (not per-tenant): in the shared global tenant, one member's
+// enablement + credential/tool assignments must not become global and
+// mutually overwritable, and a step must never run on another member's LLM key
+// (CL-1450). Unique on (tenant_id, principal_id, kind) keeps upserts idempotent.
 export const enabledWorkflow = pgTable(
   'workbench_workflows',
   {
     id: text('id').primaryKey(),
     tenantId: text('tenant_id').notNull(),
+    principalId: text('principal_id').notNull(),
     kind: text('kind').notNull(),
     // Per-step credential/tool assignments captured when the workflow is added
     // to the workbench. Shape: Record<stepName, { credentialIds: string[]; toolIds: string[] }>.
@@ -100,7 +104,11 @@ export const enabledWorkflow = pgTable(
     enabledAt: timestamp('enabled_at').notNull().defaultNow(),
   },
   (t) => ({
-    tenantKindUniq: unique('workbench_workflows_tenant_kind_uniq').on(t.tenantId, t.kind),
+    tenantPrincipalKindUniq: unique('workbench_workflows_tenant_principal_kind_uniq').on(
+      t.tenantId,
+      t.principalId,
+      t.kind
+    ),
   })
 );
 

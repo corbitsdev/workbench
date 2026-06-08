@@ -66,6 +66,14 @@ export function loadConfig() {
       dataDir: requireEnv('HUB_DATA_DIR'),
       signingKeys: requireEnv('HUB_SIGNING_KEYS'),
     },
+    // The single shared org tenant. Name/slug/domain are deployment-specific and
+    // never hardcoded — a different deployment produces a different org from the
+    // same code. See CL-1446.
+    globalTenant: {
+      slug: requireEnv('GLOBAL_TENANT_SLUG'),
+      name: requireEnv('GLOBAL_TENANT_NAME'),
+      domain: requireEnv('GLOBAL_TENANT_DOMAIN'),
+    },
     credentialKeys: parseEncryptionKeys(requireEnv('CREDENTIAL_ENCRYPTION_KEYS')),
   };
 

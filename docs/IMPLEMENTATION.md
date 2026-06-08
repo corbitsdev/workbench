@@ -262,14 +262,15 @@ The `artifact` table is the single store for all workflow and agent outputs.
 
 ### Enabled Workflows (`workbench_workflows`)
 
-Tracks which workflow kinds a tenant has added, with per-step assignments.
+Tracks which workflow kinds a principal has added, with per-step assignments.
 
 - `id` (text, primary key)
 - `tenantId` (text)
+- `principalId` (text, NOT NULL) — the enabling member's principal
 - `kind` (text) — workflow kind
 - `assignments` (jsonb, nullable) — `Record<stepName, { credentialIds: string[]; toolIds: string[] }>`
 - `enabledAt` (timestamp)
-- Unique `(tenant_id, kind)` for idempotent upserts.
+- Unique `(tenant_id, principal_id, kind)` for idempotent upserts. Scoped per-principal so one member's enablement/assignments cannot overwrite another's in the shared global tenant (CL-1450).
 
 ### Workbench User (provisional cache)
 
@@ -287,6 +288,9 @@ Tracks which workflow kinds a tenant has added, with per-step assignments.
 | `0004_collateral_generation_workflow` | Adds `collateral_generation_workflow` table; makes `artifact.sessionId` nullable; adds `artifact.workflowId` FK |
 | `0005_workbench_user`                 | Adds provisional `workbench_user` cache table                                                                   |
 | `0012_workbench_workflow_assignments` | Adds `workbench_workflows.assignments` (jsonb) for per-step credential/tool assignments                         |
+| `0015_workbench_workflows_per_principal` | Adds `workbench_workflows.principal_id` (NOT NULL), backfills from each tenant's user principal, re-keys the unique constraint to `(tenant_id, principal_id, kind)` (CL-1450) |
+
+**Data migration (not a schema migration):** `apps/hub/src/scripts/migrate-to-global-tenant.ts` moves existing users into the global tenant — re-parents workbenches, provisions a per-user Myra, and re-keys `workflow_run` / `artifact` / `artifact_version` / `workbench_workflows` from the old personal principal to the new global member principal. Dry-run by default (`--live` to write); per-user transaction; idempotent. An interrupted run MUST be re-run (Myra provisioning and the re-key transaction are intentionally not atomic, but re-running finishes the re-key). Run it once after deploying the cutover. `pain_point` is not re-keyed — it carries no tenant/principal columns and migrates implicitly with its `workflow_run` via `session_id`.
 
 ## Agent Architecture
 
@@ -294,7 +298,7 @@ Tracks which workflow kinds a tenant has added, with per-step assignments.
 
 #### Credential sources by agent
 
-- **Personal agent (Myra)**: `source: 'tenant'`, `name: 'Myra LLM'` for openai-compatible inference — resolved against the user's personal tenant. The credential is stored tenant-owned (`principalId: null`) and created during onboarding.
+- **Personal agent (Myra)**: `source: 'tenant'`, `name: 'Myra LLM'` for openai-compatible inference — resolved down the global org tenant's ancestor chain (org-level or per-workbench). The credential is stored tenant-owned (`principalId: null`) and created during onboarding. Each user has their own Myra agent definition in the global tenant, keyed on `(tenantId, creatorPrincipalId)`.
 - **Granola agent (Oat)**: `source: 'tenant'` for both `granola` and `openai-compatible` — resolved against the workspace tenant
 
 #### Creating credentials (Settings flow)
@@ -418,7 +422,9 @@ All environment validation lives in `apps/hub/src/config.ts`. Variables are vali
 
 | Variable                     | Required | Purpose                                                                                                                                                                                                                         |
 | ---------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WORKBENCH_TENANT_SLUG`      | Yes      | Slug of the shared GTM Workbench Interchange tenant                                                                                                                                                                             |
+| `GLOBAL_TENANT_SLUG`         | Yes      | Slug of the shared global org tenant, seeded at hub boot. Deployment-specific, never hardcoded.                                                                                                                                 |
+| `GLOBAL_TENANT_NAME`         | Yes      | Display name of the global org tenant (e.g. the org's name for this deployment).                                                                                                                                                |
+| `GLOBAL_TENANT_DOMAIN`       | Yes      | Domain of the global org tenant; Myra instance addresses are `instanceId@<domain>`.                                                                                                                                             |
 | `CREDENTIAL_ENCRYPTION_KEYS` | Yes      | Versioned AES-256-GCM key registry for credential encryption. Format: `1:<base64_32_bytes>[,2:<base64_32_bytes>...]`. Highest version encrypts new values; all versions decrypt. Generate a new key: `openssl rand -base64 32`. |
 
 ## Authentication

@@ -308,9 +308,38 @@ export function createDispatchTools(context: DispatchContext): AgentTool[] {
   ];
 }
 
+/**
+ * The context the hub tool registry passes to every context tool. The
+ * orchestration fields are optional there (most tools don't need them), so the
+ * dispatch entry accepts this loose shape and asserts the fields it requires at
+ * runtime — keeping `DISPATCH_HUB_TOOLS` assignable to the registry's
+ * `ContextToolEntry` without weakening `createDispatchTools` itself.
+ */
+type DispatchHostContext = Pick<
+  DispatchContext,
+  'db' | 'tenantId' | 'principalId' | 'agentId' | 'sessionId'
+> & {
+  sessionService?: SessionService;
+  eventCollectors?: EventCollectorRegistry;
+  sidecarRouter?: SidecarRouter;
+  credentialKeys?: CredentialKeyRegistry;
+  buildToolDefinitions?: (names: string[]) => ToolDefinition[];
+};
+
 export const DISPATCH_HUB_TOOLS = {
   dispatch_agent: {
     definition: DISPATCH_AGENT_DEFINITION,
-    createTools: createDispatchTools,
+    createTools: (context: DispatchHostContext): AgentTool[] => {
+      if (
+        !context.sessionService ||
+        !context.eventCollectors ||
+        !context.sidecarRouter ||
+        !context.credentialKeys ||
+        !context.buildToolDefinitions
+      ) {
+        throw new Error('dispatch_agent requires full session context (orchestration unavailable)');
+      }
+      return createDispatchTools(context as DispatchContext);
+    },
   },
 };

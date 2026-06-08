@@ -19,7 +19,7 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
@@ -31,9 +31,9 @@ import { buildToolDefinitions } from './lib/tool-registry';
 import { schema } from './db';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
-  provisionUserOnSignup,
-  provisionPersonalTenant,
   provisionMyraInstance,
+  seedGlobalTenant,
+  ensureGlobalMember,
 } from './lib/tenant-provisioning';
 import {
   migrateCredentialsToPlaintext,
@@ -77,10 +77,14 @@ if (remaining > 0) {
   process.exit(1);
 }
 
-// ─── Workbench tenant bootstrap ─────────────────────────────────────
+// ─── Global org tenant bootstrap ───────────────────────────────────
 //
-// Idempotent — creates the shared GTM Workbench Interchange tenant on first
-// boot and returns the existing tenant ID on subsequent boots.
+// Seed the single shared org tenant (name/slug/domain from env). Idempotent and
+// race-safe across replicas — creates it on first boot, returns the existing id
+// thereafter. Fail-loud: if the org tenant cannot be seeded the hub must not
+// start, because every same-domain user joins it as a principal.
+const { tenantId: globalTenantId } = await seedGlobalTenant(db);
+log.info('Global org tenant ready', { globalTenantId });
 
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 
@@ -123,18 +127,29 @@ const auth = betterAuth({
         },
         after: async (user) => {
           try {
-            const { personalTenantId } = await provisionUserOnSignup(db, {
+            // Join the shared global org tenant as a member principal and
+            // provision this user's own Myra inside it (per-user definition +
+            // instance, keyed on the member principal). This is the sole
+            // provisioning path — personal tenants are gone (CL-1452).
+            const { principalId: globalPrincipalId } = await ensureGlobalMember(db, {
               userId: user.id,
-              userEmail: user.email,
+            });
+            const { paInstanceId: globalMyraInstanceId } = await provisionMyraInstance(db, {
+              tenantId: globalTenantId,
+              tenantDomain: config.globalTenant.domain,
+              userId: user.id,
+              creatorPrincipalId: globalPrincipalId,
             });
 
             log.info('User provisioned', {
               userId: user.id,
-              personalTenantId,
+              globalTenantId,
+              globalPrincipalId,
+              globalMyraInstanceId,
             });
           } catch (err) {
             log.error(
-              'Interchange provisioning failed for new user — repair will run on next login',
+              'Global-tenant provisioning failed for new user — repair runs on next login',
               {
                 userId: user.id,
                 error: err instanceof Error ? err : new Error(String(err)),
@@ -147,60 +162,18 @@ const auth = betterAuth({
     session: {
       create: {
         after: async (session) => {
-          // Repair path: if provisioning failed at signup, retry silently on login.
+          // Repair path: if global-tenant provisioning failed at signup, retry
+          // silently on login. Both calls are idempotent and key on the user's
+          // global member principal, so a healthy user is a no-op. No personal
+          // (user-) tenant logic remains (CL-1452).
           try {
-            const personalTenant = await db.query.tenant.findFirst({
-              where: eq(intxSchema.tenant.slug, `user-${session.userId}`),
+            const { principalId } = await ensureGlobalMember(db, { userId: session.userId });
+            await provisionMyraInstance(db, {
+              tenantId: globalTenantId,
+              tenantDomain: config.globalTenant.domain,
+              userId: session.userId,
+              creatorPrincipalId: principalId,
             });
-
-            if (!personalTenant) {
-              // Full provisioning failed — retry. Look up email from auth user table.
-              const authUser = await db.query.user.findFirst({
-                where: eq(intxSchema.user.id, session.userId),
-              });
-              if (!authUser) return;
-
-              const { personalTenantId } = await provisionUserOnSignup(db, {
-                userId: session.userId,
-                userEmail: authUser.email,
-              });
-              log.info('Repaired missing personal tenant on login', {
-                userId: session.userId,
-                personalTenantId,
-              });
-              return;
-            }
-
-            // Tenant exists but Myra instance may be missing.
-            const instance = await db.query.agentInstance.findFirst({
-              where: and(
-                eq(intxSchema.agentInstance.tenantId, personalTenant.id),
-                inArray(intxSchema.agentInstance.status, ['deployed', 'running'])
-              ),
-            });
-
-            if (!instance) {
-              const repairAuthUser = await db.query.user.findFirst({
-                where: eq(intxSchema.user.id, session.userId),
-              });
-              if (!repairAuthUser) return;
-
-              const { principalId: creatorPrincipalId } = await provisionPersonalTenant(db, {
-                userId: session.userId,
-                userEmail: repairAuthUser.email,
-              });
-              const domain = `user-${session.userId}.localhost`;
-              const { paInstanceId } = await provisionMyraInstance(db, {
-                personalTenantId: personalTenant.id,
-                personalTenantDomain: domain,
-                userId: session.userId,
-                creatorPrincipalId,
-              });
-              log.info('Repaired missing Myra instance on login', {
-                userId: session.userId,
-                paInstanceId,
-              });
-            }
           } catch (err) {
             log.error('Session repair failed — continuing', {
               userId: session.userId,
@@ -372,81 +345,61 @@ v1.use('*', async (c, next) => {
 v1.get('/me', async (c) => {
   const userId = c.get('userId');
 
-  let personalTenant = await db.query.tenant.findFirst({
-    where: eq(intxSchema.tenant.slug, `user-${userId}`),
-  });
-
-  // Repair path: if provisioning failed at signup or session-create, retry here.
-  if (!personalTenant) {
-    try {
-      const authUser = await db.query.user.findFirst({
-        where: eq(intxSchema.user.id, userId),
-      });
-      if (authUser) {
-        await provisionUserOnSignup(db, { userId, userEmail: authUser.email });
-        personalTenant = await db.query.tenant.findFirst({
-          where: eq(intxSchema.tenant.slug, `user-${userId}`),
-        });
-        log.info('Repaired missing personal tenant on /me', { userId });
-      }
-    } catch (err) {
-      log.error('Failed to repair personal tenant on /me', {
-        userId,
-        error: err instanceof Error ? err : new Error(String(err)),
-      });
-    }
+  // The user's working tenant is the shared global org tenant (CL-1452). Repair
+  // path: if signup/session provisioning failed, ensure the member principal and
+  // their Myra here — both idempotent, so a healthy user is a no-op.
+  let workingTenantId: string | null = null;
+  let memberPrincipalId: string | null = null;
+  try {
+    const { tenantId, principalId } = await ensureGlobalMember(db, { userId });
+    workingTenantId = tenantId;
+    memberPrincipalId = principalId;
+  } catch (err) {
+    log.error('Failed to ensure global member on /me', {
+      userId,
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
   }
 
-  const personalTenantId = personalTenant?.id ?? null;
-
   let paInstanceId: string | null = null;
-  if (personalTenantId && personalTenant?.domain) {
-    const callerPrincipal = await db.query.principal.findFirst({
-      where: and(
-        eq(intxSchema.principal.tenantId, personalTenantId),
-        eq(intxSchema.principal.kind, 'user'),
-        eq(intxSchema.principal.refId, userId)
-      ),
+  if (workingTenantId && memberPrincipalId) {
+    const { paInstanceId: instanceId } = await provisionMyraInstance(db, {
+      tenantId: workingTenantId,
+      tenantDomain: config.globalTenant.domain,
+      userId,
+      creatorPrincipalId: memberPrincipalId,
     });
-    if (callerPrincipal) {
-      const { paInstanceId: instanceId } = await provisionMyraInstance(db, {
-        personalTenantId,
-        personalTenantDomain: personalTenant.domain,
-        userId,
-        creatorPrincipalId: callerPrincipal.id,
-      });
-      paInstanceId = instanceId;
+    paInstanceId = instanceId;
 
-      // If credentials are already granted but no session is running, relaunch automatically.
-      try {
-        await relaunchInstanceIfNeeded(
-          db,
-          sessionService,
-          grantStore,
-          eventCollectors,
-          instanceId,
-          sidecarRouter.events
-        );
-      } catch (err) {
-        log.warn('Auto-relaunch of Myra session failed — user will need to re-add credentials', {
-          userId,
-          instanceId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
+    // If credentials are already granted but no session is running, relaunch automatically.
+    try {
+      await relaunchInstanceIfNeeded(
+        db,
+        sessionService,
+        grantStore,
+        eventCollectors,
+        instanceId,
+        sidecarRouter.events
+      );
+    } catch (err) {
+      log.warn('Auto-relaunch of Myra session failed — user will need to re-add credentials', {
+        userId,
+        instanceId,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
     }
   }
 
   const userName = c.get('userName');
 
   let credentialResolved = false;
-  if (paInstanceId && personalTenantId) {
+  if (paInstanceId && workingTenantId) {
     const paInstance = await db.query.agentInstance.findFirst({
       where: eq(intxSchema.agentInstance.id, paInstanceId),
     });
     if (paInstance) {
       try {
-        const sources = await resolveInstanceSources(db, personalTenantId, {
+        const sources = await resolveInstanceSources(db, workingTenantId, {
           agentId: paInstance.agentId,
           sessionId: null,
         });
@@ -460,9 +413,11 @@ v1.get('/me', async (c) => {
   return c.json({
     userId,
     userName,
-    personalTenantId,
+    // Legacy field name retained for the web client; this is the user's working
+    // (global org) tenant id now, not a personal tenant. Rename is a follow-up.
+    personalTenantId: workingTenantId,
     paInstanceId,
-    provisioned: personalTenantId !== null,
+    provisioned: workingTenantId !== null,
     credentialResolved,
   });
 });

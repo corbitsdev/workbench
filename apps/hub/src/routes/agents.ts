@@ -12,6 +12,7 @@ import { getLogger } from '@intx/log';
 import type { SessionService, SidecarRouter, EventCollectorRegistry } from '@intx/hub-sessions';
 import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
+import { authorize, evaluateGrants } from '@intx/authz';
 import { type } from 'arktype';
 import { startInstanceScheduler } from '@workbench/agent-scheduler';
 import {
@@ -78,6 +79,25 @@ const CreateTenantCredentialBody = type({
 });
 
 // ─── Route ────────────────────────────────────────────────────────
+
+/** Resource-string prefix for the per-credential grant written at credential creation. */
+const CREDENTIAL_GRANT_PREFIX = 'credential:';
+
+/**
+ * The grant resource string for a credential (CL-1449).
+ *
+ * Authorization is decided by Interchange's `@intx/authz` evaluator, never by
+ * hand-interpreting grant rows here. A member sees/mutates only credentials it
+ * holds the creator grant for (`credential:<id>`, written at POST /credentials);
+ * org admins/owners hold a wildcard role grant (`*`) that `matchPattern` resolves
+ * against this resource. "Shared org" credentials (e.g. Myra's LLM key, seeded
+ * tenant-owned with no creator grant) are not enumerable/editable by ordinary
+ * members via this route, but remain resolvable at launch (resolution is not
+ * grant-gated).
+ */
+function credentialResource(credentialId: string): string {
+  return `${CREDENTIAL_GRANT_PREFIX}${credentialId}`;
+}
 
 export function createAgentProvisioningRouter(
   db: DB['db'],
@@ -448,9 +468,23 @@ export function createAgentProvisioningRouter(
     }
 
     const tenantChain = await getAncestorChain(db, tenantId);
-    const credentials = await db.query.credential.findMany({
+    const allCredentials = await db.query.credential.findMany({
       where: inArray(credential.tenantId, tenantChain),
     });
+
+    // CL-1449: scope to credentials the caller is authorized to read. Collect
+    // grants once, then let Interchange's authz evaluator decide per credential
+    // (a member's creator grant or an admin/owner wildcard both resolve here).
+    const callerGrants = await grantStore.collectGrants(callerPrincipal.id, tenantId);
+    const readable = await Promise.all(
+      allCredentials.map((cred) =>
+        evaluateGrants(callerGrants, credentialResource(cred.id), 'read', {
+          principalId: callerPrincipal.id,
+          tenantId,
+        }).then((verdict) => verdict.effect === 'allow')
+      )
+    );
+    const credentials = allCredentials.filter((_, i) => readable[i]);
 
     const result = await Promise.all(
       credentials.map(async (cred) => {
@@ -500,6 +534,19 @@ export function createAgentProvisioningRouter(
       where: and(eq(credential.id, credentialId), eq(credential.tenantId, tenantId)),
     });
     if (!cred) return c.json({ error: 'Credential not found' }, 404);
+
+    // CL-1449: a member may only mutate a credential they own (creator grant);
+    // admins/owners are covered by their wildcard grant. Decision via Interchange.
+    const verdict = await authorize(
+      grantStore,
+      callerPrincipal.id,
+      tenantId,
+      credentialResource(credentialId),
+      'manage'
+    );
+    if (verdict.effect !== 'allow') {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
 
     const now = new Date();
     await db.transaction(async (rawTx) => {
