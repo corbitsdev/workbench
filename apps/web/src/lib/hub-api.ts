@@ -208,10 +208,12 @@ export type AgentInstance = {
 export async function assignCredentialToAgent(
   tenantId: string,
   agentId: string,
-  credentialId: string | null
+  credentialId: string | null,
+  providerName?: string
 ): Promise<void> {
   await hubFetch<unknown>('PATCH', `v1/tenants/${tenantId}/agents/${agentId}/credential`, {
     credentialId,
+    ...(providerName !== undefined ? { providerName } : {}),
   });
 }
 

@@ -398,7 +398,7 @@ export default function CredentialSettingsPage() {
   const handleRemoveAgent = async (cred: EnrichedCredential, agentId: string) => {
     setAssigningAgentId(agentId);
     try {
-      await assignCredentialToAgent(cred.tenantId, agentId, null);
+      await assignCredentialToAgent(cred.tenantId, agentId, null, cred.providerName);
       await queryClient.invalidateQueries({ queryKey: ['agents', 'instances'] });
     } finally {
       setAssigningAgentId(null);

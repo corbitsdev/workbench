@@ -583,10 +583,8 @@ export function createAgentProvisioningRouter(
       agentRow = agentById;
     }
 
-    const reqs: Array<Record<string, unknown>> = Array.isArray(agentRow.credentialRequirements)
-      ? (agentRow.credentialRequirements as Array<Record<string, unknown>>).filter(
-          (r) => r['source'] !== 'tenant'
-        )
+    let reqs: Array<Record<string, unknown>> = Array.isArray(agentRow.credentialRequirements)
+      ? (agentRow.credentialRequirements as Array<Record<string, unknown>>)
       : [];
 
     let modelConfig = agentRow.modelConfig as { defaultModel?: string } | null;
@@ -601,11 +599,24 @@ export function createAgentProvisioningRouter(
       if (!prov) return c.json({ error: 'Credential provider not found' }, 404);
       const meta = prov.metadata as { model?: string; baseURL?: string } | null;
 
+      // Replace only the existing requirement for this provider, leave others intact.
+      reqs = reqs.filter(
+        (r) => !(r['source'] === 'tenant' && r['providerName'] === prov.name)
+      );
       reqs.push({ source: 'tenant', name: cred.name, providerName: prov.name });
 
       if (isInferenceProviderName(prov.plugin) && meta?.model && !modelConfig?.defaultModel) {
         modelConfig = { defaultModel: meta.model };
       }
+    } else {
+      // Remove the specific provider's requirement when providerName is supplied.
+      const targetProvider =
+        typeof raw.providerName === 'string' ? raw.providerName : null;
+      reqs = reqs.filter(
+        (r) =>
+          !(r['source'] === 'tenant' &&
+            (targetProvider === null || r['providerName'] === targetProvider))
+      );
     }
 
     await db
