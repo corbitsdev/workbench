@@ -27,6 +27,17 @@ export function isMissingConfigError(error: unknown): boolean {
   return MISSING_CONFIG_PATTERNS.some((p) => message.includes(p));
 }
 
+/**
+ * Statuses for which we should attempt (or already have) a session launch.
+ * A `deployed` instance is provisioned and launchable — the launch endpoint
+ * resolves its sources and brings it up — so it must not be treated as a dead
+ * "deploying" state. `stopped`/`provisioning` instances are not launchable from
+ * the chat and show a passive deploying notice instead.
+ */
+export function isLaunchableStatus(status: string | undefined): boolean {
+  return status === undefined || status === 'running' || status === 'deployed';
+}
+
 export type LaunchState =
   | { kind: 'connecting' }
   | { kind: 'deploying' }
@@ -45,7 +56,7 @@ export function classifyLaunchState(
   instanceStatus: string | undefined,
   launchError: string | null
 ): LaunchState {
-  if (instanceStatus !== undefined && instanceStatus !== 'running') {
+  if (!isLaunchableStatus(instanceStatus)) {
     return { kind: 'deploying' };
   }
 

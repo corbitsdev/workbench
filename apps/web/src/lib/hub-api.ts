@@ -295,7 +295,6 @@ export async function launchInstanceSession(
   return hubFetch<LaunchInstanceSessionResponse>('POST', `v1/instances/${instanceId}/sessions`, {});
 }
 
-
 export async function stopAgentInstance(tenantId: string, instanceId: string): Promise<void> {
   await hubFetch<void>('DELETE', `v1/tenants/${tenantId}/agents/instances/${instanceId}`);
 }

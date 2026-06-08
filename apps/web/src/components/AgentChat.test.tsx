@@ -33,20 +33,15 @@ mock.module('../lib/instance-transport', () => ({
 
 import { AgentChat } from './AgentChat';
 
-function renderAgentChat(overrides?: { instanceStatus?: string; onConfigureAgent?: () => void }) {
+function renderAgentChat(overrides?: {
+  instanceStatus?: string;
+  onConfigureAgent?: () => void;
+  retryDelayMs?: number;
+}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <AgentChat instanceId="ins_123" tenantId="tnt_123" agentName="Loop" {...overrides} />
-    </QueryClientProvider>
-  );
-}
-
-function renderDeployedAgentChat() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <AgentChat instanceId="ins_deployed" tenantId="tnt_123" agentName="Loop" />
     </QueryClientProvider>
   );
 }
@@ -78,10 +73,10 @@ describe('AgentChat — fatal launch error', () => {
   it('attempts to launch deployed agents instead of treating them as dead', async () => {
     mockLaunchInstanceSession.mockImplementationOnce(() => Promise.resolve({ launched: true }));
 
-    renderDeployedAgentChat();
+    renderAgentChat({ instanceStatus: 'deployed' });
 
     await waitFor(() => {
-      expect(mockLaunchInstanceSession).toHaveBeenCalledWith('ins_deployed');
+      expect(mockLaunchInstanceSession).toHaveBeenCalledWith('ins_123');
     });
 
     expect(mockCreateInstanceSession).toHaveBeenCalled();
@@ -131,6 +126,31 @@ describe('AgentChat — transient launch errors', () => {
     });
 
     expect(view.queryByText(/No sidecar available/)).toBeNull();
+  });
+
+  it('auto-retries the launch while the sidecar is unavailable, then connects once it returns', async () => {
+    mockLaunchInstanceSession
+      .mockImplementationOnce(() =>
+        Promise.resolve({
+          launched: false,
+          launchError: 'No sidecar available for agent "ins_123"',
+        })
+      )
+      .mockImplementationOnce(() => Promise.resolve({ launched: true }));
+
+    const view = renderAgentChat({ retryDelayMs: 10 });
+
+    await waitFor(() => {
+      expect(view.getByText(/waiting for loop to become available/i)).toBeTruthy();
+    });
+
+    // The scheduled retry fires and succeeds, so the session hydrates.
+    await waitFor(() => {
+      expect(mockLaunchInstanceSession).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(mockCreateInstanceSession).toHaveBeenCalled();
+    });
   });
 
   it('shows a waiting notice for legacy sidecar-not-connected messages', async () => {

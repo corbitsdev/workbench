@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   isTransientLaunchError,
   isMissingConfigError,
+  isLaunchableStatus,
   classifyLaunchState,
 } from './agent-launch-helpers';
 
@@ -40,6 +41,19 @@ describe('isMissingConfigError', () => {
   });
 });
 
+describe('isLaunchableStatus', () => {
+  it('treats running, deployed, and undefined as launchable', () => {
+    expect(isLaunchableStatus(undefined)).toBe(true);
+    expect(isLaunchableStatus('running')).toBe(true);
+    expect(isLaunchableStatus('deployed')).toBe(true);
+  });
+
+  it('treats stopped and provisioning as not launchable', () => {
+    expect(isLaunchableStatus('stopped')).toBe(false);
+    expect(isLaunchableStatus('provisioning')).toBe(false);
+  });
+});
+
 describe('classifyLaunchState', () => {
   it('returns deploying when instance is not yet running', () => {
     const state = classifyLaunchState('provisioning', null);
@@ -49,6 +63,16 @@ describe('classifyLaunchState', () => {
   it('returns deploying when instanceStatus is stopped', () => {
     const state = classifyLaunchState('stopped', null);
     expect(state.kind).toBe('deploying');
+  });
+
+  it('classifies a deployed instance by its launch error, not as deploying', () => {
+    // A deployed instance is launchable, so the launch outcome drives the state.
+    expect(classifyLaunchState('deployed', null).kind).toBe('connecting');
+    expect(classifyLaunchState('deployed', 'No sidecar available for agent ins_1').kind).toBe(
+      'connecting'
+    );
+    expect(classifyLaunchState('deployed', 'credential not found').kind).toBe('missing-config');
+    expect(classifyLaunchState('deployed', '502 Bad Gateway').kind).toBe('fatal');
   });
 
   it('returns connecting when no error and status is running', () => {

@@ -11,7 +11,15 @@ import {
 import { type AgentActivity } from '@intx/hub-client';
 import { launchInstanceSession } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
-import { classifyLaunchState } from './agent-launch-helpers';
+import { classifyLaunchState, isLaunchableStatus } from './agent-launch-helpers';
+
+// While a sidecar is restarting, the launch endpoint reports a transient
+// "no sidecar available" error. Re-attempt the launch on an interval so the
+// agent comes up on its own once the sidecar reconnects, instead of leaving the
+// user stranded on a "waiting…" notice. Bounded so a genuinely-down sidecar
+// eventually surfaces a retryable error instead of spinning forever.
+const DEFAULT_RETRY_DELAY_MS = 4000;
+const MAX_TRANSIENT_RETRIES = 8;
 
 type SessionState =
   | { phase: 'loading' }
@@ -27,6 +35,7 @@ interface AgentChatProps {
   instanceStatus?: string;
   onClose?: () => void;
   onConfigureAgent?: () => void;
+  retryDelayMs?: number;
 }
 
 export function AgentChat({
@@ -36,17 +45,20 @@ export function AgentChat({
   instanceStatus,
   onClose,
   onConfigureAgent,
+  retryDelayMs = DEFAULT_RETRY_DELAY_MS,
 }: AgentChatProps) {
   const identity: ChatAgentIdentity = { name: agentName };
 
-  const isRunning = instanceStatus === undefined || instanceStatus === 'running';
+  const isLaunchable = isLaunchableStatus(instanceStatus);
   const [sessionState, setSessionState] = useState<SessionState>(
-    isRunning ? { phase: 'loading' } : { phase: 'pending', reason: 'deploying' }
+    isLaunchable ? { phase: 'loading' } : { phase: 'pending', reason: 'deploying' }
   );
   const [, forceUpdate] = useState(0);
 
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
 
   const { mutate: launch, status: launchStatus } = useMutation({
     mutationFn: async () => {
@@ -60,7 +72,19 @@ export function AgentChat({
       const launchError = err instanceof Error ? err.message : String(err);
       const classified = classifyLaunchState(instanceStatus, launchError);
       if (classified.kind === 'connecting' || classified.kind === 'deploying') {
+        // Transient: the sidecar is likely still coming up. Show a waiting
+        // notice and re-attempt the launch on an interval until it succeeds or
+        // we exhaust the retry budget.
         setSessionState({ phase: 'pending', reason: classified.kind });
+        if (retryCountRef.current < MAX_TRANSIENT_RETRIES) {
+          retryCountRef.current += 1;
+          retryTimerRef.current = setTimeout(() => launch(), retryDelayMs);
+        } else {
+          setSessionState({
+            phase: 'error',
+            message: launchError,
+          });
+        }
       } else if (classified.kind === 'missing-config') {
         setSessionState({ phase: 'missing-config', message: classified.message });
       } else {
@@ -70,13 +94,19 @@ export function AgentChat({
   });
 
   // Reset state and trigger launch when instanceId changes (or on mount).
-  // Skip launch when the instance is not yet running — show deploying state instead.
+  // Skip launch only when the instance is not launchable (stopped/provisioning)
+  // — show the passive deploying notice instead.
   useEffect(() => {
-    if (!isRunning) return;
+    retryCountRef.current = 0;
+    if (retryTimerRef.current !== null) clearTimeout(retryTimerRef.current);
+    if (!isLaunchable) return;
     setSessionState({ phase: 'loading' });
     launch();
+    return () => {
+      if (retryTimerRef.current !== null) clearTimeout(retryTimerRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instanceId, isRunning]);
+  }, [instanceId, isLaunchable]);
 
   // Subscription lifecycle — syncs to the external Interchange session.
   // Runs after launch succeeds so hydration errors do not hide launch failures.
@@ -204,6 +234,7 @@ export function AgentChat({
             <button
               className="underline"
               onClick={() => {
+                retryCountRef.current = 0;
                 setSessionState({ phase: 'loading' });
                 launch();
               }}
