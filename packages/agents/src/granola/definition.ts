@@ -47,7 +47,7 @@ export const GRANOLA_DEPLOY_PROMPT: string = buildGranolaSystemPrompt('Oat', 'xm
  * to configure tools and the per-instance scheduler interval.
  */
 export const GRANOLA_CAPABILITIES = {
-  tools: ['granola_list_notes', 'granola_get_note'],
+  tools: ['granola_list_notes', 'granola_get_note', 'granola_list_folders'],
   schedulerIntervalMs: 60_000,
 } as const;
 
@@ -57,4 +57,5 @@ export const GRANOLA_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   systemPrompt: GRANOLA_DEPLOY_PROMPT,
   credentialProviderNames: ['openai-compatible', 'granola'],
   defaultTools: [...GRANOLA_CAPABILITIES.tools],
+  requiredTools: [...GRANOLA_CAPABILITIES.tools],
 };
