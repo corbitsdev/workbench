@@ -18,8 +18,7 @@ mock.module('../config', () => ({
 }));
 
 // Launch outcome is driven by resolveInstanceSources: tests set `sourcesImpl`
-// to return sources (launch proceeds) or throw (launch fails). Credential
-// repair is exercised in agent-credential-repair.test.ts; stub it here.
+// to return sources (launch proceeds) or throw (launch fails).
 let sourcesImpl: () => Promise<unknown[]> = () =>
   Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
 let credentialByIdImpl: () => Promise<unknown> = () => Promise.resolve(undefined);
@@ -27,10 +26,6 @@ mock.module('@intx/db', () => ({
   ...intxDbReal,
   resolveInstanceSources: () => sourcesImpl(),
   resolveCredentialById: () => credentialByIdImpl(),
-}));
-mock.module('../lib/agent-credential-repair', () => ({
-  repairTenantAgentCredentials: () => Promise.resolve(),
-  repairUserAgentCredentials: () => Promise.resolve(),
 }));
 
 import { Hono } from 'hono';

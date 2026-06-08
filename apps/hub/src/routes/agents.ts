@@ -16,7 +16,6 @@ import { type } from 'arktype';
 import { decryptSecret, encryptSecret } from '@workbench/hub-crypto';
 import { startInstanceScheduler } from '@workbench/agent-scheduler';
 import { getConfig } from '../config';
-import { repairTenantAgentCredentials } from '../lib/agent-credential-repair';
 import {
   buildToolDefinitions,
   getToolNamesFromCapabilities,
@@ -1137,12 +1136,6 @@ async function launchAgentSession(
   const { agentId, instanceId, instancePrincipalId, tenantId, tenantDomain, systemPrompt, now } =
     opts;
   const address = `${instanceId}@${tenantDomain}`;
-
-  // Repair the agent's credential requirements before resolving — this is the
-  // single chokepoint every launch path funnels through, so a definition that
-  // predates these fields (e.g. pre-Myra users) is healed here rather than
-  // failing to resolve. Loud by design: if repair throws, the launch fails.
-  await repairTenantAgentCredentials(db, tenantId);
 
   const rawSources = await resolveInstanceSources(db, tenantId, {
     agentId,
