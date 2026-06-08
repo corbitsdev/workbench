@@ -1,11 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import {
-  listEnrichedCredentials,
-  provisionAgent,
-  type ProvisionAgentResponse,
-} from '../../lib/hub-api';
+import { provisionAgent, type ProvisionAgentResponse } from '../../lib/hub-api';
+import { CredentialField } from '../CredentialField';
 import { LOOP_DEPLOY_PROMPT, GRANOLA_DEPLOY_PROMPT } from '@workbench/agents/browser';
 
 const FOCUSABLE =
@@ -42,7 +38,7 @@ const INFERENCE_REQUIREMENT: CredentialRequirementOption = {
 const GRANOLA_REQUIREMENT: CredentialRequirementOption = {
   id: 'granola',
   label: 'Granola API Key',
-  description: 'Workspace Granola credential used to read call notes.',
+  description: 'Workbench Granola credential used to read call notes.',
 };
 
 const PREMADE_OPTIONS: PremadeOption[] = [
@@ -80,12 +76,6 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
   >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const credentialsQuery = useQuery({
-    queryKey: ['credentials', 'enriched', workspaceTenantId],
-    queryFn: () => listEnrichedCredentials(workspaceTenantId!),
-    enabled: open && workspaceTenantId !== null,
-  });
 
   const reset = () => {
     setName('');
@@ -185,32 +175,14 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
     }
   };
 
-  const workspaceCredentials = credentialsQuery.data;
-  const credentialsLoading = credentialsQuery.isLoading;
-  const workspaceCredentialsLoaded =
-    !workspaceTenantId || credentialsLoading || workspaceCredentials !== undefined;
-  const hasAvailableCredentials =
-    workspaceCredentials !== undefined && workspaceCredentials.length > 0;
   const selectedCredentialIds = credentialRequirements.flatMap((requirement) => {
     const credentialId = selectedCredentialIdsByRequirement[requirement.id];
     return credentialId ? [credentialId] : [];
   });
 
-  const credentialsForRequirement = (requirement: CredentialRequirementOption) => {
-    if (workspaceCredentials === undefined) return [];
-    if (requirement.id === 'inference') {
-      return workspaceCredentials.filter((credential) =>
-        INFERENCE_PROVIDER_PLUGINS.has(credential.providerPlugin)
-      );
-    }
-    return workspaceCredentials.filter(
-      (credential) => credential.providerPlugin === requirement.id
-    );
-  };
-
   const selectCredentialForRequirement = (
     requirementId: CredentialRequirementKind,
-    credentialId: string
+    credentialId: string | undefined
   ) => {
     setSelectedCredentialIdsByRequirement((current) => {
       const next = { ...current };
@@ -333,55 +305,27 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
                   <p className="text-[13px] text-text-2">
                     Create a workbench first before deploying agents.
                   </p>
-                ) : !workspaceCredentialsLoaded ? (
-                  <p className="text-[13px] text-red-500">
-                    Failed to load credentials for this workspace.
-                  </p>
-                ) : !hasAvailableCredentials && !credentialsLoading ? (
-                  <p className="text-[13px] text-text-2">
-                    No credentials found for this workspace.{' '}
-                    <a
-                      href="/settings/credentials"
-                      className="text-orange underline-offset-2 hover:underline"
-                    >
-                      Add credentials in Settings.
-                    </a>
-                  </p>
-                ) : credentialsLoading ? (
-                  <p className="text-sm text-text-2">Loading credentials...</p>
                 ) : (
                   <div className="flex flex-col gap-3">
-                    {credentialRequirements.map((requirement) => {
-                      const matchingCredentials = credentialsForRequirement(requirement);
-                      return (
-                        <label key={requirement.id} className="flex flex-col gap-1.5">
-                          <span className="text-[13px] font-medium text-text">
-                            {requirement.label}
-                          </span>
-                          <span className="text-[12px] text-text-3">{requirement.description}</span>
-                          <select
-                            value={selectedCredentialIdsByRequirement[requirement.id] ?? ''}
-                            onChange={(e) =>
-                              selectCredentialForRequirement(requirement.id, e.target.value)
-                            }
-                            className="rounded-[10px] border border-border bg-bg px-3 py-2 text-[14px] text-text outline-none focus:border-orange"
-                            required
-                          >
-                            <option value="">Select {requirement.label.toLowerCase()}</option>
-                            {matchingCredentials.map((credential) => (
-                              <option key={credential.id} value={credential.id}>
-                                {credential.name}
-                              </option>
-                            ))}
-                          </select>
-                          {matchingCredentials.length === 0 && (
-                            <span className="text-[12px] text-red-500">
-                              No matching credential found. Add one in Settings.
-                            </span>
-                          )}
-                        </label>
-                      );
-                    })}
+                    {credentialRequirements.map((requirement) => (
+                      <CredentialField
+                        key={requirement.id}
+                        tenantId={workspaceTenantId}
+                        providerName={
+                          requirement.id === 'granola' ? 'granola' : 'openai-compatible'
+                        }
+                        matchProviderNames={
+                          requirement.id === 'granola'
+                            ? ['granola']
+                            : [...INFERENCE_PROVIDER_PLUGINS]
+                        }
+                        label={requirement.label}
+                        value={selectedCredentialIdsByRequirement[requirement.id]}
+                        onChange={(credentialId) =>
+                          selectCredentialForRequirement(requirement.id, credentialId)
+                        }
+                      />
+                    ))}
                   </div>
                 )}
               </div>
