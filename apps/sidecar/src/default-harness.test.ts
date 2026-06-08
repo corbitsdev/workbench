@@ -215,7 +215,9 @@ describe('createDefaultHarnessBuilder', () => {
       });
 
       expect(mergeToolRunners).toHaveBeenCalledTimes(1);
-      const runners = (mergeToolRunners as any).mock.calls[0][0] as Array<{ definitions: Array<{ name: string }> }>;
+      const runners = (mergeToolRunners as any).mock.calls[0][0] as Array<{
+        definitions: Array<{ name: string }>;
+      }>;
       const hubRunner = runners[2];
       const hubNames = hubRunner.definitions.map((d) => d.name);
       expect(hubNames).not.toContain('read_file');
