@@ -37,7 +37,7 @@ type StepName = (typeof STEP_ORDER)[number];
 
 function mapDbStatusToSessionStatus(status: string): string {
   const map: Record<string, string> = {
-    pending: 'analyzing',
+    pending: 'pending',
     analyzing: 'analyzing',
     running: 'generating',
     done: 'done',
@@ -106,18 +106,6 @@ interface WorkflowInput {
   stepConfig?: WorkflowStepConfig;
 }
 
-const WORKFLOW_LLM_REQUIREMENT = {
-  providerName: 'openai-compatible',
-  source: 'tenant' as const,
-  name: 'Workflow LLM',
-};
-
-const WORKFLOW_LLM_FALLBACK = {
-  providerName: 'openai-compatible',
-  source: 'tenant' as const,
-  name: 'Myra LLM',
-};
-
 const GRANOLA_CREDENTIAL_REQUIREMENT = {
   providerName: 'granola',
   source: 'tenant' as const,
@@ -160,23 +148,6 @@ function buildInferenceSource(
     apiKey,
     model: meta.model,
   };
-}
-
-async function resolveWorkflowInferenceSource(
-  db: HubDb,
-  tenantId: string
-): Promise<InferenceSource | null> {
-  const resolved =
-    (await resolveCredentialRequirement(db, tenantId, WORKFLOW_LLM_REQUIREMENT, null, null)) ??
-    (await resolveCredentialRequirement(db, tenantId, WORKFLOW_LLM_FALLBACK, null, null));
-  if (!resolved) return null;
-
-  const providerRow = await db.query.provider.findFirst({
-    where: eq(intxSchema.provider.id, resolved.providerId),
-  });
-  if (!providerRow) return null;
-
-  return buildInferenceSource(tenantId, providerRow, resolved.secret);
 }
 
 // ─── Per-step assignment resolution ──────────────────────────────────
@@ -223,7 +194,7 @@ async function resolveStepInferenceSource(
     const source = buildInferenceSource(tenantId, providerRow, cred.secret);
     if (source) return source;
   }
-  return resolveWorkflowInferenceSource(db, tenantId);
+  return null;
 }
 
 /**
@@ -762,8 +733,16 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 
     // Resolve inference source and kick off analyze in the background so the
     // workflow runs automatically without waiting for a manual step trigger.
-    const analyzeSource = await resolveWorkflowInferenceSource(db, userContext.tenantId);
+    const analyzeSource = await resolveStepInferenceSource(
+      db,
+      userContext.tenantId,
+      wfRow.kind,
+      'analyze'
+    );
     if (analyzeSource) {
+      // Update status to analyzing before firing the background job so the
+      // UI reflects the real state and the workflow is not stuck in pending.
+      await db.update(workflowRun).set({ status: 'analyzing' }).where(eq(workflowRun.id, wfRow.id));
       void triggerAnalyze(
         db,
         wfRow.id,
@@ -782,7 +761,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     return c.json(
       {
         id: wfRow.id,
-        status: mapDbStatusToSessionStatus(wfRow.status),
+        status: mapDbStatusToSessionStatus(analyzeSource ? 'analyzing' : wfRow.status),
         steps: {
           intake: { completed: true, transcriptId: txRow.id },
         },
@@ -981,7 +960,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       steps: {
         intake: { completed: true, transcriptId: transcriptId ?? null, transcript: tx?.content },
         analyze: {
-          completed: wf.status !== 'pending',
+          completed: wf.status === 'running' || wf.status === 'done',
           painPoints: points.map(serializePainPoint),
         },
         generate: {
@@ -1336,6 +1315,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 function deriveCurrentStep(status: string): StepName {
   const map: Record<string, StepName> = {
     pending: 'analyze',
+    analyzing: 'analyze',
     running: 'generate',
     done: 'generate',
     failed: 'intake',

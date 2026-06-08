@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   provisionAgent,
   listAvailableTools,
-  updateAgentTools,
   INFERENCE_PROVIDER_NAMES,
   type ProvisionAgentResponse,
   type ToolSummary,
@@ -200,11 +199,8 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
         name: trimmedName,
         systemPrompt: trimmedPrompt,
         credentialIds: selectedCredentialIds,
+        tools: Array.from(selectedTools),
       });
-
-      if (selectedTools.size > 0) {
-        await updateAgentTools(workbenchTenantId, response.agentId, Array.from(selectedTools));
-      }
 
       if (!response.launched && response.launchError) {
         setError(`Agent created but failed to start: ${response.launchError}`);

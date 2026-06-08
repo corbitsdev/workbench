@@ -187,6 +187,10 @@ describe('Workflow router', () => {
             tenantId: 'tenant-personal',
             kind: 'collateral-generation',
             enabledAt: new Date().toISOString(),
+            assignments: {
+              analyze: { credentialIds: ['llm-cred'], toolIds: [] },
+              generate: { credentialIds: ['llm-cred'], toolIds: [] },
+            },
           })),
         },
         provider: {
