@@ -23,7 +23,7 @@ import type {
   CredentialRequirement,
   ToolSummary,
 } from '../../lib/hub-api';
-import { PROVIDER_REGISTRY } from '../../lib/providerRegistry';
+import { PROVIDER_REGISTRY, providerByName } from '../../lib/providerRegistry';
 import { useEffect, useState } from 'react';
 
 type ResourceType = 'workflow' | 'agent';
@@ -58,6 +58,23 @@ function formatToolName(name: string): string {
     .split('_')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
+}
+
+function toolProviderLabel(providerName: string): string {
+  return providerByName(providerName)?.label ?? formatToolName(providerName);
+}
+
+function groupToolsByProvider(
+  tools: ToolSummary[]
+): Array<{ providerName: string; tools: ToolSummary[] }> {
+  const groups = new Map<string, ToolSummary[]>();
+  for (const tool of tools) {
+    groups.set(tool.providerName, [...(groups.get(tool.providerName) ?? []), tool]);
+  }
+  return Array.from(groups, ([providerName, providerTools]) => ({
+    providerName,
+    tools: providerTools,
+  }));
 }
 
 function agentToRailItem(a: AgentInstance): RailItem {
@@ -306,6 +323,7 @@ function AgentToolEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
   // Pending credential field values keyed by providerName → fieldKey → value
   const [pendingCreds, setPendingCreds] = useState<Record<string, Record<string, string>>>({});
 
@@ -340,6 +358,18 @@ function AgentToolEditor({
       }
     })();
   }, []);
+
+  const toggleProvider = (providerName: string) => {
+    setExpandedProviders((prev) => {
+      const next = new Set(prev);
+      if (next.has(providerName)) {
+        next.delete(providerName);
+      } else {
+        next.add(providerName);
+      }
+      return next;
+    });
+  };
 
   const toggleTool = (name: string) => {
     setSelected((prev) => {
@@ -409,26 +439,54 @@ function AgentToolEditor({
     >
       <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.04em] text-text-3">Tools</p>
       {error && <p className="mb-2 text-[11px] text-orange-deep">{error}</p>}
-      <div className="mb-2 flex flex-wrap gap-2">
-        {availableTools.map((tool) => (
-          <label
-            key={tool.name}
-            className={`flex cursor-pointer items-center gap-1.5 rounded-[7px] border px-2 py-1 text-[12px] transition-colors ${
-              selected.has(tool.name)
-                ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
-                : 'border-border text-text-2 hover:text-text'
-            }`}
-          >
-            <input
-              type="checkbox"
-              checked={selected.has(tool.name)}
-              onChange={() => toggleTool(tool.name)}
-              disabled={saving}
-              className="h-3 w-3 accent-orange"
-            />
-            {formatToolName(tool.name)}
-          </label>
-        ))}
+      <div className="mb-2 flex flex-col gap-1.5">
+        {groupToolsByProvider(availableTools).map(({ providerName, tools }) => {
+          const expanded = expandedProviders.has(providerName);
+          const selectedCount = tools.filter((t) => selected.has(t.name)).length;
+          return (
+            <div key={providerName} className="rounded-[8px] border border-border bg-bg/40">
+              <button
+                type="button"
+                onClick={() => toggleProvider(providerName)}
+                className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left transition-colors hover:text-text"
+                aria-expanded={expanded}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-text-3">{expanded ? '▾' : '▸'}</span>
+                  <span className="text-[12px] font-medium text-text">
+                    {toolProviderLabel(providerName)}
+                  </span>
+                </span>
+                <span className="text-[11px] text-text-3">
+                  {selectedCount}/{tools.length}
+                </span>
+              </button>
+              {expanded && (
+                <div className="flex flex-wrap gap-1.5 border-t border-border px-2.5 py-2">
+                  {tools.map((tool) => (
+                    <label
+                      key={tool.name}
+                      className={`flex cursor-pointer items-center gap-1.5 rounded-[7px] border px-2 py-1 text-[12px] transition-colors ${
+                        selected.has(tool.name)
+                          ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
+                          : 'border-border text-text-2 hover:text-text'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected.has(tool.name)}
+                        onChange={() => toggleTool(tool.name)}
+                        disabled={saving}
+                        className="h-3 w-3 accent-orange"
+                      />
+                      {formatToolName(tool.name)}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
       {missingProviders.length > 0 && (
         <div className="mb-3 space-y-3">
