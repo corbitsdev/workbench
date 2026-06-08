@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { logger } from '../lib/logger';
 import { listWorkbenches, listAgentInstances } from '../lib/hub-api';
 import type { AgentInstance } from '../lib/hub-api';
@@ -55,6 +55,8 @@ export function useWorkflow(workflowId: string) {
       return res;
     },
     enabled: Boolean(workflowId),
+    retry: (_, error) => !(error instanceof ApiError && error.status === 404),
+    refetchOnWindowFocus: false,
   });
 }
 

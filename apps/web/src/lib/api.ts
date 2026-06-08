@@ -3,6 +3,16 @@ import { logger } from './logger';
 // Empty string means same-origin (frontend served from the API).
 const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const url = new URL(
     `/api/v1/${path.replace(/^\//, '')}`,
@@ -20,7 +30,7 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
     logger.error('API request failed', { method, url, status: res.status, error: err.error });
-    throw new Error(err.error || `HTTP ${res.status}`);
+    throw new ApiError(err.error || `HTTP ${res.status}`, res.status);
   }
 
   const data = (await res.json()) as T;

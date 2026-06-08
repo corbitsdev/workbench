@@ -1,7 +1,15 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { provisionAgent, type ProvisionAgentResponse } from '../../lib/hub-api';
+import {
+  provisionAgent,
+  listAvailableTools,
+  updateAgentTools,
+  createTenantCredential,
+  type ProvisionAgentResponse,
+  type ToolSummary,
+} from '../../lib/hub-api';
 import { CredentialField } from '../CredentialField';
+import { PROVIDER_REGISTRY } from '../../lib/providerRegistry';
 import { LOOP_DEPLOY_PROMPT, GRANOLA_DEPLOY_PROMPT } from '@workbench/agents/browser';
 
 const FOCUSABLE =
@@ -56,6 +64,13 @@ const PREMADE_OPTIONS: PremadeOption[] = [
   },
 ];
 
+function formatToolName(name: string): string {
+  return name
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 export interface NewAgentModalProps {
   open: boolean;
   onClose: () => void;
@@ -77,6 +92,20 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Tools
+  const [availableTools, setAvailableTools] = useState<ToolSummary[]>([]);
+  const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set());
+  const [pendingToolCreds, setPendingToolCreds] = useState<Record<string, Record<string, string>>>(
+    {}
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    listAvailableTools()
+      .then(setAvailableTools)
+      .catch(() => {});
+  }, [open]);
+
   const reset = () => {
     setName('');
     setSystemPrompt('');
@@ -84,6 +113,8 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     setSelectedCredentialIdsByRequirement({});
     setLoading(false);
     setError(null);
+    setSelectedTools(new Set());
+    setPendingToolCreds({});
   };
 
   const handleClose = () => {
@@ -126,6 +157,33 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     setSelectedCredentialIdsByRequirement({});
   };
 
+  // Providers needed by selected tools that don't yet have a credential selected
+  const selectedToolProviders = [
+    ...new Set(
+      availableTools
+        .filter((t) => selectedTools.has(t.name))
+        .map((t) => t.providerName)
+        // Exclude inference providers — those are already covered by the main credential section
+        .filter((p) => !INFERENCE_PROVIDER_PLUGINS.has(p))
+    ),
+  ];
+
+  const missingToolProviders = selectedToolProviders
+    .map((providerName) => PROVIDER_REGISTRY.find((p) => p.name === providerName))
+    .filter((p): p is NonNullable<typeof p> => p !== undefined);
+
+  const toggleTool = (toolName: string) => {
+    setSelectedTools((prev) => {
+      const next = new Set(prev);
+      if (next.has(toolName)) {
+        next.delete(toolName);
+      } else {
+        next.add(toolName);
+      }
+      return next;
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!workbenchTenantId) return;
@@ -151,16 +209,43 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
       return;
     }
 
+    // Validate tool credential fields
+    for (const provider of missingToolProviders) {
+      const fields = pendingToolCreds[provider.name] ?? {};
+      for (const field of provider.fields) {
+        if (field.required && !fields[field.key]) {
+          setError(`${field.label} is required for ${provider.label}.`);
+          return;
+        }
+      }
+    }
+
     setLoading(true);
     setError(null);
 
     try {
+      // Create missing tool credentials first
+      for (const provider of missingToolProviders) {
+        const fields = pendingToolCreds[provider.name] ?? {};
+        await createTenantCredential(workbenchTenantId, {
+          provider: provider.name,
+          name: provider.label,
+          apiKey: fields['apiKey'] ?? '',
+          ...(fields['baseURL'] ? { baseURL: fields['baseURL'] } : {}),
+        });
+      }
+
       const response = await provisionAgent({
         tenantId: workbenchTenantId,
         name: trimmedName,
         systemPrompt: trimmedPrompt,
         credentialIds: selectedCredentialIds,
       });
+
+      if (selectedTools.size > 0) {
+        await updateAgentTools(workbenchTenantId, response.agentId, Array.from(selectedTools));
+      }
+
       if (!response.launched && response.launchError) {
         setError(`Agent created but failed to start: ${response.launchError}`);
         setLoading(false);
@@ -240,7 +325,10 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-6 py-5">
+            <form
+              onSubmit={(e) => void handleSubmit(e)}
+              className="flex max-h-[80vh] flex-col gap-4 overflow-y-auto px-6 py-5"
+            >
               {error && (
                 <p className="rounded-lg border border-orange bg-[rgba(233,132,40,0.16)] px-3 py-2 text-sm text-orange-deep">
                   {error}
@@ -294,6 +382,74 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
                   className="resize-none rounded-[10px] border border-border bg-bg px-3 py-2 text-[13px] text-text outline-none placeholder:text-text-3 focus:border-orange"
                 />
               </div>
+
+              {availableTools.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-[13px] font-medium text-text">Tools</p>
+                  <div className="flex flex-wrap gap-2">
+                    {availableTools.map((tool) => (
+                      <label
+                        key={tool.name}
+                        title={tool.description}
+                        className={`flex cursor-pointer items-center gap-1.5 rounded-[9px] border px-3 py-1.5 text-[13px] transition-colors ${
+                          selectedTools.has(tool.name)
+                            ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
+                            : 'border-border text-text-2 hover:text-text'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTools.has(tool.name)}
+                          onChange={() => toggleTool(tool.name)}
+                          disabled={loading}
+                          className="h-3 w-3 accent-orange"
+                        />
+                        {formatToolName(tool.name)}
+                      </label>
+                    ))}
+                  </div>
+
+                  {missingToolProviders.length > 0 && (
+                    <div className="flex flex-col gap-3">
+                      {missingToolProviders.map((provider) => (
+                        <div
+                          key={provider.name}
+                          className="rounded-[10px] border border-border bg-bg px-3 py-3"
+                        >
+                          <p className="mb-2 text-[12px] font-medium text-text-2">
+                            {provider.label} credentials
+                          </p>
+                          {provider.fields.map((field) => (
+                            <div key={field.key} className="mb-2">
+                              <label className="mb-1 block text-[12px] text-text-3">
+                                {field.label}
+                                {!field.required && ' (optional)'}
+                              </label>
+                              <input
+                                type={field.type === 'password' ? 'password' : 'text'}
+                                placeholder={field.placeholder}
+                                value={pendingToolCreds[provider.name]?.[field.key] ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setPendingToolCreds((prev) => ({
+                                    ...prev,
+                                    [provider.name]: {
+                                      ...prev[provider.name],
+                                      [field.key]: val,
+                                    },
+                                  }));
+                                }}
+                                disabled={loading}
+                                className="w-full rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] text-text outline-none placeholder:text-text-3 focus:border-orange"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex flex-col gap-2">
                 <p className="text-[13px] font-medium text-text">Credentials</p>

@@ -18,6 +18,7 @@ import type {
   WorkbenchEntry,
   EnrichedCredential,
   CredentialRequirement,
+  ToolSummary,
 } from '../../lib/hub-api';
 import { PROVIDER_REGISTRY } from '../../lib/providerRegistry';
 import { useEffect, useState } from 'react';
@@ -295,7 +296,7 @@ function AgentToolEditor({
   onSaved: () => void;
   onCancel: () => void;
 }) {
-  const [availableTools, setAvailableTools] = useState<string[]>([]);
+  const [availableTools, setAvailableTools] = useState<ToolSummary[]>([]);
   const [existingCredsByProvider, setExistingCredsByProvider] = useState<
     Map<string, EnrichedCredential>
   >(new Map());
@@ -407,23 +408,23 @@ function AgentToolEditor({
       <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.04em] text-text-3">Tools</p>
       {error && <p className="mb-2 text-[11px] text-orange-deep">{error}</p>}
       <div className="mb-2 flex flex-wrap gap-2">
-        {availableTools.map((name) => (
+        {availableTools.map((tool) => (
           <label
-            key={name}
+            key={tool.name}
             className={`flex cursor-pointer items-center gap-1.5 rounded-[7px] border px-2 py-1 text-[12px] transition-colors ${
-              selected.has(name)
+              selected.has(tool.name)
                 ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
                 : 'border-border text-text-2 hover:text-text'
             }`}
           >
             <input
               type="checkbox"
-              checked={selected.has(name)}
-              onChange={() => toggleTool(name)}
+              checked={selected.has(tool.name)}
+              onChange={() => toggleTool(tool.name)}
               disabled={saving}
               className="h-3 w-3 accent-orange"
             />
-            {formatToolName(name)}
+            {formatToolName(tool.name)}
           </label>
         ))}
       </div>

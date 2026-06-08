@@ -23,6 +23,21 @@ export type ToolEntry = {
 /** Names of all tools registered in KNOWN_TOOLS. */
 export const KNOWN_TOOL_NAMES: string[] = Object.keys(KNOWN_TOOLS);
 
+export type ToolSummary = {
+  name: string;
+  providerName: string;
+  description: string;
+};
+
+/** Summaries of all registered tools for client discovery. */
+export const KNOWN_TOOL_SUMMARIES: ToolSummary[] = Object.entries(KNOWN_TOOLS).map(
+  ([name, entry]) => ({
+    name,
+    providerName: entry.providerName,
+    description: entry.definition.description ?? '',
+  })
+);
+
 /**
  * Build a ToolDefinition list from an array of tool names, filtering out
  * any names not in the registry.

@@ -20,7 +20,7 @@ import {
   buildToolDefinitions,
   getToolNamesFromCapabilities,
   getSchedulerIntervalMs,
-  KNOWN_TOOL_NAMES,
+  KNOWN_TOOL_SUMMARIES,
 } from '../lib/tool-registry';
 import { buildToolGrantRows, TOOL_GRANT_RESOURCE_PREFIX } from '../lib/tool-grants';
 
@@ -726,7 +726,7 @@ export function createAgentProvisioningRouter(
 
   // List available tools that can be attached to an agent.
   app.get('/tools', async (c) => {
-    return c.json({ data: KNOWN_TOOL_NAMES });
+    return c.json({ data: KNOWN_TOOL_SUMMARIES });
   });
 
   // Launch (or relaunch) a session for an agent instance.

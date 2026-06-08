@@ -227,8 +227,14 @@ export async function updateAgentTools(
   });
 }
 
-export async function listAvailableTools(): Promise<string[]> {
-  const res = await hubFetch<{ data: string[] }>('GET', 'v1/tools');
+export type ToolSummary = {
+  name: string;
+  providerName: string;
+  description: string;
+};
+
+export async function listAvailableTools(): Promise<ToolSummary[]> {
+  const res = await hubFetch<{ data: ToolSummary[] }>('GET', 'v1/tools');
   return res.data;
 }
 
