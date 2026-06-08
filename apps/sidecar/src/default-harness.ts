@@ -131,6 +131,9 @@ export function createDefaultHarnessBuilder({
         hubHttpUrl,
         sidecarToken,
         tenantId,
+        agentId: agentConfig.agentId,
+        principalId,
+        sessionId: agentConfig.sessionId,
         toolDefinitions: agentConfig.tools,
       });
 

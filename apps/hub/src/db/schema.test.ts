@@ -21,12 +21,15 @@ describe('database schema', () => {
 
   it('has artifact table', () => {
     expect(artifact).toBeDefined();
+    expect(artifact.tenantId).toBeDefined();
+    expect(artifact.principalId).toBeDefined();
     expect(artifact.sessionId).toBeDefined();
     expect(artifact.parentId).toBeDefined();
     expect(artifact.painPointId).toBeDefined();
     expect(artifact.kind).toBeDefined();
     expect(artifact.title).toBeDefined();
     expect(artifact.content).toBeDefined();
+    expect(artifact.source).toBeDefined();
     expect(artifact.status).toBeDefined();
     expect(artifact.version).toBeDefined();
     expect(artifact.createdAt).toBeDefined();

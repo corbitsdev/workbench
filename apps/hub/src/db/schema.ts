@@ -53,12 +53,15 @@ export const painPoint = pgTable('pain_point', {
 // migrations). Nesting via parent_id; provenance via pain_point_id (nullable).
 export const artifact = pgTable('artifact', {
   id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: text('tenant_id'),
+  principalId: text('principal_id'),
   sessionId: uuid('session_id').references(() => workflowRun.id, { onDelete: 'cascade' }),
   parentId: uuid('parent_id').references((): AnyPgColumn => artifact.id, { onDelete: 'cascade' }),
   painPointId: uuid('pain_point_id').references(() => painPoint.id, { onDelete: 'set null' }),
   kind: text('kind').notNull(),
   title: text('title').notNull(),
   content: text('content').notNull(),
+  source: jsonb('source').$type<Record<string, unknown>>(),
   status: text('status', { enum: artifactStatus }).notNull().default('draft'),
   version: integer('version').notNull().default(1),
   createdAt: timestamp('created_at').notNull().defaultNow(),

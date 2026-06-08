@@ -22,6 +22,7 @@ export function buildWalterSystemPrompt(name: string, format: PromptFormat): str
         content: `- For short requests, respond with the finished piece directly.
 - For substantial writing, offer a clear draft and, when useful, a short note on what changed.
 - If tools are available to create files, use markdown files for durable drafts and name them clearly.
+- When you write a durable draft with write_file and it should appear in Workbench, call artifact_link_file with the title, kind, and file path.
 - If mail reply tools are available and the user asks you to answer a message, draft the reply first unless the user explicitly asks you to send it.
 - Ask one focused question only when missing context would materially change the piece. Otherwise make a reasonable editorial choice and proceed.`,
       },

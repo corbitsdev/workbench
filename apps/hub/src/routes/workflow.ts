@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import {
   resolveCredentialRequirement,
@@ -10,7 +10,7 @@ import {
 import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
 import type { WorkflowType } from '@workbench/workflow-core';
-import { KNOWN_TOOLS } from '../lib/tool-registry';
+import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
 import { collateralGenerationWorkflow } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
 import {
@@ -34,6 +34,46 @@ workflowRegistry.register(collateralGenerationWorkflow);
 
 const STEP_ORDER = ['intake', 'analyze', 'generate'] as const;
 type StepName = (typeof STEP_ORDER)[number];
+
+function mapDbStatusToSessionStatus(status: string): string {
+  const map: Record<string, string> = {
+    pending: 'analyzing',
+    analyzing: 'analyzing',
+    running: 'generating',
+    done: 'done',
+    failed: 'failed',
+  };
+  return map[status] ?? status;
+}
+
+async function triggerAnalyze(
+  db: HubDb,
+  id: string,
+  userContext: UserContext,
+  source: InferenceSource,
+  feedback?: string,
+  maxOutputTokens?: number
+) {
+  try {
+    const response = await runAnalyze(db, id, userContext, source, feedback, maxOutputTokens);
+    if (response.status >= 400) {
+      log.error('Analyze step failed in background', { workflowId: id, status: response.status });
+      await db
+        .update(workflowRun)
+        .set({ status: 'failed' })
+        .where(eq(workflowRun.id, id));
+    }
+  } catch (err) {
+    log.error('Analyze step threw exception in background', {
+      workflowId: id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    await db
+      .update(workflowRun)
+      .set({ status: 'failed' })
+      .where(eq(workflowRun.id, id));
+  }
+}
 
 const CONFIGURABLE_STEPS = ['analyze', 'generate'] as const;
 type ConfigurableStep = (typeof CONFIGURABLE_STEPS)[number];
@@ -437,7 +477,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
   router.get('/workflows/tools', async (c) => {
     const tools = Object.entries(KNOWN_TOOLS).map(([name, entry]) => ({
       name,
-      providerName: entry.providerName,
+      providerName: isCredentialToolEntry(entry) ? entry.providerName : 'workbench',
       description: entry.definition.description,
     }));
     return c.json(tools);
@@ -708,6 +748,8 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     });
     for (const draft of intakeArtifacts ?? []) {
       await db.insert(artifact).values({
+        tenantId: userContext.tenantId,
+        principalId: userContext.principalId,
         sessionId: wfRow.id,
         kind: draft.kind,
         title: draft.title,
@@ -724,10 +766,29 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       status: wfRow.status,
     });
 
+    // Resolve inference source and kick off analyze in the background so the
+    // workflow runs automatically without waiting for a manual step trigger.
+    const analyzeSource = await resolveWorkflowInferenceSource(db, userContext.tenantId);
+    if (analyzeSource) {
+      void triggerAnalyze(
+        db,
+        wfRow.id,
+        userContext,
+        analyzeSource,
+        undefined,
+        DEFAULT_STEP_MAX_OUTPUT_TOKENS.analyze
+      );
+    } else {
+      log.warn('No workflow LLM configured — analyze will not auto-start', {
+        workflowId: wfRow.id,
+        tenantId: userContext.tenantId,
+      });
+    }
+
     return c.json(
       {
         id: wfRow.id,
-        status: wfRow.status,
+        status: mapDbStatusToSessionStatus(wfRow.status),
         steps: {
           intake: { completed: true, transcriptId: txRow.id },
         },
@@ -789,7 +850,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         });
         return {
           id: s.id,
-          status: s.status,
+          status: mapDbStatusToSessionStatus(s.status),
           createdAt: s.createdAt,
           transcriptId: transcriptId ?? null,
           companyName: (s.input as WorkflowInput)?.companyName ?? null,
@@ -833,19 +894,26 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       limit: 50,
     });
 
-    if (sessions.length === 0) {
-      return c.json([]);
-    }
-
     const sessionById = new Map<string, (typeof sessions)[number]>(
       sessions.map((s: (typeof sessions)[number]) => [s.id, s])
     );
 
+    const directArtifactWhere = and(
+      eq(artifact.tenantId, userContext.tenantId),
+      eq(artifact.principalId, userContext.principalId)
+    );
+
     const artifacts = await db.query.artifact.findMany({
-      where: inArray(
-        artifact.sessionId,
-        sessions.map((s: (typeof sessions)[number]) => s.id)
-      ),
+      where:
+        sessions.length > 0
+          ? or(
+              inArray(
+                artifact.sessionId,
+                sessions.map((s: (typeof sessions)[number]) => s.id)
+              ),
+              directArtifactWhere
+            )
+          : directArtifactWhere,
       orderBy: [desc(artifact.updatedAt)],
     });
 
@@ -856,7 +924,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         sessionName: session
           ? deriveWorkflowDisplayName(session.kind, session.input as WorkflowInput)
           : null,
-        sessionStatus: session?.status ?? null,
+        sessionStatus: session ? mapDbStatusToSessionStatus(session.status) : null,
       };
     });
 
@@ -912,7 +980,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 
     return c.json({
       id,
-      status: wf.status,
+      status: mapDbStatusToSessionStatus(wf.status),
       currentStep,
       companyName: (wf.input as WorkflowInput)?.companyName ?? null,
       stepConfig,
@@ -1348,6 +1416,8 @@ async function runAnalyze(
   });
   for (const draft of analysisArtifacts ?? []) {
     await db.insert(artifact).values({
+      tenantId: currentWf.tenantId,
+      principalId: currentWf.principalId,
       sessionId: id,
       kind: draft.kind,
       title: draft.title,
@@ -1426,6 +1496,8 @@ async function runGenerate(
       artifactKinds.map((kind) =>
         generateCollateralWithLLM(id, transcriptContent, p, kind, source, maxOutputTokens).then(
           ({ title, body }) => ({
+            tenantId: wf.tenantId,
+            principalId: wf.principalId,
             sessionId: id,
             painPointId: p.id,
             kind,
@@ -1442,6 +1514,8 @@ async function runGenerate(
   const generated = results.flatMap(
     (
       r: PromiseSettledResult<{
+        tenantId: string;
+        principalId: string;
         sessionId: string;
         painPointId: any;
         kind: string;
