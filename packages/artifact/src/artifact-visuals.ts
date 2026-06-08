@@ -9,9 +9,17 @@ import type { ArtifactVisual, GalleryArtifact } from './types';
 // so unknown kinds fall back to a neutral document tile.
 const KIND_VISUALS: Record<string, ArtifactVisual> = {
   email: { label: 'Email', viz: 'lines', fill: 'bg-orange', span: 'row-span-3' },
-  linkedin: { label: 'Post', viz: 'lines', fill: 'bg-blue', span: 'row-span-2' },
+  'linkedin-post': { label: 'Post', viz: 'lines', fill: 'bg-blue', span: 'row-span-2' },
+  'twitter-post': { label: 'Post', viz: 'lines', fill: 'bg-blue', span: 'row-span-2' },
+  'founder-pov-post': { label: 'Post', viz: 'lines', fill: 'bg-blue', span: 'row-span-2' },
   'one-pager': { label: 'Document', viz: 'deck', fill: 'bg-charcoal', span: 'row-span-4' },
+  blog: { label: 'Document', viz: 'deck', fill: 'bg-charcoal', span: 'row-span-4' },
+  'case-study': { label: 'Document', viz: 'deck', fill: 'bg-charcoal', span: 'row-span-4' },
+  'objection-handling': { label: 'Document', viz: 'deck', fill: 'bg-charcoal', span: 'row-span-4' },
+  'customer-quotes': { label: 'Document', viz: 'deck', fill: 'bg-charcoal', span: 'row-span-4' },
   battlecard: { label: 'Battlecard', viz: 'grid', fill: 'bg-green', span: 'row-span-3' },
+  'pain-points': { label: 'Pain Points', viz: 'bars', fill: 'bg-orange', span: 'row-span-3' },
+  'call-transcript': { label: 'Transcript', viz: 'lines', fill: 'bg-cream', span: 'row-span-4' },
 };
 
 const FALLBACK_VISUAL: ArtifactVisual = {

@@ -16,7 +16,9 @@ async function hubFetch<T>(method: string, path: string, body?: unknown): Promis
   const res = await fetch(url, init);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw Object.assign(new Error(err.error || `HTTP ${res.status}`), { status: res.status });
+    throw Object.assign(new Error(err.error || `HTTP ${res.status}`), {
+      status: res.status,
+    });
   }
   if (res.status === 204 || res.headers.get('content-length') === '0') {
     return undefined as T;
@@ -90,9 +92,33 @@ export async function createWorkbench(name: string): Promise<WorkbenchResponse> 
   return hubFetch<WorkbenchResponse>('POST', 'v1/workbenches', { name });
 }
 
+const PERSONAL_TENANT_PREFIX = 'user-';
+const PERSONAL_WORKBENCH_NAME = 'Your Workbench';
+
+export function isPersonalTenantSlug(slug: string): boolean {
+  return slug.startsWith(PERSONAL_TENANT_PREFIX);
+}
+
+/**
+ * Orders the user's principals into workbench entries with the personal
+ * workspace first (relabeled "Your Workbench"), followed by shared workbenches.
+ * The personal-first ordering also makes it the default selection, since the
+ * route auto-redirect picks the first entry.
+ */
+export function principalsToWorkbenches(principals: Principal[]): WorkbenchEntry[] {
+  const personal = principals
+    .filter((p) => isPersonalTenantSlug(p.tenantSlug))
+    .map(principalToWorkbenchEntry)
+    .map((entry) => ({ ...entry, tenantName: PERSONAL_WORKBENCH_NAME }));
+  const shared = principals
+    .filter((p) => !isPersonalTenantSlug(p.tenantSlug))
+    .map(principalToWorkbenchEntry);
+  return [...personal, ...shared];
+}
+
 export async function listWorkbenches(): Promise<WorkbenchEntry[]> {
   const principals = await getMyPrincipals();
-  return principals.filter((p) => !p.tenantSlug.startsWith('user-')).map(principalToWorkbenchEntry);
+  return principalsToWorkbenches(principals);
 }
 
 export type TenantDetailResponse = {

@@ -19,6 +19,7 @@
     "@workbench/auth": "workspace:*",
     "@workbench/chat": "workspace:*",
     "@workbench/client": "workspace:*",
+    "@workbench/gtm-workflows": "workspace:*",
     "@workbench/settings": "workspace:*",
     "@workbench/shared": "workspace:*",
     "@workbench/tools-exa": "workspace:*",

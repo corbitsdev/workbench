@@ -11,7 +11,7 @@ import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
 import type { WorkflowType } from '@workbench/workflow-core';
 import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
-import { collateralGenerationWorkflow } from '@workbench/gtm-workflows';
+import { collateralGenerationWorkflow, isCollateralKind } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
 import {
   workflowRun,
@@ -1041,8 +1041,8 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           painPoints: points.map(serializePainPoint),
         },
         generate: {
-          completed: allArtifacts.length > 0,
-          artifacts: allArtifacts.map(serializeArtifact),
+          completed: allArtifacts.some((a) => isCollateralKind(a.kind)),
+          artifacts: allArtifacts.filter((a) => isCollateralKind(a.kind)).map(serializeArtifact),
         },
       },
     });

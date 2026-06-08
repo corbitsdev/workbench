@@ -93,6 +93,26 @@ export function useRunStep(workflowId: string) {
   });
 }
 
+export function useApproveArtifact(workflowId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      artifactId,
+      status,
+    }: {
+      artifactId: string;
+      status: 'approved' | 'rejected';
+    }) => {
+      return api<unknown>('PATCH', `/workflows/${workflowId}/artifacts/${artifactId}/status`, {
+        status,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+    },
+  });
+}
+
 export function useUpdateCompanyName(workflowId: string) {
   const queryClient = useQueryClient();
   return useMutation({

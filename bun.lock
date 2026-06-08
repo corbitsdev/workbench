@@ -37,6 +37,7 @@
         "@workbench/hub-crypto": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tools-dispatch": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
         "@workbench/tools-firecrawl": "workspace:*",
         "@workbench/tools-granola": "workspace:*",
@@ -87,6 +88,7 @@
         "@workbench/auth": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/client": "workspace:*",
+        "@workbench/gtm-workflows": "workspace:*",
         "@workbench/settings": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
@@ -567,6 +569,21 @@
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
         "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-dispatch": {
+      "name": "@workbench/tools-dispatch",
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/crypto-node": "workspace:*",
+        "@intx/db": "workspace:*",
+        "@intx/hub-common": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "@workbench/hub-crypto": "workspace:*",
         "typescript": "^5.9.0",
       },
     },
@@ -1246,6 +1263,8 @@
     "@workbench/shared": ["@workbench/shared@workspace:packages/workbench-shared"],
 
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
+
+    "@workbench/tools-dispatch": ["@workbench/tools-dispatch@workspace:packages/tools-dispatch"],
 
     "@workbench/tools-exa": ["@workbench/tools-exa@workspace:packages/tools-exa"],
 

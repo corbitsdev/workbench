@@ -1,19 +1,10 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import { principalToWorkbenchEntry, type Principal } from './hub-api';
+import { principalsToWorkbenches, principalToWorkbenchEntry, type Principal } from './hub-api';
 
-describe('listWorkbenches', () => {
-  it('filters out personal tenants (user-{id} slug pattern)', () => {
+describe('principalsToWorkbenches', () => {
+  it('lists the personal workbench first, relabeled "Your Workbench"', () => {
     const principals: Principal[] = [
-      {
-        principalId: 'p-1',
-        tenantId: 'tenant-user',
-        tenantSlug: 'user-abc123',
-        tenantName: 'Personal',
-        kind: 'user',
-        status: 'active',
-        roles: [],
-      },
       {
         principalId: 'p-2',
         tenantId: 'tenant-acme',
@@ -24,45 +15,42 @@ describe('listWorkbenches', () => {
         roles: [],
       },
       {
-        principalId: 'p-3',
-        tenantId: 'tenant-dev',
-        tenantSlug: 'user-xyz789',
-        tenantName: 'Dev Personal',
+        principalId: 'p-1',
+        tenantId: 'tenant-user',
+        tenantSlug: 'user-abc123',
+        tenantName: 'alice@example.com',
         kind: 'user',
         status: 'active',
         roles: [],
       },
     ];
 
-    // Test the filter logic directly since listWorkbenches wraps getMyPrincipals.
-    // We extract the filter predicate inline here.
-    const isPersonal = (slug: string) => slug.startsWith('user-');
-    const workbenches = principals
-      .filter((p) => !isPersonal(p.tenantSlug))
-      .map(principalToWorkbenchEntry);
+    const workbenches = principalsToWorkbenches(principals);
 
-    expect(workbenches).toHaveLength(1);
-    expect(workbenches[0]!.id).toBe('p-2');
-    expect(workbenches[0]!.tenantSlug).toBe('acme-sales');
-    expect(workbenches[0]!.tenantName).toBe('Acme Sales');
+    expect(workbenches).toHaveLength(2);
+    expect(workbenches[0]!.id).toBe('p-1');
+    expect(workbenches[0]!.tenantSlug).toBe('user-abc123');
+    expect(workbenches[0]!.tenantName).toBe('Your Workbench');
+    expect(workbenches[1]!.id).toBe('p-2');
+    expect(workbenches[1]!.tenantName).toBe('Acme Sales');
   });
 
-  it('returns empty array when user only has a personal tenant', () => {
+  it('returns only the personal workbench when the user has no shared tenants', () => {
     const principals: Principal[] = [
       {
         principalId: 'p-1',
         tenantId: 'tenant-user',
         tenantSlug: 'user-abc123',
-        tenantName: 'Personal',
+        tenantName: 'alice@example.com',
         kind: 'user',
         status: 'active',
         roles: [],
       },
     ];
 
-    const isPersonal = (slug: string) => slug.startsWith('user-');
-    const workbenches = principals.filter((p) => !isPersonal(p.tenantSlug));
-    expect(workbenches).toHaveLength(0);
+    const workbenches = principalsToWorkbenches(principals);
+    expect(workbenches).toHaveLength(1);
+    expect(workbenches[0]!.tenantName).toBe('Your Workbench');
   });
 
   it('maps Interchange principalId to the workbench entry id', () => {

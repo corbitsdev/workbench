@@ -1,8 +1,6 @@
-import type { ArtifactKind } from '@workbench/shared';
-
 interface ArtifactBodyProps {
   body: string;
-  type: ArtifactKind;
+  type: string;
 }
 
 function parseMarkdownTable(text: string): { headers: string[]; rows: string[][] } | null {
@@ -166,15 +164,37 @@ function BattlecardBody({ body }: { body: string }) {
 
 export default function ArtifactBody({ body, type }: ArtifactBodyProps) {
   switch (type) {
+    // email
     case 'email':
+    case 'follow-up-email':
       return <EmailBody body={body} />;
+    // social posts
     case 'linkedin':
+    case 'linkedin-post':
+    case 'pain-points-linkedin-post':
+    case 'twitter-post':
+    case 'pain-points-twitter-post':
+    case 'founder-pov-post':
       return <LinkedInBody body={body} />;
+    // documents
     case 'one-pager':
+    case 'sales-one-pager':
+    case 'blog':
+    case 'pain-points-blog':
+    case 'case-study':
+    case 'case-study-draft':
+    case 'objection-handling':
+    case 'objection-handling-doc':
+    case 'customer-quotes':
+    case 'customer-quote-pulls':
+    case 'pain-points':
+    case 'call-transcript':
       return <OnePagerBody body={body} />;
+    // battlecard
     case 'battlecard':
       return <BattlecardBody body={body} />;
+    // fallback
     default:
-      return null;
+      return <OnePagerBody body={body} />;
   }
 }

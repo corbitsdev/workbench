@@ -6,6 +6,9 @@ import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
 import { FIRECRAWL_HUB_TOOLS } from '@workbench/tools-firecrawl';
 import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
 import { ARTIFACT_HUB_TOOLS } from './artifact-tools';
+import { DISPATCH_HUB_TOOLS } from '@workbench/tools-dispatch';
+import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
+import type { CredentialKeyRegistry } from '@workbench/hub-crypto';
 
 /**
  * All hub-managed tools, assembled from tool packages.
@@ -18,6 +21,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...FIRECRAWL_HUB_TOOLS,
   ...GRANOLA_HUB_TOOLS,
   ...ARTIFACT_HUB_TOOLS,
+  ...DISPATCH_HUB_TOOLS,
 };
 
 export type CredentialToolEntry = {
@@ -34,6 +38,11 @@ export type ContextToolEntry = {
     principalId: string;
     agentId: string;
     sessionId: string;
+    sessionService?: SessionService;
+    eventCollectors?: EventCollectorRegistry;
+    sidecarRouter?: SidecarRouter;
+    credentialKeys?: CredentialKeyRegistry;
+    buildToolDefinitions?: (names: string[]) => ToolDefinition[];
   }) => AgentTool[];
 };
 
