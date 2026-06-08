@@ -113,7 +113,17 @@ export function AgentChat({
   }, [instanceId, tenantId, launchStatus]);
 
   function buildMessages(session: InstanceSession): ChatMessage[] {
-    const committed = convertInstanceEvents(session.events);
+    // The hub emits both the assistant outbound mail and the corresponding
+    // turn event. Deduplicate by dropping assistant mails whose trimmed
+    // content already appears in a turn event.
+    const turnContentSet = new Set(
+      session.events.filter((e) => e.kind === 'turn').map((e) => e.content.trim())
+    );
+    const deduped = session.events.filter(
+      (e) => !(e.kind === 'mail' && e.role === 'assistant' && turnContentSet.has(e.content.trim()))
+    );
+
+    const committed = convertInstanceEvents(deduped);
     if (session.streaming) {
       const streamingMsg: ChatMessage = {
         id: 'streaming',
@@ -168,10 +178,7 @@ export function AgentChat({
           <span className="text-[13px] text-text-2">
             {agentName} needs a credential before it can start.{' '}
             {onConfigureAgent ? (
-              <button
-                className="underline"
-                onClick={onConfigureAgent}
-              >
+              <button className="underline" onClick={onConfigureAgent}>
                 Configure the agent
               </button>
             ) : (

@@ -64,7 +64,10 @@ export interface ToolNarrativeProps {
 }
 
 function defaultSummary(call: ToolCall): string {
-  return call.label ?? call.name;
+  if (call.label !== undefined) return call.label;
+  // Anthropic raw call IDs look like "call_01_AbCdEf…" — not readable
+  if (/^call_[0-9A-Za-z_]{10,}$/.test(call.name)) return 'Tool call';
+  return call.name.replace(/_/g, ' ');
 }
 
 export function ToolNarrative({ toolCalls, formatSummary, className }: ToolNarrativeProps) {

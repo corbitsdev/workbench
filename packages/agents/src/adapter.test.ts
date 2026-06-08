@@ -137,7 +137,11 @@ describe('convertInstanceEvents', () => {
     expect(messages[1]?.id).toBe('b');
   });
 
-  it('sorts out-of-order events by timestamp', () => {
+  it('preserves input order — sorting is the hub-client session responsibility', () => {
+    // The hub-client sorts events during hydration. convertInstanceEvents
+    // intentionally preserves insertion order so that live SSE turn events
+    // (which carry client-side timestamps) are not reordered relative to
+    // concurrently-received user mails with server-side timestamps.
     const events: InstanceEvent[] = [
       {
         kind: 'turn',
@@ -160,8 +164,9 @@ describe('convertInstanceEvents', () => {
     const messages = convertInstanceEvents(events);
 
     expect(messages).toHaveLength(2);
-    expect(messages[0]?.id).toBe('msg-1');
-    expect(messages[1]?.id).toBe('turn-2');
+    // Input order preserved — turn-2 was first in the array
+    expect(messages[0]?.id).toBe('turn-2');
+    expect(messages[1]?.id).toBe('msg-1');
   });
 
   it('returns empty array for empty input', () => {
