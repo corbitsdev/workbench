@@ -18,7 +18,7 @@ This document defines the Corbits design system, responsive approach, and compon
 
 ## Design Tokens
 
-All design tokens are defined as CSS custom properties in `apps/web/tailwind.config.ts` and available globally via `:root` theme variables.
+All design tokens are defined as CSS custom properties in `packages/ui/src/styles.css` using Tailwind v4's `@theme` directive and are available globally via `:root` theme variables. There is no `tailwind.config.ts` — Tailwind v4 reads token definitions directly from CSS.
 
 ### Token Categories
 
@@ -72,7 +72,7 @@ The design system supports **light and dark themes**. Use semantic color variabl
 | `--border-strong` | `rgba(43, 38, 39, 0.22)` | `rgba(247, 234, 213, 0.22)` | Emphasized borders            |
 | `--row-hover`     | `rgba(43, 38, 39, 0.05)` | `rgba(247, 234, 213, 0.05)` | Hover state backgrounds       |
 
-**Implementation:** Define these in `tailwind.config.ts` under the `colors` and `backgroundColor` sections. shadcn components will automatically inherit them.
+**Implementation:** These are defined in `packages/ui/src/styles.css` under `@theme`. All components using Tailwind utility classes inherit them automatically.
 
 ---
 
@@ -136,17 +136,7 @@ Use Tailwind's spacing utilities (derived from base unit):
 | `--radius-xl`    | `24px` | Modal containers                 | `--radius-xl`    |
 | `--radius-panel` | `28px` | Large panels, sidebars           | `--radius-panel` |
 
-**Implementation:** Add to `tailwind.config.ts` under `borderRadius`:
-
-```js
-borderRadius: {
-  sm: 'var(--radius-sm)',
-  default: 'var(--radius)',
-  lg: 'var(--radius-lg)',
-  xl: 'var(--radius-xl)',
-  panel: 'var(--radius-panel)',
-}
-```
+**Implementation:** Defined in `packages/ui/src/styles.css` via `@theme`. Use the corresponding Tailwind utility classes (`rounded-sm`, `rounded-lg`, etc.) directly in components.
 
 ---
 
@@ -222,227 +212,26 @@ Tailwind's default breakpoints (already configured):
 
 ---
 
-## shadcn Component Usage
+## Component System
 
-### When to Use shadcn Components
+shadcn/ui is **not installed** and is not planned. The workbench uses `@workbench/ui` — a custom component package at `packages/ui/` built directly on Tailwind v4 utility classes and the CSS token system above.
 
-**Use shadcn when:**
+### Where components live
 
-- The component exists in the official shadcn library
-- You need a component that follows shadcn's unstyled + Tailwind pattern
-- The component is commonly reused (Button, Card, Input, Badge, etc.)
-- You want automatic dark-mode support and theme inheritance
+| Layer | Location | Contents |
+| ----- | -------- | -------- |
+| Foundation | `packages/ui/src/` | Primitives: Button, Input, Badge, tokens, `cn()` utility |
+| Domain | `apps/web/src/components/` | Product-specific components built on the foundation |
 
-**Do NOT build custom when shadcn has it.**
+### Rules
 
-### Available shadcn Components
-
-| Component        | Import                        | Usage                    | Notes                                                         |
-| ---------------- | ----------------------------- | ------------------------ | ------------------------------------------------------------- |
-| **Button**       | `@/components/ui/button`      | Action triggers          | Use `size` and `variant` props, never custom Button component |
-| **Card**         | `@/components/ui/card`        | Container/surface        | Use `Card`, `CardContent`, `CardHeader`, `CardFooter`         |
-| **Input**        | `@/components/ui/input`       | Text fields              | All text inputs should use this                               |
-| **Badge**        | `@/components/ui/badge`       | Tags, labels             | Use `variant` prop for styling                                |
-| **Dialog**       | `@/components/ui/dialog`      | Modals, alerts           | Use Dialog, DialogContent, DialogHeader, DialogFooter         |
-| **Popover**      | `@/components/ui/popover`     | Dropdown menus, popovers | Unstyled base; wrap with custom styling as needed             |
-| **Textarea**     | `@/components/ui/textarea`    | Multi-line text input    | Not yet audited, may need shadcn version                      |
-| **Select**       | `@/components/ui/select`      | Dropdown selects         | Not yet audited, may need shadcn version                      |
-| **Checkbox**     | `@/components/ui/checkbox`    | Form checkboxes          | Not yet audited, may need shadcn version                      |
-| **Radio**        | `@/components/ui/radio-group` | Radio button groups      | Not yet audited, may need shadcn version                      |
-| **Tabs**         | `@/components/ui/tabs`        | Tab navigation           | Not yet audited, may need shadcn version                      |
-| **Toast/Sonner** | `sonner`                      | Notifications            | External library, not shadcn but recommended                  |
-
-### Component Theming
-
-**All shadcn components inherit the Corbits theme automatically** if the design tokens are correctly mapped in `tailwind.config.ts`.
-
-Example: A Button component automatically gets the orange color from `--orange` without additional styling.
-
-**For custom variants beyond shadcn's defaults:**
-
-- Extend the component in `apps/web/components/` rather than creating a new component
-- Example: Create `apps/web/components/ui/button-variants.tsx` with custom `PrimaryButton`, `SecondaryButton` wrappers if needed
-- Keep the shadcn version pristine; wrap it with your variants instead
+- Use `@workbench/ui` primitives for buttons, inputs, and layout shells.
+- Build domain components (agent panels, workflow views, etc.) in `apps/web/src/components/`.
+- All components inherit Corbits tokens via Tailwind utility classes — no inline styles, no hardcoded colors.
+- Dark/light theme works automatically via `html[data-theme]` — no per-component theme logic needed.
 
 ---
 
-## Custom Components to Replace
-
-### Audit Results (CL-1002)
-
-**Current Status:** shadcn/ui not yet installed. Audit will identify:
-
-1. Where shadcn components should be installed
-2. Which custom components in `apps/web/src/components/` need refactoring
-3. Which domain-specific components are fine as-is
-
-**Domain-specific components (keep as-is):**
-
-- `PainPointsList.tsx` — GTM workbench domain component
-- `ProgressChecklist.tsx` — GTM workbench domain component
-- `RecentCallsPicker.tsx` — GTM workbench domain component
-- `CollateralBody.tsx` — GTM workbench domain component
-- `TranscriptPanel.tsx` — GTM workbench domain component
-- `CallIntakeForm.tsx` — GTM workbench domain component
-- `FeedbackSection.tsx` — GTM workbench domain component
-- `StepSidebar.tsx` — GTM workbench domain component
-- `AuthProvider.tsx` — Auth infrastructure
-
-**Process to complete audit (CL-1002):**
-
-1. Install shadcn/ui: `bunx shadcn-ui@latest init` in `apps/web/`
-2. Review each domain component for internal button/input/card usage
-3. Replace internal UI elements with shadcn equivalents
-4. Document any custom UI patterns that should remain (none expected)
-
-**Quick audit checklist:**
-
-Domain components to review:
-
-- [ ] `CallIntakeForm.tsx` — likely uses buttons, inputs → replace with shadcn
-- [ ] `PainPointsList.tsx` — likely uses buttons, cards → replace with shadcn
-- [ ] `ProgressChecklist.tsx` — likely uses checkboxes, cards → replace with shadcn
-- [ ] `CollateralBody.tsx` — review for buttons, cards → replace with shadcn
-- [ ] `TranscriptPanel.tsx` — review for buttons → replace with shadcn
-- [ ] `FeedbackSection.tsx` — likely uses buttons, inputs → replace with shadcn
-- [ ] `StepSidebar.tsx` — likely uses buttons → replace with shadcn
-
----
-
-## Implementation Tasks
-
-### 1. Tailwind Config Integration (CL-1003)
-
-Add Corbits tokens to `tailwind.config.ts`:
-
-```typescript
-export default {
-  theme: {
-    colors: {
-      // Corbits brand colors
-      orange: {
-        DEFAULT: 'var(--orange)',
-        deep: 'var(--orange-deep)',
-        soft: 'var(--orange-soft)',
-      },
-      blue: {
-        DEFAULT: 'var(--blue)',
-        deep: 'var(--blue-deep)',
-        soft: 'var(--blue-soft)',
-      },
-      green: {
-        DEFAULT: 'var(--green)',
-        deep: 'var(--green-deep)',
-        soft: 'var(--green-soft)',
-      },
-      cream: {
-        DEFAULT: 'var(--cream)',
-        deep: 'var(--cream-deep)',
-      },
-      charcoal: {
-        DEFAULT: 'var(--charcoal)',
-        2: 'var(--charcoal-2)',
-        deep: 'var(--charcoal-deep)',
-      },
-      // Semantic colors (theme-aware)
-      background: 'var(--bg)',
-      surface: 'var(--surface)',
-      text: 'var(--text)',
-      border: 'var(--border)',
-    },
-    borderRadius: {
-      sm: 'var(--radius-sm)',
-      DEFAULT: 'var(--radius)',
-      lg: 'var(--radius-lg)',
-      xl: 'var(--radius-xl)',
-      panel: 'var(--radius-panel)',
-    },
-    spacing: {
-      // Base unit derived from --gap: 14px
-      // Tailwind will use its default scale, but accent key ones
-    },
-    fontFamily: {
-      body: 'var(--font-body)',
-      mono: 'var(--font-mono)',
-    },
-  },
-};
-```
-
-### 2. CSS Variable Foundation
-
-Ensure `apps/web/src/index.css` (or equivalent) contains:
-
-```css
-:root {
-  /* Color palette */
-  --orange: #e98428;
-  --orange-deep: #bf6b20;
-  --orange-soft: #f2b277;
-  --blue: #607c9a;
-  --blue-deep: #2d455c;
-  --blue-soft: #c5d2de;
-  --green: #7b9974;
-  --green-deep: #425a3d;
-  --green-soft: #c1d1be;
-  --cream: #f7ead5;
-  --cream-deep: #e4d5bc;
-  --charcoal: #2b2627;
-  --charcoal-2: #5c5555;
-  --charcoal-deep: #1f1a1b;
-
-  /* Spacing & layout */
-  --gap: 14px;
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 18px;
-  --radius-xl: 24px;
-  --radius-panel: 28px;
-
-  /* Typography */
-  --font-body: 'Red Hat Display', 'Open Sans', Roboto, Arial, sans-serif;
-  --font-mono: 'Space Mono', 'Fira Code', Monaco, Consolas, monospace;
-
-  /* Animation */
-  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-html[data-theme='light'] {
-  --page: #efdcbe;
-  --bg: #f7ead5;
-  --surface: #ffffff;
-  --surface-2: #f2f4f5;
-  --text: #2b2627;
-  --text-2: #5c5555;
-  --text-3: #9a8e80;
-  --border: rgba(43, 38, 39, 0.1);
-  --border-strong: rgba(43, 38, 39, 0.22);
-  --row-hover: rgba(43, 38, 39, 0.05);
-}
-
-html[data-theme='dark'] {
-  --page: #151112;
-  --bg: #221d1e;
-  --surface: #2b2627;
-  --surface-2: #322c2d;
-  --text: #f7ead5;
-  --text-2: #c3b6a3;
-  --text-3: #8a8079;
-  --border: rgba(247, 234, 213, 0.1);
-  --border-strong: rgba(247, 234, 213, 0.22);
-  --row-hover: rgba(247, 234, 213, 0.05);
-}
-```
-
-### 3. Validate Theme Application
-
-After implementing design tokens:
-
-- [ ] All shadcn components use Corbits colors automatically
-- [ ] Light theme toggle switches colors (test by clicking theme toggle)
-- [ ] Dark theme is default (matches workbench.html behavior)
-- [ ] No hardcoded colors in component styles (all via CSS variables or Tailwind classes)
 
 ---
 
@@ -463,28 +252,14 @@ CSS variables allow:
 - Mobile is primary for many users; ensures they get a good experience
 - CSS media queries are smaller than doing mobile as an afterthought
 
-### Why shadcn Over Custom Components?
+### Why @workbench/ui Over shadcn?
 
-- **Unstyled by default** — gives us full control via Tailwind + CSS variables
-- **Consistent with React ecosystem** — other devs recognize the pattern
-- **Low maintenance** — official updates, community-tested solutions
-- **Accessibility built-in** — proper ARIA, keyboard handling, focus management
+shadcn/ui was originally considered but not adopted. `@workbench/ui` gives full control over the component contract, avoids the shadcn init / copy-paste model, and keeps the token system tightly integrated with Tailwind v4's `@theme` approach. Domain components stay in `apps/web/src/components/` and use the foundation primitives directly.
 
 ---
 
 ## References
 
-- **workbench.html:** Source of truth for design tokens (reference file)
-- **Tailwind CSS Docs:** https://tailwindcss.com
-- **shadcn/ui Docs:** https://ui.shadcn.com
+- **`packages/ui/src/styles.css`** — authoritative source for all design tokens
+- **Tailwind CSS v4 Docs:** https://tailwindcss.com
 - **Web.dev Mobile Design:** https://web.dev/responsive-web-design-basics
-
----
-
-## Related Issues
-
-- [CL-1000](https://linear.app/abklabs/issue/CL-1000): Create DESIGN.md (this document)
-- [CL-1001](https://linear.app/abklabs/issue/CL-1001): Fix critical UI layout bugs
-- [CL-1002](https://linear.app/abklabs/issue/CL-1002): Audit custom components
-- [CL-1003](https://linear.app/abklabs/issue/CL-1003): Implement design system in Tailwind config
-- [CL-1004](https://linear.app/abklabs/issue/CL-1004): Refactor custom components to shadcn

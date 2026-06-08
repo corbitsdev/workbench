@@ -3,10 +3,8 @@
 ## Session Start
 
 1. Read this file
-2. Read `CONVENTIONS.md` (or `/.agents/skills/style/SKILL.md`) for code style
-3. Read `PRODUCT.md`, `ARCHITECTURE.md`, `IMPLEMENTATION.md` for current project state
-4. Scan `/.agents/skills/` for available local skills
-5. Do not proceed until these steps are complete
+2. Read `PRODUCT.md` for current product state
+3. Do not proceed until these steps are complete
 
 ## Project
 
@@ -144,7 +142,7 @@ Pre-existing failures must be identified explicitly. Never silently skip a faili
 
 ## Issue Workflow
 
-When implementing a Linear issue, follow the `linear-issue-workflow` skill (`/.agents/skills/linear-issue-workflow/SKILL.md`):
+When implementing a Linear issue:
 
 - Mark the issue In Progress before starting
 - Create a worktree off `origin/staging` (not local staging)
