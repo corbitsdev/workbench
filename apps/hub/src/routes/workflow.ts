@@ -900,6 +900,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         });
         return {
           id: s.id,
+          kind: s.kind,
           status: mapDbStatusToSessionStatus(s.status),
           createdAt: s.createdAt,
           transcriptId: transcriptId ?? null,

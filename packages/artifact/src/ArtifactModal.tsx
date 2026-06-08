@@ -2,7 +2,7 @@
 // owned by the caller; all actions are reported via callbacks. Provides a
 // dimmed scrim, focus trap, and Escape-to-close. No data fetching.
 
-import { type ReactNode, useCallback, useEffect, useRef } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@workbench/ui';
 import type { ArtifactWithSession } from '@workbench/shared';
@@ -22,12 +22,22 @@ export interface ArtifactModalProps {
   onClose: () => void;
   /** Footer action buttons. */
   actions?: ArtifactModalAction[];
-  /** Optional custom body; defaults to the artifact content. */
+  /** Optional custom body; defaults to the artifact content (plain text). */
   children?: ReactNode;
+  /** Human-readable label for the artifact kind, e.g. "LinkedIn Post". */
+  kindLabel?: string;
 }
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
 
 export function ArtifactModal({
   open,
@@ -35,8 +45,10 @@ export function ArtifactModal({
   onClose,
   actions = [],
   children,
+  kindLabel,
 }: ArtifactModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -103,6 +115,13 @@ export function ArtifactModal({
                 <div className="mt-0.5 font-mono text-[11px] text-text-3">
                   {artifact.sessionName ?? 'Untitled job'} · v{artifact.version}
                 </div>
+                {(kindLabel ?? artifact.createdAt) && (
+                  <div className="mt-1 text-[11px] text-text-3">
+                    {kindLabel && <span>{kindLabel}</span>}
+                    {kindLabel && artifact.createdAt && <span> · </span>}
+                    {artifact.createdAt && <span>{formatDate(artifact.createdAt)}</span>}
+                  </div>
+                )}
               </div>
               <button
                 type="button"
@@ -122,7 +141,33 @@ export function ArtifactModal({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 py-5 text-[14px] leading-relaxed text-text-2">
+            <div className="relative flex-1 overflow-y-auto px-6 py-5 text-[14px] leading-relaxed text-text-2">
+              <button
+                type="button"
+                aria-label={copied ? 'Copied' : 'Copy content'}
+                onClick={() => {
+                  void navigator.clipboard.writeText(artifact.content).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  });
+                }}
+                className="absolute right-4 top-4 flex items-center gap-1.5 rounded-[7px] border border-border bg-surface px-2 py-1 text-[11px] text-text-3 transition-colors hover:text-text active:scale-[0.97]"
+              >
+                {copied ? (
+                  'Copied'
+                ) : (
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="h-3.5 w-3.5"
+                  >
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                  </svg>
+                )}
+              </button>
               {children ?? <p className="whitespace-pre-wrap">{artifact.content}</p>}
             </div>
 

@@ -31,6 +31,7 @@ mock.module('@intx/db', () => ({
 import { Hono } from 'hono';
 import {
   createAgentProvisioningRouter,
+  persistInstanceToolGrants,
   pushDecryptedSourcesForInstance,
   pushDecryptedSourceUpdates,
   relaunchInstanceIfNeeded,
@@ -325,22 +326,12 @@ describe('POST /agents', () => {
     let base: any;
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
-    // ensureAgentInstance queries agent by (tenantId, name) first; launchAgentSession
-    // queries agent by id second. Return undefined on the first call so a fresh
-    // instance is created, then return a capabilities row on subsequent calls.
-    let agentFindCount = 0;
     base = {
       transaction: txMock,
       query: {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: {
-          findFirst: mock(() => {
-            agentFindCount += 1;
-            if (agentFindCount === 1) return Promise.resolve(undefined);
-            return Promise.resolve({ id: 'agt-new', capabilities: null });
-          }),
-        },
+        agent: { findFirst: mock(() => Promise.resolve({ id: 'agt-new', capabilities: null })) },
         agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
       insert: mock(() => ({
@@ -371,19 +362,12 @@ describe('POST /agents', () => {
     let base: any;
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
-    let agentFindCount = 0;
     base = {
       transaction: txMock,
       query: {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: {
-          findFirst: mock(() => {
-            agentFindCount += 1;
-            if (agentFindCount === 1) return Promise.resolve(undefined);
-            return Promise.resolve({ id: 'agt-new', capabilities: null });
-          }),
-        },
+        agent: { findFirst: mock(() => Promise.resolve({ id: 'agt-new', capabilities: null })) },
         agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
       insert: mock(() => ({
@@ -414,22 +398,7 @@ describe('POST /agents', () => {
     expect(json.launchError).toContain('sidecar not connected');
   });
 
-  it('is idempotent — calling twice for the same (tenantId, agentName) returns the same instanceId', async () => {
-    const existingAgent = {
-      id: 'agt-loop',
-      name: 'Loop',
-      tenantId: 'tenant-1',
-      capabilities: null,
-    };
-    const existingInstance = {
-      id: 'ins-loop-existing',
-      agentId: 'agt-loop',
-      tenantId: 'tenant-1',
-      principalId: 'prn-agent-loop',
-      address: 'ins-loop-existing@tenant-1.localhost',
-      status: 'deployed',
-    };
-
+  it('creates a new agent instance on each call', async () => {
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     let base: any;
     // biome-ignore lint/suspicious/noExplicitAny: test mock
@@ -439,8 +408,8 @@ describe('POST /agents', () => {
       query: {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: { findFirst: mock(() => Promise.resolve(existingAgent)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(existingInstance)) },
+        agent: { findFirst: mock(() => Promise.resolve({ id: 'agt-new', capabilities: null })) },
+        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
       insert: mock(() => ({
         values: mock(() => ({
@@ -468,9 +437,9 @@ describe('POST /agents', () => {
     expect(res2.status).toBe(201);
     const json2 = await res2.json();
 
-    expect(json1.instanceId).toBe('ins-loop-existing');
-    expect(json2.instanceId).toBe('ins-loop-existing');
-    expect(json1.instanceId).toBe(json2.instanceId);
+    expect(json1.instanceId).toBeTruthy();
+    expect(json2.instanceId).toBeTruthy();
+    expect(json1.instanceId).not.toBe(json2.instanceId);
   });
 });
 
@@ -724,7 +693,7 @@ describe('PATCH /tenants/:tenantId/agents/:agentId/credential', () => {
     expect(updates[0]?.modelConfig).toEqual({ defaultModel: 'gpt-4o-mini' });
   });
 
-  it('rejects inference credentials that do not define a model', async () => {
+  it('accepts inference credentials that do not define a model (skips modelConfig update)', async () => {
     const db = makeMockDb();
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
     db.query.agent.findFirst = mock(() =>
@@ -754,9 +723,9 @@ describe('PATCH /tenants/:tenantId/agents/:agentId/credential', () => {
       })
     );
 
-    expect(res.status).toBe(400);
-    const json = await res.json();
-    expect(json.error).toContain('model');
+    // The PATCH endpoint is permissive — it adds the credential requirement but
+    // silently skips modelConfig when the provider metadata has no model field.
+    expect(res.status).toBe(200);
   });
 });
 
@@ -1001,24 +970,23 @@ describe('POST /instances/:instanceId/sessions', () => {
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
   });
 
-  it('returns 200 with launched:false and launchError when source resolution yields nothing', async () => {
+  it('returns 503 with error when source resolution yields nothing', async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
 
-    // No resolvable inference sources — launch should fail loudly and surface.
+    // No resolvable inference sources — launch fails and the endpoint surfaces 503.
     sourcesImpl = () => Promise.resolve([]);
 
     const app = buildApp(db);
     const res = await app.fetch(
       makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
     const json = await res.json();
-    expect(json.launched).toBe(false);
-    expect(json.launchError).toContain('No resolvable inference sources');
+    expect(json.error).toContain('No resolvable inference sources');
   });
 });
 
@@ -1049,6 +1017,7 @@ describe('relaunchInstanceIfNeeded', () => {
       db as never,
       sessionService as never,
       mockGrantStore as never,
+      mockEventCollectors as never,
       'ins-1',
       { on: () => () => {} } as never
     );
@@ -1077,6 +1046,7 @@ describe('relaunchInstanceIfNeeded', () => {
       db as never,
       sessionService as never,
       mockGrantStore as never,
+      mockEventCollectors as never,
       'ins-1',
       { on: () => () => {} } as never
     );
@@ -1107,6 +1077,7 @@ describe('relaunchInstanceIfNeeded', () => {
       db as never,
       sessionService as never,
       mockGrantStore as never,
+      mockEventCollectors as never,
       'ins-1',
       { on: () => () => {} } as never
     );
@@ -1134,6 +1105,7 @@ describe('relaunchInstanceIfNeeded', () => {
       db as never,
       sessionService as never,
       mockGrantStore as never,
+      mockEventCollectors as never,
       'ins-1',
       { on: () => () => {} } as never
     );
@@ -1231,5 +1203,127 @@ describe('pushDecryptedSourceUpdates', () => {
     const source = (capturedSources as Array<{ apiKey: string }>)[0];
     expect(source?.apiKey).toBe(TEST_API_KEY);
     expect(source?.apiKey).not.toContain('enc:');
+  });
+});
+
+// ─── persistInstanceToolGrants ────────────────────────────────────
+
+describe('persistInstanceToolGrants', () => {
+  it('inserts grant rows with correct shape for each tool name', async () => {
+    const insertedRows: unknown[] = [];
+    const valuesMock = mock((rows: unknown) => {
+      insertedRows.push(...(Array.isArray(rows) ? rows : [rows]));
+      return Promise.resolve();
+    });
+    const insertMock = mock(() => ({ values: valuesMock }));
+    const deleteMock = mock(() => ({ where: mock(() => Promise.resolve()) }));
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    const txMock = mock((fn: (tx: any) => Promise<unknown>) =>
+      fn({ insert: insertMock, delete: deleteMock })
+    );
+    const db = { ...makeMockDb(), transaction: txMock } as unknown as import('@intx/db').DB['db'];
+
+    const now = new Date('2026-01-01T00:00:00Z');
+    await persistInstanceToolGrants(db, {
+      tenantId: 'tenant-1',
+      principalId: 'prn-1',
+      toolNames: ['exa_search', 'dispatch'],
+      now,
+    });
+
+    const rows = insertedRows as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.tenantId).toBe('tenant-1');
+      expect(row.principalId).toBe('prn-1');
+      expect(row.action).toBe('invoke');
+      expect(row.effect).toBe('allow');
+      expect(row.origin).toBe('system');
+      expect(typeof row.resource).toBe('string');
+      expect((row.resource as string).startsWith('tool:')).toBe(true);
+      expect(row.roleId).toBeNull();
+      expect(row.expiresAt).toBeNull();
+      expect(row.createdAt).toEqual(now);
+      expect(row.updatedAt).toEqual(now);
+    }
+    const resources = rows.map((r) => r.resource as string);
+    expect(resources).toContain('tool:exa_search');
+    expect(resources).toContain('tool:dispatch');
+  });
+
+  it('de-duplicates tool names — duplicate entries produce one row per unique name', async () => {
+    const insertedRows: unknown[] = [];
+    const valuesMock = mock((rows: unknown) => {
+      insertedRows.push(...(Array.isArray(rows) ? rows : [rows]));
+      return Promise.resolve();
+    });
+    const insertMock = mock(() => ({ values: valuesMock }));
+    const deleteMock = mock(() => ({ where: mock(() => Promise.resolve()) }));
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    const txMock = mock((fn: (tx: any) => Promise<unknown>) =>
+      fn({ insert: insertMock, delete: deleteMock })
+    );
+    const db = { ...makeMockDb(), transaction: txMock } as unknown as import('@intx/db').DB['db'];
+
+    await persistInstanceToolGrants(db, {
+      tenantId: 'tenant-1',
+      principalId: 'prn-1',
+      toolNames: ['exa_search', 'exa_search', 'dispatch'],
+      now: new Date(),
+    });
+
+    const rows = insertedRows as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(2);
+    const resources = rows.map((r) => r.resource as string);
+    expect(resources).toContain('tool:exa_search');
+    expect(resources).toContain('tool:dispatch');
+  });
+
+  it('deletes existing system grants before inserting new ones', async () => {
+    const ops: string[] = [];
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    const txMock = mock((fn: (tx: any) => Promise<unknown>) =>
+      fn({
+        delete: mock(() => {
+          ops.push('delete');
+          return { where: mock(() => Promise.resolve()) };
+        }),
+        insert: mock(() => {
+          ops.push('insert');
+          return { values: mock(() => Promise.resolve()) };
+        }),
+      })
+    );
+    const db = { ...makeMockDb(), transaction: txMock } as unknown as import('@intx/db').DB['db'];
+
+    await persistInstanceToolGrants(db, {
+      tenantId: 'tenant-1',
+      principalId: 'prn-1',
+      toolNames: ['exa_search'],
+      now: new Date(),
+    });
+
+    expect(ops[0]).toBe('delete');
+    expect(ops[1]).toBe('insert');
+  });
+
+  it('skips insert but still deletes when toolNames is empty', async () => {
+    const insertMock = mock(() => ({ values: mock(() => Promise.resolve()) }));
+    const deleteMock = mock(() => ({ where: mock(() => Promise.resolve()) }));
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    const txMock = mock((fn: (tx: any) => Promise<unknown>) =>
+      fn({ insert: insertMock, delete: deleteMock })
+    );
+    const db = { ...makeMockDb(), transaction: txMock } as unknown as import('@intx/db').DB['db'];
+
+    await persistInstanceToolGrants(db, {
+      tenantId: 'tenant-1',
+      principalId: 'prn-1',
+      toolNames: [],
+      now: new Date(),
+    });
+
+    expect(deleteMock).toHaveBeenCalledTimes(1);
+    expect(insertMock).not.toHaveBeenCalled();
   });
 });

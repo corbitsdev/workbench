@@ -1,7 +1,8 @@
 import { useLibraryResources } from '@workbench/client/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { collateralTypeOptions } from '@workbench/gtm-workflows';
 import type { SessionStatus, WorkflowSummary } from '@workbench/shared';
 import { clientOptions } from '../../lib/client-options';
 import {
@@ -45,6 +46,7 @@ interface RailItem {
   agentStatus?: string;
   credentialRequirements?: CredentialRequirement[];
   capabilities?: Record<string, unknown> | null;
+  workflowStatus?: string;
 }
 
 function agentStatusLabel(status: string): string {
@@ -151,21 +153,40 @@ const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
   failed: 'idle',
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  analyzing: 'Analyzing',
+  generating: 'Generating',
+  reviewing: 'Reviewing',
+  done: 'Done',
+  failed: 'Failed',
+};
+
+function workflowKindLabel(kind: string): string {
+  return (
+    (collateralTypeOptions as ReadonlyArray<{ id: string; label: string }>).find(
+      (o) => o.id === kind
+    )?.label ??
+    kind
+      .split('-')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ')
+  );
+}
+
 function workflowToRailItem(w: WorkflowSummary): RailItem {
-  const name = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled workflow';
-  const sub =
-    w.painPointCount > 0
-      ? `${w.painPointCount} pain point${w.painPointCount === 1 ? '' : 's'} · ${w.status}`
-      : w.status;
+  const runName = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled';
+  const statusLabel = STATUS_LABELS[w.status] ?? w.status;
+  const sub = `${runName} · ${statusLabel}`;
   return {
     id: w.id,
     group: 'Workflows',
-    name,
+    name: workflowKindLabel(w.kind),
     type: 'workflow',
     sub,
     status: SESSION_STATUS_TO_RAIL[w.status] ?? 'idle',
     who: 'GA',
     color: 'var(--orange)',
+    workflowStatus: w.status,
   };
 }
 
@@ -600,6 +621,7 @@ export function LibraryRail({
   const [stoppingInstanceId, setStoppingInstanceId] = useState<string | null>(null);
   const [restartingInstanceId, setRestartingInstanceId] = useState<string | null>(null);
   const [deletingWorkflowId, setDeletingWorkflowId] = useState<string | null>(null);
+  const [completedWorkflowsOpen, setCompletedWorkflowsOpen] = useState(false);
   const queryClient = useQueryClient();
 
   // Resolve the tenantId for the active workbench so agents can be scoped.
@@ -619,12 +641,14 @@ export function LibraryRail({
     ? allAgentItems.filter((a) => a.tenantId === activeWorkbenchTenantId)
     : allAgentItems;
 
-  const jobItems = (workflows ?? []).map(workflowToRailItem);
+  const allJobItems = (workflows ?? []).map(workflowToRailItem);
+  const jobItems = allJobItems.filter((w) => w.workflowStatus !== 'done');
+  const completedJobItems = allJobItems.filter((w) => w.workflowStatus === 'done');
   const items: RailItem[] = [...agentItems, ...jobItems];
   const isLoading = jobsLoading;
 
   const segments: { label: string; count: number }[] = [
-    { label: 'All', count: items.length },
+    { label: 'All', count: agentItems.length + jobItems.length },
     { label: 'Agents', count: agentItems.length },
     { label: 'Workflows', count: jobItems.length },
   ];
@@ -1101,6 +1125,101 @@ export function LibraryRail({
             </div>
           );
         })}
+
+        {/* Completed Workflows — collapsible, hidden by default */}
+        {completedJobItems.length > 0 &&
+          (typeFilter === null || typeFilter === 'workflow') &&
+          query === '' && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setCompletedWorkflowsOpen((v) => !v)}
+                className="flex w-full items-center gap-2 px-[10px] pb-[7px] pt-[14px] text-[11.5px] font-bold uppercase tracking-[0.05em] text-text-3 hover:text-text-2 transition-colors"
+              >
+                {completedWorkflowsOpen ? (
+                  <ChevronDown className="h-3 w-3 flex-none" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 flex-none" />
+                )}
+                Completed
+                <span className="font-mono text-[11px] font-normal opacity-70">
+                  {completedJobItems.length}
+                </span>
+                <span className="h-px flex-1 bg-border" />
+              </button>
+              {completedWorkflowsOpen &&
+                completedJobItems.map((item) => {
+                  const isActive = item.id === activeWorkflowId;
+                  const isDeleting = deletingWorkflowId === item.id;
+
+                  const deleteWorkflow = async () => {
+                    setDeletingWorkflowId(item.id);
+                    try {
+                      await api('DELETE', `/workflows/${item.id}`);
+                      await queryClient.invalidateQueries({ queryKey: ['workflows'] });
+                      onWorkflowDeleted?.(item.id);
+                    } finally {
+                      setDeletingWorkflowId(null);
+                    }
+                  };
+
+                  return (
+                    <div key={item.id} className="rounded-[12px]">
+                      <div
+                        role={onWorkflowSelect ? 'button' : undefined}
+                        tabIndex={onWorkflowSelect ? 0 : undefined}
+                        onClick={onWorkflowSelect ? () => onWorkflowSelect(item.id) : undefined}
+                        onKeyDown={
+                          onWorkflowSelect
+                            ? (e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  onWorkflowSelect(item.id);
+                                }
+                              }
+                            : undefined
+                        }
+                        className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${onWorkflowSelect ? 'cursor-pointer hover:bg-[var(--row-hover)]' : ''} ${isActive ? 'bg-surface ring-1 ring-orange/60' : ''}`}
+                      >
+                        <StatusDot status="done" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[14px] font-medium text-text">
+                            {item.name}
+                          </div>
+                          <div className="mt-px font-mono text-[11.5px] text-text-3">
+                            {item.sub}
+                          </div>
+                        </div>
+                        <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                          <button
+                            type="button"
+                            aria-label="Delete workflow"
+                            disabled={isDeleting}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Delete ${item.name}?`)) void deleteWorkflow();
+                            }}
+                            className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
+                          >
+                            <Trash2 className="h-[13px] w-[13px]" />
+                          </button>
+                        </div>
+                        <span className="flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] bg-[rgba(233,132,40,0.16)] text-orange">
+                          <span className="h-1.5 w-1.5 rounded-full bg-orange" />
+                          Workflow
+                        </span>
+                        <div
+                          className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
+                          style={{ background: 'var(--orange)' }}
+                        >
+                          GA
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
       </div>
     </aside>
   );
