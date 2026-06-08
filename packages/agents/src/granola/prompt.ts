@@ -1,4 +1,4 @@
-import { buildSystemPrompt, type PromptFormat } from '../prompt-builder';
+import { buildSystemPrompt, HUMANIZER_SECTION, type PromptFormat } from '../prompt-builder';
 
 export function buildGranolaSystemPrompt(name: string, format: PromptFormat): string {
   return buildSystemPrompt(
@@ -45,6 +45,7 @@ Attendees: {list}
 - If a section has no content, write "None." rather than omitting the section.
 - Capture anything notable that does not fit into the structured sections in the Notes field.`,
       },
+      HUMANIZER_SECTION,
     ],
     format
   );

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { buildContextBlock, buildSystemPrompt, formatSection } from './prompt-builder';
+import {
+  buildContextBlock,
+  buildSystemPrompt,
+  formatSection,
+  HUMANIZER_SECTION,
+} from './prompt-builder';
 
 const xmlFormat = { xml: true };
 const markdownFormat = { xml: false };
@@ -40,6 +45,13 @@ describe('buildSystemPrompt', () => {
     ];
     const result = buildSystemPrompt(sections, markdownFormat);
     expect(result).toBe('## Role\nYou are an assistant.\n\n## Guidelines\nBe concise.');
+  });
+});
+
+describe('HUMANIZER_SECTION', () => {
+  it('is re-exported from @workbench/prompts', () => {
+    expect(HUMANIZER_SECTION.tag).toBe('output');
+    expect(HUMANIZER_SECTION.content).toContain('No emojis unless explicitly requested');
   });
 });
 
