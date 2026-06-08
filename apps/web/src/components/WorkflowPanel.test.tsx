@@ -166,7 +166,7 @@ describe('WorkflowPanel generate step', () => {
     mockUseWorkflow.mockImplementation(() => ({
       data: makeWorkflow({
         currentStep: 'generate',
-        status: 'running',
+        status: 'generating',
         steps: {
           intake: { completed: true, transcriptId: 'tx-1' },
           analyze: { completed: true, painPoints },

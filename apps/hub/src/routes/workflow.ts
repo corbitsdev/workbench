@@ -227,9 +227,9 @@ async function getWorkflowAssignments(
 }
 
 /**
- * Resolve the inference source for a given workflow step from its install-time
- * assignment. Falls back to the tenant name-based resolver when the step has no
- * assigned inference credential (keeps pre-assignment installs working).
+ * Resolve the inference source for a workflow step.
+ * Uses the workflow definition's credential requirements (resolved via Interchange's
+ * credential system). Per-step assignments are checked first as an optional override.
  */
 async function resolveStepInferenceSource(
   db: HubDb,
@@ -249,7 +249,21 @@ async function resolveStepInferenceSource(
     const source = buildInferenceSource(tenantId, providerRow, cred.secret);
     if (source) return source;
   }
-  return null;
+
+  const workflowDef = workflowRegistry.get(kind);
+  const stepDef = workflowDef?.steps.find((s) => s.name === step);
+  const req = stepDef?.credentialRequirements?.find((r) => r.providerName !== 'granola');
+  if (!req) return null;
+
+  const resolved = await resolveCredentialRequirement(db, tenantId, req, null, null);
+  if (!resolved) return null;
+
+  const providerRow = await db.query.provider.findFirst({
+    where: eq(intxSchema.provider.id, resolved.providerId),
+  });
+  if (!providerRow) return null;
+
+  return buildInferenceSource(tenantId, providerRow, resolved.secret);
 }
 
 /**
