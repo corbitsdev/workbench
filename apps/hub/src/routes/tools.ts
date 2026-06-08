@@ -42,7 +42,10 @@ export function createInternalToolsRouter(
       typeof (body as Record<string, unknown>)['args'] !== 'object'
     ) {
       return c.json(
-        { error: 'Missing required fields: tenantId, agentId, principalId, sessionId, toolName, args' },
+        {
+          error:
+            'Missing required fields: tenantId, agentId, principalId, sessionId, toolName, args',
+        },
         400
       );
     }

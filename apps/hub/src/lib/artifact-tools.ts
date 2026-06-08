@@ -11,9 +11,15 @@ export const ARTIFACT_LINK_FILE_DEFINITION: ToolDefinition = {
     type: 'object',
     properties: {
       title: { type: 'string', description: 'Artifact title.' },
-      kind: { type: 'string', description: 'Artifact kind, such as document, email, memo, article, essay, or letter.' },
+      kind: {
+        type: 'string',
+        description: 'Artifact kind, such as document, email, memo, article, essay, or letter.',
+      },
       path: { type: 'string', description: 'Relative path to the file in the agent workspace.' },
-      preview: { type: 'string', description: 'Optional short preview shown before the file is opened.' },
+      preview: {
+        type: 'string',
+        description: 'Optional short preview shown before the file is opened.',
+      },
     },
     required: ['title', 'kind', 'path'],
   },

@@ -57,6 +57,11 @@ export function useWorkflow(workflowId: string) {
     enabled: Boolean(workflowId),
     retry: (_, error) => !(error instanceof ApiError && error.status === 404),
     refetchOnWindowFocus: false,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      return data.status === 'done' || data.status === 'failed' ? false : 5000;
+    },
   });
 }
 
