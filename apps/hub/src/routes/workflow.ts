@@ -4,6 +4,7 @@ import { getLogger } from '@intx/log';
 import {
   resolveCredentialRequirement,
   resolveCredentialById,
+  resolveInstanceSources,
   schema as intxSchema,
 } from '@intx/db';
 import type { InferenceSource } from '@intx/types/runtime';
@@ -178,6 +179,38 @@ async function resolveStepInferenceSource(
     if (source) return source;
   }
   return resolveWorkflowInferenceSource(db, tenantId);
+}
+
+/**
+ * Resolve the inference source for a step that has been assigned to a specific
+ * agent. The assigned agent already declares its own inference provider via its
+ * credential requirements, so an agent-mode step needs only access to the agent
+ * in the tenant — not a separate per-step inference credential.
+ *
+ * `agentInstanceId` is an agent *instance* id (what the step-config UI stores);
+ * we look up the instance to find its agent definition, resolve the agent's
+ * inference sources, and decrypt the secret (workbench encrypts at write time,
+ * Interchange returns the raw stored value).
+ */
+async function resolveAgentStepInferenceSource(
+  db: HubDb,
+  tenantId: string,
+  agentInstanceId: string
+): Promise<InferenceSource | null> {
+  const instance = await db.query.agentInstance.findFirst({
+    where: eq(intxSchema.agentInstance.id, agentInstanceId),
+  });
+  if (!instance) return null;
+
+  const rawSources = await resolveInstanceSources(db, tenantId, {
+    agentId: instance.agentId,
+    sessionId: instance.sessionId ?? null,
+  });
+  const raw = rawSources[0];
+  if (!raw) return null;
+
+  const { credentialKeys } = getConfig();
+  return { ...raw, apiKey: decryptSecret(credentialKeys, tenantId, raw.apiKey) };
 }
 
 /**
@@ -900,8 +933,29 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const step = body.step ?? deriveCurrentStep(wf.status);
 
     if (step === 'analyze' || step === 'generate' || step === 'improve') {
-      const source = await resolveStepInferenceSource(db, userContext.tenantId, wf.kind, step);
+      // A step runs in one of two modes. Agent mode: the step is assigned a
+      // tenant agent, which carries its own inference provider — resolve the
+      // source from the agent definition, no per-step credential needed. Inline
+      // mode (no assigned agent): resolve the step's configured workflow LLM
+      // credential.
+      const assignedAgentId = (wf.input as WorkflowInput)?.stepConfig?.[step]?.agentId;
+      const source = assignedAgentId
+        ? await resolveAgentStepInferenceSource(db, userContext.tenantId, assignedAgentId)
+        : await resolveStepInferenceSource(db, userContext.tenantId, wf.kind, step);
       if (!source) {
+        if (assignedAgentId) {
+          log.warn('Assigned agent has no resolvable inference source', {
+            tenantId: userContext.tenantId,
+            agentId: assignedAgentId,
+          });
+          return c.json(
+            {
+              error:
+                'The agent assigned to this step has no resolvable inference provider. Check the agent and its credentials.',
+            },
+            400
+          );
+        }
         log.warn('No workflow LLM credential configured', { tenantId: userContext.tenantId });
         return c.json(
           {
@@ -1161,7 +1215,10 @@ async function runAnalyze(
       workflowId: id,
       error: err instanceof Error ? err.message : String(err),
     });
-    return Response.json({ error: 'Analysis failed. Check your LLM credential and try again.' }, { status: 502 });
+    return Response.json(
+      { error: 'Analysis failed. Check your LLM credential and try again.' },
+      { status: 502 }
+    );
   }
   log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
 
