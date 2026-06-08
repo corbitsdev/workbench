@@ -158,6 +158,8 @@ Agent launch does not accept credential IDs. The agent definition declares `cred
 
 All routes that trigger a session launch return `launched: boolean` and an optional `launchError` string. Launch failures are surfaced to callers; they do not cause the route to return an error status (the agent/credential record was still created). Session launch is retried up to 3 times with a 1 s delay before reporting failure.
 
+**Tool-grant persistence**: at launch, `persistInstanceToolGrants` (`apps/hub/src/routes/agents.ts`) reconciles the instance principal's `tool:*` grant rows to `capabilities.tools` — deleting the principal's existing `origin: system` tool grants and re-inserting the current set via `buildToolGrantRows` (`apps/hub/src/lib/tool-grants.ts`). These rows are persisted (not synthesized in memory) so they survive sidecar reconnect; migration `0013_backfill_tool_grants.sql` backfills them for instances provisioned before this change. See ARCHITECTURE.md § Tool authorization.
+
 ### Workspace Creation
 
 | Method | Route         | Input              | Output                                     |

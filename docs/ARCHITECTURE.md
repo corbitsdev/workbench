@@ -123,7 +123,13 @@ Tool execution is split across three layers with a strict separation of concerns
 
 No sidecar changes. No hub execution logic changes. Credentials come from Interchange's tenant credential store at execution time.
 
+See [CREATING_AGENTS_AND_TOOLS.md](./CREATING_AGENTS_AND_TOOLS.md) for the full step-by-step guide to building tool packages, agents, and workflows.
+
 **Tool visibility per agent** is controlled by `agent.capabilities.tools` — a list of tool names set when the agent is provisioned or updated. The hub builds `HarnessConfig.tools` from this list at launch time. An agent only sees tools explicitly listed in its capabilities, regardless of what credentials the tenant has configured.
+
+**Tool authorization** is separate from visibility and follows Interchange's grant model: every tool call is gated by a `grant` row (`resource: tool:<name>`, `action: invoke`, `effect: allow`, `origin: system`) on the instance principal. The hub reconciles these rows from `capabilities.tools` at launch (`persistInstanceToolGrants`) so the persisted grant set always matches the configured tool list. Authorization is trust-by-configuration — any tool in `capabilities.tools` is allowed; there is no per-invoker delegation. Interchange's `grantRequirements` only models `creator`/`invoker` delegation (no tenant/system source), so trusted infrastructure tools are expressed as directly-persisted grants instead, the same way admin-ui creates grants.
+
+These grants **must** be persisted, not synthesized in memory at launch. Interchange's reconnect path (`collectGrants` → `sendGrantsUpdate`) re-sends only what it reads from the `grant` table, so in-memory tool grants are dropped on every sidecar reconnect — the agent then fails every tool call with `No matching grants for tool:<name>`. Persisting makes launch and reconnect agree, since both resolve grants the same way.
 
 ## Database Schema
 
