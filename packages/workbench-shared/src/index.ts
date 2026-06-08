@@ -5,7 +5,22 @@ export type SessionStatus = 'analyzing' | 'reviewing' | 'generating' | 'done' | 
 // The subset of artifact kinds the UI knows how to render exhaustively.
 // The DB `kind` column is free-form text; this union stays closed for the
 // CollateralBody renderer switch.
-export type ArtifactKind = 'email' | 'linkedin' | 'one-pager' | 'battlecard';
+export type ArtifactKind =
+  | 'email'
+  | 'follow-up-email'
+  | 'linkedin'
+  | 'pain-points-linkedin-post'
+  | 'pain-points-twitter-post'
+  | 'founder-pov-post'
+  | 'one-pager'
+  | 'sales-one-pager'
+  | 'pain-points-blog'
+  | 'case-study-draft'
+  | 'objection-handling-doc'
+  | 'customer-quote-pulls'
+  | 'battlecard'
+  | 'pain-points'
+  | 'call-transcript';
 
 export type ArtifactStatus = 'draft' | 'approved' | 'rejected';
 

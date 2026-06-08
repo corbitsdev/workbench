@@ -167,14 +167,25 @@ function BattlecardBody({ body }: { body: string }) {
 export default function ArtifactBody({ body, type }: ArtifactBodyProps) {
   switch (type) {
     case 'email':
+    case 'follow-up-email':
       return <EmailBody body={body} />;
     case 'linkedin':
+    case 'pain-points-linkedin-post':
+    case 'pain-points-twitter-post':
+    case 'founder-pov-post':
       return <LinkedInBody body={body} />;
     case 'one-pager':
+    case 'sales-one-pager':
+    case 'pain-points-blog':
+    case 'case-study-draft':
+    case 'objection-handling-doc':
+    case 'customer-quote-pulls':
+    case 'pain-points':
+    case 'call-transcript':
       return <OnePagerBody body={body} />;
     case 'battlecard':
       return <BattlecardBody body={body} />;
     default:
-      return null;
+      return <OnePagerBody body={body} />;
   }
 }
