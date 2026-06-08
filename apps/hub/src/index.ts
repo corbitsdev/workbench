@@ -23,11 +23,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
-import {
-  createAgentProvisioningRouter,
-  pushDecryptedSourcesForInstance,
-  relaunchInstanceIfNeeded,
-} from './routes/agents';
+import { createAgentProvisioningRouter, relaunchInstanceIfNeeded } from './routes/agents';
 import { createWorkbenchesRouter } from './routes/workbenches';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createInternalToolsRouter } from './routes/tools';
@@ -39,6 +35,10 @@ import {
   provisionPersonalTenant,
   provisionMyraInstance,
 } from './lib/tenant-provisioning';
+import {
+  migrateCredentialsToPlaintext,
+  verifyPlaintextMigration,
+} from './lib/migrate-credentials-to-plaintext';
 import { initSentry } from '@workbench/sentry';
 
 await initSentry();
@@ -64,6 +64,18 @@ const db = drizzle(sql, { schema });
 
 await sql`SELECT 1`;
 log.info('Database connection established');
+
+// One-time migration: decrypt any enc:v1:* credentials written by the old
+// app-layer encryption path. Safe to re-run — already-plaintext rows are skipped.
+const migrationResult = await migrateCredentialsToPlaintext(db, config.credentialKeys);
+const remaining = await verifyPlaintextMigration(db);
+if (remaining > 0) {
+  log.error('Credential plaintext migration incomplete — aborting startup', {
+    remaining,
+    ...migrationResult,
+  });
+  process.exit(1);
+}
 
 // ─── Workbench tenant bootstrap ─────────────────────────────────────
 //
@@ -252,35 +264,6 @@ createHubSessionOrchestrator({
   eventCollectors,
   grantStore,
   agentRepoStore,
-});
-
-// Two listeners on agent.reconnected — this is intentional.
-//
-// Interchange's orchestrator (registered above via createHubSessionOrchestrator)
-// also listens on agent.reconnected and calls sendSourcesUpdate with the raw DB
-// credential values, which are encrypted (enc:v1:<ciphertext>). It has no
-// knowledge of the workbench encryption layer.
-//
-// emitAndAwait runs listeners sequentially in registration order and awaits each
-// one before moving to the next. By registering here — after the orchestrator —
-// we run second and push decrypted sources that overwrite the encrypted ones.
-//
-// We cannot fix this inside Interchange (interchange/ is read-only). Two wire
-// calls per reconnect is the cost of keeping the boundary clean.
-//
-// DO NOT use `void` here. emitAndAwait awaits the promise our listener returns;
-// `void` detaches the async work and destroys the ordering guarantee.
-//
-// DO NOT use pushDecryptedSourceUpdates (which filters by status='running').
-// The orchestrator sets status='running' inside its own handler, after its
-// sendSourcesUpdate call — the row is still 'deployed' when we run.
-// pushDecryptedSourcesForInstance targets the specific instance by address.
-sidecarRouter.events.on('agent.reconnected', async ({ agentAddress }) => {
-  const instance = await db.query.agentInstance.findFirst({
-    where: eq(intxSchema.agentInstance.address, agentAddress),
-  });
-  if (!instance) return;
-  await pushDecryptedSourcesForInstance(db, sidecarRouter, instance);
 });
 
 const sessionService = createSessionService({

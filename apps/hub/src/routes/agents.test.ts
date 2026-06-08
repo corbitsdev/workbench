@@ -1,26 +1,21 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { encryptSecret, parseEncryptionKeys } from '@workbench/hub-crypto';
 import * as intxDbReal from '@intx/db';
 import type { DB } from '@intx/db';
 import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
 import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 
-const TEST_CREDENTIAL_KEYS = parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`);
-const TEST_TENANT_ID = 'tenant-1';
 const TEST_API_KEY = 'sk-test-key';
-const TEST_ENCRYPTED_API_KEY = encryptSecret(TEST_CREDENTIAL_KEYS, TEST_TENANT_ID, TEST_API_KEY);
 
 mock.module('../config', () => ({
-  getConfig: () => ({
-    credentialKeys: TEST_CREDENTIAL_KEYS,
-  }),
+  getConfig: () => ({}),
 }));
 
 // Launch outcome is driven by resolveInstanceSources: tests set `sourcesImpl`
 // to return sources (launch proceeds) or throw (launch fails).
+// CL-1521: sources are now plaintext (stored plaintext in DB, not encrypted).
 let sourcesImpl: () => Promise<unknown[]> = () =>
-  Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+  Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 let credentialByIdImpl: () => Promise<unknown> = () => Promise.resolve(undefined);
 mock.module('@intx/db', () => ({
   ...intxDbReal,
@@ -32,8 +27,6 @@ import { Hono } from 'hono';
 import {
   createAgentProvisioningRouter,
   persistInstanceToolGrants,
-  pushDecryptedSourcesForInstance,
-  pushDecryptedSourceUpdates,
   relaunchInstanceIfNeeded,
 } from './agents';
 
@@ -344,7 +337,7 @@ describe('POST /agents', () => {
       delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
     };
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     const app = buildApp(base);
     const res = await app.fetch(
@@ -385,7 +378,7 @@ describe('POST /agents', () => {
       launchSession: mock(() => Promise.reject(new Error('sidecar not connected'))),
     };
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     const app = buildApp(base, failingService);
     const res = await app.fetch(
@@ -421,7 +414,7 @@ describe('POST /agents', () => {
       delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
     };
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     const app = buildApp(base);
 
@@ -502,7 +495,7 @@ describe('POST /tenants/:tenantId/credentials', () => {
     const savedCredential = {
       id: 'cred-new',
       name: 'My Anthropic Key',
-      secret: 'enc:v1:...',
+      secret: 'sk-test',
       tenantId: 'tenant-1',
     };
 
@@ -574,52 +567,24 @@ describe('POST /tenants/:tenantId/credentials', () => {
 // ─── PATCH /tenants/:tenantId/credentials/:credentialId ──────────
 
 describe('PATCH /tenants/:tenantId/credentials/:credentialId', () => {
-  it('pushes plaintext apiKey (not enc:v1: ciphertext) to the sidecar after credential update', async () => {
-    const capturedSendArgs: Parameters<SidecarRouter['sendSourcesUpdate']>[] = [];
-    const capturingSidecarRouter: SidecarRouter = {
-      ...mockSidecarRouter,
-      sendSourcesUpdate: mock((...args: Parameters<SidecarRouter['sendSourcesUpdate']>) => {
-        capturedSendArgs.push(args);
-        return Promise.resolve();
-      }),
-    } as unknown as SidecarRouter;
-
+  it('stores credential with plaintext apiKey (CL-1521: no encryption)', async () => {
+    const updatedRows: Array<Record<string, unknown>> = [];
     const db = makeMockDb();
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
     db.query.credential.findFirst = mock(() =>
       Promise.resolve({ id: 'crd-1', tenantId: 'tenant-1', providerId: 'prov-1' })
     );
-    db.query.agentInstance.findMany = mock(() =>
-      Promise.resolve([
-        {
-          id: 'ins-1',
-          agentId: 'agt-1',
-          tenantId: 'tenant-1',
-          address: 'ins-1@tenant-1.localhost',
-          status: 'running',
-        },
-      ])
-    );
+    db.update = mock(() => ({
+      set: mock((values: Record<string, unknown>) => ({
+        where: mock(() => {
+          updatedRows.push(values);
+          return Promise.resolve();
+        }),
+      })),
+    }));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const parent = new Hono<{ Variables: { userId: string } }>();
-    parent.use('*', async (c, next) => {
-      c.set('userId', 'user-1');
-      await next();
-    });
-    parent.route(
-      '/',
-      createAgentProvisioningRouter(
-        db as unknown as DB['db'],
-        mockSessionService,
-        mockGrantStore,
-        capturingSidecarRouter,
-        mockEventCollectors
-      )
-    );
-
-    const res = await parent.fetch(
+    const app = buildApp(db);
+    const res = await app.fetch(
       makeRequest('http://localhost/tenants/tenant-1/credentials/crd-1', {
         method: 'PATCH',
         body: { apiKey: 'sk-new-plaintext-key' },
@@ -627,15 +592,9 @@ describe('PATCH /tenants/:tenantId/credentials/:credentialId', () => {
     );
 
     expect(res.status).toBe(200);
-
-    // Wait a tick for the void-fired promise to settle.
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-
-    expect(capturedSendArgs.length).toBeGreaterThan(0);
-    const [, pushedSources] = capturedSendArgs[0]!;
-    const firstSource = (pushedSources as { apiKey: string }[])[0];
-    expect(firstSource?.apiKey).toBe(TEST_API_KEY);
-    expect(firstSource?.apiKey).not.toMatch(/^enc:v1:/);
+    expect(updatedRows).toHaveLength(1);
+    expect(updatedRows[0]?.secret).toBe('sk-new-plaintext-key');
+    expect((updatedRows[0]?.secret as string).startsWith('enc:')).toBe(false);
   });
 });
 
@@ -764,7 +723,7 @@ describe('PATCH /tenants/:tenantId/agents/:agentId/tools', () => {
         },
       ])
     );
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     const app = buildApp(db, sessionService);
     const res = await app.fetch(
@@ -908,7 +867,7 @@ describe('POST /instances/:instanceId/sessions', () => {
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     const app = buildApp(db);
     const res = await app.fetch(
@@ -945,7 +904,7 @@ describe('POST /instances/:instanceId/sessions', () => {
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     // In production, the sidecar returns "Agent already exists" wrapped in a
     // provision-phase SessionLaunchError. Simulate that here.
@@ -1039,7 +998,7 @@ describe('relaunchInstanceIfNeeded', () => {
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
     db.query.credential.findFirst = mock(() => Promise.resolve(ACTIVE_CREDENTIAL));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
     await relaunchInstanceIfNeeded(
@@ -1054,11 +1013,7 @@ describe('relaunchInstanceIfNeeded', () => {
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
   });
 
-  it('decrypts apiKey before passing sources to launchSession', async () => {
-    const { encryptSecret, parseEncryptionKeys } = await import('@workbench/hub-crypto');
-    const keys = parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`);
-    const encrypted = encryptSecret(keys, 'tenant-1', 'sk-real-key');
-
+  it('passes plaintext apiKey sources directly to launchSession (CL-1521: no decryption)', async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() =>
       Promise.resolve(runningInstance({ status: 'deployed' }))
@@ -1070,7 +1025,7 @@ describe('relaunchInstanceIfNeeded', () => {
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
     db.query.credential.findFirst = mock(() => Promise.resolve(ACTIVE_CREDENTIAL));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: encrypted }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
     await relaunchInstanceIfNeeded(
@@ -1088,7 +1043,7 @@ describe('relaunchInstanceIfNeeded', () => {
       .calls[0]![0] as {
       config: { sources: { apiKey: string }[] };
     };
-    expect(launchArg.config.sources[0]?.apiKey).toBe('sk-real-key');
+    expect(launchArg.config.sources[0]?.apiKey).toBe(TEST_API_KEY);
   });
 
   it('does not relaunch a non-running instance without an active credential', async () => {
@@ -1111,98 +1066,6 @@ describe('relaunchInstanceIfNeeded', () => {
     );
 
     expect(sessionService.launchSession).not.toHaveBeenCalled();
-  });
-});
-
-// ─── pushDecryptedSourcesForInstance ─────────────────────────────
-// Used by the agent.reconnected listener in index.ts to push decrypted
-// sources for a specific reconnecting instance. Must work regardless of
-// instance status — the orchestrator sets status='running' inside its own
-// handler, so the row is still 'deployed' when our listener fires.
-
-describe('pushDecryptedSourcesForInstance', () => {
-  it('sends plaintext apiKey to the sidecar, not the encrypted value', async () => {
-    const db = makeMockDb();
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const capturedSources: unknown[] = [];
-    const capturingSidecarRouter: SidecarRouter = {
-      sendSourcesUpdate: mock((_addr, sources) => {
-        capturedSources.push(...sources);
-        return Promise.resolve();
-      }),
-    } as unknown as SidecarRouter;
-
-    await pushDecryptedSourcesForInstance(db as unknown as DB['db'], capturingSidecarRouter, {
-      tenantId: TEST_TENANT_ID,
-      address: 'ins-reconnect@tenant-1.localhost',
-      agentId: 'agt-1',
-      sessionId: 'ses-1',
-    });
-
-    expect(capturedSources).toHaveLength(1);
-    const source = (capturedSources as Array<{ apiKey: string }>)[0];
-    expect(source?.apiKey).toBe(TEST_API_KEY);
-    expect(source?.apiKey).not.toContain('enc:');
-  });
-
-  it('works when instance status is deployed (reconnect fires before orchestrator sets running)', async () => {
-    const db = makeMockDb();
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const capturingSidecarRouter: SidecarRouter = {
-      sendSourcesUpdate: mock(() => Promise.resolve()),
-    } as unknown as SidecarRouter;
-
-    await pushDecryptedSourcesForInstance(db as unknown as DB['db'], capturingSidecarRouter, {
-      tenantId: TEST_TENANT_ID,
-      address: 'ins-reconnect@tenant-1.localhost',
-      agentId: 'agt-1',
-      sessionId: 'ses-1',
-    });
-
-    expect(capturingSidecarRouter.sendSourcesUpdate).toHaveBeenCalledTimes(1);
-  });
-});
-
-// ─── pushDecryptedSourceUpdates ───────────────────────────────────
-// Used by the credential rotation path. Operates on all running instances
-// for a tenant. Status filter is intentional here — only push to live agents.
-
-describe('pushDecryptedSourceUpdates', () => {
-  it('sends plaintext apiKey to all running instances for the tenant', async () => {
-    const db = makeMockDb();
-    db.query.agentInstance.findMany = mock(() =>
-      Promise.resolve([
-        {
-          id: 'ins-running',
-          agentId: 'agt-1',
-          tenantId: TEST_TENANT_ID,
-          address: 'ins-running@tenant-1.localhost',
-          status: 'running',
-        },
-      ])
-    );
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const capturedSources: unknown[] = [];
-    const capturingSidecarRouter: SidecarRouter = {
-      sendSourcesUpdate: mock((_addr, sources) => {
-        capturedSources.push(...sources);
-        return Promise.resolve();
-      }),
-    } as unknown as SidecarRouter;
-
-    await pushDecryptedSourceUpdates(
-      db as unknown as DB['db'],
-      capturingSidecarRouter,
-      TEST_TENANT_ID
-    );
-
-    expect(capturedSources).toHaveLength(1);
-    const source = (capturedSources as Array<{ apiKey: string }>)[0];
-    expect(source?.apiKey).toBe(TEST_API_KEY);
-    expect(source?.apiKey).not.toContain('enc:');
   });
 });
 

@@ -13,9 +13,7 @@ import type { SessionService, SidecarRouter, EventCollectorRegistry } from '@int
 import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { type } from 'arktype';
-import { decryptSecret, encryptSecret } from '@workbench/hub-crypto';
 import { startInstanceScheduler } from '@workbench/agent-scheduler';
-import { getConfig } from '../config';
 import {
   buildToolDefinitions,
   getToolNamesFromCapabilities,
@@ -305,7 +303,7 @@ export function createAgentProvisioningRouter(
     );
   });
 
-  // Create a named LLM credential (provider + encrypted secret) for a tenant.
+  // Create a named LLM credential (provider + secret) for a tenant.
   app.post('/tenants/:tenantId/credentials', async (c) => {
     const userId = c.get('userId');
     const tenantId = c.req.param('tenantId');
@@ -385,10 +383,6 @@ export function createAgentProvisioningRouter(
           now
         );
 
-        // Encrypt secret before storage — Interchange stores plaintext; encryption is a workbench
-        // invariant applied at the write boundary.
-        const encryptedSecret = encryptSecret(getConfig().credentialKeys, tenantId, apiKey);
-
         const [inserted] = await tx
           .insert(credential)
           .values({
@@ -398,7 +392,7 @@ export function createAgentProvisioningRouter(
             principalId: null,
             name: credentialName,
             type: 'api_key',
-            secret: encryptedSecret,
+            secret: apiKey,
             createdAt: now,
             updatedAt: now,
           })
@@ -433,8 +427,6 @@ export function createAgentProvisioningRouter(
       if (e.status === 409) return c.json({ error: e.message }, 409);
       throw err;
     }
-
-    void pushDecryptedSourceUpdates(db, sidecarRouter, tenantId);
 
     return c.json({ credentialId, providerId }, 201);
   });
@@ -518,11 +510,7 @@ export function createAgentProvisioningRouter(
         credUpdates['name'] = raw.name.trim();
       }
       if (typeof raw.apiKey === 'string' && raw.apiKey.trim()) {
-        credUpdates['secret'] = encryptSecret(
-          getConfig().credentialKeys,
-          tenantId,
-          raw.apiKey.trim()
-        );
+        credUpdates['secret'] = raw.apiKey.trim();
       }
       await tx.update(credential).set(credUpdates).where(eq(credential.id, credentialId));
 
@@ -544,8 +532,6 @@ export function createAgentProvisioningRouter(
           .where(eq(providerTable.id, cred.providerId));
       }
     });
-
-    void pushDecryptedSourceUpdates(db, sidecarRouter, tenantId);
 
     return c.json({ credentialId }, 200);
   });
@@ -642,8 +628,6 @@ export function createAgentProvisioningRouter(
         updatedAt: new Date(),
       })
       .where(eq(agent.id, agentId));
-
-    void pushDecryptedSourceUpdates(db, sidecarRouter, effectiveTenantId);
 
     return c.json({}, 200);
   });
@@ -849,68 +833,6 @@ export function createAgentProvisioningRouter(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────
-
-// Resolves inference sources for every running instance in the tenant, decrypts
-// each apiKey (workbench encrypts secrets at write time), and pushes plaintext
-// sources to the sidecar. Mirrors the decrypt step in launchAgentSession.
-// Errors are logged per-instance and do not propagate.
-export async function pushDecryptedSourceUpdates(
-  db: DB['db'],
-  sidecarRouter: SidecarRouter,
-  tenantId: string
-): Promise<void> {
-  const instances = await db.query.agentInstance.findMany({
-    where: and(eq(agentInstance.tenantId, tenantId), eq(agentInstance.status, 'running')),
-  });
-
-  if (instances.length === 0) return;
-
-  const { credentialKeys } = getConfig();
-
-  const results = await Promise.allSettled(
-    instances.map(async (instance) => {
-      const rawSources = await resolveInstanceSources(db, tenantId, instance);
-      if (rawSources.length === 0) return;
-      const sources = rawSources.map((s) => ({
-        ...s,
-        apiKey: decryptSecret(credentialKeys, tenantId, s.apiKey),
-      }));
-      const [first] = sources;
-      if (first === undefined) return;
-      await sidecarRouter.sendSourcesUpdate(instance.address, sources, first.id);
-    })
-  );
-
-  for (const result of results) {
-    if (result.status === 'rejected') {
-      log.warn('Failed to push decrypted source update', {
-        tenantId,
-        reason: String(result.reason),
-      });
-    }
-  }
-}
-
-// Single-instance variant used by the reconnect listener. Does not filter by
-// status — the reconnecting instance is still 'deployed' when the listener
-// fires; the orchestrator sets 'running' after sendSourcesUpdate in its own
-// handler.
-export async function pushDecryptedSourcesForInstance(
-  db: DB['db'],
-  sidecarRouter: SidecarRouter,
-  instance: { tenantId: string; address: string; agentId: string; sessionId: string | null }
-): Promise<void> {
-  const { credentialKeys } = getConfig();
-  const rawSources = await resolveInstanceSources(db, instance.tenantId, instance);
-  if (rawSources.length === 0) return;
-  const sources = rawSources.map((s) => ({
-    ...s,
-    apiKey: decryptSecret(credentialKeys, instance.tenantId, s.apiKey),
-  }));
-  const [first] = sources;
-  if (first === undefined) return;
-  await sidecarRouter.sendSourcesUpdate(instance.address, sources, first.id);
-}
 
 async function relaunchRunningAgentInstancesForToolUpdate(
   db: DB['db'],
@@ -1205,13 +1127,7 @@ export async function launchAgentSession(
     throw new Error('No resolvable inference sources for agent credential requirements');
   }
 
-  // Workbench encrypts credential secrets at write time. Interchange returns
-  // the raw DB value, so we must decrypt here before the sources reach the sidecar.
-  const { credentialKeys } = getConfig();
-  const sources = rawSources.map((s) => ({
-    ...s,
-    apiKey: decryptSecret(credentialKeys, tenantId, s.apiKey),
-  }));
+  const sources = rawSources;
   const defaultSource = sources[0]!.id;
 
   const agentRow = await db.query.agent.findFirst({
