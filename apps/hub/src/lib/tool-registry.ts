@@ -1,6 +1,7 @@
 import type { AgentTool } from '@intx/agent';
 import type { ToolDefinition } from '@intx/types/runtime';
 import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
+import { FIRECRAWL_HUB_TOOLS } from '@workbench/tools-firecrawl';
 import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
 
 /**
@@ -11,6 +12,7 @@ import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
  */
 export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...EXA_HUB_TOOLS,
+  ...FIRECRAWL_HUB_TOOLS,
   ...GRANOLA_HUB_TOOLS,
 };
 
