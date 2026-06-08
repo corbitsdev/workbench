@@ -46,6 +46,84 @@ function mapDbStatusToSessionStatus(status: string): string {
   return map[status] ?? status;
 }
 
+/** Derive step order from the workflow definition. */
+function getWorkflowStepOrder(kind: string): string[] {
+  const def = workflowRegistry.get(kind);
+  if (!def) throw new Error(`Workflow definition not found: ${kind}`);
+  return def.steps.map((s) => s.name);
+}
+
+/** Return the first step after 'intake' for a given workflow. */
+function getFirstRunnableStep(kind: string): string {
+  const steps = getWorkflowStepOrder(kind);
+  const intakeIndex = steps.indexOf('intake');
+  const next = steps[intakeIndex + 1];
+  if (!next) throw new Error(`Workflow ${kind} has no step after intake`);
+  return next;
+}
+
+/** Map a DB status to the conceptual step name for a given workflow. */
+function deriveCurrentStepForWorkflow(status: string, kind: string): string {
+  const steps = getWorkflowStepOrder(kind);
+  const firstPostIntake = steps[1];
+  const lastStep = steps[steps.length - 1];
+  switch (status) {
+    case 'pending':
+    case 'analyzing':
+      return firstPostIntake;
+    case 'running':
+    case 'done':
+      return lastStep;
+    case 'failed':
+      return 'intake';
+    default:
+      throw new Error(`Unknown workflow status: ${status}`);
+  }
+}
+
+/** Generic background step trigger. Dispatches to the domain-specific
+ *  executor based on step name. */
+async function triggerStep(
+  db: HubDb,
+  id: string,
+  userContext: UserContext,
+  step: string,
+  source: InferenceSource,
+  maxOutputTokens?: number
+) {
+  try {
+    const response = await dispatchStep(db, id, userContext, step, source, maxOutputTokens);
+    if (response.status >= 400) {
+      log.error('Background step failed', { workflowId: id, step, status: response.status });
+      await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
+    }
+  } catch (err) {
+    log.error('Background step threw exception', {
+      workflowId: id,
+      step,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
+  }
+}
+
+/** Dispatch a step to its executor. Only 'analyze' supports auto-trigger
+ *  today; 'generate' requires user input (pain-point selection). */
+async function dispatchStep(
+  db: HubDb,
+  id: string,
+  userContext: UserContext,
+  step: string,
+  source: InferenceSource,
+  maxOutputTokens?: number
+): Promise<Response> {
+  if (step === 'analyze') {
+    return runAnalyze(db, id, userContext, source, undefined, maxOutputTokens);
+  }
+  log.warn('No auto-executor for step', { workflowId: id, step });
+  return Response.json({ error: `Step ${step} does not support auto-trigger` }, { status: 400 });
+}
+
 const CONFIGURABLE_STEPS = ['analyze', 'generate'] as const;
 type ConfigurableStep = (typeof CONFIGURABLE_STEPS)[number];
 
@@ -708,10 +786,45 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       status: wfRow.status,
     });
 
+    // Auto-trigger the first step after intake. We consult the workflow
+    // definition so this works for any workflow shape, not just
+    // collateral-generation's hardcoded analyze step.
+    const firstStep = getFirstRunnableStep(workflowKind);
+    let autoTriggerStatus = wfRow.status;
+    if (firstStep) {
+      const stepSource = await resolveStepInferenceSource(
+        db,
+        userContext.tenantId,
+        wfRow.kind,
+        firstStep
+      );
+      if (stepSource) {
+        autoTriggerStatus = 'analyzing';
+        await db
+          .update(workflowRun)
+          .set({ status: 'analyzing' })
+          .where(eq(workflowRun.id, wfRow.id));
+        void triggerStep(
+          db,
+          wfRow.id,
+          userContext,
+          firstStep,
+          stepSource,
+          DEFAULT_STEP_MAX_OUTPUT_TOKENS[firstStep as keyof typeof DEFAULT_STEP_MAX_OUTPUT_TOKENS]
+        );
+      } else {
+        log.warn('Step credentials not resolvable — auto-trigger skipped', {
+          workflowId: wfRow.id,
+          tenantId: userContext.tenantId,
+          step: firstStep,
+        });
+      }
+    }
+
     return c.json(
       {
         id: wfRow.id,
-        status: mapDbStatusToSessionStatus(wfRow.status),
+        status: mapDbStatusToSessionStatus(autoTriggerStatus),
         steps: {
           intake: { completed: true, transcriptId: txRow.id },
         },
@@ -891,7 +1004,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       where: eq(artifact.sessionId, id),
     });
 
-    const currentStep = deriveCurrentStep(wf.status);
+    const currentStep = deriveCurrentStepForWorkflow(wf.status, wf.kind);
     log.info('Workflow fetched', {
       workflowId: id,
       currentStep,
@@ -954,7 +1067,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       return c.json({ error: 'Workflow not found' }, 404);
     }
 
-    const step = body.step ?? deriveCurrentStep(wf.status);
+    const step = body.step ?? deriveCurrentStepForWorkflow(wf.status, wf.kind);
 
     if (step === 'analyze' || step === 'generate') {
       // A step runs in one of two modes. Agent mode: the step is assigned a
@@ -1261,18 +1374,6 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 }
 
 // ─── Step helpers ───────────────────────────────────────────────────
-
-function deriveCurrentStep(status: string): StepName {
-  const map: Record<string, StepName> = {
-    pending: 'analyze',
-    analyzing: 'analyze',
-    running: 'generate',
-    done: 'generate',
-    failed: 'intake',
-  };
-  return map[status] ?? 'intake';
-}
-
 async function runAnalyze(
   db: HubDb,
   id: string,
@@ -1287,7 +1388,16 @@ async function runAnalyze(
     where: eq(workflowRun.id, id),
   });
 
-  const transcriptId = (wf?.input as WorkflowInput)?.transcriptId;
+  if (!wf) {
+    log.warn('Workflow not found for analyze', { workflowId: id });
+    return Response.json({ error: 'Workflow not found' }, { status: 404 });
+  }
+
+  // Mark analyzing before the LLM call so a container crash leaves the row
+  // in a recoverable state rather than silently pending with zero pain points.
+  await db.update(workflowRun).set({ status: 'analyzing' }).where(eq(workflowRun.id, id));
+
+  const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
   const tx = transcriptId
     ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
     : null;
