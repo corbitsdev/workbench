@@ -1027,6 +1027,31 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     return c.json({ id, companyName });
   });
 
+  // ─── Delete workflow ────────────────────────────────────────────────
+  router.delete('/workflows/:id', async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: eq(workflowRun.id, id),
+    });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
+
+    // pain_point and artifact rows reference workflow_run with onDelete cascade,
+    // so removing the run removes its derived rows.
+    await db.delete(workflowRun).where(eq(workflowRun.id, id));
+
+    log.info('Workflow deleted', { workflowId: id, tenantId: wf.tenantId });
+    return c.json({ id, deleted: true });
+  });
+
   // ─── Update step config ─────────────────────────────────────────────
   router.patch('/workflows/:id/step-config', async (c) => {
     const id = c.req.param('id');

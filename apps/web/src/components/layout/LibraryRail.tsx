@@ -1,4 +1,7 @@
 import { useLibraryResources } from '@workbench/client/react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Trash2 } from 'lucide-react';
+import { api } from '../../lib/api';
 import type { SessionStatus, WorkflowSummary } from '@workbench/shared';
 import { clientOptions } from '../../lib/client-options';
 import {
@@ -497,6 +500,7 @@ export interface LibraryRailProps {
   onWorkflowSelect?: (workflowId: string) => void;
   onWorkbenchSelect?: (slug: string) => void;
   onAgentDeleted?: () => void;
+  onWorkflowDeleted?: (workflowId: string) => void;
   activeAgentInstanceId?: string;
   activeWorkflowId?: string;
   activeWorkbenchSlug?: string;
@@ -518,6 +522,7 @@ export function LibraryRail({
   onWorkflowSelect,
   onWorkbenchSelect,
   onAgentDeleted,
+  onWorkflowDeleted,
   activeAgentInstanceId,
   activeWorkflowId,
   activeWorkbenchSlug,
@@ -537,6 +542,8 @@ export function LibraryRail({
   const [editingToolsFor, setEditingToolsFor] = useState<string | null>(null);
   const [stoppingInstanceId, setStoppingInstanceId] = useState<string | null>(null);
   const [restartingInstanceId, setRestartingInstanceId] = useState<string | null>(null);
+  const [deletingWorkflowId, setDeletingWorkflowId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   // Resolve the tenantId for the active workbench so agents can be scoped.
   const activeWorkbench = workbenches.find((w) => w.tenantSlug === activeWorkbenchSlug);
@@ -826,6 +833,17 @@ export function LibraryRail({
                   }
                 };
 
+                const deleteWorkflow = async () => {
+                  setDeletingWorkflowId(item.id);
+                  try {
+                    await api('DELETE', `/workflows/${item.id}`);
+                    await queryClient.invalidateQueries({ queryKey: ['workflows'] });
+                    onWorkflowDeleted?.(item.id);
+                  } finally {
+                    setDeletingWorkflowId(null);
+                  }
+                };
+
                 return (
                   <div key={item.id} className="rounded-[12px]">
                     <div
@@ -964,6 +982,22 @@ export function LibraryRail({
                               </button>
                             </>
                           )}
+                        </div>
+                      )}
+                      {item.type === 'workflow' && (
+                        <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                          <button
+                            type="button"
+                            aria-label="Delete workflow"
+                            disabled={deletingWorkflowId === item.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Delete ${item.name}?`)) void deleteWorkflow();
+                            }}
+                            className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
+                          >
+                            <Trash2 className="h-[13px] w-[13px]" />
+                          </button>
                         </div>
                       )}
                       <span

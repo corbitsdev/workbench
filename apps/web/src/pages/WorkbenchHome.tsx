@@ -226,6 +226,13 @@ export default function WorkbenchHome() {
     setLauncherHidden(false);
   };
 
+  const handleWorkflowDeleted = (workflowId: string) => {
+    if (rightPane.view === 'workflow' && rightPane.workflowId === workflowId) {
+      setRightPane({ view: 'gallery' });
+      setLauncherHidden(false);
+    }
+  };
+
   const paneTransition: Transition = { duration: 0.15, ease: [0.23, 1, 0.32, 1] };
   const paneFade = {
     initial: { opacity: 0 },
@@ -357,6 +364,7 @@ export default function WorkbenchHome() {
               onWorkflowSelect={handleWorkflowSelect}
               onWorkbenchSelect={handleWorkbenchSelect}
               onAgentDeleted={handleAgentDeleted}
+              onWorkflowDeleted={handleWorkflowDeleted}
               activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
               activeWorkflowId={rightPane.view === 'workflow' ? rightPane.workflowId : undefined}
               activeWorkbenchSlug={slug}
@@ -395,6 +403,7 @@ export default function WorkbenchHome() {
             onWorkflowSelect={handleWorkflowSelect}
             onWorkbenchSelect={handleWorkbenchSelect}
             onAgentDeleted={handleAgentDeleted}
+            onWorkflowDeleted={handleWorkflowDeleted}
             activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
             activeWorkflowId={rightPane.view === 'workflow' ? rightPane.workflowId : undefined}
             activeWorkbenchSlug={slug}
