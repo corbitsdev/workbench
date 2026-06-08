@@ -41,7 +41,20 @@ type ConfigurableStep = (typeof CONFIGURABLE_STEPS)[number];
 export interface StepConfig {
   agentId?: string;
   toolIds?: string[];
+  maxOutputTokens?: number;
 }
+
+// Per-step output-token caps applied when a step has no explicit override.
+// These are caps, not floors. Analyze is highest because reasoning models spend
+// part of the budget on think blocks before emitting the pain-point JSON; a cap
+// that is too low truncates the JSON and the step fails.
+const DEFAULT_STEP_MAX_OUTPUT_TOKENS: Record<ConfigurableStep, number> = {
+  analyze: 16384,
+  generate: 8192,
+  improve: 4096,
+};
+
+const MAX_STEP_OUTPUT_TOKENS = 65536;
 
 export interface WorkflowStepConfig {
   analyze?: StepConfig;
@@ -965,18 +978,40 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         );
       }
 
+      // Output-token cap for this step: explicit per-step override, else the
+      // per-step default. Tuned to the model, since reasoning models otherwise
+      // burn the budget on think blocks and truncate the response.
+      const maxOutputTokens =
+        (wf.input as WorkflowInput)?.stepConfig?.[step]?.maxOutputTokens ??
+        DEFAULT_STEP_MAX_OUTPUT_TOKENS[step];
+
       if (step === 'analyze') {
-        return runAnalyze(db, id, userContext, source, body.feedback);
+        return runAnalyze(db, id, userContext, source, body.feedback, maxOutputTokens);
       }
       if (step === 'generate') {
-        return runGenerate(db, id, body.painPointIds ?? [], userContext.principalId, source);
+        return runGenerate(
+          db,
+          id,
+          body.painPointIds ?? [],
+          userContext.principalId,
+          source,
+          maxOutputTokens
+        );
       }
       // step === 'improve'
       if (!body.artifactId || !body.feedback) {
         log.warn('Missing artifactId or feedback for improve step', { workflowId: id });
         return c.json({ error: 'artifactId and feedback are required' }, 400);
       }
-      return runImprove(db, id, body.artifactId, body.feedback, userContext.principalId, source);
+      return runImprove(
+        db,
+        id,
+        body.artifactId,
+        body.feedback,
+        userContext.principalId,
+        source,
+        maxOutputTokens
+      );
     }
 
     if (step === 'export') {
@@ -1088,6 +1123,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       const s = stepVal as Record<string, unknown>;
       const agentId = s['agentId'] !== undefined ? s['agentId'] : undefined;
       const toolIds = s['toolIds'] !== undefined ? s['toolIds'] : undefined;
+      const maxOutputTokens = s['maxOutputTokens'] !== undefined ? s['maxOutputTokens'] : undefined;
       if (agentId !== undefined && typeof agentId !== 'string') {
         return c.json({ error: `stepConfig.${step}.agentId must be a string` }, 400);
       }
@@ -1097,9 +1133,24 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       ) {
         return c.json({ error: `stepConfig.${step}.toolIds must be an array of strings` }, 400);
       }
+      if (
+        maxOutputTokens !== undefined &&
+        (typeof maxOutputTokens !== 'number' ||
+          !Number.isInteger(maxOutputTokens) ||
+          maxOutputTokens < 1 ||
+          maxOutputTokens > MAX_STEP_OUTPUT_TOKENS)
+      ) {
+        return c.json(
+          {
+            error: `stepConfig.${step}.maxOutputTokens must be an integer between 1 and ${MAX_STEP_OUTPUT_TOKENS}`,
+          },
+          400
+        );
+      }
       const entry: StepConfig = {};
       if (typeof agentId === 'string') entry.agentId = agentId;
       if (Array.isArray(toolIds)) entry.toolIds = toolIds as string[];
+      if (typeof maxOutputTokens === 'number') entry.maxOutputTokens = maxOutputTokens;
       validatedConfig[step] = entry;
     }
 
@@ -1210,7 +1261,8 @@ async function runAnalyze(
   id: string,
   userContext: UserContext,
   source: InferenceSource,
-  feedback?: string
+  feedback?: string,
+  maxOutputTokens?: number
 ) {
   log.info('Starting analyze step', { workflowId: id, hasFeedback: Boolean(feedback) });
 
@@ -1232,7 +1284,7 @@ async function runAnalyze(
   let extracted: Awaited<ReturnType<typeof extractPainPoints>>['painPoints'];
   let companyName: string | null;
   try {
-    const result = await extractPainPoints(id, tx.content, feedback, source);
+    const result = await extractPainPoints(id, tx.content, feedback, source, maxOutputTokens);
     extracted = result.painPoints;
     companyName = result.companyName;
   } catch (err) {
@@ -1276,7 +1328,8 @@ async function runGenerate(
   id: string,
   painPointIds: string[],
   principalId: string,
-  source: InferenceSource
+  source: InferenceSource,
+  maxOutputTokens?: number
 ) {
   const authorId = principalId;
   log.info('Starting generate step', { workflowId: id, painPointCount: painPointIds.length });
@@ -1311,7 +1364,7 @@ async function runGenerate(
   const results = await Promise.allSettled(
     points.flatMap((p: any) =>
       ARTIFACT_KINDS.map((kind) =>
-        generateCollateralWithLLM(id, transcriptContent, p, kind, source).then(
+        generateCollateralWithLLM(id, transcriptContent, p, kind, source, maxOutputTokens).then(
           ({ title, body }) => ({
             sessionId: id,
             painPointId: p.id,
@@ -1386,7 +1439,8 @@ async function runImprove(
   artifactId: string,
   feedback: string,
   authorId: string,
-  source: InferenceSource
+  source: InferenceSource,
+  maxOutputTokens?: number
 ) {
   log.info('Starting improve step', {
     workflowId: id,
@@ -1410,13 +1464,15 @@ async function runImprove(
       item.title,
       feedback,
       item.kind as 'email' | 'linkedin' | 'one-pager' | 'battlecard',
-      source
+      source,
+      maxOutputTokens
     ),
     refineFeedbackWithLLM(
       item.content,
       feedback,
       item.kind as 'email' | 'linkedin' | 'one-pager' | 'battlecard',
-      source
+      source,
+      maxOutputTokens
     ),
   ]);
 

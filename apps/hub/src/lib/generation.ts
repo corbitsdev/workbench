@@ -145,7 +145,8 @@ export async function generateCollateralWithLLM(
   transcript: string,
   point: PainPointInput,
   type: ArtifactKind,
-  source: InferenceSource
+  source: InferenceSource,
+  maxOutputTokens?: number
 ): Promise<GeneratedCollateral> {
   log.info('Generating collateral', { workflowId, painPointId: point.id, type });
 
@@ -155,7 +156,8 @@ export async function generateCollateralWithLLM(
     source,
     buildSystemPrompt(type),
     userMessage,
-    'gtm-generation'
+    'gtm-generation',
+    maxOutputTokens
   );
 
   if (!raw) throw new Error('LLM returned empty content for collateral generation');

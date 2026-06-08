@@ -8,13 +8,21 @@ export async function runSingleTurnAgent(
   source: InferenceSource,
   systemPrompt: string,
   userMessage: string,
-  contextPrefix: string
+  contextPrefix: string,
+  maxOutputTokens?: number
 ): Promise<string> {
   const contextDir = join(tmpdir(), `${contextPrefix}-${randomUUID()}`);
+  // Apply the caller's output-token cap when provided. This is a cap, not a
+  // floor: reasoning models can otherwise spend the entire budget on think
+  // blocks and truncate the answer, so the cap is tuned per step/agent.
+  const effectiveSource: InferenceSource =
+    maxOutputTokens !== undefined
+      ? { ...source, defaults: { ...source.defaults, maxTokens: maxOutputTokens } }
+      : source;
   const agent = await createAgent({
     contextDir,
-    sources: [source],
-    defaultSource: source.id,
+    sources: [effectiveSource],
+    defaultSource: effectiveSource.id,
     systemPrompt,
     tools: [],
     closeTimeoutMs: 1000,

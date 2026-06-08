@@ -10,6 +10,7 @@ export type { AgentInstance };
 export interface StepConfig {
   agentId?: string;
   toolIds?: string[];
+  maxOutputTokens?: number;
 }
 
 export interface WorkflowStepConfig {
