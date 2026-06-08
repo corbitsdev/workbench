@@ -31,7 +31,7 @@ export function LoginView({ state, onOAuth, providers = DEFAULT_OAUTH_PROVIDERS 
             <div className="h-7 w-7 rounded bg-orange" />
             GTM Workbench
           </div>
-          <p className="text-sm text-text-2">Sales collateral workspace</p>
+          <p className="text-sm text-text-2">Sales collateral workbench</p>
         </div>
 
         <div className="flex flex-col gap-2">

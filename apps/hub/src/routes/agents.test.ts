@@ -179,7 +179,7 @@ const TENANT = {
   id: 'tenant-1',
   domain: 'tenant-1.localhost',
   slug: 'ws-1',
-  name: 'Workspace 1',
+  name: 'Workbench 1',
   createdAt: new Date(),
   updatedAt: new Date(),
 };

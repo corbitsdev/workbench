@@ -1,8 +1,8 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { Hono } from 'hono';
-import { createWorkspacesRouter } from './workspaces';
+import { createWorkbenchesRouter } from './workbenches';
 
-describe('Workspaces router', () => {
+describe('Workbenches router', () => {
   function makeTenant(overrides?: Partial<{ id: string; slug: string; name: string }>) {
     return {
       id: 'tn-1',
@@ -21,7 +21,7 @@ describe('Workspaces router', () => {
   type MockDb = any;
 
   /**
-   * Wraps the workspaces router in a Hono app that sets the `userId` context
+   * Wraps the workbenches router in a Hono app that sets the `userId` context
    * variable before each request — mirrors what auth middleware does in production.
    */
   function wrapWithAuth(router: Hono<{ Variables: { userId: string } }>, userId = 'user-1'): Hono {
@@ -69,11 +69,11 @@ describe('Workspaces router', () => {
     return db;
   }
 
-  it('POST /workspaces creates a tenant and principal', async () => {
+  it('POST /workbenches creates a tenant and principal', async () => {
     const db = createMockDb();
-    const app = wrapWithAuth(createWorkspacesRouter(db as any));
+    const app = wrapWithAuth(createWorkbenchesRouter(db as any));
     const res = await app.fetch(
-      new Request('http://localhost:4000/workspaces', {
+      new Request('http://localhost:4000/workbenches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Acme Corp' }),
@@ -85,11 +85,11 @@ describe('Workspaces router', () => {
     expect(json.slug).toBeDefined();
   });
 
-  it('POST /workspaces returns 400 for missing name', async () => {
+  it('POST /workbenches returns 400 for missing name', async () => {
     const db = createMockDb();
-    const app = wrapWithAuth(createWorkspacesRouter(db as any));
+    const app = wrapWithAuth(createWorkbenchesRouter(db as any));
     const res = await app.fetch(
-      new Request('http://localhost:4000/workspaces', {
+      new Request('http://localhost:4000/workbenches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -98,11 +98,11 @@ describe('Workspaces router', () => {
     expect(res.status).toBe(400);
   });
 
-  it('POST /workspaces returns 400 for empty name', async () => {
+  it('POST /workbenches returns 400 for empty name', async () => {
     const db = createMockDb();
-    const app = wrapWithAuth(createWorkspacesRouter(db as any));
+    const app = wrapWithAuth(createWorkbenchesRouter(db as any));
     const res = await app.fetch(
-      new Request('http://localhost:4000/workspaces', {
+      new Request('http://localhost:4000/workbenches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: '   ' }),
@@ -111,14 +111,14 @@ describe('Workspaces router', () => {
     expect(res.status).toBe(400);
   });
 
-  it('POST /workspaces is idempotent — returns existing workspace if user is already a principal', async () => {
+  it('POST /workbenches is idempotent — returns existing workbench if user is already a principal', async () => {
     const db = createMockDb({
       existingTenant: makeTenant(),
       existingPrincipal: makePrincipal(),
     });
-    const app = wrapWithAuth(createWorkspacesRouter(db as any));
+    const app = wrapWithAuth(createWorkbenchesRouter(db as any));
     const res = await app.fetch(
-      new Request('http://localhost:4000/workspaces', {
+      new Request('http://localhost:4000/workbenches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Acme Corp' }),
@@ -129,14 +129,14 @@ describe('Workspaces router', () => {
     expect(json.slug).toBe('acme-corp');
   });
 
-  it('POST /workspaces returns 409 when slug exists but user is not a principal', async () => {
+  it('POST /workbenches returns 409 when slug exists but user is not a principal', async () => {
     const db = createMockDb({
       existingTenant: makeTenant(),
       existingPrincipal: null,
     });
-    const app = wrapWithAuth(createWorkspacesRouter(db as any));
+    const app = wrapWithAuth(createWorkbenchesRouter(db as any));
     const res = await app.fetch(
-      new Request('http://localhost:4000/workspaces', {
+      new Request('http://localhost:4000/workbenches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Acme Corp' }),

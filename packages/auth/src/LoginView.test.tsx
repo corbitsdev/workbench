@@ -63,10 +63,10 @@ describe('OnboardingView', () => {
       />
     );
 
-    await user.type(screen.getByLabelText('Workspace name'), 'X');
+    await user.type(screen.getByLabelText('Workbench name'), 'X');
     expect(onNameChange).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole('button', { name: /create workspace/i }));
+    await user.click(screen.getByRole('button', { name: /create workbench/i }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 

@@ -129,9 +129,9 @@ describe('NewWorkflowPane — paste submission', () => {
     expect(call.transcript).toBe(longText);
   });
 
-  it('passes tenantId when creating a workflow for a workspace', async () => {
+  it('passes tenantId when creating a workflow for a workbench', async () => {
     const user = userEvent.setup();
-    renderPane(mock(), mock(), 'tenant-workspace');
+    renderPane(mock(), mock(), 'tenant-workbench');
     const longText = 'Speaker 1: Thanks for taking the time today to discuss your challenges.';
     await user.type(screen.getByPlaceholderText(/speaker 1/i), longText);
     await user.click(screen.getByRole('button', { name: /start analysis/i }));
@@ -140,7 +140,7 @@ describe('NewWorkflowPane — paste submission', () => {
     });
     expect(mockMutateAsync.mock.calls[0][0]).toMatchObject({
       source: 'paste',
-      tenantId: 'tenant-workspace',
+      tenantId: 'tenant-workbench',
     });
   });
 

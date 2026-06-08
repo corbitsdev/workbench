@@ -27,7 +27,7 @@ mock.module('../lib/hub-api', () => ({
     }),
   getMyPrincipals: () => Promise.resolve([]),
   createTenant: () => Promise.resolve({ id: 't1', name: 'Test', slug: 'test', domain: '' }),
-  createWorkspace: () => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' }),
+  createWorkbench: () => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' }),
   listWorkbenches: () =>
     Promise.resolve([
       { id: 'p-wb', tenantId: 'tn-wb', tenantSlug: 'acme-corp', tenantName: 'Acme Corp' },

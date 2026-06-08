@@ -15,7 +15,7 @@ mock.module('../lib/hub-api', () => ({
   getMe: mock(() => Promise.resolve({ userId: 'u1', personalTenantId: null, provisionedAt: null })),
   getMyPrincipals: mock(() => Promise.resolve([])),
   createTenant: mock(() => Promise.resolve({ id: '', name: '', slug: '', domain: '' })),
-  createWorkspace: mock(() => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' })),
+  createWorkbench: mock(() => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' })),
   listWorkbenches: mock(() => Promise.resolve([])),
   getTenant: mock(() =>
     Promise.resolve({

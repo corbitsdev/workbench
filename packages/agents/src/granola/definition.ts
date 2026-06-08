@@ -21,9 +21,9 @@ export const GRANOLA_GRANT_REQUIREMENTS: GrantRequirementType[] = [
 /**
  * Credential requirements for the Granola agent.
  *
- *   - granola:    Workspace-level Granola API key (tenant credential). Shared
- *                 across all users in the workspace.
- *   - openai-compatible: Workspace-level LLM credential for inference.
+ *   - granola:    Workbench-level Granola API key (tenant credential). Shared
+ *                 across all users in the workbench.
+ *   - openai-compatible: Workbench-level LLM credential for inference.
  */
 export const GRANOLA_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {

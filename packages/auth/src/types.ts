@@ -30,11 +30,11 @@ export interface LoginFormState {
   error: string | null;
 }
 
-/** Form state for the onboarding (create workspace) surface. */
+/** Form state for the onboarding (create workbench) surface. */
 export interface OnboardingFormState {
-  /** Current workspace name input value. */
+  /** Current workbench name input value. */
   name: string;
-  /** Whether a create-workspace attempt is in flight. */
+  /** Whether a create-workbench attempt is in flight. */
   loading: boolean;
   /** Error message to surface, or null when there is none. */
   error: string | null;

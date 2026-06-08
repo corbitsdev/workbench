@@ -5,14 +5,14 @@ import { type OnboardingFormState } from './types';
 export interface OnboardingViewProps {
   /** Current form state (name / loading / error). Owned by the consuming app. */
   state: OnboardingFormState;
-  /** Invoked with the new value as the user edits the workspace name. */
+  /** Invoked with the new value as the user edits the workbench name. */
   onNameChange: (name: string) => void;
-  /** Invoked on form submit. The app owns validation and workspace creation. */
+  /** Invoked on form submit. The app owns validation and workbench creation. */
   onSubmit: () => void;
 }
 
 /**
- * Stateless onboarding (create workspace) presentation. The consuming app owns
+ * Stateless onboarding (create workbench) presentation. The consuming app owns
  * the name state, validation, and hub-api wiring; this view renders the form
  * and reports name edits and submit intent.
  */
@@ -30,9 +30,9 @@ export function OnboardingView({ state, onNameChange, onSubmit }: OnboardingView
           <span className="text-lg font-semibold tracking-tight text-text">GTM Workbench</span>
         </div>
 
-        <h1 className="text-2xl font-bold text-text mb-2">Create your workspace</h1>
+        <h1 className="text-2xl font-bold text-text mb-2">Create your workbench</h1>
         <p className="text-sm text-text-2 mb-6">
-          Your workspace is where your team's collateral lives. You can invite teammates after
+          Your workbench is where your team's collateral lives. You can invite teammates after
           setup.
         </p>
 
@@ -44,9 +44,9 @@ export function OnboardingView({ state, onNameChange, onSubmit }: OnboardingView
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="workspace-name">Workspace name</Label>
+            <Label htmlFor="workbench-name">Workbench name</Label>
             <Input
-              id="workspace-name"
+              id="workbench-name"
               type="text"
               value={state.name}
               onChange={(e) => onNameChange(e.target.value)}
@@ -61,7 +61,7 @@ export function OnboardingView({ state, onNameChange, onSubmit }: OnboardingView
             disabled={state.loading || state.name.trim().length === 0}
             className="w-full rounded-md bg-orange px-4 py-2 text-sm font-medium text-text hover:bg-orange-deep disabled:opacity-50"
           >
-            {state.loading ? 'Creating workspace…' : 'Create workspace'}
+            {state.loading ? 'Creating workbench…' : 'Create workbench'}
           </button>
         </form>
       </div>

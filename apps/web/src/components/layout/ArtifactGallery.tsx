@@ -10,7 +10,7 @@ import type { GalleryArtifact, ArtifactWithSession } from '@workbench/artifact';
 import { clientOptions } from '../../lib/client-options';
 
 interface ArtifactGalleryProps {
-  /** Active workspace tenant. Null means workspace context is still loading. */
+  /** Active workbench tenant. Null means workbench context is still loading. */
   tenantId?: string | null;
   /** Bridge to the working intake flow (real Dashboard) until CL-988/Phase 4 wires it natively. */
   onNew?: () => void;

@@ -6,7 +6,7 @@ import type { SessionService, SidecarEventEmitter } from '@intx/hub-sessions';
 const log = getLogger(['agent-scheduler']);
 
 export type InstanceSchedulerOptions = {
-  /** Agent address (e.g. "inst-abc@workspace.localhost"). */
+  /** Agent address (e.g. "inst-abc@workbench.localhost"). */
   agentAddress: string;
   /** Active session ID for this instance. */
   sessionId: string;

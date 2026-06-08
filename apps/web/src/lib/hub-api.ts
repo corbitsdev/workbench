@@ -79,15 +79,15 @@ export async function createTenant(name: string, slug: string): Promise<TenantRe
   return hubFetch<TenantResponse>('POST', 'tenants', { name, slug });
 }
 
-export type WorkspaceResponse = {
+export type WorkbenchResponse = {
   id: string;
   name: string;
   slug: string;
   tenantId: string;
 };
 
-export async function createWorkspace(name: string): Promise<WorkspaceResponse> {
-  return hubFetch<WorkspaceResponse>('POST', 'v1/workspaces', { name });
+export async function createWorkbench(name: string): Promise<WorkbenchResponse> {
+  return hubFetch<WorkbenchResponse>('POST', 'v1/workbenches', { name });
 }
 
 export async function listWorkbenches(): Promise<WorkbenchEntry[]> {

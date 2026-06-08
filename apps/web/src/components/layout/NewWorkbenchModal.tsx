@@ -78,7 +78,7 @@ export function NewWorkbenchModal({ open, onClose, onCreated }: NewWorkbenchModa
 
     const slug = slugify(trimmed);
     if (!slug) {
-      setError('Workspace name must contain at least one letter or number.');
+      setError('Workbench name must contain at least one letter or number.');
       return;
     }
 
@@ -94,10 +94,10 @@ export function NewWorkbenchModal({ open, onClose, onCreated }: NewWorkbenchModa
           ? (err as { status: unknown }).status
           : undefined;
       if (status === 409) {
-        setError('That workspace name is already taken. Please choose a different name.');
+        setError('That workbench name is already taken. Please choose a different name.');
       } else {
         setError(
-          err instanceof Error ? err.message : 'Failed to create workspace. Please try again.'
+          err instanceof Error ? err.message : 'Failed to create workbench. Please try again.'
         );
       }
       setLoading(false);
@@ -119,7 +119,7 @@ export function NewWorkbenchModal({ open, onClose, onCreated }: NewWorkbenchModa
             ref={panelRef}
             role="dialog"
             aria-modal="true"
-            aria-label="Create workspace"
+            aria-label="Create workbench"
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={handleKeyDown}
@@ -130,7 +130,7 @@ export function NewWorkbenchModal({ open, onClose, onCreated }: NewWorkbenchModa
             className="flex w-full max-w-sm flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
           >
             <div className="flex items-center justify-between border-b border-border px-6 py-4">
-              <div className="text-[16px] font-bold text-text">Create workspace</div>
+              <div className="text-[16px] font-bold text-text">Create workbench</div>
               <button
                 type="button"
                 onClick={handleClose}
@@ -156,9 +156,9 @@ export function NewWorkbenchModal({ open, onClose, onCreated }: NewWorkbenchModa
                 </p>
               )}
               <div className="flex flex-col gap-2">
-                <Label htmlFor="new-workspace-name">Workspace name</Label>
+                <Label htmlFor="new-workbench-name">Workbench name</Label>
                 <Input
-                  id="new-workspace-name"
+                  id="new-workbench-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -172,7 +172,7 @@ export function NewWorkbenchModal({ open, onClose, onCreated }: NewWorkbenchModa
                 disabled={loading || name.trim().length === 0}
                 className="w-full rounded-md bg-orange px-4 py-2 text-sm font-medium text-text hover:bg-orange-deep disabled:opacity-50"
               >
-                {loading ? 'Creating workspace...' : 'Create workspace'}
+                {loading ? 'Creating workbench...' : 'Create workbench'}
               </button>
             </form>
           </motion.div>

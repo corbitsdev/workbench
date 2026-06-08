@@ -78,7 +78,7 @@ const GRANOLA_CREDENTIAL_REQUIREMENT = {
 };
 
 /**
- * Resolve the workspace Granola API key from the tenant credential store.
+ * Resolve the workbench Granola API key from the tenant credential store.
  * Returns null when no Granola credential is configured for the tenant.
  */
 async function resolveGranolaApiKey(db: HubDb, tenantId: string): Promise<string | null> {

@@ -62,8 +62,8 @@ const PERSONAL_PRINCIPAL = {
   refId: 'test-user',
 };
 const WORKSPACE_PRINCIPAL = {
-  id: 'prn-workspace',
-  tenantId: 'tenant-workspace',
+  id: 'prn-workbench',
+  tenantId: 'tenant-workbench',
   kind: 'user',
   refId: 'test-user',
 };
@@ -216,7 +216,7 @@ describe('Workflow router', () => {
     expect(json.steps.intake.completed).toBe(true);
   });
 
-  it('POST /workflows stores a workflow under the requested workspace tenant', async () => {
+  it('POST /workflows stores a workflow under the requested workbench tenant', async () => {
     const insertedValues: unknown[] = [];
     const mockDb = createMockDb({ onInsertValues: (values) => insertedValues.push(values) });
     mockDb.query.principal.findFirst = createPrincipalSequence(
@@ -229,18 +229,18 @@ describe('Workflow router', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        transcript: 'Hello workspace world',
+        transcript: 'Hello workbench world',
         source: 'paste',
         workflowKind: 'collateral-generation',
-        tenantId: 'tenant-workspace',
+        tenantId: 'tenant-workbench',
       }),
     });
 
     const res = await router.fetch(req);
     expect(res.status).toBe(201);
     expect(insertedValues[1]).toMatchObject({
-      tenantId: 'tenant-workspace',
-      principalId: 'prn-workspace',
+      tenantId: 'tenant-workbench',
+      principalId: 'prn-workbench',
     });
   });
 
@@ -299,7 +299,7 @@ describe('Workflow router', () => {
     expect(json[0].sessionStatus).toBe('done');
   });
 
-  it('GET /artifacts checks membership before returning workspace-scoped artifacts', async () => {
+  it('GET /artifacts checks membership before returning workbench-scoped artifacts', async () => {
     const mockDb = createMockDb();
     mockDb.query.principal.findFirst = createPrincipalSequence(
       PERSONAL_PRINCIPAL,
@@ -307,17 +307,17 @@ describe('Workflow router', () => {
     );
     mockDb.query.workflowRun.findMany = mock(() => [
       {
-        id: 'wf-workspace',
+        id: 'wf-workbench',
         status: 'done',
-        input: { companyName: 'Workspace Corp' },
-        tenantId: 'tenant-workspace',
-        principalId: 'prn-workspace',
+        input: { companyName: 'Workbench Corp' },
+        tenantId: 'tenant-workbench',
+        principalId: 'prn-workbench',
         kind: 'collateral-generation',
       },
     ]);
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/artifacts?tenantId=tenant-workspace', {
+    const req = new Request('http://localhost:4000/artifacts?tenantId=tenant-workbench', {
       method: 'GET',
     });
     const res = await router.fetch(req);
@@ -337,20 +337,20 @@ describe('Workflow router', () => {
     expect(res.status).toBe(403);
   });
 
-  it('GET /artifacts returns 403 when the requesting user is deactivated in the workspace', async () => {
+  it('GET /artifacts returns 403 when the requesting user is deactivated in the workbench', async () => {
     // DB returns null because the status='active' filter excludes the row
     const mockDb = createMockDb();
     mockDb.query.principal.findFirst = createPrincipalSequence(PERSONAL_PRINCIPAL, null);
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/artifacts?tenantId=tenant-workspace', {
+    const req = new Request('http://localhost:4000/artifacts?tenantId=tenant-workbench', {
       method: 'GET',
     });
     const res = await router.fetch(req);
     expect(res.status).toBe(403);
   });
 
-  it('POST /workflows returns 403 when the requesting user is deactivated in the workspace', async () => {
+  it('POST /workflows returns 403 when the requesting user is deactivated in the workbench', async () => {
     const mockDb = createMockDb();
     mockDb.query.principal.findFirst = createPrincipalSequence(PERSONAL_PRINCIPAL, null);
 
@@ -362,7 +362,7 @@ describe('Workflow router', () => {
         transcript: 'Hello',
         source: 'paste',
         workflowKind: 'collateral-generation',
-        tenantId: 'tenant-workspace',
+        tenantId: 'tenant-workbench',
       }),
     });
     const res = await router.fetch(req);

@@ -4,7 +4,7 @@ import type {
   MeResponse,
   Principal,
   TenantResponse,
-  WorkspaceResponse,
+  WorkbenchResponse,
   WorkbenchEntry,
   TenantDetailResponse,
   PrincipalDetail,
@@ -35,7 +35,7 @@ export function createMockHubApi(overrides?: Record<string, any>) {
     createTenant: mock<(name: string, slug: string) => Promise<TenantResponse>>(() =>
       Promise.resolve({ id: '', name: '', slug: '', domain: '' })
     ),
-    createWorkspace: mock<(name: string) => Promise<WorkspaceResponse>>(() =>
+    createWorkbench: mock<(name: string) => Promise<WorkbenchResponse>>(() =>
       Promise.resolve({ id: '', name: '', slug: '', tenantId: '' })
     ),
     listWorkbenches: mock<() => Promise<WorkbenchEntry[]>>(() => Promise.resolve([])),

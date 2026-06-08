@@ -67,7 +67,7 @@ describe('listWorkbenches', () => {
 
   it('maps Interchange principalId to the workbench entry id', () => {
     const principal: Principal = {
-      principalId: 'principal-workspace',
+      principalId: 'principal-workbench',
       tenantId: 'tenant-acme',
       tenantSlug: 'acme-sales',
       tenantName: 'Acme Sales',
@@ -77,7 +77,7 @@ describe('listWorkbenches', () => {
     };
 
     expect(principalToWorkbenchEntry(principal)).toEqual({
-      id: 'principal-workspace',
+      id: 'principal-workbench',
       tenantId: 'tenant-acme',
       tenantSlug: 'acme-sales',
       tenantName: 'Acme Sales',

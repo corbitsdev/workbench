@@ -51,12 +51,12 @@ describe('ArtifactGallery', () => {
 
   it('passes tenantId through to the artifacts hook', async () => {
     const { ArtifactGallery } = await import('./ArtifactGallery');
-    renderWithClient(React.createElement(ArtifactGallery, { tenantId: 'tenant-workspace' }));
+    renderWithClient(React.createElement(ArtifactGallery, { tenantId: 'tenant-workbench' }));
 
     await waitFor(() => {
       expect(mockUseArtifacts).toHaveBeenCalled();
     });
     const lastCall = mockUseArtifacts.mock.calls[mockUseArtifacts.mock.calls.length - 1];
-    expect(lastCall?.[1]).toEqual({ tenantId: 'tenant-workspace' });
+    expect(lastCall?.[1]).toEqual({ tenantId: 'tenant-workbench' });
   });
 });

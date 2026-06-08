@@ -45,10 +45,10 @@ export type ProvisioningDB = {
 
 const SYSTEM_ROLES = ['owner', 'admin', 'member'] as const;
 
-type WorkspaceTenantResult = { tenantId: string; principalId: string };
+type WorkbenchTenantResult = { tenantId: string; principalId: string };
 
 /**
- * Provision a named workspace tenant for a user and assign them as the owner.
+ * Provision a named workbench tenant for a user and assign them as the owner.
  * Idempotent by slug — if the tenant exists and the user is already a principal,
  * returns it with `alreadyExists: true`. If the tenant exists but the user is not
  * a principal, throws a conflict error so the caller can return 409.
@@ -56,10 +56,10 @@ type WorkspaceTenantResult = { tenantId: string; principalId: string };
  * Role and grant seeding mirrors `provisionPersonalTenant` — the same three system
  * roles (owner / admin / member) with the same default grants.
  */
-export async function provisionWorkspaceTenant(
+export async function provisionWorkbenchTenant(
   db: ProductionDB,
   opts: { userId: string; name: string; slug: string }
-): Promise<WorkspaceTenantResult & { alreadyExists: boolean }> {
+): Promise<WorkbenchTenantResult & { alreadyExists: boolean }> {
   const existing = await db.query.tenant.findFirst({
     where: eq(tenant.slug, opts.slug),
   });
@@ -75,7 +75,7 @@ export async function provisionWorkspaceTenant(
     if (existingPrincipal) {
       return { tenantId: existing.id, principalId: existingPrincipal.id, alreadyExists: true };
     }
-    throw Object.assign(new Error('Workspace slug conflict'), { code: 'SLUG_CONFLICT' });
+    throw Object.assign(new Error('Workbench slug conflict'), { code: 'SLUG_CONFLICT' });
   }
 
   const result = await db.transaction(async (tx) => {
@@ -97,7 +97,7 @@ export async function provisionWorkspaceTenant(
       .returning();
 
     const tenantRow = tenantRows[0];
-    if (!tenantRow) throw new Error('Failed to insert workspace tenant');
+    if (!tenantRow) throw new Error('Failed to insert workbench tenant');
     const resolvedTenantId = (tenantRow as { id: string }).id;
 
     const roleIds: Record<string, string> = {};
@@ -177,7 +177,7 @@ export async function provisionWorkspaceTenant(
       createdAt: now,
     });
 
-    log.info('Workspace tenant provisioned', {
+    log.info('Workbench tenant provisioned', {
       userId: opts.userId,
       tenantId: resolvedTenantId,
       slug: opts.slug,
@@ -469,20 +469,20 @@ export async function provisionMyraInstance(
 }
 
 /**
- * Ensure an Oat agent and running instance exist on the workspace tenant.
- * Oat is a workspace-scoped Granola integration agent — one instance per workspace.
+ * Ensure an Oat agent and running instance exist on the workbench tenant.
+ * Oat is a workbench-scoped Granola integration agent — one instance per workbench.
  * Idempotent — if both already exist, returns the existing instance ID.
  */
 export async function provisionOatInstance(
   db: ProductionDB,
   opts: {
-    workspaceTenantId: string;
-    workspaceTenantDomain: string;
+    workbenchTenantId: string;
+    workbenchTenantDomain: string;
     creatorPrincipalId: string;
   }
 ): Promise<OatInstanceResult> {
   const existingAgent = await db.query.agent.findFirst({
-    where: and(eq(agent.tenantId, opts.workspaceTenantId), eq(agent.name, 'Oat')),
+    where: and(eq(agent.tenantId, opts.workbenchTenantId), eq(agent.name, 'Oat')),
   });
 
   if (existingAgent) {
@@ -491,7 +491,7 @@ export async function provisionOatInstance(
     });
     if (existingInstance) {
       log.info('Oat instance already exists', {
-        tenantId: opts.workspaceTenantId,
+        tenantId: opts.workbenchTenantId,
         instanceId: existingInstance.id,
       });
       return { oatInstanceId: existingInstance.id };
@@ -507,7 +507,7 @@ export async function provisionOatInstance(
         .insert(agent)
         .values({
           id: agentId,
-          tenantId: opts.workspaceTenantId,
+          tenantId: opts.workbenchTenantId,
           creatorPrincipalId: opts.creatorPrincipalId,
           name: 'Oat',
           systemPrompt: GRANOLA_DEPLOY_PROMPT,
@@ -521,13 +521,13 @@ export async function provisionOatInstance(
         .returning();
 
       const agentRow = agentRows?.[0];
-      if (!agentRow) throw new Error('Failed to create Oat agent for workspace');
+      if (!agentRow) throw new Error('Failed to create Oat agent for workbench');
     }
 
     const instancePrincipalId = generateId('principal');
     await tx.insert(principal).values({
       id: instancePrincipalId,
-      tenantId: opts.workspaceTenantId,
+      tenantId: opts.workbenchTenantId,
       kind: 'agent',
       refId: agentId,
       status: 'active',
@@ -536,12 +536,12 @@ export async function provisionOatInstance(
     });
 
     const instanceId = generateId('instance');
-    const address = `${instanceId}@${opts.workspaceTenantDomain}`;
+    const address = `${instanceId}@${opts.workbenchTenantDomain}`;
 
     await tx.insert(agentInstance).values({
       id: instanceId,
       agentId,
-      tenantId: opts.workspaceTenantId,
+      tenantId: opts.workbenchTenantId,
       principalId: instancePrincipalId,
       address,
       status: 'deployed',
@@ -550,7 +550,7 @@ export async function provisionOatInstance(
     });
 
     log.info('Oat instance provisioned', {
-      tenantId: opts.workspaceTenantId,
+      tenantId: opts.workbenchTenantId,
       instanceId,
     });
     return { oatInstanceId: instanceId };

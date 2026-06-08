@@ -302,7 +302,7 @@ export default function WorkbenchHome() {
     }
     return (
       <motion.div
-        // key change forces remount when workspace resolves, refreshing the query
+        // key change forces remount when workbench resolves, refreshing the query
         key={`gallery-${workbenchTenantId ?? 'loading'}`}
         {...paneFade}
         className="min-h-0 flex-1"

@@ -221,7 +221,7 @@ async function getNote(
 export const GRANOLA_LIST_NOTES_DEFINITION: ToolDefinition = {
   name: 'granola_list_notes',
   description:
-    'List recent Granola notes for the configured workspace. Use this to find calls before fetching a full transcript.',
+    'List recent Granola notes for the configured workbench. Use this to find calls before fetching a full transcript.',
   inputSchema: {
     type: 'object',
     properties: {

@@ -28,7 +28,7 @@ import {
   pushDecryptedSourcesForInstance,
   relaunchInstanceIfNeeded,
 } from './routes/agents';
-import { createWorkspacesRouter } from './routes/workspaces';
+import { createWorkbenchesRouter } from './routes/workbenches';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createInternalToolsRouter } from './routes/tools';
 import { schema } from './db';
@@ -488,7 +488,7 @@ v1.route(
   '/',
   createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors)
 );
-v1.route('/', createWorkspacesRouter(db));
+v1.route('/', createWorkbenchesRouter(db));
 v1.route('/', createApprovalsRouter(db));
 
 app.route('/api/v1', v1);

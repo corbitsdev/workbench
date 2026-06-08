@@ -275,7 +275,7 @@ describe('provisionOatInstance', () => {
     return insertMock;
   }
 
-  it('creates agent, principal, and agentInstance on the workspace tenant', async () => {
+  it('creates agent, principal, and agentInstance on the workbench tenant', async () => {
     const insertMock = makeInsertMockReturningAgent();
 
     const db = makeMockDB({
@@ -291,8 +291,8 @@ describe('provisionOatInstance', () => {
     });
 
     const result = await provisionOatInstance(db as never, {
-      workspaceTenantId: WORKSPACE_TENANT_ID,
-      workspaceTenantDomain: WORKSPACE_TENANT_DOMAIN,
+      workbenchTenantId: WORKSPACE_TENANT_ID,
+      workbenchTenantDomain: WORKSPACE_TENANT_DOMAIN,
       creatorPrincipalId: 'prn-owner',
     });
 
@@ -342,8 +342,8 @@ describe('provisionOatInstance', () => {
     });
 
     const result = await provisionOatInstance(db as never, {
-      workspaceTenantId: WORKSPACE_TENANT_ID,
-      workspaceTenantDomain: WORKSPACE_TENANT_DOMAIN,
+      workbenchTenantId: WORKSPACE_TENANT_ID,
+      workbenchTenantDomain: WORKSPACE_TENANT_DOMAIN,
       creatorPrincipalId: 'prn-owner',
     });
 

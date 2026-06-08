@@ -26,17 +26,17 @@ describe('@workbench/client artifacts', () => {
 
     await listArtifacts(
       { baseUrl: 'http://localhost:4000', fetch: fetcher },
-      { tenantId: 'tenant-workspace' }
+      { tenantId: 'tenant-workbench' }
     );
 
     const url = fetchMock.mock.calls[0]?.[0];
-    expect(url).toBe('http://localhost:4000/api/v1/artifacts?tenantId=tenant-workspace');
+    expect(url).toBe('http://localhost:4000/api/v1/artifacts?tenantId=tenant-workbench');
   });
 
   it('includes tenantId in the artifacts query key', () => {
-    useArtifacts({ baseUrl: 'http://localhost:4000' }, { tenantId: 'tenant-workspace' });
+    useArtifacts({ baseUrl: 'http://localhost:4000' }, { tenantId: 'tenant-workbench' });
 
     const options = useQueryMock.mock.calls[0]?.[0];
-    expect(options?.queryKey).toEqual(['artifacts', 'tenant-workspace']);
+    expect(options?.queryKey).toEqual(['artifacts', 'tenant-workbench']);
   });
 });

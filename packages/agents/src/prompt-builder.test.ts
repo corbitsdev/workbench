@@ -62,7 +62,7 @@ describe('buildSystemPrompt', () => {
 describe('buildContextBlock', () => {
   it('includes defined keys and skips undefined values for xml', () => {
     const result = buildContextBlock(
-      { date: '04/06/2026', 'Human Operator': 'Sawyer', workspace: undefined },
+      { date: '04/06/2026', 'Human Operator': 'Sawyer', workbench: undefined },
       'xml'
     );
     expect(result).toBe('<context>\nDate: 04/06/2026\nHuman Operator: Sawyer\n</context>');
@@ -70,7 +70,7 @@ describe('buildContextBlock', () => {
 
   it('includes defined keys and skips undefined values for markdown', () => {
     const result = buildContextBlock(
-      { date: '04/06/2026', 'Human Operator': 'Sawyer', workspace: undefined },
+      { date: '04/06/2026', 'Human Operator': 'Sawyer', workbench: undefined },
       'markdown'
     );
     expect(result).toBe('## Context\nDate: 04/06/2026\nHuman Operator: Sawyer');
