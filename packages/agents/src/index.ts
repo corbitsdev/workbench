@@ -22,6 +22,7 @@ export { createGranolaDirector } from './granola/director';
 
 // Shared adapter
 export { convertInstanceEvents } from './adapter';
+export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
 
 // Prompt builder
 export {

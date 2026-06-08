@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { ApiError, createInstanceSession, type InstanceSession } from '@intx/hub-client';
-import { buildContextBlock, convertInstanceEvents } from '@workbench/agents/browser';
+import {
+  buildContextBlock,
+  convertInstanceEvents,
+  createToolNameTracker,
+  type ToolNameTracker,
+} from '@workbench/agents/browser';
 import {
   ChatLauncher,
   ChatPanel,
@@ -59,6 +64,7 @@ export function PersonalAgentChat() {
 
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const toolNamesRef = useRef<ToolNameTracker | null>(null);
   const contextInjectedRef = useRef(false);
 
   useEffect(() => {
@@ -99,6 +105,17 @@ export function PersonalAgentChat() {
         const stop = session.start();
         stopRef.current = stop;
 
+        // Capture tool names from the live stream so committed turns whose tool
+        // "call" part failed to persist still render the real tool instead of a
+        // generic "Tool call" (see CL-1398).
+        toolNamesRef.current = createToolNameTracker(
+          transport,
+          { tenantId: me.personalTenantId, instanceId: me.paInstanceId },
+          () => {
+            if (!cancelled) forceUpdate((n) => n + 1);
+          }
+        );
+
         if (!cancelled) setSessionState({ phase: 'ready', session });
       } catch {
         if (!cancelled) {
@@ -116,6 +133,8 @@ export function PersonalAgentChat() {
       cancelled = true;
       stopRef.current?.();
       stopRef.current = null;
+      toolNamesRef.current?.stop();
+      toolNamesRef.current = null;
       sessionRef.current?.destroy();
       sessionRef.current = null;
     };
@@ -132,7 +151,7 @@ export function PersonalAgentChat() {
   };
 
   function buildMessages(session: InstanceSession): ChatMessage[] {
-    const committed = convertInstanceEvents(session.events);
+    const committed = convertInstanceEvents(session.events, toolNamesRef.current?.names);
 
     if (session.streaming) {
       const streamingMsg: ChatMessage = {

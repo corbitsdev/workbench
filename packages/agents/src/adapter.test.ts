@@ -190,3 +190,45 @@ describe('convertInstanceEvents', () => {
     expect(messages[0]?.content).toBe('Hello Myra');
   });
 });
+
+describe('convertInstanceEvents tool name resolution', () => {
+  const rawCallId = 'call_00_moYijX4P3EQ04w5R62pB3012';
+
+  function turnWithTool(name: string): InstanceEvent[] {
+    return [
+      {
+        kind: 'turn',
+        turnId: 'turn-tool',
+        content: '',
+        timestamp: '2024-01-01T00:00:00.000Z',
+        toolCalls: [{ name, arguments: {}, result: 'ok', isError: false }],
+      },
+    ];
+  }
+
+  it('resolves a raw call-ID tool name via the toolNames map', () => {
+    const messages = convertInstanceEvents(
+      turnWithTool(rawCallId),
+      new Map([[rawCallId, 'exa_search']])
+    );
+    expect(messages[0]?.toolCalls?.[0]?.name).toBe('exa_search');
+  });
+
+  it('leaves an already-readable tool name unchanged even when present in the map', () => {
+    const messages = convertInstanceEvents(
+      turnWithTool('exa_search'),
+      new Map([['exa_search', 'something_else']])
+    );
+    expect(messages[0]?.toolCalls?.[0]?.name).toBe('exa_search');
+  });
+
+  it('keeps the raw call ID when the map has no matching entry', () => {
+    const messages = convertInstanceEvents(turnWithTool(rawCallId), new Map());
+    expect(messages[0]?.toolCalls?.[0]?.name).toBe(rawCallId);
+  });
+
+  it('keeps the raw call ID when no map is provided', () => {
+    const messages = convertInstanceEvents(turnWithTool(rawCallId));
+    expect(messages[0]?.toolCalls?.[0]?.name).toBe(rawCallId);
+  });
+});

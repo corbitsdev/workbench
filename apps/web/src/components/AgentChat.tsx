@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
-import { convertInstanceEvents } from '@workbench/agents/browser';
+import {
+  convertInstanceEvents,
+  createToolNameTracker,
+  type ToolNameTracker,
+} from '@workbench/agents/browser';
 import {
   ChatPanel,
   type ChatAgentIdentity,
@@ -57,6 +61,7 @@ export function AgentChat({
 
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const toolNamesRef = useRef<ToolNameTracker | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
 
@@ -131,12 +136,22 @@ export function AgentChat({
     sessionRef.current = session;
     const stop = session.start();
     stopRef.current = stop;
+
+    // Capture tool names from the live stream so committed turns whose tool
+    // "call" part failed to persist still render the real tool instead of a
+    // generic "Tool call" (see CL-1398).
+    toolNamesRef.current = createToolNameTracker(transport, { tenantId, instanceId }, () => {
+      if (!cancelled) forceUpdate((n) => n + 1);
+    });
+
     if (!cancelled) setSessionState({ phase: 'ready', session });
 
     return () => {
       cancelled = true;
       stopRef.current?.();
       stopRef.current = null;
+      toolNamesRef.current?.stop();
+      toolNamesRef.current = null;
       sessionRef.current?.destroy();
       sessionRef.current = null;
     };
@@ -153,7 +168,7 @@ export function AgentChat({
       (e) => !(e.kind === 'mail' && e.role === 'assistant' && turnContentSet.has(e.content.trim()))
     );
 
-    const committed = convertInstanceEvents(deduped);
+    const committed = convertInstanceEvents(deduped, toolNamesRef.current?.names);
     if (session.streaming) {
       const streamingMsg: ChatMessage = {
         id: 'streaming',

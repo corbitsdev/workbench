@@ -28,7 +28,9 @@ mock.module('@intx/hub-client', () => ({
 }));
 
 mock.module('../lib/instance-transport', () => ({
-  createHubTransport: () => ({}),
+  // The tool-name tracker subscribes to the event stream; provide a no-op
+  // subscribe so the real tracker runs harmlessly under test.
+  createHubTransport: () => ({ subscribe: () => () => undefined }),
 }));
 
 import { AgentChat } from './AgentChat';
