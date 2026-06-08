@@ -38,7 +38,6 @@ mock.module('../hooks/use-workflow', () => ({
     error: null,
   })),
   useWorkbenchAgents: mock(() => ({ data: [], isLoading: false })),
-  isExportStepResult: mock((r: unknown) => typeof r === 'object' && r !== null && 'export' in r),
 }));
 
 import { WorkflowPanel } from './WorkflowPanel';
@@ -54,8 +53,6 @@ function makeWorkflow(overrides: Record<string, unknown> = {}) {
       intake: { completed: true, transcriptId: 'tx-1' },
       analyze: { completed: false, painPoints: [] },
       generate: { completed: false, artifacts: [] },
-      improve: { completed: false },
-      export: { completed: false },
     },
     ...overrides,
   };
@@ -139,8 +136,6 @@ describe('WorkflowPanel analyze step', () => {
     renderPanel();
     expect(screen.getByText('Analyze')).toBeDefined();
     expect(screen.getByText('Generate')).toBeDefined();
-    expect(screen.getByText('Improve')).toBeDefined();
-    expect(screen.getByText('Export')).toBeDefined();
   });
 
   it('shows Run analysis button before pain points are extracted', () => {
@@ -176,8 +171,6 @@ describe('WorkflowPanel generate step', () => {
           intake: { completed: true, transcriptId: 'tx-1' },
           analyze: { completed: true, painPoints },
           generate: { completed: false, artifacts: [] },
-          improve: { completed: false },
-          export: { completed: false },
         },
       }),
       isLoading: false,
@@ -195,20 +188,26 @@ describe('WorkflowPanel generate step', () => {
     expect(screen.getByText('No integrations')).toBeDefined();
   });
 
+  it('shows collateral type options', () => {
+    renderPanel();
+    expect(screen.getByText('Follow-up Email')).toBeDefined();
+    expect(screen.getByText('Battlecard')).toBeDefined();
+  });
+
   it('shows a Generate button after analyze completes', () => {
     renderPanel();
-    expect(screen.getByRole('button', { name: /generate/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /generate collateral/i })).toBeDefined();
   });
 });
 
-describe('WorkflowPanel improve step — human-in-the-loop gate', () => {
+describe('WorkflowPanel done step', () => {
   const artifacts = [
     {
       id: 'art-1',
       kind: 'email' as const,
       title: 'Email draft',
       content: 'Dear prospect…',
-      status: 'draft',
+      status: 'approved',
       version: 1,
     },
   ];
@@ -216,14 +215,12 @@ describe('WorkflowPanel improve step — human-in-the-loop gate', () => {
   beforeEach(() => {
     mockUseWorkflow.mockImplementation(() => ({
       data: makeWorkflow({
-        currentStep: 'improve',
-        status: 'running',
+        currentStep: 'generate',
+        status: 'done',
         steps: {
           intake: { completed: true, transcriptId: 'tx-1' },
           analyze: { completed: true, painPoints: [] },
           generate: { completed: true, artifacts },
-          improve: { completed: false },
-          export: { completed: false },
         },
       }),
       isLoading: false,
@@ -240,77 +237,15 @@ describe('WorkflowPanel improve step — human-in-the-loop gate', () => {
     expect(screen.getByText(/dear prospect/i)).toBeDefined();
   });
 
-  it('renders the improve feedback textarea', () => {
-    renderPanel();
-    const textarea = screen.getByPlaceholderText(/suggest improvements/i);
-    expect(textarea).toBeDefined();
-  });
-
-  it('Improve button is disabled when feedback is empty', () => {
-    renderPanel();
-    const improveBtn = screen.getByRole('button', { name: /^improve$/i });
-    expect((improveBtn as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('Improve button becomes enabled when feedback is typed', async () => {
-    const user = userEvent.setup();
-    renderPanel();
-    const textarea = screen.getByPlaceholderText(/suggest improvements/i);
-    await user.type(textarea, 'Make it shorter');
-    const improveBtn = screen.getByRole('button', { name: /^improve$/i });
-    expect((improveBtn as HTMLButtonElement).disabled).toBe(false);
-  });
-
-  it('Export package button is always available at improve step', () => {
-    renderPanel();
-    expect(screen.getByRole('button', { name: /export package/i })).toBeDefined();
-  });
-});
-
-describe('WorkflowPanel export step', () => {
-  const artifacts = [
-    {
-      id: 'art-1',
-      kind: 'email' as const,
-      title: 'Email draft',
-      content: 'Dear prospect…',
-      status: 'approved',
-      version: 2,
-    },
-  ];
-
-  beforeEach(() => {
-    mockUseWorkflow.mockImplementation(() => ({
-      data: makeWorkflow({
-        currentStep: 'export',
-        status: 'done',
-        steps: {
-          intake: { completed: true, transcriptId: 'tx-1' },
-          analyze: { completed: true, painPoints: [] },
-          generate: { completed: true, artifacts },
-          improve: { completed: true },
-          export: { completed: true },
-        },
-      }),
-      isLoading: false,
-      isError: false,
-    }));
-    mockRunStep.mockImplementation(() => ({
-      mutateAsync: mock(() => Promise.resolve({})),
-      isPending: false,
-    }));
-  });
-
   it('shows all stepper steps as completed or current', () => {
     renderPanel();
-    expect(screen.getByText('Export')).toBeDefined();
+    expect(screen.getByText('Generate')).toBeDefined();
   });
 
-  it('shows only Export package button at export step', () => {
+  it('does not show improve or export steps', () => {
     renderPanel();
-    const exportBtn = screen.getByRole('button', { name: /export package/i });
-    expect(exportBtn).toBeDefined();
-    expect(screen.queryByPlaceholderText(/suggest improvements/i)).toBeNull();
+    expect(screen.queryByText('Improve')).toBeNull();
+    expect(screen.queryByText('Export')).toBeNull();
   });
 
   it('calls onClose when close button is pressed', async () => {

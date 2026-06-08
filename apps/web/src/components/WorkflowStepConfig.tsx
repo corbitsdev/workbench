@@ -7,13 +7,12 @@ interface WorkflowStepConfigProps {
   currentConfig: WorkflowStepConfig;
 }
 
-const CONFIGURABLE_STEPS = ['analyze', 'generate', 'improve'] as const;
+const CONFIGURABLE_STEPS = ['analyze', 'generate'] as const;
 type ConfigurableStep = (typeof CONFIGURABLE_STEPS)[number];
 
 const STEP_LABELS: Record<ConfigurableStep, string> = {
   analyze: 'Analyze',
   generate: 'Generate',
-  improve: 'Improve',
 };
 
 interface StepRowProps {

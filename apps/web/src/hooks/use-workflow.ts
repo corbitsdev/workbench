@@ -16,7 +16,6 @@ export interface StepConfig {
 export interface WorkflowStepConfig {
   analyze?: StepConfig;
   generate?: StepConfig;
-  improve?: StepConfig;
 }
 
 export interface WorkflowTypeDefinition {
@@ -25,7 +24,7 @@ export interface WorkflowTypeDefinition {
   description: string;
 }
 
-export type StepName = 'intake' | 'analyze' | 'generate' | 'improve' | 'export';
+export type StepName = 'intake' | 'analyze' | 'generate';
 
 export interface WorkflowStep {
   completed: boolean;
@@ -61,22 +60,7 @@ export function useWorkflow(workflowId: string) {
   });
 }
 
-export interface ExportStepResult {
-  id: string;
-  status: string;
-  currentStep: 'export';
-  export: {
-    target: string;
-    content: string;
-    artifacts: unknown[];
-  };
-}
-
-export type RunStepResult = FrontendWorkflowState | ExportStepResult;
-
-export function isExportStepResult(r: RunStepResult): r is ExportStepResult {
-  return 'export' in r && typeof (r as ExportStepResult).export?.content === 'string';
-}
+export type RunStepResult = FrontendWorkflowState;
 
 export function useRunStep(workflowId: string) {
   const queryClient = useQueryClient();
@@ -84,7 +68,7 @@ export function useRunStep(workflowId: string) {
     mutationFn: async (step: {
       step: StepName;
       painPointIds?: string[];
-      artifactId?: string;
+      collateralTypes?: string[];
       feedback?: string;
     }) => {
       logger.info('Running step', { workflowId, step: step.step });

@@ -30,18 +30,16 @@ describe('collateral-generation workflow identity', () => {
 });
 
 describe('collateral-generation step sequence', () => {
-  it('runs intake -> analyze -> generate -> improve -> export in that exact order', () => {
+  it('runs intake -> analyze -> generate in that exact order', () => {
     expect(collateralGenerationWorkflow.steps.map((s) => s.name)).toEqual([
       'intake',
       'analyze',
       'generate',
-      'improve',
-      'export',
     ]);
   });
 
-  it('exposes exactly five steps', () => {
-    expect(collateralGenerationWorkflow.steps).toHaveLength(5);
+  it('exposes exactly three steps', () => {
+    expect(collateralGenerationWorkflow.steps).toHaveLength(3);
   });
 
   it('gives every step a unique name (assignment keys cannot collide)', () => {
@@ -63,16 +61,12 @@ describe('collateral-generation per-step credential requirements', () => {
     ]);
   });
 
-  it('requires the tenant-owned Collateral LLM on analyze, generate, and improve', () => {
-    for (const name of ['analyze', 'generate', 'improve']) {
+  it('requires the tenant-owned Collateral LLM on analyze and generate', () => {
+    for (const name of ['analyze', 'generate']) {
       expect(stepByName(name).credentialRequirements).toEqual([
         { providerName: 'openai-compatible', source: 'tenant', name: 'Collateral LLM' },
       ]);
     }
-  });
-
-  it('requires no credentials on export', () => {
-    expect(stepByName('export').credentialRequirements).toEqual([]);
   });
 
   it('declares every credential requirement as tenant-sourced', () => {
@@ -90,7 +84,7 @@ describe('collateral-generation per-step tool allowlist', () => {
   });
 
   it('grants no tools to any step other than intake', () => {
-    for (const name of ['analyze', 'generate', 'improve', 'export']) {
+    for (const name of ['analyze', 'generate']) {
       expect(stepByName(name).tools).toBeUndefined();
     }
   });

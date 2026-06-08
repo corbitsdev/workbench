@@ -9,8 +9,6 @@ const STEP_LABELS = {
   intake: 'Call source',
   analyze: 'Agent review',
   generate: 'Approve collateral',
-  improve: 'Improve approved',
-  export: 'Final package',
 };
 
 const steps = buildSteps('intake', STEP_LABELS);
