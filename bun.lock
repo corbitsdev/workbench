@@ -483,6 +483,7 @@
         "@workbench/shared": "workspace:*",
       },
       "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
         "@tanstack/react-query": "5.100.14",
         "@types/react": "^19.0.0",
         "react": "^19.0.0",
