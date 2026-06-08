@@ -46,29 +46,6 @@ function mapDbStatusToSessionStatus(status: string): string {
   return map[status] ?? status;
 }
 
-async function triggerAnalyze(
-  db: HubDb,
-  id: string,
-  userContext: UserContext,
-  source: InferenceSource,
-  feedback?: string,
-  maxOutputTokens?: number
-) {
-  try {
-    const response = await runAnalyze(db, id, userContext, source, feedback, maxOutputTokens);
-    if (response.status >= 400) {
-      log.error('Analyze step failed in background', { workflowId: id, status: response.status });
-      await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
-    }
-  } catch (err) {
-    log.error('Analyze step threw exception in background', {
-      workflowId: id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
-  }
-}
-
 const CONFIGURABLE_STEPS = ['analyze', 'generate'] as const;
 type ConfigurableStep = (typeof CONFIGURABLE_STEPS)[number];
 
@@ -731,37 +708,10 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       status: wfRow.status,
     });
 
-    // Resolve inference source and kick off analyze in the background so the
-    // workflow runs automatically without waiting for a manual step trigger.
-    const analyzeSource = await resolveStepInferenceSource(
-      db,
-      userContext.tenantId,
-      wfRow.kind,
-      'analyze'
-    );
-    if (analyzeSource) {
-      // Update status to analyzing before firing the background job so the
-      // UI reflects the real state and the workflow is not stuck in pending.
-      await db.update(workflowRun).set({ status: 'analyzing' }).where(eq(workflowRun.id, wfRow.id));
-      void triggerAnalyze(
-        db,
-        wfRow.id,
-        userContext,
-        analyzeSource,
-        undefined,
-        DEFAULT_STEP_MAX_OUTPUT_TOKENS.analyze
-      );
-    } else {
-      log.warn('No workflow LLM configured — analyze will not auto-start', {
-        workflowId: wfRow.id,
-        tenantId: userContext.tenantId,
-      });
-    }
-
     return c.json(
       {
         id: wfRow.id,
-        status: mapDbStatusToSessionStatus(analyzeSource ? 'analyzing' : wfRow.status),
+        status: mapDbStatusToSessionStatus(wfRow.status),
         steps: {
           intake: { completed: true, transcriptId: txRow.id },
         },
