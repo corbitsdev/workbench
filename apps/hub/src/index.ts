@@ -31,6 +31,7 @@ import {
 import { createWorkbenchesRouter } from './routes/workbenches';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createInternalToolsRouter } from './routes/tools';
+import { buildToolDefinitions } from './lib/tool-registry';
 import { schema } from './db';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
@@ -498,7 +499,13 @@ app.route('/api/v1', v1);
 app.route('/api/internal', createInternalApprovalsRouter(db, config.sidecarToken));
 app.route(
   '/api/internal',
-  createInternalToolsRouter(db, config.sidecarToken, config.credentialKeys)
+  createInternalToolsRouter(db, config.sidecarToken, config.credentialKeys, {
+    sessionService,
+    eventCollectors,
+    sidecarRouter,
+    credentialKeys: config.credentialKeys,
+    buildToolDefinitions,
+  })
 );
 
 // The web SPA is deployed as its own static Railway service (apps/web),

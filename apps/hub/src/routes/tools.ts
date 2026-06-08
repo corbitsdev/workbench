@@ -4,14 +4,22 @@ import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
 import type { AgentTool } from '@intx/agent';
 import { decryptSecret, type CredentialKeyRegistry } from '@workbench/hub-crypto';
-import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
+import { isCredentialToolEntry, KNOWN_TOOLS, buildToolDefinitions } from '../lib/tool-registry';
+import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
 
 const log = getLogger(['api', 'tools']);
 
 export function createInternalToolsRouter(
   db: DB['db'],
   sidecarToken: string,
-  credentialKeys: CredentialKeyRegistry
+  credentialKeys: CredentialKeyRegistry,
+  hubServices?: {
+    sessionService: SessionService;
+    eventCollectors: EventCollectorRegistry;
+    sidecarRouter: SidecarRouter;
+    credentialKeys: CredentialKeyRegistry;
+    buildToolDefinitions: typeof buildToolDefinitions;
+  }
 ): Hono {
   const router = new Hono();
 
@@ -66,7 +74,14 @@ export function createInternalToolsRouter(
 
     if (!isCredentialToolEntry(entry)) {
       const tool = entry
-        .createTools({ db, tenantId, agentId, principalId, sessionId })
+        .createTools({
+          db,
+          tenantId,
+          agentId,
+          principalId,
+          sessionId,
+          ...(hubServices ?? {}),
+        })
         .find((candidate) => candidate.definition.name === toolName);
       if (!tool) {
         return c.json({ error: `Tool ${toolName} not found in provider package` }, 500);

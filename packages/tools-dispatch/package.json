@@ -1,0 +1,26 @@
+{
+  "name": "@workbench/tools-dispatch",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint .",
+    "test": "bun test src"
+  },
+  "devDependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/db": "workspace:*",
+    "@intx/hub-common": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@types/bun": "latest",
+    "@workbench/hub-crypto": "workspace:*",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1156,7 +1156,7 @@ async function ensureAgentInstance(
  * re-inserts the current set, so `collectGrants` returns them at launch AND on
  * the orchestrator's reconnect path. Idempotent; safe to call on every launch.
  */
-async function persistInstanceToolGrants(
+export async function persistInstanceToolGrants(
   db: DB['db'],
   opts: { tenantId: string; principalId: string; toolNames: string[]; now: Date }
 ): Promise<void> {
@@ -1178,7 +1178,7 @@ async function persistInstanceToolGrants(
   });
 }
 
-async function launchAgentSession(
+export async function launchAgentSession(
   db: DB['db'],
   sessionService: SessionService,
   grantStore: GrantStore,
