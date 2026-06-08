@@ -49,21 +49,23 @@ mock.module('../config', () => ({
 const extractionSources: Array<{ model?: string } | undefined> = [];
 
 mock.module('../lib/extraction', () => ({
-  extractPainPoints: mock((_id: unknown, _content: unknown, _feedback: unknown, source?: { model?: string }) => {
-    extractionSources.push(source);
-    return Promise.resolve({
-      companyName: 'Acme Corp',
-      painPoints: [
-        {
-          sessionId: 'wf-1',
-          severity: 'high' as const,
-          context: 'Manual data entry is painful',
-          quote: 'We spend hours copying data between sheets',
-          selected: true,
-        },
-      ],
-    });
-  }),
+  extractPainPoints: mock(
+    (_id: unknown, _content: unknown, _feedback: unknown, source?: { model?: string }) => {
+      extractionSources.push(source);
+      return Promise.resolve({
+        companyName: 'Acme Corp',
+        painPoints: [
+          {
+            sessionId: 'wf-1',
+            severity: 'high' as const,
+            context: 'Manual data entry is painful',
+            quote: 'We spend hours copying data between sheets',
+            selected: true,
+          },
+        ],
+      });
+    }
+  ),
 }));
 
 const PERSONAL_TENANT = { id: 'tenant-personal', slug: 'user-test-user' };
@@ -481,6 +483,37 @@ describe('Workflow router', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain('agent');
+  });
+
+  it('DELETE /workflows/:id removes the workflow', async () => {
+    const deleteWheres: unknown[] = [];
+    const mockDb = createMockDb();
+    mockDb.delete = mock(() => ({
+      where: mock((arg: unknown) => {
+        deleteWheres.push(arg);
+        return Promise.resolve();
+      }),
+    })) as typeof mockDb.delete;
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows/wf-1', { method: 'DELETE' });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; deleted: boolean };
+    expect(body).toEqual({ id: 'wf-1', deleted: true });
+    expect(deleteWheres.length).toBe(1);
+  });
+
+  it('DELETE /workflows/:id returns 404 when the workflow belongs to another user', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findFirst = mock(() => null);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows/wf-other', { method: 'DELETE' });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(404);
   });
 
   it('POST /workflows/:id/steps analyze accepts feedback', async () => {
