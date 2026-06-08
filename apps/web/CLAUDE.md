@@ -1,3 +1,5 @@
+See [AGENTS.md](./AGENTS.md).
+
 # Web App Guidelines
 
 ## React Patterns

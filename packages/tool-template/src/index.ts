@@ -31,6 +31,7 @@ export const RENAME_ME_DEFINITION: ToolDefinition = {
   },
 };
 
+// oxlint-disable-next-line no-unused-vars
 export function createRenameMeTools(config: RenameToolsConfig): AgentTool[] {
   return [
     {

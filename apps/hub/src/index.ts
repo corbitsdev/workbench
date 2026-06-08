@@ -370,27 +370,6 @@ if (corsOrigins.length > 0) {
 // Mount hub app
 app.route('/', hubApp);
 
-// ─── Dev login (for local development without Google OAuth) ──────────
-
-if (isDev && !google.clientId) {
-  app.get('/api/auth/dev-session', async (c) => {
-    return c.json({
-      user: {
-        id: 'dev-user',
-        email: 'dev@example.com',
-        name: 'Dev User',
-        emailVerified: true,
-      },
-      session: {
-        id: 'dev-session',
-        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-        token: 'dev-token',
-        createdAt: new Date(),
-      },
-    });
-  });
-}
-
 // ─── Workbench routes ──────────────────────────────────────────────
 
 const v1 = new Hono<{ Variables: { userId: string; userName: string } }>();
@@ -399,12 +378,6 @@ v1.use('*', async (c, next) => {
   const result = await auth.api.getSession({ headers: c.req.raw.headers });
 
   if (!result) {
-    if (isDev && !google.clientId) {
-      c.set('userId', 'dev-user');
-      c.set('userName', 'Dev User');
-      log.debug('Dev mode: using fake user');
-      return next();
-    }
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
