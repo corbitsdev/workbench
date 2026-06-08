@@ -11,23 +11,38 @@ import {
 import { type AgentActivity } from '@intx/hub-client';
 import { launchInstanceSession } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
+import { classifyLaunchState } from './agent-launch-helpers';
 
 type SessionState =
   | { phase: 'loading' }
+  | { phase: 'pending'; reason: 'deploying' | 'connecting' }
   | { phase: 'ready'; session: InstanceSession }
+  | { phase: 'missing-config'; message: string }
   | { phase: 'error'; message: string };
 
 interface AgentChatProps {
   instanceId: string;
   tenantId: string;
   agentName: string;
+  instanceStatus?: string;
   onClose?: () => void;
+  onConfigureAgent?: () => void;
 }
 
-export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentChatProps) {
+export function AgentChat({
+  instanceId,
+  tenantId,
+  agentName,
+  instanceStatus,
+  onClose,
+  onConfigureAgent,
+}: AgentChatProps) {
   const identity: ChatAgentIdentity = { name: agentName };
 
-  const [sessionState, setSessionState] = useState<SessionState>({ phase: 'loading' });
+  const isRunning = instanceStatus === undefined || instanceStatus === 'running';
+  const [sessionState, setSessionState] = useState<SessionState>(
+    isRunning ? { phase: 'loading' } : { phase: 'pending', reason: 'deploying' }
+  );
   const [, forceUpdate] = useState(0);
 
   const sessionRef = useRef<InstanceSession | null>(null);
@@ -42,17 +57,26 @@ export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentCha
       return result;
     },
     onError: (err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      setSessionState({ phase: 'error', message });
+      const launchError = err instanceof Error ? err.message : String(err);
+      const classified = classifyLaunchState(instanceStatus, launchError);
+      if (classified.kind === 'connecting' || classified.kind === 'deploying') {
+        setSessionState({ phase: 'pending', reason: classified.kind });
+      } else if (classified.kind === 'missing-config') {
+        setSessionState({ phase: 'missing-config', message: classified.message });
+      } else {
+        setSessionState({ phase: 'error', message: classified.message });
+      }
     },
   });
 
   // Reset state and trigger launch when instanceId changes (or on mount).
+  // Skip launch when the instance is not yet running — show deploying state instead.
   useEffect(() => {
+    if (!isRunning) return;
     setSessionState({ phase: 'loading' });
     launch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instanceId]);
+  }, [instanceId, isRunning]);
 
   // Subscription lifecycle — syncs to the external Interchange session.
   // Runs after launch succeeds so hydration errors do not hide launch failures.
@@ -110,7 +134,51 @@ export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentCha
         messages={[]}
         onSend={() => undefined}
         inputDisabled
-        notice={<span className="text-[13px] text-text-3">Connecting to {agentName}…</span>}
+        notice={<span className="text-[13px] text-text-3">Connecting to {agentName}...</span>}
+        onClose={onClose}
+      />
+    );
+  }
+
+  if (sessionState.phase === 'pending') {
+    const copy =
+      sessionState.reason === 'deploying'
+        ? `${agentName} is still starting up. This usually takes a few seconds.`
+        : `Waiting for ${agentName} to become available...`;
+    return (
+      <ChatPanel
+        agent={identity}
+        messages={[]}
+        onSend={() => undefined}
+        inputDisabled
+        notice={<span className="text-[13px] text-text-3">{copy}</span>}
+        onClose={onClose}
+      />
+    );
+  }
+
+  if (sessionState.phase === 'missing-config') {
+    return (
+      <ChatPanel
+        agent={identity}
+        messages={[]}
+        onSend={() => undefined}
+        inputDisabled
+        notice={
+          <span className="text-[13px] text-text-2">
+            {agentName} needs a credential before it can start.{' '}
+            {onConfigureAgent ? (
+              <button
+                className="underline"
+                onClick={onConfigureAgent}
+              >
+                Configure the agent
+              </button>
+            ) : (
+              'Add a credential in Settings to continue.'
+            )}
+          </span>
+        }
         onClose={onClose}
       />
     );
@@ -125,7 +193,16 @@ export function AgentChat({ instanceId, tenantId, agentName, onClose }: AgentCha
         inputDisabled
         notice={
           <span className="text-[13px] text-text-2">
-            Could not connect to {agentName}. {sessionState.message}
+            {agentName} could not be reached.{' '}
+            <button
+              className="underline"
+              onClick={() => {
+                setSessionState({ phase: 'loading' });
+                launch();
+              }}
+            >
+              Try again
+            </button>
           </span>
         }
         onClose={onClose}

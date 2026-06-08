@@ -1,0 +1,91 @@
+import { describe, expect, it } from 'bun:test';
+import {
+  isTransientLaunchError,
+  isMissingConfigError,
+  classifyLaunchState,
+} from './agent-launch-helpers';
+
+describe('isTransientLaunchError', () => {
+  it('treats sidecar startup races as transient', () => {
+    expect(isTransientLaunchError(new Error('No sidecar connected for agent "ins_1"'))).toBe(true);
+    expect(isTransientLaunchError(new Error('No sidecar available for agent "ins_1"'))).toBe(true);
+    expect(isTransientLaunchError(new Error('sidecar not connected'))).toBe(true);
+    expect(isTransientLaunchError(new Error('sidecar not available'))).toBe(true);
+  });
+
+  it('does not treat auth or config errors as transient', () => {
+    expect(isTransientLaunchError(new Error('credential not found'))).toBe(false);
+    expect(isTransientLaunchError(new Error('502 Bad Gateway'))).toBe(false);
+    expect(isTransientLaunchError(new Error('agent definition not registered'))).toBe(false);
+  });
+
+  it('accepts plain strings', () => {
+    expect(isTransientLaunchError('No sidecar connected for ins_1')).toBe(true);
+    expect(isTransientLaunchError('auth_failed')).toBe(false);
+  });
+});
+
+describe('isMissingConfigError', () => {
+  it('detects credential-related messages', () => {
+    expect(isMissingConfigError(new Error('credential not found'))).toBe(true);
+    expect(isMissingConfigError(new Error('No credential configured for this agent'))).toBe(true);
+    expect(isMissingConfigError(new Error('missing configuration'))).toBe(true);
+    expect(isMissingConfigError(new Error('not configured'))).toBe(true);
+  });
+
+  it('does not classify transient or generic errors as missing config', () => {
+    expect(isMissingConfigError(new Error('No sidecar connected'))).toBe(false);
+    expect(isMissingConfigError(new Error('502 Bad Gateway'))).toBe(false);
+    expect(isMissingConfigError(new Error('internal server error'))).toBe(false);
+  });
+});
+
+describe('classifyLaunchState', () => {
+  it('returns deploying when instance is not yet running', () => {
+    const state = classifyLaunchState('provisioning', null);
+    expect(state.kind).toBe('deploying');
+  });
+
+  it('returns deploying when instanceStatus is stopped', () => {
+    const state = classifyLaunchState('stopped', null);
+    expect(state.kind).toBe('deploying');
+  });
+
+  it('returns connecting when no error and status is running', () => {
+    const state = classifyLaunchState('running', null);
+    expect(state.kind).toBe('connecting');
+  });
+
+  it('returns connecting when status is undefined (assumed running)', () => {
+    const state = classifyLaunchState(undefined, null);
+    expect(state.kind).toBe('connecting');
+  });
+
+  it('returns connecting for transient sidecar errors', () => {
+    const state = classifyLaunchState(undefined, 'No sidecar connected for agent ins_1');
+    expect(state.kind).toBe('connecting');
+  });
+
+  it('returns missing-config for credential errors', () => {
+    const state = classifyLaunchState(undefined, 'credential not found');
+    expect(state.kind).toBe('missing-config');
+    if (state.kind === 'missing-config') {
+      expect(state.message).toBe('credential not found');
+    }
+  });
+
+  it('returns fatal for unrecognised non-transient errors', () => {
+    const state = classifyLaunchState(undefined, '502 Bad Gateway');
+    expect(state.kind).toBe('fatal');
+    if (state.kind === 'fatal') {
+      expect(state.message).toBe('502 Bad Gateway');
+    }
+  });
+
+  it('deploying takes precedence over launchError when instance is not running', () => {
+    // If the instance hasn't reached running status, we always show deploying
+    // regardless of whether there's also a launch error.
+    const state = classifyLaunchState('provisioning', '502 Bad Gateway');
+    expect(state.kind).toBe('deploying');
+  });
+});
