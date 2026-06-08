@@ -2,7 +2,12 @@
 builder = "dockerfile"
 # Path is relative to the repo root (the build context), not to this file.
 dockerfilePath = "apps/sidecar/Dockerfile"
-watchPatterns = ["apps/sidecar/**", "package.json", "bun.lock"]
+# Include packages/** so the sidecar redeploys whenever the shared @workbench/*
+# packages change — the same trigger the hub watches. Without this the hub
+# rebuilds on a shared-code change but the sidecar keeps running the old build,
+# and the version skew breaks new-agent deploys (challenge / "No sidecar
+# connected") even though the sidecar's WS reconnects fine.
+watchPatterns = ["apps/sidecar/**", "packages/**", "package.json", "bun.lock"]
 
 [deploy]
 startCommand = "bun run apps/sidecar/src/index.ts"
