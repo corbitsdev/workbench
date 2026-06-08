@@ -10,7 +10,11 @@ import {
 } from '../../lib/hub-api';
 import { CredentialField } from '../CredentialField';
 import { PROVIDER_REGISTRY } from '../../lib/providerRegistry';
-import { LOOP_DEPLOY_PROMPT, GRANOLA_DEPLOY_PROMPT } from '@workbench/agents/browser';
+import {
+  LOOP_DEPLOY_PROMPT,
+  GRANOLA_DEPLOY_PROMPT,
+  GRANOLA_CAPABILITIES,
+} from '@workbench/agents/browser';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -28,6 +32,7 @@ interface PremadeOption {
   name: string;
   systemPrompt: string;
   credentialRequirements: CredentialRequirementOption[];
+  defaultTools?: string[];
 }
 
 const INFERENCE_PROVIDER_PLUGINS = new Set([
@@ -61,6 +66,7 @@ const PREMADE_OPTIONS: PremadeOption[] = [
     name: 'Oat',
     systemPrompt: GRANOLA_DEPLOY_PROMPT,
     credentialRequirements: [INFERENCE_REQUIREMENT, GRANOLA_REQUIREMENT],
+    defaultTools: [...GRANOLA_CAPABILITIES.tools],
   },
 ];
 
@@ -155,6 +161,7 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     setSystemPrompt(option.systemPrompt);
     setCredentialRequirements(option.credentialRequirements);
     setSelectedCredentialIdsByRequirement({});
+    setSelectedTools(new Set(option.defaultTools ?? []));
   };
 
   // Providers needed by selected tools that don't yet have a credential selected
