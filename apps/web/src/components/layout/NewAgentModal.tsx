@@ -5,76 +5,34 @@ import {
   listAvailableTools,
   updateAgentTools,
   createTenantCredential,
+  INFERENCE_PROVIDER_NAMES,
   type ProvisionAgentResponse,
   type ToolSummary,
 } from '../../lib/hub-api';
 import { CredentialField } from '../CredentialField';
 import { PROVIDER_REGISTRY } from '../../lib/providerRegistry';
-import {
-  LOOP_DEPLOY_PROMPT,
-  GRANOLA_DEPLOY_PROMPT,
-  GRANOLA_CAPABILITIES,
-} from '@workbench/agents/browser';
+import { PREMADE_AGENTS, type AgentDeployDescriptor } from '@workbench/agents/browser';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
-type CredentialRequirementKind = 'inference' | 'granola';
-
-type CredentialRequirementOption = {
-  id: CredentialRequirementKind;
-  label: string;
-  description: string;
-};
-
-interface PremadeOption {
-  label: string;
-  name: string;
-  systemPrompt: string;
-  credentialRequirements: CredentialRequirementOption[];
-  defaultTools?: string[];
-}
-
-const INFERENCE_PROVIDER_PLUGINS = new Set([
-  'anthropic',
-  'openai',
-  'google-genai',
-  'openai-compatible',
-]);
-
-const INFERENCE_REQUIREMENT: CredentialRequirementOption = {
-  id: 'inference',
-  label: 'Inference Provider',
-  description: 'LLM credential used to run the agent.',
-};
-
-const GRANOLA_REQUIREMENT: CredentialRequirementOption = {
-  id: 'granola',
-  label: 'Granola API Key',
-  description: 'Workbench Granola credential used to read call notes.',
-};
-
-const PREMADE_OPTIONS: PremadeOption[] = [
-  {
-    label: 'Loop — Research Intelligence',
-    name: 'Loop',
-    systemPrompt: LOOP_DEPLOY_PROMPT,
-    credentialRequirements: [INFERENCE_REQUIREMENT],
-  },
-  {
-    label: 'Oat — Call Intelligence',
-    name: 'Oat',
-    systemPrompt: GRANOLA_DEPLOY_PROMPT,
-    credentialRequirements: [INFERENCE_REQUIREMENT, GRANOLA_REQUIREMENT],
-    defaultTools: [...GRANOLA_CAPABILITIES.tools],
-  },
-];
+const INFERENCE_PROVIDER_SET = new Set<string>(INFERENCE_PROVIDER_NAMES);
 
 function formatToolName(name: string): string {
   return name
     .split('_')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
+}
+
+function labelForProvider(providerName: string): string {
+  if (INFERENCE_PROVIDER_SET.has(providerName)) return 'Inference Provider';
+  return PROVIDER_REGISTRY.find((p) => p.name === providerName)?.label ?? providerName;
+}
+
+function matchNamesForProvider(providerName: string): string[] {
+  if (INFERENCE_PROVIDER_SET.has(providerName)) return [...INFERENCE_PROVIDER_NAMES];
+  return [providerName];
 }
 
 export interface NewAgentModalProps {
@@ -89,16 +47,16 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
 
   const [name, setName] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
-  const [credentialRequirements, setCredentialRequirements] = useState<
-    CredentialRequirementOption[]
-  >([INFERENCE_REQUIREMENT]);
-  const [selectedCredentialIdsByRequirement, setSelectedCredentialIdsByRequirement] = useState<
-    Partial<Record<CredentialRequirementKind, string>>
+  // Each entry is a provider name; credential picker is rendered per entry.
+  const [credentialProviderNames, setCredentialProviderNames] = useState<string[]>([
+    'openai-compatible',
+  ]);
+  const [selectedCredentialIdsByProvider, setSelectedCredentialIdsByProvider] = useState<
+    Record<string, string>
   >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Tools
   const [availableTools, setAvailableTools] = useState<ToolSummary[]>([]);
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set());
   const [pendingToolCreds, setPendingToolCreds] = useState<Record<string, Record<string, string>>>(
@@ -115,8 +73,8 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
   const reset = () => {
     setName('');
     setSystemPrompt('');
-    setCredentialRequirements([INFERENCE_REQUIREMENT]);
-    setSelectedCredentialIdsByRequirement({});
+    setCredentialProviderNames(['openai-compatible']);
+    setSelectedCredentialIdsByProvider({});
     setLoading(false);
     setError(null);
     setSelectedTools(new Set());
@@ -156,22 +114,21 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     [onClose]
   );
 
-  const applyPremade = (option: PremadeOption) => {
-    setName(option.name);
-    setSystemPrompt(option.systemPrompt);
-    setCredentialRequirements(option.credentialRequirements);
-    setSelectedCredentialIdsByRequirement({});
-    setSelectedTools(new Set(option.defaultTools ?? []));
+  const applyPremade = (descriptor: AgentDeployDescriptor) => {
+    setName(descriptor.name);
+    setSystemPrompt(descriptor.systemPrompt);
+    setCredentialProviderNames(descriptor.credentialProviderNames);
+    setSelectedCredentialIdsByProvider({});
+    setSelectedTools(new Set(descriptor.defaultTools));
   };
 
-  // Providers needed by selected tools that don't yet have a credential selected
+  // Non-inference tool providers that are needed but have no pending credential.
   const selectedToolProviders = [
     ...new Set(
       availableTools
         .filter((t) => selectedTools.has(t.name))
         .map((t) => t.providerName)
-        // Exclude inference providers — those are already covered by the main credential section
-        .filter((p) => !INFERENCE_PROVIDER_PLUGINS.has(p))
+        .filter((p) => !INFERENCE_PROVIDER_SET.has(p))
     ),
   ];
 
@@ -206,17 +163,17 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
       setError('System prompt is required.');
       return;
     }
-    const selectedCredentialIds = credentialRequirements.flatMap((requirement) => {
-      const credentialId = selectedCredentialIdsByRequirement[requirement.id];
-      return credentialId ? [credentialId] : [];
+
+    const selectedCredentialIds = credentialProviderNames.flatMap((providerName) => {
+      const id = selectedCredentialIdsByProvider[providerName];
+      return id ? [id] : [];
     });
 
-    if (selectedCredentialIds.length !== credentialRequirements.length) {
+    if (selectedCredentialIds.length !== credentialProviderNames.length) {
       setError('Select a credential for each required agent launch need.');
       return;
     }
 
-    // Validate tool credential fields
     for (const provider of missingToolProviders) {
       const fields = pendingToolCreds[provider.name] ?? {};
       for (const field of provider.fields) {
@@ -231,7 +188,6 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     setError(null);
 
     try {
-      // Create missing tool credentials first
       for (const provider of missingToolProviders) {
         const fields = pendingToolCreds[provider.name] ?? {};
         await createTenantCredential(workbenchTenantId, {
@@ -267,25 +223,10 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
     }
   };
 
-  const selectedCredentialIds = credentialRequirements.flatMap((requirement) => {
-    const credentialId = selectedCredentialIdsByRequirement[requirement.id];
-    return credentialId ? [credentialId] : [];
+  const selectedCredentialIds = credentialProviderNames.flatMap((providerName) => {
+    const id = selectedCredentialIdsByProvider[providerName];
+    return id ? [id] : [];
   });
-
-  const selectCredentialForRequirement = (
-    requirementId: CredentialRequirementKind,
-    credentialId: string | undefined
-  ) => {
-    setSelectedCredentialIdsByRequirement((current) => {
-      const next = { ...current };
-      if (credentialId) {
-        next[requirementId] = credentialId;
-      } else {
-        delete next[requirementId];
-      }
-      return next;
-    });
-  };
 
   return (
     <AnimatePresence>
@@ -342,20 +283,20 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
                 </p>
               )}
 
-              {PREMADE_OPTIONS.length > 0 && (
+              {PREMADE_AGENTS.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <p className="text-[12px] font-medium uppercase tracking-[0.04em] text-text-3">
                     Premade
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {PREMADE_OPTIONS.map((opt) => (
+                    {PREMADE_AGENTS.map((descriptor) => (
                       <button
-                        key={opt.name}
+                        key={descriptor.name}
                         type="button"
-                        onClick={() => applyPremade(opt)}
+                        onClick={() => applyPremade(descriptor)}
                         className="flex items-center gap-1.5 rounded-[9px] border border-border px-3 py-1.5 text-[13px] text-text-2 transition-colors hover:border-orange hover:text-text"
                       >
-                        {opt.label}
+                        {descriptor.label}
                       </button>
                     ))}
                   </div>
@@ -470,22 +411,24 @@ export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: N
                   </p>
                 ) : (
                   <div className="flex flex-col gap-3">
-                    {credentialRequirements.map((requirement) => (
+                    {credentialProviderNames.map((providerName) => (
                       <CredentialField
-                        key={requirement.id}
+                        key={providerName}
                         tenantId={workbenchTenantId}
-                        providerName={
-                          requirement.id === 'granola' ? 'granola' : 'openai-compatible'
-                        }
-                        matchProviderNames={
-                          requirement.id === 'granola'
-                            ? ['granola']
-                            : [...INFERENCE_PROVIDER_PLUGINS]
-                        }
-                        label={requirement.label}
-                        value={selectedCredentialIdsByRequirement[requirement.id]}
+                        providerName={providerName}
+                        matchProviderNames={matchNamesForProvider(providerName)}
+                        label={labelForProvider(providerName)}
+                        value={selectedCredentialIdsByProvider[providerName]}
                         onChange={(credentialId) =>
-                          selectCredentialForRequirement(requirement.id, credentialId)
+                          setSelectedCredentialIdsByProvider((prev) => {
+                            const next = { ...prev };
+                            if (credentialId) {
+                              next[providerName] = credentialId;
+                            } else {
+                              delete next[providerName];
+                            }
+                            return next;
+                          })
                         }
                       />
                     ))}

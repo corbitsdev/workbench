@@ -1,5 +1,6 @@
 import type { GrantRequirement, CredentialRequirement } from '@intx/types';
 import { buildGranolaSystemPrompt } from './prompt';
+import type { AgentDeployDescriptor } from '../deploy-descriptor';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -49,3 +50,11 @@ export const GRANOLA_CAPABILITIES = {
   tools: ['granola_list_notes', 'granola_get_note'],
   schedulerIntervalMs: 60_000,
 } as const;
+
+export const GRANOLA_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
+  label: 'Oat — Call Intelligence',
+  name: 'Oat',
+  systemPrompt: GRANOLA_DEPLOY_PROMPT,
+  credentialProviderNames: ['openai-compatible', 'granola'],
+  defaultTools: [...GRANOLA_CAPABILITIES.tools],
+};
