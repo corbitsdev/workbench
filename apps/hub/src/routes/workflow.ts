@@ -1,9 +1,15 @@
 import { Hono } from 'hono';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
-import { resolveCredentialRequirement, schema as intxSchema } from '@intx/db';
+import {
+  resolveCredentialRequirement,
+  resolveCredentialById,
+  schema as intxSchema,
+} from '@intx/db';
 import type { InferenceSource } from '@intx/types/runtime';
-import { workflowRegistry } from '@workbench/workflow-core';
+import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
+import type { WorkflowType } from '@workbench/workflow-core';
+import { KNOWN_TOOLS } from '../lib/tool-registry';
 import { collateralGenerationWorkflow } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
 import {
@@ -89,6 +95,27 @@ async function resolveGranolaApiKey(db: HubDb, tenantId: string): Promise<string
   return decryptSecret(credentialKeys, tenantId, resolved.secret);
 }
 
+/** Build an InferenceSource from a resolved credential's provider row + encrypted secret. */
+function buildInferenceSource(
+  tenantId: string,
+  providerRow: { plugin: string; metadata: unknown },
+  secret: string
+): InferenceSource | null {
+  const meta = providerRow.metadata as { baseURL?: string; model?: string } | null;
+  if (!meta?.baseURL || !meta.model) return null;
+
+  const { credentialKeys } = getConfig();
+  const apiKey = decryptSecret(credentialKeys, tenantId, secret);
+
+  return {
+    id: `workflow-llm-${randomUUID()}`,
+    provider: providerRow.plugin,
+    baseURL: meta.baseURL,
+    apiKey,
+    model: meta.model,
+  };
+}
+
 async function resolveWorkflowInferenceSource(
   db: HubDb,
   tenantId: string
@@ -103,19 +130,154 @@ async function resolveWorkflowInferenceSource(
   });
   if (!providerRow) return null;
 
-  const meta = providerRow.metadata as { baseURL?: string; model?: string } | null;
-  if (!meta?.baseURL || !meta.model) return null;
+  return buildInferenceSource(tenantId, providerRow, resolved.secret);
+}
 
+// ─── Per-step assignment resolution ──────────────────────────────────
+
+export interface StepAssignment {
+  credentialIds: string[];
+  toolIds: string[];
+}
+export type WorkflowAssignments = Record<string, StepAssignment>;
+
+/** Read the per-step assignments stored on the workbench install record. */
+async function getWorkflowAssignments(
+  db: HubDb,
+  tenantId: string,
+  kind: string
+): Promise<WorkflowAssignments> {
+  const row = await db.query.enabledWorkflow.findFirst({
+    where: and(eq(enabledWorkflow.tenantId, tenantId), eq(enabledWorkflow.kind, kind)),
+  });
+  const raw = (row?.assignments ?? null) as WorkflowAssignments | null;
+  return raw ?? {};
+}
+
+/**
+ * Resolve the inference source for a given workflow step from its install-time
+ * assignment. Falls back to the tenant name-based resolver when the step has no
+ * assigned inference credential (keeps pre-assignment installs working).
+ */
+async function resolveStepInferenceSource(
+  db: HubDb,
+  tenantId: string,
+  kind: string,
+  step: string
+): Promise<InferenceSource | null> {
+  const assignments = await getWorkflowAssignments(db, tenantId, kind);
+  const credentialIds = assignments[step]?.credentialIds ?? [];
+  for (const credentialId of credentialIds) {
+    const cred = await resolveCredentialById(db, tenantId, credentialId);
+    if (!cred) continue;
+    const providerRow = await db.query.provider.findFirst({
+      where: eq(intxSchema.provider.id, cred.providerId),
+    });
+    if (!providerRow) continue;
+    const source = buildInferenceSource(tenantId, providerRow, cred.secret);
+    if (source) return source;
+  }
+  return resolveWorkflowInferenceSource(db, tenantId);
+}
+
+/**
+ * Resolve the Granola API key for a given workflow step from its install-time
+ * assignment. Falls back to the tenant-level Granola credential.
+ */
+async function resolveStepGranolaApiKey(
+  db: HubDb,
+  tenantId: string,
+  kind: string,
+  step = 'intake'
+): Promise<string | null> {
+  const assignments = await getWorkflowAssignments(db, tenantId, kind);
+  const credentialIds = assignments[step]?.credentialIds ?? [];
   const { credentialKeys } = getConfig();
-  const apiKey = decryptSecret(credentialKeys, tenantId, resolved.secret);
+  for (const credentialId of credentialIds) {
+    const cred = await resolveCredentialById(db, tenantId, credentialId);
+    if (!cred) continue;
+    const providerRow = await db.query.provider.findFirst({
+      where: eq(intxSchema.provider.id, cred.providerId),
+    });
+    if (providerRow?.name === 'granola') {
+      return decryptSecret(credentialKeys, tenantId, cred.secret);
+    }
+  }
+  return resolveGranolaApiKey(db, tenantId);
+}
 
-  return {
-    id: `workflow-llm-${randomUUID()}`,
-    provider: providerRow.plugin,
-    baseURL: meta.baseURL,
-    apiKey,
-    model: meta.model,
-  };
+/**
+ * Validate a per-step assignments payload against a workflow definition.
+ * Ensures every declared credential requirement is satisfied by an assigned
+ * tenant credential of the matching provider, and that assigned tools are known
+ * and within the step's allowed set. Returns a normalized assignments object.
+ */
+async function validateAssignments(
+  db: HubDb,
+  tenantId: string,
+  workflow: WorkflowType,
+  raw: unknown
+): Promise<{ ok: true; assignments: WorkflowAssignments } | { ok: false; error: string }> {
+  const input = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<
+    string,
+    unknown
+  >;
+  const result: WorkflowAssignments = {};
+
+  for (const step of workflow.steps) {
+    const stepValRaw = input[step.name];
+    const stepVal = (
+      stepValRaw && typeof stepValRaw === 'object' && !Array.isArray(stepValRaw) ? stepValRaw : {}
+    ) as Record<string, unknown>;
+
+    const credentialIds = Array.isArray(stepVal.credentialIds)
+      ? stepVal.credentialIds.filter((v): v is string => typeof v === 'string')
+      : [];
+    const toolIds = Array.isArray(stepVal.toolIds)
+      ? stepVal.toolIds.filter((v): v is string => typeof v === 'string')
+      : [];
+
+    // Tools must be known and within the step's declared allow-list.
+    const allowedTools = new Set(step.tools ?? []);
+    for (const toolId of toolIds) {
+      if (!KNOWN_TOOLS[toolId]) {
+        return { ok: false, error: `Unknown tool: ${toolId}` };
+      }
+      if (!allowedTools.has(toolId)) {
+        return { ok: false, error: `Tool ${toolId} is not available for step ${step.name}` };
+      }
+    }
+
+    // Resolve assigned credentials and index them by provider name.
+    const providerNamesForCredential = new Map<string, string>();
+    for (const credentialId of credentialIds) {
+      const cred = await resolveCredentialById(db, tenantId, credentialId);
+      if (!cred) {
+        return { ok: false, error: `Credential not found in this workbench: ${credentialId}` };
+      }
+      const providerRow = await db.query.provider.findFirst({
+        where: eq(intxSchema.provider.id, cred.providerId),
+      });
+      if (providerRow?.name) providerNamesForCredential.set(credentialId, providerRow.name);
+    }
+    const assignedProviders = new Set(providerNamesForCredential.values());
+
+    // Every declared credential requirement must be satisfied.
+    for (const req of step.credentialRequirements) {
+      if (!assignedProviders.has(req.providerName)) {
+        return {
+          ok: false,
+          error: `Step ${step.name} requires a ${req.providerName} credential`,
+        };
+      }
+    }
+
+    if (credentialIds.length > 0 || toolIds.length > 0) {
+      result[step.name] = { credentialIds, toolIds };
+    }
+  }
+
+  return { ok: true, assignments: result };
 }
 
 async function getUserContext(db: HubDb, userId: string): Promise<UserContext | null> {
@@ -221,9 +383,20 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       kind: wt.kind,
       name: wt.name,
       description: wt.description,
-      credentialRequirements: wt.credentialRequirements,
+      steps: wt.steps,
+      credentialRequirements: flattenStepCredentialRequirements(wt),
     }));
     return c.json(catalog);
+  });
+
+  // ─── Tool catalog (metadata for the install UI) ──────────────────────
+  router.get('/workflows/tools', async (c) => {
+    const tools = Object.entries(KNOWN_TOOLS).map(([name, entry]) => ({
+      name,
+      providerName: entry.providerName,
+      description: entry.definition.description,
+    }));
+    return c.json(tools);
   });
 
   // ─── List enabled workflows for tenant ───────────────────────────
@@ -260,6 +433,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         enabledAt: row.enabledAt,
         name: wt?.name ?? row.kind,
         description: wt?.description ?? '',
+        assignments: (row.assignments ?? {}) as WorkflowAssignments,
       };
     });
 
@@ -300,17 +474,32 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       return c.json({ error: 'User context not found' }, 400);
     }
 
+    const wt = workflowRegistry.get(kind);
+    if (!wt) {
+      return c.json({ error: `Unknown workflow kind: ${kind}` }, 400);
+    }
+
+    const validation = await validateAssignments(db, userContext.tenantId, wt, body.assignments);
+    if (!validation.ok) {
+      log.warn('Workflow assignment validation failed', { kind, error: validation.error });
+      return c.json({ error: validation.error }, 400);
+    }
+
     const id = `wkf_${randomUUID().replace(/-/g, '')}`;
     const [row] = await db
       .insert(enabledWorkflow)
-      .values({ id, tenantId: userContext.tenantId, kind })
+      .values({
+        id,
+        tenantId: userContext.tenantId,
+        kind,
+        assignments: validation.assignments,
+      })
       .onConflictDoUpdate({
         target: [enabledWorkflow.tenantId, enabledWorkflow.kind],
-        set: { kind },
+        set: { kind, assignments: validation.assignments },
       })
       .returning();
 
-    const wt = workflowRegistry.get(kind);
     log.info('Workflow kind enabled', { tenantId: userContext.tenantId, kind });
 
     return c.json({
@@ -318,8 +507,9 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       tenantId: row!.tenantId,
       kind: row!.kind,
       enabledAt: row!.enabledAt,
-      name: wt?.name ?? kind,
-      description: wt?.description ?? '',
+      name: wt.name,
+      description: wt.description,
+      assignments: validation.assignments,
     });
   });
 
@@ -400,12 +590,12 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         log.warn('Missing granolaId for granola source');
         return c.json({ error: 'granolaId is required' }, 400);
       }
-      const granolaApiKey = await resolveGranolaApiKey(db, userContext.tenantId);
+      const granolaApiKey = await resolveStepGranolaApiKey(db, userContext.tenantId, workflowKind);
       if (!granolaApiKey) {
         log.warn('Granola credential not configured for tenant', {
           tenantId: userContext.tenantId,
         });
-        return c.json({ error: 'No Granola credential configured for this workspace' }, 400);
+        return c.json({ error: 'No Granola credential configured for this workbench' }, 400);
       }
       try {
         const note = await getNoteWithTranscript(granolaApiKey, granolaId);
@@ -702,12 +892,12 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const step = body.step ?? deriveCurrentStep(wf.status);
 
     if (step === 'analyze' || step === 'generate' || step === 'improve') {
-      const source = await resolveWorkflowInferenceSource(db, userContext.tenantId);
+      const source = await resolveStepInferenceSource(db, userContext.tenantId, wf.kind, step);
       if (!source) {
         log.warn('No workflow LLM credential configured', { tenantId: userContext.tenantId });
         return c.json(
           {
-            error: 'No LLM credential configured for this workspace. Please add one in Settings.',
+            error: 'No LLM credential configured for this step. Add one in the workflow settings.',
           },
           400
         );
@@ -892,9 +1082,12 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       return c.json({ error: 'User context not found' }, 400);
     }
 
-    const granolaApiKey = await resolveGranolaApiKey(db, userContext.tenantId);
+    const kind = c.req.query('kind');
+    const granolaApiKey = kind
+      ? await resolveStepGranolaApiKey(db, userContext.tenantId, kind)
+      : await resolveGranolaApiKey(db, userContext.tenantId);
     if (!granolaApiKey) {
-      return c.json({ error: 'No Granola credential configured for this workspace' }, 400);
+      return c.json({ error: 'No Granola credential configured for this workbench' }, 400);
     }
     try {
       const calls = await getRecentNotes(granolaApiKey, 3);

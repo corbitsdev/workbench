@@ -91,6 +91,9 @@ export const enabledWorkflow = pgTable(
     id: text('id').primaryKey(),
     tenantId: text('tenant_id').notNull(),
     kind: text('kind').notNull(),
+    // Per-step credential/tool assignments captured when the workflow is added
+    // to the workbench. Shape: Record<stepName, { credentialIds: string[]; toolIds: string[] }>.
+    assignments: jsonb('assignments'),
     enabledAt: timestamp('enabled_at').notNull().defaultNow(),
   },
   (t) => ({

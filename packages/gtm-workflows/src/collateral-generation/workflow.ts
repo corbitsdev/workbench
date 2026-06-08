@@ -5,11 +5,61 @@ export const collateralGenerationWorkflow: WorkflowType = {
   name: 'Collateral Generation',
   description:
     'Turn call transcripts into sales collateral (emails, LinkedIn posts, one-pagers, battercards)',
-  credentialRequirements: [
+  steps: [
     {
-      providerName: 'openai-compatible',
-      source: 'tenant',
-      name: 'Collateral LLM',
+      name: 'intake',
+      label: 'Intake',
+      description: 'Pull a call transcript from Granola or accept a pasted transcript.',
+      credentialRequirements: [
+        {
+          providerName: 'granola',
+          source: 'tenant',
+          name: 'Granola',
+        },
+      ],
+      tools: ['granola_list_notes', 'granola_get_note'],
+    },
+    {
+      name: 'analyze',
+      label: 'Analyze',
+      description: 'Extract pain points from the transcript.',
+      credentialRequirements: [
+        {
+          providerName: 'openai-compatible',
+          source: 'tenant',
+          name: 'Collateral LLM',
+        },
+      ],
+    },
+    {
+      name: 'generate',
+      label: 'Generate',
+      description: 'Generate collateral from the selected pain points.',
+      credentialRequirements: [
+        {
+          providerName: 'openai-compatible',
+          source: 'tenant',
+          name: 'Collateral LLM',
+        },
+      ],
+    },
+    {
+      name: 'improve',
+      label: 'Improve',
+      description: 'Refine generated collateral from feedback.',
+      credentialRequirements: [
+        {
+          providerName: 'openai-compatible',
+          source: 'tenant',
+          name: 'Collateral LLM',
+        },
+      ],
+    },
+    {
+      name: 'export',
+      label: 'Export',
+      description: 'Export finished collateral.',
+      credentialRequirements: [],
     },
   ],
   inputSchema: {

@@ -15,6 +15,14 @@ mock.module('@intx/db', () => ({
     principalId: null,
     name: 'Workflow LLM',
   })),
+  resolveCredentialById: mock(async (_db: unknown, _tenantId: string, id: string) => ({
+    id,
+    providerId: 'prov-1',
+    secret: 'enc:v1:test',
+    tenantId: 'tenant-personal',
+    principalId: null,
+    name: id,
+  })),
 }));
 
 mock.module('@workbench/hub-crypto', () => ({
@@ -80,8 +88,11 @@ describe('Workflow router', () => {
     });
   }
 
-  function createMockDb(options: { onInsertValues?: (values: unknown) => void } = {}) {
+  function createMockDb(
+    options: { onInsertValues?: (values: unknown) => void; providerNameQueue?: string[] } = {}
+  ) {
     let insertCount = 0;
+    const providerNameQueue = [...(options.providerNameQueue ?? [])];
 
     return {
       query: {
@@ -135,6 +146,7 @@ describe('Workflow router', () => {
           findFirst: mock(() => ({
             id: 'prov-1',
             plugin: 'openai',
+            name: providerNameQueue.length > 0 ? providerNameQueue.shift() : 'openai-compatible',
             metadata: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o' },
           })),
         },
@@ -616,20 +628,94 @@ describe('Workflow router', () => {
     expect(json.error).toBeString();
   });
 
-  it('POST /workflows/enabled is idempotent', async () => {
-    const router = buildApp(createMockDb());
+  const VALID_COLLATERAL_ASSIGNMENTS = {
+    intake: { credentialIds: ['granola-cred'], toolIds: ['granola_list_notes'] },
+    analyze: { credentialIds: ['llm-cred'], toolIds: [] },
+    generate: { credentialIds: ['llm-cred'], toolIds: [] },
+    improve: { credentialIds: ['llm-cred'], toolIds: [] },
+  };
+  // provider.findFirst is called once per assigned credential, in step order:
+  // intake (granola), then analyze/generate/improve (openai-compatible).
+  const COLLATERAL_PROVIDER_QUEUE = [
+    'granola',
+    'openai-compatible',
+    'openai-compatible',
+    'openai-compatible',
+  ];
+
+  it('POST /workflows/enabled stores valid assignments and is idempotent', async () => {
     const makeReq = () =>
       new Request('http://localhost:4000/workflows/enabled', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'collateral-generation' }),
+        body: JSON.stringify({
+          kind: 'collateral-generation',
+          assignments: VALID_COLLATERAL_ASSIGNMENTS,
+        }),
       });
 
-    const res1 = await router.fetch(makeReq());
+    const res1 = await buildApp(
+      createMockDb({ providerNameQueue: [...COLLATERAL_PROVIDER_QUEUE] })
+    ).fetch(makeReq());
     expect(res1.status).toBe(200);
+    const json1 = await res1.json();
+    expect(json1.assignments.intake.credentialIds).toEqual(['granola-cred']);
 
-    const res2 = await router.fetch(makeReq());
+    const res2 = await buildApp(
+      createMockDb({ providerNameQueue: [...COLLATERAL_PROVIDER_QUEUE] })
+    ).fetch(makeReq());
     expect(res2.status).toBe(200);
+  });
+
+  it('POST /workflows/enabled rejects install when a required credential is missing', async () => {
+    const router = buildApp(createMockDb());
+    const req = new Request('http://localhost:4000/workflows/enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'collateral-generation', assignments: {} }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain('granola');
+  });
+
+  it('POST /workflows/enabled rejects an unknown tool', async () => {
+    const router = buildApp(createMockDb());
+    const req = new Request('http://localhost:4000/workflows/enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'collateral-generation',
+        assignments: { intake: { credentialIds: [], toolIds: ['not-a-tool'] } },
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain('Unknown tool');
+  });
+
+  it('GET /workflows/catalog exposes per-step requirements', async () => {
+    const router = buildApp(createMockDb());
+    const res = await router.fetch(new Request('http://localhost:4000/workflows/catalog'));
+    expect(res.status).toBe(200);
+    const parsed = await res.json();
+    const collateral = parsed.find((w: { kind: string }) => w.kind === 'collateral-generation');
+    expect(collateral.steps.length).toBeGreaterThan(0);
+    const intake = collateral.steps.find((s: { name: string }) => s.name === 'intake');
+    expect(intake.credentialRequirements[0].providerName).toBe('granola');
+  });
+
+  it('GET /workflows/tools returns tool metadata', async () => {
+    const router = buildApp(createMockDb());
+    const res = await router.fetch(new Request('http://localhost:4000/workflows/tools'));
+    expect(res.status).toBe(200);
+    const parsed = await res.json();
+    const granola = parsed.find((t: { name: string }) => t.name === 'granola_list_notes');
+    expect(granola.providerName).toBe('granola');
   });
 
   it('POST /workflows returns 400 when workflowKind is missing', async () => {
