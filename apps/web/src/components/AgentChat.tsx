@@ -4,8 +4,6 @@ import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
   composeChatMessages,
   createToolNameTracker,
-  EMPTY_RETAINED,
-  type RetainedAgentText,
   type ToolNameTracker,
 } from '@workbench/agents/browser';
 import {
@@ -64,7 +62,6 @@ export function AgentChat({
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const toolNamesRef = useRef<ToolNameTracker | null>(null);
-  const retainedRef = useRef<RetainedAgentText>(EMPTY_RETAINED);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
 
@@ -161,13 +158,11 @@ export function AgentChat({
   }, [instanceId, tenantId, launchStatus]);
 
   function buildMessages(session: InstanceSession): ChatMessage[] {
-    const { messages, retained } = composeChatMessages({
+    const { messages } = composeChatMessages({
       events: session.events,
       streaming: session.streaming,
       ...(toolNamesRef.current !== null ? { toolNames: toolNamesRef.current.names } : {}),
-      retained: retainedRef.current,
     });
-    retainedRef.current = retained;
     return messages;
   }
 
