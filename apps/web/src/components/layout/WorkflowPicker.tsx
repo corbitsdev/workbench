@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, Workflow } from 'lucide-react';
 import { useEnabledWorkflows } from '../../hooks/use-workflow';
 import { WorkflowCatalogModal } from './WorkflowCatalogModal';
 
@@ -14,18 +14,6 @@ export function WorkflowPicker({ onSelectKind, onClose }: WorkflowPickerProps) {
 
   const workflows = enabledWorkflows ?? [];
   const hasWorkflows = workflows.length > 0;
-
-  if (!hasWorkflows && !isLoading) {
-    return (
-      <WorkflowCatalogModal
-        open={true}
-        onClose={onClose}
-        onInstalled={(kind) => {
-          onSelectKind(kind);
-        }}
-      />
-    );
-  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-surface">
@@ -42,8 +30,28 @@ export function WorkflowPicker({ onSelectKind, onClose }: WorkflowPickerProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
-        {isLoading && <p className="px-3 py-2 text-[12px] text-text-3">Loading workflows...</p>}
-        {workflows.map((wf) => (
+        {isLoading && !hasWorkflows && (
+          <p className="px-3 py-2 text-[12px] text-text-3">Loading workflows...</p>
+        )}
+        {!hasWorkflows && !isLoading && (
+          <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+            <div className="mb-4 grid h-10 w-10 place-items-center rounded-full bg-[rgba(233,132,40,0.12)]">
+              <Workflow className="h-5 w-5 text-orange" />
+            </div>
+            <p className="text-[14px] font-semibold text-text">No workflows yet</p>
+            <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-text-3">
+              Workflows turn your call data into publishable collateral. Add your first workflow to get started.
+            </p>
+            <button
+              type="button"
+              onClick={() => setCatalogOpen(true)}
+              className="mt-4 rounded-[9px] bg-orange px-4 py-2 text-[12px] font-medium text-white transition-colors hover:bg-orange-deep"
+            >
+              Add your first workflow
+            </button>
+          </div>
+        )}
+        {hasWorkflows && workflows.map((wf) => (
           <button
             key={wf.kind}
             type="button"
@@ -54,16 +62,18 @@ export function WorkflowPicker({ onSelectKind, onClose }: WorkflowPickerProps) {
             {wf.description && <span className="text-[11.5px] text-text-3">{wf.description}</span>}
           </button>
         ))}
-        <div className="mt-1 border-t border-border pt-1">
-          <button
-            type="button"
-            onClick={() => setCatalogOpen(true)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-[12px] text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add workflow
-          </button>
-        </div>
+        {hasWorkflows && (
+          <div className="mt-1 border-t border-border pt-1">
+            <button
+              type="button"
+              onClick={() => setCatalogOpen(true)}
+              className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-[12px] text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add workflow
+            </button>
+          </div>
+        )}
       </div>
 
       <WorkflowCatalogModal
