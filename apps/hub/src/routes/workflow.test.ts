@@ -212,7 +212,7 @@ describe('Workflow router', () => {
           const row =
             insertCount === 1
               ? { id: 'tx-1', status: 'created', kind: 'transcript' }
-              : { id: 'wf-1', status: 'analyzing', kind: 'collateral-generation' };
+              : { id: 'wf-1', status: 'pending', kind: 'collateral-generation' };
           return {
             returning: mock(() => [row]),
             onConflictDoUpdate: mock(() => ({
@@ -276,7 +276,7 @@ describe('Workflow router', () => {
 
     const json = await res.json();
     expect(json.id).toBeString();
-    expect(json.status).toBe('analyzing');
+    expect(json.status).toBe('pending');
     expect(json.steps.intake.completed).toBe(true);
   });
 
