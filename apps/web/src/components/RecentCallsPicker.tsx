@@ -6,9 +6,14 @@ import { api } from '../lib/api';
 interface RecentCallsPickerProps {
   onSelect: (data: IntakeRequest) => void;
   isLoading?: boolean;
+  tenantId?: string | null;
 }
 
-export default function RecentCallsPicker({ onSelect, isLoading = false }: RecentCallsPickerProps) {
+export default function RecentCallsPicker({
+  onSelect,
+  isLoading = false,
+  tenantId,
+}: RecentCallsPickerProps) {
   const [calls, setCalls] = useState<GranolaNote[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -16,13 +21,16 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
 
   useEffect(() => {
     fetchRecentCalls();
-  }, []);
+  }, [tenantId]);
 
   const fetchRecentCalls = async () => {
     try {
       setLoading(true);
       setError('');
-      const data = await api<{ calls: GranolaNote[] }>('GET', 'recent-calls');
+      const data = await api<{ calls: GranolaNote[] }>(
+        'GET',
+        tenantId ? `recent-calls?tenantId=${encodeURIComponent(tenantId)}` : 'recent-calls'
+      );
       setCalls(data.calls || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load recent calls');
@@ -58,7 +66,7 @@ export default function RecentCallsPicker({ onSelect, isLoading = false }: Recen
         animate={{ opacity: 1 }}
       >
         <p className="font-medium">{error}</p>
-        <p className="mt-2 text-xs">Make sure Granola API is configured in your environment</p>
+        <p className="mt-2 text-xs">Add a Granola credential for this workspace to load calls</p>
       </motion.div>
     );
   }

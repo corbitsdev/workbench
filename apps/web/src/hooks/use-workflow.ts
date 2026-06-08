@@ -163,19 +163,28 @@ export function useWorkflowCatalog() {
   });
 }
 
-export function useEnabledWorkflows() {
+export function useEnabledWorkflows(tenantId?: string | null) {
   return useQuery<EnabledWorkflowEntry[]>({
-    queryKey: ['enabled-workflows'],
-    queryFn: () => api<EnabledWorkflowEntry[]>('GET', '/workflows/enabled'),
+    queryKey: ['enabled-workflows', tenantId ?? null],
+    queryFn: () =>
+      api<EnabledWorkflowEntry[]>(
+        'GET',
+        tenantId
+          ? `/workflows/enabled?tenantId=${encodeURIComponent(tenantId)}`
+          : '/workflows/enabled'
+      ),
     staleTime: 60 * 1000,
   });
 }
 
-export function useInstallWorkflow() {
+export function useInstallWorkflow(tenantId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (kind: string) => {
-      return api<EnabledWorkflowEntry>('POST', '/workflows/enabled', { kind });
+      return api<EnabledWorkflowEntry>('POST', '/workflows/enabled', {
+        kind,
+        ...(tenantId ? { tenantId } : {}),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['enabled-workflows'] });

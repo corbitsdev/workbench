@@ -60,7 +60,6 @@ export function loadConfig() {
       allowedDomains: parseOrigins(optionalEnv('GOOGLE_ALLOWED_DOMAINS')),
     },
     granola: {
-      apiKey: optionalEnv('GRANOLA_API_KEY'),
       baseUrl: 'https://public-api.granola.ai/v1',
     },
     hub: {

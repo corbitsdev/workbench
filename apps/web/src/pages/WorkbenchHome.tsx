@@ -290,6 +290,7 @@ export default function WorkbenchHome() {
       return (
         <motion.div key="workflow-picker" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
           <WorkflowPicker
+            tenantId={workspaceTenantId}
             onSelectKind={handleWorkflowKindSelected}
             onClose={() => {
               setRightPane({ view: 'gallery' });

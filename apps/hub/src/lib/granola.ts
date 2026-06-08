@@ -27,13 +27,8 @@ function granolaHeaders(apiKey: string) {
   };
 }
 
-export function isGranolaConfigured(): boolean {
-  return Boolean(loadConfig().granola.apiKey);
-}
-
-export async function getRecentNotes(limit: number = 3): Promise<GranolaNote[]> {
-  const { apiKey, baseUrl } = loadConfig().granola;
-  if (!apiKey) throw new Error('GRANOLA_API_KEY is not configured');
+export async function getRecentNotes(apiKey: string, limit: number = 3): Promise<GranolaNote[]> {
+  const { baseUrl } = loadConfig().granola;
 
   const url = new URL(`${baseUrl}/notes`);
   url.searchParams.append('limit', limit.toString());
@@ -47,9 +42,8 @@ export async function getRecentNotes(limit: number = 3): Promise<GranolaNote[]> 
   return data.notes || [];
 }
 
-export async function getNoteWithTranscript(noteId: string): Promise<GranolaNote> {
-  const { apiKey, baseUrl } = loadConfig().granola;
-  if (!apiKey) throw new Error('GRANOLA_API_KEY is not configured');
+export async function getNoteWithTranscript(apiKey: string, noteId: string): Promise<GranolaNote> {
+  const { baseUrl } = loadConfig().granola;
 
   const url = new URL(`${baseUrl}/notes/${noteId}`);
   url.searchParams.append('include', 'transcript');
@@ -62,8 +56,12 @@ export async function getNoteWithTranscript(noteId: string): Promise<GranolaNote
   return response.json() as Promise<GranolaNote>;
 }
 
-export async function getRecentNotesSince(since: Date, limit: number = 50): Promise<GranolaNote[]> {
-  const notes = await getRecentNotes(limit);
+export async function getRecentNotesSince(
+  apiKey: string,
+  since: Date,
+  limit: number = 50
+): Promise<GranolaNote[]> {
+  const notes = await getRecentNotes(apiKey, limit);
   return notes.filter((n) => new Date(n.created_at) > since);
 }
 

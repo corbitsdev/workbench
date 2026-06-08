@@ -13,13 +13,19 @@ export interface WorkflowCatalogModalProps {
   open: boolean;
   onClose: () => void;
   onInstalled: (kind: string) => void;
+  tenantId?: string | null;
 }
 
-export function WorkflowCatalogModal({ open, onClose, onInstalled }: WorkflowCatalogModalProps) {
+export function WorkflowCatalogModal({
+  open,
+  onClose,
+  onInstalled,
+  tenantId,
+}: WorkflowCatalogModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const catalogQuery = useWorkflowCatalog();
-  const enabledQuery = useEnabledWorkflows();
-  const installMutation = useInstallWorkflow();
+  const enabledQuery = useEnabledWorkflows(tenantId);
+  const installMutation = useInstallWorkflow(tenantId);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {

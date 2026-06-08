@@ -6,11 +6,12 @@ import { WorkflowCatalogModal } from './WorkflowCatalogModal';
 export interface WorkflowPickerProps {
   onSelectKind: (kind: string) => void;
   onClose: () => void;
+  tenantId?: string | null;
 }
 
-export function WorkflowPicker({ onSelectKind, onClose }: WorkflowPickerProps) {
+export function WorkflowPicker({ onSelectKind, onClose, tenantId }: WorkflowPickerProps) {
   const [catalogOpen, setCatalogOpen] = useState(false);
-  const { data: enabledWorkflows, isLoading } = useEnabledWorkflows();
+  const { data: enabledWorkflows, isLoading } = useEnabledWorkflows(tenantId);
 
   const workflows = enabledWorkflows ?? [];
   const hasWorkflows = workflows.length > 0;
@@ -40,7 +41,8 @@ export function WorkflowPicker({ onSelectKind, onClose }: WorkflowPickerProps) {
             </div>
             <p className="text-[14px] font-semibold text-text">No workflows yet</p>
             <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-text-3">
-              Workflows turn your call data into publishable collateral. Add your first workflow to get started.
+              Workflows turn your call data into publishable collateral. Add your first workflow to
+              get started.
             </p>
             <button
               type="button"
@@ -51,17 +53,20 @@ export function WorkflowPicker({ onSelectKind, onClose }: WorkflowPickerProps) {
             </button>
           </div>
         )}
-        {hasWorkflows && workflows.map((wf) => (
-          <button
-            key={wf.kind}
-            type="button"
-            onClick={() => onSelectKind(wf.kind)}
-            className="flex w-full flex-col items-start gap-0.5 rounded-[8px] px-3 py-2 text-left transition-colors hover:bg-[var(--row-hover)]"
-          >
-            <span className="text-[13px] font-medium text-text">{wf.name}</span>
-            {wf.description && <span className="text-[11.5px] text-text-3">{wf.description}</span>}
-          </button>
-        ))}
+        {hasWorkflows &&
+          workflows.map((wf) => (
+            <button
+              key={wf.kind}
+              type="button"
+              onClick={() => onSelectKind(wf.kind)}
+              className="flex w-full flex-col items-start gap-0.5 rounded-[8px] px-3 py-2 text-left transition-colors hover:bg-[var(--row-hover)]"
+            >
+              <span className="text-[13px] font-medium text-text">{wf.name}</span>
+              {wf.description && (
+                <span className="text-[11.5px] text-text-3">{wf.description}</span>
+              )}
+            </button>
+          ))}
         {hasWorkflows && (
           <div className="mt-1 border-t border-border pt-1">
             <button
@@ -78,6 +83,7 @@ export function WorkflowPicker({ onSelectKind, onClose }: WorkflowPickerProps) {
 
       <WorkflowCatalogModal
         open={catalogOpen}
+        tenantId={tenantId}
         onClose={() => setCatalogOpen(false)}
         onInstalled={(kind) => {
           setCatalogOpen(false);

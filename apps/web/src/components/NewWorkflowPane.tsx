@@ -129,7 +129,11 @@ export function NewWorkflowPane({
               transition={{ duration: 0.12 }}
             >
               {error && <p className="text-[12px] text-orange mb-3">{error}</p>}
-              <RecentCallsPicker onSelect={handleSubmit} isLoading={isLoading} />
+              <RecentCallsPicker
+                onSelect={handleSubmit}
+                isLoading={isLoading}
+                tenantId={tenantId}
+              />
             </motion.div>
           )}
         </AnimatePresence>

@@ -14,12 +14,7 @@ import {
   artifactVersion,
   enabledWorkflow,
 } from '../db/schema';
-import {
-  isGranolaConfigured,
-  getNoteWithTranscript,
-  getRecentNotes,
-  transcriptToText,
-} from '../lib/granola';
+import { getNoteWithTranscript, getRecentNotes, transcriptToText } from '../lib/granola';
 import { extractPainPoints } from '../lib/extraction';
 import { refineFeedbackWithLLM } from '../lib/feedback';
 import { generateCollateralWithLLM } from '../lib/generation';
@@ -70,6 +65,29 @@ const WORKFLOW_LLM_FALLBACK = {
   source: 'tenant' as const,
   name: 'Myra LLM',
 };
+
+const GRANOLA_CREDENTIAL_REQUIREMENT = {
+  providerName: 'granola',
+  source: 'tenant' as const,
+};
+
+/**
+ * Resolve the workspace Granola API key from the tenant credential store.
+ * Returns null when no Granola credential is configured for the tenant.
+ */
+async function resolveGranolaApiKey(db: HubDb, tenantId: string): Promise<string | null> {
+  const resolved = await resolveCredentialRequirement(
+    db,
+    tenantId,
+    GRANOLA_CREDENTIAL_REQUIREMENT,
+    null,
+    null
+  );
+  if (!resolved) return null;
+
+  const { credentialKeys } = getConfig();
+  return decryptSecret(credentialKeys, tenantId, resolved.secret);
+}
 
 async function resolveWorkflowInferenceSource(
   db: HubDb,
@@ -211,7 +229,19 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
   // ─── List enabled workflows for tenant ───────────────────────────
   router.get('/workflows/enabled', async (c) => {
     const userId = c.get('userId');
-    const userContext = await getUserContext(db, userId);
+    const requestedTenantId = c.req.query('tenantId');
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      requestedTenantId
+    );
+    if (forbidden) {
+      log.warn('User requested enabled workflows for inaccessible tenant', {
+        userId,
+        requestedTenantId,
+      });
+      return c.json({ error: 'Tenant not accessible' }, 403);
+    }
     if (!userContext) {
       log.warn('User context not found', { userId });
       return c.json({ error: 'User context not found' }, 400);
@@ -240,6 +270,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
   router.post('/workflows/enabled', async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const kind = typeof body.kind === 'string' ? body.kind : undefined;
+    const requestedTenantId = typeof body.tenantId === 'string' ? body.tenantId : null;
 
     if (!kind) {
       log.warn('Workflow kind is required for enablement');
@@ -252,7 +283,18 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     }
 
     const userId = c.get('userId');
-    const userContext = await getUserContext(db, userId);
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      requestedTenantId
+    );
+    if (forbidden) {
+      log.warn('User requested workflow enablement for inaccessible tenant', {
+        userId,
+        requestedTenantId,
+      });
+      return c.json({ error: 'Tenant not accessible' }, 403);
+    }
     if (!userContext) {
       log.warn('User context not found', { userId });
       return c.json({ error: 'User context not found' }, 400);
@@ -358,12 +400,15 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         log.warn('Missing granolaId for granola source');
         return c.json({ error: 'granolaId is required' }, 400);
       }
-      if (!isGranolaConfigured()) {
-        log.warn('Granola API not configured');
-        return c.json({ error: 'Granola API not configured' }, 503);
+      const granolaApiKey = await resolveGranolaApiKey(db, userContext.tenantId);
+      if (!granolaApiKey) {
+        log.warn('Granola credential not configured for tenant', {
+          tenantId: userContext.tenantId,
+        });
+        return c.json({ error: 'No Granola credential configured for this workspace' }, 400);
       }
       try {
-        const note = await getNoteWithTranscript(granolaId);
+        const note = await getNoteWithTranscript(granolaApiKey, granolaId);
         content = transcriptToText(note) || note.summary || note.title || '';
         log.info('Granola note fetched', { granolaId, length: content.length });
       } catch (err) {
@@ -828,11 +873,31 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 
   // ─── Granola helper ─────────────────────────────────────────────────
   router.get('/recent-calls', async (c) => {
-    if (!isGranolaConfigured()) {
-      return c.json({ error: 'Granola API not configured' }, 503);
+    const userId = c.get('userId');
+    const requestedTenantId = c.req.query('tenantId');
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      requestedTenantId
+    );
+    if (forbidden) {
+      log.warn('User requested recent calls for inaccessible tenant', {
+        userId,
+        requestedTenantId,
+      });
+      return c.json({ error: 'Tenant not accessible' }, 403);
+    }
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json({ error: 'User context not found' }, 400);
+    }
+
+    const granolaApiKey = await resolveGranolaApiKey(db, userContext.tenantId);
+    if (!granolaApiKey) {
+      return c.json({ error: 'No Granola credential configured for this workspace' }, 400);
     }
     try {
-      const calls = await getRecentNotes(3);
+      const calls = await getRecentNotes(granolaApiKey, 3);
       return c.json({ calls });
     } catch (err) {
       log.error('Granola fetch failed', { error: String(err) });

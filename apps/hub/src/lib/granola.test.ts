@@ -8,28 +8,15 @@ mock.module('../config', () => ({
   loadConfig: () => mockConfig,
 }));
 
-import {
-  isGranolaConfigured,
-  getRecentNotes,
-  getNoteWithTranscript,
-  transcriptToText,
-} from './granola';
+import { getRecentNotes, getNoteWithTranscript, transcriptToText } from './granola';
+
+const TEST_API_KEY = 'test-api-key';
 
 describe('granola', () => {
   const originalFetch = global.fetch;
 
   afterEach(() => {
     (global as any).fetch = originalFetch;
-    mockConfig.granola.apiKey = 'test-api-key';
-  });
-
-  it('isGranolaConfigured returns false when apiKey is absent', () => {
-    mockConfig.granola.apiKey = '';
-    expect(isGranolaConfigured()).toBe(false);
-  });
-
-  it('isGranolaConfigured returns true when apiKey is present', () => {
-    expect(isGranolaConfigured()).toBe(true);
   });
 
   it('getRecentNotes returns parsed notes', async () => {
@@ -49,7 +36,7 @@ describe('granola', () => {
       )
     );
 
-    const notes = await getRecentNotes(2);
+    const notes = await getRecentNotes(TEST_API_KEY, 2);
     expect(notes).toEqual(mockNotes);
   });
 
@@ -69,7 +56,7 @@ describe('granola', () => {
     );
     (global as any).fetch = fetchMock;
 
-    const note = await getNoteWithTranscript('n1');
+    const note = await getNoteWithTranscript(TEST_API_KEY, 'n1');
     expect(note.transcript).toEqual(mockNote.transcript);
     const calls = fetchMock.mock.calls as unknown as any[][];
     expect(String(calls[0]?.[0]).includes('include=transcript')).toBe(true);
@@ -96,6 +83,6 @@ describe('granola', () => {
       Promise.resolve(new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }))
     );
 
-    expect(async () => getRecentNotes(3)).toThrow();
+    expect(async () => getRecentNotes(TEST_API_KEY, 3)).toThrow();
   });
 });
