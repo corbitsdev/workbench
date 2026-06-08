@@ -16,4 +16,9 @@ export type AgentDeployDescriptor = {
   credentialProviderNames: string[];
   /** Tool names (from KNOWN_TOOLS) to attach to the agent on creation. */
   defaultTools: string[];
+  /**
+   * Tool names the agent cannot function without. Rendered as locked
+   * (checked, non-toggleable) in the UI. Must be a subset of defaultTools.
+   */
+  requiredTools: string[];
 };
