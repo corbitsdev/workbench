@@ -74,7 +74,17 @@ import type { WorkflowType } from '@workbench/workflow-core';
 export const customWorkflow: WorkflowType = {
   kind: 'custom-analysis',
   name: 'Custom Analysis',
-  // ... rest of definition
+  // Declare steps with per-step credentialRequirements + tools. Assignments are
+  // bound to tenant credentials when the workflow is added to a workbench.
+  steps: [
+    {
+      name: 'analyze',
+      label: 'Analyze',
+      credentialRequirements: [{ providerName: 'openai-compatible', source: 'tenant' }],
+      tools: [],
+    },
+  ],
+  // ... inputSchema / outputSchema
 };
 ```
 

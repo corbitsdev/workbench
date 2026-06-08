@@ -43,7 +43,18 @@ export const myWorkflow: WorkflowType = {
   kind: 'my-workflow',
   name: 'My Workflow',
   description: 'What this workflow does',
-  credentialRequirements: [{ providerName: 'openai-compatible', source: 'tenant', name: 'LLM' }],
+  // Each step declares the credentials it needs and the tools it may use. The
+  // workbench binds a tenant credential to each requirement at install time.
+  steps: [
+    {
+      name: 'analyze',
+      label: 'Analyze',
+      credentialRequirements: [
+        { providerName: 'openai-compatible', source: 'tenant', name: 'LLM' },
+      ],
+      tools: [],
+    },
+  ],
   inputSchema: {
     /* workflow-specific input schema */
   },
