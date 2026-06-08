@@ -17,6 +17,9 @@
     "format": "oxfmt --write . '!interchange' '!temporary'",
     "lint": "bun run --filter '@workbench/*' lint",
     "test": "bun run --filter '@workbench/*' test",
+    "test:coverage": "bun run --filter '@workbench/*' test:coverage",
+    "coverage:report": "COVERAGE_THRESHOLD=98.5 bun run scripts/coverage-merge.ts",
+    "coverage": "bun run test:coverage && bun run coverage:report",
     "interchange:check": "bun run scripts/check-interchange-sync.ts"
   },
   "dependencies": {

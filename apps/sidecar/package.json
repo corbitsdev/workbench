@@ -6,7 +6,8 @@
     "dev": "bun --hot src/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
-    "test": "bun test"
+    "test": "bun test",
+    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text"
   },
   "dependencies": {
     "@intx/agent": "workspace:*",

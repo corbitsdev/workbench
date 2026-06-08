@@ -9,6 +9,7 @@
     "lint": "oxlint .",
     "start": "bun run dist/index.js",
     "test": "bun test",
+    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts"
   },
   "dependencies": {
