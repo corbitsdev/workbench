@@ -194,8 +194,7 @@ export const EXA_SEARCH_DEFINITION: ToolDefinition = {
       },
       type: {
         type: 'string',
-        description:
-          'Search type: auto, instant, fast, deep-lite, deep, deep-reasoning. Default is auto.',
+        description: 'Search type: auto, instant, neural, fast, deep. Default is auto.',
       },
       includeDomains: {
         type: 'array',

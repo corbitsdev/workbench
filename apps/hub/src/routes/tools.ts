@@ -11,7 +11,7 @@ const log = getLogger(['api', 'tools']);
 export function createInternalToolsRouter(
   db: DB['db'],
   sidecarToken: string,
-  credentialKeys: CredentialKeyRegistry,
+  credentialKeys: CredentialKeyRegistry
 ): Hono {
   const router = new Hono();
 
@@ -52,29 +52,58 @@ export function createInternalToolsRouter(
       return c.json({ error: `Unknown tool: ${toolName}` }, 404);
     }
 
-    const resolved = await resolveCredentialRequirement(
-      db,
-      tenantId,
-      { providerName: entry.providerName, source: 'tenant' },
-      null,
-      null,
-    );
+    let resolved: Awaited<ReturnType<typeof resolveCredentialRequirement>>;
+    try {
+      resolved = await resolveCredentialRequirement(
+        db,
+        tenantId,
+        { providerName: entry.providerName, source: 'tenant' },
+        null,
+        null
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn('Credential resolution failed', { tenantId, toolName, error: message });
+      return c.json({ result: `Credential resolution failed: ${message}`, isError: true });
+    }
 
     if (!resolved) {
-      log.warn('No credential configured for tool execution', { tenantId, toolName, providerName: entry.providerName });
+      log.warn('No credential configured for tool execution', {
+        tenantId,
+        toolName,
+        providerName: entry.providerName,
+      });
       return c.json({ error: `No credential configured for provider: ${entry.providerName}` }, 422);
     }
 
-    const apiKey = decryptSecret(credentialKeys, tenantId, resolved.secret);
+    let apiKey: string;
+    let baseURL: string;
+    try {
+      apiKey = decryptSecret(credentialKeys, tenantId, resolved.secret);
+      const providerRow = await db.query.provider.findFirst({
+        where: (p, { eq }) => eq(p.id, resolved.providerId),
+      });
+      const metadata = (providerRow?.metadata ?? {}) as { baseURL?: string };
+      baseURL = metadata.baseURL ?? '';
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn('Credential decryption or provider lookup failed', {
+        tenantId,
+        toolName,
+        error: message,
+      });
+      return c.json({ result: `Credential setup failed: ${message}`, isError: true });
+    }
 
-    const providerRow = await db.query.provider.findFirst({
-      where: (p, { eq }) => eq(p.id, resolved.providerId),
-    });
-    const metadata = (providerRow?.metadata ?? {}) as { baseURL?: string };
-    const baseURL = metadata.baseURL ?? '';
-
-    const tools = entry.createTools({ apiKey, baseURL });
-    const tool: AgentTool | undefined = tools.find((t) => t.definition.name === toolName);
+    let tool: AgentTool | undefined;
+    try {
+      const tools = entry.createTools({ apiKey, baseURL });
+      tool = tools.find((t) => t.definition.name === toolName);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn('Tool factory failed', { tenantId, toolName, error: message });
+      return c.json({ result: `Tool initialization failed: ${message}`, isError: true });
+    }
 
     if (!tool) {
       return c.json({ error: `Tool ${toolName} not found in provider package` }, 500);
