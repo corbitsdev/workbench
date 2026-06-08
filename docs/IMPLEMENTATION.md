@@ -181,7 +181,27 @@ Each `outputType` generates independently in parallel via `@intx/agent`. Results
 | `POST` | `/workflows`           | `{ transcript, source }`                         | `{ id, status, steps }`              |
 | `GET`  | `/workflows/:id`       | —                                                | `{ id, status, currentStep, steps }` |
 | `POST` | `/workflows/:id/steps` | `{ step, painPointIds, feedback, collateralId }` | `{ id, status, currentStep, steps }` |
-| `GET`  | `/recent-calls`        | —                                                | `{ calls }`                          |
+| `GET`  | `/workflows/catalog`   | —                                                | `[{ kind, name, description, steps, credentialRequirements }]` |
+| `GET`  | `/workflows/tools`     | —                                                | `[{ name, providerName, description }]` |
+| `GET`  | `/workflows/enabled`   | `?tenantId`                                       | `[{ kind, ..., assignments }]`       |
+| `POST` | `/workflows/enabled`   | `{ kind, tenantId?, assignments }`               | `{ kind, ..., assignments }`         |
+| `GET`  | `/recent-calls`        | `?tenantId&kind`                                 | `{ calls }`                          |
+
+#### Per-step credential & tool assignments
+
+A `WorkflowType` (`@workbench/workflow-core`) declares `steps[]`, where each step lists its own
+`credentialRequirements` (by `providerName`) and allowed `tools`. The collateral workflow's intake
+step requires a `granola` credential plus the Granola tools; analyze/generate/improve require an
+`openai-compatible` inference credential.
+
+When a workflow is added to a workbench, the install UI collects one credential per requirement
+(select existing or add new inline) and a tool selection per step. `POST /workflows/enabled`
+validates these against the step definitions and stores them on the install record
+(`workbench_workflows.assignments`, shape `Record<stepName, { credentialIds, toolIds }>`). At run
+time, each step resolves its assigned credential via `resolveCredentialById` (falling back to the
+name-based resolver for installs predating assignments); Granola recent-calls/intake resolve the
+intake step's assigned credential. The web `CredentialField` component (select-or-add-new) backs
+both this flow and the agent `NewAgentModal`.
 
 ### Health
 
@@ -212,6 +232,17 @@ The `artifact` table is the single store for all workflow and agent outputs.
 - `createdAt` (timestamp)
 - `updatedAt` (timestamp)
 
+### Enabled Workflows (`workbench_workflows`)
+
+Tracks which workflow kinds a tenant has added, with per-step assignments.
+
+- `id` (text, primary key)
+- `tenantId` (text)
+- `kind` (text) — workflow kind
+- `assignments` (jsonb, nullable) — `Record<stepName, { credentialIds: string[]; toolIds: string[] }>`
+- `enabledAt` (timestamp)
+- Unique `(tenant_id, kind)` for idempotent upserts.
+
 ### Workbench User (provisional cache)
 
 - `id` (UUID, primary key)
@@ -227,6 +258,7 @@ The `artifact` table is the single store for all workflow and agent outputs.
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `0004_collateral_generation_workflow` | Adds `collateral_generation_workflow` table; makes `artifact.sessionId` nullable; adds `artifact.workflowId` FK |
 | `0005_workbench_user`                 | Adds provisional `workbench_user` cache table                                                                   |
+| `0012_workbench_workflow_assignments` | Adds `workbench_workflows.assignments` (jsonb) for per-step credential/tool assignments                         |
 
 ## Agent Architecture
 

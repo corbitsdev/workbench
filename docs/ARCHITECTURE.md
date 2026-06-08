@@ -54,6 +54,8 @@ Credentials and grants follow Interchange's model exactly. The workbench does no
 
 **Grants** (manage access, not resolution): The hub writes a `grant` row giving the creating principal manage access to the credential record (`resource: credential:{id}`, `origin: creator`). This grant enables the Settings UI to delete/update the credential. It is separate from resolution — Interchange resolves credentials from the tenant, not from grants to instance principals.
 
+**Per-step workflow assignments**: Unlike agents, whose credential requirements resolve implicitly by name, a workflow declares requirements **per step** and binds an explicit tenant credential to each step when it is added to a workbench. The binding (credential IDs and tool IDs per step) is stored on the workbench install record, not on each run. At run time the hub resolves the bound credential by ID (`resolveCredentialById`, scoped to the tenant ancestor chain) rather than by name — so different steps can use different credentials — and falls back to name-based resolution for installs predating assignments. Credentials are still tenant-owned and encrypted as above; only the selection mechanism differs.
+
 ### Credential Encryption at Rest
 
 Credential secrets written by the hub layer are encrypted before storage using AES-256-GCM with per-tenant key derivation. Interchange's `credential` table stores the ciphertext; no `@intx/*` package is modified.

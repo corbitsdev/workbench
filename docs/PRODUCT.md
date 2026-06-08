@@ -54,6 +54,15 @@ The current workflow is the first concrete version of a more general workbench m
 
 The product should surface named outcomes such as "Create sales collateral" or "Draft LinkedIn posts" rather than raw internal steps.
 
+### Adding a workflow to a workbench
+
+Adding a workflow to a workbench is a configuration step, like adding an agent. Each workflow
+exposes its steps; for every step the user assigns the credentials it needs (e.g. Granola for
+intake, an inference provider for analysis and generation) and the tools it may use. Credentials can
+be selected from those already in the workbench or added inline, without leaving the flow. These
+assignments are saved to the workbench and reused on every run, so a workflow can only be added once
+its required credentials are in place. Assignments can be edited later from the same place.
+
 ## Intake Scope
 
 - **Primary**: Oat automatically surfaces Granola call recordings as call document artifacts
