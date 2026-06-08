@@ -10,6 +10,7 @@ import {
   restartAgentInstance,
   listAvailableTools,
   updateAgentTools,
+  createTenantCredential,
   INFERENCE_PROVIDER_NAMES,
 } from '../../lib/hub-api';
 import type {
@@ -18,6 +19,7 @@ import type {
   EnrichedCredential,
   CredentialRequirement,
 } from '../../lib/hub-api';
+import { PROVIDER_REGISTRY } from '../../lib/providerRegistry';
 import { useEffect, useState } from 'react';
 
 type ResourceType = 'workflow' | 'agent';
@@ -294,10 +296,13 @@ function AgentToolEditor({
   onCancel: () => void;
 }) {
   const [availableTools, setAvailableTools] = useState<string[]>([]);
+  const [existingCredsByProvider, setExistingCredsByProvider] = useState<Map<string, EnrichedCredential>>(new Map());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Pending credential field values keyed by providerName → fieldKey → value
+  const [pendingCreds, setPendingCreds] = useState<Record<string, Record<string, string>>>({});
 
   const currentTools = Array.isArray(currentCapabilities?.tools)
     ? currentCapabilities.tools.filter((t): t is string => typeof t === 'string')
@@ -306,11 +311,21 @@ function AgentToolEditor({
   useEffect(() => {
     void (async () => {
       try {
-        const tools = await listAvailableTools();
+        const [tools, credentials] = await Promise.all([
+          listAvailableTools(),
+          listEnrichedCredentials(tenantId),
+        ]);
         setAvailableTools(tools);
         setSelected(new Set(currentTools));
+        const byProvider = new Map<string, EnrichedCredential>();
+        for (const c of credentials) {
+          if (!INFERENCE_PROVIDER_NAMES.includes(c.providerPlugin as (typeof INFERENCE_PROVIDER_NAMES)[number])) {
+            byProvider.set(c.providerPlugin, c);
+          }
+        }
+        setExistingCredsByProvider(byProvider);
       } catch {
-        setError('Failed to load available tools.');
+        setError('Failed to load tools.');
       } finally {
         setLoading(false);
       }
@@ -329,11 +344,33 @@ function AgentToolEditor({
     });
   };
 
+  // Providers that are needed by the current selection but have no credential yet.
+  const missingProviders = PROVIDER_REGISTRY.filter((p) => {
+    const needed = p.tools.some((t) => selected.has(t.name));
+    return needed && !existingCredsByProvider.has(p.name);
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
+      // Create any missing credentials first.
+      for (const provider of missingProviders) {
+        const fields = pendingCreds[provider.name] ?? {};
+        const apiKey = fields['apiKey'] ?? '';
+        if (!apiKey) {
+          setError(`API key required for ${provider.label}.`);
+          setSaving(false);
+          return;
+        }
+        await createTenantCredential(tenantId, {
+          provider: provider.name,
+          name: provider.label,
+          apiKey,
+          ...(fields['baseURL'] ? { baseURL: fields['baseURL'] } : {}),
+        });
+      }
       await updateAgentTools(tenantId, agentId, Array.from(selected));
       onSaved();
     } catch (err) {
@@ -384,6 +421,38 @@ function AgentToolEditor({
           </label>
         ))}
       </div>
+      {missingProviders.length > 0 && (
+        <div className="mb-3 space-y-3">
+          {missingProviders.map((provider) => (
+            <div key={provider.name} className="rounded-[7px] border border-border bg-bg px-3 py-2">
+              <p className="mb-1.5 text-[11px] font-medium text-text-2">
+                {provider.label} credentials required
+              </p>
+              {provider.fields.map((field) => (
+                <div key={field.key} className="mb-1.5">
+                  <label className="mb-0.5 block text-[11px] text-text-3">
+                    {field.label}{field.required ? '' : ' (optional)'}
+                  </label>
+                  <input
+                    type={field.type === 'password' ? 'password' : 'text'}
+                    placeholder={field.placeholder}
+                    value={pendingCreds[provider.name]?.[field.key] ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPendingCreds((prev) => ({
+                        ...prev,
+                        [provider.name]: { ...prev[provider.name], [field.key]: val },
+                      }));
+                    }}
+                    disabled={saving}
+                    className="w-full rounded-[6px] border border-border bg-surface px-2 py-1 text-[12px] text-text placeholder:text-text-3 focus:border-orange focus:outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex gap-2">
         <button
           type="submit"
