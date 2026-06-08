@@ -176,16 +176,16 @@ Each `outputType` generates independently in parallel via `@intx/agent`. Results
 
 ### Workflow Routes
 
-| Method | Route                  | Input                                            | Output                               |
-| ------ | ---------------------- | ------------------------------------------------ | ------------------------------------ |
-| `POST` | `/workflows`           | `{ transcript, source }`                         | `{ id, status, steps }`              |
-| `GET`  | `/workflows/:id`       | —                                                | `{ id, status, currentStep, steps }` |
-| `POST` | `/workflows/:id/steps` | `{ step, painPointIds, feedback, collateralId }` | `{ id, status, currentStep, steps }` |
+| Method | Route                  | Input                                            | Output                                                         |
+| ------ | ---------------------- | ------------------------------------------------ | -------------------------------------------------------------- |
+| `POST` | `/workflows`           | `{ transcript, source }`                         | `{ id, status, steps }`                                        |
+| `GET`  | `/workflows/:id`       | —                                                | `{ id, status, currentStep, steps }`                           |
+| `POST` | `/workflows/:id/steps` | `{ step, painPointIds, feedback, collateralId }` | `{ id, status, currentStep, steps }`                           |
 | `GET`  | `/workflows/catalog`   | —                                                | `[{ kind, name, description, steps, credentialRequirements }]` |
-| `GET`  | `/workflows/tools`     | —                                                | `[{ name, providerName, description }]` |
-| `GET`  | `/workflows/enabled`   | `?tenantId`                                       | `[{ kind, ..., assignments }]`       |
-| `POST` | `/workflows/enabled`   | `{ kind, tenantId?, assignments }`               | `{ kind, ..., assignments }`         |
-| `GET`  | `/recent-calls`        | `?tenantId&kind`                                 | `{ calls }`                          |
+| `GET`  | `/workflows/tools`     | —                                                | `[{ name, providerName, description }]`                        |
+| `GET`  | `/workflows/enabled`   | `?tenantId`                                      | `[{ kind, ..., assignments }]`                                 |
+| `POST` | `/workflows/enabled`   | `{ kind, tenantId?, assignments }`               | `{ kind, ..., assignments }`                                   |
+| `GET`  | `/recent-calls`        | `?tenantId&kind`                                 | `{ calls }`                                                    |
 
 #### Per-step credential & tool assignments
 
