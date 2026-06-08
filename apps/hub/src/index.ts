@@ -62,6 +62,7 @@ const sql = postgres({
 });
 const db = drizzle(sql, { schema });
 
+await sql`SELECT 1`;
 log.info('Database connection established');
 
 // ─── Workbench tenant bootstrap ─────────────────────────────────────
