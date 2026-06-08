@@ -1,4 +1,6 @@
-import { createAgent } from '@intx/agent';
+import { createAgent, createDefaultDirectorRegistry, defineAgent } from '@intx/agent';
+import { noopAuditStore, permissiveAuthorize } from '@intx/agent/testing';
+import { createIsogitStore } from '@intx/storage-isogit';
 import type { InferenceSource } from '@intx/types/runtime';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -19,12 +21,23 @@ export async function runSingleTurnAgent(
     maxOutputTokens !== undefined
       ? { ...source, defaults: { ...source.defaults, maxTokens: maxOutputTokens } }
       : source;
-  const agent = await createAgent({
-    contextDir,
-    sources: [effectiveSource],
-    defaultSource: effectiveSource.id,
+
+  const definition = defineAgent({
+    id: '@workbench/hub/single-turn',
     systemPrompt,
     tools: [],
+    capabilities: [],
+    inference: { sources: [{ provider: effectiveSource.provider, model: effectiveSource.model }] },
+  });
+
+  const storage = await createIsogitStore(contextDir);
+  const agent = await createAgent(definition, {
+    source: effectiveSource,
+    storage,
+    workdir: contextDir,
+    audit: noopAuditStore(),
+    authorize: permissiveAuthorize(),
+    directors: createDefaultDirectorRegistry(),
     closeTimeoutMs: 1000,
   });
   try {

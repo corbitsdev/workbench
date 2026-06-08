@@ -283,11 +283,11 @@ Tracks which workflow kinds a principal has added, with per-step assignments.
 
 ### Migration Sequence
 
-| Migration                             | Description                                                                                                     |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `0004_collateral_generation_workflow` | Adds `collateral_generation_workflow` table; makes `artifact.sessionId` nullable; adds `artifact.workflowId` FK |
-| `0005_workbench_user`                 | Adds provisional `workbench_user` cache table                                                                   |
-| `0012_workbench_workflow_assignments` | Adds `workbench_workflows.assignments` (jsonb) for per-step credential/tool assignments                         |
+| Migration                                | Description                                                                                                                                                                   |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0004_collateral_generation_workflow`    | Adds `collateral_generation_workflow` table; makes `artifact.sessionId` nullable; adds `artifact.workflowId` FK                                                               |
+| `0005_workbench_user`                    | Adds provisional `workbench_user` cache table                                                                                                                                 |
+| `0012_workbench_workflow_assignments`    | Adds `workbench_workflows.assignments` (jsonb) for per-step credential/tool assignments                                                                                       |
 | `0015_workbench_workflows_per_principal` | Adds `workbench_workflows.principal_id` (NOT NULL), backfills from each tenant's user principal, re-keys the unique constraint to `(tenant_id, principal_id, kind)` (CL-1450) |
 
 **Data migration (not a schema migration):** `apps/hub/src/scripts/migrate-to-global-tenant.ts` moves existing users into the global tenant — re-parents workbenches, provisions a per-user Myra, and re-keys `workflow_run` / `artifact` / `artifact_version` / `workbench_workflows` from the old personal principal to the new global member principal. Dry-run by default (`--live` to write); per-user transaction; idempotent. An interrupted run MUST be re-run (Myra provisioning and the re-key transaction are intentionally not atomic, but re-running finishes the re-key). Run it once after deploying the cutover. `pain_point` is not re-keyed — it carries no tenant/principal columns and migrates implicitly with its `workflow_run` via `session_id`.

@@ -41,10 +41,10 @@ On signup (`user.create.after`) the hub joins the user to the global tenant and 
 
 ### Agent Architecture
 
-| Agent                     | Tenant                          | Role                                                              |
-| ------------------------- | ------------------------------- | ----------------------------------------------------------------- |
-| **Myra** (personal agent) | Global org tenant (per-user)    | Chief of Staff / Executive Assistant for the user                 |
-| **Oat** (Granola agent)   | Global org tenant (shared)      | Continuously processes Granola calls into call document artifacts |
+| Agent                     | Tenant                       | Role                                                              |
+| ------------------------- | ---------------------------- | ----------------------------------------------------------------- |
+| **Myra** (personal agent) | Global org tenant (per-user) | Chief of Staff / Executive Assistant for the user                 |
+| **Oat** (Granola agent)   | Global org tenant (shared)   | Continuously processes Granola calls into call document artifacts |
 
 Each user has their **own Myra agent definition** in the global tenant (derived from the shared template in `@workbench/agents` — prompt + credential requirements + base toolset), so per-user tool edits mutate only that user's `capabilities.tools`. Myra is keyed for idempotency on `(tenantId, creatorPrincipalId)` — **not** `(tenantId, name)`: in a shared tenant every member's agent is named "Myra," so name-based lookup would hand the first user's Myra to everyone.
 

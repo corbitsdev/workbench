@@ -22,6 +22,7 @@
     "@intx/hub-common": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "workspace:*",
+    "@intx/storage-isogit": "workspace:*",
     "@intx/tools-posix": "workspace:*",
     "@intx/types": "workspace:*",
     "@workbench/agent-scheduler": "workspace:*",
