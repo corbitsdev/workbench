@@ -855,27 +855,49 @@ export function LibraryRail({
                       {item.type === 'agent' && item.agentId && item.tenantId && (
                         <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                           {item.agentStatus === 'stopped' ? (
-                            <button
-                              type="button"
-                              aria-label="Create Agent"
-                              disabled={restartingInstanceId === item.instanceId}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void restartAgent();
-                              }}
-                              className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text disabled:opacity-50"
-                            >
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                className="h-[13px] w-[13px]"
+                            <>
+                              <button
+                                type="button"
+                                aria-label="Create Agent"
+                                disabled={restartingInstanceId === item.instanceId}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void restartAgent();
+                                }}
+                                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text disabled:opacity-50"
                               >
-                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                                <path d="M3 3v5h5" />
-                              </svg>
-                            </button>
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  className="h-[13px] w-[13px]"
+                                >
+                                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                  <path d="M3 3v5h5" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Remove Agent"
+                                disabled={stoppingInstanceId === item.instanceId}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (window.confirm(`Remove ${item.name}?`)) void stopAgent();
+                                }}
+                                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
+                              >
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  className="h-[13px] w-[13px]"
+                                >
+                                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                                </svg>
+                              </button>
+                            </>
                           ) : (
                             <>
                               <button
