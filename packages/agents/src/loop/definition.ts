@@ -11,7 +11,7 @@ export const LOOP_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   },
 ];
 
-export const LOOP_DEPLOY_PROMPT: string = buildLoopAgentSystemPrompt('Loop', 'xml');
+export const LOOP_DEPLOY_PROMPT: string = buildLoopAgentSystemPrompt('Loop', { xml: true });
 
 export const LOOP_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: 'Loop — Research Intelligence',

@@ -26,7 +26,8 @@
     "@intx/hub-client": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
-    "@workbench/chat": "workspace:*"
+    "@workbench/chat": "workspace:*",
+    "@workbench/prompts": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

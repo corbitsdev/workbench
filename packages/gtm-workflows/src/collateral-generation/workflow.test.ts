@@ -123,6 +123,47 @@ describe('collateral-generation input schema', () => {
   });
 });
 
+describe('collateral-generation artifact behavior', () => {
+  it('declares the selectable collateral outputs outside apps', () => {
+    const selected = collateralGenerationWorkflow.selectGenerateArtifactKinds?.([
+      'pain-points-linkedin-post',
+      'pain-points-blog',
+    ]);
+    expect(selected).toEqual(['pain-points-linkedin-post', 'pain-points-blog']);
+  });
+
+  it('creates transcript artifacts during intake', () => {
+    const artifacts = collateralGenerationWorkflow.createIntakeArtifacts?.({
+      input: { transcriptId: 'tx-1', transcriptSource: 'paste' },
+      content: 'Call text',
+      callTitle: 'Demo call',
+    });
+    expect(artifacts).toEqual([
+      {
+        kind: 'call-transcript',
+        title: 'Transcript — Demo call',
+        content: 'Call text',
+        status: 'approved',
+        version: 1,
+      },
+    ]);
+  });
+
+  it('creates a pain-points document artifact from analysis output', () => {
+    const artifacts = collateralGenerationWorkflow.createAnalyzeArtifacts?.({
+      input: { companyName: 'Acme' },
+      companyName: 'Acme',
+      painPoints: [{ severity: 'high', context: 'Manual work', quote: 'Too much copying' }],
+    });
+    expect(artifacts?.[0]).toMatchObject({
+      kind: 'pain-points',
+      title: 'Pain Points — Acme',
+      status: 'approved',
+    });
+    expect(artifacts?.[0]?.content).toContain('Manual work');
+  });
+});
+
 describe('collateral-generation output schema', () => {
   it('produces an array of artifacts with kind, title, and content', () => {
     const schema = collateralGenerationWorkflow.outputSchema as {

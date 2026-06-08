@@ -3,6 +3,8 @@ export type {
   WorkflowStepDefinition,
   WorkflowCredentialRequirement,
   UserContext,
+  WorkflowArtifactDraft,
+  WorkflowOutputOption,
 } from './types';
 export { flattenStepCredentialRequirements } from './types';
 export { workflowRegistry } from './registry';

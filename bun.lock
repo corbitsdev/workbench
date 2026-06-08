@@ -37,6 +37,7 @@
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
+        "@workbench/tools-firecrawl": "workspace:*",
         "@workbench/tools-granola": "workspace:*",
         "@workbench/workflow-core": "workspace:*",
         "arktype": "catalog:",
@@ -88,6 +89,7 @@
         "@workbench/settings": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
+        "@workbench/tools-firecrawl": "workspace:*",
         "@workbench/tools-granola": "workspace:*",
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
@@ -391,6 +393,7 @@
         "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
         "@workbench/chat": "workspace:*",
+        "@workbench/prompts": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -493,9 +496,11 @@
       "dependencies": {
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
+        "@workbench/prompts": "workspace:*",
         "@workbench/workflow-core": "workspace:*",
       },
       "devDependencies": {
+        "@types/bun": "latest",
         "typescript": "catalog:",
       },
     },
@@ -504,6 +509,14 @@
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.0",
+      },
+    },
+    "packages/prompts": {
+      "name": "@workbench/prompts",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
       },
     },
     "packages/sentry": {
@@ -558,6 +571,15 @@
     },
     "packages/tools-exa": {
       "name": "@workbench/tools-exa",
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-firecrawl": {
+      "name": "@workbench/tools-firecrawl",
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1214,6 +1236,8 @@
 
     "@workbench/hub-crypto": ["@workbench/hub-crypto@workspace:packages/hub-crypto"],
 
+    "@workbench/prompts": ["@workbench/prompts@workspace:packages/prompts"],
+
     "@workbench/sentry": ["@workbench/sentry@workspace:packages/sentry"],
 
     "@workbench/settings": ["@workbench/settings@workspace:packages/settings"],
@@ -1223,6 +1247,8 @@
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
 
     "@workbench/tools-exa": ["@workbench/tools-exa@workspace:packages/tools-exa"],
+
+    "@workbench/tools-firecrawl": ["@workbench/tools-firecrawl@workspace:packages/tools-firecrawl"],
 
     "@workbench/tools-granola": ["@workbench/tools-granola@workspace:packages/tools-granola"],
 

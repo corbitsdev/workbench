@@ -71,6 +71,7 @@ interface WorkflowInput {
   transcriptId?: string;
   transcriptSource?: string;
   companyName?: string;
+  callTitle?: string;
   stepConfig?: WorkflowStepConfig;
 }
 
@@ -567,6 +568,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const source = typeof body.source === 'string' ? body.source : undefined;
     const workflowKind = typeof body.workflowKind === 'string' ? body.workflowKind : undefined;
     const requestedTenantId = typeof body.tenantId === 'string' ? body.tenantId : null;
+    const requestedCallTitle = typeof body.callTitle === 'string' ? body.callTitle.trim() : '';
 
     const workflowSource = source === 'paste' || source === 'granola' ? source : undefined;
 
@@ -619,6 +621,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     }
 
     let content: string;
+    let callTitle = requestedCallTitle;
 
     if (workflowSource === 'paste') {
       if (!transcriptText || transcriptText.trim().length === 0) {
@@ -630,6 +633,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         return c.json({ error: 'transcript exceeds maximum length' }, 413);
       }
       content = transcriptText;
+      if (!callTitle) callTitle = 'Pasted transcript';
       log.info('Transcript received', { length: content.length });
     } else {
       if (!granolaId) {
@@ -646,6 +650,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       try {
         const note = await getNoteWithTranscript(granolaApiKey, granolaId);
         content = transcriptToText(note) || note.summary || note.title || '';
+        callTitle = callTitle || note.title || 'Granola call';
         log.info('Granola note fetched', { granolaId, length: content.length });
       } catch (err) {
         log.error('Failed to fetch from Granola', {
@@ -669,7 +674,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       return c.json({ error: 'Failed to create transcript' }, 500);
     }
 
-    const workflowInput = { transcriptId: txRow.id, transcriptSource: workflowSource };
+    const workflowInput = { transcriptId: txRow.id, transcriptSource: workflowSource, callTitle };
     const inputValidation = validateWorkflowInput(workflowKind, workflowInput);
     if (!inputValidation.valid) {
       log.warn('Workflow input validation failed', {
@@ -696,6 +701,23 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         principalId: userContext.principalId,
       });
       return c.json({ error: 'Failed to create workflow' }, 500);
+    }
+
+    const workflowDefinition = workflowRegistry.get(workflowKind);
+    const intakeArtifacts = workflowDefinition?.createIntakeArtifacts?.({
+      input: workflowInput,
+      content,
+      callTitle,
+    });
+    for (const draft of intakeArtifacts ?? []) {
+      await db.insert(artifact).values({
+        sessionId: wfRow.id,
+        kind: draft.kind,
+        title: draft.title,
+        content: draft.content,
+        status: draft.status ?? 'draft',
+        version: draft.version ?? 1,
+      });
     }
 
     log.info('Workflow created', {
@@ -834,7 +856,9 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       const session = sessionById.get(a.sessionId);
       return {
         ...serializeArtifact(a),
-        sessionName: (session?.input as WorkflowInput)?.companyName ?? null,
+        sessionName: session
+          ? deriveWorkflowDisplayName(session.kind, session.input as WorkflowInput)
+          : null,
         sessionStatus: session?.status ?? null,
       };
     });
@@ -918,6 +942,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const body = (await c.req.json().catch(() => ({}))) as {
       step?: StepName;
       painPointIds?: string[];
+      collateralTypes?: string[];
       artifactId?: string;
       feedback?: string;
       target?: string;
@@ -993,6 +1018,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           db,
           id,
           body.painPointIds ?? [],
+          body.collateralTypes,
           userContext.principalId,
           source,
           maxOutputTokens
@@ -1028,6 +1054,35 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 
     log.warn('Invalid step', { workflowId: id, step });
     return c.json({ error: 'Invalid step' }, 400);
+  });
+
+  // ─── Artifact approval ──────────────────────────────────────────────
+  router.patch('/workflows/:id/artifacts/:artifactId/status', async (c) => {
+    const id = c.req.param('id');
+    const artifactId = c.req.param('artifactId');
+    const userId = c.get('userId');
+    const body = (await c.req.json().catch(() => ({}))) as { status?: string };
+    const status = body.status === 'approved' || body.status === 'rejected' ? body.status : null;
+    if (!status) return c.json({ error: 'status must be approved or rejected' }, 400);
+
+    const wf = await db.query.workflowRun.findFirst({ where: eq(workflowRun.id, id) });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
+
+    const [row] = await db
+      .update(artifact)
+      .set({ status })
+      .where(and(eq(artifact.id, artifactId), eq(artifact.sessionId, id)))
+      .returning();
+
+    if (!row) return c.json({ error: 'Artifact not found' }, 404);
+    return c.json(serializeArtifact(row));
   });
 
   // ─── Update company name ────────────────────────────────────────────
@@ -1299,12 +1354,40 @@ async function runAnalyze(
   }
   log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
 
+  const currentWf = await db.query.workflowRun.findFirst({
+    where: eq(workflowRun.id, id),
+  });
+  if (!currentWf) {
+    log.warn('Workflow deleted before analyze results could be saved', { workflowId: id });
+    return Response.json(
+      { error: 'Workflow was deleted while analysis was running' },
+      { status: 410 }
+    );
+  }
+
   await db.delete(painPoint).where(eq(painPoint.sessionId, id));
 
   const inserted =
     extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
 
-  const updatedInput: WorkflowInput = { ...(wf?.input as WorkflowInput) };
+  const workflowDefinition = workflowRegistry.get(currentWf.kind);
+  const analysisArtifacts = workflowDefinition?.createAnalyzeArtifacts?.({
+    input: currentWf.input as Record<string, unknown>,
+    painPoints: extracted,
+    companyName,
+  });
+  for (const draft of analysisArtifacts ?? []) {
+    await db.insert(artifact).values({
+      sessionId: id,
+      kind: draft.kind,
+      title: draft.title,
+      content: draft.content,
+      status: draft.status ?? 'draft',
+      version: draft.version ?? 1,
+    });
+  }
+
+  const updatedInput: WorkflowInput = { ...(currentWf.input as WorkflowInput) };
   if (companyName) updatedInput.companyName = companyName;
   await db
     .update(workflowRun)
@@ -1327,6 +1410,7 @@ async function runGenerate(
   db: HubDb,
   id: string,
   painPointIds: string[],
+  collateralTypes: string[] | undefined,
   principalId: string,
   source: InferenceSource,
   maxOutputTokens?: number
@@ -1359,11 +1443,17 @@ async function runGenerate(
     .set({ selected: true })
     .where(and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)));
 
-  const ARTIFACT_KINDS = ['email', 'linkedin', 'one-pager', 'battlecard'] as const;
+  const workflowDefinition = workflowRegistry.get(wf.kind);
+  const artifactKinds = workflowDefinition?.selectGenerateArtifactKinds?.(collateralTypes) ?? [
+    'email',
+    'linkedin',
+    'one-pager',
+    'battlecard',
+  ];
 
   const results = await Promise.allSettled(
     points.flatMap((p: any) =>
-      ARTIFACT_KINDS.map((kind) =>
+      artifactKinds.map((kind) =>
         generateCollateralWithLLM(id, transcriptContent, p, kind, source, maxOutputTokens).then(
           ({ title, body }) => ({
             sessionId: id,
@@ -1384,7 +1474,7 @@ async function runGenerate(
       r: PromiseSettledResult<{
         sessionId: string;
         painPointId: any;
-        kind: 'email' | 'linkedin' | 'one-pager' | 'battlecard';
+        kind: string;
         title: string;
         content: string;
         status: string;
@@ -1548,6 +1638,17 @@ async function runExport(db: HubDb, id: string, userContext: UserContext, target
 }
 
 // ─── Serialization helpers ──────────────────────────────────────────
+
+function deriveWorkflowDisplayName(
+  workflowKind: string | undefined,
+  input: WorkflowInput | undefined
+): string | null {
+  const workflow = workflowKind ? workflowRegistry.get(workflowKind) : undefined;
+  const title = workflow?.deriveRunTitle?.(input as Record<string, unknown> | undefined);
+  if (title) return title;
+  const companyName = typeof input?.companyName === 'string' ? input.companyName.trim() : '';
+  return companyName || null;
+}
 
 function serializePainPoint(p: any) {
   return {
