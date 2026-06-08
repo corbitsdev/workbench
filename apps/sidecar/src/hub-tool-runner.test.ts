@@ -15,6 +15,9 @@ function makeRunner() {
     hubHttpUrl: HUB_HTTP_URL,
     sidecarToken: 'test-token',
     tenantId: 'tenant-1',
+    agentId: 'agent-1',
+    principalId: 'principal-1',
+    sessionId: 'session-1',
     toolDefinitions: definitions,
   });
 }

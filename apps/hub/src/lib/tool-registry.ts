@@ -1,8 +1,11 @@
 import type { AgentTool } from '@intx/agent';
+import type { DB } from '@intx/db';
+import { createPosixTools } from '@intx/tools-posix';
 import type { ToolDefinition } from '@intx/types/runtime';
 import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
 import { FIRECRAWL_HUB_TOOLS } from '@workbench/tools-firecrawl';
 import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
+import { ARTIFACT_HUB_TOOLS } from './artifact-tools';
 
 /**
  * All hub-managed tools, assembled from tool packages.
@@ -14,13 +17,31 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...EXA_HUB_TOOLS,
   ...FIRECRAWL_HUB_TOOLS,
   ...GRANOLA_HUB_TOOLS,
+  ...ARTIFACT_HUB_TOOLS,
 };
 
-export type ToolEntry = {
+export type CredentialToolEntry = {
   definition: ToolDefinition;
   providerName: string;
   createTools: (config: { apiKey: string; baseURL: string }) => AgentTool[];
 };
+
+export type ContextToolEntry = {
+  definition: ToolDefinition;
+  createTools: (context: {
+    db: DB['db'];
+    tenantId: string;
+    principalId: string;
+    agentId: string;
+    sessionId: string;
+  }) => AgentTool[];
+};
+
+export type ToolEntry = CredentialToolEntry | ContextToolEntry;
+
+export function isCredentialToolEntry(entry: ToolEntry): entry is CredentialToolEntry {
+  return 'providerName' in entry;
+}
 
 /** Names of all tools registered in KNOWN_TOOLS. */
 export const KNOWN_TOOL_NAMES: string[] = Object.keys(KNOWN_TOOLS);
@@ -35,7 +56,7 @@ export type ToolSummary = {
 export const KNOWN_TOOL_SUMMARIES: ToolSummary[] = Object.entries(KNOWN_TOOLS).map(
   ([name, entry]) => ({
     name,
-    providerName: entry.providerName,
+    providerName: isCredentialToolEntry(entry) ? entry.providerName : 'workbench',
     description: entry.definition.description ?? '',
   })
 );
@@ -44,9 +65,16 @@ export const KNOWN_TOOL_SUMMARIES: ToolSummary[] = Object.entries(KNOWN_TOOLS).m
  * Build a ToolDefinition list from an array of tool names, filtering out
  * any names not in the registry.
  */
+const LOCAL_TOOL_DEFINITIONS: Record<string, ToolDefinition> = Object.fromEntries(
+  createPosixTools({ cwd: process.cwd() }).definitions.map((definition) => [
+    definition.name,
+    definition,
+  ])
+);
+
 export function buildToolDefinitions(names: string[]): ToolDefinition[] {
   return names
-    .map((name) => KNOWN_TOOLS[name]?.definition)
+    .map((name) => KNOWN_TOOLS[name]?.definition ?? LOCAL_TOOL_DEFINITIONS[name])
     .filter((def): def is ToolDefinition => def !== undefined);
 }
 

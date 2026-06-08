@@ -23,7 +23,7 @@ export const WALTER_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
 export const WALTER_DEPLOY_PROMPT: string = buildWalterSystemPrompt('Walter', { xml: true });
 
 export const WALTER_CAPABILITIES = {
-  tools: [],
+  tools: ['read_file', 'write_file', 'edit_file', 'search_files', 'artifact_link_file'],
 } as const;
 
 export const WALTER_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {

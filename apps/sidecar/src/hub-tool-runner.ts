@@ -4,6 +4,9 @@ type HubToolRunnerOpts = {
   hubHttpUrl: string;
   sidecarToken: string;
   tenantId: string;
+  agentId: string;
+  principalId: string;
+  sessionId: string;
   toolDefinitions: ToolDefinition[];
 };
 
@@ -29,6 +32,9 @@ export function createHubToolRunner({
   hubHttpUrl,
   sidecarToken,
   tenantId,
+  agentId,
+  principalId,
+  sessionId,
   toolDefinitions,
 }: HubToolRunnerOpts): ToolRunner & { definitions: ToolDefinition[] } {
   return {
@@ -45,7 +51,14 @@ export function createHubToolRunner({
             'Content-Type': 'application/json',
             Authorization: `Bearer ${sidecarToken}`,
           },
-          body: JSON.stringify({ tenantId, toolName: call.name, args: call.arguments }),
+          body: JSON.stringify({
+            tenantId,
+            agentId,
+            principalId,
+            sessionId,
+            toolName: call.name,
+            args: call.arguments,
+          }),
           signal,
         });
         body = await response.text();
