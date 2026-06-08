@@ -1,4 +1,4 @@
-import { eq, and, inArray, isNull } from 'drizzle-orm';
+import { eq, and, inArray, isNull, like } from 'drizzle-orm';
 import { Hono } from 'hono';
 import {
   schema as intxSchema,
@@ -22,6 +22,7 @@ import {
   getSchedulerIntervalMs,
   KNOWN_TOOL_NAMES,
 } from '../lib/tool-registry';
+import { buildToolGrantRows, TOOL_GRANT_RESOURCE_PREFIX } from '../lib/tool-grants';
 
 const log = getLogger(['api', 'agents']);
 
@@ -1127,6 +1128,32 @@ async function ensureAgentInstance(
   return { instanceId, agentId, instancePrincipalId, address, isNew: true };
 }
 
+/**
+ * Reconcile the persisted `tool:*` grant rows for an instance principal to the
+ * given tool set. Deletes the principal's existing system tool grants and
+ * re-inserts the current set, so `collectGrants` returns them at launch AND on
+ * the orchestrator's reconnect path. Idempotent; safe to call on every launch.
+ */
+async function persistInstanceToolGrants(
+  db: DB['db'],
+  opts: { tenantId: string; principalId: string; toolNames: string[]; now: Date }
+): Promise<void> {
+  const { tenantId, principalId, toolNames, now } = opts;
+  await db
+    .delete(grant)
+    .where(
+      and(
+        eq(grant.principalId, principalId),
+        eq(grant.origin, 'system'),
+        like(grant.resource, `${TOOL_GRANT_RESOURCE_PREFIX}%`)
+      )
+    );
+  const rows = buildToolGrantRows(toolNames, { tenantId, principalId }, now);
+  if (rows.length > 0) {
+    await db.insert(grant).values(rows);
+  }
+}
+
 async function launchAgentSession(
   db: DB['db'],
   sessionService: SessionService,
@@ -1163,29 +1190,26 @@ async function launchAgentSession(
   }));
   const defaultSource = sources[0]!.id;
 
-  const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
-
   const agentRow = await db.query.agent.findFirst({
     where: eq(agent.id, agentId),
   });
   const toolNames = getToolNamesFromCapabilities(agentRow?.capabilities ?? null);
   const tools = buildToolDefinitions(toolNames);
 
-  // Synthesize allow grants for each configured tool. Tool authorization is
-  // controlled by the capabilities list, not by DB grant rows, so we inject
-  // them here rather than requiring a separate grant record per tool.
-  const toolGrants = toolNames.map((name) => ({
-    id: generateId('grant'),
-    resource: `tool:${name}`,
-    action: 'invoke',
-    effect: 'allow' as const,
-    origin: 'system' as const,
-    conditions: null,
-    expiresAt: null,
-    roleId: null,
+  // Persist the agent's tool grants on the instance principal before collecting.
+  // Tool authorization is trust-by-configuration (any configured tool is allowed,
+  // origin 'system'). These rows MUST be persisted, not synthesized in memory:
+  // the orchestrator's reconnect path re-sends only what collectGrants reads from
+  // the DB, so in-memory tool grants were silently dropped on every sidecar
+  // reconnect (CL-1398). Persisting makes launch and reconnect agree.
+  await persistInstanceToolGrants(db, {
+    tenantId,
     principalId: instancePrincipalId,
-  }));
-  const allGrants = [...grants, ...toolGrants];
+    toolNames,
+    now,
+  });
+
+  const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
 
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_LAUNCH_ATTEMPTS; attempt++) {
@@ -1230,7 +1254,7 @@ async function launchAgentSession(
         agentAddress: address,
         systemPrompt,
         tools,
-        grants: allGrants,
+        grants,
         sources,
         defaultSource,
       },
