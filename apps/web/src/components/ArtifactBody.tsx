@@ -42,7 +42,13 @@ function MarkdownBlock({ text }: { text: string }) {
   while (i < lines.length) {
     const line = lines[i];
 
-    if (line.startsWith('## ')) {
+    if (line.startsWith('### ')) {
+      elements.push(
+        <h4 key={i} className="text-sm font-bold text-text mt-4 mb-1.5">
+          {line.slice(4)}
+        </h4>
+      );
+    } else if (line.startsWith('## ')) {
       elements.push(
         <h3 key={i} className="text-base font-bold text-text mt-5 mb-2">
           {line.slice(3)}
@@ -53,6 +59,15 @@ function MarkdownBlock({ text }: { text: string }) {
         <h2 key={i} className="text-lg font-bold text-text mt-4 mb-2">
           {line.slice(2)}
         </h2>
+      );
+    } else if (line.startsWith('> ')) {
+      elements.push(
+        <blockquote
+          key={i}
+          className="border-l-2 border-border pl-3 italic text-text-3 text-sm my-2"
+        >
+          {renderInline(line.slice(2))}
+        </blockquote>
       );
     } else if (line.startsWith('- ') || line.startsWith('* ')) {
       const items: string[] = [];

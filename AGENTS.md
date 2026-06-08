@@ -19,6 +19,16 @@ GTM Workbench is an AI-assisted GTM workspace built on top of Interchange. Users
 - `packages/` — Shared packages (`@workbench/*`).
 - `interchange/packages/` — Interchange packages (`@intx/*`).
 
+### Apps stay generic; packages own the domain
+
+`apps/*` should be as generic as possible. Domain knowledge — workflow definitions, status vocabularies, credential requirements, prompts, artifact kinds, business rules — lives in `packages/*` and is imported by the apps. An app is a thin host: it wires HTTP routes, renders UI, and delegates every product decision to a package.
+
+Concretely:
+
+- Define domain types and unions in the owning package, not in an app. An app consuming a value it does not own treats it as an opaque `string` rather than re-declaring the type.
+- If you find yourself encoding a product rule (what a workflow needs, what a status means, what to generate) inside `apps/web` or `apps/hub`, it belongs in a package.
+- Prefer the most specific package over the catch-all. A workflow concept belongs in the workflow package, not in a generic `shared` grab-bag.
+
 ### Stack
 
 - Package manager: Bun (1.2+)

@@ -146,7 +146,9 @@ function useWorkbenchesAndAgents(externalTick = 0): {
 }
 
 const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
+  pending: 'idle',
   analyzing: 'run',
+  ready: 'run',
   reviewing: 'run',
   generating: 'run',
   done: 'done',
@@ -154,7 +156,9 @@ const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending',
   analyzing: 'Analyzing',
+  ready: 'Ready',
   generating: 'Generating',
   reviewing: 'Reviewing',
   done: 'Done',
@@ -174,7 +178,8 @@ function workflowKindLabel(kind: string): string {
 }
 
 function workflowToRailItem(w: WorkflowSummary): RailItem {
-  const runName = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled';
+  const runNameRaw = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled';
+  const runName = runNameRaw.length > 25 ? `${runNameRaw.slice(0, 24)}…` : runNameRaw;
   const statusLabel = STATUS_LABELS[w.status] ?? w.status;
   const sub = `${runName} · ${statusLabel}`;
   return {
@@ -1085,7 +1090,9 @@ export function LibraryRail({
                         className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
                       >
                         <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
-                        {item.type === 'workflow' ? 'Workflow' : item.type}
+                        {item.type === 'workflow'
+                          ? (STATUS_LABELS[item.workflowStatus ?? ''] ?? 'Workflow')
+                          : item.type}
                       </span>
                       <div
                         className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"

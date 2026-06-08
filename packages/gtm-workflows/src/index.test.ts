@@ -32,17 +32,17 @@ describe('registry integration (mirrors hub registration)', () => {
 });
 
 describe('flattened credential requirements (mirrors catalog endpoint)', () => {
-  it('de-duplicates the shared Collateral LLM across analyze/generate', () => {
+  it('de-duplicates the shared openai-compatible LLM across analyze/generate', () => {
     const flat = flattenStepCredentialRequirements(fromRoot);
-    const llm = flat.filter((r) => r.name === 'Collateral LLM');
+    const llm = flat.filter((r) => r.providerName === 'openai-compatible');
     expect(llm).toHaveLength(1);
   });
 
-  it('surfaces exactly the Granola and Collateral LLM credentials, in first-seen order', () => {
+  it('surfaces exactly the Granola and openai-compatible LLM credentials, in first-seen order', () => {
     const flat = flattenStepCredentialRequirements(fromRoot);
     expect(flat).toEqual([
       { providerName: 'granola', source: 'tenant', name: 'Granola' },
-      { providerName: 'openai-compatible', source: 'tenant', name: 'Collateral LLM' },
+      { providerName: 'openai-compatible', source: 'tenant' },
     ]);
   });
 });

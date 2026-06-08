@@ -17,7 +17,8 @@ mock.module('framer-motion', () => ({
 const LABELS: Record<StepName, string> = {
   intake: 'Call source',
   analyze: 'Agent review',
-  generate: 'Approve collateral',
+  generate: 'Generate collateral',
+  approve: 'Approve',
 };
 
 describe('HorizontalStepper', () => {
@@ -37,7 +38,7 @@ describe('HorizontalStepper', () => {
   });
 
   it('renders all checkmarks when the workflow is done', () => {
-    render(<HorizontalStepper steps={buildSteps('generate', LABELS, true)} />);
-    expect(screen.getAllByText('✓').length).toBe(3);
+    render(<HorizontalStepper steps={buildSteps('approve', LABELS, true)} />);
+    expect(screen.getAllByText('✓').length).toBe(4);
   });
 });

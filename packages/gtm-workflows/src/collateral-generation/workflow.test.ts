@@ -61,10 +61,12 @@ describe('collateral-generation per-step credential requirements', () => {
     ]);
   });
 
-  it('requires the tenant-owned Collateral LLM on analyze and generate', () => {
+  it('requires a tenant-owned openai-compatible LLM on analyze and generate', () => {
+    // No name: any openai-compatible credential the tenant has configured
+    // satisfies the step (the workbench stores one LLM credential per tenant).
     for (const name of ['analyze', 'generate']) {
       expect(stepByName(name).credentialRequirements).toEqual([
-        { providerName: 'openai-compatible', source: 'tenant', name: 'Collateral LLM' },
+        { providerName: 'openai-compatible', source: 'tenant' },
       ]);
     }
   });
@@ -118,12 +120,20 @@ describe('collateral-generation input schema', () => {
 });
 
 describe('collateral-generation artifact behavior', () => {
-  it('declares the selectable collateral outputs outside apps', () => {
+  it('keeps the requested collateral outputs that are valid kinds', () => {
+    const selected = collateralGenerationWorkflow.selectGenerateArtifactKinds?.([
+      'linkedin-post',
+      'blog',
+    ]);
+    expect(selected).toEqual(['linkedin-post', 'blog']);
+  });
+
+  it('falls back to the default set when no requested kind is valid', () => {
     const selected = collateralGenerationWorkflow.selectGenerateArtifactKinds?.([
       'pain-points-linkedin-post',
       'pain-points-blog',
     ]);
-    expect(selected).toEqual(['pain-points-linkedin-post', 'pain-points-blog']);
+    expect(selected).toEqual(['email', 'linkedin-post', 'one-pager', 'battlecard']);
   });
 
   it('creates transcript artifacts during intake', () => {

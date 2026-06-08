@@ -60,7 +60,13 @@ export function useWorkflow(workflowId: string) {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      return data.status === 'done' || data.status === 'failed' ? false : 5000;
+      // Terminal ('done'/'failed') and quiescent human-wait ('ready', awaiting
+      // the user's generate selection) states do not change server-side, so
+      // stop polling. 'reviewing' keeps polling so a completion driven by
+      // another client is observed.
+      const status = data.status;
+      const settled = status === 'done' || status === 'failed' || status === 'ready';
+      return settled ? false : 5000;
     },
   });
 }

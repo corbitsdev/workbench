@@ -128,7 +128,12 @@ describe('Workflow router', () => {
   }
 
   function createMockDb(
-    options: { onInsertValues?: (values: unknown) => void; providerNameQueue?: string[] } = {}
+    options: {
+      onInsertValues?: (values: unknown) => void;
+      providerNameQueue?: string[];
+      onSetUpdate?: (values: Record<string, unknown>) => void;
+      updateReturning?: unknown[];
+    } = {}
   ) {
     let insertCount = 0;
     const providerNameQueue = [...(options.providerNameQueue ?? [])];
@@ -229,9 +234,14 @@ describe('Workflow router', () => {
         }),
       })),
       update: mock(() => ({
-        set: mock(() => ({
-          where: mock(() => []),
-        })),
+        set: mock((values: Record<string, unknown>) => {
+          options.onSetUpdate?.(values);
+          // where() is awaited directly by status-only updates and chained with
+          // returning() by updates that need the modified row.
+          return {
+            where: mock(() => ({ returning: mock(() => options.updateReturning ?? []) })),
+          };
+        }),
       })),
       transaction: mock((fn: (trx: unknown) => unknown) =>
         fn({
@@ -390,6 +400,85 @@ describe('Workflow router', () => {
     expect(json[0].id).toBe('a-1');
     expect(json[0].sessionName).toBe('Acme Corp');
     expect(json[0].sessionStatus).toBe('done');
+  });
+
+  // Approval gate: PATCH artifact status drives the reviewing -> done transition.
+  function buildReviewApp(opts: {
+    workflowStatus: string;
+    remainingArtifacts: Array<{ kind: string; status: string }>;
+  }) {
+    const statusUpdates: Array<Record<string, unknown>> = [];
+    const approvedRow = {
+      id: 'a-1',
+      sessionId: 'wf-1',
+      kind: 'email',
+      title: 'T',
+      content: 'B',
+      status: 'approved',
+      version: 1,
+      painPointId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const mockDb = createMockDb({
+      onSetUpdate: (vals) => statusUpdates.push(vals),
+      updateReturning: [approvedRow],
+    });
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: opts.workflowStatus,
+      principalId: PERSONAL_PRINCIPAL.id,
+      kind: 'collateral-generation',
+      input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+    }));
+    mockDb.query.artifact.findMany = mock(() =>
+      opts.remainingArtifacts.map((a, i) => ({ id: `a-${i + 1}`, sessionId: 'wf-1', ...a }))
+    );
+
+    return { app: buildApp(mockDb), statusUpdates };
+  }
+
+  async function patchArtifactStatus(app: ReturnType<typeof buildApp>, status: string) {
+    return app.fetch(
+      new Request('http://localhost:4000/workflows/wf-1/artifacts/a-1/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+    );
+  }
+
+  it('PATCH artifact status flips a reviewing workflow to done when no drafts remain', async () => {
+    const { app, statusUpdates } = buildReviewApp({
+      workflowStatus: 'reviewing',
+      remainingArtifacts: [{ kind: 'email', status: 'approved' }],
+    });
+    const res = await patchArtifactStatus(app, 'approved');
+    expect(res.status).toBe(200);
+    expect(statusUpdates).toContainEqual({ status: 'done' });
+  });
+
+  it('PATCH artifact status keeps the workflow reviewing while a draft remains', async () => {
+    const { app, statusUpdates } = buildReviewApp({
+      workflowStatus: 'reviewing',
+      remainingArtifacts: [
+        { kind: 'email', status: 'approved' },
+        { kind: 'linkedin-post', status: 'draft' },
+      ],
+    });
+    const res = await patchArtifactStatus(app, 'approved');
+    expect(res.status).toBe(200);
+    expect(statusUpdates).not.toContainEqual({ status: 'done' });
+  });
+
+  it('PATCH artifact status does not re-complete an already-done workflow', async () => {
+    const { app, statusUpdates } = buildReviewApp({
+      workflowStatus: 'done',
+      remainingArtifacts: [{ kind: 'email', status: 'rejected' }],
+    });
+    const res = await patchArtifactStatus(app, 'rejected');
+    expect(res.status).toBe(200);
+    expect(statusUpdates).not.toContainEqual({ status: 'done' });
   });
 
   it('GET /artifacts checks membership before returning workbench-scoped artifacts', async () => {
@@ -706,7 +795,9 @@ describe('Workflow router', () => {
     expect(res.status).toBe(200);
 
     const json = await res.json();
-    expect(json.status).toBe('running');
+    // Analysis complete maps to the session status 'ready' (awaiting generate),
+    // consistent with the GET endpoint.
+    expect(json.status).toBe('ready');
     expect(json.steps.analyze.completed).toBe(true);
   });
 

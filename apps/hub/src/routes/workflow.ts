@@ -39,7 +39,11 @@ function mapDbStatusToSessionStatus(status: string): string {
   const map: Record<string, string> = {
     pending: 'pending',
     analyzing: 'analyzing',
-    running: 'generating',
+    // 'running' is the post-analyze state: pain points are ready and the user
+    // is choosing what to generate. It is NOT active generation.
+    running: 'ready',
+    generating: 'generating',
+    reviewing: 'reviewing',
     done: 'done',
     failed: 'failed',
   };
@@ -67,11 +71,16 @@ function deriveCurrentStepForWorkflow(status: string, kind: string): string {
   const steps = getWorkflowStepOrder(kind);
   const firstPostIntake = steps[1];
   const lastStep = steps[steps.length - 1];
+  if (!firstPostIntake || !lastStep) {
+    throw new Error(`Workflow ${kind} has too few steps to derive current step`);
+  }
   switch (status) {
     case 'pending':
     case 'analyzing':
       return firstPostIntake;
     case 'running':
+    case 'generating':
+    case 'reviewing':
     case 'done':
       return lastStep;
     case 'failed':
@@ -255,7 +264,22 @@ async function resolveStepInferenceSource(
   const req = stepDef?.credentialRequirements?.find((r) => r.providerName !== 'granola');
   if (!req) return null;
 
-  const resolved = await resolveCredentialRequirement(db, tenantId, req, null, null);
+  // resolveCredentialRequirement throws when more than one active credential
+  // matches with no name to disambiguate. Treat that as "unresolved" so the
+  // caller returns a clear 400 (configure the credential) instead of a 500.
+  let resolved;
+  try {
+    resolved = await resolveCredentialRequirement(db, tenantId, req, null, null);
+  } catch (err) {
+    log.warn('Workflow LLM credential resolution failed', {
+      tenantId,
+      kind,
+      step,
+      providerName: req.providerName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
   if (!resolved) return null;
 
   const providerRow = await db.query.provider.findFirst({
@@ -1038,7 +1062,11 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       steps: {
         intake: { completed: true, transcriptId: transcriptId ?? null, transcript: tx?.content },
         analyze: {
-          completed: wf.status === 'running' || wf.status === 'done',
+          completed:
+            wf.status === 'running' ||
+            wf.status === 'generating' ||
+            wf.status === 'reviewing' ||
+            wf.status === 'done',
           painPoints: points.map(serializePainPoint),
         },
         generate: {
@@ -1169,6 +1197,26 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       .returning();
 
     if (!row) return c.json({ error: 'Artifact not found' }, 404);
+
+    // Approval is the final human-in-the-loop step. The workflow is only done
+    // once every collateral artifact has been reviewed (no drafts remain).
+    // `wf.status` is read at the top of the handler, so two simultaneous PATCHes
+    // could both run this check; the transition is idempotent by design (setting
+    // 'done' twice is harmless), so it is not serialized. The terminal request
+    // always observes its own committed write and flips the run.
+    if (wf.status === 'reviewing') {
+      const remaining = await db.query.artifact.findMany({
+        where: eq(artifact.sessionId, id),
+      });
+      const allReviewed = remaining
+        .filter((a) => isCollateralKind(a.kind))
+        .every((a) => a.status !== 'draft');
+      if (allReviewed) {
+        await db.update(workflowRun).set({ status: 'done' }).where(eq(workflowRun.id, id));
+        log.info('All artifacts reviewed; workflow done', { workflowId: id });
+      }
+    }
+
     return c.json(serializeArtifact(row));
   });
 
@@ -1487,7 +1535,7 @@ async function runAnalyze(
 
   return Response.json({
     id,
-    status: 'running',
+    status: mapDbStatusToSessionStatus('running'),
     currentStep: 'generate',
     steps: {
       analyze: { completed: true, painPoints: inserted.map(serializePainPoint) },
@@ -1520,6 +1568,11 @@ async function runGenerate(
     log.warn('Workflow not found for generate', { workflowId: id });
     return Response.json({ error: 'Workflow not found' }, { status: 404 });
   }
+
+  // Mark generation as actively running so the UI can show a loading state even
+  // if the request outlives its HTTP connection (long fan-out generation). The
+  // post-analyze 'running' status means "awaiting selection", which is distinct.
+  await db.update(workflowRun).set({ status: 'generating' }).where(eq(workflowRun.id, id));
 
   const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
   const tx = transcriptId
@@ -1602,13 +1655,22 @@ async function runGenerate(
         })
       : [];
 
-  await db.update(workflowRun).set({ status: 'done' }).where(eq(workflowRun.id, id));
+  // Generation produces draft artifacts that the user must approve or deny.
+  // The workflow stays in 'reviewing' until every artifact is non-draft; only
+  // then does it transition to 'done' (see the artifact status PATCH handler).
+  // If nothing was generated there is nothing to review, so it is done.
+  const nextStatus = inserted.length > 0 ? 'reviewing' : 'done';
+  await db.update(workflowRun).set({ status: nextStatus }).where(eq(workflowRun.id, id));
 
-  log.info('Generate step complete', { workflowId: id, artifactCount: inserted.length });
+  log.info('Generate step complete', {
+    workflowId: id,
+    artifactCount: inserted.length,
+    status: nextStatus,
+  });
 
   return Response.json({
     id,
-    status: 'done',
+    status: mapDbStatusToSessionStatus(nextStatus),
     currentStep: 'generate',
     steps: {
       generate: { completed: true, artifacts: inserted.map(serializeArtifact) },
