@@ -26,7 +26,8 @@ export async function refineFeedbackWithLLM(
   text: string,
   feedback: string,
   type: ArtifactKind = 'email',
-  source: InferenceSource
+  source: InferenceSource,
+  maxOutputTokens?: number
 ): Promise<string> {
   log.info('Refining collateral with feedback', { type });
 
@@ -36,7 +37,8 @@ export async function refineFeedbackWithLLM(
     source,
     buildFeedbackSystemPrompt(type),
     userMessage,
-    'gtm-feedback'
+    'gtm-feedback',
+    maxOutputTokens
   );
   const refined = raw?.trim() ?? '';
   if (!refined || refined.length === 0) {

@@ -152,14 +152,18 @@ async function runExtractionAgent(
   source: InferenceSource,
   systemPrompt: string,
   userMessage: string,
-  workflowId: string
+  workflowId: string,
+  maxOutputTokens?: number
 ): Promise<LLMResponse> {
   const contextDir = join(tmpdir(), `gtm-extraction-${randomUUID()}`);
 
-  const extractionSource: InferenceSource = {
-    ...source,
-    defaults: { ...source.defaults, maxTokens: Math.max(source.defaults?.maxTokens ?? 0, 8192) },
-  };
+  // Apply the configured output-token cap when provided. A cap (not a floor):
+  // reasoning models can spend the whole budget on think blocks and truncate
+  // the JSON, so the value is tuned per step/agent rather than forced high.
+  const extractionSource: InferenceSource =
+    maxOutputTokens !== undefined
+      ? { ...source, defaults: { ...source.defaults, maxTokens: maxOutputTokens } }
+      : source;
 
   const agent = await createAgent({
     contextDir,
@@ -246,7 +250,8 @@ export async function extractPainPointsWithLLM(
   workflowId: string,
   content: string,
   feedback: string | undefined,
-  source: InferenceSource
+  source: InferenceSource,
+  maxOutputTokens?: number
 ): Promise<ExtractionResult> {
   const model = source.model;
 
@@ -270,7 +275,13 @@ export async function extractPainPointsWithLLM(
       ...(previousPainPoints !== undefined ? { previousPainPoints } : {}),
     };
     const userMessage = buildExtractionUserMessage(chunk.content, feedback, messageOptions);
-    parsed = await runExtractionAgent(source, systemPrompt, userMessage, workflowId);
+    parsed = await runExtractionAgent(
+      source,
+      systemPrompt,
+      userMessage,
+      workflowId,
+      maxOutputTokens
+    );
     if (parsed.companyName && !bestCompanyName) {
       bestCompanyName =
         typeof parsed.companyName === 'string' && parsed.companyName.trim()
@@ -296,7 +307,8 @@ export async function extractPainPoints(
   workflowId: string,
   content: string,
   feedback: string | undefined,
-  source: InferenceSource
+  source: InferenceSource,
+  maxOutputTokens?: number
 ): Promise<ExtractionResult> {
-  return extractPainPointsWithLLM(workflowId, content, feedback, source);
+  return extractPainPointsWithLLM(workflowId, content, feedback, source, maxOutputTokens);
 }

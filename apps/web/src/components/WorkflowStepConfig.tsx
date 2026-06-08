@@ -41,6 +41,18 @@ function StepRow({ step, config, agents, onChange }: StepRowProps) {
     onChange(step, { ...config, toolIds: next });
   };
 
+  const handleMaxOutputTokensChange = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      const { maxOutputTokens: _omit, ...rest } = config;
+      onChange(step, rest);
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isInteger(parsed) || parsed < 1) return;
+    onChange(step, { ...config, maxOutputTokens: parsed });
+  };
+
   return (
     <div className="space-y-2">
       <p className="text-[12px] font-semibold text-text">{STEP_LABELS[step]}</p>
@@ -60,6 +72,20 @@ function StepRow({ step, config, agents, onChange }: StepRowProps) {
             </option>
           ))}
         </select>
+      </div>
+
+      {/* Max output tokens — cap tuned to the model (reasoning models need more) */}
+      <div>
+        <label className="block text-[11px] text-text-3 mb-1">Max output tokens</label>
+        <input
+          type="number"
+          min={1}
+          inputMode="numeric"
+          value={config.maxOutputTokens ?? ''}
+          placeholder="Default"
+          onChange={(e) => handleMaxOutputTokensChange(e.target.value)}
+          className="w-full px-2.5 py-1.5 text-[12px] border border-border rounded-[8px] bg-surface-2 text-text focus:outline-none focus:ring-1 focus:ring-orange"
+        />
       </div>
 
       {/* Tool multi-select — only shown when an agent is selected and it has tools */}
