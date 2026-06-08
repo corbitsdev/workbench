@@ -63,6 +63,14 @@ be selected from those already in the workbench or added inline, without leaving
 assignments are saved to the workbench and reused on every run, so a workflow can only be added once
 its required credentials are in place. Assignments can be edited later from the same place.
 
+### Choosing who runs each step
+
+For each generative step (analyze, generate, improve), the user can either let the workflow run it
+with the default inference provider, or route it to one of their existing agents — for example,
+sending a step to Oat so it runs with Oat's own model, credentials, and Granola tools. Picking an
+agent needs nothing more than access to that agent in the workbench; the agent already carries its
+own inference provider, so no separate provider credential is required for that step.
+
 ## Intake Scope
 
 - **Primary**: Oat automatically surfaces Granola call recordings as call document artifacts

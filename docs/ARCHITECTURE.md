@@ -175,6 +175,7 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 - **Per-user personal tenants**: Each user gets their own Interchange tenant for Myra, enabling personal-agent isolation and cross-tenant grant semantics.
 - **Artifact-centric model**: All outputs — from agents and workflows — are stored as `artifact` rows with provenance. Artifacts can be reused as inputs.
 - **Parallel generation**: Each collateral output type in a Collateral Generation workflow generates independently in parallel via separate agent calls.
+- **Two-mode step execution**: Each generative workflow step runs either in _agent mode_ (routed to a configured tenant agent, which supplies its own inference provider and credentials) or _inline mode_ (the step's own workflow LLM credential). Both modes resolve to a single inference source consumed identically by the step runner; only the source's origin differs.
 - **Paste-first intake**: Manual transcript paste remains supported as a secondary path; Oat-driven Granola processing is the primary intake.
 - **Human-in-the-loop**: Every major stage requires human approval. No fully automated pipeline.
 - **Persistent sessions**: Full workflow state is saved to PostgreSQL. Resumable.

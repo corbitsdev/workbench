@@ -205,6 +205,26 @@ name-based resolver for installs predating assignments); Granola recent-calls/in
 intake step's assigned credential. The web `CredentialField` component (select-or-add-new) backs
 both this flow and the agent `NewAgentModal`.
 
+#### Per-step execution mode (agent vs inline)
+
+Each generative step (`analyze`/`generate`/`improve`) runs in one of two modes, decided per run from
+`workflow_runs.input.stepConfig` (shape `Record<stepName, { agentId?, toolIds? }>`, persisted via
+`PATCH /workflows/:id/step-config`):
+
+- **Agent mode** — `stepConfig[step].agentId` is set (an agent _instance_ id). The step resolves its
+  inference source from the assigned agent's own credential requirements:
+  `resolveAgentStepInferenceSource` looks up the `agentInstance` to find its agent definition, calls
+  `resolveInstanceSources` (the same Interchange resolver used at agent launch), and decrypts the
+  secret. The agent already declares its inference provider, so an agent-mode step needs only tenant
+  access to the agent — **not** a per-step workflow LLM credential. A missing/unresolvable agent
+  source returns `400` pointing at the agent's credentials.
+- **Inline mode** — no agent assigned. The step uses its configured workflow LLM credential via
+  `resolveStepInferenceSource` (the name-based assignment flow above).
+
+Both modes produce an `InferenceSource` consumed identically by the step runners, so the only
+difference is where the source originates. The run-step handler in `apps/hub/src/routes/workflow.ts`
+branches on `agentId` to pick the resolver.
+
 ### Health
 
 | Method | Route     | Output                              |
