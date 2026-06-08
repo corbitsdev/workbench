@@ -1,0 +1,21 @@
+{
+  "name": "@workbench/prompts",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint .",
+    "test": "bun test src",
+    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "catalog:"
+  }
+}

@@ -1,38 +1,22 @@
 import { describe, expect, it } from 'bun:test';
-import {
-  formatFromModel,
-  formatSection,
-  buildSystemPrompt,
-  buildContextBlock,
-} from './prompt-builder';
+import { buildContextBlock, buildSystemPrompt, formatSection } from './prompt-builder';
 
-describe('formatFromModel', () => {
-  it('returns xml for claude-sonnet-4-6', () => {
-    expect(formatFromModel('claude-sonnet-4-6')).toBe('xml');
-  });
-
-  it('returns markdown for gpt-4o', () => {
-    expect(formatFromModel('gpt-4o')).toBe('markdown');
-  });
-
-  it('returns xml for claude-haiku-4-5', () => {
-    expect(formatFromModel('claude-haiku-4-5')).toBe('xml');
-  });
-});
+const xmlFormat = { xml: true };
+const markdownFormat = { xml: false };
 
 describe('formatSection', () => {
-  it('produces XML tags for xml format', () => {
-    const result = formatSection({ tag: 'role', content: 'You are an assistant.' }, 'xml');
+  it('produces XML tags when xml is enabled', () => {
+    const result = formatSection({ tag: 'role', content: 'You are an assistant.' }, xmlFormat);
     expect(result).toBe('<role>\nYou are an assistant.\n</role>');
   });
 
-  it('produces markdown headers for markdown format', () => {
-    const result = formatSection({ tag: 'role', content: 'You are an assistant.' }, 'markdown');
+  it('produces markdown headers when xml is disabled', () => {
+    const result = formatSection({ tag: 'role', content: 'You are an assistant.' }, markdownFormat);
     expect(result).toBe('## Role\nYou are an assistant.');
   });
 
   it('title-cases the tag in markdown headers', () => {
-    const result = formatSection({ tag: 'guidelines', content: 'Be concise.' }, 'markdown');
+    const result = formatSection({ tag: 'guidelines', content: 'Be concise.' }, markdownFormat);
     expect(result).toBe('## Guidelines\nBe concise.');
   });
 });
@@ -43,7 +27,7 @@ describe('buildSystemPrompt', () => {
       { tag: 'role', content: 'You are an assistant.' },
       { tag: 'guidelines', content: 'Be concise.' },
     ];
-    const result = buildSystemPrompt(sections, 'xml');
+    const result = buildSystemPrompt(sections, xmlFormat);
     expect(result).toBe(
       '<role>\nYou are an assistant.\n</role>\n\n<guidelines>\nBe concise.\n</guidelines>'
     );
@@ -54,7 +38,7 @@ describe('buildSystemPrompt', () => {
       { tag: 'role', content: 'You are an assistant.' },
       { tag: 'guidelines', content: 'Be concise.' },
     ];
-    const result = buildSystemPrompt(sections, 'markdown');
+    const result = buildSystemPrompt(sections, markdownFormat);
     expect(result).toBe('## Role\nYou are an assistant.\n\n## Guidelines\nBe concise.');
   });
 });
@@ -63,7 +47,7 @@ describe('buildContextBlock', () => {
   it('includes defined keys and skips undefined values for xml', () => {
     const result = buildContextBlock(
       { date: '04/06/2026', 'Human Operator': 'Sawyer', workbench: undefined },
-      'xml'
+      xmlFormat
     );
     expect(result).toBe('<context>\nDate: 04/06/2026\nHuman Operator: Sawyer\n</context>');
   });
@@ -71,13 +55,13 @@ describe('buildContextBlock', () => {
   it('includes defined keys and skips undefined values for markdown', () => {
     const result = buildContextBlock(
       { date: '04/06/2026', 'Human Operator': 'Sawyer', workbench: undefined },
-      'markdown'
+      markdownFormat
     );
     expect(result).toBe('## Context\nDate: 04/06/2026\nHuman Operator: Sawyer');
   });
 
   it('only includes date when all optional keys are undefined', () => {
-    const result = buildContextBlock({ date: '04/06/2026' }, 'xml');
+    const result = buildContextBlock({ date: '04/06/2026' }, xmlFormat);
     expect(result).toBe('<context>\nDate: 04/06/2026\n</context>');
   });
 });

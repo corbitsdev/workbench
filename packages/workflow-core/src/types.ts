@@ -18,6 +18,19 @@ export type WorkflowStepDefinition = {
   tools?: string[];
 };
 
+export type WorkflowArtifactDraft = {
+  kind: string;
+  title: string;
+  content: string;
+  status?: 'draft' | 'approved' | 'rejected';
+  version?: number;
+};
+
+export type WorkflowOutputOption = {
+  id: string;
+  label: string;
+};
+
 export type WorkflowType = {
   kind: string;
   name: string;
@@ -25,6 +38,19 @@ export type WorkflowType = {
   steps: WorkflowStepDefinition[];
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
+  outputOptions?: WorkflowOutputOption[];
+  deriveRunTitle?: (input: Record<string, unknown> | undefined) => string | null;
+  createIntakeArtifacts?: (context: {
+    input: Record<string, unknown>;
+    content: string;
+    callTitle?: string;
+  }) => WorkflowArtifactDraft[];
+  createAnalyzeArtifacts?: (context: {
+    input: Record<string, unknown>;
+    painPoints: Array<{ severity: string; context: string; quote: string }>;
+    companyName?: string | null;
+  }) => WorkflowArtifactDraft[];
+  selectGenerateArtifactKinds?: (requested: string[] | undefined) => string[];
 };
 
 /**

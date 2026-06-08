@@ -1,4 +1,10 @@
 import type { WorkflowType } from '@workbench/workflow-core';
+import {
+  createPainPointArtifacts,
+  createTranscriptArtifacts,
+  deriveCollateralRunTitle,
+  selectCollateralTypeIds,
+} from './artifacts';
 
 export const collateralGenerationWorkflow: WorkflowType = {
   kind: 'collateral-generation',
@@ -71,6 +77,16 @@ export const collateralGenerationWorkflow: WorkflowType = {
     },
     required: ['transcriptId', 'transcriptSource'],
   },
+  deriveRunTitle: deriveCollateralRunTitle,
+  createIntakeArtifacts: ({ content, callTitle }) =>
+    createTranscriptArtifacts({ content, callTitle }),
+  createAnalyzeArtifacts: ({ input, painPoints, companyName }) =>
+    createPainPointArtifacts({
+      points: painPoints,
+      companyName,
+      runTitle: deriveCollateralRunTitle(input),
+    }),
+  selectGenerateArtifactKinds: selectCollateralTypeIds,
   outputSchema: {
     type: 'object',
     properties: {

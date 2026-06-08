@@ -15,9 +15,11 @@
   "dependencies": {
     "@intx/log": "workspace:*",
     "@intx/types": "workspace:*",
+    "@workbench/prompts": "workspace:*",
     "@workbench/workflow-core": "workspace:*"
   },
   "devDependencies": {
+    "@types/bun": "latest",
     "typescript": "catalog:"
   }
 }

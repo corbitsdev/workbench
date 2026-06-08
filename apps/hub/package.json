@@ -29,6 +29,7 @@
     "@workbench/sentry": "workspace:*",
     "@workbench/shared": "workspace:*",
     "@workbench/tools-exa": "workspace:*",
+    "@workbench/tools-firecrawl": "workspace:*",
     "@workbench/tools-granola": "workspace:*",
     "@workbench/workflow-core": "workspace:*",
     "arktype": "catalog:",
