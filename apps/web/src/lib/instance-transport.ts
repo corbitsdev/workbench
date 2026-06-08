@@ -41,14 +41,40 @@ export function createHubTransport(): Transport {
       onEvent: (event: unknown) => void,
       opts?: { eventName?: string }
     ): () => void {
-      const es = new EventSource(toUrl(path), { withCredentials: true });
-      const handler = (e: MessageEvent) => onEvent(JSON.parse(e.data));
-      if (opts?.eventName) {
-        es.addEventListener(opts.eventName, handler);
-      } else {
-        es.onmessage = handler;
+      let es: EventSource;
+      let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+      let retryDelay = 1000;
+      let closed = false;
+
+      function connect() {
+        es = new EventSource(toUrl(path), { withCredentials: true });
+        const handler = (e: MessageEvent) => onEvent(JSON.parse(e.data));
+        if (opts?.eventName) {
+          es.addEventListener(opts.eventName, handler);
+        } else {
+          es.onmessage = handler;
+        }
+        es.onerror = () => {
+          es.close();
+          if (!closed) {
+            retryTimeout = setTimeout(() => {
+              retryDelay = Math.min(retryDelay * 2, 30_000);
+              connect();
+            }, retryDelay);
+          }
+        };
+        es.onopen = () => {
+          retryDelay = 1000;
+        };
       }
-      return () => es.close();
+
+      connect();
+
+      return () => {
+        closed = true;
+        if (retryTimeout !== null) clearTimeout(retryTimeout);
+        es.close();
+      };
     },
   };
 }

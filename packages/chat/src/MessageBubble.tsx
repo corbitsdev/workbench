@@ -19,6 +19,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isSystem = message.role === 'system';
   const isStreaming = message.status === 'sending';
 
+  if (!message.content && message.status !== 'sending') return null;
+
   return (
     <div
       data-role={message.role}

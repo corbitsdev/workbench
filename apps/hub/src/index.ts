@@ -479,6 +479,7 @@ v1.get('/me', async (c) => {
           db,
           sessionService,
           grantStore,
+          eventCollectors,
           instanceId,
           sidecarRouter.events
         );
@@ -523,7 +524,7 @@ v1.get('/me', async (c) => {
 });
 
 v1.route('/', createWorkflowRouter(db));
-v1.route('/', createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter));
+v1.route('/', createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors));
 v1.route('/', createWorkspacesRouter(db));
 v1.route('/', createApprovalsRouter(db));
 

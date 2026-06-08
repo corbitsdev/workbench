@@ -9,7 +9,7 @@ import {
 import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
-import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
+import type { SessionService, SidecarRouter, EventCollectorRegistry } from '@intx/hub-sessions';
 import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { type } from 'arktype';
@@ -84,7 +84,8 @@ export function createAgentProvisioningRouter(
   db: DB['db'],
   sessionService: SessionService,
   grantStore: GrantStore,
-  sidecarRouter: SidecarRouter
+  sidecarRouter: SidecarRouter,
+  eventCollectors: EventCollectorRegistry
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
@@ -176,6 +177,16 @@ export function createAgentProvisioningRouter(
         .where(eq(agent.id, instance.agentId));
     });
 
+    // Notify the sidecar so it tears down the agent immediately. Without this,
+    // the sidecar holds the agent in memory and will try to re-register it on
+    // reconnect, failing challenge because endedAt is now set in the DB.
+    await sessionService.endSession(instance.address, 'user deleted instance').catch((err) => {
+      log.warn('Failed to end sidecar session on instance delete', {
+        instanceId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
     return c.body(null, 204);
   });
 
@@ -245,7 +256,7 @@ export function createAgentProvisioningRouter(
 
     if (isNew) {
       try {
-        const session = await launchAgentSession(db, sessionService, grantStore, {
+        const session = await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
           agentId,
           instanceId,
           instancePrincipalId,
@@ -699,7 +710,7 @@ export function createAgentProvisioningRouter(
       })
       .where(eq(agent.id, agentId));
 
-    await relaunchRunningAgentInstancesForToolUpdate(db, sessionService, grantStore, agentRow, sidecarRouter.events);
+    await relaunchRunningAgentInstancesForToolUpdate(db, sessionService, grantStore, eventCollectors, agentRow, sidecarRouter.events);
 
     return c.json({ tools: toolNames }, 200);
   });
@@ -739,6 +750,12 @@ export function createAgentProvisioningRouter(
       return c.json({ launched: true });
     }
 
+    // A stopped instance with endedAt set was explicitly deleted — it cannot be
+    // relaunched. The caller should provision a fresh instance instead.
+    if (instance.status === 'stopped' && instance.endedAt !== null) {
+      return c.json({ error: 'Instance was deleted. Provision a new instance.' }, 409);
+    }
+
     // Reset a stopped instance so the sidecar treats it as a fresh launch.
     if (instance.status === 'stopped') {
       const resetNow = new Date();
@@ -772,7 +789,7 @@ export function createAgentProvisioningRouter(
     let launchError: string | undefined;
 
     try {
-      const session = await launchAgentSession(db, sessionService, grantStore, {
+      const session = await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
         agentId: instance.agentId,
         instanceId: instance.id,
         instancePrincipalId: instance.principalId,
@@ -809,10 +826,11 @@ export function createAgentProvisioningRouter(
       }
     }
 
-    return c.json({
-      launched,
-      ...(launchError !== undefined ? { launchError } : {}),
-    });
+    if (!launched) {
+      return c.json({ error: launchError ?? 'Failed to launch agent session' }, 503);
+    }
+
+    return c.json({ launched: true });
   });
 
   return app;
@@ -886,6 +904,7 @@ async function relaunchRunningAgentInstancesForToolUpdate(
   db: DB['db'],
   sessionService: SessionService,
   grantStore: GrantStore,
+  eventCollectors: EventCollectorRegistry,
   agentRow: { id: string; tenantId: string; systemPrompt?: string | null; capabilities?: unknown },
   sidecarEvents: import('@intx/hub-sessions').SidecarEventEmitter
 ): Promise<void> {
@@ -911,7 +930,7 @@ async function relaunchRunningAgentInstancesForToolUpdate(
         });
       });
 
-      const session = await launchAgentSession(db, sessionService, grantStore, {
+      const session = await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
         agentId: agentRow.id,
         instanceId: instance.id,
         instancePrincipalId: instance.principalId,
@@ -1104,6 +1123,7 @@ async function launchAgentSession(
   db: DB['db'],
   sessionService: SessionService,
   grantStore: GrantStore,
+  eventCollectors: EventCollectorRegistry,
   opts: {
     agentId: string;
     instanceId: string;
@@ -1217,6 +1237,9 @@ async function launchAgentSession(
 
     try {
       await sessionService.launchSession(launchConfig);
+      // Register the event collector before updating status so inference events
+      // arriving immediately after launch are captured rather than dropped.
+      eventCollectors.create(address, tenantId, sessionId, instanceId);
       await db
         .update(agentInstance)
         .set({ status: 'running', updatedAt: new Date() })
@@ -1254,6 +1277,7 @@ export async function relaunchInstanceIfNeeded(
   db: DB['db'],
   sessionService: SessionService,
   grantStore: GrantStore,
+  eventCollectors: EventCollectorRegistry,
   instanceId: string,
   sidecarEvents: import('@intx/hub-sessions').SidecarEventEmitter
 ): Promise<void> {
@@ -1293,7 +1317,7 @@ export async function relaunchInstanceIfNeeded(
   });
   if (!hasCred) return;
 
-  const launched = await launchAgentSession(db, sessionService, grantStore, {
+  const launched = await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
     agentId: instance.agentId,
     instanceId: instance.id,
     instancePrincipalId: instance.principalId,
