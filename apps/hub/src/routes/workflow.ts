@@ -23,7 +23,7 @@ import {
 } from '../db/schema';
 import { getNoteWithTranscript, getRecentNotes, transcriptToText } from '../lib/granola';
 import { extractPainPoints } from '../lib/extraction';
-import { refineFeedbackWithLLM } from '../lib/feedback';
+
 import { generateCollateralWithLLM } from '../lib/generation';
 import { decryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
@@ -32,10 +32,10 @@ const log = getLogger(['api', 'workflow']);
 
 workflowRegistry.register(collateralGenerationWorkflow);
 
-const STEP_ORDER = ['intake', 'analyze', 'generate', 'improve', 'export'] as const;
+const STEP_ORDER = ['intake', 'analyze', 'generate'] as const;
 type StepName = (typeof STEP_ORDER)[number];
 
-const CONFIGURABLE_STEPS = ['analyze', 'generate', 'improve'] as const;
+const CONFIGURABLE_STEPS = ['analyze', 'generate'] as const;
 type ConfigurableStep = (typeof CONFIGURABLE_STEPS)[number];
 
 export interface StepConfig {
@@ -61,9 +61,6 @@ export interface WorkflowStepConfig {
   generate?: StepConfig;
   improve?: StepConfig;
 }
-
-const VALID_EXPORT_TARGETS = ['markdown', 'csv', 'json'] as const;
-type ExportTarget = (typeof VALID_EXPORT_TARGETS)[number];
 
 import type { UserContext } from '@workbench/workflow-core';
 
@@ -929,8 +926,6 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           completed: allArtifacts.length > 0,
           artifacts: allArtifacts.map(serializeArtifact),
         },
-        improve: { completed: allArtifacts.some((a: { version: number }) => a.version > 1) },
-        export: { completed: wf.status === 'done' },
       },
     });
   });
@@ -970,7 +965,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 
     const step = body.step ?? deriveCurrentStep(wf.status);
 
-    if (step === 'analyze' || step === 'generate' || step === 'improve') {
+    if (step === 'analyze' || step === 'generate') {
       // A step runs in one of two modes. Agent mode: the step is assigned a
       // tenant agent, which carries its own inference provider — resolve the
       // source from the agent definition, no per-step credential needed. Inline
@@ -1013,43 +1008,16 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       if (step === 'analyze') {
         return runAnalyze(db, id, userContext, source, body.feedback, maxOutputTokens);
       }
-      if (step === 'generate') {
-        return runGenerate(
-          db,
-          id,
-          body.painPointIds ?? [],
-          body.collateralTypes,
-          userContext.principalId,
-          source,
-          maxOutputTokens
-        );
-      }
-      // step === 'improve'
-      if (!body.artifactId || !body.feedback) {
-        log.warn('Missing artifactId or feedback for improve step', { workflowId: id });
-        return c.json({ error: 'artifactId and feedback are required' }, 400);
-      }
-      return runImprove(
+      // step === 'generate'
+      return runGenerate(
         db,
         id,
-        body.artifactId,
-        body.feedback,
+        body.painPointIds ?? [],
+        body.collateralTypes,
         userContext.principalId,
         source,
         maxOutputTokens
       );
-    }
-
-    if (step === 'export') {
-      const target = body.target ?? 'markdown';
-      if (!isValidExportTarget(target)) {
-        log.warn('Invalid export target', { workflowId: id, target });
-        return c.json(
-          { error: `Invalid export target. Must be one of: ${VALID_EXPORT_TARGETS.join(', ')}` },
-          400
-        );
-      }
-      return runExport(db, id, userContext, target);
     }
 
     log.warn('Invalid step', { workflowId: id, step });
@@ -1281,6 +1249,8 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     }
 
     const kind = c.req.query('kind');
+    const limitParam = c.req.query('limit');
+    const limit = limitParam ? parseInt(limitParam, 10) : 10;
     const granolaApiKey = kind
       ? await resolveStepGranolaApiKey(db, userContext.tenantId, kind)
       : await resolveGranolaApiKey(db, userContext.tenantId);
@@ -1288,7 +1258,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       return c.json({ error: 'No Granola credential configured for this workbench' }, 400);
     }
     try {
-      const calls = await getRecentNotes(granolaApiKey, 3);
+      const calls = await getRecentNotes(granolaApiKey, limit);
       return c.json({ calls });
     } catch (err) {
       log.error('Granola fetch failed', { error: String(err) });
@@ -1305,7 +1275,7 @@ function deriveCurrentStep(status: string): StepName {
   const map: Record<string, StepName> = {
     pending: 'analyze',
     running: 'generate',
-    done: 'export',
+    done: 'generate',
     failed: 'intake',
   };
   return map[status] ?? 'intake';
@@ -1509,130 +1479,16 @@ async function runGenerate(
         })
       : [];
 
-  await db.update(workflowRun).set({ status: 'running' }).where(eq(workflowRun.id, id));
+  await db.update(workflowRun).set({ status: 'done' }).where(eq(workflowRun.id, id));
 
   log.info('Generate step complete', { workflowId: id, artifactCount: inserted.length });
 
   return Response.json({
     id,
-    status: 'running',
-    currentStep: 'improve',
+    status: 'done',
+    currentStep: 'generate',
     steps: {
       generate: { completed: true, artifacts: inserted.map(serializeArtifact) },
-    },
-  });
-}
-
-async function runImprove(
-  db: HubDb,
-  id: string,
-  artifactId: string,
-  feedback: string,
-  authorId: string,
-  source: InferenceSource,
-  maxOutputTokens?: number
-) {
-  log.info('Starting improve step', {
-    workflowId: id,
-    artifactId,
-    feedbackLength: feedback.length,
-  });
-
-  // Scope to the session from the route (already verified to belong to the
-  // caller) so a user cannot mutate another session's artifact by id.
-  const item = await db.query.artifact.findFirst({
-    where: and(eq(artifact.id, artifactId), eq(artifact.sessionId, id)),
-  });
-  if (!item) {
-    log.warn('Artifact not found for improve', { workflowId: id, artifactId });
-    return Response.json({ error: 'Artifact not found' }, { status: 404 });
-  }
-
-  const nextVersion = item.version + 1;
-  const [improvedTitle, improvedContent] = await Promise.all([
-    refineFeedbackWithLLM(
-      item.title,
-      feedback,
-      item.kind as 'email' | 'linkedin' | 'one-pager' | 'battlecard',
-      source,
-      maxOutputTokens
-    ),
-    refineFeedbackWithLLM(
-      item.content,
-      feedback,
-      item.kind as 'email' | 'linkedin' | 'one-pager' | 'battlecard',
-      source,
-      maxOutputTokens
-    ),
-  ]);
-
-  // Update the artifact and append its new version row atomically, so the live
-  // version always has a matching history row.
-  const row = await db.transaction(async (trx: any) => {
-    const updated = await trx
-      .update(artifact)
-      .set({ title: improvedTitle, content: improvedContent, version: nextVersion })
-      .where(and(eq(artifact.id, artifactId), eq(artifact.sessionId, id)))
-      .returning();
-    await trx.insert(artifactVersion).values({
-      artifactId: item.id,
-      version: nextVersion,
-      title: improvedTitle,
-      content: improvedContent,
-      authorId,
-    });
-    return updated[0];
-  });
-  log.info('Improve step complete', { workflowId: id, artifactId, newVersion: nextVersion });
-
-  return Response.json({
-    id,
-    status: 'improving',
-    currentStep: 'improve',
-    steps: {
-      improve: { completed: true, artifact: serializeArtifact(row) },
-    },
-  });
-}
-
-async function runExport(db: HubDb, id: string, userContext: UserContext, target: string) {
-  log.info('Starting export step', { workflowId: id, target });
-
-  const wf = await db.query.workflowRun.findFirst({
-    where: eq(workflowRun.id, id),
-  });
-  if (!wf) {
-    log.warn('Workflow not found for export', { workflowId: id });
-    return Response.json({ error: 'Workflow not found' }, { status: 404 });
-  }
-
-  const allArtifacts = await db.query.artifact.findMany({
-    where: eq(artifact.sessionId, id),
-  });
-
-  if (allArtifacts.length === 0) {
-    log.warn('No artifacts to export', { workflowId: id });
-    return Response.json({ error: 'No artifacts to export' }, { status: 400 });
-  }
-
-  const assembled = assembleExport(allArtifacts, target);
-
-  await db.update(workflowRun).set({ status: 'done' }).where(eq(workflowRun.id, id));
-
-  log.info('Export step complete', {
-    workflowId: id,
-    target,
-    artifactCount: allArtifacts.length,
-  });
-
-  return Response.json({
-    id,
-    status: 'done',
-    currentStep: 'export',
-    export: {
-      target,
-      content: assembled,
-      artifacts: allArtifacts.map(serializeArtifact),
     },
   });
 }
@@ -1688,33 +1544,3 @@ function serializeArtifact(a: any) {
 }
 
 // ─── Content generation helpers ─────────────────────────────────────
-
-function isValidExportTarget(target: string): target is ExportTarget {
-  return (VALID_EXPORT_TARGETS as unknown as string[]).includes(target);
-}
-
-function escapeForCsv(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
-function escapeForMarkdown(text: string): string {
-  return text.replace(/[*#`[\]\\]/g, '\\$&');
-}
-
-function assembleExport(artifacts: any[], target: string): string {
-  if (target === 'json') {
-    return JSON.stringify(artifacts, null, 2);
-  }
-
-  if (target === 'csv') {
-    const header = 'Kind,Title,Content';
-    const rows = artifacts.map((a) =>
-      [escapeForCsv(a.kind), escapeForCsv(a.title), escapeForCsv(a.content)].join(',')
-    );
-    return [header, ...rows].join('\n');
-  }
-
-  return artifacts
-    .map((a) => `## ${escapeForMarkdown(a.title)}\n\n${a.content}\n\n*(${a.kind} artifact)*`)
-    .join('\n\n---\n\n');
-}

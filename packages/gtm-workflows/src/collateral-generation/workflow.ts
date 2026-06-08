@@ -49,24 +49,6 @@ export const collateralGenerationWorkflow: WorkflowType = {
         },
       ],
     },
-    {
-      name: 'improve',
-      label: 'Improve',
-      description: 'Refine generated collateral from feedback.',
-      credentialRequirements: [
-        {
-          providerName: 'openai-compatible',
-          source: 'tenant',
-          name: 'Collateral LLM',
-        },
-      ],
-    },
-    {
-      name: 'export',
-      label: 'Export',
-      description: 'Export finished collateral.',
-      credentialRequirements: [],
-    },
   ],
   inputSchema: {
     type: 'object',

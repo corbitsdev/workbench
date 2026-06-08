@@ -20,10 +20,11 @@ export default function RecentCallsPicker({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [limit, setLimit] = useState(10);
 
   useEffect(() => {
     fetchRecentCalls();
-  }, [tenantId, kind]);
+  }, [tenantId, kind, limit]);
 
   const fetchRecentCalls = async () => {
     try {
@@ -32,6 +33,7 @@ export default function RecentCallsPicker({
       const params = new URLSearchParams();
       if (tenantId) params.set('tenantId', tenantId);
       if (kind) params.set('kind', kind);
+      params.set('limit', String(limit));
       const qs = params.toString();
       const data = await api<{ calls: GranolaNote[] }>(
         'GET',
@@ -44,6 +46,10 @@ export default function RecentCallsPicker({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLoadMore = () => {
+    setLimit((prev) => prev + 10);
   };
 
   const handleSelect = (callId: string) => {
@@ -119,6 +125,16 @@ export default function RecentCallsPicker({
           </p>
         </motion.button>
       ))}
+      {calls.length >= limit && (
+        <button
+          type="button"
+          onClick={handleLoadMore}
+          disabled={isLoading || selectedId !== null}
+          className="col-span-full py-2 text-sm text-text-2 hover:text-text border border-border rounded-lg hover:border-border-strong transition-colors disabled:opacity-50"
+        >
+          Load more
+        </button>
+      )}
     </motion.div>
   );
 }

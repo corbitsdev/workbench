@@ -32,7 +32,7 @@ describe('registry integration (mirrors hub registration)', () => {
 });
 
 describe('flattened credential requirements (mirrors catalog endpoint)', () => {
-  it('de-duplicates the shared Collateral LLM across analyze/generate/improve', () => {
+  it('de-duplicates the shared Collateral LLM across analyze/generate', () => {
     const flat = flattenStepCredentialRequirements(fromRoot);
     const llm = flat.filter((r) => r.name === 'Collateral LLM');
     expect(llm).toHaveLength(1);

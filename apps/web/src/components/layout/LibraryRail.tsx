@@ -130,8 +130,6 @@ const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
   analyzing: 'run',
   reviewing: 'run',
   generating: 'run',
-  improving: 'run',
-  exporting: 'run',
   done: 'done',
 };
 

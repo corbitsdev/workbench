@@ -29,6 +29,14 @@ export {
 } from './firecrawl/definition';
 export { createFirecrawlDirector } from './firecrawl/director';
 
+// Walter agent
+export { buildWalterSystemPrompt } from './walter/prompt';
+export {
+  WALTER_GRANT_REQUIREMENTS,
+  WALTER_CREDENTIAL_REQUIREMENTS,
+  WALTER_DEPLOY_PROMPT,
+} from './walter/definition';
+
 // Shared adapter
 export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';

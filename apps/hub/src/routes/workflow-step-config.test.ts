@@ -10,9 +10,6 @@ mock.module('../lib/extraction', () => ({
 mock.module('../lib/generation', () => ({
   generateCollateralWithLLM: mock(() => Promise.resolve({ title: 'Test', body: 'content' })),
 }));
-mock.module('../lib/feedback', () => ({
-  refineFeedbackWithLLM: mock(() => Promise.resolve('refined')),
-}));
 
 import { createWorkflowRouter } from './workflow';
 import type { HubDb } from '../db';
@@ -168,7 +165,7 @@ describe('PATCH /workflows/:id/step-config', () => {
       method: 'PATCH',
       body: {
         stepConfig: {
-          improve: { agentId: 'agent-xyz' },
+          generate: { agentId: 'agent-xyz' },
         },
       },
     });
@@ -176,7 +173,7 @@ describe('PATCH /workflows/:id/step-config', () => {
     const res = await app.fetch(req);
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.stepConfig.improve).toMatchObject({ agentId: 'agent-xyz' });
+    expect(json.stepConfig.generate).toMatchObject({ agentId: 'agent-xyz' });
   });
 
   it('returns 400 when stepConfig is missing from body', async () => {

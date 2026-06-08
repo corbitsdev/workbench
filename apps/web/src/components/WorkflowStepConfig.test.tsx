@@ -83,20 +83,19 @@ describe('WorkflowStepConfig', () => {
     expect(screen.getByText('Step configuration')).toBeTruthy();
     expect(screen.getByText('Analyze')).toBeTruthy();
     expect(screen.getByText('Generate')).toBeTruthy();
-    expect(screen.getByText('Improve')).toBeTruthy();
   });
 
   it('renders agent dropdowns with Default option and available agents', () => {
     renderConfig();
     const selects = screen.getAllByRole('combobox');
-    expect(selects.length).toBe(3); // one per step
+    expect(selects.length).toBe(2); // one per step
     // Each should have "Default" option
     selects.forEach((sel) => {
       expect(sel.querySelector('option[value=""]')?.textContent).toBe('Default');
     });
     // Available agents listed
     const myraOptions = screen.getAllByText('Myra');
-    expect(myraOptions.length).toBe(3);
+    expect(myraOptions.length).toBe(2);
   });
 
   it('shows pre-existing agent selection from currentConfig', () => {
