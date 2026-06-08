@@ -2,11 +2,26 @@ import type { AgentTool } from '@intx/agent';
 import type { ToolDefinition } from '@intx/types/runtime';
 
 const DEFAULT_LIST_LIMIT = 10;
-const MAX_LIST_LIMIT = 50;
+const MAX_LIST_LIMIT = 30;
+
+/**
+ * Granola's public API base URL. Owned by the tool package so callers only
+ * need to supply an API key — the base URL is pulled in here rather than
+ * stored per credential. Override is still possible via `baseUrl`.
+ */
+export const GRANOLA_DEFAULT_BASE_URL = 'https://public-api.granola.ai/v1';
 
 export type GranolaFetch = (input: string, init: RequestInit) => Promise<Response>;
 
 export type GranolaToolsConfig = {
+  apiKey: string;
+  /** Defaults to {@link GRANOLA_DEFAULT_BASE_URL} when omitted or empty. */
+  baseUrl?: string;
+  fetcher?: GranolaFetch;
+};
+
+/** Internal config with the base URL resolved to a concrete value. */
+type ResolvedGranolaConfig = {
   apiKey: string;
   baseUrl: string;
   fetcher?: GranolaFetch;
@@ -22,7 +37,7 @@ type GranolaTranscriptItem = {
 
 type GranolaNote = {
   id: string;
-  title: string;
+  title: string | null;
   created_at: string;
   participants?: string[];
   summary?: string;
@@ -31,6 +46,18 @@ type GranolaNote = {
 
 type GranolaListResponse = {
   notes: GranolaNote[];
+  hasMore: boolean;
+  cursor?: string;
+};
+
+type GranolaFolder = {
+  id: string;
+  name: string;
+  parent_folder_id: string | null;
+};
+
+type GranolaFolderListResponse = {
+  folders: GranolaFolder[];
   hasMore: boolean;
   cursor?: string;
 };
@@ -122,11 +149,39 @@ function parseNote(value: unknown): GranolaNote {
 
   return {
     id: requiredResponseString(value, 'id'),
-    title: requiredResponseString(value, 'title'),
+    title: optionalString(value.title),
     created_at: requiredResponseString(value, 'created_at'),
     ...(participants !== null ? { participants } : {}),
     ...(summary !== null ? { summary } : {}),
     ...(transcript !== null ? { transcript } : {}),
+  };
+}
+
+function parseFolder(value: unknown): GranolaFolder {
+  if (!isRecord(value)) {
+    throw new Error('Granola response contains an invalid folder');
+  }
+
+  const parentFolderId = optionalString(value.parent_folder_id);
+
+  return {
+    id: requiredResponseString(value, 'id'),
+    name: requiredResponseString(value, 'name'),
+    parent_folder_id: parentFolderId,
+  };
+}
+
+function parseFolderListResponse(value: unknown): GranolaFolderListResponse {
+  if (!isRecord(value) || !Array.isArray(value.folders) || typeof value.hasMore !== 'boolean') {
+    throw new Error('Granola response contains an invalid folders list');
+  }
+
+  const cursor = optionalString(value.cursor);
+
+  return {
+    folders: value.folders.map(parseFolder),
+    hasMore: value.hasMore,
+    ...(cursor !== null ? { cursor } : {}),
   };
 }
 
@@ -144,7 +199,7 @@ function parseListResponse(value: unknown): GranolaListResponse {
   };
 }
 
-function validateConfig(config: GranolaToolsConfig): void {
+function validateConfig(config: ResolvedGranolaConfig): void {
   if (config.apiKey.length === 0) {
     throw new Error('Granola apiKey is required');
   }
@@ -173,7 +228,7 @@ function errorMessageFromBody(text: string): string | null {
   return text;
 }
 
-async function fetchGranolaJSON(config: GranolaToolsConfig, url: URL, signal: AbortSignal) {
+async function fetchGranolaJSON(config: ResolvedGranolaConfig, url: URL, signal: AbortSignal) {
   const fetcher = config.fetcher ?? fetch;
   const response = await fetcher(url.toString(), {
     headers: granolaHeaders(config.apiKey),
@@ -191,23 +246,56 @@ async function fetchGranolaJSON(config: GranolaToolsConfig, url: URL, signal: Ab
 }
 
 async function listNotes(
-  config: GranolaToolsConfig,
+  config: ResolvedGranolaConfig,
   args: Record<string, unknown>,
   signal: AbortSignal
 ) {
   const limit = optionalPositiveInteger(args.limit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
   const cursor = optionalString(args.cursor);
+  const createdAfter = optionalString(args.createdAfter);
+  const createdBefore = optionalString(args.createdBefore);
+  const updatedAfter = optionalString(args.updatedAfter);
+  const folderId = optionalString(args.folderId);
+
   const url = new URL(`${normalizeBaseUrl(config.baseUrl)}/notes`);
-  url.searchParams.set('limit', limit.toString());
+  url.searchParams.set('page_size', limit.toString());
   if (cursor !== null) {
     url.searchParams.set('cursor', cursor);
+  }
+  if (createdAfter !== null) {
+    url.searchParams.set('created_after', createdAfter);
+  }
+  if (createdBefore !== null) {
+    url.searchParams.set('created_before', createdBefore);
+  }
+  if (updatedAfter !== null) {
+    url.searchParams.set('updated_after', updatedAfter);
+  }
+  if (folderId !== null) {
+    url.searchParams.set('folder_id', folderId);
   }
 
   return parseListResponse(await fetchGranolaJSON(config, url, signal));
 }
 
+async function listFolders(
+  config: ResolvedGranolaConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal
+) {
+  const limit = optionalPositiveInteger(args.limit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const cursor = optionalString(args.cursor);
+  const url = new URL(`${normalizeBaseUrl(config.baseUrl)}/folders`);
+  url.searchParams.set('page_size', limit.toString());
+  if (cursor !== null) {
+    url.searchParams.set('cursor', cursor);
+  }
+
+  return parseFolderListResponse(await fetchGranolaJSON(config, url, signal));
+}
+
 async function getNote(
-  config: GranolaToolsConfig,
+  config: ResolvedGranolaConfig,
   args: Record<string, unknown>,
   signal: AbortSignal
 ) {
@@ -227,11 +315,31 @@ export const GRANOLA_LIST_NOTES_DEFINITION: ToolDefinition = {
     properties: {
       limit: {
         type: 'number',
-        description: 'Maximum number of notes to return. Defaults to 10 and caps at 50.',
+        description: 'Maximum number of notes to return. Defaults to 10 and caps at 30.',
       },
       cursor: {
         type: 'string',
         description: 'Pagination cursor returned by a prior Granola list response.',
+      },
+      createdAfter: {
+        type: 'string',
+        description:
+          'Return only notes created after this date. ISO date (2026-01-27) or date-time (2026-01-27T15:30:00Z).',
+      },
+      createdBefore: {
+        type: 'string',
+        description:
+          'Return only notes created before this date. ISO date (2026-01-27) or date-time (2026-01-27T15:30:00Z).',
+      },
+      updatedAfter: {
+        type: 'string',
+        description:
+          'Return only notes updated after this date. ISO date (2026-01-27) or date-time (2026-01-27T15:30:00Z).',
+      },
+      folderId: {
+        type: 'string',
+        description:
+          'Return only notes in this folder and its child folders. Use granola_list_folders to discover folder IDs.',
       },
     },
   },
@@ -252,19 +360,48 @@ export const GRANOLA_GET_NOTE_DEFINITION: ToolDefinition = {
   },
 };
 
+export const GRANOLA_LIST_FOLDERS_DEFINITION: ToolDefinition = {
+  name: 'granola_list_folders',
+  description:
+    'List Granola folders (Spaces) for the configured workbench, sorted alphabetically. Use this to discover folder IDs for filtering notes with granola_list_notes.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      limit: {
+        type: 'number',
+        description: 'Maximum number of folders to return. Defaults to 10 and caps at 30.',
+      },
+      cursor: {
+        type: 'string',
+        description: 'Pagination cursor returned by a prior Granola folders list response.',
+      },
+    },
+  },
+};
+
 export function createGranolaTools(config: GranolaToolsConfig): AgentTool[] {
-  validateConfig(config);
+  const resolved: ResolvedGranolaConfig = {
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl?.trim() || GRANOLA_DEFAULT_BASE_URL,
+    ...(config.fetcher ? { fetcher: config.fetcher } : {}),
+  };
+  validateConfig(resolved);
 
   return [
     {
       kind: 'string',
       definition: GRANOLA_LIST_NOTES_DEFINITION,
-      handler: async (args, signal) => jsonResult(await listNotes(config, args, signal)),
+      handler: async (args, signal) => jsonResult(await listNotes(resolved, args, signal)),
     },
     {
       kind: 'string',
       definition: GRANOLA_GET_NOTE_DEFINITION,
-      handler: async (args, signal) => jsonResult(await getNote(config, args, signal)),
+      handler: async (args, signal) => jsonResult(await getNote(resolved, args, signal)),
+    },
+    {
+      kind: 'string',
+      definition: GRANOLA_LIST_FOLDERS_DEFINITION,
+      handler: async (args, signal) => jsonResult(await listFolders(resolved, args, signal)),
     },
   ];
 }
@@ -277,13 +414,28 @@ export const GRANOLA_HUB_TOOLS = {
   granola_list_notes: {
     definition: GRANOLA_LIST_NOTES_DEFINITION,
     providerName: 'granola' as const,
-    createTools: (config: { apiKey: string; baseURL: string }) =>
-      createGranolaTools({ apiKey: config.apiKey, baseUrl: config.baseURL }),
+    createTools: (config: { apiKey: string; baseURL?: string }) =>
+      createGranolaTools({
+        apiKey: config.apiKey,
+        ...(config.baseURL ? { baseUrl: config.baseURL } : {}),
+      }),
   },
   granola_get_note: {
     definition: GRANOLA_GET_NOTE_DEFINITION,
     providerName: 'granola' as const,
-    createTools: (config: { apiKey: string; baseURL: string }) =>
-      createGranolaTools({ apiKey: config.apiKey, baseUrl: config.baseURL }),
+    createTools: (config: { apiKey: string; baseURL?: string }) =>
+      createGranolaTools({
+        apiKey: config.apiKey,
+        ...(config.baseURL ? { baseUrl: config.baseURL } : {}),
+      }),
+  },
+  granola_list_folders: {
+    definition: GRANOLA_LIST_FOLDERS_DEFINITION,
+    providerName: 'granola' as const,
+    createTools: (config: { apiKey: string; baseURL?: string }) =>
+      createGranolaTools({
+        apiKey: config.apiKey,
+        ...(config.baseURL ? { baseUrl: config.baseURL } : {}),
+      }),
   },
 };
