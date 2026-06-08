@@ -13,6 +13,7 @@ import {
   GRANOLA_GET_NOTE_DEFINITION,
 } from '@workbench/tools-granola';
 import { EXA_SEARCH_DEFINITION } from '@workbench/tools-exa';
+import { FIRECRAWL_DEFINITIONS } from '@workbench/tools-firecrawl';
 
 export type FieldSpec = {
   key: 'apiKey' | 'baseURL';
@@ -94,7 +95,34 @@ const EXA: ProviderMeta = {
   ],
 };
 
-export const PROVIDER_REGISTRY: ProviderMeta[] = [GRANOLA, EXA];
+const FIRECRAWL: ProviderMeta = {
+  name: 'firecrawl',
+  label: 'Firecrawl',
+  description: 'Scrape, crawl, map, search, and extract web data with Firecrawl.',
+  fields: [
+    {
+      key: 'apiKey',
+      label: 'API key',
+      type: 'password',
+      required: true,
+      placeholder: 'fc-...',
+    },
+    {
+      key: 'baseURL',
+      label: 'Base URL (optional)',
+      type: 'url',
+      required: false,
+      placeholder: 'https://api.firecrawl.dev/v2',
+    },
+  ],
+  tools: FIRECRAWL_DEFINITIONS.map((definition) => ({
+    name: definition.name,
+    label: definition.name.replace(/^firecrawl_/, '').replace(/_/g, ' '),
+    description: definition.description,
+  })),
+};
+
+export const PROVIDER_REGISTRY: ProviderMeta[] = [GRANOLA, EXA, FIRECRAWL];
 
 export function providerByName(name: string): ProviderMeta | undefined {
   return PROVIDER_REGISTRY.find((p) => p.name === name);

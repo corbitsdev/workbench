@@ -61,6 +61,10 @@ src/
     prompt.ts        — Oat system prompt
     definition.ts    — Oat agent definition
     director.ts      — Custom director filtering inbound senders
+  firecrawl/
+    prompt.ts        — Freddy system prompt
+    definition.ts    — Freddy agent definition
+    director.ts      — Default director
   adapter.ts         — InstanceEvent → ChatMessage adapter
   prompt-builder.ts  — Shared prompt formatting utilities
   index.ts           — Public exports
@@ -105,6 +109,8 @@ No tool package reads env vars or resolves credentials. Config (`apiKey`, `baseU
 **`packages/tools-exa`** (`@workbench/tools-exa`): Exa search API. Exports `EXA_HUB_TOOLS` with `exa_search` (providerName: `'exa'`).
 
 **`packages/tools-granola`** (`@workbench/tools-granola`): Granola notes API. Exports `GRANOLA_HUB_TOOLS` with `granola_list_notes`, `granola_get_note`, and `granola_list_folders` (providerName: `'granola'`). `granola_list_notes` paginates with `page_size` (default 10, max 30) and accepts `created_after`/`created_before`/`updated_after`/`folder_id` filters; `granola_list_folders` surfaces folder IDs for that `folder_id` filter.
+
+**`packages/tools-firecrawl`** (`@workbench/tools-firecrawl`): Firecrawl v2 API. Exports `FIRECRAWL_HUB_TOOLS` with `firecrawl_scrape`, crawl start/status/active/errors/cancel/params-preview tools, batch scrape start/status/errors/cancel tools, `firecrawl_map`, `firecrawl_search`, extract start/status tools, `firecrawl_agent` (autonomous research via POST /agent), `firecrawl_parse` (document parsing), `firecrawl_interact`, `firecrawl_browser_sessions_list`, `firecrawl_browser_session_delete`, monitor CRUD (create/get/update/delete/list/run/check), `firecrawl_credit_usage`, `firecrawl_historical_credit_usage`, `firecrawl_token_usage`, `firecrawl_historical_token_usage`, and `firecrawl_activity` (providerName: `'firecrawl'`). Long-running endpoints return job IDs and require explicit polling tools.
 
 #### `packages/tool-template` (scaffold)
 

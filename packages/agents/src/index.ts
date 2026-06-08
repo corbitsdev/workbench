@@ -20,6 +20,15 @@ export {
 } from './granola/definition';
 export { createGranolaDirector } from './granola/director';
 
+// Firecrawl agent
+export { buildFirecrawlSystemPrompt } from './firecrawl/prompt';
+export {
+  FIRECRAWL_GRANT_REQUIREMENTS,
+  FIRECRAWL_CREDENTIAL_REQUIREMENTS,
+  FIRECRAWL_DEPLOY_PROMPT,
+} from './firecrawl/definition';
+export { createFirecrawlDirector } from './firecrawl/director';
+
 // Shared adapter
 export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
