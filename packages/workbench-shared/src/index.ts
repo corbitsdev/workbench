@@ -1,6 +1,6 @@
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 
-export type SessionStatus = 'analyzing' | 'reviewing' | 'generating' | 'done';
+export type SessionStatus = 'analyzing' | 'reviewing' | 'generating' | 'done' | 'failed';
 
 // The subset of artifact kinds the UI knows how to render exhaustively.
 // The DB `kind` column is free-form text; this union stays closed for the

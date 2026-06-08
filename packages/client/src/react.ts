@@ -19,6 +19,7 @@ export function useLibraryResources(
     queryKey: ['workflows', params.tenantId ?? null],
     queryFn: () => listWorkflows(options, params),
     enabled: params.tenantId != null,
+    refetchInterval: 5000,
   });
 }
 

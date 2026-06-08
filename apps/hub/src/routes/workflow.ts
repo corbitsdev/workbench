@@ -58,20 +58,14 @@ async function triggerAnalyze(
     const response = await runAnalyze(db, id, userContext, source, feedback, maxOutputTokens);
     if (response.status >= 400) {
       log.error('Analyze step failed in background', { workflowId: id, status: response.status });
-      await db
-        .update(workflowRun)
-        .set({ status: 'failed' })
-        .where(eq(workflowRun.id, id));
+      await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
     }
   } catch (err) {
     log.error('Analyze step threw exception in background', {
       workflowId: id,
       error: err instanceof Error ? err.message : String(err),
     });
-    await db
-      .update(workflowRun)
-      .set({ status: 'failed' })
-      .where(eq(workflowRun.id, id));
+    await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
   }
 }
 
@@ -88,11 +82,11 @@ export interface StepConfig {
 // These are caps, not floors. Analyze is highest because reasoning models spend
 // part of the budget on think blocks before emitting the pain-point JSON; a cap
 // that is too low truncates the JSON and the step fails.
-const DEFAULT_STEP_MAX_OUTPUT_TOKENS: Record<ConfigurableStep, number> = {
+const DEFAULT_STEP_MAX_OUTPUT_TOKENS = {
   analyze: 16384,
   generate: 8192,
   improve: 4096,
-};
+} as const;
 
 const MAX_STEP_OUTPUT_TOKENS = 65536;
 
