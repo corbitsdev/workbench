@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
-  convertInstanceEvents,
+  composeChatMessages,
   createToolNameTracker,
+  EMPTY_RETAINED,
+  type RetainedAgentText,
   type ToolNameTracker,
 } from '@workbench/agents/browser';
 import {
@@ -62,6 +64,7 @@ export function AgentChat({
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const toolNamesRef = useRef<ToolNameTracker | null>(null);
+  const retainedRef = useRef<RetainedAgentText>(EMPTY_RETAINED);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
 
@@ -158,28 +161,14 @@ export function AgentChat({
   }, [instanceId, tenantId, launchStatus]);
 
   function buildMessages(session: InstanceSession): ChatMessage[] {
-    // The hub emits both the assistant outbound mail and the corresponding
-    // turn event. Deduplicate by dropping assistant mails whose trimmed
-    // content already appears in a turn event.
-    const turnContentSet = new Set(
-      session.events.filter((e) => e.kind === 'turn').map((e) => e.content.trim())
-    );
-    const deduped = session.events.filter(
-      (e) => !(e.kind === 'mail' && e.role === 'assistant' && turnContentSet.has(e.content.trim()))
-    );
-
-    const committed = convertInstanceEvents(deduped, toolNamesRef.current?.names);
-    if (session.streaming) {
-      const streamingMsg: ChatMessage = {
-        id: 'streaming',
-        role: 'agent',
-        content: session.streaming,
-        createdAt: new Date().toISOString(),
-        status: 'sending',
-      };
-      return [...committed, streamingMsg];
-    }
-    return committed;
+    const { messages, retained } = composeChatMessages({
+      events: session.events,
+      streaming: session.streaming,
+      ...(toolNamesRef.current !== null ? { toolNames: toolNamesRef.current.names } : {}),
+      retained: retainedRef.current,
+    });
+    retainedRef.current = retained;
+    return messages;
   }
 
   if (sessionState.phase === 'loading') {

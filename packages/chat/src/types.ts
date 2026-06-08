@@ -28,6 +28,8 @@ export interface ToolCall {
   name: string;
   /** Human-readable label. When absent the host should derive one from `name`. */
   label?: string;
+  /** Arguments the tool was invoked with, e.g. `{ query: "minimax m3" }`. */
+  arguments?: Record<string, unknown>;
   /** Result text. Absent when the call is still in-flight. */
   result?: string;
   /** True when the tool returned an error result. */

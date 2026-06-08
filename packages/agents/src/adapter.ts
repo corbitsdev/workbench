@@ -59,6 +59,7 @@ export function convertInstanceEvents(
     const toolCalls: ToolCall[] | undefined = event.toolCalls?.map((tc, i) => ({
       id: `${event.turnId}-${i}`,
       name: resolveToolName(tc.name, toolNames),
+      ...(tc.arguments !== undefined ? { arguments: tc.arguments } : {}),
       result: tc.result,
       isError: tc.isError === true,
     }));

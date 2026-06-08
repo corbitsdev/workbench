@@ -231,4 +231,25 @@ describe('convertInstanceEvents tool name resolution', () => {
     const messages = convertInstanceEvents(turnWithTool(rawCallId));
     expect(messages[0]?.toolCalls?.[0]?.name).toBe(rawCallId);
   });
+
+  it('passes tool arguments through to the ChatMessage', () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: 'turn',
+        turnId: 'turn-args',
+        content: '',
+        timestamp: '2024-01-01T00:00:00.000Z',
+        toolCalls: [
+          {
+            name: 'exa_search',
+            arguments: { query: 'minimax m3', numResults: 5 },
+            result: 'ok',
+            isError: false,
+          },
+        ],
+      },
+    ];
+    const messages = convertInstanceEvents(events);
+    expect(messages[0]?.toolCalls?.[0]?.arguments).toEqual({ query: 'minimax m3', numResults: 5 });
+  });
 });

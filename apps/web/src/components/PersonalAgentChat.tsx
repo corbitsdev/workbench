@@ -3,8 +3,10 @@ import { Link } from 'react-router';
 import { ApiError, createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
   buildContextBlock,
-  convertInstanceEvents,
+  composeChatMessages,
   createToolNameTracker,
+  EMPTY_RETAINED,
+  type RetainedAgentText,
   type ToolNameTracker,
 } from '@workbench/agents/browser';
 import {
@@ -65,6 +67,7 @@ export function PersonalAgentChat() {
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const toolNamesRef = useRef<ToolNameTracker | null>(null);
+  const retainedRef = useRef<RetainedAgentText>(EMPTY_RETAINED);
   const contextInjectedRef = useRef(false);
 
   useEffect(() => {
@@ -151,20 +154,14 @@ export function PersonalAgentChat() {
   };
 
   function buildMessages(session: InstanceSession): ChatMessage[] {
-    const committed = convertInstanceEvents(session.events, toolNamesRef.current?.names);
-
-    if (session.streaming) {
-      const streamingMsg: ChatMessage = {
-        id: 'streaming',
-        role: 'agent',
-        content: session.streaming,
-        createdAt: new Date().toISOString(),
-        status: 'sending',
-      };
-      return [...committed, streamingMsg];
-    }
-
-    return committed;
+    const { messages, retained } = composeChatMessages({
+      events: session.events,
+      streaming: session.streaming,
+      ...(toolNamesRef.current !== null ? { toolNames: toolNamesRef.current.names } : {}),
+      retained: retainedRef.current,
+    });
+    retainedRef.current = retained;
+    return messages;
   }
 
   // Shown when Myra is provisioned but no credential resolves for her.

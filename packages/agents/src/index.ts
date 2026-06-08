@@ -23,6 +23,13 @@ export { createGranolaDirector } from './granola/director';
 // Shared adapter
 export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
+export {
+  composeChatMessages,
+  EMPTY_RETAINED,
+  type RetainedAgentText,
+  type ComposeChatInput,
+  type ComposeChatResult,
+} from './chat-messages';
 
 // Prompt builder
 export {

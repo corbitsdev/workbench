@@ -1,0 +1,67 @@
+/// <reference types="bun" />
+import { afterEach, describe, expect, it } from 'bun:test';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import React from 'react';
+
+import { ToolNarrative } from './ToolNarrative';
+import { type ToolCall } from './types';
+
+afterEach(() => {
+  cleanup();
+});
+
+describe('ToolNarrative', () => {
+  it('renders the tool name and a query summary from arguments', () => {
+    const calls: ToolCall[] = [
+      {
+        id: 'c1',
+        name: 'exa search',
+        arguments: { query: 'minimax m3', numResults: 5 },
+        result: 'some results',
+        isError: false,
+      },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    expect(screen.getByText('exa search')).toBeDefined();
+    expect(screen.getByText('· minimax m3')).toBeDefined();
+  });
+
+  it('reveals the result when an expandable row is clicked', () => {
+    const calls: ToolCall[] = [
+      {
+        id: 'c1',
+        name: 'exa search',
+        arguments: { query: 'minimax m3' },
+        result: 'the full result body',
+        isError: false,
+      },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    expect(screen.queryByText('the full result body')).toBeNull();
+    fireEvent.click(screen.getByText('exa search'));
+    expect(screen.getByText('the full result body')).toBeDefined();
+  });
+
+  it('shows the error result for a failed tool call', () => {
+    const calls: ToolCall[] = [
+      {
+        id: 'c1',
+        name: 'exa search',
+        arguments: { query: 'x' },
+        result: 'No matching grants for tool:exa_search/invoke',
+        isError: true,
+      },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    fireEvent.click(screen.getByText('exa search'));
+    expect(screen.getByText('No matching grants for tool:exa_search/invoke')).toBeDefined();
+  });
+
+  it('does not expand a pending call', () => {
+    const calls: ToolCall[] = [{ id: 'c1', name: 'exa search', arguments: { query: 'x' } }];
+    render(<ToolNarrative toolCalls={calls} />);
+    fireEvent.click(screen.getByText('exa search'));
+    // No result to show; the args pre block must not appear.
+    expect(screen.queryByText(/"query"/)).toBeNull();
+  });
+});
