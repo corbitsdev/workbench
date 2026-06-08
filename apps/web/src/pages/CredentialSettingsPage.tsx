@@ -284,6 +284,7 @@ export default function CredentialSettingsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null);
   const [togglingTool, setTogglingTool] = useState<string | null>(null);
+  const [addAgentSelect, setAddAgentSelect] = useState<Record<string, string>>({});
 
   const handleToggleTool = async (agent: AgentInstance, toolName: string, enabled: boolean) => {
     const current = getAgentTools(agent.capabilities);
@@ -389,6 +390,7 @@ export default function CredentialSettingsPage() {
     setAssigningAgentId(agentId);
     try {
       await assignCredentialToAgent(cred.tenantId, agentId, cred.id);
+      setAddAgentSelect((prev) => ({ ...prev, [cred.id]: '' }));
       await queryClient.invalidateQueries({ queryKey: ['agents', 'instances'] });
     } finally {
       setAssigningAgentId(null);
@@ -768,18 +770,16 @@ export default function CredentialSettingsPage() {
                           {linkableAgentsForCredential(c).length > 0 && (
                             <select
                               aria-label={`Add agent for ${c.name}`}
-                              defaultValue=""
+                              value={addAgentSelect[c.id] ?? ''}
                               disabled={!!assigningAgentId}
                               onChange={(e) => {
                                 const agentId = e.currentTarget.value;
-                                e.currentTarget.value = '';
+                                if (!agentId) return;
                                 void handleAssignAgent(c, agentId);
                               }}
                               className="max-w-[160px] rounded-[6px] border border-border bg-bg px-2 py-1 text-[11px] text-text-2 outline-none focus:border-orange disabled:opacity-50"
                             >
-                              <option value="" disabled>
-                                Add agent...
-                              </option>
+                              <option value="">+ Add agent</option>
                               {linkableAgentsForCredential(c).map((agent) => (
                                 <option key={agent.agentId} value={agent.agentId}>
                                   {agent.agentName}
