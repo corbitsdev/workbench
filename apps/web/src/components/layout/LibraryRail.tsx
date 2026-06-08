@@ -131,6 +131,7 @@ const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
   reviewing: 'run',
   generating: 'run',
   done: 'done',
+  failed: 'idle',
 };
 
 function workflowToRailItem(w: WorkflowSummary): RailItem {

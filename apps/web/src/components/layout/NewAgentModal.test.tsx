@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import '../../test-setup';
 import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -55,17 +55,29 @@ function renderModal() {
 afterEach(() => cleanup());
 
 describe('NewAgentModal', () => {
-  it('locks required tools and never renders an inline tool-credential block', async () => {
+  it('collapses tools by provider until the provider is expanded', async () => {
     const user = userEvent.setup();
-    renderModal();
+    const view = renderModal();
 
-    // Tools load asynchronously.
-    await waitFor(() => expect(screen.getByText('Granola List Notes')).toBeDefined());
+    await waitFor(() => expect(view.getByRole('button', { name: /Granola/ })).toBeDefined());
 
-    // Apply the Oat premade — its required tools become locked.
-    await user.click(screen.getByText('Oat — Call Intelligence'));
+    expect(view.queryByText('Granola List Notes')).toBeNull();
 
-    const listNotes = screen
+    await user.click(view.getByRole('button', { name: /Granola/ }));
+
+    expect(view.getByText('Granola List Notes')).toBeDefined();
+    expect(view.getByText('Granola Get Note')).toBeDefined();
+  });
+
+  it('locks required tools inside expanded providers', async () => {
+    const user = userEvent.setup();
+    const view = renderModal();
+
+    await waitFor(() => expect(view.getByRole('button', { name: /Granola/ })).toBeDefined());
+    await user.click(view.getByText('Oat — Call Intelligence'));
+    await user.click(view.getByRole('button', { name: /Granola/ }));
+
+    const listNotes = view
       .getByText('Granola List Notes')
       .closest('label')!
       .querySelector('input[type="checkbox"]') as HTMLInputElement;
@@ -73,23 +85,18 @@ describe('NewAgentModal', () => {
     expect(listNotes.checked).toBe(true);
     expect(listNotes.disabled).toBe(true);
 
-    // Clicking a required tool must not unselect it.
     await user.click(listNotes);
     expect(listNotes.checked).toBe(true);
-
-    // The old inline raw-entry block must be gone.
-    expect(screen.queryByText('Granola credentials')).toBeNull();
-    expect(screen.queryByPlaceholderText('https://api.granola.ai')).toBeNull();
   });
 
-  it('leaves optional tools toggleable', async () => {
+  it('leaves optional tools toggleable inside expanded providers', async () => {
     const user = userEvent.setup();
-    renderModal();
+    const view = renderModal();
 
-    await waitFor(() => expect(screen.getByText('Exa Search')).toBeDefined());
-    await user.click(screen.getByText('Oat — Call Intelligence'));
+    await waitFor(() => expect(view.getByRole('button', { name: /Exa/ })).toBeDefined());
+    await user.click(view.getByRole('button', { name: /Exa/ }));
 
-    const exa = screen
+    const exa = view
       .getByText('Exa Search')
       .closest('label')!
       .querySelector('input[type="checkbox"]') as HTMLInputElement;
