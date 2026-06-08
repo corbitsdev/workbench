@@ -104,7 +104,7 @@ No tool package reads env vars or resolves credentials. Config (`apiKey`, `baseU
 
 **`packages/tools-exa`** (`@workbench/tools-exa`): Exa search API. Exports `EXA_HUB_TOOLS` with `exa_search` (providerName: `'exa'`).
 
-**`packages/tools-granola`** (`@workbench/tools-granola`): Granola notes API. Exports `GRANOLA_HUB_TOOLS` with `granola_list_notes` and `granola_get_note` (providerName: `'granola'`).
+**`packages/tools-granola`** (`@workbench/tools-granola`): Granola notes API. Exports `GRANOLA_HUB_TOOLS` with `granola_list_notes`, `granola_get_note`, and `granola_list_folders` (providerName: `'granola'`). `granola_list_notes` paginates with `page_size` (default 10, max 30) and accepts `created_after`/`created_before`/`updated_after`/`folder_id` filters; `granola_list_folders` surfaces folder IDs for that `folder_id` filter.
 
 #### `packages/tool-template` (scaffold)
 
@@ -572,7 +572,9 @@ All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agen
 
 When configured with `GRANOLA_API_KEY`, Oat ingests recent sales calls from Granola's public API:
 
-- **Endpoint**: Granola API v1 `/calls` endpoint
+- **Endpoints**: Granola API v1 `GET /v1/notes` (list), `GET /v1/notes/{id}?include=transcript` (single note), and `GET /v1/folders` (list folders). The base URL is owned by the tool package (`GRANOLA_DEFAULT_BASE_URL`)
+- **Pagination**: `page_size` query parameter (default 10, max 30) plus a `cursor`. Note titles may be `null`
+- **Filters**: list-notes accepts `created_after`, `created_before`, `updated_after`, and `folder_id`. The scheduler client (`apps/hub/src/lib/granola.ts`) uses `created_after` to fetch only notes newer than the last poll rather than over-fetching and filtering in memory
 - **Authentication**: Bearer token via `GRANOLA_API_KEY`
 - **Integration**: Call recordings are fetched and stored as call document artifacts (kind: `call-document`) in the `artifact` table
 - **Scope**: Entirely optional; Oat runs continuously and surfaces calls automatically
