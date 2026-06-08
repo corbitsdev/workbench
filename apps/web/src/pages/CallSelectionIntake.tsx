@@ -30,7 +30,10 @@ export default function CallSelectionIntake({ onWorkflowCreated }: CallSelection
   const handleSubmit = async (data: IntakeRequest) => {
     setError('');
     try {
-      const workflow = await createWorkflow.mutateAsync({ ...data, workflowKind: 'collateral-generation' });
+      const workflow = await createWorkflow.mutateAsync({
+        ...data,
+        workflowKind: 'collateral-generation',
+      });
       onWorkflowCreated(workflow.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create workflow');

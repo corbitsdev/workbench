@@ -39,11 +39,11 @@
 
 The sidecar carries three tool runners merged via `mergeToolRunners` before `filterToolRunner` gates model-visible definitions to whatever the hub configured in `HarnessConfig.tools`:
 
-| Runner | Source | What it covers |
-|---|---|---|
-| `posixTools` | `@intx/tools-posix` | File system, shell, LSP |
-| `askPrincipalRunner` | `@workbench/approvals` | Human approval flow (calls hub `/api/internal/approvals`) |
-| `hubToolRunner` | `apps/sidecar/src/hub-tool-runner.ts` | All hub-managed tools (exa, granola, etc.) |
+| Runner               | Source                                | What it covers                                            |
+| -------------------- | ------------------------------------- | --------------------------------------------------------- |
+| `posixTools`         | `@intx/tools-posix`                   | File system, shell, LSP                                   |
+| `askPrincipalRunner` | `@workbench/approvals`                | Human approval flow (calls hub `/api/internal/approvals`) |
+| `hubToolRunner`      | `apps/sidecar/src/hub-tool-runner.ts` | All hub-managed tools (exa, granola, etc.)                |
 
 `HubToolRunner` is generic — it forwards every tool call to `POST /api/internal/tools/run` using `sidecarToken` auth. It has no knowledge of specific tools. Adding a new tool package never requires a sidecar change.
 
@@ -109,6 +109,7 @@ No tool package reads env vars or resolves credentials. Config (`apiKey`, `baseU
 #### `packages/tool-template` (scaffold)
 
 A minimal `@workbench/tools-*` package skeleton for quickly duplicating. Contains:
+
 - `src/index.ts` with stub definition, stub `createTools`, and stub `*_HUB_TOOLS`
 - `package.json` with correct deps (`@intx/agent` devDep, `@intx/types` devDep)
 - `tsconfig.json` extending the workspace base
@@ -118,6 +119,7 @@ Copy the directory, rename, replace stubs. No other files needed to ship a new t
 #### `packages/tool-agent` (scaffold)
 
 A minimal agent package skeleton for agents that primarily expose tool-based capabilities. Contains:
+
 - `src/definition.ts` — `credentialRequirements` (openai-compatible only), `capabilities.tools: []`
 - `src/prompt.ts` — stub system prompt using `buildSystemPrompt`
 - `src/director.ts` — stub director wrapping `createDefaultDirector`

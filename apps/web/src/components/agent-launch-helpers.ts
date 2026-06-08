@@ -43,7 +43,7 @@ export type LaunchState =
  */
 export function classifyLaunchState(
   instanceStatus: string | undefined,
-  launchError: string | null,
+  launchError: string | null
 ): LaunchState {
   if (instanceStatus !== undefined && instanceStatus !== 'running') {
     return { kind: 'deploying' };

@@ -33,19 +33,11 @@ mock.module('../lib/instance-transport', () => ({
 
 import { AgentChat } from './AgentChat';
 
-function renderAgentChat(overrides?: {
-  instanceStatus?: string;
-  onConfigureAgent?: () => void;
-}) {
+function renderAgentChat(overrides?: { instanceStatus?: string; onConfigureAgent?: () => void }) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <AgentChat
-        instanceId="ins_123"
-        tenantId="tnt_123"
-        agentName="Loop"
-        {...overrides}
-      />
+      <AgentChat instanceId="ins_123" tenantId="tnt_123" agentName="Loop" {...overrides} />
     </QueryClientProvider>
   );
 }

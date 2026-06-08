@@ -218,10 +218,10 @@ shadcn/ui is **not installed** and is not planned. The workbench uses `@workbenc
 
 ### Where components live
 
-| Layer | Location | Contents |
-| ----- | -------- | -------- |
-| Foundation | `packages/ui/src/` | Primitives: Button, Input, Badge, tokens, `cn()` utility |
-| Domain | `apps/web/src/components/` | Product-specific components built on the foundation |
+| Layer      | Location                   | Contents                                                 |
+| ---------- | -------------------------- | -------------------------------------------------------- |
+| Foundation | `packages/ui/src/`         | Primitives: Button, Input, Badge, tokens, `cn()` utility |
+| Domain     | `apps/web/src/components/` | Product-specific components built on the foundation      |
 
 ### Rules
 
@@ -231,7 +231,6 @@ shadcn/ui is **not installed** and is not planned. The workbench uses `@workbenc
 - Dark/light theme works automatically via `html[data-theme]` — no per-component theme logic needed.
 
 ---
-
 
 ---
 

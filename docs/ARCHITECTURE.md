@@ -107,13 +107,14 @@ Credential secrets written by the hub layer are encrypted before storage using A
 
 Tool execution is split across three layers with a strict separation of concerns:
 
-| Layer | Responsibility |
-|---|---|
+| Layer                                 | Responsibility                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------ |
 | **Tool package** (`packages/tools-*`) | Tool definition (model-visible schema), AgentTool handlers, hub registry entry |
-| **Hub** (`/api/internal/tools/run`) | Credential resolution from Interchange, dispatches to tool package handler |
-| **Sidecar** (`HubToolRunner`) | Generic proxy — forwards all tool calls to hub; zero tool-specific code |
+| **Hub** (`/api/internal/tools/run`)   | Credential resolution from Interchange, dispatches to tool package handler     |
+| **Sidecar** (`HubToolRunner`)         | Generic proxy — forwards all tool calls to hub; zero tool-specific code        |
 
 **Adding a new tool** requires only:
+
 1. Create `@workbench/tools-<name>` — export `*_HUB_TOOLS` with definition + providerName + `createTools` factory
 2. Spread `*_HUB_TOOLS` into hub's `KNOWN_TOOLS` in `apps/hub/src/lib/tool-registry.ts`
 3. Register the provider + credential in Interchange

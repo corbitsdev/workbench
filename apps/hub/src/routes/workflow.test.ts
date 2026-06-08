@@ -124,7 +124,12 @@ describe('Workflow router', () => {
           findMany: mock<() => unknown[]>(() => []),
         },
         enabledWorkflow: {
-          findFirst: mock(() => ({ id: 'ew-1', tenantId: 'tenant-personal', kind: 'collateral-generation', enabledAt: new Date().toISOString() })),
+          findFirst: mock(() => ({
+            id: 'ew-1',
+            tenantId: 'tenant-personal',
+            kind: 'collateral-generation',
+            enabledAt: new Date().toISOString(),
+          })),
         },
         provider: {
           findFirst: mock(() => ({

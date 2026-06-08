@@ -50,7 +50,6 @@ export const RENAME_ME_HUB_TOOLS = {
   rename_me_action: {
     definition: RENAME_ME_DEFINITION,
     providerName: PROVIDER_NAME,
-    createTools: (config: { apiKey: string; baseURL: string }) =>
-      createRenameMeTools(config),
+    createTools: (config: { apiKey: string; baseURL: string }) => createRenameMeTools(config),
   },
 };

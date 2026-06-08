@@ -610,9 +610,7 @@ export function createAgentProvisioningRouter(
       const meta = prov.metadata as { model?: string; baseURL?: string } | null;
 
       // Replace only the existing requirement for this provider, leave others intact.
-      reqs = reqs.filter(
-        (r) => !(r['source'] === 'tenant' && r['providerName'] === prov.name)
-      );
+      reqs = reqs.filter((r) => !(r['source'] === 'tenant' && r['providerName'] === prov.name));
       reqs.push({ source: 'tenant', name: cred.name, providerName: prov.name });
 
       if (isInferenceProviderName(prov.plugin) && meta?.model && !modelConfig?.defaultModel) {
@@ -620,12 +618,13 @@ export function createAgentProvisioningRouter(
       }
     } else {
       // Remove the specific provider's requirement when providerName is supplied.
-      const targetProvider =
-        typeof raw.providerName === 'string' ? raw.providerName : null;
+      const targetProvider = typeof raw.providerName === 'string' ? raw.providerName : null;
       reqs = reqs.filter(
         (r) =>
-          !(r['source'] === 'tenant' &&
-            (targetProvider === null || r['providerName'] === targetProvider))
+          !(
+            r['source'] === 'tenant' &&
+            (targetProvider === null || r['providerName'] === targetProvider)
+          )
       );
     }
 
@@ -709,7 +708,14 @@ export function createAgentProvisioningRouter(
       })
       .where(eq(agent.id, agentId));
 
-    await relaunchRunningAgentInstancesForToolUpdate(db, sessionService, grantStore, eventCollectors, agentRow, sidecarRouter.events);
+    await relaunchRunningAgentInstancesForToolUpdate(
+      db,
+      sessionService,
+      grantStore,
+      eventCollectors,
+      agentRow,
+      sidecarRouter.events
+    );
 
     return c.json({ tools: toolNames }, 200);
   });

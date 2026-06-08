@@ -13,7 +13,12 @@ interface NewWorkflowPaneProps {
 
 type IntakeMode = 'paste' | 'recent';
 
-export function NewWorkflowPane({ workflowKind, onCreated, onClose, tenantId }: NewWorkflowPaneProps) {
+export function NewWorkflowPane({
+  workflowKind,
+  onCreated,
+  onClose,
+  tenantId,
+}: NewWorkflowPaneProps) {
   const [mode, setMode] = useState<IntakeMode>('paste');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
