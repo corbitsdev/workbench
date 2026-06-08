@@ -7,6 +7,7 @@ import { NewWorkflowPane } from '../components/NewWorkflowPane';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { NewWorkbenchModal } from '../components/layout/NewWorkbenchModal';
 import { NewAgentModal } from '../components/layout/NewAgentModal';
+import { WorkflowPicker } from '../components/layout/WorkflowPicker';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
 import { useResizableRail } from '@workbench/ui';
 import { useMediaQuery } from '../lib/use-media-query';
@@ -88,7 +89,7 @@ function useProvisioningGuard(): { state: ProvisioningState; retry: () => void }
  */
 const RAIL_HEIGHT = 'h-full';
 
-type NewModal = 'none' | 'workbench' | 'agent';
+type NewModal = 'none' | 'workbench' | 'agent' | 'workflow-picker';
 
 type RightPane =
   | { view: 'gallery' }
@@ -99,7 +100,7 @@ type RightPane =
       agentName: string;
     }
   | { view: 'workflow'; workflowId: string }
-  | { view: 'new-workflow' };
+  | { view: 'new-workflow'; workflowKind: string };
 
 function useWorkspaceContext(slug: string | undefined): {
   tenantId: string | null;
@@ -205,8 +206,13 @@ export default function WorkbenchHome() {
   };
 
   const handleNewWorkflow = () => {
-    setRightPane({ view: 'new-workflow' });
+    setActiveModal('workflow-picker');
     setLauncherHidden(true);
+  };
+
+  const handleWorkflowKindSelected = (kind: string) => {
+    setActiveModal('none');
+    setRightPane({ view: 'new-workflow', workflowKind: kind });
   };
 
   const handleWorkflowCreated = (workflowId: string) => {
@@ -268,6 +274,7 @@ export default function WorkbenchHome() {
       return (
         <motion.div key="new-workflow" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
           <NewWorkflowPane
+            workflowKind={rightPane.workflowKind}
             tenantId={workspaceTenantId}
             onCreated={handleWorkflowCreated}
             onClose={() => {
@@ -313,6 +320,7 @@ export default function WorkbenchHome() {
           />
         ) : rightPane.view === 'new-workflow' ? (
           <NewWorkflowPane
+            workflowKind={rightPane.workflowKind}
             tenantId={workspaceTenantId}
             onCreated={handleWorkflowCreated}
             onClose={() => {
@@ -352,6 +360,15 @@ export default function WorkbenchHome() {
           onCreated={handleAgentCreated}
           workspaceTenantId={workspaceTenantId}
         />
+        {activeModal === 'workflow-picker' && (
+          <WorkflowPicker
+            onSelectKind={handleWorkflowKindSelected}
+            onClose={() => {
+              setActiveModal('none');
+              setLauncherHidden(false);
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -410,6 +427,12 @@ export default function WorkbenchHome() {
         onCreated={handleAgentCreated}
         workspaceTenantId={workspaceTenantId}
       />
+      {activeModal === 'workflow-picker' && (
+        <WorkflowPicker
+          onSelectKind={handleWorkflowKindSelected}
+          onClose={() => setActiveModal('none')}
+        />
+      )}
     </>
   );
 }

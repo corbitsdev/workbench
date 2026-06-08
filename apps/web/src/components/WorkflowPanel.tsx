@@ -66,7 +66,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-[13px] text-text-3">Loading job…</p>
+        <p className="text-[13px] text-text-3">Loading workflow…</p>
       </div>
     );
   }
@@ -74,7 +74,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   if (isError || !workflow) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-[13px] text-text-3">Could not load job.</p>
+        <p className="text-[13px] text-text-3">Could not load workflow.</p>
       </div>
     );
   }
@@ -89,7 +89,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const generateCompleted = Boolean(generateStep?.completed);
   const isBusy = runStep.isPending;
 
-  const title = workflow.companyName ?? painPoints[0]?.context ?? 'Job';
+  const title = workflow.companyName ?? painPoints[0]?.context ?? 'Workflow';
 
   const STEP_LABELS: Record<StepName, string> = {
     intake: 'Intake',
@@ -184,7 +184,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close job"
+            aria-label="Close workflow"
             className="grid h-[28px] w-[28px] place-items-center rounded-[8px] border border-border text-text-2 hover:text-text hover:bg-surface-2 transition-colors"
           >
             <svg

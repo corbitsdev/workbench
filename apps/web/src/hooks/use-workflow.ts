@@ -140,6 +140,54 @@ export function useUpdateStepConfig(workflowId: string) {
   });
 }
 
+export interface WorkflowCatalogEntry {
+  kind: string;
+  name: string;
+  description: string;
+}
+
+export interface EnabledWorkflowEntry {
+  id: string;
+  tenantId: string;
+  kind: string;
+  enabledAt: string;
+  name: string;
+  description: string;
+}
+
+export function useWorkflowCatalog() {
+  return useQuery<WorkflowCatalogEntry[]>({
+    queryKey: ['workflow-catalog'],
+    queryFn: () => api<WorkflowCatalogEntry[]>('GET', '/workflows/catalog'),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useEnabledWorkflows() {
+  return useQuery<EnabledWorkflowEntry[]>({
+    queryKey: ['enabled-workflows'],
+    queryFn: () => api<EnabledWorkflowEntry[]>('GET', '/workflows/enabled'),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useInstallWorkflow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (kind: string) => {
+      return api<EnabledWorkflowEntry>('POST', '/workflows/enabled', { kind });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['enabled-workflows'] });
+    },
+    onError: (error) => {
+      logger.error('Workflow install failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
+}
+
 export function useWorkspaceAgents() {
   return useQuery<AgentInstance[]>({
     queryKey: ['workspace-agents'],
@@ -161,15 +209,14 @@ export function useCreateWorkflow() {
       transcript?: string;
       granolaId?: string;
       source: string;
-      workflowKind?: string;
+      workflowKind: string;
       tenantId?: string;
     }) => {
-      const payload = { workflowKind: 'collateral-generation', ...body };
       logger.info('Creating workflow', {
-        source: payload.source,
-        workflowKind: payload.workflowKind,
+        source: body.source,
+        workflowKind: body.workflowKind,
       });
-      const res = await api<FrontendWorkflowState>('POST', '/workflows', payload);
+      const res = await api<FrontendWorkflowState>('POST', '/workflows', body);
       logger.info('Workflow created', { workflowId: res.id });
       return res;
     },

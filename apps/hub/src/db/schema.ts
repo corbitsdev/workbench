@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -80,6 +81,22 @@ export const artifactVersion = pgTable('artifact_version', {
   authorId: text('author_id').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// Tracks which workflow kinds a tenant has opted into. Each row represents a
+// single enabled workflow kind for a tenant. Unique constraint on (tenant_id,
+// kind) makes upserts safe and idempotent.
+export const enabledWorkflow = pgTable(
+  'workbench_workflows',
+  {
+    id: text('id').primaryKey(),
+    tenantId: text('tenant_id').notNull(),
+    kind: text('kind').notNull(),
+    enabledAt: timestamp('enabled_at').notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantKindUniq: unique('workbench_workflows_tenant_kind_uniq').on(t.tenantId, t.kind),
+  })
+);
 
 // ─── Approvals ─────────────────────────────────────────────────────
 

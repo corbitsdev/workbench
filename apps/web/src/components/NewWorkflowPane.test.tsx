@@ -57,7 +57,12 @@ function renderPane(onCreated = mock(), onClose = mock(), tenantId?: string | nu
     React.createElement(
       QueryClientProvider,
       { client },
-      React.createElement(NewWorkflowPane, { onCreated, onClose, tenantId })
+      React.createElement(NewWorkflowPane, {
+        workflowKind: 'collateral-generation',
+        onCreated,
+        onClose,
+        tenantId,
+      })
     )
   );
 }
@@ -81,7 +86,7 @@ describe('NewWorkflowPane — render', () => {
 
   it('renders a close button', () => {
     renderPane();
-    expect(screen.getByRole('button', { name: /close new job/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /close new workflow/i })).toBeDefined();
   });
 });
 
@@ -90,7 +95,7 @@ describe('NewWorkflowPane — close', () => {
     const user = userEvent.setup();
     const onClose = mock();
     renderPane(mock(), onClose);
-    await user.click(screen.getByRole('button', { name: /close new job/i }));
+    await user.click(screen.getByRole('button', { name: /close new workflow/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

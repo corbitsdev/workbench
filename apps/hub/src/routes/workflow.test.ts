@@ -123,6 +123,9 @@ describe('Workflow router', () => {
         agentInstance: {
           findMany: mock<() => unknown[]>(() => []),
         },
+        enabledWorkflow: {
+          findFirst: mock(() => ({ id: 'ew-1', tenantId: 'tenant-personal', kind: 'collateral-generation', enabledAt: new Date().toISOString() })),
+        },
         provider: {
           findFirst: mock(() => ({
             id: 'prov-1',
@@ -138,12 +141,22 @@ describe('Workflow router', () => {
         values: mock((values: unknown) => {
           options.onInsertValues?.(values);
           insertCount += 1;
+          const row =
+            insertCount === 1
+              ? { id: 'tx-1', status: 'created', kind: 'transcript' }
+              : { id: 'wf-1', status: 'analyzing', kind: 'collateral-generation' };
           return {
-            returning: mock(() =>
-              insertCount === 1
-                ? [{ id: 'tx-1', status: 'created', kind: 'transcript' }]
-                : [{ id: 'wf-1', status: 'analyzing', kind: 'collateral-generation' }]
-            ),
+            returning: mock(() => [row]),
+            onConflictDoUpdate: mock(() => ({
+              returning: mock(() => [
+                {
+                  id: 'ew-1',
+                  tenantId: 'tenant-personal',
+                  kind: 'collateral-generation',
+                  enabledAt: new Date().toISOString(),
+                },
+              ]),
+            })),
           };
         }),
       })),
@@ -581,5 +594,75 @@ describe('Workflow router', () => {
     const parsed = JSON.parse(json.export.content);
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed[0].kind).toBe('email');
+  });
+
+  it('POST /workflows/enabled rejects an unknown workflow kind', async () => {
+    const router = buildApp(createMockDb());
+    const req = new Request('http://localhost:4000/workflows/enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'not-a-real-kind' }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(400);
+
+    const json = await res.json();
+    expect(json.error).toBeString();
+  });
+
+  it('POST /workflows/enabled is idempotent', async () => {
+    const router = buildApp(createMockDb());
+    const makeReq = () =>
+      new Request('http://localhost:4000/workflows/enabled', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'collateral-generation' }),
+      });
+
+    const res1 = await router.fetch(makeReq());
+    expect(res1.status).toBe(200);
+
+    const res2 = await router.fetch(makeReq());
+    expect(res2.status).toBe(200);
+  });
+
+  it('POST /workflows returns 400 when workflowKind is missing', async () => {
+    const router = buildApp(createMockDb());
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript: 'Hello world', source: 'paste' }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(400);
+
+    const json = await res.json();
+    expect(json.error).toBeString();
+  });
+
+  it('POST /workflows returns 400 when the kind is not enabled for the tenant', async () => {
+    const mockDb = createMockDb();
+    // Override findFirst to simulate the workflow kind not being enabled for this tenant
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockDb.query.enabledWorkflow.findFirst = mock(() => null) as any;
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript: 'Hello world',
+        source: 'paste',
+        workflowKind: 'collateral-generation',
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(400);
+
+    const json = await res.json();
+    expect(json.error).toBeString();
   });
 });

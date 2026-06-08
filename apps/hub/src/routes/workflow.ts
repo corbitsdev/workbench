@@ -6,7 +6,14 @@ import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry } from '@workbench/workflow-core';
 import { collateralGenerationWorkflow } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
-import { workflowRun, transcript, painPoint, artifact, artifactVersion } from '../db/schema';
+import {
+  workflowRun,
+  transcript,
+  painPoint,
+  artifact,
+  artifactVersion,
+  enabledWorkflow,
+} from '../db/schema';
 import {
   isGranolaConfigured,
   getNoteWithTranscript,
@@ -190,6 +197,90 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     return c.json(types);
   });
 
+  // ─── Workflow catalog ─────────────────────────────────────────────
+  router.get('/workflows/catalog', async (c) => {
+    const catalog = workflowRegistry.list().map((wt) => ({
+      kind: wt.kind,
+      name: wt.name,
+      description: wt.description,
+      credentialRequirements: wt.credentialRequirements,
+    }));
+    return c.json(catalog);
+  });
+
+  // ─── List enabled workflows for tenant ───────────────────────────
+  router.get('/workflows/enabled', async (c) => {
+    const userId = c.get('userId');
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json({ error: 'User context not found' }, 400);
+    }
+
+    const rows = await db.query.enabledWorkflow.findMany({
+      where: eq(enabledWorkflow.tenantId, userContext.tenantId),
+    });
+
+    const result = rows.map((row) => {
+      const wt = workflowRegistry.get(row.kind);
+      return {
+        id: row.id,
+        tenantId: row.tenantId,
+        kind: row.kind,
+        enabledAt: row.enabledAt,
+        name: wt?.name ?? row.kind,
+        description: wt?.description ?? '',
+      };
+    });
+
+    return c.json(result);
+  });
+
+  // ─── Enable a workflow kind for the current tenant ────────────────
+  router.post('/workflows/enabled', async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const kind = typeof body.kind === 'string' ? body.kind : undefined;
+
+    if (!kind) {
+      log.warn('Workflow kind is required for enablement');
+      return c.json({ error: 'kind is required' }, 400);
+    }
+
+    if (!workflowRegistry.isValid(kind)) {
+      log.warn('Unknown workflow kind for enablement', { kind });
+      return c.json({ error: `Unknown workflow kind: ${kind}` }, 400);
+    }
+
+    const userId = c.get('userId');
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json({ error: 'User context not found' }, 400);
+    }
+
+    const id = `wkf_${randomUUID().replace(/-/g, '')}`;
+    const [row] = await db
+      .insert(enabledWorkflow)
+      .values({ id, tenantId: userContext.tenantId, kind })
+      .onConflictDoUpdate({
+        target: [enabledWorkflow.tenantId, enabledWorkflow.kind],
+        set: { kind },
+      })
+      .returning();
+
+    const wt = workflowRegistry.get(kind);
+    log.info('Workflow kind enabled', { tenantId: userContext.tenantId, kind });
+
+    return c.json({
+      id: row!.id,
+      tenantId: row!.tenantId,
+      kind: row!.kind,
+      enabledAt: row!.enabledAt,
+      name: wt?.name ?? kind,
+      description: wt?.description ?? '',
+    });
+  });
+
   // ─── Create workflow (intake) ─────────────────────────────────────
   router.post('/workflows', async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -208,6 +299,38 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     if (!workflowRegistry.isValid(workflowKind)) {
       log.warn('Invalid workflow kind', { workflowKind });
       return c.json({ error: `Invalid workflow kind: ${workflowKind}` }, 400);
+    }
+
+    const userId = c.get('userId');
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      requestedTenantId
+    );
+    if (forbidden) {
+      log.warn('User requested workflow creation for inaccessible tenant', {
+        userId,
+        requestedTenantId,
+      });
+      return c.json({ error: 'Tenant not accessible' }, 403);
+    }
+    if (!userContext) {
+      log.warn('User context not found', { userId });
+      return c.json({ error: 'User context not found' }, 400);
+    }
+
+    const enabledRow = await db.query.enabledWorkflow.findFirst({
+      where: and(
+        eq(enabledWorkflow.tenantId, userContext.tenantId),
+        eq(enabledWorkflow.kind, workflowKind)
+      ),
+    });
+    if (!enabledRow) {
+      log.warn('Workflow kind not enabled for tenant', {
+        workflowKind,
+        tenantId: userContext.tenantId,
+      });
+      return c.json({ error: `Workflow kind not enabled for this tenant: ${workflowKind}` }, 400);
     }
 
     log.info('Creating workflow', { source });
@@ -254,24 +377,6 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         log.warn('Granola note has no usable content', { granolaId });
         return c.json({ error: 'Granola note has no usable content' }, 400);
       }
-    }
-
-    const userId = c.get('userId');
-    const { context: userContext, forbidden } = await getRequestedUserContext(
-      db,
-      userId,
-      requestedTenantId
-    );
-    if (forbidden) {
-      log.warn('User requested workflow creation for inaccessible tenant', {
-        userId,
-        requestedTenantId,
-      });
-      return c.json({ error: 'Tenant not accessible' }, 403);
-    }
-    if (!userContext) {
-      log.warn('User context not found', { userId });
-      return c.json({ error: 'User context not found' }, 400);
     }
 
     const [txRow] = await db

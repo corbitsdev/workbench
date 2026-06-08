@@ -94,7 +94,7 @@ describe('LibraryRail', () => {
     await waitFor(() => {
       expect(view.getAllByText('Acme Corp').length).toBeGreaterThan(0);
     });
-    expect(view.getAllByText('Jobs').length).toBeGreaterThan(0);
+    expect(view.getAllByText('Workflows').length).toBeGreaterThan(0);
   });
 
   it('renders the + button when onNew is provided and workbenches are present', async () => {

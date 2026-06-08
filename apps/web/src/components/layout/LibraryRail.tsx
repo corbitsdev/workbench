@@ -24,7 +24,7 @@ import { useEffect, useState } from 'react';
 
 type ResourceType = 'workflow' | 'agent';
 type ResourceStatus = 'run' | 'done' | 'idle';
-type RailGroup = 'Agents' | 'Jobs';
+type RailGroup = 'Agents' | 'Workflows';
 
 interface RailItem {
   id: string;
@@ -132,14 +132,14 @@ const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
 };
 
 function workflowToRailItem(w: WorkflowSummary): RailItem {
-  const name = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled job';
+  const name = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled workflow';
   const sub =
     w.painPointCount > 0
       ? `${w.painPointCount} pain point${w.painPointCount === 1 ? '' : 's'} · ${w.status}`
       : w.status;
   return {
     id: w.id,
-    group: 'Jobs',
+    group: 'Workflows',
     name,
     type: 'workflow',
     sub,
@@ -149,7 +149,7 @@ function workflowToRailItem(w: WorkflowSummary): RailItem {
   };
 }
 
-const GROUP_ORDER: RailGroup[] = ['Agents', 'Jobs'];
+const GROUP_ORDER: RailGroup[] = ['Agents', 'Workflows'];
 
 const TAG_STYLES: Record<ResourceType, string> = {
   workflow: 'bg-[rgba(233,132,40,0.16)] text-orange',
@@ -498,7 +498,7 @@ export interface LibraryRailProps {
 const SEGMENT_FILTER: Record<string, ResourceType | null> = {
   All: null,
   Agents: 'agent',
-  Jobs: 'workflow',
+  Workflows: 'workflow',
 };
 
 export function LibraryRail({
@@ -554,7 +554,7 @@ export function LibraryRail({
   const segments: { label: string; count: number }[] = [
     { label: 'All', count: items.length },
     { label: 'Agents', count: agentItems.length },
-    { label: 'Jobs', count: jobItems.length },
+    { label: 'Workflows', count: jobItems.length },
   ];
 
   const typeFilter = SEGMENT_FILTER[activeSegment] ?? null;
@@ -688,7 +688,7 @@ export function LibraryRail({
           <div className="px-[10px] py-6 text-[13px] text-text-3">Loading workbench…</div>
         )}
         {isError && (
-          <div className="px-[10px] py-6 text-[13px] text-text-3">Could not load jobs.</div>
+          <div className="px-[10px] py-6 text-[13px] text-text-3">Could not load workflows.</div>
         )}
         {workbenchError && (
           <div className="flex flex-col gap-2 px-[10px] py-6">
@@ -715,7 +715,7 @@ export function LibraryRail({
           const showGroup =
             inGroup.length > 0 ||
             (group === 'Agents' && onNew !== undefined) ||
-            (group === 'Jobs' && onNewWorkflow !== undefined);
+            (group === 'Workflows' && onNewWorkflow !== undefined);
           if (!showGroup) return null;
 
           return (
@@ -746,11 +746,11 @@ export function LibraryRail({
                     </span>
                   </button>
                 )}
-                {group === 'Jobs' && onNewWorkflow && (
+                {group === 'Workflows' && onNewWorkflow && (
                   <button
                     type="button"
                     onClick={onNewWorkflow}
-                    aria-label="New job"
+                    aria-label="New workflow"
                     className="-m-[11px] grid h-[40px] w-[40px] flex-none place-items-center rounded-[5px] text-text-3 transition-colors hover:text-orange"
                   >
                     <span className="grid h-[18px] w-[18px] place-items-center rounded-[5px] border border-border transition-colors hover:border-orange">
@@ -940,7 +940,7 @@ export function LibraryRail({
                         className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
                       >
                         <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
-                        {item.type === 'workflow' ? 'Job' : item.type}
+                        {item.type === 'workflow' ? 'Workflow' : item.type}
                       </span>
                       <div
                         className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
