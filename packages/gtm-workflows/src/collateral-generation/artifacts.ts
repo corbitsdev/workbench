@@ -13,24 +13,19 @@ export interface WorkflowArtifactDraft {
 }
 
 export const collateralTypeOptions = [
-  { id: 'pain-points-linkedin-post', label: 'Pain Points LinkedIn Post' },
-  { id: 'pain-points-twitter-post', label: 'Pain Points Twitter Post' },
-  { id: 'pain-points-blog', label: 'Pain Points Blog' },
+  { id: 'linkedin-post', label: 'LinkedIn Post' },
+  { id: 'twitter-post', label: 'Twitter Post' },
+  { id: 'blog', label: 'Blog' },
   { id: 'founder-pov-post', label: 'Founder POV Post' },
-  { id: 'follow-up-email', label: 'Follow-up Email' },
-  { id: 'sales-one-pager', label: 'Sales One-Pager' },
+  { id: 'email', label: 'Follow-up Email' },
+  { id: 'one-pager', label: 'Sales One-Pager' },
   { id: 'battlecard', label: 'Battlecard' },
-  { id: 'case-study-draft', label: 'Case Study Draft' },
-  { id: 'objection-handling-doc', label: 'Objection Handling Doc' },
-  { id: 'customer-quote-pulls', label: 'Customer Quote Pulls' },
+  { id: 'case-study', label: 'Case Study' },
+  { id: 'objection-handling', label: 'Objection Handling' },
+  { id: 'customer-quotes', label: 'Customer Quotes' },
 ] as const;
 
-const defaultCollateralTypeIds = [
-  'follow-up-email',
-  'pain-points-linkedin-post',
-  'sales-one-pager',
-  'battlecard',
-] as const;
+const defaultCollateralTypeIds = ['email', 'linkedin-post', 'one-pager', 'battlecard'] as const;
 
 export function selectCollateralTypeIds(requested: string[] | undefined): string[] {
   const allowed = new Set(collateralTypeOptions.map((option) => option.id));

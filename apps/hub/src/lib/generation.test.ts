@@ -2,7 +2,17 @@ import { describe, expect, it } from 'bun:test';
 import type { ArtifactKind } from '@workbench/shared';
 import { buildRulesBlock, isPublicKind } from './generation';
 
-const PUBLIC_KINDS: ArtifactKind[] = ['linkedin', 'one-pager', 'battlecard'];
+const PUBLIC_KINDS: ArtifactKind[] = [
+  'linkedin-post',
+  'twitter-post',
+  'blog',
+  'founder-pov-post',
+  'one-pager',
+  'case-study',
+  'objection-handling',
+  'customer-quotes',
+  'battlecard',
+];
 
 describe('isPublicKind', () => {
   it('treats linkedin, one-pager, and battlecard as public', () => {

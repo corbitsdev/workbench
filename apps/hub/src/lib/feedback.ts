@@ -7,20 +7,17 @@ const log = getLogger(['feedback']);
 
 function buildFeedbackSystemPrompt(type: ArtifactKind): string {
   switch (type) {
-    case 'linkedin':
-    case 'pain-points-linkedin-post':
-    case 'pain-points-twitter-post':
+    case 'linkedin-post':
+    case 'twitter-post':
     case 'founder-pov-post':
       return `You are a sales copywriter editing a social post. Apply the user's feedback strictly. Critical rules: never mention client names, company names, prospect names, or any identifying details — generalise to a category or job function. The insight must feel universal. Return only the refined text, no explanations.`;
     case 'email':
-    case 'follow-up-email':
       return `You are a senior outbound sales rep editing a follow-up email. Apply the user's feedback. Keep the email sounding human — not a template. Vary sentence length, strip hollow adjectives, and make every word earn its place. Return only the refined text, no explanations.`;
     case 'one-pager':
-    case 'sales-one-pager':
-    case 'pain-points-blog':
-    case 'case-study-draft':
-    case 'objection-handling-doc':
-    case 'customer-quote-pulls':
+    case 'blog':
+    case 'case-study':
+    case 'objection-handling':
+    case 'customer-quotes':
       return `You are a sales copywriter editing a GTM document. Apply the user's feedback. Keep every section grounded in the prospect's specific numbers, team size, and language. Return only the refined text, no explanations.`;
     case 'battlecard':
       return `You are a sales copywriter editing paid ad copy. Apply the user's feedback. Keep each variant distinct in angle, headlines specific (use numbers or language from the context), and CTAs active and concrete. Return only the refined text, no explanations.`;

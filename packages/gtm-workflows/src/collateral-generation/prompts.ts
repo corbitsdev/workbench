@@ -6,17 +6,15 @@ import {
 } from '@workbench/prompts';
 
 const PUBLIC_KINDS = [
-  'linkedin',
-  'one-pager',
-  'battlecard',
-  'pain-points-linkedin-post',
-  'pain-points-twitter-post',
-  'pain-points-blog',
+  'linkedin-post',
+  'twitter-post',
+  'blog',
   'founder-pov-post',
-  'sales-one-pager',
-  'case-study-draft',
-  'objection-handling-doc',
-  'customer-quote-pulls',
+  'one-pager',
+  'case-study',
+  'objection-handling',
+  'customer-quotes',
+  'battlecard',
 ] as const;
 
 export function isPublicCollateralKind(type: string): boolean {
@@ -61,7 +59,6 @@ export function buildCollateralRulesBlock(type: string): string {
 function kindGuidance(type: string) {
   switch (type) {
     case 'email':
-    case 'follow-up-email':
       return [
         structuredSection(
           'role',
@@ -78,9 +75,8 @@ function kindGuidance(type: string) {
           ])
         ),
       ];
-    case 'linkedin':
-    case 'pain-points-linkedin-post':
-    case 'pain-points-twitter-post':
+    case 'linkedin-post':
+    case 'twitter-post':
     case 'founder-pov-post':
       return [
         structuredSection(
@@ -105,11 +101,10 @@ function kindGuidance(type: string) {
         ),
       ];
     case 'one-pager':
-    case 'sales-one-pager':
-    case 'pain-points-blog':
-    case 'case-study-draft':
-    case 'objection-handling-doc':
-    case 'customer-quote-pulls':
+    case 'blog':
+    case 'case-study':
+    case 'objection-handling':
+    case 'customer-quotes':
       return [
         structuredSection(
           'role',

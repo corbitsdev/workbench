@@ -57,7 +57,7 @@ describe('Feedback refinement', () => {
     const result = await refineFeedbackWithLLM(
       'original',
       'make it punchier',
-      'linkedin',
+      'linkedin-post',
       TEST_SOURCE
     );
 

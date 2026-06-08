@@ -7,17 +7,14 @@ export type SessionStatus = 'analyzing' | 'reviewing' | 'generating' | 'done' | 
 // CollateralBody renderer switch.
 export type ArtifactKind =
   | 'email'
-  | 'follow-up-email'
-  | 'linkedin'
-  | 'pain-points-linkedin-post'
-  | 'pain-points-twitter-post'
+  | 'linkedin-post'
+  | 'twitter-post'
+  | 'blog'
   | 'founder-pov-post'
   | 'one-pager'
-  | 'sales-one-pager'
-  | 'pain-points-blog'
-  | 'case-study-draft'
-  | 'objection-handling-doc'
-  | 'customer-quote-pulls'
+  | 'case-study'
+  | 'objection-handling'
+  | 'customer-quotes'
   | 'battlecard'
   | 'pain-points'
   | 'call-transcript';

@@ -17,37 +17,13 @@ describe('ArtifactBody rendering', () => {
     expect(screen.getByText(containsHello)).toBeDefined();
   });
 
-  it('renders linkedin body for linkedin', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'linkedin' }));
+  it('renders linkedin body for linkedin-post', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'linkedin-post' }));
     expect(screen.getByText(containsHello)).toBeDefined();
   });
 
-  it('renders one-pager body for one-pager', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'one-pager' }));
-    expect(screen.getByText('Hello')).toBeDefined();
-  });
-
-  it('renders battlecard body for battlecard', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'battlecard' }));
-    expect(screen.getByText(containsHello)).toBeDefined();
-  });
-
-  it('renders email body for follow-up-email', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'follow-up-email' }));
-    expect(screen.getByText(containsHello)).toBeDefined();
-  });
-
-  it('renders linkedin body for pain-points-linkedin-post', () => {
-    render(
-      React.createElement(ArtifactBody, { body: TEST_BODY, type: 'pain-points-linkedin-post' })
-    );
-    expect(screen.getByText(containsHello)).toBeDefined();
-  });
-
-  it('renders linkedin body for pain-points-twitter-post', () => {
-    render(
-      React.createElement(ArtifactBody, { body: TEST_BODY, type: 'pain-points-twitter-post' })
-    );
+  it('renders linkedin body for twitter-post', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'twitter-post' }));
     expect(screen.getByText(containsHello)).toBeDefined();
   });
 
@@ -56,29 +32,34 @@ describe('ArtifactBody rendering', () => {
     expect(screen.getByText(containsHello)).toBeDefined();
   });
 
-  it('renders one-pager body for sales-one-pager', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'sales-one-pager' }));
+  it('renders one-pager body for one-pager', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'one-pager' }));
     expect(screen.getByText('Hello')).toBeDefined();
   });
 
-  it('renders one-pager body for pain-points-blog', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'pain-points-blog' }));
+  it('renders one-pager body for blog', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'blog' }));
     expect(screen.getByText('Hello')).toBeDefined();
   });
 
-  it('renders one-pager body for case-study-draft', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'case-study-draft' }));
+  it('renders one-pager body for case-study', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'case-study' }));
     expect(screen.getByText('Hello')).toBeDefined();
   });
 
-  it('renders one-pager body for objection-handling-doc', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'objection-handling-doc' }));
+  it('renders one-pager body for objection-handling', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'objection-handling' }));
     expect(screen.getByText('Hello')).toBeDefined();
   });
 
-  it('renders one-pager body for customer-quote-pulls', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'customer-quote-pulls' }));
+  it('renders one-pager body for customer-quotes', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'customer-quotes' }));
     expect(screen.getByText('Hello')).toBeDefined();
+  });
+
+  it('renders battlecard body for battlecard', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'battlecard' }));
+    expect(screen.getByText(containsHello)).toBeDefined();
   });
 
   it('renders markdown body for pain-points', () => {
@@ -93,6 +74,42 @@ describe('ArtifactBody rendering', () => {
 
   it('renders markdown body for unknown kind instead of blank screen', () => {
     render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'unknown-kind' as any }));
+    expect(screen.getByText('Hello')).toBeDefined();
+  });
+
+  // Backward-compatibility: old artifact kind names still render
+  it('renders email body for follow-up-email (legacy)', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'follow-up-email' as any }));
+    expect(screen.getByText(containsHello)).toBeDefined();
+  });
+
+  it('renders linkedin body for pain-points-linkedin-post (legacy)', () => {
+    render(
+      React.createElement(ArtifactBody, {
+        body: TEST_BODY,
+        type: 'pain-points-linkedin-post' as any,
+      })
+    );
+    expect(screen.getByText(containsHello)).toBeDefined();
+  });
+
+  it('renders linkedin body for pain-points-twitter-post (legacy)', () => {
+    render(
+      React.createElement(ArtifactBody, {
+        body: TEST_BODY,
+        type: 'pain-points-twitter-post' as any,
+      })
+    );
+    expect(screen.getByText(containsHello)).toBeDefined();
+  });
+
+  it('renders one-pager body for sales-one-pager (legacy)', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'sales-one-pager' as any }));
+    expect(screen.getByText('Hello')).toBeDefined();
+  });
+
+  it('renders one-pager body for case-study-draft (legacy)', () => {
+    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'case-study-draft' as any }));
     expect(screen.getByText('Hello')).toBeDefined();
   });
 });
