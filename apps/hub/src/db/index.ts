@@ -1,8 +1,7 @@
+import type { Sql } from 'postgres';
 import { type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { schema as intxSchema } from '@intx/db';
-import * as schema from './schema';
+import { schema as intx } from '@intx/db';
+import * as workbench from './schema';
 
-export { schema };
-
-/** Hub database type that merges the Interchange schema with workbench schema. */
-export type HubDb = PostgresJsDatabase<typeof intxSchema & typeof schema>;
+export const schema = { ...intx, ...workbench };
+export type HubDb = PostgresJsDatabase<typeof schema> & { $client: Sql<{}> };

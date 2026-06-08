@@ -6,7 +6,6 @@ import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry } from '@workbench/workflow-core';
 import { collateralGenerationWorkflow } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
-import type { DB } from '@intx/db';
 import { workflowRun, transcript, painPoint, artifact, artifactVersion } from '../db/schema';
 import {
   isGranolaConfigured,
@@ -70,20 +69,8 @@ async function resolveWorkflowInferenceSource(
   tenantId: string
 ): Promise<InferenceSource | null> {
   const resolved =
-    (await resolveCredentialRequirement(
-      db as unknown as DB['db'],
-      tenantId,
-      WORKFLOW_LLM_REQUIREMENT,
-      null,
-      null
-    )) ??
-    (await resolveCredentialRequirement(
-      db as unknown as DB['db'],
-      tenantId,
-      WORKFLOW_LLM_FALLBACK,
-      null,
-      null
-    ));
+    (await resolveCredentialRequirement(db, tenantId, WORKFLOW_LLM_REQUIREMENT, null, null)) ??
+    (await resolveCredentialRequirement(db, tenantId, WORKFLOW_LLM_FALLBACK, null, null));
   if (!resolved) return null;
 
   const providerRow = await db.query.provider.findFirst({

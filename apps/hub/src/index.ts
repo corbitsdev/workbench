@@ -32,7 +32,7 @@ import { repairUserAgentCredentials } from './lib/agent-credential-repair';
 import { createWorkspacesRouter } from './routes/workspaces';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createInternalToolsRouter } from './routes/tools';
-import * as workbenchSchema from './db/schema';
+import { schema } from './db';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
   provisionUserOnSignup,
@@ -60,7 +60,7 @@ const sql = postgres({
   max: 10,
   ...(dbConfig.ssl !== undefined && { ssl: dbConfig.ssl }),
 });
-const db = drizzle(sql, { schema: { ...intxSchema, ...workbenchSchema } });
+const db = drizzle(sql, { schema });
 
 log.info('Database connection established');
 
@@ -531,7 +531,10 @@ app.route('/api/v1', v1);
 // ─── Internal routes (sidecar token auth) ──────────────────────────
 
 app.route('/api/internal', createInternalApprovalsRouter(db, config.sidecarToken));
-app.route('/api/internal', createInternalToolsRouter(db, config.sidecarToken, config.credentialKeys));
+app.route(
+  '/api/internal',
+  createInternalToolsRouter(db, config.sidecarToken, config.credentialKeys)
+);
 
 // The web SPA is deployed as its own static Railway service (apps/web),
 // not served from here. The hub is API-only.
