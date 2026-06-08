@@ -71,48 +71,70 @@ describe('composeChatMessages', () => {
     expect(messages[messages.length - 1]?.content).toBe('Real answer');
   });
 
-  it('sorts the final list by timestamp regardless of event order', () => {
-    // Events supplied out of chronological order; expect them re-sorted.
-    const { messages } = composeChatMessages({
-      events: [
-        assistantMail('a1', 'second', '2024-01-01T00:02:00.000Z'),
-        userMail('u1', 'first', '2024-01-01T00:01:00.000Z'),
-      ],
-      streaming: '',
-    });
-    expect(messages.map((m) => m.content)).toEqual(['first', 'second']);
-  });
-
-  it('deduplicates an assistant mail that echoes a committed turn', () => {
+  it('keeps the server-timestamped mail and drops the echoing text-only turn', () => {
+    // A text reply exists as both a client-clock turn and a server-clock mail.
+    // The mail must win so ordering stays anchored to the server clock.
     const turn: InstanceEvent = {
       kind: 'turn',
       turnId: 't1',
       content: 'Same content',
-      timestamp: '2024-01-01T00:00:30.000Z',
+      // Client clock ahead — later than the mail's server timestamp.
+      timestamp: '2024-01-01T00:09:00.000Z',
     };
     const { messages } = composeChatMessages({
-      events: [userMail('u1', 'hi'), turn, assistantMail('a1', 'Same content')],
+      events: [
+        userMail('u1', 'hi', '2024-01-01T00:00:00.000Z'),
+        turn,
+        assistantMail('a1', 'Same content', '2024-01-01T00:00:30.000Z'),
+      ],
       streaming: '',
     });
     const agentMessages = messages.filter(
       (m) => m.role === 'agent' && m.content === 'Same content'
     );
     expect(agentMessages).toHaveLength(1);
+    // The surviving message is the mail (server timestamp), not the turn.
+    expect(agentMessages[0]?.id).toBe('a1');
   });
 
-  it('renders tool-call turns', () => {
+  it('orders the last sent message below the prior response despite a skewed turn clock', () => {
+    // Reproduces the live bug: the prior reply's turn carries a client clock that
+    // runs ahead of the next user mail's server timestamp. Because the text turn
+    // is dropped in favour of the server-timestamped mail, the new user message
+    // stays below the response after sorting.
+    const turn: InstanceEvent = {
+      kind: 'turn',
+      turnId: 't1',
+      content: 'first answer',
+      timestamp: '2024-01-01T00:09:00.000Z', // skewed-ahead client clock
+    };
+    const { messages } = composeChatMessages({
+      events: [
+        userMail('u1', 'first', '2024-01-01T00:00:00.000Z'),
+        turn,
+        assistantMail('a1', 'first answer', '2024-01-01T00:00:30.000Z'),
+        userMail('u2', 'second', '2024-01-01T00:01:00.000Z'),
+      ],
+      streaming: '',
+    });
+    expect(messages.map((m) => m.content)).toEqual(['first', 'first answer', 'second']);
+  });
+
+  it('keeps a tool-call turn and drops the assistant mail that echoes it', () => {
     const toolTurn: InstanceEvent = {
       kind: 'turn',
       turnId: 't1',
-      content: '',
+      content: 'Done searching',
       timestamp: '2024-01-01T00:00:30.000Z',
       toolCalls: [{ name: 'exa_search', arguments: { query: 'x' }, result: 'r', isError: false }],
     };
     const { messages } = composeChatMessages({
-      events: [userMail('u1', 'search'), toolTurn],
+      events: [userMail('u1', 'search'), toolTurn, assistantMail('a1', 'Done searching')],
       streaming: '',
     });
-    const turnMsg = messages.find((m) => m.id === 't1');
-    expect(turnMsg?.toolCalls?.[0]?.name).toBe('exa_search');
+    const agentMessages = messages.filter((m) => m.role === 'agent');
+    expect(agentMessages).toHaveLength(1);
+    expect(agentMessages[0]?.id).toBe('t1');
+    expect(agentMessages[0]?.toolCalls?.[0]?.name).toBe('exa_search');
   });
 });
