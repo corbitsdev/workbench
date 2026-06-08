@@ -70,6 +70,17 @@ const mockSidecarRouter: SidecarRouter = {
   sendSourcesUpdate: mock(() => Promise.resolve()),
 } as unknown as SidecarRouter;
 
+const mockEventCollectors = {
+  create: mock(() => {}),
+  dispatch: mock(() => {}),
+  abandon: mock(() => {}),
+  has: mock(() => false),
+  getStatus: mock(() => undefined),
+  getAccumulatedText: mock(() => undefined),
+  getCurrentTurnId: mock(() => undefined),
+  getLastTurnId: mock(() => undefined),
+} as unknown as import('@intx/hub-sessions').EventCollectorRegistry;
+
 function buildApp(
   db: ReturnType<typeof makeMockDb>,
   sessionService: SessionService = mockSessionService,
@@ -86,7 +97,8 @@ function buildApp(
       db as unknown as DB['db'],
       sessionService,
       mockGrantStore,
-      mockSidecarRouter
+      mockSidecarRouter,
+      mockEventCollectors
     )
   );
   return parent;
@@ -608,7 +620,8 @@ describe('PATCH /tenants/:tenantId/credentials/:credentialId', () => {
         db as unknown as DB['db'],
         mockSessionService,
         mockGrantStore,
-        capturingSidecarRouter
+        capturingSidecarRouter,
+        mockEventCollectors
       )
     );
 
