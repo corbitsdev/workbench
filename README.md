@@ -1,5 +1,37 @@
 # GTM Workbench
 
+## Testing & coverage
+
+Run the suite across every workspace:
+
+```bash
+bun run test            # all @workbench/* workspaces
+bun run test:coverage   # same, but each workspace emits coverage/lcov.info
+bun run coverage:report # merge the lcov reports into one monorepo number
+bun run coverage        # test:coverage + coverage:report in one shot
+```
+
+**The target is 98.5% line coverage.** `coverage:report` merges every
+workspace's `coverage/lcov.info` and exits non-zero until the aggregate clears
+the target (set via `COVERAGE_THRESHOLD`, default 98.5). Track the ramp in the
+"Test coverage to 98.5%" Linear project.
+
+Notes on how the number is computed (`scripts/coverage-merge.ts`):
+
+- **Line coverage only.** Bun instruments lines and functions but emits no
+  per-function records in lcov, so functions cannot be unioned across runs.
+  Line coverage is the reported metric. (Branch coverage is not available in
+  Bun at all.)
+- **Union by file.** A workspace's lcov includes every file it imports —
+  `interchange/` and other `@workbench/*` packages included. The merge resolves
+  each path, drops `interchange/`, `node_modules/`, and test files, and unions
+  line hits per file so each instrumented line counts once and is "covered" if
+  any test run hit it.
+- **Untested files are invisible until a test imports them.** Bun only
+  instruments files loaded during a run, so a source file no test touches is
+  absent from the denominator rather than counted as 0%. As the ramp tickets
+  add tests, those files enter the denominator and the aggregate moves.
+
 ## Railway Deployment
 
 The workbench runs as **three standalone Railway services** from the same repo — `hub`, `web`, and `sidecar`. Each has its own `Dockerfile` and `railway.toml` co-located in its app directory. Set up each service once in the Railway dashboard; every subsequent push to `staging` (or `main`) deploys the affected services automatically (each service's `watchPatterns` decides which ones rebuild).
