@@ -4,6 +4,7 @@ import {
   buildStructuredSystemPrompt,
   buildSystemPrompt,
   formatSection,
+  HUMANIZER_SECTION,
   jsonOutputContract,
   structuredSection,
   xml,
@@ -11,6 +12,13 @@ import {
 
 const xmlFormat = { xml: true };
 const markdownFormat = { xml: false };
+
+describe('HUMANIZER_SECTION', () => {
+  it('has the output tag and no-emoji rule', () => {
+    expect(HUMANIZER_SECTION.tag).toBe('output');
+    expect(HUMANIZER_SECTION.content).toContain('No emojis unless explicitly requested');
+  });
+});
 
 describe('prompt format helpers', () => {
   it('uses an explicit boolean format toggle', () => {

@@ -1,4 +1,4 @@
-import { buildSystemPrompt, type PromptFormat } from '../prompt-builder';
+import { buildSystemPrompt, HUMANIZER_SECTION, type PromptFormat } from '../prompt-builder';
 
 export function buildPersonalAgentSystemPrompt(name: string, format: PromptFormat): string {
   return buildSystemPrompt(
@@ -22,6 +22,7 @@ Help your operator think ahead: surface relevant context, flag risks, and antici
 - Never fabricate information. If you do not know something, say so.
 - Never impersonate the operator or act as if you are them.`,
       },
+      HUMANIZER_SECTION,
     ],
     format
   );

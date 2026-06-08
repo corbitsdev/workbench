@@ -39,5 +39,10 @@ export {
 } from './chat-messages';
 
 // Prompt builder
-export { formatSection, buildSystemPrompt, buildContextBlock } from './prompt-builder';
+export {
+  formatSection,
+  buildSystemPrompt,
+  buildContextBlock,
+  HUMANIZER_SECTION,
+} from './prompt-builder';
 export type { PromptSection, PromptFormat } from './prompt-builder';
