@@ -39,11 +39,9 @@ export function convertInstanceEvents(
   events: InstanceEvent[],
   toolNames?: ReadonlyMap<string, string>
 ): ChatMessage[] {
-  // Do not re-sort. The session maintains correct insertion order:
-  // hydration sorts by server timestamps, then live SSE events are appended
-  // in arrival order. Re-sorting corrupts order when turn events carry
-  // client-side timestamps that land after a subsequent user mail's server
-  // timestamp.
+  // Pure mapping — chronological ordering is applied once, on the final list,
+  // by composeChatMessages (which sorts by timestamp). Keeping this a 1:1 map
+  // means callers that bypass composeChatMessages get events in source order.
   return events.map((event): ChatMessage => {
     if (event.kind === 'mail') {
       return {

@@ -2,50 +2,31 @@ import type { InstanceEvent } from '@intx/hub-client';
 import type { ChatMessage } from '@workbench/chat';
 import { convertInstanceEvents } from './adapter';
 
-/**
- * Cross-render state for the disappearing-response mitigation. The host keeps
- * this in a ref and passes it back on each compose call.
- *
- * `text` is the last streamed assistant text; `afterUserId` is the id of the
- * user message it was a reply to, so a stale reply is dropped once a new user
- * message arrives.
- */
-export interface RetainedAgentText {
-  text: string;
-  afterUserId: string | null;
-}
-
-export const EMPTY_RETAINED: RetainedAgentText = { text: '', afterUserId: null };
-
 export interface ComposeChatInput {
   events: InstanceEvent[];
   /** Live streaming buffer from the session (empty when not streaming). */
   streaming: string;
   /** callId -> tool-name map captured from the live stream. */
   toolNames?: ReadonlyMap<string, string>;
-  /** Retained streamed text from the previous compose call. */
-  retained?: RetainedAgentText;
 }
 
 export interface ComposeChatResult {
   messages: ChatMessage[];
-  /** Retained text to store back in the host ref for the next render. */
-  retained: RetainedAgentText;
 }
 
 /**
  * Build the chat message list from session events plus the live streaming
  * buffer.
  *
- * The hub can fail to persist a turn's text part (CL-1398), so `turn.committed`
- * may carry empty text and the durable assistant reply only lands later as a
- * mail event. Without mitigation the streamed text the user watched appear
- * blinks out in the gap. We keep showing the last streamed text until a durable
- * agent reply (non-empty turn/mail or a tool call) lands for that same user
- * message.
+ * Mirrors the deal-scout `eventsToMessages` approach: dedup mail that echoes a
+ * turn, map to chat messages, fold in the live streaming buffer, then sort the
+ * final list by timestamp so chronology is stable regardless of the order the
+ * session happened to accumulate events in (hydrated events are server-sorted,
+ * but live SSE events are appended raw and turn events carry client-side
+ * timestamps).
  */
 export function composeChatMessages(input: ComposeChatInput): ComposeChatResult {
-  const { events, streaming, toolNames, retained = EMPTY_RETAINED } = input;
+  const { events, streaming, toolNames } = input;
 
   // Drop assistant mail whose content already appears in a committed turn, so
   // the same reply is not rendered twice.
@@ -56,49 +37,28 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
 
   const messages = convertInstanceEvents(deduped, toolNames);
 
-  let lastUserIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i]?.role === 'user') {
-      lastUserIdx = i;
-      break;
+  // The hub can fail to persist a turn's text part (CL-1398), so turn.committed
+  // may arrive with empty text while the streamed text the user watched is still
+  // in the live buffer. Surface it: overwrite the trailing assistant bubble's
+  // content when one exists, otherwise synthesize a streaming bubble.
+  if (streaming.trim() !== '') {
+    const last = messages[messages.length - 1];
+    if (last?.role === 'agent') {
+      last.content = streaming;
+      last.status = 'sending';
+    } else {
+      messages.push({
+        id: 'streaming-synthetic',
+        role: 'agent',
+        content: streaming,
+        createdAt: new Date().toISOString(),
+        status: 'sending',
+      });
     }
   }
-  const lastUserId = lastUserIdx >= 0 ? (messages[lastUserIdx]?.id ?? null) : null;
 
-  // A durable reply exists when, after the last user message, an agent message
-  // carries content or tool calls.
-  const hasAgentReply = messages
-    .slice(lastUserIdx + 1)
-    .some((m) => m.role === 'agent' && (m.content.trim() !== '' || (m.toolCalls?.length ?? 0) > 0));
+  // Ensure stable chronology regardless of how the session ordered events.
+  messages.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
 
-  const live = streaming.trim() !== '';
-
-  let nextRetained: RetainedAgentText;
-  if (hasAgentReply) {
-    // The durable reply has landed. Never show streamed/retained text now — it
-    // only duplicates the durable message. Interchange does not reliably clear
-    // its streaming buffer across multi-reply sessions (it appends a later
-    // reply's deltas onto leftover text), so `streaming` may still be non-empty
-    // and stale here; checking `live` first would render that garbage.
-    nextRetained = EMPTY_RETAINED;
-  } else if (live) {
-    nextRetained = { text: streaming, afterUserId: lastUserId };
-  } else if (retained.afterUserId !== lastUserId) {
-    // A newer user message arrived and the retained text is now stale.
-    nextRetained = EMPTY_RETAINED;
-  } else {
-    nextRetained = retained;
-  }
-
-  if (nextRetained.text.trim() !== '') {
-    messages.push({
-      id: 'streaming',
-      role: 'agent',
-      content: nextRetained.text,
-      createdAt: new Date().toISOString(),
-      ...(live ? { status: 'sending' as const } : {}),
-    });
-  }
-
-  return { messages, retained: nextRetained };
+  return { messages };
 }
