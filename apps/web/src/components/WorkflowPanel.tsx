@@ -85,7 +85,8 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const artifacts: Artifact[] = (generateStep?.artifacts as Artifact[] | undefined) ?? [];
   const analyzeCompleted = Boolean(analyzeStep?.completed);
   const generateCompleted = Boolean(generateStep?.completed);
-  const isBusy = runStep.isPending;
+  const isBusy =
+    runStep.isPending || workflow.status === 'analyzing' || workflow.status === 'generating';
 
   const title = workflow.companyName ?? painPoints[0]?.context ?? 'Workflow';
 

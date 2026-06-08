@@ -310,6 +310,7 @@ export type ProvisionAgentInput = {
   name: string;
   systemPrompt: string;
   credentialIds?: string[];
+  tools?: string[];
 };
 
 export type ProvisionAgentResponse = {

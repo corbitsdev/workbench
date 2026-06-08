@@ -18,8 +18,16 @@ mock.module('framer-motion', () => ({
 
 // CredentialField makes its own network calls; stub it down to a marker.
 mock.module('../CredentialField', () => ({
-  CredentialField: ({ label }: { label: string }) =>
-    React.createElement('div', { 'data-testid': `credential-field-${label}` }, label),
+  CredentialField: ({ label, onChange }: { label: string; onChange: (id: string) => void }) =>
+    React.createElement(
+      'button',
+      {
+        type: 'button',
+        'data-testid': `credential-field-${label}`,
+        onClick: () => onChange('cred-1'),
+      },
+      label
+    ),
 }));
 
 mock.module('../../lib/hub-api', () => ({
@@ -35,6 +43,7 @@ mock.module('../../lib/hub-api', () => ({
 }));
 
 import { NewAgentModal } from './NewAgentModal';
+import { provisionAgent } from '../../lib/hub-api';
 
 function renderModal() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -63,7 +72,7 @@ describe('NewAgentModal', () => {
 
     expect(view.queryByText('Granola List Notes')).toBeNull();
 
-    await user.click(view.getByRole('button', { name: /Granola/ }));
+    await user.click(view.getAllByRole('button', { name: /Granola/ })[0]!);
 
     expect(view.getByText('Granola List Notes')).toBeDefined();
     expect(view.getByText('Granola Get Note')).toBeDefined();
@@ -75,7 +84,7 @@ describe('NewAgentModal', () => {
 
     await waitFor(() => expect(view.getByRole('button', { name: /Granola/ })).toBeDefined());
     await user.click(view.getByText('Oat — Call Intelligence'));
-    await user.click(view.getByRole('button', { name: /Granola/ }));
+    await user.click(view.getAllByRole('button', { name: /Granola/ })[0]!);
 
     const listNotes = view
       .getByText('Granola List Notes')
@@ -87,6 +96,33 @@ describe('NewAgentModal', () => {
 
     await user.click(listNotes);
     expect(listNotes.checked).toBe(true);
+  });
+
+  it('sends selected tools with the initial create request', async () => {
+    const provisionAgentMock = provisionAgent as ReturnType<typeof mock>;
+    provisionAgentMock.mockResolvedValue({
+      instanceId: 'ins-1',
+      agentId: 'agt-1',
+      agentName: 'Custom',
+      tenantId: 't-1',
+      launched: true,
+    });
+
+    const user = userEvent.setup();
+    const view = renderModal();
+
+    await waitFor(() => expect(view.getByRole('button', { name: /Exa/ })).toBeDefined());
+    await user.type(view.getByLabelText('Name'), 'Custom');
+    await user.type(view.getByLabelText('System prompt'), 'Do useful work');
+    await user.click(view.getByTestId('credential-field-Inference Provider'));
+    await user.click(view.getByRole('button', { name: /Exa/ }));
+    await user.click(view.getByText('Exa Search'));
+    await user.click(view.getByRole('button', { name: 'Deploy agent' }));
+
+    await waitFor(() => expect(provisionAgentMock).toHaveBeenCalled());
+    expect(provisionAgentMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ tools: ['exa_search'] })
+    );
   });
 
   it('leaves optional tools toggleable inside expanded providers', async () => {

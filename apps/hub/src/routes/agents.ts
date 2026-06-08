@@ -66,6 +66,7 @@ const ProvisionAgentBody = type({
   name: 'string',
   systemPrompt: 'string',
   'credentialIds?': 'string[]',
+  'tools?': 'string[]',
 });
 
 type ProvisionAgentBodyType = typeof ProvisionAgentBody.infer;
@@ -245,6 +246,7 @@ export function createAgentProvisioningRouter(
         creatorPrincipalId: callerPrincipal.id,
         now,
         ...(body.credentialIds !== undefined ? { credentialIds: body.credentialIds } : {}),
+        ...(body.tools !== undefined ? { toolNames: body.tools } : {}),
       });
     });
 
@@ -681,14 +683,12 @@ export function createAgentProvisioningRouter(
     if (!agentRow) return c.json({ error: 'Agent not found' }, 404);
 
     const capabilities = (agentRow.capabilities as Record<string, unknown> | null) ?? {};
+    const current = getToolNamesFromCapabilities(capabilities);
     let toolNames: string[];
 
     if (Array.isArray(raw.tools)) {
       toolNames = raw.tools.filter((t: unknown): t is string => typeof t === 'string');
     } else {
-      const current = Array.isArray(capabilities['tools'])
-        ? capabilities['tools'].filter((t: unknown): t is string => typeof t === 'string')
-        : [];
       const toAdd = Array.isArray(raw.add)
         ? raw.add.filter((t: unknown): t is string => typeof t === 'string')
         : [];
@@ -699,10 +699,13 @@ export function createAgentProvisioningRouter(
       toolNames = [...new Set([...current, ...toAdd])].filter((t) => !removeSet.has(t));
     }
 
-    const updatedCapabilities: Record<string, unknown> = {
-      ...capabilities,
-      tools: toolNames,
-    };
+    toolNames = [...new Set(toolNames)];
+
+    if (sameStringSet(current, toolNames)) {
+      return c.json({ tools: current }, 200);
+    }
+
+    const updatedCapabilities = withToolCapabilities(capabilities, toolNames);
 
     await db
       .update(agent)
@@ -717,7 +720,7 @@ export function createAgentProvisioningRouter(
       sessionService,
       grantStore,
       eventCollectors,
-      agentRow,
+      { ...agentRow, capabilities: updatedCapabilities },
       sidecarRouter.events
     );
 
@@ -973,6 +976,22 @@ async function relaunchRunningAgentInstancesForToolUpdate(
   }
 }
 
+function withToolCapabilities(
+  capabilities: Record<string, unknown>,
+  toolNames: string[]
+): Record<string, unknown> {
+  return {
+    ...capabilities,
+    tools: [...new Set(toolNames)],
+  };
+}
+
+function sameStringSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const bSet = new Set(b);
+  return a.every((value) => bSet.has(value));
+}
+
 async function ensureProvider(
   db: DB['db'],
   tenantId: string,
@@ -1026,6 +1045,7 @@ async function ensureAgentInstance(
     creatorPrincipalId: string;
     now: Date;
     credentialIds?: string[];
+    toolNames?: string[];
   }
 ): Promise<EnsureAgentResult> {
   const {
@@ -1036,6 +1056,7 @@ async function ensureAgentInstance(
     creatorPrincipalId,
     now,
     credentialIds,
+    toolNames,
   } = opts;
 
   const agentId = generateId('agent');
@@ -1093,6 +1114,7 @@ async function ensureAgentInstance(
     systemPrompt,
     credentialRequirements: credReqs,
     ...(modelConfig !== undefined ? { modelConfig } : {}),
+    ...(toolNames !== undefined ? { capabilities: withToolCapabilities({}, toolNames) } : {}),
     status: 'deployed',
     currentVersion: '1',
     createdAt: now,
