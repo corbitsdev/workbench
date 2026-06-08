@@ -26,7 +26,7 @@ mock.module('@intx/harness', () => ({
 
 mock.module('@intx/tools-posix', () => ({
   createPosixTools: mock(() => ({
-    definitions: [],
+    definitions: [{ name: 'read_file' }, { name: 'write_file' }],
     dispose: mock(async () => {}),
     run: mock(async () => ({ callId: 'x', content: '' })),
   })),
@@ -47,6 +47,7 @@ mock.module('@intx/types/runtime', () => ({
 import { createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
 import type { InferenceSource } from '@intx/types/runtime';
 import { encryptSecret, parseEncryptionKeys } from '@workbench/hub-crypto';
+import { mergeToolRunners } from '@intx/harness';
 
 const TEST_KEYS = parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`);
 const TEST_TENANT_ID = 'tenant-1';
@@ -174,6 +175,52 @@ describe('createDefaultHarnessBuilder', () => {
       expect(createHarnessMock).toHaveBeenCalledTimes(1);
       const callArgs = createHarnessMock.mock.calls[0] as unknown as [{ source: InferenceSource }];
       expect(callArgs[0].source.apiKey).toBe('sk-plaintext-key');
+    });
+
+    it('excludes POSIX tools from the hub tool runner to avoid mergeToolRunners collisions', async () => {
+      (mergeToolRunners as unknown as ReturnType<typeof mock>).mockClear?.();
+
+      const builder = createDefaultHarnessBuilder({
+        hubHttpUrl: 'http://localhost:4000',
+        sidecarToken: 'test-token',
+        credentialKeys: TEST_KEYS,
+      });
+
+      await builder.build({
+        agentAddress: 'agent@tenant.localhost',
+        agentConfig: {
+          agentAddress: 'agent@tenant.localhost',
+          agentId: 'agent-1',
+          sessionId: 'session-1',
+          sources: [validSource],
+          defaultSource: 'src-1',
+          grants: [],
+          tools: [
+            { name: 'read_file' },
+            { name: 'write_file' },
+            { name: 'artifact_link_file' },
+          ] as any,
+          principalId: 'user-1',
+          tenantId: 'tenant-1',
+          systemPrompt: 'You are a helpful assistant.',
+        },
+        source: validSource,
+        storeDir: '/tmp/test-store',
+        agentTransport: {} as any,
+        crypto: {
+          signSSH: mock(() => 'sig'),
+        } as any,
+        onEvent: mock(() => {}),
+        onConnectorStateChanged: mock(() => {}),
+      });
+
+      expect(mergeToolRunners).toHaveBeenCalledTimes(1);
+      const runners = (mergeToolRunners as any).mock.calls[0][0] as Array<{ definitions: Array<{ name: string }> }>;
+      const hubRunner = runners[2];
+      const hubNames = hubRunner.definitions.map((d) => d.name);
+      expect(hubNames).not.toContain('read_file');
+      expect(hubNames).not.toContain('write_file');
+      expect(hubNames).toContain('artifact_link_file');
     });
   });
 });

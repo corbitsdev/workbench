@@ -127,6 +127,11 @@ export function createDefaultHarnessBuilder({
         }),
       ]);
 
+      const localToolNames = new Set([
+        ...posixTools.definitions.map((d) => d.name),
+        ...askPrincipalRunner.definitions.map((d) => d.name),
+      ]);
+
       const hubToolRunner = createHubToolRunner({
         hubHttpUrl,
         sidecarToken,
@@ -134,7 +139,7 @@ export function createDefaultHarnessBuilder({
         agentId: agentConfig.agentId,
         principalId,
         sessionId: agentConfig.sessionId,
-        toolDefinitions: agentConfig.tools,
+        toolDefinitions: agentConfig.tools.filter((t) => !localToolNames.has(t.name)),
       });
 
       const runners: (ToolRunner & { definitions: ToolDefinition[] })[] = [
