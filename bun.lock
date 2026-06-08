@@ -535,6 +535,27 @@
         "react": "*",
       },
     },
+    "packages/tool-agent": {
+      "name": "@workbench/agent-rename-me",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/inference": "workspace:*",
+        "@intx/types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tool-template": {
+      "name": "@workbench/tools-rename-me",
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-exa": {
       "name": "@workbench/tools-exa",
       "devDependencies": {
@@ -1171,6 +1192,8 @@
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@6.0.2", "", { "dependencies": { "@rolldown/pluginutils": "^1.0.0" }, "peerDependencies": { "@rolldown/plugin-babel": "^0.1.7 || ^0.2.0", "babel-plugin-react-compiler": "^1.0.0", "vite": "^8.0.0" }, "optionalPeers": ["@rolldown/plugin-babel", "babel-plugin-react-compiler"] }, "sha512-DlSMqo4WhThw4vB8Mpn0Woe9J+Jfq1geJ61AKW0QEgLzGMNwtIMdxbDUzLxcun8W7NbJO0e2Jg/Nxm3cCSVzzg=="],
 
+    "@workbench/agent-rename-me": ["@workbench/agent-rename-me@workspace:packages/tool-agent"],
+
     "@workbench/agent-scheduler": ["@workbench/agent-scheduler@workspace:packages/agent-scheduler"],
 
     "@workbench/agents": ["@workbench/agents@workspace:packages/agents"],
@@ -1202,6 +1225,8 @@
     "@workbench/tools-exa": ["@workbench/tools-exa@workspace:packages/tools-exa"],
 
     "@workbench/tools-granola": ["@workbench/tools-granola@workspace:packages/tools-granola"],
+
+    "@workbench/tools-rename-me": ["@workbench/tools-rename-me@workspace:packages/tool-template"],
 
     "@workbench/transcript": ["@workbench/transcript@workspace:packages/transcript"],
 

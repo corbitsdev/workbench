@@ -265,8 +265,6 @@ export default function CredentialSettingsPage() {
   }
 
   function linkableAgentsForCredential(cred: EnrichedCredential): AgentInstance[] {
-    if (!isInferenceProvider(cred.providerPlugin)) return [];
-
     return allInstances.filter(
       (inst) =>
         inst.tenantId === cred.tenantId &&

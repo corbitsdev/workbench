@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 const sendMock = mock(async () => ({ reply: 'Refined output text' }));
 const closeMock = mock(async () => {});
-const createAgentMock = mock(async () => ({ send: sendMock, close: closeMock }));
+const createAgentMock = mock(async (_opts: unknown) => ({
+  send: sendMock,
+  close: closeMock,
+})) as any;
 
 mock.module('@intx/agent', () => ({
   createAgent: createAgentMock,

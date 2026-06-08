@@ -599,17 +599,11 @@ export function createAgentProvisioningRouter(
         where: eq(providerTable.id, cred.providerId),
       });
       if (!prov) return c.json({ error: 'Credential provider not found' }, 404);
-      if (!isInferenceProviderName(prov.plugin)) {
-        return c.json({ error: 'Credential must use an inference provider' }, 400);
-      }
       const meta = prov.metadata as { model?: string; baseURL?: string } | null;
-      if (!meta?.model) {
-        return c.json({ error: 'Credential is missing an inference model' }, 400);
-      }
 
       reqs.push({ source: 'tenant', name: cred.name, providerName: prov.name });
 
-      if (!modelConfig?.defaultModel) {
+      if (isInferenceProviderName(prov.plugin) && meta?.model && !modelConfig?.defaultModel) {
         modelConfig = { defaultModel: meta.model };
       }
     }

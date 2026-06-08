@@ -2,10 +2,11 @@ import { Hono } from 'hono';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import { resolveCredentialRequirement, schema as intxSchema } from '@intx/db';
-import type { DB } from '@intx/db';
 import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry } from '@workbench/workflow-core';
 import { collateralGenerationWorkflow } from '@workbench/gtm-workflows';
+import type { HubDb } from '../db';
+import type { DB } from '@intx/db';
 import { workflowRun, transcript, painPoint, artifact, artifactVersion } from '../db/schema';
 import {
   isGranolaConfigured,
@@ -65,12 +66,24 @@ const WORKFLOW_LLM_FALLBACK = {
 };
 
 async function resolveWorkflowInferenceSource(
-  db: DB['db'],
+  db: HubDb,
   tenantId: string
 ): Promise<InferenceSource | null> {
   const resolved =
-    (await resolveCredentialRequirement(db, tenantId, WORKFLOW_LLM_REQUIREMENT, null, null)) ??
-    (await resolveCredentialRequirement(db, tenantId, WORKFLOW_LLM_FALLBACK, null, null));
+    (await resolveCredentialRequirement(
+      db as unknown as DB['db'],
+      tenantId,
+      WORKFLOW_LLM_REQUIREMENT,
+      null,
+      null
+    )) ??
+    (await resolveCredentialRequirement(
+      db as unknown as DB['db'],
+      tenantId,
+      WORKFLOW_LLM_FALLBACK,
+      null,
+      null
+    ));
   if (!resolved) return null;
 
   const providerRow = await db.query.provider.findFirst({
@@ -93,7 +106,7 @@ async function resolveWorkflowInferenceSource(
   };
 }
 
-async function getUserContext(db: DB['db'], userId: string): Promise<UserContext | null> {
+async function getUserContext(db: HubDb, userId: string): Promise<UserContext | null> {
   const personalTenant = await db.query.tenant.findFirst({
     where: eq(intxSchema.tenant.slug, `user-${userId}`),
   });
@@ -125,7 +138,7 @@ async function getUserContext(db: DB['db'], userId: string): Promise<UserContext
 }
 
 async function getRequestedUserContext(
-  db: DB['db'],
+  db: HubDb,
   userId: string,
   requestedTenantId?: string | null
 ): Promise<{ context: UserContext | null; forbidden: boolean }> {
@@ -181,7 +194,7 @@ function validateWorkflowInput(
   return { valid: true };
 }
 
-export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: string } }> {
+export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
   // ─── List available workflow types ───────────────────────────────
@@ -700,7 +713,7 @@ export function createWorkflowRouter(db: DB['db']): Hono<{ Variables: { userId: 
           eq(intxSchema.agentInstance.tenantId, userContext.tenantId)
         ),
       });
-      const foundIds = new Set(instances.map((i) => i.id));
+      const foundIds = new Set(instances.map((i: { id: string }) => i.id));
       const unauthorized = agentIds.filter((aid) => !foundIds.has(aid));
       if (unauthorized.length > 0) {
         log.warn('agentId not found in tenant', { workflowId: id, unauthorized });
@@ -751,7 +764,7 @@ function deriveCurrentStep(status: string): StepName {
 }
 
 async function runAnalyze(
-  db: DB['db'],
+  db: HubDb,
   id: string,
   userContext: UserContext,
   source: InferenceSource,
@@ -807,7 +820,7 @@ async function runAnalyze(
 }
 
 async function runGenerate(
-  db: DB['db'],
+  db: HubDb,
   id: string,
   painPointIds: string[],
   principalId: string,
@@ -861,14 +874,26 @@ async function runGenerate(
     )
   );
 
-  const generated = results.flatMap((r) => {
-    if (r.status === 'fulfilled') return [r.value];
-    log.error('Artifact generation failed for one item', {
-      workflowId: id,
-      error: String(r.reason),
-    });
-    return [];
-  });
+  const generated = results.flatMap(
+    (
+      r: PromiseSettledResult<{
+        sessionId: string;
+        painPointId: any;
+        kind: 'email' | 'linkedin' | 'one-pager' | 'battlecard';
+        title: string;
+        content: string;
+        status: string;
+        version: number;
+      }>
+    ) => {
+      if (r.status === 'fulfilled') return [r.value];
+      log.error('Artifact generation failed for one item', {
+        workflowId: id,
+        error: String(r.reason),
+      });
+      return [];
+    }
+  );
 
   // Insert artifacts and their initial version rows atomically, so an artifact
   // can never exist without a matching v1 history row.
@@ -904,7 +929,7 @@ async function runGenerate(
 }
 
 async function runImprove(
-  db: DB['db'],
+  db: HubDb,
   id: string,
   artifactId: string,
   feedback: string,
@@ -929,8 +954,18 @@ async function runImprove(
 
   const nextVersion = item.version + 1;
   const [improvedTitle, improvedContent] = await Promise.all([
-    refineFeedbackWithLLM(item.title, feedback, item.kind, source),
-    refineFeedbackWithLLM(item.content, feedback, item.kind, source),
+    refineFeedbackWithLLM(
+      item.title,
+      feedback,
+      item.kind as 'email' | 'linkedin' | 'one-pager' | 'battlecard',
+      source
+    ),
+    refineFeedbackWithLLM(
+      item.content,
+      feedback,
+      item.kind as 'email' | 'linkedin' | 'one-pager' | 'battlecard',
+      source
+    ),
   ]);
 
   // Update the artifact and append its new version row atomically, so the live
@@ -962,7 +997,7 @@ async function runImprove(
   });
 }
 
-async function runExport(db: DB['db'], id: string, userContext: UserContext, target: string) {
+async function runExport(db: HubDb, id: string, userContext: UserContext, target: string) {
   log.info('Starting export step', { workflowId: id, target });
 
   const wf = await db.query.workflowRun.findFirst({

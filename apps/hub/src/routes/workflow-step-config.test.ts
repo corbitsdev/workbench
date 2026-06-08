@@ -15,6 +15,7 @@ mock.module('../lib/feedback', () => ({
 }));
 
 import { createWorkflowRouter } from './workflow';
+import type { HubDb } from '../db';
 
 // ─── Shared mock DB factory ─────────────────────────────────────────
 
@@ -98,7 +99,7 @@ function makeRequest(
 
 function wrapRouter(db: ReturnType<typeof createMockDb>) {
   const { Hono } = require('hono') as typeof import('hono');
-  const inner = createWorkflowRouter(db);
+  const inner = createWorkflowRouter(db as unknown as HubDb);
   const app = new Hono<{ Variables: { userId: string } }>();
   app.use('*', async (c, next) => {
     c.set('userId', c.req.header('x-user-id') ?? 'user-1');

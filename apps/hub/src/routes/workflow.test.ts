@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { createWorkflowRouter } from './workflow';
 
 import * as intxDb from '@intx/db';
-import type { DB } from '@intx/db';
+import type { HubDb } from '../db';
 
 mock.module('@intx/db', () => ({
   ...intxDb,
@@ -161,7 +161,7 @@ describe('Workflow router', () => {
       c.set('userId', userId);
       await next();
     });
-    parent.route('/', createWorkflowRouter(db as unknown as DB['db']));
+    parent.route('/', createWorkflowRouter(db as unknown as HubDb));
     return parent;
   }
 
