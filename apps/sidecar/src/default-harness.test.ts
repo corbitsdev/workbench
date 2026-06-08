@@ -44,7 +44,7 @@ mock.module('@intx/types/runtime', () => ({
   createBlobReader: mock(() => ({})),
 }));
 
-import { createDefaultHarnessBuilder } from './default-harness';
+import { createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
 import type { InferenceSource } from '@intx/types/runtime';
 import { encryptSecret, parseEncryptionKeys } from '@workbench/hub-crypto';
 
@@ -58,6 +58,22 @@ const validSource: InferenceSource = {
   apiKey: 'test-key',
   model: 'gpt-4o',
 };
+
+describe('wsUrlToHttp', () => {
+  it('returns origin only, stripping the websocket path', () => {
+    expect(wsUrlToHttp('ws://staging-hub.railway.internal:8080/api/sidecars/ws')).toBe(
+      'http://staging-hub.railway.internal:8080'
+    );
+  });
+
+  it('converts wss to https and strips the path', () => {
+    expect(wsUrlToHttp('wss://hub.example.com/api/sidecars/ws')).toBe('https://hub.example.com');
+  });
+
+  it('handles a url with no path', () => {
+    expect(wsUrlToHttp('ws://localhost:4000')).toBe('http://localhost:4000');
+  });
+});
 
 describe('createDefaultHarnessBuilder', () => {
   describe('canBuildSource', () => {
