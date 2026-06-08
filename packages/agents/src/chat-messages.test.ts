@@ -68,6 +68,21 @@ describe('composeChatMessages', () => {
     expect(retained).toEqual(EMPTY_RETAINED);
   });
 
+  it('suppresses a stale streaming buffer once a durable reply has landed', () => {
+    // Interchange fails to clear its streaming buffer across multi-reply
+    // sessions (session.ts only clears when `streaming === text`), so deltas
+    // from a later reply append onto leftover text. Even with a non-empty
+    // streaming buffer, once a durable assistant reply exists for the last user
+    // message we must not render the buffer — it duplicates/concatenates.
+    const { messages, retained } = composeChatMessages({
+      events: [userMail('u1', 'hi'), assistantMail('a1', 'Real answer')],
+      streaming: 'greeting onegreeting two',
+    });
+    expect(messages.some((m) => m.id === 'streaming')).toBe(false);
+    expect(messages[messages.length - 1]?.content).toBe('Real answer');
+    expect(retained).toEqual(EMPTY_RETAINED);
+  });
+
   it('drops stale retained text when a new user message arrives', () => {
     const { messages, retained } = composeChatMessages({
       events: [userMail('u1', 'hi'), assistantMail('a1', 'first answer'), userMail('u2', 'again')],
