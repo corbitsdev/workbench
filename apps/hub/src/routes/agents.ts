@@ -1139,19 +1139,21 @@ async function persistInstanceToolGrants(
   opts: { tenantId: string; principalId: string; toolNames: string[]; now: Date }
 ): Promise<void> {
   const { tenantId, principalId, toolNames, now } = opts;
-  await db
-    .delete(grant)
-    .where(
-      and(
-        eq(grant.principalId, principalId),
-        eq(grant.origin, 'system'),
-        like(grant.resource, `${TOOL_GRANT_RESOURCE_PREFIX}%`)
-      )
-    );
   const rows = buildToolGrantRows(toolNames, { tenantId, principalId }, now);
-  if (rows.length > 0) {
-    await db.insert(grant).values(rows);
-  }
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(grant)
+      .where(
+        and(
+          eq(grant.principalId, principalId),
+          eq(grant.origin, 'system'),
+          like(grant.resource, `${TOOL_GRANT_RESOURCE_PREFIX}%`)
+        )
+      );
+    if (rows.length > 0) {
+      await tx.insert(grant).values(rows);
+    }
+  });
 }
 
 async function launchAgentSession(
@@ -1193,7 +1195,8 @@ async function launchAgentSession(
   const agentRow = await db.query.agent.findFirst({
     where: eq(agent.id, agentId),
   });
-  const toolNames = getToolNamesFromCapabilities(agentRow?.capabilities ?? null);
+  if (!agentRow) throw new Error(`Agent not found: ${agentId}`);
+  const toolNames = getToolNamesFromCapabilities(agentRow.capabilities ?? null);
   const tools = buildToolDefinitions(toolNames);
 
   // Persist the agent's tool grants on the instance principal before collecting.
@@ -1293,6 +1296,19 @@ async function launchAgentSession(
       .set({ status: 'ended', updatedAt: new Date() })
       .where(and(eq(agentSession.id, finalInstance.sessionId), eq(agentSession.status, 'active')));
   }
+
+  // Clean up any tool grants written before the launch loop — they're orphaned
+  // since no session launched, and would otherwise be returned by collectGrants
+  // on the next reconnect attempt with incorrect scope.
+  await db
+    .delete(grant)
+    .where(
+      and(
+        eq(grant.principalId, instancePrincipalId),
+        eq(grant.origin, 'system'),
+        like(grant.resource, `${TOOL_GRANT_RESOURCE_PREFIX}%`)
+      )
+    );
 
   throw lastError;
 }

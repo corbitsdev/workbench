@@ -24,13 +24,20 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
     init.body = JSON.stringify(body);
   }
 
-  logger.info('API request', { method, url, body });
+  logger.info('API request', { method, url });
 
   const res = await fetch(url, init);
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    logger.error('API request failed', { method, url, status: res.status, error: err.error });
-    throw new ApiError(err.error || `HTTP ${res.status}`, res.status);
+    const body: unknown = await res.json().catch(() => null);
+    const message =
+      body !== null &&
+      typeof body === 'object' &&
+      'error' in body &&
+      typeof (body as Record<string, unknown>).error === 'string'
+        ? (body as { error: string }).error
+        : `HTTP ${res.status}`;
+    logger.error('API request failed', { method, url, status: res.status, error: message });
+    throw new ApiError(message, res.status);
   }
 
   const data = (await res.json()) as T;

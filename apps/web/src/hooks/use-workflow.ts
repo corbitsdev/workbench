@@ -245,7 +245,15 @@ export function useWorkbenchAgents() {
     queryFn: async () => {
       const workbenches = await listWorkbenches();
       const agentLists = await Promise.all(
-        workbenches.map((w) => listAgentInstances(w.tenantId).catch((): AgentInstance[] => []))
+        workbenches.map((w) =>
+          listAgentInstances(w.tenantId).catch((err): AgentInstance[] => {
+            logger.warn('Failed to list agent instances for workbench', {
+              tenantId: w.tenantId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return [];
+          })
+        )
       );
       return agentLists.flat();
     },

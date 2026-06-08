@@ -1,3 +1,4 @@
+import { grant } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 
 /**
@@ -15,20 +16,7 @@ import { generateId } from '@intx/hub-common';
  * the DB, so in-memory tool grants are dropped on every sidecar reconnect (the
  * cause of CL-1398's "No matching grants for tool:..." failures).
  */
-export interface ToolGrantRow {
-  id: string;
-  tenantId: string;
-  principalId: string;
-  roleId: null;
-  resource: string;
-  action: 'invoke';
-  effect: 'allow';
-  conditions: null;
-  origin: 'system';
-  expiresAt: null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+export type ToolGrantRow = typeof grant.$inferInsert;
 
 /** The resource-string prefix every tool grant uses. */
 export const TOOL_GRANT_RESOURCE_PREFIX = 'tool:';
