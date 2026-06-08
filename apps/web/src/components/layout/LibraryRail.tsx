@@ -7,7 +7,7 @@ import {
   listEnrichedCredentials,
   assignCredentialToAgent,
   stopAgentInstance,
-  restartAgentInstance,
+  launchInstanceSession,
   listAvailableTools,
   updateAgentTools,
   createTenantCredential,
@@ -296,7 +296,9 @@ function AgentToolEditor({
   onCancel: () => void;
 }) {
   const [availableTools, setAvailableTools] = useState<string[]>([]);
-  const [existingCredsByProvider, setExistingCredsByProvider] = useState<Map<string, EnrichedCredential>>(new Map());
+  const [existingCredsByProvider, setExistingCredsByProvider] = useState<
+    Map<string, EnrichedCredential>
+  >(new Map());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -319,7 +321,11 @@ function AgentToolEditor({
         setSelected(new Set(currentTools));
         const byProvider = new Map<string, EnrichedCredential>();
         for (const c of credentials) {
-          if (!INFERENCE_PROVIDER_NAMES.includes(c.providerPlugin as (typeof INFERENCE_PROVIDER_NAMES)[number])) {
+          if (
+            !INFERENCE_PROVIDER_NAMES.includes(
+              c.providerPlugin as (typeof INFERENCE_PROVIDER_NAMES)[number]
+            )
+          ) {
             byProvider.set(c.providerPlugin, c);
           }
         }
@@ -431,7 +437,8 @@ function AgentToolEditor({
               {provider.fields.map((field) => (
                 <div key={field.key} className="mb-1.5">
                   <label className="mb-0.5 block text-[11px] text-text-3">
-                    {field.label}{field.required ? '' : ' (optional)'}
+                    {field.label}
+                    {field.required ? '' : ' (optional)'}
                   </label>
                   <input
                     type={field.type === 'password' ? 'password' : 'text'}
@@ -811,7 +818,7 @@ export function LibraryRail({
                   if (!item.instanceId) return;
                   setRestartingInstanceId(item.instanceId);
                   try {
-                    await restartAgentInstance(item.instanceId);
+                    await launchInstanceSession(item.instanceId);
                     onAgentDeleted?.();
                   } finally {
                     setRestartingInstanceId(null);
@@ -842,7 +849,7 @@ export function LibraryRail({
                           {item.name}
                         </div>
                         <div className="mt-px font-mono text-[11.5px] text-text-3">
-                          {isRestarting ? 'Agent · Restarting…' : item.sub}
+                          {isRestarting ? 'Agent · Creating…' : item.sub}
                         </div>
                       </div>
                       {item.type === 'agent' && item.agentId && item.tenantId && (
@@ -850,7 +857,7 @@ export function LibraryRail({
                           {item.agentStatus === 'stopped' ? (
                             <button
                               type="button"
-                              aria-label="Restart agent"
+                              aria-label="Create Agent"
                               disabled={restartingInstanceId === item.instanceId}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -914,11 +921,11 @@ export function LibraryRail({
                               </button>
                               <button
                                 type="button"
-                                aria-label="Stop agent"
+                                aria-label="Remove Agent"
                                 disabled={stoppingInstanceId === item.instanceId}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (window.confirm(`Stop ${item.name}?`)) void stopAgent();
+                                  if (window.confirm(`Remove ${item.name}?`)) void stopAgent();
                                 }}
                                 className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
                               >
