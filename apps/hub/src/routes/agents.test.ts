@@ -255,6 +255,36 @@ describe('GET /agents', () => {
     expect(json.data).toHaveLength(1);
     expect(json.data[0].agentName).toBe('Loop');
   });
+
+  it('excludes removed instances (endedAt set) from the list query', async () => {
+    // Search a drizzle SQL condition for a column with the given name. Only
+    // descends through queryChunks/arrays — never into a Column's `.table`
+    // back-reference, which would otherwise surface every column in the schema.
+    // biome-ignore lint/suspicious/noExplicitAny: introspecting drizzle SQL chunks
+    function referencesColumn(node: any, columnName: string, seen = new Set()): boolean {
+      if (!node || typeof node !== 'object' || seen.has(node)) return false;
+      seen.add(node);
+      if (node.name === columnName && node.columnType) return true;
+      const children = Array.isArray(node) ? node : (node.queryChunks ?? []);
+      return children.some((child: unknown) => referencesColumn(child, columnName, seen));
+    }
+
+    const db = makeMockDb({
+      query: {
+        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
+        agent: { findMany: mock(() => Promise.resolve([])) },
+        agentInstance: { findMany: mock(() => Promise.resolve([])) },
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: test mock
+    } as any);
+
+    const app = buildApp(db);
+    const res = await app.fetch(makeRequest('http://localhost/agents?tenantId=tenant-1'));
+    expect(res.status).toBe(200);
+
+    const findManyArgs = db.query.agentInstance.findMany.mock.calls[0][0];
+    expect(referencesColumn(findManyArgs.where, 'ended_at')).toBe(true);
+  });
 });
 
 // ─── POST /agents ─────────────────────────────────────────────────

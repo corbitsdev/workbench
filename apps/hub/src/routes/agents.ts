@@ -111,7 +111,10 @@ export function createAgentProvisioningRouter(
     const instances = await db.query.agentInstance.findMany({
       where: and(
         eq(agentInstance.tenantId, tenantId),
-        inArray(agentInstance.status, ['deployed', 'running', 'stopped'])
+        inArray(agentInstance.status, ['deployed', 'running', 'stopped']),
+        // Removed instances set endedAt; keep them out of the list so they
+        // disappear from the rail rather than lingering as "Stopped".
+        isNull(agentInstance.endedAt)
       ),
     });
 
