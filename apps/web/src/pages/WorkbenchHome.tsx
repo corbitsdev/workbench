@@ -103,7 +103,7 @@ type RightPane =
   | { view: 'new-workflow'; workflowKind: string }
   | { view: 'workflow-picker' };
 
-function useWorkspaceContext(slug: string | undefined): {
+function useWorkbenchContext(slug: string | undefined): {
   tenantId: string | null;
   workbenches: WorkbenchEntry[];
 } {
@@ -136,7 +136,7 @@ export default function WorkbenchHome() {
   const { slug } = useParams<{ slug?: string }>();
   const navigate = useNavigate();
   const { setHidden: setLauncherHidden } = useChatLauncher();
-  const { tenantId: workspaceTenantId } = useWorkspaceContext(slug);
+  const { tenantId: workbenchTenantId } = useWorkbenchContext(slug);
 
   // Auto-redirect from "/" to the first available workbench.
   useEffect(() => {
@@ -276,7 +276,7 @@ export default function WorkbenchHome() {
         <motion.div key="new-workflow" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
           <NewWorkflowPane
             workflowKind={rightPane.workflowKind}
-            tenantId={workspaceTenantId}
+            tenantId={workbenchTenantId}
             onCreated={handleWorkflowCreated}
             onClose={() => {
               setRightPane({ view: 'gallery' });
@@ -290,7 +290,7 @@ export default function WorkbenchHome() {
       return (
         <motion.div key="workflow-picker" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
           <WorkflowPicker
-            tenantId={workspaceTenantId}
+            tenantId={workbenchTenantId}
             onSelectKind={handleWorkflowKindSelected}
             onClose={() => {
               setRightPane({ view: 'gallery' });
@@ -303,11 +303,11 @@ export default function WorkbenchHome() {
     return (
       <motion.div
         // key change forces remount when workspace resolves, refreshing the query
-        key={`gallery-${workspaceTenantId ?? 'loading'}`}
+        key={`gallery-${workbenchTenantId ?? 'loading'}`}
         {...paneFade}
         className="min-h-0 flex-1"
       >
-        <ArtifactGallery tenantId={workspaceTenantId} />
+        <ArtifactGallery tenantId={workbenchTenantId} />
       </motion.div>
     );
   }
@@ -336,7 +336,7 @@ export default function WorkbenchHome() {
         ) : rightPane.view === 'new-workflow' ? (
           <NewWorkflowPane
             workflowKind={rightPane.workflowKind}
-            tenantId={workspaceTenantId}
+            tenantId={workbenchTenantId}
             onCreated={handleWorkflowCreated}
             onClose={() => {
               setRightPane({ view: 'gallery' });
@@ -344,7 +344,7 @@ export default function WorkbenchHome() {
             }}
           />
         ) : (
-          <ArtifactGallery tenantId={workspaceTenantId} onOpenLibrary={() => setRailOpen(true)} />
+          <ArtifactGallery tenantId={workbenchTenantId} onOpenLibrary={() => setRailOpen(true)} />
         )}
         {railOpen && (
           <div className="fixed inset-0 z-50 bg-page p-2">
@@ -373,7 +373,7 @@ export default function WorkbenchHome() {
           open={activeModal === 'agent'}
           onClose={() => setActiveModal('none')}
           onCreated={handleAgentCreated}
-          workspaceTenantId={workspaceTenantId}
+          workbenchTenantId={workbenchTenantId}
         />
       </div>
     );
@@ -431,7 +431,7 @@ export default function WorkbenchHome() {
         open={activeModal === 'agent'}
         onClose={() => setActiveModal('none')}
         onCreated={handleAgentCreated}
-        workspaceTenantId={workspaceTenantId}
+        workbenchTenantId={workbenchTenantId}
       />
     </>
   );

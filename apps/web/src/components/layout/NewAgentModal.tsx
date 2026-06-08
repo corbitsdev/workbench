@@ -60,10 +60,10 @@ export interface NewAgentModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: (response: ProvisionAgentResponse) => void;
-  workspaceTenantId: string | null;
+  workbenchTenantId: string | null;
 }
 
-export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: NewAgentModalProps) {
+export function NewAgentModal({ open, onClose, onCreated, workbenchTenantId }: NewAgentModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   const [name, setName] = useState('');
@@ -128,7 +128,7 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!workspaceTenantId) return;
+    if (!workbenchTenantId) return;
 
     const trimmedName = name.trim();
     const trimmedPrompt = systemPrompt.trim();
@@ -156,7 +156,7 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
 
     try {
       const response = await provisionAgent({
-        tenantId: workspaceTenantId,
+        tenantId: workbenchTenantId,
         name: trimmedName,
         systemPrompt: trimmedPrompt,
         credentialIds: selectedCredentialIds,
@@ -301,7 +301,7 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
                   These credentials will be accessible to this agent at runtime.
                 </p>
 
-                {!workspaceTenantId ? (
+                {!workbenchTenantId ? (
                   <p className="text-[13px] text-text-2">
                     Create a workbench first before deploying agents.
                   </p>
@@ -310,7 +310,7 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
                     {credentialRequirements.map((requirement) => (
                       <CredentialField
                         key={requirement.id}
-                        tenantId={workspaceTenantId}
+                        tenantId={workbenchTenantId}
                         providerName={
                           requirement.id === 'granola' ? 'granola' : 'openai-compatible'
                         }
@@ -332,7 +332,7 @@ export function NewAgentModal({ open, onClose, onCreated, workspaceTenantId }: N
 
               <button
                 type="submit"
-                disabled={loading || !workspaceTenantId || selectedCredentialIds.length === 0}
+                disabled={loading || !workbenchTenantId || selectedCredentialIds.length === 0}
                 className="w-full rounded-[9px] bg-orange px-4 py-2 text-sm font-medium text-text hover:bg-orange-deep disabled:opacity-50"
               >
                 {loading ? 'Deploying...' : 'Deploy agent'}

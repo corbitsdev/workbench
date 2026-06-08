@@ -37,7 +37,7 @@ mock.module('../hooks/use-workflow', () => ({
     isError: false,
     error: null,
   })),
-  useWorkspaceAgents: mock(() => ({ data: [], isLoading: false })),
+  useWorkbenchAgents: mock(() => ({ data: [], isLoading: false })),
   isExportStepResult: mock((r: unknown) => typeof r === 'object' && r !== null && 'export' in r),
 }));
 

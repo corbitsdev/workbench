@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useUpdateStepConfig, useWorkspaceAgents } from '../hooks/use-workflow';
+import { useUpdateStepConfig, useWorkbenchAgents } from '../hooks/use-workflow';
 import type { WorkflowStepConfig, StepConfig, AgentInstance } from '../hooks/use-workflow';
 
 interface WorkflowStepConfigProps {
@@ -95,7 +95,7 @@ export function WorkflowStepConfig({ workflowId, currentConfig }: WorkflowStepCo
   const [draft, setDraft] = useState<WorkflowStepConfig>(currentConfig);
   const [saved, setSaved] = useState(false);
   const updateStepConfig = useUpdateStepConfig(workflowId);
-  const { data: agents = [] } = useWorkspaceAgents();
+  const { data: agents = [] } = useWorkbenchAgents();
 
   const handleStepChange = (step: ConfigurableStep, config: StepConfig) => {
     setDraft((prev) => ({ ...prev, [step]: config }));

@@ -14,7 +14,7 @@ const mockUpdateStepConfig = mock(() => ({
   error: null,
 }));
 
-const mockWorkspaceAgents = mock(() => ({
+const mockWorkbenchAgents = mock(() => ({
   data: [
     {
       id: 'inst-1',
@@ -44,7 +44,7 @@ const mockWorkspaceAgents = mock(() => ({
 
 mock.module('../hooks/use-workflow', () => ({
   useUpdateStepConfig: mockUpdateStepConfig,
-  useWorkspaceAgents: mockWorkspaceAgents,
+  useWorkbenchAgents: mockWorkbenchAgents,
 }));
 
 import { WorkflowStepConfig } from './WorkflowStepConfig';
