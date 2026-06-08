@@ -94,7 +94,7 @@ describe('WorkflowPanel loading state', () => {
 
   it('shows loading text while data is being fetched', () => {
     renderPanel();
-    expect(screen.getByText(/loading job/i)).toBeDefined();
+    expect(screen.getByText(/loading workflow/i)).toBeDefined();
   });
 });
 
@@ -113,7 +113,7 @@ describe('WorkflowPanel error state', () => {
 
   it('shows error text when workflow fetch fails', () => {
     renderPanel();
-    expect(screen.getByText(/could not load job/i)).toBeDefined();
+    expect(screen.getByText(/could not load workflow/i)).toBeDefined();
   });
 });
 
@@ -316,7 +316,7 @@ describe('WorkflowPanel export step', () => {
   it('calls onClose when close button is pressed', async () => {
     const user = userEvent.setup();
     renderPanel();
-    await user.click(screen.getByRole('button', { name: /close job/i }));
+    await user.click(screen.getByRole('button', { name: /close workflow/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
