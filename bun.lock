@@ -575,9 +575,11 @@
       "name": "@workbench/tools-dispatch",
       "devDependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/crypto-node": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-common": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
         "@types/bun": "latest",
         "@workbench/hub-crypto": "workspace:*",

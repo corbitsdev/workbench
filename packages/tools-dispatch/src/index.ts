@@ -1,7 +1,6 @@
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
-import { createGrantStore } from '@intx/authz';
-import { schema as intxSchema, resolveInstanceSources } from '@intx/db';
+import { schema as intxSchema, resolveInstanceSources, createGrantStore } from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateKeyPair, createNodeCrypto } from '@intx/crypto-node';
 import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
