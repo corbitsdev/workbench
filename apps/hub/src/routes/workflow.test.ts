@@ -47,11 +47,19 @@ mock.module('../config', () => ({
 }));
 
 const extractionSources: Array<{ model?: string } | undefined> = [];
+const extractionMaxTokens: Array<number | undefined> = [];
 
 mock.module('../lib/extraction', () => ({
   extractPainPoints: mock(
-    (_id: unknown, _content: unknown, _feedback: unknown, source?: { model?: string }) => {
+    (
+      _id: unknown,
+      _content: unknown,
+      _feedback: unknown,
+      source?: { model?: string },
+      maxOutputTokens?: number
+    ) => {
       extractionSources.push(source);
+      extractionMaxTokens.push(maxOutputTokens);
       return Promise.resolve({
         companyName: 'Acme Corp',
         painPoints: [
@@ -483,6 +491,47 @@ describe('Workflow router', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain('agent');
+  });
+
+  it('POST /workflows/:id/steps analyze applies the default output-token cap', async () => {
+    extractionMaxTokens.length = 0;
+    const router = buildApp(createMockDb());
+    const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 'analyze' }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+    // Analyze default cap (reasoning models need headroom to emit JSON).
+    expect(extractionMaxTokens.at(-1)).toBe(16384);
+  });
+
+  it('POST /workflows/:id/steps analyze honors a per-step maxOutputTokens override', async () => {
+    extractionMaxTokens.length = 0;
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: 'pending',
+      principalId: PERSONAL_PRINCIPAL.id,
+      input: {
+        companyName: 'Test Corp',
+        transcriptId: 'tx-1',
+        stepConfig: { analyze: { maxOutputTokens: 32000 } },
+      },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 'analyze' }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+    expect(extractionMaxTokens.at(-1)).toBe(32000);
   });
 
   it('DELETE /workflows/:id removes the workflow', async () => {
