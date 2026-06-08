@@ -71,6 +71,7 @@ export interface ArtifactWithSession extends Artifact {
  */
 export interface WorkflowSummary {
   id: string;
+  kind: string;
   status: SessionStatus;
   createdAt: string;
   transcriptId: string;

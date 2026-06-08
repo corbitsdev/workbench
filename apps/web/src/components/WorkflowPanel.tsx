@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useWorkflow, useRunStep, useApproveArtifact } from '../hooks/use-workflow';
+import { CheckIcon } from 'lucide-react';
 import PainPointsList from './PainPointsList';
 import FeedbackSection from './FeedbackSection';
 import ArtifactBody from './ArtifactBody';
@@ -73,6 +74,14 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
 
   const title = workflow.companyName ?? painPoints[0]?.context ?? 'Workflow';
 
+  const STATUS_LABELS: Record<string, string> = {
+    analyzing: 'Analyzing',
+    generating: 'Generating',
+    reviewing: 'Reviewing',
+    done: 'Done',
+    failed: 'Failed',
+  };
+
   const STEP_LABELS: Record<StepName, string> = {
     intake: 'Intake',
     analyze: 'Analyze',
@@ -109,9 +118,28 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
     void runStep.mutateAsync({ step: 'generate', painPointIds: ids, collateralTypes: types });
   };
 
-  // Determine active artifact
+  // Determine active artifact — prefer explicit selection, fall back to first draft, then last
+  const firstDraft = artifacts.find((a) => a.status === 'draft') ?? null;
   const displayArtifact =
-    artifacts.find((a) => a.id === activeArtifactId) ?? artifacts[artifacts.length - 1] ?? null;
+    artifacts.find((a) => a.id === activeArtifactId) ??
+    firstDraft ??
+    artifacts[artifacts.length - 1] ??
+    null;
+
+  const hasDraftArtifacts = artifacts.some((a) => a.status === 'draft');
+
+  const handleApproveOrDeny = (status: 'approved' | 'rejected') => {
+    if (!displayArtifact) return;
+    const nextDraft = artifacts.find((a) => a.status === 'draft' && a.id !== displayArtifact.id);
+    void approveArtifact.mutateAsync({ artifactId: displayArtifact.id, status }).then(() => {
+      setActiveArtifactId(nextDraft?.id ?? null);
+    });
+  };
+
+  const kindLabel =
+    collateralTypeOptions.find((o) => o.id === displayArtifact?.kind)?.label ??
+    displayArtifact?.kind ??
+    null;
 
   return (
     <div className="flex flex-col h-full overflow-hidden rounded-panel border border-border bg-bg">
@@ -120,7 +148,8 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
         <div className="min-w-0">
           <p className="truncate text-[14px] font-semibold text-text">{title}</p>
           <p className="text-[11px] text-text-3 font-mono mt-px">
-            {currentStep} · {workflow.status}
+            {STEP_LABELS[currentStep as StepName] ?? currentStep} ·{' '}
+            {STATUS_LABELS[workflow.status] ?? workflow.status}
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -177,11 +206,23 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Artifact pane — shown once generate is done */}
-        {generateCompleted && displayArtifact && (
-          <div className="flex-1 overflow-y-auto">
-            {/* Artifact tabs */}
+        {generateCompleted && !hasDraftArtifacts && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
+            <div className="grid h-10 w-10 place-items-center rounded-full bg-green/[0.18]">
+              <CheckIcon className="h-5 w-5 text-green" />
+            </div>
+            <p className="text-[14px] font-semibold text-text">All artifacts reviewed</p>
+            <p className="text-[12px] text-text-3 max-w-[220px]">
+              {artifacts.length} artifact{artifacts.length !== 1 ? 's' : ''} approved or denied.
+            </p>
+          </div>
+        )}
+
+        {generateCompleted && displayArtifact && hasDraftArtifacts && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Artifact tabs — pinned, don't scroll */}
             {artifacts.length > 1 && (
-              <div className="flex gap-1 px-4 pt-3 pb-1 border-b border-border overflow-x-auto">
+              <div className="flex gap-1 px-4 pt-3 pb-1 border-b border-border overflow-x-auto shrink-0">
                 {artifacts.map((a) => (
                   <button
                     key={a.id}
@@ -198,43 +239,41 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
                 ))}
               </div>
             )}
-            <div className="p-5 space-y-4">
-              <ArtifactBody body={displayArtifact.content} type={displayArtifact.kind} />
+            {/* Scrollable content with sticky action bar */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-5 space-y-3">
+                {kindLabel && (
+                  <span className="inline-block rounded border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-text-3">
+                    {kindLabel}
+                  </span>
+                )}
+                <ArtifactBody body={displayArtifact.content} type={displayArtifact.kind} />
+              </div>
               {displayArtifact.status === 'draft' && (
-                <div className="flex gap-2 pt-2">
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-bg/95 px-5 py-3 backdrop-blur-sm">
                   <button
                     type="button"
                     disabled={approveArtifact.isPending}
-                    onClick={() =>
-                      void approveArtifact.mutate({
-                        artifactId: displayArtifact.id,
-                        status: 'approved',
-                      })
-                    }
-                    className="btn-primary flex-1"
+                    onClick={() => handleApproveOrDeny('rejected')}
+                    className="flex-1 rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.97] disabled:opacity-50"
                   >
-                    Approve
+                    Deny
                   </button>
                   <button
                     type="button"
                     disabled={approveArtifact.isPending}
-                    onClick={() =>
-                      void approveArtifact.mutate({
-                        artifactId: displayArtifact.id,
-                        status: 'rejected',
-                      })
-                    }
-                    className="btn-secondary flex-1"
+                    onClick={() => handleApproveOrDeny('approved')}
+                    className="flex-1 rounded-[9px] border border-green/40 bg-green/10 px-3 py-2 text-[13px] font-medium text-green transition-colors hover:bg-green/[0.16] active:scale-[0.97] disabled:opacity-50"
                   >
-                    Deny
+                    Approve
                   </button>
                 </div>
               )}
               {displayArtifact.status === 'approved' && (
-                <p className="text-[12px] text-text-3">Approved</p>
+                <p className="px-5 pb-4 text-[12px] text-text-3">Approved</p>
               )}
               {displayArtifact.status === 'rejected' && (
-                <p className="text-[12px] text-text-3">Denied</p>
+                <p className="px-5 pb-4 text-[12px] text-text-3">Denied</p>
               )}
             </div>
           </div>

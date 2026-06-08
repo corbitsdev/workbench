@@ -9,6 +9,7 @@ import type { WorkflowSummary } from '@workbench/shared';
 
 const fakeWorkflow: WorkflowSummary = {
   id: 'wf-1',
+  kind: 'collateral-generation',
   status: 'reviewing',
   createdAt: new Date().toISOString(),
   transcriptId: 'tx-1',
@@ -92,7 +93,8 @@ describe('LibraryRail', () => {
     const view = renderWithClient(React.createElement(LibraryRail));
 
     await waitFor(() => {
-      expect(view.getAllByText('Acme Corp').length).toBeGreaterThan(0);
+      // Title shows the workflow type label; company name appears in the subtitle
+      expect(view.getAllByText('Collateral Generation').length).toBeGreaterThan(0);
     });
     expect(view.getAllByText('Workflows').length).toBeGreaterThan(0);
   });

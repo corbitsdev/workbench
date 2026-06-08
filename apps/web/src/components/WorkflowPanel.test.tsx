@@ -232,9 +232,9 @@ describe('WorkflowPanel done step', () => {
     }));
   });
 
-  it('shows the artifact content', () => {
+  it('shows the completion state when all artifacts are reviewed', () => {
     renderPanel();
-    expect(screen.getByText(/dear prospect/i)).toBeDefined();
+    expect(screen.getByText(/all artifacts reviewed/i)).toBeDefined();
   });
 
   it('shows all stepper steps as completed or current', () => {

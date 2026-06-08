@@ -8,6 +8,8 @@ import { useArtifacts } from '@workbench/client/react';
 import { ArtifactGallery as ArtifactGalleryView, ArtifactModal } from '@workbench/artifact';
 import type { GalleryArtifact, ArtifactWithSession } from '@workbench/artifact';
 import { clientOptions } from '../../lib/client-options';
+import ArtifactBody from '../ArtifactBody';
+import { collateralTypeOptions } from '@workbench/gtm-workflows';
 
 interface ArtifactGalleryProps {
   /** Active workbench tenant. Null means workbench context is still loading. */
@@ -41,7 +43,14 @@ export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGall
         open={selected !== null}
         artifact={selected}
         onClose={() => setSelected(null)}
-      />
+        kindLabel={
+          selected
+            ? (collateralTypeOptions.find((o) => o.id === selected.kind)?.label ?? selected.kind)
+            : undefined
+        }
+      >
+        {selected && <ArtifactBody body={selected.content} type={selected.kind} />}
+      </ArtifactModal>
     </>
   );
 }
