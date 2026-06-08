@@ -19,7 +19,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isSystem = message.role === 'system';
   const isStreaming = message.status === 'sending';
 
+  const hasToolCalls = (message.toolCalls?.length ?? 0) > 0;
+
+  // Suppress transitional LLM prose when tool calls are present — the
+  // ToolNarrative rendered by ChatThread carries the signal for that turn.
   if (!message.content && message.status !== 'sending') return null;
+  if (isUser === false && !isSystem && hasToolCalls) return null;
 
   return (
     <div

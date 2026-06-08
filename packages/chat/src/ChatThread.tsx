@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { cn } from '@workbench/ui';
 import { type ChatMessage, type ChatActivity } from './types';
 import { MessageBubble } from './MessageBubble';
+import { ToolNarrative, type ToolNarrativeProps } from './ToolNarrative';
 import { TypingIndicator } from './TypingIndicator';
 
 function formatActivityLabel(activity: ChatActivity, agentName: string): string {
@@ -28,6 +29,11 @@ export interface ChatThreadProps {
   typingLabel?: string;
   /** Shown when there are no messages yet. */
   emptyState?: React.ReactNode;
+  /**
+   * Optional formatter passed through to ToolNarrative. Supply this to turn
+   * raw tool names and results into readable summary lines.
+   */
+  formatToolSummary?: ToolNarrativeProps['formatSummary'];
   className?: string;
 }
 
@@ -39,6 +45,7 @@ export function ChatThread({
   agentName,
   typingLabel,
   emptyState,
+  formatToolSummary,
   className,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -73,7 +80,18 @@ export function ChatThread({
           </div>
         ))}
       {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} />
+        <div key={message.id} className="flex flex-col gap-1.5">
+          <MessageBubble message={message} />
+          {message.role === 'agent' &&
+            message.toolCalls !== undefined &&
+            message.toolCalls.length > 0 && (
+              <ToolNarrative
+                toolCalls={message.toolCalls}
+                {...(formatToolSummary !== undefined ? { formatSummary: formatToolSummary } : {})}
+                className="pl-1"
+              />
+            )}
+        </div>
       ))}
       {hasActivity && agentName !== undefined && (
         <div className="flex items-start" aria-live="polite">

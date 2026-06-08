@@ -21,6 +21,19 @@ export type ChatMessageStatus = 'sending' | 'sent' | 'failed';
  */
 export type ChatMessageKind = 'tool' | 'artifact';
 
+/** A completed or in-progress tool invocation attached to an agent message. */
+export interface ToolCall {
+  id: string;
+  /** Raw tool name as returned by the agent runtime. */
+  name: string;
+  /** Human-readable label. When absent the host should derive one from `name`. */
+  label?: string;
+  /** Result text. Absent when the call is still in-flight. */
+  result?: string;
+  /** True when the tool returned an error result. */
+  isError?: boolean;
+}
+
 /** A single message in a chat thread. */
 export interface ChatMessage {
   id: string;
@@ -36,6 +49,12 @@ export interface ChatMessage {
    * threads; artifact messages are always fully visible.
    */
   kind?: ChatMessageKind;
+  /**
+   * Tool calls made during this agent turn. The host populates these from the
+   * agent runtime event stream. A call whose `result` is absent is treated as
+   * still in-flight (renders with a pulse indicator).
+   */
+  toolCalls?: ToolCall[];
 }
 
 /** A tappable suggested reply offered by the agent. */

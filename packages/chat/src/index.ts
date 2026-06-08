@@ -3,6 +3,7 @@ export {
   type ChatMessageStatus,
   type ChatMessage,
   type ChatMessageKind,
+  type ToolCall,
   type QuickReply,
   type ChatDockState,
   type ChatOpenState,
@@ -19,6 +20,7 @@ export {
 export { CollapsedGroup, type CollapsedGroupProps } from './CollapsedGroup';
 
 export { MessageBubble, type MessageBubbleProps } from './MessageBubble';
+export { ToolNarrative, type ToolNarrativeProps } from './ToolNarrative';
 export { TypingIndicator, type TypingIndicatorProps } from './TypingIndicator';
 export { QuickReplyChips, type QuickReplyChipsProps } from './QuickReplyChips';
 export { ChatInput, type ChatInputProps } from './ChatInput';
