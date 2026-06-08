@@ -1149,6 +1149,22 @@ async function launchAgentSession(
   const toolNames = getToolNamesFromCapabilities(agentRow?.capabilities ?? null);
   const tools = buildToolDefinitions(toolNames);
 
+  // Synthesize allow grants for each configured tool. Tool authorization is
+  // controlled by the capabilities list, not by DB grant rows, so we inject
+  // them here rather than requiring a separate grant record per tool.
+  const toolGrants = toolNames.map((name) => ({
+    id: generateId('grant'),
+    resource: `tool:${name}`,
+    action: 'invoke',
+    effect: 'allow' as const,
+    origin: 'system' as const,
+    conditions: null,
+    expiresAt: null,
+    roleId: null,
+    principalId: instancePrincipalId,
+  }));
+  const allGrants = [...grants, ...toolGrants];
+
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_LAUNCH_ATTEMPTS; attempt++) {
     // Clean up any orphaned session rows from a previous failed attempt before
@@ -1192,7 +1208,7 @@ async function launchAgentSession(
         agentAddress: address,
         systemPrompt,
         tools,
-        grants,
+        grants: allGrants,
         sources,
         defaultSource,
       },
