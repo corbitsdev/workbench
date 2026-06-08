@@ -156,10 +156,15 @@ async function runExtractionAgent(
 ): Promise<LLMResponse> {
   const contextDir = join(tmpdir(), `gtm-extraction-${randomUUID()}`);
 
+  const extractionSource: InferenceSource = {
+    ...source,
+    defaults: { ...source.defaults, maxTokens: Math.max(source.defaults?.maxTokens ?? 0, 8192) },
+  };
+
   const agent = await createAgent({
     contextDir,
-    sources: [source],
-    defaultSource: source.id,
+    sources: [extractionSource],
+    defaultSource: extractionSource.id,
     systemPrompt,
     tools: [],
     closeTimeoutMs: 1000,

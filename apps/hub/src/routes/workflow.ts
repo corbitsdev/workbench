@@ -1150,12 +1150,19 @@ async function runAnalyze(
   }
 
   log.info('Extracting pain points', { workflowId: id, transcriptLength: tx.content.length });
-  const { painPoints: extracted, companyName } = await extractPainPoints(
-    id,
-    tx.content,
-    feedback,
-    source
-  );
+  let extracted: Awaited<ReturnType<typeof extractPainPoints>>['painPoints'];
+  let companyName: string | null;
+  try {
+    const result = await extractPainPoints(id, tx.content, feedback, source);
+    extracted = result.painPoints;
+    companyName = result.companyName;
+  } catch (err) {
+    log.error('Pain point extraction failed', {
+      workflowId: id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return Response.json({ error: 'Analysis failed. Check your LLM credential and try again.' }, { status: 502 });
+  }
   log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
 
   await db.delete(painPoint).where(eq(painPoint.sessionId, id));
