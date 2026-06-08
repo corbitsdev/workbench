@@ -23,6 +23,15 @@ mock.module('@intx/db', () => ({
     principalId: null,
     name: id,
   })),
+  resolveInstanceSources: mock(async () => [
+    {
+      id: 'agent-source-1',
+      provider: 'openai',
+      baseURL: 'https://api.deepseek.com/v1',
+      apiKey: 'enc:v1:agent',
+      model: 'agent-model',
+    },
+  ]),
 }));
 
 mock.module('@workbench/hub-crypto', () => ({
@@ -37,9 +46,12 @@ mock.module('../config', () => ({
   loadConfig: mock(() => {}),
 }));
 
+const extractionSources: Array<{ model?: string } | undefined> = [];
+
 mock.module('../lib/extraction', () => ({
-  extractPainPoints: mock(() =>
-    Promise.resolve({
+  extractPainPoints: mock((_id: unknown, _content: unknown, _feedback: unknown, source?: { model?: string }) => {
+    extractionSources.push(source);
+    return Promise.resolve({
       companyName: 'Acme Corp',
       painPoints: [
         {
@@ -50,8 +62,8 @@ mock.module('../lib/extraction', () => ({
           selected: true,
         },
       ],
-    })
-  ),
+    });
+  }),
 }));
 
 const PERSONAL_TENANT = { id: 'tenant-personal', slug: 'user-test-user' };
@@ -133,6 +145,12 @@ describe('Workflow router', () => {
         },
         agentInstance: {
           findMany: mock<() => unknown[]>(() => []),
+          findFirst: mock(() => ({
+            id: 'inst-oat',
+            agentId: 'agent-oat',
+            tenantId: 'tenant-personal',
+            sessionId: null,
+          })),
         },
         enabledWorkflow: {
           findFirst: mock(() => ({
@@ -408,6 +426,61 @@ describe('Workflow router', () => {
 
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
+  });
+
+  it('POST /workflows/:id/steps analyze runs via the assigned agent inference source', async () => {
+    extractionSources.length = 0;
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: 'pending',
+      principalId: PERSONAL_PRINCIPAL.id,
+      input: {
+        companyName: 'Test Corp',
+        transcriptId: 'tx-1',
+        stepConfig: { analyze: { agentId: 'inst-oat' } },
+      },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 'analyze' }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+    // The agent's own inference source (model 'agent-model') must drive the step,
+    // not the step's inline workflow credential.
+    expect(extractionSources.at(-1)?.model).toBe('agent-model');
+  });
+
+  it('POST /workflows/:id/steps analyze fails when the assigned agent has no inference source', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: 'pending',
+      principalId: PERSONAL_PRINCIPAL.id,
+      input: {
+        companyName: 'Test Corp',
+        transcriptId: 'tx-1',
+        stepConfig: { analyze: { agentId: 'inst-oat' } },
+      },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    (intxDb.resolveInstanceSources as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 'analyze' }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('agent');
   });
 
   it('POST /workflows/:id/steps analyze accepts feedback', async () => {
