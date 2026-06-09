@@ -94,7 +94,7 @@ export function decryptSecret(
   ciphertext: string
 ): string {
   if (!ciphertext.startsWith(ENC_PREFIX)) {
-    throw new Error('decryptSecret called on value without enc: prefix');
+    return ciphertext;
   }
 
   const rest = ciphertext.slice(ENC_PREFIX.length);

@@ -59,8 +59,8 @@ describe('encryptSecret / decryptSecret', () => {
     expect(() => decryptSecret(keysV1, TENANT_A, encrypted)).toThrow();
   });
 
-  it('decryptSecret rejects a plaintext value (no enc: prefix)', () => {
-    expect(() => decryptSecret(keysV1, TENANT_A, 'plaintext-no-prefix')).toThrow();
+  it('decryptSecret returns plaintext values as-is (no enc: prefix)', () => {
+    expect(decryptSecret(keysV1, TENANT_A, 'plaintext-no-prefix')).toBe('plaintext-no-prefix');
   });
 
   it('encryptSecret throws on already-encrypted input', () => {
