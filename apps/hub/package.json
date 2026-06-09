@@ -14,7 +14,9 @@
     "seed:superadmin": "bun --env-file=../../.env run bin/seed.ts",
     "seed:superadmin-prod": "bun run bin/seed-prod.ts",
     "seed:llm-credential": "bun --env-file=../../.env run bin/add-llm-credential.ts",
-    "seed:credentials": "bun --env-file=../../.env run bin/seed-credentials.ts"
+    "seed:credentials": "bun --env-file=../../.env run bin/seed-credentials.ts",
+    "diagnose:providers": "bun --env-file=../../.env run bin/diagnose-providers.ts",
+    "reset:myra": "bun --env-file=../../.env run bin/reset-myra.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.9",

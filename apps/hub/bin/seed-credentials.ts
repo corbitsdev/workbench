@@ -192,9 +192,15 @@ async function resolveOrCreateProvider(
   entry: CredentialEntry,
   cookies: CookieJar
 ): Promise<string> {
+  // List only tenant-owned providers (inherited=false). Inherited rows belong
+  // to ancestor tenants: PATCH rejects them, and a credential created in this
+  // tenant binds to this tenant's own provider — so an inherited row that
+  // happens to look correct must not mask a stale owned row. Resolution reads
+  // baseURL from the provider the credential is bound to, so the owned row is
+  // the one that matters.
   const listRes = await api(
     'GET',
-    `/api/tenants/${tenantId}/providers?inherited=true`,
+    `/api/tenants/${tenantId}/providers?inherited=false`,
     undefined,
     cookies
   );
@@ -209,18 +215,22 @@ async function resolveOrCreateProvider(
   ).find((p) => p.name === entry.providerName);
 
   if (existing) {
-    // Patch metadata if the entry has metadata that the existing provider is missing.
+    // Always reconcile metadata. Skipping when a row "looks correct" is what let
+    // a stale baseURL (api.openai.com) survive and route inference to the wrong
+    // endpoint. Merge so unrelated keys are preserved.
     if (entry.metadata) {
-      const needsPatch = Object.entries(entry.metadata).some(
-        ([k, v]) => existing.metadata?.[k] !== v
-      );
-      if (needsPatch) {
-        await api(
+      const merged = { ...existing.metadata, ...entry.metadata };
+      const changed = Object.entries(merged).some(([k, v]) => existing.metadata?.[k] !== v);
+      if (changed) {
+        const patch = await api(
           'PATCH',
           `/api/tenants/${tenantId}/providers/${existing.id}`,
-          { metadata: { ...existing.metadata, ...entry.metadata } },
+          { metadata: merged },
           cookies
         );
+        if (patch.status !== 200) {
+          fail(`patch provider (${entry.providerName})`, patch.status, patch.data);
+        }
         log(`  Updated provider metadata: ${entry.providerName}`);
       }
     }
@@ -241,7 +251,7 @@ async function resolveOrCreateProvider(
   if (createRes.status === 409) {
     const refreshed = await api(
       'GET',
-      `/api/tenants/${tenantId}/providers?inherited=true`,
+      `/api/tenants/${tenantId}/providers?inherited=false`,
       undefined,
       cookies
     );

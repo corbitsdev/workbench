@@ -291,6 +291,56 @@ curl -X POST https://<hub domain>/api/v1/instances/<instanceId>/sessions \
 
 Or sign in to the web UI — the `/v1/me` endpoint relaunches Myra automatically on every page load when the instance is not running.
 
+### Diagnose and fix provider baseURLs
+
+If inference fails with a `credential_failure` / HTTP 401 that names a provider
+you are **not** using (e.g. an OpenAI "find your API key at platform.openai.com"
+error while pointing at an openai-compatible endpoint), the credential is bound
+to a provider row whose `baseURL` is stale. Inference reads `baseURL` from the
+provider the credential is bound to — not from the credential's own metadata —
+so a single stale provider row routes the right key to the wrong endpoint.
+
+Audit every `openai-compatible` provider, its stored `baseURL`, and the
+credentials bound to it:
+
+```bash
+DATABASE_URL=<postgres connection string> \
+bun run apps/hub/bin/diagnose-providers.ts
+```
+
+Pass `--fix` to rewrite every `openai-compatible` provider's `baseURL` (and
+`model`) from `OPENAI_COMPATIBLE_BASE_URL` / `OPENAI_COMPATIBLE_MODEL`. This is
+the cross-tenant correction the per-tenant credential seed cannot make — an
+agent resolves its provider from its own tenant, so a stale row on any tenant
+breaks inference even when the global tenant is seeded correctly:
+
+```bash
+DATABASE_URL=<postgres connection string> \
+OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1 \
+OPENAI_COMPATIBLE_MODEL=gpt-4o \
+bun run apps/hub/bin/diagnose-providers.ts --fix
+```
+
+`baseURL` is resolved at session launch, so relaunch affected agents afterward
+(delete + reload, or the relaunch runbook above) to pick up the new endpoint.
+
+### Reset a user's Myra (no admin-ui)
+
+When a user's personal agent (Myra) is wedged and admin-ui (Google auth) is
+unavailable, delete and re-provision it via the API. The delete tears down the
+sidecar session and drops the `memberAgentInstance` mapping, so the next
+`/api/v1/me` (a web app reload) re-provisions a fresh Myra and auto-relaunches
+it. Authenticate with the user's own `better-auth.session_token` (DevTools →
+Application → Cookies):
+
+```bash
+HUB_URL=https://<hub domain> \
+SESSION_TOKEN=<__Secure-better-auth.session_token from the browser> \
+bun run apps/hub/bin/reset-myra.ts
+```
+
+Then reload the web app to bring the new Myra online.
+
 ### Add a new agent definition
 
 1. Follow the "Adding a New Agent" steps in `DEV.md`
