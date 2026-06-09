@@ -11,7 +11,6 @@ COPY package.json bun.lockb ./
 COPY apps/hub/package.json apps/hub/
 COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
-COPY apps/admin-ui/package.json apps/admin-ui/
 COPY packages/agent-scheduler/package.json packages/agent-scheduler/
 COPY packages/agents/package.json packages/agents/
 COPY packages/approvals/package.json packages/approvals/
