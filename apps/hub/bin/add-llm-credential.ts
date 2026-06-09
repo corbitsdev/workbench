@@ -14,6 +14,10 @@ function env(name: string, fallback: string): string {
 const BASE = env('HUB_URL', 'http://localhost:4000');
 const EMAIL = env('SUPERADMIN_EMAIL', 'alice@example.com');
 const PASSWORD = env('SUPERADMIN_PASS', 'password123');
+// SESSION_TOKEN: pass a better-auth session cookie value grabbed from the browser.
+// Use this in production where email/password auth is disabled (OAuth-only).
+// In DevTools: Application → Cookies → copy the value of the `better-auth.session_token` cookie.
+const SESSION_TOKEN = process.env['SESSION_TOKEN'];
 const TENANT_SLUG = env('GLOBAL_TENANT_SLUG', 'abklabs');
 const PROVIDER_NAME = env('LLM_PROVIDER_NAME', 'openai-compatible');
 const CREDENTIAL_NAME = env('LLM_CREDENTIAL_NAME', 'Myra LLM');
@@ -70,10 +74,21 @@ function fail(label: string, status: number, data: unknown): never {
   process.exit(1);
 }
 
-const signIn = await api('POST', '/api/auth/sign-in/email', { email: EMAIL, password: PASSWORD });
-if (signIn.cookies.length === 0) fail('sign in', signIn.status, signIn.data);
+let sessionCookies: CookieJar;
+if (SESSION_TOKEN) {
+  log('Using SESSION_TOKEN for authentication');
+  // Production (HTTPS) uses the __Secure- prefix; include both so it works in both environments.
+  sessionCookies = [
+    `better-auth.session_token=${SESSION_TOKEN}`,
+    `__Secure-better-auth.session_token=${SESSION_TOKEN}`,
+  ];
+} else {
+  const signIn = await api('POST', '/api/auth/sign-in/email', { email: EMAIL, password: PASSWORD });
+  if (signIn.cookies.length === 0) fail('sign in', signIn.status, signIn.data);
+  sessionCookies = signIn.cookies;
+}
 
-const principalsRes = await api('GET', '/api/me/principals', undefined, signIn.cookies);
+const principalsRes = await api('GET', '/api/me/principals', undefined, sessionCookies);
 if (principalsRes.status !== 200)
   fail('/api/me/principals', principalsRes.status, principalsRes.data);
 
@@ -91,7 +106,7 @@ const providersRes = await api(
   'GET',
   `/api/tenants/${tenantId}/providers?inherited=true`,
   undefined,
-  signIn.cookies
+  sessionCookies
 );
 if (providersRes.status !== 200) fail('list providers', providersRes.status, providersRes.data);
 
@@ -108,7 +123,7 @@ if (!provider) {
       plugin: PROVIDER_NAME,
       metadata: { baseURL: LLM_BASE_URL, model: LLM_MODEL },
     },
-    signIn.cookies
+    sessionCookies
   );
 
   if (createProvider.status !== 201 && createProvider.status !== 409) {
@@ -122,7 +137,7 @@ if (!provider) {
       'GET',
       `/api/tenants/${tenantId}/providers?inherited=true`,
       undefined,
-      signIn.cookies
+      sessionCookies
     );
     provider = ((refreshed.data as { data?: Array<{ id: string; name: string }> }).data ?? []).find(
       (p) => p.name === PROVIDER_NAME
@@ -147,7 +162,7 @@ const createCredential = await api(
     scopes: ['chat'],
     metadata: { model: LLM_MODEL, baseURL: LLM_BASE_URL },
   },
-  signIn.cookies
+  sessionCookies
 );
 
 if (createCredential.status === 409) {
@@ -164,7 +179,7 @@ const agentsRes = await api(
   'GET',
   `/api/tenants/${tenantId}/agents/definitions`,
   undefined,
-  signIn.cookies
+  sessionCookies
 );
 if (agentsRes.status !== 200) fail('list agents', agentsRes.status, agentsRes.data);
 
@@ -176,7 +191,7 @@ for (const a of agents) {
     'PATCH',
     `/api/tenants/${tenantId}/agents/definitions/${a.id}`,
     { modelConfig: { defaultModel: LLM_MODEL } },
-    signIn.cookies
+    sessionCookies
   );
   if (patch.status !== 200) {
     console.error(`[credential] WARN: failed to patch modelConfig on ${a.name}: ${patch.status}`);

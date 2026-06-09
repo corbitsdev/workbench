@@ -1,5 +1,6 @@
 import { GrantRequirement, CredentialRequirement } from '@intx/types';
 import { buildPersonalAgentSystemPrompt } from './prompt';
+import { LLM_CREDENTIAL_NAME } from '../constants';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -25,7 +26,7 @@ export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[]
   {
     providerName: 'openai-compatible',
     source: 'tenant',
-    name: 'Myra LLM',
+    name: LLM_CREDENTIAL_NAME,
   },
 ];
 

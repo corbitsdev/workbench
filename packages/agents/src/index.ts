@@ -1,3 +1,6 @@
+// Shared constants
+export { LLM_CREDENTIAL_NAME } from './constants';
+
 // Personal agent
 export { buildPersonalAgentSystemPrompt } from './personal-agent/prompt';
 export {

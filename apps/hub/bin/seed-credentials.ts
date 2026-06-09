@@ -19,6 +19,10 @@ const BASE = env('HUB_URL', 'http://localhost:4000') as string;
 const EMAIL = env('SUPERADMIN_EMAIL', 'alice@example.com') as string;
 const PASSWORD = env('SUPERADMIN_PASS', 'password123') as string;
 const TENANT_SLUG = env('GLOBAL_TENANT_SLUG', 'abklabs') as string;
+// SESSION_TOKEN: pass a better-auth session cookie value grabbed from the browser.
+// Use in production where email/password auth is disabled (OAuth-only).
+// In DevTools: Application → Cookies → copy the value of __Secure-better-auth.session_token.
+const SESSION_TOKEN = process.env['SESSION_TOKEN'];
 
 type CookieJar = string[];
 
@@ -223,10 +227,19 @@ async function resolveOrCreateProvider(
   fail(`create provider (${entry.providerName})`, createRes.status, createRes.data);
 }
 
-const signIn = await api('POST', '/api/auth/sign-in/email', { email: EMAIL, password: PASSWORD });
-if (signIn.cookies.length === 0) fail('sign in', signIn.status, signIn.data);
-const cookies = signIn.cookies;
-log(`Signed in as ${EMAIL}`);
+let cookies: CookieJar;
+if (SESSION_TOKEN) {
+  log('Using SESSION_TOKEN for authentication');
+  cookies = [
+    `better-auth.session_token=${SESSION_TOKEN}`,
+    `__Secure-better-auth.session_token=${SESSION_TOKEN}`,
+  ];
+} else {
+  const signIn = await api('POST', '/api/auth/sign-in/email', { email: EMAIL, password: PASSWORD });
+  if (signIn.cookies.length === 0) fail('sign in', signIn.status, signIn.data);
+  cookies = signIn.cookies;
+  log(`Signed in as ${EMAIL}`);
+}
 
 const principalsRes = await api('GET', '/api/me/principals', undefined, cookies);
 if (principalsRes.status !== 200)

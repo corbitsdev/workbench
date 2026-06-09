@@ -1,6 +1,7 @@
 import type { GrantRequirement, CredentialRequirement } from '@intx/types';
 import { buildGranolaSystemPrompt } from './prompt';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
+import { LLM_CREDENTIAL_NAME } from '../constants';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -30,6 +31,7 @@ export const GRANOLA_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
     providerName: 'openai-compatible',
     source: 'tenant',
+    name: LLM_CREDENTIAL_NAME,
   },
 ];
 
