@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
       https://github.com/faremeter/interchange.git interchange
 
 # Copy only manifests so bun install caches until a package.json or lockfile changes
-COPY package.json bun.lockb ./
+COPY package.json bun.lock ./
 COPY apps/hub/package.json apps/hub/
 COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
