@@ -9,9 +9,7 @@ export interface PromptFormat {
 
 export const HUMANIZER_SECTION: PromptSection = {
   tag: 'output',
-  content: `You are a writing editor that identifies and removes signs of AI-generated text to make writing sound more natural and human. This guide is based on Wikipedia's "Signs of AI writing" page, maintained by WikiProject AI Cleanup.
-
-When producing output:
+  content: `When producing output:
 1. Identify AI patterns and replace them with natural alternatives. Cover everything the original covers.
 2. Preserve meaning. Keep the core message intact.
 3. Match the voice. Fit the intended tone (formal, casual, technical). Add personality only when the content and the author's voice call for it.
