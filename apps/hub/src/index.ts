@@ -35,10 +35,6 @@ import {
   seedGlobalTenant,
   ensureGlobalMember,
 } from './lib/tenant-provisioning';
-import {
-  migrateCredentialsToPlaintext,
-  verifyPlaintextMigration,
-} from './lib/migrate-credentials-to-plaintext';
 import { initSentry } from '@workbench/sentry';
 
 await initSentry();
@@ -64,18 +60,6 @@ const db = drizzle(sql, { schema });
 
 await sql`SELECT 1`;
 log.info('Database connection established');
-
-// One-time migration: decrypt any enc:v1:* credentials written by the old
-// app-layer encryption path. Safe to re-run — already-plaintext rows are skipped.
-const migrationResult = await migrateCredentialsToPlaintext(db, config.credentialKeys);
-const remaining = await verifyPlaintextMigration(db);
-if (remaining > 0) {
-  log.error('Credential plaintext migration incomplete — aborting startup', {
-    remaining,
-    ...migrationResult,
-  });
-  process.exit(1);
-}
 
 // ─── Global org tenant bootstrap ───────────────────────────────────
 //
@@ -103,6 +87,7 @@ const auth = betterAuth({
   account: {
     skipStateCookieCheck: true,
   },
+  emailAndPassword: isDev ? { enabled: true } : undefined,
   advanced: isCrossOrigin
     ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
     : undefined,
@@ -119,6 +104,8 @@ const auth = betterAuth({
     user: {
       create: {
         before: async (user) => {
+          // Domain restriction only applies to OAuth (Google) sign-ups.
+          // Email/password is allowed for local dev.
           if (google.allowedDomains.length === 0) return;
           const domain = user.email.split('@')[1];
           if (!domain || !google.allowedDomains.includes(domain)) {
@@ -437,11 +424,10 @@ app.route('/api/v1', v1);
 app.route('/api/internal', createInternalApprovalsRouter(db, config.sidecarToken));
 app.route(
   '/api/internal',
-  createInternalToolsRouter(db, config.sidecarToken, config.credentialKeys, {
+  createInternalToolsRouter(db, config.sidecarToken, {
     sessionService,
     eventCollectors,
     sidecarRouter,
-    credentialKeys: config.credentialKeys,
     buildToolDefinitions,
   })
 );

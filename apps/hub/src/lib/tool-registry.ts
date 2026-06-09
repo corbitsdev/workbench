@@ -8,7 +8,6 @@ import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
 import { ARTIFACT_HUB_TOOLS } from './artifact-tools';
 import { DISPATCH_HUB_TOOLS } from '@workbench/tools-dispatch';
 import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
-import type { CredentialKeyRegistry } from '@workbench/hub-crypto';
 
 /**
  * All hub-managed tools, assembled from tool packages.
@@ -41,7 +40,6 @@ export type ContextToolEntry = {
     sessionService?: SessionService;
     eventCollectors?: EventCollectorRegistry;
     sidecarRouter?: SidecarRouter;
-    credentialKeys?: CredentialKeyRegistry;
     buildToolDefinitions?: (names: string[]) => ToolDefinition[];
   }) => AgentTool[];
 };

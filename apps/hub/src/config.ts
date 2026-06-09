@@ -1,5 +1,4 @@
 import { getLogger } from '@intx/log';
-import { parseEncryptionKeys } from '@workbench/hub-crypto';
 
 const log = getLogger(['api', 'config']);
 
@@ -74,7 +73,6 @@ export function loadConfig() {
       name: requireEnv('GLOBAL_TENANT_NAME'),
       domain: requireEnv('GLOBAL_TENANT_DOMAIN'),
     },
-    credentialKeys: parseEncryptionKeys(requireEnv('CREDENTIAL_ENCRYPTION_KEYS')),
   };
 
   log.info('Configuration loaded', {

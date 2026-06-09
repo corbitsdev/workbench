@@ -25,7 +25,6 @@ import { getNoteWithTranscript, getRecentNotes, transcriptToText } from '../lib/
 import { extractPainPoints } from '../lib/extraction';
 
 import { generateCollateralWithLLM } from '../lib/generation';
-import { decryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
 import { randomUUID } from 'node:crypto';
 const log = getLogger(['api', 'workflow']);
@@ -189,8 +188,7 @@ async function resolveGranolaApiKey(db: HubDb, tenantId: string): Promise<string
   );
   if (!resolved) return null;
 
-  const { credentialKeys } = getConfig();
-  return decryptSecret(credentialKeys, tenantId, resolved.secret);
+  return resolved.secret;
 }
 
 /** Build an InferenceSource from a resolved credential's provider row + encrypted secret. */
@@ -202,8 +200,7 @@ function buildInferenceSource(
   const meta = providerRow.metadata as { baseURL?: string; model?: string } | null;
   if (!meta?.baseURL || !meta.model) return null;
 
-  const { credentialKeys } = getConfig();
-  const apiKey = decryptSecret(credentialKeys, tenantId, secret);
+  const apiKey = secret;
 
   return {
     id: `workflow-llm-${randomUUID()}`,
@@ -324,8 +321,7 @@ async function resolveAgentStepInferenceSource(
   const raw = rawSources[0];
   if (!raw) return null;
 
-  const { credentialKeys } = getConfig();
-  return { ...raw, apiKey: decryptSecret(credentialKeys, tenantId, raw.apiKey) };
+  return raw;
 }
 
 /**
@@ -341,7 +337,6 @@ async function resolveStepGranolaApiKey(
 ): Promise<string | null> {
   const assignments = await getWorkflowAssignments(db, tenantId, principalId, kind);
   const credentialIds = assignments[step]?.credentialIds ?? [];
-  const { credentialKeys } = getConfig();
   for (const credentialId of credentialIds) {
     const cred = await resolveCredentialById(db, tenantId, credentialId);
     if (!cred) continue;
@@ -349,7 +344,7 @@ async function resolveStepGranolaApiKey(
       where: eq(intxSchema.provider.id, cred.providerId),
     });
     if (providerRow?.name === 'granola') {
-      return decryptSecret(credentialKeys, tenantId, cred.secret);
+      return cred.secret;
     }
   }
   return resolveGranolaApiKey(db, tenantId);
