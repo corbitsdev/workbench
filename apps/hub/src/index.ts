@@ -40,6 +40,8 @@ import {
   seedAgentTemplates,
   seedTenantWorkflows,
   ensureGlobalMember,
+  provisionMemberInstances,
+  getMyraInstanceId,
 } from './lib/tenant-provisioning';
 import { initSentry } from '@workbench/sentry';
 
@@ -396,6 +398,22 @@ v1.get('/me', async (c) => {
       ),
     });
     paInstanceId = mapping?.instanceId ?? null;
+
+    // If the mapping is missing (e.g. user deleted Myra), re-provision it.
+    if (!paInstanceId) {
+      try {
+        const instances = await provisionMemberInstances(db, {
+          userId,
+          memberPrincipalId: memberPrincipalId,
+        });
+        paInstanceId = getMyraInstanceId(instances);
+      } catch (err) {
+        log.warn('Failed to re-provision Myra on /me', {
+          userId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
 
     // If credentials are already granted but no session is running, relaunch automatically.
     if (paInstanceId) {
