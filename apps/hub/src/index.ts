@@ -108,7 +108,7 @@ const auth = betterAuth({
   account: {
     skipStateCookieCheck: true,
   },
-  emailAndPassword: isDev ? { enabled: true } : undefined,
+  emailAndPassword: { enabled: true },
   advanced:
     !isDev && isCrossOrigin
       ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }

@@ -10,6 +10,8 @@
  *
  * This script does NOT create agent definitions. Hub boot seeds those through
  * seedAgentTemplates(db) from @workbench/agents.
+ *
+ * For production use, run seed-prod.ts instead.
  */
 
 import postgres from 'postgres';
