@@ -151,25 +151,42 @@ if (!provider) {
 }
 log(`Provider ID: ${provider.id}`);
 
-const createCredential = await api(
-  'POST',
+const listCredentials = await api(
+  'GET',
   `/api/tenants/${tenantId}/credentials`,
-  {
-    providerId: provider.id,
-    name: CREDENTIAL_NAME,
-    type: 'api_key',
-    secret: LLM_API_KEY,
-    scopes: ['chat'],
-    metadata: { model: LLM_MODEL, baseURL: LLM_BASE_URL },
-  },
+  undefined,
   sessionCookies
 );
+if (listCredentials.status !== 200) fail('list credentials', listCredentials.status, listCredentials.data);
 
-if (createCredential.status === 409) {
-  log(`Credential already exists: ${CREDENTIAL_NAME}`);
-} else if (createCredential.status !== 201) {
-  fail('create credential', createCredential.status, createCredential.data);
+const existingCredential = (
+  (listCredentials.data as { data?: Array<{ id: string; name: string }> }).data ?? []
+).find((c) => c.name === CREDENTIAL_NAME);
+
+if (existingCredential) {
+  const patch = await api(
+    'PATCH',
+    `/api/tenants/${tenantId}/credentials/${existingCredential.id}`,
+    { secret: LLM_API_KEY, metadata: { model: LLM_MODEL, baseURL: LLM_BASE_URL } },
+    sessionCookies
+  );
+  if (patch.status !== 200) fail('patch credential', patch.status, patch.data);
+  log(`Credential updated: ${existingCredential.id}`);
 } else {
+  const createCredential = await api(
+    'POST',
+    `/api/tenants/${tenantId}/credentials`,
+    {
+      providerId: provider.id,
+      name: CREDENTIAL_NAME,
+      type: 'api_key',
+      secret: LLM_API_KEY,
+      scopes: ['chat'],
+      metadata: { model: LLM_MODEL, baseURL: LLM_BASE_URL },
+    },
+    sessionCookies
+  );
+  if (createCredential.status !== 201) fail('create credential', createCredential.status, createCredential.data);
   log(`Credential created: ${(createCredential.data as { id?: string }).id ?? CREDENTIAL_NAME}`);
 }
 

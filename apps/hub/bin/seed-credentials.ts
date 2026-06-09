@@ -289,28 +289,40 @@ if (entries.length === 0) {
   process.exit(0);
 }
 
+const listRes = await api('GET', `/api/tenants/${tenantId}/credentials`, undefined, cookies);
+if (listRes.status !== 200) fail('list credentials', listRes.status, listRes.data);
+const existingCredentials =
+  (listRes.data as { data?: Array<{ id: string; name: string }> }).data ?? [];
+
 for (const entry of entries) {
   const providerId = await resolveOrCreateProvider(tenantId, entry, cookies);
   log(`Provider ${entry.providerName}: ${providerId}`);
 
-  const credRes = await api(
-    'POST',
-    `/api/tenants/${tenantId}/credentials`,
-    {
-      providerId,
-      name: entry.credentialName,
-      type: 'api_key',
-      secret: entry.secret,
-      ...(entry.metadata ? { metadata: entry.metadata } : {}),
-    },
-    cookies
-  );
+  const existing = existingCredentials.find((c) => c.name === entry.credentialName);
 
-  if (credRes.status === 409) {
-    log(`  (skip) Credential already exists: ${entry.credentialName}`);
-  } else if (credRes.status !== 201) {
-    fail(`create credential (${entry.credentialName})`, credRes.status, credRes.data);
+  if (existing) {
+    const patch = await api(
+      'PATCH',
+      `/api/tenants/${tenantId}/credentials/${existing.id}`,
+      { secret: entry.secret, ...(entry.metadata ? { metadata: entry.metadata } : {}) },
+      cookies
+    );
+    if (patch.status !== 200) fail(`patch credential (${entry.credentialName})`, patch.status, patch.data);
+    log(`  Updated credential: ${entry.credentialName}`);
   } else {
+    const credRes = await api(
+      'POST',
+      `/api/tenants/${tenantId}/credentials`,
+      {
+        providerId,
+        name: entry.credentialName,
+        type: 'api_key',
+        secret: entry.secret,
+        ...(entry.metadata ? { metadata: entry.metadata } : {}),
+      },
+      cookies
+    );
+    if (credRes.status !== 201) fail(`create credential (${entry.credentialName})`, credRes.status, credRes.data);
     log(`  Created credential: ${entry.credentialName}`);
   }
 }
