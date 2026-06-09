@@ -78,6 +78,7 @@ type CredentialEntry = {
 function buildEntries(): CredentialEntry[] {
   const entries: CredentialEntry[] = [];
 
+  // Unnumbered entry (backwards compat).
   const openaiCompatibleKey = env('OPENAI_COMPATIBLE_API_KEY');
   if (openaiCompatibleKey) {
     entries.push({
@@ -90,6 +91,33 @@ function buildEntries(): CredentialEntry[] {
         baseURL: env('OPENAI_COMPATIBLE_BASE_URL', 'https://api.openai.com/v1'),
         ...(env('OPENAI_COMPATIBLE_MAX_TOKENS')
           ? { maxTokens: Number(env('OPENAI_COMPATIBLE_MAX_TOKENS')) }
+          : {}),
+      },
+    });
+  }
+
+  // Numbered entries: OPENAI_COMPATIBLE_API_KEY_1, _2, … until a gap is hit.
+  // Each set uses its own CREDENTIAL_NAME, MODEL, BASE_URL, MAX_TOKENS suffixed with _N.
+  for (let i = 1; ; i++) {
+    const key = env(`OPENAI_COMPATIBLE_API_KEY_${i}`);
+    if (!key) break;
+    const name = env(`OPENAI_COMPATIBLE_CREDENTIAL_NAME_${i}`);
+    if (!name) {
+      console.error(
+        `[seed-credentials] OPENAI_COMPATIBLE_API_KEY_${i} is set but OPENAI_COMPATIBLE_CREDENTIAL_NAME_${i} is missing — skipping`
+      );
+      continue;
+    }
+    entries.push({
+      providerName: 'openai-compatible',
+      providerPlugin: 'openai-compatible',
+      credentialName: name,
+      secret: key,
+      metadata: {
+        model: env(`OPENAI_COMPATIBLE_MODEL_${i}`, 'gpt-4o'),
+        baseURL: env(`OPENAI_COMPATIBLE_BASE_URL_${i}`, 'https://api.openai.com/v1'),
+        ...(env(`OPENAI_COMPATIBLE_MAX_TOKENS_${i}`)
+          ? { maxTokens: Number(env(`OPENAI_COMPATIBLE_MAX_TOKENS_${i}`)) }
           : {}),
       },
     });

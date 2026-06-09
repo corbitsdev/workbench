@@ -20,7 +20,7 @@ const PASSWORD = env('SUPERADMIN_PASS', 'password123');
 const SESSION_TOKEN = process.env['SESSION_TOKEN'];
 const TENANT_SLUG = env('GLOBAL_TENANT_SLUG', 'abklabs');
 const PROVIDER_NAME = env('LLM_PROVIDER_NAME', 'openai-compatible');
-const CREDENTIAL_NAME = env('LLM_CREDENTIAL_NAME', 'Myra LLM');
+const CREDENTIAL_NAME = env('OPENAI_COMPATIBLE_CREDENTIAL_NAME', env('LLM_CREDENTIAL_NAME', 'Myra LLM'));
 const LLM_API_KEY = env(
   'OPENAI_COMPATIBLE_API_KEY',
   env('LLM_API_KEY', 'sk-dummy-key-for-local-dev')
