@@ -19,20 +19,26 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
-import { createAgentProvisioningRouter, relaunchInstanceIfNeeded } from './routes/agents';
+import { workflowRegistry } from '@workbench/workflow-core';
+import {
+  createAgentProvisioningRouter,
+  relaunchInstanceIfNeeded,
+  persistInstanceToolGrants,
+} from './routes/agents';
 import { createWorkbenchesRouter } from './routes/workbenches';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createInternalToolsRouter } from './routes/tools';
-import { buildToolDefinitions } from './lib/tool-registry';
+import { buildToolDefinitions, getToolNamesFromCapabilities } from './lib/tool-registry';
 import { schema } from './db';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
-  provisionMyraInstance,
   seedGlobalTenant,
+  seedAgentTemplates,
+  seedTenantWorkflows,
   ensureGlobalMember,
 } from './lib/tenant-provisioning';
 import { initSentry } from '@workbench/sentry';
@@ -70,6 +76,21 @@ log.info('Database connection established');
 const { tenantId: globalTenantId } = await seedGlobalTenant(db);
 log.info('Global org tenant ready', { globalTenantId });
 
+// Seed each agent template as a first-class agent definition in the global org
+// tenant so admins can manage them and members get per-user instances later
+// (CL-1530). Depends on the global tenant existing. Fail-loud.
+await seedAgentTemplates(db);
+log.info('Agent templates seeded');
+
+// Seed tenant-scoped workflow rows so every registered workflow is available to
+// all members of the global org tenant without any per-user action. Idempotent.
+await seedTenantWorkflows(
+  db,
+  globalTenantId,
+  workflowRegistry.list().map((w) => w.kind)
+);
+log.info('Tenant workflows seeded', { tenantId: globalTenantId });
+
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 
 // ─── Auth ──────────────────────────────────────────────────────────
@@ -88,9 +109,10 @@ const auth = betterAuth({
     skipStateCookieCheck: true,
   },
   emailAndPassword: isDev ? { enabled: true } : undefined,
-  advanced: isCrossOrigin
-    ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
-    : undefined,
+  advanced:
+    !isDev && isCrossOrigin
+      ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
+      : undefined,
   socialProviders:
     google.clientId && google.clientSecret
       ? {
@@ -114,34 +136,19 @@ const auth = betterAuth({
         },
         after: async (user) => {
           try {
-            // Join the shared global org tenant as a member principal and
-            // provision this user's own Myra inside it (per-user definition +
-            // instance, keyed on the member principal). This is the sole
-            // provisioning path — personal tenants are gone (CL-1452).
             const { principalId: globalPrincipalId } = await ensureGlobalMember(db, {
               userId: user.id,
             });
-            const { paInstanceId: globalMyraInstanceId } = await provisionMyraInstance(db, {
-              tenantId: globalTenantId,
-              tenantDomain: config.globalTenant.domain,
-              userId: user.id,
-              creatorPrincipalId: globalPrincipalId,
-            });
-
-            log.info('User provisioned', {
+            log.info('User joined global tenant', {
               userId: user.id,
               globalTenantId,
               globalPrincipalId,
-              globalMyraInstanceId,
             });
           } catch (err) {
-            log.error(
-              'Global-tenant provisioning failed for new user — repair runs on next login',
-              {
-                userId: user.id,
-                error: err instanceof Error ? err : new Error(String(err)),
-              }
-            );
+            log.error('Global-tenant membership failed for new user', {
+              userId: user.id,
+              error: err instanceof Error ? err : new Error(String(err)),
+            });
           }
         },
       },
@@ -149,18 +156,9 @@ const auth = betterAuth({
     session: {
       create: {
         after: async (session) => {
-          // Repair path: if global-tenant provisioning failed at signup, retry
-          // silently on login. Both calls are idempotent and key on the user's
-          // global member principal, so a healthy user is a no-op. No personal
-          // (user-) tenant logic remains (CL-1452).
+          // Repair path: ensure global-tenant membership on login in case signup hook failed.
           try {
-            const { principalId } = await ensureGlobalMember(db, { userId: session.userId });
-            await provisionMyraInstance(db, {
-              tenantId: globalTenantId,
-              tenantDomain: config.globalTenant.domain,
-              userId: session.userId,
-              creatorPrincipalId: principalId,
-            });
+            await ensureGlobalMember(db, { userId: session.userId });
           } catch (err) {
             log.error('Session repair failed — continuing', {
               userId: session.userId,
@@ -226,10 +224,49 @@ createHubSessionOrchestrator({
   agentRepoStore,
 });
 
-const sessionService = createSessionService({
+const rawSessionService = createSessionService({
   sidecarRouter,
   agentRepoStore,
 });
+
+// Wrap launchSession so that Interchange's native instance-creation path
+// (which always passes tools: []) picks up tool definitions from the agent's
+// capabilities column. Our own provisioning route already passes the correct
+// tools; the guard on tools.length === 0 avoids double-injection there.
+const sessionService: typeof rawSessionService = {
+  ...rawSessionService,
+  async launchSession(params) {
+    if (params.config.tools.length === 0) {
+      const agentRow = await db.query.agent.findFirst({
+        where: eq(intxSchema.agent.id, params.agentId),
+      });
+      if (agentRow?.capabilities) {
+        const toolNames = getToolNamesFromCapabilities(agentRow.capabilities);
+        if (toolNames.length > 0) {
+          const tools = buildToolDefinitions(toolNames);
+          await persistInstanceToolGrants(db, {
+            tenantId: params.config.tenantId,
+            principalId: params.config.principalId,
+            toolNames,
+            now: new Date(),
+          });
+          // Re-collect grants after persisting tool grants — the snapshot
+          // in params.config.grants was built before persistence and is stale.
+          const grants = await grantStore.collectGrants(
+            params.config.principalId,
+            params.config.tenantId
+          );
+          params = { ...params, config: { ...params.config, tools, grants } };
+          log.info('Injected tool definitions for agent {agentId}', {
+            agentId: params.agentId,
+            toolNames,
+          });
+        }
+      }
+    }
+    return rawSessionService.launchSession(params);
+  },
+};
 
 // ─── Hub app ────────────────────────────────────────────────────────
 //
@@ -350,30 +387,34 @@ v1.get('/me', async (c) => {
 
   let paInstanceId: string | null = null;
   if (workingTenantId && memberPrincipalId) {
-    const { paInstanceId: instanceId } = await provisionMyraInstance(db, {
-      tenantId: workingTenantId,
-      tenantDomain: config.globalTenant.domain,
-      userId,
-      creatorPrincipalId: memberPrincipalId,
+    const { memberAgentInstance } = schema;
+    const mapping = await db.query.memberAgentInstance.findFirst({
+      where: and(
+        eq(memberAgentInstance.tenantId, workingTenantId),
+        eq(memberAgentInstance.memberPrincipalId, memberPrincipalId),
+        eq(memberAgentInstance.templateKey, 'myra')
+      ),
     });
-    paInstanceId = instanceId;
+    paInstanceId = mapping?.instanceId ?? null;
 
     // If credentials are already granted but no session is running, relaunch automatically.
-    try {
-      await relaunchInstanceIfNeeded(
-        db,
-        sessionService,
-        grantStore,
-        eventCollectors,
-        instanceId,
-        sidecarRouter.events
-      );
-    } catch (err) {
-      log.warn('Auto-relaunch of Myra session failed — user will need to re-add credentials', {
-        userId,
-        instanceId,
-        error: err instanceof Error ? err : new Error(String(err)),
-      });
+    if (paInstanceId) {
+      try {
+        await relaunchInstanceIfNeeded(
+          db,
+          sessionService,
+          grantStore,
+          eventCollectors,
+          paInstanceId,
+          sidecarRouter
+        );
+      } catch (err) {
+        log.warn('Auto-relaunch of Myra session failed — user will need to re-add credentials', {
+          userId,
+          instanceId: paInstanceId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
     }
   }
 
@@ -409,7 +450,7 @@ v1.get('/me', async (c) => {
   });
 });
 
-v1.route('/', createWorkflowRouter(db));
+v1.route('/', createWorkflowRouter(db, grantStore));
 v1.route(
   '/',
   createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors)

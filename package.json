@@ -5,13 +5,14 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "interchange/packages/*"
+    "interchange/packages/*",
+    "interchange/apps/admin-ui"
   ],
   "scripts": {
     "db:setup": "bun --env-file=.env run scripts/db-setup.ts",
     "db:seed": "bun --env-file=.env run scripts/db-seed.ts",
     "db:reset": "bun --env-file=.env run scripts/db-reset.ts",
-    "dev": "bun --env-file=.env run --parallel --filter @workbench/web --filter @workbench/hub --filter @workbench/sidecar dev",
+    "dev": "bun --env-file=.env run --parallel --filter @workbench/web --filter @workbench/hub --filter @workbench/sidecar --filter @intx/admin-ui dev",
     "build": "bun run --parallel --filter @workbench/web --filter @workbench/hub build",
     "typecheck": "bun run --filter '@workbench/*' typecheck",
     "format": "oxfmt --write . '!interchange' '!temporary'",

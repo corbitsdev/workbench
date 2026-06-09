@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
 import { ApiError, createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
-  buildContextBlock,
   composeChatMessages,
   createToolNameTracker,
   type ToolNameTracker,
@@ -54,9 +52,10 @@ type SessionState =
 export function PersonalAgentChat() {
   const [open, setOpen] = useState(false);
   const [dockState, setDockState] = useState<ChatDockState>(readDockState);
-  const [sessionState, setSessionState] = useState<SessionState>({ phase: 'loading' });
+  const [sessionState, setSessionState] = useState<SessionState>({
+    phase: 'loading',
+  });
   const [, forceUpdate] = useState(0);
-  const [me, setMe] = useState<{ userName: string } | null>(null);
   const instanceIdRef = useRef<string | null>(null);
   // Bumping this re-runs the connect effect — used by the error-state retry so a
   // transient hydration/transport failure does not permanently brick the panel.
@@ -65,7 +64,12 @@ export function PersonalAgentChat() {
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const toolNamesRef = useRef<ToolNameTracker | null>(null);
-  const contextInjectedRef = useRef(false);
+
+  const { registerReconnect } = useChatLauncher();
+
+  useEffect(() => {
+    registerReconnect(() => setAttempt((n) => n + 1));
+  }, [registerReconnect]);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +79,6 @@ export function PersonalAgentChat() {
       try {
         const me = await getMe();
         if (cancelled) return;
-        if (!cancelled) setMe({ userName: me.userName });
 
         if (!me.personalTenantId || !me.paInstanceId) {
           setSessionState({ phase: 'provisioning' });
@@ -159,27 +162,15 @@ export function PersonalAgentChat() {
     return messages;
   }
 
-  // Shown when Myra is provisioned but no credential resolves for her.
+  // Shown when Myra is provisioned but no credential resolves for her. The org
+  // LLM credential is admin-managed, so members are directed to their admin.
   const credentialErrorNotice = (
-    <span>
-      No API credential is set up for Myra.{' '}
-      <Link to="/settings/credentials" className="text-orange underline">
-        Add a credential in Settings
-      </Link>{' '}
-      to get started.
-    </span>
+    <span>No API credential is set up for Myra. Ask your admin to finish workspace setup.</span>
   );
 
-  // Shown only when Myra has not been provisioned with a credential yet.
-  const setupNotice = (
-    <span>
-      Myra isn't set up yet —{' '}
-      <Link to="/onboarding" className="text-orange underline">
-        add an LLM API key to get started
-      </Link>
-      .
-    </span>
-  );
+  // Shown while Myra's personal tenant and instance are still being provisioned.
+  // This is server-side auto-provisioning, so the member only needs to wait.
+  const setupNotice = <span>Setting up Myra for your workspace…</span>;
 
   // Shown when the session exists but we failed to connect or hydrate it. This
   // is recoverable — retrying re-runs the connect effect rather than telling the
@@ -282,14 +273,7 @@ export function PersonalAgentChat() {
     };
 
     const handleSend = (text: string) => {
-      let content = text;
-      if (!contextInjectedRef.current && me !== null) {
-        contextInjectedRef.current = true;
-        const date = new Date().toLocaleDateString('en-GB');
-        const contextBlock = buildContextBlock({ date, 'Human Operator': me.userName }, 'xml');
-        content = `${contextBlock}\n\n${text}`;
-      }
-      void sendWithRecovery(content).catch(() => {
+      void sendWithRecovery(text).catch(() => {
         setSessionState({
           phase: 'error',
           message: 'Could not reach Myra. Check your connection and try again.',

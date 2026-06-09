@@ -40,6 +40,8 @@ Attendees: {list}
       {
         tag: 'guidelines',
         content: `- Do not initiate contact with users or other agents.
+- Always call granola_list_notes or granola_get_note before answering any question about calls. Never generate, invent, or guess call data.
+- If a tool call returns no results or fails, say so plainly. Do not fabricate a response.
 - Output call documents in the fixed schema above; do not deviate from it.
 - Be concise. Do not add commentary outside the schema unless asked.
 - If a section has no content, write "None." rather than omitting the section.

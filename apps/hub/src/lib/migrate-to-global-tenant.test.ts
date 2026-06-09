@@ -7,10 +7,12 @@ import { migrateUserToGlobalTenant, type MigrationDeps } from './migrate-to-glob
 const ensureGlobalMemberMock = mock(() =>
   Promise.resolve({ tenantId: 'tnt_global', principalId: 'prn_new' })
 );
-const provisionMyraInstanceMock = mock(() => Promise.resolve({ paInstanceId: 'ins_global_myra' }));
+const provisionMemberInstancesMock = mock(() =>
+  Promise.resolve([{ templateKey: 'myra', instanceId: 'ins_global_myra' }])
+);
 const deps = {
   ensureGlobalMember: ensureGlobalMemberMock,
-  provisionMyraInstance: provisionMyraInstanceMock,
+  provisionMemberInstances: provisionMemberInstancesMock,
 } as unknown as MigrationDeps;
 
 type FindManyMap = {
@@ -66,7 +68,7 @@ describe('migrateUserToGlobalTenant', () => {
 
   it('dry run writes nothing and reports counts', async () => {
     ensureGlobalMemberMock.mockClear();
-    provisionMyraInstanceMock.mockClear();
+    provisionMemberInstancesMock.mockClear();
     const { db, update } = makeDb({
       personalTenant: { id: 'tnt_personal', slug: 'user-alice' },
       oldPrincipal: { id: 'prn_old' },
@@ -96,12 +98,12 @@ describe('migrateUserToGlobalTenant', () => {
     // No writes in dry run.
     expect(update).not.toHaveBeenCalled();
     expect(ensureGlobalMemberMock).not.toHaveBeenCalled();
-    expect(provisionMyraInstanceMock).not.toHaveBeenCalled();
+    expect(provisionMemberInstancesMock).not.toHaveBeenCalled();
   });
 
   it('live run provisions the global Myra and re-keys data', async () => {
     ensureGlobalMemberMock.mockClear();
-    provisionMyraInstanceMock.mockClear();
+    provisionMemberInstancesMock.mockClear();
     const { db, update } = makeDb({
       personalTenant: { id: 'tnt_personal', slug: 'user-alice' },
       oldPrincipal: { id: 'prn_old' },
@@ -123,7 +125,7 @@ describe('migrateUserToGlobalTenant', () => {
     );
 
     expect(ensureGlobalMemberMock).toHaveBeenCalledTimes(1);
-    expect(provisionMyraInstanceMock).toHaveBeenCalledTimes(1);
+    expect(provisionMemberInstancesMock).toHaveBeenCalledTimes(1);
     expect(res.newPrincipalId).toBe('prn_new');
     expect(res.globalMyraInstanceId).toBe('ins_global_myra');
     // reparent + workflowRun + artifact + artifactVersion + enabledWorkflow + Myra stop = 6.
@@ -132,7 +134,7 @@ describe('migrateUserToGlobalTenant', () => {
 
   it('re-run is a no-op for already-migrated data (zero re-key updates)', async () => {
     ensureGlobalMemberMock.mockClear();
-    provisionMyraInstanceMock.mockClear();
+    provisionMemberInstancesMock.mockClear();
     // oldPrincipal exists but all its rows were already re-keyed away → counts 0,
     // no workbenches left to reparent, no old Myra instances running.
     const { db, update } = makeDb({
@@ -147,7 +149,7 @@ describe('migrateUserToGlobalTenant', () => {
       deps
     );
 
-    // ensureGlobalMember + provisionMyraInstance still run (idempotent), but no
+    // ensureGlobalMember + provisionMemberInstances still run (idempotent), but no
     // re-key/reparent/stop UPDATE is issued.
     expect(update).not.toHaveBeenCalled();
   });

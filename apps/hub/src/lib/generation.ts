@@ -1,5 +1,6 @@
 import { getLogger } from '@intx/log';
 import type { InferenceSource } from '@intx/types/runtime';
+import type { GrantStore } from '@intx/types/authz';
 import {
   buildCollateralRulesBlock,
   buildCollateralSystemPrompt,
@@ -73,6 +74,9 @@ export async function generateCollateralWithLLM(
   point: PainPointInput,
   type: string,
   source: InferenceSource,
+  principalId: string,
+  grantStore: GrantStore,
+  tenantId: string,
   maxOutputTokens?: number
 ): Promise<GeneratedCollateral> {
   log.info('Generating collateral', {
@@ -91,6 +95,9 @@ export async function generateCollateralWithLLM(
     buildCollateralSystemPrompt(type),
     userMessage,
     'gtm-generation',
+    principalId,
+    grantStore,
+    tenantId,
     resolvedMaxTokens
   );
 
@@ -117,6 +124,9 @@ export async function generateCollateralWithLLM(
       buildCollateralSystemPrompt(type),
       retryMessage,
       'gtm-generation',
+      principalId,
+      grantStore,
+      tenantId,
       resolvedMaxTokens
     );
     if (!retryRaw) throw new Error('LLM returned empty content on retry for collateral generation');

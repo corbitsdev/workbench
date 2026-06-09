@@ -96,7 +96,8 @@ function makeRequest(
 
 function wrapRouter(db: ReturnType<typeof createMockDb>) {
   const { Hono } = require('hono') as typeof import('hono');
-  const inner = createWorkflowRouter(db as unknown as HubDb);
+  const mockGrantStore = { collectGrants: mock(() => Promise.resolve([])) };
+  const inner = createWorkflowRouter(db as unknown as HubDb, mockGrantStore as unknown as any);
   const app = new Hono<{ Variables: { userId: string } }>();
   app.use('*', async (c, next) => {
     c.set('userId', c.req.header('x-user-id') ?? 'user-1');

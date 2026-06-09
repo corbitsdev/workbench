@@ -6,7 +6,7 @@ COPY . .
 # Railway doesn't clone git submodules — shallow clone interchange
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
     rm -rf interchange && \
-    git clone --depth 1 --single-branch --branch v0.1.2 \
+    git clone --depth 1 --single-branch --branch cl-1529-workbench-compat \
       https://github.com/faremeter/interchange.git interchange
 
 RUN bun install

@@ -1,5 +1,6 @@
 import { getLogger } from '@intx/log';
 import type { InferenceSource } from '@intx/types/runtime';
+import type { GrantStore } from '@intx/types/authz';
 import type { ArtifactKind } from '@workbench/shared';
 import { runSingleTurnAgent } from './inference';
 
@@ -36,6 +37,9 @@ export async function refineFeedbackWithLLM(
   feedback: string,
   type: ArtifactKind = 'email',
   source: InferenceSource,
+  principalId: string,
+  grantStore: GrantStore,
+  tenantId: string,
   maxOutputTokens?: number
 ): Promise<string> {
   log.info('Refining collateral with feedback', { type });
@@ -47,6 +51,9 @@ export async function refineFeedbackWithLLM(
     buildFeedbackSystemPrompt(type),
     userMessage,
     'gtm-feedback',
+    principalId,
+    grantStore,
+    tenantId,
     maxOutputTokens
   );
   const refined = raw?.trim() ?? '';

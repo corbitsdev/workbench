@@ -6,7 +6,6 @@ import { generateKeyPair, createNodeCrypto } from '@intx/crypto-node';
 import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
 import type { AgentTool } from '@intx/agent';
 import type { ToolDefinition } from '@intx/types/runtime';
-import { decryptSecret, type CredentialKeyRegistry } from '@workbench/hub-crypto';
 
 export type { ToolDefinition };
 import { and, eq } from 'drizzle-orm';
@@ -42,7 +41,6 @@ export type DispatchContext = {
   sessionService: SessionService;
   eventCollectors: EventCollectorRegistry;
   sidecarRouter: SidecarRouter;
-  credentialKeys: CredentialKeyRegistry;
   buildToolDefinitions: (names: string[]) => ToolDefinition[];
 };
 
@@ -98,7 +96,7 @@ async function launchAgentInstance(
   context: DispatchContext,
   agentRow: typeof intxSchema.agent.$inferSelect
 ): Promise<{ instanceId: string; address: string; sessionId: string }> {
-  const { db, tenantId, sessionService, eventCollectors, credentialKeys } = context;
+  const { db, tenantId, sessionService, eventCollectors } = context;
   const agentDefinitionId = agentRow.id;
   const systemPrompt = agentRow.systemPrompt!;
 
@@ -147,10 +145,7 @@ async function launchAgentInstance(
     throw new Error('No resolvable inference sources for agent credential requirements');
   }
 
-  const sources = rawSources.map((s) => ({
-    ...s,
-    apiKey: decryptSecret(credentialKeys, tenantId, s.apiKey),
-  }));
+  const sources = rawSources;
   const defaultSource = sources[0]!.id;
 
   const toolNames = getToolNamesFromCapabilities(agentRow.capabilities ?? null);
@@ -322,7 +317,6 @@ type DispatchHostContext = Pick<
   sessionService?: SessionService;
   eventCollectors?: EventCollectorRegistry;
   sidecarRouter?: SidecarRouter;
-  credentialKeys?: CredentialKeyRegistry;
   buildToolDefinitions?: (names: string[]) => ToolDefinition[];
 };
 
@@ -334,7 +328,6 @@ export const DISPATCH_HUB_TOOLS = {
         !context.sessionService ||
         !context.eventCollectors ||
         !context.sidecarRouter ||
-        !context.credentialKeys ||
         !context.buildToolDefinitions
       ) {
         throw new Error('dispatch_agent requires full session context (orchestration unavailable)');

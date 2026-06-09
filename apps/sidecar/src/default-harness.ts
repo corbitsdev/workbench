@@ -1,15 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { evaluateGrants } from '@intx/authz';
-import { createToolRunner } from '@intx/agent';
-import {
-  createHarness,
-  createHarnessRuntimeCapabilities,
-  mergeToolRunners,
-  readDeployTree,
-} from '@intx/harness';
-
-export { mergeToolRunners as combineRunners };
+import { createToolRunner, createDefaultDirectorRegistry, defineTool } from '@intx/agent';
+import { createHarness, createHarnessRuntimeCapabilities } from '@intx/harness';
+import { readDeployTree } from '@intx/hub-agent';
 import { hasProvider } from '@intx/inference';
 import { getLogger } from '@intx/log';
 import { createIsogitStore, createMailAuditStore } from '@intx/storage-isogit';
@@ -23,6 +17,34 @@ import { createAskPrincipalTool } from '@workbench/approvals';
 import { createHubToolRunner } from './hub-tool-runner';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
+
+function mergeToolRunners(runners: ToolRunner[]): ToolRunner & { definitions: ToolDefinition[] } {
+  const allDefinitions = runners.flatMap((r) => (r as any).definitions ?? []);
+  const toolToRunner = new Map<string, ToolRunner>();
+  for (const runner of runners) {
+    const definitions = (runner as any).definitions ?? [];
+    for (const def of definitions) {
+      toolToRunner.set(def.name, runner);
+    }
+  }
+
+  return {
+    definitions: allDefinitions,
+    async run(call, signal) {
+      const runner = toolToRunner.get(call.name);
+      if (!runner) {
+        return {
+          callId: call.id,
+          content: { error: `Tool "${call.name}" is not available` },
+          isError: true,
+        };
+      }
+      return runner.run(call, signal);
+    },
+  };
+}
+
+export { mergeToolRunners as combineRunners };
 
 type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
 
@@ -61,7 +83,10 @@ type HarnessBuilderOpts = {
   sidecarToken: string;
 };
 
-export function createDefaultHarnessBuilder({ hubHttpUrl, sidecarToken }: HarnessBuilderOpts): HarnessBuilder {
+export function createDefaultHarnessBuilder({
+  hubHttpUrl,
+  sidecarToken,
+}: HarnessBuilderOpts): HarnessBuilder {
   return {
     canBuildSource(source: InferenceSource): void {
       if (!hasProvider(source.provider)) {
@@ -140,19 +165,62 @@ export function createDefaultHarnessBuilder({ hubHttpUrl, sidecarToken }: Harnes
       const tools = filterToolRunner(allTools as DefinedRunner, allowedNames);
 
       try {
-        const harness = createHarness({
-          address: agentAddress,
-          systemPrompt,
-          source,
-          transport: agentTransport,
-          crypto,
-          storage,
-          authorize,
-          auditStore: storage,
-          tools,
-          onEvent,
-          onConnectorStateChanged,
+        const toolsFactory = defineTool({
+          id: '@workbench/sidecar/tools',
+          factory: () => ({
+            definitions: tools.definitions,
+            run: tools.run.bind(tools),
+          }),
         });
+
+        const def = {
+          id: agentConfig.agentId,
+          systemPrompt,
+          toolFactories: [toolsFactory] as const,
+          capabilities: [],
+          inference: { sources: [] as const },
+        };
+
+        const env = {
+          source,
+          storage,
+          workdir: workDir,
+          audit: storage,
+          authorize,
+          directors: createDefaultDirectorRegistry(),
+          transport: agentTransport,
+          address: agentAddress,
+          onConnectorStateChanged,
+        };
+
+        const harness = await createHarness(def, env);
+
+        // Forward the reactor's event stream to the hub. This is the seam the
+        // SessionManager builds around: it supplies `onEvent` and expects the
+        // builder to invoke it for each event. Without this, the hub only ever
+        // sees outbound mail — never inference/turn events — so committed turns
+        // and streaming text never reach the UI live and only appear on reload.
+        // `message.received` is reactor-internal and not an InferenceEvent.
+        //
+        // The loop ends when the harness closes its stream consumers (on
+        // session teardown). A stream error (e.g. StreamBackpressureError if a
+        // consumer overruns its buffer) is caught and logged rather than left to
+        // reject: the disposer awaits this promise, so an unsettled rejection
+        // would otherwise surface as an unhandled rejection or stall teardown.
+        async function forwardEvents(): Promise<void> {
+          try {
+            for await (const event of harness.stream()) {
+              if (event.type === 'message.received') continue;
+              onEvent(event);
+            }
+          } catch (err) {
+            logger.warn('Harness event forwarding stopped for {address}: {msg}', {
+              address: agentAddress,
+              msg: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        const eventForwarding = forwardEvents();
 
         return {
           harness,
@@ -160,10 +228,7 @@ export function createDefaultHarnessBuilder({ hubHttpUrl, sidecarToken }: Harnes
           updateGrants(grants) {
             grantsRef.current = grants;
           },
-          disposers: [
-            () => mailTools.dispose(),
-            () => posixTools.dispose(),
-          ],
+          disposers: [() => mailTools.dispose(), () => posixTools.dispose(), () => eventForwarding],
         };
       } catch (err) {
         try {

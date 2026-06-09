@@ -8,23 +8,10 @@ import { clientOptions } from '../../lib/client-options';
 import {
   listAgentInstances,
   listWorkbenches,
-  listEnrichedCredentials,
-  assignCredentialToAgent,
   stopAgentInstance,
   launchInstanceSession,
-  listAvailableTools,
-  updateAgentTools,
-  createTenantCredential,
-  INFERENCE_PROVIDER_NAMES,
 } from '../../lib/hub-api';
-import type {
-  AgentInstance,
-  WorkbenchEntry,
-  EnrichedCredential,
-  CredentialRequirement,
-  ToolSummary,
-} from '../../lib/hub-api';
-import { PROVIDER_REGISTRY, providerByName } from '../../lib/providerRegistry';
+import type { AgentInstance, WorkbenchEntry, CredentialRequirement } from '../../lib/hub-api';
 import { useEffect, useState } from 'react';
 
 type ResourceType = 'workflow' | 'agent';
@@ -53,30 +40,6 @@ function agentStatusLabel(status: string): string {
   if (status === 'running') return 'Running';
   if (status === 'stopped') return 'Stopped';
   return 'Deploying';
-}
-
-function formatToolName(name: string): string {
-  return name
-    .split('_')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
-}
-
-function toolProviderLabel(providerName: string): string {
-  return providerByName(providerName)?.label ?? formatToolName(providerName);
-}
-
-function groupToolsByProvider(
-  tools: ToolSummary[]
-): Array<{ providerName: string; tools: ToolSummary[] }> {
-  const groups = new Map<string, ToolSummary[]>();
-  for (const tool of tools) {
-    groups.set(tool.providerName, [...(groups.get(tool.providerName) ?? []), tool]);
-  }
-  return Array.from(groups, ([providerName, providerTools]) => ({
-    providerName,
-    tools: providerTools,
-  }));
 }
 
 function agentToRailItem(a: AgentInstance): RailItem {
@@ -229,345 +192,6 @@ function StatusDot({ status }: { status: ResourceStatus }) {
   );
 }
 
-function AgentCredentialEditor({
-  tenantId,
-  agentId,
-  currentRequirements,
-  onSaved,
-  onCancel,
-}: {
-  tenantId: string;
-  agentId: string;
-  currentRequirements: CredentialRequirement[];
-  onSaved: () => void;
-  onCancel: () => void;
-}) {
-  const [credentials, setCredentials] = useState<EnrichedCredential[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        setCredentials(await listEnrichedCredentials(tenantId));
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [tenantId]);
-
-  const currentCredName = currentRequirements[0]?.name ?? '';
-
-  const inferenceCredentials = credentials.filter((c) =>
-    INFERENCE_PROVIDER_NAMES.includes(c.providerPlugin as (typeof INFERENCE_PROVIDER_NAMES)[number])
-  );
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const credId = fd.get('credentialId') as string;
-    if (!credId) return;
-
-    setSaving(true);
-    setError(null);
-    try {
-      await assignCredentialToAgent(tenantId, agentId, credId);
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update credential.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return <p className="px-3 py-2 text-[12px] text-text-3">Loading credentials…</p>;
-  }
-
-  return (
-    <form
-      onSubmit={(e) => void handleSubmit(e)}
-      className="mt-1 rounded-[10px] border border-border bg-surface px-3 py-3"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.04em] text-text-3">
-        Credential
-      </p>
-      {error && <p className="mb-2 text-[11px] text-orange-deep">{error}</p>}
-      <select
-        name="credentialId"
-        defaultValue={inferenceCredentials.find((c) => c.name === currentCredName)?.id ?? ''}
-        disabled={saving}
-        className="mb-2 w-full rounded-[8px] border border-border bg-bg px-2 py-1.5 text-[12px] text-text outline-none focus:border-orange disabled:opacity-50"
-      >
-        {inferenceCredentials.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name} ({c.providerPlugin})
-          </option>
-        ))}
-      </select>
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={saving || inferenceCredentials.length === 0}
-          className="rounded-[7px] bg-orange px-2.5 py-1 text-[12px] font-medium text-white hover:bg-orange-deep disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={saving}
-          className="rounded-[7px] border border-border px-2.5 py-1 text-[12px] text-text-2 hover:text-text disabled:opacity-50"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function AgentToolEditor({
-  tenantId,
-  agentId,
-  currentCapabilities,
-  onSaved,
-  onCancel,
-}: {
-  tenantId: string;
-  agentId: string;
-  currentCapabilities: Record<string, unknown> | null;
-  onSaved: () => void;
-  onCancel: () => void;
-}) {
-  const [availableTools, setAvailableTools] = useState<ToolSummary[]>([]);
-  const [existingCredsByProvider, setExistingCredsByProvider] = useState<
-    Map<string, EnrichedCredential>
-  >(new Map());
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
-  // Pending credential field values keyed by providerName → fieldKey → value
-  const [pendingCreds, setPendingCreds] = useState<Record<string, Record<string, string>>>({});
-
-  const currentTools = Array.isArray(currentCapabilities?.tools)
-    ? currentCapabilities.tools.filter((t): t is string => typeof t === 'string')
-    : [];
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [tools, credentials] = await Promise.all([
-          listAvailableTools(),
-          listEnrichedCredentials(tenantId),
-        ]);
-        setAvailableTools(tools);
-        setSelected(new Set(currentTools));
-        const byProvider = new Map<string, EnrichedCredential>();
-        for (const c of credentials) {
-          if (
-            !INFERENCE_PROVIDER_NAMES.includes(
-              c.providerPlugin as (typeof INFERENCE_PROVIDER_NAMES)[number]
-            )
-          ) {
-            byProvider.set(c.providerPlugin, c);
-          }
-        }
-        setExistingCredsByProvider(byProvider);
-      } catch {
-        setError('Failed to load tools.');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  const toggleProvider = (providerName: string) => {
-    setExpandedProviders((prev) => {
-      const next = new Set(prev);
-      if (next.has(providerName)) {
-        next.delete(providerName);
-      } else {
-        next.add(providerName);
-      }
-      return next;
-    });
-  };
-
-  const toggleTool = (name: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) {
-        next.delete(name);
-      } else {
-        next.add(name);
-      }
-      return next;
-    });
-  };
-
-  // Providers that are needed by the current selection but have no credential yet.
-  const missingProviders = PROVIDER_REGISTRY.filter((p) => {
-    const needed = p.tools.some((t) => selected.has(t.name));
-    return needed && !existingCredsByProvider.has(p.name);
-  });
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    try {
-      // Create any missing credentials first.
-      for (const provider of missingProviders) {
-        const fields = pendingCreds[provider.name] ?? {};
-        const apiKey = fields['apiKey'] ?? '';
-        if (!apiKey) {
-          setError(`API key required for ${provider.label}.`);
-          setSaving(false);
-          return;
-        }
-        await createTenantCredential(tenantId, {
-          provider: provider.name,
-          name: provider.label,
-          apiKey,
-          ...(fields['baseURL'] ? { baseURL: fields['baseURL'] } : {}),
-        });
-      }
-      await updateAgentTools(tenantId, agentId, Array.from(selected));
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update tools.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return <p className="px-3 py-2 text-[12px] text-text-3">Loading tools…</p>;
-  }
-
-  if (availableTools.length === 0) {
-    return (
-      <div className="mt-1 rounded-[10px] border border-border bg-surface px-3 py-3">
-        <p className="text-[12px] text-text-3">No tools available.</p>
-      </div>
-    );
-  }
-
-  return (
-    <form
-      onSubmit={(e) => void handleSubmit(e)}
-      className="mt-1 rounded-[10px] border border-border bg-surface px-3 py-3"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.04em] text-text-3">Tools</p>
-      {error && <p className="mb-2 text-[11px] text-orange-deep">{error}</p>}
-      <div className="mb-2 flex flex-col gap-1.5">
-        {groupToolsByProvider(availableTools).map(({ providerName, tools }) => {
-          const expanded = expandedProviders.has(providerName);
-          const selectedCount = tools.filter((t) => selected.has(t.name)).length;
-          return (
-            <div key={providerName} className="rounded-[8px] border border-border bg-bg/40">
-              <button
-                type="button"
-                onClick={() => toggleProvider(providerName)}
-                className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left transition-colors hover:text-text"
-                aria-expanded={expanded}
-              >
-                <span className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-text-3">{expanded ? '▾' : '▸'}</span>
-                  <span className="text-[12px] font-medium text-text">
-                    {toolProviderLabel(providerName)}
-                  </span>
-                </span>
-                <span className="text-[11px] text-text-3">
-                  {selectedCount}/{tools.length}
-                </span>
-              </button>
-              {expanded && (
-                <div className="flex flex-wrap gap-1.5 border-t border-border px-2.5 py-2">
-                  {tools.map((tool) => (
-                    <label
-                      key={tool.name}
-                      className={`flex cursor-pointer items-center gap-1.5 rounded-[7px] border px-2 py-1 text-[12px] transition-colors ${
-                        selected.has(tool.name)
-                          ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
-                          : 'border-border text-text-2 hover:text-text'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selected.has(tool.name)}
-                        onChange={() => toggleTool(tool.name)}
-                        disabled={saving}
-                        className="h-3 w-3 accent-orange"
-                      />
-                      {formatToolName(tool.name)}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {missingProviders.length > 0 && (
-        <div className="mb-3 space-y-3">
-          {missingProviders.map((provider) => (
-            <div key={provider.name} className="rounded-[7px] border border-border bg-bg px-3 py-2">
-              <p className="mb-1.5 text-[11px] font-medium text-text-2">
-                {provider.label} credentials required
-              </p>
-              {provider.fields.map((field) => (
-                <div key={field.key} className="mb-1.5">
-                  <label className="mb-0.5 block text-[11px] text-text-3">
-                    {field.label}
-                    {field.required ? '' : ' (optional)'}
-                  </label>
-                  <input
-                    type={field.type === 'password' ? 'password' : 'text'}
-                    placeholder={field.placeholder}
-                    value={pendingCreds[provider.name]?.[field.key] ?? ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setPendingCreds((prev) => ({
-                        ...prev,
-                        [provider.name]: { ...prev[provider.name], [field.key]: val },
-                      }));
-                    }}
-                    disabled={saving}
-                    className="w-full rounded-[6px] border border-border bg-surface px-2 py-1 text-[12px] text-text placeholder:text-text-3 focus:border-orange focus:outline-none"
-                  />
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-[7px] bg-orange px-2.5 py-1 text-[12px] font-medium text-white hover:bg-orange-deep disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={saving}
-          className="rounded-[7px] border border-border px-2.5 py-1 text-[12px] text-text-2 hover:text-text disabled:opacity-50"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
-  );
-}
-
 export interface AgentSelection {
   instanceId: string;
   tenantId: string;
@@ -577,8 +201,7 @@ export interface AgentSelection {
 export interface LibraryRailProps {
   onClose?: () => void;
   onNew?: () => void;
-  onNewWorkbench?: () => void;
-  onNewWorkflow?: () => void;
+  onNewAgent?: () => void;
   onAgentSelect?: (selection: AgentSelection) => void;
   onWorkflowSelect?: (workflowId: string) => void;
   onWorkbenchSelect?: (slug: string) => void;
@@ -599,8 +222,7 @@ const SEGMENT_FILTER: Record<string, ResourceType | null> = {
 export function LibraryRail({
   onClose,
   onNew,
-  onNewWorkbench,
-  onNewWorkflow,
+  onNewAgent,
   onAgentSelect,
   onWorkflowSelect,
   onWorkbenchSelect,
@@ -621,8 +243,6 @@ export function LibraryRail({
 
   const [activeSegment, setActiveSegment] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [editingCredentialFor, setEditingCredentialFor] = useState<string | null>(null);
-  const [editingToolsFor, setEditingToolsFor] = useState<string | null>(null);
   const [stoppingInstanceId, setStoppingInstanceId] = useState<string | null>(null);
   const [restartingInstanceId, setRestartingInstanceId] = useState<string | null>(null);
   const [deletingWorkflowId, setDeletingWorkflowId] = useState<string | null>(null);
@@ -700,24 +320,6 @@ export function LibraryRail({
                 </button>
               );
             })}
-            {onNewWorkbench && (
-              <button
-                type="button"
-                onClick={onNewWorkbench}
-                aria-label="New workbench"
-                className="grid h-[27px] w-[27px] place-items-center rounded-[8px] border border-dashed border-border text-text-3 transition-colors hover:border-orange hover:text-orange"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  className="h-[11px] w-[11px]"
-                >
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-              </button>
-            )}
           </div>
           {onClose && (
             <button
@@ -815,8 +417,7 @@ export function LibraryRail({
           // for Jobs when onNewWorkflow is provided.
           const showGroup =
             inGroup.length > 0 ||
-            (group === 'Agents' && onNew !== undefined) ||
-            (group === 'Workflows' && onNewWorkflow !== undefined);
+            (group === 'Agents' && (onNew !== undefined || onNewAgent !== undefined));
           if (!showGroup) return null;
 
           return (
@@ -827,31 +428,11 @@ export function LibraryRail({
                   {inGroup.length}
                 </span>
                 <span className="h-px flex-1 bg-border" />
-                {group === 'Agents' && onNew && (
+                {group === 'Agents' && (onNew ?? onNewAgent) && (
                   <button
                     type="button"
-                    onClick={onNew}
-                    aria-label="New agent"
-                    className="-m-[11px] grid h-[40px] w-[40px] flex-none place-items-center rounded-[5px] text-text-3 transition-colors hover:text-orange"
-                  >
-                    <span className="grid h-[18px] w-[18px] place-items-center rounded-[5px] border border-border transition-colors hover:border-orange">
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        className="h-[11px] w-[11px]"
-                      >
-                        <path d="M12 5v14M5 12h14" />
-                      </svg>
-                    </span>
-                  </button>
-                )}
-                {group === 'Workflows' && onNewWorkflow && (
-                  <button
-                    type="button"
-                    onClick={onNewWorkflow}
-                    aria-label="New workflow"
+                    onClick={onNewAgent ?? onNew}
+                    aria-label="Add agent"
                     className="-m-[11px] grid h-[40px] w-[40px] flex-none place-items-center rounded-[5px] text-text-3 transition-colors hover:text-orange"
                   >
                     <span className="grid h-[18px] w-[18px] place-items-center rounded-[5px] border border-border transition-colors hover:border-orange">
@@ -881,8 +462,6 @@ export function LibraryRail({
                 const isActiveAgent =
                   item.type === 'agent' && item.instanceId === activeAgentInstanceId;
                 const isActiveWorkflow = item.type === 'workflow' && item.id === activeWorkflowId;
-                const isEditingCred = editingCredentialFor === item.id;
-                const isEditingTools = editingToolsFor === item.id;
                 const isRestarting = restartingInstanceId === item.instanceId;
 
                 const openItem = () => {
@@ -1007,47 +586,6 @@ export function LibraryRail({
                             <>
                               <button
                                 type="button"
-                                aria-label="Configure tools"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingToolsFor(isEditingTools ? null : item.id);
-                                  if (!isEditingTools) setEditingCredentialFor(null);
-                                }}
-                                className={`grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text ${isEditingTools ? 'opacity-100 text-orange' : ''}`}
-                              >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="h-[13px] w-[13px]"
-                                >
-                                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-                                </svg>
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Configure credential"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingCredentialFor(isEditingCred ? null : item.id);
-                                  if (!isEditingCred) setEditingToolsFor(null);
-                                }}
-                                className={`grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text ${isEditingCred ? 'opacity-100 text-orange' : ''}`}
-                              >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="h-[13px] w-[13px]"
-                                >
-                                  <circle cx="12" cy="12" r="3" />
-                                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-                                </svg>
-                              </button>
-                              <button
-                                type="button"
                                 aria-label="Remove Agent"
                                 disabled={stoppingInstanceId === item.instanceId}
                                 onClick={(e) => {
@@ -1101,31 +639,6 @@ export function LibraryRail({
                         {item.who}
                       </div>
                     </div>
-                    {isEditingCred && item.agentId && item.tenantId && (
-                      <div className="px-[11px] pb-2">
-                        <AgentCredentialEditor
-                          tenantId={item.tenantId}
-                          agentId={item.agentId}
-                          currentRequirements={item.credentialRequirements ?? []}
-                          onSaved={() => setEditingCredentialFor(null)}
-                          onCancel={() => setEditingCredentialFor(null)}
-                        />
-                      </div>
-                    )}
-                    {isEditingTools && item.agentId && item.tenantId && (
-                      <div className="px-[11px] pb-2">
-                        <AgentToolEditor
-                          tenantId={item.tenantId}
-                          agentId={item.agentId}
-                          currentCapabilities={item.capabilities ?? null}
-                          onSaved={() => {
-                            setEditingToolsFor(null);
-                            retryWorkbenches();
-                          }}
-                          onCancel={() => setEditingToolsFor(null)}
-                        />
-                      </div>
-                    )}
                   </div>
                 );
               })}

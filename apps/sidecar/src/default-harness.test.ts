@@ -28,6 +28,9 @@ const createHarnessMock = mock(async () => ({
 
 mock.module('@intx/harness', () => ({
   createHarness: createHarnessMock,
+  createHarnessRuntimeCapabilities: mock(() => ({
+    resolve: mock(() => ({ type: 'mock-transport' })),
+  })),
 }));
 
 mock.module('@intx/hub-agent', () => ({
@@ -88,7 +91,6 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
-
       });
       expect(() => builder.canBuildSource(validSource)).not.toThrow();
     });
@@ -97,7 +99,6 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
-
       });
       const unknownSource: InferenceSource = { ...validSource, provider: 'unknown-provider-xyz' };
       expect(() => builder.canBuildSource(unknownSource)).toThrow(
@@ -111,7 +112,6 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
-
       });
 
       const bundle = await builder.build({
@@ -144,6 +144,99 @@ describe('createDefaultHarnessBuilder', () => {
       expect(bundle.disposers.length).toBeGreaterThan(0);
     });
 
+    it('passes the source apiKey through to createHarness unchanged (plaintext)', async () => {
+      createHarnessMock.mockClear();
+
+      const plaintextSource: InferenceSource = { ...validSource, apiKey: 'sk-plaintext-key' };
+
+      const builder = createDefaultHarnessBuilder({
+        hubHttpUrl: 'http://localhost:4000',
+        sidecarToken: 'test-token',
+      });
+
+      await builder.build({
+        agentAddress: 'agent@tenant.localhost',
+        agentConfig: {
+          agentAddress: 'agent@tenant.localhost',
+          agentId: 'agent-1',
+          sessionId: 'session-1',
+          sources: [plaintextSource],
+          defaultSource: 'src-1',
+          grants: [],
+          tools: [],
+          principalId: 'user-1',
+          tenantId: TEST_TENANT_ID,
+          systemPrompt: 'You are a helpful assistant.',
+        },
+        source: plaintextSource,
+        storeDir: '/tmp/test-store',
+        agentTransport: {} as any,
+        crypto: { signSSH: mock(() => 'sig') } as any,
+        onEvent: mock(() => {}),
+        onConnectorStateChanged: mock(() => {}),
+      });
+
+      expect(createHarnessMock).toHaveBeenCalledTimes(1);
+      // createHarness(def, env) — the source lives on the env (second argument),
+      // not the definition. Secrets are plaintext at the app layer now.
+      const callArgs = createHarnessMock.mock.calls[0] as unknown as [
+        unknown,
+        { source: InferenceSource },
+      ];
+      expect(callArgs[1].source.apiKey).toBe('sk-plaintext-key');
+    });
+
+    it('forwards reactor events to onEvent, skipping message.received', async () => {
+      // Without this forwarding the hub never sees inference/turn events, so
+      // committed turns and streaming text only render after a manual reload.
+      // message.received is reactor-internal and not an InferenceEvent.
+      createHarnessMock.mockImplementationOnce((async () => ({
+        type: 'harness',
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async *stream() {
+          yield { type: 'inference.start', seq: 0, data: { model: 'gpt-4o' } };
+          yield { type: 'message.received', seq: 1, data: { message: {} } };
+          yield { type: 'connector.reply', seq: 2, data: {} };
+        },
+        async close() {},
+      })) as any);
+
+      const onEvent = mock((_event: unknown) => {});
+      const builder = createDefaultHarnessBuilder({
+        hubHttpUrl: 'http://localhost:4000',
+        sidecarToken: 'test-token',
+      });
+
+      const bundle = await builder.build({
+        agentAddress: 'agent@tenant.localhost',
+        agentConfig: {
+          agentAddress: 'agent@tenant.localhost',
+          agentId: 'agent-1',
+          sessionId: 'session-1',
+          sources: [validSource],
+          defaultSource: 'src-1',
+          grants: [],
+          tools: [],
+          principalId: 'user-1',
+          tenantId: TEST_TENANT_ID,
+          systemPrompt: 'You are a helpful assistant.',
+        },
+        source: validSource,
+        storeDir: '/tmp/test-store',
+        agentTransport: {} as any,
+        crypto: { signSSH: mock(() => 'sig') } as any,
+        onEvent,
+        onConnectorStateChanged: mock(() => {}),
+      });
+
+      // The forwarding drain runs detached; it settles when the (finite) stream
+      // closes. The final disposer is the drain promise, so awaiting it
+      // guarantees every event has been processed before asserting.
+      await bundle.disposers[bundle.disposers.length - 1]?.();
+
+      const forwarded = onEvent.mock.calls.map((c) => (c[0] as { type: string }).type);
+      expect(forwarded).toEqual(['inference.start', 'connector.reply']);
+    });
   });
 
   describe('combineRunners', () => {
@@ -185,7 +278,6 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
-
       });
 
       const bundle = await builder.build({

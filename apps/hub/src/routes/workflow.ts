@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, desc, eq, inArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import {
   resolveCredentialRequirement,
@@ -8,6 +8,7 @@ import {
   schema as intxSchema,
 } from '@intx/db';
 import type { InferenceSource } from '@intx/types/runtime';
+import type { GrantStore } from '@intx/types/authz';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
 import type { WorkflowType } from '@workbench/workflow-core';
 import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
@@ -93,6 +94,7 @@ function deriveCurrentStepForWorkflow(status: string, kind: string): string {
  *  executor based on step name. */
 async function triggerStep(
   db: HubDb,
+  grantStore: GrantStore,
   id: string,
   userContext: UserContext,
   step: string,
@@ -100,7 +102,15 @@ async function triggerStep(
   maxOutputTokens?: number
 ) {
   try {
-    const response = await dispatchStep(db, id, userContext, step, source, maxOutputTokens);
+    const response = await dispatchStep(
+      db,
+      grantStore,
+      id,
+      userContext,
+      step,
+      source,
+      maxOutputTokens
+    );
     if (response.status >= 400) {
       log.error('Background step failed', { workflowId: id, step, status: response.status });
       await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
@@ -119,6 +129,7 @@ async function triggerStep(
  *  today; 'generate' requires user input (pain-point selection). */
 async function dispatchStep(
   db: HubDb,
+  grantStore: GrantStore,
   id: string,
   userContext: UserContext,
   step: string,
@@ -126,7 +137,7 @@ async function dispatchStep(
   maxOutputTokens?: number
 ): Promise<Response> {
   if (step === 'analyze') {
-    return runAnalyze(db, id, userContext, source, undefined, maxOutputTokens);
+    return runAnalyze(db, grantStore, id, userContext, source, undefined, maxOutputTokens);
   }
   log.warn('No auto-executor for step', { workflowId: id, step });
   return Response.json({ error: `Step ${step} does not support auto-trigger` }, { status: 400 });
@@ -191,9 +202,8 @@ async function resolveGranolaApiKey(db: HubDb, tenantId: string): Promise<string
   return resolved.secret;
 }
 
-/** Build an InferenceSource from a resolved credential's provider row + encrypted secret. */
+/** Build an InferenceSource from a resolved credential's provider row + plaintext secret. */
 function buildInferenceSource(
-  tenantId: string,
   providerRow: { plugin: string; metadata: unknown },
   secret: string
 ): InferenceSource | null {
@@ -219,20 +229,24 @@ export interface StepAssignment {
 }
 export type WorkflowAssignments = Record<string, StepAssignment>;
 
-/** Read the per-step assignments stored on the workbench install record. */
+/** Read the per-step assignments stored on the workbench install record.
+ *  Prefers a per-user row over a tenant-scoped (principalId IS NULL) row so
+ *  that per-user overrides still work if ever introduced. */
 async function getWorkflowAssignments(
   db: HubDb,
   tenantId: string,
   principalId: string,
   kind: string
 ): Promise<WorkflowAssignments> {
-  const row = await db.query.enabledWorkflow.findFirst({
+  const rows = await db.query.enabledWorkflow.findMany({
     where: and(
       eq(enabledWorkflow.tenantId, tenantId),
-      eq(enabledWorkflow.principalId, principalId),
+      or(eq(enabledWorkflow.principalId, principalId), isNull(enabledWorkflow.principalId)),
       eq(enabledWorkflow.kind, kind)
     ),
   });
+  // Prefer per-user row (principalId set) over tenant-scoped fallback.
+  const row = rows.find((r) => r.principalId !== null) ?? rows[0];
   const raw = (row?.assignments ?? null) as WorkflowAssignments | null;
   return raw ?? {};
 }
@@ -258,7 +272,7 @@ async function resolveStepInferenceSource(
       where: eq(intxSchema.provider.id, cred.providerId),
     });
     if (!providerRow) continue;
-    const source = buildInferenceSource(tenantId, providerRow, cred.secret);
+    const source = buildInferenceSource(providerRow, cred.secret);
     if (source) return source;
   }
 
@@ -290,7 +304,7 @@ async function resolveStepInferenceSource(
   });
   if (!providerRow) return null;
 
-  return buildInferenceSource(tenantId, providerRow, resolved.secret);
+  return buildInferenceSource(providerRow, resolved.secret);
 }
 
 /**
@@ -300,9 +314,9 @@ async function resolveStepInferenceSource(
  * in the tenant — not a separate per-step inference credential.
  *
  * `agentInstanceId` is an agent *instance* id (what the step-config UI stores);
- * we look up the instance to find its agent definition, resolve the agent's
- * inference sources, and decrypt the secret (workbench encrypts at write time,
- * Interchange returns the raw stored value).
+ * we look up the instance to find its agent definition and resolve the agent's
+ * inference sources. Secrets are stored plaintext at the app layer (encryption
+ * is handled at rest by storage), so the resolved source is used as-is.
  */
 async function resolveAgentStepInferenceSource(
   db: HubDb,
@@ -406,8 +420,11 @@ async function validateAssignments(
     }
     const assignedProviders = new Set(providerNamesForCredential.values());
 
-    // Every declared credential requirement must be satisfied.
+    // Only enforce credential requirements that can't be auto-resolved at runtime.
+    // Requirements with source 'tenant' are resolved by Interchange's credential
+    // system when the workflow runs — no explicit assignment needed at install time.
     for (const req of step.credentialRequirements) {
+      if (req.source === 'tenant') continue;
       if (!assignedProviders.has(req.providerName)) {
         return {
           ok: false,
@@ -517,7 +534,10 @@ function validateWorkflowInput(
   return { valid: true };
 }
 
-export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: string } }> {
+export function createWorkflowRouter(
+  db: HubDb,
+  grantStore: GrantStore
+): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
   // ─── List available workflow types ───────────────────────────────
@@ -572,11 +592,24 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const rows = await db.query.enabledWorkflow.findMany({
       where: and(
         eq(enabledWorkflow.tenantId, userContext.tenantId),
-        eq(enabledWorkflow.principalId, userContext.principalId)
+        or(
+          eq(enabledWorkflow.principalId, userContext.principalId),
+          isNull(enabledWorkflow.principalId)
+        )
       ),
     });
 
-    const result = rows.map((row) => {
+    // Deduplicate by kind: a per-user row (principalId set) takes precedence
+    // over a tenant-scoped row (principalId null) for the same kind.
+    const byKind = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const existing = byKind.get(row.kind);
+      if (!existing || existing.principalId === null) {
+        byKind.set(row.kind, row);
+      }
+    }
+
+    const result = Array.from(byKind.values()).map((row) => {
       const wt = workflowRegistry.get(row.kind);
       return {
         id: row.id,
@@ -712,7 +745,10 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const enabledRow = await db.query.enabledWorkflow.findFirst({
       where: and(
         eq(enabledWorkflow.tenantId, userContext.tenantId),
-        eq(enabledWorkflow.principalId, userContext.principalId),
+        or(
+          eq(enabledWorkflow.principalId, userContext.principalId),
+          isNull(enabledWorkflow.principalId)
+        ),
         eq(enabledWorkflow.kind, workflowKind)
       ),
     });
@@ -866,6 +902,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           .where(eq(workflowRun.id, wfRow.id));
         void triggerStep(
           db,
+          grantStore,
           wfRow.id,
           userContext,
           firstStep,
@@ -1181,11 +1218,12 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         DEFAULT_STEP_MAX_OUTPUT_TOKENS[step];
 
       if (step === 'analyze') {
-        return runAnalyze(db, id, userContext, source, body.feedback, maxOutputTokens);
+        return runAnalyze(db, grantStore, id, userContext, source, body.feedback, maxOutputTokens);
       }
       // step === 'generate'
       return runGenerate(
         db,
+        grantStore,
         id,
         body.painPointIds ?? [],
         body.collateralTypes,
@@ -1467,6 +1505,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 // ─── Step helpers ───────────────────────────────────────────────────
 async function runAnalyze(
   db: HubDb,
+  grantStore: GrantStore,
   id: string,
   userContext: UserContext,
   source: InferenceSource,
@@ -1502,7 +1541,16 @@ async function runAnalyze(
   let extracted: Awaited<ReturnType<typeof extractPainPoints>>['painPoints'];
   let companyName: string | null;
   try {
-    const result = await extractPainPoints(id, tx.content, feedback, source, maxOutputTokens);
+    const result = await extractPainPoints(
+      id,
+      tx.content,
+      feedback,
+      source,
+      userContext.principalId,
+      grantStore,
+      wf.tenantId,
+      maxOutputTokens
+    );
     extracted = result.painPoints;
     companyName = result.companyName;
   } catch (err) {
@@ -1573,6 +1621,7 @@ async function runAnalyze(
 
 async function runGenerate(
   db: HubDb,
+  grantStore: GrantStore,
   id: string,
   painPointIds: string[],
   collateralTypes: string[] | undefined,
@@ -1624,19 +1673,27 @@ async function runGenerate(
   const results = await Promise.allSettled(
     points.flatMap((p: any) =>
       artifactKinds.map((kind) =>
-        generateCollateralWithLLM(id, transcriptContent, p, kind, source, maxOutputTokens).then(
-          ({ title, body }) => ({
-            tenantId: wf.tenantId,
-            principalId: wf.principalId,
-            sessionId: id,
-            painPointId: p.id,
-            kind,
-            title,
-            content: body,
-            status: 'draft',
-            version: 1,
-          })
-        )
+        generateCollateralWithLLM(
+          id,
+          transcriptContent,
+          p,
+          kind,
+          source,
+          principalId,
+          grantStore,
+          wf.tenantId,
+          maxOutputTokens
+        ).then(({ title, body }) => ({
+          tenantId: wf.tenantId,
+          principalId: wf.principalId,
+          sessionId: id,
+          painPointId: p.id,
+          kind,
+          title,
+          content: body,
+          status: 'draft',
+          version: 1,
+        }))
       )
     )
   );

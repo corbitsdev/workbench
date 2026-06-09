@@ -1,5 +1,6 @@
 import { getLogger } from '@intx/log';
 import type { InferenceSource } from '@intx/types/runtime';
+import type { GrantStore } from '@intx/types/authz';
 import { runSingleTurnAgent } from './inference';
 
 const log = getLogger(['extraction']);
@@ -150,6 +151,9 @@ async function runExtractionAgent(
   systemPrompt: string,
   userMessage: string,
   workflowId: string,
+  principalId: string,
+  grantStore: GrantStore,
+  tenantId: string,
   maxOutputTokens?: number
 ): Promise<LLMResponse> {
   const reply = await runSingleTurnAgent(
@@ -157,6 +161,9 @@ async function runExtractionAgent(
     systemPrompt,
     userMessage,
     'gtm-extraction',
+    principalId,
+    grantStore,
+    tenantId,
     maxOutputTokens
   );
   log.info('LLM response received', { length: reply.length });
@@ -231,6 +238,9 @@ export async function extractPainPointsWithLLM(
   content: string,
   feedback: string | undefined,
   source: InferenceSource,
+  principalId: string,
+  grantStore: GrantStore,
+  tenantId: string,
   maxOutputTokens?: number
 ): Promise<ExtractionResult> {
   const model = source.model;
@@ -260,6 +270,9 @@ export async function extractPainPointsWithLLM(
       systemPrompt,
       userMessage,
       workflowId,
+      principalId,
+      grantStore,
+      tenantId,
       maxOutputTokens
     );
     if (parsed.companyName && !bestCompanyName) {
@@ -288,7 +301,19 @@ export async function extractPainPoints(
   content: string,
   feedback: string | undefined,
   source: InferenceSource,
+  principalId: string,
+  grantStore: GrantStore,
+  tenantId: string,
   maxOutputTokens?: number
 ): Promise<ExtractionResult> {
-  return extractPainPointsWithLLM(workflowId, content, feedback, source, maxOutputTokens);
+  return extractPainPointsWithLLM(
+    workflowId,
+    content,
+    feedback,
+    source,
+    principalId,
+    grantStore,
+    tenantId,
+    maxOutputTokens
+  );
 }

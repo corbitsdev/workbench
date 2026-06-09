@@ -10,7 +10,7 @@ mock.module('@intx/db', () => ({
   resolveCredentialRequirement: mock(async () => ({
     id: 'cred-1',
     providerId: 'prov-1',
-    secret: 'enc:v1:test',
+    secret: 'sk-test-key',
     tenantId: 'tenant-personal',
     principalId: null,
     name: 'Workflow LLM',
@@ -18,7 +18,7 @@ mock.module('@intx/db', () => ({
   resolveCredentialById: mock(async (_db: unknown, _tenantId: string, id: string) => ({
     id,
     providerId: 'prov-1',
-    secret: 'enc:v1:test',
+    secret: 'sk-test-key',
     tenantId: 'tenant-personal',
     principalId: null,
     name: id,
@@ -28,20 +28,14 @@ mock.module('@intx/db', () => ({
       id: 'agent-source-1',
       provider: 'openai',
       baseURL: 'https://api.deepseek.com/v1',
-      apiKey: 'enc:v1:agent',
+      apiKey: 'sk-test-key',
       model: 'agent-model',
     },
   ]),
 }));
 
-mock.module('@workbench/hub-crypto', () => ({
-  decryptSecret: mock(() => 'sk-test-key'),
-  parseEncryptionKeys: mock(() => ({})),
-}));
-
 mock.module('../config', () => ({
   getConfig: mock(() => ({
-    credentialKeys: {},
     globalTenant: { slug: 'global-org', name: 'Global Org', domain: 'global.example.com' },
   })),
   loadConfig: mock(() => {}),
@@ -58,6 +52,9 @@ mock.module('../lib/extraction', () => ({
       _content: unknown,
       _feedback: unknown,
       source?: { model?: string },
+      _principalId?: string,
+      _grantStore?: unknown,
+      _tenantId?: string,
       maxOutputTokens?: number
     ) => {
       extractionSources.push(source);
@@ -86,6 +83,9 @@ mock.module('../lib/generation', () => ({
       _point: unknown,
       kind: string,
       _source: unknown,
+      _principalId?: string,
+      _grantStore?: unknown,
+      _tenantId?: string,
       _maxOutputTokens?: number
     ) => {
       generatedKinds.push(kind);
@@ -268,7 +268,11 @@ describe('Workflow router', () => {
       c.set('userId', userId);
       await next();
     });
-    parent.route('/', createWorkflowRouter(db as unknown as HubDb));
+    const mockGrantStore = { collectGrants: mock(() => Promise.resolve([])) };
+    parent.route(
+      '/',
+      createWorkflowRouter(db as unknown as HubDb, mockGrantStore as unknown as any)
+    );
     return parent;
   }
 
@@ -988,7 +992,9 @@ describe('Workflow router', () => {
     expect(referencesColumn(args.where, 'principal_id')).toBe(true);
   });
 
-  it('POST /workflows/enabled rejects install when a required credential is missing', async () => {
+  it('POST /workflows/enabled succeeds without an explicit granola credential assignment', async () => {
+    // Tenant-sourced credentials (like granola) are resolved at runtime by Interchange,
+    // not at install time. Install must not block on them being explicitly assigned.
     const router = buildApp(createMockDb());
     const req = new Request('http://localhost:4000/workflows/enabled', {
       method: 'POST',
@@ -997,9 +1003,7 @@ describe('Workflow router', () => {
     });
 
     const res = await router.fetch(req);
-    expect(res.status).toBe(400);
-    const json = await res.json();
-    expect(json.error).toContain('granola');
+    expect(res.status).toBe(200);
   });
 
   it('POST /workflows/enabled rejects an unknown tool', async () => {

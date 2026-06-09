@@ -135,8 +135,12 @@ export function createInternalToolsRouter(
       baseURL = metadata.baseURL ?? '';
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log.warn('Provider lookup failed', { tenantId, toolName, error: message });
-      return c.json({ result: `Provider lookup failed: ${message}`, isError: true });
+      log.warn('Provider lookup failed', {
+        tenantId,
+        toolName,
+        error: message,
+      });
+      return c.json({ result: `Credential setup failed: ${message}`, isError: true });
     }
 
     let tool: AgentTool | undefined;

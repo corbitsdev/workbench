@@ -57,3 +57,31 @@ describe('0015 scopes workbench_workflows per principal (CL-1450)', () => {
     );
   });
 });
+
+describe('0016 creates member_agent_instance (CL-1532)', () => {
+  const sql = readFileSync(
+    join(import.meta.dir, '../../migrations/0016_member_agent_instance.sql'),
+    'utf-8'
+  );
+
+  it('creates the table with the expected columns', () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "member_agent_instance"/i);
+    for (const col of [
+      'id',
+      'tenant_id',
+      'member_principal_id',
+      'template_key',
+      'agent_id',
+      'instance_id',
+      'created_at',
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it('adds the (tenant, member, template) unique constraint', () => {
+    expect(sql).toMatch(
+      /ADD CONSTRAINT "member_agent_instance_tenant_member_template_uniq"\s+UNIQUE \("tenant_id", "member_principal_id", "template_key"\)/i
+    );
+  });
+});

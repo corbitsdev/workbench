@@ -4,7 +4,11 @@ import { getLogger } from '@intx/log';
 import { getConfig } from '../config';
 import type { HubDb } from '../db';
 import { workflowRun, artifact, artifactVersion, enabledWorkflow } from '../db/schema';
-import { ensureGlobalMember, provisionMyraInstance } from './tenant-provisioning';
+import {
+  ensureGlobalMember,
+  provisionMemberInstances,
+  getMyraInstanceId,
+} from './tenant-provisioning';
 
 const log = getLogger(['migrate', 'global-tenant']);
 
@@ -17,10 +21,10 @@ const { tenant, principal, agentInstance } = intxSchema;
  */
 export type MigrationDeps = {
   ensureGlobalMember: typeof ensureGlobalMember;
-  provisionMyraInstance: typeof provisionMyraInstance;
+  provisionMemberInstances: typeof provisionMemberInstances;
 };
 
-const defaultDeps: MigrationDeps = { ensureGlobalMember, provisionMyraInstance };
+const defaultDeps: MigrationDeps = { ensureGlobalMember, provisionMemberInstances };
 
 export type UserMigrationResult = {
   userId: string;
@@ -47,10 +51,10 @@ export type MigrationSummary = {
 /**
  * Migrate one user from their personal tenant into the shared global org tenant
  * (CL-1451). Idempotent and re-runnable: it ensures the global member principal,
- * re-parents the user's named workbenches under the global tenant, provisions a
- * fresh per-user Myra in the global tenant (stopping the old personal instance),
- * and re-keys workflow_run / artifact / artifact_version from the old personal
- * principal to the new global principal.
+ * re-parents the user's named workbenches under the global tenant, provisions the
+ * member's per-user agent instances in the global tenant (default Myra, stopping
+ * the old personal instance), and re-keys workflow_run / artifact /
+ * artifact_version from the old personal principal to the new global principal.
  *
  * pain_point carries no tenant/principal columns (it hangs off workflow_run via
  * session_id), so it migrates implicitly with its run — nothing to re-key.
@@ -58,8 +62,8 @@ export type MigrationSummary = {
  * In dryRun mode no writes happen; the returned counts report what WOULD move.
  * The live path runs inside a single per-user transaction so one failure rolls
  * back cleanly and the batch continues. Note: ensureGlobalMember +
- * provisionMyraInstance run BEFORE that transaction (they have their own), so a
- * crash between them and the re-key commit leaves Myra provisioned but data not
+ * provisionMemberInstances run BEFORE that transaction (they have their own), so
+ * a crash between them and the re-key commit leaves Myra provisioned but data not
  * yet re-keyed — recoverable, because a re-run finishes the re-key (the UPDATEs
  * are guarded by counts from the old principal). An interrupted run MUST be
  * re-run.
@@ -69,7 +73,7 @@ export async function migrateUserToGlobalTenant(
   opts: { userId: string; globalTenantId: string; globalTenantDomain: string; dryRun: boolean },
   deps: MigrationDeps = defaultDeps
 ): Promise<UserMigrationResult> {
-  const { userId, globalTenantId, globalTenantDomain, dryRun } = opts;
+  const { userId, globalTenantId, dryRun } = opts;
 
   const personalSlug = `user-${userId}`;
   const personalTenant = await db.query.tenant.findFirst({
@@ -163,13 +167,11 @@ export async function migrateUserToGlobalTenant(
   const { principalId: newPrincipalId } = await deps.ensureGlobalMember(db, { userId });
   result.newPrincipalId = newPrincipalId;
 
-  const { paInstanceId } = await deps.provisionMyraInstance(db, {
-    tenantId: globalTenantId,
-    tenantDomain: globalTenantDomain,
+  const instances = await deps.provisionMemberInstances(db, {
     userId,
-    creatorPrincipalId: newPrincipalId,
+    memberPrincipalId: newPrincipalId,
   });
-  result.globalMyraInstanceId = paInstanceId;
+  result.globalMyraInstanceId = getMyraInstanceId(instances);
 
   await db.transaction(async (tx) => {
     const now = new Date();

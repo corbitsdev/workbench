@@ -29,55 +29,20 @@ mock.module('../../lib/hub-api', () => ({
     Promise.resolve({
       userId: '',
       userName: '',
+      orgName: '',
       personalTenantId: null,
       paInstanceId: null,
       provisioned: false,
+      credentialResolved: false,
     })
   ),
   getMyPrincipals: mock(() => Promise.resolve([])),
-  createTenant: mock(() => Promise.resolve({ id: '', name: '', slug: '', domain: '' })),
   createWorkbench: mock(() => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' })),
   listWorkbenches: mock(() => Promise.resolve([])),
-  getTenant: mock(() =>
-    Promise.resolve({
-      id: '',
-      name: '',
-      slug: '',
-      domain: '',
-      parentId: null,
-      createdAt: '',
-      updatedAt: '',
-    })
-  ),
-  listTenantPrincipals: mock(() => Promise.resolve([])),
-  getPrincipal: mock(() =>
-    Promise.resolve({
-      id: '',
-      tenantId: '',
-      kind: 'user',
-      refId: '',
-      displayName: '',
-      status: 'active',
-      roles: [],
-      createdAt: '',
-      updatedAt: '',
-    })
-  ),
-  listTenantCredentials: mock(() => Promise.resolve([])),
-  listPrincipalGrants: mock(() => Promise.resolve([])),
   listAgentInstances: mock(() => Promise.resolve([])),
-  createTenantCredential: mock(() => Promise.resolve({ credentialId: '', providerId: '' })),
-  deleteTenantCredential: mock(() => Promise.resolve()),
   launchInstanceSession: mock(() => Promise.resolve({ launched: true })),
-  listEnrichedCredentials: mock(() => Promise.resolve([])),
-  provisionAgent: mock(() =>
-    Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' })
-  ),
-  assignCredentialToAgent: mock(() => Promise.resolve()),
   deleteAgentInstance: mock(() => Promise.resolve()),
-  listAvailableTools: mock(() => Promise.resolve([])),
-  updateAgentTools: mock(() => Promise.resolve()),
-  INFERENCE_PROVIDER_NAMES: ['anthropic', 'openai', 'google-genai', 'openai-compatible'],
+  stopAgentInstance: mock(() => Promise.resolve()),
 }));
 
 function renderWithClient(ui: React.ReactElement) {
@@ -113,7 +78,7 @@ describe('LibraryRail', () => {
     );
 
     await waitFor(() => {
-      expect(view.getByRole('button', { name: 'New agent' })).toBeDefined();
+      expect(view.getByRole('button', { name: 'Add agent' })).toBeDefined();
     });
   });
 
@@ -122,86 +87,8 @@ describe('LibraryRail', () => {
     const view = renderWithClient(React.createElement(LibraryRail));
 
     await waitFor(() => {
-      expect(view.queryByRole('button', { name: 'New agent' })).toBeNull();
+      expect(view.queryByRole('button', { name: 'Add agent' })).toBeNull();
     });
-  });
-
-  it('only shows inference credentials in the agent credential editor', async () => {
-    const { listWorkbenches, listAgentInstances, listEnrichedCredentials } =
-      await import('../../lib/hub-api');
-    (listWorkbenches as ReturnType<typeof mock>).mockImplementation(() =>
-      Promise.resolve([{ id: 'wb-1', tenantId: 'tn-1', tenantSlug: 'acme', tenantName: 'Acme' }])
-    );
-    (listAgentInstances as ReturnType<typeof mock>).mockImplementation(() =>
-      Promise.resolve([
-        {
-          id: 'inst-1',
-          agentId: 'ag-1',
-          agentName: 'Loop',
-          tenantId: 'tn-1',
-          address: '',
-          status: 'running',
-          credentialRequirements: [
-            { providerName: 'openai-compatible', source: 'tenant', name: 'Zen Test' },
-          ],
-          capabilities: null,
-          createdAt: new Date().toISOString(),
-        },
-      ])
-    );
-    (listEnrichedCredentials as ReturnType<typeof mock>).mockImplementation(() =>
-      Promise.resolve([
-        {
-          id: 'cred-1',
-          name: 'Zen Test',
-          tenantId: 'tn-1',
-          providerPlugin: 'openai-compatible',
-          providerName: 'openai-compatible',
-          providerId: 'pid-1',
-          status: 'active',
-          baseURL: '',
-          model: '',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          id: 'cred-2',
-          name: 'Exa Key',
-          tenantId: 'tn-1',
-          providerPlugin: 'exa',
-          providerName: 'exa',
-          providerId: 'pid-2',
-          status: 'active',
-          baseURL: '',
-          model: '',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ])
-    );
-
-    const { LibraryRail } = await import('./LibraryRail');
-    const view = renderWithClient(
-      React.createElement(LibraryRail as React.FC<LibraryRailProps>, {
-        activeWorkbenchSlug: 'acme',
-        onAgentSelect: () => void 0,
-      })
-    );
-
-    await waitFor(() => {
-      expect(view.getByText('Loop')).toBeDefined();
-    });
-
-    fireEvent.click(view.getByRole('button', { name: 'Configure credential' }));
-
-    await waitFor(() => {
-      expect(view.getByRole('combobox')).toBeDefined();
-    });
-
-    const options = view.getAllByRole('option');
-    expect(options.length).toBe(1);
-    expect(options[0].textContent).toContain('Zen Test');
-    expect(options[0].textContent).not.toContain('Exa');
   });
 
   it('opens deployed agents so the chat can launch or show the real error', async () => {

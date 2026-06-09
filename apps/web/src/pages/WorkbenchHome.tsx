@@ -5,27 +5,28 @@ import { AgentChat } from '../components/AgentChat';
 import { WorkflowPanel } from '../components/WorkflowPanel';
 import { NewWorkflowPane } from '../components/NewWorkflowPane';
 import { LibraryRail } from '../components/layout/LibraryRail';
-import { NewWorkbenchModal } from '../components/layout/NewWorkbenchModal';
-import { NewAgentModal } from '../components/layout/NewAgentModal';
+import { AgentCatalogModal } from '../components/layout/AgentCatalogModal';
 import { WorkflowPicker } from '../components/layout/WorkflowPicker';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
 import { useResizableRail } from '@workbench/ui';
 import { useMediaQuery } from '../lib/use-media-query';
-import { getMe, listWorkbenches } from '../lib/hub-api';
+import { deployAgentFromTemplate, getMe, listWorkbenches } from '../lib/hub-api';
 import { useChatLauncher } from '../lib/chat-launcher-context';
 import type { AgentSelection } from '../components/layout/LibraryRail';
-import type { ProvisionAgentResponse } from '../lib/hub-api';
-import type { WorkbenchEntry } from '../lib/hub-api';
+import type { MeResponse, WorkbenchEntry } from '../lib/hub-api';
 
-const PROVISIONING_MAX_RETRIES = 10;
+const ME_MAX_RETRIES = 10;
 
 type ProvisioningState =
   | { status: 'loading' }
-  | { status: 'needs-onboarding' }
+  | { status: 'needs-onboarding'; me: MeResponse }
   | { status: 'ready' }
   | { status: 'error'; message: string };
 
-function useProvisioningGuard(): { state: ProvisioningState; retry: () => void } {
+function useProvisioningGuard(): {
+  state: ProvisioningState;
+  retry: () => void;
+} {
   const [state, setState] = useState<ProvisioningState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -45,17 +46,18 @@ function useProvisioningGuard(): { state: ProvisioningState; retry: () => void }
       try {
         const me = await getMe();
         setState(
-          me.provisioned && me.paInstanceId ? { status: 'ready' } : { status: 'needs-onboarding' }
+          me.provisioned && me.paInstanceId
+            ? { status: 'ready' }
+            : { status: 'needs-onboarding', me }
         );
         clear();
       } catch {
         retryCountRef.current += 1;
-        if (retryCountRef.current >= PROVISIONING_MAX_RETRIES) {
+        if (retryCountRef.current >= ME_MAX_RETRIES) {
           clear();
           setState({
             status: 'error',
-            message:
-              'Could not reach the server while setting up your workbench. Check your connection and try again.',
+            message: 'Could not reach the server. Check your connection and try again.',
           });
         }
       }
@@ -74,6 +76,59 @@ function useProvisioningGuard(): { state: ProvisioningState; retry: () => void }
   return { state, retry };
 }
 
+function OnboardingScreen({
+  tenantId,
+  tenantName,
+  onComplete,
+}: {
+  tenantId: string | null;
+  tenantName: string | null;
+  onComplete: () => void;
+}) {
+  const [launching, setLaunching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleLaunch = async () => {
+    if (!tenantId) return;
+    setLaunching(true);
+    setError(null);
+    try {
+      await deployAgentFromTemplate(tenantId, 'myra');
+      onComplete();
+    } catch {
+      setError('Something went wrong. Please try again.');
+      setLaunching(false);
+    }
+  };
+
+  const buttonLabel = launching
+    ? 'Launching…'
+    : tenantName
+      ? `Launch Myra and join the ${tenantName} team`
+      : 'Launch Myra';
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-6 px-4">
+      <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+        <h1 className="text-[20px] font-semibold text-text">Welcome to Workbench</h1>
+        <p className="text-[14px] leading-relaxed text-text-2">
+          Myra is your personal agent — she gets smarter the more you work together and stays in
+          context across everything you do.
+        </p>
+        {error && <p className="text-[13px] text-red-500">{error}</p>}
+        <button
+          type="button"
+          disabled={launching || !tenantId}
+          onClick={() => void handleLaunch()}
+          className="mt-2 rounded-[9px] bg-orange px-5 py-2.5 text-[14px] font-medium text-white transition-opacity disabled:opacity-50"
+        >
+          {buttonLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Workbench home. Full-bleed, mobile-responsive layout.
  *
@@ -89,7 +144,7 @@ function useProvisioningGuard(): { state: ProvisioningState; retry: () => void }
  */
 const RAIL_HEIGHT = 'h-full';
 
-type NewModal = 'none' | 'workbench' | 'agent';
+type NewModal = 'none' | 'agent-catalog';
 
 type RightPane =
   | { view: 'gallery' }
@@ -135,8 +190,8 @@ export default function WorkbenchHome() {
   const [agentRefreshTick, setAgentRefreshTick] = useState(0);
   const { slug } = useParams<{ slug?: string }>();
   const navigate = useNavigate();
-  const { setHidden: setLauncherHidden } = useChatLauncher();
-  const { tenantId: workbenchTenantId } = useWorkbenchContext(slug);
+  const { setHidden: setLauncherHidden, notifyProvisioned } = useChatLauncher();
+  const { tenantId: workbenchTenantId, workbenches } = useWorkbenchContext(slug);
 
   // Auto-redirect from "/" to the first available workbench.
   useEffect(() => {
@@ -148,12 +203,6 @@ export default function WorkbenchHome() {
       })
       .catch(() => {});
   }, [slug, navigate]);
-
-  useEffect(() => {
-    if (provisioningState.status === 'needs-onboarding') {
-      void navigate('/onboarding', { replace: true });
-    }
-  }, [provisioningState, navigate]);
 
   if (provisioningState.status === 'error') {
     return (
@@ -170,27 +219,26 @@ export default function WorkbenchHome() {
     );
   }
 
-  if (provisioningState.status === 'loading' || provisioningState.status === 'needs-onboarding') {
+  if (provisioningState.status === 'loading') {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-[14px] text-text-3">Setting up your workbench…</p>
+        <p className="text-[14px] text-text-3">Loading…</p>
       </div>
     );
   }
 
-  const handleWorkbenchCreated = (newSlug: string) => {
-    setActiveModal('none');
-    void navigate(`/workbenches/${newSlug}`);
-  };
-
-  const handleAgentCreated = (_response: ProvisionAgentResponse) => {
-    setActiveModal('none');
-    setAgentRefreshTick((n) => n + 1);
-  };
-
-  const handleNew = () => {
-    setActiveModal('agent');
-  };
+  if (provisioningState.status === 'needs-onboarding') {
+    return (
+      <OnboardingScreen
+        tenantId={provisioningState.me.personalTenantId}
+        tenantName={workbenches[0]?.tenantName ?? null}
+        onComplete={() => {
+          notifyProvisioned();
+          retryProvisioning();
+        }}
+      />
+    );
+  }
 
   const handleWorkbenchSelect = (selectedSlug: string) => {
     void navigate(`/workbenches/${selectedSlug}`);
@@ -233,7 +281,10 @@ export default function WorkbenchHome() {
     }
   };
 
-  const paneTransition: Transition = { duration: 0.15, ease: [0.23, 1, 0.32, 1] };
+  const paneTransition: Transition = {
+    duration: 0.15,
+    ease: [0.23, 1, 0.32, 1],
+  };
   const paneFade = {
     initial: { opacity: 0 },
     animate: { opacity: 1 },
@@ -314,7 +365,7 @@ export default function WorkbenchHome() {
         {...paneFade}
         className="min-h-0 flex-1"
       >
-        <ArtifactGallery tenantId={workbenchTenantId} />
+        <ArtifactGallery tenantId={workbenchTenantId} onNew={handleNewWorkflow} />
       </motion.div>
     );
   }
@@ -351,15 +402,17 @@ export default function WorkbenchHome() {
             }}
           />
         ) : (
-          <ArtifactGallery tenantId={workbenchTenantId} onOpenLibrary={() => setRailOpen(true)} />
+          <ArtifactGallery
+            tenantId={workbenchTenantId}
+            onNew={handleNewWorkflow}
+            onOpenLibrary={() => setRailOpen(true)}
+          />
         )}
         {railOpen && (
           <div className="fixed inset-0 z-50 bg-page p-2">
             <LibraryRail
               onClose={() => setRailOpen(false)}
-              onNew={handleNew}
-              onNewWorkbench={() => setActiveModal('workbench')}
-              onNewWorkflow={handleNewWorkflow}
+              onNewAgent={() => setActiveModal('agent-catalog')}
               onAgentSelect={handleAgentSelect}
               onWorkflowSelect={handleWorkflowSelect}
               onWorkbenchSelect={handleWorkbenchSelect}
@@ -372,16 +425,14 @@ export default function WorkbenchHome() {
             />
           </div>
         )}
-        <NewWorkbenchModal
-          open={activeModal === 'workbench'}
+        <AgentCatalogModal
+          open={activeModal === 'agent-catalog'}
+          tenantId={workbenchTenantId ?? null}
           onClose={() => setActiveModal('none')}
-          onCreated={handleWorkbenchCreated}
-        />
-        <NewAgentModal
-          open={activeModal === 'agent'}
-          onClose={() => setActiveModal('none')}
-          onCreated={handleAgentCreated}
-          workbenchTenantId={workbenchTenantId}
+          onDeployed={() => {
+            setActiveModal('none');
+            setAgentRefreshTick((n) => n + 1);
+          }}
         />
       </div>
     );
@@ -396,9 +447,7 @@ export default function WorkbenchHome() {
       >
         <div className={`sticky top-0 self-start ${RAIL_HEIGHT}`}>
           <LibraryRail
-            onNew={handleNew}
-            onNewWorkbench={() => setActiveModal('workbench')}
-            onNewWorkflow={handleNewWorkflow}
+            onNewAgent={() => setActiveModal('agent-catalog')}
             onAgentSelect={handleAgentSelect}
             onWorkflowSelect={handleWorkflowSelect}
             onWorkbenchSelect={handleWorkbenchSelect}
@@ -431,16 +480,14 @@ export default function WorkbenchHome() {
 
         <AnimatePresence mode="wait">{renderRightPane()}</AnimatePresence>
       </div>
-      <NewWorkbenchModal
-        open={activeModal === 'workbench'}
+      <AgentCatalogModal
+        open={activeModal === 'agent-catalog'}
+        tenantId={workbenchTenantId ?? null}
         onClose={() => setActiveModal('none')}
-        onCreated={handleWorkbenchCreated}
-      />
-      <NewAgentModal
-        open={activeModal === 'agent'}
-        onClose={() => setActiveModal('none')}
-        onCreated={handleAgentCreated}
-        workbenchTenantId={workbenchTenantId}
+        onDeployed={() => {
+          setActiveModal('none');
+          setAgentRefreshTick((n) => n + 1);
+        }}
       />
     </>
   );
