@@ -1,37 +1,34 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { evaluateGrants } from '@intx/authz';
+import { createToolRunner } from '@intx/agent';
 import {
-  createDefaultDirectorRegistry,
-  createToolRunner,
-  defineAgent,
-  defineTool,
-  fromToolRunner,
-} from '@intx/agent';
-import type { MailEnv } from '@intx/harness';
-import { createHarness } from '@intx/harness';
+  createHarness,
+  createHarnessRuntimeCapabilities,
+  mergeToolRunners,
+  readDeployTree,
+} from '@intx/harness';
+
+export { mergeToolRunners as combineRunners };
 import { hasProvider } from '@intx/inference';
 import { getLogger } from '@intx/log';
 import { createIsogitStore, createMailAuditStore } from '@intx/storage-isogit';
+import { createMailTools } from '@intx/tools-mail';
 import { createPosixTools } from '@intx/tools-posix';
 import { createLSPPlugin } from '@intx/tools-lsp';
 import { createBlobReader } from '@intx/types/runtime';
-import type { InferenceEvent, InferenceSource } from '@intx/types/runtime';
-import { readDeployTree, type HarnessBuilder, type HarnessBundle } from '@intx/hub-agent';
+import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/runtime';
+import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
 import { createAskPrincipalTool } from '@workbench/approvals';
 import { decryptSecret, type CredentialKeyRegistry } from '@workbench/hub-crypto';
 import { createHubToolRunner } from './hub-tool-runner';
-import type { ToolDefinition, ToolRunner } from '@intx/types/runtime';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
 
-type DefinedRunner = ToolRunner & { definitions: readonly ToolDefinition[] };
+type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
 
 /**
- * Derive the hub's HTTP origin from its websocket URL. Returns origin only —
- * HUB_WS_URL carries the sidecar websocket path (e.g. /api/sidecars/ws), which
- * must not leak into HTTP endpoint URLs the sidecar builds (e.g. the internal
- * tool-run endpoint mounted at /api/internal/tools/run).
+ * Derive the hub's HTTP origin from its websocket URL.
  */
 export function wsUrlToHttp(wsUrl: string): string {
   const url = new URL(wsUrl);
@@ -40,45 +37,8 @@ export function wsUrlToHttp(wsUrl: string): string {
 }
 
 /**
- * Combine several tool runners into a single runner that dispatches each
- * call to the runner that owns the named tool. Replaces the removed
- * `@intx/harness` `mergeToolRunners` helper: the new runtime composes
- * tools through `defineAgent({ tools: [...] })` factories, but the
- * sidecar still wants a single dispatchable runner so it can gate the
- * model-visible surface (see `filterToolRunner`) before handing the
- * result to the agent as one bundle.
- */
-export function combineRunners(runners: DefinedRunner[]): DefinedRunner {
-  const byName = new Map<string, DefinedRunner>();
-  const definitions: ToolDefinition[] = [];
-  for (const runner of runners) {
-    for (const def of runner.definitions) {
-      byName.set(def.name, runner);
-      definitions.push(def);
-    }
-  }
-  return {
-    definitions,
-    async run(call, signal) {
-      const runner = byName.get(call.name);
-      if (runner === undefined) {
-        return {
-          callId: call.id,
-          content: { error: `Tool "${call.name}" has no registered handler` },
-          isError: true,
-        };
-      }
-      return runner.run(call, signal);
-    },
-  };
-}
-
-/**
  * Filter a merged tool runner to only expose the tool definitions the hub
- * configured for this agent. The underlying handlers remain available so
- * that the sidecar can safely add new tools without the hub needing to
- * know about them at launch time; only the model-visible definitions are
- * gated.
+ * configured for this agent.
  */
 function filterToolRunner(runner: DefinedRunner, allowedNames: Set<string>): DefinedRunner {
   const filtered = runner.definitions.filter((d) => allowedNames.has(d.name));
@@ -157,6 +117,9 @@ export function createDefaultHarnessBuilder({
         blobReader,
       });
 
+      const capabilities = createHarnessRuntimeCapabilities({ transport: agentTransport });
+      const mailTools = createMailTools({ capabilities });
+
       const askPrincipalRunner = createToolRunner([
         createAskPrincipalTool({
           hubHttpUrl,
@@ -182,70 +145,31 @@ export function createDefaultHarnessBuilder({
         toolDefinitions: agentConfig.tools.filter((t) => !localToolNames.has(t.name)),
       });
 
-      const allTools = combineRunners([posixTools, askPrincipalRunner, hubToolRunner]);
+      const allTools = mergeToolRunners([
+        posixTools,
+        mailTools,
+        askPrincipalRunner as DefinedRunner,
+        hubToolRunner,
+      ]);
       const allowedNames = new Set(agentConfig.tools.map((t) => t.name));
-      const tools = filterToolRunner(allTools, allowedNames);
-
-      // The new runtime composes tools through `defineAgent` factories. We
-      // already have one fully-assembled, name-gated runner, so wrap it in
-      // a single `defineTool` bundle that adapts the runner's definitions
-      // and dispatch into the agent's factory contract.
-      const toolFactory = defineTool({
-        id: '@workbench/sidecar/tools',
-        factory: () => {
-          const adapted = createToolRunner(fromToolRunner(tools));
-          return {
-            definitions: adapted.definitions,
-            run: (call, signal) => adapted.run(call, signal),
-          };
-        },
-      });
-
-      const definition = defineAgent({
-        id: agentConfig.agentId,
-        systemPrompt,
-        tools: [toolFactory],
-        capabilities: [],
-        inference: { sources: [{ provider: source.provider, model: source.model }] },
-      });
+      const tools = filterToolRunner(allTools as DefinedRunner, allowedNames);
 
       const decryptedSource = decryptSource(source, credentialKeys, tenantId);
 
-      const env: MailEnv = {
-        source: decryptedSource,
-        storage,
-        workdir: workDir,
-        audit: storage,
-        authorize,
-        directors: createDefaultDirectorRegistry(),
-        transport: agentTransport,
-        address: agentAddress,
-        onConnectorStateChanged,
-      };
-
       try {
-        const harness = await createHarness(definition, env);
-
-        // The old harness accepted an `onEvent` callback directly; the new
-        // runtime exposes events only through `harness.stream()`. Subscribe
-        // and forward every reactor event except `message.received` (which
-        // is not part of the `InferenceEvent` union the session sink
-        // consumes). The drain is detached and stops when the stream closes
-        // on `harness.close()`; the disposer guards against double-stop.
-        let stopForwarding = false;
-        async function forwardEvents(): Promise<void> {
-          try {
-            for await (const event of harness.stream()) {
-              if (stopForwarding) break;
-              if (event.type === 'message.received') continue;
-              onEvent(event as InferenceEvent);
-            }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            logger.warn('event-forwarding stream terminated: {msg}', { msg });
-          }
-        }
-        const forwardingDone = forwardEvents();
+        const harness = createHarness({
+          address: agentAddress,
+          systemPrompt,
+          source: decryptedSource,
+          transport: agentTransport,
+          crypto,
+          storage,
+          authorize,
+          auditStore: storage,
+          tools,
+          onEvent,
+          onConnectorStateChanged,
+        });
 
         return {
           harness,
@@ -254,14 +178,17 @@ export function createDefaultHarnessBuilder({
             grantsRef.current = grants;
           },
           disposers: [
-            async () => {
-              stopForwarding = true;
-              await forwardingDone;
-            },
+            () => mailTools.dispose(),
             () => posixTools.dispose(),
           ],
         };
       } catch (err) {
+        try {
+          await mailTools.dispose();
+        } catch (disposeErr) {
+          const msg = disposeErr instanceof Error ? disposeErr.message : String(disposeErr);
+          logger.warn('mailTools.dispose failed during harness rollback: {msg}', { msg });
+        }
         try {
           await posixTools.dispose();
         } catch (disposeErr) {
