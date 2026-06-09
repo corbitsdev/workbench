@@ -42,7 +42,7 @@ describe('flattened credential requirements (mirrors catalog endpoint)', () => {
     const flat = flattenStepCredentialRequirements(fromRoot);
     expect(flat).toEqual([
       { providerName: 'granola', source: 'tenant', name: 'Granola' },
-      { providerName: 'openai-compatible', source: 'tenant' },
+      { providerName: 'openai-compatible', source: 'tenant', name: 'zen-deepseek-v4-flash-free' },
     ]);
   });
 });

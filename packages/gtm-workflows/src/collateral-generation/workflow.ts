@@ -31,11 +31,9 @@ export const collateralGenerationWorkflow: WorkflowType = {
       description: 'Extract pain points from the transcript.',
       credentialRequirements: [
         {
-          // No name: the step uses whatever openai-compatible LLM credential the
-          // tenant has configured. Add a name here only if a tenant is expected
-          // to hold several openai-compatible credentials and one must be picked.
           providerName: 'openai-compatible',
           source: 'tenant',
+          name: 'zen-deepseek-v4-flash-free',
         },
       ],
     },
@@ -45,11 +43,9 @@ export const collateralGenerationWorkflow: WorkflowType = {
       description: 'Generate collateral from the selected pain points.',
       credentialRequirements: [
         {
-          // No name: the step uses whatever openai-compatible LLM credential the
-          // tenant has configured. Add a name here only if a tenant is expected
-          // to hold several openai-compatible credentials and one must be picked.
           providerName: 'openai-compatible',
           source: 'tenant',
+          name: 'zen-deepseek-v4-flash-free',
         },
       ],
     },

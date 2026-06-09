@@ -62,11 +62,9 @@ describe('collateral-generation per-step credential requirements', () => {
   });
 
   it('requires a tenant-owned openai-compatible LLM on analyze and generate', () => {
-    // No name: any openai-compatible credential the tenant has configured
-    // satisfies the step (the workbench stores one LLM credential per tenant).
     for (const name of ['analyze', 'generate']) {
       expect(stepByName(name).credentialRequirements).toEqual([
-        { providerName: 'openai-compatible', source: 'tenant' },
+        { providerName: 'openai-compatible', source: 'tenant', name: 'zen-deepseek-v4-flash-free' },
       ]);
     }
   });
