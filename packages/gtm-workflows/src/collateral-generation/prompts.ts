@@ -150,20 +150,98 @@ function kindGuidance(type: string) {
         ),
       ];
     case 'blog':
-    case 'case-study':
-    case 'objection-handling':
-    case 'customer-quotes':
       return [
         structuredSection(
           'role',
-          'You are writing a useful GTM document the reader can share internally or turn into collateral.'
+          'You are writing a compelling blog post with a narrative arc, not an analytical document. Write in first or second person, as if telling a story.'
         ),
         structuredSection(
           'structure',
           bulletList([
-            'Use clear markdown headers.',
-            'Start with the problem, then evidence, then recommended next step.',
-            'Make each section actionable and specific.',
+            'Hook: Open with a personal observation, relatable scenario, or concrete problem from the field.',
+            'Story: Develop the narrative from problem to solution. Show the progression, not just state the conclusion.',
+            'Lessons: Conclude with what the reader should take away. Make it personal and reflective.',
+            'Tone: Conversational, specific, and grounded. Not analytical or report-like.',
+          ])
+        ),
+        structuredSection(
+          'formatting',
+          bulletList([
+            'Use clear markdown headers (##) to structure sections.',
+            'Paste-ready with clean paragraph breaks.',
+            'Vary sentence length. Write how a person talks, not how a marketing team edits.',
+          ])
+        ),
+      ];
+    case 'case-study':
+      return [
+        structuredSection(
+          'role',
+          "You are writing a customer case study: a success story showing challenge, solution, and measurable results. Use the customer's voice and specific metrics."
+        ),
+        structuredSection(
+          'structure',
+          bulletList([
+            'Customer & Context: Who they are, their situation, what team or function they belong to.',
+            'Challenge: The specific problem they faced. Grounded in the call, in their terms.',
+            'Solution: What was implemented and how it addressed the challenge.',
+            'Results: Measurable outcomes—time saved, cost reduced, quality improved, or velocity increased.',
+          ])
+        ),
+        structuredSection(
+          'formatting',
+          bulletList([
+            'Use clear markdown headers (##) for each section.',
+            'Include specific numbers and metrics. Avoid generalizations.',
+            'This is a success story. Let the positive outcome come through clearly.',
+          ])
+        ),
+      ];
+    case 'objection-handling':
+      return [
+        structuredSection(
+          'role',
+          'You are writing an objection-handling guide: a tactical reference for sellers to rebut common objections with evidence and examples.'
+        ),
+        structuredSection(
+          'structure',
+          bulletList([
+            'For each objection: State it clearly as a buyer might raise it.',
+            'Response: Provide a direct, conversational rebuttal. Address the concern head-on.',
+            'Proof: Cite proof points—evidence, outcomes, or patterns from customers.',
+            'Example: Give a concrete scenario that makes the response real and actionable.',
+          ])
+        ),
+        structuredSection(
+          'formatting',
+          bulletList([
+            'Format for sales readiness. This is a tactical tool, not a narrative.',
+            'Use clear headers and short, scannable sections.',
+            'Each objection should be a complete unit a rep can use immediately.',
+          ])
+        ),
+      ];
+    case 'customer-quotes':
+      return [
+        structuredSection(
+          'role',
+          'You are curating verbatim customer quotes that illustrate key themes. Let quotes speak for themselves—no paraphrasing or narrative commentary.'
+        ),
+        structuredSection(
+          'structure',
+          bulletList([
+            'Quote: Exact verbatim text from the call, in quotation marks.',
+            'Attribution: Who said it (name, title, company). Generalise company if needed (e.g., "mid-market SaaS team").',
+            'Context: When and why they said it. What problem or situation prompted the comment.',
+            'Theme: What theme or insight this quote supports.',
+          ])
+        ),
+        structuredSection(
+          'formatting',
+          bulletList([
+            'Each quote is a distinct unit with all four elements.',
+            "No paraphrasing. No editorializing. Let the customers' own words do the work.",
+            'Use clear formatting to separate quote, attribution, context, and theme.',
           ])
         ),
       ];
@@ -171,11 +249,25 @@ function kindGuidance(type: string) {
       return [
         structuredSection(
           'role',
-          'You are writing paid ad copy with 4 variants for a paid media handoff.'
+          'You are writing a competitive battlecard: a reference guide for sellers to position against competitors and respond to competitive claims.'
         ),
         structuredSection(
-          'format',
-          xml('table', 'Markdown table with columns: Variant | Headline | Body | CTA.')
+          'structure',
+          bulletList([
+            'Competitor or Scenario: Name the competitor or competitive positioning to address.',
+            'Their Claim: What they claim about their product, approach, or advantage.',
+            'Our Differentiation: How we position differently. What is our actual advantage.',
+            'Proof Points: Evidence, outcomes, or capabilities that support our positioning.',
+          ])
+        ),
+        structuredSection(
+          'formatting',
+          bulletList([
+            'Format as a reference guide for sales, not paid media copy.',
+            'Use clear headers so reps can scan and find what they need quickly.',
+            'Each competitor is a complete unit with all four elements.',
+            'Tone is factual and direct. No superlatives or hype.',
+          ])
         ),
       ];
     default:
