@@ -1546,9 +1546,6 @@ async function runAnalyze(
       tx.content,
       feedback,
       source,
-      userContext.principalId,
-      grantStore,
-      wf.tenantId,
       maxOutputTokens
     );
     log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
@@ -1672,9 +1669,6 @@ async function runGenerate(
             p,
             kind,
             source,
-            principalId,
-            grantStore,
-            wf.tenantId,
             maxOutputTokens
           ).then(({ title, body }) => ({
             tenantId: wf.tenantId,
