@@ -69,8 +69,11 @@ if (ownerEmail) {
     { email: ownerEmail },
     cookies
   );
-  if (inviteRes.status !== 200 && inviteRes.status !== 201) {
+  if (inviteRes.status === 409) {
+    log(`Owner already a member: ${ownerEmail}`);
+  } else if (inviteRes.status !== 200 && inviteRes.status !== 201) {
     fail(`invite owner ${ownerEmail}`, inviteRes.status, inviteRes.data);
+  } else {
+    log(`Owner invited: ${ownerEmail}`);
   }
-  log(`Owner invited: ${ownerEmail}`);
 }
