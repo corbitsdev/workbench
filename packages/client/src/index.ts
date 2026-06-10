@@ -53,6 +53,7 @@ export interface ListWorkflowsParams {
 
 export interface ListArtifactsParams {
   tenantId?: string | null;
+  query?: string;
 }
 
 /** Fetch the current user's jobs (`GET /workflows`). */
@@ -72,6 +73,9 @@ export function listArtifacts(
   options: ClientOptions = {},
   params: ListArtifactsParams = {}
 ): Promise<ArtifactWithSession[]> {
-  const search = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  const qs = new URLSearchParams();
+  if (params.tenantId) qs.set('tenantId', params.tenantId);
+  if (params.query) qs.set('query', params.query);
+  const search = qs.size > 0 ? `?${qs.toString()}` : '';
   return request<ArtifactWithSession[]>(`artifacts${search}`, options);
 }

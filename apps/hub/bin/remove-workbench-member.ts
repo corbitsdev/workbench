@@ -73,7 +73,9 @@ try {
   const workbench = workbenches[wbIdx]!;
 
   // Load members of this workbench.
-  const members = await sql<{ principal_id: string; user_id: string; email: string; display_name: string }[]>`
+  const members = await sql<
+    { principal_id: string; user_id: string; email: string; display_name: string }[]
+  >`
     select p.id as principal_id, u.id as user_id, u.email, u.name as display_name
     from principal p
     join "user" u on u.id = p.ref_id

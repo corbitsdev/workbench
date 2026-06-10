@@ -13,6 +13,10 @@ export interface ArtifactGalleryProps {
   artifacts: ArtifactWithSession[];
   isLoading?: boolean;
   isError?: boolean;
+  /** Current search query value. */
+  query?: string;
+  /** Called when the user changes the search input. */
+  onQueryChange?: (query: string) => void;
   /** Invoked when a tile is opened. */
   onOpen?: (artifact: GalleryArtifact) => void;
   /** Bridge to the working intake flow (the "New" action). */
@@ -25,11 +29,14 @@ export function ArtifactGallery({
   artifacts,
   isLoading = false,
   isError = false,
+  query = '',
+  onQueryChange,
   onOpen,
   onNew,
   onOpenLibrary,
 }: ArtifactGalleryProps) {
   const tiles = artifacts.map(toGalleryArtifact);
+  const isSearching = query.trim().length > 0;
 
   return (
     <section className="flex min-h-full flex-col rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
@@ -57,6 +64,13 @@ export function ArtifactGallery({
           {tiles.length} items
         </span>
         <div className="flex-1" />
+        <input
+          type="search"
+          placeholder="Search artifacts"
+          value={query}
+          onChange={(e) => onQueryChange?.(e.target.value)}
+          className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
+        />
         <button
           type="button"
           className="flex items-center gap-[7px] rounded-[9px] border border-border px-[13px] py-[7px] text-[12.5px] font-semibold text-text-2 transition-colors hover:border-border-strong hover:bg-[var(--row-hover)]"
@@ -93,9 +107,14 @@ export function ArtifactGallery({
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7 [container-type:inline-size]">
         {isLoading && <div className="py-10 text-[13px] text-text-3">Loading artifacts…</div>}
         {isError && <div className="py-10 text-[13px] text-text-3">Could not load artifacts.</div>}
-        {!isLoading && !isError && tiles.length === 0 && (
+        {!isLoading && !isError && tiles.length === 0 && !isSearching && (
           <div className="py-10 text-[13px] text-text-3">
             No artifacts yet. Start a job to generate collateral.
+          </div>
+        )}
+        {!isLoading && !isError && tiles.length === 0 && isSearching && (
+          <div className="py-10 text-[13px] text-text-3">
+            No results for &ldquo;{query.trim()}&rdquo;.
           </div>
         )}
         <div className="grid auto-rows-[88px] grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
