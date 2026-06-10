@@ -5,6 +5,7 @@ See [AGENTS.md](./AGENTS.md).
 ## React Patterns
 
 - **Avoid unnecessary useEffect**: Read [alejandrobailo/no-use-effect](https://github.com/alejandrobailo/no-use-effect) for patterns and anti-patterns. Many `useEffect` calls can be replaced with proper state management or moved to event handlers.
+- **Data fetching uses TanStack Query** (`useQuery`/`useMutation`), never `useEffect` + `useState` + fetch. Use `enabled` to gate queries on conditions (e.g. modal open state). Place query hooks in `src/hooks/` when reused across components; inline `useQuery` is fine for single-use cases.
 
 ## Data Handling
 

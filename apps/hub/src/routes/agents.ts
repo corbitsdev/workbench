@@ -280,6 +280,16 @@ export function createAgentProvisioningRouter(
     return c.json({ launched: true });
   });
 
+  // List deployable agent templates for the catalog UI.
+  app.get('/agents/templates', (c) => {
+    const templates = AGENT_TEMPLATES.filter((t) => t.deployable !== false).map((t) => ({
+      key: t.key,
+      name: t.name,
+      description: t.description,
+    }));
+    return c.json({ data: templates });
+  });
+
   // Deploy an agent instance from a pre-built template.
   // Creates a principal + agentInstance + memberAgentInstance row then launches
   // the session. The shared agent definition is the one seeded at boot time in
