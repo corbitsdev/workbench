@@ -34,7 +34,21 @@ COPY packages/workflow-core/package.json packages/workflow-core/
 COPY packages/workflow/package.json packages/workflow/
 RUN bun install --frozen-lockfile
 
-COPY . .
+COPY interchange/ interchange/
+COPY apps/hub/ apps/hub/
+COPY packages/agent-scheduler/ packages/agent-scheduler/
+COPY packages/agents/ packages/agents/
+COPY packages/chat/ packages/chat/
+COPY packages/gtm-workflows/ packages/gtm-workflows/
+COPY packages/prompts/ packages/prompts/
+COPY packages/sentry/ packages/sentry/
+COPY packages/tools-dispatch/ packages/tools-dispatch/
+COPY packages/tools-exa/ packages/tools-exa/
+COPY packages/tools-firecrawl/ packages/tools-firecrawl/
+COPY packages/tools-granola/ packages/tools-granola/
+COPY packages/ui/ packages/ui/
+COPY packages/workbench-shared/ packages/workbench-shared/
+COPY packages/workflow-core/ packages/workflow-core/
 
 EXPOSE 4000
 

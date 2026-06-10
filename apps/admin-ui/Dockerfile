@@ -34,7 +34,7 @@ COPY packages/workflow-core/package.json packages/workflow-core/
 COPY packages/workflow/package.json packages/workflow/
 RUN bun install --frozen-lockfile
 
-COPY . .
+COPY interchange/ interchange/
 
 WORKDIR /app/interchange/apps/admin-ui
 RUN bunx vite build
