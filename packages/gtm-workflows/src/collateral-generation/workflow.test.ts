@@ -126,12 +126,12 @@ describe('collateral-generation artifact behavior', () => {
     expect(selected).toEqual(['linkedin-post', 'blog']);
   });
 
-  it('falls back to the default set when no requested kind is valid', () => {
+  it('returns no kinds when no requested kind is valid', () => {
     const selected = collateralGenerationWorkflow.selectGenerateArtifactKinds?.([
       'pain-points-linkedin-post',
       'pain-points-blog',
     ]);
-    expect(selected).toEqual(['email', 'linkedin-post', 'one-pager', 'battlecard']);
+    expect(selected).toEqual([]);
   });
 
   it('creates transcript artifacts during intake', () => {

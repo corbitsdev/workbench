@@ -57,8 +57,15 @@ export function createHubTransport(): Transport {
       let retryTimeout: ReturnType<typeof setTimeout> | null = null;
       let retryDelay = 1000;
       let closed = false;
+      // Consecutive connections that errored without ever opening. An auth or
+      // routing failure (403/404) presents this way on every attempt — unlike a
+      // dropped-but-once-open stream — so after a few we stop for good instead
+      // of hammering the hub forever.
+      let failedBeforeOpen = 0;
+      const MAX_FAILED_BEFORE_OPEN = 3;
 
       function connect() {
+        let opened = false;
         es = new EventSource(toEventSourceUrl(path), { withCredentials: true });
         const handler = (e: MessageEvent) => onEvent(JSON.parse(e.data));
         if (opts?.eventName) {
@@ -68,14 +75,19 @@ export function createHubTransport(): Transport {
         }
         es.onerror = () => {
           es.close();
-          if (!closed) {
-            retryTimeout = setTimeout(() => {
-              retryDelay = Math.min(retryDelay * 2, 30_000);
-              connect();
-            }, retryDelay);
+          if (closed) return;
+          if (!opened) {
+            failedBeforeOpen += 1;
+            if (failedBeforeOpen >= MAX_FAILED_BEFORE_OPEN) return;
           }
+          retryTimeout = setTimeout(() => {
+            retryDelay = Math.min(retryDelay * 2, 30_000);
+            connect();
+          }, retryDelay);
         };
         es.onopen = () => {
+          opened = true;
+          failedBeforeOpen = 0;
           retryDelay = 1000;
         };
       }

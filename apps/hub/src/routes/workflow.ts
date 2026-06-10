@@ -1207,10 +1207,18 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         return runAnalyze(db, id, userContext, source, body.feedback, maxOutputTokens);
       }
       // step === 'generate'
+      if (!Array.isArray(body.painPointIds) || body.painPointIds.length === 0) {
+        log.warn('Generate called without pain point selection', { workflowId: id });
+        return c.json({ error: 'Select at least one pain point to generate collateral.' }, 400);
+      }
+      if (!Array.isArray(body.collateralTypes) || body.collateralTypes.length === 0) {
+        log.warn('Generate called without collateral type selection', { workflowId: id });
+        return c.json({ error: 'Select at least one collateral type to generate.' }, 400);
+      }
       return runGenerate(
         db,
         id,
-        body.painPointIds ?? [],
+        body.painPointIds,
         body.collateralTypes,
         userContext.principalId,
         source,
@@ -1595,7 +1603,7 @@ async function runGenerate(
   db: HubDb,
   id: string,
   painPointIds: string[],
-  collateralTypes: string[] | undefined,
+  collateralTypes: string[],
   principalId: string,
   source: InferenceSource,
   maxOutputTokens?: number
@@ -1629,18 +1637,21 @@ async function runGenerate(
       : null;
     const transcriptContent: string = tx?.content ?? '';
 
+    // Reset stale selections from prior runs, then persist exactly this run's
+    // selection — the UI's generating summary reads this flag after a remount.
+    await db.update(painPoint).set({ selected: false }).where(eq(painPoint.sessionId, id));
     await db
       .update(painPoint)
       .set({ selected: true })
       .where(and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)));
 
     const workflowDefinition = workflowRegistry.get(wf.kind);
-    const artifactKinds = workflowDefinition?.selectGenerateArtifactKinds?.(collateralTypes) ?? [
-      'email',
-      'linkedin',
-      'one-pager',
-      'battlecard',
-    ];
+    const artifactKinds = workflowDefinition?.selectGenerateArtifactKinds?.(collateralTypes) ?? [];
+    if (artifactKinds.length === 0) {
+      log.warn('No valid collateral types for generate', { workflowId: id, collateralTypes });
+      await db.update(workflowRun).set({ status: 'ready' }).where(eq(workflowRun.id, id));
+      return Response.json({ error: 'No valid collateral types selected.' }, { status: 400 });
+    }
 
     const results = await Promise.allSettled(
       points.flatMap((p: any) =>

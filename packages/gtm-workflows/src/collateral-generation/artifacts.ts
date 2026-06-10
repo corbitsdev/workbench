@@ -25,8 +25,6 @@ export const collateralTypeOptions = [
   { id: 'customer-quotes', label: 'Customer Quotes' },
 ] as const;
 
-const defaultCollateralTypeIds = ['email', 'linkedin-post', 'one-pager', 'battlecard'] as const;
-
 const BOOKKEEPING_KINDS = new Set(['call-transcript', 'pain-points']);
 
 export function isCollateralKind(kind: string): boolean {
@@ -35,10 +33,9 @@ export function isCollateralKind(kind: string): boolean {
 
 export function selectCollateralTypeIds(requested: string[] | undefined): string[] {
   const allowed = new Set(collateralTypeOptions.map((option) => option.id));
-  const selected = requested?.filter((id) =>
+  return (requested ?? []).filter((id) =>
     allowed.has(id as (typeof collateralTypeOptions)[number]['id'])
   );
-  return selected && selected.length > 0 ? selected : [...defaultCollateralTypeIds];
 }
 
 export function deriveCollateralRunTitle(

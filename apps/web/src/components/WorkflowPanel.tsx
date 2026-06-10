@@ -4,7 +4,6 @@ import { CheckIcon } from 'lucide-react';
 import PainPointsList from './PainPointsList';
 import FeedbackSection from './FeedbackSection';
 import ArtifactBody from './ArtifactBody';
-import { WorkflowStepConfig } from './WorkflowStepConfig';
 import { HorizontalStepper, buildSteps } from '@workbench/workflow';
 import { collateralTypeOptions } from '@workbench/gtm-workflows';
 import type { ArtifactKind } from '@workbench/shared';
@@ -31,18 +30,14 @@ interface PainPointData {
   selected?: boolean;
 }
 
-const DEFAULT_COLLATERAL_TYPES = ['email', 'linkedin-post', 'one-pager', 'battlecard'];
-
 // The pain points a generation run was started with: the current in-session
-// selection if present, else the server-persisted selection (survives remount),
-// else all of them.
+// selection if present, else the server-persisted selection (survives remount).
 function getSubmittedPainPoints(
   painPoints: PainPointData[],
   selectedIds: Set<string>
 ): PainPointData[] {
   if (selectedIds.size > 0) return painPoints.filter((p) => selectedIds.has(p.id));
-  const serverSelected = painPoints.filter((p) => p.selected);
-  return serverSelected.length > 0 ? serverSelected : painPoints;
+  return painPoints.filter((p) => p.selected);
 }
 
 export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
@@ -52,11 +47,8 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
 
   const [feedback, setFeedback] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [collateralTypes, setCollateralTypes] = useState<Set<string>>(
-    new Set(DEFAULT_COLLATERAL_TYPES)
-  );
+  const [collateralTypes, setCollateralTypes] = useState<Set<string>>(new Set());
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
-  const [configOpen, setConfigOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -137,9 +129,12 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   };
 
   const handleGenerate = () => {
-    const ids = selectedIds.size > 0 ? [...selectedIds] : painPoints.map((p) => p.id);
-    const types = collateralTypes.size > 0 ? [...collateralTypes] : DEFAULT_COLLATERAL_TYPES;
-    void runStep.mutateAsync({ step: 'generate', painPointIds: ids, collateralTypes: types });
+    if (selectedIds.size === 0 || collateralTypes.size === 0) return;
+    void runStep.mutateAsync({
+      step: 'generate',
+      painPointIds: [...selectedIds],
+      collateralTypes: [...collateralTypes],
+    });
   };
 
   // Determine active artifact — prefer explicit selection, fall back to first draft, then last
@@ -185,28 +180,6 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
-            onClick={() => setConfigOpen((v) => !v)}
-            aria-label={configOpen ? 'Close step configuration' : 'Configure steps'}
-            title={configOpen ? 'Close step configuration' : 'Configure steps'}
-            className={`grid h-[28px] w-[28px] place-items-center rounded-[8px] border transition-colors ${
-              configOpen
-                ? 'border-orange text-text bg-[rgba(233,132,40,0.08)]'
-                : 'border-border text-text-2 hover:text-text hover:bg-surface-2'
-            }`}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="h-4 w-4"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
-            </svg>
-          </button>
-          <button
-            type="button"
             onClick={onClose}
             aria-label="Close workflow"
             className="grid h-[28px] w-[28px] place-items-center rounded-[8px] border border-border text-text-2 hover:text-text hover:bg-surface-2 transition-colors"
@@ -226,13 +199,6 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
 
       {/* Step progress */}
       <HorizontalStepper steps={steps} />
-
-      {/* Step configuration panel */}
-      {configOpen && (
-        <div className="border-b border-border bg-surface px-5 py-4 shrink-0">
-          <WorkflowStepConfig workflowId={workflowId} currentConfig={workflow.stepConfig ?? {}} />
-        </div>
-      )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Artifact pane — shown once generate is done */}
@@ -391,7 +357,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
                 feedback={feedback}
                 onFeedbackChange={setFeedback}
                 analyzeCompleted={analyzeCompleted}
-                selectedCount={selectedIds.size || (analyzeCompleted ? painPoints.length : 0)}
+                selectedCount={selectedIds.size}
                 isLoading={isBusy}
                 onAnalyze={handleAnalyze}
                 onGenerate={handleGenerate}
