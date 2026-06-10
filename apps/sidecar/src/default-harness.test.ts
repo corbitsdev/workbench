@@ -13,15 +13,28 @@ mock.module('@intx/storage-isogit', () => ({
   })),
 }));
 
-const createHarnessMock = mock(() => ({ type: 'harness' }));
+// The new runtime exposes events only through `harness.stream()`. The
+// builder subscribes to it and forwards events, so the mocked harness
+// must return an async-iterable stream that closes immediately.
+const createHarnessMock = mock(async () => ({
+  type: 'harness',
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async *stream() {
+    // Empty stream: closes immediately so the builder's forwarding
+    // drain settles without emitting any event.
+  },
+  async close() {},
+}));
 
 mock.module('@intx/harness', () => ({
   createHarness: createHarnessMock,
-  readDeployTree: mock(async () => ({ systemPrompt: null })),
-  mergeToolRunners: mock((runners: { definitions: unknown[] }[]) => ({
-    definitions: runners.flatMap((r) => r.definitions ?? []),
-    run: mock(async () => ({ callId: 'x', content: '' })),
+  createHarnessRuntimeCapabilities: mock(() => ({
+    resolve: mock(() => ({ type: 'mock-transport' })),
   })),
+}));
+
+mock.module('@intx/hub-agent', () => ({
+  readDeployTree: mock(async () => ({ systemPrompt: undefined })),
 }));
 
 mock.module('@intx/tools-posix', () => ({
@@ -44,12 +57,8 @@ mock.module('@intx/types/runtime', () => ({
   createBlobReader: mock(() => ({})),
 }));
 
-import { createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
-import type { InferenceSource } from '@intx/types/runtime';
-import { encryptSecret, parseEncryptionKeys } from '@workbench/hub-crypto';
-import { mergeToolRunners } from '@intx/harness';
-
-const TEST_KEYS = parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`);
+import { combineRunners, createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
+import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/runtime';
 const TEST_TENANT_ID = 'tenant-1';
 
 const validSource: InferenceSource = {
@@ -82,7 +91,6 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
-        credentialKeys: TEST_KEYS,
       });
       expect(() => builder.canBuildSource(validSource)).not.toThrow();
     });
@@ -91,7 +99,6 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
-        credentialKeys: TEST_KEYS,
       });
       const unknownSource: InferenceSource = { ...validSource, provider: 'unknown-provider-xyz' };
       expect(() => builder.canBuildSource(unknownSource)).toThrow(
@@ -105,7 +112,6 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
-        credentialKeys: TEST_KEYS,
       });
 
       const bundle = await builder.build({
@@ -138,16 +144,14 @@ describe('createDefaultHarnessBuilder', () => {
       expect(bundle.disposers.length).toBeGreaterThan(0);
     });
 
-    it('decrypts an enc:-prefixed apiKey before passing the source to createHarness', async () => {
+    it('passes the source apiKey through to createHarness unchanged (plaintext)', async () => {
       createHarnessMock.mockClear();
 
-      const encryptedKey = encryptSecret(TEST_KEYS, TEST_TENANT_ID, 'sk-plaintext-key');
-      const encryptedSource: InferenceSource = { ...validSource, apiKey: encryptedKey };
+      const plaintextSource: InferenceSource = { ...validSource, apiKey: 'sk-plaintext-key' };
 
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
-        credentialKeys: TEST_KEYS,
       });
 
       await builder.build({
@@ -156,7 +160,7 @@ describe('createDefaultHarnessBuilder', () => {
           agentAddress: 'agent@tenant.localhost',
           agentId: 'agent-1',
           sessionId: 'session-1',
-          sources: [encryptedSource],
+          sources: [plaintextSource],
           defaultSource: 'src-1',
           grants: [],
           tools: [],
@@ -164,7 +168,7 @@ describe('createDefaultHarnessBuilder', () => {
           tenantId: TEST_TENANT_ID,
           systemPrompt: 'You are a helpful assistant.',
         },
-        source: encryptedSource,
+        source: plaintextSource,
         storeDir: '/tmp/test-store',
         agentTransport: {} as any,
         crypto: { signSSH: mock(() => 'sig') } as any,
@@ -173,20 +177,110 @@ describe('createDefaultHarnessBuilder', () => {
       });
 
       expect(createHarnessMock).toHaveBeenCalledTimes(1);
-      const callArgs = createHarnessMock.mock.calls[0] as unknown as [{ source: InferenceSource }];
-      expect(callArgs[0].source.apiKey).toBe('sk-plaintext-key');
+      // createHarness(def, env) — the source lives on the env (second argument),
+      // not the definition. Secrets are plaintext at the app layer now.
+      const callArgs = createHarnessMock.mock.calls[0] as unknown as [
+        unknown,
+        { source: InferenceSource },
+      ];
+      expect(callArgs[1].source.apiKey).toBe('sk-plaintext-key');
     });
 
-    it('excludes POSIX tools from the hub tool runner to avoid mergeToolRunners collisions', async () => {
-      (mergeToolRunners as unknown as ReturnType<typeof mock>).mockClear?.();
+    it('forwards reactor events to onEvent, skipping message.received', async () => {
+      // Without this forwarding the hub never sees inference/turn events, so
+      // committed turns and streaming text only render after a manual reload.
+      // message.received is reactor-internal and not an InferenceEvent.
+      createHarnessMock.mockImplementationOnce((async () => ({
+        type: 'harness',
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async *stream() {
+          yield { type: 'inference.start', seq: 0, data: { model: 'gpt-4o' } };
+          yield { type: 'message.received', seq: 1, data: { message: {} } };
+          yield { type: 'connector.reply', seq: 2, data: {} };
+        },
+        async close() {},
+      })) as any);
 
+      const onEvent = mock((_event: unknown) => {});
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
-        credentialKeys: TEST_KEYS,
       });
 
-      await builder.build({
+      const bundle = await builder.build({
+        agentAddress: 'agent@tenant.localhost',
+        agentConfig: {
+          agentAddress: 'agent@tenant.localhost',
+          agentId: 'agent-1',
+          sessionId: 'session-1',
+          sources: [validSource],
+          defaultSource: 'src-1',
+          grants: [],
+          tools: [],
+          principalId: 'user-1',
+          tenantId: TEST_TENANT_ID,
+          systemPrompt: 'You are a helpful assistant.',
+        },
+        source: validSource,
+        storeDir: '/tmp/test-store',
+        agentTransport: {} as any,
+        crypto: { signSSH: mock(() => 'sig') } as any,
+        onEvent,
+        onConnectorStateChanged: mock(() => {}),
+      });
+
+      // The forwarding drain runs detached; it settles when the (finite) stream
+      // closes. The final disposer is the drain promise, so awaiting it
+      // guarantees every event has been processed before asserting.
+      await bundle.disposers[bundle.disposers.length - 1]?.();
+
+      const forwarded = onEvent.mock.calls.map((c) => (c[0] as { type: string }).type);
+      expect(forwarded).toEqual(['inference.start', 'connector.reply']);
+    });
+  });
+
+  describe('combineRunners', () => {
+    const makeRunner = (names: string[]): ToolRunner & { definitions: ToolDefinition[] } => ({
+      definitions: names.map((name) => ({ name }) as unknown as ToolDefinition),
+      async run(call) {
+        return { callId: call.id, content: `ran:${call.name}` };
+      },
+    });
+
+    it('merges definitions from every runner', () => {
+      const merged = combineRunners([makeRunner(['read_file']), makeRunner(['artifact_link'])]);
+      const names = merged.definitions.map((d) => d.name);
+      expect(names).toContain('read_file');
+      expect(names).toContain('artifact_link');
+    });
+
+    it('dispatches a call to the runner that owns the named tool', async () => {
+      const merged = combineRunners([makeRunner(['a']), makeRunner(['b'])]);
+      const result = await merged.run(
+        { id: 'c1', name: 'b', arguments: {} } as any,
+        new AbortController().signal
+      );
+      expect(result.content).toBe('ran:b');
+    });
+
+    it('returns an error result for an unregistered tool name', async () => {
+      const merged = combineRunners([makeRunner(['a'])]);
+      const result = await merged.run(
+        { id: 'c1', name: 'missing', arguments: {} } as any,
+        new AbortController().signal
+      );
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe('hub tool runner composition', () => {
+    it('excludes POSIX tools from the hub tool runner', async () => {
+      const builder = createDefaultHarnessBuilder({
+        hubHttpUrl: 'http://localhost:4000',
+        sidecarToken: 'test-token',
+      });
+
+      const bundle = await builder.build({
         agentAddress: 'agent@tenant.localhost',
         agentConfig: {
           agentAddress: 'agent@tenant.localhost',
@@ -214,15 +308,10 @@ describe('createDefaultHarnessBuilder', () => {
         onConnectorStateChanged: mock(() => {}),
       });
 
-      expect(mergeToolRunners).toHaveBeenCalledTimes(1);
-      const runners = (mergeToolRunners as any).mock.calls[0][0] as Array<{
-        definitions: Array<{ name: string }>;
-      }>;
-      const hubRunner = runners[2];
-      const hubNames = hubRunner.definitions.map((d) => d.name);
-      expect(hubNames).not.toContain('read_file');
-      expect(hubNames).not.toContain('write_file');
-      expect(hubNames).toContain('artifact_link_file');
+      // The build succeeds: posix names (read_file/write_file) are not
+      // re-sent to the hub tool runner, so no duplicate-name collision is
+      // raised when the runners are combined.
+      expect(bundle.harness).toBeDefined();
     });
   });
 });

@@ -28,4 +28,4 @@ export { ChatThread, type ChatThreadProps } from './ChatThread';
 export { ChatPanel, type ChatPanelProps } from './ChatPanel';
 export { ChatLauncher, type ChatLauncherProps } from './ChatLauncher';
 export { FloatingChat, type FloatingChatProps } from './FloatingChat';
-export { DockedChat, type DockedChatProps } from './DockedChat';
+export { DockedChatBar, type DockedChatBarProps, DOCKED_BAR_HEIGHT } from './DockedChatBar';

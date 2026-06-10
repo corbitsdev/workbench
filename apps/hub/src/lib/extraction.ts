@@ -1,9 +1,6 @@
-import { createAgent } from '@intx/agent';
 import { getLogger } from '@intx/log';
 import type { InferenceSource } from '@intx/types/runtime';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { runSingleTurnAgent } from './inference';
 
 const log = getLogger(['extraction']);
 
@@ -45,13 +42,17 @@ const ASSUMED_CONTEXT_WINDOW_TOKENS = 128000;
 const RESERVED_OUTPUT_TOKENS = 4096;
 const APPROX_CHARS_PER_TOKEN = 4;
 const PROMPT_SAFETY_MARGIN_CHARS = 120000;
-const SINGLE_PASS_TRANSCRIPT_CHARS =
+export const SINGLE_PASS_TRANSCRIPT_CHARS =
   (ASSUMED_CONTEXT_WINDOW_TOKENS - RESERVED_OUTPUT_TOKENS) * APPROX_CHARS_PER_TOKEN -
   PROMPT_SAFETY_MARGIN_CHARS;
 const CHUNK_TRANSCRIPT_CHARS = Math.floor(SINGLE_PASS_TRANSCRIPT_CHARS / 2);
 
-export function splitTranscriptForExtraction(content: string): TranscriptChunk[] {
-  if (content.length <= SINGLE_PASS_TRANSCRIPT_CHARS) {
+export function splitTranscriptForExtraction(
+  content: string,
+  feedbackOverheadChars = 0
+): TranscriptChunk[] {
+  const budget = SINGLE_PASS_TRANSCRIPT_CHARS - feedbackOverheadChars;
+  if (content.length <= budget) {
     return [{ index: 1, total: 1, phase: 'final', content }];
   }
 
@@ -155,68 +156,51 @@ async function runExtractionAgent(
   workflowId: string,
   maxOutputTokens?: number
 ): Promise<LLMResponse> {
-  const contextDir = join(tmpdir(), `gtm-extraction-${randomUUID()}`);
-
-  // Apply the configured output-token cap when provided. A cap (not a floor):
-  // reasoning models can spend the whole budget on think blocks and truncate
-  // the JSON, so the value is tuned per step/agent rather than forced high.
-  const extractionSource: InferenceSource =
-    maxOutputTokens !== undefined
-      ? { ...source, defaults: { ...source.defaults, maxTokens: maxOutputTokens } }
-      : source;
-
-  const agent = await createAgent({
-    contextDir,
-    sources: [extractionSource],
-    defaultSource: extractionSource.id,
+  const reply = await runSingleTurnAgent(
+    source,
     systemPrompt,
-    tools: [],
-    closeTimeoutMs: 1000,
-  });
+    userMessage,
+    'gtm-extraction',
+    maxOutputTokens
+  );
+  log.info('LLM response received', { length: reply.length });
 
+  let parsed: LLMResponse;
   try {
-    const result = await agent.send(userMessage);
-    log.info('LLM response received', { length: result.reply.length });
-
-    let parsed: LLMResponse;
-    try {
-      // Try to parse the response directly
-      parsed = JSON.parse(result.reply) as LLMResponse;
-    } catch {
-      // Fallback: extract JSON from response if wrapped in markdown or text
-      const jsonMatch = result.reply.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        log.error('LLM extraction returned no JSON', {
-          workflowId,
-          raw: result.reply.substring(0, 500),
-        });
-        throw new Error('LLM returned no JSON for pain point extraction');
-      }
-
-      try {
-        parsed = JSON.parse(jsonMatch[0]) as LLMResponse;
-      } catch (extractError) {
-        log.error('LLM extraction returned malformed JSON', {
-          workflowId,
-          extracted: jsonMatch[0].substring(0, 500),
-          error: extractError instanceof Error ? extractError.message : String(extractError),
-        });
-        throw new Error('LLM returned malformed JSON for pain point extraction');
-      }
-    }
-
-    if (!Array.isArray(parsed.painPoints)) {
-      log.error('LLM response missing painPoints array', {
+    // Try to parse the response directly
+    parsed = JSON.parse(reply) as LLMResponse;
+  } catch {
+    // Fallback: extract JSON from response if wrapped in markdown or text
+    const jsonMatch = reply.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      log.error('LLM extraction returned no JSON', {
         workflowId,
-        received: typeof parsed.painPoints,
+        raw: reply.substring(0, 500),
       });
-      throw new Error('LLM response missing painPoints array');
+      throw new Error('LLM returned no JSON for pain point extraction');
     }
 
-    return parsed;
-  } finally {
-    await agent.close();
+    try {
+      parsed = JSON.parse(jsonMatch[0]) as LLMResponse;
+    } catch (extractError) {
+      log.error('LLM extraction returned malformed JSON', {
+        workflowId,
+        extracted: jsonMatch[0].substring(0, 500),
+        error: extractError instanceof Error ? extractError.message : String(extractError),
+      });
+      throw new Error('LLM returned malformed JSON for pain point extraction');
+    }
   }
+
+  if (!Array.isArray(parsed.painPoints)) {
+    log.error('LLM response missing painPoints array', {
+      workflowId,
+      received: typeof parsed.painPoints,
+    });
+    throw new Error('LLM response missing painPoints array');
+  }
+
+  return parsed;
 }
 
 function serializeExtractionResult(
@@ -258,7 +242,11 @@ export async function extractPainPointsWithLLM(
   log.info('Starting LLM extraction', { workflowId, transcriptLength: content.length, model });
 
   const systemPrompt = buildExtractionSystemPrompt();
-  const chunks = splitTranscriptForExtraction(content);
+  const sanitizedFeedback = feedback?.trim().replace(/<\//g, '');
+  const feedbackOverheadChars = sanitizedFeedback
+    ? sanitizedFeedback.length + '\n<refinement_direction>\n\n</refinement_direction>\n'.length
+    : 0;
+  const chunks = splitTranscriptForExtraction(content, feedbackOverheadChars);
   log.info('Prepared extraction chunks', {
     workflowId,
     chunkCount: chunks.length,

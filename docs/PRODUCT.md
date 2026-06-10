@@ -12,7 +12,7 @@ The broader workbench pattern is source-to-artifact: users bring source material
 
 ### Myra — Personal AI Agent
 
-Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staff / Executive Assistant, living in the user's personal Interchange tenant. Myra can coordinate across workbenches and serves as the user's persistent, intelligent assistant throughout the platform.
+Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staff / Executive Assistant. Each user receives their own Myra instance (provisioned automatically on join) within the shared global org tenant. Myra can coordinate across workbenches and serves as the user's persistent, intelligent assistant throughout the platform.
 
 ### Oat — Workspace Granola Agent
 
@@ -58,10 +58,11 @@ The product should surface named outcomes such as "Create sales collateral" or "
 
 Adding a workflow to a workbench is a configuration step, like adding an agent. Each workflow
 exposes its steps; for every step the user assigns the credentials it needs (e.g. Granola for
-intake, an inference provider for analysis and generation) and the tools it may use. Credentials can
-be selected from those already in the workbench or added inline, without leaving the flow. These
-assignments are saved to the workbench and reused on every run, so a workflow can only be added once
-its required credentials are in place. Assignments can be edited later from the same place.
+intake, an inference provider for analysis and generation) and the tools it may use. Credentials are
+provisioned by an org admin via admin-ui — users select from the credentials already available in
+their tenant. These assignments are saved to the workbench and reused on every run, so a workflow
+can only be added once its required credentials are in place. Assignments can be edited later from
+the same place.
 
 ### Choosing who runs each step
 
@@ -87,4 +88,4 @@ own inference provider, so no separate provider credential is required for that 
 - Users can review, refine, and export generated artifacts
 - Session state is persisted and can be resumed
 - Usable without full production CRM sync
-- API keys and credentials are encrypted at rest
+- API keys and credentials are encrypted at rest by the storage layer (not by application code)

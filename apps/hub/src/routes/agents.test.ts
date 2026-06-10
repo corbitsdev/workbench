@@ -1,39 +1,30 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { encryptSecret, parseEncryptionKeys } from '@workbench/hub-crypto';
 import * as intxDbReal from '@intx/db';
 import type { DB } from '@intx/db';
 import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
 import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 
-const TEST_CREDENTIAL_KEYS = parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`);
-const TEST_TENANT_ID = 'tenant-1';
 const TEST_API_KEY = 'sk-test-key';
-const TEST_ENCRYPTED_API_KEY = encryptSecret(TEST_CREDENTIAL_KEYS, TEST_TENANT_ID, TEST_API_KEY);
 
 mock.module('../config', () => ({
-  getConfig: () => ({
-    credentialKeys: TEST_CREDENTIAL_KEYS,
-  }),
+  getConfig: () => ({}),
 }));
 
 // Launch outcome is driven by resolveInstanceSources: tests set `sourcesImpl`
 // to return sources (launch proceeds) or throw (launch fails).
+// CL-1521: sources are now plaintext (stored plaintext in DB, not encrypted).
 let sourcesImpl: () => Promise<unknown[]> = () =>
-  Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-let credentialByIdImpl: () => Promise<unknown> = () => Promise.resolve(undefined);
+  Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 mock.module('@intx/db', () => ({
   ...intxDbReal,
   resolveInstanceSources: () => sourcesImpl(),
-  resolveCredentialById: () => credentialByIdImpl(),
 }));
 
 import { Hono } from 'hono';
 import {
   createAgentProvisioningRouter,
   persistInstanceToolGrants,
-  pushDecryptedSourcesForInstance,
-  pushDecryptedSourceUpdates,
   relaunchInstanceIfNeeded,
 } from './agents';
 
@@ -139,6 +130,10 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
         findFirst: mock(() => Promise.resolve(undefined)),
         findMany: mock(() => Promise.resolve([])),
       },
+      memberAgentInstance: {
+        findFirst: mock(() => Promise.resolve(undefined)),
+        findMany: mock(() => Promise.resolve([])),
+      },
       provider: {
         findFirst: mock(() => Promise.resolve(undefined)),
         findMany: mock(() => Promise.resolve([])),
@@ -185,12 +180,11 @@ const TENANT = {
   updatedAt: new Date(),
 };
 
-const PRINCIPAL = { id: 'prn-1', tenantId: 'tenant-1', kind: 'user', refId: 'user-1' };
-
-const VALID_BODY = {
+const PRINCIPAL = {
+  id: 'prn-1',
   tenantId: 'tenant-1',
-  name: 'Loop',
-  systemPrompt: 'You are Loop, a research agent.',
+  kind: 'user',
+  refId: 'user-1',
 };
 
 // ─── GET /agents ──────────────────────────────────────────────────
@@ -240,6 +234,9 @@ describe('GET /agents', () => {
           findFirst: mock(() => Promise.resolve(undefined)),
           findMany: mock(() => Promise.resolve([instance])),
         },
+        memberAgentInstance: {
+          findMany: mock(() => Promise.resolve([])),
+        },
         provider: { findFirst: mock(() => Promise.resolve(undefined)) },
         credential: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
@@ -275,6 +272,7 @@ describe('GET /agents', () => {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         agent: { findMany: mock(() => Promise.resolve([])) },
         agentInstance: { findMany: mock(() => Promise.resolve([])) },
+        memberAgentInstance: { findMany: mock(() => Promise.resolve([])) },
       },
       // biome-ignore lint/suspicious/noExplicitAny: test mock
     } as any);
@@ -285,580 +283,6 @@ describe('GET /agents', () => {
 
     const findManyArgs = db.query.agentInstance.findMany.mock.calls[0][0];
     expect(referencesColumn(findManyArgs.where, 'ended_at')).toBe(true);
-  });
-});
-
-// ─── POST /agents ─────────────────────────────────────────────────
-
-describe('POST /agents', () => {
-  it('returns 400 when body is invalid (missing name)', async () => {
-    const app = buildApp(makeMockDb());
-    const res = await app.fetch(
-      makeRequest('http://localhost/agents', {
-        method: 'POST',
-        body: { tenantId: 'tenant-1', systemPrompt: 'You are Loop.' },
-      })
-    );
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 403 when caller has no principal in the tenant', async () => {
-    const app = buildApp(makeMockDb());
-    const res = await app.fetch(
-      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
-    );
-    expect(res.status).toBe(403);
-  });
-
-  it('returns 404 when tenant not found', async () => {
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.tenant.findFirst = mock(() => Promise.resolve(undefined));
-    const app = buildApp(db);
-    const res = await app.fetch(
-      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
-    );
-    expect(res.status).toBe(404);
-  });
-
-  it('returns 201 with launched:true and creates an agent instance', async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    let base: any;
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
-    base = {
-      transaction: txMock,
-      query: {
-        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
-        tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: { findFirst: mock(() => Promise.resolve({ id: 'agt-new', capabilities: null })) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-      },
-      insert: mock(() => ({
-        values: mock(() => ({
-          returning: mock(() => Promise.resolve([])),
-          onConflictDoNothing: mock(() => Promise.resolve([])),
-        })),
-      })),
-      update: mock(() => ({ set: mock(() => ({ where: mock(() => Promise.resolve()) })) })),
-      delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
-    };
-
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const app = buildApp(base);
-    const res = await app.fetch(
-      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
-    );
-    expect(res.status).toBe(201);
-    const json = await res.json();
-    expect(json.agentName).toBe('Loop');
-    expect(json.instanceId).toBeTruthy();
-    expect(json.launched).toBe(true);
-  });
-
-  it('returns 201 with launched:false and launchError when session launch fails', async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    let base: any;
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
-    base = {
-      transaction: txMock,
-      query: {
-        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
-        tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: { findFirst: mock(() => Promise.resolve({ id: 'agt-new', capabilities: null })) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-      },
-      insert: mock(() => ({
-        values: mock(() => ({
-          returning: mock(() => Promise.resolve([])),
-          onConflictDoNothing: mock(() => Promise.resolve([])),
-        })),
-      })),
-      update: mock(() => ({ set: mock(() => ({ where: mock(() => Promise.resolve()) })) })),
-      delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
-    };
-
-    const failingService = {
-      ...mockSessionService,
-      launchSession: mock(() => Promise.reject(new Error('sidecar not connected'))),
-    };
-
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const app = buildApp(base, failingService);
-    const res = await app.fetch(
-      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
-    );
-    expect(res.status).toBe(201);
-    const json = await res.json();
-    expect(json.launched).toBe(false);
-    expect(typeof json.launchError).toBe('string');
-    expect(json.launchError).toContain('sidecar not connected');
-  });
-
-  it('creates a new agent instance on each call', async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    let base: any;
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    const txMock = mock((fn: (tx: any) => Promise<unknown>) => fn(base));
-    base = {
-      transaction: txMock,
-      query: {
-        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
-        tenant: { findFirst: mock(() => Promise.resolve(TENANT)) },
-        agent: { findFirst: mock(() => Promise.resolve({ id: 'agt-new', capabilities: null })) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-      },
-      insert: mock(() => ({
-        values: mock(() => ({
-          returning: mock(() => Promise.resolve([])),
-          onConflictDoNothing: mock(() => Promise.resolve([])),
-        })),
-      })),
-      update: mock(() => ({ set: mock(() => ({ where: mock(() => Promise.resolve()) })) })),
-      delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
-    };
-
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const app = buildApp(base);
-
-    const res1 = await app.fetch(
-      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
-    );
-    expect(res1.status).toBe(201);
-    const json1 = await res1.json();
-
-    const res2 = await app.fetch(
-      makeRequest('http://localhost/agents', { method: 'POST', body: VALID_BODY })
-    );
-    expect(res2.status).toBe(201);
-    const json2 = await res2.json();
-
-    expect(json1.instanceId).toBeTruthy();
-    expect(json2.instanceId).toBeTruthy();
-    expect(json1.instanceId).not.toBe(json2.instanceId);
-  });
-});
-
-// ─── POST /tenants/:tenantId/credentials ──────────────────────────
-
-describe('POST /tenants/:tenantId/credentials', () => {
-  const CRED_BODY = {
-    provider: 'anthropic',
-    apiKey: 'sk-test',
-    model: 'claude-sonnet-4-6',
-    name: 'My Anthropic Key',
-  };
-
-  it('returns 400 when body is missing required fields', async () => {
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
-    const app = buildApp(db);
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/credentials', {
-        method: 'POST',
-        body: { provider: 'anthropic', apiKey: 'sk-test' },
-      })
-    );
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 403 when caller has no principal in the tenant', async () => {
-    const app = buildApp(makeMockDb());
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/credentials', {
-        method: 'POST',
-        body: CRED_BODY,
-      })
-    );
-    expect(res.status).toBe(403);
-  });
-
-  it('returns 404 when tenant not found', async () => {
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.tenant.findFirst = mock(() => Promise.resolve(undefined));
-    const app = buildApp(db);
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/credentials', {
-        method: 'POST',
-        body: CRED_BODY,
-      })
-    );
-    expect(res.status).toBe(404);
-  });
-
-  it('returns 201 with credentialId and providerId on success', async () => {
-    const savedProvider = {
-      id: 'prov-1',
-      name: 'anthropic',
-      plugin: 'anthropic',
-      tenantId: 'tenant-1',
-    };
-    const savedCredential = {
-      id: 'cred-new',
-      name: 'My Anthropic Key',
-      secret: 'enc:v1:...',
-      tenantId: 'tenant-1',
-    };
-
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
-    db.query.provider.findFirst = mock(() => Promise.resolve(savedProvider));
-    // insert chain: supports both .onConflictDoUpdate (provider upsert) and .onConflictDoNothing().returning() (credential insert)
-    db.insert = mock(() => ({
-      values: mock((): any => ({
-        // biome-ignore lint/suspicious/noExplicitAny: test mock
-        onConflictDoNothing: mock((): any => ({
-          returning: mock(() => Promise.resolve([savedCredential])),
-        })),
-        onConflictDoUpdate: mock((): any => ({
-          returning: mock(() => Promise.resolve([])),
-        })),
-      })),
-    }));
-
-    const app = buildApp(db);
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/credentials', {
-        method: 'POST',
-        body: CRED_BODY,
-      })
-    );
-    expect(res.status).toBe(201);
-    const json = await res.json();
-    expect(json.credentialId).toBe('cred-new');
-    expect(json.providerId).toBe('prov-1');
-  });
-
-  it('returns 409 when a credential with the same name already exists', async () => {
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
-    db.query.provider.findFirst = mock(() =>
-      Promise.resolve({
-        id: 'prov-1',
-        name: 'anthropic',
-        plugin: 'anthropic',
-        tenantId: 'tenant-1',
-      })
-    );
-    // insert chain: supports both .onConflictDoUpdate (provider upsert) and .onConflictDoNothing().returning() → [] (conflict)
-    db.insert = mock(() => ({
-      values: mock((): any => ({
-        // biome-ignore lint/suspicious/noExplicitAny: test mock
-        onConflictDoNothing: mock((): any => ({
-          returning: mock(() => Promise.resolve([])),
-        })),
-        onConflictDoUpdate: mock((): any => ({
-          returning: mock(() => Promise.resolve([])),
-        })),
-      })),
-    }));
-    const app = buildApp(db);
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/credentials', {
-        method: 'POST',
-        body: CRED_BODY,
-      })
-    );
-    expect(res.status).toBe(409);
-  });
-});
-
-// ─── PATCH /tenants/:tenantId/credentials/:credentialId ──────────
-
-describe('PATCH /tenants/:tenantId/credentials/:credentialId', () => {
-  it('pushes plaintext apiKey (not enc:v1: ciphertext) to the sidecar after credential update', async () => {
-    const capturedSendArgs: Parameters<SidecarRouter['sendSourcesUpdate']>[] = [];
-    const capturingSidecarRouter: SidecarRouter = {
-      ...mockSidecarRouter,
-      sendSourcesUpdate: mock((...args: Parameters<SidecarRouter['sendSourcesUpdate']>) => {
-        capturedSendArgs.push(args);
-        return Promise.resolve();
-      }),
-    } as unknown as SidecarRouter;
-
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.credential.findFirst = mock(() =>
-      Promise.resolve({ id: 'crd-1', tenantId: 'tenant-1', providerId: 'prov-1' })
-    );
-    db.query.agentInstance.findMany = mock(() =>
-      Promise.resolve([
-        {
-          id: 'ins-1',
-          agentId: 'agt-1',
-          tenantId: 'tenant-1',
-          address: 'ins-1@tenant-1.localhost',
-          status: 'running',
-        },
-      ])
-    );
-
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const parent = new Hono<{ Variables: { userId: string } }>();
-    parent.use('*', async (c, next) => {
-      c.set('userId', 'user-1');
-      await next();
-    });
-    parent.route(
-      '/',
-      createAgentProvisioningRouter(
-        db as unknown as DB['db'],
-        mockSessionService,
-        mockGrantStore,
-        capturingSidecarRouter,
-        mockEventCollectors
-      )
-    );
-
-    const res = await parent.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/credentials/crd-1', {
-        method: 'PATCH',
-        body: { apiKey: 'sk-new-plaintext-key' },
-      })
-    );
-
-    expect(res.status).toBe(200);
-
-    // Wait a tick for the void-fired promise to settle.
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-
-    expect(capturedSendArgs.length).toBeGreaterThan(0);
-    const [, pushedSources] = capturedSendArgs[0]!;
-    const firstSource = (pushedSources as { apiKey: string }[])[0];
-    expect(firstSource?.apiKey).toBe(TEST_API_KEY);
-    expect(firstSource?.apiKey).not.toMatch(/^enc:v1:/);
-  });
-});
-
-// ─── PATCH /tenants/:tenantId/agents/:agentId/credential ─────────
-
-describe('PATCH /tenants/:tenantId/agents/:agentId/credential', () => {
-  it('assigns a credential using the agent tenant when the URL tenant is stale', async () => {
-    const updates: Array<Record<string, unknown>> = [];
-    const db = makeMockDb({
-      update: mock(() => ({
-        set: mock((values: Record<string, unknown>) => ({
-          where: mock(() => {
-            updates.push(values);
-            return Promise.resolve();
-          }),
-        })),
-      })),
-    });
-
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    let agentLookup = 0;
-    db.query.agent.findFirst = mock(() => {
-      agentLookup += 1;
-      if (agentLookup === 1) return Promise.resolve(undefined);
-      return Promise.resolve({
-        id: 'agt-1',
-        tenantId: 'tenant-1',
-        credentialRequirements: [],
-        modelConfig: null,
-      });
-    });
-    db.query.provider.findFirst = mock(() =>
-      Promise.resolve({
-        id: 'prov-1',
-        name: 'openai-compatible',
-        plugin: 'openai-compatible',
-        metadata: { model: 'gpt-4o-mini' },
-      })
-    );
-    credentialByIdImpl = () =>
-      Promise.resolve({ id: 'crd-1', name: 'Workbench LLM', providerId: 'prov-1' });
-
-    const app = buildApp(db);
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/wrong-tenant/agents/agt-1/credential', {
-        method: 'PATCH',
-        body: { credentialId: 'crd-1' },
-      })
-    );
-
-    expect(res.status).toBe(200);
-    expect(updates[0]?.credentialRequirements).toEqual([
-      { source: 'tenant', name: 'Workbench LLM', providerName: 'openai-compatible' },
-    ]);
-    expect(updates[0]?.modelConfig).toEqual({ defaultModel: 'gpt-4o-mini' });
-  });
-
-  it('accepts inference credentials that do not define a model (skips modelConfig update)', async () => {
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.agent.findFirst = mock(() =>
-      Promise.resolve({
-        id: 'agt-1',
-        tenantId: 'tenant-1',
-        credentialRequirements: [],
-        modelConfig: null,
-      })
-    );
-    db.query.provider.findFirst = mock(() =>
-      Promise.resolve({
-        id: 'prov-1',
-        name: 'openai-compatible',
-        plugin: 'openai-compatible',
-        metadata: {},
-      })
-    );
-    credentialByIdImpl = () =>
-      Promise.resolve({ id: 'crd-1', name: 'Broken LLM', providerId: 'prov-1' });
-
-    const app = buildApp(db);
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/agents/agt-1/credential', {
-        method: 'PATCH',
-        body: { credentialId: 'crd-1' },
-      })
-    );
-
-    // The PATCH endpoint is permissive — it adds the credential requirement but
-    // silently skips modelConfig when the provider metadata has no model field.
-    expect(res.status).toBe(200);
-  });
-});
-
-// ─── PATCH /tenants/:tenantId/agents/:agentId/tools ──────────────
-
-describe('PATCH /tenants/:tenantId/agents/:agentId/tools', () => {
-  it('relaunches running agent instances so updated tools become visible', async () => {
-    const sessionService: SessionService = {
-      launchSession: mock(() => Promise.resolve()),
-      sendUserMessage: mock(() => Promise.reject(new Error('not implemented'))),
-      endSession: mock(() => Promise.resolve()),
-    } as unknown as SessionService;
-
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
-    db.query.agent.findFirst = mock(() =>
-      Promise.resolve({
-        id: 'agt-1',
-        tenantId: 'tenant-1',
-        name: 'Loop',
-        systemPrompt: 'You are Loop.',
-        capabilities: null,
-      })
-    );
-    db.query.agentInstance.findMany = mock(() =>
-      Promise.resolve([
-        {
-          id: 'ins-1',
-          agentId: 'agt-1',
-          tenantId: 'tenant-1',
-          address: 'ins-1@tenant-1.localhost',
-          status: 'running',
-          principalId: 'prn-agent-1',
-          sessionId: 'ses-1',
-        },
-      ])
-    );
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const app = buildApp(db, sessionService);
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/agents/agt-1/tools', {
-        method: 'PATCH',
-        body: { tools: ['exa_search'] },
-      })
-    );
-
-    expect(res.status).toBe(200);
-    expect(sessionService.endSession).toHaveBeenCalledWith(
-      'ins-1@tenant-1.localhost',
-      'agent tools updated'
-    );
-    expect(sessionService.launchSession).toHaveBeenCalled();
-  });
-
-  it('skips relaunch when the agent has no systemPrompt', async () => {
-    const sessionService: SessionService = {
-      launchSession: mock(() => Promise.resolve()),
-      sendUserMessage: mock(() => Promise.reject(new Error('not implemented'))),
-      endSession: mock(() => Promise.resolve()),
-    } as unknown as SessionService;
-
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.agent.findFirst = mock(() =>
-      Promise.resolve({
-        id: 'agt-1',
-        tenantId: 'tenant-1',
-        name: 'Loop',
-        systemPrompt: null,
-        capabilities: null,
-      })
-    );
-    db.query.agentInstance.findMany = mock(() => Promise.resolve([]));
-
-    const app = buildApp(db, sessionService);
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/agents/agt-1/tools', {
-        method: 'PATCH',
-        body: { tools: ['exa_search'] },
-      })
-    );
-
-    expect(res.status).toBe(200);
-    expect(sessionService.endSession).not.toHaveBeenCalled();
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
-  });
-
-  it('skips relaunch when the tenant has no domain', async () => {
-    const sessionService: SessionService = {
-      launchSession: mock(() => Promise.resolve()),
-      sendUserMessage: mock(() => Promise.reject(new Error('not implemented'))),
-      endSession: mock(() => Promise.resolve()),
-    } as unknown as SessionService;
-
-    const db = makeMockDb();
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.tenant.findFirst = mock(() => Promise.resolve({ id: 'tenant-1', domain: null }));
-    db.query.agent.findFirst = mock(() =>
-      Promise.resolve({
-        id: 'agt-1',
-        tenantId: 'tenant-1',
-        name: 'Loop',
-        systemPrompt: 'You are Loop.',
-        capabilities: null,
-      })
-    );
-    db.query.agentInstance.findMany = mock(() =>
-      Promise.resolve([
-        {
-          id: 'ins-1',
-          agentId: 'agt-1',
-          tenantId: 'tenant-1',
-          address: 'ins-1@tenant-1.localhost',
-          status: 'running',
-          principalId: 'prn-agent-1',
-          sessionId: 'ses-1',
-        },
-      ])
-    );
-
-    const app = buildApp(db, sessionService);
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/agents/agt-1/tools', {
-        method: 'PATCH',
-        body: { tools: ['exa_search'] },
-      })
-    );
-
-    expect(res.status).toBe(200);
-    expect(sessionService.endSession).not.toHaveBeenCalled();
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
   });
 });
 
@@ -885,7 +309,9 @@ describe('POST /instances/:instanceId/sessions', () => {
   it('returns 404 when instance not found', async () => {
     const app = buildApp(makeMockDb());
     const res = await app.fetch(
-      makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+      })
     );
     expect(res.status).toBe(404);
   });
@@ -896,7 +322,9 @@ describe('POST /instances/:instanceId/sessions', () => {
     db.query.principal.findFirst = mock(() => Promise.resolve(undefined));
     const app = buildApp(db);
     const res = await app.fetch(
-      makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+      })
     );
     expect(res.status).toBe(403);
   });
@@ -908,34 +336,42 @@ describe('POST /instances/:instanceId/sessions', () => {
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     const app = buildApp(db);
     const res = await app.fetch(
-      makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+      })
     );
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.launched).toBe(true);
   });
 
-  it('returns 200 with launched:true immediately when the instance is already running', async () => {
+  it('returns 200 with launched:true when the instance is already running (relaunches to recover after sidecar reconnect)', async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() =>
       Promise.resolve({ ...INSTANCE, status: 'running' })
     );
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
 
-    const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.resolve()),
+    };
     const app = buildApp(db, sessionService);
     const res = await app.fetch(
-      makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+      })
     );
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.launched).toBe(true);
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(sessionService.launchSession).toHaveBeenCalled();
   });
 
   it('returns 200 with launched:true when launchSession fails because the agent already exists on the sidecar', async () => {
@@ -945,7 +381,7 @@ describe('POST /instances/:instanceId/sessions', () => {
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     // In production, the sidecar returns "Agent already exists" wrapped in a
     // provision-phase SessionLaunchError. Simulate that here.
@@ -960,7 +396,9 @@ describe('POST /instances/:instanceId/sessions', () => {
     };
     const app = buildApp(db, sessionService);
     const res = await app.fetch(
-      makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+      })
     );
     expect(res.status).toBe(200);
     const json = await res.json();
@@ -982,7 +420,9 @@ describe('POST /instances/:instanceId/sessions', () => {
 
     const app = buildApp(db);
     const res = await app.fetch(
-      makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
+      makeRequest('http://localhost/instances/ins-1/sessions', {
+        method: 'POST',
+      })
     );
     expect(res.status).toBe(503);
     const json = await res.json();
@@ -993,7 +433,11 @@ describe('POST /instances/:instanceId/sessions', () => {
 describe('relaunchInstanceIfNeeded', () => {
   const TENANT_ROW = { id: 'tenant-1', domain: 'tenant-1.localhost' };
   const AGENT_ROW = { id: 'agt-1', systemPrompt: 'You are Myra.' };
-  const ACTIVE_CREDENTIAL = { id: 'crd-1', tenantId: 'tenant-1', status: 'active' };
+  const ACTIVE_CREDENTIAL = {
+    id: 'crd-1',
+    tenantId: 'tenant-1',
+    status: 'active',
+  };
 
   function runningInstance(overrides: Record<string, unknown> = {}) {
     return {
@@ -1008,21 +452,45 @@ describe('relaunchInstanceIfNeeded', () => {
     };
   }
 
-  it('does not relaunch when the instance is already running', async () => {
+  it('handles "agent already exists" gracefully when instance is running on sidecar', async () => {
+    // After a sidecar restart the DB may still show "running" while the sidecar has the agent
+    // alive. launchSession throws "Agent already exists for address"; relaunchInstanceIfNeeded
+    // must treat that as success rather than surfacing an error.
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() => Promise.resolve(runningInstance()));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+    db.query.credential.findFirst = mock(() => Promise.resolve(ACTIVE_CREDENTIAL));
 
-    const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
-    await relaunchInstanceIfNeeded(
-      db as never,
-      sessionService as never,
-      mockGrantStore as never,
-      mockEventCollectors as never,
-      'ins-1',
-      { on: () => () => {} } as never
-    );
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    const sessionService = {
+      ...mockSessionService,
+      // The sidecar wraps the "already exists" error in a provision-phase SessionLaunchError,
+      // which breaks the retry loop and propagates to our isAgentAlreadyExistsError check.
+      launchSession: mock(() =>
+        Promise.reject(
+          new SessionLaunchError(
+            'provision',
+            new Error('Agent already exists for address ins-1@tenant-1.localhost'),
+            false
+          )
+        )
+      ),
+    };
+    // Must not throw — the agent is live, so this is a no-op.
+    await expect(
+      relaunchInstanceIfNeeded(
+        db as never,
+        sessionService as never,
+        mockGrantStore as never,
+        mockEventCollectors as never,
+        'ins-1',
+        { on: () => () => {} } as never
+      )
+    ).resolves.toBeUndefined();
+
+    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
   });
 
   it('relaunches a deployed instance with a stale active session record', async () => {
@@ -1039,9 +507,12 @@ describe('relaunchInstanceIfNeeded', () => {
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
     db.query.credential.findFirst = mock(() => Promise.resolve(ACTIVE_CREDENTIAL));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
-    const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.resolve()),
+    };
     await relaunchInstanceIfNeeded(
       db as never,
       sessionService as never,
@@ -1054,11 +525,7 @@ describe('relaunchInstanceIfNeeded', () => {
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
   });
 
-  it('decrypts apiKey before passing sources to launchSession', async () => {
-    const { encryptSecret, parseEncryptionKeys } = await import('@workbench/hub-crypto');
-    const keys = parseEncryptionKeys(`1:${Buffer.alloc(32, 0x01).toString('base64')}`);
-    const encrypted = encryptSecret(keys, 'tenant-1', 'sk-real-key');
-
+  it('passes plaintext apiKey sources directly to launchSession (CL-1521: no decryption)', async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() =>
       Promise.resolve(runningInstance({ status: 'deployed' }))
@@ -1070,9 +537,12 @@ describe('relaunchInstanceIfNeeded', () => {
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
     db.query.credential.findFirst = mock(() => Promise.resolve(ACTIVE_CREDENTIAL));
 
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: encrypted }]);
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
-    const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.resolve()),
+    };
     await relaunchInstanceIfNeeded(
       db as never,
       sessionService as never,
@@ -1083,12 +553,12 @@ describe('relaunchInstanceIfNeeded', () => {
     );
 
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
-    const launchArg = (sessionService.launchSession as ReturnType<typeof mock>).mock
+    const launchArg =
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      .calls[0]![0] as {
-      config: { sources: { apiKey: string }[] };
-    };
-    expect(launchArg.config.sources[0]?.apiKey).toBe('sk-real-key');
+      (sessionService.launchSession as ReturnType<typeof mock>).mock.calls[0]![0] as {
+        config: { sources: { apiKey: string }[] };
+      };
+    expect(launchArg.config.sources[0]?.apiKey).toBe(TEST_API_KEY);
   });
 
   it('does not relaunch a non-running instance without an active credential', async () => {
@@ -1100,7 +570,10 @@ describe('relaunchInstanceIfNeeded', () => {
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
     db.query.credential.findFirst = mock(() => Promise.resolve(undefined));
 
-    const sessionService = { ...mockSessionService, launchSession: mock(() => Promise.resolve()) };
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.resolve()),
+    };
     await relaunchInstanceIfNeeded(
       db as never,
       sessionService as never,
@@ -1111,98 +584,6 @@ describe('relaunchInstanceIfNeeded', () => {
     );
 
     expect(sessionService.launchSession).not.toHaveBeenCalled();
-  });
-});
-
-// ─── pushDecryptedSourcesForInstance ─────────────────────────────
-// Used by the agent.reconnected listener in index.ts to push decrypted
-// sources for a specific reconnecting instance. Must work regardless of
-// instance status — the orchestrator sets status='running' inside its own
-// handler, so the row is still 'deployed' when our listener fires.
-
-describe('pushDecryptedSourcesForInstance', () => {
-  it('sends plaintext apiKey to the sidecar, not the encrypted value', async () => {
-    const db = makeMockDb();
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const capturedSources: unknown[] = [];
-    const capturingSidecarRouter: SidecarRouter = {
-      sendSourcesUpdate: mock((_addr, sources) => {
-        capturedSources.push(...sources);
-        return Promise.resolve();
-      }),
-    } as unknown as SidecarRouter;
-
-    await pushDecryptedSourcesForInstance(db as unknown as DB['db'], capturingSidecarRouter, {
-      tenantId: TEST_TENANT_ID,
-      address: 'ins-reconnect@tenant-1.localhost',
-      agentId: 'agt-1',
-      sessionId: 'ses-1',
-    });
-
-    expect(capturedSources).toHaveLength(1);
-    const source = (capturedSources as Array<{ apiKey: string }>)[0];
-    expect(source?.apiKey).toBe(TEST_API_KEY);
-    expect(source?.apiKey).not.toContain('enc:');
-  });
-
-  it('works when instance status is deployed (reconnect fires before orchestrator sets running)', async () => {
-    const db = makeMockDb();
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const capturingSidecarRouter: SidecarRouter = {
-      sendSourcesUpdate: mock(() => Promise.resolve()),
-    } as unknown as SidecarRouter;
-
-    await pushDecryptedSourcesForInstance(db as unknown as DB['db'], capturingSidecarRouter, {
-      tenantId: TEST_TENANT_ID,
-      address: 'ins-reconnect@tenant-1.localhost',
-      agentId: 'agt-1',
-      sessionId: 'ses-1',
-    });
-
-    expect(capturingSidecarRouter.sendSourcesUpdate).toHaveBeenCalledTimes(1);
-  });
-});
-
-// ─── pushDecryptedSourceUpdates ───────────────────────────────────
-// Used by the credential rotation path. Operates on all running instances
-// for a tenant. Status filter is intentional here — only push to live agents.
-
-describe('pushDecryptedSourceUpdates', () => {
-  it('sends plaintext apiKey to all running instances for the tenant', async () => {
-    const db = makeMockDb();
-    db.query.agentInstance.findMany = mock(() =>
-      Promise.resolve([
-        {
-          id: 'ins-running',
-          agentId: 'agt-1',
-          tenantId: TEST_TENANT_ID,
-          address: 'ins-running@tenant-1.localhost',
-          status: 'running',
-        },
-      ])
-    );
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_ENCRYPTED_API_KEY }]);
-
-    const capturedSources: unknown[] = [];
-    const capturingSidecarRouter: SidecarRouter = {
-      sendSourcesUpdate: mock((_addr, sources) => {
-        capturedSources.push(...sources);
-        return Promise.resolve();
-      }),
-    } as unknown as SidecarRouter;
-
-    await pushDecryptedSourceUpdates(
-      db as unknown as DB['db'],
-      capturingSidecarRouter,
-      TEST_TENANT_ID
-    );
-
-    expect(capturedSources).toHaveLength(1);
-    const source = (capturedSources as Array<{ apiKey: string }>)[0];
-    expect(source?.apiKey).toBe(TEST_API_KEY);
-    expect(source?.apiKey).not.toContain('enc:');
   });
 });
 
@@ -1221,7 +602,10 @@ describe('persistInstanceToolGrants', () => {
     const txMock = mock((fn: (tx: any) => Promise<unknown>) =>
       fn({ insert: insertMock, delete: deleteMock })
     );
-    const db = { ...makeMockDb(), transaction: txMock } as unknown as import('@intx/db').DB['db'];
+    const db = {
+      ...makeMockDb(),
+      transaction: txMock,
+    } as unknown as import('@intx/db').DB['db'];
 
     const now = new Date('2026-01-01T00:00:00Z');
     await persistInstanceToolGrants(db, {
@@ -1263,7 +647,10 @@ describe('persistInstanceToolGrants', () => {
     const txMock = mock((fn: (tx: any) => Promise<unknown>) =>
       fn({ insert: insertMock, delete: deleteMock })
     );
-    const db = { ...makeMockDb(), transaction: txMock } as unknown as import('@intx/db').DB['db'];
+    const db = {
+      ...makeMockDb(),
+      transaction: txMock,
+    } as unknown as import('@intx/db').DB['db'];
 
     await persistInstanceToolGrants(db, {
       tenantId: 'tenant-1',
@@ -1294,7 +681,10 @@ describe('persistInstanceToolGrants', () => {
         }),
       })
     );
-    const db = { ...makeMockDb(), transaction: txMock } as unknown as import('@intx/db').DB['db'];
+    const db = {
+      ...makeMockDb(),
+      transaction: txMock,
+    } as unknown as import('@intx/db').DB['db'];
 
     await persistInstanceToolGrants(db, {
       tenantId: 'tenant-1',
@@ -1314,7 +704,10 @@ describe('persistInstanceToolGrants', () => {
     const txMock = mock((fn: (tx: any) => Promise<unknown>) =>
       fn({ insert: insertMock, delete: deleteMock })
     );
-    const db = { ...makeMockDb(), transaction: txMock } as unknown as import('@intx/db').DB['db'];
+    const db = {
+      ...makeMockDb(),
+      transaction: txMock,
+    } as unknown as import('@intx/db').DB['db'];
 
     await persistInstanceToolGrants(db, {
       tenantId: 'tenant-1',

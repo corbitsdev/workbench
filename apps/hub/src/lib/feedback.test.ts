@@ -16,9 +16,10 @@ mock.module('./inference', () => ({
     _source: unknown,
     _systemPrompt: string,
     userMessage: string,
-    _contextPrefix: string
+    _contextPrefix: string,
+    _maxOutputTokens?: number
   ) => {
-    const agent = await createAgentMock({} as any);
+    const agent = await createAgentMock({} as any, {} as any);
     const result = await agent.send(userMessage);
     return result.reply;
   },

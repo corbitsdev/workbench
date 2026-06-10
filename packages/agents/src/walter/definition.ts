@@ -1,6 +1,7 @@
 import type { CredentialRequirement, GrantRequirement } from '@intx/types';
 import { buildWalterSystemPrompt } from './prompt';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
+import { LLM_CREDENTIAL_NAME } from '../constants';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -17,6 +18,7 @@ export const WALTER_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
     providerName: 'openai-compatible',
     source: 'tenant',
+    name: LLM_CREDENTIAL_NAME,
   },
 ];
 

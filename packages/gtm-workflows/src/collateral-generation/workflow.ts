@@ -33,7 +33,7 @@ export const collateralGenerationWorkflow: WorkflowType = {
         {
           providerName: 'openai-compatible',
           source: 'tenant',
-          name: 'Collateral LLM',
+          name: 'zen-deepseek-v4-flash-free',
         },
       ],
     },
@@ -45,7 +45,7 @@ export const collateralGenerationWorkflow: WorkflowType = {
         {
           providerName: 'openai-compatible',
           source: 'tenant',
-          name: 'Collateral LLM',
+          name: 'zen-deepseek-v4-flash-free',
         },
       ],
     },

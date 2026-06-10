@@ -1,5 +1,7 @@
-import { grant } from '@intx/db';
+import { schema as intxSchema } from '@intx/db';
 import { generateId } from '@intx/hub-common';
+
+const { grant } = intxSchema;
 
 /**
  * A persisted `grant` row authorizing an instance principal to invoke a tool.

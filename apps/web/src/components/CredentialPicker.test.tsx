@@ -2,7 +2,9 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import type { Principal, CredentialDetail } from '../lib/hub-api';
+import type { Principal } from '../lib/hub-api';
+
+type PickerCredential = { id: string; tenantId: string; name: string };
 
 afterEach(() => cleanup());
 
@@ -27,31 +29,9 @@ const principals: Principal[] = [
   },
 ];
 
-const credentialsByTenant: Record<string, CredentialDetail[]> = {
-  't-1': [
-    {
-      id: 'cred-1',
-      tenantId: 't-1',
-      providerId: 'granola',
-      name: 'Granola API Key',
-      type: 'api_key',
-      status: 'active',
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-    },
-  ],
-  't-2': [
-    {
-      id: 'cred-2',
-      tenantId: 't-2',
-      providerId: 'linear',
-      name: 'Linear API Key',
-      type: 'api_key',
-      status: 'active',
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-    },
-  ],
+const credentialsByTenant: Record<string, PickerCredential[]> = {
+  't-1': [{ id: 'cred-1', tenantId: 't-1', name: 'Granola API Key' }],
+  't-2': [{ id: 'cred-2', tenantId: 't-2', name: 'Linear API Key' }],
 };
 
 describe('CredentialPicker', () => {

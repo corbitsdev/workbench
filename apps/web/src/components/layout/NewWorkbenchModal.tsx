@@ -1,7 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Input, Label } from '@workbench/auth';
-import { createTenant } from '../../lib/hub-api';
+import { Input, Label } from '../auth/Field';
+import { createWorkbench } from '../../lib/hub-api';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -76,8 +76,7 @@ export function NewWorkbenchModal({ open, onClose, onCreated }: NewWorkbenchModa
     const trimmed = name.trim();
     if (!trimmed) return;
 
-    const slug = slugify(trimmed);
-    if (!slug) {
+    if (!slugify(trimmed)) {
       setError('Workbench name must contain at least one letter or number.');
       return;
     }
@@ -85,9 +84,9 @@ export function NewWorkbenchModal({ open, onClose, onCreated }: NewWorkbenchModa
     setLoading(true);
     setError(null);
     try {
-      await createTenant(trimmed, slug);
+      const created = await createWorkbench(trimmed);
       reset();
-      onCreated(slug);
+      onCreated(created.slug);
     } catch (err) {
       const status =
         err !== null && typeof err === 'object' && 'status' in err

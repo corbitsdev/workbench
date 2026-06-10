@@ -30,3 +30,71 @@ describe('migrations cover the schema', () => {
     expect(migrationSql).toMatch(createPattern);
   });
 });
+
+describe('0015 scopes workbench_workflows per principal (CL-1450)', () => {
+  const sql = readFileSync(
+    join(import.meta.dir, '../../migrations/0015_workbench_workflows_per_principal.sql'),
+    'utf-8'
+  );
+
+  it('adds the principal_id column', () => {
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "principal_id"/i);
+  });
+
+  it('backfills principal_id from the tenant user principal', () => {
+    // Maps each existing row to its tenant's user principal (unambiguous today).
+    expect(sql).toMatch(/UPDATE "workbench_workflows"/i);
+    expect(sql).toMatch(/FROM "principal" p/i);
+    expect(sql).toMatch(/p\.tenant_id = ew\.tenant_id/i);
+    expect(sql).toMatch(/p\.kind = 'user'/i);
+  });
+
+  it('makes principal_id NOT NULL and swaps the unique key to include it', () => {
+    expect(sql).toMatch(/ALTER COLUMN "principal_id" SET NOT NULL/i);
+    expect(sql).toMatch(/DROP CONSTRAINT IF EXISTS "workbench_workflows_tenant_kind_uniq"/i);
+    expect(sql).toMatch(
+      /ADD CONSTRAINT "workbench_workflows_tenant_principal_kind_uniq"\s+UNIQUE \("tenant_id", "principal_id", "kind"\)/i
+    );
+  });
+});
+
+describe('0016 creates member_agent_instance (CL-1532)', () => {
+  const sql = readFileSync(
+    join(import.meta.dir, '../../migrations/0016_member_agent_instance.sql'),
+    'utf-8'
+  );
+
+  it('creates the table with the expected columns', () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "member_agent_instance"/i);
+    for (const col of [
+      'id',
+      'tenant_id',
+      'member_principal_id',
+      'template_key',
+      'agent_id',
+      'instance_id',
+      'created_at',
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it('adds the (tenant, member, template) unique constraint', () => {
+    expect(sql).toMatch(
+      /ADD CONSTRAINT "member_agent_instance_tenant_member_template_uniq"\s+UNIQUE \("tenant_id", "member_principal_id", "template_key"\)/i
+    );
+  });
+});
+
+describe('0018 drops member_agent_instance unique constraint (CL-1558)', () => {
+  const sql = readFileSync(
+    join(import.meta.dir, '../../migrations/0018_drop_member_agent_instance_uniq.sql'),
+    'utf-8'
+  );
+
+  it('drops the (tenant, member, template) unique constraint', () => {
+    expect(sql).toMatch(
+      /DROP CONSTRAINT IF EXISTS "member_agent_instance_tenant_member_template_uniq"/i
+    );
+  });
+});

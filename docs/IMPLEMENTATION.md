@@ -47,9 +47,13 @@ The sidecar carries three tool runners merged via `mergeToolRunners` before `fil
 
 `HubToolRunner` is generic — it forwards every tool call to `POST /api/internal/tools/run` using `sidecarToken` auth. It has no knowledge of specific tools. Adding a new tool package never requires a sidecar change.
 
+#### Harness construction
+
+The merged `ToolRunner` is wrapped as an Interchange `toolFactory` via `defineTool` (from `@intx/agent`) and passed in `toolFactories` on the `AgentDefinition` — **not** via an `env.tools` field, which does not exist in Interchange's `BaseEnv`. The `env` passed to `createHarness` must include `directors: createDefaultDirectorRegistry()` (required by `BaseEnv`). Missing either of these causes `createHarness` to throw at agent launch time, leaving every workflow run stuck in its current state with zero token consumption.
+
 ### `packages/agents` (`@workbench/agents`)
 
-Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter.
+Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter. This package is the source of truth for all template content. At hub boot, `seedAgentTemplates(db)` reads the templates from this package and idempotently upserts one Interchange agent definition per template (Myra, Oat, Freddy, Walter, Loop) into the global tenant — re-boot is a no-op.
 
 ```
 src/
@@ -76,16 +80,6 @@ src/
 - `formatFromModel(model: string): PromptFormat` — returns `'xml'` for `claude-*` models, `'markdown'` for all others
 - `buildSystemPrompt(sections: PromptSection[], format: PromptFormat): string`
 - `buildContextBlock(context: Record<string, string>, format: PromptFormat): string`
-
-### `packages/hub-crypto` (`@workbench/hub-crypto`)
-
-AES-256-GCM credential encryption primitives for Interchange-based hubs. No workbench-specific dependencies — reusable by any hub that stores credentials in Interchange's `credential` table.
-
-Exports:
-
-- `parseEncryptionKeys(raw: string): CredentialKeyRegistry` — parses `CREDENTIAL_ENCRYPTION_KEYS` format; validates key lengths; selects highest version as active
-- `encryptSecret(keys, tenantId, plaintext): string` — returns `enc:vN:<base64>` ciphertext; throws if input already has `enc:` prefix
-- `decryptSecret(keys, tenantId, ciphertext): string` — parses version from prefix, selects key, decrypts; throws on unknown version or auth tag mismatch
 
 ### `packages/tools-*` — Tool Packages
 
@@ -132,7 +126,7 @@ A minimal agent package skeleton for agents that primarily expose tool-based cap
 - `src/index.ts` — public exports
 - `package.json` and `tsconfig.json`
 
-Copy, rename, fill in the tool list and prompt. Wire provisioning in `tenant-provisioning.ts`.
+Copy, rename, fill in the tool list and prompt. After adding the definition, `seedAgentTemplates` will pick it up on next hub boot.
 
 ### `packages/chat` (`@workbench/chat`)
 
@@ -152,13 +146,11 @@ Transport-agnostic chat UI components. No dependency on a specific agent transpo
 
 ### Agent Provisioning
 
-| Method   | Route                                          | Input                                                                               | Output                                                                     |
-| -------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `GET`    | `/agents`                                      | `?tenantId=...`                                                                     | `{ data: AgentInstance[] }`                                                |
-| `POST`   | `/agents`                                      | `{ name, systemPrompt, tenantId, credentialIds: string[] }`                         | `{ instanceId, agentId, agentName, tenantId, launched, launchError? }` 201 |
-| `POST`   | `/tenants/:tenantId/credentials`               | `{ provider, name, apiKey, model, baseURL? }`                                       | `{ credentialId, providerId }` 201                                         |
-| `DELETE` | `/tenants/:tenantId/credentials/:credentialId` | — (Interchange-native; manage grant created at write time)                          | `{ ok: true }` 200                                                         |
-| `POST`   | `/instances/:instanceId/sessions`              | `{}` (no credential IDs — Interchange resolves from agent's credentialRequirements) | `{ launched, launchError? }` 200                                           |
+| Method   | Route                                          | Input                                                                               | Output                           |
+| -------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------- |
+| `GET`    | `/agents`                                      | `?tenantId=...`                                                                     | `{ data: AgentInstance[] }`      |
+| `DELETE` | `/tenants/:tenantId/credentials/:credentialId` | — (Interchange-native; manage grant created at write time)                          | `{ ok: true }` 200               |
+| `POST`   | `/instances/:instanceId/sessions`              | `{}` (no credential IDs — Interchange resolves from agent's credentialRequirements) | `{ launched, launchError? }` 200 |
 
 Agent launch does not accept credential IDs. The agent definition declares `credentialRequirements`; Interchange resolves them at launch time by walking the tenant ancestor chain. Grants written at credential-creation time are for management access only (delete/update via Settings UI), not for resolution.
 
@@ -262,14 +254,15 @@ The `artifact` table is the single store for all workflow and agent outputs.
 
 ### Enabled Workflows (`workbench_workflows`)
 
-Tracks which workflow kinds a tenant has added, with per-step assignments.
+Tracks which workflow kinds a principal has added, with per-step assignments.
 
 - `id` (text, primary key)
 - `tenantId` (text)
+- `principalId` (text, NOT NULL) — the enabling member's principal
 - `kind` (text) — workflow kind
 - `assignments` (jsonb, nullable) — `Record<stepName, { credentialIds: string[]; toolIds: string[] }>`
 - `enabledAt` (timestamp)
-- Unique `(tenant_id, kind)` for idempotent upserts.
+- Unique `(tenant_id, principal_id, kind)` for idempotent upserts. Scoped per-principal so one member's enablement/assignments cannot overwrite another's in the shared global tenant (CL-1450).
 
 ### Workbench User (provisional cache)
 
@@ -282,11 +275,14 @@ Tracks which workflow kinds a tenant has added, with per-step assignments.
 
 ### Migration Sequence
 
-| Migration                             | Description                                                                                                     |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `0004_collateral_generation_workflow` | Adds `collateral_generation_workflow` table; makes `artifact.sessionId` nullable; adds `artifact.workflowId` FK |
-| `0005_workbench_user`                 | Adds provisional `workbench_user` cache table                                                                   |
-| `0012_workbench_workflow_assignments` | Adds `workbench_workflows.assignments` (jsonb) for per-step credential/tool assignments                         |
+| Migration                                | Description                                                                                                                                                                   |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0004_collateral_generation_workflow`    | Adds `collateral_generation_workflow` table; makes `artifact.sessionId` nullable; adds `artifact.workflowId` FK                                                               |
+| `0005_workbench_user`                    | Adds provisional `workbench_user` cache table                                                                                                                                 |
+| `0012_workbench_workflow_assignments`    | Adds `workbench_workflows.assignments` (jsonb) for per-step credential/tool assignments                                                                                       |
+| `0015_workbench_workflows_per_principal` | Adds `workbench_workflows.principal_id` (NOT NULL), backfills from each tenant's user principal, re-keys the unique constraint to `(tenant_id, principal_id, kind)` (CL-1450) |
+
+**Data migration (not a schema migration):** `apps/hub/src/scripts/migrate-to-global-tenant.ts` moves existing users into the global tenant — re-parents workbenches, provisions a per-user Myra, and re-keys `workflow_run` / `artifact` / `artifact_version` / `workbench_workflows` from the old personal principal to the new global member principal. Dry-run by default (`--live` to write); per-user transaction; idempotent. An interrupted run MUST be re-run (Myra provisioning and the re-key transaction are intentionally not atomic, but re-running finishes the re-key). Run it once after deploying the cutover. `pain_point` is not re-keyed — it carries no tenant/principal columns and migrates implicitly with its `workflow_run` via `session_id`.
 
 ## Agent Architecture
 
@@ -294,51 +290,24 @@ Tracks which workflow kinds a tenant has added, with per-step assignments.
 
 #### Credential sources by agent
 
-- **Personal agent (Myra)**: `source: 'tenant'`, `name: 'Myra LLM'` for openai-compatible inference — resolved against the user's personal tenant. The credential is stored tenant-owned (`principalId: null`) and created during onboarding.
+- **Personal agent (Myra)**: `source: 'tenant'`, `name: 'Myra LLM'` for openai-compatible inference — resolved down the global org tenant's ancestor chain (org-level or per-workbench). The credential is stored tenant-owned (`principalId: null`) and created during onboarding. Each user has their own Myra agent definition in the global tenant, keyed on `(tenantId, creatorPrincipalId)`.
 - **Granola agent (Oat)**: `source: 'tenant'` for both `granola` and `openai-compatible` — resolved against the workspace tenant
 
-#### Creating credentials (Settings flow)
+#### Creating credentials
 
-> **Custom workbench logic** — Interchange stores credentials in its `credential` table but does not encrypt secrets. The workbench adds an encryption layer via `@workbench/hub-crypto` and owns the create/delete endpoints rather than delegating to Interchange's generic credential endpoint.
-
-Credentials are created via `POST /api/v1/tenants/:tenantId/credentials` (workbench-owned route in `apps/hub/src/routes/agents.ts`). The hub:
-
-1. Checks for a name conflict in the tenant — returns 409 if a credential with the same `name` already exists.
-2. Calls `ensureProvider` (**Interchange**: inserts into Interchange's `provider` table in `intxSchema`, or reuses existing by `(tenantId, name)`) to create or reuse a provider record for the given plugin.
-3. Inserts into Interchange's `credential` table with `principalId: null` (tenant-owned) and the secret encrypted via `encryptSecret` from `@workbench/hub-crypto`.
-4. Returns `{ credentialId, providerId }`.
+Credentials are created by an org admin via **`@intx/admin-ui`** using Interchange's native `POST /api/tenants/:tenantId/credentials` route. The workbench product app has no credential creation UI.
 
 **Credentials are always tenant-owned** (`principalId: null`). This is required for Interchange's `source: 'tenant'` resolution to find them at agent launch time.
 
-Required fields: `provider`, `name`, and `apiKey`. `provider` accepts arbitrary service keys such as `'granola'`; inference providers are restricted to `anthropic`, `openai`, `google-genai`, and `openai-compatible` wherever the UI is selecting an inference source. `model` is required only for inference providers. `baseURL` is optional for service credentials and required for `openai-compatible` inference credentials.
+Secrets are stored as plaintext at the application layer; encryption is handled at rest by the storage layer (see CL-1521). The app reads secrets directly from the `credential` table and passes them to the sidecar without any decryption step.
 
-Secrets are stored with an `enc:vN:` prefix — see `@workbench/hub-crypto`. Plain secrets are never written to the DB.
-
-#### Credential decryption invariant — three paths, all must decrypt
-
-> **Danger zone.** Credentials are stored encrypted (`enc:v1:<ciphertext>`). The sidecar must **always** receive plaintext API keys. Any code path that calls `sidecarRouter.sendSourcesUpdate` is responsible for decrypting first. There are exactly three such paths; all three must be audited whenever the credential or session-launch code changes.
-
-| Path          | Where                                                           | How decryption happens                                                                                                                                                  |
-| ------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Launch**    | `launchAgentSession` in `apps/hub/src/routes/agents.ts`         | Sources resolved via `resolveInstanceSources`, then each `apiKey` passed through `decryptSecret` before `sessionService.launchSession` is called                        |
-| **Rotation**  | `pushDecryptedSourceUpdates` in `apps/hub/src/routes/agents.ts` | Called from `POST /tenants/:tenantId/credentials` and `POST /instances/:instanceId/sessions`; resolves and decrypts sources for all **running** instances in the tenant |
-| **Reconnect** | `agent.reconnected` listener in `apps/hub/src/index.ts`         | Registered **after** `createHubSessionOrchestrator`. Calls `pushDecryptedSourcesForInstance` (single-instance variant, no status filter) and **awaits** it              |
-
-#### Why the reconnect path needs two listeners
-
-Interchange's orchestrator also listens on `agent.reconnected` and calls `sendSourcesUpdate` with the raw (encrypted) DB values — it has no knowledge of the workbench encryption layer. `emitAndAwait` runs listeners sequentially in registration order and **awaits each one** before moving to the next. Because our listener is registered after the orchestrator's, it fires second and overwrites the encrypted sources with decrypted ones.
-
-This is intentional and unavoidable: we cannot modify `interchange/`. Two `sendSourcesUpdate` wire calls per reconnect is the cost of keeping the boundary clean.
-
-#### Why `pushDecryptedSourcesForInstance`, not `pushDecryptedSourceUpdates`, for reconnect
-
-`pushDecryptedSourceUpdates` queries `agentInstance WHERE status = 'running'`. The orchestrator sets `status = 'running'` **inside its own listener**, after `sendSourcesUpdate`. When our listener fires, the reconnecting instance is still `'deployed'` and would be silently skipped. `pushDecryptedSourcesForInstance` takes the specific instance directly and applies no status filter.
+For local dev, use `bun run seed:credentials` from `apps/hub/` to seed providers and credentials from env vars (see Local Development).
 
 #### What must not change
 
 - **Do not `void` the call inside the reconnect listener.** `emitAndAwait` awaits the promise the listener returns. `void` detaches the async body, destroying the sequencing guarantee and causing the push to race with (and likely lose to) Interchange's encrypted push.
 - **Do not reorder listener registration.** Our listener must be registered after `createHubSessionOrchestrator`.
-- **If you add a new caller of `sidecarRouter.sendSourcesUpdate`**, verify it sends decrypted keys.
+- **If you add a new caller of `sidecarRouter.sendSourcesUpdate`**, verify it sends the credential secrets as read from the `credential` table (plaintext; no decrypt step required).
 
 The reconnect bug was introduced as CL-1396 and fixed in the same ticket.
 
@@ -370,8 +339,6 @@ The `useCredentials` hook (`apps/web/src/hooks/use-credentials.ts`) fetches the 
 
 The `CredentialPicker` component (`apps/web/src/components/CredentialPicker.tsx`) renders a checkbox list displaying each credential as `"{cred.name} — {tenantName}"`. It receives the full `credentialsByTenant` map — not filtered to a single workspace — so credentials from parent tenants are visible and selectable (matching the ancestor-chain grant model).
 
-The `CredentialSettingsPage` (**custom**) at `/settings/credentials` shows all credentials across all tenants the user is a principal in, with tenant labels. Create calls `POST /api/v1/tenants/:tenantId/credentials` (workbench). Delete calls `DELETE /api/v1/tenants/:tenantId/credentials/:credentialId` (workbench — verifies principal membership before calling Drizzle delete on Interchange's `credential` table).
-
 #### Route mounts
 
 **Interchange-owned routes** (mounted automatically by `createApp` from `@intx/hub-api`, available at `/api/tenants/:tenantId/*`):
@@ -383,9 +350,7 @@ The `CredentialSettingsPage` (**custom**) at `/settings/credentials` shows all c
 
 **Workbench-owned routes** (in `apps/hub/src/routes/`, mounted under `/api/v1/`):
 
-- `POST /v1/tenants/:tenantId/credentials` — create with encryption + manage grant
 - `DELETE /api/tenants/:tenantId/credentials/:credentialId` — Interchange-native (manage grant created at write time enables this)
-- `POST /v1/agents` — provision agent + launch session
 - `POST /v1/instances/:instanceId/sessions` — launch session for existing instance (no credential IDs; Interchange resolves from agent's credentialRequirements)
 - `POST /v1/workspaces`, `GET /v1/agents`, etc.
 
@@ -416,10 +381,11 @@ All environment validation lives in `apps/hub/src/config.ts`. Variables are vali
 
 ### Added Variables
 
-| Variable                     | Required | Purpose                                                                                                                                                                                                                         |
-| ---------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WORKBENCH_TENANT_SLUG`      | Yes      | Slug of the shared GTM Workbench Interchange tenant                                                                                                                                                                             |
-| `CREDENTIAL_ENCRYPTION_KEYS` | Yes      | Versioned AES-256-GCM key registry for credential encryption. Format: `1:<base64_32_bytes>[,2:<base64_32_bytes>...]`. Highest version encrypts new values; all versions decrypt. Generate a new key: `openssl rand -base64 32`. |
+| Variable               | Required | Purpose                                                                                         |
+| ---------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `GLOBAL_TENANT_SLUG`   | Yes      | Slug of the shared global org tenant, seeded at hub boot. Deployment-specific, never hardcoded. |
+| `GLOBAL_TENANT_NAME`   | Yes      | Display name of the global org tenant (e.g. the org's name for this deployment).                |
+| `GLOBAL_TENANT_DOMAIN` | Yes      | Domain of the global org tenant; Myra instance addresses are `instanceId@<domain>`.             |
 
 ## Authentication
 
@@ -449,9 +415,23 @@ Services:
 ### Environment
 
 ```bash
-cp env.workbench.example .env.workbench
-# Edit optional values
+cp .env.example .env
+# Edit required values
 ```
+
+Per-instance env files are also provided for running services independently:
+
+- `.env.hub.example` → `.env.hub` — hub-specific variables
+- `.env.sidecar.example` → `.env.sidecar` — sidecar-specific variables
+- `.env.migrate.example` → `.env.migrate` — migration-only variables
+
+To seed providers and credentials locally, copy your API keys into the appropriate env file and run:
+
+```bash
+cd apps/hub && bun run seed:credentials
+```
+
+This reads `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GEMINI_API_KEY`, `GRANOLA_API_KEY`, `EXA_API_KEY`, and `FIRECRAWL_API_KEY` and upserts the corresponding providers and tenant credentials.
 
 ### Running
 

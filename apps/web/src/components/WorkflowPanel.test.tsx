@@ -166,7 +166,8 @@ describe('WorkflowPanel generate step', () => {
     mockUseWorkflow.mockImplementation(() => ({
       data: makeWorkflow({
         currentStep: 'generate',
-        status: 'generating',
+        // Analysis is done; the user is choosing what to generate (not yet generating).
+        status: 'ready',
         steps: {
           intake: { completed: true, transcriptId: 'tx-1' },
           analyze: { completed: true, painPoints },
@@ -197,6 +198,56 @@ describe('WorkflowPanel generate step', () => {
   it('shows a Generate button after analyze completes', () => {
     renderPanel();
     expect(screen.getByRole('button', { name: /generate collateral/i })).toBeDefined();
+  });
+});
+
+describe('WorkflowPanel generating state', () => {
+  const painPoints = [
+    {
+      id: 'pp-1',
+      context: 'Slow onboarding',
+      quote: 'Takes weeks',
+      severity: 'high' as const,
+      selected: false,
+    },
+  ];
+
+  beforeEach(() => {
+    mockUseWorkflow.mockImplementation(() => ({
+      data: makeWorkflow({
+        currentStep: 'generate',
+        status: 'generating',
+        steps: {
+          intake: { completed: true, transcriptId: 'tx-1' },
+          analyze: { completed: true, painPoints },
+          generate: { completed: false, artifacts: [] },
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    }));
+    mockRunStep.mockImplementation(() => ({
+      mutateAsync: mock(() => Promise.resolve({})),
+      isPending: false,
+    }));
+  });
+
+  it('collapses the form to a disabled Generating button', () => {
+    renderPanel();
+    const button = screen.getByRole('button', { name: /generating/i });
+    expect(button).toBeDefined();
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /generate collateral/i })).toBeNull();
+  });
+
+  it('hides the collateral type toggles while generating', () => {
+    renderPanel();
+    expect(screen.queryByText('Battlecard')).toBeNull();
+  });
+
+  it('shows the submitted pain point as a read-only summary', () => {
+    renderPanel();
+    expect(screen.getByText('Slow onboarding')).toBeDefined();
   });
 });
 

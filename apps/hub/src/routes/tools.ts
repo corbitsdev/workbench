@@ -3,7 +3,6 @@ import { resolveCredentialRequirement } from '@intx/db';
 import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
 import type { AgentTool } from '@intx/agent';
-import { decryptSecret, type CredentialKeyRegistry } from '@workbench/hub-crypto';
 import { isCredentialToolEntry, KNOWN_TOOLS, buildToolDefinitions } from '../lib/tool-registry';
 import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
 
@@ -12,12 +11,10 @@ const log = getLogger(['api', 'tools']);
 export function createInternalToolsRouter(
   db: DB['db'],
   sidecarToken: string,
-  credentialKeys: CredentialKeyRegistry,
   hubServices?: {
     sessionService: SessionService;
     eventCollectors: EventCollectorRegistry;
     sidecarRouter: SidecarRouter;
-    credentialKeys: CredentialKeyRegistry;
     buildToolDefinitions: typeof buildToolDefinitions;
   }
 ): Hono {
@@ -128,10 +125,9 @@ export function createInternalToolsRouter(
       return c.json({ error: `No credential configured for provider: ${entry.providerName}` }, 422);
     }
 
-    let apiKey: string;
+    const apiKey = resolved.secret;
     let baseURL: string;
     try {
-      apiKey = decryptSecret(credentialKeys, tenantId, resolved.secret);
       const providerRow = await db.query.provider.findFirst({
         where: (p, { eq }) => eq(p.id, resolved.providerId),
       });
@@ -139,7 +135,7 @@ export function createInternalToolsRouter(
       baseURL = metadata.baseURL ?? '';
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log.warn('Credential decryption or provider lookup failed', {
+      log.warn('Provider lookup failed', {
         tenantId,
         toolName,
         error: message,

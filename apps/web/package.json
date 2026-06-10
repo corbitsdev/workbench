@@ -16,7 +16,6 @@
     "@tanstack/react-query": "5.100.14",
     "@workbench/agents": "workspace:*",
     "@workbench/artifact": "workspace:*",
-    "@workbench/auth": "workspace:*",
     "@workbench/chat": "workspace:*",
     "@workbench/client": "workspace:*",
     "@workbench/gtm-workflows": "workspace:*",

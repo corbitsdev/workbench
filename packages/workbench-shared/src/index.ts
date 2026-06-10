@@ -1,6 +1,16 @@
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 
-export type SessionStatus = 'analyzing' | 'reviewing' | 'generating' | 'done' | 'failed';
+// 'pending' = created, analysis not yet started.
+// 'ready' = analysis complete, awaiting the user's generate selection.
+// 'generating' = collateral generation actively running.
+export type SessionStatus =
+  | 'pending'
+  | 'analyzing'
+  | 'ready'
+  | 'generating'
+  | 'reviewing'
+  | 'done'
+  | 'failed';
 
 // The subset of artifact kinds the UI knows how to render exhaustively.
 // The DB `kind` column is free-form text; this union stays closed for the

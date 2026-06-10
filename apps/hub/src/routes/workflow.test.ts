@@ -10,7 +10,7 @@ mock.module('@intx/db', () => ({
   resolveCredentialRequirement: mock(async () => ({
     id: 'cred-1',
     providerId: 'prov-1',
-    secret: 'enc:v1:test',
+    secret: 'sk-test-key',
     tenantId: 'tenant-personal',
     principalId: null,
     name: 'Workflow LLM',
@@ -18,7 +18,7 @@ mock.module('@intx/db', () => ({
   resolveCredentialById: mock(async (_db: unknown, _tenantId: string, id: string) => ({
     id,
     providerId: 'prov-1',
-    secret: 'enc:v1:test',
+    secret: 'sk-test-key',
     tenantId: 'tenant-personal',
     principalId: null,
     name: id,
@@ -28,20 +28,15 @@ mock.module('@intx/db', () => ({
       id: 'agent-source-1',
       provider: 'openai',
       baseURL: 'https://api.deepseek.com/v1',
-      apiKey: 'enc:v1:agent',
+      apiKey: 'sk-test-key',
       model: 'agent-model',
     },
   ]),
 }));
 
-mock.module('@workbench/hub-crypto', () => ({
-  decryptSecret: mock(() => 'sk-test-key'),
-  parseEncryptionKeys: mock(() => ({})),
-}));
-
 mock.module('../config', () => ({
   getConfig: mock(() => ({
-    credentialKeys: {},
+    globalTenant: { slug: 'global-org', name: 'Global Org', domain: 'global.example.com' },
   })),
   loadConfig: mock(() => {}),
 }));
@@ -128,7 +123,12 @@ describe('Workflow router', () => {
   }
 
   function createMockDb(
-    options: { onInsertValues?: (values: unknown) => void; providerNameQueue?: string[] } = {}
+    options: {
+      onInsertValues?: (values: unknown) => void;
+      providerNameQueue?: string[];
+      onSetUpdate?: (values: Record<string, unknown>) => void;
+      updateReturning?: unknown[];
+    } = {}
   ) {
     let insertCount = 0;
     const providerNameQueue = [...(options.providerNameQueue ?? [])];
@@ -185,6 +185,7 @@ describe('Workflow router', () => {
           findFirst: mock(() => ({
             id: 'ew-1',
             tenantId: 'tenant-personal',
+            principalId: 'prn-personal',
             kind: 'collateral-generation',
             enabledAt: new Date().toISOString(),
             assignments: {
@@ -192,6 +193,7 @@ describe('Workflow router', () => {
               generate: { credentialIds: ['llm-cred'], toolIds: [] },
             },
           })),
+          findMany: mock<() => unknown[]>(() => []),
         },
         provider: {
           findFirst: mock(() => ({
@@ -229,9 +231,14 @@ describe('Workflow router', () => {
         }),
       })),
       update: mock(() => ({
-        set: mock(() => ({
-          where: mock(() => []),
-        })),
+        set: mock((values: Record<string, unknown>) => {
+          options.onSetUpdate?.(values);
+          // where() is awaited directly by status-only updates and chained with
+          // returning() by updates that need the modified row.
+          return {
+            where: mock(() => ({ returning: mock(() => options.updateReturning ?? []) })),
+          };
+        }),
       })),
       transaction: mock((fn: (trx: unknown) => unknown) =>
         fn({
@@ -337,6 +344,33 @@ describe('Workflow router', () => {
     });
   });
 
+  it('resolves user context via the global tenant slug, not the user- slug (CL-1452)', async () => {
+    // Collect every string/param value referenced in a drizzle where clause.
+    function collectValues(node: unknown, out: string[], seen = new Set()): void {
+      if (!node || typeof node !== 'object' || seen.has(node)) return;
+      seen.add(node);
+      // biome-ignore lint/suspicious/noExplicitAny: drizzle SQL introspection
+      const n = node as any;
+      if (typeof n.value === 'string') out.push(n.value);
+      const children = Array.isArray(n) ? n : (n.queryChunks ?? Object.values(n));
+      for (const child of children) collectValues(child, out, seen);
+    }
+
+    const mockDb = createMockDb();
+    const res = await buildApp(mockDb).fetch(
+      new Request('http://localhost:4000/workflows/enabled', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+
+    // The first tenant lookup is getUserContext resolving the working tenant.
+    // biome-ignore lint/suspicious/noExplicitAny: test mock introspection
+    const where = (mockDb.query.tenant.findFirst as any).mock.calls[0][0].where;
+    const values: string[] = [];
+    collectValues(where, values);
+    expect(values).toContain('global-org');
+    expect(values).not.toContain('user-test-user');
+  });
+
   it('GET /workflows/:id returns workflow state', async () => {
     const router = buildApp(createMockDb());
     const req = new Request('http://localhost:4000/workflows/wf-1', {
@@ -390,6 +424,85 @@ describe('Workflow router', () => {
     expect(json[0].id).toBe('a-1');
     expect(json[0].sessionName).toBe('Acme Corp');
     expect(json[0].sessionStatus).toBe('done');
+  });
+
+  // Approval gate: PATCH artifact status drives the reviewing -> done transition.
+  function buildReviewApp(opts: {
+    workflowStatus: string;
+    remainingArtifacts: Array<{ kind: string; status: string }>;
+  }) {
+    const statusUpdates: Array<Record<string, unknown>> = [];
+    const approvedRow = {
+      id: 'a-1',
+      sessionId: 'wf-1',
+      kind: 'email',
+      title: 'T',
+      content: 'B',
+      status: 'approved',
+      version: 1,
+      painPointId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const mockDb = createMockDb({
+      onSetUpdate: (vals) => statusUpdates.push(vals),
+      updateReturning: [approvedRow],
+    });
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: opts.workflowStatus,
+      principalId: PERSONAL_PRINCIPAL.id,
+      kind: 'collateral-generation',
+      input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+    }));
+    mockDb.query.artifact.findMany = mock(() =>
+      opts.remainingArtifacts.map((a, i) => ({ id: `a-${i + 1}`, sessionId: 'wf-1', ...a }))
+    );
+
+    return { app: buildApp(mockDb), statusUpdates };
+  }
+
+  async function patchArtifactStatus(app: ReturnType<typeof buildApp>, status: string) {
+    return app.fetch(
+      new Request('http://localhost:4000/workflows/wf-1/artifacts/a-1/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+    );
+  }
+
+  it('PATCH artifact status flips a reviewing workflow to done when no drafts remain', async () => {
+    const { app, statusUpdates } = buildReviewApp({
+      workflowStatus: 'reviewing',
+      remainingArtifacts: [{ kind: 'email', status: 'approved' }],
+    });
+    const res = await patchArtifactStatus(app, 'approved');
+    expect(res.status).toBe(200);
+    expect(statusUpdates).toContainEqual({ status: 'done' });
+  });
+
+  it('PATCH artifact status keeps the workflow reviewing while a draft remains', async () => {
+    const { app, statusUpdates } = buildReviewApp({
+      workflowStatus: 'reviewing',
+      remainingArtifacts: [
+        { kind: 'email', status: 'approved' },
+        { kind: 'linkedin-post', status: 'draft' },
+      ],
+    });
+    const res = await patchArtifactStatus(app, 'approved');
+    expect(res.status).toBe(200);
+    expect(statusUpdates).not.toContainEqual({ status: 'done' });
+  });
+
+  it('PATCH artifact status does not re-complete an already-done workflow', async () => {
+    const { app, statusUpdates } = buildReviewApp({
+      workflowStatus: 'done',
+      remainingArtifacts: [{ kind: 'email', status: 'rejected' }],
+    });
+    const res = await patchArtifactStatus(app, 'rejected');
+    expect(res.status).toBe(200);
+    expect(statusUpdates).not.toContainEqual({ status: 'done' });
   });
 
   it('GET /artifacts checks membership before returning workbench-scoped artifacts', async () => {
@@ -706,7 +819,9 @@ describe('Workflow router', () => {
     expect(res.status).toBe(200);
 
     const json = await res.json();
-    expect(json.status).toBe('running');
+    // Analysis complete maps to the session status 'ready' (awaiting generate),
+    // consistent with the GET endpoint.
+    expect(json.status).toBe('ready');
     expect(json.steps.analyze.completed).toBe(true);
   });
 
@@ -815,7 +930,61 @@ describe('Workflow router', () => {
     expect(res2.status).toBe(200);
   });
 
-  it('POST /workflows/enabled rejects install when a required credential is missing', async () => {
+  it('POST /workflows/enabled scopes the enablement row to the caller principal (CL-1450)', async () => {
+    // Proof-of-fix: enablement is keyed per-principal, so member A's row carries
+    // their principalId and cannot be a tenant-global row another member shares.
+    const insertedValues: unknown[] = [];
+    const mockDb = createMockDb({
+      onInsertValues: (values) => insertedValues.push(values),
+      providerNameQueue: [...COLLATERAL_PROVIDER_QUEUE],
+    });
+    const res = await buildApp(mockDb).fetch(
+      new Request('http://localhost:4000/workflows/enabled', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'collateral-generation',
+          assignments: VALID_COLLATERAL_ASSIGNMENTS,
+        }),
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(insertedValues).toContainEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-personal',
+        principalId: 'prn-personal',
+        kind: 'collateral-generation',
+      })
+    );
+  });
+
+  it('GET /workflows/enabled filters by the caller principal (CL-1450)', async () => {
+    function referencesColumn(
+      // biome-ignore lint/suspicious/noExplicitAny: where-clause introspection
+      node: any,
+      columnName: string,
+      seen = new Set()
+    ): boolean {
+      if (!node || typeof node !== 'object' || seen.has(node)) return false;
+      seen.add(node);
+      if (node.name === columnName && node.columnType) return true;
+      const children = Array.isArray(node) ? node : (node.queryChunks ?? []);
+      return children.some((child: unknown) => referencesColumn(child, columnName, seen));
+    }
+
+    const mockDb = createMockDb();
+    const res = await buildApp(mockDb).fetch(
+      new Request('http://localhost:4000/workflows/enabled', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    // biome-ignore lint/suspicious/noExplicitAny: test mock introspection
+    const args = (mockDb.query.enabledWorkflow.findMany as any).mock.calls[0][0];
+    expect(referencesColumn(args.where, 'principal_id')).toBe(true);
+  });
+
+  it('POST /workflows/enabled succeeds without an explicit granola credential assignment', async () => {
+    // Tenant-sourced credentials (like granola) are resolved at runtime by Interchange,
+    // not at install time. Install must not block on them being explicitly assigned.
     const router = buildApp(createMockDb());
     const req = new Request('http://localhost:4000/workflows/enabled', {
       method: 'POST',
@@ -824,9 +993,7 @@ describe('Workflow router', () => {
     });
 
     const res = await router.fetch(req);
-    expect(res.status).toBe(400);
-    const json = await res.json();
-    expect(json.error).toContain('granola');
+    expect(res.status).toBe(200);
   });
 
   it('POST /workflows/enabled rejects an unknown tool', async () => {

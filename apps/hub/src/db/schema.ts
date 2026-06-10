@@ -85,14 +85,24 @@ export const artifactVersion = pgTable('artifact_version', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-// Tracks which workflow kinds a tenant has opted into. Each row represents a
-// single enabled workflow kind for a tenant. Unique constraint on (tenant_id,
-// kind) makes upserts safe and idempotent.
+// Tracks which workflow kinds are enabled within a tenant.
+//
+// Two flavours:
+//   - principal_id IS NULL  → tenant-scoped row, enabled for all members.
+//     Seeded by seedTenantWorkflows at workbench creation; no user action needed.
+//   - principal_id NOT NULL → per-user row, enabled by an individual member.
+//     Kept for backwards compatibility; per-user opt-in still works.
+//
+// GET /workflows/enabled returns rows matching either flavour for the caller.
+// Unique on (tenant_id, principal_id, kind) for non-null rows; a separate
+// partial unique index handles (tenant_id, kind) WHERE principal_id IS NULL
+// (migration 0017).
 export const enabledWorkflow = pgTable(
   'workbench_workflows',
   {
     id: text('id').primaryKey(),
     tenantId: text('tenant_id').notNull(),
+    principalId: text('principal_id'),
     kind: text('kind').notNull(),
     // Per-step credential/tool assignments captured when the workflow is added
     // to the workbench. Shape: Record<stepName, { credentialIds: string[]; toolIds: string[] }>.
@@ -100,8 +110,34 @@ export const enabledWorkflow = pgTable(
     enabledAt: timestamp('enabled_at').notNull().defaultNow(),
   },
   (t) => ({
-    tenantKindUniq: unique('workbench_workflows_tenant_kind_uniq').on(t.tenantId, t.kind),
+    tenantPrincipalKindUniq: unique('workbench_workflows_tenant_principal_kind_uniq').on(
+      t.tenantId,
+      t.principalId,
+      t.kind
+    ),
   })
+);
+
+// Per-user attribution for agent instances. Interchange's `agent_instance` has
+// no owner-user column, so this workbench-side mapping records which member
+// principal owns a per-user instance of a given org-level template definition
+// (CL-1532). One row per (member principal, template) — the unique key keeps the
+// on-join provisioning idempotent and race-safe.
+export const memberAgentInstance = pgTable(
+  'member_agent_instance',
+  {
+    id: text('id').primaryKey(),
+    tenantId: text('tenant_id').notNull(),
+    // The user's member principal in the global tenant.
+    memberPrincipalId: text('member_principal_id').notNull(),
+    templateKey: text('template_key').notNull(),
+    // The shared org-level agent definition (seeded by CL-1530) this instances.
+    agentId: text('agent_id').notNull(),
+    // The per-user agent_instance id.
+    instanceId: text('instance_id').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  () => ({})
 );
 
 // ─── Approvals ─────────────────────────────────────────────────────

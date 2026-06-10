@@ -20,21 +20,40 @@ The current workflow is transcript/call-document-to-artifact. The broader produc
 
 The hub deploys Interchange's `createApp`, which registers all tenant, principal, grant, agent, and instance routes. The workbench is a multi-tenant system built on top of Interchange's identity and delivery primitives.
 
-### Signup Provisioning
+### Tenancy Model: Shared Global Org Tenant
 
-On signup, the hub:
+The workbench runs on a **single shared global org tenant**, seeded once at hub boot. Its name/slug/domain come from env (`GLOBAL_TENANT_{SLUG,NAME,DOMAIN}` via `requireEnv`) — never hardcoded, so the same code produces a different org per deployment. The seed (`seedGlobalTenant`) is idempotent and race-safe across replicas (unique-slug catch-and-reselect) and fails loud if the tenant exists but is missing its system roles.
 
-1. Creates a personal Interchange tenant for the user (slug: `user-{userId}`)
-2. Assigns the user the `owner` role on their personal tenant
-3. Creates a principal for the user in the shared GTM Workbench tenant (member role)
-4. Seeds a cross-tenant deliver grant on the personal tenant's `owner` role, enabling Myra to deliver mail to workbench agents
+Every same-domain user **auto-joins the global tenant as a `member` principal** (`ensureGlobalMember`, race-safe via the unique `principal (tenantId, kind, refId)` constraint). The `member` role is intentionally grant-less: product reads are principal-scoped and never consult the Interchange grant system, so a `member *:read` grant would only widen blast radius in a shared tenant. Owner (`*:*`) and admin (`*:{read,create,manage}`) grants remain for org admins.
 
-### Agent Architecture
+**Workbenches are sub-tenants** of the global tenant (`parentId = globalTenantId`). Because `getAncestorChain` resolves nearest-tenant-first, an LLM credential stored once at the org level resolves down the hierarchy into every workbench via `resolveCredentialRequirement` — no per-workbench credential duplication.
 
-| Agent                     | Tenant                             | Role                                                              |
-| ------------------------- | ---------------------------------- | ----------------------------------------------------------------- |
-| **Myra** (personal agent) | User's personal Interchange tenant | Chief of Staff / Executive Assistant for the user                 |
-| **Oat** (Granola agent)   | Shared GTM Workbench tenant        | Continuously processes Granola calls into call document artifacts |
+`getUserContext` resolves the caller's working context as their member principal in the global tenant (by config slug). This single function gates every workflow/artifact route. The former per-user personal-tenant model (slug `user-{userId}`) and all its provisioning/repair paths have been removed.
+
+> **Forward path (substrate for multi-tenant SaaS):** this builds the per-org shape SaaS needs — org tenant → member principals → sub-tenant workbenches → tenant+principal-scoped data + credential inheritance. Going multi-tenant later is additive: replace the single env-seeded org with per-customer org provisioning and resolve the user's org by membership instead of the one constant. Treat the `GLOBAL_TENANT_*` env seed as a deliberately temporary v1 mechanism.
+
+### Agent Definitions and Signup Provisioning
+
+**Agent templates** (`@workbench/agents`) are materialized as first-class Interchange agent definitions in the global tenant at hub boot via `seedAgentTemplates(db)`. This is idempotent — re-boot is a no-op. Definitions become visible and editable in admin-ui automatically.
+
+| Template   | Role                                                              |
+| ---------- | ----------------------------------------------------------------- |
+| **Myra**   | Personal Chief of Staff / Executive Assistant for each user       |
+| **Oat**    | Continuously processes Granola calls into call document artifacts |
+| **Freddy** | Firecrawl-backed web research agent                               |
+| **Walter** | Workflow orchestration agent                                      |
+| **Loop**   | Iterative refinement agent                                        |
+
+The enabled-template set (which definitions members auto-get on join) defaults to `['myra']` in code. No runtime config.
+
+**On join** (`user.create.after` / `session.create.after` / `GET /me`):
+
+1. `ensureGlobalMember` — creates the user's `member` principal in the global tenant (idempotent, race-safe via unique constraint)
+2. For each enabled template definition: creates a per-user **instance** keyed on `(definitionId, memberPrincipalId)` — idempotent, no duplicate instances on re-login
+
+Instance creation uses Interchange-native instance APIs; no bespoke per-user agent creation. The org-level credential is inherited at launch time from the global tenant's ancestor chain via `resolveCredentialRequirement` — no per-user credential entry.
+
+Myra instances are keyed on `(definitionId, memberPrincipalId)` — **not** `(tenantId, name)`: in a shared tenant every member's instance is named "Myra," so name-based lookup would hand one user's instance to everyone.
 
 Both Myra and Oat use custom directors wrapping `createDefaultDirector` to filter inbound senders before inference.
 
@@ -48,25 +67,25 @@ Credentials and grants follow Interchange's model exactly. The workbench does no
 
 **Credential resolution at launch time**: Interchange's `resolveCredentialRequirement` walks up the tenant ancestor chain looking for a credential matching `providerName + source` (and optionally `name`). The workbench relies entirely on this resolver — it never builds inference sources manually or passes credential IDs through the launch call.
 
-**Myra's credential requirement**: `{ providerName: 'openai-compatible', source: 'tenant', name: 'Myra LLM' }`. The user saves a credential named `'Myra LLM'` in their personal tenant during onboarding. Interchange finds it at launch time.
+**Myra's credential requirement**: `{ providerName: 'openai-compatible', source: 'tenant', name: 'Myra LLM' }`. The credential named `'Myra LLM'` is stored tenant-owned (org level or per-workbench); Interchange resolves it down the ancestor chain at launch time.
 
-**Onboarding flow**: The frontend saves the credential via `POST /v1/tenants/:tenantId/credentials`, then calls `POST /v1/instances/:instanceId/sessions` with no credential IDs. The hub launches the session; Interchange resolves the credential from the tenant.
+**Credential setup**: An org admin creates the LLM credential once at the global tenant level via `@intx/admin-ui`. Members never enter API keys. The credential resolves down the ancestor chain to every member's instance at launch time via `resolveCredentialRequirement`.
 
 **Grants** (manage access, not resolution): The hub writes a `grant` row giving the creating principal manage access to the credential record (`resource: credential:{id}`, `origin: creator`). This grant enables the Settings UI to delete/update the credential. It is separate from resolution — Interchange resolves credentials from the tenant, not from grants to instance principals.
 
-**Per-step workflow assignments**: Unlike agents, whose credential requirements resolve implicitly by name, a workflow declares requirements **per step** and binds an explicit tenant credential to each step when it is added to a workbench. The binding (credential IDs and tool IDs per step) is stored on the workbench install record, not on each run. At run time the hub resolves the bound credential by ID (`resolveCredentialById`, scoped to the tenant ancestor chain) rather than by name — so different steps can use different credentials — and falls back to name-based resolution for installs predating assignments. Credentials are still tenant-owned and encrypted as above; only the selection mechanism differs.
+**Credential ownership in a shared tenant**: because every member is a principal in the same global tenant, `GET`/`PATCH /v1/tenants/:tenantId/credentials` are scoped to the caller's owned credentials. The decision is delegated entirely to Interchange's authorization evaluator (`authorize`/`evaluateGrants` from `@intx/authz`) against the resource `credential:<id>` — no hand-rolled grant interpretation. A member's `creator` grant authorizes their own credentials; an admin/owner wildcard grant authorizes all. "Shared org" credentials (e.g. a tenant-owned `Myra LLM` key seeded at the org level with no creator grant) are not enumerable/editable by ordinary members via this route but remain resolvable at launch (resolution is not grant-gated).
 
-### Credential Encryption at Rest
+**Per-step workflow assignments**: Unlike agents, whose credential requirements resolve implicitly by name, a workflow declares requirements **per step** and binds an explicit tenant credential to each step when it is added to a workbench. Workflow enablement + its assignments are scoped **per principal** — the `workbench_workflows` row is unique on `(tenant_id, principal_id, kind)` — so in the shared tenant one member's enablement and credential/tool bindings cannot overwrite another's, and a step never resolves another member's LLM key. At run time the hub resolves the bound credential by ID (`resolveCredentialById`, scoped to the tenant ancestor chain) rather than by name — so different steps can use different credentials — and falls back to name-based resolution for installs predating assignments. Credentials are still tenant-owned and encrypted as above; only the selection mechanism differs.
 
-Credential secrets written by the hub layer are encrypted before storage using AES-256-GCM with per-tenant key derivation. Interchange's `credential` table stores the ciphertext; no `@intx/*` package is modified.
+### Credentials at Rest
 
-**Encryption boundary**: Only the hub layer encrypts and decrypts. Interchange is unaware of the wrapping — it sees opaque `secret` values. The hub decrypts before passing secrets to agents or making comparisons.
+Credential secrets are stored as plaintext at the application layer in Interchange's `credential` table. Encryption at rest is handled by the storage layer, not by application code (see CL-1521). The hub reads secrets directly and passes them to agents without any encrypt or decrypt step. The application-layer encryption package (`@workbench/hub-crypto`) was removed in CL-1537.
 
-**`enc:` prefix convention**: Encrypted values are stored as `enc:vN:<base64(iv+tag+ciphertext)>`. The version number (`N`) identifies which key was used. Rows without the prefix are treated as legacy plaintext and are re-encrypted on next write.
+## Admin Surface
 
-**Key rotation**: The hub supports multiple simultaneous key versions. All registered versions can decrypt; the highest-numbered version encrypts new values. Rotation is handled by adding a new version to `CREDENTIAL_ENCRYPTION_KEYS` without downtime.
+All org management (credentials, providers, agent definitions, instances, principals, roles, grants) is handled by **`@intx/admin-ui`** — Interchange's native admin SPA. It is deployed as a separate subdomain (`admin.*`) pointed at the hub's `/api` routes, which are already mounted by `createApp`. Admins authenticate via admin-ui's email/password login; this is separate from the workbench's Google session.
 
-**`@workbench/hub-crypto`**: The encryption primitives (`parseEncryptionKeys`, `encryptSecret`, `decryptSecret`) live in a standalone package with no workbench-specific dependencies. Any Interchange-based hub can adopt the same encryption layer by adding this package and wiring `CREDENTIAL_ENCRYPTION_KEYS` at startup.
+The workbench product app contains no management UI — no credential settings pages, no principal management, no agent provisioning forms.
 
 ## Component Diagram
 
@@ -161,7 +180,7 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 
 - **Workspace**: The user-facing organizational unit in GTM Workbench. Every user belongs to one workspace. Use "workspace" in UI copy.
 - **Tenant**: The Interchange concept that a workspace maps to 1:1. Use "tenant" in backend/API code, "workspace" in UI and product copy.
-- **Personal Tenant**: Each user also gets a personal Interchange tenant (slug: `user-{userId}`) where their personal agent Myra lives.
+- **Personal Tenant**: Removed. The former per-user personal tenant model (`user-{userId}`) was replaced by the shared global org tenant + per-user instances of enabled agent definitions.
 - **Source**: Input material selected for a job, such as a call document, uploaded file, brain/context file, URL, or prior artifact reused as input.
 - **Workflow**: A reusable recipe or definition. Workbench owns the product-facing offering; Interchange owns deployable workflow execution.
 - **Job**: One execution/run of a workflow against selected sources and options. Jobs are what users resume, review, and complete.
@@ -172,13 +191,20 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 ## Design Decisions
 
 - **Interchange as the foundation**: The hub deploys `createApp` from Interchange rather than building its own tenant/identity/agent infrastructure.
-- **Per-user personal tenants**: Each user gets their own Interchange tenant for Myra, enabling personal-agent isolation and cross-tenant grant semantics.
+- **Shared global org tenant**: All users are member principals of one env-named global org tenant seeded at boot; agent definitions are seeded at the same time via `seedAgentTemplates`; workbenches are sub-tenants and per-user Myra instances live in the global tenant. Replaced the former per-user personal-tenant model (which was fragile — provisioned from three paths — and not the SaaS substrate). Data is kept private by per-principal scoping, not by per-user tenants.
 - **Artifact-centric model**: All outputs — from agents and workflows — are stored as `artifact` rows with provenance. Artifacts can be reused as inputs.
 - **Parallel generation**: Each collateral output type in a Collateral Generation workflow generates independently in parallel via separate agent calls.
 - **Two-mode step execution**: Each generative workflow step runs either in _agent mode_ (routed to a configured tenant agent, which supplies its own inference provider and credentials) or _inline mode_ (the step's own workflow LLM credential). Both modes resolve to a single inference source consumed identically by the step runner; only the source's origin differs.
 - **Paste-first intake**: Manual transcript paste remains supported as a secondary path; Oat-driven Granola processing is the primary intake.
 - **Human-in-the-loop**: Every major stage requires human approval. No fully automated pipeline.
 - **Persistent sessions**: Full workflow state is saved to PostgreSQL. Resumable.
+
+## Known Debt & Forward Direction
+
+- **`pain_point` should be an Artifact, not its own table**: pain points are workflow outputs and belong in the unified `artifact` model (with provenance), not in a dedicated `pain_point` table. The tenancy migration deliberately does not entrench it (it carries no tenant/principal columns and rides `workflow_run`).
+- **Avoid per-workflow database structures**: workflow-specific tables do not scale across workflow kinds. `workbench_workflows` is intentionally generic (keyed by a `kind` string + a jsonb `assignments` blob); new workflow kinds must not add bespoke tables.
+- **`/me` field rename**: the `/me` response still returns the working (global) tenant id under the legacy field name `personalTenantId`; rename to `tenantId` across hub + web is a pending follow-up.
+- **Tool changes require definition edit + relaunch**: there is no PATCH route for live tool updates. To change an agent's tool list, edit the agent definition in admin-ui and relaunch the instance. The `relaunchRunningAgentInstancesForToolUpdate` code path was removed in CL-1536.
 
 ---
 

@@ -1,5 +1,6 @@
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
-// These are interchange endpoints — tenant management, principals, etc.
+// These are interchange endpoints — principals, agent instances, sessions.
+// Credential and tenant management moved to Interchange admin-ui (CL-1535).
 
 const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -52,13 +53,6 @@ export function principalToWorkbenchEntry({
   return { id: principalId, tenantId, tenantSlug, tenantName };
 }
 
-export type TenantResponse = {
-  id: string;
-  name: string;
-  slug: string;
-  domain: string;
-};
-
 export type MeResponse = {
   userId: string;
   userName: string;
@@ -77,10 +71,6 @@ export async function getMyPrincipals(): Promise<Principal[]> {
   return res.data;
 }
 
-export async function createTenant(name: string, slug: string): Promise<TenantResponse> {
-  return hubFetch<TenantResponse>('POST', 'tenants', { name, slug });
-}
-
 export type WorkbenchResponse = {
   id: string;
   name: string;
@@ -92,125 +82,16 @@ export async function createWorkbench(name: string): Promise<WorkbenchResponse> 
   return hubFetch<WorkbenchResponse>('POST', 'v1/workbenches', { name });
 }
 
-const PERSONAL_TENANT_PREFIX = 'user-';
-const PERSONAL_WORKBENCH_NAME = 'Your Workbench';
-
-export function isPersonalTenantSlug(slug: string): boolean {
-  return slug.startsWith(PERSONAL_TENANT_PREFIX);
-}
-
-/**
- * Orders the user's principals into workbench entries with the personal
- * workspace first (relabeled "Your Workbench"), followed by shared workbenches.
- * The personal-first ordering also makes it the default selection, since the
- * route auto-redirect picks the first entry.
- */
-export function principalsToWorkbenches(principals: Principal[]): WorkbenchEntry[] {
-  const personal = principals
-    .filter((p) => isPersonalTenantSlug(p.tenantSlug))
-    .map(principalToWorkbenchEntry)
-    .map((entry) => ({ ...entry, tenantName: PERSONAL_WORKBENCH_NAME }));
-  const shared = principals
-    .filter((p) => !isPersonalTenantSlug(p.tenantSlug))
-    .map(principalToWorkbenchEntry);
-  return [...personal, ...shared];
+export function principalsToWorkbenches(
+  principals: Principal[],
+  globalTenantId: string | null
+): WorkbenchEntry[] {
+  return principals.filter((p) => p.tenantId !== globalTenantId).map(principalToWorkbenchEntry);
 }
 
 export async function listWorkbenches(): Promise<WorkbenchEntry[]> {
-  const principals = await getMyPrincipals();
-  return principalsToWorkbenches(principals);
-}
-
-export type TenantDetailResponse = {
-  id: string;
-  name: string;
-  slug: string;
-  domain: string;
-  parentId: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type PrincipalDetail = {
-  id: string;
-  tenantId: string;
-  kind: 'user' | 'agent';
-  refId: string;
-  displayName: string;
-  email?: string;
-  status: 'active' | 'suspended' | 'invited' | 'deactivated';
-  roles: { id: string; name: string }[];
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type CredentialDetail = {
-  id: string;
-  tenantId: string;
-  providerId: string;
-  principalId?: string | null;
-  name: string;
-  type: 'api_key' | 'oauth_token' | 'certificate' | 'other';
-  description?: string | null;
-  status: 'active' | 'expired' | 'revoked' | 'error';
-  scopes?: string[] | null;
-  expiresAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type GrantDetail = {
-  id: string;
-  tenantId: string;
-  roleId?: string | null;
-  roleName?: string | null;
-  principalId?: string | null;
-  principalName?: string | null;
-  resource: string;
-  action: string;
-  effect: 'allow' | 'deny' | 'ask';
-  origin: 'system' | 'role' | 'creator' | 'invoker';
-  expiresAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export async function getTenant(tenantId: string): Promise<TenantDetailResponse> {
-  return hubFetch<TenantDetailResponse>('GET', `tenants/${tenantId}`);
-}
-
-export async function listTenantPrincipals(tenantId: string): Promise<PrincipalDetail[]> {
-  const res = await hubFetch<{ data: PrincipalDetail[] }>(
-    'GET',
-    `tenants/${tenantId}/principals?limit=100`
-  );
-  return res.data;
-}
-
-export async function getPrincipal(
-  tenantId: string,
-  principalId: string
-): Promise<PrincipalDetail> {
-  return hubFetch<PrincipalDetail>('GET', `tenants/${tenantId}/principals/${principalId}`);
-}
-
-export async function listTenantCredentials(tenantId: string): Promise<CredentialDetail[]> {
-  const res = await hubFetch<{ data: CredentialDetail[] }>(
-    'GET',
-    `tenants/${tenantId}/credentials?limit=100`
-  );
-  return res.data;
-}
-
-export async function listPrincipalGrants(
-  tenantId: string,
-  principalId: string
-): Promise<GrantDetail[]> {
-  const res = await hubFetch<{ data: GrantDetail[] }>(
-    'GET',
-    `tenants/${tenantId}/grants?limit=100&principalId=${encodeURIComponent(principalId)}`
-  );
-  return res.data;
+  const [principals, me] = await Promise.all([getMyPrincipals(), getMe()]);
+  return principalsToWorkbenches(principals, me.personalTenantId);
 }
 
 export type CredentialRequirement = {
@@ -231,39 +112,6 @@ export type AgentInstance = {
   createdAt: string;
 };
 
-export async function assignCredentialToAgent(
-  tenantId: string,
-  agentId: string,
-  credentialId: string | null,
-  providerName?: string
-): Promise<void> {
-  await hubFetch<unknown>('PATCH', `v1/tenants/${tenantId}/agents/${agentId}/credential`, {
-    credentialId,
-    ...(providerName !== undefined ? { providerName } : {}),
-  });
-}
-
-export async function updateAgentTools(
-  tenantId: string,
-  agentId: string,
-  tools: string[]
-): Promise<void> {
-  await hubFetch<unknown>('PATCH', `v1/tenants/${tenantId}/agents/${agentId}/tools`, {
-    tools,
-  });
-}
-
-export type ToolSummary = {
-  name: string;
-  providerName: string;
-  description: string;
-};
-
-export async function listAvailableTools(): Promise<ToolSummary[]> {
-  const res = await hubFetch<{ data: ToolSummary[] }>('GET', 'v1/tools');
-  return res.data;
-}
-
 export async function listAgentInstances(tenantId: string): Promise<AgentInstance[]> {
   const res = await hubFetch<{ data: AgentInstance[] }>(
     'GET',
@@ -274,46 +122,6 @@ export async function listAgentInstances(tenantId: string): Promise<AgentInstanc
 
 export async function deleteAgentInstance(tenantId: string, instanceId: string): Promise<void> {
   await hubFetch<void>('DELETE', `v1/tenants/${tenantId}/agents/instances/${instanceId}`);
-}
-
-export type LLMProviderType = 'anthropic' | 'openai' | 'google-genai' | 'openai-compatible';
-
-export const INFERENCE_PROVIDER_NAMES: LLMProviderType[] = [
-  'anthropic',
-  'openai',
-  'google-genai',
-  'openai-compatible',
-];
-
-export type CreateTenantCredentialInput = {
-  provider: string;
-  name: string;
-  apiKey: string;
-  model?: string;
-  baseURL?: string;
-};
-
-export type CreateTenantCredentialResponse = {
-  credentialId: string;
-  providerId: string;
-};
-
-export async function createTenantCredential(
-  tenantId: string,
-  input: CreateTenantCredentialInput
-): Promise<CreateTenantCredentialResponse> {
-  return hubFetch<CreateTenantCredentialResponse>(
-    'POST',
-    `v1/tenants/${tenantId}/credentials`,
-    input
-  );
-}
-
-export async function deleteTenantCredential(
-  tenantId: string,
-  credentialId: string
-): Promise<void> {
-  await hubFetch<void>('DELETE', `tenants/${tenantId}/credentials/${credentialId}`);
 }
 
 export type LaunchInstanceSessionResponse = {
@@ -331,64 +139,16 @@ export async function stopAgentInstance(tenantId: string, instanceId: string): P
   await hubFetch<void>('DELETE', `v1/tenants/${tenantId}/agents/instances/${instanceId}`);
 }
 
-export type ProvisionAgentInput = {
-  tenantId: string;
-  name: string;
-  systemPrompt: string;
-  credentialIds?: string[];
-  tools?: string[];
-};
-
-export type ProvisionAgentResponse = {
+export type DeployAgentResponse = {
   instanceId: string;
-  agentId: string;
-  agentName: string;
-  tenantId: string;
-  launched: boolean;
-  launchError?: string;
+  created: boolean;
 };
 
-export async function provisionAgent(input: ProvisionAgentInput): Promise<ProvisionAgentResponse> {
-  return hubFetch<ProvisionAgentResponse>('POST', 'v1/agents', input);
-}
-
-export type EnrichedCredential = {
-  id: string;
-  name: string;
-  tenantId: string;
-  providerPlugin: string;
-  providerName: string;
-  providerId: string;
-  status: string;
-  baseURL: string;
-  model: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type UpdateTenantCredentialInput = {
-  name?: string;
-  apiKey?: string;
-  model?: string;
-  baseURL?: string;
-};
-
-export async function updateTenantCredential(
+export async function deployAgentFromTemplate(
   tenantId: string,
-  credentialId: string,
-  input: UpdateTenantCredentialInput
-): Promise<void> {
-  await hubFetch<{ credentialId: string }>(
-    'PATCH',
-    `v1/tenants/${tenantId}/credentials/${credentialId}`,
-    input
-  );
-}
-
-export async function listEnrichedCredentials(tenantId: string): Promise<EnrichedCredential[]> {
-  const res = await hubFetch<{ data: EnrichedCredential[] }>(
-    'GET',
-    `v1/tenants/${tenantId}/credentials`
-  );
-  return res.data;
+  templateKey: string
+): Promise<DeployAgentResponse> {
+  return hubFetch<DeployAgentResponse>('POST', `v1/tenants/${tenantId}/agents/instances`, {
+    templateKey,
+  });
 }

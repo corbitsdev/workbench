@@ -18,7 +18,7 @@ export interface Step {
 }
 
 /** Canonical workflow step identifiers used to build the step list. */
-export type StepName = 'intake' | 'analyze' | 'generate';
+export type StepName = 'intake' | 'analyze' | 'generate' | 'approve';
 
 /** Status of the progress checklist (e.g. live analysis tasks). */
 export type ProgressStatus = 'idle' | 'running' | 'completed' | 'error';

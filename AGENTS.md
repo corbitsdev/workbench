@@ -19,6 +19,16 @@ GTM Workbench is an AI-assisted GTM workspace built on top of Interchange. Users
 - `packages/` — Shared packages (`@workbench/*`).
 - `interchange/packages/` — Interchange packages (`@intx/*`).
 
+### Apps stay generic; packages own the domain
+
+`apps/*` should be as generic as possible. Domain knowledge — workflow definitions, status vocabularies, credential requirements, prompts, artifact kinds, business rules — lives in `packages/*` and is imported by the apps. An app is a thin host: it wires HTTP routes, renders UI, and delegates every product decision to a package.
+
+Concretely:
+
+- Define domain types and unions in the owning package, not in an app. An app consuming a value it does not own treats it as an opaque `string` rather than re-declaring the type.
+- If you find yourself encoding a product rule (what a workflow needs, what a status means, what to generate) inside `apps/web` or `apps/hub`, it belongs in a package.
+- Prefer the most specific package over the catch-all. A workflow concept belongs in the workflow package, not in a generic `shared` grab-bag.
+
 ### Stack
 
 - Package manager: Bun (1.2+)
@@ -140,6 +150,12 @@ bun run test
 
 Pre-existing failures must be identified explicitly. Never silently skip a failing step.
 
+### Typecheck gate
+
+`bun run check` (typecheck) **must pass with zero errors in our code** before any commit, push, or PR. Errors inside `interchange/` are pre-existing upstream issues and may be ignored, but every error in `apps/`, `packages/`, and `scripts/` must be resolved first.
+
+Do not merge or push while typecheck is red on our code. If a change introduces a new type error, fix it before committing — do not defer it.
+
 ## Issue Workflow
 
 When implementing a Linear issue:
@@ -156,10 +172,14 @@ When implementing a Linear issue:
 
 ## Code Style
 
-- TypeScript strict mode
+- No comments unless the WHY is non-obvious (hidden constraint, subtle invariant, workaround for a specific bug). If removing the comment wouldn't confuse a future reader, don't write it. Never narrate what the code does.
+- TypeScript strict mode. Load the `gaas:typescript` skill before writing or reviewing TypeScript.
 - No `console.log` — use `@intx/log` structured logging in hub/sidecar, nothing in web
 - No emojis in code, comments, or messages
-- No fallbacks for required env vars — use `requireEnv()` and fail loudly at startup
+- No IIFEs or dynamic imports in production code — use named async functions and static imports.
+- No fallbacks for required values — prefer explicit checks and fail loudly. Use `requireEnv()` for env vars; never silently substitute a default.
+- No nested ternaries or similarly compressed conditional expressions — use `if`/`else` or early returns.
+- Use full, descriptive variable and function names. Clean, readable design over brevity.
 - All env var validation lives in `apps/hub/src/config.ts`
 
 ## Dependency Injection

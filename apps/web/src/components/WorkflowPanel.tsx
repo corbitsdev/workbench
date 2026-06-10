@@ -33,6 +33,18 @@ interface PainPointData {
 
 const DEFAULT_COLLATERAL_TYPES = ['email', 'linkedin-post', 'one-pager', 'battlecard'];
 
+// The pain points a generation run was started with: the current in-session
+// selection if present, else the server-persisted selection (survives remount),
+// else all of them.
+function getSubmittedPainPoints(
+  painPoints: PainPointData[],
+  selectedIds: Set<string>
+): PainPointData[] {
+  if (selectedIds.size > 0) return painPoints.filter((p) => selectedIds.has(p.id));
+  const serverSelected = painPoints.filter((p) => p.selected);
+  return serverSelected.length > 0 ? serverSelected : painPoints;
+}
+
 export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const { data: workflow, isLoading, isError } = useWorkflow(workflowId);
   const runStep = useRunStep(workflowId);
@@ -70,12 +82,19 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const artifacts: Artifact[] = (generateStep?.artifacts as Artifact[] | undefined) ?? [];
   const analyzeCompleted = Boolean(analyzeStep?.completed);
   const generateCompleted = Boolean(generateStep?.completed);
-  const isBusy = runStep.isPending || workflow.status === 'analyzing';
+  // Active generation is signalled by the server status 'generating' (which
+  // survives the request, unlike runStep.isPending), or optimistically the
+  // moment the user fires the generate step from the ready state. The 'ready'
+  // status (analysis done, awaiting selection) is deliberately NOT busy.
+  const isGenerating = workflow.status === 'generating' || (runStep.isPending && analyzeCompleted);
+  const isBusy = runStep.isPending || workflow.status === 'analyzing' || isGenerating;
 
   const title = workflow.companyName ?? painPoints[0]?.context ?? 'Workflow';
 
   const STATUS_LABELS: Record<string, string> = {
+    pending: 'Pending',
     analyzing: 'Analyzing',
+    ready: 'Ready',
     generating: 'Generating',
     reviewing: 'Reviewing',
     done: 'Done',
@@ -86,9 +105,14 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
     intake: 'Intake',
     analyze: 'Analyze',
     generate: 'Generate',
+    approve: 'Approve',
   };
 
-  const steps = buildSteps(currentStep, STEP_LABELS, workflow.status === 'done');
+  // Approval is a formal step: once generation has produced drafts the workflow
+  // sits on 'approve' until every artifact is reviewed, then completes.
+  const isReviewing = workflow.status === 'reviewing';
+  const stepperStep: StepName = isReviewing ? 'approve' : (currentStep as StepName);
+  const steps = buildSteps(stepperStep, STEP_LABELS, workflow.status === 'done');
 
   const handleToggle = (id: string) => {
     setSelectedIds((prev) => {
@@ -141,6 +165,12 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
     displayArtifact?.kind ??
     null;
 
+  // While generating, the form collapses to a read-only summary of what was
+  // submitted. Prefer the in-session selection; after a remount (generation
+  // outliving the connection) selectedIds is empty, so fall back to the
+  // server-persisted `selected` flag, and only then to all pain points.
+  const selectedPainPoints = getSubmittedPainPoints(painPoints, selectedIds);
+
   return (
     <div className="flex flex-col h-full overflow-hidden rounded-panel border border-border bg-bg">
       {/* Header */}
@@ -148,7 +178,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
         <div className="min-w-0">
           <p className="truncate text-[14px] font-semibold text-text">{title}</p>
           <p className="text-[11px] text-text-3 font-mono mt-px">
-            {STEP_LABELS[currentStep as StepName] ?? currentStep} ·{' '}
+            {STEP_LABELS[stepperStep] ?? stepperStep} ·{' '}
             {STATUS_LABELS[workflow.status] ?? workflow.status}
           </p>
         </div>
@@ -279,8 +309,28 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
           </div>
         )}
 
+        {/* Generating — collapse the form to a read-only summary of the submission */}
+        {!generateCompleted && isGenerating && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-3">
+            <h3 className="text-[13px] font-semibold text-text">
+              Generating collateral for {selectedPainPoints.length} pain point
+              {selectedPainPoints.length !== 1 ? 's' : ''}
+            </h3>
+            <ul className="space-y-2">
+              {selectedPainPoints.map((p) => (
+                <li
+                  key={p.id}
+                  className="rounded-[8px] border border-border bg-surface px-3 py-2 text-[12px] text-text-2"
+                >
+                  {p.context}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Pain points + collateral selection — shown during analyze/generate phases */}
-        {!generateCompleted && (
+        {!generateCompleted && !isGenerating && (
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
             {/* Pain points section */}
             <div>
@@ -327,7 +377,14 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
         )}
 
         {/* Bottom action bar */}
-        {!generateCompleted && (
+        {!generateCompleted && isGenerating && (
+          <div className="border-t border-border bg-surface px-4 py-3 shrink-0">
+            <button type="button" disabled className="btn-primary w-full">
+              Generating…
+            </button>
+          </div>
+        )}
+        {!generateCompleted && !isGenerating && (
           <div className="border-t border-border bg-surface px-4 py-3 shrink-0 space-y-3">
             {!analyzeCompleted && (
               <FeedbackSection
@@ -351,7 +408,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
                   onClick={() => handleGenerate()}
                   className="btn-primary w-full"
                 >
-                  {isBusy ? 'Generating...' : 'Generate collateral'}
+                  {isBusy ? 'Generating…' : 'Generate collateral'}
                 </button>
               </>
             )}

@@ -20,51 +20,20 @@ mock.module('../lib/hub-api', () => ({
   getMe: () =>
     Promise.resolve({
       userId: 'u1',
+      userName: 'Test User',
       personalTenantId: 'pt1',
       paInstanceId: 'inst-1',
       provisioned: true,
       credentialResolved: true,
     }),
   getMyPrincipals: () => Promise.resolve([]),
-  createTenant: () => Promise.resolve({ id: 't1', name: 'Test', slug: 'test', domain: '' }),
   createWorkbench: () => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' }),
   listWorkbenches: () =>
     Promise.resolve([
       { id: 'p-wb', tenantId: 'tn-wb', tenantSlug: 'acme-corp', tenantName: 'Acme Corp' },
     ]),
-  getTenant: () =>
-    Promise.resolve({
-      id: '',
-      name: '',
-      slug: '',
-      domain: '',
-      parentId: null,
-      createdAt: '',
-      updatedAt: '',
-    }),
-  listTenantPrincipals: () => Promise.resolve([]),
-  getPrincipal: () =>
-    Promise.resolve({
-      id: '',
-      tenantId: '',
-      kind: 'user',
-      refId: '',
-      displayName: '',
-      status: 'active',
-      roles: [],
-      createdAt: '',
-      updatedAt: '',
-    }),
-  listTenantCredentials: () => Promise.resolve([]),
-  listPrincipalGrants: () => Promise.resolve([]),
   listAgentInstances: () => Promise.resolve([]),
-  createTenantCredential: () => Promise.resolve({ credentialId: '', providerId: '' }),
-  deleteTenantCredential: () => Promise.resolve(),
   launchInstanceSession: () => Promise.resolve({ launched: true }),
-  listEnrichedCredentials: () => Promise.resolve([]),
-  provisionAgent: () =>
-    Promise.resolve({ instanceId: '', agentId: '', agentName: '', tenantId: '' }),
-  assignCredentialToAgent: () => Promise.resolve(),
 }));
 
 import WorkbenchHome from './WorkbenchHome';

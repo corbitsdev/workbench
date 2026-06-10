@@ -1,6 +1,8 @@
 .DS_Store
 .pi
 .env
+.env.hub
+.env.sidecar
 node_modules
 .agents
 .claude/settings.local.json
@@ -12,4 +14,5 @@ temporary
 dist
 interchange
 apps/hub/data
+apps/sidecar/data
 coverage

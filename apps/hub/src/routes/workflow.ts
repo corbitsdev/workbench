@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, desc, eq, inArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import {
   resolveCredentialRequirement,
@@ -25,7 +25,6 @@ import { getNoteWithTranscript, getRecentNotes, transcriptToText } from '../lib/
 import { extractPainPoints } from '../lib/extraction';
 
 import { generateCollateralWithLLM } from '../lib/generation';
-import { decryptSecret } from '@workbench/hub-crypto';
 import { getConfig } from '../config';
 import { randomUUID } from 'node:crypto';
 const log = getLogger(['api', 'workflow']);
@@ -39,11 +38,19 @@ function mapDbStatusToSessionStatus(status: string): string {
   const map: Record<string, string> = {
     pending: 'pending',
     analyzing: 'analyzing',
-    running: 'generating',
+    // 'running' is the post-analyze state: pain points are ready and the user
+    // is choosing what to generate. It is NOT active generation.
+    running: 'ready',
+    generating: 'generating',
+    reviewing: 'reviewing',
     done: 'done',
     failed: 'failed',
   };
-  return map[status] ?? status;
+  const mapped = map[status];
+  if (mapped === undefined) {
+    throw new Error(`Unknown workflow status: ${status}`);
+  }
+  return mapped;
 }
 
 /** Derive step order from the workflow definition. */
@@ -67,11 +74,16 @@ function deriveCurrentStepForWorkflow(status: string, kind: string): string {
   const steps = getWorkflowStepOrder(kind);
   const firstPostIntake = steps[1];
   const lastStep = steps[steps.length - 1];
+  if (!firstPostIntake || !lastStep) {
+    throw new Error(`Workflow ${kind} has too few steps to derive current step`);
+  }
   switch (status) {
     case 'pending':
     case 'analyzing':
       return firstPostIntake;
     case 'running':
+    case 'generating':
+    case 'reviewing':
     case 'done':
       return lastStep;
     case 'failed':
@@ -92,7 +104,14 @@ async function triggerStep(
   maxOutputTokens?: number
 ) {
   try {
-    const response = await dispatchStep(db, id, userContext, step, source, maxOutputTokens);
+    const response = await dispatchStep(
+      db,
+      id,
+      userContext,
+      step,
+      source,
+      maxOutputTokens
+    );
     if (response.status >= 400) {
       log.error('Background step failed', { workflowId: id, step, status: response.status });
       await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
@@ -180,21 +199,18 @@ async function resolveGranolaApiKey(db: HubDb, tenantId: string): Promise<string
   );
   if (!resolved) return null;
 
-  const { credentialKeys } = getConfig();
-  return decryptSecret(credentialKeys, tenantId, resolved.secret);
+  return resolved.secret;
 }
 
-/** Build an InferenceSource from a resolved credential's provider row + encrypted secret. */
+/** Build an InferenceSource from a resolved credential's provider row + plaintext secret. */
 function buildInferenceSource(
-  tenantId: string,
   providerRow: { plugin: string; metadata: unknown },
   secret: string
 ): InferenceSource | null {
   const meta = providerRow.metadata as { baseURL?: string; model?: string } | null;
   if (!meta?.baseURL || !meta.model) return null;
 
-  const { credentialKeys } = getConfig();
-  const apiKey = decryptSecret(credentialKeys, tenantId, secret);
+  const apiKey = secret;
 
   return {
     id: `workflow-llm-${randomUUID()}`,
@@ -213,15 +229,24 @@ export interface StepAssignment {
 }
 export type WorkflowAssignments = Record<string, StepAssignment>;
 
-/** Read the per-step assignments stored on the workbench install record. */
+/** Read the per-step assignments stored on the workbench install record.
+ *  Prefers a per-user row over a tenant-scoped (principalId IS NULL) row so
+ *  that per-user overrides still work if ever introduced. */
 async function getWorkflowAssignments(
   db: HubDb,
   tenantId: string,
+  principalId: string,
   kind: string
 ): Promise<WorkflowAssignments> {
-  const row = await db.query.enabledWorkflow.findFirst({
-    where: and(eq(enabledWorkflow.tenantId, tenantId), eq(enabledWorkflow.kind, kind)),
+  const rows = await db.query.enabledWorkflow.findMany({
+    where: and(
+      eq(enabledWorkflow.tenantId, tenantId),
+      or(eq(enabledWorkflow.principalId, principalId), isNull(enabledWorkflow.principalId)),
+      eq(enabledWorkflow.kind, kind)
+    ),
   });
+  // Prefer per-user row (principalId set) over tenant-scoped fallback.
+  const row = rows.find((r) => r.principalId !== null) ?? rows[0];
   const raw = (row?.assignments ?? null) as WorkflowAssignments | null;
   return raw ?? {};
 }
@@ -234,10 +259,11 @@ async function getWorkflowAssignments(
 async function resolveStepInferenceSource(
   db: HubDb,
   tenantId: string,
+  principalId: string,
   kind: string,
   step: string
 ): Promise<InferenceSource | null> {
-  const assignments = await getWorkflowAssignments(db, tenantId, kind);
+  const assignments = await getWorkflowAssignments(db, tenantId, principalId, kind);
   const credentialIds = assignments[step]?.credentialIds ?? [];
   for (const credentialId of credentialIds) {
     const cred = await resolveCredentialById(db, tenantId, credentialId);
@@ -246,7 +272,7 @@ async function resolveStepInferenceSource(
       where: eq(intxSchema.provider.id, cred.providerId),
     });
     if (!providerRow) continue;
-    const source = buildInferenceSource(tenantId, providerRow, cred.secret);
+    const source = buildInferenceSource(providerRow, cred.secret);
     if (source) return source;
   }
 
@@ -255,7 +281,22 @@ async function resolveStepInferenceSource(
   const req = stepDef?.credentialRequirements?.find((r) => r.providerName !== 'granola');
   if (!req) return null;
 
-  const resolved = await resolveCredentialRequirement(db, tenantId, req, null, null);
+  // resolveCredentialRequirement throws when more than one active credential
+  // matches with no name to disambiguate. Treat that as "unresolved" so the
+  // caller returns a clear 400 (configure the credential) instead of a 500.
+  let resolved;
+  try {
+    resolved = await resolveCredentialRequirement(db, tenantId, req, null, null);
+  } catch (err) {
+    log.warn('Workflow LLM credential resolution failed', {
+      tenantId,
+      kind,
+      step,
+      providerName: req.providerName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
   if (!resolved) return null;
 
   const providerRow = await db.query.provider.findFirst({
@@ -263,7 +304,7 @@ async function resolveStepInferenceSource(
   });
   if (!providerRow) return null;
 
-  return buildInferenceSource(tenantId, providerRow, resolved.secret);
+  return buildInferenceSource(providerRow, resolved.secret);
 }
 
 /**
@@ -273,9 +314,9 @@ async function resolveStepInferenceSource(
  * in the tenant — not a separate per-step inference credential.
  *
  * `agentInstanceId` is an agent *instance* id (what the step-config UI stores);
- * we look up the instance to find its agent definition, resolve the agent's
- * inference sources, and decrypt the secret (workbench encrypts at write time,
- * Interchange returns the raw stored value).
+ * we look up the instance to find its agent definition and resolve the agent's
+ * inference sources. Secrets are stored plaintext at the app layer (encryption
+ * is handled at rest by storage), so the resolved source is used as-is.
  */
 async function resolveAgentStepInferenceSource(
   db: HubDb,
@@ -294,8 +335,7 @@ async function resolveAgentStepInferenceSource(
   const raw = rawSources[0];
   if (!raw) return null;
 
-  const { credentialKeys } = getConfig();
-  return { ...raw, apiKey: decryptSecret(credentialKeys, tenantId, raw.apiKey) };
+  return raw;
 }
 
 /**
@@ -305,12 +345,12 @@ async function resolveAgentStepInferenceSource(
 async function resolveStepGranolaApiKey(
   db: HubDb,
   tenantId: string,
+  principalId: string,
   kind: string,
   step = 'intake'
 ): Promise<string | null> {
-  const assignments = await getWorkflowAssignments(db, tenantId, kind);
+  const assignments = await getWorkflowAssignments(db, tenantId, principalId, kind);
   const credentialIds = assignments[step]?.credentialIds ?? [];
-  const { credentialKeys } = getConfig();
   for (const credentialId of credentialIds) {
     const cred = await resolveCredentialById(db, tenantId, credentialId);
     if (!cred) continue;
@@ -318,7 +358,7 @@ async function resolveStepGranolaApiKey(
       where: eq(intxSchema.provider.id, cred.providerId),
     });
     if (providerRow?.name === 'granola') {
-      return decryptSecret(credentialKeys, tenantId, cred.secret);
+      return cred.secret;
     }
   }
   return resolveGranolaApiKey(db, tenantId);
@@ -380,8 +420,11 @@ async function validateAssignments(
     }
     const assignedProviders = new Set(providerNamesForCredential.values());
 
-    // Every declared credential requirement must be satisfied.
+    // Only enforce credential requirements that can't be auto-resolved at runtime.
+    // Requirements with source 'tenant' are resolved by Interchange's credential
+    // system when the workflow runs — no explicit assignment needed at install time.
     for (const req of step.credentialRequirements) {
+      if (req.source === 'tenant') continue;
       if (!assignedProviders.has(req.providerName)) {
         return {
           ok: false,
@@ -399,32 +442,37 @@ async function validateAssignments(
 }
 
 async function getUserContext(db: HubDb, userId: string): Promise<UserContext | null> {
-  const personalTenant = await db.query.tenant.findFirst({
-    where: eq(intxSchema.tenant.slug, `user-${userId}`),
+  // Resolve the caller's working context in the shared global org tenant
+  // (CL-1452 cutover). Was the per-user `user-${userId}` personal tenant; now
+  // every same-domain user is a member principal in the one global tenant.
+  const { slug } = getConfig().globalTenant;
+  const globalTenant = await db.query.tenant.findFirst({
+    where: eq(intxSchema.tenant.slug, slug),
   });
 
-  if (!personalTenant) {
+  if (!globalTenant) {
+    log.error('Global tenant not found — is it seeded?', { slug });
     return null;
   }
 
   const principal = await db.query.principal.findFirst({
     where: and(
-      eq(intxSchema.principal.tenantId, personalTenant.id),
+      eq(intxSchema.principal.tenantId, globalTenant.id),
       eq(intxSchema.principal.kind, 'user'),
       eq(intxSchema.principal.refId, userId)
     ),
   });
 
   if (!principal) {
-    log.error('Principal not found for user', {
+    log.error('Member principal not found for user in global tenant', {
       userId,
-      tenantId: personalTenant.id,
+      tenantId: globalTenant.id,
     });
     return null;
   }
 
   return {
-    tenantId: personalTenant.id,
+    tenantId: globalTenant.id,
     principalId: principal.id,
   };
 }
@@ -486,7 +534,9 @@ function validateWorkflowInput(
   return { valid: true };
 }
 
-export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: string } }> {
+export function createWorkflowRouter(
+  db: HubDb
+): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
   // ─── List available workflow types ───────────────────────────────
@@ -539,10 +589,26 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     }
 
     const rows = await db.query.enabledWorkflow.findMany({
-      where: eq(enabledWorkflow.tenantId, userContext.tenantId),
+      where: and(
+        eq(enabledWorkflow.tenantId, userContext.tenantId),
+        or(
+          eq(enabledWorkflow.principalId, userContext.principalId),
+          isNull(enabledWorkflow.principalId)
+        )
+      ),
     });
 
-    const result = rows.map((row) => {
+    // Deduplicate by kind: a per-user row (principalId set) takes precedence
+    // over a tenant-scoped row (principalId null) for the same kind.
+    const byKind = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const existing = byKind.get(row.kind);
+      if (!existing || existing.principalId === null) {
+        byKind.set(row.kind, row);
+      }
+    }
+
+    const result = Array.from(byKind.values()).map((row) => {
       const wt = workflowRegistry.get(row.kind);
       return {
         id: row.id,
@@ -592,10 +658,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       return c.json({ error: 'User context not found' }, 400);
     }
 
-    const wt = workflowRegistry.get(kind);
-    if (!wt) {
-      return c.json({ error: `Unknown workflow kind: ${kind}` }, 400);
-    }
+    const wt = workflowRegistry.get(kind)!;
 
     const validation = await validateAssignments(db, userContext.tenantId, wt, body.assignments);
     if (!validation.ok) {
@@ -609,16 +672,21 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       .values({
         id,
         tenantId: userContext.tenantId,
+        principalId: userContext.principalId,
         kind,
         assignments: validation.assignments,
       })
       .onConflictDoUpdate({
-        target: [enabledWorkflow.tenantId, enabledWorkflow.kind],
+        target: [enabledWorkflow.tenantId, enabledWorkflow.principalId, enabledWorkflow.kind],
         set: { kind, assignments: validation.assignments },
       })
       .returning();
 
-    log.info('Workflow kind enabled', { tenantId: userContext.tenantId, kind });
+    log.info('Workflow kind enabled', {
+      tenantId: userContext.tenantId,
+      principalId: userContext.principalId,
+      kind,
+    });
 
     return c.json({
       id: row!.id,
@@ -673,6 +741,10 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const enabledRow = await db.query.enabledWorkflow.findFirst({
       where: and(
         eq(enabledWorkflow.tenantId, userContext.tenantId),
+        or(
+          eq(enabledWorkflow.principalId, userContext.principalId),
+          isNull(enabledWorkflow.principalId)
+        ),
         eq(enabledWorkflow.kind, workflowKind)
       ),
     });
@@ -711,7 +783,12 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         log.warn('Missing granolaId for granola source');
         return c.json({ error: 'granolaId is required' }, 400);
       }
-      const granolaApiKey = await resolveStepGranolaApiKey(db, userContext.tenantId, workflowKind);
+      const granolaApiKey = await resolveStepGranolaApiKey(
+        db,
+        userContext.tenantId,
+        userContext.principalId,
+        workflowKind
+      );
       if (!granolaApiKey) {
         log.warn('Granola credential not configured for tenant', {
           tenantId: userContext.tenantId,
@@ -809,6 +886,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       const stepSource = await resolveStepInferenceSource(
         db,
         userContext.tenantId,
+        userContext.principalId,
         wfRow.kind,
         firstStep
       );
@@ -1038,7 +1116,11 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       steps: {
         intake: { completed: true, transcriptId: transcriptId ?? null, transcript: tx?.content },
         analyze: {
-          completed: wf.status === 'running' || wf.status === 'done',
+          completed:
+            wf.status === 'running' ||
+            wf.status === 'generating' ||
+            wf.status === 'reviewing' ||
+            wf.status === 'done',
           painPoints: points.map(serializePainPoint),
         },
         generate: {
@@ -1093,7 +1175,13 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       const assignedAgentId = (wf.input as WorkflowInput)?.stepConfig?.[step]?.agentId;
       const source = assignedAgentId
         ? await resolveAgentStepInferenceSource(db, userContext.tenantId, assignedAgentId)
-        : await resolveStepInferenceSource(db, userContext.tenantId, wf.kind, step);
+        : await resolveStepInferenceSource(
+            db,
+            userContext.tenantId,
+            userContext.principalId,
+            wf.kind,
+            step
+          );
       if (!source) {
         if (assignedAgentId) {
           log.warn('Assigned agent has no resolvable inference source', {
@@ -1169,6 +1257,26 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       .returning();
 
     if (!row) return c.json({ error: 'Artifact not found' }, 404);
+
+    // Approval is the final human-in-the-loop step. The workflow is only done
+    // once every collateral artifact has been reviewed (no drafts remain).
+    // `wf.status` is read at the top of the handler, so two simultaneous PATCHes
+    // could both run this check; the transition is idempotent by design (setting
+    // 'done' twice is harmless), so it is not serialized. The terminal request
+    // always observes its own committed write and flips the run.
+    if (wf.status === 'reviewing') {
+      const remaining = await db.query.artifact.findMany({
+        where: eq(artifact.sessionId, id),
+      });
+      const allReviewed = remaining
+        .filter((a) => isCollateralKind(a.kind))
+        .every((a) => a.status !== 'draft');
+      if (allReviewed) {
+        await db.update(workflowRun).set({ status: 'done' }).where(eq(workflowRun.id, id));
+        log.info('All artifacts reviewed; workflow done', { workflowId: id });
+      }
+    }
+
     return c.json(serializeArtifact(row));
   });
 
@@ -1369,9 +1477,10 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 
     const kind = c.req.query('kind');
     const limitParam = c.req.query('limit');
-    const limit = limitParam ? parseInt(limitParam, 10) : 10;
+    const parsedLimit = limitParam ? parseInt(limitParam, 10) : 10;
+    const limit = Number.isNaN(parsedLimit) ? 20 : parsedLimit;
     const granolaApiKey = kind
-      ? await resolveStepGranolaApiKey(db, userContext.tenantId, kind)
+      ? await resolveStepGranolaApiKey(db, userContext.tenantId, userContext.principalId, kind)
       : await resolveGranolaApiKey(db, userContext.tenantId);
     if (!granolaApiKey) {
       return c.json({ error: 'No Granola credential configured for this workbench' }, 400);
@@ -1408,86 +1517,82 @@ async function runAnalyze(
     return Response.json({ error: 'Workflow not found' }, { status: 404 });
   }
 
-  // Mark analyzing before the LLM call so a container crash leaves the row
-  // in a recoverable state rather than silently pending with zero pain points.
   await db.update(workflowRun).set({ status: 'analyzing' }).where(eq(workflowRun.id, id));
 
-  const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
-  const tx = transcriptId
-    ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
-    : null;
+  let inserted: any[];
 
-  if (!tx) {
-    log.error('Transcript not found for analyze', { workflowId: id, transcriptId });
-    return Response.json({ error: 'Transcript not found' }, { status: 400 });
-  }
-
-  log.info('Extracting pain points', { workflowId: id, transcriptLength: tx.content.length });
-  let extracted: Awaited<ReturnType<typeof extractPainPoints>>['painPoints'];
-  let companyName: string | null;
   try {
-    const result = await extractPainPoints(id, tx.content, feedback, source, maxOutputTokens);
-    extracted = result.painPoints;
-    companyName = result.companyName;
-  } catch (err) {
-    log.error('Pain point extraction failed', {
-      workflowId: id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return Response.json(
-      { error: 'Analysis failed. Check your LLM credential and try again.' },
-      { status: 502 }
+    const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
+    const tx = transcriptId
+      ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
+      : null;
+
+    if (!tx) {
+      log.error('Transcript not found for analyze', { workflowId: id, transcriptId });
+      throw new Error('Transcript not found');
+    }
+
+    log.info('Extracting pain points', { workflowId: id, transcriptLength: tx.content.length });
+    const { painPoints: extracted, companyName } = await extractPainPoints(
+      id,
+      tx.content,
+      feedback,
+      source,
+      maxOutputTokens
     );
-  }
-  log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
+    log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
 
-  const currentWf = await db.query.workflowRun.findFirst({
-    where: eq(workflowRun.id, id),
-  });
-  if (!currentWf) {
-    log.warn('Workflow deleted before analyze results could be saved', { workflowId: id });
-    return Response.json(
-      { error: 'Workflow was deleted while analysis was running' },
-      { status: 410 }
-    );
-  }
-
-  await db.delete(painPoint).where(eq(painPoint.sessionId, id));
-
-  const inserted =
-    extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
-
-  const workflowDefinition = workflowRegistry.get(currentWf.kind);
-  const analysisArtifacts = workflowDefinition?.createAnalyzeArtifacts?.({
-    input: currentWf.input as Record<string, unknown>,
-    painPoints: extracted,
-    companyName,
-  });
-  for (const draft of analysisArtifacts ?? []) {
-    await db.insert(artifact).values({
-      tenantId: currentWf.tenantId,
-      principalId: currentWf.principalId,
-      sessionId: id,
-      kind: draft.kind,
-      title: draft.title,
-      content: draft.content,
-      status: draft.status ?? 'draft',
-      version: draft.version ?? 1,
+    const currentWf = await db.query.workflowRun.findFirst({
+      where: eq(workflowRun.id, id),
     });
-  }
+    if (!currentWf) {
+      log.warn('Workflow deleted before analyze results could be saved', { workflowId: id });
+      return Response.json(
+        { error: 'Workflow was deleted while analysis was running' },
+        { status: 410 }
+      );
+    }
 
-  const updatedInput: WorkflowInput = { ...(currentWf.input as WorkflowInput) };
-  if (companyName) updatedInput.companyName = companyName;
-  await db
-    .update(workflowRun)
-    .set({ status: 'running', input: updatedInput as Record<string, unknown> })
-    .where(eq(workflowRun.id, id));
+    await db.delete(painPoint).where(eq(painPoint.sessionId, id));
+
+    inserted = extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
+
+    const workflowDefinition = workflowRegistry.get(currentWf.kind);
+    const analysisArtifacts = workflowDefinition?.createAnalyzeArtifacts?.({
+      input: currentWf.input as Record<string, unknown>,
+      painPoints: extracted,
+      companyName,
+    });
+    for (const draft of analysisArtifacts ?? []) {
+      await db.insert(artifact).values({
+        tenantId: currentWf.tenantId,
+        principalId: currentWf.principalId,
+        sessionId: id,
+        kind: draft.kind,
+        title: draft.title,
+        content: draft.content,
+        status: draft.status ?? 'draft',
+        version: draft.version ?? 1,
+      });
+    }
+
+    const updatedInput: WorkflowInput = { ...(currentWf.input as WorkflowInput) };
+    if (companyName) updatedInput.companyName = companyName;
+    await db
+      .update(workflowRun)
+      .set({ status: 'running', input: updatedInput as Record<string, unknown> })
+      .where(eq(workflowRun.id, id));
+  } catch (error) {
+    log.error('Analyze step failed', { workflowId: id, error: String(error) });
+    await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
+    return Response.json({ error: 'Analysis failed' }, { status: 500 });
+  }
 
   log.info('Analyze step complete', { workflowId: id, insertedCount: inserted.length });
 
   return Response.json({
     id,
-    status: 'running',
+    status: mapDbStatusToSessionStatus('running'),
     currentStep: 'generate',
     steps: {
       analyze: { completed: true, painPoints: inserted.map(serializePainPoint) },
@@ -1521,30 +1626,42 @@ async function runGenerate(
     return Response.json({ error: 'Workflow not found' }, { status: 404 });
   }
 
-  const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
-  const tx = transcriptId
-    ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
-    : null;
-  const transcriptContent: string = tx?.content ?? '';
+  await db.update(workflowRun).set({ status: 'generating' }).where(eq(workflowRun.id, id));
 
-  await db
-    .update(painPoint)
-    .set({ selected: true })
-    .where(and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)));
+  let nextStatus: string;
+  let inserted: any[];
 
-  const workflowDefinition = workflowRegistry.get(wf.kind);
-  const artifactKinds = workflowDefinition?.selectGenerateArtifactKinds?.(collateralTypes) ?? [
-    'email',
-    'linkedin',
-    'one-pager',
-    'battlecard',
-  ];
+  try {
+    const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
+    const tx = transcriptId
+      ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
+      : null;
+    const transcriptContent: string = tx?.content ?? '';
 
-  const results = await Promise.allSettled(
-    points.flatMap((p: any) =>
-      artifactKinds.map((kind) =>
-        generateCollateralWithLLM(id, transcriptContent, p, kind, source, maxOutputTokens).then(
-          ({ title, body }) => ({
+    await db
+      .update(painPoint)
+      .set({ selected: true })
+      .where(and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)));
+
+    const workflowDefinition = workflowRegistry.get(wf.kind);
+    const artifactKinds = workflowDefinition?.selectGenerateArtifactKinds?.(collateralTypes) ?? [
+      'email',
+      'linkedin',
+      'one-pager',
+      'battlecard',
+    ];
+
+    const results = await Promise.allSettled(
+      points.flatMap((p: any) =>
+        artifactKinds.map((kind) =>
+          generateCollateralWithLLM(
+            id,
+            transcriptContent,
+            p,
+            kind,
+            source,
+            maxOutputTokens
+          ).then(({ title, body }) => ({
             tenantId: wf.tenantId,
             principalId: wf.principalId,
             sessionId: id,
@@ -1554,61 +1671,75 @@ async function runGenerate(
             content: body,
             status: 'draft',
             version: 1,
-          })
+          }))
         )
       )
-    )
-  );
+    );
 
-  const generated = results.flatMap(
-    (
-      r: PromiseSettledResult<{
-        tenantId: string;
-        principalId: string;
-        sessionId: string;
-        painPointId: any;
-        kind: string;
-        title: string;
-        content: string;
-        status: string;
-        version: number;
-      }>
-    ) => {
-      if (r.status === 'fulfilled') return [r.value];
-      log.error('Artifact generation failed for one item', {
-        workflowId: id,
-        error: String(r.reason),
-      });
-      return [];
+    const generated = results.flatMap(
+      (
+        r: PromiseSettledResult<{
+          tenantId: string;
+          principalId: string;
+          sessionId: string;
+          painPointId: any;
+          kind: string;
+          title: string;
+          content: string;
+          status: string;
+          version: number;
+        }>
+      ) => {
+        if (r.status === 'fulfilled') return [r.value];
+        log.error('Artifact generation failed for one item', {
+          workflowId: id,
+          error: String(r.reason),
+        });
+        return [];
+      }
+    );
+
+    inserted =
+      generated.length > 0
+        ? await db.transaction(async (trx: any) => {
+            const rows = await trx.insert(artifact).values(generated).returning();
+            await trx.insert(artifactVersion).values(
+              rows.map((a: any) => ({
+                artifactId: a.id,
+                version: a.version,
+                title: a.title,
+                content: a.content,
+                authorId,
+              }))
+            );
+            return rows;
+          })
+        : [];
+
+    const rejectedCount = results.filter((r) => r.status === 'rejected').length;
+    if (generated.length === 0 && rejectedCount > 0) {
+      log.error('All artifact generations failed', { workflowId: id, failedCount: rejectedCount });
+      nextStatus = 'failed';
+    } else {
+      nextStatus = inserted.length > 0 ? 'reviewing' : 'done';
     }
-  );
+  } catch (error) {
+    log.error('Generate step failed', { workflowId: id, error: String(error) });
+    await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
+    return Response.json({ error: 'Generation failed' }, { status: 500 });
+  }
 
-  // Insert artifacts and their initial version rows atomically, so an artifact
-  // can never exist without a matching v1 history row.
-  const inserted =
-    generated.length > 0
-      ? await db.transaction(async (trx: any) => {
-          const rows = await trx.insert(artifact).values(generated).returning();
-          await trx.insert(artifactVersion).values(
-            rows.map((a: any) => ({
-              artifactId: a.id,
-              version: a.version,
-              title: a.title,
-              content: a.content,
-              authorId,
-            }))
-          );
-          return rows;
-        })
-      : [];
+  await db.update(workflowRun).set({ status: nextStatus }).where(eq(workflowRun.id, id));
 
-  await db.update(workflowRun).set({ status: 'done' }).where(eq(workflowRun.id, id));
-
-  log.info('Generate step complete', { workflowId: id, artifactCount: inserted.length });
+  log.info('Generate step complete', {
+    workflowId: id,
+    artifactCount: inserted.length,
+    status: nextStatus,
+  });
 
   return Response.json({
     id,
-    status: 'done',
+    status: mapDbStatusToSessionStatus(nextStatus),
     currentStep: 'generate',
     steps: {
       generate: { completed: true, artifacts: inserted.map(serializeArtifact) },

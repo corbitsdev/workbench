@@ -1,6 +1,6 @@
 import { type Step, type StepName } from './types';
 
-const STEP_ORDER: StepName[] = ['intake', 'analyze', 'generate'];
+const STEP_ORDER: StepName[] = ['intake', 'analyze', 'generate', 'approve'];
 
 export function buildSteps(
   currentStep: StepName,

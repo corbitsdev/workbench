@@ -1,9 +1,13 @@
+// Shared constants
+export { LLM_CREDENTIAL_NAME } from './constants';
+
 // Personal agent
 export { buildPersonalAgentSystemPrompt } from './personal-agent/prompt';
 export {
   buildPersonalAgentGrantRequirements,
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
   PERSONAL_AGENT_DEPLOY_PROMPT,
+  PERSONAL_AGENT_BASE_TOOLS,
 } from './personal-agent/definition';
 export { createPersonalAgentDirector } from './personal-agent/director';
 
@@ -36,6 +40,9 @@ export {
   WALTER_CREDENTIAL_REQUIREMENTS,
   WALTER_DEPLOY_PROMPT,
 } from './walter/definition';
+
+// Agent templates registry
+export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
 
 // Shared adapter
 export { convertInstanceEvents } from './adapter';

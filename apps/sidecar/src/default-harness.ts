@@ -1,28 +1,55 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { evaluateGrants } from '@intx/authz';
-import { createHarness, readDeployTree, mergeToolRunners } from '@intx/harness';
+import { createToolRunner, createDefaultDirectorRegistry, defineTool } from '@intx/agent';
+import { createHarness, createHarnessRuntimeCapabilities } from '@intx/harness';
+import { readDeployTree } from '@intx/hub-agent';
 import { hasProvider } from '@intx/inference';
 import { getLogger } from '@intx/log';
 import { createIsogitStore, createMailAuditStore } from '@intx/storage-isogit';
+import { createMailTools } from '@intx/tools-mail';
 import { createPosixTools } from '@intx/tools-posix';
 import { createLSPPlugin } from '@intx/tools-lsp';
 import { createBlobReader } from '@intx/types/runtime';
-import type { InferenceSource } from '@intx/types/runtime';
+import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/runtime';
 import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
 import { createAskPrincipalTool } from '@workbench/approvals';
-import { decryptSecret, type CredentialKeyRegistry } from '@workbench/hub-crypto';
-import { createToolRunner } from '@intx/agent';
 import { createHubToolRunner } from './hub-tool-runner';
-import type { ToolDefinition, ToolRunner } from '@intx/types/runtime';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
 
+function mergeToolRunners(runners: ToolRunner[]): ToolRunner & { definitions: ToolDefinition[] } {
+  const allDefinitions = runners.flatMap((r) => (r as any).definitions ?? []);
+  const toolToRunner = new Map<string, ToolRunner>();
+  for (const runner of runners) {
+    const definitions = (runner as any).definitions ?? [];
+    for (const def of definitions) {
+      toolToRunner.set(def.name, runner);
+    }
+  }
+
+  return {
+    definitions: allDefinitions,
+    async run(call, signal) {
+      const runner = toolToRunner.get(call.name);
+      if (!runner) {
+        return {
+          callId: call.id,
+          content: { error: `Tool "${call.name}" is not available` },
+          isError: true,
+        };
+      }
+      return runner.run(call, signal);
+    },
+  };
+}
+
+export { mergeToolRunners as combineRunners };
+
+type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
+
 /**
- * Derive the hub's HTTP origin from its websocket URL. Returns origin only —
- * HUB_WS_URL carries the sidecar websocket path (e.g. /api/sidecars/ws), which
- * must not leak into HTTP endpoint URLs the sidecar builds (e.g. the internal
- * tool-run endpoint mounted at /api/internal/tools/run).
+ * Derive the hub's HTTP origin from its websocket URL.
  */
 export function wsUrlToHttp(wsUrl: string): string {
   const url = new URL(wsUrl);
@@ -32,15 +59,9 @@ export function wsUrlToHttp(wsUrl: string): string {
 
 /**
  * Filter a merged tool runner to only expose the tool definitions the hub
- * configured for this agent. The underlying handlers remain available so
- * that the sidecar can safely add new tools without the hub needing to
- * know about them at launch time; only the model-visible definitions are
- * gated.
+ * configured for this agent.
  */
-function filterToolRunner(
-  runner: ToolRunner & { definitions: ToolDefinition[] },
-  allowedNames: Set<string>
-): ToolRunner & { definitions: ToolDefinition[] } {
+function filterToolRunner(runner: DefinedRunner, allowedNames: Set<string>): DefinedRunner {
   const filtered = runner.definitions.filter((d) => allowedNames.has(d.name));
   return {
     definitions: filtered,
@@ -57,25 +78,14 @@ function filterToolRunner(
   };
 }
 
-function decryptSource(
-  source: InferenceSource,
-  keys: CredentialKeyRegistry,
-  tenantId: string
-): InferenceSource {
-  if (!source.apiKey?.startsWith('enc:')) return source;
-  return { ...source, apiKey: decryptSecret(keys, tenantId, source.apiKey) };
-}
-
 type HarnessBuilderOpts = {
   hubHttpUrl: string;
   sidecarToken: string;
-  credentialKeys: CredentialKeyRegistry;
 };
 
 export function createDefaultHarnessBuilder({
   hubHttpUrl,
   sidecarToken,
-  credentialKeys,
 }: HarnessBuilderOpts): HarnessBuilder {
   return {
     canBuildSource(source: InferenceSource): void {
@@ -117,6 +127,9 @@ export function createDefaultHarnessBuilder({
         blobReader,
       });
 
+      const capabilities = createHarnessRuntimeCapabilities({ transport: agentTransport });
+      const mailTools = createMailTools({ capabilities });
+
       const askPrincipalRunner = createToolRunner([
         createAskPrincipalTool({
           hubHttpUrl,
@@ -142,32 +155,72 @@ export function createDefaultHarnessBuilder({
         toolDefinitions: agentConfig.tools.filter((t) => !localToolNames.has(t.name)),
       });
 
-      const runners: (ToolRunner & { definitions: ToolDefinition[] })[] = [
+      const allTools = mergeToolRunners([
         posixTools,
-        askPrincipalRunner as unknown as ToolRunner & { definitions: ToolDefinition[] },
+        mailTools,
+        askPrincipalRunner as DefinedRunner,
         hubToolRunner,
-      ];
-
-      const allTools = mergeToolRunners(runners);
+      ]);
       const allowedNames = new Set(agentConfig.tools.map((t) => t.name));
-      const tools = filterToolRunner(allTools, allowedNames);
-
-      const decryptedSource = decryptSource(source, credentialKeys, tenantId);
+      const tools = filterToolRunner(allTools as DefinedRunner, allowedNames);
 
       try {
-        const harness = createHarness({
-          address: agentAddress,
-          systemPrompt,
-          source: decryptedSource,
-          transport: agentTransport,
-          crypto,
-          storage,
-          authorize,
-          auditStore: storage,
-          tools,
-          onEvent,
-          onConnectorStateChanged,
+        const toolsFactory = defineTool({
+          id: '@workbench/sidecar/tools',
+          factory: () => ({
+            definitions: tools.definitions,
+            run: tools.run.bind(tools),
+          }),
         });
+
+        const def = {
+          id: agentConfig.agentId,
+          systemPrompt,
+          toolFactories: [toolsFactory] as const,
+          capabilities: [],
+          inference: { sources: [] as const },
+        };
+
+        const env = {
+          source,
+          storage,
+          workdir: workDir,
+          audit: storage,
+          authorize,
+          directors: createDefaultDirectorRegistry(),
+          transport: agentTransport,
+          address: agentAddress,
+          onConnectorStateChanged,
+        };
+
+        const harness = await createHarness(def, env);
+
+        // Forward the reactor's event stream to the hub. This is the seam the
+        // SessionManager builds around: it supplies `onEvent` and expects the
+        // builder to invoke it for each event. Without this, the hub only ever
+        // sees outbound mail — never inference/turn events — so committed turns
+        // and streaming text never reach the UI live and only appear on reload.
+        // `message.received` is reactor-internal and not an InferenceEvent.
+        //
+        // The loop ends when the harness closes its stream consumers (on
+        // session teardown). A stream error (e.g. StreamBackpressureError if a
+        // consumer overruns its buffer) is caught and logged rather than left to
+        // reject: the disposer awaits this promise, so an unsettled rejection
+        // would otherwise surface as an unhandled rejection or stall teardown.
+        async function forwardEvents(): Promise<void> {
+          try {
+            for await (const event of harness.stream()) {
+              if (event.type === 'message.received') continue;
+              onEvent(event);
+            }
+          } catch (err) {
+            logger.warn('Harness event forwarding stopped for {address}: {msg}', {
+              address: agentAddress,
+              msg: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        const eventForwarding = forwardEvents();
 
         return {
           harness,
@@ -175,9 +228,15 @@ export function createDefaultHarnessBuilder({
           updateGrants(grants) {
             grantsRef.current = grants;
           },
-          disposers: [() => posixTools.dispose()],
+          disposers: [() => mailTools.dispose(), () => posixTools.dispose(), () => eventForwarding],
         };
       } catch (err) {
+        try {
+          await mailTools.dispose();
+        } catch (disposeErr) {
+          const msg = disposeErr instanceof Error ? disposeErr.message : String(disposeErr);
+          logger.warn('mailTools.dispose failed during harness rollback: {msg}', { msg });
+        }
         try {
           await posixTools.dispose();
         } catch (disposeErr) {

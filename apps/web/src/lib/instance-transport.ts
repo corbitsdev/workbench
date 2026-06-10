@@ -13,6 +13,18 @@ function toUrl(path: string): string {
   return new URL(path, apiBase || window.location.origin).toString();
 }
 
+// EventSource URL resolver. A credentialed cross-origin EventSource is blocked
+// by Safari (ITP) and Brave (shields) — the connection opens but the browser
+// never surfaces the streamed events, so live chat updates silently fail and a
+// reload is required. In dev we route the stream through the same-origin Vite
+// proxy instead: the auth cookie is port-agnostic, so the proxied request still
+// authenticates against the hub. Regular fetch is unaffected and stays on
+// apiBase. In prod there is no proxy, so fall back to apiBase like fetch.
+function toEventSourceUrl(path: string): string {
+  const base = import.meta.env.DEV ? window.location.origin : apiBase || window.location.origin;
+  return new URL(path, base).toString();
+}
+
 export function createHubTransport(): Transport {
   return {
     async fetch<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -47,7 +59,7 @@ export function createHubTransport(): Transport {
       let closed = false;
 
       function connect() {
-        es = new EventSource(toUrl(path), { withCredentials: true });
+        es = new EventSource(toEventSourceUrl(path), { withCredentials: true });
         const handler = (e: MessageEvent) => onEvent(JSON.parse(e.data));
         if (opts?.eventName) {
           es.addEventListener(opts.eventName, handler);

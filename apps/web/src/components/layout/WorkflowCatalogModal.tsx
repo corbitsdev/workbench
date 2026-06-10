@@ -8,7 +8,6 @@ import {
   type WorkflowCatalogEntry,
   type WorkflowAssignments,
 } from '../../hooks/use-workflow';
-import { CredentialField } from '../CredentialField';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -34,8 +33,6 @@ export function WorkflowCatalogModal({
 
   // Phase 2 state: the workflow being configured before install.
   const [configuring, setConfiguring] = useState<WorkflowCatalogEntry | null>(null);
-  // credential selection keyed by `${stepName}:${requirementIndex}`.
-  const [credByReq, setCredByReq] = useState<Record<string, string | undefined>>({});
   // tool selection keyed by stepName.
   const [toolsByStep, setToolsByStep] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
@@ -73,17 +70,12 @@ export function WorkflowCatalogModal({
 
   const startConfigure = (entry: WorkflowCatalogEntry) => {
     const existing = enabledByKind.get(entry.kind);
-    const cred: Record<string, string | undefined> = {};
     const tools: Record<string, string[]> = {};
     for (const step of entry.steps) {
       const assigned = existing?.assignments?.[step.name];
-      step.credentialRequirements.forEach((_req, i) => {
-        cred[`${step.name}:${i}`] = assigned?.credentialIds?.[i];
-      });
       // Default to the step's full tool set, or the previously saved selection.
       tools[step.name] = assigned?.toolIds ?? step.tools ?? [];
     }
-    setCredByReq(cred);
     setToolsByStep(tools);
     setError(null);
     setConfiguring(entry);
@@ -109,18 +101,9 @@ export function WorkflowCatalogModal({
 
     const assignments: WorkflowAssignments = {};
     for (const step of configuring.steps) {
-      const credentialIds: string[] = [];
-      for (let i = 0; i < step.credentialRequirements.length; i++) {
-        const credId = credByReq[`${step.name}:${i}`];
-        if (!credId) {
-          setError(`Select a credential for ${step.label}.`);
-          return;
-        }
-        credentialIds.push(credId);
-      }
       const toolIds = toolsByStep[step.name] ?? [];
-      if (credentialIds.length > 0 || toolIds.length > 0) {
-        assignments[step.name] = { credentialIds, toolIds };
+      if (toolIds.length > 0) {
+        assignments[step.name] = { credentialIds: [], toolIds };
       }
     }
 
@@ -191,10 +174,7 @@ export function WorkflowCatalogModal({
                 )}
                 {!tenantId && <p className="text-[13px] text-text-2">Select a workbench first.</p>}
                 {configuring.steps
-                  .filter(
-                    (step) =>
-                      step.credentialRequirements.length > 0 || (step.tools?.length ?? 0) > 0
-                  )
+                  .filter((step) => (step.tools?.length ?? 0) > 0)
                   .map((step) => (
                     <div
                       key={step.name}
@@ -206,23 +186,6 @@ export function WorkflowCatalogModal({
                           <p className="mt-0.5 text-[12px] text-text-3">{step.description}</p>
                         )}
                       </div>
-
-                      {tenantId &&
-                        step.credentialRequirements.map((req, i) => (
-                          <CredentialField
-                            key={`${step.name}:${i}`}
-                            tenantId={tenantId}
-                            providerName={req.providerName}
-                            label={req.name ?? req.providerName}
-                            value={credByReq[`${step.name}:${i}`]}
-                            onChange={(credentialId) =>
-                              setCredByReq((cur) => ({
-                                ...cur,
-                                [`${step.name}:${i}`]: credentialId,
-                              }))
-                            }
-                          />
-                        ))}
 
                       {(step.tools?.length ?? 0) > 0 && (
                         <div className="flex flex-col gap-1.5">

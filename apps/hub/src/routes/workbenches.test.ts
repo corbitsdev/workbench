@@ -1,8 +1,20 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { Hono } from 'hono';
+
+mock.module('../config', () => ({
+  getConfig: () => ({
+    globalTenant: { slug: 'global-org', name: 'Global Org', domain: 'global.example.com' },
+  }),
+  loadConfig: () => ({
+    globalTenant: { slug: 'global-org', name: 'Global Org', domain: 'global.example.com' },
+  }),
+}));
+
 import { createWorkbenchesRouter } from './workbenches';
 
 describe('Workbenches router', () => {
+  const GLOBAL_TENANT = { id: 'tn-global', slug: 'global-org', name: 'Global Org' };
+
   function makeTenant(overrides?: Partial<{ id: string; slug: string; name: string }>) {
     return {
       id: 'tn-1',
@@ -41,13 +53,24 @@ describe('Workbenches router', () => {
     const existingTenant = opts?.existingTenant ?? null;
     const existingPrincipal = opts?.existingPrincipal ?? null;
 
+    // When the workbench already exists, every tenant lookup (the slug check and
+    // the route's re-fetch by id) returns it. On the create path the first
+    // lookup (workbench slug) misses and the next (the parent global tenant
+    // lookup provisionWorkbenchTenant performs) returns the global tenant.
+    let tenantCall = 0;
+    const tenantFindFirst = mock(() => {
+      tenantCall += 1;
+      if (existingTenant) return Promise.resolve(existingTenant);
+      return Promise.resolve(tenantCall >= 2 ? GLOBAL_TENANT : undefined);
+    });
+
     const db: MockDb = {
       transaction: mock(async <T>(fn: (tx: MockDb) => Promise<T>): Promise<T> => {
         return fn(db as MockDb);
       }),
       query: {
         tenant: {
-          findFirst: mock(() => Promise.resolve(existingTenant ?? undefined)),
+          findFirst: tenantFindFirst,
         },
         principal: {
           findFirst: mock(() => Promise.resolve(existingPrincipal ?? undefined)),
