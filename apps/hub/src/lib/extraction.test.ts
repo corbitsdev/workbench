@@ -5,6 +5,7 @@ import {
   buildExtractionUserMessage,
   extractPainPointsWithLLM,
   splitTranscriptForExtraction,
+  SINGLE_PASS_TRANSCRIPT_CHARS,
 } from './extraction';
 
 const TEST_SOURCE = {
@@ -35,7 +36,34 @@ describe('extractPainPointsWithLLM', () => {
   });
 });
 
+describe('SINGLE_PASS_TRANSCRIPT_CHARS', () => {
+  it('is a positive number', () => {
+    expect(typeof SINGLE_PASS_TRANSCRIPT_CHARS).toBe('number');
+    expect(SINGLE_PASS_TRANSCRIPT_CHARS).toBeGreaterThan(0);
+  });
+});
+
 describe('splitTranscriptForExtraction', () => {
+  it('forces chunking when feedback overhead reduces budget below transcript length', () => {
+    // transcript just under the normal single-pass limit — would normally be one chunk
+    const transcript = 'A'.repeat(SINGLE_PASS_TRANSCRIPT_CHARS - 100);
+    // feedback large enough to push it over when accounted for
+    const largeOverhead = SINGLE_PASS_TRANSCRIPT_CHARS;
+
+    const withoutOverhead = splitTranscriptForExtraction(transcript);
+    expect(withoutOverhead.length).toBe(1);
+
+    const withOverhead = splitTranscriptForExtraction(transcript, largeOverhead);
+    expect(withOverhead.length).toBeGreaterThan(1);
+  });
+
+  it('keeps single chunk when budget still covers transcript after overhead', () => {
+    const transcript = 'short transcript';
+    const smallOverhead = 10;
+    const chunks = splitTranscriptForExtraction(transcript, smallOverhead);
+    expect(chunks.length).toBe(1);
+  });
+
   it('keeps the transcript as one chunk when it fits the prompt budget', () => {
     const transcript = 'Opening context\nCustomer asks for a deck at the end';
 

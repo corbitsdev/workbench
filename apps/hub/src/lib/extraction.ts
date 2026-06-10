@@ -43,13 +43,17 @@ const ASSUMED_CONTEXT_WINDOW_TOKENS = 128000;
 const RESERVED_OUTPUT_TOKENS = 4096;
 const APPROX_CHARS_PER_TOKEN = 4;
 const PROMPT_SAFETY_MARGIN_CHARS = 120000;
-const SINGLE_PASS_TRANSCRIPT_CHARS =
+export const SINGLE_PASS_TRANSCRIPT_CHARS =
   (ASSUMED_CONTEXT_WINDOW_TOKENS - RESERVED_OUTPUT_TOKENS) * APPROX_CHARS_PER_TOKEN -
   PROMPT_SAFETY_MARGIN_CHARS;
 const CHUNK_TRANSCRIPT_CHARS = Math.floor(SINGLE_PASS_TRANSCRIPT_CHARS / 2);
 
-export function splitTranscriptForExtraction(content: string): TranscriptChunk[] {
-  if (content.length <= SINGLE_PASS_TRANSCRIPT_CHARS) {
+export function splitTranscriptForExtraction(
+  content: string,
+  feedbackOverheadChars = 0
+): TranscriptChunk[] {
+  const budget = SINGLE_PASS_TRANSCRIPT_CHARS - feedbackOverheadChars;
+  if (content.length <= budget) {
     return [{ index: 1, total: 1, phase: 'final', content }];
   }
 
@@ -248,7 +252,11 @@ export async function extractPainPointsWithLLM(
   log.info('Starting LLM extraction', { workflowId, transcriptLength: content.length, model });
 
   const systemPrompt = buildExtractionSystemPrompt();
-  const chunks = splitTranscriptForExtraction(content);
+  const sanitizedFeedback = feedback?.trim().replace(/<\//g, '');
+  const feedbackOverheadChars = sanitizedFeedback
+    ? sanitizedFeedback.length + '\n<refinement_direction>\n\n</refinement_direction>\n'.length
+    : 0;
+  const chunks = splitTranscriptForExtraction(content, feedbackOverheadChars);
   log.info('Prepared extraction chunks', {
     workflowId,
     chunkCount: chunks.length,
