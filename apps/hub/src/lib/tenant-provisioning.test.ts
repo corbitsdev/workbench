@@ -152,6 +152,32 @@ describe('provisionMemberInstances', () => {
     expect(agentDefRow).toBeUndefined();
   });
 
+  it('grants the owning member read/write/manage on their own instance (CL-1635)', async () => {
+    const { db, inserted } = makeCapturingDb({});
+
+    await provisionMemberInstances(db as never, {
+      userId: USER_ID,
+      memberPrincipalId: MEMBER_PRINCIPAL,
+    });
+
+    const instanceRow = inserted.find((r) => r.agentId !== undefined && 'address' in r);
+    const instanceId = instanceRow?.id as string;
+    expect(instanceId).toBeDefined();
+
+    const instanceGrants = inserted.filter(
+      (r) =>
+        r.principalId === MEMBER_PRINCIPAL &&
+        r.resource === `instance:${instanceId}` &&
+        r.action !== undefined
+    );
+    expect(instanceGrants.map((g) => g.action).sort()).toEqual(['manage', 'read', 'write']);
+    for (const g of instanceGrants) {
+      expect(g.effect).toBe('allow');
+      expect(g.tenantId).toBe('tnt_global');
+      expect(g.roleId).toBeUndefined();
+    }
+  });
+
   it('is idempotent — existing mapping + instance means no new insert', async () => {
     const { db, insertMock } = makeCapturingDb({
       mappingFind: () => Promise.resolve({ id: 'mai_1', instanceId: 'ins_existing' }),
