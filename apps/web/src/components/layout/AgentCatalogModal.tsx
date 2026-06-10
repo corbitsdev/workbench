@@ -1,33 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { deployAgentFromTemplate } from '../../lib/hub-api';
+import { useQuery } from '@tanstack/react-query';
+import { deployAgentFromTemplate, listAgentTemplates, type AgentCatalogEntry } from '../../lib/hub-api';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
-
-interface AgentCatalogEntry {
-  key: string;
-  name: string;
-  description: string;
-}
-
-const CATALOG: AgentCatalogEntry[] = [
-  {
-    key: 'oat',
-    name: 'Oat',
-    description: 'Pulls meeting notes from Granola and surfaces key signals for your pipeline.',
-  },
-  {
-    key: 'freddy',
-    name: 'Freddy',
-    description: 'Web research agent — crawls and extracts structured data from any URL.',
-  },
-  {
-    key: 'walter',
-    name: 'Walter',
-    description: 'Content writer — turns briefs and research into polished GTM collateral.',
-  },
-];
 
 export interface AgentCatalogModalProps {
   open: boolean;
@@ -40,6 +17,12 @@ export function AgentCatalogModal({ open, tenantId, onClose, onDeployed }: Agent
   const panelRef = useRef<HTMLDivElement>(null);
   const [deploying, setDeploying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const { data: catalog = [] } = useQuery<AgentCatalogEntry[]>({
+    queryKey: ['agent-templates'],
+    queryFn: listAgentTemplates,
+    enabled: open,
+  });
 
   const handleClose = () => {
     setError(null);
@@ -146,7 +129,7 @@ export function AgentCatalogModal({ open, tenantId, onClose, onDeployed }: Agent
                   {error}
                 </p>
               )}
-              {CATALOG.map((entry) => (
+              {catalog.map((entry) => (
                 <div
                   key={entry.key}
                   className="flex items-center gap-3 rounded-[12px] border border-border px-4 py-3 transition-colors hover:bg-[var(--row-hover)]"

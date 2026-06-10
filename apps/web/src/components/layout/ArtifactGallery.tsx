@@ -3,13 +3,15 @@
 // @workbench/client and passes the array + flags into the package component.
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useArtifacts } from '@workbench/client/react';
 import { ArtifactGallery as ArtifactGalleryView, ArtifactModal } from '@workbench/artifact';
 import type { GalleryArtifact, ArtifactWithSession } from '@workbench/artifact';
 import { clientOptions } from '../../lib/client-options';
 import ArtifactBody from '../ArtifactBody';
 import { collateralTypeOptions } from '@workbench/gtm-workflows';
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 interface ArtifactGalleryProps {
   /** Active workbench tenant. Null means workbench context is still loading. */
@@ -21,8 +23,27 @@ interface ArtifactGalleryProps {
 }
 
 export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGalleryProps) {
-  const { data: artifacts, isLoading, isError } = useArtifacts(clientOptions, { tenantId });
+  const [inputQuery, setInputQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const {
+    data: artifacts,
+    isLoading,
+    isError,
+  } = useArtifacts(clientOptions, {
+    tenantId,
+    query: debouncedQuery || undefined,
+  });
   const [selected, setSelected] = useState<ArtifactWithSession | null>(null);
+
+  const handleQueryChange = (value: string) => {
+    setInputQuery(value);
+    if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      setDebouncedQuery(value);
+    }, SEARCH_DEBOUNCE_MS);
+  };
 
   const handleOpen = (gallery: GalleryArtifact) => {
     const full = (artifacts ?? []).find((a) => a.id === gallery.id) ?? null;
@@ -35,6 +56,8 @@ export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGall
         artifacts={artifacts ?? []}
         isLoading={isLoading}
         isError={isError}
+        query={inputQuery}
+        onQueryChange={handleQueryChange}
         onOpen={handleOpen}
         onNew={onNew}
         onOpenLibrary={onOpenLibrary}

@@ -864,6 +864,26 @@ export async function provisionMemberInstances(
           createdAt: now,
         });
 
+        // The global tenant's `member` role deliberately carries no grants (see
+        // `seedGlobalTenant`), so the owning member needs principal-scoped grants
+        // to operate their own personal instance: read powers the chat event
+        // stream (`GET /instances/:id/events`), write sends mail, manage aborts a
+        // turn. Scoped to this instance id alone — it grants nothing about any
+        // other member's instances in the shared tenant (CL-1635).
+        for (const action of ['read', 'write', 'manage'] as const) {
+          await tx.insert(grant).values({
+            id: generateId('grant'),
+            tenantId,
+            principalId: opts.memberPrincipalId,
+            resource: `instance:${instanceId}`,
+            action,
+            effect: 'allow',
+            origin: 'system',
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+
         log.info('Member agent instance provisioned', {
           userId: opts.userId,
           templateKey: template.key,

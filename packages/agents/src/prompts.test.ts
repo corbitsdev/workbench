@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { buildPersonalAgentSystemPrompt } from './personal-agent/prompt';
 import { buildLoopAgentSystemPrompt } from './loop/prompt';
 import { buildGranolaSystemPrompt } from './granola/prompt';
 import { buildFirecrawlSystemPrompt } from './firecrawl/prompt';
 import { buildWalterSystemPrompt } from './walter/prompt';
+import { buildHammySystemPrompt } from './hammy-the-humanizer/prompt';
+import { HAMMY_SKILL_CONTENT } from './hammy-the-humanizer/skill';
 
 const format = { xml: true };
 
@@ -34,5 +38,29 @@ describe('agent system prompts', () => {
     expect(prompt).toContain('essays, articles, memos, narratives, letters, speeches, scripts');
     expect(prompt).toContain('If tools are available to create files');
     expect(prompt).toContain('No emojis unless explicitly requested');
+  });
+
+  it('hammy agent is scoped to humanize and score only', () => {
+    const prompt = buildHammySystemPrompt('Hammy', format);
+    expect(prompt).toContain('Hammy is a humanizer');
+    expect(prompt).toContain('Humanize');
+    expect(prompt).toContain('Score');
+    expect(prompt).not.toContain('writer and editor');
+  });
+});
+
+describe('HAMMY_SKILL_CONTENT sync with SKILL.md', () => {
+  it('skill.ts content matches SKILL.md', () => {
+    const skillMd = readFileSync(
+      join(import.meta.dir, 'hammy-the-humanizer/SKILL.md'),
+      'utf-8'
+    );
+    const normalize = (s: string) =>
+      s
+        .split('\n')
+        .map((l) => l.trimEnd())
+        .join('\n')
+        .trim();
+    expect(normalize(HAMMY_SKILL_CONTENT)).toEqual(normalize(skillMd));
   });
 });

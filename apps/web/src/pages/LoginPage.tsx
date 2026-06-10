@@ -44,7 +44,7 @@ export function LoginPage() {
     <LoginView
       state={{ loading, error }}
       onOAuth={handleOAuth}
-      onEmailPassword={import.meta.env.DEV ? handleEmailPassword : undefined}
+      onEmailPassword={handleEmailPassword}
     />
   );
 }

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, isNull, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import {
   resolveCredentialRequirement,
@@ -989,6 +989,10 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const userId = c.get('userId');
 
     const requestedTenantId = c.req.query('tenantId');
+    const searchQuery = (c.req.query('query')?.trim() ?? '')
+      .slice(0, 200)
+      .replace(/[%_\\]/g, '\\$&');
+
     const { context: userContext, forbidden } = await getRequestedUserContext(
       db,
       userId,
@@ -1023,17 +1027,23 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       eq(artifact.principalId, userContext.principalId)
     );
 
+    const ownershipWhere =
+      sessions.length > 0
+        ? or(
+            inArray(
+              artifact.sessionId,
+              sessions.map((s: (typeof sessions)[number]) => s.id)
+            ),
+            directArtifactWhere
+          )
+        : directArtifactWhere;
+
+    const searchWhere = searchQuery
+      ? or(ilike(artifact.title, `%${searchQuery}%`), ilike(artifact.content, `%${searchQuery}%`))
+      : undefined;
+
     const artifacts = await db.query.artifact.findMany({
-      where:
-        sessions.length > 0
-          ? or(
-              inArray(
-                artifact.sessionId,
-                sessions.map((s: (typeof sessions)[number]) => s.id)
-              ),
-              directArtifactWhere
-            )
-          : directArtifactWhere,
+      where: searchWhere ? and(ownershipWhere, searchWhere) : ownershipWhere,
       orderBy: [desc(artifact.updatedAt)],
     });
 

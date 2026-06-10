@@ -61,7 +61,9 @@ try {
     limit 1
   `;
   if (!principal) {
-    console.error(`[seed-prod] Could not find principal for ${email} in tenant "${globalTenantSlug}". Has the user signed in yet?`);
+    console.error(
+      `[seed-prod] Could not find principal for ${email} in tenant "${globalTenantSlug}". Has the user signed in yet?`
+    );
     process.exit(1);
   }
   log(`  Principal ID: ${principal.id}`);

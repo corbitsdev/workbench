@@ -25,6 +25,7 @@ export function useLibraryResources(
 
 export interface UseArtifactsParams {
   tenantId?: string | null;
+  query?: string;
 }
 
 /** Query the current user's artifacts across all jobs for the gallery. */
@@ -33,7 +34,7 @@ export function useArtifacts(
   params: UseArtifactsParams = {}
 ): UseQueryResult<ArtifactWithSession[]> {
   return useQuery({
-    queryKey: ['artifacts', params.tenantId ?? null],
+    queryKey: ['artifacts', params.tenantId ?? null, params.query ?? ''],
     queryFn: () => listArtifacts(options, params),
     enabled: params.tenantId != null,
   });

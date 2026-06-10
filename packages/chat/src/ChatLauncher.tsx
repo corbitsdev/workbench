@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { MessageCircle, X } from 'lucide-react';
 import { cn } from '@workbench/ui';
 
 export interface ChatLauncherProps {
@@ -32,7 +33,7 @@ export function ChatLauncher({ onClick, open, unreadCount, label, className }: C
         className
       )}
     >
-      <span className="text-lg font-medium">{open === true ? '×' : '💬'}</span>
+      {open === true ? <X size={24} strokeWidth={2} /> : <MessageCircle size={24} strokeWidth={2} />}
       {unreadCount !== undefined && unreadCount > 0 && (
         <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-blue px-1 text-xs text-white">
           {unreadCount}

@@ -147,6 +147,17 @@ export type DeployAgentResponse = {
   created: boolean;
 };
 
+export type AgentCatalogEntry = {
+  key: string;
+  name: string;
+  description: string;
+};
+
+export async function listAgentTemplates(): Promise<AgentCatalogEntry[]> {
+  const res = await hubFetch<{ data: AgentCatalogEntry[] }>('GET', 'v1/agents/templates');
+  return res.data;
+}
+
 export async function deployAgentFromTemplate(
   tenantId: string,
   templateKey: string
