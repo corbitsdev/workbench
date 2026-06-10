@@ -43,10 +43,19 @@ export async function runSingleTurnAgent(
   };
 
   const agent = await createAgent(def, env);
+
+  async function drainStream() {
+    for await (const _ of agent.stream()) {
+      // discard — no client is subscribed; drain prevents buffer overflow
+    }
+  }
+
+  const drainDone = drainStream();
   try {
     const result = await agent.send(userMessage);
     return result.reply;
   } finally {
     await agent.close();
+    await drainDone.catch(() => {});
   }
 }
