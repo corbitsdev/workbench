@@ -163,16 +163,14 @@ function useWorkbenchContext(slug: string | undefined): {
   workbenches: WorkbenchEntry[];
   loaded: boolean;
 } {
-  const [tenantId, setTenantId] = useState<string | null>(null);
   const [workbenches, setWorkbenches] = useState<WorkbenchEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
 
+  // Fetch the workbench list once at mount — slug changes do not re-fetch.
   useEffect(() => {
     listWorkbenches()
       .then((entries) => {
         setWorkbenches(entries);
-        const match = slug ? entries.find((entry) => entry.tenantSlug === slug) : undefined;
-        setTenantId((match ?? entries[0])?.tenantId ?? null);
       })
       .catch(() => {
         // non-fatal
@@ -180,7 +178,11 @@ function useWorkbenchContext(slug: string | undefined): {
       .finally(() => {
         setLoaded(true);
       });
-  }, [slug]);
+  }, []);
+
+  // Derive the active tenantId from the already-loaded list whenever slug changes.
+  const match = slug ? workbenches.find((entry) => entry.tenantSlug === slug) : undefined;
+  const tenantId = (match ?? workbenches[0])?.tenantId ?? null;
 
   return { tenantId, workbenches, loaded };
 }
@@ -245,7 +247,7 @@ export default function WorkbenchHome() {
     );
   }
 
-  if (workbenchesLoaded && workbenches.length === 0) {
+  if (provisioningState.status === 'ready' && workbenchesLoaded && workbenches.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-[14px] text-text-2">

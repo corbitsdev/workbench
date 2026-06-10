@@ -17,57 +17,15 @@
  *   SUPERADMIN_PASS   — password for sign-in (default password123)
  */
 
-function env(name: string, fallback?: string): string | undefined {
-  return process.env[name] ?? fallback;
-}
+import { api, env, makeLogger, makeFail, signIn } from './_lib';
 
-const BASE = env('HUB_URL', 'http://localhost:4000') as string;
-const EMAIL = env('SUPERADMIN_EMAIL', 'alice@example.com') as string;
-const PASSWORD = env('SUPERADMIN_PASS', 'password123') as string;
+const BASE = env('HUB_URL', 'http://localhost:4000');
+const EMAIL = env('SUPERADMIN_EMAIL', 'alice@example.com');
+const PASSWORD = env('SUPERADMIN_PASS', 'password123');
 const SESSION_TOKEN = process.env['SESSION_TOKEN'];
 
-type CookieJar = string[];
-
-async function api(
-  method: string,
-  path: string,
-  body?: unknown,
-  cookies: CookieJar = []
-): Promise<{ status: number; data: unknown; cookies: CookieJar }> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (cookies.length > 0) headers['Cookie'] = cookies.join('; ');
-
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-    redirect: 'manual',
-  });
-
-  const nextCookies = [...cookies];
-  for (const sc of res.headers.getSetCookie()) {
-    const name = sc.split('=')[0];
-    const value = sc.split(';')[0];
-    if (!name || !value) continue;
-    const idx = nextCookies.findIndex((c) => c.startsWith(`${name}=`));
-    if (idx >= 0) nextCookies[idx] = value;
-    else nextCookies.push(value);
-  }
-
-  let data: unknown = null;
-  if ((res.headers.get('content-type') ?? '').includes('json')) data = await res.json();
-  return { status: res.status, data, cookies: nextCookies };
-}
-
-function log(message: string) {
-  console.log(`[create-workbench] ${message}`);
-}
-
-function fail(label: string, status: number, data: unknown): never {
-  console.error(`[create-workbench] FAIL ${label}: ${status}`);
-  console.error(`[create-workbench]   ${JSON.stringify(data)}`);
-  process.exit(1);
-}
+const log = makeLogger('create-workbench');
+const fail = makeFail('create-workbench');
 
 // Parse args
 const args = process.argv.slice(2);
@@ -89,23 +47,10 @@ if (!name) {
   process.exit(1);
 }
 
-// Auth
-let cookies: CookieJar;
-if (SESSION_TOKEN) {
-  log('Using SESSION_TOKEN for authentication');
-  cookies = [
-    `better-auth.session_token=${SESSION_TOKEN}`,
-    `__Secure-better-auth.session_token=${SESSION_TOKEN}`,
-  ];
-} else {
-  const signIn = await api('POST', '/api/auth/sign-in/email', { email: EMAIL, password: PASSWORD });
-  if (signIn.cookies.length === 0) fail('sign in', signIn.status, signIn.data);
-  cookies = signIn.cookies;
-  log(`Signed in as ${EMAIL}`);
-}
+const cookies = await signIn(BASE, EMAIL, PASSWORD, SESSION_TOKEN, log, fail);
 
 // Create workbench
-const createRes = await api('POST', '/api/v1/workbenches', { name }, cookies);
+const createRes = await api(BASE, 'POST', '/api/v1/workbenches', { name }, cookies);
 if (createRes.status !== 200 && createRes.status !== 201) {
   fail('create workbench', createRes.status, createRes.data);
 }
@@ -118,6 +63,7 @@ log(
 // Optionally invite owner
 if (ownerEmail) {
   const inviteRes = await api(
+    BASE,
     'POST',
     `/api/tenants/${workbench.tenantId}/members/invite`,
     { email: ownerEmail },
