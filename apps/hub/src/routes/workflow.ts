@@ -8,7 +8,6 @@ import {
   schema as intxSchema,
 } from '@intx/db';
 import type { InferenceSource } from '@intx/types/runtime';
-import type { GrantStore } from '@intx/types/authz';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
 import type { WorkflowType } from '@workbench/workflow-core';
 import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
@@ -98,7 +97,6 @@ function deriveCurrentStepForWorkflow(status: string, kind: string): string {
  *  executor based on step name. */
 async function triggerStep(
   db: HubDb,
-  grantStore: GrantStore,
   id: string,
   userContext: UserContext,
   step: string,
@@ -108,7 +106,6 @@ async function triggerStep(
   try {
     const response = await dispatchStep(
       db,
-      grantStore,
       id,
       userContext,
       step,
@@ -133,7 +130,6 @@ async function triggerStep(
  *  today; 'generate' requires user input (pain-point selection). */
 async function dispatchStep(
   db: HubDb,
-  grantStore: GrantStore,
   id: string,
   userContext: UserContext,
   step: string,
@@ -141,7 +137,7 @@ async function dispatchStep(
   maxOutputTokens?: number
 ): Promise<Response> {
   if (step === 'analyze') {
-    return runAnalyze(db, grantStore, id, userContext, source, undefined, maxOutputTokens);
+    return runAnalyze(db, id, userContext, source, undefined, maxOutputTokens);
   }
   log.warn('No auto-executor for step', { workflowId: id, step });
   return Response.json({ error: `Step ${step} does not support auto-trigger` }, { status: 400 });
@@ -539,8 +535,7 @@ function validateWorkflowInput(
 }
 
 export function createWorkflowRouter(
-  db: HubDb,
-  grantStore: GrantStore
+  db: HubDb
 ): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
@@ -903,7 +898,6 @@ export function createWorkflowRouter(
           .where(eq(workflowRun.id, wfRow.id));
         void triggerStep(
           db,
-          grantStore,
           wfRow.id,
           userContext,
           firstStep,
@@ -1219,12 +1213,11 @@ export function createWorkflowRouter(
         DEFAULT_STEP_MAX_OUTPUT_TOKENS[step];
 
       if (step === 'analyze') {
-        return runAnalyze(db, grantStore, id, userContext, source, body.feedback, maxOutputTokens);
+        return runAnalyze(db, id, userContext, source, body.feedback, maxOutputTokens);
       }
       // step === 'generate'
       return runGenerate(
         db,
-        grantStore,
         id,
         body.painPointIds ?? [],
         body.collateralTypes,
@@ -1507,7 +1500,6 @@ export function createWorkflowRouter(
 // ─── Step helpers ───────────────────────────────────────────────────
 async function runAnalyze(
   db: HubDb,
-  grantStore: GrantStore,
   id: string,
   userContext: UserContext,
   source: InferenceSource,
@@ -1610,7 +1602,6 @@ async function runAnalyze(
 
 async function runGenerate(
   db: HubDb,
-  grantStore: GrantStore,
   id: string,
   painPointIds: string[],
   collateralTypes: string[] | undefined,

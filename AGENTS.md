@@ -150,6 +150,12 @@ bun run test
 
 Pre-existing failures must be identified explicitly. Never silently skip a failing step.
 
+### Typecheck gate
+
+`bun run check` (typecheck) **must pass with zero errors in our code** before any commit, push, or PR. Errors inside `interchange/` are pre-existing upstream issues and may be ignored, but every error in `apps/`, `packages/`, and `scripts/` must be resolved first.
+
+Do not merge or push while typecheck is red on our code. If a change introduces a new type error, fix it before committing — do not defer it.
+
 ## Issue Workflow
 
 When implementing a Linear issue:
