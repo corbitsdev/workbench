@@ -86,9 +86,5 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
     }
   }
 
-  // Sort by timestamp. Safe now that every text message is anchored to the
-  // server clock via the dedup above.
-  messages.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
-
   return { messages };
 }
