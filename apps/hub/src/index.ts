@@ -99,7 +99,17 @@ const auth = betterAuth({
   account: {
     skipStateCookieCheck: true,
   },
-  emailAndPassword: { enabled: true },
+  emailAndPassword: {
+    enabled: true,
+    // Hash with Bun.password (argon2id) instead of better-auth's default scrypt
+    // so the owner-run create-user script can produce a matching hash directly
+    // in the DB without going through the sign-up HTTP route (see
+    // apps/hub/bin/create-user.ts).
+    password: {
+      hash: (password) => Bun.password.hash(password),
+      verify: ({ hash, password }) => Bun.password.verify(password, hash),
+    },
+  },
   advanced:
     !isDev && isCrossOrigin
       ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
