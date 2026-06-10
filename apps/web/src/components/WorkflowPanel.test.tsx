@@ -208,7 +208,9 @@ describe('WorkflowPanel generating state', () => {
       context: 'Slow onboarding',
       quote: 'Takes weeks',
       severity: 'high' as const,
-      selected: false,
+      // The hub marks submitted pain points selected at generate start; the
+      // generating summary renders exactly the server-selected set.
+      selected: true,
     },
   ];
 

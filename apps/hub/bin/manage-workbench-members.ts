@@ -83,6 +83,21 @@ type WorkbenchPrincipal = {
   kind: string;
 };
 
+async function activatePrincipal(
+  tenantId: string,
+  principalId: string,
+  cookies: CookieJar
+): Promise<void> {
+  const res = await api(
+    BASE,
+    'PATCH',
+    `/api/tenants/${tenantId}/principals/${principalId}`,
+    { status: 'active' },
+    cookies
+  );
+  if (res.status !== 200) fail(`activate principal ${principalId}`, res.status, res.data);
+}
+
 const cookies = await signIn(BASE, EMAIL, PASSWORD, SESSION_TOKEN, log, fail);
 
 // Get the global org tenant ID from /me
@@ -136,14 +151,19 @@ const membershipChecks = await Promise.all(
     const members = await listAllPrincipals(wb.tenantId, cookies).catch(() => null);
     if (!members) return { wb, isMember: false, principalId: null, index: i };
     const existing = members.find((m) => m.refId === selectedUser.refId);
-    return { wb, isMember: !!existing, principalId: existing?.id ?? null, index: i };
+    return {
+      wb,
+      isMember: !!existing,
+      principalId: existing?.id ?? null,
+      status: existing?.status ?? null,
+      index: i,
+    };
   })
 );
 
-membershipChecks.forEach(({ wb, isMember, index }) => {
-  console.log(
-    `  [${index + 1}] ${wb.tenantName} (${wb.tenantSlug}) — ${isMember ? 'MEMBER' : 'not a member'}`
-  );
+membershipChecks.forEach(({ wb, isMember, status, index }) => {
+  const label = isMember ? `MEMBER (${status})` : 'not a member';
+  console.log(`  [${index + 1}] ${wb.tenantName} (${wb.tenantSlug}) — ${label}`);
 });
 
 const wbIdxStr = await prompt('\nSelect workbench number: ');
@@ -159,8 +179,19 @@ const action = await prompt(
 );
 
 if (action === 'a' || action === 'add') {
+  // An existing principal is created by invite in `invited` state; the workflow
+  // access gate only accepts `active`. Activate directly rather than re-inviting
+  // (the invite endpoint 409s on an existing principal).
   if (selected.isMember) {
-    log(`${selectedUser.displayName} is already a member of ${selected.wb.tenantName}.`);
+    if (selected.status === 'active') {
+      log(`${selectedUser.displayName} is already an active member of ${selected.wb.tenantName}.`);
+      process.exit(0);
+    }
+    if (!selected.principalId) fail('activate existing member', 0, 'missing principal id');
+    await activatePrincipal(selected.wb.tenantId, selected.principalId!, cookies);
+    log(
+      `Activated ${selectedUser.displayName} in ${selected.wb.tenantName} (was ${selected.status}).`
+    );
     process.exit(0);
   }
   if (!selectedUser.email) {
@@ -177,7 +208,9 @@ if (action === 'a' || action === 'add') {
   if (inviteRes.status !== 200 && inviteRes.status !== 201) {
     fail(`invite ${selectedUser.email}`, inviteRes.status, inviteRes.data);
   }
-  log(`Added ${selectedUser.displayName} to ${selected.wb.tenantName}.`);
+  const invited = inviteRes.data as { id: string };
+  await activatePrincipal(selected.wb.tenantId, invited.id, cookies);
+  log(`Added and activated ${selectedUser.displayName} in ${selected.wb.tenantName}.`);
 } else if (action === 'r' || action === 'remove') {
   if (!selected.isMember || !selected.principalId) {
     log(`${selectedUser.displayName} is not a member of ${selected.wb.tenantName}.`);

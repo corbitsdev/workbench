@@ -156,6 +156,16 @@ Pre-existing failures must be identified explicitly. Never silently skip a faili
 
 Do not merge or push while typecheck is red on our code. If a change introduces a new type error, fix it before committing — do not defer it.
 
+## Dockerfile Maintenance
+
+Each image (`hub`, `sidecar`, `admin-ui`, `web`) uses a targeted `COPY` list instead of `COPY . .`. When you add, remove, or rename a package or app, you must update every affected Dockerfile:
+
+- Adding a new `packages/*` entry as a dependency of hub or sidecar → add a `COPY packages/<name>/ packages/<name>/` line and a `COPY packages/<name>/package.json packages/<name>/` line in every image that depends on it (directly or transitively).
+- Removing a package → remove its lines from all Dockerfiles.
+- Adding a new `apps/*` entry → create a new Dockerfile following the same pattern; do not use `COPY . .`.
+
+The manifest-copy section (all the `COPY packages/*/package.json` lines before `bun install`) must list every workspace member regardless of whether the image uses it — bun needs the full graph to resolve the lockfile.
+
 ## Issue Workflow
 
 When implementing a Linear issue:

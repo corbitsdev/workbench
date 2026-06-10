@@ -34,6 +34,10 @@ COPY packages/workflow-core/package.json packages/workflow-core/
 COPY packages/workflow/package.json packages/workflow/
 RUN bun install --frozen-lockfile
 
-COPY . .
+COPY interchange/ interchange/
+COPY apps/sidecar/ apps/sidecar/
+COPY packages/approvals/ packages/approvals/
+COPY packages/sentry/ packages/sentry/
+COPY packages/tools-exa/ packages/tools-exa/
 
 CMD ["bun", "run", "apps/sidecar/src/index.ts"]
