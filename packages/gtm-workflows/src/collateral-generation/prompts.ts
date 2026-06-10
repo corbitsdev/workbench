@@ -47,12 +47,21 @@ export function buildCollateralRulesBlock(type: string): string {
         'Sentence case. Vary sentence length. Write how a person talks, not how a copywriter edits.',
       ])
     ),
-    structuredSection('output', [
-      xml('field', 'Short artifact title.', { name: 'title' }),
-      xml('field', 'Paste-ready artifact body, with newlines escaped as JSON string content.', {
-        name: 'body',
-      }),
-    ]),
+    structuredSection(
+      'output',
+      [
+        'Return a single JSON object with exactly two keys: "title" and "body". No markdown fences, no preamble, no trailing text — raw JSON only.',
+        xml('field', 'Short artifact title (plain text, no quotes).', { name: 'title' }),
+        xml(
+          'field',
+          'Paste-ready artifact body. Escape newlines as \\n within the JSON string value.',
+          {
+            name: 'body',
+          }
+        ),
+      ],
+      { format: 'json', fences: 'false' }
+    ),
   ]);
 }
 

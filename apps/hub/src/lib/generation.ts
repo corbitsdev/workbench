@@ -41,9 +41,13 @@ function tryParseCollateral(
   workflowId: string,
   type: string
 ): { title: string; body: string } {
+  const stripped = raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/, '')
+    .trim();
   let parsed: { title?: string; body?: string };
   try {
-    parsed = JSON.parse(raw) as { title?: string; body?: string };
+    parsed = JSON.parse(stripped) as { title?: string; body?: string };
   } catch (parseErr) {
     log.error('Collateral generation returned invalid JSON', {
       workflowId,
