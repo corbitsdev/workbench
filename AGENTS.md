@@ -166,10 +166,14 @@ When implementing a Linear issue:
 
 ## Code Style
 
-- TypeScript strict mode
+- No comments unless the WHY is non-obvious (hidden constraint, subtle invariant, workaround for a specific bug). If removing the comment wouldn't confuse a future reader, don't write it. Never narrate what the code does.
+- TypeScript strict mode. Load the `gaas:typescript` skill before writing or reviewing TypeScript.
 - No `console.log` — use `@intx/log` structured logging in hub/sidecar, nothing in web
 - No emojis in code, comments, or messages
-- No fallbacks for required env vars — use `requireEnv()` and fail loudly at startup
+- No IIFEs or dynamic imports in production code — use named async functions and static imports.
+- No fallbacks for required values — prefer explicit checks and fail loudly. Use `requireEnv()` for env vars; never silently substitute a default.
+- No nested ternaries or similarly compressed conditional expressions — use `if`/`else` or early returns.
+- Use full, descriptive variable and function names. Clean, readable design over brevity.
 - All env var validation lives in `apps/hub/src/config.ts`
 
 ## Dependency Injection
