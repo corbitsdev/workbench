@@ -82,33 +82,16 @@ export async function createWorkbench(name: string): Promise<WorkbenchResponse> 
   return hubFetch<WorkbenchResponse>('POST', 'v1/workbenches', { name });
 }
 
-const PERSONAL_TENANT_PREFIX = 'user-';
-const PERSONAL_WORKBENCH_NAME = 'Your Workbench';
-
-export function isPersonalTenantSlug(slug: string): boolean {
-  return slug.startsWith(PERSONAL_TENANT_PREFIX);
-}
-
-/**
- * Orders the user's principals into workbench entries with the personal
- * workspace first (relabeled "Your Workbench"), followed by shared workbenches.
- * The personal-first ordering also makes it the default selection, since the
- * route auto-redirect picks the first entry.
- */
-export function principalsToWorkbenches(principals: Principal[]): WorkbenchEntry[] {
-  const personal = principals
-    .filter((p) => isPersonalTenantSlug(p.tenantSlug))
-    .map(principalToWorkbenchEntry)
-    .map((entry) => ({ ...entry, tenantName: PERSONAL_WORKBENCH_NAME }));
-  const shared = principals
-    .filter((p) => !isPersonalTenantSlug(p.tenantSlug))
-    .map(principalToWorkbenchEntry);
-  return [...personal, ...shared];
+export function principalsToWorkbenches(
+  principals: Principal[],
+  globalTenantId: string | null
+): WorkbenchEntry[] {
+  return principals.filter((p) => p.tenantId !== globalTenantId).map(principalToWorkbenchEntry);
 }
 
 export async function listWorkbenches(): Promise<WorkbenchEntry[]> {
-  const principals = await getMyPrincipals();
-  return principalsToWorkbenches(principals);
+  const [principals, me] = await Promise.all([getMyPrincipals(), getMe()]);
+  return principalsToWorkbenches(principals, me.personalTenantId);
 }
 
 export type CredentialRequirement = {

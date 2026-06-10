@@ -161,9 +161,11 @@ type RightPane =
 function useWorkbenchContext(slug: string | undefined): {
   tenantId: string | null;
   workbenches: WorkbenchEntry[];
+  loaded: boolean;
 } {
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [workbenches, setWorkbenches] = useState<WorkbenchEntry[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     listWorkbenches()
@@ -174,10 +176,13 @@ function useWorkbenchContext(slug: string | undefined): {
       })
       .catch(() => {
         // non-fatal
+      })
+      .finally(() => {
+        setLoaded(true);
       });
   }, [slug]);
 
-  return { tenantId, workbenches };
+  return { tenantId, workbenches, loaded };
 }
 
 export default function WorkbenchHome() {
@@ -191,18 +196,18 @@ export default function WorkbenchHome() {
   const { slug } = useParams<{ slug?: string }>();
   const navigate = useNavigate();
   const { setHidden: setLauncherHidden, notifyProvisioned } = useChatLauncher();
-  const { tenantId: workbenchTenantId, workbenches } = useWorkbenchContext(slug);
+  const {
+    tenantId: workbenchTenantId,
+    workbenches,
+    loaded: workbenchesLoaded,
+  } = useWorkbenchContext(slug);
 
   // Auto-redirect from "/" to the first available workbench.
   useEffect(() => {
-    if (slug) return;
-    listWorkbenches()
-      .then((entries) => {
-        const first = entries[0];
-        if (first) void navigate(`/workbenches/${first.tenantSlug}`, { replace: true });
-      })
-      .catch(() => {});
-  }, [slug, navigate]);
+    if (!workbenchesLoaded || slug) return;
+    const first = workbenches[0];
+    if (first) void navigate(`/workbenches/${first.tenantSlug}`, { replace: true });
+  }, [workbenchesLoaded, workbenches, slug, navigate]);
 
   if (provisioningState.status === 'error') {
     return (
@@ -237,6 +242,19 @@ export default function WorkbenchHome() {
           retryProvisioning();
         }}
       />
+    );
+  }
+
+  if (workbenchesLoaded && workbenches.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3">
+        <p className="text-[14px] text-text-2">
+          You have not been provided access to any workbenches.
+        </p>
+        <p className="text-[13px] text-text-3">
+          Please contact your administrator to request access.
+        </p>
+      </div>
     );
   }
 

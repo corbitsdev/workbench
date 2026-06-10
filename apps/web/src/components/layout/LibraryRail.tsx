@@ -294,78 +294,75 @@ export function LibraryRail({
 
   return (
     <aside className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
-      {/* Workbench switcher */}
-      <div className="border-b border-border px-[18px] pb-[12px] pt-[16px]">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-[6px]">
-            {workbenches.length === 0 && (
-              <span className="text-[13px] font-bold uppercase tracking-[0.04em] text-text-3">
-                Workbench
+      {/* Workbench switcher — hidden when user has no workbenches */}
+      {workbenches.length > 0 && (
+        <div className="border-b border-border px-[18px] pb-[12px] pt-[16px]">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-[6px]">
+              {workbenches.map((wb) => {
+                const isActive = wb.tenantSlug === activeWorkbenchSlug;
+                return (
+                  <button
+                    key={wb.id}
+                    type="button"
+                    onClick={() => onWorkbenchSelect?.(wb.tenantSlug)}
+                    className={`rounded-[8px] border px-2.5 py-[5px] text-[12px] font-semibold transition-colors ${
+                      isActive
+                        ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
+                        : 'border-border text-text-2 hover:border-orange/60 hover:text-text'
+                    }`}
+                  >
+                    {wb.tenantName}
+                  </button>
+                );
+              })}
+            </div>
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close workbench"
+                className="grid h-[30px] w-[30px] flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="h-[18px] w-[18px]"
+                >
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          <div className="mt-3 flex items-center gap-[9px] rounded-[12px] border border-border bg-surface px-[11px] py-2 focus-within:border-orange">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="h-[15px] w-[15px] flex-none text-text-3"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4-4" />
+            </svg>
+            <input
+              aria-label="Search workflows, agents"
+              placeholder="Search workflows, agents…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full border-none bg-transparent text-[14px] text-text outline-none placeholder:text-text-3"
+            />
+            {searchQuery === '' && (
+              <span className="flex-none rounded-[5px] border border-border px-1.5 py-0.5 font-mono text-[11px] text-text-3">
+                ⌘K
               </span>
             )}
-            {workbenches.map((wb) => {
-              const isActive = wb.tenantSlug === activeWorkbenchSlug;
-              return (
-                <button
-                  key={wb.id}
-                  type="button"
-                  onClick={() => onWorkbenchSelect?.(wb.tenantSlug)}
-                  className={`rounded-[8px] border px-2.5 py-[5px] text-[12px] font-semibold transition-colors ${
-                    isActive
-                      ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
-                      : 'border-border text-text-2 hover:border-orange/60 hover:text-text'
-                  }`}
-                >
-                  {wb.tenantName}
-                </button>
-              );
-            })}
           </div>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close workbench"
-              className="grid h-[30px] w-[30px] flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className="h-[18px] w-[18px]"
-              >
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
-          )}
         </div>
-
-        <div className="mt-3 flex items-center gap-[9px] rounded-[12px] border border-border bg-surface px-[11px] py-2 focus-within:border-orange">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="h-[15px] w-[15px] flex-none text-text-3"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="M21 21l-4-4" />
-          </svg>
-          <input
-            aria-label="Search workflows, agents"
-            placeholder="Search workflows, agents…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full border-none bg-transparent text-[14px] text-text outline-none placeholder:text-text-3"
-          />
-          {searchQuery === '' && (
-            <span className="flex-none rounded-[5px] border border-border px-1.5 py-0.5 font-mono text-[11px] text-text-3">
-              ⌘K
-            </span>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Filter tabs */}
       <div className="flex flex-wrap gap-[3px] px-4 pb-1.5 pt-3">

@@ -3,10 +3,19 @@ import { describe, expect, it } from 'bun:test';
 import { principalsToWorkbenches, principalToWorkbenchEntry, type Principal } from './hub-api';
 
 describe('principalsToWorkbenches', () => {
-  it('lists the personal workbench first, relabeled "Your Workbench"', () => {
+  it('filters out the global org tenant by id', () => {
     const principals: Principal[] = [
       {
-        principalId: 'p-2',
+        principalId: 'p-global',
+        tenantId: 'tenant-global',
+        tenantSlug: 'example-org',
+        tenantName: 'Example Org',
+        kind: 'user',
+        status: 'active',
+        roles: [],
+      },
+      {
+        principalId: 'p-wb',
         tenantId: 'tenant-acme',
         tenantSlug: 'acme-sales',
         tenantName: 'Acme Sales',
@@ -14,43 +23,47 @@ describe('principalsToWorkbenches', () => {
         status: 'active',
         roles: [],
       },
+    ];
+
+    const workbenches = principalsToWorkbenches(principals, 'tenant-global');
+
+    expect(workbenches).toHaveLength(1);
+    expect(workbenches[0]!.id).toBe('p-wb');
+    expect(workbenches[0]!.tenantName).toBe('Acme Sales');
+  });
+
+  it('returns empty list when user has only the global org tenant', () => {
+    const principals: Principal[] = [
       {
-        principalId: 'p-1',
-        tenantId: 'tenant-user',
-        tenantSlug: 'user-abc123',
-        tenantName: 'alice@example.com',
+        principalId: 'p-global',
+        tenantId: 'tenant-global',
+        tenantSlug: 'example-org',
+        tenantName: 'Example Org',
         kind: 'user',
         status: 'active',
         roles: [],
       },
     ];
 
-    const workbenches = principalsToWorkbenches(principals);
-
-    expect(workbenches).toHaveLength(2);
-    expect(workbenches[0]!.id).toBe('p-1');
-    expect(workbenches[0]!.tenantSlug).toBe('user-abc123');
-    expect(workbenches[0]!.tenantName).toBe('Your Workbench');
-    expect(workbenches[1]!.id).toBe('p-2');
-    expect(workbenches[1]!.tenantName).toBe('Acme Sales');
+    const workbenches = principalsToWorkbenches(principals, 'tenant-global');
+    expect(workbenches).toHaveLength(0);
   });
 
-  it('returns only the personal workbench when the user has no shared tenants', () => {
+  it('returns all principals when globalTenantId is null', () => {
     const principals: Principal[] = [
       {
         principalId: 'p-1',
-        tenantId: 'tenant-user',
-        tenantSlug: 'user-abc123',
-        tenantName: 'alice@example.com',
+        tenantId: 'tenant-acme',
+        tenantSlug: 'acme-sales',
+        tenantName: 'Acme Sales',
         kind: 'user',
         status: 'active',
         roles: [],
       },
     ];
 
-    const workbenches = principalsToWorkbenches(principals);
+    const workbenches = principalsToWorkbenches(principals, null);
     expect(workbenches).toHaveLength(1);
-    expect(workbenches[0]!.tenantName).toBe('Your Workbench');
   });
 
   it('maps Interchange principalId to the workbench entry id', () => {
