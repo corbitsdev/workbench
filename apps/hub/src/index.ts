@@ -21,7 +21,6 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { and, eq } from 'drizzle-orm';
 import { loadConfig } from './config';
-import { resolveDatabaseConfig } from './lib/db';
 import { createWorkflowRouter } from './routes/workflow';
 import { workflowRegistry } from '@workbench/workflow-core';
 import {
@@ -53,17 +52,7 @@ const config = loadConfig();
 
 // ─── Database ──────────────────────────────────────────────────────
 
-const dbConfig = resolveDatabaseConfig();
-
-const sql = postgres({
-  host: dbConfig.host,
-  port: dbConfig.port,
-  user: dbConfig.user,
-  password: dbConfig.password,
-  database: dbConfig.database,
-  max: 10,
-  ...(dbConfig.ssl !== undefined && { ssl: dbConfig.ssl }),
-});
+const sql = postgres(config.databaseUrl);
 const db = drizzle(sql, { schema });
 
 await sql`SELECT 1`;

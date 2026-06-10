@@ -61,6 +61,7 @@ export function loadConfig() {
     granola: {
       baseUrl: 'https://public-api.granola.ai/v1',
     },
+    databaseUrl: requireEnv('DATABASE_URL'),
     hub: {
       dataDir: requireEnv('HUB_DATA_DIR'),
       signingKeys: requireEnv('HUB_SIGNING_KEYS'),

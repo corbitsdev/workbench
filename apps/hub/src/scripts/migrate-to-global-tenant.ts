@@ -16,7 +16,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { getLogger } from '@intx/log';
 import { loadConfig } from '../config';
-import { resolveDatabaseConfig } from '../lib/db';
+
 import { schema, type HubDb } from '../db';
 import { migrateAllUsersToGlobalTenant } from '../lib/migrate-to-global-tenant';
 
@@ -27,18 +27,9 @@ async function main(): Promise<void> {
   const dryRun = !live;
 
   // loadConfig validates the env (incl. GLOBAL_TENANT_*) and fails loud if missing.
-  loadConfig();
+  const config = loadConfig();
 
-  const dbConfig = resolveDatabaseConfig();
-  const sql = postgres({
-    host: dbConfig.host,
-    port: dbConfig.port,
-    user: dbConfig.user,
-    password: dbConfig.password,
-    database: dbConfig.database,
-    max: 1,
-    ...(dbConfig.ssl !== undefined && { ssl: dbConfig.ssl }),
-  });
+  const sql = postgres(config.databaseUrl, { max: 1 });
   const db = drizzle(sql, { schema }) as unknown as HubDb;
 
   try {
