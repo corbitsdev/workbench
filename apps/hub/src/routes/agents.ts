@@ -20,7 +20,8 @@ import type { HubDb } from '../db';
 
 const log = getLogger(['api', 'agents']);
 
-const { agent, agentInstance, agentSession, credential, grant, principal, tenant } = intxSchema;
+const { agent, agentInstance, agentSession, credential, grant, principal, provider, tenant } =
+  intxSchema;
 
 const LAUNCH_RETRY_DELAY_MS = 1_000;
 const MAX_LAUNCH_ATTEMPTS = 3;
@@ -721,17 +722,32 @@ export async function relaunchInstanceIfNeeded(
   });
   if (!agentRow?.systemPrompt) return;
 
-  // Guard: do not attempt launch if the tenant has no active credential for this agent.
-  // Without this check, every GET /v1/me for a pre-onboarding user fires a launch attempt
-  // that always fails with "No resolvable inference sources".
-  const hasCred = await db.query.credential.findFirst({
-    where: and(
-      eq(credential.tenantId, instance.tenantId),
-      isNull(credential.principalId),
-      eq(credential.status, 'active')
-    ),
-  });
-  if (!hasCred) return;
+  // Guard: do not attempt launch if the tenant is missing any of the credentials this
+  // agent requires. Without this check, every GET /v1/me for a pre-onboarding user fires
+  // a launch attempt that always fails with "No resolvable inference sources".
+  const requirements = (agentRow.credentialRequirements ?? []) as Array<{
+    providerName: string;
+    source: string;
+  }>;
+  const tenantRequirements = requirements.filter((r) => r.source === 'tenant');
+  if (tenantRequirements.length > 0) {
+    for (const req of tenantRequirements) {
+      const [hasCred] = await db
+        .select({ id: credential.id })
+        .from(credential)
+        .innerJoin(provider, eq(credential.providerId, provider.id))
+        .where(
+          and(
+            eq(credential.tenantId, instance.tenantId),
+            isNull(credential.principalId),
+            eq(credential.status, 'active'),
+            eq(provider.name, req.providerName)
+          )
+        )
+        .limit(1);
+      if (!hasCred) return;
+    }
+  }
 
   let launched: { address: string; sessionId: string };
   try {

@@ -832,18 +832,17 @@ export async function provisionMemberInstances(
       const created = await db.transaction(async (tx) => {
         const now = new Date();
 
+        const instanceId = generateId('instance');
         const instancePrincipalId = generateId('principal');
         await tx.insert(principal).values({
           id: instancePrincipalId,
           tenantId,
           kind: 'agent',
-          refId: agentId,
+          refId: instanceId,
           status: 'active',
           createdAt: now,
           updatedAt: now,
         });
-
-        const instanceId = generateId('instance');
         await tx.insert(agentInstance).values({
           id: instanceId,
           agentId,

@@ -181,6 +181,7 @@ function buildEntries(): CredentialEntry[] {
       providerPlugin: 'firecrawl',
       credentialName: 'Firecrawl',
       secret: firecrawlKey,
+      metadata: { baseURL: 'https://api.firecrawl.dev/v2' },
     });
   }
 
