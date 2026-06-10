@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { createToolRunner } from '@intx/agent';
-import { createGranolaTools, GRANOLA_DEFAULT_BASE_URL } from './index';
+import { createGranolaTools, GRANOLA_DEFAULT_BASE_URL, GRANOLA_HUB_TOOLS } from './index';
 
 describe('createGranolaTools', () => {
   it('falls back to the package default base URL when none is provided', async () => {
@@ -359,5 +359,214 @@ describe('createGranolaTools', () => {
         baseUrl: 'not a url',
       })
     ).toThrow('Granola baseUrl must be a valid URL');
+  });
+
+  function runGranola(
+    response: unknown,
+    request: { name: string; arguments: Record<string, unknown> },
+    status = 200
+  ) {
+    const fetcher = mock(async () => new Response(JSON.stringify(response), { status }));
+    const runner = createToolRunner(
+      createGranolaTools({
+        apiKey: 'tenant-api-key',
+        baseUrl: 'https://public-api.granola.ai/v1',
+        fetcher,
+      })
+    );
+    return runner.run({ id: 'call', ...request }, new AbortController().signal);
+  }
+
+  it('errors when a note is missing a required id', async () => {
+    const result = await runGranola(
+      { notes: [{ title: 'No id', created_at: '2026-01-01' }], hasMore: false },
+      { name: 'granola_list_notes', arguments: {} }
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Granola response missing id');
+  });
+
+  it('errors when the notes list shape is invalid', async () => {
+    const result = await runGranola(
+      { notes: 'not-an-array', hasMore: false },
+      { name: 'granola_list_notes', arguments: {} }
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Granola response contains an invalid notes list');
+  });
+
+  it('errors when a note value is not an object', async () => {
+    const result = await runGranola(
+      { notes: ['not-an-object'], hasMore: false },
+      { name: 'granola_list_notes', arguments: {} }
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Granola response contains an invalid note');
+  });
+
+  it('errors when a transcript item is malformed', async () => {
+    const result = await runGranola(
+      {
+        id: 'note_1',
+        title: 'Call',
+        created_at: '2026-01-01',
+        transcript: [{ speaker: { source: 'microphone' } }],
+      },
+      { name: 'granola_get_note', arguments: { noteId: 'note_1' } }
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Granola response contains an invalid transcript item');
+  });
+
+  it('errors when a transcript speaker source is unknown', async () => {
+    const result = await runGranola(
+      {
+        id: 'note_1',
+        title: 'Call',
+        created_at: '2026-01-01',
+        transcript: [{ speaker: { source: 'radio' }, text: 'hi' }],
+      },
+      { name: 'granola_get_note', arguments: { noteId: 'note_1' } }
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Granola response contains an invalid transcript speaker');
+  });
+
+  it('omits the diarization label when absent', async () => {
+    const result = await runGranola(
+      {
+        id: 'note_1',
+        title: 'Call',
+        created_at: '2026-01-01',
+        transcript: [{ speaker: { source: 'speaker' }, text: 'no label' }],
+      },
+      { name: 'granola_get_note', arguments: { noteId: 'note_1' } }
+    );
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(String(result.content));
+    expect(parsed.transcript[0]).toEqual({ speaker: { source: 'speaker' }, text: 'no label' });
+  });
+
+  it('requires the noteId argument', async () => {
+    const result = await runGranola({}, { name: 'granola_get_note', arguments: {} });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('noteId is required');
+  });
+
+  it('errors when the folders list shape is invalid', async () => {
+    const result = await runGranola(
+      { folders: 'nope', hasMore: false },
+      { name: 'granola_list_folders', arguments: {} }
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Granola response contains an invalid folders list');
+  });
+
+  it('errors when a folder value is not an object', async () => {
+    const result = await runGranola(
+      { folders: [42], hasMore: false },
+      { name: 'granola_list_folders', arguments: {} }
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Granola response contains an invalid folder');
+  });
+
+  it('paginates notes with a cursor', async () => {
+    const fetcher = mock(async (input: string) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.get('cursor')).toBe('next');
+      return new Response(JSON.stringify({ notes: [], hasMore: false }), { status: 200 });
+    });
+    const runner = createToolRunner(
+      createGranolaTools({
+        apiKey: 'tenant-api-key',
+        baseUrl: 'https://public-api.granola.ai/v1',
+        fetcher,
+      })
+    );
+
+    const result = await runner.run(
+      { id: 'c', name: 'granola_list_notes', arguments: { cursor: 'next' } },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the HTTP status text when the error body is empty', async () => {
+    const fetcher = mock(
+      async () => new Response('', { status: 503, statusText: 'Service Unavailable' })
+    );
+    const runner = createToolRunner(
+      createGranolaTools({
+        apiKey: 'tenant-api-key',
+        baseUrl: 'https://public-api.granola.ai/v1',
+        fetcher,
+      })
+    );
+
+    const result = await runner.run(
+      { id: 'c', name: 'granola_list_notes', arguments: {} },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe('Granola API error: 503 Service Unavailable');
+  });
+
+  it('surfaces a non-JSON error body verbatim', async () => {
+    const fetcher = mock(
+      async () => new Response('upstream exploded', { status: 500, statusText: '' })
+    );
+    const runner = createToolRunner(
+      createGranolaTools({
+        apiKey: 'tenant-api-key',
+        baseUrl: 'https://public-api.granola.ai/v1',
+        fetcher,
+      })
+    );
+
+    const result = await runner.run(
+      { id: 'c', name: 'granola_list_notes', arguments: {} },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe('Granola API error: 500 upstream exploded');
+  });
+});
+
+describe('GRANOLA_HUB_TOOLS', () => {
+  it('builds tools from resolved credentials and honors baseURL override', () => {
+    const entry = GRANOLA_HUB_TOOLS.granola_list_notes;
+    expect(entry.providerName).toBe('granola');
+    expect(entry.definition.name).toBe('granola_list_notes');
+
+    const tools = entry.createTools({ apiKey: 'k', baseURL: 'https://override.example/v1' });
+    expect(tools.map((tool) => tool.definition.name)).toEqual([
+      'granola_list_notes',
+      'granola_get_note',
+      'granola_list_folders',
+    ]);
+  });
+
+  it('builds tools for get_note and list_folders entries without a baseURL', () => {
+    const getTools = GRANOLA_HUB_TOOLS.granola_get_note.createTools({ apiKey: 'k' });
+    const listTools = GRANOLA_HUB_TOOLS.granola_list_folders.createTools({ apiKey: 'k' });
+
+    expect(getTools).toHaveLength(3);
+    expect(listTools).toHaveLength(3);
+    expect(GRANOLA_HUB_TOOLS.granola_get_note.providerName).toBe('granola');
+    expect(GRANOLA_HUB_TOOLS.granola_list_folders.providerName).toBe('granola');
   });
 });

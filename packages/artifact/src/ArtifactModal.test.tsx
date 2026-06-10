@@ -58,6 +58,58 @@ describe('ArtifactModal', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('wraps focus from the last element back to the first on Tab', () => {
+    render(
+      React.createElement(ArtifactModal, {
+        open: true,
+        artifact,
+        onClose: () => {},
+        actions: [{ label: 'Approve', onClick: () => {} }],
+      })
+    );
+    const dialog = screen.getByRole('dialog');
+    const focusable = dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+    );
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    last.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('wraps focus from the first element to the last on Shift+Tab', () => {
+    render(
+      React.createElement(ArtifactModal, {
+        open: true,
+        artifact,
+        onClose: () => {},
+        actions: [{ label: 'Approve', onClick: () => {} }],
+      })
+    );
+    const dialog = screen.getByRole('dialog');
+    const focusable = dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+    );
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    first.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
+
+  it('copies the artifact content to the clipboard and shows a copied state', async () => {
+    const writeText = mock(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    render(React.createElement(ArtifactModal, { open: true, artifact, onClose: () => {} }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy content' }));
+    expect(writeText).toHaveBeenCalledWith('Hello there');
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeDefined();
+  });
+
   it('invokes an action callback with the artifact', () => {
     const onClick = mock(() => {});
     render(

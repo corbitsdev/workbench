@@ -16,3 +16,7 @@ Hono + TypeScript backend. Thin product layer on top of Interchange.
 - Structured logging via `@intx/log` — no `console.log`
 - Inject stateful deps (db, sessionService) into routers; import stateless singletons directly
 - `eventCollectors.create()` must be called immediately after `sessionService.launchSession()` — missing this loses all conversation history
+
+## Testing
+
+Follow the repository testing standards in the [root AGENTS.md](../../AGENTS.md#testing) — red/green (tests first), the 80% coverage floor (always aim higher), and the test-quality bar.

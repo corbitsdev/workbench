@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { createToolRunner } from '@intx/agent';
-import { createExaTools, type ExaFetch } from './index';
+import { createExaTools, EXA_HUB_TOOLS, type ExaFetch } from './index';
 
 type FetchStub = ExaFetch & {
   mock: { calls: [string, RequestInit][] };
@@ -88,5 +88,145 @@ describe('exa_search handler', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain('Exa API error: 401 Invalid API key');
+  });
+
+  it('forwards type and domain filters in the request body', async () => {
+    const fetcher = makeFetchStub({ results: [] });
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
+
+    await runner.run(
+      {
+        id: 'call_1',
+        name: 'exa_search',
+        arguments: {
+          query: 'launches',
+          type: 'neural',
+          includeDomains: ['example.com'],
+          excludeDomains: ['spam.com'],
+        },
+      },
+      new AbortController().signal
+    );
+
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1].body));
+    expect(body).toEqual({
+      query: 'launches',
+      numResults: 5,
+      type: 'neural',
+      includeDomains: ['example.com'],
+      excludeDomains: ['spam.com'],
+    });
+  });
+
+  it('drops non-string-array domain filters', async () => {
+    const fetcher = makeFetchStub({ results: [] });
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
+
+    await runner.run(
+      {
+        id: 'call_1',
+        name: 'exa_search',
+        arguments: { query: 'q', includeDomains: ['ok', 7], excludeDomains: 'nope' },
+      },
+      new AbortController().signal
+    );
+
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1].body));
+    expect(body).toEqual({ query: 'q', numResults: 5 });
+  });
+
+  it('requires a query argument', async () => {
+    const fetcher = makeFetchStub({ results: [] });
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
+
+    const result = await runner.run(
+      { id: 'call_1', name: 'exa_search', arguments: {} },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('query is required');
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+
+  it('coerces missing result fields to empty strings and omits optionals', async () => {
+    const fetcher = makeFetchStub({ results: [{ publishedDate: '' }] });
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
+
+    const result = await runner.run(
+      { id: 'call_1', name: 'exa_search', arguments: { query: 'q' } },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual({ results: [{ title: '', url: '' }] });
+  });
+
+  it('errors when a search result is not an object', async () => {
+    const fetcher = makeFetchStub({ results: ['nope'] });
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
+
+    const result = await runner.run(
+      { id: 'call_1', name: 'exa_search', arguments: { query: 'q' } },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Exa response contains an invalid search result');
+  });
+
+  it('errors when the response result list is missing', async () => {
+    const fetcher = makeFetchStub({ notResults: [] });
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
+
+    const result = await runner.run(
+      { id: 'call_1', name: 'exa_search', arguments: { query: 'q' } },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Exa response contains an invalid search result list');
+  });
+
+  it('uses the HTTP status text when the error body is empty', async () => {
+    const fetcher: ExaFetch = mock(() =>
+      Promise.resolve(new Response('', { status: 502, statusText: 'Bad Gateway' }))
+    );
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
+
+    const result = await runner.run(
+      { id: 'call_1', name: 'exa_search', arguments: { query: 'q' } },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Exa API error: 502 Bad Gateway');
+  });
+
+  it('surfaces a non-JSON error body verbatim', async () => {
+    const fetcher: ExaFetch = mock(() =>
+      Promise.resolve(new Response('rate limited', { status: 429, statusText: '' }))
+    );
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
+
+    const result = await runner.run(
+      { id: 'call_1', name: 'exa_search', arguments: { query: 'q' } },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('Exa API error: 429 rate limited');
+  });
+});
+
+describe('EXA_HUB_TOOLS', () => {
+  it('builds the exa search tool from resolved credentials', () => {
+    const entry = EXA_HUB_TOOLS.exa_search;
+    expect(entry.providerName).toBe('exa');
+    expect(entry.definition.name).toBe('exa_search');
+
+    const tools = entry.createTools({ apiKey: 'k', baseURL: 'https://api.exa.ai' });
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.definition.name).toBe('exa_search');
   });
 });

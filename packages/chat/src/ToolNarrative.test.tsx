@@ -64,4 +64,20 @@ describe('ToolNarrative', () => {
     // No result to show; the args pre block must not appear.
     expect(screen.queryByText(/"query"/)).toBeNull();
   });
+
+  it('summarizes a non-priority arg as "key: value" when no known key is present', () => {
+    const calls: ToolCall[] = [
+      { id: 'c1', name: 'fetch_rows', arguments: { limit: 10 }, result: 'ok' },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    expect(screen.getByText('· limit: 10')).toBeDefined();
+  });
+
+  it('omits the summary when arguments have no stringifiable scalar values', () => {
+    const calls: ToolCall[] = [
+      { id: 'c1', name: 'apply_filter', arguments: { rules: [1, 2, 3] }, result: 'ok' },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    expect(screen.queryByText(/·/)).toBeNull();
+  });
 });

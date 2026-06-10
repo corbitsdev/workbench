@@ -5,3 +5,7 @@ Scaffold template for new agent packages. Copy this directory to create a new ag
 - Follow the inline comments in `definition.ts` to fill in the agent name, system prompt, credential requirements, and capabilities
 - Wire provisioning in `apps/hub/src/lib/tenant-provisioning.ts` after creating the package
 - Tool names in `capabilities.tools` must match keys in the hub's `tool-registry.ts`
+
+## Testing
+
+Follow the repository testing standards in the [root AGENTS.md](../../AGENTS.md#testing) — red/green (tests first), the 80% coverage floor (always aim higher), and the test-quality bar.

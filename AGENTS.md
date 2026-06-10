@@ -137,6 +137,36 @@ Run the scribe skill if the change affects product, architecture, or implementat
 - Do not auto-commit unless the user explicitly says so
 - Always present the commit message and wait for user confirmation
 
+## Testing
+
+Tests are not an afterthought and not a cleanup pass. Every behavioral change is developed **red → green**: write the test first, watch it fail for the right reason, then write the minimal code to make it pass. New code ships with its tests in the same change — never "tests later."
+
+### Red/green workflow
+
+1. **Red** — write the test for the new or changed behavior first. Run it; confirm it fails for the reason you expect.
+2. **Green** — implement the minimal change to make it pass.
+3. **Refactor** — clean up with the test green.
+
+This is the same sequence the Commit Process encodes (tests-first commit, then implementation). A change that adds or alters behavior with no accompanying test is incomplete.
+
+### Coverage policy
+
+- Measure with `bun run coverage` (whole repo, merged) or `bun run test:coverage` (one package). The merged gate lives in `scripts/coverage-merge.ts`.
+- **80% merged line coverage is a hard floor. Never let a change drop below it.** If your change lowers coverage, add tests in the same change until it recovers — do not push a regression.
+- **80% is the floor, not the goal.** Every change should leave coverage equal or higher; the standing target is always *higher* than where we are now. An uncovered line you touch is yours to cover.
+- Any package containing runnable code must define `test` and `test:coverage` scripts so the merged gate sees it. Pure type-only packages are exempt (document the exemption).
+- Coverage is line coverage only (Bun emits no branch/per-function lcov).
+
+### Test quality bar
+
+This is the difference between regression protection and theater:
+
+- **Assert behavior, not execution.** No tautologies (`expect(true).toBe(true)`), no render-without-crash tests, no test whose only point is that code ran.
+- **A throwing query is already the assertion.** `screen.getByText('X')` throws if absent — do not append `.toBeDefined()` to it. For an explicit presence/absence check, use `queryBy…()` with `.not.toBeNull()` / `.toBeNull()`.
+- **Never assert the mock.** A test that only checks a value the test itself fed to a mock proves nothing about the code under test.
+- **Mock only at the Interchange (`@intx/*`) or a true module boundary**, via `mock.module(...)`. Inject stateful collaborators (db, services) as arguments — never module-mock your own package's public surface. (See Dependency Injection.)
+- Assert user-visible behavior and call contracts. For generated text such as prompts, assert structure/contract — never brittle full-string equality.
+
 ## Build Requirements
 
 Run the full pipeline before declaring any task complete:

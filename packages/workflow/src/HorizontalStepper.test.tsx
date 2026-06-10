@@ -1,8 +1,10 @@
 /// <reference types="bun" />
-import { describe, expect, it, mock } from 'bun:test';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { cleanup, render, screen } from '@testing-library/react';
 import React from 'react';
 import HorizontalStepper from './HorizontalStepper';
+
+afterEach(cleanup);
 import { buildSteps } from './steps';
 import { type StepName } from './types';
 

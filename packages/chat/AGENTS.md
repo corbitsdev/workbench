@@ -6,3 +6,7 @@ Chat UI components: message thread, input, typing indicator, docked and floating
 - `compactMessages` collapses adjacent tool-use messages for display
 - Styling uses `packages/ui/src/styles.css` design tokens — no inline Tailwind magic values
 - No direct hub API calls; the parent app owns the transport layer
+
+## Testing
+
+Follow the repository testing standards in the [root AGENTS.md](../../AGENTS.md#testing) — red/green (tests first), the 80% coverage floor (always aim higher), and the test-quality bar.
