@@ -317,7 +317,8 @@ for (const entry of entries) {
       { secret: entry.secret, ...(entry.metadata ? { metadata: entry.metadata } : {}) },
       cookies
     );
-    if (patch.status !== 200) fail(`patch credential (${entry.credentialName})`, patch.status, patch.data);
+    if (patch.status !== 200)
+      fail(`patch credential (${entry.credentialName})`, patch.status, patch.data);
     log(`  Updated credential: ${entry.credentialName}`);
   } else {
     const credRes = await api(
@@ -332,7 +333,8 @@ for (const entry of entries) {
       },
       cookies
     );
-    if (credRes.status !== 201) fail(`create credential (${entry.credentialName})`, credRes.status, credRes.data);
+    if (credRes.status !== 201)
+      fail(`create credential (${entry.credentialName})`, credRes.status, credRes.data);
     log(`  Created credential: ${entry.credentialName}`);
   }
 }

@@ -536,10 +536,7 @@ export async function persistInstanceGrantRequirements(
     await tx
       .delete(grant)
       .where(
-        and(
-          eq(grant.principalId, principalId),
-          inArray(grant.origin, ['creator', 'invoker'])
-        )
+        and(eq(grant.principalId, principalId), inArray(grant.origin, ['creator', 'invoker']))
       );
     if (rows.length > 0) {
       await tx.insert(grant).values(rows);

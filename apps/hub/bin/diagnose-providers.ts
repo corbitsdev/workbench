@@ -58,7 +58,9 @@ try {
       console.log('  credentials: (none bound)');
     } else {
       for (const c of creds) {
-        console.log(`  credential ${c.id} name="${c.name}" status=${c.status} tenant=${c.tenant_id}`);
+        console.log(
+          `  credential ${c.id} name="${c.name}" status=${c.status} tenant=${c.tenant_id}`
+        );
       }
     }
     console.log('');

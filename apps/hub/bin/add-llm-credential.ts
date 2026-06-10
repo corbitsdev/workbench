@@ -20,7 +20,10 @@ const PASSWORD = env('SUPERADMIN_PASS', 'password123');
 const SESSION_TOKEN = process.env['SESSION_TOKEN'];
 const TENANT_SLUG = env('GLOBAL_TENANT_SLUG', 'abklabs');
 const PROVIDER_NAME = env('LLM_PROVIDER_NAME', 'openai-compatible');
-const CREDENTIAL_NAME = env('OPENAI_COMPATIBLE_CREDENTIAL_NAME', env('LLM_CREDENTIAL_NAME', 'Myra LLM'));
+const CREDENTIAL_NAME = env(
+  'OPENAI_COMPATIBLE_CREDENTIAL_NAME',
+  env('LLM_CREDENTIAL_NAME', 'Myra LLM')
+);
 const LLM_API_KEY = env(
   'OPENAI_COMPATIBLE_API_KEY',
   env('LLM_API_KEY', 'sk-dummy-key-for-local-dev')
@@ -157,7 +160,8 @@ const listCredentials = await api(
   undefined,
   sessionCookies
 );
-if (listCredentials.status !== 200) fail('list credentials', listCredentials.status, listCredentials.data);
+if (listCredentials.status !== 200)
+  fail('list credentials', listCredentials.status, listCredentials.data);
 
 const existingCredential = (
   (listCredentials.data as { data?: Array<{ id: string; name: string }> }).data ?? []
@@ -186,7 +190,8 @@ if (existingCredential) {
     },
     sessionCookies
   );
-  if (createCredential.status !== 201) fail('create credential', createCredential.status, createCredential.data);
+  if (createCredential.status !== 201)
+    fail('create credential', createCredential.status, createCredential.data);
   log(`Credential created: ${(createCredential.data as { id?: string }).id ?? CREDENTIAL_NAME}`);
 }
 

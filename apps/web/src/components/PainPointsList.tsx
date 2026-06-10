@@ -23,11 +23,11 @@ export const getSeverityColor = (severity?: SeverityLevel): string => {
     case 'low':
       return 'bg-blue-soft text-blue-deep';
     case 'medium':
-      return 'bg-yellow-100 text-yellow-800';
+      return 'bg-cream text-charcoal-deep';
     case 'high':
       return 'bg-orange-soft text-orange-deep';
     case 'critical':
-      return 'bg-red-100 text-red-800';
+      return 'bg-orange-deep text-cream';
     default:
       return 'bg-surface-2 text-text-2';
   }
