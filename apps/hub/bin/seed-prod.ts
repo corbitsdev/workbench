@@ -10,8 +10,9 @@
  * so admin-ui works.
  *
  * Required env vars:
- *   DATABASE_URL       — Postgres connection string
- *   SUPERADMIN_EMAIL   — email of the user to promote (looked up in the DB)
+ *   DATABASE_URL         — Postgres connection string
+ *   SUPERADMIN_EMAIL     — email of the user to promote (looked up in the DB)
+ *   GLOBAL_TENANT_SLUG   — slug of the global org tenant (e.g. "interchange")
  *
  * For local dev, run seed.ts instead.
  */
@@ -32,6 +33,7 @@ function log(message: string) {
 }
 
 const email = requireEnv('SUPERADMIN_EMAIL');
+const globalTenantSlug = requireEnv('GLOBAL_TENANT_SLUG');
 const sql = postgres(requireEnv('DATABASE_URL'), { max: 1 });
 
 try {
@@ -48,18 +50,18 @@ try {
   }
   log(`  User ID: ${user.id}`);
 
-  // Find their global (personal) tenant — the one they own directly.
+  // Find the user's principal in the global org tenant (by slug).
   const [principal] = await sql<{ id: string; tenant_id: string }[]>`
     select p.id, p.tenant_id
     from principal p
     join tenant t on t.id = p.tenant_id
     where p.kind = 'user'
       and p.ref_id = ${user.id}
-      and t.parent_id is null
+      and t.slug = ${globalTenantSlug}
     limit 1
   `;
   if (!principal) {
-    console.error('[seed-prod] Could not find global user principal. Has the user signed in yet?');
+    console.error(`[seed-prod] Could not find principal for ${email} in tenant "${globalTenantSlug}". Has the user signed in yet?`);
     process.exit(1);
   }
   log(`  Principal ID: ${principal.id}`);

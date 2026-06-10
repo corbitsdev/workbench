@@ -57,6 +57,7 @@ export type MeResponse = {
   userId: string;
   userName: string;
   personalTenantId: string | null;
+  rootTenantIds: string[];
   paInstanceId: string | null;
   provisioned: boolean;
   credentialResolved: boolean;
@@ -84,14 +85,16 @@ export async function createWorkbench(name: string): Promise<WorkbenchResponse> 
 
 export function principalsToWorkbenches(
   principals: Principal[],
-  globalTenantId: string | null
+  excludeTenantIds: (string | null)[]
 ): WorkbenchEntry[] {
-  return principals.filter((p) => p.tenantId !== globalTenantId).map(principalToWorkbenchEntry);
+  const excluded = new Set(excludeTenantIds.filter((id): id is string => id !== null));
+  return principals.filter((p) => !excluded.has(p.tenantId)).map(principalToWorkbenchEntry);
 }
 
 export async function listWorkbenches(): Promise<WorkbenchEntry[]> {
   const [principals, me] = await Promise.all([getMyPrincipals(), getMe()]);
-  return principalsToWorkbenches(principals, me.personalTenantId);
+  const excludeIds = me.rootTenantIds?.length ? me.rootTenantIds : [me.personalTenantId];
+  return principalsToWorkbenches(principals, excludeIds);
 }
 
 export type CredentialRequirement = {

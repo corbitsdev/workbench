@@ -19,7 +19,7 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { createWorkflowRouter } from './routes/workflow';
 import { workflowRegistry } from '@workbench/workflow-core';
@@ -445,12 +445,36 @@ v1.get('/me', async (c) => {
     }
   }
 
+  // Find all root tenants (parentId = null) the user belongs to. These are
+  // Interchange-created personal tenants and the global org — none of them
+  // should appear as selectable workbenches in the UI.
+  const rootTenantIds: string[] = [];
+  try {
+    const rootPrincipals = await db
+      .select({ tenantId: intxSchema.principal.tenantId })
+      .from(intxSchema.principal)
+      .innerJoin(intxSchema.tenant, eq(intxSchema.tenant.id, intxSchema.principal.tenantId))
+      .where(
+        and(
+          eq(intxSchema.principal.refId, userId),
+          eq(intxSchema.principal.kind, 'user'),
+          isNull(intxSchema.tenant.parentId)
+        )
+      );
+    for (const row of rootPrincipals) {
+      rootTenantIds.push(row.tenantId);
+    }
+  } catch {
+    // non-fatal — frontend falls back to filtering only personalTenantId
+  }
+
   return c.json({
     userId,
     userName,
     // Legacy field name retained for the web client; this is the user's working
     // (global org) tenant id now, not a personal tenant. Rename is a follow-up.
     personalTenantId: workingTenantId,
+    rootTenantIds,
     paInstanceId,
     provisioned: workingTenantId !== null,
     credentialResolved,
