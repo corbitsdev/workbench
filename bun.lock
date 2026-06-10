@@ -157,13 +157,10 @@
       "version": "0.1.2",
       "dependencies": {
         "@intx/inference": "workspace:*",
-        "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
+        "@intx/storage-isogit": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@intx/storage-isogit": "workspace:*",
       },
     },
     "interchange/packages/authz": {
@@ -195,14 +192,10 @@
       "name": "@intx/harness",
       "version": "0.1.2",
       "dependencies": {
-        "@intx/agent": "workspace:*",
+        "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
-      },
-      "devDependencies": {
-        "@intx/inference-testing": "workspace:*",
         "@intx/mime": "workspace:*",
-        "@intx/storage-isogit": "workspace:*",
+        "@intx/types": "workspace:*",
         "arktype": "catalog:",
       },
     },
