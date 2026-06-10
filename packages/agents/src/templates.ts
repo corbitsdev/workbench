@@ -24,6 +24,12 @@ import {
   WALTER_GRANT_REQUIREMENTS,
   WALTER_CAPABILITIES,
 } from './walter/definition';
+import {
+  HAMMY_DEPLOY_PROMPT,
+  HAMMY_CREDENTIAL_REQUIREMENTS,
+  HAMMY_GRANT_REQUIREMENTS,
+  HAMMY_CAPABILITIES,
+} from './hammy-the-humanizer/definition';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -74,6 +80,7 @@ export interface AgentTemplate {
  *   - Oat:    GRANOLA_CAPABILITIES.tools
  *   - Freddy: FIRECRAWL_CAPABILITIES.tools
  *   - Walter: WALTER_CAPABILITIES.tools
+ *   - Hammy:  HAMMY_CAPABILITIES.tools
  */
 export const AGENT_TEMPLATES: AgentTemplate[] = [
   {
@@ -122,5 +129,15 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     credentialRequirements: WALTER_CREDENTIAL_REQUIREMENTS,
     grantRequirements: WALTER_GRANT_REQUIREMENTS,
     capabilities: { tools: [...WALTER_CAPABILITIES.tools] },
+  },
+  {
+    key: 'hammy',
+    name: 'Hammy',
+    description:
+      'Humanizer — rewrites AI-sounding content to read as human-authored, or scores how human content already reads.',
+    systemPrompt: HAMMY_DEPLOY_PROMPT,
+    credentialRequirements: HAMMY_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: HAMMY_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...HAMMY_CAPABILITIES.tools] },
   },
 ];

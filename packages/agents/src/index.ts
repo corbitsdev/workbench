@@ -41,6 +41,15 @@ export {
   WALTER_DEPLOY_PROMPT,
 } from './walter/definition';
 
+// Hammy — the humanizer
+export { buildHammySystemPrompt } from './hammy-the-humanizer/prompt';
+export {
+  HAMMY_GRANT_REQUIREMENTS,
+  HAMMY_CREDENTIAL_REQUIREMENTS,
+  HAMMY_DEPLOY_PROMPT,
+  HAMMY_CAPABILITIES,
+} from './hammy-the-humanizer/definition';
+
 // Agent templates registry
 export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
 

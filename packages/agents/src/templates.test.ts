@@ -2,9 +2,9 @@ import { describe, expect, it } from 'bun:test';
 import { AGENT_TEMPLATES } from './templates';
 
 describe('AGENT_TEMPLATES', () => {
-  it('contains all five templates', () => {
+  it('contains all six templates', () => {
     const keys = AGENT_TEMPLATES.map((t) => t.key).sort();
-    expect(keys).toEqual(['freddy', 'loop', 'myra', 'oat', 'walter']);
+    expect(keys).toEqual(['freddy', 'hammy', 'loop', 'myra', 'oat', 'walter']);
   });
 
   it('every template has a non-empty name, systemPrompt, and credentialRequirements', () => {
