@@ -6,6 +6,7 @@ export interface FeedbackSectionProps {
   isLoading: boolean;
   onAnalyze: () => void;
   onGenerate: () => void;
+  callName?: string;
 }
 
 export default function FeedbackSection({
@@ -16,6 +17,7 @@ export default function FeedbackSection({
   isLoading,
   onAnalyze,
   onGenerate,
+  callName,
 }: FeedbackSectionProps) {
   return (
     <div className="space-y-4 border-t border-border bg-surface px-4 py-3 md:p-6">
@@ -31,7 +33,7 @@ export default function FeedbackSection({
       {!analyzeCompleted && (
         <button onClick={onAnalyze} disabled={isLoading} className="btn-primary w-full">
           {isLoading
-            ? 'Analyzing...'
+            ? `Analyzing ${callName ?? 'your call'} and extracting pain points…`
             : feedback.trim()
               ? 'Run analysis with feedback'
               : 'Run analysis'}

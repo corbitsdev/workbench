@@ -30,6 +30,10 @@ const mockRunStep = mock(() => ({
 mock.module('../hooks/use-workflow', () => ({
   useWorkflow: mockUseWorkflow,
   useRunStep: mockRunStep,
+  useApproveArtifact: mock(() => ({
+    mutateAsync: mock(() => Promise.resolve({})),
+    isPending: false,
+  })),
   useUpdateCompanyName: mock(() => ({ mutateAsync: mock(() => Promise.resolve({})) })),
   useUpdateStepConfig: mock(() => ({
     mutate: mock(() => {}),
@@ -290,6 +294,16 @@ describe('WorkflowPanel done step', () => {
     expect(screen.getByText(/all artifacts reviewed/i)).toBeDefined();
   });
 
+  it('lists approved artifact titles in the completion state', () => {
+    renderPanel();
+    expect(screen.getByText('Email draft')).toBeDefined();
+  });
+
+  it('shows the artifacts-saved note in the completion state', () => {
+    renderPanel();
+    expect(screen.getByText(/your approved pieces have been saved to artifacts/i)).toBeDefined();
+  });
+
   it('shows all stepper steps as completed or current', () => {
     renderPanel();
     expect(screen.getByText('Generate')).toBeDefined();
@@ -301,10 +315,69 @@ describe('WorkflowPanel done step', () => {
     expect(screen.queryByText('Export')).toBeNull();
   });
 
-  it('calls onClose when close button is pressed', async () => {
+  it('calls onClose when the completion CTA is pressed', async () => {
     const user = userEvent.setup();
     renderPanel();
     await user.click(screen.getByRole('button', { name: /close workflow/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('WorkflowPanel done step — all denied', () => {
+  const onClose = mock(() => {});
+
+  function renderPanel() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(WorkflowPanel, { workflowId: 'wf-1', onClose })
+      )
+    );
+  }
+
+  beforeEach(() => {
+    mockUseWorkflow.mockImplementation(() => ({
+      data: {
+        id: 'wf-1',
+        status: 'done',
+        currentStep: 'generate',
+        companyName: 'Acme Corp',
+        steps: {
+          intake: { completed: true, transcriptId: 'tx-1' },
+          analyze: { completed: true, painPoints: [] },
+          generate: {
+            completed: true,
+            artifacts: [
+              {
+                id: 'art-1',
+                kind: 'email',
+                title: 'Email draft',
+                content: 'Dear prospect…',
+                status: 'rejected',
+                version: 1,
+              },
+            ],
+          },
+        },
+      },
+      isLoading: false,
+      isError: false,
+    }));
+    mockRunStep.mockImplementation(() => ({
+      mutateAsync: mock(() => Promise.resolve({})),
+      isPending: false,
+    }));
+  });
+
+  it('shows the all-denied message when no artifacts were approved', () => {
+    renderPanel();
+    expect(screen.getByText(/all pieces were denied/i)).toBeDefined();
+  });
+
+  it('does not show the saved-to-artifacts note when nothing was approved', () => {
+    renderPanel();
+    expect(screen.queryByText(/your approved pieces have been saved/i)).toBeNull();
   });
 });
