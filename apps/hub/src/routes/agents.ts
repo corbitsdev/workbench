@@ -282,7 +282,7 @@ export function createAgentProvisioningRouter(
 
   // List deployable agent templates for the catalog UI.
   app.get('/agents/templates', (c) => {
-    const templates = AGENT_TEMPLATES.filter((t) => t.deployable !== false).map((t) => ({
+    const templates = AGENT_TEMPLATES.filter((t) => t.deployable !== false && t.kind !== 'personal').map((t) => ({
       key: t.key,
       name: t.name,
       description: t.description,
