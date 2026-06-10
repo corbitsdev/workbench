@@ -104,14 +104,7 @@ async function triggerStep(
   maxOutputTokens?: number
 ) {
   try {
-    const response = await dispatchStep(
-      db,
-      id,
-      userContext,
-      step,
-      source,
-      maxOutputTokens
-    );
+    const response = await dispatchStep(db, id, userContext, step, source, maxOutputTokens);
     if (response.status >= 400) {
       log.error('Background step failed', { workflowId: id, step, status: response.status });
       await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
@@ -534,9 +527,7 @@ function validateWorkflowInput(
   return { valid: true };
 }
 
-export function createWorkflowRouter(
-  db: HubDb
-): Hono<{ Variables: { userId: string } }> {
+export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
   // ─── List available workflow types ───────────────────────────────
@@ -1654,24 +1645,19 @@ async function runGenerate(
     const results = await Promise.allSettled(
       points.flatMap((p: any) =>
         artifactKinds.map((kind) =>
-          generateCollateralWithLLM(
-            id,
-            transcriptContent,
-            p,
-            kind,
-            source,
-            maxOutputTokens
-          ).then(({ title, body }) => ({
-            tenantId: wf.tenantId,
-            principalId: wf.principalId,
-            sessionId: id,
-            painPointId: p.id,
-            kind,
-            title,
-            content: body,
-            status: 'draft',
-            version: 1,
-          }))
+          generateCollateralWithLLM(id, transcriptContent, p, kind, source, maxOutputTokens).then(
+            ({ title, body }) => ({
+              tenantId: wf.tenantId,
+              principalId: wf.principalId,
+              sessionId: id,
+              painPointId: p.id,
+              kind,
+              title,
+              content: body,
+              status: 'draft',
+              version: 1,
+            })
+          )
         )
       )
     );

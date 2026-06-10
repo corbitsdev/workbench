@@ -25,7 +25,7 @@ describe('principalsToWorkbenches', () => {
       },
     ];
 
-    const workbenches = principalsToWorkbenches(principals, 'tenant-global');
+    const workbenches = principalsToWorkbenches(principals, ['tenant-global']);
 
     expect(workbenches).toHaveLength(1);
     expect(workbenches[0]!.id).toBe('p-wb');
@@ -45,7 +45,7 @@ describe('principalsToWorkbenches', () => {
       },
     ];
 
-    const workbenches = principalsToWorkbenches(principals, 'tenant-global');
+    const workbenches = principalsToWorkbenches(principals, ['tenant-global']);
     expect(workbenches).toHaveLength(0);
   });
 
@@ -62,7 +62,7 @@ describe('principalsToWorkbenches', () => {
       },
     ];
 
-    const workbenches = principalsToWorkbenches(principals, null);
+    const workbenches = principalsToWorkbenches(principals, [null]);
     expect(workbenches).toHaveLength(1);
   });
 

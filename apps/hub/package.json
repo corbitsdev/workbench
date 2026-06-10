@@ -18,7 +18,8 @@
     "diagnose:providers": "bun --env-file=../../.env run bin/diagnose-providers.ts",
     "reset:myra": "bun --env-file=../../.env run bin/reset-myra.ts",
     "workbench:create": "bun --env-file=../../.env run bin/create-workbench.ts",
-    "workbench:members": "bun --env-file=../../.env run bin/manage-workbench-members.ts"
+    "workbench:members": "bun --env-file=../../.env run bin/manage-workbench-members.ts",
+    "workbench:remove-member": "bun --env-file=../../.env run bin/remove-workbench-member.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.9",
