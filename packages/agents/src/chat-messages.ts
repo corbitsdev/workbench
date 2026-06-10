@@ -68,11 +68,24 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
 
   // The hub can fail to persist a turn's text part (CL-1398), so turn.committed
   // may arrive with empty text while the streamed text the user watched is still
-  // in the live buffer. Surface it: overwrite the trailing assistant bubble's
-  // content when one exists, otherwise synthesize a streaming bubble.
+  // in the live buffer. Surface it by overwriting that empty trailing bubble.
+  //
+  // The live text belongs to the turn currently streaming, which has not
+  // committed yet — so it never matches an already-committed, non-empty bubble.
+  // Only overwrite a trailing agent bubble that is EMPTY (the CL-1398 case);
+  // otherwise synthesize a new streaming bubble. Overwriting a non-empty
+  // committed bubble would transiently mask it: in a multi-step tool-loop reply,
+  // an earlier text segment commits as its own bubble and the next segment's
+  // live text would paint over it until it commits (CL-1643).
+  //
+  // `streaming` here is the current turn's live text only — the caller sources
+  // it from createLiveTextTracker, which reads each delta's per-turn cumulative
+  // `partial.text` and resets on turn.committed. It must NOT be the interchange
+  // session's `streaming` buffer, which accumulates across turns when a turn
+  // commits empty and would merge separate replies into one bubble (CL-1643).
   if (streaming.trim() !== '') {
     const last = messages[messages.length - 1];
-    if (last?.role === 'agent') {
+    if (last?.role === 'agent' && last.content === '') {
       last.content = streaming;
       last.status = 'sending';
     } else {

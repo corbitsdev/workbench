@@ -56,6 +56,7 @@ export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
 // Shared adapter
 export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
+export { createLiveTextTracker, type LiveTextTracker } from './live-text-tracker';
 export {
   composeChatMessages,
   type ComposeChatInput,

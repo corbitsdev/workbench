@@ -16,6 +16,7 @@ export {
 } from './walter/definition';
 export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
+export { createLiveTextTracker, type LiveTextTracker } from './live-text-tracker';
 export {
   composeChatMessages,
   type ComposeChatInput,

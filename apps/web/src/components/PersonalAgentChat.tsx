@@ -3,7 +3,9 @@ import { ApiError, createInstanceSession, type InstanceSession } from '@intx/hub
 import {
   composeChatMessages,
   createToolNameTracker,
+  createLiveTextTracker,
   type ToolNameTracker,
+  type LiveTextTracker,
 } from '@workbench/agents/browser';
 import {
   ChatLauncher,
@@ -65,6 +67,7 @@ export function PersonalAgentChat() {
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const toolNamesRef = useRef<ToolNameTracker | null>(null);
+  const liveTextRef = useRef<LiveTextTracker | null>(null);
 
   const { registerReconnect } = useChatLauncher();
 
@@ -120,6 +123,17 @@ export function PersonalAgentChat() {
           }
         );
 
+        // Track the current turn's live text from the raw stream. The session's
+        // own `streaming` buffer accumulates across turns when a turn commits
+        // empty (CL-1398) and would merge separate replies into one (CL-1643).
+        liveTextRef.current = createLiveTextTracker(
+          transport,
+          { tenantId: me.personalTenantId, instanceId: me.paInstanceId },
+          () => {
+            if (!cancelled) forceUpdate((n) => n + 1);
+          }
+        );
+
         if (!cancelled) setSessionState({ phase: 'ready', session });
       } catch {
         if (!cancelled) {
@@ -139,6 +153,8 @@ export function PersonalAgentChat() {
       stopRef.current = null;
       toolNamesRef.current?.stop();
       toolNamesRef.current = null;
+      liveTextRef.current?.stop();
+      liveTextRef.current = null;
       sessionRef.current?.destroy();
       sessionRef.current = null;
     };
@@ -157,7 +173,7 @@ export function PersonalAgentChat() {
   function buildMessages(session: InstanceSession): ChatMessage[] {
     const { messages } = composeChatMessages({
       events: session.events,
-      streaming: session.streaming,
+      streaming: liveTextRef.current !== null ? liveTextRef.current.text : '',
       ...(toolNamesRef.current !== null ? { toolNames: toolNamesRef.current.names } : {}),
     });
     return messages;
