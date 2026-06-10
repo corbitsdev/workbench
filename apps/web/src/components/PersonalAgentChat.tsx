@@ -8,7 +8,8 @@ import {
 import {
   ChatLauncher,
   ChatPanel,
-  DockedChat,
+  DockedChatBar,
+  DOCKED_BAR_HEIGHT,
   FloatingChat,
   type ChatAgentIdentity,
   type ChatDockState,
@@ -298,7 +299,14 @@ export function PersonalAgentChat() {
   const panel = renderPanel();
 
   if (dockState === 'docked') {
-    return <DockedChat side="right">{panel}</DockedChat>;
+    return (
+      <>
+        {/* Spacer reserves height in the flex column so main content shrinks
+            above the fixed overlay rather than being hidden behind it. */}
+        <div aria-hidden style={{ height: DOCKED_BAR_HEIGHT + 18 }} className="shrink-0" />
+        <DockedChatBar>{panel}</DockedChatBar>
+      </>
+    );
   }
 
   return (
