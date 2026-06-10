@@ -36,6 +36,8 @@ RUN bun install --frozen-lockfile
 
 COPY interchange/ interchange/
 COPY apps/hub/ apps/hub/
+# Railway's pre-deploy command runs `bun run scripts/db-setup.ts` in this image
+COPY scripts/ scripts/
 COPY packages/agent-scheduler/ packages/agent-scheduler/
 COPY packages/agents/ packages/agents/
 COPY packages/chat/ packages/chat/
