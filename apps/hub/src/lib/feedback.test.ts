@@ -17,9 +17,6 @@ mock.module('./inference', () => ({
     _systemPrompt: string,
     userMessage: string,
     _contextPrefix: string,
-    _principalId: string,
-    _grantStore: unknown,
-    _tenantId: string,
     _maxOutputTokens?: number
   ) => {
     const agent = await createAgentMock({} as any, {} as any);
@@ -54,17 +51,7 @@ describe('Feedback refinement', () => {
   it('requires a source to be provided', () => {
     // The function signature requires source — TypeScript enforces this at compile time.
     // This test confirms the function accepts a source without throwing synchronously.
-    expect(() =>
-      refineFeedbackWithLLM(
-        'text',
-        'feedback',
-        'email',
-        TEST_SOURCE,
-        'prn_test',
-        {} as any,
-        'tnt_test'
-      )
-    ).not.toThrow();
+    expect(() => refineFeedbackWithLLM('text', 'feedback', 'email', TEST_SOURCE)).not.toThrow();
   });
 
   it('routes refinement through the @intx/agent runtime', async () => {
@@ -72,10 +59,7 @@ describe('Feedback refinement', () => {
       'original',
       'make it punchier',
       'linkedin-post',
-      TEST_SOURCE,
-      'prn_test',
-      {} as any,
-      'tnt_test'
+      TEST_SOURCE
     );
 
     expect(createAgentMock).toHaveBeenCalledTimes(1);
@@ -87,15 +71,7 @@ describe('Feedback refinement', () => {
     sendMock.mockResolvedValueOnce({ reply: '   ' });
 
     await expect(
-      refineFeedbackWithLLM(
-        'original',
-        'feedback',
-        'email',
-        TEST_SOURCE,
-        'prn_test',
-        {} as any,
-        'tnt_test'
-      )
+      refineFeedbackWithLLM('original', 'feedback', 'email', TEST_SOURCE)
     ).rejects.toThrow('empty response');
   });
 
@@ -103,15 +79,7 @@ describe('Feedback refinement', () => {
     sendMock.mockResolvedValueOnce({ reply: '' });
 
     await expect(
-      refineFeedbackWithLLM(
-        'original',
-        'feedback',
-        'email',
-        TEST_SOURCE,
-        'prn_test',
-        {} as any,
-        'tnt_test'
-      )
+      refineFeedbackWithLLM('original', 'feedback', 'email', TEST_SOURCE)
     ).rejects.toThrow('empty response');
   });
 
@@ -120,15 +88,7 @@ describe('Feedback refinement', () => {
     sendMock.mockResolvedValueOnce({} as any);
 
     await expect(
-      refineFeedbackWithLLM(
-        'original',
-        'feedback',
-        'email',
-        TEST_SOURCE,
-        'prn_test',
-        {} as any,
-        'tnt_test'
-      )
+      refineFeedbackWithLLM('original', 'feedback', 'email', TEST_SOURCE)
     ).rejects.toThrow('empty response');
   });
 });

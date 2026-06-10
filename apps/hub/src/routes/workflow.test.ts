@@ -52,9 +52,6 @@ mock.module('../lib/extraction', () => ({
       _content: unknown,
       _feedback: unknown,
       source?: { model?: string },
-      _principalId?: string,
-      _grantStore?: unknown,
-      _tenantId?: string,
       maxOutputTokens?: number
     ) => {
       extractionSources.push(source);
@@ -83,9 +80,6 @@ mock.module('../lib/generation', () => ({
       _point: unknown,
       kind: string,
       _source: unknown,
-      _principalId?: string,
-      _grantStore?: unknown,
-      _tenantId?: string,
       _maxOutputTokens?: number
     ) => {
       generatedKinds.push(kind);
@@ -268,11 +262,7 @@ describe('Workflow router', () => {
       c.set('userId', userId);
       await next();
     });
-    const mockGrantStore = { collectGrants: mock(() => Promise.resolve([])) };
-    parent.route(
-      '/',
-      createWorkflowRouter(db as unknown as HubDb, mockGrantStore as unknown as any)
-    );
+    parent.route('/', createWorkflowRouter(db as unknown as HubDb));
     return parent;
   }
 

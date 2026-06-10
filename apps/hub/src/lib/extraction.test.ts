@@ -20,15 +20,7 @@ describe('extractPainPointsWithLLM', () => {
   it('throws when source has no apiKey', async () => {
     const badSource = { ...TEST_SOURCE, apiKey: '' };
     try {
-      await extractPainPointsWithLLM(
-        'wf-1',
-        'Test transcript',
-        undefined,
-        badSource,
-        'prn_test',
-        {} as any,
-        'tnt_test'
-      );
+      await extractPainPointsWithLLM('wf-1', 'Test transcript', undefined, badSource);
       throw new Error('Expected error when apiKey is missing');
     } catch (err) {
       expect(err instanceof Error).toBe(true);

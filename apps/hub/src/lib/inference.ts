@@ -1,9 +1,5 @@
 import { createAgent, defineAgent, createDefaultDirectorRegistry } from '@intx/agent';
 import type { InferenceSource } from '@intx/types/runtime';
-import type { GrantStore } from '@intx/types/authz';
-import type { AuthorizeFn } from '@intx/agent';
-import { authorize } from '@intx/authz';
-import type { AuthzResult } from '@intx/authz';
 import { createIsogitStore } from '@intx/storage-isogit';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -14,9 +10,6 @@ export async function runSingleTurnAgent(
   systemPrompt: string,
   userMessage: string,
   contextPrefix: string,
-  principalId: string,
-  grantStore: GrantStore,
-  tenantId: string,
   maxOutputTokens?: number
 ): Promise<string> {
   const contextDir = join(tmpdir(), `${contextPrefix}-${randomUUID()}`);
@@ -26,21 +19,6 @@ export async function runSingleTurnAgent(
       : source;
 
   const store = await createIsogitStore(contextDir);
-
-  const authorizeFn: AuthorizeFn = async (resource: string, action: string) => {
-    const result: AuthzResult = await authorize(
-      grantStore,
-      principalId,
-      tenantId,
-      resource,
-      action
-    );
-    return {
-      effect: result.effect,
-      matchingGrants: result.matchingGrants,
-      resolvedBy: result.resolvedBy,
-    };
-  };
 
   const def = defineAgent({
     id: `runSingleTurn-${randomUUID()}`,
@@ -57,7 +35,9 @@ export async function runSingleTurnAgent(
     storage: store,
     workdir: contextDir,
     audit: store,
-    authorize: authorizeFn,
+    // Permissive because this agent has no tools. If tools are ever added, wire
+    // this to a real grant check via authorize() from @intx/authz.
+    authorize: async () => ({ effect: 'allow' as const, matchingGrants: [], resolvedBy: null }),
     directors: createDefaultDirectorRegistry(),
     closeTimeoutMs: 1000,
   };

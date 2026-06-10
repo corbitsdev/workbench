@@ -457,7 +457,7 @@ v1.get('/me', async (c) => {
   });
 });
 
-v1.route('/', createWorkflowRouter(db, grantStore));
+v1.route('/', createWorkflowRouter(db));
 v1.route(
   '/',
   createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors)
