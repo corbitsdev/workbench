@@ -8,6 +8,7 @@ import {
   schema as intxSchema,
 } from '@intx/db';
 import type { InferenceSource } from '@intx/types/runtime';
+import type { GrantStore } from '@intx/types/authz';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
 import type { WorkflowType } from '@workbench/workflow-core';
 import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
@@ -46,7 +47,11 @@ function mapDbStatusToSessionStatus(status: string): string {
     done: 'done',
     failed: 'failed',
   };
-  return map[status] ?? status;
+  const mapped = map[status];
+  if (mapped === undefined) {
+    throw new Error(`Unknown workflow status: ${status}`);
+  }
+  return mapped;
 }
 
 /** Derive step order from the workflow definition. */
@@ -93,6 +98,7 @@ function deriveCurrentStepForWorkflow(status: string, kind: string): string {
  *  executor based on step name. */
 async function triggerStep(
   db: HubDb,
+  grantStore: GrantStore,
   id: string,
   userContext: UserContext,
   step: string,
@@ -100,7 +106,15 @@ async function triggerStep(
   maxOutputTokens?: number
 ) {
   try {
-    const response = await dispatchStep(db, id, userContext, step, source, maxOutputTokens);
+    const response = await dispatchStep(
+      db,
+      grantStore,
+      id,
+      userContext,
+      step,
+      source,
+      maxOutputTokens
+    );
     if (response.status >= 400) {
       log.error('Background step failed', { workflowId: id, step, status: response.status });
       await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
@@ -119,6 +133,7 @@ async function triggerStep(
  *  today; 'generate' requires user input (pain-point selection). */
 async function dispatchStep(
   db: HubDb,
+  grantStore: GrantStore,
   id: string,
   userContext: UserContext,
   step: string,
@@ -126,7 +141,7 @@ async function dispatchStep(
   maxOutputTokens?: number
 ): Promise<Response> {
   if (step === 'analyze') {
-    return runAnalyze(db, id, userContext, source, undefined, maxOutputTokens);
+    return runAnalyze(db, grantStore, id, userContext, source, undefined, maxOutputTokens);
   }
   log.warn('No auto-executor for step', { workflowId: id, step });
   return Response.json({ error: `Step ${step} does not support auto-trigger` }, { status: 400 });
@@ -523,7 +538,10 @@ function validateWorkflowInput(
   return { valid: true };
 }
 
-export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: string } }> {
+export function createWorkflowRouter(
+  db: HubDb,
+  grantStore: GrantStore
+): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
   // ─── List available workflow types ───────────────────────────────
@@ -645,10 +663,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       return c.json({ error: 'User context not found' }, 400);
     }
 
-    const wt = workflowRegistry.get(kind);
-    if (!wt) {
-      return c.json({ error: `Unknown workflow kind: ${kind}` }, 400);
-    }
+    const wt = workflowRegistry.get(kind)!;
 
     const validation = await validateAssignments(db, userContext.tenantId, wt, body.assignments);
     if (!validation.ok) {
@@ -888,6 +903,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           .where(eq(workflowRun.id, wfRow.id));
         void triggerStep(
           db,
+          grantStore,
           wfRow.id,
           userContext,
           firstStep,
@@ -1203,14 +1219,16 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         DEFAULT_STEP_MAX_OUTPUT_TOKENS[step];
 
       if (step === 'analyze') {
-        return runAnalyze(db, id, userContext, source, body.feedback, maxOutputTokens);
+        return runAnalyze(db, grantStore, id, userContext, source, body.feedback, maxOutputTokens);
       }
       // step === 'generate'
       return runGenerate(
         db,
+        grantStore,
         id,
         body.painPointIds ?? [],
         body.collateralTypes,
+        userContext.principalId,
         source,
         maxOutputTokens
       );
@@ -1466,7 +1484,8 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 
     const kind = c.req.query('kind');
     const limitParam = c.req.query('limit');
-    const limit = limitParam ? parseInt(limitParam, 10) : 10;
+    const parsedLimit = limitParam ? parseInt(limitParam, 10) : 10;
+    const limit = Number.isNaN(parsedLimit) ? 20 : parsedLimit;
     const granolaApiKey = kind
       ? await resolveStepGranolaApiKey(db, userContext.tenantId, userContext.principalId, kind)
       : await resolveGranolaApiKey(db, userContext.tenantId);
@@ -1488,6 +1507,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 // ─── Step helpers ───────────────────────────────────────────────────
 async function runAnalyze(
   db: HubDb,
+  grantStore: GrantStore,
   id: string,
   userContext: UserContext,
   source: InferenceSource,
@@ -1505,80 +1525,79 @@ async function runAnalyze(
     return Response.json({ error: 'Workflow not found' }, { status: 404 });
   }
 
-  // Mark analyzing before the LLM call so a container crash leaves the row
-  // in a recoverable state rather than silently pending with zero pain points.
   await db.update(workflowRun).set({ status: 'analyzing' }).where(eq(workflowRun.id, id));
 
-  const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
-  const tx = transcriptId
-    ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
-    : null;
+  let inserted: any[];
 
-  if (!tx) {
-    log.error('Transcript not found for analyze', { workflowId: id, transcriptId });
-    return Response.json({ error: 'Transcript not found' }, { status: 400 });
-  }
-
-  log.info('Extracting pain points', { workflowId: id, transcriptLength: tx.content.length });
-  let extracted: Awaited<ReturnType<typeof extractPainPoints>>['painPoints'];
-  let companyName: string | null;
   try {
-    const result = await extractPainPoints(id, tx.content, feedback, source, maxOutputTokens);
-    extracted = result.painPoints;
-    companyName = result.companyName;
-  } catch (err) {
-    log.error('Pain point extraction failed', {
-      workflowId: id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return Response.json(
-      { error: 'Analysis failed. Check your LLM credential and try again.' },
-      { status: 502 }
+    const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
+    const tx = transcriptId
+      ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
+      : null;
+
+    if (!tx) {
+      log.error('Transcript not found for analyze', { workflowId: id, transcriptId });
+      throw new Error('Transcript not found');
+    }
+
+    log.info('Extracting pain points', { workflowId: id, transcriptLength: tx.content.length });
+    const { painPoints: extracted, companyName } = await extractPainPoints(
+      id,
+      tx.content,
+      feedback,
+      source,
+      userContext.principalId,
+      grantStore,
+      wf.tenantId,
+      maxOutputTokens
     );
-  }
-  log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
+    log.info('Pain points extracted', { workflowId: id, count: extracted.length, companyName });
 
-  const currentWf = await db.query.workflowRun.findFirst({
-    where: eq(workflowRun.id, id),
-  });
-  if (!currentWf) {
-    log.warn('Workflow deleted before analyze results could be saved', { workflowId: id });
-    return Response.json(
-      { error: 'Workflow was deleted while analysis was running' },
-      { status: 410 }
-    );
-  }
-
-  await db.delete(painPoint).where(eq(painPoint.sessionId, id));
-
-  const inserted =
-    extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
-
-  const workflowDefinition = workflowRegistry.get(currentWf.kind);
-  const analysisArtifacts = workflowDefinition?.createAnalyzeArtifacts?.({
-    input: currentWf.input as Record<string, unknown>,
-    painPoints: extracted,
-    companyName,
-  });
-  for (const draft of analysisArtifacts ?? []) {
-    await db.insert(artifact).values({
-      tenantId: currentWf.tenantId,
-      principalId: currentWf.principalId,
-      sessionId: id,
-      kind: draft.kind,
-      title: draft.title,
-      content: draft.content,
-      status: draft.status ?? 'draft',
-      version: draft.version ?? 1,
+    const currentWf = await db.query.workflowRun.findFirst({
+      where: eq(workflowRun.id, id),
     });
-  }
+    if (!currentWf) {
+      log.warn('Workflow deleted before analyze results could be saved', { workflowId: id });
+      return Response.json(
+        { error: 'Workflow was deleted while analysis was running' },
+        { status: 410 }
+      );
+    }
 
-  const updatedInput: WorkflowInput = { ...(currentWf.input as WorkflowInput) };
-  if (companyName) updatedInput.companyName = companyName;
-  await db
-    .update(workflowRun)
-    .set({ status: 'running', input: updatedInput as Record<string, unknown> })
-    .where(eq(workflowRun.id, id));
+    await db.delete(painPoint).where(eq(painPoint.sessionId, id));
+
+    inserted = extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
+
+    const workflowDefinition = workflowRegistry.get(currentWf.kind);
+    const analysisArtifacts = workflowDefinition?.createAnalyzeArtifacts?.({
+      input: currentWf.input as Record<string, unknown>,
+      painPoints: extracted,
+      companyName,
+    });
+    for (const draft of analysisArtifacts ?? []) {
+      await db.insert(artifact).values({
+        tenantId: currentWf.tenantId,
+        principalId: currentWf.principalId,
+        sessionId: id,
+        kind: draft.kind,
+        title: draft.title,
+        content: draft.content,
+        status: draft.status ?? 'draft',
+        version: draft.version ?? 1,
+      });
+    }
+
+    const updatedInput: WorkflowInput = { ...(currentWf.input as WorkflowInput) };
+    if (companyName) updatedInput.companyName = companyName;
+    await db
+      .update(workflowRun)
+      .set({ status: 'running', input: updatedInput as Record<string, unknown> })
+      .where(eq(workflowRun.id, id));
+  } catch (error) {
+    log.error('Analyze step failed', { workflowId: id, error: String(error) });
+    await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
+    return Response.json({ error: 'Analysis failed' }, { status: 500 });
+  }
 
   log.info('Analyze step complete', { workflowId: id, insertedCount: inserted.length });
 
@@ -1594,12 +1613,15 @@ async function runAnalyze(
 
 async function runGenerate(
   db: HubDb,
+  grantStore: GrantStore,
   id: string,
   painPointIds: string[],
   collateralTypes: string[] | undefined,
+  principalId: string,
   source: InferenceSource,
   maxOutputTokens?: number
 ) {
+  const authorId = principalId;
   log.info('Starting generate step', { workflowId: id, painPointCount: painPointIds.length });
 
   const [points, wf] = await Promise.all([
@@ -1616,35 +1638,45 @@ async function runGenerate(
     return Response.json({ error: 'Workflow not found' }, { status: 404 });
   }
 
-  // Mark generation as actively running so the UI can show a loading state even
-  // if the request outlives its HTTP connection (long fan-out generation). The
-  // post-analyze 'running' status means "awaiting selection", which is distinct.
   await db.update(workflowRun).set({ status: 'generating' }).where(eq(workflowRun.id, id));
 
-  const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
-  const tx = transcriptId
-    ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
-    : null;
-  const transcriptContent: string = tx?.content ?? '';
+  let nextStatus: string;
+  let inserted: any[];
 
-  await db
-    .update(painPoint)
-    .set({ selected: true })
-    .where(and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)));
+  try {
+    const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
+    const tx = transcriptId
+      ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
+      : null;
+    const transcriptContent: string = tx?.content ?? '';
 
-  const workflowDefinition = workflowRegistry.get(wf.kind);
-  const artifactKinds = workflowDefinition?.selectGenerateArtifactKinds?.(collateralTypes) ?? [
-    'email',
-    'linkedin',
-    'one-pager',
-    'battlecard',
-  ];
+    await db
+      .update(painPoint)
+      .set({ selected: true })
+      .where(and(inArray(painPoint.id, painPointIds), eq(painPoint.sessionId, id)));
 
-  const results = await Promise.allSettled(
-    points.flatMap((p: any) =>
-      artifactKinds.map((kind) =>
-        generateCollateralWithLLM(id, transcriptContent, p, kind, source, maxOutputTokens).then(
-          ({ title, body }) => ({
+    const workflowDefinition = workflowRegistry.get(wf.kind);
+    const artifactKinds = workflowDefinition?.selectGenerateArtifactKinds?.(collateralTypes) ?? [
+      'email',
+      'linkedin',
+      'one-pager',
+      'battlecard',
+    ];
+
+    const results = await Promise.allSettled(
+      points.flatMap((p: any) =>
+        artifactKinds.map((kind) =>
+          generateCollateralWithLLM(
+            id,
+            transcriptContent,
+            p,
+            kind,
+            source,
+            principalId,
+            grantStore,
+            wf.tenantId,
+            maxOutputTokens
+          ).then(({ title, body }) => ({
             tenantId: wf.tenantId,
             principalId: wf.principalId,
             sessionId: id,
@@ -1654,59 +1686,64 @@ async function runGenerate(
             content: body,
             status: 'draft',
             version: 1,
-          })
+          }))
         )
       )
-    )
-  );
+    );
 
-  const generated = results.flatMap(
-    (
-      r: PromiseSettledResult<{
-        tenantId: string;
-        principalId: string;
-        sessionId: string;
-        painPointId: any;
-        kind: string;
-        title: string;
-        content: string;
-        status: string;
-        version: number;
-      }>
-    ) => {
-      if (r.status === 'fulfilled') return [r.value];
-      log.error('Artifact generation failed for one item', {
-        workflowId: id,
-        error: String(r.reason),
-      });
-      return [];
+    const generated = results.flatMap(
+      (
+        r: PromiseSettledResult<{
+          tenantId: string;
+          principalId: string;
+          sessionId: string;
+          painPointId: any;
+          kind: string;
+          title: string;
+          content: string;
+          status: string;
+          version: number;
+        }>
+      ) => {
+        if (r.status === 'fulfilled') return [r.value];
+        log.error('Artifact generation failed for one item', {
+          workflowId: id,
+          error: String(r.reason),
+        });
+        return [];
+      }
+    );
+
+    inserted =
+      generated.length > 0
+        ? await db.transaction(async (trx: any) => {
+            const rows = await trx.insert(artifact).values(generated).returning();
+            await trx.insert(artifactVersion).values(
+              rows.map((a: any) => ({
+                artifactId: a.id,
+                version: a.version,
+                title: a.title,
+                content: a.content,
+                authorId,
+              }))
+            );
+            return rows;
+          })
+        : [];
+
+    const rejectedCount = results.filter((r) => r.status === 'rejected').length;
+    if (generated.length === 0 && rejectedCount > 0) {
+      log.error('All artifact generations failed', { workflowId: id, failedCount: rejectedCount });
+      nextStatus = 'failed';
+    } else {
+      nextStatus = inserted.length > 0 ? 'reviewing' : 'done';
     }
-  );
+  } catch (error) {
+    log.error('Generate step failed', { workflowId: id, error: String(error) });
+    await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
+    return Response.json({ error: 'Generation failed' }, { status: 500 });
+  }
 
-  // Insert artifacts and their initial version rows atomically, so an artifact
-  // can never exist without a matching v1 history row.
-  const inserted =
-    generated.length > 0
-      ? await db.transaction(async (trx: any) => {
-          const rows = await trx.insert(artifact).values(generated).returning();
-          await trx.insert(artifactVersion).values(
-            rows.map((a: any) => ({
-              artifactId: a.id,
-              version: a.version,
-              title: a.title,
-              content: a.content,
-              authorId: wf.principalId,
-            }))
-          );
-          return rows;
-        })
-      : [];
-
-  // Generation produces draft artifacts that the user must approve or deny.
-  // The workflow stays in 'reviewing' until every artifact is non-draft; only
-  // then does it transition to 'done' (see the artifact status PATCH handler).
-  // If nothing was generated there is nothing to review, so it is done.
-  const nextStatus = inserted.length > 0 ? 'reviewing' : 'done';
   await db.update(workflowRun).set({ status: nextStatus }).where(eq(workflowRun.id, id));
 
   log.info('Generate step complete', {

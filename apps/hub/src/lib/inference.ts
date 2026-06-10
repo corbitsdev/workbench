@@ -35,8 +35,6 @@ export async function runSingleTurnAgent(
     storage: store,
     workdir: contextDir,
     audit: store,
-    // Permissive because this agent has no tools. If tools are ever added, wire
-    // this to a real grant check via authorize() from @intx/authz.
     authorize: async () => ({ effect: 'allow' as const, matchingGrants: [], resolvedBy: null }),
     directors: createDefaultDirectorRegistry(),
     closeTimeoutMs: 1000,
@@ -46,7 +44,6 @@ export async function runSingleTurnAgent(
 
   async function drainStream() {
     for await (const _ of agent.stream()) {
-      // discard — no client is subscribed; drain prevents buffer overflow
     }
   }
 
