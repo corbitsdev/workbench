@@ -137,13 +137,7 @@ export const memberAgentInstance = pgTable(
     instanceId: text('instance_id').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
-  (t) => ({
-    tenantMemberTemplateUniq: unique('member_agent_instance_tenant_member_template_uniq').on(
-      t.tenantId,
-      t.memberPrincipalId,
-      t.templateKey
-    ),
-  })
+  () => ({})
 );
 
 // ─── Approvals ─────────────────────────────────────────────────────

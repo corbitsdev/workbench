@@ -308,31 +308,31 @@ export function createAgentProvisioningRouter(
     const tenantRow = await db.query.tenant.findFirst({ where: eq(tenant.id, tenantId) });
     if (!tenantRow?.domain) return c.json({ error: 'Tenant configuration missing' }, 500);
 
-    const def = await db.query.agent.findFirst({
-      where: and(eq(agent.tenantId, tenantId), eq(agent.name, template.name)),
-    });
+    // Walk up the tenant hierarchy until we find the agent definition or exhaust the tree.
+    // Start from tenantRow.parentId — tenantRow is already fetched and checked above.
+    // Cycle guard prevents infinite loops on malformed tenant data.
+    const findDefInHierarchy = async (startTenantId: string) => {
+      const visited = new Set<string>();
+      let cursor: string | null = startTenantId;
+      while (cursor !== null) {
+        if (visited.has(cursor)) break;
+        visited.add(cursor);
+        const candidate = await db.query.agent.findFirst({
+          where: and(eq(agent.tenantId, cursor), eq(agent.name, template.name)),
+        });
+        if (candidate) return candidate;
+        const tenantResult: { parentId: string | null } | undefined =
+          await db.query.tenant.findFirst({ where: eq(tenant.id, cursor) });
+        cursor = tenantResult?.parentId ?? null;
+      }
+      return undefined;
+    };
+    const def = await findDefInHierarchy(tenantRow.parentId ?? tenantId);
     if (!def) {
       return c.json({ error: `Agent definition for template "${templateKey}" not found` }, 404);
     }
 
     const hubDb = db as unknown as HubDb;
-
-    // Idempotent: if a live instance already exists for this user+template, return it.
-    const existingMapping = await hubDb.query.memberAgentInstance.findFirst({
-      where: and(
-        eq(memberAgentInstance.tenantId, tenantId),
-        eq(memberAgentInstance.memberPrincipalId, callerPrincipal.id),
-        eq(memberAgentInstance.templateKey, templateKey)
-      ),
-    });
-    if (existingMapping) {
-      const existingInst = await hubDb.query.agentInstance.findFirst({
-        where: and(eq(agentInstance.id, existingMapping.instanceId), isNull(agentInstance.endedAt)),
-      });
-      if (existingInst) {
-        return c.json({ instanceId: existingInst.id, created: false });
-      }
-    }
 
     const now = new Date();
     const instanceId = generateId('instance');
@@ -341,49 +341,20 @@ export function createAgentProvisioningRouter(
     await hubDb.transaction(async (rawTx) => {
       const tx = rawTx as unknown as HubDb;
 
-      // Remove any stale mapping whose instance has ended so the unique
-      // constraint on (tenantId, memberPrincipalId, templateKey) doesn't block
-      // re-onboarding after instance deletion.
-      if (existingMapping) {
-        await tx
-          .delete(memberAgentInstance)
-          .where(
-            and(
-              eq(memberAgentInstance.tenantId, tenantId),
-              eq(memberAgentInstance.memberPrincipalId, callerPrincipal.id),
-              eq(memberAgentInstance.templateKey, templateKey)
-            )
-          );
-      }
-
-      // The unique constraint on (tenant_id, kind, ref_id) means only one
-      // principal can exist per agent definition per tenant. Reuse it if it
-      // already exists (e.g. after an instance was deleted and re-created).
-      await tx
-        .insert(principal)
-        .values({
-          id: generateId('principal'),
-          tenantId,
-          kind: 'agent',
-          refId: def.id,
-          status: 'active',
-          createdAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [principal.tenantId, principal.kind, principal.refId],
-          set: { status: 'active', updatedAt: now },
-        });
-
-      const instancePrincipalRow = await tx.query.principal.findFirst({
-        where: and(
-          eq(principal.tenantId, tenantId),
-          eq(principal.kind, 'agent'),
-          eq(principal.refId, def.id)
-        ),
+      // Each instance gets its own principal scoped to the user's workbench tenant.
+      // refId = instanceId keeps principals isolated per user — two users deploying
+      // the same shared definition get separate principals.
+      const newPrincipalId = generateId('principal');
+      await tx.insert(principal).values({
+        id: newPrincipalId,
+        tenantId,
+        kind: 'agent',
+        refId: instanceId,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
       });
-      if (!instancePrincipalRow) throw new Error('Principal upsert failed');
-      instancePrincipalId = instancePrincipalRow.id;
+      instancePrincipalId = newPrincipalId;
 
       await tx.insert(agentInstance).values({
         id: instanceId,

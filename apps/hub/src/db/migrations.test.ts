@@ -85,3 +85,16 @@ describe('0016 creates member_agent_instance (CL-1532)', () => {
     );
   });
 });
+
+describe('0018 drops member_agent_instance unique constraint (CL-1558)', () => {
+  const sql = readFileSync(
+    join(import.meta.dir, '../../migrations/0018_drop_member_agent_instance_uniq.sql'),
+    'utf-8'
+  );
+
+  it('drops the (tenant, member, template) unique constraint', () => {
+    expect(sql).toMatch(
+      /DROP CONSTRAINT IF EXISTS "member_agent_instance_tenant_member_template_uniq"/i
+    );
+  });
+});
