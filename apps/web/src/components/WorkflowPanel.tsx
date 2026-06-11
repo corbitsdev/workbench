@@ -146,6 +146,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
     null;
 
   const hasDraftArtifacts = artifacts.some((a) => a.status === 'draft');
+  const approvedArtifacts = artifacts.filter((a) => a.status === 'approved');
 
   const handleApproveOrDeny = (status: 'approved' | 'rejected') => {
     if (!displayArtifact) return;
@@ -181,7 +182,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close workflow"
+            aria-label="Close"
             className="grid h-[28px] w-[28px] place-items-center rounded-[8px] border border-border text-text-2 hover:text-text hover:bg-surface-2 transition-colors"
           >
             <svg
@@ -203,14 +204,41 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Artifact pane — shown once generate is done */}
         {generateCompleted && !hasDraftArtifacts && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
-            <div className="grid h-10 w-10 place-items-center rounded-full bg-green/[0.18]">
-              <CheckIcon className="h-5 w-5 text-green" />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-green/[0.18]">
+                  <CheckIcon className="h-4 w-4 text-green" />
+                </div>
+                <p className="text-[14px] font-semibold text-text">All artifacts reviewed</p>
+              </div>
+              {approvedArtifacts.length > 0 ? (
+                <>
+                  <ul className="space-y-1.5">
+                    {approvedArtifacts.map((a) => (
+                      <li
+                        key={a.id}
+                        className="rounded-[8px] border border-border bg-surface px-3 py-2 text-[12px] text-text"
+                      >
+                        {a.title}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[12px] text-text-3">
+                    Your approved pieces have been saved to Artifacts.
+                  </p>
+                </>
+              ) : (
+                <p className="text-[12px] text-text-3">
+                  All pieces were denied. No artifacts were saved.
+                </p>
+              )}
             </div>
-            <p className="text-[14px] font-semibold text-text">All artifacts reviewed</p>
-            <p className="text-[12px] text-text-3 max-w-[220px]">
-              {artifacts.length} artifact{artifacts.length !== 1 ? 's' : ''} approved or denied.
-            </p>
+            <div className="border-t border-border bg-surface px-4 py-3 shrink-0">
+              <button type="button" onClick={onClose} className="btn-primary w-full">
+                Close workflow
+              </button>
+            </div>
           </div>
         )}
 
@@ -361,6 +389,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
                 isLoading={isBusy}
                 onAnalyze={handleAnalyze}
                 onGenerate={handleGenerate}
+                callName={workflow.companyName ?? undefined}
               />
             )}
             {analyzeCompleted && (

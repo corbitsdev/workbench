@@ -1,8 +1,10 @@
 /// <reference types="bun" />
-import { describe, expect, it, mock } from 'bun:test';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { cleanup, render, screen } from '@testing-library/react';
 import React from 'react';
 import ProgressChecklist from './ProgressChecklist';
+
+afterEach(cleanup);
 
 // framer-motion is not compatible with Happy DOM; replace motion.div with a plain div
 mock.module('framer-motion', () => ({
@@ -34,5 +36,12 @@ describe('ProgressChecklist', () => {
   it('renders an empty-state message when there are no tasks', () => {
     render(<ProgressChecklist tasks={[]} />);
     expect(screen.getByText('No tasks to display')).toBeDefined();
+  });
+
+  it('renders completed tasks with checkmarks when status is completed', () => {
+    render(<ProgressChecklist tasks={['Task A', 'Task B']} status="completed" />);
+    expect(screen.getByText('Task A')).toBeDefined();
+    expect(screen.getByText('Task B')).toBeDefined();
+    expect(screen.getAllByText('✓').length).toBe(2);
   });
 });

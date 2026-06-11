@@ -12,3 +12,7 @@ Firecrawl tool implementations. Registered in the hub's tool registry as `firecr
 Each feature area is its own module under `src/`, exporting a `create<Area>Tools(config)` factory plus its `*_DEFINITION` constants. `src/shared.ts` holds the config types, the generic `firecrawlFetchJSON` HTTP helper, and parse/validation utilities. `src/index.ts` aggregates every module into `createFirecrawlTools` and `FIRECRAWL_HUB_TOOLS`.
 
 Long-running job endpoints (crawl, batch-scrape, extract) expose start + status tools rather than blocking; the agent polls.
+
+## Testing
+
+Follow the repository testing standards in the [root AGENTS.md](../../AGENTS.md#testing) — red/green (tests first), the 80% coverage floor (always aim higher), and the test-quality bar.

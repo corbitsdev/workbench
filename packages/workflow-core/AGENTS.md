@@ -5,3 +5,7 @@ Workflow type system and registry. Defines `WorkflowType` and `WorkflowTypeRegis
 - `workflowRegistry` is the singleton — import it to register or look up workflow kinds
 - New workflow kinds: define in `@workbench/gtm-workflows`, register at hub startup
 - No UI or agent logic here — purely type definitions and the registry
+
+## Testing
+
+Follow the repository testing standards in the [root AGENTS.md](../../AGENTS.md#testing) — red/green (tests first), the 80% coverage floor (always aim higher), and the test-quality bar.

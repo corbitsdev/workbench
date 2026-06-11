@@ -30,6 +30,12 @@ import {
   HAMMY_GRANT_REQUIREMENTS,
   HAMMY_CAPABILITIES,
 } from './hammy-the-humanizer/definition';
+import {
+  LINCOLN_DEPLOY_PROMPT,
+  LINCOLN_CREDENTIAL_REQUIREMENTS,
+  LINCOLN_GRANT_REQUIREMENTS,
+  LINCOLN_CAPABILITIES,
+} from './lincoln/definition';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -139,5 +145,15 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     credentialRequirements: HAMMY_CREDENTIAL_REQUIREMENTS,
     grantRequirements: HAMMY_GRANT_REQUIREMENTS,
     capabilities: { tools: [...HAMMY_CAPABILITIES.tools] },
+  },
+  {
+    key: 'lincoln',
+    name: 'Lincoln',
+    description:
+      'LinkedIn writer — drafts substantive, paste-ready posts grounded in field observations and call insights.',
+    systemPrompt: LINCOLN_DEPLOY_PROMPT,
+    credentialRequirements: LINCOLN_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: LINCOLN_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...LINCOLN_CAPABILITIES.tools] },
   },
 ];

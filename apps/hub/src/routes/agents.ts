@@ -1,4 +1,4 @@
-import { eq, and, inArray, isNull, like } from 'drizzle-orm';
+import { eq, and, inArray, notInArray, isNull, like } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { schema as intxSchema, resolveInstanceSources } from '@intx/db';
 import type { DB } from '@intx/db';
@@ -57,35 +57,35 @@ export function createAgentProvisioningRouter(
       return c.json({ error: 'Forbidden' }, 403);
     }
 
-    const instances = await db.query.agentInstance.findMany({
+    const personalTemplateKeys = AGENT_TEMPLATES.filter((t) => t.kind === 'personal').map(
+      (t) => t.key
+    );
+    const hubDb = db as unknown as HubDb;
+
+    // Return only instances this user has deployed (via memberAgentInstance),
+    // excluding personal-template instances (those surface in PersonalAgentChat).
+    const callerMappings = await hubDb.query.memberAgentInstance.findMany({
       where: and(
-        eq(agentInstance.tenantId, tenantId),
-        inArray(agentInstance.status, ['deployed', 'running', 'stopped']),
-        // Removed instances set endedAt; keep them out of the list so they
-        // disappear from the rail rather than lingering as "Stopped".
-        isNull(agentInstance.endedAt)
+        eq(memberAgentInstance.tenantId, tenantId),
+        eq(memberAgentInstance.memberPrincipalId, callerPrincipal.id),
+        personalTemplateKeys.length > 0
+          ? notInArray(memberAgentInstance.templateKey, personalTemplateKeys)
+          : undefined
       ),
     });
 
-    // Exclude instances that are the calling user's personal agent. Personal
-    // agents (kind: 'personal' templates) appear in the dedicated PersonalAgentChat
-    // panel — not the shared agent list.
-    const personalTemplateKeys = new Set(
-      AGENT_TEMPLATES.filter((t) => t.kind === 'personal').map((t) => t.key)
-    );
-    const hubDb = db as unknown as HubDb;
-    const personalMappings =
-      personalTemplateKeys.size > 0
-        ? await hubDb.query.memberAgentInstance.findMany({
-            where: and(
-              eq(memberAgentInstance.tenantId, tenantId),
-              eq(memberAgentInstance.memberPrincipalId, callerPrincipal.id),
-              inArray(memberAgentInstance.templateKey, [...personalTemplateKeys])
-            ),
-          })
-        : [];
-    const personalInstanceIds = new Set(personalMappings.map((m) => m.instanceId));
-    const sharedInstances = instances.filter((i) => !personalInstanceIds.has(i.id));
+    const callerInstanceIds = callerMappings.map((m) => m.instanceId);
+    if (callerInstanceIds.length === 0) {
+      return c.json({ data: [] });
+    }
+
+    const sharedInstances = await db.query.agentInstance.findMany({
+      where: and(
+        inArray(agentInstance.id, callerInstanceIds),
+        inArray(agentInstance.status, ['deployed', 'running', 'stopped']),
+        isNull(agentInstance.endedAt)
+      ),
+    });
 
     const agentIds = [...new Set(sharedInstances.map((i) => i.agentId))];
     const agentRows =
@@ -282,7 +282,9 @@ export function createAgentProvisioningRouter(
 
   // List deployable agent templates for the catalog UI.
   app.get('/agents/templates', (c) => {
-    const templates = AGENT_TEMPLATES.filter((t) => t.deployable !== false && t.kind !== 'personal').map((t) => ({
+    const templates = AGENT_TEMPLATES.filter(
+      (t) => t.deployable !== false && t.kind !== 'personal'
+    ).map((t) => ({
       key: t.key,
       name: t.name,
       description: t.description,

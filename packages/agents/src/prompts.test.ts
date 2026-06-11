@@ -51,10 +51,7 @@ describe('agent system prompts', () => {
 
 describe('HAMMY_SKILL_CONTENT sync with SKILL.md', () => {
   it('skill.ts content matches SKILL.md', () => {
-    const skillMd = readFileSync(
-      join(import.meta.dir, 'hammy-the-humanizer/SKILL.md'),
-      'utf-8'
-    );
+    const skillMd = readFileSync(join(import.meta.dir, 'hammy-the-humanizer/SKILL.md'), 'utf-8');
     const normalize = (s: string) =>
       s
         .split('\n')

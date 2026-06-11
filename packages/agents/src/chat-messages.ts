@@ -2,6 +2,8 @@ import type { InstanceEvent } from '@intx/hub-client';
 import type { ChatMessage } from '@workbench/chat';
 import { convertInstanceEvents } from './adapter';
 
+export const STREAMING_BUBBLE_ID = 'streaming-synthetic';
+
 export interface ComposeChatInput {
   events: InstanceEvent[];
   /** Live streaming buffer from the session (empty when not streaming). */
@@ -64,20 +66,46 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
     return true;
   });
 
-  const messages = convertInstanceEvents(deduped, toolNames);
+  const converted = convertInstanceEvents(deduped, toolNames);
+
+  // Deduplicate by message id. The session layer already deduplicates events
+  // by id, but guard here too in case two different code paths produce the
+  // same id (e.g. a hydration race that drains the SSE buffer after the REST
+  // fetch returns the same mail).
+  const seen = new Set<string>();
+  const messages: ChatMessage[] = [];
+  for (const msg of converted) {
+    if (!seen.has(msg.id)) {
+      seen.add(msg.id);
+      messages.push(msg);
+    }
+  }
 
   // The hub can fail to persist a turn's text part (CL-1398), so turn.committed
   // may arrive with empty text while the streamed text the user watched is still
-  // in the live buffer. Surface it: overwrite the trailing assistant bubble's
-  // content when one exists, otherwise synthesize a streaming bubble.
+  // in the live buffer. Surface it by overwriting that empty trailing bubble.
+  //
+  // The live text belongs to the turn currently streaming, which has not
+  // committed yet — so it never matches an already-committed, non-empty bubble.
+  // Only overwrite a trailing agent bubble that is EMPTY (the CL-1398 case);
+  // otherwise synthesize a new streaming bubble. Overwriting a non-empty
+  // committed bubble would transiently mask it: in a multi-step tool-loop reply,
+  // an earlier text segment commits as its own bubble and the next segment's
+  // live text would paint over it until it commits (CL-1643).
+  //
+  // `streaming` here is the current turn's live text only — the caller sources
+  // it from createLiveTextTracker, which reads each delta's per-turn cumulative
+  // `partial.text` and resets on turn.committed. It must NOT be the interchange
+  // session's `streaming` buffer, which accumulates across turns when a turn
+  // commits empty and would merge separate replies into one bubble (CL-1643).
   if (streaming.trim() !== '') {
     const last = messages[messages.length - 1];
-    if (last?.role === 'agent') {
+    if (last?.role === 'agent' && last.content === '') {
       last.content = streaming;
       last.status = 'sending';
     } else {
       messages.push({
-        id: 'streaming-synthetic',
+        id: STREAMING_BUBBLE_ID,
         role: 'agent',
         content: streaming,
         createdAt: new Date().toISOString(),

@@ -48,6 +48,22 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Settings')).toBeDefined();
   });
 
+  it('renders a custom title and page description when provided', () => {
+    render(
+      React.createElement(SettingsPage, {
+        sections,
+        values,
+        onChange: () => {},
+        title: 'Preferences',
+        description: 'Tune your workspace',
+        className: 'custom-page',
+      })
+    );
+    expect(screen.getByText('Preferences')).toBeDefined();
+    expect(screen.getByText('Tune your workspace')).toBeDefined();
+    expect(screen.queryByText('Settings')).toBeNull();
+  });
+
   it('fires onChange with the new string value when a text field changes', () => {
     const onChange = mock((_key: string, _value: string | boolean) => {});
     render(React.createElement(SettingsPage, { sections, values, onChange }));

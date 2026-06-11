@@ -10,3 +10,7 @@ React 19 + Vite + Tailwind CSS frontend. Human-facing UI for GTM Workbench.
 - Prefer event handlers and derived state over `useEffect` — see `apps/web/CLAUDE.md` for detail
 - All API calls go through `@workbench/client` or `@intx/hub-client`; no raw fetch in components
 - SSE subscriptions reconnect automatically via `src/lib/instance-transport.ts`
+
+## Testing
+
+Follow the repository testing standards in the [root AGENTS.md](../../AGENTS.md#testing) — red/green (tests first), the 80% coverage floor (always aim higher), and the test-quality bar.

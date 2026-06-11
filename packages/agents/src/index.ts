@@ -41,6 +41,16 @@ export {
   WALTER_DEPLOY_PROMPT,
 } from './walter/definition';
 
+// Lincoln agent
+export { buildLincolnSystemPrompt } from './lincoln/prompt';
+export {
+  LINCOLN_GRANT_REQUIREMENTS,
+  LINCOLN_CREDENTIAL_REQUIREMENTS,
+  LINCOLN_DEPLOY_PROMPT,
+  LINCOLN_CAPABILITIES,
+  LINCOLN_DEPLOY_DESCRIPTOR,
+} from './lincoln/definition';
+
 // Hammy — the humanizer
 export { buildHammySystemPrompt } from './hammy-the-humanizer/prompt';
 export {
@@ -56,8 +66,10 @@ export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
 // Shared adapter
 export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
+export { createLiveTextTracker, type LiveTextTracker } from './live-text-tracker';
 export {
   composeChatMessages,
+  STREAMING_BUBBLE_ID,
   type ComposeChatInput,
   type ComposeChatResult,
 } from './chat-messages';

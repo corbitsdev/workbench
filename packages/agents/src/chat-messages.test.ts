@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { InstanceEvent } from '@intx/hub-client';
-import { composeChatMessages } from './chat-messages';
+import { composeChatMessages, STREAMING_BUBBLE_ID } from './chat-messages';
 
 const userMail = (
   id: string,
@@ -39,7 +39,7 @@ describe('composeChatMessages', () => {
       streaming: 'Thinking out lou',
     });
     const last = messages[messages.length - 1];
-    expect(last?.id).toBe('streaming-synthetic');
+    expect(last?.id).toBe(STREAMING_BUBBLE_ID);
     expect(last?.content).toBe('Thinking out lou');
     expect(last?.status).toBe('sending');
   });
@@ -60,6 +60,29 @@ describe('composeChatMessages', () => {
     expect(last?.role).toBe('agent');
     expect(last?.content).toBe('Here is my answer');
     expect(last?.status).toBe('sending');
+  });
+
+  it('does not overwrite a non-empty committed bubble — the next segment streams as its own bubble', () => {
+    // Multi-step tool-loop reply: an earlier text segment commits as its own
+    // (non-empty) bubble, then the next segment's text streams live. Overwriting
+    // the committed segment would transiently mask it (CL-1643). The live text
+    // belongs to a not-yet-committed turn, so it must form a new bubble.
+    const committedSegment: InstanceEvent = {
+      kind: 'turn',
+      turnId: 't1',
+      content: 'Let me search for that.',
+      timestamp: '2024-01-01T00:00:30.000Z',
+      toolCalls: [{ name: 'exa_search', arguments: { query: 'x' }, result: 'r', isError: false }],
+    };
+    const { messages } = composeChatMessages({
+      events: [userMail('u1', 'find x'), committedSegment],
+      streaming: 'Here is what I found',
+    });
+    const agentMessages = messages.filter((m) => m.role === 'agent');
+    expect(agentMessages).toHaveLength(2);
+    expect(agentMessages[0]?.content).toBe('Let me search for that.');
+    expect(agentMessages[1]?.content).toBe('Here is what I found');
+    expect(agentMessages[1]?.status).toBe('sending');
   });
 
   it('shows no streaming bubble once the durable reply has landed and streaming cleared', () => {
@@ -118,6 +141,20 @@ describe('composeChatMessages', () => {
       streaming: '',
     });
     expect(messages.map((m) => m.content)).toEqual(['first', 'first answer', 'second']);
+  });
+
+  it('deduplicates events with the same id (hydration-race guard)', () => {
+    // The session hydrates via a REST fetch, then drains the SSE buffer. If the
+    // same mail arrives in both, convertInstanceEvents emits it twice with the
+    // same id. The id-based pass must keep only the first.
+    const mail = assistantMail('a1', 'Hello');
+    const { messages } = composeChatMessages({
+      events: [userMail('u1', 'hi'), mail, { ...mail }],
+      streaming: '',
+    });
+    const agentMessages = messages.filter((m) => m.role === 'agent');
+    expect(agentMessages).toHaveLength(1);
+    expect(agentMessages[0]?.id).toBe('a1');
   });
 
   it('keeps a tool-call turn and drops the assistant mail that echoes it', () => {
