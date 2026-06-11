@@ -16,10 +16,6 @@ export const LINCOLN_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
     source: 'tenant',
     name: LLM_CREDENTIAL_NAME,
   },
-  {
-    providerName: 'firecrawl',
-    source: 'tenant',
-  },
 ];
 
 export const LINCOLN_DEPLOY_PROMPT: string = buildLincolnSystemPrompt('Lincoln');

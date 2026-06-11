@@ -82,6 +82,12 @@ sessionService.launchSession({ agentId, instanceId, ... }) // sources resolved i
 
 The frontend's job is to save the credential. The hub's job is to launch the agent. Neither should pass credential IDs through the launch call.
 
+### Agent credentials vs tool credentials
+
+`credentialRequirements` on an Interchange agent definition are launch-time inference credentials in the current Interchange implementation. `resolveInstanceSources` turns each requirement into an `InferenceSource`, and the sidecar validates each source against the inference provider registry. Do not put tool-only providers such as `firecrawl`, `granola`, `exa`, `xai`, `reddit`, or `scrapecreators` in an agent template's `credentialRequirements`; they will be pushed to the sidecar as inference sources and can break launch or reconnect with errors like `Source provider "firecrawl" is not registered`.
+
+For Workbench tool credentials, keep the provider in the agent deploy descriptor's `credentialProviderNames` so the UI asks for it, and let the hub tool registry resolve it at tool execution time through `resolveCredentialRequirement`. The tool API key stays server-side; the sidecar proxies tool calls to the hub and the agent only sees the tool result.
+
 ### Specific rules
 
 - `generateId` — import from `@intx/hub-common`, never reimplement
@@ -90,6 +96,7 @@ The frontend's job is to save the credential. The hub's job is to launch the age
 - ID formats, table schemas, type definitions — read `@intx/db/schema` and `@intx/types` before defining your own
 - Credential resolution — use `resolveCredentialRequirement` from `@intx/db`
 - Agent launch — use `SessionService.launchSession`; never build inference sources manually
+- Tool credentials — do not add tool-only providers to agent `credentialRequirements`; expose them through `credentialProviderNames` and resolve them inside the hub tool registry
 - Do not modify `interchange/` unless explicitly asked
 
 ## Worktree Setup
@@ -153,7 +160,7 @@ This is the same sequence the Commit Process encodes (tests-first commit, then i
 
 - Measure with `bun run coverage` (whole repo, merged) or `bun run test:coverage` (one package). The merged gate lives in `scripts/coverage-merge.ts`.
 - **80% merged line coverage is a hard floor. Never let a change drop below it.** If your change lowers coverage, add tests in the same change until it recovers — do not push a regression.
-- **80% is the floor, not the goal.** Every change should leave coverage equal or higher; the standing target is always *higher* than where we are now. An uncovered line you touch is yours to cover.
+- **80% is the floor, not the goal.** Every change should leave coverage equal or higher; the standing target is always _higher_ than where we are now. An uncovered line you touch is yours to cover.
 - Any package containing runnable code must define `test` and `test:coverage` scripts so the merged gate sees it. Pure type-only packages are exempt (document the exemption).
 - Coverage is line coverage only (Bun emits no branch/per-function lcov).
 

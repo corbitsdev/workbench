@@ -2,6 +2,16 @@ import { describe, expect, it } from 'bun:test';
 import { AGENT_TEMPLATES } from './templates';
 
 describe('AGENT_TEMPLATES', () => {
+  const inferenceProviderNames = new Set(['openai-compatible']);
+  const knownToolProviderNames = new Set([
+    'exa',
+    'firecrawl',
+    'granola',
+    'reddit',
+    'scrapecreators',
+    'xai',
+  ]);
+
   it('contains all seven templates', () => {
     const keys = AGENT_TEMPLATES.map((t) => t.key).sort();
     expect(keys).toEqual(['freddy', 'hammy', 'lincoln', 'loop', 'myra', 'oat', 'walter']);
@@ -13,6 +23,15 @@ describe('AGENT_TEMPLATES', () => {
       expect(template.systemPrompt.length).toBeGreaterThan(0);
       expect(template.credentialRequirements.length).toBeGreaterThan(0);
       expect(Array.isArray(template.capabilities.tools)).toBe(true);
+    }
+  });
+
+  it('only declares inference providers as launch-time credential requirements', () => {
+    for (const template of AGENT_TEMPLATES) {
+      for (const requirement of template.credentialRequirements) {
+        expect(inferenceProviderNames.has(requirement.providerName)).toBe(true);
+        expect(knownToolProviderNames.has(requirement.providerName)).toBe(false);
+      }
     }
   });
 
