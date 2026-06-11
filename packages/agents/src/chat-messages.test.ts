@@ -33,6 +33,31 @@ const assistantMail = (
 });
 
 describe('composeChatMessages', () => {
+  it('synthesizes a reasoning-only streaming bubble while thinking (no answer yet)', () => {
+    const { messages } = composeChatMessages({
+      events: [userMail('u1', 'hi')],
+      streaming: '',
+      reasoning: 'Let me check the calls',
+    });
+    const last = messages[messages.length - 1];
+    expect(last?.id).toBe(STREAMING_BUBBLE_ID);
+    expect(last?.role).toBe('agent');
+    expect(last?.content).toBe('');
+    expect(last?.reasoning).toBe('Let me check the calls');
+    expect(last?.status).toBe('sending');
+  });
+
+  it('attaches live reasoning to the streaming answer bubble', () => {
+    const { messages } = composeChatMessages({
+      events: [userMail('u1', 'hi')],
+      streaming: 'Here is the answer',
+      reasoning: 'Reasoned about it',
+    });
+    const last = messages[messages.length - 1];
+    expect(last?.content).toBe('Here is the answer');
+    expect(last?.reasoning).toBe('Reasoned about it');
+  });
+
   it('synthesizes a streaming bubble while streaming with no durable reply yet', () => {
     const { messages } = composeChatMessages({
       events: [userMail('u1', 'hi')],

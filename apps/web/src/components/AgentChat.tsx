@@ -5,8 +5,10 @@ import {
   composeChatMessages,
   createToolNameTracker,
   createLiveTextTracker,
+  createReasoningTracker,
   type ToolNameTracker,
   type LiveTextTracker,
+  type ReasoningTracker,
 } from '@workbench/agents/browser';
 import {
   ChatPanel,
@@ -65,6 +67,7 @@ export function AgentChat({
   const stopRef = useRef<(() => void) | null>(null);
   const toolNamesRef = useRef<ToolNameTracker | null>(null);
   const liveTextRef = useRef<LiveTextTracker | null>(null);
+  const reasoningRef = useRef<ReasoningTracker | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
 
@@ -162,6 +165,10 @@ export function AgentChat({
     // SSE connections to the same endpoint).
     liveTextRef.current = createLiveTextTracker(transport, { tenantId, instanceId });
 
+    // Live reasoning for the current turn, sourced like the text tracker. No
+    // onUpdate — the session's onChange drives renders; we read it at render.
+    reasoningRef.current = createReasoningTracker(transport, { tenantId, instanceId });
+
     if (!cancelled) setSessionState({ phase: 'ready', session });
 
     return () => {
@@ -172,6 +179,8 @@ export function AgentChat({
       toolNamesRef.current = null;
       liveTextRef.current?.stop();
       liveTextRef.current = null;
+      reasoningRef.current?.stop();
+      reasoningRef.current = null;
       sessionRef.current?.destroy();
       sessionRef.current = null;
     };
@@ -181,6 +190,7 @@ export function AgentChat({
     const { messages } = composeChatMessages({
       events: session.events,
       streaming: liveTextRef.current !== null ? liveTextRef.current.text : '',
+      reasoning: reasoningRef.current !== null ? reasoningRef.current.text : '',
       ...(toolNamesRef.current !== null ? { toolNames: toolNamesRef.current.names } : {}),
     });
     return messages;

@@ -1,4 +1,5 @@
 import { ApiError, type Transport } from '@intx/hub-client';
+import { subscribeSharedEventStream } from './shared-event-stream';
 
 // Browser Transport for InstanceSession that targets the hub origin and sends
 // auth cookies. Interchange's stock createBrowserTransport issues relative,
@@ -53,52 +54,16 @@ export function createHubTransport(): Transport {
       onEvent: (event: unknown) => void,
       opts?: { eventName?: string }
     ): () => void {
-      let es: EventSource;
-      let retryTimeout: ReturnType<typeof setTimeout> | null = null;
-      let retryDelay = 1000;
-      let closed = false;
-      // Consecutive connections that errored without ever opening. An auth or
-      // routing failure (403/404) presents this way on every attempt — unlike a
-      // dropped-but-once-open stream — so after a few we stop for good instead
-      // of hammering the hub forever.
-      let failedBeforeOpen = 0;
-      const MAX_FAILED_BEFORE_OPEN = 3;
-
-      function connect() {
-        let opened = false;
-        es = new EventSource(toEventSourceUrl(path), { withCredentials: true });
-        const handler = (e: MessageEvent) => onEvent(JSON.parse(e.data));
-        if (opts?.eventName) {
-          es.addEventListener(opts.eventName, handler);
-        } else {
-          es.onmessage = handler;
-        }
-        es.onerror = () => {
-          es.close();
-          if (closed) return;
-          if (!opened) {
-            failedBeforeOpen += 1;
-            if (failedBeforeOpen >= MAX_FAILED_BEFORE_OPEN) return;
-          }
-          retryTimeout = setTimeout(() => {
-            retryDelay = Math.min(retryDelay * 2, 30_000);
-            connect();
-          }, retryDelay);
-        };
-        es.onopen = () => {
-          opened = true;
-          failedBeforeOpen = 0;
-          retryDelay = 1000;
-        };
-      }
-
-      connect();
-
-      return () => {
-        closed = true;
-        if (retryTimeout !== null) clearTimeout(retryTimeout);
-        es.close();
-      };
+      // Delegate to the process-wide shared stream so every consumer of this
+      // agent's events (session, live-text / reasoning / phase trackers, the
+      // sidebar) shares one EventSource instead of each opening its own and
+      // exhausting the browser's per-origin connection cap (CL-1660 review).
+      // 'message' is the default unnamed SSE event when no eventName is given.
+      return subscribeSharedEventStream(
+        toEventSourceUrl(path),
+        opts?.eventName ?? 'message',
+        onEvent
+      );
     },
   };
 }

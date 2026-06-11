@@ -1,5 +1,5 @@
 /**
- * Domain types for the personal agent (Ada) chat UI.
+ * Domain types for the personal agent (Myra) chat UI.
  *
  * This package is intentionally stateless: it describes the shape of chat data
  * and the handlers a host supplies, but performs no transport. Real agent
@@ -57,6 +57,12 @@ export interface ChatMessage {
    * still in-flight (renders with a pulse indicator).
    */
   toolCalls?: ToolCall[];
+  /**
+   * The agent's reasoning ("thinking") for this turn, when available. Rendered
+   * as a collapsible disclosure above the message content; present on the live
+   * streaming bubble while the agent is thinking.
+   */
+  reasoning?: string;
 }
 
 /** A tappable suggested reply offered by the agent. */
@@ -88,7 +94,7 @@ export interface ChatLauncherPosition {
 
 /** Identity shown in the panel header. */
 export interface ChatAgentIdentity {
-  /** Display name, e.g. "Ada". */
+  /** Display name, e.g. "Myra". */
   name: string;
   /** Optional short subtitle, e.g. "Personal agent". */
   tagline?: string;

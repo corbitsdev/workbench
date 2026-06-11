@@ -12,6 +12,8 @@ import {
   launchInstanceSession,
 } from '../../lib/hub-api';
 import type { AgentInstance, WorkbenchEntry, CredentialRequirement } from '../../lib/hub-api';
+import { useAgentPhase } from '../../lib/use-agent-phase';
+import type { AgentPhase } from '@workbench/agents/browser';
 import { useEffect, useState } from 'react';
 
 type ResourceType = 'workflow' | 'agent';
@@ -41,6 +43,14 @@ function agentStatusLabel(status: string): string {
   if (status === 'stopped') return 'Stopped';
   return 'Deploying';
 }
+
+// "Reasoning" (not "Thinking") mirrors the chat reasoning disclosure and avoids
+// anthropomorphizing the agent per the brand word list.
+const AGENT_PHASE_LABEL: Record<AgentPhase, string> = {
+  idle: 'Idle',
+  thinking: 'Reasoning',
+  typing: 'Typing',
+};
 
 function agentToRailItem(a: AgentInstance): RailItem {
   return {
@@ -170,7 +180,14 @@ const DOT_STYLES: Record<ResourceType, string> = {
   agent: 'bg-green',
 };
 
-function StatusDot({ status }: { status: ResourceStatus }) {
+function StatusDot({ status, pulse = false }: { status: ResourceStatus; pulse?: boolean }) {
+  if (status === 'run' && pulse) {
+    return (
+      <span className="relative h-[15px] w-[15px] flex-none rounded-full border-2 border-orange">
+        <span className="absolute inset-[2px] animate-pulse rounded-full bg-orange" />
+      </span>
+    );
+  }
   if (status === 'done') {
     return (
       <span className="relative h-[15px] w-[15px] flex-none rounded-full bg-green">
@@ -189,6 +206,39 @@ function StatusDot({ status }: { status: ResourceStatus }) {
     <span className="relative h-[15px] w-[15px] flex-none rounded-full border-2 border-text-3">
       <span className="absolute inset-[3px] rounded-full bg-text-3 opacity-40" />
     </span>
+  );
+}
+
+// The status dot + name + subtitle for one rail row. Rendered as its own
+// component so each agent row owns its phase subscription independently — an
+// agent entering or leaving the list mounts/unmounts only its own row, never
+// disturbing the others' live connections.
+function RailItemLead({ item, isRestarting }: { item: RailItem; isRestarting: boolean }) {
+  const phaseTarget =
+    item.type === 'agent' &&
+    item.agentStatus === 'running' &&
+    item.instanceId !== undefined &&
+    item.tenantId !== undefined
+      ? { instanceId: item.instanceId, tenantId: item.tenantId }
+      : null;
+  const phase = useAgentPhase(phaseTarget);
+  const isActivePhase = phase === 'thinking' || phase === 'typing';
+
+  let sub = item.sub;
+  if (item.type === 'agent' && isRestarting) {
+    sub = 'Agent · Creating…';
+  } else if (phase !== null) {
+    sub = `Agent · ${AGENT_PHASE_LABEL[phase]}`;
+  }
+
+  return (
+    <>
+      <StatusDot status={item.status} pulse={isActivePhase} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[14px] font-medium text-text">{item.name}</div>
+        <div className="mt-px font-mono text-[11.5px] text-text-3">{sub}</div>
+      </div>
+    </>
   );
 }
 
@@ -524,15 +574,7 @@ export function LibraryRail({
                       }
                       className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${isClickable ? 'cursor-pointer hover:bg-[var(--row-hover)]' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
                     >
-                      <StatusDot status={item.status} />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[14px] font-medium text-text">
-                          {item.name}
-                        </div>
-                        <div className="mt-px font-mono text-[11.5px] text-text-3">
-                          {isRestarting ? 'Agent · Creating…' : item.sub}
-                        </div>
-                      </div>
+                      <RailItemLead item={item} isRestarting={isRestarting} />
                       {item.type === 'agent' && item.agentId && item.tenantId && (
                         <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                           {item.agentStatus === 'stopped' ? (

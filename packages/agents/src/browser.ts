@@ -17,6 +17,9 @@ export {
 export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
 export { createLiveTextTracker, type LiveTextTracker } from './live-text-tracker';
+export { createReasoningTracker, type ReasoningTracker } from './reasoning-tracker';
+export { deriveAgentPhase, type AgentPhase } from './agent-phase';
+export { createAgentPhaseTracker, type AgentPhaseTracker } from './agent-phase-tracker';
 export {
   composeChatMessages,
   type ComposeChatInput,

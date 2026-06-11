@@ -19,7 +19,34 @@ describe('MessageBubble', () => {
       createdAt: '2026-06-04T00:00:00Z',
     };
     render(<MessageBubble message={message} />);
-    expect(screen.getByText('Hello agent')).toBeDefined();
+    expect(screen.getByText('Hello agent')).not.toBeNull();
+  });
+
+  it('renders a reasoning disclosure when the agent message carries reasoning', () => {
+    const message: ChatMessage = {
+      id: 'r1',
+      role: 'agent',
+      content: 'Final answer',
+      reasoning: 'I weighed the options',
+      createdAt: '2026-06-04T00:01:00Z',
+    };
+    render(<MessageBubble message={message} />);
+    expect(screen.getByText('Reasoning')).not.toBeNull();
+    expect(screen.getByText('Final answer')).not.toBeNull();
+  });
+
+  it('shows streaming reasoning expanded with the Reasoning label', () => {
+    const message: ChatMessage = {
+      id: 'r2',
+      role: 'agent',
+      content: '',
+      reasoning: 'Working through it',
+      status: 'sending',
+      createdAt: '2026-06-04T00:01:00Z',
+    };
+    render(<MessageBubble message={message} />);
+    expect(screen.getByText('Reasoning')).not.toBeNull();
+    expect(screen.getByText('Working through it')).not.toBeNull();
   });
 
   it('renders agent message with markdown support', () => {
@@ -30,8 +57,8 @@ describe('MessageBubble', () => {
       createdAt: '2026-06-04T00:01:00Z',
     };
     render(<MessageBubble message={message} />);
-    expect(screen.getByText('Hello')).toBeDefined();
-    expect(screen.getByText('bold')).toBeDefined();
+    expect(screen.getByText('Hello')).not.toBeNull();
+    expect(screen.getByText('bold')).not.toBeNull();
   });
 
   it('renders system message with markdown support', () => {
@@ -42,7 +69,7 @@ describe('MessageBubble', () => {
       createdAt: '2026-06-04T00:02:00Z',
     };
     render(<MessageBubble message={message} />);
-    expect(screen.getByText('notice')).toBeDefined();
+    expect(screen.getByText('notice')).not.toBeNull();
   });
 
   it('shows failed status when present', () => {
@@ -54,6 +81,6 @@ describe('MessageBubble', () => {
       status: 'failed',
     };
     render(<MessageBubble message={message} />);
-    expect(screen.getByText('Failed to send')).toBeDefined();
+    expect(screen.getByText('Failed to send')).not.toBeNull();
   });
 });

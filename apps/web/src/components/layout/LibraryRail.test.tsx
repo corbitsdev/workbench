@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import '../../test-setup';
 import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, render, waitFor, fireEvent } from '@testing-library/react';
+import { act, cleanup, render, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { LibraryRailProps } from './LibraryRail';
@@ -43,6 +43,29 @@ mock.module('../../lib/hub-api', () => ({
   launchInstanceSession: mock(() => Promise.resolve({ launched: true })),
   deleteAgentInstance: mock(() => Promise.resolve()),
   stopAgentInstance: mock(() => Promise.resolve()),
+}));
+
+// Controllable transport so the activity hook subscribes without a real
+// EventSource (absent in happy-dom). Tests push events through `emitEvent`.
+const eventListeners = new Map<string, Set<(event: unknown) => void>>();
+function emitEvent(instanceId: string, tenantId: string, event: unknown): void {
+  const path = `/api/tenants/${tenantId}/agents/instances/${instanceId}/events`;
+  const listeners = eventListeners.get(path);
+  if (listeners) for (const listener of listeners) listener(event);
+}
+mock.module('../../lib/instance-transport', () => ({
+  createHubTransport: () => ({
+    fetch: async () => undefined,
+    subscribe(path: string, onEvent: (event: unknown) => void) {
+      const listeners = eventListeners.get(path) ?? new Set();
+      listeners.add(onEvent);
+      eventListeners.set(path, listeners);
+      return () => {
+        listeners.delete(onEvent);
+        if (listeners.size === 0) eventListeners.delete(path);
+      };
+    },
+  }),
 }));
 
 function renderWithClient(ui: React.ReactElement) {
@@ -167,5 +190,45 @@ describe('LibraryRail', () => {
     });
 
     expect(view.getByText('Some agents could not be loaded.')).toBeDefined();
+  });
+
+  it('reflects a running agent live activity phase in the sidebar', async () => {
+    const { listWorkbenches, listAgentInstances } = await import('../../lib/hub-api');
+    (listWorkbenches as ReturnType<typeof mock>).mockImplementation(() =>
+      Promise.resolve([{ id: 'wb-1', tenantId: 'tn-ok', tenantSlug: 'acme', tenantName: 'Acme' }])
+    );
+    (listAgentInstances as ReturnType<typeof mock>).mockImplementation((tenantId: string) =>
+      Promise.resolve([
+        {
+          id: 'inst-9',
+          agentId: 'ag-9',
+          agentName: 'Loop',
+          tenantId,
+          address: '',
+          status: 'running',
+          credentialRequirements: [],
+          capabilities: null,
+          createdAt: new Date().toISOString(),
+        },
+      ])
+    );
+
+    const { LibraryRail } = await import('./LibraryRail');
+    const view = renderWithClient(React.createElement(LibraryRail));
+
+    // A running agent with no live stream reads as idle.
+    await waitFor(() => {
+      expect(view.getByText('Agent · Idle')).not.toBeNull();
+    });
+
+    act(() => {
+      emitEvent('inst-9', 'tn-ok', {
+        type: 'inference.thinking.delta',
+        data: { partial: { thinking: 'considering' } },
+      });
+    });
+    await waitFor(() => {
+      expect(view.getByText('Agent · Reasoning')).not.toBeNull();
+    });
   });
 });

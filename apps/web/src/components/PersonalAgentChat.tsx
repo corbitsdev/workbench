@@ -4,8 +4,10 @@ import {
   composeChatMessages,
   createToolNameTracker,
   createLiveTextTracker,
+  createReasoningTracker,
   type ToolNameTracker,
   type LiveTextTracker,
+  type ReasoningTracker,
 } from '@workbench/agents/browser';
 import {
   ChatLauncher,
@@ -68,6 +70,7 @@ export function PersonalAgentChat() {
   const stopRef = useRef<(() => void) | null>(null);
   const toolNamesRef = useRef<ToolNameTracker | null>(null);
   const liveTextRef = useRef<LiveTextTracker | null>(null);
+  const reasoningRef = useRef<ReasoningTracker | null>(null);
 
   const { registerReconnect } = useChatLauncher();
 
@@ -133,10 +136,14 @@ export function PersonalAgentChat() {
         // empty (CL-1398) and would merge separate replies into one (CL-1643).
         // No onUpdate — same rationale as AgentChat: avoid double-render race
         // between the session and tracker SSE connections.
-        liveTextRef.current = createLiveTextTracker(
-          transport,
-          { tenantId: me.personalTenantId, instanceId: me.paInstanceId }
-        );
+        liveTextRef.current = createLiveTextTracker(transport, {
+          tenantId: me.personalTenantId,
+          instanceId: me.paInstanceId,
+        });
+        reasoningRef.current = createReasoningTracker(transport, {
+          tenantId: me.personalTenantId,
+          instanceId: me.paInstanceId,
+        });
 
         if (!cancelled) setSessionState({ phase: 'ready', session });
       } catch {
@@ -159,6 +166,8 @@ export function PersonalAgentChat() {
       toolNamesRef.current = null;
       liveTextRef.current?.stop();
       liveTextRef.current = null;
+      reasoningRef.current?.stop();
+      reasoningRef.current = null;
       sessionRef.current?.destroy();
       sessionRef.current = null;
     };
@@ -178,6 +187,7 @@ export function PersonalAgentChat() {
     const { messages } = composeChatMessages({
       events: session.events,
       streaming: liveTextRef.current !== null ? liveTextRef.current.text : '',
+      reasoning: reasoningRef.current !== null ? reasoningRef.current.text : '',
       ...(toolNamesRef.current !== null ? { toolNames: toolNamesRef.current.names } : {}),
     });
     return messages;

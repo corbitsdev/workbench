@@ -59,6 +59,17 @@ describe('createLiveTextTracker', () => {
     expect(tracker.text).toBe('');
   });
 
+  it('clears on a failed turn so a stale partial answer does not linger', () => {
+    const { transport, emit } = createFakeTransport();
+    const tracker = createLiveTextTracker(transport, params);
+
+    emit(delta('partial ans'));
+    expect(tracker.text).toBe('partial ans');
+
+    emit({ type: 'inference.error' });
+    expect(tracker.text).toBe('');
+  });
+
   it('does not accumulate across turns — a new turn replaces, never appends', () => {
     // The core CL-1643 bug: the session buffer held [first answer][second
     // answer]. partial.text is per-turn, so the second turn's deltas carry only
