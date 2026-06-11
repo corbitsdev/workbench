@@ -1160,6 +1160,41 @@ describe('POST /tenants/:tenantId/agents/instances', () => {
     expect(inserted.length).toBeGreaterThanOrEqual(3);
   });
 
+  it('grants the caller read/write/manage on the new instance', async () => {
+    const db = deployDb();
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
+
+    const inserted: Array<Record<string, unknown>> = [];
+    const insertMock = mock(() => ({
+      values: mock((row: Record<string, unknown>) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    }));
+    db.insert = insertMock;
+    db.transaction = mock((fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ insert: insertMock, update: db.update, delete: db.delete })
+    );
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest('http://localhost/tenants/tenant-1/agents/instances', {
+        method: 'POST',
+        body: { templateKey: 'oat' },
+      })
+    );
+    expect(res.status).toBe(201);
+
+    const instanceId = (await res.json()).instanceId as string;
+    const memberGrants = inserted.filter(
+      (row) =>
+        row.resource === `instance:${instanceId}` &&
+        row.principalId === PRINCIPAL.id &&
+        row.effect === 'allow'
+    );
+    expect(memberGrants.map((g) => g.action).sort()).toEqual(['manage', 'read', 'write']);
+  });
+
   it('still returns 201 when the post-create session launch fails', async () => {
     const db = deployDb();
     // No sources -> launchAgentSession throws -> caught and logged, route still 201.

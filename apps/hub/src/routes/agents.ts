@@ -389,6 +389,25 @@ export function createAgentProvisioningRouter(
         instanceId,
         createdAt: now,
       });
+
+      // The owning member needs principal-scoped grants to operate their own
+      // instance: read powers the chat event stream (`GET /instances/:id/events`),
+      // write sends mail, manage aborts a turn. Without these the catalog-deploy
+      // path leaves the instance unreadable to its creator (403 "no_match"),
+      // matching the provisioning-on-join path in tenant-provisioning (CL-1635).
+      for (const action of ['read', 'write', 'manage'] as const) {
+        await tx.insert(grant).values({
+          id: generateId('grant'),
+          tenantId,
+          principalId: callerPrincipal.id,
+          resource: `instance:${instanceId}`,
+          action,
+          effect: 'allow',
+          origin: 'system',
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
     });
 
     try {
