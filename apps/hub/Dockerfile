@@ -24,6 +24,7 @@ COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
 COPY packages/tool-agent/package.json packages/tool-agent/
 COPY packages/tool-template/package.json packages/tool-template/
+COPY packages/tools-agents/package.json packages/tools-agents/
 COPY packages/tools-dispatch/package.json packages/tools-dispatch/
 COPY packages/tools-exa/package.json packages/tools-exa/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
@@ -46,6 +47,7 @@ COPY packages/chat/ packages/chat/
 COPY packages/gtm-workflows/ packages/gtm-workflows/
 COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
+COPY packages/tools-agents/ packages/tools-agents/
 COPY packages/tools-dispatch/ packages/tools-dispatch/
 COPY packages/tools-exa/ packages/tools-exa/
 COPY packages/tools-firecrawl/ packages/tools-firecrawl/

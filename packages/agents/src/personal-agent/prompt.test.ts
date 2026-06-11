@@ -34,6 +34,16 @@ describe('buildPersonalAgentSystemPrompt', () => {
     expect(prompt).toContain('<delegation>');
   });
 
+  it('documents the direct tools: files, web search, artifacts, directory, and messaging', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('<tools>');
+    expect(prompt).toContain('write_file');
+    expect(prompt).toContain('exa_search');
+    expect(prompt).toContain('artifact_create');
+    expect(prompt).toContain('list_agents');
+    expect(prompt).toContain('mail_send');
+  });
+
   it('coordinates expertise rather than claiming authority', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('coordinate expertise');

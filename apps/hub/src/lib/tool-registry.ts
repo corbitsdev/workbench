@@ -2,6 +2,7 @@ import type { AgentTool } from '@intx/agent';
 import type { DB } from '@intx/db';
 import { createPosixTools } from '@intx/tools-posix';
 import type { ToolDefinition } from '@intx/types/runtime';
+import { AGENTS_HUB_TOOLS } from '@workbench/tools-agents';
 import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
 import { FIRECRAWL_HUB_TOOLS } from '@workbench/tools-firecrawl';
 import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
@@ -21,6 +22,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...GRANOLA_HUB_TOOLS,
   ...ARTIFACT_HUB_TOOLS,
   ...DISPATCH_HUB_TOOLS,
+  ...AGENTS_HUB_TOOLS,
 };
 
 export type CredentialToolEntry = {

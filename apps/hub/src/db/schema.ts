@@ -73,17 +73,29 @@ export const artifact = pgTable('artifact', {
 
 // Append-only version history. Every change by an agent or a human writes a row.
 // author_id is the actor's principal id (no agent/human distinction).
-export const artifactVersion = pgTable('artifact_version', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  artifactId: uuid('artifact_id')
-    .notNull()
-    .references(() => artifact.id, { onDelete: 'cascade' }),
-  version: integer('version').notNull(),
-  title: text('title').notNull(),
-  content: text('content').notNull(),
-  authorId: text('author_id').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
+export const artifactVersion = pgTable(
+  'artifact_version',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    artifactId: uuid('artifact_id')
+      .notNull()
+      .references(() => artifact.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    title: text('title').notNull(),
+    content: text('content').notNull(),
+    authorId: text('author_id').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  // One row per (artifact, version). Backstops the version bump in
+  // artifact_write: a racing writer that computes the same next version fails
+  // loudly instead of corrupting history with duplicate version rows.
+  (t) => ({
+    artifactVersionUniq: unique('artifact_version_artifact_id_version_uniq').on(
+      t.artifactId,
+      t.version
+    ),
+  })
+);
 
 // Tracks which workflow kinds are enabled within a tenant.
 //

@@ -39,6 +39,7 @@
         "@workbench/gtm-workflows": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tools-agents": "workspace:*",
         "@workbench/tools-dispatch": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
         "@workbench/tools-firecrawl": "workspace:*",
@@ -596,6 +597,16 @@
       "name": "@workbench/tools-rename-me",
       "devDependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-agents": {
+      "name": "@workbench/tools-agents",
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/db": "workspace:*",
         "@intx/types": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.0",
@@ -1596,6 +1607,8 @@
     "@workbench/shared": ["@workbench/shared@workspace:packages/workbench-shared"],
 
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
+
+    "@workbench/tools-agents": ["@workbench/tools-agents@workspace:packages/tools-agents"],
 
     "@workbench/tools-dispatch": ["@workbench/tools-dispatch@workspace:packages/tools-dispatch"],
 
