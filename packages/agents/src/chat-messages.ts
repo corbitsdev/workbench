@@ -10,6 +10,8 @@ export interface ComposeChatInput {
   streaming: string;
   /** callId -> tool-name map captured from the live stream. */
   toolNames?: ReadonlyMap<string, string>;
+  /** Live reasoning buffer for the current turn (empty when not thinking). */
+  reasoning?: string;
 }
 
 export interface ComposeChatResult {
@@ -35,7 +37,7 @@ export interface ComposeChatResult {
  * sort is clock-consistent.
  */
 export function composeChatMessages(input: ComposeChatInput): ComposeChatResult {
-  const { events, streaming, toolNames } = input;
+  const { events, streaming, toolNames, reasoning = '' } = input;
 
   // Content of assistant mail (server-timestamped) and of turns that carry tool
   // calls (the only thing mail cannot represent).
@@ -98,18 +100,37 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
   // `partial.text` and resets on turn.committed. It must NOT be the interchange
   // session's `streaming` buffer, which accumulates across turns when a turn
   // commits empty and would merge separate replies into one bubble (CL-1643).
-  if (streaming.trim() !== '') {
+  // Attach the current turn's live text and reasoning to the streaming bubble.
+  // Reasoning can be present before any answer text (the "thinking" phase), so
+  // a streaming bubble is synthesized when either is non-empty. The reasoning
+  // tracker, like the text tracker, resets on turn.committed — so this is the
+  // current turn only and never bleeds across turns (CL-1643).
+  const liveText = streaming.trim();
+  const liveReasoning = reasoning.trim();
+  if (liveText !== '' || liveReasoning !== '') {
     const last = messages[messages.length - 1];
     if (last?.role === 'agent' && last.content === '') {
-      last.content = streaming;
+      if (liveText !== '') last.content = streaming;
+      if (liveReasoning !== '') last.reasoning = reasoning;
       last.status = 'sending';
-    } else {
+    } else if (liveText !== '') {
       messages.push({
         id: STREAMING_BUBBLE_ID,
         role: 'agent',
         content: streaming,
         createdAt: new Date().toISOString(),
         status: 'sending',
+        ...(liveReasoning !== '' ? { reasoning } : {}),
+      });
+    } else {
+      // Reasoning only — the agent is thinking and has not started answering.
+      messages.push({
+        id: STREAMING_BUBBLE_ID,
+        role: 'agent',
+        content: '',
+        createdAt: new Date().toISOString(),
+        status: 'sending',
+        reasoning,
       });
     }
   }

@@ -30,9 +30,15 @@ interface TextDeltaEvent {
   data: { partial: { text: string } };
 }
 
-interface TurnCommittedEvent {
-  type: 'turn.committed';
-}
+// Events that end the current turn. `turn.committed` is the normal path; the
+// reactor/inference errors are the failure paths that would otherwise leave the
+// last streamed text in place after a mid-turn failure (CL-1660 review).
+const TURN_END_EVENTS = new Set([
+  'turn.committed',
+  'reactor.abort',
+  'reactor.error',
+  'inference.error',
+]);
 
 interface TextReplayEvent {
   type: 'inference.text.replay';
@@ -51,11 +57,10 @@ function parseTextDeltaEvent(raw: unknown): TextDeltaEvent | null {
   return { type, data: { partial: { text } } };
 }
 
-function parseTurnCommittedEvent(raw: unknown): TurnCommittedEvent | null {
-  if (typeof raw !== 'object' || raw === null) return null;
+function isTurnEndEvent(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) return false;
   const { type } = raw as { type?: unknown };
-  if (type !== 'turn.committed') return null;
-  return { type };
+  return typeof type === 'string' && TURN_END_EVENTS.has(type);
 }
 
 function parseTextReplayEvent(raw: unknown): TextReplayEvent | null {
@@ -87,7 +92,7 @@ export function createLiveTextTracker(
         return;
       }
 
-      if (parseTurnCommittedEvent(raw) !== null) {
+      if (isTurnEndEvent(raw)) {
         if (text === '') return;
         text = '';
         onUpdate?.();

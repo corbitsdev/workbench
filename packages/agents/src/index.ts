@@ -67,6 +67,8 @@ export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
 export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
 export { createLiveTextTracker, type LiveTextTracker } from './live-text-tracker';
+export { createReasoningTracker, type ReasoningTracker } from './reasoning-tracker';
+export { deriveAgentPhase, type AgentPhase } from './agent-phase';
 export {
   composeChatMessages,
   STREAMING_BUBBLE_ID,
