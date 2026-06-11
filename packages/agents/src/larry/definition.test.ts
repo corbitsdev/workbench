@@ -8,15 +8,28 @@ import { buildLarrySystemPrompt } from './prompt';
 import { LARRY_SKILL_CONTENT } from './skill';
 
 describe('LARRY_CREDENTIAL_REQUIREMENTS', () => {
-  it('has exactly one entry', () => {
-    expect(LARRY_CREDENTIAL_REQUIREMENTS).toHaveLength(1);
+  it('requires an openai-compatible LLM', () => {
+    const req = LARRY_CREDENTIAL_REQUIREMENTS.find((r) => r.providerName === 'openai-compatible');
+    if (!req) throw new Error('expected openai-compatible credential requirement');
+    expect(req.source).toBe('tenant');
   });
 
-  it('requires an openai-compatible LLM', () => {
-    const req = LARRY_CREDENTIAL_REQUIREMENTS[0];
-    if (!req) throw new Error('expected at least one credential requirement');
-    expect(req.providerName).toBe('openai-compatible');
+  it('requires xai for x_search', () => {
+    const req = LARRY_CREDENTIAL_REQUIREMENTS.find((r) => r.providerName === 'xai');
+    if (!req) throw new Error('expected xai credential requirement');
     expect(req.source).toBe('tenant');
+  });
+
+  it('requires scrapecreators for social scraping', () => {
+    const req = LARRY_CREDENTIAL_REQUIREMENTS.find((r) => r.providerName === 'scrapecreators');
+    if (!req) throw new Error('expected scrapecreators credential requirement');
+    expect(req.source).toBe('tenant');
+  });
+
+  it('requires reddit as invoker-scoped credential', () => {
+    const req = LARRY_CREDENTIAL_REQUIREMENTS.find((r) => r.providerName === 'reddit');
+    if (!req) throw new Error('expected reddit credential requirement');
+    expect(req.source).toBe('invoker');
   });
 });
 

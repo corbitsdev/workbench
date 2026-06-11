@@ -14,6 +14,20 @@ export const LARRY_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
     source: 'tenant',
     name: LLM_CREDENTIAL_NAME,
   },
+  {
+    providerName: 'xai',
+    source: 'tenant',
+  },
+  {
+    providerName: 'scrapecreators',
+    source: 'tenant',
+  },
+  // Reddit tokens are per-user (OAuth2 bearer). source: 'invoker' means
+  // Interchange resolves from the session invoker (the user), not the shared tenant.
+  {
+    providerName: 'reddit',
+    source: 'invoker',
+  },
 ];
 
 export const LARRY_DEPLOY_PROMPT: string = buildLarrySystemPrompt('Larry');

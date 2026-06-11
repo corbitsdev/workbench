@@ -6,8 +6,16 @@ import { AGENTS_HUB_TOOLS } from '@workbench/tools-agents';
 import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
 import { FIRECRAWL_HUB_TOOLS } from '@workbench/tools-firecrawl';
 import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
+import { HACKERNEWS_HUB_TOOLS } from '@workbench/tools-hackernews';
+import { GITHUB_HUB_TOOLS } from '@workbench/tools-github';
+import { POLYMARKET_HUB_TOOLS } from '@workbench/tools-polymarket';
+import { REDDIT_HUB_TOOLS } from '@workbench/tools-reddit';
+import { SCRAPECREATORS_HUB_TOOLS } from '@workbench/tools-scrapecreators';
+import { X_HUB_TOOLS } from '@workbench/tools-x';
 import { ARTIFACT_HUB_TOOLS } from './artifact-tools';
 import { DISPATCH_HUB_TOOLS } from '@workbench/tools-dispatch';
+import { WRITE_ARTIFACT_HUB_TOOLS } from '../tools/write-artifact';
+import { LAST30DAYS_CORE_HUB_TOOLS } from '../tools/last30days-core-tools';
 import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
 
 /**
@@ -20,9 +28,17 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...EXA_HUB_TOOLS,
   ...FIRECRAWL_HUB_TOOLS,
   ...GRANOLA_HUB_TOOLS,
+  ...HACKERNEWS_HUB_TOOLS,
+  ...GITHUB_HUB_TOOLS,
+  ...POLYMARKET_HUB_TOOLS,
+  ...REDDIT_HUB_TOOLS,
+  ...SCRAPECREATORS_HUB_TOOLS,
+  ...X_HUB_TOOLS,
   ...ARTIFACT_HUB_TOOLS,
   ...DISPATCH_HUB_TOOLS,
   ...AGENTS_HUB_TOOLS,
+  ...WRITE_ARTIFACT_HUB_TOOLS,
+  ...LAST30DAYS_CORE_HUB_TOOLS,
 };
 
 export type CredentialToolEntry = {
