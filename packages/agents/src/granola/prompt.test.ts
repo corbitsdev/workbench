@@ -49,6 +49,19 @@ describe('buildGranolaSystemPrompt', () => {
     expect(prompt).toContain('No emojis unless explicitly requested');
   });
 
+  it('instructs the agent to present call documents as a fenced ui block', () => {
+    const prompt = buildGranolaSystemPrompt('Freddy', xmlFormat);
+    expect(prompt).toContain('<presentation>');
+    expect(prompt).toContain('```ui');
+    expect(prompt).toContain('"kind":"document"');
+    expect(prompt).toContain('"kind":"choice"');
+  });
+
+  it('tells the agent to fall back to plain markdown when JSON is not possible', () => {
+    const prompt = buildGranolaSystemPrompt('Freddy', xmlFormat);
+    expect(prompt).toContain('fall back to the plain markdown schema');
+  });
+
   it('renders sections as XML tags under the xml format', () => {
     const prompt = buildGranolaSystemPrompt('Freddy', xmlFormat);
     expect(prompt).toContain('<role>');

@@ -4,6 +4,7 @@ import { type ChatMessage, type ChatActivity } from './types';
 import { MessageBubble } from './MessageBubble';
 import { ToolNarrative, type ToolNarrativeProps } from './ToolNarrative';
 import { TypingIndicator } from './TypingIndicator';
+import type { UIBlock, UIResponse } from './ui-block';
 
 function formatActivityLabel(activity: ChatActivity, agentName: string): string {
   switch (activity.type) {
@@ -34,6 +35,10 @@ export interface ChatThreadProps {
    * raw tool names and results into readable summary lines.
    */
   formatToolSummary?: ToolNarrativeProps['formatSummary'];
+  /** Wired to send an interactive UI block's response back to the agent. */
+  onRespond?: (response: UIResponse) => void;
+  /** Wired to document UI block actions (copy / download / save-artifact). */
+  onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
   className?: string;
 }
 
@@ -46,6 +51,8 @@ export function ChatThread({
   typingLabel,
   emptyState,
   formatToolSummary,
+  onRespond,
+  onAction,
   className,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -81,13 +88,19 @@ export function ChatThread({
         ))}
       {messages.map((message) => (
         <div key={message.id} className="flex flex-col gap-1.5">
-          <MessageBubble message={message} />
+          <MessageBubble
+            message={message}
+            {...(onRespond !== undefined ? { onRespond } : {})}
+            {...(onAction !== undefined ? { onAction } : {})}
+          />
           {message.role === 'agent' &&
             message.toolCalls !== undefined &&
             message.toolCalls.length > 0 && (
               <ToolNarrative
                 toolCalls={message.toolCalls}
                 {...(formatToolSummary !== undefined ? { formatSummary: formatToolSummary } : {})}
+                {...(onRespond !== undefined ? { onRespond } : {})}
+                {...(onAction !== undefined ? { onAction } : {})}
                 className="pl-1"
               />
             )}

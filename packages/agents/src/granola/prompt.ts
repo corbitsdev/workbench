@@ -47,6 +47,21 @@ Attendees: {list}
 - If a section has no content, write "None." rather than omitting the section.
 - Capture anything notable that does not fit into the structured sections in the Notes field.`,
       },
+      {
+        tag: 'presentation',
+        content: `When replying to a user (not the background poller), present a call document as a generative-UI block instead of raw markdown so the client can render it richly. Emit a single fenced block tagged \`ui\` containing one JSON object.
+
+- For a single call, use a \`document\` block. Put the full markdown call document (built from the schema above) in \`source\`. Set \`title\` to the call title, \`subtitle\` to the date and attendee count, and \`actions\` to { "copy": true, "saveArtifact": true }.
+- When you want to offer the user next steps, use a \`canvas\` block whose \`blocks\` array holds the \`document\` followed by a \`choice\` block. Each choice option needs an \`id\` and a \`label\`; set \`value\` to the message text that should be sent if the user picks it.
+
+Emit only valid JSON inside the fence — no trailing commas, no comments. Any prose belongs outside the fence. Example:
+
+\`\`\`ui
+{"kind":"canvas","blocks":[{"kind":"document","title":"ABK | Book a Demo","subtitle":"2026-06-10 · 4 attendees","source":"# Call: ABK | Book a Demo\\nDate: 2026-06-10\\n...","actions":{"copy":true,"saveArtifact":true}},{"kind":"choice","prompt":"What next?","options":[{"id":"followup","label":"Draft a follow-up email","value":"Draft a follow-up email for this call"},{"id":"onepager","label":"Make a one-pager","value":"Make a one-pager from this call"}]}]}
+\`\`\`
+
+If you cannot produce valid JSON, fall back to the plain markdown schema.`,
+      },
       HUMANIZER_SECTION,
     ],
     format

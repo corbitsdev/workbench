@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { cn } from '@workbench/ui';
 import { motion } from 'framer-motion';
 import type { ToolCall } from './types';
+import { parseToolResult, type UIBlock, type UIResponse } from './ui-block';
+import { UIBlockView } from './UIBlockView';
 
 function DoneIcon({ isError }: { isError?: boolean }) {
   return (
@@ -61,6 +63,10 @@ export interface ToolNarrativeProps {
    * human-readable summary line. Falls back to the call's `label` or `name`.
    */
   formatSummary?: (call: ToolCall) => string;
+  /** Forwarded to interactive UI blocks rendered from a structured tool result. */
+  onRespond?: (response: UIResponse) => void;
+  /** Forwarded to document UI blocks for copy / download / save-artifact. */
+  onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
   className?: string;
 }
 
@@ -107,12 +113,26 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
-function ToolRow({ call, summary }: { call: ToolCall; summary: string }) {
+function ToolRow({
+  call,
+  summary,
+  onRespond,
+  onAction,
+}: {
+  call: ToolCall;
+  summary: string;
+  onRespond?: (response: UIResponse) => void;
+  onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
+}) {
   const [open, setOpen] = useState(false);
   const pending = call.result === undefined && !call.isError;
   const argsSummary = summarizeArgs(call.arguments);
   const hasArgs = call.arguments !== undefined && Object.keys(call.arguments).length > 0;
   const expandable = !pending && (call.result !== undefined || hasArgs);
+  const resultBlock =
+    call.result !== undefined && call.result !== '' && !call.isError
+      ? parseToolResult(call.result)
+      : null;
 
   return (
     <div className="flex flex-col">
@@ -143,15 +163,24 @@ function ToolRow({ call, summary }: { call: ToolCall; summary: string }) {
               {JSON.stringify(call.arguments, null, 2)}
             </pre>
           )}
-          {call.result !== undefined && call.result !== '' && (
-            <pre
-              className={cn(
-                'max-h-60 overflow-auto whitespace-pre-wrap break-words rounded px-2 py-1.5 font-mono',
-                call.isError ? 'bg-red-500/10 text-red-600' : 'bg-surface-2 text-text-2'
-              )}
-            >
+          {call.isError === true && call.result !== undefined && call.result !== '' && (
+            <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red-500/10 px-2 py-1.5 font-mono text-red-600">
               {call.result}
             </pre>
+          )}
+          {resultBlock !== null && resultBlock.kind === 'text' && (
+            <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1.5 font-mono text-text-2">
+              {resultBlock.text}
+            </pre>
+          )}
+          {resultBlock !== null && resultBlock.kind !== 'text' && (
+            <div className="text-sm">
+              <UIBlockView
+                block={resultBlock}
+                {...(onRespond !== undefined ? { onRespond } : {})}
+                {...(onAction !== undefined ? { onAction } : {})}
+              />
+            </div>
           )}
         </div>
       )}
@@ -159,7 +188,13 @@ function ToolRow({ call, summary }: { call: ToolCall; summary: string }) {
   );
 }
 
-export function ToolNarrative({ toolCalls, formatSummary, className }: ToolNarrativeProps) {
+export function ToolNarrative({
+  toolCalls,
+  formatSummary,
+  onRespond,
+  onAction,
+  className,
+}: ToolNarrativeProps) {
   if (toolCalls.length === 0) return null;
 
   const fmt = formatSummary ?? defaultSummary;
@@ -169,7 +204,15 @@ export function ToolNarrative({ toolCalls, formatSummary, className }: ToolNarra
       {toolCalls.map((call) => {
         const pending = call.result === undefined && !call.isError;
         const summary = pending ? (call.label ?? call.name) : fmt(call);
-        return <ToolRow key={call.id} call={call} summary={summary} />;
+        return (
+          <ToolRow
+            key={call.id}
+            call={call}
+            summary={summary}
+            {...(onRespond !== undefined ? { onRespond } : {})}
+            {...(onAction !== undefined ? { onAction } : {})}
+          />
+        );
       })}
     </div>
   );

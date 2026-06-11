@@ -19,6 +19,7 @@ import {
   type ChatDockState,
   type ChatMessage,
   type ChatActivity,
+  type UIResponse,
 } from '@workbench/chat';
 import { type AgentActivity } from '@intx/hub-client';
 import { getMe, launchInstanceSession } from '../lib/hub-api';
@@ -312,11 +313,18 @@ export function PersonalAgentChat() {
       });
     };
 
+    // Closes the generative-UI loop: an interactive block's selection is sent
+    // back as the next user turn, exactly as if the user had typed it.
+    const handleRespond = (response: UIResponse) => {
+      handleSend(response.value);
+    };
+
     return (
       <ChatPanel
         agent={MYRA}
         messages={messages}
         onSend={handleSend}
+        onRespond={handleRespond}
         activity={activity}
         dockState={dockState}
         onToggleDock={toggleDock}
