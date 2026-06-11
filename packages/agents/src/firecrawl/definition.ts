@@ -6,7 +6,9 @@ import { LLM_CREDENTIAL_NAME } from '../constants';
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
-export const FIRECRAWL_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
+export const FIRECRAWL_GRANT_REQUIREMENTS: GrantRequirementType[] = [
+  { source: 'invoker', resource: 'tool:mail_reply', action: 'invoke' },
+];
 
 /**
  * Credential requirements for the Freddy agent.

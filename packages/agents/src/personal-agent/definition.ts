@@ -41,9 +41,8 @@ export const PERSONAL_AGENT_DEPLOY_PROMPT: string = buildPersonalAgentSystemProm
  *
  * Tool grants (`tool:<name>/invoke`) are synthesized from this list at launch
  * (persistInstanceToolGrants), so listing a tool here is what authorizes it.
- * `mail_send` is granted separately via grant requirements (invoker delegation),
- * and the mail tools themselves are provided by the sidecar harness — Myra finds
- * addresses to message with `list_agents` (CL-1666).
+ * Mail tools are provided by the sidecar harness — `mail_send` is also covered
+ * by the invoker delegation grant in `buildPersonalAgentGrantRequirements`.
  */
 export const PERSONAL_AGENT_BASE_TOOLS: string[] = [
   'read_file',
@@ -56,4 +55,9 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = [
   'artifact_write',
   'artifact_list',
   'list_agents',
+  'mail_send',
+  'mail_reply',
+  'mail_search',
+  'mail_read',
+  'mail_wait',
 ];

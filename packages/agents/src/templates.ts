@@ -5,7 +5,11 @@ import {
   PERSONAL_AGENT_BASE_TOOLS,
   buildPersonalAgentGrantRequirements,
 } from './personal-agent/definition';
-import { LOOP_DEPLOY_PROMPT, LOOP_CREDENTIAL_REQUIREMENTS } from './loop/definition';
+import {
+  LOOP_DEPLOY_PROMPT,
+  LOOP_CREDENTIAL_REQUIREMENTS,
+  LOOP_GRANT_REQUIREMENTS,
+} from './loop/definition';
 import {
   GRANOLA_DEPLOY_PROMPT,
   GRANOLA_CREDENTIAL_REQUIREMENTS,
@@ -114,7 +118,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     description: 'Runs scheduled background tasks on a configurable interval.',
     systemPrompt: LOOP_DEPLOY_PROMPT,
     credentialRequirements: LOOP_CREDENTIAL_REQUIREMENTS,
-    grantRequirements: [],
+    grantRequirements: LOOP_GRANT_REQUIREMENTS,
     capabilities: { tools: [] },
     deployable: false,
   },

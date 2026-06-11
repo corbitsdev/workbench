@@ -30,4 +30,23 @@ describe('AGENT_TEMPLATES', () => {
     const resources = myra?.grantRequirements.map((g) => g.resource) ?? [];
     expect(resources).toContain('tool:mail_send');
   });
+
+  it('Myra capabilities include all mail tools', () => {
+    const myra = AGENT_TEMPLATES.find((t) => t.key === 'myra');
+    expect(myra).toBeDefined();
+    const tools = myra?.capabilities.tools ?? [];
+    expect(tools).toContain('mail_send');
+    expect(tools).toContain('mail_reply');
+    expect(tools).toContain('mail_search');
+    expect(tools).toContain('mail_read');
+    expect(tools).toContain('mail_wait');
+  });
+
+  it('every specialist agent has a mail_reply grant requirement', () => {
+    const specialists = AGENT_TEMPLATES.filter((t) => t.key !== 'myra');
+    for (const template of specialists) {
+      const resources = template.grantRequirements.map((g) => g.resource);
+      expect(resources).toContain('tool:mail_reply');
+    }
+  });
 });

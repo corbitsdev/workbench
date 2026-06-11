@@ -1,9 +1,14 @@
-import type { CredentialRequirement } from '@intx/types';
+import type { CredentialRequirement, GrantRequirement } from '@intx/types';
 import { buildLoopAgentSystemPrompt } from './prompt';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
 import { LLM_CREDENTIAL_NAME } from '../constants';
 
+type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
+
+export const LOOP_GRANT_REQUIREMENTS: GrantRequirementType[] = [
+  { source: 'invoker', resource: 'tool:mail_reply', action: 'invoke' },
+];
 
 export const LOOP_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
