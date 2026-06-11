@@ -115,6 +115,11 @@ export function PersonalAgentChat() {
         // Capture tool names from the live stream so committed turns whose tool
         // "call" part failed to persist still render the real tool instead of a
         // generic "Tool call" (see CL-1398).
+        // toolNameTracker retains its onUpdate because tool names are resolved once
+        // per tool call (not per streaming token), so the extra render is rare and
+        // does not cause per-token stutter. Unlike liveTextTracker, the cost of
+        // missing a render here (tool name stays as "Tool call" after commit) is
+        // visible to the user.
         toolNamesRef.current = createToolNameTracker(
           transport,
           { tenantId: me.personalTenantId, instanceId: me.paInstanceId },
@@ -126,12 +131,11 @@ export function PersonalAgentChat() {
         // Track the current turn's live text from the raw stream. The session's
         // own `streaming` buffer accumulates across turns when a turn commits
         // empty (CL-1398) and would merge separate replies into one (CL-1643).
+        // No onUpdate — same rationale as AgentChat: avoid double-render race
+        // between the session and tracker SSE connections.
         liveTextRef.current = createLiveTextTracker(
           transport,
-          { tenantId: me.personalTenantId, instanceId: me.paInstanceId },
-          () => {
-            if (!cancelled) forceUpdate((n) => n + 1);
-          }
+          { tenantId: me.personalTenantId, instanceId: me.paInstanceId }
         );
 
         if (!cancelled) setSessionState({ phase: 'ready', session });

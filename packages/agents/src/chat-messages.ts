@@ -2,6 +2,8 @@ import type { InstanceEvent } from '@intx/hub-client';
 import type { ChatMessage } from '@workbench/chat';
 import { convertInstanceEvents } from './adapter';
 
+export const STREAMING_BUBBLE_ID = 'streaming-synthetic';
+
 export interface ComposeChatInput {
   events: InstanceEvent[];
   /** Live streaming buffer from the session (empty when not streaming). */
@@ -64,7 +66,20 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
     return true;
   });
 
-  const messages = convertInstanceEvents(deduped, toolNames);
+  const converted = convertInstanceEvents(deduped, toolNames);
+
+  // Deduplicate by message id. The session layer already deduplicates events
+  // by id, but guard here too in case two different code paths produce the
+  // same id (e.g. a hydration race that drains the SSE buffer after the REST
+  // fetch returns the same mail).
+  const seen = new Set<string>();
+  const messages: ChatMessage[] = [];
+  for (const msg of converted) {
+    if (!seen.has(msg.id)) {
+      seen.add(msg.id);
+      messages.push(msg);
+    }
+  }
 
   // The hub can fail to persist a turn's text part (CL-1398), so turn.committed
   // may arrive with empty text while the streamed text the user watched is still
@@ -90,7 +105,7 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
       last.status = 'sending';
     } else {
       messages.push({
-        id: 'streaming-synthetic',
+        id: STREAMING_BUBBLE_ID,
         role: 'agent',
         content: streaming,
         createdAt: new Date().toISOString(),

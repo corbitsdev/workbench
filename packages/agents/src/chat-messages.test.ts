@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { InstanceEvent } from '@intx/hub-client';
-import { composeChatMessages } from './chat-messages';
+import { composeChatMessages, STREAMING_BUBBLE_ID } from './chat-messages';
 
 const userMail = (
   id: string,
@@ -39,7 +39,7 @@ describe('composeChatMessages', () => {
       streaming: 'Thinking out lou',
     });
     const last = messages[messages.length - 1];
-    expect(last?.id).toBe('streaming-synthetic');
+    expect(last?.id).toBe(STREAMING_BUBBLE_ID);
     expect(last?.content).toBe('Thinking out lou');
     expect(last?.status).toBe('sending');
   });
@@ -141,6 +141,20 @@ describe('composeChatMessages', () => {
       streaming: '',
     });
     expect(messages.map((m) => m.content)).toEqual(['first', 'first answer', 'second']);
+  });
+
+  it('deduplicates events with the same id (hydration-race guard)', () => {
+    // The session hydrates via a REST fetch, then drains the SSE buffer. If the
+    // same mail arrives in both, convertInstanceEvents emits it twice with the
+    // same id. The id-based pass must keep only the first.
+    const mail = assistantMail('a1', 'Hello');
+    const { messages } = composeChatMessages({
+      events: [userMail('u1', 'hi'), mail, { ...mail }],
+      streaming: '',
+    });
+    const agentMessages = messages.filter((m) => m.role === 'agent');
+    expect(agentMessages).toHaveLength(1);
+    expect(agentMessages[0]?.id).toBe('a1');
   });
 
   it('keeps a tool-call turn and drops the assistant mail that echoes it', () => {

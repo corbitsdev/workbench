@@ -69,6 +69,7 @@ export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker
 export { createLiveTextTracker, type LiveTextTracker } from './live-text-tracker';
 export {
   composeChatMessages,
+  STREAMING_BUBBLE_ID,
   type ComposeChatInput,
   type ComposeChatResult,
 } from './chat-messages';
