@@ -63,4 +63,23 @@ describe('FIRECRAWL_HUB_TOOLS', () => {
     expect(result.isError).toBeUndefined();
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+
+  it('ignores a malformed stored baseURL and uses the hardcoded default', async () => {
+    const fetcher = makeFetchStub({ success: true, data: { markdown: '# Example' } });
+    const tools = FIRECRAWL_HUB_TOOLS.firecrawl_scrape?.createTools({
+      apiKey: 'test-key',
+      baseURL: 'api.firecrawl.dev/v2',
+      fetcher,
+    });
+
+    const runner = createToolRunner(tools ?? []);
+    const result = await runner.run(
+      { id: 'call_1', name: 'firecrawl_scrape', arguments: { url: 'https://example.com' } },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBeUndefined();
+    const [requestedUrl] = fetcher.mock.calls[0] ?? [];
+    expect(requestedUrl).toContain('https://api.firecrawl.dev/v2');
+  });
 });

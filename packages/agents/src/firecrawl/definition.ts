@@ -8,11 +8,17 @@ type CredentialRequirementType = typeof CredentialRequirement.infer;
 
 export const FIRECRAWL_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
 
+/**
+ * Credential requirements for the Freddy agent.
+ *
+ * Only the LLM credential is declared here — Interchange resolves these as
+ * inference sources at launch time, and the sidecar validates each against the
+ * LLM inference provider registry. The firecrawl API key is a non-LLM
+ * credential resolved by the hub at tool execution time via the tool registry,
+ * so declaring it here would push an unbuildable inference source and fail the
+ * session launch ("Source provider 'firecrawl' is not registered").
+ */
 export const FIRECRAWL_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
-  {
-    providerName: 'firecrawl',
-    source: 'tenant',
-  },
   {
     providerName: 'openai-compatible',
     source: 'tenant',

@@ -122,10 +122,13 @@ export const FIRECRAWL_HUB_TOOLS = Object.fromEntries(
         baseURL?: string;
         fetcher?: FirecrawlToolsConfig['fetcher'];
       }) =>
+        // Firecrawl's base URL is owned by the package (FIRECRAWL_DEFAULT_BASE_URL),
+        // not configured per credential. The hub forwards the provider row's
+        // optional, free-text baseURL, which may be empty or malformed; ignoring
+        // it here keeps a bad provider value from breaking every Firecrawl tool.
         createFirecrawlToolByName(
           {
             apiKey: config.apiKey,
-            ...(config.baseURL ? { baseUrl: config.baseURL } : {}),
             ...(config.fetcher ? { fetcher: config.fetcher } : {}),
           },
           definition.name
