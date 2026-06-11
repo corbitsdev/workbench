@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { AGENT_TEMPLATES } from './templates';
+import { BOBBY_DEPLOY_DESCRIPTOR } from './bobby/definition';
 
 describe('AGENT_TEMPLATES', () => {
   const inferenceProviderNames = new Set(['openai-compatible']);
@@ -12,9 +13,16 @@ describe('AGENT_TEMPLATES', () => {
     'xai',
   ]);
 
-  it('contains all seven templates', () => {
+  it('contains all eight templates', () => {
     const keys = AGENT_TEMPLATES.map((t) => t.key).sort();
-    expect(keys).toEqual(['freddy', 'hammy', 'lincoln', 'loop', 'myra', 'oat', 'walter']);
+    expect(keys).toEqual(['bobby', 'freddy', 'hammy', 'lincoln', 'loop', 'myra', 'oat', 'walter']);
+  });
+
+  it('registers Bobby with the browser toolset and the browserbase credential provider', () => {
+    const bobby = AGENT_TEMPLATES.find((t) => t.key === 'bobby');
+    expect(bobby).toBeDefined();
+    expect(bobby?.capabilities.tools).toContain('browser_create_session');
+    expect(BOBBY_DEPLOY_DESCRIPTOR.credentialProviderNames).toContain('browserbase');
   });
 
   it('every template has a non-empty name, systemPrompt, and credentialRequirements', () => {

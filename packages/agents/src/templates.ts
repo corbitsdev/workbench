@@ -40,6 +40,12 @@ import {
   LINCOLN_GRANT_REQUIREMENTS,
   LINCOLN_CAPABILITIES,
 } from './lincoln/definition';
+import {
+  BOBBY_DEPLOY_PROMPT,
+  BOBBY_CREDENTIAL_REQUIREMENTS,
+  BOBBY_GRANT_REQUIREMENTS,
+  BOBBY_CAPABILITIES,
+} from './bobby/definition';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -149,6 +155,16 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     credentialRequirements: HAMMY_CREDENTIAL_REQUIREMENTS,
     grantRequirements: HAMMY_GRANT_REQUIREMENTS,
     capabilities: { tools: [...HAMMY_CAPABILITIES.tools] },
+  },
+  {
+    key: 'bobby',
+    name: 'Bobby',
+    description:
+      'Browser automation agent — navigates real sites, fills forms, and extracts what only a live page can give.',
+    systemPrompt: BOBBY_DEPLOY_PROMPT,
+    credentialRequirements: BOBBY_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: BOBBY_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...BOBBY_CAPABILITIES.tools] },
   },
   {
     key: 'lincoln',

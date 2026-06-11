@@ -41,6 +41,16 @@ export {
   WALTER_DEPLOY_PROMPT,
 } from './walter/definition';
 
+// Bobby — the browser
+export { buildBobbySystemPrompt } from './bobby/prompt';
+export {
+  BOBBY_GRANT_REQUIREMENTS,
+  BOBBY_CREDENTIAL_REQUIREMENTS,
+  BOBBY_DEPLOY_PROMPT,
+  BOBBY_CAPABILITIES,
+  BOBBY_DEPLOY_DESCRIPTOR,
+} from './bobby/definition';
+
 // Lincoln agent
 export { buildLincolnSystemPrompt } from './lincoln/prompt';
 export {

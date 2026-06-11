@@ -42,6 +42,7 @@
     "@workbench/shared": "workspace:*",
     "@workbench/last30days-core": "workspace:*",
     "@workbench/tools-agents": "workspace:*",
+    "@workbench/tools-browser": "workspace:*",
     "@workbench/tools-dispatch": "workspace:*",
     "@workbench/tools-github": "workspace:*",
     "@workbench/tools-hackernews": "workspace:*",

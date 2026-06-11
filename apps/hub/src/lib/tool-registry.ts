@@ -3,6 +3,7 @@ import type { DB } from '@intx/db';
 import { createPosixTools } from '@intx/tools-posix';
 import type { ToolDefinition } from '@intx/types/runtime';
 import { AGENTS_HUB_TOOLS } from '@workbench/tools-agents';
+import { BROWSER_HUB_TOOLS } from '@workbench/tools-browser';
 import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
 import { FIRECRAWL_HUB_TOOLS } from '@workbench/tools-firecrawl';
 import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
@@ -25,6 +26,7 @@ import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@int
  * *_HUB_TOOLS object and spread it here. No other hub or sidecar changes needed.
  */
 export const KNOWN_TOOLS: Record<string, ToolEntry> = {
+  ...BROWSER_HUB_TOOLS,
   ...EXA_HUB_TOOLS,
   ...FIRECRAWL_HUB_TOOLS,
   ...GRANOLA_HUB_TOOLS,

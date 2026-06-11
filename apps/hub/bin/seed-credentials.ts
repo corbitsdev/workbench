@@ -185,6 +185,29 @@ function buildEntries(): CredentialEntry[] {
     });
   }
 
+  // Browserbase needs both an API key and a project id. The hub only forwards a
+  // single `baseURL` string per credential, so the project id rides on it as a
+  // query param and the tool package parses it back out.
+  const browserbaseKey = env('BROWSERBASE_API_KEY');
+  const browserbaseProjectId = env('BROWSERBASE_PROJECT_ID');
+  if (browserbaseKey) {
+    if (!browserbaseProjectId) {
+      console.error(
+        '[seed-credentials] BROWSERBASE_API_KEY is set but BROWSERBASE_PROJECT_ID is missing — skipping'
+      );
+    } else {
+      entries.push({
+        providerName: 'browserbase',
+        providerPlugin: 'browserbase',
+        credentialName: 'Browserbase',
+        secret: browserbaseKey,
+        metadata: {
+          baseURL: `https://api.browserbase.com/v1?projectId=${browserbaseProjectId}`,
+        },
+      });
+    }
+  }
+
   return entries;
 }
 
