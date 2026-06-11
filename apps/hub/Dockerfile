@@ -13,6 +13,7 @@ COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/agent-scheduler/package.json packages/agent-scheduler/
 COPY packages/agents/package.json packages/agents/
+COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
 COPY packages/chat/package.json packages/chat/
@@ -40,6 +41,7 @@ COPY apps/hub/ apps/hub/
 COPY scripts/ scripts/
 COPY packages/agent-scheduler/ packages/agent-scheduler/
 COPY packages/agents/ packages/agents/
+COPY packages/event-collector/ packages/event-collector/
 COPY packages/chat/ packages/chat/
 COPY packages/gtm-workflows/ packages/gtm-workflows/
 COPY packages/prompts/ packages/prompts/

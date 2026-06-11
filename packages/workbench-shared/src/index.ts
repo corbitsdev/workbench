@@ -27,7 +27,8 @@ export type ArtifactKind =
   | 'customer-quotes'
   | 'battlecard'
   | 'pain-points'
-  | 'call-transcript';
+  | 'call-transcript'
+  | 'linkedin-daily';
 
 export type ArtifactStatus = 'draft' | 'approved' | 'rejected';
 

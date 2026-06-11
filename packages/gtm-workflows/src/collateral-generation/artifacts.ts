@@ -14,6 +14,7 @@ export interface WorkflowArtifactDraft {
 
 export const collateralTypeOptions = [
   { id: 'linkedin-post', label: 'LinkedIn Post' },
+  { id: 'linkedin-daily', label: 'LinkedIn Daily (3 Drafts)' },
   { id: 'twitter-post', label: 'Twitter Post' },
   { id: 'blog', label: 'Blog' },
   { id: 'founder-pov-post', label: 'Founder POV Post' },
@@ -24,6 +25,29 @@ export const collateralTypeOptions = [
   { id: 'objection-handling', label: 'Objection Handling' },
   { id: 'customer-quotes', label: 'Customer Quotes' },
 ] as const;
+
+type CollateralTypeId = (typeof collateralTypeOptions)[number]['id'];
+
+const MULTI_VARIANT_KINDS: Partial<Record<CollateralTypeId, number>> = {
+  'linkedin-daily': 3,
+};
+
+export function getVariantCount(kind: string): number {
+  return MULTI_VARIANT_KINDS[kind as CollateralTypeId] ?? 1;
+}
+
+export function hasMultiVariantKind(artifacts: { kind: string }[]): boolean {
+  return artifacts.some((a) => getVariantCount(a.kind) > 1);
+}
+
+export function appendVariantSuffix(
+  collateral: { title: string; body: string },
+  kind: string,
+  variantIndex: number
+): { title: string; body: string } {
+  if (getVariantCount(kind) <= 1) return collateral;
+  return { ...collateral, title: `${collateral.title} — Draft ${variantIndex + 1}` };
+}
 
 const BOOKKEEPING_KINDS = new Set(['call-transcript', 'pain-points']);
 

@@ -596,22 +596,31 @@ export async function launchAgentSession(
 
   const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
 
-  let lastError: unknown;
-  for (let attempt = 0; attempt < MAX_LAUNCH_ATTEMPTS; attempt++) {
-    // Clean up any orphaned session rows from a previous failed attempt before
-    // creating a new one. Without this, each retry leaves an active session row
-    // pointing at a sidecar agent that was never started successfully.
-    const existing = await db.query.agentInstance.findFirst({
-      where: eq(agentInstance.id, instanceId),
+  // Resolve the session to launch under. Reuse the instance's existing active
+  // session (resume) rather than minting a new one on every call. Minting
+  // unconditionally caused session churn (CL-1651): a transient sidecar
+  // disconnect made the instance briefly unroutable, so every GET /v1/me poll
+  // slipped past the routable guard in relaunchInstanceIfNeeded and created a
+  // fresh session, orphaning the prior one and dropping in-flight live events
+  // whose turns belonged to the superseded session.
+  const existing = await db.query.agentInstance.findFirst({
+    where: eq(agentInstance.id, instanceId),
+  });
+  let sessionId: string | undefined;
+  if (existing?.sessionId) {
+    const existingSession = await db.query.agentSession.findFirst({
+      where: eq(agentSession.id, existing.sessionId),
     });
-    if (existing?.sessionId) {
-      await db
-        .update(agentSession)
-        .set({ status: 'ended', updatedAt: new Date() })
-        .where(and(eq(agentSession.id, existing.sessionId), eq(agentSession.status, 'active')));
+    // Reusing existing.sessionId is only sound because the instance already
+    // points at it — we resume in place rather than repointing the instance at a
+    // different active session. The skipped agentInstance.update below relies on
+    // that invariant.
+    if (existingSession?.status === 'active') {
+      sessionId = existing.sessionId;
     }
-
-    const sessionId = generateId('session');
+  }
+  if (sessionId === undefined) {
+    sessionId = generateId('session');
     await db.insert(agentSession).values({
       id: sessionId,
       tenantId,
@@ -621,31 +630,33 @@ export async function launchAgentSession(
       createdAt: now,
       updatedAt: now,
     });
-
     await db
       .update(agentInstance)
       .set({ sessionId, updatedAt: now })
       .where(eq(agentInstance.id, instanceId));
+  }
 
-    const launchConfig = {
-      agentAddress: address,
+  const launchConfig = {
+    agentAddress: address,
+    agentId,
+    instanceId,
+    config: {
+      sessionId,
       agentId,
-      instanceId,
-      config: {
-        sessionId,
-        agentId,
-        tenantId,
-        principalId: instancePrincipalId,
-        agentAddress: address,
-        systemPrompt,
-        tools,
-        grants,
-        sources,
-        defaultSource,
-      },
-      deployContent: { systemPrompt },
-    };
+      tenantId,
+      principalId: instancePrincipalId,
+      agentAddress: address,
+      systemPrompt,
+      tools,
+      grants,
+      sources,
+      defaultSource,
+    },
+    deployContent: { systemPrompt },
+  };
 
+  let lastError: unknown;
+  for (let attempt = 0; attempt < MAX_LAUNCH_ATTEMPTS; attempt++) {
     try {
       await sessionService.launchSession(launchConfig);
       // Register the event collector before updating status so inference events
@@ -668,16 +679,13 @@ export async function launchAgentSession(
     }
   }
 
-  // Mark the last session row as ended since the launch ultimately failed.
-  const finalInstance = await db.query.agentInstance.findFirst({
-    where: eq(agentInstance.id, instanceId),
-  });
-  if (finalInstance?.sessionId) {
-    await db
-      .update(agentSession)
-      .set({ status: 'ended', updatedAt: new Date() })
-      .where(and(eq(agentSession.id, finalInstance.sessionId), eq(agentSession.status, 'active')));
-  }
+  // Launch ultimately failed — mark the session ended. Stamp endedAt (not just
+  // status) so ended sessions carry a timestamp (CL-1651).
+  const failedAt = new Date();
+  await db
+    .update(agentSession)
+    .set({ status: 'ended', endedAt: failedAt, updatedAt: failedAt })
+    .where(and(eq(agentSession.id, sessionId), eq(agentSession.status, 'active')));
 
   // Clean up any tool grants written before the launch loop — they're orphaned
   // since no session launched, and would otherwise be returned by collectGrants
@@ -714,15 +722,24 @@ export async function relaunchInstanceIfNeeded(
   // relaunched.
   if (instance.status === 'stopped' && instance.endedAt !== null) return;
 
-  // If the agent is already reachable on a connected sidecar, it is live — do
-  // not relaunch. Re-launching re-deploys the same address, which the sidecar
-  // rejects with "Agent already exists"; that rejected deploy evicts the live
-  // agent from the router's address index, after which mail delivery fails with
-  // "agent is unreachable" (502). Relaunch only when the agent is genuinely not
-  // routable — e.g. a sidecar restart cleared the index, or the hub boot reset
-  // the instance status to 'deployed'. This keeps the post-reconnect recovery
-  // intent without breaking healthy, just-deployed instances.
+  // The sidecar — not the hub — owns the lifecycle of a launched agent. If the
+  // address is routable on a connected sidecar the agent is live; and even while
+  // momentarily unroutable during a sidecar reconnect, an instance that already
+  // has an active session is restored by the sidecar (see the agent.reconnected
+  // path in hub-session-orchestrator). Relaunching from the poll-driven /v1/me
+  // path in either case churns sessions and can evict the live agent ("Agent
+  // already exists" → router eviction → 502). So relaunch only for a genuine cold
+  // start: an instance with no active session yet. (CL-1651)
   if (sidecarRouter.getRoutableAddresses().includes(instance.address)) return;
+  if (instance.sessionId) {
+    const session = await db.query.agentSession.findFirst({
+      where: eq(agentSession.id, instance.sessionId),
+    });
+    // Active or ending: the harness owns it (live, or mid-teardown). Only a fully
+    // ended session leaves nothing for the harness to resume — relaunching while
+    // a session is 'ending' would mint a fresh one mid-teardown and re-churn.
+    if (session && session.status !== 'ended') return;
+  }
 
   const tenantRow = await db.query.tenant.findFirst({
     where: eq(tenant.id, instance.tenantId),

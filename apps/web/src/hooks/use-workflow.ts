@@ -255,9 +255,10 @@ export function useInstallWorkflow(tenantId?: string | null) {
   });
 }
 
-export function useWorkbenchAgents() {
+export function useWorkbenchAgents({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery<AgentInstance[]>({
     queryKey: ['workbench-agents'],
+    enabled,
     queryFn: async () => {
       const workbenches = await listWorkbenches();
       const agentLists = await Promise.all(

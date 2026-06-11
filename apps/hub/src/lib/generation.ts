@@ -1,6 +1,7 @@
 import { getLogger } from '@intx/log';
 import type { InferenceSource } from '@intx/types/runtime';
 import {
+  appendVariantSuffix,
   buildCollateralRulesBlock,
   buildCollateralSystemPrompt,
   isPublicCollateralKind,
@@ -77,12 +78,14 @@ export async function generateCollateralWithLLM(
   point: PainPointInput,
   type: string,
   source: InferenceSource,
-  maxOutputTokens?: number
+  maxOutputTokens?: number,
+  variantIndex = 0
 ): Promise<GeneratedCollateral> {
   log.info('Generating collateral', {
     workflowId,
     painPointId: point.id,
     type,
+    variantIndex,
   });
 
   const resolvedMaxTokens =
@@ -90,9 +93,11 @@ export async function generateCollateralWithLLM(
 
   const userMessage = `Transcript (for context):\n\n${transcript.slice(0, 60000)}\n\n---\n\nPain point to address:\n- Summary: ${point.context}\n- Severity: ${point.severity}\n- Verbatim quote: "${point.quote}"\n\nGenerate the ${type} collateral now.`;
 
+  const systemPrompt = buildCollateralSystemPrompt(type, variantIndex);
+
   const raw = await runSingleTurnAgent(
     source,
-    buildCollateralSystemPrompt(type),
+    systemPrompt,
     userMessage,
     'gtm-generation',
     resolvedMaxTokens
@@ -102,12 +107,14 @@ export async function generateCollateralWithLLM(
 
   try {
     const result = tryParseCollateral(raw, workflowId, type);
+    const titled = appendVariantSuffix(result, type, variantIndex);
     log.info('Collateral generated', {
       workflowId,
       painPointId: point.id,
       type,
+      variantIndex,
     });
-    return result;
+    return titled;
   } catch {
     // Retry once. Long-form kinds get a JSON-only instruction (they need the
     // content length); short-form kinds get a brevity cap to avoid truncation.
@@ -118,18 +125,19 @@ export async function generateCollateralWithLLM(
     const retryMessage = `${userMessage}\n\n${retryHint}`;
     const retryRaw = await runSingleTurnAgent(
       source,
-      buildCollateralSystemPrompt(type),
+      systemPrompt,
       retryMessage,
       'gtm-generation',
       resolvedMaxTokens
     );
     if (!retryRaw) throw new Error('LLM returned empty content on retry for collateral generation');
-    const result = tryParseCollateral(retryRaw, workflowId, type);
+    const retryResult = tryParseCollateral(retryRaw, workflowId, type);
     log.info('Collateral generated (retry)', {
       workflowId,
       painPointId: point.id,
       type,
+      variantIndex,
     });
-    return result;
+    return appendVariantSuffix(retryResult, type, variantIndex);
   }
 }

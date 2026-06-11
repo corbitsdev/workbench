@@ -1069,10 +1069,14 @@ describe('Workflow router', () => {
 
   it('GET /workflows returns an empty array when user context is missing', async () => {
     const mockDb = createMockDb();
-    mockDb.query.tenant.findFirst = mock(() => null) as unknown as typeof mockDb.query.tenant.findFirst;
+    mockDb.query.tenant.findFirst = mock(
+      () => null
+    ) as unknown as typeof mockDb.query.tenant.findFirst;
 
     const router = buildApp(mockDb);
-    const res = await router.fetch(new Request('http://localhost:4000/workflows', { method: 'GET' }));
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows', { method: 'GET' })
+    );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual([]);
   });
@@ -1097,7 +1101,9 @@ describe('Workflow router', () => {
     ]) as typeof mockDb.query.painPoint.findMany;
 
     const router = buildApp(mockDb);
-    const res = await router.fetch(new Request('http://localhost:4000/workflows', { method: 'GET' }));
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows', { method: 'GET' })
+    );
     expect(res.status).toBe(200);
     const json = (await res.json()) as Array<Record<string, unknown>>;
     expect(json).toHaveLength(1);
@@ -1124,7 +1130,9 @@ describe('Workflow router', () => {
 
   it('GET /workflows/:id returns 404 when the workflow does not exist', async () => {
     const mockDb = createMockDb();
-    mockDb.query.workflowRun.findFirst = mock(() => null) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.workflowRun.findFirst = mock(
+      () => null
+    ) as typeof mockDb.query.workflowRun.findFirst;
 
     const router = buildApp(mockDb);
     const res = await router.fetch(
@@ -1173,7 +1181,11 @@ describe('Workflow router', () => {
       new Request('http://localhost:4000/workflows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: '   ', source: 'paste', workflowKind: 'collateral-generation' }),
+        body: JSON.stringify({
+          transcript: '   ',
+          source: 'paste',
+          workflowKind: 'collateral-generation',
+        }),
       })
     );
     expect(res.status).toBe(400);
@@ -1231,7 +1243,9 @@ describe('Workflow router', () => {
 
   it('PATCH /workflows/:id/company returns 404 when the workflow is missing', async () => {
     const mockDb = createMockDb();
-    mockDb.query.workflowRun.findFirst = mock(() => null) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.workflowRun.findFirst = mock(
+      () => null
+    ) as typeof mockDb.query.workflowRun.findFirst;
 
     const router = buildApp(mockDb);
     const res = await router.fetch(
@@ -1266,7 +1280,9 @@ describe('Workflow router', () => {
     expect(json.stepConfig.analyze).toMatchObject({ agentId: 'inst-oat', maxOutputTokens: 2048 });
     expect(setValues[0]).toMatchObject({
       input: expect.objectContaining({
-        stepConfig: expect.objectContaining({ analyze: expect.objectContaining({ agentId: 'inst-oat' }) }),
+        stepConfig: expect.objectContaining({
+          analyze: expect.objectContaining({ agentId: 'inst-oat' }),
+        }),
       }),
     });
   });
@@ -1351,7 +1367,9 @@ describe('Workflow router', () => {
 
   it('PATCH /workflows/:id/step-config returns 404 when the workflow is missing', async () => {
     const mockDb = createMockDb();
-    mockDb.query.workflowRun.findFirst = mock(() => null) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.workflowRun.findFirst = mock(
+      () => null
+    ) as typeof mockDb.query.workflowRun.findFirst;
 
     const router = buildApp(mockDb);
     const res = await router.fetch(
@@ -1366,7 +1384,9 @@ describe('Workflow router', () => {
 
   it('PATCH /workflows/:id/step-config rejects an agentId not in the tenant', async () => {
     const mockDb = createMockDb();
-    mockDb.query.agentInstance.findMany = mock(() => []) as typeof mockDb.query.agentInstance.findMany;
+    mockDb.query.agentInstance.findMany = mock(
+      () => []
+    ) as typeof mockDb.query.agentInstance.findMany;
 
     const router = buildApp(mockDb);
     const res = await router.fetch(
@@ -1394,7 +1414,9 @@ describe('Workflow router', () => {
 
   it('PATCH artifact status returns 404 when the workflow is missing', async () => {
     const mockDb = createMockDb();
-    mockDb.query.workflowRun.findFirst = mock(() => null) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.workflowRun.findFirst = mock(
+      () => null
+    ) as typeof mockDb.query.workflowRun.findFirst;
     const router = buildApp(mockDb);
     const res = await router.fetch(
       new Request('http://localhost:4000/workflows/missing/artifacts/a-1/status', {
@@ -1482,7 +1504,9 @@ describe('Workflow router', () => {
 
   it('POST /workflows/:id/steps inline step returns 400 when no LLM credential resolves', async () => {
     const mockDb = createMockDb();
-    mockDb.query.enabledWorkflow.findMany = mock(() => []) as typeof mockDb.query.enabledWorkflow.findMany;
+    mockDb.query.enabledWorkflow.findMany = mock(
+      () => []
+    ) as typeof mockDb.query.enabledWorkflow.findMany;
     (intxDb.resolveCredentialRequirement as ReturnType<typeof mock>).mockResolvedValueOnce(null);
 
     const router = buildApp(mockDb);

@@ -81,6 +81,33 @@ describe('buildCollateralSystemPrompt', () => {
     expect(battlecard).toMatch(/not paid media copy/i);
   });
 
+  it('generates linkedin-daily with shared LinkedIn writing sections', () => {
+    const prompt = buildCollateralSystemPrompt('linkedin-daily', 0);
+    expect(prompt).toMatch(/<role>/);
+    expect(prompt).toMatch(/practitioner/);
+    expect(prompt).toMatch(/No hashtags/);
+  });
+
+  it('generates 3 distinct hook variants for linkedin-daily', () => {
+    const v0 = buildCollateralSystemPrompt('linkedin-daily', 0);
+    const v1 = buildCollateralSystemPrompt('linkedin-daily', 1);
+    const v2 = buildCollateralSystemPrompt('linkedin-daily', 2);
+    expect(v0).not.toBe(v1);
+    expect(v1).not.toBe(v2);
+    expect(v0).not.toBe(v2);
+  });
+
+  it('treats linkedin-daily as public (strips PII)', () => {
+    const prompt = buildCollateralSystemPrompt('linkedin-daily', 0);
+    expect(prompt).toMatch(/PUBLIC artifact/);
+  });
+
+  it('wraps linkedin-daily hook variants by modulo so index 3 equals index 0', () => {
+    const v0 = buildCollateralSystemPrompt('linkedin-daily', 0);
+    const v3 = buildCollateralSystemPrompt('linkedin-daily', 3);
+    expect(v0).toBe(v3);
+  });
+
   it('falls back to generic guidance for an unknown kind, interpolating the format', () => {
     const prompt = buildCollateralSystemPrompt('whitepaper');
     expect(prompt).toMatch(/paste-ready GTM collateral/i);

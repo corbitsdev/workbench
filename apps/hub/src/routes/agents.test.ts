@@ -513,10 +513,12 @@ describe('relaunchInstanceIfNeeded', () => {
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
   });
 
-  it('relaunches a deployed instance with a stale active session record', async () => {
+  it('does not relaunch a deployed instance that still has an active session (harness owns continuity) (CL-1651)', async () => {
     const db = makeMockDb();
-    // Restart left the row in "deployed" with a stale active session record —
-    // the agent was dropped from the sidecar and must be relaunched.
+    // Interchange continuity model: a launched agent's harness persists its state
+    // and resumes it on reconnect (ARCHITECTURE.md "Agent Continuity"). A "deployed"
+    // status with an active session means the harness is mid-reconnect, not gone —
+    // the hub must not relaunch it.
     db.query.agentInstance.findFirst = mock(() =>
       Promise.resolve(runningInstance({ status: 'deployed' }))
     );
@@ -542,16 +544,14 @@ describe('relaunchInstanceIfNeeded', () => {
       makeSidecarRouter() as never
     );
 
-    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
   });
 
   it('passes plaintext apiKey sources directly to launchSession (CL-1521: no decryption)', async () => {
     const db = makeMockDb();
+    // Cold start: no active session, so the hub launches and we can inspect sources.
     db.query.agentInstance.findFirst = mock(() =>
-      Promise.resolve(runningInstance({ status: 'deployed' }))
-    );
-    db.query.agentSession.findFirst = mock(() =>
-      Promise.resolve({ id: 'ses-1', status: 'active' })
+      Promise.resolve(runningInstance({ status: 'deployed', sessionId: null }))
     );
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
@@ -1202,7 +1202,11 @@ describe('POST /tenants/:tenantId/agents/instances', () => {
     // (tenant-1), then hierarchy walk over org-tenant.
     db.query.tenant.findFirst = mock((args: { where?: unknown }) => {
       void args;
-      return Promise.resolve({ id: 'tenant-1', domain: 'tenant-1.localhost', parentId: 'org-tenant' });
+      return Promise.resolve({
+        id: 'tenant-1',
+        domain: 'tenant-1.localhost',
+        parentId: 'org-tenant',
+      });
     });
     // Definition only exists under the parent: first agent.findFirst (cursor=org-tenant) hits.
     db.query.agent.findFirst = mock(() => Promise.resolve(DEF));
@@ -1234,7 +1238,11 @@ describe('launchAgentSession', () => {
   function launchDb() {
     const db = makeMockDb();
     db.query.agent.findFirst = mock(() =>
-      Promise.resolve({ id: 'agt-1', capabilities: { tools: ['exa_search'] }, grantRequirements: [] })
+      Promise.resolve({
+        id: 'agt-1',
+        capabilities: { tools: ['exa_search'] },
+        grantRequirements: [],
+      })
     );
     db.query.agentInstance.findFirst = mock(() =>
       Promise.resolve({ id: 'ins-1', sessionId: null })
@@ -1329,29 +1337,87 @@ describe('launchAgentSession', () => {
     expect(launchSession).toHaveBeenCalledTimes(2);
   }, 10000);
 
-  it('ends a stale active session row before each launch attempt', async () => {
+  it('reuses the instance existing active session instead of minting a new one (CL-1651)', async () => {
     sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
     const db = launchDb();
     db.query.agentInstance.findFirst = mock(() =>
-      Promise.resolve({ id: 'ins-1', sessionId: 'ses-stale' })
+      Promise.resolve({ id: 'ins-1', sessionId: 'ses-existing' })
     );
-    const setWhere = mock(() => Promise.resolve());
-    const setMock = mock(() => ({ where: setWhere }));
-    db.update = mock(() => ({ set: setMock }));
-    const launchSession = mock(() => Promise.resolve());
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: 'ses-existing', status: 'active' })
+    );
+    const insertMock = mock(() => ({ values: mock(() => Promise.resolve()) }));
+    db.insert = insertMock;
+    let launchedSessionId: string | undefined;
+    const launchSession = mock((cfg: { config: { sessionId: string } }) => {
+      launchedSessionId = cfg.config.sessionId;
+      return Promise.resolve();
+    });
     const sessionService = { ...mockSessionService, launchSession };
 
-    await launchAgentSession(
+    const result = await launchAgentSession(
       db as never,
       sessionService as never,
       mockGrantStore as never,
       mockEventCollectors as never,
       BASE_OPTS
     );
-    const endedStale = setMock.mock.calls.find(
-      (c) => (c[0] as { status?: string }).status === 'ended'
+    expect(result.sessionId).toBe('ses-existing');
+    expect(launchedSessionId).toBe('ses-existing');
+  });
+
+  it('mints a new session when the instance session is not active (CL-1651)', async () => {
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
+    const db = launchDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: 'ins-1', sessionId: 'ses-ended' })
     );
-    expect(endedStale).toBeTruthy();
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: 'ses-ended', status: 'ended' })
+    );
+    let launchedSessionId: string | undefined;
+    const launchSession = mock((cfg: { config: { sessionId: string } }) => {
+      launchedSessionId = cfg.config.sessionId;
+      return Promise.resolve();
+    });
+    const sessionService = { ...mockSessionService, launchSession };
+
+    const result = await launchAgentSession(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      BASE_OPTS
+    );
+    expect(result.sessionId).not.toBe('ses-ended');
+    expect(result.sessionId.startsWith('ses_')).toBe(true);
+    expect(launchedSessionId).toBe(result.sessionId);
+  });
+
+  it('stamps endedAt when ending the session after a terminal launch failure (CL-1651)', async () => {
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
+    const db = launchDb();
+    const setMock = mock((_set: { status?: string; endedAt?: Date }) => ({
+      where: mock(() => Promise.resolve()),
+    }));
+    db.update = mock(() => ({ set: setMock }));
+    const provisionError = new SessionLaunchError('provision', new Error('rejected'), false);
+    const launchSession = mock(() => Promise.reject(provisionError));
+    const sessionService = { ...mockSessionService, launchSession };
+
+    await expect(
+      launchAgentSession(
+        db as never,
+        sessionService as never,
+        mockGrantStore as never,
+        mockEventCollectors as never,
+        BASE_OPTS
+      )
+    ).rejects.toBe(provisionError);
+
+    const endedCall = setMock.mock.calls.find((c) => c[0].status === 'ended');
+    expect(endedCall).toBeTruthy();
+    expect(endedCall?.[0].endedAt).toBeInstanceOf(Date);
   });
 });
 
@@ -1478,6 +1544,104 @@ describe('relaunchInstanceIfNeeded — early returns', () => {
       makeSidecarRouter(['ins-1@tenant-1.localhost']) as never
     );
     expect(launchSession).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the instance already has an active session (sidecar owns it) (CL-1651)', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'ins-1',
+        status: 'deployed',
+        endedAt: null,
+        tenantId: 'tenant-1',
+        agentId: 'agt-1',
+        address: 'ins-1@tenant-1.localhost',
+        sessionId: 'ses-1',
+      })
+    );
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: 'ses-1', status: 'active' })
+    );
+    const launchSession = mock(() => Promise.resolve());
+    await relaunchInstanceIfNeeded(
+      db as never,
+      { ...mockSessionService, launchSession } as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      'ins-1',
+      makeSidecarRouter() as never
+    );
+    expect(launchSession).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the instance session is ending (mid-teardown) (CL-1651)', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'ins-1',
+        status: 'deployed',
+        endedAt: null,
+        tenantId: 'tenant-1',
+        agentId: 'agt-1',
+        address: 'ins-1@tenant-1.localhost',
+        sessionId: 'ses-ending',
+      })
+    );
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: 'ses-ending', status: 'ending' })
+    );
+    const launchSession = mock(() => Promise.resolve());
+    await relaunchInstanceIfNeeded(
+      db as never,
+      { ...mockSessionService, launchSession } as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      'ins-1',
+      makeSidecarRouter() as never
+    );
+    expect(launchSession).not.toHaveBeenCalled();
+  });
+
+  it('relaunches when the instance session is no longer active (CL-1651)', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'ins-1',
+        status: 'deployed',
+        endedAt: null,
+        tenantId: 'tenant-1',
+        agentId: 'agt-1',
+        principalId: 'prn-agent-1',
+        address: 'ins-1@tenant-1.localhost',
+        sessionId: 'ses-ended',
+      })
+    );
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: 'ses-ended', status: 'ended' })
+    );
+    db.query.tenant.findFirst = mock(() =>
+      Promise.resolve({ id: 'tenant-1', domain: 'tenant-1.localhost' })
+    );
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        id: 'agt-1',
+        systemPrompt: 'You are an agent.',
+        capabilities: { tools: [] },
+        grantRequirements: [],
+        credentialRequirements: [],
+      })
+    );
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
+    const launchSession = mock(() => Promise.resolve());
+    await relaunchInstanceIfNeeded(
+      db as never,
+      { ...mockSessionService, launchSession } as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      'ins-1',
+      makeSidecarRouter() as never
+    );
+    expect(launchSession).toHaveBeenCalledTimes(1);
   });
 
   it('no-ops when the tenant has no domain', async () => {

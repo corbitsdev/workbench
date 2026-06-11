@@ -11,7 +11,11 @@ import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
 import type { WorkflowType } from '@workbench/workflow-core';
 import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
-import { collateralGenerationWorkflow, isCollateralKind } from '@workbench/gtm-workflows';
+import {
+  collateralGenerationWorkflow,
+  getVariantCount,
+  isCollateralKind,
+} from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
 import {
   workflowRun,
@@ -1665,9 +1669,18 @@ async function runGenerate(
 
     const results = await Promise.allSettled(
       points.flatMap((p: any) =>
-        artifactKinds.map((kind) =>
-          generateCollateralWithLLM(id, transcriptContent, p, kind, source, maxOutputTokens).then(
-            ({ title, body }) => ({
+        artifactKinds.flatMap((kind) => {
+          const variantCount = getVariantCount(kind);
+          return Array.from({ length: variantCount }, (_, variantIndex) =>
+            generateCollateralWithLLM(
+              id,
+              transcriptContent,
+              p,
+              kind,
+              source,
+              maxOutputTokens,
+              variantIndex
+            ).then(({ title, body }) => ({
               tenantId: wf.tenantId,
               principalId: wf.principalId,
               sessionId: id,
@@ -1677,9 +1690,9 @@ async function runGenerate(
               content: body,
               status: 'draft',
               version: 1,
-            })
-          )
-        )
+            }))
+          );
+        })
       )
     );
 

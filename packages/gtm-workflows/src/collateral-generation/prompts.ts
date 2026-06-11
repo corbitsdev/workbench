@@ -1,4 +1,5 @@
 import {
+  LINKEDIN_WRITING_SECTIONS,
   buildStructuredSystemPrompt,
   bulletList,
   structuredSection,
@@ -7,6 +8,7 @@ import {
 
 const PUBLIC_KINDS = [
   'linkedin-post',
+  'linkedin-daily',
   'twitter-post',
   'blog',
   'founder-pov-post',
@@ -65,7 +67,13 @@ export function buildCollateralRulesBlock(type: string): string {
   ]);
 }
 
-function kindGuidance(type: string) {
+const LINKEDIN_DAILY_HOOK_VARIANTS = [
+  'Open with a scene from the field: a specific moment, conversation, or observation that makes the reader feel like they were in the room.',
+  'Open with a statement that challenges a common assumption. Make the reader stop and reconsider something they thought they understood.',
+  'Open by naming a pattern you have noticed across multiple conversations or situations — specific enough to be credible, broad enough that others recognise it.',
+];
+
+function kindGuidance(type: string, variantIndex = 0) {
   switch (type) {
     case 'email':
       return [
@@ -108,6 +116,12 @@ function kindGuidance(type: string) {
           ])
         ),
       ];
+    case 'linkedin-daily': {
+      const hookInstruction =
+        LINKEDIN_DAILY_HOOK_VARIANTS[variantIndex % LINKEDIN_DAILY_HOOK_VARIANTS.length];
+      if (!hookInstruction) throw new Error(`No hook variant for index ${variantIndex}`);
+      return [...LINKEDIN_WRITING_SECTIONS, structuredSection('hook-style', hookInstruction)];
+    }
     case 'twitter-post':
     case 'founder-pov-post':
       return [
@@ -289,9 +303,9 @@ function kindGuidance(type: string) {
   }
 }
 
-export function buildCollateralSystemPrompt(type: string): string {
+export function buildCollateralSystemPrompt(type: string, variantIndex = 0): string {
   return buildStructuredSystemPrompt([
-    ...kindGuidance(type),
+    ...kindGuidance(type, variantIndex),
     structuredSection('ruleset', buildCollateralRulesBlock(type)),
   ]);
 }

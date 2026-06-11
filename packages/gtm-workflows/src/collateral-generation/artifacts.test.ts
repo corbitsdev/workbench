@@ -1,13 +1,78 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  appendVariantSuffix,
+  collateralTypeOptions,
   createPainPointArtifacts,
   createTranscriptArtifacts,
   deriveCollateralRunTitle,
   formatPainPointsDocument,
+  getVariantCount,
+  hasMultiVariantKind,
   isCollateralKind,
   selectCollateralTypeIds,
   type CollateralPainPoint,
 } from './artifacts';
+
+describe('collateralTypeOptions', () => {
+  it('includes linkedin-daily', () => {
+    expect(collateralTypeOptions.map((o) => o.id)).toContain('linkedin-daily');
+  });
+});
+
+describe('getVariantCount', () => {
+  it('returns 3 for linkedin-daily', () => {
+    expect(getVariantCount('linkedin-daily')).toBe(3);
+  });
+
+  it('returns 1 for all other collateral kinds', () => {
+    for (const option of collateralTypeOptions) {
+      if (option.id === 'linkedin-daily') continue;
+      expect(getVariantCount(option.id)).toBe(1);
+    }
+  });
+
+  it('returns 1 for unknown kinds', () => {
+    expect(getVariantCount('unknown-kind')).toBe(1);
+  });
+});
+
+describe('appendVariantSuffix', () => {
+  it('appends Draft N to the title for multi-variant kinds', () => {
+    const result = appendVariantSuffix(
+      { title: 'Hook play', body: 'content' },
+      'linkedin-daily',
+      0
+    );
+    expect(result.title).toBe('Hook play — Draft 1');
+    expect(result.body).toBe('content');
+  });
+
+  it('increments draft number by variantIndex', () => {
+    expect(appendVariantSuffix({ title: 'T', body: '' }, 'linkedin-daily', 2).title).toBe(
+      'T — Draft 3'
+    );
+  });
+
+  it('passes through unchanged for single-variant kinds', () => {
+    const collateral = { title: 'Post', body: 'body' };
+    expect(appendVariantSuffix(collateral, 'linkedin-post', 0)).toBe(collateral);
+    expect(appendVariantSuffix(collateral, 'blog', 1)).toBe(collateral);
+  });
+});
+
+describe('hasMultiVariantKind', () => {
+  it('returns true when any artifact is a multi-variant kind', () => {
+    expect(hasMultiVariantKind([{ kind: 'linkedin-daily' }, { kind: 'email' }])).toBe(true);
+  });
+
+  it('returns false when no artifact is a multi-variant kind', () => {
+    expect(hasMultiVariantKind([{ kind: 'email' }, { kind: 'blog' }])).toBe(false);
+  });
+
+  it('returns false for an empty list', () => {
+    expect(hasMultiVariantKind([])).toBe(false);
+  });
+});
 
 describe('isCollateralKind', () => {
   it('treats bookkeeping kinds as non-collateral', () => {

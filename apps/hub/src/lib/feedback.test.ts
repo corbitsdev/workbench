@@ -1,31 +1,34 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 const sendMock = mock(async () => ({ reply: 'Refined output text' }));
 const closeMock = mock(async () => {});
+// biome-ignore lint/suspicious/noExplicitAny: mock needs flexible typing
 const createAgentMock = mock(async (_opts: unknown) => ({
   send: sendMock,
   close: closeMock,
 })) as any;
+const defineAgentMock = mock((def: unknown) => def);
+const createDefaultDirectorRegistryMock = mock(() => ({}));
 
-mock.module('@intx/agent', () => ({
-  createAgent: createAgentMock,
-}));
+let refineFeedbackWithLLM: (typeof import('./feedback'))['refineFeedbackWithLLM'];
 
-mock.module('./inference', () => ({
-  runSingleTurnAgent: async (
-    _source: unknown,
-    _systemPrompt: string,
-    userMessage: string,
-    _contextPrefix: string,
-    _maxOutputTokens?: number
-  ) => {
-    const agent = await createAgentMock({} as any, {} as any);
-    const result = await agent.send(userMessage);
-    return result.reply;
-  },
-}));
+beforeAll(async () => {
+  mock.module('@intx/agent', () => ({
+    createAgent: createAgentMock,
+    defineAgent: defineAgentMock,
+    createDefaultDirectorRegistry: createDefaultDirectorRegistryMock,
+  }));
 
-import { refineFeedbackWithLLM } from './feedback';
+  mock.module('@intx/storage-isogit', () => ({
+    createIsogitStore: mock(async () => ({})),
+  }));
+
+  ({ refineFeedbackWithLLM } = await import('./feedback'));
+});
+
+afterAll(() => {
+  mock.restore();
+});
 
 const TEST_SOURCE = {
   id: 'test-src',
@@ -49,8 +52,6 @@ describe('Feedback refinement', () => {
   });
 
   it('requires a source to be provided', () => {
-    // The function signature requires source — TypeScript enforces this at compile time.
-    // This test confirms the function accepts a source without throwing synchronously.
     expect(() => refineFeedbackWithLLM('text', 'feedback', 'email', TEST_SOURCE)).not.toThrow();
   });
 

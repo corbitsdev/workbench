@@ -6,13 +6,17 @@ import { schema as intxSchema, createGrantStore, resolveInstanceSources } from '
 import { createApp } from '@intx/hub-api';
 import {
   createAgentRepoStore,
-  createEventCollectorRegistry,
   createHubSessionLookups,
   createHubSessionOrchestrator,
   createSessionService,
   createSidecarRouter,
   type WsHandle,
 } from '@intx/hub-sessions';
+// Per-agent serialized event-collector registry (CL-1656). Drop-in for
+// @intx/hub-sessions' createEventCollectorRegistry; serializes onEvent per
+// agent so a turn row commits before its parts, fixing the FK race that
+// dropped thinking/reply parts.
+import { createEventCollectorRegistry } from '@workbench/event-collector';
 import { hexEncode } from '@intx/types';
 import { getLogger, setup } from '@intx/log';
 import { betterAuth } from 'better-auth';
@@ -21,6 +25,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { and, eq, isNull } from 'drizzle-orm';
 import { loadConfig } from './config';
+import { createSidecarConnectionRegistry } from './sidecar-connections';
 import { createWorkflowRouter } from './routes/workflow';
 import { workflowRegistry } from '@workbench/workflow-core';
 import {
@@ -197,6 +202,8 @@ const sidecarRouter = createSidecarRouter({
   lookups,
 });
 
+const sidecarConnections = createSidecarConnectionRegistry();
+
 const eventCollectors = createEventCollectorRegistry({
   db,
   onTurnFinalized(agentAddress, turn) {
@@ -318,6 +325,7 @@ const hubApp = createApp({
           },
         };
         sidecarRouter.handleOpen(handle);
+        sidecarConnections.track(handle);
       },
       onMessage(evt, _ws) {
         if (typeof evt.data === 'string') {
@@ -325,6 +333,7 @@ const hubApp = createApp({
         }
       },
       onClose(_evt, _ws) {
+        sidecarConnections.untrack(handle);
         sidecarRouter.handleClose(handle);
       },
     };
@@ -426,7 +435,7 @@ v1.get('/me', async (c) => {
           sidecarRouter
         );
       } catch (err) {
-        log.warn('Auto-relaunch of Myra session failed — user will need to re-add credentials', {
+        log.warn('Auto-relaunch of Myra session failed', {
           userId,
           instanceId: paInstanceId,
           error: err instanceof Error ? err : new Error(String(err)),
@@ -540,6 +549,11 @@ let server: ReturnType<typeof Bun.serve> | undefined;
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, async () => {
     log.info('Received {signal}, draining', { signal });
+    // Close sidecar sockets deliberately so each sidecar sees a clean close
+    // and reconnects on its short reconnect delay, rather than waiting for its
+    // heartbeat to time out the zombie socket left by an abrupt exit (CL-1654).
+    log.info('Closing sidecar connections', { count: sidecarConnections.size() });
+    sidecarConnections.closeAll();
     await server?.stop();
     log.info('Server stopped, exiting');
     process.exit(0);

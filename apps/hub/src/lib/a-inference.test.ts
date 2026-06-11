@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 const sendMock = mock(async (_msg: string) => ({ reply: 'agent reply' }));
 const closeMock = mock(async () => {});
@@ -6,17 +6,25 @@ const createAgentMock = mock(async () => ({ send: sendMock, close: closeMock }))
 const defineAgentMock = mock((def: unknown) => def);
 const createDefaultDirectorRegistryMock = mock(() => ({}));
 
-mock.module('@intx/agent', () => ({
-  createAgent: createAgentMock,
-  defineAgent: defineAgentMock,
-  createDefaultDirectorRegistry: createDefaultDirectorRegistryMock,
-}));
+let runSingleTurnAgent: (typeof import('./inference'))['runSingleTurnAgent'];
 
-mock.module('@intx/storage-isogit', () => ({
-  createIsogitStore: mock(async () => ({})),
-}));
+beforeAll(async () => {
+  mock.module('@intx/agent', () => ({
+    createAgent: createAgentMock,
+    defineAgent: defineAgentMock,
+    createDefaultDirectorRegistry: createDefaultDirectorRegistryMock,
+  }));
 
-import { runSingleTurnAgent } from './inference';
+  mock.module('@intx/storage-isogit', () => ({
+    createIsogitStore: mock(async () => ({})),
+  }));
+
+  ({ runSingleTurnAgent } = await import('./inference'));
+});
+
+afterAll(() => {
+  mock.restore();
+});
 
 const TEST_SOURCE = {
   id: 'src-1',

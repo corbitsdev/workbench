@@ -29,15 +29,32 @@ describe('buildPersonalAgentSystemPrompt', () => {
     expect(prompt).toContain('delegate');
   });
 
+  it('includes a dedicated delegation section', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('<delegation>');
+  });
+
+  it('coordinates expertise rather than claiming authority', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('coordinate expertise');
+  });
+
+  it('directs the agent to confirm before irreversible or high-stakes actions', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt.toLowerCase()).toContain('irreversible');
+  });
+
   it('forbids fabrication and impersonation of the operator', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('Never fabricate information');
     expect(prompt).toContain('Never impersonate the operator');
   });
 
-  it('appends the shared humanizer output section', () => {
+  it('carries a concise style note rather than the full humanizer essay', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('No emojis unless explicitly requested');
+    expect(prompt).not.toContain('superficial -ing analyses');
+    expect(prompt).not.toContain('negative parallelisms');
   });
 
   it('respects the requested output format', () => {

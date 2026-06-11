@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { InferenceSource } from '@intx/types/runtime';
 
 const runSingleTurnAgentMock = mock(
@@ -11,11 +11,20 @@ const runSingleTurnAgentMock = mock(
   ): Promise<string> => ''
 );
 
-mock.module('./inference', () => ({
-  runSingleTurnAgent: runSingleTurnAgentMock,
-}));
+let extractPainPointsWithLLM: (typeof import('./extraction'))['extractPainPointsWithLLM'];
+let SINGLE_PASS_TRANSCRIPT_CHARS: (typeof import('./extraction'))['SINGLE_PASS_TRANSCRIPT_CHARS'];
 
-const { extractPainPointsWithLLM, SINGLE_PASS_TRANSCRIPT_CHARS } = await import('./extraction');
+beforeAll(async () => {
+  mock.module('./inference', () => ({
+    runSingleTurnAgent: runSingleTurnAgentMock,
+  }));
+
+  ({ extractPainPointsWithLLM, SINGLE_PASS_TRANSCRIPT_CHARS } = await import('./extraction'));
+});
+
+afterAll(() => {
+  mock.restore();
+});
 
 const SOURCE = {
   id: 'src-1',
@@ -100,7 +109,9 @@ describe('extractPainPointsWithLLM', () => {
   });
 
   it('throws when extracted JSON is malformed', async () => {
-    runSingleTurnAgentMock.mockImplementation(async () => 'prefix {"painPoints": [bad json} suffix');
+    runSingleTurnAgentMock.mockImplementation(
+      async () => 'prefix {"painPoints": [bad json} suffix'
+    );
 
     await expect(
       extractPainPointsWithLLM('wf-1', 'short transcript', undefined, SOURCE)

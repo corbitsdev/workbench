@@ -7,6 +7,9 @@ export {
   formatPainPointsDocument,
   isCollateralKind,
   selectCollateralTypeIds,
+  appendVariantSuffix,
+  getVariantCount,
+  hasMultiVariantKind,
   type CollateralPainPoint,
   type WorkflowArtifactDraft,
 } from './artifacts';

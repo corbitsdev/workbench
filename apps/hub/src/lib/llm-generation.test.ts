@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { InferenceSource } from '@intx/types/runtime';
 
 const runSingleTurnAgentMock = mock(
@@ -11,11 +11,18 @@ const runSingleTurnAgentMock = mock(
   ): Promise<string> => ''
 );
 
-mock.module('./inference', () => ({
-  runSingleTurnAgent: runSingleTurnAgentMock,
-}));
+let generateCollateralWithLLM: (typeof import('./generation'))['generateCollateralWithLLM'];
 
-const { generateCollateralWithLLM } = await import('./generation');
+beforeAll(async () => {
+  mock.module('./inference', () => ({
+    runSingleTurnAgent: runSingleTurnAgentMock,
+  }));
+  ({ generateCollateralWithLLM } = await import('./generation'));
+});
+
+afterAll(() => {
+  mock.restore();
+});
 
 const SOURCE = {
   id: 'src-1',

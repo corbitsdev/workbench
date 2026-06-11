@@ -32,7 +32,7 @@ describe('buildRulesBlock', () => {
       const rules = buildRulesBlock(kind);
       expect(rules).toMatch(/<rules>/);
       expect(rules).toMatch(/<style>/);
-      expect(rules).toMatch(/<output>/);
+      expect(rules).toMatch(/<output[\s>]/);
       expect(rules).toMatch(/(public|private) artifact/i);
     }
   });

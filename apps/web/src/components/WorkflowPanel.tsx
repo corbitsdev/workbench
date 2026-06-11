@@ -1,11 +1,17 @@
 import { useState } from 'react';
-import { useWorkflow, useRunStep, useApproveArtifact } from '../hooks/use-workflow';
+import {
+  useWorkflow,
+  useRunStep,
+  useApproveArtifact,
+  useWorkbenchAgents,
+} from '../hooks/use-workflow';
 import { CheckIcon } from 'lucide-react';
 import PainPointsList from './PainPointsList';
 import FeedbackSection from './FeedbackSection';
 import ArtifactBody from './ArtifactBody';
+import { AgentChat } from './AgentChat';
 import { HorizontalStepper, buildSteps } from '@workbench/workflow';
-import { collateralTypeOptions } from '@workbench/gtm-workflows';
+import { collateralTypeOptions, hasMultiVariantKind } from '@workbench/gtm-workflows';
 import type { ArtifactKind } from '@workbench/shared';
 import type { StepName } from '@workbench/workflow';
 
@@ -49,6 +55,10 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [collateralTypes, setCollateralTypes] = useState<Set<string>>(new Set());
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
+  const [showLincolnChat, setShowLincolnChat] = useState(false);
+
+  const generateCompleted = Boolean(workflow?.steps.generate?.completed);
+  const { data: allAgents = [] } = useWorkbenchAgents({ enabled: generateCompleted });
 
   if (isLoading) {
     return (
@@ -73,7 +83,6 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
     (analyzeStep?.painPoints as PainPointData[] | undefined) ?? [];
   const artifacts: Artifact[] = (generateStep?.artifacts as Artifact[] | undefined) ?? [];
   const analyzeCompleted = Boolean(analyzeStep?.completed);
-  const generateCompleted = Boolean(generateStep?.completed);
   // Active generation is signalled by the server status 'generating' (which
   // survives the request, unlike runStep.isPending), or optimistically the
   // moment the user fires the generate step from the ready state. The 'ready'
@@ -147,6 +156,8 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
 
   const hasDraftArtifacts = artifacts.some((a) => a.status === 'draft');
   const approvedArtifacts = artifacts.filter((a) => a.status === 'approved');
+  const hasLinkedInVariants = generateCompleted && hasMultiVariantKind(artifacts);
+  const lincolnInstance = allAgents.find((a) => a.agentName === 'Lincoln') ?? null;
 
   const handleApproveOrDeny = (status: 'approved' | 'rejected') => {
     if (!displayArtifact) return;
@@ -168,7 +179,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const selectedPainPoints = getSubmittedPainPoints(painPoints, selectedIds);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden rounded-panel border border-border bg-bg">
+    <div className="relative flex flex-col h-full overflow-hidden rounded-panel border border-border bg-bg">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border bg-surface shrink-0">
         <div className="min-w-0">
@@ -234,11 +245,31 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
                 </p>
               )}
             </div>
-            <div className="border-t border-border bg-surface px-4 py-3 shrink-0">
+            <div className="border-t border-border bg-surface px-4 py-3 shrink-0 space-y-2">
+              {hasLinkedInVariants && lincolnInstance !== null && (
+                <button
+                  type="button"
+                  onClick={() => setShowLincolnChat(true)}
+                  className="w-full rounded-[9px] border border-border bg-surface-2 px-3 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.97]"
+                >
+                  Chat with Lincoln
+                </button>
+              )}
               <button type="button" onClick={onClose} className="btn-primary w-full">
                 Close workflow
               </button>
             </div>
+            {showLincolnChat && lincolnInstance !== null && (
+              <div className="absolute inset-0 z-10 flex flex-col overflow-hidden rounded-panel border border-border bg-bg">
+                <AgentChat
+                  instanceId={lincolnInstance.id}
+                  tenantId={lincolnInstance.tenantId}
+                  agentName="Lincoln"
+                  instanceStatus={lincolnInstance.status}
+                  onClose={() => setShowLincolnChat(false)}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -274,23 +305,34 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
                 <ArtifactBody body={displayArtifact.content} type={displayArtifact.kind} />
               </div>
               {displayArtifact.status === 'draft' && (
-                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-bg/95 px-5 py-3 backdrop-blur-sm">
-                  <button
-                    type="button"
-                    disabled={approveArtifact.isPending}
-                    onClick={() => handleApproveOrDeny('rejected')}
-                    className="flex-1 rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.97] disabled:opacity-50"
-                  >
-                    Deny
-                  </button>
-                  <button
-                    type="button"
-                    disabled={approveArtifact.isPending}
-                    onClick={() => handleApproveOrDeny('approved')}
-                    className="flex-1 rounded-[9px] border border-green/40 bg-green/10 px-3 py-2 text-[13px] font-medium text-green transition-colors hover:bg-green/[0.16] active:scale-[0.97] disabled:opacity-50"
-                  >
-                    Approve
-                  </button>
+                <div className="sticky bottom-0 flex flex-col gap-2 border-t border-border bg-bg/95 px-5 py-3 backdrop-blur-sm">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={approveArtifact.isPending}
+                      onClick={() => handleApproveOrDeny('rejected')}
+                      className="flex-1 rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.97] disabled:opacity-50"
+                    >
+                      Deny
+                    </button>
+                    <button
+                      type="button"
+                      disabled={approveArtifact.isPending}
+                      onClick={() => handleApproveOrDeny('approved')}
+                      className="flex-1 rounded-[9px] border border-green/40 bg-green/10 px-3 py-2 text-[13px] font-medium text-green transition-colors hover:bg-green/[0.16] active:scale-[0.97] disabled:opacity-50"
+                    >
+                      Approve
+                    </button>
+                  </div>
+                  {hasLinkedInVariants && lincolnInstance !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setShowLincolnChat(true)}
+                      className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.97]"
+                    >
+                      Chat with Lincoln
+                    </button>
+                  )}
                 </div>
               )}
               {displayArtifact.status === 'approved' && (

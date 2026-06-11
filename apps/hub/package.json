@@ -36,6 +36,7 @@
     "@intx/types": "workspace:*",
     "@workbench/agent-scheduler": "workspace:*",
     "@workbench/agents": "workspace:*",
+    "@workbench/event-collector": "workspace:*",
     "@workbench/gtm-workflows": "workspace:*",
     "@workbench/sentry": "workspace:*",
     "@workbench/shared": "workspace:*",

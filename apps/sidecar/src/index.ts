@@ -10,6 +10,7 @@ import {
 } from '@intx/crypto-node';
 import { createSidecarOrchestrator } from '@intx/hub-agent';
 import { createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
+import { resolveSidecarHeartbeat } from './config';
 
 await initSentry();
 await setup({ dev: process.env.NODE_ENV !== 'production' });
@@ -22,11 +23,15 @@ function requireEnv(name: string): string {
   return value;
 }
 
+const heartbeat = resolveSidecarHeartbeat(process.env);
+
 const orchestrator = createSidecarOrchestrator({
   hubURL: requireEnv('HUB_WS_URL'),
   sidecarId: requireEnv('SIDECAR_ID'),
   token: requireEnv('SIDECAR_TOKEN'),
   dataDir: requireEnv('SIDECAR_DATA_DIR'),
+  pingIntervalMs: heartbeat.pingIntervalMs,
+  reconnectDelayMs: heartbeat.reconnectDelayMs,
   transport: createInMemoryTransport(),
   buildHarness: createDefaultHarnessBuilder({
     hubHttpUrl: wsUrlToHttp(requireEnv('HUB_WS_URL')),

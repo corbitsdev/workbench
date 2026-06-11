@@ -35,6 +35,7 @@
         "@intx/types": "workspace:*",
         "@workbench/agent-scheduler": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/event-collector": "workspace:*",
         "@workbench/gtm-workflows": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
@@ -512,6 +513,20 @@
       "peerDependencies": {
         "@tanstack/react-query": "*",
         "react": "*",
+      },
+    },
+    "packages/event-collector": {
+      "name": "@workbench/event-collector",
+      "dependencies": {
+        "@intx/db": "workspace:*",
+        "@intx/hub-common": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/types": "workspace:*",
+        "drizzle-orm": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
       },
     },
     "packages/gtm-workflows": {
@@ -1565,6 +1580,8 @@
     "@workbench/chat": ["@workbench/chat@workspace:packages/chat"],
 
     "@workbench/client": ["@workbench/client@workspace:packages/client"],
+
+    "@workbench/event-collector": ["@workbench/event-collector@workspace:packages/event-collector"],
 
     "@workbench/gtm-workflows": ["@workbench/gtm-workflows@workspace:packages/gtm-workflows"],
 
