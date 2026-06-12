@@ -3,6 +3,7 @@ import {
   PERSONAL_AGENT_DEPLOY_PROMPT,
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
   PERSONAL_AGENT_BASE_TOOLS,
+  PERSONAL_AGENT_NAME,
   buildPersonalAgentGrantRequirements,
 } from './personal-agent/definition';
 import {
@@ -102,7 +103,7 @@ export interface AgentTemplate {
 export const AGENT_TEMPLATES: AgentTemplate[] = [
   {
     key: 'myra',
-    name: 'Myra',
+    name: PERSONAL_AGENT_NAME,
     description: 'Your personal AI assistant — always on, context-aware, and ready to help.',
     systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,

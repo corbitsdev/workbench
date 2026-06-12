@@ -8,6 +8,7 @@ import type { SessionService, SidecarRouter, EventCollectorRegistry } from '@int
 import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { AGENT_TEMPLATES } from '@workbench/agents';
+import { composePersonalAgentPromptForInstance } from '../lib/operator-profile';
 import { buildToolDefinitions, getToolNamesFromCapabilities } from '../lib/tool-registry';
 import { buildToolGrantRows, TOOL_GRANT_RESOURCE_PREFIX } from '../lib/tool-grants';
 import { memberAgentInstance } from '../db/schema';
@@ -557,6 +558,31 @@ export async function launchAgentSession(
   const toolNames = getToolNamesFromCapabilities(agentRow.capabilities ?? null);
   const tools = buildToolDefinitions(toolNames);
 
+  // Personalize the personal agent per instance: rebuild its prompt in the
+  // provider-appropriate format (Markdown for openai-compatible, XML for
+  // Anthropic) and append the owning operator's profile. Identity is the
+  // structural personal-template marker, not the display name. Best-effort —
+  // a non-personal instance or an unresolved operator keeps the seeded prompt,
+  // never a launch failure.
+  const defaultSourceProvider =
+    sources.find((s) => s.id === defaultSource)?.provider ?? sources[0]!.provider;
+  let effectiveSystemPrompt = systemPrompt;
+  try {
+    const personalized = await composePersonalAgentPromptForInstance(db, {
+      tenantId,
+      instanceId,
+      provider: defaultSourceProvider,
+    });
+    if (personalized !== null) {
+      effectiveSystemPrompt = personalized;
+    }
+  } catch (err) {
+    log.warn('Failed to personalize personal-agent prompt; using seeded prompt', {
+      instanceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // Persist the agent's tool grants on the instance principal before collecting.
   // Tool authorization is trust-by-configuration (any configured tool is allowed,
   // origin 'system'). These rows MUST be persisted, not synthesized in memory:
@@ -638,13 +664,13 @@ export async function launchAgentSession(
       tenantId,
       principalId: instancePrincipalId,
       agentAddress: address,
-      systemPrompt,
+      systemPrompt: effectiveSystemPrompt,
       tools,
       grants,
       sources,
       defaultSource,
     },
-    deployContent: { systemPrompt },
+    deployContent: { systemPrompt: effectiveSystemPrompt },
   };
 
   let lastError: unknown;

@@ -8,6 +8,7 @@ export {
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
   PERSONAL_AGENT_DEPLOY_PROMPT,
   PERSONAL_AGENT_BASE_TOOLS,
+  PERSONAL_AGENT_NAME,
 } from './personal-agent/definition';
 export { createPersonalAgentDirector } from './personal-agent/director';
 

@@ -30,9 +30,15 @@ export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[]
   },
 ];
 
-export const PERSONAL_AGENT_DEPLOY_PROMPT: string = buildPersonalAgentSystemPrompt('Myra', {
-  xml: true,
-});
+/** Display name of the personal agent; also the per-tenant seed idempotency key. */
+export const PERSONAL_AGENT_NAME = 'Myra';
+
+export const PERSONAL_AGENT_DEPLOY_PROMPT: string = buildPersonalAgentSystemPrompt(
+  PERSONAL_AGENT_NAME,
+  {
+    xml: true,
+  }
+);
 
 /**
  * Base toolset every Myra instance starts with. Single source of truth for the

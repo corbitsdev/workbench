@@ -15,7 +15,7 @@ import type { ContextToolEntry } from '../lib/tool-registry';
 export const LIST_AGENTS_DEFINITION: ToolDefinition = {
   name: 'list_agents',
   description:
-    'List the agents you can address. Returns each agent instance with its name, mail address, status, definition id, and instance id. Use the address with mail_send to message an agent. By default returns your own operator\'s running agents — the agents owned by the same user you act for. Pass a status to filter (or "all" for every status), and a principals array of member principal ids (from list_principals) to list another operator\'s agents instead.',
+    'List the agents you can address. Returns each agent instance with its name, description (what the agent is for — use it to pick the right specialist), mail address, status, definition id, and instance id. Use the address with mail_send to message an agent. By default returns your own operator\'s running agents — the agents owned by the same user you act for. Pass a status to filter (or "all" for every status), and a principals array of member principal ids (from list_principals) to list another operator\'s agents instead.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -173,6 +173,7 @@ export function createListAgentsTool(context: ListAgentsContext): AgentTool[] {
           .select({
             instanceId: intxSchema.agentInstance.id,
             name: intxSchema.agent.name,
+            description: intxSchema.agent.description,
             address: intxSchema.agentInstance.address,
             status: intxSchema.agentInstance.status,
             agentDefinitionId: intxSchema.agentInstance.agentId,
