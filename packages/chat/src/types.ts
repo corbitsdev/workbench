@@ -47,6 +47,12 @@ export interface ChatMessage {
   /** Delivery state. Absent means delivered/no tracking needed. */
   status?: ChatMessageStatus;
   /**
+   * Display label for the message sender. Present on inbound agent-to-agent mail
+   * so the chat view can show who delegated the task. Absent for regular user
+   * messages (no attribution needed) and for all agent/system messages.
+   */
+  senderLabel?: string;
+  /**
    * Optional classification. Tool messages are eligible for compaction in long
    * threads; artifact messages are always fully visible.
    */

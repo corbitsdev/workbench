@@ -72,6 +72,29 @@ describe('MessageBubble', () => {
     expect(screen.getByText('notice')).not.toBeNull();
   });
 
+  it('renders senderLabel when present on an agent-role inbound mail bubble', () => {
+    const message: ChatMessage = {
+      id: 'mail-1',
+      role: 'agent',
+      content: 'Please handle this',
+      createdAt: '2026-06-05T00:00:00Z',
+      senderLabel: 'Myra',
+    };
+    render(<MessageBubble message={message} />);
+    expect(screen.getByText('From: Myra')).not.toBeNull();
+  });
+
+  it('does not render a sender label when senderLabel is absent', () => {
+    const message: ChatMessage = {
+      id: 'mail-2',
+      role: 'agent',
+      content: 'Regular agent message',
+      createdAt: '2026-06-05T00:00:00Z',
+    };
+    render(<MessageBubble message={message} />);
+    expect(screen.queryByText(/^From:/)).toBeNull();
+  });
+
   it('shows failed status when present', () => {
     const message: ChatMessage = {
       id: '4',

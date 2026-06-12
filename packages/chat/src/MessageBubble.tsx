@@ -66,6 +66,9 @@ export function MessageBubble({ message, onRespond, onAction }: MessageBubblePro
       data-role={message.role}
       className={cn('flex w-full flex-col gap-2', isUser ? 'items-end' : 'items-start')}
     >
+      {message.senderLabel !== undefined && message.senderLabel !== '' && (
+        <span className="text-xs text-text-3">From: {message.senderLabel}</span>
+      )}
       {hasReasoning && (
         <ReasoningDisclosure
           reasoning={message.reasoning ?? ''}
