@@ -48,6 +48,18 @@ import {
   BOBBY_GRANT_REQUIREMENTS,
   BOBBY_CAPABILITIES,
 } from './bobby/definition';
+import {
+  GERALT_DEPLOY_PROMPT,
+  GERALT_CREDENTIAL_REQUIREMENTS,
+  GERALT_GRANT_REQUIREMENTS,
+  GERALT_TOOL_NAMES,
+} from './geralt/definition';
+import {
+  LARRY_DEPLOY_PROMPT,
+  LARRY_CREDENTIAL_REQUIREMENTS,
+  LARRY_GRANT_REQUIREMENTS,
+  LARRY_CAPABILITIES,
+} from './larry/definition';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -177,5 +189,24 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     credentialRequirements: LINCOLN_CREDENTIAL_REQUIREMENTS,
     grantRequirements: LINCOLN_GRANT_REQUIREMENTS,
     capabilities: { tools: [...LINCOLN_CAPABILITIES.tools] },
+  },
+  {
+    key: 'geralt',
+    name: 'Geralt',
+    description: 'Presentation builder — turns briefs and research into Gamma slide decks.',
+    systemPrompt: GERALT_DEPLOY_PROMPT,
+    credentialRequirements: GERALT_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: GERALT_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...GERALT_TOOL_NAMES] },
+  },
+  {
+    key: 'larry',
+    name: 'Larry',
+    description:
+      'Research agent — mines Reddit, X, HackerNews, and social platforms for the last 30 days of signal.',
+    systemPrompt: LARRY_DEPLOY_PROMPT,
+    credentialRequirements: LARRY_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: LARRY_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...LARRY_CAPABILITIES.tools] },
   },
 ];
