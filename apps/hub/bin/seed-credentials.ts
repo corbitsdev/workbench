@@ -208,6 +208,26 @@ function buildEntries(): CredentialEntry[] {
     }
   }
 
+  const xaiKey = env('XAI_API_KEY');
+  if (xaiKey) {
+    entries.push({
+      providerName: 'xai',
+      providerPlugin: 'xai',
+      credentialName: 'xAI',
+      secret: xaiKey,
+    });
+  }
+
+  const scrapecreatorsKey = env('SCRAPECREATORS_API_KEY');
+  if (scrapecreatorsKey) {
+    entries.push({
+      providerName: 'scrapecreators',
+      providerPlugin: 'scrapecreators',
+      credentialName: 'ScrapeCreators',
+      secret: scrapecreatorsKey,
+    });
+  }
+
   return entries;
 }
 
