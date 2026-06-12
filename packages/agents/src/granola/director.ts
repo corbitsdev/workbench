@@ -19,9 +19,8 @@ import type {
  *
  * @param systemPrompt      Granola agent's system prompt.
  * @param toolDefinitions   Tool definitions the agent has access to.
- * @param allowedSenders    Addresses the agent accepts mail from. The hub's
- *                          per-instance scheduler sends from
- *                          'scheduler@system'; include it here if needed.
+ * @param allowedSenders    Addresses the agent accepts mail from. Add any
+ *                          system address that needs to reach the agent.
  */
 export function createGranolaDirector(
   systemPrompt: string,

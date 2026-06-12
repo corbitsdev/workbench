@@ -31,6 +31,7 @@ import { workflowRegistry } from '@workbench/workflow-core';
 import {
   createAgentProvisioningRouter,
   relaunchInstanceIfNeeded,
+  registerDisconnectReconciler,
   persistInstanceToolGrants,
 } from './routes/agents';
 import { createWorkbenchesRouter } from './routes/workbenches';
@@ -231,6 +232,21 @@ createHubSessionOrchestrator({
   grantStore,
   agentRepoStore,
 });
+
+// The orchestrator above only abandons event collectors on sidecar.disconnect;
+// it leaves agent_session rows active so a transient reconnect can resume. When
+// a sidecar fully restarts and the address never reconnects, the stale session
+// would wedge the instance (relaunch sees an "active" session and bails). This
+// reconciles those orphaned sessions after a grace window so /me can relaunch.
+//
+// ASSUMES A SINGLE HUB REPLICA. The reconcile decision reads this hub's
+// in-memory getRoutableAddresses(); the disconnect event is also local to this
+// hub's sidecar sockets. With multiple replicas a sidecar could reconnect to
+// replica B while replica A — which still sees the address as unroutable —
+// ends the session, reintroducing the CL-1651 relaunch churn/eviction. Before
+// scaling the hub horizontally, gate this on a shared (DB-backed) routability
+// signal instead of local router state.
+registerDisconnectReconciler({ db, router: sidecarRouter });
 
 const rawSessionService = createSessionService({
   sidecarRouter,

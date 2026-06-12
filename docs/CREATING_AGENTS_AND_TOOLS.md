@@ -262,78 +262,15 @@ This is the key property: the tool package, the hub registry, and the agent/work
 
 ---
 
-## Creating a Continuously Running Agent (Cron / Loop)
+## Recurring / Scheduled Agent Work
 
-Some agents need to run on a recurring schedule rather than only responding to user messages — Oat is the canonical example. Oat checks for new Granola call recordings every 60 seconds and processes them into artifacts, regardless of whether a user has sent a message.
+> **Removed in CL-1696.** The per-instance agent scheduler (`@workbench/agent-scheduler`, `startInstanceScheduler`, `getSchedulerIntervalMs`, and the `schedulerIntervalMs` capability) has been deleted. There is no longer a host loop that sends a periodic `"sync"` message to an agent session.
 
-This is implemented via the **instance scheduler** (`@workbench/agent-scheduler`). The mechanism is simple: the scheduler sends the string `"sync"` to the agent's session on each interval tick, as if it were a message from `scheduler@system`. The agent's prompt and director handle this trigger the same way they handle any other inbound message.
+All agents are now uniform: interactive and recover-on-open. They respond to inbound mail and are brought back when needed (Myra auto-relaunches via `GET /v1/me`; other agents recover on the next open). No agent runs on a host-driven timer.
 
-### 1. Declare the interval in capabilities
+Recurring work is moving to **workflows**, which will provide native scheduling. Do not reintroduce a per-agent timer in the hub — model recurring work as a workflow when that capability lands.
 
-Add `schedulerIntervalMs` to the agent definition's capabilities:
-
-```ts
-export const myAgentCapabilities = {
-  tools: ['my_tool'],
-  schedulerIntervalMs: 60_000, // milliseconds; omit for non-scheduled agents
-} as const;
-```
-
-The hub reads this value via `getSchedulerIntervalMs(capabilities)` at launch time. If the field is present, `startInstanceScheduler` is called automatically when the session launches. No other hub wiring is needed.
-
-### 2. Accept the scheduler sender in the director
-
-The scheduler sends from the address `scheduler@system`. Your director must include this in the allowed senders list, or the sync message will be rejected:
-
-```ts
-export function createMyAgentDirector(
-  systemPrompt: string,
-  toolDefinitions: ToolDefinition[]
-): ReactorDirector {
-  const base = createDefaultDirector(systemPrompt, toolDefinitions);
-  const allowedSenders = ['scheduler@system'];
-
-  return {
-    async decide(event, state, capabilities) {
-      if (event.type === 'message.received') {
-        const sender = event.message.headers.from;
-        if (!allowedSenders.includes(sender)) {
-          return [capabilities.reply('Not authorised'), capabilities.wait()];
-        }
-      }
-      return base.decide(event, state, capabilities);
-    },
-  };
-}
-```
-
-You can add other allowed senders (e.g. a specific Myra instance address) to the same list.
-
-### 3. Handle the sync trigger in the system prompt
-
-The agent receives the literal string `"sync"` as the message content on each tick. Your system prompt should tell the agent what to do when it receives this:
-
-```
-When you receive a "sync" message, check for new [X] and process any that have
-not been handled yet. Do not reply with commentary — complete the work and wait.
-If there is nothing new, do nothing.
-```
-
-The scheduler skips a tick if the agent is already mid-inference, so there is no risk of overlapping runs.
-
-### 4. How the scheduler lifecycle works
-
-- The scheduler starts automatically after `startInstanceScheduler` is called from the hub at session launch.
-- It stops automatically when the agent's reactor emits `reactor.done` (i.e. the session ends).
-- The hub calls `startInstanceScheduler` on session launch, session reconnect, and relaunch. All three paths are covered — the scheduler restarts with the session.
-- The cleanup function returned by `startInstanceScheduler` is called on hub shutdown.
-
-### What Oat does as a reference
-
-- `schedulerIntervalMs: 60_000` — checks every 60 seconds
-- Director allows `scheduler@system` as a sender
-- On `"sync"`: calls `granola_list_notes`, compares against already-processed call IDs, calls `granola_get_note` for new ones, creates call document artifacts
-- On other messages (e.g. from Myra): responds normally
+A director may still allow a system sender address (e.g. `scheduler@system`) for messages that arrive over normal mail infrastructure; that is unrelated to the removed host scheduler.
 
 ---
 
@@ -357,12 +294,3 @@ The scheduler skips a tick if the agent is already mid-inference, so there is no
 - [ ] Provisioning wired in `tenant-provisioning.ts`
 - [ ] Credential provider entries exist for every requirement
 
-## Checklist: Shipping a Scheduled Agent (Cron / Loop)
-
-All items from the agent checklist above, plus:
-
-- [ ] `schedulerIntervalMs` set in capabilities (in milliseconds)
-- [ ] Director allows `scheduler@system` as a sender
-- [ ] System prompt documents what to do on a `"sync"` message
-- [ ] System prompt instructs the agent not to reply with commentary on sync ticks
-- [ ] Tested that the agent processes new items and skips correctly when there is nothing to do

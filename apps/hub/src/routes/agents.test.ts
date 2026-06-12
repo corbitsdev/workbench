@@ -11,11 +11,6 @@ mock.module('../config', () => ({
   getConfig: () => ({}),
 }));
 
-const startInstanceSchedulerMock = mock(() => {});
-mock.module('@workbench/agent-scheduler', () => ({
-  startInstanceScheduler: startInstanceSchedulerMock,
-}));
-
 // Launch outcome is driven by resolveInstanceSources: tests set `sourcesImpl`
 // to return sources (launch proceeds) or throw (launch fails).
 // CL-1521: sources are now plaintext (stored plaintext in DB, not encrypted).
@@ -33,6 +28,8 @@ import {
   persistInstanceGrantRequirements,
   launchAgentSession,
   relaunchInstanceIfNeeded,
+  reconcileDisconnectedSession,
+  registerDisconnectReconciler,
 } from './agents';
 
 function makeRequest(
@@ -989,25 +986,6 @@ describe('POST /instances/:instanceId/sessions — branches', () => {
     expect(res.status).toBe(500);
     expect((await res.json()).error).toContain('Agent configuration');
   });
-
-  it('starts a scheduler when the agent declares schedulerIntervalMs', async () => {
-    startInstanceSchedulerMock.mockClear();
-    const db = makeMockDb();
-    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
-    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
-    db.query.agent.findFirst = mock(() =>
-      Promise.resolve({ ...AGENT_ROW, capabilities: { tools: [], schedulerIntervalMs: 5000 } })
-    );
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
-
-    const app = buildApp(db);
-    const res = await app.fetch(
-      makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
-    );
-    expect(res.status).toBe(200);
-    expect(startInstanceSchedulerMock).toHaveBeenCalledTimes(1);
-  });
 });
 
 // ─── GET /agents/templates ────────────────────────────────────────
@@ -1208,24 +1186,6 @@ describe('POST /tenants/:tenantId/agents/instances', () => {
     );
     expect(res.status).toBe(201);
     expect((await res.json()).created).toBe(true);
-  });
-
-  it('starts a scheduler after deploy when the definition declares schedulerIntervalMs', async () => {
-    startInstanceSchedulerMock.mockClear();
-    const db = deployDb();
-    db.query.agent.findFirst = mock(() =>
-      Promise.resolve({ ...DEF, capabilities: { tools: [], schedulerIntervalMs: 5000 } })
-    );
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
-    const app = buildApp(db);
-    const res = await app.fetch(
-      makeRequest('http://localhost/tenants/tenant-1/agents/instances', {
-        method: 'POST',
-        body: { templateKey: 'oat' },
-      })
-    );
-    expect(res.status).toBe(201);
-    expect(startInstanceSchedulerMock).toHaveBeenCalledTimes(1);
   });
 
   it('walks up the tenant hierarchy to find the definition in a parent tenant', async () => {
@@ -1731,48 +1691,6 @@ describe('relaunchInstanceIfNeeded — early returns', () => {
     expect(launchSession).not.toHaveBeenCalled();
   });
 
-  it('starts a scheduler after relaunch when the agent declares schedulerIntervalMs', async () => {
-    startInstanceSchedulerMock.mockClear();
-    const db = makeMockDb();
-    db.query.agentInstance.findFirst = mock(() =>
-      Promise.resolve({
-        id: 'ins-1',
-        status: 'deployed',
-        endedAt: null,
-        tenantId: 'tenant-1',
-        agentId: 'agt-1',
-        principalId: 'prn-agent-1',
-        address: 'ins-1@tenant-1.localhost',
-        sessionId: null,
-      })
-    );
-    db.query.tenant.findFirst = mock(() =>
-      Promise.resolve({ id: 'tenant-1', domain: 'tenant-1.localhost' })
-    );
-    db.query.agent.findFirst = mock(() =>
-      Promise.resolve({
-        id: 'agt-1',
-        systemPrompt: 'You are Loop.',
-        capabilities: { tools: [], schedulerIntervalMs: 5000 },
-        grantRequirements: [],
-        credentialRequirements: [],
-      })
-    );
-    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
-    const launchSession = mock(() => Promise.resolve());
-
-    await relaunchInstanceIfNeeded(
-      db as never,
-      { ...mockSessionService, launchSession } as never,
-      mockGrantStore as never,
-      mockEventCollectors as never,
-      'ins-1',
-      makeSidecarRouter() as never
-    );
-    expect(launchSession).toHaveBeenCalledTimes(1);
-    expect(startInstanceSchedulerMock).toHaveBeenCalledTimes(1);
-  });
-
   it('rethrows a non-"already exists" launch error', async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() =>
@@ -1814,5 +1732,174 @@ describe('relaunchInstanceIfNeeded — early returns', () => {
         makeSidecarRouter() as never
       )
     ).rejects.toThrow('boom');
+  });
+});
+
+// ─── reconcileDisconnectedSession ─────────────────────────────────
+//
+// When a sidecar fully restarts (every redeploy) it connects fresh with no
+// agents, so the address it previously routed never reconnects. Interchange's
+// orchestrator only abandons the event collector on sidecar.disconnect; it
+// leaves agent_session.status = 'active' so a transient reconnect can resume.
+// Nothing reconciles the DB when the reconnect never comes, leaving Myra wedged
+// (active session, unroutable address) — relaunchInstanceIfNeeded then returns
+// early forever. This reconcile is the host-side cleanup that retires the
+// manual reset-myra ritual. (CL-1692)
+
+function makeUpdateCapture() {
+  const calls: Array<Record<string, unknown>> = [];
+  const update = mock(() => ({
+    set: mock((values: Record<string, unknown>) => {
+      calls.push(values);
+      return { where: mock(() => Promise.resolve()) };
+    }),
+  }));
+  return { update, calls };
+}
+
+describe('reconcileDisconnectedSession', () => {
+  const ADDR = 'ins-1@tenant-1.localhost';
+
+  it('no-ops when no instance is found for the address', async () => {
+    const db = makeMockDb();
+    const { update, calls } = makeUpdateCapture();
+    db.update = update;
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(undefined));
+
+    await reconcileDisconnectedSession(db as never, makeSidecarRouter() as never, ADDR);
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it('no-ops when the address became routable again (sidecar reconnected)', async () => {
+    const db = makeMockDb();
+    const { update, calls } = makeUpdateCapture();
+    db.update = update;
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: 'ins-1', address: ADDR, sessionId: 'ses-1' })
+    );
+
+    await reconcileDisconnectedSession(db as never, makeSidecarRouter([ADDR]) as never, ADDR);
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it('no-ops when the instance has no session', async () => {
+    const db = makeMockDb();
+    const { update, calls } = makeUpdateCapture();
+    db.update = update;
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: 'ins-1', address: ADDR, sessionId: null })
+    );
+
+    await reconcileDisconnectedSession(db as never, makeSidecarRouter() as never, ADDR);
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it('no-ops when the session is already ended', async () => {
+    const db = makeMockDb();
+    const { update, calls } = makeUpdateCapture();
+    db.update = update;
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: 'ins-1', address: ADDR, sessionId: 'ses-1' })
+    );
+    db.query.agentSession.findFirst = mock(() => Promise.resolve({ id: 'ses-1', status: 'ended' }));
+
+    await reconcileDisconnectedSession(db as never, makeSidecarRouter() as never, ADDR);
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it('marks an active session ended when the address never reconnected', async () => {
+    const db = makeMockDb();
+    const { update, calls } = makeUpdateCapture();
+    db.update = update;
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: 'ins-1', address: ADDR, sessionId: 'ses-1' })
+    );
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: 'ses-1', status: 'active' })
+    );
+
+    await reconcileDisconnectedSession(db as never, makeSidecarRouter() as never, ADDR);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.status).toBe('ended');
+    expect(calls[0]?.endedAt).toBeInstanceOf(Date);
+  });
+
+  it('marks an ending session ended (a dead sidecar never completes teardown)', async () => {
+    const db = makeMockDb();
+    const { update, calls } = makeUpdateCapture();
+    db.update = update;
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: 'ins-1', address: ADDR, sessionId: 'ses-1' })
+    );
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: 'ses-1', status: 'ending' })
+    );
+
+    await reconcileDisconnectedSession(db as never, makeSidecarRouter() as never, ADDR);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.status).toBe('ended');
+  });
+});
+
+describe('registerDisconnectReconciler', () => {
+  const ADDR = 'ins-1@tenant-1.localhost';
+
+  function makeEventRouter(routable: string[] = []) {
+    let disconnectListener: ((p: { agentAddresses: string[] }) => void) | undefined;
+    const router = {
+      getRoutableAddresses: mock(() => routable),
+      events: {
+        on: mock((type: string, listener: (p: { agentAddresses: string[] }) => void) => {
+          if (type === 'sidecar.disconnect') disconnectListener = listener;
+          return () => {};
+        }),
+      },
+    } as unknown as SidecarRouter;
+    return { router, fire: (addrs: string[]) => disconnectListener?.({ agentAddresses: addrs }) };
+  }
+
+  it('subscribes to sidecar.disconnect and reconciles after the grace window', async () => {
+    const db = makeMockDb();
+    const { update, calls } = makeUpdateCapture();
+    db.update = update;
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: 'ins-1', address: ADDR, sessionId: 'ses-1' })
+    );
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: 'ses-1', status: 'active' })
+    );
+    const { router, fire } = makeEventRouter([]);
+
+    registerDisconnectReconciler({ db: db as never, router, graceMs: 1 });
+    fire([ADDR]);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.status).toBe('ended');
+  });
+
+  it('does not reconcile when the address reconnected within the grace window', async () => {
+    const db = makeMockDb();
+    const { update, calls } = makeUpdateCapture();
+    db.update = update;
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: 'ins-1', address: ADDR, sessionId: 'ses-1' })
+    );
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: 'ses-1', status: 'active' })
+    );
+    const { router, fire } = makeEventRouter([ADDR]);
+
+    registerDisconnectReconciler({ db: db as never, router, graceMs: 1 });
+    fire([ADDR]);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(calls).toHaveLength(0);
   });
 });

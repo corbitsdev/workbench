@@ -11,7 +11,6 @@ COPY package.json bun.lock ./
 COPY apps/hub/package.json apps/hub/
 COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
-COPY packages/agent-scheduler/package.json packages/agent-scheduler/
 COPY packages/agents/package.json packages/agents/
 COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
@@ -48,7 +47,6 @@ COPY interchange/ interchange/
 COPY apps/hub/ apps/hub/
 # Railway's pre-deploy command runs `bun run scripts/db-setup.ts` in this image
 COPY scripts/ scripts/
-COPY packages/agent-scheduler/ packages/agent-scheduler/
 COPY packages/agents/ packages/agents/
 COPY packages/event-collector/ packages/event-collector/
 COPY packages/chat/ packages/chat/

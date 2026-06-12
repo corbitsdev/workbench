@@ -46,7 +46,6 @@ export const FIRECRAWL_CAPABILITIES = {
     'firecrawl_credit_usage',
     'firecrawl_token_usage',
   ],
-  schedulerIntervalMs: 60_000,
 } as const;
 
 export const FIRECRAWL_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {

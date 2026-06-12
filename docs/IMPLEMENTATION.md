@@ -373,6 +373,12 @@ A hub or sidecar restart drops the in-memory agent — the sidecar re-registers 
 
 The Myra chat (`apps/web/src/components/PersonalAgentChat.tsx`) also self-heals at send time: if `sendMail` throws an `ApiError` with status `409`, it calls `launchInstanceSession(instanceId)` and retries the send once. This covers the window between a restart and the next `/v1/me` relaunch, so a send during that gap heals rather than throwing and dropping the message. A genuine failure surfaces the recoverable error notice instead of crashing the panel.
 
+#### Disconnect reconciler
+
+Interchange's session orchestrator only abandons the in-memory event collector on `sidecar.disconnect`; it leaves `agentSession.status = 'active'` so a transient reconnect can resume. When a sidecar fully restarts (every redeploy) the previous address never re-registers, so the DB is left describing a live agent that no sidecar routes — and `relaunchInstanceIfNeeded` then returns early forever (an active session reads as "the harness owns it"), wedging the instance until its row is deleted by hand.
+
+`registerDisconnectReconciler({ db, router })` (`apps/hub/src/routes/agents.ts`, wired in `apps/hub/src/index.ts` after `createHubSessionOrchestrator`) subscribes to `sidecar.disconnect`. For each disconnected address it waits a grace window (`DEFAULT_DISCONNECT_RECONCILE_GRACE_MS`, 90s — the host's bet on how long a genuine reconnect can take) and then calls `reconcileDisconnectedSession`. That function re-checks `sidecarRouter.getRoutableAddresses()`: if the address is routable again the sidecar reconnected and there is nothing to do; otherwise the agent is gone, so its non-`ended` session is marked `ended` (`status`, `endedAt`, `updatedAt`). Ending the stale session lets the next `relaunchInstanceIfNeeded` treat the instance as a cold start — so Myra auto-relaunches via `/v1/me` and other agents recover on next open, instead of staying wedged behind a phantom session.
+
 ## Environment Configuration
 
 All environment validation lives in `apps/hub/src/config.ts`. Variables are validated at startup via `requireEnv()` — no silent defaults for required values.

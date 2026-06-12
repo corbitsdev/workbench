@@ -7,13 +7,8 @@ import { getLogger } from '@intx/log';
 import type { SessionService, SidecarRouter, EventCollectorRegistry } from '@intx/hub-sessions';
 import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
-import { startInstanceScheduler } from '@workbench/agent-scheduler';
 import { AGENT_TEMPLATES } from '@workbench/agents';
-import {
-  buildToolDefinitions,
-  getToolNamesFromCapabilities,
-  getSchedulerIntervalMs,
-} from '../lib/tool-registry';
+import { buildToolDefinitions, getToolNamesFromCapabilities } from '../lib/tool-registry';
 import { buildToolGrantRows, TOOL_GRANT_RESOURCE_PREFIX } from '../lib/tool-grants';
 import { memberAgentInstance } from '../db/schema';
 import type { HubDb } from '../db';
@@ -233,7 +228,7 @@ export function createAgentProvisioningRouter(
     let launchError: string | undefined;
 
     try {
-      const session = await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
+      await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
         agentId: instance.agentId,
         instanceId: instance.id,
         instancePrincipalId: instance.principalId,
@@ -242,17 +237,6 @@ export function createAgentProvisioningRouter(
         systemPrompt: agentRow.systemPrompt,
         now,
       });
-      const intervalMs = getSchedulerIntervalMs(agentRow.capabilities);
-      if (intervalMs !== undefined) {
-        startInstanceScheduler({
-          agentAddress: session.address,
-          sessionId: session.sessionId,
-          tenantId: instance.tenantId,
-          sessionService,
-          events: sidecarRouter.events,
-          intervalMs,
-        });
-      }
       launched = true;
     } catch (err) {
       // If the sidecar already has the agent provisioned (e.g. a race between
@@ -411,7 +395,7 @@ export function createAgentProvisioningRouter(
     });
 
     try {
-      const session = await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
+      await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
         agentId: def.id,
         instanceId,
         instancePrincipalId,
@@ -420,17 +404,6 @@ export function createAgentProvisioningRouter(
         systemPrompt: def.systemPrompt ?? '',
         now,
       });
-      const intervalMs = getSchedulerIntervalMs(def.capabilities);
-      if (intervalMs !== undefined) {
-        startInstanceScheduler({
-          agentAddress: session.address,
-          sessionId: session.sessionId,
-          tenantId,
-          sessionService,
-          events: sidecarRouter.events,
-          intervalMs,
-        });
-      }
     } catch (err) {
       log.warn('Agent instance created but session launch failed', {
         instanceId,
@@ -797,9 +770,8 @@ export async function relaunchInstanceIfNeeded(
     }
   }
 
-  let launched: { address: string; sessionId: string };
   try {
-    launched = await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
+    await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
       agentId: instance.agentId,
       instanceId: instance.id,
       instancePrincipalId: instance.principalId,
@@ -813,18 +785,6 @@ export async function relaunchInstanceIfNeeded(
     if (isAgentAlreadyExistsError(err)) return;
     throw err;
   }
-
-  const intervalMs = getSchedulerIntervalMs(agentRow.capabilities);
-  if (intervalMs !== undefined) {
-    startInstanceScheduler({
-      agentAddress: launched.address,
-      sessionId: launched.sessionId,
-      tenantId: instance.tenantId,
-      sessionService,
-      events: sidecarRouter.events,
-      intervalMs,
-    });
-  }
 }
 
 /**
@@ -836,4 +796,78 @@ export async function relaunchInstanceIfNeeded(
 function isAgentAlreadyExistsError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   return err.message.includes('Agent already exists for address');
+}
+
+// A sidecar that fully restarts (every redeploy) reconnects with no agents, so
+// the address it previously routed never re-registers. Interchange's
+// orchestrator only abandons the event collector on sidecar.disconnect and
+// leaves agent_session.status = 'active' so a transient reconnect can resume.
+// When the reconnect never comes, the DB is left describing a live agent that
+// no sidecar routes — and relaunchInstanceIfNeeded then returns early forever
+// (active session ⇒ "harness owns it"), wedging the instance until its row is
+// deleted by hand. The grace window is the host's bet on how long a genuine
+// reconnect can take; past it, an address that is still unroutable is gone.
+const DEFAULT_DISCONNECT_RECONCILE_GRACE_MS = 90_000;
+
+/**
+ * Reconciles one disconnected agent address against sidecar reality. If the
+ * address is routable again the sidecar reconnected and there is nothing to do.
+ * Otherwise the agent is gone, so any non-ended session is marked ended — which
+ * lets the next relaunchInstanceIfNeeded treat the instance as a cold start and
+ * bring it back, instead of mistaking the stale session for a live agent. (CL-1692)
+ */
+export async function reconcileDisconnectedSession(
+  db: DB['db'],
+  sidecarRouter: SidecarRouter,
+  agentAddress: string
+): Promise<void> {
+  if (sidecarRouter.getRoutableAddresses().includes(agentAddress)) return;
+
+  const instance = await db.query.agentInstance.findFirst({
+    where: eq(agentInstance.address, agentAddress),
+  });
+  if (!instance?.sessionId) return;
+
+  const session = await db.query.agentSession.findFirst({
+    where: eq(agentSession.id, instance.sessionId),
+  });
+  if (!session || session.status === 'ended') return;
+
+  const now = new Date();
+  await db
+    .update(agentSession)
+    .set({ status: 'ended', endedAt: now, updatedAt: now })
+    .where(eq(agentSession.id, session.id));
+
+  log.info('Reconciled stale session for disconnected agent', {
+    agentAddress,
+    sessionId: session.id,
+  });
+}
+
+/**
+ * Subscribes to sidecar disconnects and, after a grace window, reconciles any
+ * address that did not reconnect. Returns an unsubscribe function. The grace
+ * window lets a genuine reconnect win the race before we tear the session down.
+ */
+export function registerDisconnectReconciler(deps: {
+  db: DB['db'];
+  router: SidecarRouter;
+  graceMs?: number;
+}): () => void {
+  const { db, router } = deps;
+  const graceMs = deps.graceMs ?? DEFAULT_DISCONNECT_RECONCILE_GRACE_MS;
+
+  return router.events.on('sidecar.disconnect', ({ agentAddresses }) => {
+    for (const agentAddress of agentAddresses) {
+      setTimeout(() => {
+        void reconcileDisconnectedSession(db, router, agentAddress).catch((err) => {
+          log.warn('Failed to reconcile disconnected agent session', {
+            agentAddress,
+            error: err instanceof Error ? err : new Error(String(err)),
+          });
+        });
+      }, graceMs);
+    }
+  });
 }
