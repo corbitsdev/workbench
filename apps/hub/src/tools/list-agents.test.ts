@@ -10,8 +10,10 @@ import * as drizzleActual from 'drizzle-orm';
 mock.module('drizzle-orm', () => ({
   ...drizzleActual,
   and: (...conds: unknown[]) => ({ op: 'and', conds }),
+  or: (...conds: unknown[]) => ({ op: 'or', conds }),
   eq: (col: unknown, val: unknown) => ({ op: 'eq', col, val }),
   inArray: (col: unknown, vals: unknown) => ({ op: 'inArray', col, vals }),
+  isNull: (col: unknown) => ({ op: 'isNull', col }),
   desc: (col: unknown) => ({ op: 'desc', col }),
 }));
 
@@ -78,11 +80,13 @@ describe('LIST_AGENTS_DEFINITION', () => {
 });
 
 describe('resolveOwnedInstanceIds', () => {
-  it("resolves the caller's owning member and returns that member's instances", async () => {
+  it("resolves the caller's owning member and returns instances across all tenants", async () => {
     const { db } = makeDb([
-      [{ id: 'ins_caller' }],
-      [{ memberPrincipalId: 'prn_user' }],
-      [{ instanceId: 'ins_caller' }, { instanceId: 'ins_oat' }],
+      [{ id: 'ins_caller' }],                                           // caller instance lookup
+      [{ memberPrincipalId: 'prn_user' }],                             // owner row lookup
+      [{ refId: 'usr_1' }],                                            // owner principal refId
+      [{ id: 'prn_user' }, { id: 'prn_user_wb' }],                                         // all user principals
+      [{ instanceId: 'ins_caller' }, { instanceId: 'ins_oat' }],       // owned instances
     ]);
 
     expect(await resolveOwnedInstanceIds(db, CONTEXT, undefined)).toEqual([
@@ -101,6 +105,11 @@ describe('resolveOwnedInstanceIds', () => {
     expect(await resolveOwnedInstanceIds(db, CONTEXT, undefined)).toBeNull();
   });
 
+  it('returns null when the owner principal has no refId', async () => {
+    const { db } = makeDb([[{ id: 'ins_caller' }], [{ memberPrincipalId: 'prn_user' }], []]);
+    expect(await resolveOwnedInstanceIds(db, CONTEXT, undefined)).toBeNull();
+  });
+
   it('uses explicit member principals without resolving the caller', async () => {
     const { db } = makeDb([[{ instanceId: 'ins_a' }, { instanceId: 'ins_b' }]]);
     expect(await resolveOwnedInstanceIds(db, CONTEXT, ['prn_other'])).toEqual(['ins_a', 'ins_b']);
@@ -116,7 +125,7 @@ describe('resolveOwnedInstanceIds', () => {
 });
 
 describe('list_agents handler', () => {
-  it("returns the caller's owned running agents, scoped by tenant and instance ids", async () => {
+  it("returns the caller's owned running agents filtered by instance ids", async () => {
     const finalRows = [
       {
         instanceId: 'ins_caller',
@@ -129,6 +138,8 @@ describe('list_agents handler', () => {
     const { db, wheres } = makeDb([
       [{ id: 'ins_caller' }],
       [{ memberPrincipalId: 'prn_user' }],
+      [{ refId: 'usr_1' }],
+      [{ id: 'prn_user' }],
       [{ instanceId: 'ins_caller' }],
       finalRows,
     ]);
@@ -136,9 +147,8 @@ describe('list_agents handler', () => {
     expect(JSON.parse((await handler(db)({})) as string)).toEqual({ agents: finalRows });
 
     const finalWhere = wheres.at(-1)!;
-    expect(hasEq(finalWhere, intxSchema.agentInstance.tenantId, 'tnt_1')).toBe(true);
     expect(
-      (finalWhere.conds ?? []).some(
+      (finalWhere.conds ?? [finalWhere]).some(
         (c) =>
           c.op === 'inArray' &&
           c.col === intxSchema.agentInstance.id &&
@@ -148,7 +158,13 @@ describe('list_agents handler', () => {
   });
 
   it('fails closed (empty) when the owning member has no instances', async () => {
-    const { db } = makeDb([[{ id: 'ins_caller' }], [{ memberPrincipalId: 'prn_user' }], []]);
+    const { db } = makeDb([
+      [{ id: 'ins_caller' }],
+      [{ memberPrincipalId: 'prn_user' }],
+      [{ refId: 'usr_1' }],
+      [{ id: 'prn_user' }],
+      [],
+    ]);
     expect(JSON.parse((await handler(db)({})) as string)).toEqual({ agents: [] });
   });
 

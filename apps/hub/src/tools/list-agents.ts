@@ -8,7 +8,7 @@ import {
   resolveStatusFilter,
   type AgentInstanceStatus,
 } from '@workbench/tools-agents';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { memberAgentInstance } from '../db/schema';
 import type { ContextToolEntry } from '../lib/tool-registry';
 
@@ -48,9 +48,14 @@ export type ListAgentsContext = {
 /**
  * Resolve which agent-instance ids to list, honouring per-user ownership.
  *
- * - Explicit `memberPrincipals` → every instance those members own.
+ * - Explicit `memberPrincipals` → every instance those members own, scoped to
+ *   context.tenantId only (explicit principal lists come from list_principals
+ *   which is already tenant-scoped).
  * - Otherwise resolve the caller's owning member (the user this agent acts for)
- *   via `member_agent_instance` and return that member's instances.
+ *   via `member_agent_instance`, then collect all of that user's principals
+ *   across every tenant they belong to, and return instances from all of them.
+ *   This ensures agents deployed in workbench (child) tenants are visible even
+ *   when the calling agent (Myra) lives in the global org tenant.
  * - Returns `null` when the caller is not a member-owned instance (e.g. a
  *   dispatched or admin-launched agent). The caller's owner is unknown, so the
  *   handler fails closed: in the shared org tenant a tenant-wide listing would
@@ -61,48 +66,79 @@ export async function resolveOwnedInstanceIds(
   context: { tenantId: string; principalId: string },
   memberPrincipals: string[] | undefined
 ): Promise<string[] | null> {
-  let members = memberPrincipals;
-
-  if (members === undefined) {
-    const callerRows = await db
-      .select({ id: intxSchema.agentInstance.id })
-      .from(intxSchema.agentInstance)
-      .where(
-        and(
-          eq(intxSchema.agentInstance.tenantId, context.tenantId),
-          eq(intxSchema.agentInstance.principalId, context.principalId)
-        )
-      )
-      .limit(1);
-
-    const callerInstanceId = callerRows[0]?.id;
-    if (callerInstanceId === undefined) return null;
-
-    const ownerRows = await db
-      .select({ memberPrincipalId: memberAgentInstance.memberPrincipalId })
+  if (memberPrincipals !== undefined) {
+    const ownedRows = await db
+      .select({ instanceId: memberAgentInstance.instanceId })
       .from(memberAgentInstance)
       .where(
         and(
           eq(memberAgentInstance.tenantId, context.tenantId),
-          eq(memberAgentInstance.instanceId, callerInstanceId)
+          inArray(memberAgentInstance.memberPrincipalId, memberPrincipals)
         )
-      )
-      .limit(1);
-
-    const ownerPrincipalId = ownerRows[0]?.memberPrincipalId;
-    if (ownerPrincipalId === undefined) return null;
-    members = [ownerPrincipalId];
+      );
+    return ownedRows.map((row) => row.instanceId);
   }
 
-  const ownedRows = await db
-    .select({ instanceId: memberAgentInstance.instanceId })
+  // Resolve caller's agent instance → owning member principal → user refId.
+  const callerRows = await db
+    .select({ id: intxSchema.agentInstance.id })
+    .from(intxSchema.agentInstance)
+    .where(
+      and(
+        eq(intxSchema.agentInstance.tenantId, context.tenantId),
+        eq(intxSchema.agentInstance.principalId, context.principalId)
+      )
+    )
+    .limit(1);
+
+  const callerInstanceId = callerRows[0]?.id;
+  if (callerInstanceId === undefined) return null;
+
+  const ownerRows = await db
+    .select({ memberPrincipalId: memberAgentInstance.memberPrincipalId })
     .from(memberAgentInstance)
     .where(
       and(
         eq(memberAgentInstance.tenantId, context.tenantId),
-        inArray(memberAgentInstance.memberPrincipalId, members)
+        eq(memberAgentInstance.instanceId, callerInstanceId)
+      )
+    )
+    .limit(1);
+
+  const ownerPrincipalId = ownerRows[0]?.memberPrincipalId;
+  if (ownerPrincipalId === undefined) return null;
+
+  // Resolve the user's refId from their member principal so we can find all
+  // their principals across every tenant (global org + workbenches).
+  const ownerPrincipalRows = await db
+    .select({ refId: intxSchema.principal.refId })
+    .from(intxSchema.principal)
+    .where(eq(intxSchema.principal.id, ownerPrincipalId))
+    .limit(1);
+  const userRefId = ownerPrincipalRows[0]?.refId;
+  if (!userRefId) return null;
+
+  // Collect every user principal for this person across all tenants.
+  const allUserPrincipals = await db
+    .select({ id: intxSchema.principal.id })
+    .from(intxSchema.principal)
+    .where(
+      and(
+        eq(intxSchema.principal.kind, 'user'),
+        eq(intxSchema.principal.refId, userRefId),
+        or(isNull(intxSchema.principal.status), eq(intxSchema.principal.status, 'active'))
       )
     );
+
+  if (allUserPrincipals.length === 0) return null;
+
+  const allPrincipalIds = allUserPrincipals.map((p) => p.id);
+
+  // Return instances owned by any of those principals in any tenant.
+  const ownedRows = await db
+    .select({ instanceId: memberAgentInstance.instanceId })
+    .from(memberAgentInstance)
+    .where(inArray(memberAgentInstance.memberPrincipalId, allPrincipalIds));
 
   return ownedRows.map((row) => row.instanceId);
 }
@@ -127,7 +163,6 @@ export function createListAgentsTool(context: ListAgentsContext): AgentTool[] {
         }
 
         const conditions = [
-          eq(intxSchema.agentInstance.tenantId, context.tenantId),
           inArray(intxSchema.agentInstance.id, instanceIds),
         ];
         if (status !== undefined) {
