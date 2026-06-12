@@ -55,6 +55,7 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = [
   'artifact_write',
   'artifact_list',
   'list_agents',
+  'list_principals',
   'mail_send',
   'mail_reply',
   'mail_search',

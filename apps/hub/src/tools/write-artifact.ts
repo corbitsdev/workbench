@@ -63,7 +63,6 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
 
         const rawCitations = args.citations;
         const citations = Array.isArray(rawCitations) ? rawCitations : [];
-        const citationsJson = JSON.stringify(citations);
 
         const result = await context.db.transaction(async (tx) => {
           // artifact.sessionId is a uuid FK to workflow_run — not suitable for agent sessions.

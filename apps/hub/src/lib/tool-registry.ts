@@ -17,6 +17,7 @@ import { X_HUB_TOOLS } from '@workbench/tools-x';
 import { ARTIFACT_HUB_TOOLS } from './artifact-tools';
 import { DISPATCH_HUB_TOOLS } from '@workbench/tools-dispatch';
 import { WRITE_ARTIFACT_HUB_TOOLS } from '../tools/write-artifact';
+import { LIST_AGENTS_HUB_TOOLS } from '../tools/list-agents';
 import { LAST30DAYS_CORE_HUB_TOOLS } from '../tools/last30days-core-tools';
 import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
 
@@ -40,6 +41,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...ARTIFACT_HUB_TOOLS,
   ...DISPATCH_HUB_TOOLS,
   ...AGENTS_HUB_TOOLS,
+  ...LIST_AGENTS_HUB_TOOLS,
   ...WRITE_ARTIFACT_HUB_TOOLS,
   ...LAST30DAYS_CORE_HUB_TOOLS,
 };

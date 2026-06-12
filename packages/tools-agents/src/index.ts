@@ -1,102 +1,84 @@
 import type { AgentTool } from '@intx/agent';
-import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
 import type { ToolDefinition } from '@intx/types/runtime';
-import { and, desc, eq } from 'drizzle-orm';
+import { createPrincipalsTools, LIST_PRINCIPALS_DEFINITION } from './principals';
 
 export type { ToolDefinition };
+export {
+  createPrincipalsTools,
+  LIST_PRINCIPALS_DEFINITION,
+  resolvePrincipalKind,
+  resolvePrincipalStatusFilter,
+} from './principals';
+export type { ListPrincipalsContext } from './principals';
 
-const AGENT_INSTANCE_STATUSES = ['deployed', 'running', 'updating', 'error', 'stopped'] as const;
-type AgentInstanceStatus = (typeof AGENT_INSTANCE_STATUSES)[number];
+export const AGENT_INSTANCE_STATUSES = [
+  'deployed',
+  'running',
+  'updating',
+  'error',
+  'stopped',
+] as const;
+export type AgentInstanceStatus = (typeof AGENT_INSTANCE_STATUSES)[number];
+
+const DEFAULT_STATUS: AgentInstanceStatus = 'running';
+const ALL_STATUSES = 'all';
+const STATUS_VALUES = [...AGENT_INSTANCE_STATUSES, ALL_STATUSES] as const;
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
-export const LIST_AGENTS_DEFINITION: ToolDefinition = {
-  name: 'list_agents',
-  description:
-    'List the agents in this workbench so you can address them. Returns each agent instance with its name, mail address, status, definition id, and instance id. Use the address with mail_send to message an agent. Optionally filter by status (e.g. running).',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      status: {
-        type: 'string',
-        description:
-          'Optional status filter: deployed, running, updating, error, or stopped. Use running to find agents reachable right now.',
-      },
-      limit: {
-        type: 'number',
-        description: 'Maximum number of agents to return (1-200, default 50).',
-      },
-    },
-    required: [],
-  },
-};
-
-export type ListAgentsContext = {
-  db: DB['db'];
-  tenantId: string;
-};
-
-function parseStatus(value: unknown): AgentInstanceStatus | undefined {
-  if (value === undefined) return undefined;
+/**
+ * Resolve the agent-instance status filter. Defaults to `running` (the agents
+ * reachable right now); `all` removes the filter; anything else must be one of
+ * the known instance statuses.
+ */
+export function resolveStatusFilter(value: unknown): AgentInstanceStatus | undefined {
+  if (value === undefined) return DEFAULT_STATUS;
   if (typeof value !== 'string') {
     throw new Error('status must be a string');
   }
+  if (value === ALL_STATUSES) return undefined;
   if (!AGENT_INSTANCE_STATUSES.includes(value as AgentInstanceStatus)) {
-    throw new Error(`status must be one of: ${AGENT_INSTANCE_STATUSES.join(', ')}`);
+    throw new Error(`status must be one of: ${STATUS_VALUES.join(', ')}`);
   }
   return value as AgentInstanceStatus;
 }
 
-function parseLimit(value: unknown): number {
+/**
+ * Validate an optional `principals` argument. Returns the provided ids, or
+ * `undefined` when the argument is absent (the caller decides the default).
+ */
+export function parsePrincipalIds(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error('principals must be an array of principal ids');
+  }
+  if (value.length === 0) {
+    throw new Error('principals must be a non-empty array of principal ids');
+  }
+  if (!value.every((id) => typeof id === 'string')) {
+    throw new Error('principals must contain only strings');
+  }
+  return value as string[];
+}
+
+export function parseListLimit(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_LIMIT;
   return Math.min(Math.max(1, Math.floor(value)), MAX_LIMIT);
 }
 
-export function createAgentsTools(context: ListAgentsContext): AgentTool[] {
-  return [
-    {
-      kind: 'string',
-      definition: LIST_AGENTS_DEFINITION,
-      handler: async (args) => {
-        const status = parseStatus(args.status);
-        const limit = parseLimit(args.limit);
-
-        const conditions = [eq(intxSchema.agentInstance.tenantId, context.tenantId)];
-        if (status !== undefined) {
-          conditions.push(eq(intxSchema.agentInstance.status, status));
-        }
-
-        const rows = await context.db
-          .select({
-            instanceId: intxSchema.agentInstance.id,
-            name: intxSchema.agent.name,
-            address: intxSchema.agentInstance.address,
-            status: intxSchema.agentInstance.status,
-            agentDefinitionId: intxSchema.agentInstance.agentId,
-          })
-          .from(intxSchema.agentInstance)
-          .innerJoin(intxSchema.agent, eq(intxSchema.agentInstance.agentId, intxSchema.agent.id))
-          .where(and(...conditions))
-          .orderBy(desc(intxSchema.agentInstance.createdAt))
-          .limit(limit);
-
-        return JSON.stringify({ agents: rows }, null, 2);
-      },
-    },
-  ];
-}
-
 /**
- * Hub tool registry entry for the agent directory. A context tool (no provider
- * credential): it reads the tenant's agent instances directly from the
- * Interchange db. Import and spread into the hub's KNOWN_TOOLS to register.
+ * Hub tool registry entries owned by this package. The agent directory
+ * (`list_agents`) lives in the hub because it resolves per-user instance
+ * ownership from the hub-owned `member_agent_instance` table; this package
+ * exposes the principal directory and the shared, db-free query helpers it
+ * reuses.
  */
 export const AGENTS_HUB_TOOLS = {
-  list_agents: {
-    definition: LIST_AGENTS_DEFINITION,
+  list_principals: {
+    definition: LIST_PRINCIPALS_DEFINITION,
     createTools: (context: { db: DB['db']; tenantId: string }): AgentTool[] =>
-      createAgentsTools(context),
+      createPrincipalsTools(context),
   },
 };
