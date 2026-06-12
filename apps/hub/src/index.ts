@@ -569,15 +569,22 @@ let server: ReturnType<typeof Bun.serve> | undefined;
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, async () => {
-    log.info('Received {signal}, draining', { signal });
-    // Close sidecar sockets deliberately so each sidecar sees a clean close
-    // and reconnects on its short reconnect delay, rather than waiting for its
-    // heartbeat to time out the zombie socket left by an abrupt exit (CL-1654).
-    log.info('Closing sidecar connections', { count: sidecarConnections.size() });
-    sidecarConnections.closeAll();
-    await server?.stop();
-    log.info('Server stopped, exiting');
-    process.exit(0);
+    try {
+      log.info('Received {signal}, draining', { signal });
+      // Stop accepting new connections first so no WebSocket upgrade can slip in
+      // after closeAll (CL-1654).
+      await server?.stop();
+      // Close sidecar sockets deliberately so each sidecar sees a clean close
+      // and reconnects on its short reconnect delay, rather than waiting for its
+      // heartbeat to time out the zombie socket left by an abrupt exit (CL-1654).
+      log.info('Closing sidecar connections', { count: sidecarConnections.size() });
+      sidecarConnections.closeAll();
+      log.info('Server stopped, exiting');
+      process.exit(0);
+    } catch (err) {
+      log.fatal('Shutdown error', { error: err });
+      process.exit(1);
+    }
   });
 }
 
