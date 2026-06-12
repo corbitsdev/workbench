@@ -49,6 +49,7 @@ import {
   getMyraInstanceId,
 } from './lib/tenant-provisioning';
 import { initSentry } from '@workbench/sentry';
+import { createFatalErrorRecovery } from './lib/fatal-error-recovery';
 
 await initSentry();
 await setup({ dev: process.env.NODE_ENV !== 'production' });
@@ -205,6 +206,8 @@ const sidecarRouter = createSidecarRouter({
 
 const sidecarConnections = createSidecarConnectionRegistry();
 
+const fatalErrorRecovery = createFatalErrorRecovery(db);
+
 const eventCollectors = createEventCollectorRegistry({
   db,
   onTurnFinalized(agentAddress, turn) {
@@ -221,6 +224,8 @@ const eventCollectors = createEventCollectorRegistry({
         toolErrors: turn.toolErrors,
       },
     });
+
+    fatalErrorRecovery(agentAddress, turn);
   },
 });
 
