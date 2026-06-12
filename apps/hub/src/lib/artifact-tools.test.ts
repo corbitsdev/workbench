@@ -2,8 +2,10 @@ import { describe, expect, it, mock } from 'bun:test';
 import type { DB } from '@intx/db';
 import {
   ARTIFACT_CREATE_DEFINITION,
+  ARTIFACT_FIND_BY_TITLE_DEFINITION,
   ARTIFACT_HUB_TOOLS,
   ARTIFACT_LINK_FILE_DEFINITION,
+  ARTIFACT_LINK_PRESENTATION_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
   ARTIFACT_READ_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
@@ -132,6 +134,12 @@ describe('artifact tool registry', () => {
     expect(ARTIFACT_HUB_TOOLS.artifact_read.definition).toBe(ARTIFACT_READ_DEFINITION);
     expect(ARTIFACT_HUB_TOOLS.artifact_write.definition).toBe(ARTIFACT_WRITE_DEFINITION);
     expect(ARTIFACT_HUB_TOOLS.artifact_list.definition).toBe(ARTIFACT_LIST_DEFINITION);
+    expect(ARTIFACT_HUB_TOOLS.artifact_link_presentation.definition).toBe(
+      ARTIFACT_LINK_PRESENTATION_DEFINITION
+    );
+    expect(ARTIFACT_HUB_TOOLS.artifact_find_by_title.definition).toBe(
+      ARTIFACT_FIND_BY_TITLE_DEFINITION
+    );
     expect(ARTIFACT_HUB_TOOLS.artifact_create.createTools).toBe(createArtifactTools);
   });
 
@@ -386,5 +394,144 @@ describe('artifact_list handler', () => {
     await expect(handlerFor(bad.context, 'artifact_list')({ status: 'archived' })).rejects.toThrow(
       /status must be one of/
     );
+  });
+});
+
+describe('artifact_link_presentation handler', () => {
+  it('creates a new presentation artifact when no artifactId is given', async () => {
+    const { context, artifactInsertValues, versionInsertValues } = makeContext();
+    const handler = handlerFor(context, 'artifact_link_presentation');
+
+    const raw = await handler({ url: 'https://gamma.app/docs/abc', title: 'My Deck' });
+
+    expect(JSON.parse(raw as string)).toEqual({
+      artifactId: 'art_123',
+      version: 1,
+      url: 'https://gamma.app/docs/abc',
+    });
+    expect(artifactInsertValues[0]?.kind).toBe('presentation');
+    expect(artifactInsertValues[0]?.content).toBe('https://gamma.app/docs/abc');
+    expect(artifactInsertValues[0]?.version).toBe(1);
+    expect(versionInsertValues[0]?.version).toBe(1);
+    expect(versionInsertValues[0]?.content).toBe('https://gamma.app/docs/abc');
+    expect(versionInsertValues[0]?.authorId).toBe('prn_1');
+  });
+
+  it('bumps the version when artifactId is given for an existing presentation', async () => {
+    const { context, updateSets, versionInsertValues, calls } = makeQueryContext([
+      [
+        {
+          id: 'art_1',
+          kind: 'presentation',
+          title: 'Old Deck',
+          status: 'draft',
+          version: 1,
+          content: 'https://gamma.app/docs/old',
+        },
+      ],
+    ]);
+    const handler = handlerFor(context, 'artifact_link_presentation');
+
+    const raw = await handler({
+      url: 'https://gamma.app/docs/new',
+      title: 'New Deck',
+      artifactId: 'art_1',
+    });
+
+    expect(JSON.parse(raw as string)).toEqual({
+      artifactId: 'art_1',
+      version: 2,
+      url: 'https://gamma.app/docs/new',
+    });
+    expect(updateSets[0]?.version).toBe(2);
+    expect(updateSets[0]?.content).toBe('https://gamma.app/docs/new');
+    expect(versionInsertValues[0]?.version).toBe(2);
+    expect(versionInsertValues[0]?.authorId).toBe('prn_1');
+    expect(calls.forUpdateCount).toBe(1);
+  });
+
+  it('rejects a version bump if the artifact is not kind=presentation', async () => {
+    const { context } = makeQueryContext([
+      [
+        {
+          id: 'art_1',
+          kind: 'document',
+          title: 'A Doc',
+          status: 'draft',
+          version: 1,
+          content: 'some text',
+        },
+      ],
+    ]);
+    const handler = handlerFor(context, 'artifact_link_presentation');
+
+    await expect(
+      handler({ url: 'https://gamma.app/docs/abc', title: 'Deck', artifactId: 'art_1' })
+    ).rejects.toThrow(/not a presentation artifact/);
+  });
+
+  it('rejects a version bump if the artifact is not found', async () => {
+    const { context } = makeQueryContext([[]]);
+    const handler = handlerFor(context, 'artifact_link_presentation');
+
+    await expect(
+      handler({ url: 'https://gamma.app/docs/abc', title: 'Deck', artifactId: 'gone' })
+    ).rejects.toThrow(/Artifact not found/);
+  });
+
+  it('rejects a non-https url', async () => {
+    const { context } = makeContext();
+    const handler = handlerFor(context, 'artifact_link_presentation');
+
+    await expect(
+      handler({ url: 'http://gamma.app/docs/abc', title: 'Deck' })
+    ).rejects.toThrow(/must use HTTPS/);
+  });
+
+  it('rejects an invalid url', async () => {
+    const { context } = makeContext();
+    const handler = handlerFor(context, 'artifact_link_presentation');
+
+    await expect(handler({ url: 'not-a-url', title: 'Deck' })).rejects.toThrow(/valid URL/);
+  });
+
+  it('rejects an empty-string artifactId', async () => {
+    const { context } = makeContext();
+    const handler = handlerFor(context, 'artifact_link_presentation');
+
+    await expect(
+      handler({ url: 'https://gamma.app/docs/abc', title: 'Deck', artifactId: '' })
+    ).rejects.toThrow(/artifactId must not be empty/);
+  });
+});
+
+describe('artifact_find_by_title handler', () => {
+  it('returns artifactId and version when a match is found', async () => {
+    const { context, calls } = makeQueryContext([[{ id: 'art_42', version: 3 }]]);
+    const handler = handlerFor(context, 'artifact_find_by_title');
+
+    const raw = await handler({ title: 'My Deck' });
+
+    expect(JSON.parse(raw as string)).toEqual({ artifactId: 'art_42', version: 3 });
+    expect(calls.whereCount).toBe(1);
+    expect(calls.limitArg).toBe(1);
+  });
+
+  it('returns null when no matching artifact is found', async () => {
+    const { context } = makeQueryContext([[]]);
+    const handler = handlerFor(context, 'artifact_find_by_title');
+
+    const raw = await handler({ title: 'Missing' });
+
+    expect(JSON.parse(raw as string)).toBeNull();
+  });
+
+  it('applies orderBy to return the most recently updated match', async () => {
+    const { context, calls } = makeQueryContext([[{ id: 'art_99', version: 5 }]]);
+    const handler = handlerFor(context, 'artifact_find_by_title');
+
+    await handler({ title: 'My Deck' });
+
+    expect(calls.orderByCount).toBe(1);
   });
 });

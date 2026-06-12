@@ -1,3 +1,5 @@
+import PresentationBody from './PresentationBody';
+
 interface ArtifactBodyProps {
   body: string;
   type: string;
@@ -208,6 +210,24 @@ export default function ArtifactBody({ body, type }: ArtifactBodyProps) {
     // battlecard
     case 'battlecard':
       return <BattlecardBody body={body} />;
+    // presentation
+    case 'presentation': {
+      let isValidUrl = false;
+      try {
+        const parsed = new URL(body);
+        isValidUrl = parsed.protocol === 'https:';
+      } catch {
+        isValidUrl = false;
+      }
+      if (!isValidUrl) {
+        return (
+          <p className="text-sm text-text-3 p-4">
+            Presentation URL is invalid or unavailable.
+          </p>
+        );
+      }
+      return <PresentationBody url={body} />;
+    }
     // fallback
     default:
       return <OnePagerBody body={body} />;

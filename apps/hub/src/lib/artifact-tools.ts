@@ -78,6 +78,39 @@ export const ARTIFACT_WRITE_DEFINITION: ToolDefinition = {
   },
 };
 
+export const ARTIFACT_LINK_PRESENTATION_DEFINITION: ToolDefinition = {
+  name: 'artifact_link_presentation',
+  description:
+    "Save a Gamma presentation as a Workbench artifact. Pass the Gamma URL as 'url', a 'title', and optionally an existing 'artifactId' to create a new version instead of a new artifact. Returns { artifactId, version, url }.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: 'The Gamma share URL.' },
+      title: { type: 'string', description: 'Artifact title.' },
+      artifactId: {
+        type: 'string',
+        description:
+          'If provided, creates a new version of this artifact. If absent, creates a new artifact with kind=presentation.',
+      },
+    },
+    required: ['url', 'title'],
+  },
+};
+
+export const ARTIFACT_FIND_BY_TITLE_DEFINITION: ToolDefinition = {
+  name: 'artifact_find_by_title',
+  description:
+    'Find a Workbench artifact by exact title and optional kind. Returns { artifactId, version } if found, null if not found.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: 'Exact artifact title to search for.' },
+      kind: { type: 'string', description: 'Optional kind filter.' },
+    },
+    required: ['title'],
+  },
+};
+
 export const ARTIFACT_LIST_DEFINITION: ToolDefinition = {
   name: 'artifact_list',
   description:
@@ -370,6 +403,131 @@ function createWriteHandler(context: ArtifactToolContext): AgentTool {
   };
 }
 
+function validatePresentationUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('url must be a valid URL');
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error('url must use HTTPS');
+  }
+}
+
+function createLinkPresentationHandler(context: ArtifactToolContext): AgentTool {
+  return {
+    kind: 'string',
+    definition: ARTIFACT_LINK_PRESENTATION_DEFINITION,
+    handler: async (args) => {
+      const url = requiredString(args, 'url');
+      validatePresentationUrl(url);
+      const title = requiredString(args, 'title');
+      const artifactId = optionalNonEmptyString(args, 'artifactId');
+
+      const now = new Date();
+
+      if (artifactId !== undefined) {
+        return await context.db.transaction(async (tx) => {
+          const [existing] = await tx
+            .select()
+            .from(artifact)
+            .where(and(eq(artifact.id, artifactId), eq(artifact.tenantId, context.tenantId)))
+            .for('update')
+            .limit(1);
+
+          if (!existing) throw new Error(`Artifact not found: ${artifactId}`);
+          if (existing.kind !== 'presentation') {
+            throw new Error(`Artifact ${artifactId} is not a presentation artifact`);
+          }
+
+          const newVersion = existing.version + 1;
+
+          await tx
+            .update(artifact)
+            .set({ title, content: url, version: newVersion, updatedAt: now })
+            .where(eq(artifact.id, artifactId));
+
+          await tx.insert(artifactVersion).values({
+            artifactId,
+            version: newVersion,
+            title,
+            content: url,
+            authorId: context.principalId,
+            createdAt: now,
+          });
+
+          return jsonResult({ artifactId, version: newVersion, url });
+        });
+      }
+
+      const source = {
+        type: 'inline',
+        agentId: context.agentId,
+        sessionId: context.sessionId,
+      };
+
+      const row = await context.db.transaction(async (tx) => {
+        const [created] = await tx
+          .insert(artifact)
+          .values({
+            tenantId: context.tenantId,
+            principalId: context.principalId,
+            kind: 'presentation',
+            title,
+            content: url,
+            source,
+            status: 'draft',
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+
+        if (!created) throw new Error('Failed to create artifact');
+
+        await tx.insert(artifactVersion).values({
+          artifactId: created.id,
+          version: 1,
+          title,
+          content: url,
+          authorId: context.principalId,
+          createdAt: now,
+        });
+
+        return created;
+      });
+
+      return jsonResult({ artifactId: row.id, version: 1, url });
+    },
+  };
+}
+
+function createFindByTitleHandler(context: ArtifactToolContext): AgentTool {
+  return {
+    kind: 'string',
+    definition: ARTIFACT_FIND_BY_TITLE_DEFINITION,
+    handler: async (args) => {
+      const title = requiredString(args, 'title');
+      const kind = optionalString(args, 'kind');
+
+      const conditions = [eq(artifact.tenantId, context.tenantId), eq(artifact.title, title)];
+      if (kind !== undefined) conditions.push(eq(artifact.kind, kind));
+
+      const [row] = await context.db
+        .select({ id: artifact.id, version: artifact.version })
+        .from(artifact)
+        .where(and(...conditions))
+        .orderBy(desc(artifact.updatedAt))
+        .limit(1);
+
+      if (!row) return jsonResult(null);
+
+      return jsonResult({ artifactId: row.id, version: row.version });
+    },
+  };
+}
+
 function createListHandler(context: ArtifactToolContext): AgentTool {
   return {
     kind: 'string',
@@ -413,6 +571,8 @@ export function createArtifactTools(context: ArtifactToolContext): AgentTool[] {
     createReadHandler(context),
     createWriteHandler(context),
     createListHandler(context),
+    createLinkPresentationHandler(context),
+    createFindByTitleHandler(context),
   ];
 }
 
@@ -426,4 +586,6 @@ export const ARTIFACT_HUB_TOOLS = {
   artifact_read: artifactToolEntry(ARTIFACT_READ_DEFINITION),
   artifact_write: artifactToolEntry(ARTIFACT_WRITE_DEFINITION),
   artifact_list: artifactToolEntry(ARTIFACT_LIST_DEFINITION),
+  artifact_link_presentation: artifactToolEntry(ARTIFACT_LINK_PRESENTATION_DEFINITION),
+  artifact_find_by_title: artifactToolEntry(ARTIFACT_FIND_BY_TITLE_DEFINITION),
 };

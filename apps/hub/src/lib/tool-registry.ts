@@ -7,6 +7,7 @@ import { AGENTS_HUB_TOOLS } from '@workbench/tools-agents';
 import { BROWSER_HUB_TOOLS } from '@workbench/tools-browser';
 import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
 import { FIRECRAWL_HUB_TOOLS } from '@workbench/tools-firecrawl';
+import { GAMMA_HUB_TOOLS } from '@workbench/tools-gamma';
 import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
 import { HACKERNEWS_HUB_TOOLS } from '@workbench/tools-hackernews';
 import { GITHUB_HUB_TOOLS } from '@workbench/tools-github';
@@ -31,6 +32,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...BROWSER_HUB_TOOLS,
   ...EXA_HUB_TOOLS,
   ...FIRECRAWL_HUB_TOOLS,
+  ...GAMMA_HUB_TOOLS,
   ...GRANOLA_HUB_TOOLS,
   ...HACKERNEWS_HUB_TOOLS,
   ...GITHUB_HUB_TOOLS,

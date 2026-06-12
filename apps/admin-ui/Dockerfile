@@ -29,6 +29,7 @@ COPY packages/tools-browser/package.json packages/tools-browser/
 COPY packages/tools-dispatch/package.json packages/tools-dispatch/
 COPY packages/tools-exa/package.json packages/tools-exa/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
+COPY packages/tools-gamma/package.json packages/tools-gamma/
 COPY packages/tools-granola/package.json packages/tools-granola/
 COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/

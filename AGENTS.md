@@ -88,6 +88,10 @@ The frontend's job is to save the credential. The hub's job is to launch the age
 
 For Workbench tool credentials, keep the provider in the agent deploy descriptor's `credentialProviderNames` so the UI asks for it, and let the hub tool registry resolve it at tool execution time through `resolveCredentialRequirement`. The tool API key stays server-side; the sidecar proxies tool calls to the hub and the agent only sees the tool result.
 
+### Third-party generation APIs (Gamma)
+
+Gamma's `POST /generations/from-template` is a SaaS generation endpoint, not an LLM inference provider. Direct HTTP from a hub tool is acceptable here — the same pattern as Firecrawl. Do NOT add gamma to an agent's `credentialRequirements`. Resolve the Gamma API key via `resolveCredentialRequirement` in the hub tool registry. Document this decision in `packages/tools-gamma/README.md`.
+
 ### Specific rules
 
 - `generateId` — import from `@intx/hub-common`, never reimplement

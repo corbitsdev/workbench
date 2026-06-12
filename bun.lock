@@ -45,6 +45,7 @@
         "@workbench/tools-dispatch": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
         "@workbench/tools-firecrawl": "workspace:*",
+        "@workbench/tools-gamma": "workspace:*",
         "@workbench/tools-github": "workspace:*",
         "@workbench/tools-granola": "workspace:*",
         "@workbench/tools-hackernews": "workspace:*",
@@ -665,6 +666,15 @@
     },
     "packages/tools-firecrawl": {
       "name": "@workbench/tools-firecrawl",
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-gamma": {
+      "name": "@workbench/tools-gamma",
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1710,6 +1720,8 @@
     "@workbench/tools-exa": ["@workbench/tools-exa@workspace:packages/tools-exa"],
 
     "@workbench/tools-firecrawl": ["@workbench/tools-firecrawl@workspace:packages/tools-firecrawl"],
+
+    "@workbench/tools-gamma": ["@workbench/tools-gamma@workspace:packages/tools-gamma"],
 
     "@workbench/tools-github": ["@workbench/tools-github@workspace:packages/tools-github"],
 
