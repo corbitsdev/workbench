@@ -1,6 +1,7 @@
 import type { AgentTool } from '@intx/agent';
 import type { DB } from '@intx/db';
 import { createPosixTools } from '@intx/tools-posix';
+import { TOOL_DEFINITIONS as MAIL_TOOL_DEFINITIONS } from '@intx/tools-mail';
 import type { ToolDefinition } from '@intx/types/runtime';
 import { AGENTS_HUB_TOOLS } from '@workbench/tools-agents';
 import { BROWSER_HUB_TOOLS } from '@workbench/tools-browser';
@@ -93,10 +94,10 @@ export const KNOWN_TOOL_SUMMARIES: ToolSummary[] = Object.entries(KNOWN_TOOLS).m
  * any names not in the registry.
  */
 const LOCAL_TOOL_DEFINITIONS: Record<string, ToolDefinition> = Object.fromEntries(
-  createPosixTools({ cwd: process.cwd() }).definitions.map((definition) => [
-    definition.name,
-    definition,
-  ])
+  [
+    ...createPosixTools({ cwd: process.cwd() }).definitions,
+    ...MAIL_TOOL_DEFINITIONS,
+  ].map((definition) => [definition.name, definition])
 );
 
 export function buildToolDefinitions(names: string[]): ToolDefinition[] {
