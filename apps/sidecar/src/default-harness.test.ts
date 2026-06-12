@@ -7,6 +7,14 @@ import { describe, it, expect, mock } from 'bun:test';
 mock.module('@intx/storage-isogit', () => ({
   createIsogitStore: mock(async () => ({
     type: 'isogit',
+    load: mock(async () => ({
+      turns: [],
+      pendingOperations: [],
+      tokenUsage: {},
+      connectorState: null,
+    })),
+    writeTurns: mock(async () => {}),
+    commit: mock(async () => ({})),
   })),
   createMailAuditStore: mock(async () => ({
     type: 'mail-audit',

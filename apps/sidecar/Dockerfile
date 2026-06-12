@@ -16,6 +16,7 @@ COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
 COPY packages/chat/package.json packages/chat/
 COPY packages/client/package.json packages/client/
+COPY packages/context-repair/package.json packages/context-repair/
 COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/gtm-workflows/package.json packages/gtm-workflows/
 COPY packages/last30days-core/package.json packages/last30days-core/
@@ -46,6 +47,7 @@ RUN bun install --frozen-lockfile
 COPY interchange/ interchange/
 COPY apps/sidecar/ apps/sidecar/
 COPY packages/approvals/ packages/approvals/
+COPY packages/context-repair/ packages/context-repair/
 COPY packages/sentry/ packages/sentry/
 COPY packages/tools-exa/ packages/tools-exa/
 

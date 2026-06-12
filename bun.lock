@@ -81,6 +81,7 @@
         "@intx/tools-posix": "workspace:*",
         "@intx/types": "workspace:*",
         "@workbench/approvals": "workspace:*",
+        "@workbench/context-repair": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
       },
@@ -509,6 +510,16 @@
       "peerDependencies": {
         "@tanstack/react-query": "*",
         "react": "*",
+      },
+    },
+    "packages/context-repair": {
+      "name": "@workbench/context-repair",
+      "dependencies": {
+        "@intx/types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
       },
     },
     "packages/event-collector": {
@@ -1669,6 +1680,8 @@
     "@workbench/chat": ["@workbench/chat@workspace:packages/chat"],
 
     "@workbench/client": ["@workbench/client@workspace:packages/client"],
+
+    "@workbench/context-repair": ["@workbench/context-repair@workspace:packages/context-repair"],
 
     "@workbench/event-collector": ["@workbench/event-collector@workspace:packages/event-collector"],
 
