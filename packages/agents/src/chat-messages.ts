@@ -34,9 +34,15 @@ export interface ComposeChatResult {
  *
  * So when a turn and a mail carry the same text we keep the MAIL (server clock)
  * and drop the turn — unless the turn carries tool calls, which the mail does
- * not represent, in which case we keep the turn and drop the echoing mail. Every
- * surviving text message then has a server timestamp, so the final timestamp
- * sort is clock-consistent.
+ * not represent, in which case we keep the turn and drop the echoing mail.
+ *
+ * The surviving mail is emitted at the EARLIEST position of its content — the
+ * dropped turn's slot — not wherever the mail itself lands in the append-only
+ * event array. Events are appended in arrival order and only re-sorted on a
+ * hard reload (CL-1788): the assistant mail can be delivered late, after a
+ * newer user message. Leaving the mail at its tail position would drop the
+ * prior reply below the just-sent message. Anchoring it to the turn's slot
+ * keeps the reply above the newer message without a clock-mixing sort.
  */
 export function composeChatMessages(input: ComposeChatInput): ComposeChatResult {
   const { events, streaming, toolNames, reasoning = '', liveImages } = input;
@@ -51,24 +57,53 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
       .filter((e) => e.kind === 'turn' && (e.toolCalls?.length ?? 0) > 0)
       .map((e) => e.content.trim())
   );
+  // Assistant mails grouped by content, in arrival order. A text-only turn is
+  // matched to the next not-yet-hoisted mail of the same content so distinct
+  // replies that happen to share identical text are not collapsed together.
+  const assistantMailsByContent = new Map<string, InstanceEvent[]>();
+  for (const e of events) {
+    if (e.kind === 'mail' && e.role === 'assistant') {
+      const content = e.content.trim();
+      const group = assistantMailsByContent.get(content);
+      if (group) group.push(e);
+      else assistantMailsByContent.set(content, [e]);
+    }
+  }
 
-  const deduped = events.filter((e) => {
-    // A text-only turn echoed by an assistant mail is redundant: drop it so the
-    // server-timestamped mail wins.
+  // Mails hoisted into an earlier text-only turn's slot, tracked by id so the
+  // mail's own (possibly late) occurrence is skipped without content-collapsing
+  // unrelated duplicates.
+  const hoistedMailIds = new Set<string>();
+  const deduped: InstanceEvent[] = [];
+  for (const e of events) {
+    // A text-only turn echoed by an assistant mail is redundant: emit that
+    // server-timestamped mail in the turn's (earliest) slot and drop the turn.
     if (
       e.kind === 'turn' &&
       (e.toolCalls?.length ?? 0) === 0 &&
       assistantMailContent.has(e.content.trim())
     ) {
-      return false;
+      // If every same-content mail is already hoisted (two identical text-only
+      // turns share one mail), the turn collapses with no replacement — matching
+      // the prior filter's content-collapse behaviour.
+      const mail = assistantMailsByContent
+        .get(e.content.trim())
+        ?.find((m) => m.kind === 'mail' && !hoistedMailIds.has(m.id));
+      if (mail !== undefined && mail.kind === 'mail') {
+        hoistedMailIds.add(mail.id);
+        deduped.push(mail);
+      }
+      continue;
     }
-    // An assistant mail echoed by a tool-call turn is redundant: keep the turn
-    // (it carries the tool narrative).
-    if (e.kind === 'mail' && e.role === 'assistant' && toolTurnContent.has(e.content.trim())) {
-      return false;
+    if (e.kind === 'mail' && e.role === 'assistant') {
+      // An assistant mail echoed by a tool-call turn is redundant: keep the turn
+      // (it carries the tool narrative).
+      if (toolTurnContent.has(e.content.trim())) continue;
+      // Already hoisted into an earlier turn's slot — skip this late occurrence.
+      if (hoistedMailIds.has(e.id)) continue;
     }
-    return true;
-  });
+    deduped.push(e);
+  }
 
   const converted = convertInstanceEvents(deduped, toolNames);
 

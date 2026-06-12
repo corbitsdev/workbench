@@ -168,6 +168,53 @@ describe('composeChatMessages', () => {
     expect(messages.map((m) => m.content)).toEqual(['first', 'first answer', 'second']);
   });
 
+  it('anchors a late-arriving assistant mail to the dropped turn position, below no newer message', () => {
+    // The live bug (CL-1788): in a static, non-streaming chat the prior reply
+    // exists as a text-only turn. The user sends a new message, and only THEN
+    // does the assistant mail echoing the prior reply arrive via SSE — appended
+    // at the tail, after the new user mail. The dedup drops the text-only turn
+    // in favour of the mail; if the mail keeps its late tail position the prior
+    // reply jumps BELOW the just-sent message. The surviving mail must take the
+    // dropped turn's (earlier) slot instead.
+    const turn: InstanceEvent = {
+      kind: 'turn',
+      turnId: 't1',
+      content: 'first answer',
+      timestamp: '2024-01-01T00:00:30.000Z',
+    };
+    const { messages } = composeChatMessages({
+      events: [
+        userMail('u1', 'first', '2024-01-01T00:00:00.000Z'),
+        turn,
+        userMail('u2', 'second', '2024-01-01T00:01:00.000Z'),
+        // Assistant mail for the FIRST reply, delivered late — after u2.
+        assistantMail('a1', 'first answer', '2024-01-01T00:00:45.000Z'),
+      ],
+      streaming: '',
+    });
+    expect(messages.map((m) => m.content)).toEqual(['first', 'first answer', 'second']);
+    const answer = messages.find((m) => m.content === 'first answer');
+    expect(answer?.id).toBe('a1');
+  });
+
+  it('keeps two distinct assistant replies that share identical text', () => {
+    // Hoisting must match by id, not content: two separate replies that happen
+    // to carry the same text (e.g. "Done.") are distinct messages and must not
+    // be collapsed into one.
+    const { messages } = composeChatMessages({
+      events: [
+        userMail('u1', 'do a', '2024-01-01T00:00:00.000Z'),
+        assistantMail('a1', 'Done.', '2024-01-01T00:00:10.000Z'),
+        userMail('u2', 'do b', '2024-01-01T00:00:20.000Z'),
+        assistantMail('a2', 'Done.', '2024-01-01T00:00:30.000Z'),
+      ],
+      streaming: '',
+    });
+    const replies = messages.filter((m) => m.role === 'agent' && m.content === 'Done.');
+    expect(replies).toHaveLength(2);
+    expect(replies.map((m) => m.id)).toEqual(['a1', 'a2']);
+  });
+
   it('deduplicates events with the same id (hydration-race guard)', () => {
     // The session hydrates via a REST fetch, then drains the SSE buffer. If the
     // same mail arrives in both, convertInstanceEvents emits it twice with the

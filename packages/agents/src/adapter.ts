@@ -56,9 +56,10 @@ export function convertInstanceEvents(
   events: InstanceEvent[],
   toolNames?: ReadonlyMap<string, string>
 ): ChatMessage[] {
-  // Pure mapping — chronological ordering is applied once, on the final list,
-  // by composeChatMessages (which sorts by timestamp). Keeping this a 1:1 map
-  // means callers that bypass composeChatMessages get events in source order.
+  // Pure mapping — ordering is owned by composeChatMessages, which preserves the
+  // events' arrival order (hydration sorts by server timestamp; live events are
+  // appended). Keeping this a 1:1 map means callers that bypass composeChatMessages
+  // get events in source order.
   return events.map((event): ChatMessage => {
     if (event.kind === 'mail') {
       const isInbound = event.role === 'user';
