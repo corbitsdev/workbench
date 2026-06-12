@@ -6,26 +6,42 @@ import type { TurnFinalized } from '@workbench/event-collector';
 
 const log = getLogger(['api', 'fatal-error-recovery']);
 
-const { agentInstance, agentSession } = intxSchema;
+const { agentInstance, agentSession, inferenceTurn } = intxSchema;
 
 /**
  * Returns a callback suitable for use as `onTurnFinalized` in the event
  * collector registry. When a turn ends with a fatal inference error the
- * session is marked ended so the next relaunchInstanceIfNeeded restarts the
- * agent with a clean history instead of replaying the bad turn forever.
+ * corrupt turn is deleted from the DB and the session is marked ended so the
+ * next relaunchInstanceIfNeeded restarts the agent without replaying the bad
+ * turn forever.
  */
 export function createFatalErrorRecovery(db: DB['db']) {
   return function onFatalError(agentAddress: string, turn: TurnFinalized): void {
     const hasFatalError = turn.hadError && turn.errors.some((e) => e.category === 'fatal');
     if (!hasFatalError) return;
 
-    endSessionForAddress(db, agentAddress).catch((err) => {
-      log.error('Failed to end session after fatal inference error', {
+    recoverFromFatalError(db, agentAddress, turn.turnId).catch((err) => {
+      log.error('Failed to recover from fatal inference error', {
         agentAddress,
         error: err,
       });
     });
   };
+}
+
+async function recoverFromFatalError(
+  db: DB['db'],
+  agentAddress: string,
+  turnId: string
+): Promise<void> {
+  await deleteCorruptTurn(db, turnId);
+  await endSessionForAddress(db, agentAddress);
+}
+
+async function deleteCorruptTurn(db: DB['db'], turnId: string): Promise<void> {
+  await db.delete(inferenceTurn).where(eq(inferenceTurn.id, turnId));
+
+  log.info('Deleted corrupt inference turn that caused fatal error', { turnId });
 }
 
 async function endSessionForAddress(db: DB['db'], agentAddress: string): Promise<void> {

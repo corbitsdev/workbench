@@ -20,19 +20,27 @@ function makeTurn(
   };
 }
 
+const TURN_ID = 'turn-1';
+
 function makeDb(updatedRows: { id: string }[] = [{ id: SESSION_ID }]) {
   const returning = mock(() => Promise.resolve(updatedRows));
   const where = mock(() => ({ returning }));
   const set = mock(() => ({ where }));
   const updateMock = mock(() => ({ set }));
+  const deleteWhere = mock(() => Promise.resolve());
+  const deleteMock = mock(() => ({ where: deleteWhere }));
   return {
     query: {
       agentInstance: {
-        findFirst: mock(() => Promise.resolve({ address: AGENT_ADDRESS, sessionId: SESSION_ID })),
+        findFirst: mock(() =>
+          Promise.resolve({ address: AGENT_ADDRESS, sessionId: SESSION_ID as string | null })
+        ),
       },
     },
     update: updateMock,
+    delete: deleteMock,
     _where: where,
+    _deleteWhere: deleteWhere,
   };
 }
 
@@ -138,5 +146,68 @@ describe('createFatalErrorRecovery', () => {
 
     await new Promise((r) => setTimeout(r, 20));
     expect(db.update).toHaveBeenCalled();
+  });
+
+  it('deletes the corrupt inference turn before ending the session', async () => {
+    const db = makeDb([{ id: SESSION_ID }]);
+    const onFatalError = createFatalErrorRecovery(db as never);
+
+    onFatalError(
+      AGENT_ADDRESS,
+      makeTurn({
+        hadError: true,
+        errors: [
+          {
+            category: 'fatal',
+            message: 'Invalid assistant message: content or tool_calls must be set',
+          },
+        ],
+      })
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(db.delete).toHaveBeenCalled();
+    expect(db._deleteWhere).toHaveBeenCalled();
+  });
+
+  it('does not delete a turn when error is not fatal', async () => {
+    const db = makeDb();
+    const onFatalError = createFatalErrorRecovery(db as never);
+
+    onFatalError(
+      AGENT_ADDRESS,
+      makeTurn({ hadError: true, errors: [{ category: 'retryable', message: 'timeout' }] })
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+
+  it('deletes the turn even when session update returns zero rows', async () => {
+    const db = makeDb([]);
+    const onFatalError = createFatalErrorRecovery(db as never);
+
+    onFatalError(
+      AGENT_ADDRESS,
+      makeTurn({ hadError: true, errors: [{ category: 'fatal', message: 'bad' }] })
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(db.delete).toHaveBeenCalled();
+  });
+
+  it('deletes the turn identified by turnId from TurnFinalized', async () => {
+    const db = makeDb([{ id: SESSION_ID }]);
+    const onFatalError = createFatalErrorRecovery(db as never);
+
+    const turn = {
+      ...makeTurn({ hadError: true, errors: [{ category: 'fatal', message: 'bad' }] }),
+      turnId: TURN_ID,
+    };
+    onFatalError(AGENT_ADDRESS, turn);
+
+    await new Promise((r) => setTimeout(r, 20));
+    // delete was called once (the corrupt turn)
+    expect(db.delete).toHaveBeenCalledTimes(1);
   });
 });
