@@ -1,5 +1,5 @@
 import type { InstanceEvent } from '@intx/hub-client';
-import type { ChatMessage } from '@workbench/chat';
+import type { ChatMessage, ChatImage } from '@workbench/chat';
 import { convertInstanceEvents } from './adapter';
 
 export const STREAMING_BUBBLE_ID = 'streaming-synthetic';
@@ -12,6 +12,8 @@ export interface ComposeChatInput {
   toolNames?: ReadonlyMap<string, string>;
   /** Live reasoning buffer for the current turn (empty when not thinking). */
   reasoning?: string;
+  /** Inline images captured from the current turn's live stream. */
+  liveImages?: readonly ChatImage[];
 }
 
 export interface ComposeChatResult {
@@ -37,7 +39,7 @@ export interface ComposeChatResult {
  * sort is clock-consistent.
  */
 export function composeChatMessages(input: ComposeChatInput): ComposeChatResult {
-  const { events, streaming, toolNames, reasoning = '' } = input;
+  const { events, streaming, toolNames, reasoning = '', liveImages } = input;
 
   // Content of assistant mail (server-timestamped) and of turns that carry tool
   // calls (the only thing mail cannot represent).
@@ -107,11 +109,13 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
   // current turn only and never bleeds across turns (CL-1643).
   const liveText = streaming.trim();
   const liveReasoning = reasoning.trim();
-  if (liveText !== '' || liveReasoning !== '') {
+  const hasLiveImages = liveImages !== undefined && liveImages.length > 0;
+  if (liveText !== '' || liveReasoning !== '' || hasLiveImages) {
     const last = messages[messages.length - 1];
     if (last?.role === 'agent' && last.content === '') {
       if (liveText !== '') last.content = streaming;
       if (liveReasoning !== '') last.reasoning = reasoning;
+      if (hasLiveImages) last.images = [...liveImages!];
       last.status = 'sending';
     } else if (liveText !== '') {
       messages.push({
@@ -121,16 +125,18 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
         createdAt: new Date().toISOString(),
         status: 'sending',
         ...(liveReasoning !== '' ? { reasoning } : {}),
+        ...(hasLiveImages ? { images: [...liveImages!] } : {}),
       });
-    } else {
-      // Reasoning only — the agent is thinking and has not started answering.
+    } else if (liveReasoning !== '' || hasLiveImages) {
+      // Reasoning only or images only — agent is thinking/producing output with no text yet.
       messages.push({
         id: STREAMING_BUBBLE_ID,
         role: 'agent',
         content: '',
         createdAt: new Date().toISOString(),
         status: 'sending',
-        reasoning,
+        ...(liveReasoning !== '' ? { reasoning } : {}),
+        ...(hasLiveImages ? { images: [...liveImages!] } : {}),
       });
     }
   }

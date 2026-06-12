@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it } from 'bun:test';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 
 import { MessageBubble } from './MessageBubble';
@@ -105,5 +105,54 @@ describe('MessageBubble', () => {
     };
     render(<MessageBubble message={message} />);
     expect(screen.getByText('Failed to send')).not.toBeNull();
+  });
+
+  it('renders an img element for each base64 image in an agent message', () => {
+    const message: ChatMessage = {
+      id: 'img1',
+      role: 'agent',
+      content: 'Here is the screenshot',
+      createdAt: '2026-06-04T00:04:00Z',
+      images: [{ mimeType: 'image/png', data: 'abc123' }],
+    };
+    const { container } = render(<MessageBubble message={message} />);
+    const img = container.querySelector('img') as HTMLImageElement;
+    expect(img).not.toBeNull();
+    expect(img.src).toContain('data:image/png;base64,abc123');
+  });
+
+  it('renders multiple images when the message has more than one', () => {
+    const message: ChatMessage = {
+      id: 'img2',
+      role: 'agent',
+      content: 'Two images',
+      createdAt: '2026-06-04T00:05:00Z',
+      images: [
+        { mimeType: 'image/jpeg', data: 'data1' },
+        { mimeType: 'image/png', data: 'data2' },
+      ],
+    };
+    const { container } = render(<MessageBubble message={message} />);
+    const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+    expect(imgs.length).toBe(2);
+    const [first, second] = imgs;
+    expect(first?.src).toContain('data:image/jpeg;base64,data1');
+    expect(second?.src).toContain('data:image/png;base64,data2');
+  });
+
+  it('shows a broken-image fallback on load error without crashing', () => {
+    const message: ChatMessage = {
+      id: 'img3',
+      role: 'agent',
+      content: 'broken',
+      createdAt: '2026-06-04T00:06:00Z',
+      images: [{ mimeType: 'image/png', data: 'badbytes' }],
+    };
+    const { container } = render(<MessageBubble message={message} />);
+    const img = container.querySelector('img') as HTMLImageElement;
+    expect(img).not.toBeNull();
+    fireEvent.error(img);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('Image unavailable')).not.toBeNull();
   });
 });

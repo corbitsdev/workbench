@@ -3,6 +3,7 @@ export {
   type ChatMessageStatus,
   type ChatMessage,
   type ChatMessageKind,
+  type ChatImage,
   type ToolCall,
   type QuickReply,
   type ChatDockState,

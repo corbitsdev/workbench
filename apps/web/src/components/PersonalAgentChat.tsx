@@ -5,9 +5,11 @@ import {
   createToolNameTracker,
   createLiveTextTracker,
   createReasoningTracker,
+  createImageTracker,
   type ToolNameTracker,
   type LiveTextTracker,
   type ReasoningTracker,
+  type ImageTracker,
 } from '@workbench/agents/browser';
 import {
   ChatLauncher,
@@ -72,6 +74,7 @@ export function PersonalAgentChat() {
   const toolNamesRef = useRef<ToolNameTracker | null>(null);
   const liveTextRef = useRef<LiveTextTracker | null>(null);
   const reasoningRef = useRef<ReasoningTracker | null>(null);
+  const imageTrackerRef = useRef<ImageTracker | null>(null);
 
   const { registerReconnect } = useChatLauncher();
 
@@ -145,6 +148,10 @@ export function PersonalAgentChat() {
           tenantId: me.personalTenantId,
           instanceId: me.paInstanceId,
         });
+        imageTrackerRef.current = createImageTracker(transport, {
+          tenantId: me.personalTenantId,
+          instanceId: me.paInstanceId,
+        });
 
         if (!cancelled) setSessionState({ phase: 'ready', session });
       } catch {
@@ -169,6 +176,8 @@ export function PersonalAgentChat() {
       liveTextRef.current = null;
       reasoningRef.current?.stop();
       reasoningRef.current = null;
+      imageTrackerRef.current?.stop();
+      imageTrackerRef.current = null;
       sessionRef.current?.destroy();
       sessionRef.current = null;
     };
@@ -190,6 +199,9 @@ export function PersonalAgentChat() {
       streaming: liveTextRef.current !== null ? liveTextRef.current.text : '',
       reasoning: reasoningRef.current !== null ? reasoningRef.current.text : '',
       ...(toolNamesRef.current !== null ? { toolNames: toolNamesRef.current.names } : {}),
+      ...(imageTrackerRef.current !== null && imageTrackerRef.current.images.length > 0
+        ? { liveImages: imageTrackerRef.current.images }
+        : {}),
     });
     return messages;
   }

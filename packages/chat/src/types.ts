@@ -36,6 +36,12 @@ export interface ToolCall {
   isError?: boolean;
 }
 
+/** An inline image captured from the agent's response stream. */
+export interface ChatImage {
+  mimeType: string;
+  data: string;
+}
+
 /** A single message in a chat thread. */
 export interface ChatMessage {
   id: string;
@@ -69,6 +75,11 @@ export interface ChatMessage {
    * streaming bubble while the agent is thinking.
    */
   reasoning?: string;
+  /**
+   * Inline images produced during this agent turn (e.g. browser snapshots).
+   * Each entry carries a base64-encoded payload and its MIME type.
+   */
+  images?: ChatImage[];
 }
 
 /** A tappable suggested reply offered by the agent. */

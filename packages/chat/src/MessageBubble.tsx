@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { Streamdown } from 'streamdown';
 import { cn } from '@workbench/ui';
-import { type ChatMessage } from './types';
+import { type ChatMessage, type ChatImage } from './types';
 import { ReasoningDisclosure } from './ReasoningDisclosure';
 import { extractUIBlockFromText, type UIBlock, type UIResponse } from './ui-block';
 import { UIBlockView } from './UIBlockView';
@@ -23,14 +24,38 @@ export interface MessageBubbleProps {
  * UIBlockView registry, with the surrounding prose still rendered as Markdown.
  * User messages are kept as plain text.
  */
+
+function InlineImage({ image }: { image: ChatImage }) {
+  const [failed, setFailed] = useState(false);
+  const src = `data:${image.mimeType};base64,${image.data}`;
+
+  if (failed) {
+    return (
+      <div className="flex items-center justify-center rounded-lg bg-zinc-700 px-4 py-3 text-xs text-zinc-400 mt-2 max-w-[600px]">
+        Image unavailable
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      className="max-w-[600px] w-full rounded-lg mt-2"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export function MessageBubble({ message, onRespond, onAction }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isStreaming = message.status === 'sending';
   const hasReasoning = message.role === 'agent' && (message.reasoning ?? '').trim() !== '';
+  const hasImages = message.images !== undefined && message.images.length > 0;
 
-  // Nothing to show: no body, not streaming, and no reasoning to disclose.
-  if (!message.content && message.status !== 'sending' && !hasReasoning) return null;
+  // Nothing to show: no body, not streaming, no reasoning, and no images.
+  if (!message.content && message.status !== 'sending' && !hasReasoning && !hasImages) return null;
 
   // Only attempt block extraction on settled agent/system messages — a partial
   // stream may contain a half-written fence we should not try to parse yet.
@@ -87,6 +112,8 @@ export function MessageBubble({ message, onRespond, onAction }: MessageBubblePro
           {renderBody()}
         </div>
       )}
+      {hasImages &&
+        message.images!.map((image, index) => <InlineImage key={index} image={image} />)}
       {message.status === 'failed' && (
         <span className="text-xs text-orange-soft">Failed to send</span>
       )}
