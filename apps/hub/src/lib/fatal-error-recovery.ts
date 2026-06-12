@@ -1,16 +1,12 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
+import type { TurnFinalized } from '@workbench/event-collector';
 
 const log = getLogger(['api', 'fatal-error-recovery']);
 
 const { agentInstance, agentSession } = intxSchema;
-
-export type RecoverableTurn = {
-  hadError: boolean;
-  errors: { category: string; message: string }[];
-};
 
 /**
  * Returns a callback suitable for use as `onTurnFinalized` in the event
@@ -19,12 +15,12 @@ export type RecoverableTurn = {
  * agent with a clean history instead of replaying the bad turn forever.
  */
 export function createFatalErrorRecovery(db: DB['db']) {
-  return function onFatalError(agentAddress: string, turn: RecoverableTurn): void {
+  return function onFatalError(agentAddress: string, turn: TurnFinalized): void {
     const hasFatalError = turn.hadError && turn.errors.some((e) => e.category === 'fatal');
     if (!hasFatalError) return;
 
     endSessionForAddress(db, agentAddress).catch((err) => {
-      log.warn('Failed to end session after fatal inference error', {
+      log.error('Failed to end session after fatal inference error', {
         agentAddress,
         error: err,
       });
@@ -38,19 +34,17 @@ async function endSessionForAddress(db: DB['db'], agentAddress: string): Promise
   });
   if (!instance?.sessionId) return;
 
-  const session = await db.query.agentSession.findFirst({
-    where: eq(agentSession.id, instance.sessionId),
-  });
-  if (!session || session.status === 'ended') return;
-
   const now = new Date();
-  await db
+  const updated = await db
     .update(agentSession)
     .set({ status: 'ended', endedAt: now, updatedAt: now })
-    .where(eq(agentSession.id, session.id));
+    .where(and(eq(agentSession.id, instance.sessionId), ne(agentSession.status, 'ended')))
+    .returning({ id: agentSession.id });
+
+  if (updated.length === 0) return;
 
   log.info('Ended session after fatal inference error — agent will relaunch on next request', {
     agentAddress,
-    sessionId: session.id,
+    sessionId: instance.sessionId,
   });
 }

@@ -8,26 +8,31 @@ function makeTurn(
   overrides: Partial<{ hadError: boolean; errors: { category: string; message: string }[] }>
 ) {
   return {
+    turnId: 'turn-1',
+    status: 'completed' as const,
+    text: '',
+    hadReply: false,
     hadError: false,
     errors: [],
+    toolCalls: [],
+    toolErrors: [],
     ...overrides,
   };
 }
 
-function makeDb(sessionStatus: string = 'active') {
-  const updateSet = mock(() => ({ where: mock(() => Promise.resolve()) }));
-  const updateMock = mock(() => ({ set: updateSet }));
+function makeDb(updatedRows: { id: string }[] = [{ id: SESSION_ID }]) {
+  const returning = mock(() => Promise.resolve(updatedRows));
+  const where = mock(() => ({ returning }));
+  const set = mock(() => ({ where }));
+  const updateMock = mock(() => ({ set }));
   return {
     query: {
       agentInstance: {
         findFirst: mock(() => Promise.resolve({ address: AGENT_ADDRESS, sessionId: SESSION_ID })),
       },
-      agentSession: {
-        findFirst: mock(() => Promise.resolve({ id: SESSION_ID, status: sessionStatus })),
-      },
     },
     update: updateMock,
-    _updateSet: updateSet,
+    _where: where,
   };
 }
 
@@ -68,8 +73,8 @@ describe('createFatalErrorRecovery', () => {
     expect(db.query.agentInstance.findFirst).not.toHaveBeenCalled();
   });
 
-  it('marks the session ended when a fatal error occurs', async () => {
-    const db = makeDb('active');
+  it('issues a conditional UPDATE when a fatal error occurs', async () => {
+    const db = makeDb([{ id: SESSION_ID }]);
     const onFatalError = createFatalErrorRecovery(db as never);
 
     onFatalError(
@@ -84,8 +89,10 @@ describe('createFatalErrorRecovery', () => {
     expect(db.update).toHaveBeenCalled();
   });
 
-  it('does nothing when session is already ended', async () => {
-    const db = makeDb('ended');
+  it('does not log when UPDATE returns zero rows (session already ended)', async () => {
+    // DB returns empty array = the WHERE ne(status, 'ended') guard excluded the row.
+    // The code should return early — no second update.
+    const db = makeDb([]);
     const onFatalError = createFatalErrorRecovery(db as never);
 
     onFatalError(
@@ -94,7 +101,8 @@ describe('createFatalErrorRecovery', () => {
     );
 
     await new Promise((r) => setTimeout(r, 20));
-    expect(db.update).not.toHaveBeenCalled();
+    // UPDATE was still issued (the guard is in the WHERE clause), but only once.
+    expect(db.update).toHaveBeenCalledTimes(1);
   });
 
   it('does nothing when instance has no session', async () => {
@@ -113,8 +121,8 @@ describe('createFatalErrorRecovery', () => {
     expect(db.update).not.toHaveBeenCalled();
   });
 
-  it('handles non-fatal errors mixed with other categories correctly', async () => {
-    const db = makeDb('active');
+  it('triggers on a mix of categories when any is fatal', async () => {
+    const db = makeDb([{ id: SESSION_ID }]);
     const onFatalError = createFatalErrorRecovery(db as never);
 
     onFatalError(
