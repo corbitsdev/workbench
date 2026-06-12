@@ -7,6 +7,9 @@ import { buildGranolaSystemPrompt } from './granola/prompt';
 import { buildFirecrawlSystemPrompt } from './firecrawl/prompt';
 import { buildWalterSystemPrompt } from './walter/prompt';
 import { buildHammySystemPrompt } from './hammy-the-humanizer/prompt';
+import { buildGeraltSystemPrompt } from './geralt/prompt';
+import { buildBobbySystemPrompt } from './bobby/prompt';
+import { buildLincolnSystemPrompt } from './lincoln/prompt';
 import { HAMMY_SKILL_CONTENT } from './hammy-the-humanizer/skill';
 
 const format = { xml: true };
@@ -47,6 +50,27 @@ describe('agent system prompts', () => {
     expect(prompt).toContain('Score');
     expect(prompt).not.toContain('writer and editor');
   });
+});
+
+describe('specialist agent mail_reply contract', () => {
+  const MAIL_REPLY_CONTRACT = 'must respond using mail_reply';
+  const specialists: Array<[string, (name: string) => string]> = [
+    ['granola', (name) => buildGranolaSystemPrompt(name, { xml: true })],
+    ['firecrawl', (name) => buildFirecrawlSystemPrompt(name, { xml: true })],
+    ['walter', (name) => buildWalterSystemPrompt(name, { xml: true })],
+    ['hammy', (name) => buildHammySystemPrompt(name, { xml: true })],
+    ['loop', (name) => buildLoopAgentSystemPrompt(name, { xml: true })],
+    ['geralt', (name) => buildGeraltSystemPrompt(name, { xml: true })],
+    ['bobby', (name) => buildBobbySystemPrompt(name, { xml: true })],
+    ['lincoln', (_name) => buildLincolnSystemPrompt('Lincoln')],
+  ];
+
+  for (const [agentName, buildPrompt] of specialists) {
+    it(`${agentName} instructs the agent to respond with mail_reply when the inbound turn is from another agent`, () => {
+      const prompt = buildPrompt(agentName);
+      expect(prompt).toContain(MAIL_REPLY_CONTRACT);
+    });
+  }
 });
 
 describe('HAMMY_SKILL_CONTENT sync with SKILL.md', () => {

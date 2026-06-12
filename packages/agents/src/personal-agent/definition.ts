@@ -66,5 +66,4 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = [
   'mail_reply',
   'mail_search',
   'mail_read',
-  'mail_wait',
 ];

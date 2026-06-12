@@ -154,4 +154,41 @@ describe('buildPersonalAgentSystemPrompt', () => {
     });
     expect(prompt).not.toContain('<operator>');
   });
+
+  // CL-1789 — mail_wait removed; async delegation pattern
+  it('does not instruct Myra to call mail_wait', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).not.toContain('mail_wait');
+  });
+
+  it('instructs Myra to end her turn after sending and inform the user she is waiting', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('end your turn');
+    expect(prompt).toContain('waiting on the reply');
+  });
+
+  it('instructs Myra to record pending delegations in her notes before ending the turn', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('PENDING.md');
+  });
+
+  it('instructs Myra to check for inbound agent replies at the start of a new turn', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain(
+      'When a new inbound message arrives that is not from the person you work for'
+    );
+    expect(prompt).toContain('PENDING.md');
+    expect(prompt).toContain('mail_search');
+  });
+
+  it('provides a fallback when mail_search finds no pending match', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('no matching pending delegation');
+  });
+
+  it('instructs Myra to surface stale pending delegations to the user', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('older than');
+    expect(prompt).toContain('unresolved');
+  });
 });

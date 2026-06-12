@@ -125,6 +125,15 @@ export function jsonOutputContract(shape: Record<string, string>): XmlNode {
   return xml('output', fields, { format: 'json', fences: false });
 }
 
+export const SPECIALIST_MAIL_SECTION: PromptSection = {
+  tag: 'messaging',
+  content: `When your turn is triggered by an inbound message from another agent rather than a user, you must respond using mail_reply — not by writing to the chat. This is the only way the sending agent receives your answer. Replying to the chat instead leaves the requesting agent permanently blocked waiting for a response that will never arrive.
+
+How to recognise an agent-triggered turn: the message arrives without user framing, references a task you were delegated, or comes from an address that matches an agent rather than a person.
+
+When in doubt, use mail_reply. A reply sent to both the chat and via mail_reply is fine; a reply sent only to the chat when an agent is waiting is a silent failure.`,
+};
+
 export const LINKEDIN_WRITING_SECTIONS: StructuredPromptSection[] = [
   structuredSection(
     'role',

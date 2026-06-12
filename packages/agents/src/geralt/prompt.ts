@@ -1,4 +1,9 @@
-import { buildSystemPrompt, HUMANIZER_SECTION, type PromptFormat } from '../prompt-builder';
+import {
+  buildSystemPrompt,
+  HUMANIZER_SECTION,
+  SPECIALIST_MAIL_SECTION,
+  type PromptFormat,
+} from '../prompt-builder';
 
 export function buildGeraltSystemPrompt(name: string, format: PromptFormat): string {
   return buildSystemPrompt(
@@ -59,6 +64,7 @@ Use duplication instead of regeneration when the user wants to preserve the exis
 - Do not invent template names or theme IDs — always call the list tools first.
 - Be concise. One clear sentence beats a paragraph.`,
       },
+      SPECIALIST_MAIL_SECTION,
       HUMANIZER_SECTION,
     ],
     format

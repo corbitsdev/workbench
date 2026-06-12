@@ -1,4 +1,9 @@
-import { buildSystemPrompt, HUMANIZER_SECTION, type PromptFormat } from '../prompt-builder';
+import {
+  buildSystemPrompt,
+  HUMANIZER_SECTION,
+  SPECIALIST_MAIL_SECTION,
+  type PromptFormat,
+} from '../prompt-builder';
 
 export function buildGranolaSystemPrompt(name: string, format: PromptFormat): string {
   return buildSystemPrompt(
@@ -62,6 +67,7 @@ Emit only valid JSON inside the fence — no trailing commas, no comments. Any p
 
 If you cannot produce valid JSON, fall back to the plain markdown schema.`,
       },
+      SPECIALIST_MAIL_SECTION,
       HUMANIZER_SECTION,
     ],
     format

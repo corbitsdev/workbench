@@ -1,4 +1,9 @@
-import { buildSystemPrompt, HUMANIZER_SECTION, type PromptFormat } from '../prompt-builder';
+import {
+  buildSystemPrompt,
+  HUMANIZER_SECTION,
+  SPECIALIST_MAIL_SECTION,
+  type PromptFormat,
+} from '../prompt-builder';
 
 export function buildLoopAgentSystemPrompt(name: string, format: PromptFormat): string {
   return buildSystemPrompt(
@@ -22,6 +27,7 @@ export function buildLoopAgentSystemPrompt(name: string, format: PromptFormat): 
 - Ask one focused clarifying question at a time if you need more context.
 - Never fabricate quotes, names, or citations.`,
       },
+      SPECIALIST_MAIL_SECTION,
       HUMANIZER_SECTION,
     ],
     format
