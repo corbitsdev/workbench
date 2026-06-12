@@ -13,12 +13,14 @@ COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/agent-scheduler/package.json packages/agent-scheduler/
 COPY packages/agents/package.json packages/agents/
-COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
+COPY packages/auth/package.json packages/auth/
 COPY packages/chat/package.json packages/chat/
 COPY packages/client/package.json packages/client/
+COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/gtm-workflows/package.json packages/gtm-workflows/
+COPY packages/hub-crypto/package.json packages/hub-crypto/
 COPY packages/last30days-core/package.json packages/last30days-core/
 COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
