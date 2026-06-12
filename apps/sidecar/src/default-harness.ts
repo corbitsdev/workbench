@@ -142,6 +142,7 @@ export function createDefaultHarnessBuilder({
 
       const localToolNames = new Set([
         ...posixTools.definitions.map((d) => d.name),
+        ...mailTools.definitions.map((d) => d.name),
         ...askPrincipalRunner.definitions.map((d) => d.name),
       ]);
 
