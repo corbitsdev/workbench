@@ -1,17 +1,49 @@
 /**
  * Browserbase session lifecycle + config resolution.
  *
- * Sessions live on Browserbase. We create them via the REST API, reconstruct
- * the CDP connect URL deterministically from `apiKey + sessionId` (no stored
- * connection state), and release them via the REST API. A hard `timeout` is set
- * at creation as the real orphan-session backstop: it survives a hub crash, an
- * agent eviction, or a dropped socket, because it runs on Browserbase's side.
+ * Sessions live on Browserbase. We create them via the REST API with
+ * `keepAlive: true` so the session persists across the repeated connect /
+ * disconnect calls each tool makes. The API returns a `connectUrl`; we store it
+ * in a module-level Map keyed by sessionId so subsequent tools can use it
+ * without exposing a credential-bearing URL to the model. A hard `timeout` is
+ * set at creation as the real orphan-session backstop: it survives a hub crash,
+ * an agent eviction, or a dropped socket, because it runs on Browserbase's side.
  */
 import type { BrowserFetch, BrowserToolsConfig, ResolvedBrowserConfig } from './types';
 import { realConnector } from './connect';
 
 const DEFAULT_BASE_URL = 'https://api.browserbase.com/v1';
-const CONNECT_HOST = 'wss://connect.browserbase.com';
+
+/**
+ * Server-side store mapping sessionId → Browserbase-provided connectUrl.
+ * Lives for the process lifetime. Entries are removed when browser_close_session
+ * is called. Tools are rebuilt on every hub /tools/run call, so this cannot live
+ * in a closure.
+ */
+const SESSION_CONNECT_URLS = new Map<string, string>();
+
+export function storeSessionConnectURL(sessionId: string, connectUrl: string): void {
+  SESSION_CONNECT_URLS.set(sessionId, connectUrl);
+}
+
+export function lookupSessionConnectURL(sessionId: string): string {
+  const url = SESSION_CONNECT_URLS.get(sessionId);
+  if (url === undefined) {
+    throw new Error(
+      `No connectUrl for browser session "${sessionId}". Call browser_create_session first.`
+    );
+  }
+  return url;
+}
+
+export function removeSessionConnectURL(sessionId: string): void {
+  SESSION_CONNECT_URLS.delete(sessionId);
+}
+
+/** Clear all stored connect URLs. Intended for use in tests only. */
+export function clearSessionConnectURLs(): void {
+  SESSION_CONNECT_URLS.clear();
+}
 
 /** Browserbase session duration ceiling, in seconds. */
 export const DEFAULT_SESSION_TIMEOUT_SECONDS = 600;
@@ -104,20 +136,15 @@ export function clampTimeoutSeconds(value: unknown): number {
   );
 }
 
-export function buildConnectUrl(apiKey: string, sessionId: string): string {
-  const params = new URLSearchParams({ apiKey, sessionId });
-  return `${CONNECT_HOST}?${params.toString()}`;
-}
-
 export async function createSession(
   config: ResolvedBrowserConfig,
   timeoutSeconds: number,
   signal: AbortSignal
-): Promise<{ sessionId: string }> {
+): Promise<{ sessionId: string; connectUrl: string }> {
   const response = await config.fetcher(`${config.baseUrl}/sessions`, {
     method: 'POST',
     headers: browserbaseHeaders(config.apiKey),
-    body: JSON.stringify({ projectId: config.projectId, timeout: timeoutSeconds }),
+    body: JSON.stringify({ projectId: config.projectId, timeout: timeoutSeconds, keepAlive: true }),
     signal,
   });
   if (!response.ok) {
@@ -127,7 +154,10 @@ export async function createSession(
   if (!isRecord(data) || typeof data.id !== 'string' || data.id.length === 0) {
     throw new Error('Browserbase session response missing id');
   }
-  return { sessionId: data.id };
+  if (typeof data.connectUrl !== 'string' || data.connectUrl.length === 0) {
+    throw new Error('Browserbase session response missing connectUrl');
+  }
+  return { sessionId: data.id, connectUrl: data.connectUrl };
 }
 
 export async function endSession(

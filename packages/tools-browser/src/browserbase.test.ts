@@ -1,13 +1,16 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import {
-  buildConnectUrl,
+  clearSessionConnectURLs,
   clampTimeoutSeconds,
   createSession,
   endSession,
   listRunningSessions,
+  lookupSessionConnectURL,
   parseBrowserbaseBaseURL,
   reapStaleSessions,
+  removeSessionConnectURL,
   resolveConfig,
+  storeSessionConnectURL,
 } from './browserbase';
 import type { BrowserFetch, ResolvedBrowserConfig } from './types';
 
@@ -32,6 +35,10 @@ const baseConfig: ResolvedBrowserConfig = {
   fetcher: makeFetchStub({}),
   connector: () => Promise.reject(new Error('unused')),
 };
+
+beforeEach(() => {
+  clearSessionConnectURLs();
+});
 
 describe('parseBrowserbaseBaseURL', () => {
   it('splits projectId off the query string', () => {
@@ -81,32 +88,64 @@ describe('clampTimeoutSeconds', () => {
   });
 });
 
-describe('buildConnectUrl', () => {
-  it('builds a CDP url from apiKey and sessionId', () => {
-    expect(buildConnectUrl('k', 's')).toBe('wss://connect.browserbase.com?apiKey=k&sessionId=s');
+describe('session connect URL store', () => {
+  it('stores and retrieves a connectUrl by sessionId', () => {
+    storeSessionConnectURL('s1', 'wss://url-1');
+    expect(lookupSessionConnectURL('s1')).toBe('wss://url-1');
+  });
+
+  it('throws when the sessionId is not in the store', () => {
+    expect(() => lookupSessionConnectURL('missing')).toThrow('missing');
+  });
+
+  it('remove deletes the entry so a subsequent lookup throws', () => {
+    storeSessionConnectURL('s2', 'wss://url-2');
+    removeSessionConnectURL('s2');
+    expect(() => lookupSessionConnectURL('s2')).toThrow('s2');
+  });
+
+  it('remove on a missing key is a no-op', () => {
+    expect(() => removeSessionConnectURL('never-stored')).not.toThrow();
   });
 });
 
 describe('createSession', () => {
-  it('posts projectId and timeout, returns the session id', async () => {
-    const fetcher = makeFetchStub({ id: 'sess-123' });
-    const sessionId = await createSession(
+  it('sends keepAlive:true, posts projectId and timeout, returns sessionId and connectUrl', async () => {
+    const fetcher = makeFetchStub({
+      id: 'sess-123',
+      connectUrl: 'wss://connect.browserbase.com/playwright?apiKey=bb-key&sessionId=sess-123',
+    });
+    const result = await createSession(
       { ...baseConfig, fetcher },
       600,
       new AbortController().signal
     );
-    expect(sessionId).toEqual({ sessionId: 'sess-123' });
+    expect(result).toEqual({
+      sessionId: 'sess-123',
+      connectUrl: 'wss://connect.browserbase.com/playwright?apiKey=bb-key&sessionId=sess-123',
+    });
     const [url, init] = fetcher.mock.calls[0]!;
     expect(url).toBe('https://api.browserbase.com/v1/sessions');
-    expect(JSON.parse(String(init.body))).toEqual({ projectId: 'proj-1', timeout: 600 });
+    expect(JSON.parse(String(init.body))).toEqual({
+      projectId: 'proj-1',
+      timeout: 600,
+      keepAlive: true,
+    });
     expect((init.headers as Record<string, string>)['X-BB-API-Key']).toBe('bb-key');
   });
 
   it('throws when the response has no id', async () => {
-    const fetcher = makeFetchStub({ notId: true });
+    const fetcher = makeFetchStub({ notId: true, connectUrl: 'wss://x' });
     await expect(
       createSession({ ...baseConfig, fetcher }, 600, new AbortController().signal)
     ).rejects.toThrow('missing id');
+  });
+
+  it('throws when the response has no connectUrl', async () => {
+    const fetcher = makeFetchStub({ id: 'sess-123' });
+    await expect(
+      createSession({ ...baseConfig, fetcher }, 600, new AbortController().signal)
+    ).rejects.toThrow('missing connectUrl');
   });
 
   it('surfaces API errors', async () => {

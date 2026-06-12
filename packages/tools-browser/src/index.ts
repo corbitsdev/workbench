@@ -10,12 +10,14 @@
 import type { AgentTool } from '@intx/agent';
 import type { ToolDefinition } from '@intx/types/runtime';
 import {
-  buildConnectUrl,
   clampTimeoutSeconds,
   createSession,
   endSession,
+  lookupSessionConnectURL,
   parseBrowserbaseBaseURL,
+  removeSessionConnectURL,
   resolveConfig,
+  storeSessionConnectURL,
 } from './browserbase';
 import { ACTION_TIMEOUT_MS, CONNECT_TIMEOUT_MS, getPage, withTimeout } from './connect';
 import { FRAME_DELIMITER, pruneSnapshot, SNAPSHOT_SCRIPT, type RawSnapshot } from './snapshot';
@@ -34,7 +36,6 @@ export type {
 } from './types';
 export {
   parseBrowserbaseBaseURL,
-  buildConnectUrl,
   resolveConfig,
   listRunningSessions,
   reapStaleSessions,
@@ -60,7 +61,7 @@ async function withSession<T>(
   sessionId: string,
   fn: (page: PageLike) => Promise<T>
 ): Promise<T> {
-  const connectUrl = buildConnectUrl(config.apiKey, sessionId);
+  const connectUrl = lookupSessionConnectURL(sessionId);
   const browser = await withTimeout(
     config.connector(connectUrl),
     CONNECT_TIMEOUT_MS,
@@ -252,7 +253,8 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
   return [
     stringTool(BROWSER_CREATE_SESSION_DEFINITION, async (args, signal) => {
       const timeoutSeconds = clampTimeoutSeconds(args.timeoutSeconds);
-      const { sessionId } = await createSession(config, timeoutSeconds, signal);
+      const { sessionId, connectUrl } = await createSession(config, timeoutSeconds, signal);
+      storeSessionConnectURL(sessionId, connectUrl);
       return { sessionId, timeoutSeconds };
     }),
 
@@ -332,7 +334,11 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
 
     stringTool(BROWSER_CLOSE_SESSION_DEFINITION, async (args, signal) => {
       const sessionId = requiredString(args, 'sessionId');
-      await endSession(config, sessionId, signal);
+      try {
+        await endSession(config, sessionId, signal);
+      } finally {
+        removeSessionConnectURL(sessionId);
+      }
       return { closed: true, sessionId };
     }),
   ];
