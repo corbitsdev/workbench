@@ -228,6 +228,16 @@ function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const gammaKey = env('GAMMA_API_KEY');
+  if (gammaKey) {
+    entries.push({
+      providerName: 'gamma',
+      providerPlugin: 'gamma',
+      credentialName: 'Gamma',
+      secret: gammaKey,
+    });
+  }
+
   return entries;
 }
 
