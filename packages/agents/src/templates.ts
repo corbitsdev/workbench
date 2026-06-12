@@ -9,6 +9,7 @@ import {
   LOOP_DEPLOY_PROMPT,
   LOOP_CREDENTIAL_REQUIREMENTS,
   LOOP_GRANT_REQUIREMENTS,
+  LOOP_DEPLOY_DESCRIPTOR,
 } from './loop/definition';
 import {
   GRANOLA_DEPLOY_PROMPT,
@@ -92,7 +93,7 @@ export interface AgentTemplate {
  *
  * Base tool sources:
  *   - Myra:   PERSONAL_AGENT_BASE_TOOLS (empty today; single source of truth)
- *   - Loop:   LOOP_DEPLOY_DESCRIPTOR.defaultTools is empty; Loop has no base tools
+ *   - Loop:   LOOP_DEPLOY_DESCRIPTOR.defaultTools
  *   - Oat:    GRANOLA_CAPABILITIES.tools
  *   - Freddy: FIRECRAWL_CAPABILITIES.tools
  *   - Walter: WALTER_CAPABILITIES.tools
@@ -125,7 +126,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     systemPrompt: LOOP_DEPLOY_PROMPT,
     credentialRequirements: LOOP_CREDENTIAL_REQUIREMENTS,
     grantRequirements: LOOP_GRANT_REQUIREMENTS,
-    capabilities: { tools: [] },
+    capabilities: { tools: [...LOOP_DEPLOY_DESCRIPTOR.defaultTools] },
     deployable: false,
   },
   {

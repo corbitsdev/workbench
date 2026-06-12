@@ -27,8 +27,8 @@ describe('loop agent definition', () => {
     expect(LOOP_DEPLOY_DESCRIPTOR.credentialProviderNames).toEqual(['openai-compatible']);
   });
 
-  it('ships with no default or required tools', () => {
-    expect(LOOP_DEPLOY_DESCRIPTOR.defaultTools).toEqual([]);
-    expect(LOOP_DEPLOY_DESCRIPTOR.requiredTools).toEqual([]);
+  it('can reply to inbound mail by default', () => {
+    expect(LOOP_DEPLOY_DESCRIPTOR.defaultTools).toEqual(['mail_reply']);
+    expect(LOOP_DEPLOY_DESCRIPTOR.requiredTools).toEqual(['mail_reply']);
   });
 });

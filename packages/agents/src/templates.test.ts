@@ -76,4 +76,11 @@ describe('AGENT_TEMPLATES', () => {
       expect(resources).toContain('tool:mail_reply');
     }
   });
+
+  it('every specialist agent exposes mail_reply as an enabled tool', () => {
+    const specialists = AGENT_TEMPLATES.filter((t) => t.key !== 'myra');
+    for (const template of specialists) {
+      expect(template.capabilities.tools).toContain('mail_reply');
+    }
+  });
 });

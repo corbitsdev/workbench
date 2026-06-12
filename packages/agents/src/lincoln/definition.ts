@@ -28,6 +28,7 @@ export const LINCOLN_CAPABILITIES = {
     'artifact_link_file',
     'firecrawl_scrape',
     'firecrawl_search',
+    'mail_reply',
   ],
 } as const;
 

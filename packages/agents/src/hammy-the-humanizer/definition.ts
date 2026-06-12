@@ -21,7 +21,7 @@ export const HAMMY_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
 export const HAMMY_DEPLOY_PROMPT: string = buildHammySystemPrompt('Hammy', { xml: true });
 
 export const HAMMY_CAPABILITIES = {
-  tools: ['read_file', 'write_file', 'edit_file', 'artifact_link_file'],
+  tools: ['read_file', 'write_file', 'edit_file', 'artifact_link_file', 'mail_reply'],
 } as const;
 
 export const HAMMY_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {

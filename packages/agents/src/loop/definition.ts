@@ -25,6 +25,6 @@ export const LOOP_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   name: 'Loop',
   systemPrompt: LOOP_DEPLOY_PROMPT,
   credentialProviderNames: ['openai-compatible'],
-  defaultTools: [],
-  requiredTools: [],
+  defaultTools: ['mail_reply'],
+  requiredTools: ['mail_reply'],
 };

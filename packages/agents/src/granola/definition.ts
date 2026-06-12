@@ -45,7 +45,7 @@ export const GRANOLA_DEPLOY_PROMPT: string = buildGranolaSystemPrompt('Oat', { x
  * to configure tools.
  */
 export const GRANOLA_CAPABILITIES = {
-  tools: ['granola_list_notes', 'granola_get_note', 'granola_list_folders'],
+  tools: ['granola_list_notes', 'granola_get_note', 'granola_list_folders', 'mail_reply'],
 } as const;
 
 export const GRANOLA_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {

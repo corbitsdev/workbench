@@ -34,6 +34,7 @@ export const BOBBY_CAPABILITIES = {
     'browser_get_text',
     'browser_screenshot',
     'browser_close_session',
+    'mail_reply',
   ],
 } as const;
 

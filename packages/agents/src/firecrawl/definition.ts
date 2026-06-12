@@ -45,6 +45,7 @@ export const FIRECRAWL_CAPABILITIES = {
     'firecrawl_parse',
     'firecrawl_credit_usage',
     'firecrawl_token_usage',
+    'mail_reply',
   ],
 } as const;
 
