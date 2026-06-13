@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router';
 import { AgentChat } from '../components/AgentChat';
 import { WorkflowPanel } from '../components/WorkflowPanel';
 import { NewWorkflowPane } from '../components/NewWorkflowPane';
+import { PresentationGenerationWizard } from '../components/PresentationGenerationWizard';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { AgentCatalogModal } from '../components/layout/AgentCatalogModal';
 import { WorkflowPicker } from '../components/layout/WorkflowPicker';
@@ -350,17 +351,26 @@ export default function WorkbenchHome() {
       );
     }
     if (rightPane.view === 'new-workflow') {
+      const closeHandler = () => {
+        setRightPane({ view: 'gallery' });
+        setLauncherHidden(false);
+      };
       return (
         <motion.div key="new-workflow" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
-          <NewWorkflowPane
-            workflowKind={rightPane.workflowKind}
-            tenantId={workbenchTenantId}
-            onCreated={handleWorkflowCreated}
-            onClose={() => {
-              setRightPane({ view: 'gallery' });
-              setLauncherHidden(false);
-            }}
-          />
+          {rightPane.workflowKind === 'presentation-generation' ? (
+            <PresentationGenerationWizard
+              tenantId={workbenchTenantId}
+              onCreated={handleWorkflowCreated}
+              onClose={closeHandler}
+            />
+          ) : (
+            <NewWorkflowPane
+              workflowKind={rightPane.workflowKind}
+              tenantId={workbenchTenantId}
+              onCreated={handleWorkflowCreated}
+              onClose={closeHandler}
+            />
+          )}
         </motion.div>
       );
     }
@@ -412,15 +422,26 @@ export default function WorkbenchHome() {
             }}
           />
         ) : rightPane.view === 'new-workflow' ? (
-          <NewWorkflowPane
-            workflowKind={rightPane.workflowKind}
-            tenantId={workbenchTenantId}
-            onCreated={handleWorkflowCreated}
-            onClose={() => {
-              setRightPane({ view: 'gallery' });
-              setLauncherHidden(false);
-            }}
-          />
+          rightPane.workflowKind === 'presentation-generation' ? (
+            <PresentationGenerationWizard
+              tenantId={workbenchTenantId}
+              onCreated={handleWorkflowCreated}
+              onClose={() => {
+                setRightPane({ view: 'gallery' });
+                setLauncherHidden(false);
+              }}
+            />
+          ) : (
+            <NewWorkflowPane
+              workflowKind={rightPane.workflowKind}
+              tenantId={workbenchTenantId}
+              onCreated={handleWorkflowCreated}
+              onClose={() => {
+                setRightPane({ view: 'gallery' });
+                setLauncherHidden(false);
+              }}
+            />
+          )
         ) : (
           <ArtifactGallery
             tenantId={workbenchTenantId}

@@ -34,6 +34,15 @@ mock.module('@intx/db', () => ({
   ]),
 }));
 
+mock.module('@intx/crypto-node', () => ({
+  generateKeyPair: mock(async () => ({ publicKey: 'pk', privateKey: 'sk' })),
+  createNodeCrypto: mock(() => ({ sign: mock(() => 'sig'), verify: mock(() => true) })),
+}));
+
+mock.module('@intx/hub-common', () => ({
+  generateId: mock((prefix: string) => `${prefix}-test-id`),
+}));
+
 mock.module('../config', () => ({
   getConfig: mock(() => ({
     globalTenant: { slug: 'global-org', name: 'Global Org', domain: 'global.example.com' },
@@ -1805,5 +1814,196 @@ describe('Workflow router', () => {
 
     const json = await res.json();
     expect(json.error).toBeString();
+  });
+
+  describe('presentation-generation workflow', () => {
+    function buildPresentationApp(
+      db: ReturnType<typeof createMockDb>,
+      deps?: { sessionService?: { sendUserMessage: (...args: unknown[]) => Promise<void> } }
+    ) {
+      const parent = new Hono<{ Variables: { userId: string } }>();
+      parent.use('*', async (c, next) => {
+        c.set('userId', 'test-user');
+        await next();
+      });
+      parent.route(
+        '/',
+        createWorkflowRouter(
+          db as unknown as HubDb,
+          deps as unknown as { sessionService?: import('./workflow').SessionServiceDep }
+        )
+      );
+      return parent;
+    }
+
+    function createPresentationMockDb(options: Parameters<typeof createMockDb>[0] = {}) {
+      const db = createMockDb(options);
+      db.query.enabledWorkflow.findFirst = mock(() => ({
+        id: 'ew-pres',
+        tenantId: 'tenant-personal',
+        principalId: 'prn-personal',
+        kind: 'presentation-generation',
+        enabledAt: new Date().toISOString(),
+        assignments: {} as unknown as {
+          analyze: { credentialIds: string[]; toolIds: never[] };
+          generate: { credentialIds: string[]; toolIds: never[] };
+        },
+      }));
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'pending',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: {} as { companyName: string; transcriptId: string },
+      }));
+      db.insert = mock(() => ({
+        values: mock((values: unknown) => {
+          options.onInsertValues?.(values);
+          return {
+            returning: mock(() => [
+              { id: 'wf-pres', status: 'pending', kind: 'presentation-generation' },
+            ]),
+            onConflictDoUpdate: mock(() => ({
+              returning: mock(() => []),
+            })),
+          };
+        }),
+      }));
+      return db;
+    }
+
+    it('GET /gamma/templates returns an array', async () => {
+      const router = buildPresentationApp(createPresentationMockDb());
+      const res = await router.fetch(new Request('http://localhost/gamma/templates'));
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(Array.isArray(json)).toBe(true);
+    });
+
+    it('POST /workflows creates presentation-generation run without transcript', async () => {
+      const router = buildPresentationApp(createPresentationMockDb());
+      const res = await router.fetch(
+        new Request('http://localhost/workflows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workflowKind: 'presentation-generation' }),
+        })
+      );
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.id).toBeString();
+      expect(json.kind).toBe('presentation-generation');
+    });
+
+    it('POST /workflows/id/steps template step advances to analyzing', async () => {
+      const updatedValues: unknown[] = [];
+      const db = createPresentationMockDb({ onSetUpdate: (v) => updatedValues.push(v) });
+      const router = buildPresentationApp(db);
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            step: 'template',
+            templateId: 'tmpl-1',
+            audience: 'Executives',
+            tone: 'Formal',
+            goal: 'Close deal',
+          }),
+        })
+      );
+      expect(res.status).toBe(200);
+      expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'analyzing' }));
+    });
+
+    it('POST /workflows/id/steps source step (paste) advances to running', async () => {
+      const updatedValues: unknown[] = [];
+      const db = createPresentationMockDb({ onSetUpdate: (v) => updatedValues.push(v) });
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'analyzing',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: { templateId: 'tmpl-1' } as unknown as { companyName: string; transcriptId: string },
+      }));
+      const router = buildPresentationApp(db);
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            step: 'source',
+            transcriptSource: 'paste',
+            transcript: 'Hello world content for the deck',
+            callTitle: 'Test Call',
+          }),
+        })
+      );
+      expect(res.status).toBe(200);
+      expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'running' }));
+    });
+
+    it('POST /workflows/id/steps generate without agentInstanceId returns 400', async () => {
+      const db = createPresentationMockDb();
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'running',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: {
+          templateId: 'tmpl-1',
+          transcriptSource: 'paste',
+          transcriptId: 'tx-1',
+        } as unknown as { companyName: string; transcriptId: string },
+      }));
+      const sendUserMessage = mock(() => Promise.resolve());
+      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step: 'generate' }),
+        })
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('POST /workflows/id/steps generate dispatches mail and advances to generating', async () => {
+      const updatedValues: unknown[] = [];
+      const db = createPresentationMockDb({ onSetUpdate: (v) => updatedValues.push(v) });
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'running',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: {
+          templateId: 'tmpl-1',
+          transcriptSource: 'paste',
+          transcriptId: 'tx-1',
+          callTitle: 'Test Call',
+        } as unknown as { companyName: string; transcriptId: string },
+      }));
+      db.query.agentInstance.findFirst = mock<
+        () => { id: string; agentId: string; tenantId: string; address: string; sessionId: null }
+      >(() => ({
+        id: 'inst-geralt',
+        agentId: 'agent-geralt',
+        tenantId: 'tenant-personal',
+        address: 'inst-geralt@global.example.com',
+        sessionId: 'ses-geralt' as unknown as null,
+      }));
+      const sendUserMessage = mock(() => Promise.resolve());
+      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step: 'generate', agentInstanceId: 'inst-geralt' }),
+        })
+      );
+      expect(res.status).toBe(200);
+      expect(sendUserMessage).toHaveBeenCalledTimes(1);
+      expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'generating' }));
+    });
   });
 });

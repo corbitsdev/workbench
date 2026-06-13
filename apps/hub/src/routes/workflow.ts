@@ -13,9 +13,16 @@ import type { WorkflowType } from '@workbench/workflow-core';
 import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
 import {
   collateralGenerationWorkflow,
+  presentationGenerationWorkflow,
   getVariantCount,
   isCollateralKind,
 } from '@workbench/gtm-workflows';
+import { GAMMA_TEMPLATE_REGISTRY } from '@workbench/tools-gamma';
+import type { SessionService } from '@intx/hub-sessions';
+import { generateKeyPair, createNodeCrypto } from '@intx/crypto-node';
+import { generateId } from '@intx/hub-common';
+
+export type SessionServiceDep = Pick<SessionService, 'sendUserMessage'>;
 import type { HubDb } from '../db';
 import {
   workflowRun,
@@ -34,6 +41,7 @@ import { randomUUID } from 'node:crypto';
 const log = getLogger(['api', 'workflow']);
 
 workflowRegistry.register(collateralGenerationWorkflow);
+workflowRegistry.register(presentationGenerationWorkflow);
 
 const STEP_ORDER = ['intake', 'analyze', 'generate'] as const;
 type StepName = (typeof STEP_ORDER)[number];
@@ -76,6 +84,22 @@ function getFirstRunnableStep(kind: string): string {
 /** Map a DB status to the conceptual step name for a given workflow. */
 function deriveCurrentStepForWorkflow(status: string, kind: string): string {
   const steps = getWorkflowStepOrder(kind);
+  if (kind === 'presentation-generation') {
+    switch (status) {
+      case 'pending':
+      case 'failed':
+        return steps[0]!;
+      case 'analyzing':
+        return steps[1]!;
+      case 'running':
+      case 'generating':
+      case 'reviewing':
+      case 'done':
+        return steps[2]!;
+      default:
+        throw new Error(`Unknown workflow status: ${status}`);
+    }
+  }
   const firstPostIntake = steps[1];
   const lastStep = steps[steps.length - 1];
   if (!firstPostIntake || !lastStep) {
@@ -531,7 +555,11 @@ function validateWorkflowInput(
   return { valid: true };
 }
 
-export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: string } }> {
+export function createWorkflowRouter(
+  db: HubDb,
+  deps?: { sessionService?: SessionServiceDep }
+): Hono<{ Variables: { userId: string } }> {
+  const sessionService = deps?.sessionService;
   const router = new Hono<{ Variables: { userId: string } }>();
 
   // ─── List available workflow types ───────────────────────────────
@@ -560,6 +588,11 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       description: entry.definition.description,
     }));
     return c.json(tools);
+  });
+
+  // ─── Gamma template registry ─────────────────────────────────────
+  router.get('/gamma/templates', (c) => {
+    return c.json(GAMMA_TEMPLATE_REGISTRY.map((entry) => ({ ...entry, id: entry.gammaId })));
   });
 
   // ─── List enabled workflows for tenant ───────────────────────────
@@ -751,7 +784,28 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       return c.json({ error: `Workflow kind not enabled for this tenant: ${workflowKind}` }, 400);
     }
 
-    log.info('Creating workflow', { source });
+    log.info('Creating workflow', { workflowKind, source });
+
+    if (workflowKind === 'presentation-generation') {
+      const [wfRow] = await db
+        .insert(workflowRun)
+        .values({
+          tenantId: userContext.tenantId,
+          principalId: userContext.principalId,
+          kind: workflowKind,
+          status: 'pending',
+          input: {},
+        })
+        .returning();
+      if (!wfRow) {
+        log.error('Failed to create presentation workflow row', {
+          tenantId: userContext.tenantId,
+        });
+        return c.json({ error: 'Failed to create workflow' }, 500);
+      }
+      log.info('Presentation generation workflow created', { workflowId: wfRow.id });
+      return c.json({ id: wfRow.id, status: wfRow.status, kind: wfRow.kind }, 201);
+    }
 
     if (!workflowSource) {
       log.warn('Invalid source', { source });
@@ -1141,12 +1195,22 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const id = c.req.param('id');
     const userId = c.get('userId');
     const body = (await c.req.json().catch(() => ({}))) as {
-      step?: StepName;
+      step?: string;
       painPointIds?: string[];
       collateralTypes?: string[];
       artifactId?: string;
       feedback?: string;
       target?: string;
+      templateId?: string;
+      audience?: string;
+      tone?: string;
+      goal?: string;
+      transcriptSource?: string;
+      transcript?: string;
+      granolaId?: string;
+      callTitle?: string;
+      sourceArtifactId?: string;
+      agentInstanceId?: string;
     };
 
     log.info('Running step', { workflowId: id, step: body.step });
@@ -1171,13 +1235,230 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 
     const step = body.step ?? deriveCurrentStepForWorkflow(wf.status, wf.kind);
 
+    if (step === 'template' && wf.kind === 'presentation-generation') {
+      if (wf.status !== 'pending' && wf.status !== 'failed') {
+        return c.json({ error: 'Template step can only be submitted from pending status' }, 409);
+      }
+      const currentInput = (wf.input as Record<string, unknown>) ?? {};
+      await db
+        .update(workflowRun)
+        .set({
+          status: 'analyzing',
+          input: {
+            ...currentInput,
+            templateId: body.templateId,
+            audience: body.audience,
+            tone: body.tone,
+            goal: body.goal,
+          },
+        })
+        .where(eq(workflowRun.id, id));
+      return c.json({ status: 'analyzing' });
+    }
+
+    if (step === 'source' && wf.kind === 'presentation-generation') {
+      const transcriptSource = body.transcriptSource;
+      const currentInput = (wf.input as Record<string, unknown>) ?? {};
+
+      if (transcriptSource === 'artifact') {
+        if (!body.sourceArtifactId) {
+          return c.json({ error: 'sourceArtifactId is required' }, 400);
+        }
+        await db
+          .update(workflowRun)
+          .set({
+            status: 'running',
+            input: {
+              ...currentInput,
+              transcriptSource: 'artifact',
+              sourceArtifactId: body.sourceArtifactId,
+            },
+          })
+          .where(eq(workflowRun.id, id));
+        return c.json({ status: 'running' });
+      }
+
+      if (transcriptSource === 'paste') {
+        if (!body.transcript || body.transcript.trim().length === 0) {
+          return c.json({ error: 'transcript is required' }, 400);
+        }
+        const callTitle = body.callTitle?.trim() || 'Pasted transcript';
+        const [txRow] = await db
+          .insert(transcript)
+          .values({ content: body.transcript, source: 'paste' })
+          .returning();
+        if (!txRow) return c.json({ error: 'Failed to create transcript' }, 500);
+        const newInput = {
+          ...currentInput,
+          transcriptSource: 'paste',
+          transcriptId: txRow.id,
+          callTitle,
+        };
+        const workflowDef = workflowRegistry.get(wf.kind);
+        const intakeArtifacts = workflowDef?.createIntakeArtifacts?.({
+          input: newInput,
+          content: body.transcript,
+          callTitle,
+        });
+        for (const draft of intakeArtifacts ?? []) {
+          await db.insert(artifact).values({
+            tenantId: userContext.tenantId,
+            principalId: userContext.principalId,
+            sessionId: wf.id,
+            kind: draft.kind,
+            title: draft.title,
+            content: draft.content,
+            status: draft.status ?? 'draft',
+            version: draft.version ?? 1,
+          });
+        }
+        await db
+          .update(workflowRun)
+          .set({ status: 'running', input: newInput })
+          .where(eq(workflowRun.id, id));
+        return c.json({ status: 'running' });
+      }
+
+      if (transcriptSource === 'granola') {
+        if (!body.granolaId) {
+          return c.json({ error: 'granolaId is required' }, 400);
+        }
+        const granolaApiKey = await resolveStepGranolaApiKey(
+          db,
+          userContext.tenantId,
+          userContext.principalId,
+          wf.kind,
+          'source'
+        );
+        if (!granolaApiKey) {
+          return c.json({ error: 'No Granola credential configured for this workbench' }, 400);
+        }
+        let granolaContent: string;
+        let granolaCallTitle: string;
+        try {
+          const note = await getNoteWithTranscript(granolaApiKey, body.granolaId);
+          granolaContent = transcriptToText(note) || note.summary || note.title || '';
+          granolaCallTitle = body.callTitle?.trim() || (note.title as string) || 'Granola call';
+        } catch (err) {
+          log.error('Failed to fetch from Granola', {
+            granolaId: body.granolaId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return c.json({ error: 'Failed to fetch from Granola' }, 400);
+        }
+        if (granolaContent.trim().length === 0) {
+          return c.json({ error: 'Granola note has no usable content' }, 400);
+        }
+        const [txRow] = await db
+          .insert(transcript)
+          .values({ content: granolaContent, source: 'granola' })
+          .returning();
+        if (!txRow) return c.json({ error: 'Failed to create transcript' }, 500);
+        const newInput = {
+          ...currentInput,
+          transcriptSource: 'granola',
+          transcriptId: txRow.id,
+          callTitle: granolaCallTitle,
+        };
+        const workflowDef = workflowRegistry.get(wf.kind);
+        const intakeArtifacts = workflowDef?.createIntakeArtifacts?.({
+          input: newInput,
+          content: granolaContent,
+          callTitle: granolaCallTitle,
+        });
+        for (const draft of intakeArtifacts ?? []) {
+          await db.insert(artifact).values({
+            tenantId: userContext.tenantId,
+            principalId: userContext.principalId,
+            sessionId: wf.id,
+            kind: draft.kind,
+            title: draft.title,
+            content: draft.content,
+            status: draft.status ?? 'draft',
+            version: draft.version ?? 1,
+          });
+        }
+        await db
+          .update(workflowRun)
+          .set({ status: 'running', input: newInput })
+          .where(eq(workflowRun.id, id));
+        return c.json({ status: 'running' });
+      }
+
+      return c.json({ error: 'transcriptSource must be paste, granola, or artifact' }, 400);
+    }
+
+    if (step === 'generate' && wf.kind === 'presentation-generation') {
+      if (!body.agentInstanceId) {
+        log.warn('Generate called without agentInstanceId', { workflowId: id });
+        return c.json({ error: 'agentInstanceId is required to dispatch to Geralt' }, 400);
+      }
+      if (!sessionService) {
+        log.error('sessionService not configured in workflow router');
+        return c.json({ error: 'Session service not configured' }, 500);
+      }
+      const instance = await db.query.agentInstance.findFirst({
+        where: eq(intxSchema.agentInstance.id, body.agentInstanceId),
+      });
+      if (!instance || instance.tenantId !== userContext.tenantId) {
+        log.warn('Geralt agent instance not found', {
+          agentInstanceId: body.agentInstanceId,
+          tenantId: userContext.tenantId,
+        });
+        return c.json({ error: 'Agent instance not found' }, 404);
+      }
+      if (!instance.sessionId) {
+        log.warn('Geralt agent instance is not running', {
+          agentInstanceId: body.agentInstanceId,
+        });
+        return c.json({ error: 'Geralt agent is not running. Launch it first.' }, 400);
+      }
+      const wfInput = (wf.input as Record<string, unknown>) ?? {};
+      const briefLines: string[] = [];
+      if (typeof wfInput.templateId === 'string')
+        briefLines.push(`Template: ${wfInput.templateId}`);
+      if (typeof wfInput.audience === 'string') briefLines.push(`Audience: ${wfInput.audience}`);
+      if (typeof wfInput.tone === 'string') briefLines.push(`Tone: ${wfInput.tone}`);
+      if (typeof wfInput.goal === 'string') briefLines.push(`Goal: ${wfInput.goal}`);
+      if (typeof wfInput.callTitle === 'string') briefLines.push(`Call: ${wfInput.callTitle}`);
+      let transcriptContent = '';
+      if (typeof wfInput.transcriptId === 'string') {
+        const txRow = await db.query.transcript.findFirst({
+          where: eq(transcript.id, wfInput.transcriptId),
+        });
+        transcriptContent = txRow?.content ?? '';
+      }
+      const brief =
+        briefLines.join('\n') + (transcriptContent ? `\n\nTranscript:\n${transcriptContent}` : '');
+      const kp = await generateKeyPair();
+      const cryptoProvider = createNodeCrypto(kp);
+      const mailId = generateId('sessionMail');
+      await sessionService.sendUserMessage({
+        agentAddress: instance.address,
+        from: 'workflow@system',
+        messageId: `<${mailId}@system>`,
+        date: new Date(),
+        content: brief,
+        sessionId: instance.sessionId,
+        tenantId: userContext.tenantId,
+        cryptoProvider,
+      });
+      await db.update(workflowRun).set({ status: 'generating' }).where(eq(workflowRun.id, id));
+      log.info('Presentation generation dispatched to Geralt', {
+        workflowId: id,
+        agentInstanceId: body.agentInstanceId,
+      });
+      return c.json({ status: 'generating' });
+    }
+
     if (step === 'analyze' || step === 'generate') {
       // A step runs in one of two modes. Agent mode: the step is assigned a
       // tenant agent, which carries its own inference provider — resolve the
       // source from the agent definition, no per-step credential needed. Inline
       // mode (no assigned agent): resolve the step's configured workflow LLM
       // credential.
-      const assignedAgentId = (wf.input as WorkflowInput)?.stepConfig?.[step]?.agentId;
+      const configurableStep = step as ConfigurableStep;
+      const assignedAgentId = (wf.input as WorkflowInput)?.stepConfig?.[configurableStep]?.agentId;
       const source = assignedAgentId
         ? await resolveAgentStepInferenceSource(db, userContext.tenantId, assignedAgentId)
         : await resolveStepInferenceSource(
@@ -1214,8 +1495,8 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       // per-step default. Tuned to the model, since reasoning models otherwise
       // burn the budget on think blocks and truncate the response.
       const maxOutputTokens =
-        (wf.input as WorkflowInput)?.stepConfig?.[step]?.maxOutputTokens ??
-        DEFAULT_STEP_MAX_OUTPUT_TOKENS[step];
+        (wf.input as WorkflowInput)?.stepConfig?.[configurableStep]?.maxOutputTokens ??
+        DEFAULT_STEP_MAX_OUTPUT_TOKENS[configurableStep];
 
       if (step === 'analyze') {
         return runAnalyze(db, id, userContext, source, body.feedback, maxOutputTokens);

@@ -1,3 +1,4 @@
+export { presentationGenerationWorkflow } from './presentation-generation';
 export {
   collateralGenerationWorkflow,
   collateralTypeOptions,

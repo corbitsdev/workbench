@@ -10,6 +10,10 @@
     "./collateral-generation": {
       "types": "./src/collateral-generation/index.ts",
       "default": "./src/collateral-generation/index.ts"
+    },
+    "./presentation-generation": {
+      "types": "./src/presentation-generation/index.ts",
+      "default": "./src/presentation-generation/index.ts"
     }
   },
   "scripts": {
