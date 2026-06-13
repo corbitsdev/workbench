@@ -1,24 +1,28 @@
-import { useLibraryResources } from '@workbench/client/react';
-import { useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
-import { api } from '../../lib/api';
-import { collateralTypeOptions } from '@workbench/gtm-workflows';
-import type { SessionStatus, WorkflowSummary } from '@workbench/shared';
-import { clientOptions } from '../../lib/client-options';
+import { useLibraryResources } from "@workbench/client/react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { api } from "../../lib/api";
+import { collateralTypeOptions } from "@workbench/gtm-workflows";
+import type { SessionStatus, WorkflowSummary } from "@workbench/shared";
+import { clientOptions } from "../../lib/client-options";
 import {
   listAgentInstances,
   listWorkbenches,
   stopAgentInstance,
   launchInstanceSession,
-} from '../../lib/hub-api';
-import type { AgentInstance, WorkbenchEntry, CredentialRequirement } from '../../lib/hub-api';
-import { useAgentPhase } from '../../lib/use-agent-phase';
-import type { AgentPhase } from '@workbench/agents/browser';
-import { useEffect, useState } from 'react';
+} from "../../lib/hub-api";
+import type {
+  AgentInstance,
+  WorkbenchEntry,
+  CredentialRequirement,
+} from "../../lib/hub-api";
+import { useAgentPhase } from "../../lib/use-agent-phase";
+import type { AgentPhase } from "@workbench/agents/browser";
+import { useEffect, useState } from "react";
 
-type ResourceType = 'workflow' | 'agent';
-type ResourceStatus = 'run' | 'done' | 'idle';
-type RailGroup = 'Agents' | 'Workflows';
+type ResourceType = "workflow" | "agent";
+type ResourceStatus = "run" | "done" | "idle";
+type RailGroup = "Agents" | "Workflows";
 
 interface RailItem {
   id: string;
@@ -39,29 +43,29 @@ interface RailItem {
 }
 
 function agentStatusLabel(status: string): string {
-  if (status === 'running') return 'Running';
-  if (status === 'stopped') return 'Stopped';
-  return 'Deploying';
+  if (status === "running") return "Running";
+  if (status === "stopped") return "Stopped";
+  return "Deploying";
 }
 
 // "Reasoning" (not "Thinking") mirrors the chat reasoning disclosure and avoids
 // anthropomorphizing the agent per the brand word list.
 const AGENT_PHASE_LABEL: Record<AgentPhase, string> = {
-  idle: 'Idle',
-  thinking: 'Reasoning',
-  typing: 'Typing',
+  idle: "Idle",
+  thinking: "Reasoning",
+  typing: "Typing",
 };
 
 function agentToRailItem(a: AgentInstance): RailItem {
   return {
     id: a.id,
-    group: 'Agents',
+    group: "Agents",
     name: a.agentName,
-    type: 'agent',
+    type: "agent",
     sub: `Agent · ${agentStatusLabel(a.status)}`,
-    status: a.status === 'running' ? 'run' : 'idle',
+    status: a.status === "running" ? "run" : "idle",
     who: a.agentName.slice(0, 2).toUpperCase(),
-    color: a.status === 'stopped' ? 'var(--text-3)' : 'var(--green)',
+    color: a.status === "stopped" ? "var(--text-3)" : "var(--green)",
     instanceId: a.id,
     tenantId: a.tenantId,
     agentId: a.agentId,
@@ -97,13 +101,15 @@ function useWorkbenchesAndAgents(externalTick = 0): {
         setWorkbenches(entries);
 
         const agentResults = await Promise.allSettled(
-          entries.map((w) => listAgentInstances(w.tenantId))
+          entries.map((w) => listAgentInstances(w.tenantId)),
         );
         const loadedAgents = agentResults.flatMap((result) =>
-          result.status === 'fulfilled' ? result.value : []
+          result.status === "fulfilled" ? result.value : [],
         );
         setAgentItems(loadedAgents.map(agentToRailItem));
-        setAgentLoadError(agentResults.some((result) => result.status === 'rejected'));
+        setAgentLoadError(
+          agentResults.some((result) => result.status === "rejected"),
+        );
         setError(false);
       } catch {
         setError(true);
@@ -119,83 +125,91 @@ function useWorkbenchesAndAgents(externalTick = 0): {
 }
 
 const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
-  pending: 'idle',
-  analyzing: 'run',
-  ready: 'run',
-  reviewing: 'run',
-  generating: 'run',
-  done: 'done',
-  failed: 'idle',
+  pending: "idle",
+  analyzing: "run",
+  ready: "run",
+  reviewing: "run",
+  generating: "run",
+  done: "done",
+  failed: "idle",
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: 'Pending',
-  analyzing: 'Analyzing',
-  ready: 'Ready',
-  generating: 'Generating',
-  reviewing: 'Reviewing',
-  done: 'Done',
-  failed: 'Failed',
+  pending: "Pending",
+  analyzing: "Analyzing",
+  ready: "Ready",
+  generating: "Generating",
+  reviewing: "Reviewing",
+  done: "Done",
+  failed: "Failed",
 };
 
 function workflowKindLabel(kind: string): string {
   return (
-    (collateralTypeOptions as ReadonlyArray<{ id: string; label: string }>).find(
-      (o) => o.id === kind
-    )?.label ??
+    (
+      collateralTypeOptions as ReadonlyArray<{ id: string; label: string }>
+    ).find((o) => o.id === kind)?.label ??
     kind
-      .split('-')
+      .split("-")
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(' ')
+      .join(" ")
   );
 }
 
 function workflowToRailItem(w: WorkflowSummary): RailItem {
-  const runNameRaw = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled';
-  const runName = runNameRaw.length > 25 ? `${runNameRaw.slice(0, 24)}…` : runNameRaw;
+  const runNameRaw =
+    w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? "Untitled";
+  const runName =
+    runNameRaw.length > 25 ? `${runNameRaw.slice(0, 24)}…` : runNameRaw;
   const statusLabel = STATUS_LABELS[w.status] ?? w.status;
   const sub = `${runName} · ${statusLabel}`;
   return {
     id: w.id,
-    group: 'Workflows',
+    group: "Workflows",
     name: workflowKindLabel(w.kind),
-    type: 'workflow',
+    type: "workflow",
     sub,
-    status: SESSION_STATUS_TO_RAIL[w.status] ?? 'idle',
-    who: 'GA',
-    color: 'var(--orange)',
+    status: SESSION_STATUS_TO_RAIL[w.status] ?? "idle",
+    who: "GA",
+    color: "var(--orange)",
     workflowStatus: w.status,
   };
 }
 
-const GROUP_ORDER: RailGroup[] = ['Agents', 'Workflows'];
+const GROUP_ORDER: RailGroup[] = ["Agents", "Workflows"];
 
 const TAG_STYLES: Record<ResourceType, string> = {
-  workflow: 'bg-[rgba(233,132,40,0.16)] text-orange',
-  agent: 'bg-[rgba(123,153,116,0.18)] text-green',
+  workflow: "bg-[rgba(233,132,40,0.16)] text-orange",
+  agent: "bg-[rgba(123,153,116,0.18)] text-green",
 };
 
 const DOT_STYLES: Record<ResourceType, string> = {
-  workflow: 'bg-orange',
-  agent: 'bg-green',
+  workflow: "bg-orange",
+  agent: "bg-green",
 };
 
-function StatusDot({ status, pulse = false }: { status: ResourceStatus; pulse?: boolean }) {
-  if (status === 'run' && pulse) {
+function StatusDot({
+  status,
+  pulse = false,
+}: {
+  status: ResourceStatus;
+  pulse?: boolean;
+}) {
+  if (status === "run" && pulse) {
     return (
       <span className="relative h-[15px] w-[15px] flex-none rounded-full border-2 border-orange">
         <span className="absolute inset-[2px] animate-pulse rounded-full bg-orange" />
       </span>
     );
   }
-  if (status === 'done') {
+  if (status === "done") {
     return (
       <span className="relative h-[15px] w-[15px] flex-none rounded-full bg-green">
         <span className="absolute left-[4px] top-[1.5px] h-2 w-1 rotate-[42deg] border-b-2 border-r-2 border-white" />
       </span>
     );
   }
-  if (status === 'run') {
+  if (status === "run") {
     return (
       <span className="relative h-[15px] w-[15px] flex-none rounded-full border-2 border-orange">
         <span className="absolute inset-[2px] rounded-full bg-orange" />
@@ -213,20 +227,26 @@ function StatusDot({ status, pulse = false }: { status: ResourceStatus; pulse?: 
 // component so each agent row owns its phase subscription independently — an
 // agent entering or leaving the list mounts/unmounts only its own row, never
 // disturbing the others' live connections.
-function RailItemLead({ item, isRestarting }: { item: RailItem; isRestarting: boolean }) {
+function RailItemLead({
+  item,
+  isRestarting,
+}: {
+  item: RailItem;
+  isRestarting: boolean;
+}) {
   const phaseTarget =
-    item.type === 'agent' &&
-    item.agentStatus === 'running' &&
+    item.type === "agent" &&
+    item.agentStatus === "running" &&
     item.instanceId !== undefined &&
     item.tenantId !== undefined
       ? { instanceId: item.instanceId, tenantId: item.tenantId }
       : null;
   const phase = useAgentPhase(phaseTarget);
-  const isActivePhase = phase === 'thinking' || phase === 'typing';
+  const isActivePhase = phase === "thinking" || phase === "typing";
 
   let sub = item.sub;
-  if (item.type === 'agent' && isRestarting) {
-    sub = 'Agent · Creating…';
+  if (item.type === "agent" && isRestarting) {
+    sub = "Agent · Creating…";
   } else if (phase !== null) {
     sub = `Agent · ${AGENT_PHASE_LABEL[phase]}`;
   }
@@ -235,7 +255,9 @@ function RailItemLead({ item, isRestarting }: { item: RailItem; isRestarting: bo
     <>
       <StatusDot status={item.status} pulse={isActivePhase} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[14px] font-medium text-text">{item.name}</div>
+        <div className="truncate text-[14px] font-medium text-text">
+          {item.name}
+        </div>
         <div className="mt-px font-mono text-[11.5px] text-text-3">{sub}</div>
       </div>
     </>
@@ -251,7 +273,6 @@ export interface AgentSelection {
 export interface LibraryRailProps {
   onClose?: () => void;
   onNew?: () => void;
-  onNewAgent?: () => void;
   onAgentSelect?: (selection: AgentSelection) => void;
   onWorkflowSelect?: (workflowId: string) => void;
   onWorkbenchSelect?: (slug: string) => void;
@@ -265,14 +286,13 @@ export interface LibraryRailProps {
 
 const SEGMENT_FILTER: Record<string, ResourceType | null> = {
   All: null,
-  Agents: 'agent',
-  Workflows: 'workflow',
+  Agents: "agent",
+  Workflows: "workflow",
 };
 
 export function LibraryRail({
   onClose,
   onNew,
-  onNewAgent,
   onAgentSelect,
   onWorkflowSelect,
   onWorkbenchSelect,
@@ -291,16 +311,24 @@ export function LibraryRail({
     retry: retryWorkbenches,
   } = useWorkbenchesAndAgents(refreshTick);
 
-  const [activeSegment, setActiveSegment] = useState<string>('All');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [stoppingInstanceId, setStoppingInstanceId] = useState<string | null>(null);
-  const [restartingInstanceId, setRestartingInstanceId] = useState<string | null>(null);
-  const [deletingWorkflowId, setDeletingWorkflowId] = useState<string | null>(null);
+  const [activeSegment, setActiveSegment] = useState<string>("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [stoppingInstanceId, setStoppingInstanceId] = useState<string | null>(
+    null,
+  );
+  const [restartingInstanceId, setRestartingInstanceId] = useState<
+    string | null
+  >(null);
+  const [deletingWorkflowId, setDeletingWorkflowId] = useState<string | null>(
+    null,
+  );
   const [completedWorkflowsOpen, setCompletedWorkflowsOpen] = useState(false);
   const queryClient = useQueryClient();
 
   // Resolve the tenantId for the active workbench so agents can be scoped.
-  const activeWorkbench = workbenches.find((w) => w.tenantSlug === activeWorkbenchSlug);
+  const activeWorkbench = workbenches.find(
+    (w) => w.tenantSlug === activeWorkbenchSlug,
+  );
   const activeWorkbenchTenantId = activeWorkbench?.tenantId;
 
   const {
@@ -308,7 +336,9 @@ export function LibraryRail({
     isLoading: jobsLoading,
     isError,
   } = useLibraryResources(clientOptions, {
-    tenantId: activeWorkbenchSlug ? (activeWorkbenchTenantId ?? null) : undefined,
+    tenantId: activeWorkbenchSlug
+      ? (activeWorkbenchTenantId ?? null)
+      : undefined,
   });
 
   // Scope agents to the active workbench; fall back to all agents when no slug is set.
@@ -317,15 +347,17 @@ export function LibraryRail({
     : allAgentItems;
 
   const allJobItems = (workflows ?? []).map(workflowToRailItem);
-  const jobItems = allJobItems.filter((w) => w.workflowStatus !== 'done');
-  const completedJobItems = allJobItems.filter((w) => w.workflowStatus === 'done');
+  const jobItems = allJobItems.filter((w) => w.workflowStatus !== "done");
+  const completedJobItems = allJobItems.filter(
+    (w) => w.workflowStatus === "done",
+  );
   const items: RailItem[] = [...agentItems, ...jobItems];
   const isLoading = jobsLoading;
 
   const segments: { label: string; count: number }[] = [
-    { label: 'All', count: agentItems.length + jobItems.length },
-    { label: 'Agents', count: agentItems.length },
-    { label: 'Workflows', count: jobItems.length },
+    { label: "All", count: agentItems.length + jobItems.length },
+    { label: "Agents", count: agentItems.length },
+    { label: "Workflows", count: jobItems.length },
   ];
 
   const typeFilter = SEGMENT_FILTER[activeSegment] ?? null;
@@ -334,7 +366,7 @@ export function LibraryRail({
   const visibleItems = items.filter((item) => {
     if (typeFilter !== null && item.type !== typeFilter) return false;
     if (
-      query !== '' &&
+      query !== "" &&
       !item.name.toLowerCase().includes(query) &&
       !item.sub.toLowerCase().includes(query)
     )
@@ -358,8 +390,8 @@ export function LibraryRail({
                     onClick={() => onWorkbenchSelect?.(wb.tenantSlug)}
                     className={`rounded-[8px] border px-2.5 py-[5px] text-[12px] font-semibold transition-colors ${
                       isActive
-                        ? 'border-orange bg-[rgba(233,132,40,0.12)] text-orange'
-                        : 'border-border text-text-2 hover:border-orange/60 hover:text-text'
+                        ? "border-orange bg-[rgba(233,132,40,0.12)] text-orange"
+                        : "border-border text-text-2 hover:border-orange/60 hover:text-text"
                     }`}
                   >
                     {wb.tenantName}
@@ -405,7 +437,7 @@ export function LibraryRail({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full border-none bg-transparent text-[14px] text-text outline-none placeholder:text-text-3"
             />
-            {searchQuery === '' && (
+            {searchQuery === "" && (
               <span className="flex-none rounded-[5px] border border-border px-1.5 py-0.5 font-mono text-[11px] text-text-3">
                 ⌘K
               </span>
@@ -423,11 +455,14 @@ export function LibraryRail({
             onClick={() => setActiveSegment(seg.label)}
             className={`flex items-center gap-[5px] whitespace-nowrap rounded-[9px] px-[9px] py-1.5 text-[12px] font-semibold transition-colors ${
               activeSegment === seg.label
-                ? 'bg-surface text-text shadow-[0_2px_6px_rgba(0,0,0,0.2)]'
-                : 'text-text-2 hover:bg-[var(--row-hover)]'
+                ? "bg-surface text-text shadow-[0_2px_6px_rgba(0,0,0,0.2)]"
+                : "text-text-2 hover:bg-[var(--row-hover)]"
             }`}
           >
-            {seg.label} <span className="font-mono text-[10.5px] text-text-3">{seg.count}</span>
+            {seg.label}{" "}
+            <span className="font-mono text-[10.5px] text-text-3">
+              {seg.count}
+            </span>
           </button>
         ))}
       </div>
@@ -435,14 +470,20 @@ export function LibraryRail({
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-[10px] pb-[22px] pt-1">
         {isLoading && (
-          <div className="px-[10px] py-6 text-[13px] text-text-3">Loading workbench…</div>
+          <div className="px-[10px] py-6 text-[13px] text-text-3">
+            Loading workbench…
+          </div>
         )}
         {isError && (
-          <div className="px-[10px] py-6 text-[13px] text-text-3">Could not load workflows.</div>
+          <div className="px-[10px] py-6 text-[13px] text-text-3">
+            Could not load workflows.
+          </div>
         )}
         {workbenchError && (
           <div className="flex flex-col gap-2 px-[10px] py-6">
-            <p className="text-[13px] text-text-3">Could not load workbenches.</p>
+            <p className="text-[13px] text-text-3">
+              Could not load workbenches.
+            </p>
             <button
               type="button"
               onClick={retryWorkbenches}
@@ -463,8 +504,7 @@ export function LibraryRail({
           // deploy button is accessible even before any agents exist. Do the same
           // for Jobs when onNewWorkflow is provided.
           const showGroup =
-            inGroup.length > 0 ||
-            (group === 'Agents' && (onNew !== undefined || onNewAgent !== undefined));
+            inGroup.length > 0 || (group === "Agents" && onNew !== undefined);
           if (!showGroup) return null;
 
           return (
@@ -475,10 +515,10 @@ export function LibraryRail({
                   {inGroup.length}
                 </span>
                 <span className="h-px flex-1 bg-border" />
-                {group === 'Agents' && (onNew ?? onNewAgent) && (
+                {group === "Agents" && onNew && (
                   <button
                     type="button"
-                    onClick={onNewAgent ?? onNew}
+                    onClick={onNew}
                     aria-label="Add agent"
                     className="-m-[11px] grid h-[40px] w-[40px] flex-none place-items-center rounded-[5px] text-text-3 transition-colors hover:text-orange"
                   >
@@ -498,17 +538,19 @@ export function LibraryRail({
               </div>
               {inGroup.map((item) => {
                 const isClickableAgent =
-                  item.type === 'agent' &&
-                  item.agentStatus !== 'stopped' &&
+                  item.type === "agent" &&
+                  item.agentStatus !== "stopped" &&
                   onAgentSelect !== undefined &&
                   item.instanceId !== undefined &&
                   item.tenantId !== undefined;
                 const isClickableWorkflow =
-                  item.type === 'workflow' && onWorkflowSelect !== undefined;
+                  item.type === "workflow" && onWorkflowSelect !== undefined;
                 const isClickable = isClickableAgent || isClickableWorkflow;
                 const isActiveAgent =
-                  item.type === 'agent' && item.instanceId === activeAgentInstanceId;
-                const isActiveWorkflow = item.type === 'workflow' && item.id === activeWorkflowId;
+                  item.type === "agent" &&
+                  item.instanceId === activeAgentInstanceId;
+                const isActiveWorkflow =
+                  item.type === "workflow" && item.id === activeWorkflowId;
                 const isRestarting = restartingInstanceId === item.instanceId;
 
                 const openItem = () => {
@@ -548,8 +590,10 @@ export function LibraryRail({
                 const deleteWorkflow = async () => {
                   setDeletingWorkflowId(item.id);
                   try {
-                    await api('DELETE', `/workflows/${item.id}`);
-                    await queryClient.invalidateQueries({ queryKey: ['workflows'] });
+                    await api("DELETE", `/workflows/${item.id}`);
+                    await queryClient.invalidateQueries({
+                      queryKey: ["workflows"],
+                    });
                     onWorkflowDeleted?.(item.id);
                   } finally {
                     setDeletingWorkflowId(null);
@@ -559,95 +603,117 @@ export function LibraryRail({
                 return (
                   <div key={item.id} className="rounded-[12px]">
                     <div
-                      role={isClickable ? 'button' : undefined}
+                      role={isClickable ? "button" : undefined}
                       tabIndex={isClickable ? 0 : undefined}
                       onClick={isClickable ? openItem : undefined}
                       onKeyDown={
                         isClickable
                           ? (e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
+                              if (e.key === "Enter" || e.key === " ") {
                                 e.preventDefault();
                                 openItem();
                               }
                             }
                           : undefined
                       }
-                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${isClickable ? 'cursor-pointer hover:bg-[var(--row-hover)]' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
+                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${isClickable ? "cursor-pointer hover:bg-[var(--row-hover)]" : ""} ${isActiveAgent || isActiveWorkflow ? "bg-surface ring-1 ring-orange/60" : ""}`}
                     >
                       <RailItemLead item={item} isRestarting={isRestarting} />
-                      {item.type === 'agent' && item.agentId && item.tenantId && (
-                        <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                          {item.agentStatus === 'stopped' ? (
-                            <>
-                              <button
-                                type="button"
-                                aria-label="Create Agent"
-                                disabled={restartingInstanceId === item.instanceId}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void restartAgent();
-                                }}
-                                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text disabled:opacity-50"
-                              >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="h-[13px] w-[13px]"
+                      {item.type === "agent" &&
+                        item.agentId &&
+                        item.tenantId && (
+                          <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                            {item.agentStatus === "stopped" ? (
+                              <>
+                                <button
+                                  type="button"
+                                  aria-label="Create Agent"
+                                  disabled={
+                                    restartingInstanceId === item.instanceId
+                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void restartAgent();
+                                  }}
+                                  className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-text disabled:opacity-50"
                                 >
-                                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                                  <path d="M3 3v5h5" />
-                                </svg>
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Remove Agent"
-                                disabled={stoppingInstanceId === item.instanceId}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (window.confirm(`Remove ${item.name}?`)) void stopAgent();
-                                }}
-                                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
-                              >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="h-[13px] w-[13px]"
+                                  <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    className="h-[13px] w-[13px]"
+                                  >
+                                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                    <path d="M3 3v5h5" />
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label="Remove Agent"
+                                  disabled={
+                                    stoppingInstanceId === item.instanceId
+                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (window.confirm(`Remove ${item.name}?`))
+                                      void stopAgent();
+                                  }}
+                                  className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
                                 >
-                                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                                </svg>
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                aria-label="Remove Agent"
-                                disabled={stoppingInstanceId === item.instanceId}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (window.confirm(`Remove ${item.name}?`)) void stopAgent();
-                                }}
-                                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
-                              >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="h-[13px] w-[13px]"
+                                  <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    className="h-[13px] w-[13px]"
+                                  >
+                                    <rect
+                                      x="3"
+                                      y="3"
+                                      width="18"
+                                      height="18"
+                                      rx="2"
+                                    />
+                                  </svg>
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  aria-label="Remove Agent"
+                                  disabled={
+                                    stoppingInstanceId === item.instanceId
+                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (window.confirm(`Remove ${item.name}?`))
+                                      void stopAgent();
+                                  }}
+                                  className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
                                 >
-                                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                                </svg>
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      )}
-                      {item.type === 'workflow' && (
+                                  <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    className="h-[13px] w-[13px]"
+                                  >
+                                    <rect
+                                      x="3"
+                                      y="3"
+                                      width="18"
+                                      height="18"
+                                      rx="2"
+                                    />
+                                  </svg>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      {item.type === "workflow" && (
                         <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                           <button
                             type="button"
@@ -655,7 +721,8 @@ export function LibraryRail({
                             disabled={deletingWorkflowId === item.id}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (window.confirm(`Delete ${item.name}?`)) void deleteWorkflow();
+                              if (window.confirm(`Delete ${item.name}?`))
+                                void deleteWorkflow();
                             }}
                             className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
                           >
@@ -666,9 +733,12 @@ export function LibraryRail({
                       <span
                         className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
-                        {item.type === 'workflow'
-                          ? (STATUS_LABELS[item.workflowStatus ?? ''] ?? 'Workflow')
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`}
+                        />
+                        {item.type === "workflow"
+                          ? (STATUS_LABELS[item.workflowStatus ?? ""] ??
+                            "Workflow")
                           : item.type}
                       </span>
                       <div
@@ -687,8 +757,8 @@ export function LibraryRail({
 
         {/* Completed Workflows — collapsible, hidden by default */}
         {completedJobItems.length > 0 &&
-          (typeFilter === null || typeFilter === 'workflow') &&
-          query === '' && (
+          (typeFilter === null || typeFilter === "workflow") &&
+          query === "" && (
             <div>
               <button
                 type="button"
@@ -714,8 +784,10 @@ export function LibraryRail({
                   const deleteWorkflow = async () => {
                     setDeletingWorkflowId(item.id);
                     try {
-                      await api('DELETE', `/workflows/${item.id}`);
-                      await queryClient.invalidateQueries({ queryKey: ['workflows'] });
+                      await api("DELETE", `/workflows/${item.id}`);
+                      await queryClient.invalidateQueries({
+                        queryKey: ["workflows"],
+                      });
                       onWorkflowDeleted?.(item.id);
                     } finally {
                       setDeletingWorkflowId(null);
@@ -725,20 +797,24 @@ export function LibraryRail({
                   return (
                     <div key={item.id} className="rounded-[12px]">
                       <div
-                        role={onWorkflowSelect ? 'button' : undefined}
+                        role={onWorkflowSelect ? "button" : undefined}
                         tabIndex={onWorkflowSelect ? 0 : undefined}
-                        onClick={onWorkflowSelect ? () => onWorkflowSelect(item.id) : undefined}
+                        onClick={
+                          onWorkflowSelect
+                            ? () => onWorkflowSelect(item.id)
+                            : undefined
+                        }
                         onKeyDown={
                           onWorkflowSelect
                             ? (e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
+                                if (e.key === "Enter" || e.key === " ") {
                                   e.preventDefault();
                                   onWorkflowSelect(item.id);
                                 }
                               }
                             : undefined
                         }
-                        className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${onWorkflowSelect ? 'cursor-pointer hover:bg-[var(--row-hover)]' : ''} ${isActive ? 'bg-surface ring-1 ring-orange/60' : ''}`}
+                        className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${onWorkflowSelect ? "cursor-pointer hover:bg-[var(--row-hover)]" : ""} ${isActive ? "bg-surface ring-1 ring-orange/60" : ""}`}
                       >
                         <StatusDot status="done" />
                         <div className="min-w-0 flex-1">
@@ -756,7 +832,8 @@ export function LibraryRail({
                             disabled={isDeleting}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (window.confirm(`Delete ${item.name}?`)) void deleteWorkflow();
+                              if (window.confirm(`Delete ${item.name}?`))
+                                void deleteWorkflow();
                             }}
                             className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
                           >
@@ -769,7 +846,7 @@ export function LibraryRail({
                         </span>
                         <div
                           className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
-                          style={{ background: 'var(--orange)' }}
+                          style={{ background: "var(--orange)" }}
                         >
                           GA
                         </div>
