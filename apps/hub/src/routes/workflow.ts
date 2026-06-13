@@ -589,11 +589,6 @@ export function createWorkflowRouter(
     return c.json(tools);
   });
 
-  // ─── Gamma template registry ─────────────────────────────────────
-  router.get('/gamma/templates', (c) => {
-    return c.json([]);
-  });
-
   // ─── List enabled workflows for tenant ───────────────────────────
   router.get('/workflows/enabled', async (c) => {
     const userId = c.get('userId');
