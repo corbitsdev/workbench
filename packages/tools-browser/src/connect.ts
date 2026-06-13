@@ -21,10 +21,11 @@ export const EDGE_REQUEST_BUDGET_MS = 20_000;
  */
 export const OPERATION_BUDGET_MS = 18_000;
 
-// CDP connect is normally sub-second; a multi-second hang means Browserbase is
-// unreachable. Fail fast and well under the operation budget so the action
-// still has room, and a pathological connect never consumes the whole budget.
-export const CONNECT_TIMEOUT_MS = 8_000;
+// browser_create_session now guarantees the session is RUNNING before returning,
+// so CDP connect should succeed quickly. 15s gives headroom for Browserbase's
+// CDP bridge to become reachable after the status flip, while leaving 3s for
+// the action itself within the 18s operation budget.
+export const CONNECT_TIMEOUT_MS = 15_000;
 export const ACTION_TIMEOUT_MS = 9_000;
 
 export const realConnector: BrowserConnector = async (connectUrl: string) => {
