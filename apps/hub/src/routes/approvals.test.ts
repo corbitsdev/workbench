@@ -404,7 +404,7 @@ describe('createInternalApprovalsRouter', () => {
   function authed(init: RequestInit = {}): RequestInit {
     return {
       ...init,
-      headers: { ...(init.headers ?? {}), Authorization: `Bearer ${TOKEN}` },
+      headers: { ...init.headers, Authorization: `Bearer ${TOKEN}` },
     };
   }
 

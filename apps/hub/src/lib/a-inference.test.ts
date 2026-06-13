@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import * as storageIsogitActual from '@intx/storage-isogit';
 
 const sendMock = mock(async (_msg: string) => ({ reply: 'agent reply' }));
 const closeMock = mock(async () => {});
@@ -15,7 +16,11 @@ beforeAll(async () => {
     createDefaultDirectorRegistry: createDefaultDirectorRegistryMock,
   }));
 
+  // Spread the real module: mock.module is process-global in Bun and persists
+  // past mock.restore(), so dropping unmocked exports (e.g. createDeployPack,
+  // which hub-agent imports) breaks later suites order-dependently (CL-1825).
   mock.module('@intx/storage-isogit', () => ({
+    ...storageIsogitActual,
     createIsogitStore: mock(async () => ({})),
   }));
 

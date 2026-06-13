@@ -77,7 +77,7 @@ export function createInternalToolsRouter(
           agentId,
           principalId,
           sessionId,
-          ...(hubServices ?? {}),
+          ...hubServices,
         })
         .find((candidate) => candidate.definition.name === toolName);
       if (!tool) {
