@@ -61,6 +61,7 @@ describe('specialist agent dispatch-reply contract', () => {
     ['loop', (name) => buildLoopAgentSystemPrompt(name, { xml: true })],
     ['geralt', (name) => buildGeraltSystemPrompt(name, { xml: true })],
     ['lincoln', (_name) => buildLincolnSystemPrompt('Lincoln')],
+    ['bobby', (name) => buildBobbySystemPrompt(name, { xml: true })],
   ];
 
   for (const [agentName, buildPrompt] of dispatchSpecialists) {
@@ -82,12 +83,6 @@ describe('specialist agent dispatch-reply contract', () => {
       expect(prompt).toContain('Never construct a message ref from scratch');
     });
   }
-
-  it('bobby does not contain a mail messaging section', () => {
-    const prompt = buildBobbySystemPrompt('Bobby', { xml: true });
-    expect(prompt).not.toContain('ins_');
-    expect(prompt).not.toContain('mail_search');
-  });
 });
 
 describe('HAMMY_SKILL_CONTENT sync with SKILL.md', () => {

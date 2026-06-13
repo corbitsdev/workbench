@@ -61,6 +61,18 @@ async function withSession<T>(
   sessionId: string,
   fn: (page: PageLike) => Promise<T>
 ): Promise<T> {
+  return withTimeout(
+    runSession(config, sessionId, fn),
+    config.operationBudgetMs,
+    'browser operation'
+  );
+}
+
+async function runSession<T>(
+  config: ResolvedBrowserConfig,
+  sessionId: string,
+  fn: (page: PageLike) => Promise<T>
+): Promise<T> {
   const connectUrl = lookupSessionConnectURL(sessionId);
   const browser = await withTimeout(
     config.connector(connectUrl),

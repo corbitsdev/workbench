@@ -70,6 +70,8 @@ export type BrowserToolsConfig = {
   projectId?: string;
   fetcher?: BrowserFetch;
   connector?: BrowserConnector;
+  /** Hard ceiling per tool call (connect + action), ms. Defaults to OPERATION_BUDGET_MS. */
+  operationBudgetMs?: number;
 };
 
 /** Config with required values resolved and validated. */
@@ -79,6 +81,7 @@ export type ResolvedBrowserConfig = {
   projectId: string;
   fetcher: BrowserFetch;
   connector: BrowserConnector;
+  operationBudgetMs: number;
 };
 
 /**

@@ -14,6 +14,16 @@ const { agentInstance, agentSession, inferenceTurn } = intxSchema;
  * corrupt turn is deleted from the DB and the session is marked ended so the
  * next relaunchInstanceIfNeeded restarts the agent without replaying the bad
  * turn forever.
+ *
+ * Scope: `inferenceTurn` here is the UI/turns *projection*, not the inference
+ * context. The reactor sends DeepSeek the isogit `ContextStore`
+ * (`contextStore.load()`), never this table, and `turn_part` cascades on
+ * delete — so this delete cannot cause or fix a provider 400, and cannot
+ * leave the projection inconsistent. Its job is to drop the corrupt row from
+ * the UI and to end the session so relaunch happens. The inference-correctness
+ * repair lives in `@workbench/context-repair` (`healTurns`), applied to the
+ * isogit store at launch. Do not "harden" this delete to be tool_call-aware:
+ * it operates on a store inference never reads.
  */
 export function createFatalErrorRecovery(db: DB['db']) {
   return function onFatalError(agentAddress: string, turn: TurnFinalized): void {

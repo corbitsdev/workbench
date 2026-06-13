@@ -34,6 +34,7 @@ const baseConfig: ResolvedBrowserConfig = {
   projectId: 'proj-1',
   fetcher: makeFetchStub({}),
   connector: () => Promise.reject(new Error('unused')),
+  operationBudgetMs: 18_000,
 };
 
 beforeEach(() => {

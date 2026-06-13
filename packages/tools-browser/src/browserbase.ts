@@ -10,7 +10,7 @@
  * an agent eviction, or a dropped socket, because it runs on Browserbase's side.
  */
 import type { BrowserFetch, BrowserToolsConfig, ResolvedBrowserConfig } from './types';
-import { realConnector } from './connect';
+import { OPERATION_BUDGET_MS, realConnector } from './connect';
 
 const DEFAULT_BASE_URL = 'https://api.browserbase.com/v1';
 
@@ -100,6 +100,7 @@ export function resolveConfig(config: BrowserToolsConfig): ResolvedBrowserConfig
     projectId,
     fetcher: config.fetcher ?? fetch,
     connector: config.connector ?? realConnector,
+    operationBudgetMs: config.operationBudgetMs ?? OPERATION_BUDGET_MS,
   };
 }
 
