@@ -2,6 +2,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useWorkbenchAgents } from './use-workflow';
 import type { AgentInstance } from './use-workflow';
+import type { PresentationStepArgs } from '@workbench/workflow';
+
+export { type PresentationStepArgs };
 
 export function useGeraltInstances() {
   const agents = useWorkbenchAgents();
@@ -32,31 +35,7 @@ export function useCreatePresentationWorkflow() {
   });
 }
 
-type TemplateStepBody = {
-  step: 'template';
-  templateId?: string;
-  audience?: string;
-  tone?: string;
-  goal?: string;
-};
-
-type SourceStepBody = {
-  step: 'source';
-  transcriptSource: 'paste' | 'granola' | 'artifact';
-  transcript?: string;
-  granolaId?: string;
-  sourceArtifactId?: string;
-  callTitle?: string;
-};
-
-type GenerateStepBody = {
-  step: 'generate';
-  agentInstanceId: string;
-};
-
-type PresentationStepBody = TemplateStepBody | SourceStepBody | GenerateStepBody;
-
-type StepMutationArgs = PresentationStepBody & { workflowId: string };
+type StepMutationArgs = PresentationStepArgs & { workflowId: string };
 
 export function useSubmitPresentationStep() {
   const queryClient = useQueryClient();
