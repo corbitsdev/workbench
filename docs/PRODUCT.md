@@ -16,11 +16,11 @@ Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staf
 
 ### Oat — Workspace Granola Agent
 
-**Oat** is a shared workspace agent that continuously processes Granola call recordings and surfaces them as call document artifacts in the workbench. Oat runs in the shared GTM Workbench Interchange tenant.
+**Oat** is a shared workspace agent that processes Granola call recordings and surfaces them as call document artifacts in the workbench. Oat runs in the shared GTM Workbench Interchange tenant. Oat processes calls when prompted; recurring, scheduled ingestion is moving to workflows.
 
 ## How It Works
 
-1. **Oat processes calls** — Oat automatically ingests Granola call recordings and creates call document artifacts.
+1. **Oat processes calls** — Oat ingests Granola call recordings and creates call document artifacts when prompted.
 2. **User triggers Collateral Generation** — The user selects N input artifacts (e.g. call documents) and N output types (e.g. case study, one-pager, email draft). Each combination generates independently.
 3. **Each output is an independent artifact** — Results are stored as artifact rows and can be reviewed, refined, re-used as inputs, or exported.
 
@@ -74,14 +74,14 @@ own inference provider, so no separate provider credential is required for that 
 
 ## Intake Scope
 
-- **Primary**: Oat automatically surfaces Granola call recordings as call document artifacts
+- **Primary**: Oat surfaces Granola call recordings as call document artifacts
 - **Secondary**: Manual paste of raw transcript, VTT, or rough notes
 - **Out of scope (v2)**: Full CRM sync (Attio, Salesforce, etc.)
 
 ## Acceptance Criteria
 
 - Users must authenticate via Google OAuth (optional domain allowlist for team gating)
-- Oat continuously processes Granola calls into call document artifacts
+- Oat processes Granola calls into call document artifacts
 - Users can trigger Collateral Generation by selecting input artifacts and output types
 - Each output type generates independently in parallel
 - Results are stored as artifact rows with provenance

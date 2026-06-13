@@ -378,6 +378,7 @@ export async function seedAgentTemplates(db: ProductionDB): Promise<void> {
       await db
         .update(agent)
         .set({
+          description: template.description,
           systemPrompt: template.systemPrompt,
           credentialRequirements: template.credentialRequirements,
           grantRequirements: template.grantRequirements,
@@ -405,6 +406,7 @@ export async function seedAgentTemplates(db: ProductionDB): Promise<void> {
             tenantId: globalTenant.id,
             creatorPrincipalId: systemPrincipalId,
             name: template.name,
+            description: template.description,
             systemPrompt: template.systemPrompt,
             credentialRequirements: template.credentialRequirements,
             grantRequirements: template.grantRequirements,

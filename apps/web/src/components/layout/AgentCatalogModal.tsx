@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
-import { deployAgentFromTemplate, listAgentTemplates, type AgentCatalogEntry } from '../../lib/hub-api';
+import {
+  deployAgentFromTemplate,
+  listAgentTemplates,
+  type AgentCatalogEntry,
+} from '../../lib/hub-api';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
+// CBS --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1) — iOS-like drawer curve
+const EASE_DRAWER = [0.32, 0.72, 0, 1] as const;
 
 export interface AgentCatalogModalProps {
   open: boolean;
@@ -17,12 +24,21 @@ export function AgentCatalogModal({ open, tenantId, onClose, onDeployed }: Agent
   const panelRef = useRef<HTMLDivElement>(null);
   const [deploying, setDeploying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isMobileSheet, setIsMobileSheet] = useState(false);
 
   const { data: catalog = [] } = useQuery<AgentCatalogEntry[]>({
     queryKey: ['agent-templates'],
     queryFn: listAgentTemplates,
     enabled: open,
   });
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    setIsMobileSheet(mq.matches);
+    const listener = (e: MediaQueryListEvent) => setIsMobileSheet(e.matches);
+    mq.addEventListener('change', listener);
+    return () => mq.removeEventListener('change', listener);
+  }, []);
 
   const handleClose = () => {
     setError(null);
@@ -78,11 +94,25 @@ export function AgentCatalogModal({ open, tenantId, onClose, onDeployed }: Agent
     }
   };
 
+  const panelAnimation = isMobileSheet
+    ? {
+        initial: { opacity: 0, y: '100%' },
+        animate: { opacity: 1, y: 0 },
+        exit: { opacity: 0, y: '100%' },
+        transition: { duration: 0.3, ease: EASE_DRAWER },
+      }
+    : {
+        initial: { opacity: 0, scale: 0.97, y: 8 },
+        animate: { opacity: 1, scale: 1, y: 0 },
+        exit: { opacity: 0, scale: 0.97, y: 8 },
+        transition: { duration: 0.18 },
+      };
+
   return (
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(0,0,0,0.55)] p-4 backdrop-blur-[2px]"
+          className="fixed inset-0 z-50 flex items-end bg-black/40 backdrop-blur-[2px] sm:grid sm:place-items-center sm:p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -97,11 +127,8 @@ export function AgentCatalogModal({ open, tenantId, onClose, onDeployed }: Agent
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={handleKeyDown}
-            initial={{ opacity: 0, scale: 0.97, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: 8 }}
-            transition={{ duration: 0.18 }}
-            className="flex w-full max-w-sm flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
+            {...panelAnimation}
+            className="flex w-full max-h-[85dvh] flex-col overflow-hidden rounded-t-2xl bg-surface focus:outline-none shadow-[0_0_0_1px_rgba(255,255,255,0.1),0px_16px_48px_-8px_rgba(0,0,0,0.6)] sm:max-w-sm sm:max-h-[min(600px,85dvh)] sm:rounded-panel"
           >
             <div className="flex items-center justify-between border-b border-border px-6 py-4">
               <div className="text-[16px] font-bold text-text">Add agent</div>
@@ -109,7 +136,7 @@ export function AgentCatalogModal({ open, tenantId, onClose, onDeployed }: Agent
                 type="button"
                 onClick={handleClose}
                 aria-label="Close"
-                className="grid h-8 w-8 flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
+                className="grid h-8 w-8 flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors [@media(hover:hover)_and_(pointer:fine)]:hover:bg-[var(--row-hover)] [@media(hover:hover)_and_(pointer:fine)]:hover:text-text"
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -123,16 +150,16 @@ export function AgentCatalogModal({ open, tenantId, onClose, onDeployed }: Agent
               </button>
             </div>
 
-            <div className="flex flex-col gap-2 px-4 py-4">
+            <div className="flex flex-col gap-2 overflow-y-auto overscroll-contain px-4 py-4">
               {error && (
-                <p className="rounded-lg border border-orange bg-orange-soft px-3 py-2 text-sm text-orange-deep">
+                <p className="rounded-md border border-orange bg-orange-soft px-3 py-2 text-sm text-orange-deep">
                   {error}
                 </p>
               )}
               {catalog.map((entry) => (
                 <div
                   key={entry.key}
-                  className="flex items-center gap-3 rounded-[12px] border border-border px-4 py-3 transition-colors hover:bg-[var(--row-hover)]"
+                  className="flex items-center gap-3 rounded-md border border-border px-4 py-3 transition-colors [@media(hover:hover)_and_(pointer:fine)]:hover:bg-[var(--row-hover)]"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="text-[14px] font-semibold text-text">{entry.name}</div>
@@ -142,7 +169,7 @@ export function AgentCatalogModal({ open, tenantId, onClose, onDeployed }: Agent
                     type="button"
                     disabled={deploying !== null || !tenantId}
                     onClick={() => void handleDeploy(entry)}
-                    className="flex-none rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:border-orange hover:text-orange disabled:opacity-50"
+                    className="flex-none rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-semibold text-text-2 transition-colors duration-[160ms] active:scale-[0.97] disabled:opacity-50 [@media(hover:hover)_and_(pointer:fine)]:hover:border-orange [@media(hover:hover)_and_(pointer:fine)]:hover:text-orange"
                   >
                     {deploying === entry.key ? 'Adding…' : 'Add'}
                   </button>

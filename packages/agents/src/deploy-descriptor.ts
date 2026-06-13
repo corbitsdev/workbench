@@ -10,8 +10,9 @@ export type AgentDeployDescriptor = {
   /** System prompt sent to the hub at provisioning time. */
   systemPrompt: string;
   /**
-   * Interchange provider names for credentials this agent requires.
-   * The UI renders a credential picker per entry.
+   * Workbench onboarding provider names. The UI renders a credential picker per
+   * entry, but these are not copied into Interchange agent credentialRequirements.
+   * Tool credentials are resolved server-side by the hub tool registry.
    */
   credentialProviderNames: string[];
   /** Tool names (from KNOWN_TOOLS) to attach to the agent on creation. */

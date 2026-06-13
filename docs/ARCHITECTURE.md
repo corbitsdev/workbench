@@ -39,7 +39,7 @@ Every same-domain user **auto-joins the global tenant as a `member` principal** 
 | Template   | Role                                                              |
 | ---------- | ----------------------------------------------------------------- |
 | **Myra**   | Personal Chief of Staff / Executive Assistant for each user       |
-| **Oat**    | Continuously processes Granola calls into call document artifacts |
+| **Oat**    | Processes Granola calls into call document artifacts when prompted |
 | **Freddy** | Firecrawl-backed web research agent                               |
 | **Walter** | Workflow orchestration agent                                      |
 | **Loop**   | Iterative refinement agent                                        |
@@ -56,6 +56,8 @@ Instance creation uses Interchange-native instance APIs; no bespoke per-user age
 Myra instances are keyed on `(definitionId, memberPrincipalId)` — **not** `(tenantId, name)`: in a shared tenant every member's instance is named "Myra," so name-based lookup would hand one user's instance to everyone.
 
 Both Myra and Oat use custom directors wrapping `createDefaultDirector` to filter inbound senders before inference.
+
+**Uniform agent lifecycle (CL-1696).** There is no host-driven per-instance scheduler. Every agent is interactive and recover-on-open: it acts on inbound mail and is relaunched when needed, rather than on a timer. Myra is the only auto-relaunched agent (via `GET /v1/me`); other agents recover on the next open. Recurring work (e.g. periodic Granola ingestion) is moving to **workflows**, which will own native scheduling. See the Session Liveness and Relaunch section in IMPLEMENTATION.md for the disconnect reconciler that keeps a sidecar restart from wedging an instance.
 
 ### Credential and Grant Model
 

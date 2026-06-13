@@ -14,9 +14,31 @@ import { createBlobReader } from '@intx/types/runtime';
 import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/runtime';
 import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
 import { createAskPrincipalTool } from '@workbench/approvals';
+import { stripUnsendableAssistantTurns } from '@workbench/context-repair';
+import type { ContextStore } from '@intx/types/runtime';
 import { createHubToolRunner } from './hub-tool-runner';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
+
+/**
+ * Strip assistant turns that an OpenAI-compatible provider would reject
+ * ("content or tool_calls must be set") from the durable context before the
+ * harness loads it. Without this, a single poisoned turn replays on every
+ * launch and the agent is permanently stuck — ending and relaunching the
+ * session alone does not clear it, because the isogit store is reused.
+ */
+export async function healContextStore(storage: ContextStore, agentAddress: string): Promise<void> {
+  const { turns } = await storage.load();
+  const { turns: healed, removedCount } = stripUnsendableAssistantTurns(turns);
+  if (removedCount === 0) return;
+
+  await storage.writeTurns(healed);
+  await storage.commit({ message: 'recover: drop unsendable assistant turns' });
+  logger.warn('Healed context for {address}: dropped {count} unsendable assistant turn(s)', {
+    address: agentAddress,
+    count: removedCount,
+  });
+}
 
 function mergeToolRunners(runners: ToolRunner[]): ToolRunner & { definitions: ToolDefinition[] } {
   const allDefinitions = runners.flatMap((r) => (r as any).definitions ?? []);
@@ -107,6 +129,7 @@ export function createDefaultHarnessBuilder({
       const signer = (payload: string) => crypto.signSSH(payload);
 
       const storage = await createIsogitStore(storeDir, signer);
+      await healContextStore(storage, agentAddress);
       const mailStore = await createMailAuditStore(storeDir, signer);
 
       const deployTree = await readDeployTree(storeDir);
@@ -142,6 +165,7 @@ export function createDefaultHarnessBuilder({
 
       const localToolNames = new Set([
         ...posixTools.definitions.map((d) => d.name),
+        ...mailTools.definitions.map((d) => d.name),
         ...askPrincipalRunner.definitions.map((d) => d.name),
       ]);
 

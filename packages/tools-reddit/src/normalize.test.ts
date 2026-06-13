@@ -1,0 +1,54 @@
+import { describe, expect, it } from 'bun:test';
+import { normalizeRedditPost } from './normalize';
+import type { RedditPost } from './types';
+
+const fixture: RedditPost = {
+  id: 'abc123',
+  title: 'Why TypeScript strict mode matters',
+  url: 'https://example.com/ts-strict',
+  permalink: '/r/typescript/comments/abc123/why_typescript_strict_mode_matters/',
+  selftext: 'A detailed post about strict mode.',
+  created_utc: 1700000000,
+  ups: 423,
+  num_comments: 57,
+  subreddit: 'typescript',
+};
+
+describe('normalizeRedditPost', () => {
+  it('builds url from permalink', () => {
+    const result = normalizeRedditPost(fixture);
+    expect(result.url).toBe(
+      'https://www.reddit.com/r/typescript/comments/abc123/why_typescript_strict_mode_matters/'
+    );
+  });
+
+  it('preserves title', () => {
+    const result = normalizeRedditPost(fixture);
+    expect(result.title).toBe('Why TypeScript strict mode matters');
+  });
+
+  it('converts created_utc to ISO string', () => {
+    const result = normalizeRedditPost(fixture);
+    expect(result.publishedAt).toBe(new Date(1700000000 * 1000).toISOString());
+  });
+
+  it('sets source to reddit', () => {
+    const result = normalizeRedditPost(fixture);
+    expect(result.source).toBe('reddit');
+  });
+
+  it('maps ups to engagement upvotes', () => {
+    const result = normalizeRedditPost(fixture);
+    expect(result.engagement.upvotes).toBe(423);
+  });
+
+  it('maps num_comments to engagement comments', () => {
+    const result = normalizeRedditPost(fixture);
+    expect(result.engagement.comments).toBe(57);
+  });
+
+  it('prefixes subreddit with r/ in author', () => {
+    const result = normalizeRedditPost(fixture);
+    expect(result.author).toBe('r/typescript');
+  });
+});

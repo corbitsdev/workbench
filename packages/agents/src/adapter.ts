@@ -20,6 +20,23 @@ function resolveToolName(name: string, toolNames?: ReadonlyMap<string, string>):
   return name;
 }
 
+function isAgentInstanceEmail(email: string): boolean {
+  const atIndex = email.indexOf('@');
+  const localPart = atIndex > 0 ? email.slice(0, atIndex) : email;
+  return localPart.startsWith('ins_');
+}
+
+function resolveSenderLabel(sender: { name: string | null; email: string }): string {
+  if (sender.name !== null && sender.name.trim() !== '') {
+    return sender.name.trim();
+  }
+  const atIndex = sender.email.indexOf('@');
+  if (atIndex > 0) {
+    return sender.email.slice(0, atIndex);
+  }
+  return sender.email;
+}
+
 /**
  * Convert a list of InstanceEvents from the hub-client into ChatMessages
  * suitable for rendering in the web UI.
@@ -39,16 +56,21 @@ export function convertInstanceEvents(
   events: InstanceEvent[],
   toolNames?: ReadonlyMap<string, string>
 ): ChatMessage[] {
-  // Pure mapping — chronological ordering is applied once, on the final list,
-  // by composeChatMessages (which sorts by timestamp). Keeping this a 1:1 map
-  // means callers that bypass composeChatMessages get events in source order.
+  // Pure mapping — ordering is owned by composeChatMessages, which preserves the
+  // events' arrival order (hydration sorts by server timestamp; live events are
+  // appended). Keeping this a 1:1 map means callers that bypass composeChatMessages
+  // get events in source order.
   return events.map((event): ChatMessage => {
     if (event.kind === 'mail') {
+      const isInbound = event.role === 'user';
+      const isAgentToAgent = isInbound && isAgentInstanceEmail(event.sender.email);
+      const senderLabel = isAgentToAgent ? resolveSenderLabel(event.sender) : undefined;
       return {
         id: event.id,
-        role: event.role === 'user' ? 'user' : 'agent',
-        content: event.role === 'user' ? stripContextBlock(event.content) : event.content,
+        role: isAgentToAgent ? 'agent' : isInbound ? 'user' : 'agent',
+        content: isInbound ? stripContextBlock(event.content) : event.content,
         createdAt: event.timestamp,
+        ...(senderLabel !== undefined && senderLabel !== '' ? { senderLabel } : {}),
         ...(event.isError === true ? { status: 'failed' as const } : {}),
       };
     }

@@ -10,6 +10,7 @@ import {
 import { ChatThread } from './ChatThread';
 import { QuickReplyChips } from './QuickReplyChips';
 import { ChatInput } from './ChatInput';
+import type { UIBlock, UIResponse } from './ui-block';
 
 export interface ChatPanelProps {
   agent: ChatAgentIdentity;
@@ -28,6 +29,10 @@ export interface ChatPanelProps {
   /** Close the panel (floating mode). */
   onClose?: () => void;
   inputDisabled?: boolean;
+  /** Wired to send an interactive UI block's response back to the agent. */
+  onRespond?: (response: UIResponse) => void;
+  /** Wired to document UI block actions (copy / download / save-artifact). */
+  onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
   className?: string;
   notice?: React.ReactNode;
 }
@@ -49,6 +54,8 @@ export function ChatPanel({
   onToggleDock,
   onClose,
   inputDisabled,
+  onRespond,
+  onAction,
   className,
   notice,
 }: ChatPanelProps) {
@@ -103,6 +110,8 @@ export function ChatPanel({
         {...(activity !== undefined ? { activity } : {})}
         agentName={agent.name}
         typingLabel={`${agent.name} is typing`}
+        {...(onRespond !== undefined ? { onRespond } : {})}
+        {...(onAction !== undefined ? { onAction } : {})}
       />
 
       {quickReplies !== undefined && quickReplies.length > 0 && onQuickReply !== undefined && (

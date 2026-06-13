@@ -1,4 +1,9 @@
-import { buildSystemPrompt, HUMANIZER_SECTION, type PromptFormat } from '../prompt-builder';
+import {
+  buildSystemPrompt,
+  HUMANIZER_SECTION,
+  SPECIALIST_MAIL_SECTION,
+  type PromptFormat,
+} from '../prompt-builder';
 
 export function buildWalterSystemPrompt(name: string, format: PromptFormat): string {
   return buildSystemPrompt(
@@ -26,6 +31,7 @@ export function buildWalterSystemPrompt(name: string, format: PromptFormat): str
 - If mail reply tools are available and the user asks you to answer a message, draft the reply first unless the user explicitly asks you to send it.
 - Ask one focused question only when missing context would materially change the piece. Otherwise make a reasonable editorial choice and proceed.`,
       },
+      SPECIALIST_MAIL_SECTION,
       HUMANIZER_SECTION,
     ],
     format

@@ -7,6 +7,9 @@ import { buildGranolaSystemPrompt } from './granola/prompt';
 import { buildFirecrawlSystemPrompt } from './firecrawl/prompt';
 import { buildWalterSystemPrompt } from './walter/prompt';
 import { buildHammySystemPrompt } from './hammy-the-humanizer/prompt';
+import { buildGeraltSystemPrompt } from './geralt/prompt';
+import { buildBobbySystemPrompt } from './bobby/prompt';
+import { buildLincolnSystemPrompt } from './lincoln/prompt';
 import { HAMMY_SKILL_CONTENT } from './hammy-the-humanizer/skill';
 
 const format = { xml: true };
@@ -46,6 +49,44 @@ describe('agent system prompts', () => {
     expect(prompt).toContain('Humanize');
     expect(prompt).toContain('Score');
     expect(prompt).not.toContain('writer and editor');
+  });
+});
+
+describe('specialist agent dispatch-reply contract', () => {
+  const dispatchSpecialists: Array<[string, (name: string) => string]> = [
+    ['granola', (name) => buildGranolaSystemPrompt(name, { xml: true })],
+    ['firecrawl', (name) => buildFirecrawlSystemPrompt(name, { xml: true })],
+    ['walter', (name) => buildWalterSystemPrompt(name, { xml: true })],
+    ['hammy', (name) => buildHammySystemPrompt(name, { xml: true })],
+    ['loop', (name) => buildLoopAgentSystemPrompt(name, { xml: true })],
+    ['geralt', (name) => buildGeraltSystemPrompt(name, { xml: true })],
+    ['lincoln', (_name) => buildLincolnSystemPrompt('Lincoln')],
+  ];
+
+  for (const [agentName, buildPrompt] of dispatchSpecialists) {
+    it(`${agentName} instructs search-then-reply for agent-dispatched turns`, () => {
+      const prompt = buildPrompt(agentName);
+      expect(prompt).toContain('mail_search');
+      expect(prompt).toContain('mail_reply');
+      expect(prompt).toContain('ins_');
+    });
+
+    it(`${agentName} distinguishes user turns (usr_) from agent turns (ins_)`, () => {
+      const prompt = buildPrompt(agentName);
+      expect(prompt).toContain('usr_');
+    });
+
+    it(`${agentName} does not instruct guessing a ref`, () => {
+      const prompt = buildPrompt(agentName);
+      expect(prompt).not.toContain('uid: 1');
+      expect(prompt).toContain('Never construct a message ref from scratch');
+    });
+  }
+
+  it('bobby does not contain a mail messaging section', () => {
+    const prompt = buildBobbySystemPrompt('Bobby', { xml: true });
+    expect(prompt).not.toContain('ins_');
+    expect(prompt).not.toContain('mail_search');
   });
 });
 

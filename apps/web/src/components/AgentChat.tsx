@@ -6,9 +6,11 @@ import {
   createToolNameTracker,
   createLiveTextTracker,
   createReasoningTracker,
+  createImageTracker,
   type ToolNameTracker,
   type LiveTextTracker,
   type ReasoningTracker,
+  type ImageTracker,
 } from '@workbench/agents/browser';
 import {
   ChatPanel,
@@ -68,6 +70,7 @@ export function AgentChat({
   const toolNamesRef = useRef<ToolNameTracker | null>(null);
   const liveTextRef = useRef<LiveTextTracker | null>(null);
   const reasoningRef = useRef<ReasoningTracker | null>(null);
+  const imageTrackerRef = useRef<ImageTracker | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
 
@@ -169,6 +172,10 @@ export function AgentChat({
     // onUpdate — the session's onChange drives renders; we read it at render.
     reasoningRef.current = createReasoningTracker(transport, { tenantId, instanceId });
 
+    // Live images for the current turn. No onUpdate — the session's onChange
+    // drives renders; we read the captured images at render time.
+    imageTrackerRef.current = createImageTracker(transport, { tenantId, instanceId });
+
     if (!cancelled) setSessionState({ phase: 'ready', session });
 
     return () => {
@@ -181,6 +188,8 @@ export function AgentChat({
       liveTextRef.current = null;
       reasoningRef.current?.stop();
       reasoningRef.current = null;
+      imageTrackerRef.current?.stop();
+      imageTrackerRef.current = null;
       sessionRef.current?.destroy();
       sessionRef.current = null;
     };
@@ -192,6 +201,9 @@ export function AgentChat({
       streaming: liveTextRef.current !== null ? liveTextRef.current.text : '',
       reasoning: reasoningRef.current !== null ? reasoningRef.current.text : '',
       ...(toolNamesRef.current !== null ? { toolNames: toolNamesRef.current.names } : {}),
+      ...(imageTrackerRef.current !== null && imageTrackerRef.current.images.length > 0
+        ? { liveImages: imageTrackerRef.current.images }
+        : {}),
     });
     return messages;
   }

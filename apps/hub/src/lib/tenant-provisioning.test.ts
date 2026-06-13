@@ -745,6 +745,13 @@ describe('seedAgentTemplates', () => {
     }
     const names = agentInserts.map((r) => r['name']).sort();
     expect(names).toEqual(AGENT_TEMPLATES.map((t) => t.name).sort());
+
+    // Each seeded definition carries its template description so list_agents
+    // can surface what every agent is for (CL-1783).
+    for (const template of AGENT_TEMPLATES) {
+      const row = agentInserts.find((r) => r['name'] === template.name);
+      expect(row?.['description']).toBe(template.description);
+    }
   });
 
   it('patches modelConfig from provider metadata when modelConfig is null', async () => {

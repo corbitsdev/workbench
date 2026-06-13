@@ -3,6 +3,7 @@ export {
   type ChatMessageStatus,
   type ChatMessage,
   type ChatMessageKind,
+  type ChatImage,
   type ToolCall,
   type QuickReply,
   type ChatDockState,
@@ -19,6 +20,16 @@ export {
 } from './compactMessages';
 export { CollapsedGroup, type CollapsedGroupProps } from './CollapsedGroup';
 
+export {
+  type UIBlock,
+  type UIResponse,
+  type DocumentActions,
+  type ExtractedUIBlock,
+  parseToolResult,
+  extractUIBlockFromText,
+  isUIBlock,
+} from './ui-block';
+export { UIBlockView, type UIBlockViewProps } from './UIBlockView';
 export { MessageBubble, type MessageBubbleProps } from './MessageBubble';
 export { ToolNarrative, type ToolNarrativeProps } from './ToolNarrative';
 export { TypingIndicator, type TypingIndicatorProps } from './TypingIndicator';

@@ -3,9 +3,15 @@ import {
   PERSONAL_AGENT_DEPLOY_PROMPT,
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
   PERSONAL_AGENT_BASE_TOOLS,
+  PERSONAL_AGENT_NAME,
   buildPersonalAgentGrantRequirements,
 } from './personal-agent/definition';
-import { LOOP_DEPLOY_PROMPT, LOOP_CREDENTIAL_REQUIREMENTS } from './loop/definition';
+import {
+  LOOP_DEPLOY_PROMPT,
+  LOOP_CREDENTIAL_REQUIREMENTS,
+  LOOP_GRANT_REQUIREMENTS,
+  LOOP_DEPLOY_DESCRIPTOR,
+} from './loop/definition';
 import {
   GRANOLA_DEPLOY_PROMPT,
   GRANOLA_CREDENTIAL_REQUIREMENTS,
@@ -36,6 +42,24 @@ import {
   LINCOLN_GRANT_REQUIREMENTS,
   LINCOLN_CAPABILITIES,
 } from './lincoln/definition';
+import {
+  BOBBY_DEPLOY_PROMPT,
+  BOBBY_CREDENTIAL_REQUIREMENTS,
+  BOBBY_GRANT_REQUIREMENTS,
+  BOBBY_CAPABILITIES,
+} from './bobby/definition';
+import {
+  GERALT_DEPLOY_PROMPT,
+  GERALT_CREDENTIAL_REQUIREMENTS,
+  GERALT_GRANT_REQUIREMENTS,
+  GERALT_TOOL_NAMES,
+} from './geralt/definition';
+import {
+  LARRY_DEPLOY_PROMPT,
+  LARRY_CREDENTIAL_REQUIREMENTS,
+  LARRY_GRANT_REQUIREMENTS,
+  LARRY_CAPABILITIES,
+} from './larry/definition';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -82,7 +106,7 @@ export interface AgentTemplate {
  *
  * Base tool sources:
  *   - Myra:   PERSONAL_AGENT_BASE_TOOLS (empty today; single source of truth)
- *   - Loop:   LOOP_DEPLOY_DESCRIPTOR.defaultTools is empty; Loop has no base tools
+ *   - Loop:   LOOP_DEPLOY_DESCRIPTOR.defaultTools
  *   - Oat:    GRANOLA_CAPABILITIES.tools
  *   - Freddy: FIRECRAWL_CAPABILITIES.tools
  *   - Walter: WALTER_CAPABILITIES.tools
@@ -91,7 +115,7 @@ export interface AgentTemplate {
 export const AGENT_TEMPLATES: AgentTemplate[] = [
   {
     key: 'myra',
-    name: 'Myra',
+    name: PERSONAL_AGENT_NAME,
     description: 'Your personal AI assistant — always on, context-aware, and ready to help.',
     systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
@@ -114,8 +138,8 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     description: 'Runs scheduled background tasks on a configurable interval.',
     systemPrompt: LOOP_DEPLOY_PROMPT,
     credentialRequirements: LOOP_CREDENTIAL_REQUIREMENTS,
-    grantRequirements: [],
-    capabilities: { tools: [] },
+    grantRequirements: LOOP_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...LOOP_DEPLOY_DESCRIPTOR.defaultTools] },
     deployable: false,
   },
   {
@@ -147,6 +171,16 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     capabilities: { tools: [...HAMMY_CAPABILITIES.tools] },
   },
   {
+    key: 'bobby',
+    name: 'Bobby',
+    description:
+      'Browser automation agent — navigates real sites, fills forms, and extracts what only a live page can give.',
+    systemPrompt: BOBBY_DEPLOY_PROMPT,
+    credentialRequirements: BOBBY_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: BOBBY_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...BOBBY_CAPABILITIES.tools] },
+  },
+  {
     key: 'lincoln',
     name: 'Lincoln',
     description:
@@ -155,5 +189,24 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     credentialRequirements: LINCOLN_CREDENTIAL_REQUIREMENTS,
     grantRequirements: LINCOLN_GRANT_REQUIREMENTS,
     capabilities: { tools: [...LINCOLN_CAPABILITIES.tools] },
+  },
+  {
+    key: 'geralt',
+    name: 'Geralt',
+    description: 'Presentation builder — turns briefs and research into Gamma slide decks.',
+    systemPrompt: GERALT_DEPLOY_PROMPT,
+    credentialRequirements: GERALT_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: GERALT_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...GERALT_TOOL_NAMES] },
+  },
+  {
+    key: 'larry',
+    name: 'Larry',
+    description:
+      'Research agent — mines Reddit, X, HackerNews, and social platforms for the last 30 days of signal.',
+    systemPrompt: LARRY_DEPLOY_PROMPT,
+    credentialRequirements: LARRY_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: LARRY_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...LARRY_CAPABILITIES.tools] },
   },
 ];

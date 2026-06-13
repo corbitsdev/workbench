@@ -12,8 +12,7 @@
     "skipLibCheck": true,
     "types": ["bun"],
     "paths": {
-      "@workbench/shared": ["../../packages/workbench-shared/src/index.ts"],
-      "@workbench/agent-scheduler": ["../../packages/agent-scheduler/src/index.ts"]
+      "@workbench/shared": ["../../packages/workbench-shared/src/index.ts"]
     }
   },
   "include": ["src/**/*"]

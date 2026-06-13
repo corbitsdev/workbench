@@ -173,6 +173,104 @@ describe('convertInstanceEvents', () => {
     expect(convertInstanceEvents([])).toEqual([]);
   });
 
+  it('populates senderLabel from an agent instance email address for inbound mail', () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: 'mail',
+        id: 'mail-agent',
+        role: 'user',
+        content: 'Please handle this task',
+        sender: { name: null, email: 'ins_myra123@workbench.example' },
+        recipients: [{ name: null, email: 'ins_oat456@workbench.example' }],
+        attachments: [],
+        timestamp: '2026-06-05T00:00:00Z',
+      },
+    ];
+    const messages = convertInstanceEvents(events);
+    expect(messages[0]?.senderLabel).toBe('ins_myra123');
+  });
+
+  it('populates senderLabel with display name when sender has a non-null name', () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: 'mail',
+        id: 'mail-named',
+        role: 'user',
+        content: 'Hi',
+        sender: { name: 'Myra', email: 'ins_myra123@workbench.example' },
+        recipients: [],
+        attachments: [],
+        timestamp: '2026-06-05T00:00:00Z',
+      },
+    ];
+    const messages = convertInstanceEvents(events);
+    expect(messages[0]?.senderLabel).toBe('Myra');
+  });
+
+  it('falls back to email local part when sender name is whitespace only', () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: 'mail',
+        id: 'mail-ws',
+        role: 'user',
+        content: 'Hi',
+        sender: { name: '   ', email: 'ins_myra123@workbench.example' },
+        recipients: [],
+        attachments: [],
+        timestamp: '2026-06-05T00:00:00Z',
+      },
+    ];
+    const messages = convertInstanceEvents(events);
+    expect(messages[0]?.senderLabel).toBe('ins_myra123');
+  });
+
+  it('renders inbound mail with role agent so it is left-aligned', () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: 'mail',
+        id: 'mail-role',
+        role: 'user',
+        content: 'Task for you',
+        sender: { name: 'Myra', email: 'ins_myra@workbench.example' },
+        recipients: [],
+        attachments: [],
+        timestamp: '2026-06-05T00:00:00Z',
+      },
+    ];
+    const messages = convertInstanceEvents(events);
+    expect(messages[0]?.role).toBe('agent');
+  });
+
+  it('does not set senderLabel for outbound assistant mail', () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: 'mail',
+        id: 'mail-out',
+        role: 'assistant',
+        content: 'Task complete',
+        sender: { name: null, email: 'ins_oat456@workbench.example' },
+        recipients: [{ name: null, email: 'ins_myra123@workbench.example' }],
+        attachments: [],
+        timestamp: '2026-06-05T00:00:00Z',
+      },
+    ];
+    const messages = convertInstanceEvents(events);
+    expect(messages[0]?.senderLabel).toBeUndefined();
+  });
+
+  it('does not set senderLabel for turn events', () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: 'turn',
+        turnId: 'turn-x',
+        content: 'Response',
+        timestamp: '2026-06-05T00:00:00Z',
+      },
+    ];
+    const messages = convertInstanceEvents(events);
+    expect(messages[0]?.senderLabel).toBeUndefined();
+  });
+
   it('strips leading <context> block from user mail content', () => {
     const events: InstanceEvent[] = [
       {

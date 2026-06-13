@@ -8,6 +8,7 @@ export {
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
   PERSONAL_AGENT_DEPLOY_PROMPT,
   PERSONAL_AGENT_BASE_TOOLS,
+  PERSONAL_AGENT_NAME,
 } from './personal-agent/definition';
 export { createPersonalAgentDirector } from './personal-agent/director';
 
@@ -41,6 +42,16 @@ export {
   WALTER_DEPLOY_PROMPT,
 } from './walter/definition';
 
+// Bobby — the browser
+export { buildBobbySystemPrompt } from './bobby/prompt';
+export {
+  BOBBY_GRANT_REQUIREMENTS,
+  BOBBY_CREDENTIAL_REQUIREMENTS,
+  BOBBY_DEPLOY_PROMPT,
+  BOBBY_CAPABILITIES,
+  BOBBY_DEPLOY_DESCRIPTOR,
+} from './bobby/definition';
+
 // Lincoln agent
 export { buildLincolnSystemPrompt } from './lincoln/prompt';
 export {
@@ -60,6 +71,27 @@ export {
   HAMMY_CAPABILITIES,
 } from './hammy-the-humanizer/definition';
 
+// Geralt agent
+export { buildGeraltSystemPrompt } from './geralt/prompt';
+export {
+  GERALT_GRANT_REQUIREMENTS,
+  GERALT_CREDENTIAL_REQUIREMENTS,
+  GERALT_DEPLOY_PROMPT,
+  GERALT_TOOL_NAMES,
+  GERALT_DEPLOY_DESCRIPTOR,
+} from './geralt/definition';
+
+// Larry — last30days research
+export { buildLarrySystemPrompt } from './larry/prompt';
+export { LARRY_SKILL_CONTENT } from './larry/skill';
+export {
+  LARRY_GRANT_REQUIREMENTS,
+  LARRY_CREDENTIAL_REQUIREMENTS,
+  LARRY_DEPLOY_PROMPT,
+  LARRY_CAPABILITIES,
+  LARRY_DEPLOY_DESCRIPTOR,
+} from './larry/definition';
+
 // Agent templates registry
 export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
 
@@ -68,6 +100,7 @@ export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
 export { createLiveTextTracker, type LiveTextTracker } from './live-text-tracker';
 export { createReasoningTracker, type ReasoningTracker } from './reasoning-tracker';
+export { createImageTracker, type ImageTracker, type CapturedImage } from './image-tracker';
 export { deriveAgentPhase, type AgentPhase } from './agent-phase';
 export {
   composeChatMessages,

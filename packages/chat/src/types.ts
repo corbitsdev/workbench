@@ -36,6 +36,12 @@ export interface ToolCall {
   isError?: boolean;
 }
 
+/** An inline image captured from the agent's response stream. */
+export interface ChatImage {
+  mimeType: string;
+  data: string;
+}
+
 /** A single message in a chat thread. */
 export interface ChatMessage {
   id: string;
@@ -46,6 +52,12 @@ export interface ChatMessage {
   createdAt: string;
   /** Delivery state. Absent means delivered/no tracking needed. */
   status?: ChatMessageStatus;
+  /**
+   * Display label for the message sender. Present on inbound agent-to-agent mail
+   * so the chat view can show who delegated the task. Absent for regular user
+   * messages (no attribution needed) and for all agent/system messages.
+   */
+  senderLabel?: string;
   /**
    * Optional classification. Tool messages are eligible for compaction in long
    * threads; artifact messages are always fully visible.
@@ -63,6 +75,11 @@ export interface ChatMessage {
    * streaming bubble while the agent is thinking.
    */
   reasoning?: string;
+  /**
+   * Inline images produced during this agent turn (e.g. browser snapshots).
+   * Each entry carries a base64-encoded payload and its MIME type.
+   */
+  images?: ChatImage[];
 }
 
 /** A tappable suggested reply offered by the agent. */

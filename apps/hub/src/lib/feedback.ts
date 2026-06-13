@@ -26,6 +26,8 @@ function buildFeedbackSystemPrompt(type: ArtifactKind): string {
     case 'pain-points':
     case 'call-transcript':
       return `You are editing a structured document. Apply the user's feedback carefully. Preserve the original format and structure. Return only the refined text, no explanations.`;
+    case 'presentation':
+      throw new Error('Presentation artifacts cannot be refined with text feedback');
     default: {
       const _exhaustive: never = type;
       throw new Error(`Unknown artifact kind: ${String(_exhaustive)}`);

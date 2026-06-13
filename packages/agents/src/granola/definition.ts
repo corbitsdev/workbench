@@ -1,7 +1,7 @@
-import type { GrantRequirement, CredentialRequirement } from '@intx/types';
-import { buildGranolaSystemPrompt } from './prompt';
-import type { AgentDeployDescriptor } from '../deploy-descriptor';
-import { LLM_CREDENTIAL_NAME } from '../constants';
+import type { GrantRequirement, CredentialRequirement } from "@intx/types";
+import { buildGranolaSystemPrompt } from "./prompt";
+import type { AgentDeployDescriptor } from "../deploy-descriptor";
+import { LLM_CREDENTIAL_NAME } from "../constants";
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -13,11 +13,8 @@ type CredentialRequirementType = typeof CredentialRequirement.infer;
  * initiate outbound mail — tool:mail.send is not granted.
  */
 export const GRANOLA_GRANT_REQUIREMENTS: GrantRequirementType[] = [
-  {
-    source: 'invoker',
-    resource: 'tool:mail_reply',
-    action: 'invoke',
-  },
+  { source: "invoker", resource: "tool:mail_search", action: "invoke" },
+  { source: "invoker", resource: "tool:mail_reply", action: "invoke" },
 ];
 
 /**
@@ -29,8 +26,8 @@ export const GRANOLA_GRANT_REQUIREMENTS: GrantRequirementType[] = [
  */
 export const GRANOLA_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
-    providerName: 'openai-compatible',
-    source: 'tenant',
+    providerName: "openai-compatible",
+    source: "tenant",
     name: LLM_CREDENTIAL_NAME,
   },
 ];
@@ -38,22 +35,29 @@ export const GRANOLA_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
 /**
  * Static deploy prompt for the Granola agent definition.
  */
-export const GRANOLA_DEPLOY_PROMPT: string = buildGranolaSystemPrompt('Oat', { xml: true });
+export const GRANOLA_DEPLOY_PROMPT: string = buildGranolaSystemPrompt("Oat", {
+  xml: true,
+});
 
 /**
  * Capabilities bag for the Granola agent. Consumed by the hub at launch time
- * to configure tools and the per-instance scheduler interval.
+ * to configure tools.
  */
 export const GRANOLA_CAPABILITIES = {
-  tools: ['granola_list_notes', 'granola_get_note', 'granola_list_folders'],
-  schedulerIntervalMs: 60_000,
+  tools: [
+    "granola_list_notes",
+    "granola_get_note",
+    "granola_list_folders",
+    "mail_search",
+    "mail_reply",
+  ],
 } as const;
 
 export const GRANOLA_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
-  label: 'Oat — Call Intelligence',
-  name: 'Oat',
+  label: "Oat — Call Intelligence",
+  name: "Oat",
   systemPrompt: GRANOLA_DEPLOY_PROMPT,
-  credentialProviderNames: ['openai-compatible', 'granola'],
+  credentialProviderNames: ["openai-compatible", "granola"],
   defaultTools: [...GRANOLA_CAPABILITIES.tools],
   requiredTools: [...GRANOLA_CAPABILITIES.tools],
 };
