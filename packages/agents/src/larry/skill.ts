@@ -55,6 +55,7 @@ Structure the synthesized body as follows:
 4. **Footer**: last line is \`*Research by last30days via GTM Workbench*\`.
 
 Additional rules:
+
 - No em-dashes anywhere in the output.
 - Do not invent citations — every link must come from the citations array returned by \`last30days_core_report\`.
 - For COMPARISON queries, cover each entity in its own paragraph before a closing synthesis paragraph.

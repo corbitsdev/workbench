@@ -52,25 +52,42 @@ describe('agent system prompts', () => {
   });
 });
 
-describe('specialist agent mail_reply contract', () => {
-  const MAIL_REPLY_CONTRACT = 'must respond using mail_reply';
-  const specialists: Array<[string, (name: string) => string]> = [
+describe('specialist agent dispatch-reply contract', () => {
+  const dispatchSpecialists: Array<[string, (name: string) => string]> = [
     ['granola', (name) => buildGranolaSystemPrompt(name, { xml: true })],
     ['firecrawl', (name) => buildFirecrawlSystemPrompt(name, { xml: true })],
     ['walter', (name) => buildWalterSystemPrompt(name, { xml: true })],
     ['hammy', (name) => buildHammySystemPrompt(name, { xml: true })],
     ['loop', (name) => buildLoopAgentSystemPrompt(name, { xml: true })],
     ['geralt', (name) => buildGeraltSystemPrompt(name, { xml: true })],
-    ['bobby', (name) => buildBobbySystemPrompt(name, { xml: true })],
     ['lincoln', (_name) => buildLincolnSystemPrompt('Lincoln')],
   ];
 
-  for (const [agentName, buildPrompt] of specialists) {
-    it(`${agentName} instructs the agent to respond with mail_reply when the inbound turn is from another agent`, () => {
+  for (const [agentName, buildPrompt] of dispatchSpecialists) {
+    it(`${agentName} instructs search-then-reply for agent-dispatched turns`, () => {
       const prompt = buildPrompt(agentName);
-      expect(prompt).toContain(MAIL_REPLY_CONTRACT);
+      expect(prompt).toContain('mail_search');
+      expect(prompt).toContain('mail_reply');
+      expect(prompt).toContain('ins_');
+    });
+
+    it(`${agentName} distinguishes user turns (usr_) from agent turns (ins_)`, () => {
+      const prompt = buildPrompt(agentName);
+      expect(prompt).toContain('usr_');
+    });
+
+    it(`${agentName} does not instruct guessing a ref`, () => {
+      const prompt = buildPrompt(agentName);
+      expect(prompt).not.toContain('uid: 1');
+      expect(prompt).toContain('Never construct a message ref from scratch');
     });
   }
+
+  it('bobby does not contain a mail messaging section', () => {
+    const prompt = buildBobbySystemPrompt('Bobby', { xml: true });
+    expect(prompt).not.toContain('ins_');
+    expect(prompt).not.toContain('mail_search');
+  });
 });
 
 describe('HAMMY_SKILL_CONTENT sync with SKILL.md', () => {

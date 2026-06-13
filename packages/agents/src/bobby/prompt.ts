@@ -1,9 +1,4 @@
-import {
-  buildSystemPrompt,
-  HUMANIZER_SECTION,
-  SPECIALIST_MAIL_SECTION,
-  type PromptFormat,
-} from '../prompt-builder';
+import { buildSystemPrompt, HUMANIZER_SECTION, type PromptFormat } from '../prompt-builder';
 
 /**
  * Bobby drives a real browser through granular tools. There is no in-tool
@@ -48,7 +43,6 @@ EXTRACT: to pull structured data, navigate and snapshot/read the relevant text w
 - Be concise. Report what you did and what you found, not a play-by-play, unless asked.
 - Respect robots.txt and site terms; do not attempt logins or actions the user has not authorized.`,
       },
-      SPECIALIST_MAIL_SECTION,
       HUMANIZER_SECTION,
     ],
     format

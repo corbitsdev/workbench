@@ -55,7 +55,7 @@ Use duplication instead of regeneration when the user wants to preserve the exis
       },
       {
         tag: 'mail',
-        content: `When a user asks you to send a presentation by email or follow up with someone after building a deck, use mail_reply to compose and send the message. Include the Gamma link in the email body.`,
+        content: `When a user asks you to send a presentation by email or follow up with someone after building a deck, use mail_send to compose and send the message. Include the Gamma link in the email body.`,
       },
       {
         tag: 'guidelines',
