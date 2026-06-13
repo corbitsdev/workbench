@@ -1,22 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useWorkbenchAgents } from './use-workflow';
 import type { AgentInstance } from './use-workflow';
+import type { PresentationStepArgs } from '@workbench/workflow';
 
-export type GammaTemplate = {
-  id: string;
-  gammaId: string;
-  name: string;
-  description: string;
-};
-
-export function useGammaTemplates() {
-  return useQuery<GammaTemplate[]>({
-    queryKey: ['gamma-templates'],
-    queryFn: () => api<GammaTemplate[]>('GET', '/gamma/templates'),
-    staleTime: 5 * 60 * 1000,
-  });
-}
+export { type PresentationStepArgs };
 
 export function useGeraltInstances() {
   const agents = useWorkbenchAgents();
@@ -47,31 +35,7 @@ export function useCreatePresentationWorkflow() {
   });
 }
 
-type TemplateStepBody = {
-  step: 'template';
-  templateId?: string;
-  audience?: string;
-  tone?: string;
-  goal?: string;
-};
-
-type SourceStepBody = {
-  step: 'source';
-  transcriptSource: 'paste' | 'granola' | 'artifact';
-  transcript?: string;
-  granolaId?: string;
-  sourceArtifactId?: string;
-  callTitle?: string;
-};
-
-type GenerateStepBody = {
-  step: 'generate';
-  agentInstanceId: string;
-};
-
-type PresentationStepBody = TemplateStepBody | SourceStepBody | GenerateStepBody;
-
-type StepMutationArgs = PresentationStepBody & { workflowId: string };
+type StepMutationArgs = PresentationStepArgs & { workflowId: string };
 
 export function useSubmitPresentationStep() {
   const queryClient = useQueryClient();
