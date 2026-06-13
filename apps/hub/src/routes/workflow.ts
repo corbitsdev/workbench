@@ -17,7 +17,6 @@ import {
   getVariantCount,
   isCollateralKind,
 } from '@workbench/gtm-workflows';
-import { GAMMA_TEMPLATE_REGISTRY } from '@workbench/tools-gamma';
 import type { SessionService } from '@intx/hub-sessions';
 import { generateKeyPair, createNodeCrypto } from '@intx/crypto-node';
 import { generateId } from '@intx/hub-common';
@@ -592,7 +591,7 @@ export function createWorkflowRouter(
 
   // ─── Gamma template registry ─────────────────────────────────────
   router.get('/gamma/templates', (c) => {
-    return c.json(GAMMA_TEMPLATE_REGISTRY.map((entry) => ({ ...entry, id: entry.gammaId })));
+    return c.json([]);
   });
 
   // ─── List enabled workflows for tenant ───────────────────────────
