@@ -26,9 +26,39 @@ function makeFetchStub(
   );
 }
 
-/** A fetch stub that returns a valid create-session response. */
+/**
+ * A fetch stub that routes Browserbase API calls correctly:
+ * POST /sessions → create-session response (id + connectUrl)
+ * GET /sessions/{id} → status response (id + status:RUNNING)
+ * POST /sessions/{id} → end-session response
+ */
 function makeSessionFetchStub(sessionId = 'sess-1', connectUrl = 'wss://fake-connect') {
-  return makeFetchStub({ id: sessionId, connectUrl });
+  return mock((input: string, init: RequestInit) => {
+    const method = (init.method ?? 'GET').toUpperCase();
+    const isCreate = method === 'POST' && !input.endsWith(`/${sessionId}`);
+    if (isCreate) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ id: sessionId, connectUrl }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    }
+    if (method === 'GET') {
+      return Promise.resolve(
+        new Response(JSON.stringify({ id: sessionId, status: 'RUNNING' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+  }) as BrowserFetch & { mock: { calls: [string, RequestInit][] } };
 }
 
 type FakePageOptions = {

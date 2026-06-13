@@ -11,13 +11,17 @@ import { createBrowserTools } from './index';
 import type { BrowserConnector, BrowserFetch, BrowserLike } from './types';
 
 function sessionFetchStub(sessionId = 'sess-1', connectUrl = 'wss://fake'): BrowserFetch {
-  return () =>
-    Promise.resolve(
-      new Response(JSON.stringify({ id: sessionId, connectUrl }), {
+  return (input: string, init: RequestInit) => {
+    const method = (init.method ?? 'GET').toUpperCase();
+    const body =
+      method === 'GET' ? { id: sessionId, status: 'RUNNING' } : { id: sessionId, connectUrl };
+    return Promise.resolve(
+      new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
     );
+  };
 }
 
 const hangingConnector: BrowserConnector = () => new Promise<BrowserLike>(() => {});

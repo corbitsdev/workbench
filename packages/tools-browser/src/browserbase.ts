@@ -250,4 +250,57 @@ export async function reapStaleSessions(
   return { reaped, skipped };
 }
 
+const TERMINAL_SESSION_STATUSES = new Set(['ERROR', 'TIMED_OUT', 'COMPLETED', 'CANCELLED']);
+
+export type WaitForSessionRunningOptions = {
+  pollIntervalMs?: number;
+  maxWaitMs?: number;
+};
+
+const DEFAULT_WAIT_FOR_RUNNING_MAX_MS = 30_000;
+const DEFAULT_WAIT_FOR_RUNNING_POLL_MS = 1_000;
+
+/**
+ * Poll GET /sessions/{id} until status === RUNNING or a terminal/deadline condition fires.
+ * The browser process starts asynchronously after POST /sessions; connecting CDP before
+ * RUNNING produces a WebSocket timeout.
+ */
+export async function waitForSessionRunning(
+  config: ResolvedBrowserConfig,
+  sessionId: string,
+  signal: AbortSignal,
+  options?: WaitForSessionRunningOptions
+): Promise<void> {
+  const pollIntervalMs = options?.pollIntervalMs ?? DEFAULT_WAIT_FOR_RUNNING_POLL_MS;
+  const maxWaitMs = options?.maxWaitMs ?? DEFAULT_WAIT_FOR_RUNNING_MAX_MS;
+  const deadline = Date.now() + maxWaitMs;
+
+  while (Date.now() < deadline) {
+    const response = await config.fetcher(`${config.baseUrl}/sessions/${sessionId}`, {
+      method: 'GET',
+      headers: browserbaseHeaders(config.apiKey),
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Browserbase API error: ${response.status} ${await errorDetail(response)}`);
+    }
+    const data: unknown = await response.json();
+    if (!isRecord(data) || typeof data.status !== 'string') {
+      throw new Error('Browserbase session status response missing status');
+    }
+    const status = data.status;
+    if (status === 'RUNNING') {
+      return;
+    }
+    if (TERMINAL_SESSION_STATUSES.has(status)) {
+      throw new Error(`Browserbase session ${sessionId} reached terminal status: ${status}`);
+    }
+    if (pollIntervalMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+  }
+
+  throw new Error(`Browserbase session ${sessionId} did not reach RUNNING within ${maxWaitMs}ms`);
+}
+
 export type { BrowserFetch };

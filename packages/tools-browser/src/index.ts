@@ -18,6 +18,7 @@ import {
   removeSessionConnectURL,
   resolveConfig,
   storeSessionConnectURL,
+  waitForSessionRunning,
 } from './browserbase';
 import { ACTION_TIMEOUT_MS, CONNECT_TIMEOUT_MS, getPage, withTimeout } from './connect';
 import { FRAME_DELIMITER, pruneSnapshot, SNAPSHOT_SCRIPT, type RawSnapshot } from './snapshot';
@@ -266,6 +267,7 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
     stringTool(BROWSER_CREATE_SESSION_DEFINITION, async (args, signal) => {
       const timeoutSeconds = clampTimeoutSeconds(args.timeoutSeconds);
       const { sessionId, connectUrl } = await createSession(config, timeoutSeconds, signal);
+      await waitForSessionRunning(config, sessionId, signal);
       storeSessionConnectURL(sessionId, connectUrl);
       return { sessionId, timeoutSeconds };
     }),
