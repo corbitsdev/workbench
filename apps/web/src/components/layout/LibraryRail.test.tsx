@@ -2,6 +2,7 @@
 import '../../test-setup';
 import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { act, cleanup, render, waitFor, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { LibraryRailProps } from './LibraryRail';
@@ -101,7 +102,7 @@ describe('LibraryRail', () => {
     );
 
     await waitFor(() => {
-      expect(view.getByRole('button', { name: 'Add agent' })).toBeDefined();
+      view.getByRole('button', { name: 'Add agent' });
     });
   });
 
@@ -145,16 +146,58 @@ describe('LibraryRail', () => {
     );
 
     await waitFor(() => {
-      expect(view.getByText('Loop')).toBeDefined();
+      view.getByText('Loop');
     });
 
-    fireEvent.click(view.getByText('Loop'));
+    fireEvent.click(view.getByRole('button', { name: 'Open agent Loop' }));
 
     expect(onAgentSelect).toHaveBeenCalledWith({
       instanceId: 'inst-1',
       tenantId: 'tn-1',
       agentName: 'Loop',
     });
+  });
+
+  it('calls onWorkflowSelect with both id and kind when a workflow row is clicked', async () => {
+    const { listWorkbenches } = await import('../../lib/hub-api');
+    (listWorkbenches as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve([]));
+    const onWorkflowSelect = mock((_id: string, _kind: string) => undefined);
+
+    const { LibraryRail } = await import('./LibraryRail');
+    const view = renderWithClient(
+      React.createElement(LibraryRail as React.FC<LibraryRailProps>, {
+        onWorkflowSelect,
+      })
+    );
+
+    const row = await waitFor(() =>
+      view.getByRole('button', { name: 'Open workflow Collateral Generation' })
+    );
+    fireEvent.click(row);
+
+    expect(onWorkflowSelect).toHaveBeenCalledWith('wf-1', 'collateral-generation');
+  });
+
+  it('activates a workflow row via the keyboard as a native button', async () => {
+    const { listWorkbenches } = await import('../../lib/hub-api');
+    (listWorkbenches as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve([]));
+    const onWorkflowSelect = mock((_id: string, _kind: string) => undefined);
+    const user = userEvent.setup();
+
+    const { LibraryRail } = await import('./LibraryRail');
+    const view = renderWithClient(
+      React.createElement(LibraryRail as React.FC<LibraryRailProps>, {
+        onWorkflowSelect,
+      })
+    );
+
+    const row = await waitFor(() =>
+      view.getByRole('button', { name: 'Open workflow Collateral Generation' })
+    );
+    row.focus();
+    await user.keyboard('{Enter}');
+
+    expect(onWorkflowSelect).toHaveBeenCalledWith('wf-1', 'collateral-generation');
   });
 
   it('keeps loaded agents visible and warns when one workbench fails to load agents', async () => {
@@ -186,10 +229,10 @@ describe('LibraryRail', () => {
     const view = renderWithClient(React.createElement(LibraryRail));
 
     await waitFor(() => {
-      expect(view.getByText('Loop')).toBeDefined();
+      view.getByText('Loop');
     });
 
-    expect(view.getByText('Some agents could not be loaded.')).toBeDefined();
+    view.getByText('Some agents could not be loaded.');
   });
 
   it('reflects a running agent live activity phase in the sidebar', async () => {
@@ -230,5 +273,50 @@ describe('LibraryRail', () => {
     await waitFor(() => {
       expect(view.getByText('Agent · Reasoning')).not.toBeNull();
     });
+  });
+});
+
+describe('CompletedWorkflowRow (pure view)', () => {
+  const item = {
+    id: 'wf-done',
+    group: 'Workflows' as const,
+    name: 'Collateral Generation',
+    type: 'workflow' as const,
+    sub: 'Acme Corp · Done',
+    status: 'done' as const,
+    who: 'GA',
+    color: 'var(--orange)',
+    workflowStatus: 'done',
+    workflowKind: 'collateral-generation',
+  };
+
+  it('invokes onOpen with no further data dependencies when the row is activated', async () => {
+    const { CompletedWorkflowRow } = await import('./LibraryRail');
+    const onOpen = mock(() => {});
+    const view = render(
+      React.createElement(CompletedWorkflowRow, {
+        item,
+        isActive: false,
+        isDeleting: false,
+        onOpen,
+        onDelete: () => {},
+      })
+    );
+    fireEvent.click(view.getByRole('button', { name: 'Open workflow Collateral Generation' }));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders without an open affordance when onOpen is omitted', async () => {
+    const { CompletedWorkflowRow } = await import('./LibraryRail');
+    const view = render(
+      React.createElement(CompletedWorkflowRow, {
+        item,
+        isActive: false,
+        isDeleting: false,
+        onDelete: () => {},
+      })
+    );
+    expect(view.queryByRole('button', { name: 'Open workflow Collateral Generation' })).toBeNull();
+    view.getByText('Collateral Generation');
   });
 });

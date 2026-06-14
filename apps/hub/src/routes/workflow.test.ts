@@ -192,6 +192,7 @@ describe('Workflow router', () => {
         },
         transcript: {
           findFirst: mock(() => ({ content: 'Test transcript content' })),
+          findMany: mock<() => unknown[]>(() => []),
         },
         painPoint: {
           findMany: mock<() => unknown[]>(() => []),
@@ -230,6 +231,14 @@ describe('Workflow router', () => {
             name: providerNameQueue.length > 0 ? providerNameQueue.shift() : 'openai-compatible',
             metadata: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o' },
           })),
+          findMany: mock(() => [
+            {
+              id: 'prov-1',
+              plugin: 'openai',
+              name: providerNameQueue.length > 0 ? providerNameQueue.shift() : 'openai-compatible',
+              metadata: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o' },
+            },
+          ]),
         },
       },
       delete: mock(() => ({
@@ -412,6 +421,9 @@ describe('Workflow router', () => {
     expect(json.id).toBe('wf-1');
     expect(json.status).toBeString();
     expect(json.steps).toBeObject();
+    // The panel derives its mode from the workflow kind, so the read endpoint
+    // must return it rather than relying on the navigation-origin prop (CL-1894).
+    expect(json.kind).toBe('collateral-generation');
   });
 
   it('GET /artifacts returns the user artifacts enriched with session info', async () => {
@@ -1314,11 +1326,11 @@ describe('Workflow router', () => {
         kind: 'collateral-generation',
       },
     ]) as typeof mockDb.query.workflowRun.findMany;
-    mockDb.query.transcript.findFirst = mock(() => ({
-      content: 'A long transcript body here',
-    })) as typeof mockDb.query.transcript.findFirst;
+    mockDb.query.transcript.findMany = mock(() => [
+      { id: 'tx-1', content: 'A long transcript body here' },
+    ]) as typeof mockDb.query.transcript.findMany;
     mockDb.query.painPoint.findMany = mock(() => [
-      { id: 'p-1', context: 'pain context' },
+      { id: 'p-1', context: 'pain context', sessionId: 'wf-1' },
     ]) as typeof mockDb.query.painPoint.findMany;
 
     const router = buildApp(mockDb);
@@ -1336,6 +1348,50 @@ describe('Workflow router', () => {
       painPointCount: 1,
       firstPainPoint: 'pain context',
     });
+  });
+
+  it('GET /workflows batches enrichment into one query per table regardless of row count', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => [
+      {
+        id: 'wf-1',
+        status: 'done',
+        input: { companyName: 'Acme', transcriptId: 'tx-1' },
+        tenantId: 'tenant-personal',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'collateral-generation',
+      },
+      {
+        id: 'wf-2',
+        status: 'done',
+        input: { companyName: 'Beta', transcriptId: 'tx-2' },
+        tenantId: 'tenant-personal',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'collateral-generation',
+      },
+    ]) as typeof mockDb.query.workflowRun.findMany;
+    mockDb.query.transcript.findMany = mock(() => [
+      { id: 'tx-1', content: 'one' },
+      { id: 'tx-2', content: 'two' },
+    ]) as typeof mockDb.query.transcript.findMany;
+    mockDb.query.painPoint.findMany = mock(() => [
+      { id: 'p-1', context: 'a', sessionId: 'wf-1' },
+      { id: 'p-2', context: 'b', sessionId: 'wf-2' },
+    ]) as typeof mockDb.query.painPoint.findMany;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows', { method: 'GET' })
+    );
+
+    expect(res.status).toBe(200);
+    // Two workflow rows must not produce two transcript + two pain-point queries.
+    expect(mockDb.query.transcript.findFirst).not.toHaveBeenCalled();
+    expect(mockDb.query.transcript.findMany).toHaveBeenCalledTimes(1);
+    expect(mockDb.query.painPoint.findMany).toHaveBeenCalledTimes(1);
+    const json = (await res.json()) as Array<Record<string, unknown>>;
+    expect(json).toHaveLength(2);
+    expect(json[1]).toMatchObject({ id: 'wf-2', firstPainPoint: 'b', painPointCount: 1 });
   });
 
   it('GET /workflows returns 403 for an inaccessible requested tenant', async () => {
@@ -1359,6 +1415,26 @@ describe('Workflow router', () => {
     const res = await router.fetch(
       new Request('http://localhost:4000/workflows/missing', { method: 'GET' })
     );
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /workflows/:id returns 404 when the caller is not the workflow owner', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: 'reviewing',
+      principalId: 'prn-not-owner',
+      kind: 'collateral-generation',
+      input: { companyName: 'Secret Corp', transcriptId: 'tx-1' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows/wf-1', { method: 'GET' })
+    );
+    // Reads are principal-private; a non-owner tenant member must not see the
+    // run's transcript, and must not be able to distinguish "not yours" from
+    // "does not exist".
     expect(res.status).toBe(404);
   });
 
@@ -1723,6 +1799,172 @@ describe('Workflow router', () => {
     expect((await res.json()).error).toContain('No valid collateral types');
   });
 
+  it('POST /workflows/:id/steps generate restores the running status (not "ready") when collateral types are invalid', async () => {
+    const setStatuses: string[] = [];
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => {
+        if (typeof values.status === 'string') setStatuses.push(values.status);
+      },
+    });
+    mockDb.query.painPoint.findMany = mock(() => [
+      { id: 'p-1', sessionId: 'wf-1', severity: 'high', context: 'c', quote: 'q', selected: true },
+    ]) as typeof mockDb.query.painPoint.findMany;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows/wf-1/steps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'generate',
+          painPointIds: ['p-1'],
+          collateralTypes: ['not-a-collateral-type'],
+        }),
+      })
+    );
+
+    expect(res.status).toBe(400);
+    // 'ready' is a session status, not a DB status. Writing it to the column
+    // poisons every later GET because mapDbStatusToSessionStatus rejects it.
+    expect(setStatuses).not.toContain('ready');
+    // The workflow must return to the post-analyze selection state so the user
+    // can choose valid collateral types and retry.
+    expect(setStatuses).toContain('running');
+  });
+
+  it('POST /workflows/:id/steps source rejects a sourceArtifactId from another tenant', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: 'pending',
+      principalId: PERSONAL_PRINCIPAL.id,
+      kind: 'presentation-generation',
+      input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'art-cross',
+      tenantId: 'tenant-other',
+      principalId: 'prn-other',
+      sessionId: 'wf-other',
+    })) as unknown as typeof mockDb.query.artifact.findFirst;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows/wf-1/steps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'source',
+          transcriptSource: 'artifact',
+          sourceArtifactId: 'art-cross',
+        }),
+      })
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /workflows/:id/steps source accepts a sourceArtifactId in the caller tenant', async () => {
+    const setValues: Record<string, unknown>[] = [];
+    const mockDb = createMockDb({ onSetUpdate: (values) => setValues.push(values) });
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: 'pending',
+      principalId: PERSONAL_PRINCIPAL.id,
+      kind: 'presentation-generation',
+      input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'art-own',
+      tenantId: 'tenant-personal',
+      principalId: PERSONAL_PRINCIPAL.id,
+      sessionId: 'wf-1',
+    })) as unknown as typeof mockDb.query.artifact.findFirst;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows/wf-1/steps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'source',
+          transcriptSource: 'artifact',
+          sourceArtifactId: 'art-own',
+        }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(setValues.some((v) => v.status === 'running')).toBe(true);
+  });
+
+  describe('principal ownership on mutation routes', () => {
+    function dbWithForeignWorkflow() {
+      const mockDb = createMockDb();
+      mockDb.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-1',
+        status: 'reviewing',
+        principalId: 'prn-not-owner',
+        kind: 'collateral-generation',
+        input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+      })) as typeof mockDb.query.workflowRun.findFirst;
+      return mockDb;
+    }
+
+    const cases: Array<{ name: string; method: string; path: string; body?: unknown }> = [
+      {
+        name: 'PATCH /company',
+        method: 'PATCH',
+        path: '/workflows/wf-1/company',
+        body: { companyName: 'Hijack' },
+      },
+      { name: 'DELETE /workflows/:id', method: 'DELETE', path: '/workflows/wf-1' },
+      {
+        name: 'PATCH /step-config',
+        method: 'PATCH',
+        path: '/workflows/wf-1/step-config',
+        body: { stepConfig: { analyze: {} } },
+      },
+      {
+        name: 'PATCH /artifacts/:artifactId/status',
+        method: 'PATCH',
+        path: '/workflows/wf-1/artifacts/art-1/status',
+        body: { status: 'approved' },
+      },
+      {
+        name: 'POST /steps',
+        method: 'POST',
+        path: '/workflows/wf-1/steps',
+        body: { step: 'analyze' },
+      },
+    ];
+
+    for (const tc of cases) {
+      it(`${tc.name} returns 403 when the caller is not the workflow owner`, async () => {
+        const router = buildApp(dbWithForeignWorkflow());
+        const init: RequestInit = {
+          method: tc.method,
+          headers: { 'Content-Type': 'application/json' },
+        };
+        if (tc.body) init.body = JSON.stringify(tc.body);
+        const res = await router.fetch(new Request(`http://localhost:4000${tc.path}`, init));
+        expect(res.status).toBe(403);
+      });
+    }
+
+    it('PATCH /company succeeds for the workflow owner', async () => {
+      const router = buildApp(createMockDb());
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/company', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyName: 'Acme' }),
+        })
+      );
+      expect(res.status).toBe(200);
+    });
+  });
+
   it('POST /workflows/:id/steps inline step returns 400 when no LLM credential resolves', async () => {
     const mockDb = createMockDb();
     mockDb.query.enabledWorkflow.findMany = mock(
@@ -1807,6 +2049,46 @@ describe('Workflow router', () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as { calls: unknown[] };
     expect(json.calls).toHaveLength(1);
+  });
+
+  it('GET /recent-calls clamps an oversized limit to the maximum window', async () => {
+    getRecentNotesMock.mockClear();
+    getRecentNotesMock.mockResolvedValueOnce([{ id: 'n-1', title: 'Call' }]);
+
+    const router = buildApp(createMockDb());
+    const res = await router.fetch(
+      new Request('http://localhost:4000/recent-calls?limit=99999', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    // The handler must not forward an unbounded page size to Granola.
+    const passedLimit = (getRecentNotesMock.mock.calls[0] as unknown[] | undefined)?.[1];
+    expect(passedLimit).toBe(50);
+  });
+
+  it('GET /recent-calls floors a non-positive limit to at least 1', async () => {
+    getRecentNotesMock.mockClear();
+    getRecentNotesMock.mockResolvedValueOnce([{ id: 'n-1', title: 'Call' }]);
+
+    const router = buildApp(createMockDb());
+    const res = await router.fetch(
+      new Request('http://localhost:4000/recent-calls?limit=-5', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    const passedLimit = (getRecentNotesMock.mock.calls[0] as unknown[] | undefined)?.[1];
+    expect(passedLimit).toBe(1);
+  });
+
+  it('GET /recent-calls defaults a non-numeric limit to 10', async () => {
+    getRecentNotesMock.mockClear();
+    getRecentNotesMock.mockResolvedValueOnce([{ id: 'n-1', title: 'Call' }]);
+
+    const router = buildApp(createMockDb());
+    const res = await router.fetch(
+      new Request('http://localhost:4000/recent-calls?limit=abc', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    const passedLimit = (getRecentNotesMock.mock.calls[0] as unknown[] | undefined)?.[1];
+    expect(passedLimit).toBe(10);
   });
 
   it('GET /recent-calls returns 502 when Granola fetch fails', async () => {

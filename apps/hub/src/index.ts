@@ -28,12 +28,12 @@ import { loadConfig } from './config';
 import { createSidecarConnectionRegistry } from './sidecar-connections';
 import { createWorkflowRouter } from './routes/workflow';
 import { workflowRegistry } from '@workbench/workflow-core';
+import { createAgentProvisioningRouter } from './routes/agents';
 import {
-  createAgentProvisioningRouter,
   relaunchInstanceIfNeeded,
   registerDisconnectReconciler,
   persistInstanceToolGrants,
-} from './routes/agents';
+} from './services/agent-provisioning';
 import { createWorkbenchesRouter } from './routes/workbenches';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createInternalToolsRouter } from './routes/tools';
@@ -50,6 +50,8 @@ import {
 } from './lib/tenant-provisioning';
 import { initSentry } from '@workbench/sentry';
 import { createFatalErrorRecovery } from './lib/fatal-error-recovery';
+import { resolveCorsAllowOrigin } from './lib/cors-origin';
+import { createRateLimiter } from './lib/rate-limit';
 
 await initSentry();
 await setup({ dev: process.env.NODE_ENV !== 'production' });
@@ -103,9 +105,6 @@ const auth = betterAuth({
     ? Array.from({ length: 10 }, (_, i) => `http://localhost:${5173 + i}`)
     : corsOrigins,
   database: drizzleAdapter(db, { provider: 'pg' }),
-  account: {
-    skipStateCookieCheck: true,
-  },
   emailAndPassword: {
     enabled: true,
     // Hash with Bun.password (argon2id) instead of better-auth's default scrypt
@@ -316,8 +315,7 @@ const hubApp = createApp({
     for (const [key, value] of response.headers) {
       headers.append(key, value);
     }
-    const requestOrigin = c.req.header('Origin') ?? '';
-    const allowedOrigin = corsOrigins.includes(requestOrigin) ? requestOrigin : corsOrigins[0];
+    const allowedOrigin = resolveCorsAllowOrigin(c.req.header('Origin'), corsOrigins);
     if (allowedOrigin) headers.set('Access-Control-Allow-Origin', allowedOrigin);
     headers.set('Access-Control-Allow-Credentials', 'true');
     return new Response(response.body, {
@@ -377,6 +375,10 @@ if (corsOrigins.length > 0) {
     })
   );
 }
+
+// Brute-force defense on credential sign-in. Single-process in-memory limiter;
+// infra-level limiting across replicas is still expected in production.
+app.use('/api/auth/sign-in/*', createRateLimiter({ windowMs: 60_000, max: 10 }));
 
 // Mount hub app
 app.route('/', hubApp);

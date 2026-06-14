@@ -22,15 +22,15 @@ mock.module('@intx/db', () => ({
 }));
 
 import { Hono } from 'hono';
+import { createAgentProvisioningRouter } from './agents';
 import {
-  createAgentProvisioningRouter,
   persistInstanceToolGrants,
   persistInstanceGrantRequirements,
   launchAgentSession,
   relaunchInstanceIfNeeded,
   reconcileDisconnectedSession,
   registerDisconnectReconciler,
-} from './agents';
+} from '../services/agent-provisioning';
 
 function makeRequest(
   url: string,
@@ -335,7 +335,7 @@ describe('POST /instances/:instanceId/sessions', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 403 when caller has no principal in the instance tenant', async () => {
+  it('returns 404 (not 403) when caller has no principal in the instance tenant, to avoid leaking instance existence', async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
     db.query.principal.findFirst = mock(() => Promise.resolve(undefined));
@@ -345,7 +345,7 @@ describe('POST /instances/:instanceId/sessions', () => {
         method: 'POST',
       })
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it('returns 200 with launched:true on successful session start', async () => {
@@ -982,7 +982,7 @@ describe('POST /instances/:instanceId/sessions — branches', () => {
 // ─── GET /agents/templates ────────────────────────────────────────
 
 describe('GET /agents/templates', () => {
-  it('returns deployable, non-personal templates with key/name/description only', async () => {
+  it('returns deployable, non-personal templates with key/name/description/tools', async () => {
     const app = buildApp(makeMockDb());
     const res = await app.fetch(makeRequest('http://localhost/agents/templates'));
     expect(res.status).toBe(200);
@@ -993,7 +993,8 @@ describe('GET /agents/templates', () => {
     expect(keys).not.toContain('myra');
     expect(keys).not.toContain('loop');
     for (const t of json.data) {
-      expect(Object.keys(t).sort()).toEqual(['description', 'key', 'name']);
+      expect(Object.keys(t).sort()).toEqual(['description', 'key', 'name', 'tools']);
+      expect(Array.isArray(t.tools)).toBe(true);
     }
   });
 });

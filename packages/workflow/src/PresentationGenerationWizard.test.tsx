@@ -127,6 +127,20 @@ describe('PresentationGenerationWizard', () => {
       expect(props.createWorkflow.mutateAsync).not.toHaveBeenCalled();
       expect(props.submitStep.mutateAsync).not.toHaveBeenCalled();
     });
+
+    it('selects a template via the Enter key', async () => {
+      const props = makeProps();
+      render(<PresentationGenerationWizard {...props} />);
+      const salesDeckRadio = screen.getByText('Sales Deck').closest('[role="radio"]');
+      if (!salesDeckRadio) throw new Error('template radio not found');
+      fireEvent.keyDown(salesDeckRadio, { key: 'Enter' });
+      expect(salesDeckRadio.getAttribute('aria-checked')).toBe('true');
+      await advanceToStep('Describe the presentation goal.', () => submitForm());
+      await advanceToStep('Choose the source for this presentation.', () => submitForm());
+      expect(props.submitStep.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ templateId: 'tmpl-1' })
+      );
+    });
   });
 
   describe('Brief step', () => {
@@ -315,6 +329,103 @@ describe('PresentationGenerationWizard', () => {
         })
       );
     });
+
+    it('submits a granola source with its id', async () => {
+      const props = await renderAtSource(
+        makeProps({
+          renderRecentPicker: ({ onSelect }) =>
+            React.createElement(
+              'button',
+              {
+                type: 'button',
+                onClick: () => onSelect({ source: 'granola', granolaId: 'gr-9' }),
+              },
+              'Pick granola'
+            ),
+        })
+      );
+      await advanceToStep('Pick a running presentation agent session.', () =>
+        fireEvent.click(screen.getByText('Pick granola'))
+      );
+      expect(props.submitStep.mutateAsync).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          step: 'source',
+          transcriptSource: 'granola',
+          granolaId: 'gr-9',
+        })
+      );
+    });
+
+    it('rejects an artifact selection with no artifact id', async () => {
+      const props = await renderAtSource(
+        makeProps({
+          renderArtifactPicker: ({ onSelect }) =>
+            React.createElement(
+              'button',
+              { type: 'button', onClick: () => onSelect({ source: 'artifact' }) },
+              'Pick artifact'
+            ),
+        })
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByText('Artifact'));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Pick artifact'));
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByText('Select an artifact to use as the source', { exact: false })
+        ).not.toBeNull()
+      );
+      expect(props.submitStep.mutateAsync).not.toHaveBeenCalledWith(
+        expect.objectContaining({ step: 'source' })
+      );
+    });
+
+    it('rejects a recent selection that carries no transcript', async () => {
+      const props = await renderAtSource(
+        makeProps({
+          renderRecentPicker: ({ onSelect }) =>
+            React.createElement(
+              'button',
+              { type: 'button', onClick: () => onSelect({ source: 'paste' }) },
+              'Pick empty'
+            ),
+        })
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByText('Pick empty'));
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByText('Paste a transcript of at least a few lines', { exact: false })
+        ).not.toBeNull()
+      );
+      expect(props.submitStep.mutateAsync).not.toHaveBeenCalledWith(
+        expect.objectContaining({ step: 'source' })
+      );
+    });
+
+    it('surfaces an error when saving the source fails', async () => {
+      await renderAtSource(
+        makeProps({
+          submitStep: {
+            isPending: false,
+            mutateAsync: mock(async (args: { step: string }) => {
+              if (args.step === 'source') throw new Error('Source save boom');
+              return { status: 'ok' };
+            }),
+          },
+        })
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByText('Pick recent'));
+      });
+      await waitFor(() =>
+        expect(screen.queryByText('Source save boom', { exact: false })).not.toBeNull()
+      );
+    });
   });
 
   describe('Generate step', () => {
@@ -353,6 +464,30 @@ describe('PresentationGenerationWizard', () => {
       expect(props.submitStep.mutateAsync).toHaveBeenLastCalledWith(
         expect.objectContaining({ step: 'generate', agentInstanceId: 'inst-1' })
       );
+    });
+
+    it('surfaces an error when dispatching the brief fails', async () => {
+      const props = await renderAtGenerate(
+        makeProps({
+          submitStep: {
+            isPending: false,
+            mutateAsync: mock(async (args: { step: string }) => {
+              if (args.step === 'generate') throw new Error('Dispatch boom');
+              return { status: 'ok' };
+            }),
+          },
+        })
+      );
+      const label = screen.getByText('Session 1').closest('label');
+      if (!label) throw new Error('label not found');
+      fireEvent.click(label);
+      await act(async () => {
+        submitForm();
+      });
+      await waitFor(() =>
+        expect(screen.queryByText('Dispatch boom', { exact: false })).not.toBeNull()
+      );
+      expect(props.onCreated).not.toHaveBeenCalled();
     });
   });
 

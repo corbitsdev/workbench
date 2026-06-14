@@ -3,7 +3,9 @@
 ## Session Start
 
 1. Read this file
-2. Read `PRODUCT.md` for current product state
+2. Read `PRODUCT.md` (the product entrypoint), which points to the canonical
+   `docs/PRODUCT.md`; see `docs/README.md` for the full doc index and which
+   doc to read for a given task
 3. Do not proceed until these steps are complete
 
 ## Project
@@ -247,6 +249,16 @@ export function createWorkflowRouter(db: DB['db'], config: Config): Hono { ... }
 ```
 
 In tests, mock at the module boundary (`mock.module(...)`) — do not inject fakes through function arguments.
+
+## Frontend conventions (apps/web)
+
+Detailed rules live in `apps/web/CLAUDE.md`; the non-negotiables:
+
+- **Data fetching is TanStack Query only.** `useEffect` + `useState` + `fetch` for data is prohibited — it bypasses the cache, breaks dedup, and loses abort-on-unmount.
+- **Gate queries with `enabled`** so they don't fire on every mount; set `staleTime ≥ 5 min` for catalog/static data, default for live workflow state.
+- **`mutateAsync` must have a `.catch()`** (or use `mutate` with `onError`/`onSuccess`) — never `void mutateAsync().then()`.
+- **Validate at the boundary with ArkType.** Parse API responses / `unknown` through an ArkType schema instead of casting; plain `interface`/`type` for internal, already-trusted shapes.
+- **Derive component behavior from the loaded resource** (e.g. `workflow.kind`), not from a prop threaded from the navigation origin.
 
 ## Configuration
 

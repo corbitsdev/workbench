@@ -6,50 +6,50 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-// framer-motion stub — avoids animation side-effects in tests.
-mock.module('framer-motion', () => ({
-  motion: {
-    form: ({
-      children,
-      className,
-      onSubmit,
-    }: {
-      children: React.ReactNode;
-      className?: string;
-      onSubmit?: React.FormEventHandler;
-    }) => React.createElement('form', { className, onSubmit }, children),
-    div: ({ children, className }: { children: React.ReactNode; className?: string }) =>
-      React.createElement('div', { className }, children),
-  },
-  AnimatePresence: ({ children }: { children: React.ReactNode }) =>
-    React.createElement(React.Fragment, null, children),
-}));
+// Drive the real useCreateWorkflow through the fetch boundary rather than
+// module-mocking ../hooks/use-workflow. A local-module mock leaks process-wide
+// under bun (mock.restore does not evict a transitively-cached module) and
+// replaced the real hook in use-workflow.test. Stubbing fetch keeps the real
+// hook + RecentCallsPicker running with no cross-file leakage.
+const originalFetch = globalThis.fetch;
 
-// Stub RecentCallsPicker — it makes network calls we don't need here.
-mock.module('./RecentCallsPicker', () => ({
-  default: ({ onSelect, isLoading }: { onSelect: (data: unknown) => void; isLoading: boolean }) =>
-    React.createElement(
-      'button',
-      {
-        type: 'button',
-        'data-testid': 'recent-calls-picker',
-        disabled: isLoading,
-        onClick: () => onSelect({ source: 'granola', granolaId: 'note-123' }),
-      },
-      'Pick recent call'
-    ),
-}));
+interface CreateResult {
+  ok: boolean;
+  status?: number;
+  body: unknown;
+}
 
-const mockMutateAsync = mock<(body: unknown) => Promise<{ id: string }>>();
+let createResult: CreateResult = { ok: true, body: { id: 'wf-abc' } };
+let workflowPosts: unknown[] = [];
 
-mock.module('../hooks/use-workflow', () => ({
-  useCreateWorkflow: () => ({
-    mutateAsync: mockMutateAsync,
-    isPending: false,
-  }),
-}));
+function jsonResponse(result: { ok: boolean; status?: number; body: unknown }): Response {
+  return {
+    ok: result.ok,
+    status: result.status ?? 200,
+    headers: { get: () => null },
+    json: () => Promise.resolve(result.body),
+  } as unknown as Response;
+}
 
-import { NewWorkflowPane } from './NewWorkflowPane';
+beforeEach(() => {
+  (
+    globalThis as unknown as { window: { happyDOM: { setURL: (u: string) => void } } }
+  ).window.happyDOM.setURL('http://localhost/');
+  createResult = { ok: true, body: { id: 'wf-abc' } };
+  workflowPosts = [];
+  globalThis.fetch = mock((url: string, init?: RequestInit) => {
+    if (String(url).includes('/workflows') && init?.method === 'POST') {
+      workflowPosts.push(JSON.parse(String(init.body)));
+      return Promise.resolve(jsonResponse(createResult));
+    }
+    return Promise.resolve(jsonResponse({ ok: true, body: { calls: [] } }));
+  }) as unknown as typeof fetch;
+});
+
+afterEach(() => {
+  cleanup();
+  globalThis.fetch = originalFetch;
+});
 
 function renderPane(onCreated = mock(), onClose = mock(), tenantId?: string | null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -66,11 +66,6 @@ function renderPane(onCreated = mock(), onClose = mock(), tenantId?: string | nu
     )
   );
 }
-
-afterEach(() => {
-  cleanup();
-  mockMutateAsync.mockClear();
-});
 
 describe('NewWorkflowPane — render', () => {
   it('renders paste and recent calls tabs', () => {
@@ -101,17 +96,13 @@ describe('NewWorkflowPane — close', () => {
 });
 
 describe('NewWorkflowPane — paste submission', () => {
-  beforeEach(() => {
-    mockMutateAsync.mockResolvedValue({ id: 'wf-abc' });
-  });
-
   it('shows a validation error when transcript is too short', async () => {
     const user = userEvent.setup();
     renderPane();
     await user.type(screen.getByPlaceholderText(/speaker 1/i), 'short');
     await user.click(screen.getByRole('button', { name: /start analysis/i }));
     expect(screen.getByText(/paste a transcript/i)).toBeDefined();
-    expect(mockMutateAsync).not.toHaveBeenCalled();
+    expect(workflowPosts).toHaveLength(0);
   });
 
   it('calls createWorkflow with paste source and transcript', async () => {
@@ -122,9 +113,9 @@ describe('NewWorkflowPane — paste submission', () => {
     await user.type(screen.getByPlaceholderText(/speaker 1/i), longText);
     await user.click(screen.getByRole('button', { name: /start analysis/i }));
     await waitFor(() => {
-      expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+      expect(workflowPosts).toHaveLength(1);
     });
-    const call = mockMutateAsync.mock.calls[0][0] as { source: string; transcript: string };
+    const call = workflowPosts[0] as { source: string; transcript: string };
     expect(call.source).toBe('paste');
     expect(call.transcript).toBe(longText);
   });
@@ -136,9 +127,9 @@ describe('NewWorkflowPane — paste submission', () => {
     await user.type(screen.getByPlaceholderText(/speaker 1/i), longText);
     await user.click(screen.getByRole('button', { name: /start analysis/i }));
     await waitFor(() => {
-      expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+      expect(workflowPosts).toHaveLength(1);
     });
-    expect(mockMutateAsync.mock.calls[0][0]).toMatchObject({
+    expect(workflowPosts[0]).toMatchObject({
       source: 'paste',
       tenantId: 'tenant-workbench',
     });
@@ -157,7 +148,7 @@ describe('NewWorkflowPane — paste submission', () => {
   });
 
   it('shows an error message when creation fails', async () => {
-    mockMutateAsync.mockRejectedValue(new Error('Server error'));
+    createResult = { ok: false, status: 500, body: { error: 'Server error' } };
     const user = userEvent.setup();
     renderPane();
     const longText = 'Speaker 1: Thanks for taking the time today to discuss your challenges.';
@@ -174,6 +165,10 @@ describe('NewWorkflowPane — mode switching', () => {
     const user = userEvent.setup();
     renderPane();
     await user.click(screen.getByRole('button', { name: /recent calls/i }));
-    expect(screen.getByTestId('recent-calls-picker')).toBeDefined();
+    await waitFor(() => {
+      expect(screen.queryByText(/no recent calls found/i)).not.toBeNull();
+    });
   });
 });
+
+import { NewWorkflowPane } from './NewWorkflowPane';

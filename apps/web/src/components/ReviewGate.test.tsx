@@ -1,18 +1,9 @@
 /// <reference types="bun" />
+import '../test-setup';
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import type { Approval } from '../lib/approvals-api';
-
-// framer-motion stub (not used here, but kept consistent with sibling tests)
-mock.module('framer-motion', () => ({
-  motion: {
-    div: ({ children, className }: { children: React.ReactNode; className?: string }) =>
-      React.createElement('div', { className }, children),
-  },
-  AnimatePresence: ({ children }: { children: React.ReactNode }) =>
-    React.createElement(React.Fragment, null, children),
-}));
 
 const mockListApprovals = mock<() => Promise<Approval[]>>();
 const mockApproveRequest = mock<() => Promise<Approval>>();

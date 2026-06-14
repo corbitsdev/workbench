@@ -114,6 +114,7 @@ export interface WorkbenchSession {
 
 export interface WorkflowState {
   id: string;
+  kind: string;
   status: SessionStatus;
   currentStep: string;
   companyName: string | null;

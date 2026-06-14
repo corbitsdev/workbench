@@ -109,6 +109,7 @@
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
         "@workbench/workflow": "workspace:*",
+        "arktype": "^2.2.0",
         "better-auth": "^1.1.43",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -596,27 +597,6 @@
       },
       "peerDependencies": {
         "react": "*",
-      },
-    },
-    "packages/tool-agent": {
-      "name": "@workbench/agent-rename-me",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/inference": "workspace:*",
-        "@intx/types": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "^5.9.0",
-      },
-    },
-    "packages/tool-template": {
-      "name": "@workbench/tools-rename-me",
-      "devDependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
-        "@types/bun": "latest",
-        "typescript": "^5.9.0",
       },
     },
     "packages/tools-agents": {
@@ -1679,8 +1659,6 @@
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@4.7.0", "", { "dependencies": { "@babel/core": "^7.28.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-beta.27", "@types/babel__core": "^7.20.5", "react-refresh": "^0.17.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0" } }, "sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA=="],
 
-    "@workbench/agent-rename-me": ["@workbench/agent-rename-me@workspace:packages/tool-agent"],
-
     "@workbench/agents": ["@workbench/agents@workspace:packages/agents"],
 
     "@workbench/approvals": ["@workbench/approvals@workspace:packages/approvals"],
@@ -1732,8 +1710,6 @@
     "@workbench/tools-polymarket": ["@workbench/tools-polymarket@workspace:packages/tools-polymarket"],
 
     "@workbench/tools-reddit": ["@workbench/tools-reddit@workspace:packages/tools-reddit"],
-
-    "@workbench/tools-rename-me": ["@workbench/tools-rename-me@workspace:packages/tool-template"],
 
     "@workbench/tools-scrapecreators": ["@workbench/tools-scrapecreators@workspace:packages/tools-scrapecreators"],
 

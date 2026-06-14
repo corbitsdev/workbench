@@ -5,6 +5,7 @@ import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { ArtifactWithSession } from '@workbench/shared';
+import ArtifactSourcePicker from './ArtifactSourcePicker';
 
 function makeArtifact(overrides: Partial<ArtifactWithSession>): ArtifactWithSession {
   return {
@@ -25,30 +26,33 @@ function makeArtifact(overrides: Partial<ArtifactWithSession>): ArtifactWithSess
   };
 }
 
-let mockArtifactsResult: {
-  data: ArtifactWithSession[] | undefined;
-  isLoading: boolean;
-  isError: boolean;
-} = { data: [makeArtifact({})], isLoading: false, isError: false };
-
-mock.module('@workbench/client/react', () => ({
-  useArtifacts: () => mockArtifactsResult,
-  useLibraryResources: () => ({ data: [], isLoading: false, isError: false }),
-}));
+const TENANT_ID = 'tenant-workbench';
 
 afterEach(cleanup);
 
-function renderPicker(ui: React.ReactElement) {
+// Seed the real useArtifacts query cache rather than module-mocking
+// @workbench/client/react. Under bun, mock.module is applied globally for the
+// whole run, so mocking that shared surface poisons the @workbench/client tests
+// that import the real useArtifacts.
+function renderPicker(
+  artifacts: ArtifactWithSession[],
+  props: { onSelect: (data: unknown) => void; kinds?: string[] }
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(React.createElement(QueryClientProvider, { client }, ui));
+  client.setQueryData(['artifacts', TENANT_ID, '', 'newest', '', ''], artifacts);
+  return render(
+    React.createElement(
+      QueryClientProvider,
+      { client },
+      React.createElement(ArtifactSourcePicker, { tenantId: TENANT_ID, ...props })
+    )
+  );
 }
 
 describe('ArtifactSourcePicker', () => {
-  it('selecting an artifact and continuing reports source: artifact with its id', async () => {
-    mockArtifactsResult = { data: [makeArtifact({})], isLoading: false, isError: false };
+  it('selecting an artifact and continuing reports source: artifact with its id', () => {
     const onSelect = mock(() => {});
-    const { default: ArtifactSourcePicker } = await import('./ArtifactSourcePicker');
-    renderPicker(React.createElement(ArtifactSourcePicker, { onSelect }));
+    renderPicker([makeArtifact({})], { onSelect });
 
     fireEvent.click(screen.getByText('Acme Pain Points'));
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -61,11 +65,9 @@ describe('ArtifactSourcePicker', () => {
     });
   });
 
-  it('does not report until an artifact is selected', async () => {
-    mockArtifactsResult = { data: [makeArtifact({})], isLoading: false, isError: false };
+  it('does not report until an artifact is selected', () => {
     const onSelect = mock(() => {});
-    const { default: ArtifactSourcePicker } = await import('./ArtifactSourcePicker');
-    renderPicker(React.createElement(ArtifactSourcePicker, { onSelect }));
+    renderPicker([makeArtifact({})], { onSelect });
 
     const continueButton = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
     expect(continueButton.disabled).toBe(true);
@@ -73,28 +75,23 @@ describe('ArtifactSourcePicker', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('restricts to the provided kinds', async () => {
-    mockArtifactsResult = {
-      data: [
+  it('restricts to the provided kinds', () => {
+    const onSelect = mock(() => {});
+    renderPicker(
+      [
         makeArtifact({ id: 'a-1', kind: 'pain-points', title: 'Pains' }),
         makeArtifact({ id: 'a-2', kind: 'email', title: 'An Email' }),
       ],
-      isLoading: false,
-      isError: false,
-    };
-    const onSelect = mock(() => {});
-    const { default: ArtifactSourcePicker } = await import('./ArtifactSourcePicker');
-    renderPicker(React.createElement(ArtifactSourcePicker, { onSelect, kinds: ['pain-points'] }));
+      { onSelect, kinds: ['pain-points'] }
+    );
 
     expect(screen.queryByText('Pains')).not.toBeNull();
     expect(screen.queryByText('An Email')).toBeNull();
   });
 
-  it('shows an empty state when there are no eligible artifacts', async () => {
-    mockArtifactsResult = { data: [], isLoading: false, isError: false };
+  it('shows an empty state when there are no eligible artifacts', () => {
     const onSelect = mock(() => {});
-    const { default: ArtifactSourcePicker } = await import('./ArtifactSourcePicker');
-    renderPicker(React.createElement(ArtifactSourcePicker, { onSelect }));
+    renderPicker([], { onSelect });
 
     expect(screen.queryByText(/no artifacts available/i)).not.toBeNull();
   });

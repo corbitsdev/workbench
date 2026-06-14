@@ -73,6 +73,66 @@ describe('UIBlockView', () => {
     expect(screen.getByText('Granola API failed')).not.toBeNull();
   });
 
+  it('renders a plain text block as preformatted prose', () => {
+    const block: UIBlock = { kind: 'text', text: 'just some output' };
+    render(<UIBlockView block={block} />);
+    expect(screen.getByText('just some output')).not.toBeNull();
+  });
+
+  it('renders a non-collapsible markdown block open with its source', () => {
+    const block: UIBlock = { kind: 'markdown', title: 'Notes', source: 'rendered body' };
+    render(<UIBlockView block={block} />);
+    expect(screen.getByText('Notes')).not.toBeNull();
+    expect(screen.getByText('rendered body')).not.toBeNull();
+  });
+
+  it('keeps a collapsible markdown block closed until its header is clicked', () => {
+    const block: UIBlock = {
+      kind: 'markdown',
+      title: 'Details',
+      source: 'hidden body',
+      collapsible: true,
+    };
+    render(<UIBlockView block={block} />);
+    expect(screen.queryByText('hidden body')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+    expect(screen.getByText('hidden body')).not.toBeNull();
+  });
+
+  it('renders a link block pointing at its url and showing its title', () => {
+    const block: UIBlock = {
+      kind: 'link',
+      url: 'https://corbits.dev/report',
+      title: 'Quarterly report',
+      description: 'Q2 summary',
+    };
+    const { container } = render(<UIBlockView block={block} />);
+    const anchor = container.querySelector('a') as HTMLAnchorElement;
+    expect(anchor.getAttribute('href')).toBe('https://corbits.dev/report');
+    expect(screen.getByText('Quarterly report')).not.toBeNull();
+    expect(screen.getByText('Q2 summary')).not.toBeNull();
+  });
+
+  it('falls back to the url as the link label when no title is given', () => {
+    const block: UIBlock = { kind: 'link', url: 'https://corbits.dev/raw' };
+    render(<UIBlockView block={block} />);
+    expect(screen.getByText('https://corbits.dev/raw')).not.toBeNull();
+  });
+
+  it('fires onAction with the document action key when an action button is clicked', () => {
+    const onAction = mock(() => undefined);
+    const block: UIBlock = {
+      kind: 'document',
+      title: 'Doc',
+      source: '# body text',
+      actions: { copy: true, download: true, saveArtifact: true },
+    };
+    render(<UIBlockView block={block} onAction={onAction} />);
+    fireEvent.click(screen.getByRole('button', { name: /Doc/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save to artifacts' }));
+    expect(onAction).toHaveBeenCalledWith('save-artifact', block);
+  });
+
   it('recursively renders canvas children', () => {
     const block: UIBlock = {
       kind: 'canvas',

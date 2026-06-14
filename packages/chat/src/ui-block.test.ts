@@ -78,4 +78,35 @@ describe('isUIBlock', () => {
     expect(isUIBlock('string')).toBe(false);
     expect(isUIBlock(null)).toBe(false);
   });
+
+  it('rejects an object with no kind discriminant', () => {
+    expect(isUIBlock({ title: 'x' })).toBe(false);
+  });
+
+  it('accepts each well-formed variant', () => {
+    expect(isUIBlock({ kind: 'text', text: 'hi' })).toBe(true);
+    expect(isUIBlock({ kind: 'markdown', source: '# x' })).toBe(true);
+    expect(isUIBlock({ kind: 'table', columns: ['a'], rows: [['1']] })).toBe(true);
+    expect(isUIBlock({ kind: 'link', url: 'https://x.dev' })).toBe(true);
+    expect(isUIBlock({ kind: 'error', message: 'boom' })).toBe(true);
+    expect(isUIBlock({ kind: 'canvas', blocks: [] })).toBe(true);
+  });
+
+  it('rejects each variant when its required field is the wrong type', () => {
+    expect(isUIBlock({ kind: 'text', text: 5 })).toBe(false);
+    expect(isUIBlock({ kind: 'markdown', source: 5 })).toBe(false);
+    expect(isUIBlock({ kind: 'table', columns: 'a', rows: [] })).toBe(false);
+    expect(isUIBlock({ kind: 'link', url: 5 })).toBe(false);
+    expect(isUIBlock({ kind: 'error', message: 5 })).toBe(false);
+    expect(isUIBlock({ kind: 'canvas', blocks: 'x' })).toBe(false);
+  });
+});
+
+describe('parseToolResult array path', () => {
+  it('degrades a JSON array that is not a UIBlock to a text block', () => {
+    const raw = '[1, 2, 3]';
+    const result = parseToolResult(raw);
+    expect(result.kind).toBe('text');
+    if (result.kind === 'text') expect(result.text).toBe(raw);
+  });
 });

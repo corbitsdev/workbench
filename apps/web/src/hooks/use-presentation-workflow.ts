@@ -7,16 +7,17 @@ import type { GammaTemplate } from '@workbench/tools-gamma';
 
 export { type PresentationStepArgs, type GammaTemplate };
 
-export function useGammaTemplates() {
+export function useGammaTemplates({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery<GammaTemplate[]>({
     queryKey: ['gamma-templates'],
     queryFn: () => api<GammaTemplate[]>('GET', '/workflows/gamma/templates'),
+    enabled,
     staleTime: 5 * 60 * 1000,
   });
 }
 
-export function useGeraltInstances() {
-  const agents = useWorkbenchAgents();
+export function useGeraltInstances({ enabled = true }: { enabled?: boolean } = {}) {
+  const agents = useWorkbenchAgents({ enabled });
   return {
     ...agents,
     data: agents.data?.filter((a: AgentInstance) => a.agentName === 'Geralt') ?? [],

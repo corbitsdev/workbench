@@ -1,18 +1,13 @@
 /// <reference types="bun" />
-import { describe, expect, it, mock } from 'bun:test';
-
-interface QueryOptions {
-  queryKey: unknown[];
-}
-
-const useQueryMock = mock((opts: QueryOptions) => opts);
-
-mock.module('@tanstack/react-query', () => ({
-  useQuery: useQueryMock,
-}));
-
+import '../test-setup';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { cleanup, renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
 import { listArtifacts } from '../../../../packages/client/src/index';
 import { useArtifacts } from '../../../../packages/client/src/react';
+
+afterEach(cleanup);
 
 describe('@workbench/client artifacts', () => {
   it('passes tenantId as a query parameter when provided', async () => {
@@ -33,11 +28,35 @@ describe('@workbench/client artifacts', () => {
     expect(url).toBe('http://localhost:4000/api/v1/artifacts?tenantId=tenant-workbench');
   });
 
-  it('includes tenantId in the artifacts query key', () => {
-    useArtifacts({ baseUrl: 'http://localhost:4000' }, { tenantId: 'tenant-workbench' });
+  it('includes tenantId in the artifacts query key', async () => {
+    // Use a real QueryClient (rather than module-mocking @tanstack/react-query,
+    // which leaks globally under bun and poisons every later test that renders a
+    // real query). Read the registered queryKey back from the cache.
+    const fetchMock = mock(() =>
+      Promise.resolve(new Response(JSON.stringify({ artifacts: [] }), { status: 200 }))
+    );
+    const fetcher: typeof fetch = Object.assign(
+      (url: string | URL | Request, init?: RequestInit) => fetchMock(url, init),
+      { preconnect: mock(() => {}) }
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-    const options = useQueryMock.mock.calls[0]?.[0];
-    expect(options?.queryKey[0]).toBe('artifacts');
-    expect(options?.queryKey[1]).toBe('tenant-workbench');
+    renderHook(
+      () =>
+        useArtifacts(
+          { baseUrl: 'http://localhost:4000', fetch: fetcher },
+          { tenantId: 'tenant-workbench' }
+        ),
+      {
+        wrapper: ({ children }) => React.createElement(QueryClientProvider, { client }, children),
+      }
+    );
+
+    await waitFor(() => {
+      expect(client.getQueryCache().getAll().length).toBeGreaterThan(0);
+    });
+    const queryKey = client.getQueryCache().getAll()[0]?.queryKey as unknown[];
+    expect(queryKey[0]).toBe('artifacts');
+    expect(queryKey[1]).toBe('tenant-workbench');
   });
 });
