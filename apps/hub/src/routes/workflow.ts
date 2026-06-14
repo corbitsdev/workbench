@@ -8,6 +8,7 @@ import {
   schema as intxSchema,
 } from '@intx/db';
 import type { InferenceSource } from '@intx/types/runtime';
+import { fetchGammaTemplates } from '@workbench/tools-gamma';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
 import type { WorkflowType } from '@workbench/workflow-core';
 import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
@@ -41,9 +42,6 @@ const log = getLogger(['api', 'workflow']);
 
 workflowRegistry.register(collateralGenerationWorkflow);
 workflowRegistry.register(presentationGenerationWorkflow);
-
-const STEP_ORDER = ['intake', 'analyze', 'generate'] as const;
-type StepName = (typeof STEP_ORDER)[number];
 
 function mapDbStatusToSessionStatus(status: string): string {
   const map: Record<string, string> = {
@@ -587,6 +585,30 @@ export function createWorkflowRouter(
       description: entry.definition.description,
     }));
     return c.json(tools);
+  });
+
+  // ─── Gamma template registry ─────────────────────────────────────
+  router.get('/workflows/gamma/templates', async (c) => {
+    const userId = c.get('userId');
+    const { context: userContext } = await getRequestedUserContext(db, userId, undefined);
+    if (!userContext) return c.json({ error: 'User context not found' }, 400);
+
+    const cred = await resolveCredentialRequirement(
+      db,
+      userContext.tenantId,
+      { providerName: 'gamma', source: 'tenant' },
+      null,
+      null
+    );
+    if (!cred) return c.json({ error: 'Gamma credential not configured' }, 503);
+
+    try {
+      const templates = await fetchGammaTemplates({ apiKey: cred.secret }, c.req.raw.signal);
+      return c.json(templates);
+    } catch (err) {
+      log.error('Failed to fetch Gamma templates', { cause: err });
+      return c.json({ error: 'Failed to fetch templates from Gamma' }, 502);
+    }
   });
 
   // ─── List enabled workflows for tenant ───────────────────────────

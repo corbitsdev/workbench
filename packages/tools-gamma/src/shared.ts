@@ -82,7 +82,7 @@ export type GammaRequest = {
 export async function gammaFetchJSON(
   config: ResolvedGammaConfig,
   request: GammaRequest,
-  signal: AbortSignal
+  signal?: AbortSignal
 ): Promise<unknown> {
   const url = new URL(`${normalizeBaseUrl(config.baseUrl)}${request.path}`);
   if (request.query !== undefined) {
@@ -116,7 +116,8 @@ export function errorMessageFromBody(text: string): string | null {
   if (text.length === 0) {
     return null;
   }
-  const truncated = text.length > ERROR_BODY_MAX_LENGTH ? text.slice(0, ERROR_BODY_MAX_LENGTH) + '…' : text;
+  const truncated =
+    text.length > ERROR_BODY_MAX_LENGTH ? text.slice(0, ERROR_BODY_MAX_LENGTH) + '…' : text;
   try {
     const parsed: unknown = JSON.parse(text);
     if (isRecord(parsed)) {
@@ -191,10 +192,14 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
       return;
     }
     const timer = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => {
-      clearTimeout(timer);
-      reject(new Error('Aborted'));
-    }, { once: true });
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(new Error('Aborted'));
+      },
+      { once: true }
+    );
   });
 }
 

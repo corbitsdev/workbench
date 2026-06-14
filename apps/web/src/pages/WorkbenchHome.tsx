@@ -10,6 +10,7 @@ import {
   useCreatePresentationWorkflow,
   useSubmitPresentationStep,
   useGeraltInstances,
+  useGammaTemplates,
 } from '../hooks/use-presentation-workflow';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { UnifiedCatalogModal } from '../components/layout/UnifiedCatalogModal';
@@ -206,6 +207,7 @@ export default function WorkbenchHome() {
   const createWorkflow = useCreatePresentationWorkflow();
   const submitStep = useSubmitPresentationStep();
   const geraltInstances = useGeraltInstances();
+  const gammaTemplates = useGammaTemplates();
   const {
     tenantId: workbenchTenantId,
     workbenches,
@@ -372,6 +374,7 @@ export default function WorkbenchHome() {
               createWorkflow={createWorkflow}
               submitStep={submitStep}
               geraltInstances={geraltInstances}
+              gammaTemplates={gammaTemplates}
               renderRecentPicker={({ onSelect, isLoading }) => (
                 <RecentCallsPicker
                   onSelect={onSelect}
@@ -437,6 +440,7 @@ export default function WorkbenchHome() {
               createWorkflow={createWorkflow}
               submitStep={submitStep}
               geraltInstances={geraltInstances}
+              gammaTemplates={gammaTemplates}
               renderRecentPicker={({ onSelect, isLoading }) => (
                 <RecentCallsPicker
                   onSelect={onSelect}

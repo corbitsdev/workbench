@@ -24,6 +24,18 @@ interface GeraltInstancesQuery {
   data: AgentInstance[];
 }
 
+export interface GammaTemplate {
+  gammaId: string;
+  name: string;
+  description: string | null;
+}
+
+interface GammaTemplatesQuery {
+  isLoading: boolean;
+  isError: boolean;
+  data: GammaTemplate[] | undefined;
+}
+
 export interface PresentationGenerationWizardProps {
   onCreated: (workflowId: string) => void;
   onClose: () => void;
@@ -31,6 +43,7 @@ export interface PresentationGenerationWizardProps {
   createWorkflow: CreateWorkflowMutation;
   submitStep: SubmitStepMutation;
   geraltInstances: GeraltInstancesQuery;
+  gammaTemplates: GammaTemplatesQuery;
   renderRecentPicker: (props: {
     onSelect: (data: PresentationSourceData) => void;
     isLoading: boolean;
@@ -150,6 +163,7 @@ export function PresentationGenerationWizard({
   createWorkflow,
   submitStep,
   geraltInstances,
+  gammaTemplates,
   renderRecentPicker,
 }: PresentationGenerationWizardProps) {
   const [wizardStep, setWizardStep] = useState<WizardStep>('template');
@@ -337,47 +351,56 @@ export function PresentationGenerationWizard({
                   </div>
                 </div>
 
-                <div
-                  role="radio"
-                  aria-checked={!useAutoTemplate}
-                  tabIndex={0}
-                  onClick={() => setUseAutoTemplate(false)}
-                  onKeyDown={(e) => e.key === 'Enter' && setUseAutoTemplate(false)}
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-[background-color,border-color] ${
-                    !useAutoTemplate
-                      ? 'border-orange bg-orange/5'
-                      : 'border-border hover:border-text-3'
-                  }`}
-                >
-                  <div
-                    className={`mt-0.5 h-4 w-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
-                      !useAutoTemplate ? 'border-orange' : 'border-border'
-                    }`}
-                  >
-                    {!useAutoTemplate && <div className="h-2 w-2 rounded-full bg-orange" />}
+                {gammaTemplates.isLoading && (
+                  <div className="text-[12px] text-text-3 py-2">Loading templates…</div>
+                )}
+                {!gammaTemplates.isLoading && gammaTemplates.isError && (
+                  <div className="text-[12px] text-text-3 py-2">
+                    Could not load templates — Gamma credential may not be configured.
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-text">Specific template</p>
-                    <p className="text-[12px] text-text-3 mb-2">Enter a Gamma template ID</p>
-                    {!useAutoTemplate && (
-                      <input
-                        type="text"
-                        value={selectedTemplateId}
-                        onChange={(e) => setSelectedTemplateId(e.target.value)}
-                        placeholder="Template ID from Gamma"
-                        autoFocus
-                        className="w-full px-3 py-2 text-[13px] border border-border rounded-lg bg-surface-2 text-text focus:outline-none focus:ring-2 focus:ring-orange"
-                      />
-                    )}
-                  </div>
-                </div>
+                )}
+                {!gammaTemplates.isLoading &&
+                  !gammaTemplates.isError &&
+                  (gammaTemplates.data ?? []).map((tmpl) => (
+                    <div
+                      key={tmpl.gammaId}
+                      role="radio"
+                      aria-checked={selectedTemplateId === tmpl.gammaId}
+                      tabIndex={0}
+                      onClick={() => {
+                        setUseAutoTemplate(false);
+                        setSelectedTemplateId(tmpl.gammaId);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          setUseAutoTemplate(false);
+                          setSelectedTemplateId(tmpl.gammaId);
+                        }
+                      }}
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-[background-color,border-color] ${
+                        selectedTemplateId === tmpl.gammaId
+                          ? 'border-orange bg-orange/5'
+                          : 'border-border hover:border-text-3'
+                      }`}
+                    >
+                      <div
+                        className={`mt-0.5 h-4 w-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
+                          selectedTemplateId === tmpl.gammaId ? 'border-orange' : 'border-border'
+                        }`}
+                      >
+                        {selectedTemplateId === tmpl.gammaId && (
+                          <div className="h-2 w-2 rounded-full bg-orange" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-[13px] font-medium text-text">{tmpl.name}</p>
+                        {tmpl.description && (
+                          <p className="text-[12px] text-text-3">{tmpl.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
               </div>
-
-              {!useAutoTemplate && selectedTemplateId.trim() === '' && (
-                <p className="text-[12px] text-text-3">
-                  Leave blank to let Geralt pick, or enter a template ID.
-                </p>
-              )}
 
               {error && <p className="text-[12px] text-orange">{error}</p>}
 

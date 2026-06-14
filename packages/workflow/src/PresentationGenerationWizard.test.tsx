@@ -44,6 +44,14 @@ function makeProps(overrides: Partial<Parameters<typeof PresentationGenerationWi
     }),
     submitStep: makeMutation({ status: 'ok' }),
     geraltInstances: { isLoading: false, data: [{ id: 'inst-1', agentName: 'Geralt' }] },
+    gammaTemplates: {
+      isLoading: false,
+      isError: false,
+      data: [
+        { gammaId: 'tmpl-1', name: 'Sales Deck', description: 'A sales template' },
+        { gammaId: 'tmpl-2', name: 'Investor Pitch', description: null },
+      ],
+    },
     renderRecentPicker: mock(
       ({ onSelect }: { onSelect: (d: PresentationSourceData) => void; isLoading: boolean }) =>
         React.createElement(
@@ -74,23 +82,42 @@ async function advanceToStep(targetText: string | RegExp, fn: () => void) {
 
 describe('PresentationGenerationWizard', () => {
   describe('Template step', () => {
-    it('renders the template step by default', () => {
+    it('renders the template step with Auto and fetched templates', () => {
       render(<PresentationGenerationWizard {...makeProps()} />);
       expect(screen.getByText('Auto')).toBeDefined();
-      expect(screen.getByText('Specific template')).toBeDefined();
+      expect(screen.getByText('Sales Deck')).toBeDefined();
+      expect(screen.getByText('Investor Pitch')).toBeDefined();
     });
 
-    it('shows template ID input when Specific template is selected', () => {
-      render(<PresentationGenerationWizard {...makeProps()} />);
-      fireEvent.click(screen.getByText('Specific template'));
-      expect(screen.getByPlaceholderText('Template ID from Gamma')).toBeDefined();
+    it('shows loading state while templates are fetching', () => {
+      render(
+        <PresentationGenerationWizard
+          {...makeProps({
+            gammaTemplates: { isLoading: true, isError: false, data: undefined },
+          })}
+        />
+      );
+      expect(screen.getByText('Loading templates…')).toBeDefined();
     });
 
-    it('hides template ID input when Auto is re-selected', () => {
+    it('shows error state when Gamma credential is not configured', () => {
+      render(
+        <PresentationGenerationWizard
+          {...makeProps({
+            gammaTemplates: { isLoading: false, isError: true, data: undefined },
+          })}
+        />
+      );
+      expect(screen.getByText(/Could not load templates/)).toBeDefined();
+    });
+
+    it('selects a template by clicking it', () => {
       render(<PresentationGenerationWizard {...makeProps()} />);
-      fireEvent.click(screen.getByText('Specific template'));
-      fireEvent.click(screen.getByText('Auto'));
-      expect(screen.queryByPlaceholderText('Template ID from Gamma')).toBeNull();
+      fireEvent.click(screen.getByText('Sales Deck'));
+      const radio = screen
+        .getAllByRole('radio')
+        .find((el) => el.getAttribute('aria-checked') === 'true');
+      expect(radio).toBeDefined();
     });
 
     it('advances to brief step without calling any mutation', async () => {
@@ -137,17 +164,14 @@ describe('PresentationGenerationWizard', () => {
       );
     });
 
-    it('includes templateId when Specific template is selected with an ID', async () => {
+    it('includes templateId when a specific template is selected from the list', async () => {
       const props = makeProps();
       render(<PresentationGenerationWizard {...props} />);
-      fireEvent.click(screen.getByText('Specific template'));
-      fireEvent.change(screen.getByPlaceholderText('Template ID from Gamma'), {
-        target: { value: 'tpl-abc' },
-      });
+      fireEvent.click(screen.getByText('Sales Deck'));
       await advanceToStep('Describe the presentation goal.', () => submitForm());
       await advanceToStep('Choose where the call content comes from.', () => submitForm());
       expect(props.submitStep.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ templateId: 'tpl-abc' })
+        expect.objectContaining({ templateId: 'tmpl-1' })
       );
     });
 

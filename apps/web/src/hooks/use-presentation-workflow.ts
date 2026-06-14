@@ -1,10 +1,19 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useWorkbenchAgents } from './use-workflow';
 import type { AgentInstance } from './use-workflow';
 import type { PresentationStepArgs } from '@workbench/workflow';
+import type { GammaTemplate } from '@workbench/tools-gamma';
 
-export { type PresentationStepArgs };
+export { type PresentationStepArgs, type GammaTemplate };
+
+export function useGammaTemplates() {
+  return useQuery<GammaTemplate[]>({
+    queryKey: ['gamma-templates'],
+    queryFn: () => api<GammaTemplate[]>('GET', '/workflows/gamma/templates'),
+    staleTime: 5 * 60 * 1000,
+  });
+}
 
 export function useGeraltInstances() {
   const agents = useWorkbenchAgents();

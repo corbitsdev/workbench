@@ -34,6 +34,14 @@ mock.module('@intx/db', () => ({
   ]),
 }));
 
+mock.module('@workbench/tools-gamma', () => ({
+  GAMMA_HUB_TOOLS: {},
+  fetchGammaTemplates: mock(async () => [
+    { gammaId: 'tmpl-1', name: 'Sales Deck', description: 'A sales deck template' },
+    { gammaId: 'tmpl-2', name: 'Investor Pitch', description: null },
+  ]),
+}));
+
 mock.module('@intx/crypto-node', () => ({
   generateKeyPair: mock(async () => ({ publicKey: 'pk', privateKey: 'sk' })),
   createNodeCrypto: mock(() => ({ sign: mock(() => 'sig'), verify: mock(() => true) })),
@@ -1872,9 +1880,9 @@ describe('Workflow router', () => {
       return db;
     }
 
-    it('GET /gamma/templates returns an array', async () => {
+    it('GET /workflows/gamma/templates returns a template list', async () => {
       const router = buildPresentationApp(createPresentationMockDb());
-      const res = await router.fetch(new Request('http://localhost/gamma/templates'));
+      const res = await router.fetch(new Request('http://localhost/workflows/gamma/templates'));
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(Array.isArray(json)).toBe(true);
@@ -2004,6 +2012,31 @@ describe('Workflow router', () => {
       expect(res.status).toBe(200);
       expect(sendUserMessage).toHaveBeenCalledTimes(1);
       expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'generating' }));
+    });
+  });
+
+  describe('GET /workflows/gamma/templates', () => {
+    it('returns template list from Gamma API when credential is configured', async () => {
+      const router = buildApp(createMockDb());
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/gamma/templates', { method: 'GET' })
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as unknown[];
+      expect(Array.isArray(json)).toBe(true);
+      expect(json[0]).toMatchObject({ gammaId: 'tmpl-1', name: 'Sales Deck' });
+    });
+
+    it('returns 503 when no Gamma credential is configured', async () => {
+      const { resolveCredentialRequirement } = await import('@intx/db');
+      (resolveCredentialRequirement as ReturnType<typeof mock>).mockImplementationOnce(
+        async () => null
+      );
+      const router = buildApp(createMockDb());
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/gamma/templates', { method: 'GET' })
+      );
+      expect(res.status).toBe(503);
     });
   });
 });
