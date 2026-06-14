@@ -6,6 +6,7 @@ import { WorkflowPanel } from '../components/WorkflowPanel';
 import { NewWorkflowPane } from '../components/NewWorkflowPane';
 import { PresentationGenerationWizard } from '@workbench/workflow';
 import RecentCallsPicker from '../components/RecentCallsPicker';
+import ArtifactSourcePicker from '../components/ArtifactSourcePicker';
 import {
   useCreatePresentationWorkflow,
   useSubmitPresentationStep,
@@ -383,6 +384,13 @@ export default function WorkbenchHome() {
                   kind="presentation-generation"
                 />
               )}
+              renderArtifactPicker={({ onSelect, isLoading }) => (
+                <ArtifactSourcePicker
+                  onSelect={onSelect}
+                  isLoading={isLoading}
+                  tenantId={workbenchTenantId}
+                />
+              )}
             />
           ) : (
             <NewWorkflowPane
@@ -447,6 +455,13 @@ export default function WorkbenchHome() {
                   isLoading={isLoading}
                   tenantId={workbenchTenantId}
                   kind="presentation-generation"
+                />
+              )}
+              renderArtifactPicker={({ onSelect, isLoading }) => (
+                <ArtifactSourcePicker
+                  onSelect={onSelect}
+                  isLoading={isLoading}
+                  tenantId={workbenchTenantId}
                 />
               )}
             />

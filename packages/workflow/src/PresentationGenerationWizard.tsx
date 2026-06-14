@@ -48,10 +48,22 @@ export interface PresentationGenerationWizardProps {
     onSelect: (data: PresentationSourceData) => void;
     isLoading: boolean;
   }) => React.ReactNode;
+  /** When provided, the Source step offers an "Artifact" tab that picks an existing
+   *  artifact as the source. The picker calls onSelect with source: 'artifact'. */
+  renderArtifactPicker?: (props: {
+    onSelect: (data: PresentationSourceData) => void;
+    isLoading: boolean;
+  }) => React.ReactNode;
 }
 
 type WizardStep = 'template' | 'brief' | 'source' | 'generate';
-type SourceMode = 'paste' | 'recent';
+type SourceMode = 'paste' | 'recent' | 'artifact';
+
+const SOURCE_MODE_LABELS: Record<SourceMode, string> = {
+  recent: 'Recent',
+  paste: 'Paste',
+  artifact: 'Artifact',
+};
 type Tone = 'Formal' | 'Conversational' | 'Technical';
 
 const TONES: Tone[] = ['Formal', 'Conversational', 'Technical'];
@@ -165,6 +177,7 @@ export function PresentationGenerationWizard({
   geraltInstances,
   gammaTemplates,
   renderRecentPicker,
+  renderArtifactPicker,
 }: PresentationGenerationWizardProps) {
   const [wizardStep, setWizardStep] = useState<WizardStep>('template');
   const [workflowId, setWorkflowId] = useState<string | null>(null);
@@ -179,6 +192,10 @@ export function PresentationGenerationWizard({
 
   const [sourceMode, setSourceMode] = useState<SourceMode>('recent');
   const [pasteText, setPasteText] = useState('');
+
+  const sourceModes: SourceMode[] = renderArtifactPicker
+    ? ['recent', 'paste', 'artifact']
+    : ['recent', 'paste'];
 
   const [selectedInstanceId, setSelectedInstanceId] = useState('');
 
@@ -214,27 +231,42 @@ export function PresentationGenerationWizard({
   const handleSourceSubmit = async (data: PresentationSourceData) => {
     if (!workflowId) return;
     setError('');
-    try {
-      if (data.source === 'granola') {
-        const args: PresentationStepArgs = {
-          workflowId,
-          step: 'source',
-          transcriptSource: 'granola',
-          ...(data.granolaId ? { granolaId: data.granolaId } : {}),
-        };
-        await submitStep.mutateAsync(args);
-      } else {
-        if (!data.transcript) {
-          setError('Paste a transcript of at least a few lines');
-          return;
-        }
-        await submitStep.mutateAsync({
-          workflowId,
-          step: 'source',
-          transcriptSource: 'paste',
-          transcript: data.transcript,
-        });
+
+    let args: PresentationStepArgs;
+    if (data.source === 'granola') {
+      args = {
+        workflowId,
+        step: 'source',
+        transcriptSource: 'granola',
+        ...(data.granolaId ? { granolaId: data.granolaId } : {}),
+      };
+    } else if (data.source === 'artifact') {
+      if (!data.sourceArtifactId) {
+        setError('Select an artifact to use as the source');
+        return;
       }
+      args = {
+        workflowId,
+        step: 'source',
+        transcriptSource: 'artifact',
+        sourceArtifactId: data.sourceArtifactId,
+        ...(data.callTitle ? { callTitle: data.callTitle } : {}),
+      };
+    } else {
+      if (!data.transcript) {
+        setError('Paste a transcript of at least a few lines');
+        return;
+      }
+      args = {
+        workflowId,
+        step: 'source',
+        transcriptSource: 'paste',
+        transcript: data.transcript,
+      };
+    }
+
+    try {
+      await submitStep.mutateAsync(args);
       setWizardStep('generate');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save source');
@@ -485,10 +517,10 @@ export function PresentationGenerationWizard({
 
           {wizardStep === 'source' && (
             <motion.div key="source" className="space-y-4" {...stepFade}>
-              <p className="text-[13px] text-text-2">Choose where the call content comes from.</p>
+              <p className="text-[13px] text-text-2">Choose the source for this presentation.</p>
 
-              <div className="flex gap-1 p-1 bg-surface-2 rounded-[10px] w-48">
-                {(['recent', 'paste'] as SourceMode[]).map((m) => (
+              <div className="flex gap-1 p-1 bg-surface-2 rounded-[10px] w-fit">
+                {sourceModes.map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -502,13 +534,13 @@ export function PresentationGenerationWizard({
                         : 'text-text-2 hover:text-text'
                     }`}
                   >
-                    {m === 'recent' ? 'Recent' : 'Paste'}
+                    {SOURCE_MODE_LABELS[m]}
                   </button>
                 ))}
               </div>
 
               <AnimatePresence mode="wait">
-                {sourceMode === 'paste' ? (
+                {sourceMode === 'paste' && (
                   <motion.form
                     key="paste"
                     onSubmit={handlePasteSourceSubmit}
@@ -535,10 +567,20 @@ export function PresentationGenerationWizard({
                       {submitStepLoading ? 'Saving…' : 'Continue'}
                     </button>
                   </motion.form>
-                ) : (
+                )}
+                {sourceMode === 'recent' && (
                   <motion.div key="recent" {...tabFade}>
                     {error && <p className="text-[12px] text-orange mb-3">{error}</p>}
                     {renderRecentPicker({
+                      onSelect: handleSourceSubmit,
+                      isLoading: submitStepLoading,
+                    })}
+                  </motion.div>
+                )}
+                {sourceMode === 'artifact' && renderArtifactPicker && (
+                  <motion.div key="artifact" {...tabFade}>
+                    {error && <p className="text-[12px] text-orange mb-3">{error}</p>}
+                    {renderArtifactPicker({
                       onSelect: handleSourceSubmit,
                       isLoading: submitStepLoading,
                     })}

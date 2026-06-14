@@ -29,7 +29,9 @@ export type PresentationStepArgs =
   | PresentationGenerateStepArgs;
 
 export interface PresentationSourceData {
-  source: 'paste' | 'granola';
+  source: 'paste' | 'granola' | 'artifact';
   transcript?: string;
   granolaId?: string;
+  sourceArtifactId?: string;
+  callTitle?: string;
 }

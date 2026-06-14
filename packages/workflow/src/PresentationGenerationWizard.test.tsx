@@ -153,7 +153,7 @@ describe('PresentationGenerationWizard', () => {
       fireEvent.change(screen.getByPlaceholderText('e.g. Enterprise CTOs'), {
         target: { value: 'Startup founders' },
       });
-      await advanceToStep('Choose where the call content comes from.', () => submitForm());
+      await advanceToStep('Choose the source for this presentation.', () => submitForm());
       expect(props.createWorkflow.mutateAsync).toHaveBeenCalledTimes(1);
       expect(props.submitStep.mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -169,7 +169,7 @@ describe('PresentationGenerationWizard', () => {
       render(<PresentationGenerationWizard {...props} />);
       fireEvent.click(screen.getByText('Sales Deck'));
       await advanceToStep('Describe the presentation goal.', () => submitForm());
-      await advanceToStep('Choose where the call content comes from.', () => submitForm());
+      await advanceToStep('Choose the source for this presentation.', () => submitForm());
       expect(props.submitStep.mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({ templateId: 'tmpl-1' })
       );
@@ -177,7 +177,7 @@ describe('PresentationGenerationWizard', () => {
 
     it('omits templateId when Auto is selected', async () => {
       const props = await renderAtBrief(makeProps());
-      await advanceToStep('Choose where the call content comes from.', () => submitForm());
+      await advanceToStep('Choose the source for this presentation.', () => submitForm());
       const calls = (props.submitStep.mutateAsync as ReturnType<typeof mock>).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
       const call = calls[0]![0] as Record<string, unknown>;
@@ -208,7 +208,7 @@ describe('PresentationGenerationWizard', () => {
     async function renderAtSource(props = makeProps()) {
       render(<PresentationGenerationWizard {...props} />);
       await advanceToStep('Describe the presentation goal.', () => submitForm());
-      await advanceToStep('Choose where the call content comes from.', () => submitForm());
+      await advanceToStep('Choose the source for this presentation.', () => submitForm());
       return props;
     }
 
@@ -221,6 +221,47 @@ describe('PresentationGenerationWizard', () => {
     it('renders the recent picker via render prop', async () => {
       await renderAtSource();
       expect(screen.getByText('Pick recent')).toBeDefined();
+    });
+
+    it('hides the Artifact tab when no artifact picker is provided', async () => {
+      await renderAtSource();
+      expect(screen.queryByText('Artifact')).toBeNull();
+    });
+
+    it('submits source step with a selected artifact', async () => {
+      const props = await renderAtSource(
+        makeProps({
+          renderArtifactPicker: ({ onSelect }) =>
+            React.createElement(
+              'button',
+              {
+                type: 'button',
+                onClick: () =>
+                  onSelect({
+                    source: 'artifact',
+                    sourceArtifactId: 'art-1',
+                    callTitle: 'Acme Pain Points',
+                  }),
+              },
+              'Pick artifact'
+            ),
+        })
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByText('Artifact'));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Pick artifact'));
+      });
+      await waitFor(() =>
+        expect(props.submitStep.mutateAsync).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            step: 'source',
+            transcriptSource: 'artifact',
+            sourceArtifactId: 'art-1',
+          })
+        )
+      );
     });
 
     it('submits source step with paste transcript', async () => {
@@ -280,7 +321,7 @@ describe('PresentationGenerationWizard', () => {
     async function renderAtGenerate(props = makeProps()) {
       render(<PresentationGenerationWizard {...props} />);
       await advanceToStep('Describe the presentation goal.', () => submitForm());
-      await advanceToStep('Choose where the call content comes from.', () => submitForm());
+      await advanceToStep('Choose the source for this presentation.', () => submitForm());
       await advanceToStep('Pick a running presentation agent session.', () =>
         fireEvent.click(screen.getByText('Pick recent'))
       );
