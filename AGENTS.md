@@ -229,6 +229,7 @@ When implementing a Linear issue:
 - No emojis in code, comments, or messages
 - No IIFEs or dynamic imports in production code — use named async functions and static imports.
 - No fallbacks for required values — prefer explicit checks and fail loudly. Use `requireEnv()` for env vars; never silently substitute a default.
+- **Fallbacks (`?? default`, `|| default`, defaulted optionals) are allowed ONLY when absolutely necessary** — i.e. a genuinely optional value with a single, contract-guaranteed default (e.g. an empty string for an initially-empty controlled input). Otherwise do a proper check and handle the missing case explicitly. A reflexive `?? something` masks missing/invalid data, makes the code harder to test and validate, and turns a loud failure into a silent wrong-result. When in doubt, narrow and branch — don't default.
 - No nested ternaries or similarly compressed conditional expressions — use `if`/`else` or early returns.
 - Use full, descriptive variable and function names. Clean, readable design over brevity.
 - All env var validation lives in `apps/hub/src/config.ts`
