@@ -51,7 +51,67 @@ export type WorkflowType = {
     companyName?: string | null;
   }) => WorkflowArtifactDraft[];
   selectGenerateArtifactKinds?: (requested: string[] | undefined) => string[];
+  /**
+   * V2 generic pipeline: artifact kinds the user may select as inputs. Undefined
+   * means any tenant artifact is eligible; an empty array means none.
+   */
+  inputArtifactKinds?: string[];
 };
+
+/**
+ * A V2 generic workflow run: the user selects N existing artifacts as inputs and
+ * M output types to generate. Each output type generates independently.
+ */
+export type MultiIOInput = {
+  inputArtifactIds: string[];
+  outputTypes: string[];
+};
+
+/** The output-type ids a workflow offers (empty when it declares none). */
+export function getOutputOptionIds(workflow: WorkflowType): string[] {
+  return (workflow.outputOptions ?? []).map((option) => option.id);
+}
+
+/**
+ * Split requested output types into those the workflow offers and those it does
+ * not. Callers reject the request when `unknown` is non-empty rather than
+ * silently dropping types — keep failures loud.
+ */
+export function partitionOutputTypes(
+  workflow: WorkflowType,
+  requested: string[]
+): { known: string[]; unknown: string[] } {
+  const offered = new Set(getOutputOptionIds(workflow));
+  const known: string[] = [];
+  const unknown: string[] = [];
+  for (const type of requested) {
+    if (offered.has(type)) {
+      known.push(type);
+    } else {
+      unknown.push(type);
+    }
+  }
+  return { known, unknown };
+}
+
+/**
+ * Validate a multi-input/multi-output run request against a workflow. Returns an
+ * error string when invalid (no inputs, no outputs, or unknown output types) so
+ * the caller can fail loudly; returns null when the request is valid.
+ */
+export function validateMultiIOInput(workflow: WorkflowType, input: MultiIOInput): string | null {
+  if (input.inputArtifactIds.length === 0) {
+    return 'Select at least one input artifact';
+  }
+  if (input.outputTypes.length === 0) {
+    return 'Select at least one output type';
+  }
+  const { unknown } = partitionOutputTypes(workflow, input.outputTypes);
+  if (unknown.length > 0) {
+    return `Unknown output type(s): ${unknown.join(', ')}`;
+  }
+  return null;
+}
 
 /**
  * Flatten every step's credential requirements into a single list, de-duplicated

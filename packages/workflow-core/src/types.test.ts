@@ -1,6 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import { flattenStepCredentialRequirements } from './types';
+import {
+  flattenStepCredentialRequirements,
+  getOutputOptionIds,
+  partitionOutputTypes,
+  validateMultiIOInput,
+} from './types';
 import type { WorkflowType, WorkflowCredentialRequirement } from './types';
+
+function workflowWithOutputs(ids: string[]): WorkflowType {
+  return {
+    kind: 'test',
+    name: 'Test',
+    description: 'Test workflow',
+    steps: [],
+    outputOptions: ids.map((id) => ({ id, label: id })),
+  };
+}
 
 function workflowWithSteps(
   steps: { name: string; credentialRequirements: WorkflowCredentialRequirement[] }[]
@@ -162,5 +177,68 @@ describe('flattenStepCredentialRequirements', () => {
 
     expect(workflow.steps[0]!.credentialRequirements).toEqual([req]);
     expect(req).toEqual({ providerName: 'granola', source: 'tenant', name: 'Granola' });
+  });
+});
+
+describe('getOutputOptionIds', () => {
+  test('returns the option ids in order', () => {
+    expect(getOutputOptionIds(workflowWithOutputs(['case-study', 'one-pager']))).toEqual([
+      'case-study',
+      'one-pager',
+    ]);
+  });
+
+  test('returns an empty list when no output options are declared', () => {
+    const workflow: WorkflowType = {
+      kind: 'test',
+      name: 'Test',
+      description: 'Test',
+      steps: [],
+    };
+    expect(getOutputOptionIds(workflow)).toEqual([]);
+  });
+});
+
+describe('partitionOutputTypes', () => {
+  test('separates offered types from unknown ones', () => {
+    const workflow = workflowWithOutputs(['case-study', 'one-pager']);
+    expect(partitionOutputTypes(workflow, ['one-pager', 'mystery', 'case-study'])).toEqual({
+      known: ['one-pager', 'case-study'],
+      unknown: ['mystery'],
+    });
+  });
+});
+
+describe('validateMultiIOInput', () => {
+  const workflow = workflowWithOutputs(['case-study', 'one-pager']);
+
+  test('accepts a request with inputs and offered output types', () => {
+    expect(
+      validateMultiIOInput(workflow, {
+        inputArtifactIds: ['art-1'],
+        outputTypes: ['case-study'],
+      })
+    ).toBeNull();
+  });
+
+  test('rejects a request with no input artifacts', () => {
+    expect(
+      validateMultiIOInput(workflow, { inputArtifactIds: [], outputTypes: ['case-study'] })
+    ).toBe('Select at least one input artifact');
+  });
+
+  test('rejects a request with no output types', () => {
+    expect(validateMultiIOInput(workflow, { inputArtifactIds: ['art-1'], outputTypes: [] })).toBe(
+      'Select at least one output type'
+    );
+  });
+
+  test('rejects unknown output types loudly rather than dropping them', () => {
+    expect(
+      validateMultiIOInput(workflow, {
+        inputArtifactIds: ['art-1'],
+        outputTypes: ['case-study', 'mystery'],
+      })
+    ).toBe('Unknown output type(s): mystery');
   });
 });
