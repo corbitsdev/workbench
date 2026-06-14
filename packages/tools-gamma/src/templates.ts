@@ -13,16 +13,6 @@ import {
 } from './shared';
 
 // Direct HTTP to Gamma SaaS API — see AGENTS.md 'Third-party generation APIs' and packages/tools-gamma/README.md
-// Response shape: { data: Template[], hasMore: boolean, nextCursor?: string }
-async function listTemplates(
-  config: ResolvedGammaConfig,
-  _args: Record<string, unknown>,
-  signal: AbortSignal
-): Promise<unknown> {
-  return fetchGammaTemplatesResolved(config, signal);
-}
-
-// Direct HTTP to Gamma SaaS API — see AGENTS.md 'Third-party generation APIs' and packages/tools-gamma/README.md
 async function createFromTemplate(
   config: ResolvedGammaConfig,
   args: Record<string, unknown>,
@@ -65,41 +55,19 @@ export type GammaTemplate = {
   description: string | null;
 };
 
-async function fetchGammaTemplatesResolved(
-  config: ResolvedGammaConfig,
-  signal?: AbortSignal
-): Promise<GammaTemplate[]> {
-  const result = await gammaFetchJSON(config, { method: 'GET', path: '/templates' }, signal);
+// Gamma's REST API has no list-templates (or list-gammas) endpoint — a "template" is just
+// an existing single-page gamma referenced by gammaId. We serve a workbench-owned curated
+// registry until OAuth/MCP auto-sourcing lands (CL-1875). See packages/tools-gamma/README.md.
+export const GAMMA_TEMPLATES: GammaTemplate[] = [];
 
-  if (!isRecord(result) || !Array.isArray(result['data'])) {
-    return [];
-  }
-
-  const templates: GammaTemplate[] = [];
-  for (const item of result['data'] as unknown[]) {
-    if (!isRecord(item)) continue;
-    const gammaId = optionalString(item['id']) ?? optionalString(item['gammaId']);
-    if (gammaId === null) continue;
-    templates.push({
-      gammaId,
-      name: optionalString(item['name']) ?? '',
-      description: optionalString(item['description']),
-    });
-  }
-  return templates;
-}
-
-export async function fetchGammaTemplates(
-  config: GammaToolsConfig,
-  signal?: AbortSignal
-): Promise<GammaTemplate[]> {
-  return fetchGammaTemplatesResolved(resolveConfig(config), signal);
+export function fetchGammaTemplates(): GammaTemplate[] {
+  return GAMMA_TEMPLATES;
 }
 
 export const GAMMA_LIST_TEMPLATES_DEFINITION: ToolDefinition = {
   name: 'gamma_list_templates',
   description:
-    'List available Gamma presentation templates from the workspace registry. Returns an array of templates with gammaId, name, and description. Use names when presenting options to the user; use gammaId internally when calling gamma_create_from_template.',
+    'List the workbench curated registry of Gamma presentation templates. Returns an array of templates with gammaId, name, and description (may be empty if none are configured). Use names when presenting options to the user; use gammaId internally when calling gamma_create_from_template.',
   inputSchema: {
     type: 'object',
     properties: {},
@@ -143,9 +111,7 @@ export const TEMPLATE_DEFINITIONS: ToolDefinition[] = [
 export function createTemplateTools(config: GammaToolsConfig): AgentTool[] {
   const resolved = resolveConfig(config);
   return [
-    stringTool(GAMMA_LIST_TEMPLATES_DEFINITION, (args, signal) =>
-      listTemplates(resolved, args, signal)
-    ),
+    stringTool(GAMMA_LIST_TEMPLATES_DEFINITION, async () => GAMMA_TEMPLATES),
     stringTool(GAMMA_CREATE_FROM_TEMPLATE_DEFINITION, (args, signal) =>
       createFromTemplate(resolved, args, signal)
     ),

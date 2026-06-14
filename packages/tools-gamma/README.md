@@ -4,7 +4,7 @@ Gamma deck-generation tools for GTM Workbench agents.
 
 ## What this package is
 
-This package wraps the Gamma SaaS API (https://gamma.app) as a set of `AgentTool` instances. Agents use these tools to list templates, list themes, and generate decks from templates.
+This package wraps the Gamma SaaS API (https://gamma.app) as a set of `AgentTool` instances. Agents use these tools to list themes, generate decks from a template, and list the workbench's curated template registry.
 
 ## Direct HTTP is acceptable here
 
@@ -14,4 +14,12 @@ See AGENTS.md "Third-party generation APIs (Gamma)" for the authoritative explan
 
 ## API endpoint notes
 
-The endpoint paths used here (`/templates`, `/themes`, `/generations/from-template`) follow plausible REST conventions. Verify these against the live Gamma API docs before deploying — the Gamma API is not publicly documented at time of writing.
+Verified against the official docs (https://developers.gamma.app). The REST API exposes: `POST /generations`, `POST /generations/from-template`, `GET /generations/{id}`, `GET /themes`, `GET /folders`, `POST /gammas/{gammaId}/archive`, `DELETE /gammas/{gammaId}`.
+
+## There is no list-templates endpoint
+
+Gamma's REST API has **no** endpoint to list templates — and no endpoint to list gammas/documents at all. A "template" is simply an existing single-page gamma referenced by its `gammaId` (copied from the Gamma app); `POST /generations/from-template` takes that `gammaId` plus a prompt that fills placeholder tokens.
+
+Because of this, `gamma_list_templates` and the hub route `GET /workflows/gamma/templates` return a **workbench-owned curated registry** (`GAMMA_TEMPLATES` in `templates.ts`), not a live Gamma call. The registry is empty until templates are added (CL-1874).
+
+The only way to enumerate templates programmatically is the **MCP** tool `get_gammas` (`type: template`), which requires OAuth 2.0 / Dynamic Client Registration rather than the REST `X-API-KEY`. That auto-sourcing path is tracked in CL-1875.

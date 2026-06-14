@@ -36,7 +36,7 @@ mock.module('@intx/db', () => ({
 
 mock.module('@workbench/tools-gamma', () => ({
   GAMMA_HUB_TOOLS: {},
-  fetchGammaTemplates: mock(async () => [
+  fetchGammaTemplates: mock(() => [
     { gammaId: 'tmpl-1', name: 'Sales Deck', description: 'A sales deck template' },
     { gammaId: 'tmpl-2', name: 'Investor Pitch', description: null },
   ]),
@@ -2016,7 +2016,7 @@ describe('Workflow router', () => {
   });
 
   describe('GET /workflows/gamma/templates', () => {
-    it('returns template list from Gamma API when credential is configured', async () => {
+    it('returns the curated template registry', async () => {
       const router = buildApp(createMockDb());
       const res = await router.fetch(
         new Request('http://localhost:4000/workflows/gamma/templates', { method: 'GET' })
@@ -2027,7 +2027,7 @@ describe('Workflow router', () => {
       expect(json[0]).toMatchObject({ gammaId: 'tmpl-1', name: 'Sales Deck' });
     });
 
-    it('returns 503 when no Gamma credential is configured', async () => {
+    it('does not depend on a Gamma credential (no 502/503 when none configured)', async () => {
       const { resolveCredentialRequirement } = await import('@intx/db');
       (resolveCredentialRequirement as ReturnType<typeof mock>).mockImplementationOnce(
         async () => null
@@ -2036,7 +2036,7 @@ describe('Workflow router', () => {
       const res = await router.fetch(
         new Request('http://localhost:4000/workflows/gamma/templates', { method: 'GET' })
       );
-      expect(res.status).toBe(503);
+      expect(res.status).toBe(200);
     });
   });
 });

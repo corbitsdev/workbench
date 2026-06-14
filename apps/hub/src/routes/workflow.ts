@@ -588,27 +588,10 @@ export function createWorkflowRouter(
   });
 
   // ─── Gamma template registry ─────────────────────────────────────
-  router.get('/workflows/gamma/templates', async (c) => {
-    const userId = c.get('userId');
-    const { context: userContext } = await getRequestedUserContext(db, userId, undefined);
-    if (!userContext) return c.json({ error: 'User context not found' }, 400);
-
-    const cred = await resolveCredentialRequirement(
-      db,
-      userContext.tenantId,
-      { providerName: 'gamma', source: 'tenant' },
-      null,
-      null
-    );
-    if (!cred) return c.json({ error: 'Gamma credential not configured' }, 503);
-
-    try {
-      const templates = await fetchGammaTemplates({ apiKey: cred.secret }, c.req.raw.signal);
-      return c.json(templates);
-    } catch (err) {
-      log.error('Failed to fetch Gamma templates', { cause: err });
-      return c.json({ error: 'Failed to fetch templates from Gamma' }, 502);
-    }
+  // Gamma has no list-templates API; we serve a workbench-owned curated registry.
+  // Tenant-scoped persistence + an add-template flow land in CL-1874.
+  router.get('/workflows/gamma/templates', (c) => {
+    return c.json(fetchGammaTemplates());
   });
 
   // ─── List enabled workflows for tenant ───────────────────────────
