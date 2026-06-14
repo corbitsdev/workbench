@@ -36,8 +36,35 @@ describe('createXTools / x_search handler', () => {
     ],
   };
 
+  const responsesApiResponse = {
+    output: [
+      {
+        type: 'message',
+        content: [
+          {
+            type: 'output_text',
+            text: JSON.stringify({ items: apiResults }),
+          },
+        ],
+      },
+    ],
+  };
+
   function makeFetcher(response: unknown) {
     return async (_url: string, _init: RequestInit): Promise<Response> => {
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => response,
+        text: async () => JSON.stringify(response),
+      } as unknown as Response;
+    };
+  }
+
+  function makeCapturingFetcher(response: unknown, calls: { url: string; init: RequestInit }[]) {
+    return async (url: string, init: RequestInit): Promise<Response> => {
+      calls.push({ url, init });
       return {
         ok: true,
         status: 200,
@@ -70,6 +97,55 @@ describe('createXTools / x_search handler', () => {
     expect(item.title).toBe('AI funding surges');
     expect(item.publishedAt).toBe('2025-01-15T09:00:00Z');
     expect(item.provenance).toBe('degraded');
+  });
+
+  it('uses the xAI Responses x_search endpoint and forwards date range parameters', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const tools = createXTools({
+      apiKey: 'test-key',
+      fetcher: makeCapturingFetcher(responsesApiResponse, calls),
+    });
+    const xSearch = findStringTool(tools, 'x_search');
+
+    await xSearch.handler(
+      { query: 'AI funding', fromDate: '2026-05-15', toDate: '2026-06-14' },
+      new AbortController().signal
+    );
+
+    expect(calls[0]?.url).toBe('https://api.x.ai/v1/responses');
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      tools: [{ type: 'x_search', from_date: '2026-05-15', to_date: '2026-06-14' }],
+    });
+    expect(body).not.toHaveProperty('search_parameters');
+  });
+
+  it('ignores an empty hub baseURL and uses the xAI default endpoint', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const tools = createXTools({
+      apiKey: 'test-key',
+      baseURL: '',
+      fetcher: makeCapturingFetcher(responsesApiResponse, calls),
+    });
+    const xSearch = findStringTool(tools, 'x_search');
+
+    await xSearch.handler({ query: 'AI funding' }, new AbortController().signal);
+
+    expect(calls[0]?.url).toBe('https://api.x.ai/v1/responses');
+  });
+
+  it('accepts a hub baseURL that already includes /v1', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const tools = createXTools({
+      apiKey: 'test-key',
+      baseURL: 'https://api.x.ai/v1',
+      fetcher: makeCapturingFetcher(responsesApiResponse, calls),
+    });
+    const xSearch = findStringTool(tools, 'x_search');
+
+    await xSearch.handler({ query: 'AI funding' }, new AbortController().signal);
+
+    expect(calls[0]?.url).toBe('https://api.x.ai/v1/responses');
   });
 
   it('throws when query is missing', async () => {
