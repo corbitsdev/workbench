@@ -118,6 +118,32 @@ describe('github_activity tool', () => {
     expect(String(result.content)).toContain('GitHub API error: 401');
   });
 
+  test('includes GitHub error body in error message for non-ok responses', async () => {
+    const errorBody = {
+      message: 'Validation Failed',
+      errors: [{ code: 'invalid', field: 'q', resource: 'Search' }],
+    };
+    const fetcher: GitHubFetch = mock(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(errorBody), {
+          status: 422,
+          statusText: 'Unprocessable Entity',
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    );
+    const runner = createToolRunner(createGitHubTools({ apiKey: 'test', fetcher }));
+
+    const result = await runner.run(
+      { id: 'call_1', name: 'github_activity', arguments: { query: 'AI agents' } },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBe(true);
+    expect(String(result.content)).toContain('422');
+    expect(String(result.content)).toContain('Validation Failed');
+  });
+
   test('surfaces missing query as tool error', async () => {
     const fetcher = makeGitHubFetcher({ items: [] }, { items: [] });
     const runner = createToolRunner(createGitHubTools({ apiKey: '', fetcher }));

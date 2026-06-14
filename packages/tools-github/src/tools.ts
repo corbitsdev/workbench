@@ -87,7 +87,16 @@ async function fetchGitHubJSON(
     signal,
   });
   if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+    let detail = '';
+    try {
+      const body = await response.text();
+      if (body.length > 0) {
+        detail = `: ${body}`;
+      }
+    } catch {
+      // body read failure is non-fatal; the status code is sufficient
+    }
+    throw new Error(`GitHub API error: ${response.status} ${response.statusText}${detail}`);
   }
   return response.json();
 }
@@ -120,18 +129,13 @@ async function searchGitHub(
     fetchGitHubJSON(prsUrl, config, signal),
   ]);
 
-  const repoItems: GitHubRepo[] = isRecord(reposRaw) && Array.isArray(reposRaw.items)
-    ? reposRaw.items.map(parseGitHubRepo)
-    : [];
+  const repoItems: GitHubRepo[] =
+    isRecord(reposRaw) && Array.isArray(reposRaw.items) ? reposRaw.items.map(parseGitHubRepo) : [];
 
-  const prItems: GitHubPR[] = isRecord(prsRaw) && Array.isArray(prsRaw.items)
-    ? prsRaw.items.map(parseGitHubPR)
-    : [];
+  const prItems: GitHubPR[] =
+    isRecord(prsRaw) && Array.isArray(prsRaw.items) ? prsRaw.items.map(parseGitHubPR) : [];
 
-  const items = [
-    ...repoItems.map(normalizeGitHubRepo),
-    ...prItems.map(normalizeGitHubPR),
-  ];
+  const items = [...repoItems.map(normalizeGitHubRepo), ...prItems.map(normalizeGitHubPR)];
 
   return JSON.stringify(items, null, 2);
 }
