@@ -45,8 +45,13 @@ export function clearSessionConnectURLs(): void {
   SESSION_CONNECT_URLS.clear();
 }
 
-/** Browserbase session duration ceiling, in seconds. */
-export const DEFAULT_SESSION_TIMEOUT_SECONDS = 600;
+/**
+ * Default session lifetime, in seconds. Kept short because sessions are created
+ * with keepAlive and an abandoned one (agent crash, eviction, never-closed)
+ * burns this much paid browser-time before Browserbase auto-releases it. On the
+ * free tier's 1-hour monthly budget, a long default exhausts the allowance fast.
+ */
+export const DEFAULT_SESSION_TIMEOUT_SECONDS = 180;
 export const MIN_SESSION_TIMEOUT_SECONDS = 60;
 export const MAX_SESSION_TIMEOUT_SECONDS = 3600;
 

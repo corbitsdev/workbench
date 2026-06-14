@@ -80,7 +80,7 @@ describe('resolveConfig', () => {
 
 describe('clampTimeoutSeconds', () => {
   it('defaults when not a number', () => {
-    expect(clampTimeoutSeconds(undefined)).toBe(600);
+    expect(clampTimeoutSeconds(undefined)).toBe(180);
   });
   it('clamps below the floor', () => {
     expect(clampTimeoutSeconds(5)).toBe(60);
