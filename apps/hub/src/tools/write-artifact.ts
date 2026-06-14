@@ -39,6 +39,7 @@ export const WRITE_ARTIFACT_DEFINITION: ToolDefinition = {
 
 type WriteArtifactContext = {
   db: DB['db'];
+  tenantId: string;
   principalId: string;
   sessionId: string;
 };
@@ -88,6 +89,7 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
             const [created] = await tx
               .insert(artifact)
               .values({
+                tenantId: context.tenantId,
                 principalId: context.principalId,
                 kind,
                 title,
@@ -138,6 +140,7 @@ export const WRITE_ARTIFACT_HUB_TOOLS: Record<string, ContextToolEntry> = {
     createTools: (context) =>
       createWriteArtifactTool({
         db: context.db,
+        tenantId: context.tenantId,
         principalId: context.principalId,
         sessionId: context.sessionId,
       }),

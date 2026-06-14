@@ -1079,10 +1079,10 @@ export function createWorkflowRouter(
       sessions.map((s: (typeof sessions)[number]) => [s.id, s])
     );
 
-    const directArtifactWhere = and(
-      eq(artifact.tenantId, userContext.tenantId),
-      eq(artifact.principalId, userContext.principalId)
-    );
+    // Agent-written artifacts carry tenantId but a synthetic instance principalId that
+    // never matches a human user's principalId. Match on tenantId only so workspace
+    // members see all artifacts produced for their tenant (agents + workflows).
+    const directArtifactWhere = eq(artifact.tenantId, userContext.tenantId);
 
     const ownershipWhere =
       sessions.length > 0
