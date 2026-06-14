@@ -1,41 +1,45 @@
-import { AnimatePresence, motion, type Transition } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
-import { AgentChat } from '../components/AgentChat';
-import { WorkflowPanel } from '../components/WorkflowPanel';
-import { NewWorkflowPane } from '../components/NewWorkflowPane';
-import { PresentationGenerationWizard } from '@workbench/workflow';
-import RecentCallsPicker from '../components/RecentCallsPicker';
-import ArtifactSourcePicker from '../components/ArtifactSourcePicker';
+import { AnimatePresence, motion, type Transition } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router";
+import { AgentChat } from "../components/AgentChat";
+import { WorkflowPanel } from "../components/WorkflowPanel";
+import { NewWorkflowPane } from "../components/NewWorkflowPane";
+import { PresentationGenerationWizard } from "@workbench/workflow";
+import RecentCallsPicker from "../components/RecentCallsPicker";
+import ArtifactSourcePicker from "../components/ArtifactSourcePicker";
 import {
   useCreatePresentationWorkflow,
   useSubmitPresentationStep,
   useGeraltInstances,
   useGammaTemplates,
-} from '../hooks/use-presentation-workflow';
-import { LibraryRail } from '../components/layout/LibraryRail';
-import { UnifiedCatalogModal } from '../components/layout/UnifiedCatalogModal';
-import { ArtifactGallery } from '../components/layout/ArtifactGallery';
-import { useResizableRail } from '@workbench/ui';
-import { useMediaQuery } from '../lib/use-media-query';
-import { deployAgentFromTemplate, getMe, listWorkbenches } from '../lib/hub-api';
-import { useChatLauncher } from '../lib/chat-launcher-context';
-import type { AgentSelection } from '../components/layout/LibraryRail';
-import type { MeResponse, WorkbenchEntry } from '../lib/hub-api';
+} from "../hooks/use-presentation-workflow";
+import { LibraryRail } from "../components/layout/LibraryRail";
+import { UnifiedCatalogModal } from "../components/layout/UnifiedCatalogModal";
+import { ArtifactGallery } from "../components/layout/ArtifactGallery";
+import { useResizableRail } from "@workbench/ui";
+import { useMediaQuery } from "../lib/use-media-query";
+import {
+  deployAgentFromTemplate,
+  getMe,
+  listWorkbenches,
+} from "../lib/hub-api";
+import { useChatLauncher } from "../lib/chat-launcher-context";
+import type { AgentSelection } from "../components/layout/LibraryRail";
+import type { MeResponse, WorkbenchEntry } from "../lib/hub-api";
 
 const ME_MAX_RETRIES = 10;
 
 type ProvisioningState =
-  | { status: 'loading' }
-  | { status: 'needs-onboarding'; me: MeResponse }
-  | { status: 'ready' }
-  | { status: 'error'; message: string };
+  | { status: "loading" }
+  | { status: "needs-onboarding"; me: MeResponse }
+  | { status: "ready" }
+  | { status: "error"; message: string };
 
 function useProvisioningGuard(): {
   state: ProvisioningState;
   retry: () => void;
 } {
-  const [state, setState] = useState<ProvisioningState>({ status: 'loading' });
+  const [state, setState] = useState<ProvisioningState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryCountRef = useRef(0);
@@ -55,8 +59,8 @@ function useProvisioningGuard(): {
         const me = await getMe();
         setState(
           me.provisioned && me.paInstanceId
-            ? { status: 'ready' }
-            : { status: 'needs-onboarding', me }
+            ? { status: "ready" }
+            : { status: "needs-onboarding", me },
         );
         clear();
       } catch {
@@ -64,8 +68,9 @@ function useProvisioningGuard(): {
         if (retryCountRef.current >= ME_MAX_RETRIES) {
           clear();
           setState({
-            status: 'error',
-            message: 'Could not reach the server. Check your connection and try again.',
+            status: "error",
+            message:
+              "Could not reach the server. Check your connection and try again.",
           });
         }
       }
@@ -77,7 +82,7 @@ function useProvisioningGuard(): {
   }, [attempt]);
 
   const retry = () => {
-    setState({ status: 'loading' });
+    setState({ status: "loading" });
     setAttempt((n) => n + 1);
   };
 
@@ -101,27 +106,29 @@ function OnboardingScreen({
     setLaunching(true);
     setError(null);
     try {
-      await deployAgentFromTemplate(tenantId, 'myra');
+      await deployAgentFromTemplate(tenantId, "myra");
       onComplete();
     } catch {
-      setError('Something went wrong. Please try again.');
+      setError("Something went wrong. Please try again.");
       setLaunching(false);
     }
   };
 
   const buttonLabel = launching
-    ? 'Launching…'
+    ? "Launching…"
     : tenantName
       ? `Launch Myra and join the ${tenantName} team`
-      : 'Launch Myra';
+      : "Launch Myra";
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 px-4">
       <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-        <h1 className="text-[20px] font-semibold text-text">Welcome to Workbench</h1>
+        <h1 className="text-[20px] font-semibold text-text">
+          Welcome to Workbench
+        </h1>
         <p className="text-[14px] leading-relaxed text-text-2">
-          Myra is your personal agent — she gets smarter the more you work together and stays in
-          context across everything you do.
+          Myra is your personal agent — she gets smarter the more you work
+          together and stays in context across everything you do.
         </p>
         {error && <p className="text-[13px] text-red-500">{error}</p>}
         <button
@@ -150,20 +157,20 @@ function OnboardingScreen({
  * The right pane toggles between: artifact gallery, collateral-generation
  * panel, or agent chat — no route change.
  */
-const RAIL_HEIGHT = 'h-full';
+const RAIL_HEIGHT = "h-full";
 
-type NewModal = 'none' | 'catalog';
+type NewModal = "none" | "catalog";
 
 type RightPane =
-  | { view: 'gallery' }
+  | { view: "gallery" }
   | {
-      view: 'agent';
+      view: "agent";
       instanceId: string;
       tenantId: string;
       agentName: string;
     }
-  | { view: 'workflow'; workflowId: string }
-  | { view: 'new-workflow'; workflowKind: string };
+  | { view: "workflow"; workflowId: string; workflowKind: string }
+  | { view: "new-workflow"; workflowKind: string };
 
 function useWorkbenchContext(slug: string | undefined): {
   tenantId: string | null;
@@ -188,19 +195,23 @@ function useWorkbenchContext(slug: string | undefined): {
   }, []);
 
   // Derive the active tenantId from the already-loaded list whenever slug changes.
-  const match = slug ? workbenches.find((entry) => entry.tenantSlug === slug) : undefined;
+  const match = slug
+    ? workbenches.find((entry) => entry.tenantSlug === slug)
+    : undefined;
   const tenantId = (match ?? workbenches[0])?.tenantId ?? null;
 
   return { tenantId, workbenches, loaded };
 }
 
 export default function WorkbenchHome() {
-  const { state: provisioningState, retry: retryProvisioning } = useProvisioningGuard();
-  const isDesktop = useMediaQuery('(min-width: 1024px)');
-  const { width, min, max, dragging, containerRef, handleProps } = useResizableRail();
+  const { state: provisioningState, retry: retryProvisioning } =
+    useProvisioningGuard();
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const { width, min, max, dragging, containerRef, handleProps } =
+    useResizableRail();
   const [railOpen, setRailOpen] = useState(false);
-  const [rightPane, setRightPane] = useState<RightPane>({ view: 'gallery' });
-  const [activeModal, setActiveModal] = useState<NewModal>('none');
+  const [rightPane, setRightPane] = useState<RightPane>({ view: "gallery" });
+  const [activeModal, setActiveModal] = useState<NewModal>("none");
   const [agentRefreshTick, setAgentRefreshTick] = useState(0);
   const { slug } = useParams<{ slug?: string }>();
   const navigate = useNavigate();
@@ -219,10 +230,11 @@ export default function WorkbenchHome() {
   useEffect(() => {
     if (!workbenchesLoaded || slug) return;
     const first = workbenches[0];
-    if (first) void navigate(`/workbenches/${first.tenantSlug}`, { replace: true });
+    if (first)
+      void navigate(`/workbenches/${first.tenantSlug}`, { replace: true });
   }, [workbenchesLoaded, workbenches, slug, navigate]);
 
-  if (provisioningState.status === 'error') {
+  if (provisioningState.status === "error") {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-[14px] text-text-3">{provisioningState.message}</p>
@@ -237,7 +249,7 @@ export default function WorkbenchHome() {
     );
   }
 
-  if (provisioningState.status === 'loading') {
+  if (provisioningState.status === "loading") {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-[14px] text-text-3">Loading…</p>
@@ -245,7 +257,7 @@ export default function WorkbenchHome() {
     );
   }
 
-  if (provisioningState.status === 'needs-onboarding') {
+  if (provisioningState.status === "needs-onboarding") {
     return (
       <OnboardingScreen
         tenantId={provisioningState.me.personalTenantId}
@@ -258,7 +270,11 @@ export default function WorkbenchHome() {
     );
   }
 
-  if (provisioningState.status === 'ready' && workbenchesLoaded && workbenches.length === 0) {
+  if (
+    provisioningState.status === "ready" &&
+    workbenchesLoaded &&
+    workbenches.length === 0
+  ) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-[14px] text-text-2">
@@ -276,38 +292,43 @@ export default function WorkbenchHome() {
   };
 
   const handleAgentSelect = (selection: AgentSelection) => {
-    setRightPane({ view: 'agent', ...selection });
+    setRightPane({ view: "agent", ...selection });
     setLauncherHidden(true);
   };
 
-  const handleWorkflowSelect = (workflowId: string) => {
-    setRightPane({ view: 'workflow', workflowId });
+  const handleWorkflowSelect = (workflowId: string, workflowKind: string) => {
+    setRightPane({ view: "workflow", workflowId, workflowKind });
     setLauncherHidden(true);
   };
 
   const handleNewWorkflow = () => {
-    setActiveModal('catalog');
+    setActiveModal("catalog");
   };
 
   const handleWorkflowKindSelected = (kind: string) => {
-    setActiveModal('none');
-    setRightPane({ view: 'new-workflow', workflowKind: kind });
+    setActiveModal("none");
+    setRightPane({ view: "new-workflow", workflowKind: kind });
     setLauncherHidden(true);
   };
 
   const handleWorkflowCreated = (workflowId: string) => {
-    setRightPane({ view: 'workflow', workflowId });
+    if (rightPane.view !== "new-workflow") return;
+    setRightPane({
+      view: "workflow",
+      workflowId,
+      workflowKind: rightPane.workflowKind,
+    });
   };
 
   const handleAgentDeleted = () => {
     setAgentRefreshTick((n) => n + 1);
-    setRightPane({ view: 'gallery' });
+    setRightPane({ view: "gallery" });
     setLauncherHidden(false);
   };
 
   const handleWorkflowDeleted = (workflowId: string) => {
-    if (rightPane.view === 'workflow' && rightPane.workflowId === workflowId) {
-      setRightPane({ view: 'gallery' });
+    if (rightPane.view === "workflow" && rightPane.workflowId === workflowId) {
+      setRightPane({ view: "gallery" });
       setLauncherHidden(false);
     }
   };
@@ -324,7 +345,7 @@ export default function WorkbenchHome() {
   };
 
   function renderRightPane() {
-    if (rightPane.view === 'agent') {
+    if (rightPane.view === "agent") {
       return (
         <motion.div
           key={`agent-${rightPane.instanceId}`}
@@ -336,14 +357,14 @@ export default function WorkbenchHome() {
             tenantId={rightPane.tenantId}
             agentName={rightPane.agentName}
             onClose={() => {
-              setRightPane({ view: 'gallery' });
+              setRightPane({ view: "gallery" });
               setLauncherHidden(false);
             }}
           />
         </motion.div>
       );
     }
-    if (rightPane.view === 'workflow') {
+    if (rightPane.view === "workflow") {
       return (
         <motion.div
           key={`workflow-${rightPane.workflowId}`}
@@ -352,22 +373,27 @@ export default function WorkbenchHome() {
         >
           <WorkflowPanel
             workflowId={rightPane.workflowId}
+            workflowKind={rightPane.workflowKind}
             onClose={() => {
-              setRightPane({ view: 'gallery' });
+              setRightPane({ view: "gallery" });
               setLauncherHidden(false);
             }}
           />
         </motion.div>
       );
     }
-    if (rightPane.view === 'new-workflow') {
+    if (rightPane.view === "new-workflow") {
       const closeHandler = () => {
-        setRightPane({ view: 'gallery' });
+        setRightPane({ view: "gallery" });
         setLauncherHidden(false);
       };
       return (
-        <motion.div key="new-workflow" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
-          {rightPane.workflowKind === 'presentation-generation' ? (
+        <motion.div
+          key="new-workflow"
+          {...paneFade}
+          className="min-h-0 flex-1 overflow-hidden"
+        >
+          {rightPane.workflowKind === "presentation-generation" ? (
             <PresentationGenerationWizard
               tenantId={workbenchTenantId}
               onCreated={handleWorkflowCreated}
@@ -406,11 +432,14 @@ export default function WorkbenchHome() {
     return (
       <motion.div
         // key change forces remount when workbench resolves, refreshing the query
-        key={`gallery-${workbenchTenantId ?? 'loading'}`}
+        key={`gallery-${workbenchTenantId ?? "loading"}`}
         {...paneFade}
         className="min-h-0 flex-1"
       >
-        <ArtifactGallery tenantId={workbenchTenantId} onNew={handleNewWorkflow} />
+        <ArtifactGallery
+          tenantId={workbenchTenantId}
+          onNew={handleNewWorkflow}
+        />
       </motion.div>
     );
   }
@@ -418,31 +447,32 @@ export default function WorkbenchHome() {
   if (!isDesktop) {
     return (
       <div className="h-full overflow-y-auto px-2 pb-10 pt-1">
-        {rightPane.view === 'agent' ? (
+        {rightPane.view === "agent" ? (
           <AgentChat
             instanceId={rightPane.instanceId}
             tenantId={rightPane.tenantId}
             agentName={rightPane.agentName}
             onClose={() => {
-              setRightPane({ view: 'gallery' });
+              setRightPane({ view: "gallery" });
               setLauncherHidden(false);
             }}
           />
-        ) : rightPane.view === 'workflow' ? (
+        ) : rightPane.view === "workflow" ? (
           <WorkflowPanel
             workflowId={rightPane.workflowId}
+            workflowKind={rightPane.workflowKind}
             onClose={() => {
-              setRightPane({ view: 'gallery' });
+              setRightPane({ view: "gallery" });
               setLauncherHidden(false);
             }}
           />
-        ) : rightPane.view === 'new-workflow' ? (
-          rightPane.workflowKind === 'presentation-generation' ? (
+        ) : rightPane.view === "new-workflow" ? (
+          rightPane.workflowKind === "presentation-generation" ? (
             <PresentationGenerationWizard
               tenantId={workbenchTenantId}
               onCreated={handleWorkflowCreated}
               onClose={() => {
-                setRightPane({ view: 'gallery' });
+                setRightPane({ view: "gallery" });
                 setLauncherHidden(false);
               }}
               createWorkflow={createWorkflow}
@@ -471,7 +501,7 @@ export default function WorkbenchHome() {
               tenantId={workbenchTenantId}
               onCreated={handleWorkflowCreated}
               onClose={() => {
-                setRightPane({ view: 'gallery' });
+                setRightPane({ view: "gallery" });
                 setLauncherHidden(false);
               }}
             />
@@ -487,25 +517,29 @@ export default function WorkbenchHome() {
           <div className="fixed inset-0 z-50 bg-page p-2">
             <LibraryRail
               onClose={() => setRailOpen(false)}
-              onNew={() => setActiveModal('catalog')}
+              onNew={() => setActiveModal("catalog")}
               onAgentSelect={handleAgentSelect}
               onWorkflowSelect={handleWorkflowSelect}
               onWorkbenchSelect={handleWorkbenchSelect}
               onAgentDeleted={handleAgentDeleted}
               onWorkflowDeleted={handleWorkflowDeleted}
-              activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
-              activeWorkflowId={rightPane.view === 'workflow' ? rightPane.workflowId : undefined}
+              activeAgentInstanceId={
+                rightPane.view === "agent" ? rightPane.instanceId : undefined
+              }
+              activeWorkflowId={
+                rightPane.view === "workflow" ? rightPane.workflowId : undefined
+              }
               activeWorkbenchSlug={slug}
               refreshTick={agentRefreshTick}
             />
           </div>
         )}
         <UnifiedCatalogModal
-          open={activeModal === 'catalog'}
+          open={activeModal === "catalog"}
           tenantId={workbenchTenantId ?? null}
-          onClose={() => setActiveModal('none')}
+          onClose={() => setActiveModal("none")}
           onAgentDeployed={() => {
-            setActiveModal('none');
+            setActiveModal("none");
             setAgentRefreshTick((n) => n + 1);
           }}
           onWorkflowSelected={handleWorkflowKindSelected}
@@ -518,19 +552,23 @@ export default function WorkbenchHome() {
     <>
       <div
         ref={containerRef}
-        className={`grid h-full gap-0 overflow-y-auto px-2 pb-10 pt-1 ${dragging ? 'select-none' : ''}`}
+        className={`grid h-full gap-0 overflow-y-auto px-2 pb-10 pt-1 ${dragging ? "select-none" : ""}`}
         style={{ gridTemplateColumns: `${width}px 16px 1fr` }}
       >
         <div className={`sticky top-0 self-start ${RAIL_HEIGHT}`}>
           <LibraryRail
-            onNew={() => setActiveModal('catalog')}
+            onNew={() => setActiveModal("catalog")}
             onAgentSelect={handleAgentSelect}
             onWorkflowSelect={handleWorkflowSelect}
             onWorkbenchSelect={handleWorkbenchSelect}
             onAgentDeleted={handleAgentDeleted}
             onWorkflowDeleted={handleWorkflowDeleted}
-            activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
-            activeWorkflowId={rightPane.view === 'workflow' ? rightPane.workflowId : undefined}
+            activeAgentInstanceId={
+              rightPane.view === "agent" ? rightPane.instanceId : undefined
+            }
+            activeWorkflowId={
+              rightPane.view === "workflow" ? rightPane.workflowId : undefined
+            }
             activeWorkbenchSlug={slug}
             refreshTick={agentRefreshTick}
           />
@@ -549,7 +587,7 @@ export default function WorkbenchHome() {
         >
           <div
             className={`w-[5px] rounded-full bg-border-strong transition-[background-color,height] duration-200 ease-out group-hover:bg-orange group-focus:bg-orange ${
-              dragging ? 'h-20 bg-orange' : 'h-[46px] group-hover:h-20'
+              dragging ? "h-20 bg-orange" : "h-[46px] group-hover:h-20"
             }`}
           />
         </div>
@@ -557,11 +595,11 @@ export default function WorkbenchHome() {
         <AnimatePresence mode="wait">{renderRightPane()}</AnimatePresence>
       </div>
       <UnifiedCatalogModal
-        open={activeModal === 'catalog'}
+        open={activeModal === "catalog"}
         tenantId={workbenchTenantId ?? null}
-        onClose={() => setActiveModal('none')}
+        onClose={() => setActiveModal("none")}
         onAgentDeployed={() => {
-          setActiveModal('none');
+          setActiveModal("none");
           setAgentRefreshTick((n) => n + 1);
         }}
         onWorkflowSelected={handleWorkflowKindSelected}

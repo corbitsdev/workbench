@@ -40,6 +40,7 @@ interface RailItem {
   credentialRequirements?: CredentialRequirement[];
   capabilities?: Record<string, unknown> | null;
   workflowStatus?: string;
+  workflowKind?: string;
 }
 
 function agentStatusLabel(status: string): string {
@@ -173,6 +174,7 @@ function workflowToRailItem(w: WorkflowSummary): RailItem {
     who: "GA",
     color: "var(--orange)",
     workflowStatus: w.status,
+    workflowKind: w.kind,
   };
 }
 
@@ -274,7 +276,7 @@ export interface LibraryRailProps {
   onClose?: () => void;
   onNew?: () => void;
   onAgentSelect?: (selection: AgentSelection) => void;
-  onWorkflowSelect?: (workflowId: string) => void;
+  onWorkflowSelect?: (workflowId: string, workflowKind: string) => void;
   onWorkbenchSelect?: (slug: string) => void;
   onAgentDeleted?: () => void;
   onWorkflowDeleted?: (workflowId: string) => void;
@@ -561,7 +563,8 @@ export function LibraryRail({
                       agentName: item.name,
                     });
                   } else if (isClickableWorkflow) {
-                    onWorkflowSelect!(item.id);
+                    if (!item.workflowKind) return;
+                    onWorkflowSelect!(item.id, item.workflowKind);
                   }
                 };
 
@@ -800,16 +803,17 @@ export function LibraryRail({
                         role={onWorkflowSelect ? "button" : undefined}
                         tabIndex={onWorkflowSelect ? 0 : undefined}
                         onClick={
-                          onWorkflowSelect
-                            ? () => onWorkflowSelect(item.id)
+                          onWorkflowSelect && item.workflowKind
+                            ? () =>
+                                onWorkflowSelect(item.id, item.workflowKind!)
                             : undefined
                         }
                         onKeyDown={
-                          onWorkflowSelect
+                          onWorkflowSelect && item.workflowKind
                             ? (e) => {
                                 if (e.key === "Enter" || e.key === " ") {
                                   e.preventDefault();
-                                  onWorkflowSelect(item.id);
+                                  onWorkflowSelect(item.id, item.workflowKind!);
                                 }
                               }
                             : undefined
