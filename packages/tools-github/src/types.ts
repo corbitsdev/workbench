@@ -6,13 +6,14 @@ export type GitHubRepo = {
   pushed_at: string;
 };
 
-export type GitHubPR = {
+export type GitHubIssueOrPR = {
   html_url: string;
   title: string;
+  comments: number;
   reactions: {
     total_count: number;
   };
-  created_at: string;
+  updated_at: string;
 };
 
 export type GitHubSearchReposResponse = {
@@ -20,5 +21,5 @@ export type GitHubSearchReposResponse = {
 };
 
 export type GitHubSearchIssuesResponse = {
-  items: GitHubPR[];
+  items: GitHubIssueOrPR[];
 };

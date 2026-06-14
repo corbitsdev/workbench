@@ -1,4 +1,4 @@
-import type { GitHubPR, GitHubRepo } from './types';
+import type { GitHubIssueOrPR, GitHubRepo } from './types';
 
 export function normalizeGitHubRepo(repo: GitHubRepo) {
   return {
@@ -14,15 +14,15 @@ export function normalizeGitHubRepo(repo: GitHubRepo) {
   };
 }
 
-export function normalizeGitHubPR(pr: GitHubPR) {
+export function normalizeGitHubIssueOrPR(item: GitHubIssueOrPR) {
   return {
-    url: pr.html_url,
-    title: pr.title,
-    publishedAt: pr.created_at,
+    url: item.html_url,
+    title: item.title,
+    publishedAt: item.updated_at,
     source: 'github',
     engagement: {
-      upvotes: pr.reactions.total_count,
-      comments: 0,
+      upvotes: item.reactions.total_count,
+      comments: item.comments,
     },
   };
 }
