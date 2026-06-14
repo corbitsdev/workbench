@@ -32,9 +32,9 @@ describe('ArtifactModal', () => {
 
   it('renders the artifact content when open', () => {
     render(React.createElement(ArtifactModal, { open: true, artifact, onClose: () => {} }));
-    expect(screen.getByRole('dialog')).toBeDefined();
-    expect(screen.getByText('Hello there')).toBeDefined();
-    expect(screen.getByText('Outreach email')).toBeDefined();
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+    expect(screen.queryByText('Hello there')).not.toBeNull();
+    expect(screen.queryByText('Outreach email')).not.toBeNull();
   });
 
   it('closes on Escape', () => {
@@ -107,7 +107,7 @@ describe('ArtifactModal', () => {
     render(React.createElement(ArtifactModal, { open: true, artifact, onClose: () => {} }));
     fireEvent.click(screen.getByRole('button', { name: 'Copy content' }));
     expect(writeText).toHaveBeenCalledWith('Hello there');
-    expect(await screen.findByRole('button', { name: 'Copied' })).toBeDefined();
+    await screen.findByRole('button', { name: 'Copied' });
   });
 
   it('invokes an action callback with the artifact', () => {
@@ -123,5 +123,99 @@ describe('ArtifactModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     expect(onClick).toHaveBeenCalledTimes(1);
     expect(onClick).toHaveBeenCalledWith(artifact);
+  });
+
+  describe('CL-1638: Use in Workflow button', () => {
+    it('renders the button when canUseInWorkflow returns true', () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+          onUseInWorkflow: () => {},
+          canUseInWorkflow: () => true,
+        })
+      );
+      expect(screen.queryByRole('button', { name: 'Use in Workflow' })).not.toBeNull();
+    });
+
+    it('hides the button when canUseInWorkflow returns false', () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+          onUseInWorkflow: () => {},
+          canUseInWorkflow: () => false,
+        })
+      );
+      expect(screen.queryByRole('button', { name: 'Use in Workflow' })).toBeNull();
+    });
+
+    it('offers the action for any artifact when no predicate is given', () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+          onUseInWorkflow: () => {},
+        })
+      );
+      expect(screen.queryByRole('button', { name: 'Use in Workflow' })).not.toBeNull();
+    });
+
+    it('does not render the button when onUseInWorkflow is absent', () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+          canUseInWorkflow: () => true,
+        })
+      );
+      expect(screen.queryByRole('button', { name: 'Use in Workflow' })).toBeNull();
+    });
+
+    it('calls onUseInWorkflow with the artifact on click', () => {
+      const onUseInWorkflow = mock(() => {});
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+          onUseInWorkflow,
+          canUseInWorkflow: () => true,
+        })
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Use in Workflow' }));
+      expect(onUseInWorkflow).toHaveBeenCalledTimes(1);
+      expect(onUseInWorkflow).toHaveBeenCalledWith(artifact);
+    });
+  });
+
+  describe('CL-1556: Open in Myra deep-link', () => {
+    it('renders an Open in Myra link when myraHref is provided', () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+          myraHref: '/chat?artifactId=a-1',
+        })
+      );
+      const link = screen.getByRole('link', { name: /Open in Myra/i });
+      expect(link.getAttribute('href')).toBe('/chat?artifactId=a-1');
+    });
+
+    it('does not render an Open in Myra link when myraHref is absent', () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+        })
+      );
+      expect(screen.queryByRole('link', { name: /Open in Myra/i })).toBeNull();
+    });
   });
 });

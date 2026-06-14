@@ -37,6 +37,7 @@ describe('@workbench/client artifacts', () => {
     useArtifacts({ baseUrl: 'http://localhost:4000' }, { tenantId: 'tenant-workbench' });
 
     const options = useQueryMock.mock.calls[0]?.[0];
-    expect(options?.queryKey).toEqual(['artifacts', 'tenant-workbench']);
+    expect(options?.queryKey[0]).toBe('artifacts');
+    expect(options?.queryKey[1]).toBe('tenant-workbench');
   });
 });

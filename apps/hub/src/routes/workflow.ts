@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, desc, eq, ilike, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, ne, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import {
   resolveCredentialRequirement,
@@ -29,6 +29,7 @@ import {
   transcript,
   painPoint,
   artifact,
+  artifactStatus,
   artifactVersion,
   enabledWorkflow,
 } from '../db/schema';
@@ -1049,6 +1050,25 @@ export function createWorkflowRouter(
     const searchQuery = (c.req.query('query')?.trim() ?? '')
       .slice(0, 200)
       .replace(/[%_\\]/g, '\\$&');
+    const sortParam = c.req.query('sort');
+    const kindParam = c.req.query('kind');
+    const statusParam = c.req.query('status');
+    const cursorParam = c.req.query('cursor');
+    const limitParam = c.req.query('limit');
+
+    type ArtifactStatusValue = (typeof artifactStatus)[number];
+    const isArtifactStatus = (value: string): value is ArtifactStatusValue =>
+      (artifactStatus as readonly string[]).includes(value);
+
+    let statusFilter: ArtifactStatusValue | undefined;
+    if (statusParam !== undefined) {
+      if (!isArtifactStatus(statusParam)) {
+        return c.json({ error: 'Invalid status filter' }, 400);
+      }
+      statusFilter = statusParam;
+    }
+
+    const pageLimit = Math.min(Math.max(1, Number(limitParam ?? 20) || 20), 100);
 
     const { context: userContext, forbidden } = await getRequestedUserContext(
       db,
@@ -1061,7 +1081,7 @@ export function createWorkflowRouter(
     }
     if (!userContext) {
       log.warn('User context not found', { userId });
-      return c.json([]);
+      return c.json({ artifacts: [], nextCursor: null });
     }
 
     const sessions = await db.query.workflowRun.findMany({
@@ -1099,13 +1119,69 @@ export function createWorkflowRouter(
       ? or(ilike(artifact.title, `%${searchQuery}%`), ilike(artifact.content, `%${searchQuery}%`))
       : undefined;
 
-    const artifacts = await db.query.artifact.findMany({
-      where: searchWhere ? and(ownershipWhere, searchWhere) : ownershipWhere,
-      orderBy: [desc(artifact.updatedAt)],
+    const hideRejectedWhere =
+      statusFilter === undefined ? ne(artifact.status, 'rejected') : undefined;
+    const statusWhere = statusFilter ? eq(artifact.status, statusFilter) : undefined;
+    // `kind` is intentionally not validated against a closed vocabulary: the DB
+    // column is free-form text and agents write arbitrary kinds, so an unknown
+    // kind is a legitimate (empty) filter rather than a 400. This asymmetry with
+    // `status` (a closed enum) is deliberate.
+    const kindWhere = kindParam ? eq(artifact.kind, kindParam) : undefined;
+
+    let cursorWhere: ReturnType<typeof or> | undefined;
+    if (cursorParam !== undefined) {
+      const separatorIndex = cursorParam.lastIndexOf('__');
+      const cursorDate = new Date(cursorParam.slice(0, separatorIndex));
+      const cursorId = cursorParam.slice(separatorIndex + 2);
+      if (separatorIndex === -1 || Number.isNaN(cursorDate.getTime()) || cursorId.length === 0) {
+        return c.json({ error: 'Invalid cursor' }, 400);
+      }
+      // Keyset pagination must walk in the same direction as the sort, with the
+      // id tie-break matching: ascending for oldest-first, descending otherwise.
+      cursorWhere =
+        sortParam === 'oldest'
+          ? or(
+              gt(artifact.updatedAt, cursorDate),
+              and(eq(artifact.updatedAt, cursorDate), gt(artifact.id, cursorId))
+            )
+          : or(
+              lt(artifact.updatedAt, cursorDate),
+              and(eq(artifact.updatedAt, cursorDate), lt(artifact.id, cursorId))
+            );
+    }
+
+    const whereConditions = [
+      ownershipWhere,
+      hideRejectedWhere,
+      statusWhere,
+      kindWhere,
+      searchWhere,
+      cursorWhere,
+    ].filter((c): c is NonNullable<typeof c> => c != null);
+
+    const orderBy =
+      sortParam === 'oldest'
+        ? [asc(artifact.updatedAt), asc(artifact.id)]
+        : [desc(artifact.updatedAt), desc(artifact.id)];
+
+    const fetched = await db.query.artifact.findMany({
+      where: whereConditions.length > 0 ? and(...whereConditions) : undefined,
+      orderBy,
+      limit: pageLimit + 1,
     });
 
-    const rows = artifacts.map((a: any) => {
-      const session = sessionById.get(a.sessionId);
+    let nextCursor: string | null = null;
+    let page = fetched;
+    if (fetched.length > pageLimit) {
+      page = fetched.slice(0, pageLimit);
+      const last = page[page.length - 1];
+      if (last) {
+        nextCursor = `${last.updatedAt.toISOString()}__${last.id}`;
+      }
+    }
+
+    const rows = page.map((a) => {
+      const session = a.sessionId !== null ? sessionById.get(a.sessionId) : undefined;
       return {
         ...serializeArtifact(a),
         sessionName: session
@@ -1115,7 +1191,7 @@ export function createWorkflowRouter(
       };
     });
 
-    return c.json(rows);
+    return c.json({ artifacts: rows, nextCursor });
   });
 
   // ─── Read workflow ──────────────────────────────────────────────────

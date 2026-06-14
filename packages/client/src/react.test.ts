@@ -161,7 +161,9 @@ describe('useArtifacts', () => {
   });
 
   it('fetches artifacts for the tenant and surfaces the data on success', async () => {
-    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([fakeArtifact])));
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifacts: [fakeArtifact], nextCursor: null }))
+    );
 
     const { result } = renderHook(
       () =>

@@ -26,6 +26,16 @@ export interface ArtifactModalProps {
   children?: ReactNode;
   /** Human-readable label for the artifact kind, e.g. "LinkedIn Post". */
   kindLabel?: string;
+  /** When provided, renders an "Open in Myra" anchor in the footer. */
+  myraHref?: string;
+  /** When provided, renders a "Use in Workflow" button for eligible artifacts. */
+  onUseInWorkflow?: (artifact: ArtifactWithSession) => void;
+  /**
+   * Decides whether the current artifact may be used in a workflow. Eligibility
+   * is a workflow product rule, so the caller injects it; absent a predicate the
+   * action is offered for any artifact.
+   */
+  canUseInWorkflow?: (artifact: ArtifactWithSession) => boolean;
 }
 
 const FOCUSABLE =
@@ -46,7 +56,13 @@ export function ArtifactModal({
   actions = [],
   children,
   kindLabel,
+  myraHref,
+  onUseInWorkflow,
+  canUseInWorkflow,
 }: ArtifactModalProps) {
+  const showUseInWorkflow = Boolean(
+    onUseInWorkflow && artifact && (canUseInWorkflow ? canUseInWorkflow(artifact) : true)
+  );
   const panelRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
 
@@ -171,8 +187,21 @@ export function ArtifactModal({
               {children ?? <p className="whitespace-pre-wrap">{artifact.content}</p>}
             </div>
 
-            {actions.length > 0 && (
-              <div className="flex justify-end gap-2 border-t border-border px-6 py-4">
+            {(actions.length > 0 || myraHref || showUseInWorkflow) && (
+              <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
+                {myraHref && (
+                  <a
+                    href={myraHref}
+                    className="flex items-center gap-[7px] rounded-[9px] border border-border px-[13px] py-[7px] text-[12.5px] font-semibold text-text-2 transition-colors hover:border-border-strong hover:bg-[var(--row-hover)]"
+                  >
+                    Open in Myra
+                  </a>
+                )}
+                {showUseInWorkflow && artifact && onUseInWorkflow && (
+                  <Button variant="secondary" size="sm" onClick={() => onUseInWorkflow(artifact)}>
+                    Use in Workflow
+                  </Button>
+                )}
                 {actions.map((action) => (
                   <Button
                     key={action.label}

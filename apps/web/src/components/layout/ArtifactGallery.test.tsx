@@ -3,6 +3,7 @@ import '../../test-setup';
 import { describe, expect, it, mock } from 'bun:test';
 import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router';
 import React from 'react';
 import type { ArtifactWithSession } from '@workbench/shared';
 
@@ -35,7 +36,13 @@ mock.module('@workbench/client/react', () => ({
 
 function renderWithClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(React.createElement(QueryClientProvider, { client }, ui));
+  return render(
+    React.createElement(
+      MemoryRouter,
+      null,
+      React.createElement(QueryClientProvider, { client }, ui)
+    )
+  );
 }
 
 describe('ArtifactGallery', () => {
@@ -57,6 +64,6 @@ describe('ArtifactGallery', () => {
       expect(mockUseArtifacts).toHaveBeenCalled();
     });
     const lastCall = mockUseArtifacts.mock.calls[mockUseArtifacts.mock.calls.length - 1];
-    expect(lastCall?.[1]).toEqual({ tenantId: 'tenant-workbench' });
+    expect(lastCall?.[1]).toMatchObject({ tenantId: 'tenant-workbench' });
   });
 });

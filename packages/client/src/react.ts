@@ -3,7 +3,7 @@
 // app provides the QueryClientProvider.
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import type { ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
+import type { ArtifactStatus, ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
 import { listArtifacts, listWorkflows, type ClientOptions } from './index';
 
 export interface UseLibraryResourcesParams {
@@ -26,6 +26,9 @@ export function useLibraryResources(
 export interface UseArtifactsParams {
   tenantId?: string | null;
   query?: string;
+  sort?: 'newest' | 'oldest';
+  kind?: string;
+  status?: ArtifactStatus;
 }
 
 /** Query the current user's artifacts across all jobs for the gallery. */
@@ -34,8 +37,15 @@ export function useArtifacts(
   params: UseArtifactsParams = {}
 ): UseQueryResult<ArtifactWithSession[]> {
   return useQuery({
-    queryKey: ['artifacts', params.tenantId ?? null, params.query ?? ''],
-    queryFn: () => listArtifacts(options, params),
+    queryKey: [
+      'artifacts',
+      params.tenantId ?? null,
+      params.query ?? '',
+      params.sort ?? 'newest',
+      params.kind ?? '',
+      params.status ?? '',
+    ],
+    queryFn: () => listArtifacts(options, params).then((page) => page.artifacts),
     enabled: params.tenantId != null,
   });
 }

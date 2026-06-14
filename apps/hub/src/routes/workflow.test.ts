@@ -446,12 +446,14 @@ describe('Workflow router', () => {
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
-    const json = await res.json();
-    expect(Array.isArray(json)).toBe(true);
-    expect(json).toHaveLength(1);
-    expect(json[0].id).toBe('a-1');
-    expect(json[0].sessionName).toBe('Acme Corp');
-    expect(json[0].sessionStatus).toBe('done');
+    const json = (await res.json()) as {
+      artifacts: Array<{ id: string; sessionName: string; sessionStatus: string }>;
+    };
+    expect(Array.isArray(json.artifacts)).toBe(true);
+    expect(json.artifacts).toHaveLength(1);
+    expect(json.artifacts[0].id).toBe('a-1');
+    expect(json.artifacts[0].sessionName).toBe('Acme Corp');
+    expect(json.artifacts[0].sessionStatus).toBe('done');
   });
 
   // Approval gate: PATCH artifact status drives the reviewing -> done transition.
@@ -636,8 +638,8 @@ describe('Workflow router', () => {
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
-    const json = await res.json();
-    expect(json[0].sessionName).toBe('Demo with Globex');
+    const json = (await res.json()) as { artifacts: Array<{ sessionName: string }> };
+    expect(json.artifacts[0].sessionName).toBe('Demo with Globex');
   });
 
   it('GET /artifacts returns an empty array when the user has no sessions', async () => {
@@ -649,8 +651,210 @@ describe('Workflow router', () => {
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
-    const json = await res.json();
-    expect(json).toEqual([]);
+    const json = (await res.json()) as { artifacts: unknown[] };
+    expect(json.artifacts).toEqual([]);
+  });
+
+  it('GET /artifacts excludes rejected artifacts by default (CL-1550)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    const findManyMock = mock(() => []);
+    mockDb.query.artifact.findMany = findManyMock;
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+
+    expect(findManyMock).toHaveBeenCalledTimes(1);
+    const callArgs = (findManyMock as any).mock.calls[0]?.[0] as { where?: unknown } | undefined;
+    expect(callArgs?.where).toBeDefined();
+
+    const json = (await res.json()) as { artifacts: unknown[]; nextCursor: string | null };
+    expect(json.artifacts).toEqual([]);
+    expect(json.nextCursor).toBeNull();
+  });
+
+  it('GET /artifacts returns rejected artifacts when ?status=rejected (CL-1550)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    const findManyMock = mock(() => [
+      {
+        id: 'a-rejected',
+        sessionId: null,
+        parentId: null,
+        painPointId: null,
+        kind: 'email',
+        title: 'Rejected Email',
+        content: 'body',
+        status: 'rejected',
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tenantId: 'tenant-personal',
+        principalId: PERSONAL_PRINCIPAL.id,
+      },
+    ]);
+    mockDb.query.artifact.findMany = findManyMock;
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?status=rejected', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as { artifacts: Array<{ id: string }> };
+    expect(json.artifacts.map((a) => a.id)).toContain('a-rejected');
+  });
+
+  it('GET /artifacts returns 400 for unknown status filter (CL-1553)', async () => {
+    const mockDb = createMockDb();
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?status=unknown-status', {
+      method: 'GET',
+    });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toBeDefined();
+  });
+
+  const captureArtifactQuery = async (
+    url: string
+  ): Promise<{ where?: unknown; orderBy?: unknown }> => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    const findManyMock = mock(() => []);
+    mockDb.query.artifact.findMany = findManyMock;
+    const res = await buildApp(mockDb).fetch(new Request(url, { method: 'GET' }));
+    expect(res.status).toBe(200);
+    return ((findManyMock as any).mock.calls[0]?.[0] ?? {}) as {
+      where?: unknown;
+      orderBy?: unknown;
+    };
+  };
+
+  it('GET /artifacts adds the kind filter to the DB query (CL-1553)', async () => {
+    const withKind = await captureArtifactQuery('http://localhost:4000/artifacts?kind=email');
+    const withoutKind = await captureArtifactQuery('http://localhost:4000/artifacts');
+    // The kind filter must change the where clause, not just be "present".
+    expect(withKind.where).not.toEqual(withoutKind.where);
+  });
+
+  it('GET /artifacts accepts valid status filter (CL-1553)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    mockDb.query.artifact.findMany = mock(() => []);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?status=approved', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+  });
+
+  it('GET /artifacts returns nextCursor when results exceed the page limit (CL-1554)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    const updatedAt = new Date('2026-01-15T10:00:00.000Z');
+    const artifacts = Array.from({ length: 21 }, (_, i) => ({
+      id: `a-${i + 1}`,
+      sessionId: null,
+      parentId: null,
+      painPointId: null,
+      kind: 'email',
+      title: `Artifact ${i + 1}`,
+      content: 'body',
+      status: 'draft',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt,
+      tenantId: 'tenant-personal',
+      principalId: PERSONAL_PRINCIPAL.id,
+    }));
+    mockDb.query.artifact.findMany = mock(() => artifacts);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?limit=20', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as {
+      artifacts: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(json.artifacts).toHaveLength(20);
+    expect(json.nextCursor).not.toBeNull();
+    expect(typeof json.nextCursor).toBe('string');
+    expect(json.nextCursor).toContain('__');
+    const [datePart, idPart] = json.nextCursor!.split('__');
+    expect(new Date(datePart!).toISOString()).toBe(updatedAt.toISOString());
+    expect(idPart).toBe('a-20');
+  });
+
+  it('GET /artifacts returns null nextCursor when results fit within page limit (CL-1554)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    mockDb.query.artifact.findMany = mock(() => [
+      {
+        id: 'a-1',
+        sessionId: null,
+        parentId: null,
+        painPointId: null,
+        kind: 'email',
+        title: 'Only one',
+        content: 'body',
+        status: 'draft',
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date(),
+        tenantId: 'tenant-personal',
+        principalId: PERSONAL_PRINCIPAL.id,
+      },
+    ]);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as { artifacts: unknown[]; nextCursor: string | null };
+    expect(json.nextCursor).toBeNull();
+  });
+
+  it('GET /artifacts orders differently for oldest vs newest, with a tie-break (CL-1551)', async () => {
+    const oldest = await captureArtifactQuery('http://localhost:4000/artifacts?sort=oldest');
+    const newest = await captureArtifactQuery('http://localhost:4000/artifacts');
+    // Two order keys: updatedAt + id tie-break, in both directions.
+    expect(oldest.orderBy).toHaveLength(2);
+    expect(newest.orderBy).toHaveLength(2);
+    // Direction must actually flip with the sort param (asc vs desc).
+    expect(oldest.orderBy).not.toEqual(newest.orderBy);
+  });
+
+  it('GET /artifacts walks the cursor in the sort direction (CL-1554)', async () => {
+    const cursor = `${new Date('2026-01-15T10:00:00.000Z').toISOString()}__a-10`;
+    const enc = encodeURIComponent(cursor);
+    const oldest = await captureArtifactQuery(
+      `http://localhost:4000/artifacts?sort=oldest&cursor=${enc}`
+    );
+    const newest = await captureArtifactQuery(`http://localhost:4000/artifacts?cursor=${enc}`);
+    // oldest-first must page forward (gt), newest-first backward (lt): the cursor
+    // predicate must differ, otherwise keyset pagination corrupts for one direction.
+    expect(oldest.where).not.toEqual(newest.where);
+  });
+
+  it('GET /artifacts returns 400 for a malformed cursor (CL-1554)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    mockDb.query.artifact.findMany = mock(() => []);
+    const router = buildApp(mockDb);
+    for (const bad of ['no-separator', 'not-a-date__a-1', `${new Date().toISOString()}__`]) {
+      const res = await router.fetch(
+        new Request(`http://localhost:4000/artifacts?cursor=${encodeURIComponent(bad)}`, {
+          method: 'GET',
+        })
+      );
+      expect(res.status).toBe(400);
+    }
   });
 
   it('POST /workflows/:id/steps generate returns 404 when workflow belongs to another user', async () => {

@@ -67,6 +67,11 @@ export interface ArtifactVersion {
   createdAt: string;
 }
 
+/** An artifact with its full version history. */
+export interface ArtifactWithVersions extends Artifact {
+  versions: ArtifactVersion[];
+}
+
 /**
  * An artifact enriched with the session it belongs to. Returned by the
  * aggregate `GET /artifacts` endpoint so the library can show a "from" label
