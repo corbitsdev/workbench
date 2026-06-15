@@ -18,7 +18,6 @@ export function normalizeBlueskyPost(post: BlueskyPost): ResearchItem {
   const rkey = rkeyFromUri(post.uri);
   const url = `https://bsky.app/profile/${post.author.handle}/post/${rkey}`;
 
-  // 'bluesky' added to SourceLabel by CL-1992 integration
   return {
     url,
     title: truncate(text, 100),
@@ -29,5 +28,5 @@ export function normalizeBlueskyPost(post: BlueskyPost): ResearchItem {
       comments: post.replyCount,
       shares: post.repostCount,
     },
-  } as ResearchItem;
+  };
 }

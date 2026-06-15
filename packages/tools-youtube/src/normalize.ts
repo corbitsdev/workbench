@@ -1,9 +1,10 @@
+import type { ResearchItem } from '@workbench/last30days-core';
 import type { YouTubeSearchItem, YouTubeVideoStatistics } from './types';
 
 export function normalizeYouTubeVideo(
   item: YouTubeSearchItem,
   stats: YouTubeVideoStatistics | undefined
-) {
+): ResearchItem {
   const videoId = item.id.videoId;
   return {
     url: `https://www.youtube.com/watch?v=${videoId}`,

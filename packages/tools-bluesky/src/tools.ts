@@ -9,10 +9,12 @@ const MAX_ERROR_BODY_LENGTH = 500;
 
 export type BlueskyFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
+// Bluesky search runs against the unauthenticated AppView (public.api.bsky.app),
+// which needs no credential. Authenticated reads would require a real AT Protocol
+// createSession -> JWT bearer flow (not HTTP Basic); until there's a need for it,
+// this tool is public-only and takes no auth config.
 export type BlueskyToolsConfig = {
   fetcher?: BlueskyFetch;
-  appPassword?: string;
-  identifier?: string;
 };
 
 export const BLUESKY_SEARCH_DEFINITION: ToolDefinition = {
@@ -104,14 +106,8 @@ async function searchBluesky(
   url.searchParams.set('limit', '100');
   url.searchParams.set('sort', 'top');
 
-  const headers: Record<string, string> = {};
-  if (config.appPassword !== undefined && config.identifier !== undefined) {
-    const credentials = btoa(`${config.identifier}:${config.appPassword}`);
-    headers['Authorization'] = `Basic ${credentials}`;
-  }
-
   const fetcher = config.fetcher ?? fetch;
-  const response = await fetcher(url.toString(), { headers, signal });
+  const response = await fetcher(url.toString(), { signal });
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
