@@ -41,6 +41,7 @@ Every same-domain user **auto-joins the global tenant as a `member` principal** 
 | **Myra**   | Personal Chief of Staff / Executive Assistant for each user       |
 | **Oat**    | Processes Granola calls into call document artifacts when prompted |
 | **Freddy** | Firecrawl-backed web research agent                               |
+| **Larry**  | last30days research agent — mines HN/GitHub/Reddit/X/YouTube/Bluesky/web for recent signal and emits a structured research brief |
 | **Walter** | Workflow orchestration agent                                      |
 | **Loop**   | Iterative refinement agent                                        |
 
@@ -171,6 +172,7 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 - `sessionId` is nullable (workflow-level artifacts have no session)
 - `workflowId` links artifacts to collateral generation workflows
 - `kind` is typed as `CollateralType` (case-study, one-pager, email-draft, call-document, etc.)
+- `content` holds the human-readable body; `source` is an opaque JSON bag for structured payloads alongside it. For `kind: 'research'`, `source.brief` carries the typed `ResearchBrief` (clusters, best-takes, stats, citations) that the UI renders richly, with `content` as the prose/markdown fallback. The renderer validates `source.brief` at the boundary and degrades to markdown if absent.
 
 ## Data Flow
 
