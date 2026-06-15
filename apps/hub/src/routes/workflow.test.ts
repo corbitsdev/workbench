@@ -40,7 +40,7 @@ mock.module("@workbench/tools-gamma", () => ({
   GAMMA_HUB_TOOLS: {},
 }));
 
-mock.module("./gamma-templates", () => ({
+mock.module("../lib/gamma-templates", () => ({
   listLatestGammaTemplates: mock(async () => [
     {
       id: "tpl-1",
@@ -59,7 +59,6 @@ mock.module("./gamma-templates", () => ({
       createdAt: new Date().toISOString(),
     },
   ]),
-  createGammaTemplatesRouter: mock(() => new (require("hono").Hono)()),
 }));
 
 mock.module("@intx/crypto-node", () => ({

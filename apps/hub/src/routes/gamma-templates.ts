@@ -1,83 +1,18 @@
 import { Hono } from "hono";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getLogger } from "@intx/log";
 import type { DB } from "@intx/db";
 import type { HubDb } from "../db";
 import { workbenchTemplate, workbenchTemplateVersion } from "../db/schema";
 import { getUserContext } from "../services/workflow-orchestration";
+import {
+  configToRow,
+  listLatestGammaTemplates,
+  GAMMA_KIND,
+} from "../lib/gamma-templates";
+import type { GammaTemplateConfig } from "../lib/gamma-templates";
 
 const log = getLogger("hub:gamma-templates");
-
-const GAMMA_KIND = "gamma";
-
-export type GammaTemplateConfig = {
-  gammaId: string;
-  systemPrompt: string;
-};
-
-export type GammaTemplateRow = {
-  id: string;
-  version: number;
-  name: string;
-  gammaId: string;
-  systemPrompt: string;
-  createdAt: string;
-};
-
-function configToRow(
-  templateId: string,
-  version: number,
-  name: string,
-  config: Record<string, unknown>,
-  createdAt: Date,
-): GammaTemplateRow {
-  return {
-    id: templateId,
-    version,
-    name,
-    gammaId: config["gammaId"] as string,
-    systemPrompt: config["systemPrompt"] as string,
-    createdAt: createdAt.toISOString(),
-  };
-}
-
-// Uses DB['db'] (not HubDb) so this function is callable from both the route
-// (HubDb is a superset) and the ContextToolEntry (receives DB['db']).
-export async function listLatestGammaTemplates(
-  db: DB["db"],
-  tenantId: string,
-): Promise<GammaTemplateRow[]> {
-  const rows = await db
-    .select({
-      id: workbenchTemplate.id,
-      version: workbenchTemplateVersion.version,
-      name: workbenchTemplateVersion.name,
-      config: workbenchTemplateVersion.config,
-      createdAt: workbenchTemplateVersion.createdAt,
-    })
-    .from(workbenchTemplate)
-    .innerJoin(
-      workbenchTemplateVersion,
-      and(
-        eq(workbenchTemplateVersion.templateId, workbenchTemplate.id),
-        eq(
-          workbenchTemplateVersion.version,
-          sql<number>`(SELECT MAX(v2.version) FROM template_version v2 WHERE v2.template_id = ${workbenchTemplate.id})`,
-        ),
-      ),
-    )
-    .where(
-      and(
-        eq(workbenchTemplate.tenantId, tenantId),
-        eq(workbenchTemplate.kind, GAMMA_KIND),
-      ),
-    )
-    .orderBy(desc(workbenchTemplate.createdAt));
-
-  return rows.map((r) =>
-    configToRow(r.id, r.version, r.name, r.config, r.createdAt),
-  );
-}
 
 async function getLatestVersion(
   db: DB["db"],

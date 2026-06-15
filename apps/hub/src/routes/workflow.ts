@@ -15,7 +15,7 @@ import {
 } from "drizzle-orm";
 import { getLogger } from "@intx/log";
 import { schema as intxSchema } from "@intx/db";
-import { listLatestGammaTemplates } from "./gamma-templates";
+import { listLatestGammaTemplates } from "../lib/gamma-templates";
 import {
   workflowRegistry,
   flattenStepCredentialRequirements,

@@ -13,17 +13,18 @@ mock.module("../config", () => ({
   loadConfig: () => ({}),
 }));
 
-mock.module("../services/workflow-orchestration", () => ({
-  getUserContext: mock(async () => ({
-    tenantId: "tn-global",
-    principalId: "prn-user",
-  })),
-}));
-
 import { createGammaTemplatesRouter } from "./gamma-templates";
 
 // biome-ignore lint/suspicious/noExplicitAny: structural mock
 type MockDb = any;
+
+const MOCK_TENANT = { id: "tn-global", slug: "global-org" };
+const MOCK_PRINCIPAL = {
+  id: "prn-user",
+  tenantId: "tn-global",
+  kind: "user",
+  status: "active",
+};
 
 function makeMockDb(overrides: Partial<MockDb> = {}): MockDb {
   const selectResult: unknown[] = [];
@@ -39,6 +40,14 @@ function makeMockDb(overrides: Partial<MockDb> = {}): MockDb {
   };
 
   const db: MockDb = {
+    // These stubs mirror the two queries getUserContext makes:
+    // db.query.tenant.findFirst({ where: eq(tenant.slug, globalTenant.slug) })
+    // db.query.principal.findFirst({ where: and(eq(tenantId,...), eq(kind,'user'), eq(refId,...)) })
+    // If getUserContext changes its resolution path, update these stubs to match.
+    query: {
+      tenant: { findFirst: mock(() => Promise.resolve(MOCK_TENANT)) },
+      principal: { findFirst: mock(() => Promise.resolve(MOCK_PRINCIPAL)) },
+    },
     select: mock(() => queryBuilder),
     insert: mock(() => ({
       values: mock(() => ({

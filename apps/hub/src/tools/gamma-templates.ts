@@ -2,7 +2,7 @@ import type { AgentTool } from "@intx/agent";
 import type { DB } from "@intx/db";
 import { GAMMA_LIST_TEMPLATES_DEFINITION } from "@workbench/tools-gamma";
 import type { ContextToolEntry } from "../lib/tool-registry";
-import { listLatestGammaTemplates } from "../routes/gamma-templates";
+import { listLatestGammaTemplates } from "../lib/gamma-templates";
 
 function createGammaListTemplatesTool(context: {
   db: DB["db"];
