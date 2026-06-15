@@ -204,4 +204,15 @@ describe('buildPersonalAgentSystemPrompt', () => {
     expect(prompt).toContain('<sources> recency rules still govern');
     expect(prompt).toContain('do not answer it from an artifact');
   });
+
+  // CL-1952 — the base prompt carries the memory-seed marker so the sidecar can
+  // parse the file list out of the effective (personalized) prompt.
+  it('embeds the memory-seed marker in the base prompt regardless of format', () => {
+    expect(buildPersonalAgentSystemPrompt('Myra', xmlFormat)).toContain(
+      '<!-- workbench:memory-seed='
+    );
+    expect(buildPersonalAgentSystemPrompt('Myra', markdownFormat)).toContain(
+      '<!-- workbench:memory-seed='
+    );
+  });
 });

@@ -13,7 +13,9 @@ import { createLSPPlugin } from '@intx/tools-lsp';
 import { createBlobReader } from '@intx/types/runtime';
 import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/runtime';
 import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
+import { hasSeedMarker, parseSeedMarker, stripSeedMarker } from '@workbench/agents/seed';
 import { createAskPrincipalTool } from '@workbench/approvals';
+import { seedWorkspaceFiles } from './seed-workspace-files';
 import { healTurns } from '@workbench/context-repair';
 import { withActiveContext } from '@workbench/prompts';
 import { createGuardedMailRunner } from './mail-guard';
@@ -142,13 +144,22 @@ export function createDefaultHarnessBuilder({
 
       const deployTree = await readDeployTree(storeDir);
       const basePrompt = deployTree.systemPrompt ?? agentConfig.systemPrompt;
+
+      // Parse the memory-seed file list off the RAW base prompt, then strip the
+      // marker before the prompt reaches the model. The marker is a
+      // control-plane sentinel for the harness; the live model must never see
+      // its own seed instructions (it would surface as raw text the agent could
+      // echo or be confused by) — CL-1952.
+      const declaredSeedFiles = parseSeedMarker(basePrompt);
+      const cleanedPrompt = stripSeedMarker(basePrompt);
+
       // Append the unified active-context block at launch so every agent shares
       // the same runtime context and is not anchored to its training cutoff
       // (CL-1938). The human user's name is not resolvable at this seam — the
       // agentConfig principal is the synthetic per-instance principal — so only
       // the live date is populated until user identity is threaded through the
       // launch config.
-      const systemPrompt = withActiveContext(basePrompt, { now: new Date() });
+      const systemPrompt = withActiveContext(cleanedPrompt, { now: new Date() });
 
       const grantsRef = { current: agentConfig.grants };
       const { principalId, tenantId } = agentConfig;
@@ -157,6 +168,25 @@ export function createDefaultHarnessBuilder({
 
       const workDir = path.join(storeDir, 'workspace');
       await fs.promises.mkdir(workDir, { recursive: true });
+
+      // Seed the memory files the agent documents but does not create itself, so
+      // its first read never fails (CL-1952). Marker presence IS the signal: a
+      // prompt with no marker is simply a non-marker-bearing agent (normal), so
+      // there is no phrase-based heuristic to guess "should have been seeded".
+      if (declaredSeedFiles.length === 0 && hasSeedMarker(basePrompt)) {
+        // A marker that resolves zero files is a malformed/empty marker — a
+        // contract break between the prompt builder and the seed table. Surface
+        // it rather than silently seed nothing (CL-1952).
+        logger.warn('Seed marker for {address} resolved zero files (malformed)', {
+          address: agentAddress,
+        });
+      }
+      const seedResult = await seedWorkspaceFiles(workDir, declaredSeedFiles);
+      logger.info('Seeded {created} workspace file(s) for {address}, skipped {skipped} existing', {
+        address: agentAddress,
+        created: seedResult.created,
+        skipped: seedResult.skipped,
+      });
 
       const blobReader = createBlobReader(storage);
       const posixTools = createPosixTools({

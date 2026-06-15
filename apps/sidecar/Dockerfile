@@ -45,6 +45,7 @@ RUN bun install --frozen-lockfile
 
 COPY interchange/ interchange/
 COPY apps/sidecar/ apps/sidecar/
+COPY packages/agents/ packages/agents/
 COPY packages/approvals/ packages/approvals/
 COPY packages/context-repair/ packages/context-repair/
 COPY packages/prompts/ packages/prompts/

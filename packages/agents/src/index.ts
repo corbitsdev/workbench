@@ -11,6 +11,12 @@ export {
   PERSONAL_AGENT_NAME,
 } from './personal-agent/definition';
 export { createPersonalAgentDirector } from './personal-agent/director';
+export {
+  PERSONAL_AGENT_SEED_FILES,
+  buildSeedMarker,
+  parseSeedMarker,
+  type SeedWorkspaceFile,
+} from './personal-agent/seed-files';
 
 // Loop agent
 export { buildLoopAgentSystemPrompt } from './loop/prompt';

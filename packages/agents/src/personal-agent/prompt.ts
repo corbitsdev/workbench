@@ -1,4 +1,5 @@
 import { buildSystemPrompt, type PromptFormat, type PromptSection } from '../prompt-builder';
+import { buildSeedMarker, PERSONAL_AGENT_SEED_FILES } from './seed-files';
 
 const STYLE_SECTION: PromptSection = {
   tag: 'style',
@@ -111,5 +112,8 @@ These are private memory, not deliverables — finished outputs go in artifacts.
     sections.push({ tag: 'operator', content: options.operatorProfile.trim() });
   }
 
-  return buildSystemPrompt(sections, format);
+  // Emit the seed marker as a verbatim trailing line so it survives the hub's
+  // per-operator personalization (which appends an <operator> section) and the
+  // sidecar can parse the file list out of the effective prompt (CL-1952).
+  return `${buildSystemPrompt(sections, format)}\n\n${buildSeedMarker(PERSONAL_AGENT_SEED_FILES)}`;
 }

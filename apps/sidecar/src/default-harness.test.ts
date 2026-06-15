@@ -41,8 +41,9 @@ mock.module('@intx/harness', () => ({
   })),
 }));
 
+const readDeployTreeMock = mock(async () => ({ systemPrompt: undefined as string | undefined }));
 mock.module('@intx/hub-agent', () => ({
-  readDeployTree: mock(async () => ({ systemPrompt: undefined })),
+  readDeployTree: readDeployTreeMock,
 }));
 
 mock.module('@intx/tools-posix', () => ({
@@ -65,7 +66,11 @@ mock.module('@intx/types/runtime', () => ({
   createBlobReader: mock(() => ({})),
 }));
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { combineRunners, createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
+import { buildPersonalAgentSystemPrompt } from '@workbench/agents';
 import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/runtime';
 const TEST_TENANT_ID = 'tenant-1';
 
@@ -192,6 +197,58 @@ describe('createDefaultHarnessBuilder', () => {
         { source: InferenceSource },
       ];
       expect(callArgs[1].source.apiKey).toBe('sk-plaintext-key');
+    });
+
+    it('strips the memory-seed marker from the model prompt while seeding the workspace (CL-1952)', async () => {
+      createHarnessMock.mockClear();
+      const deployPrompt = buildPersonalAgentSystemPrompt('Myra', { xml: true });
+      readDeployTreeMock.mockImplementationOnce(async () => ({ systemPrompt: deployPrompt }));
+
+      const storeDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'harness-seed-'));
+      try {
+        const builder = createDefaultHarnessBuilder({
+          hubHttpUrl: 'http://localhost:4000',
+          sidecarToken: 'test-token',
+        });
+
+        await builder.build({
+          agentAddress: 'myra@tenant.localhost',
+          agentConfig: {
+            agentAddress: 'myra@tenant.localhost',
+            agentId: 'agent-1',
+            sessionId: 'session-1',
+            sources: [validSource],
+            defaultSource: 'src-1',
+            grants: [],
+            tools: [],
+            principalId: 'user-1',
+            tenantId: TEST_TENANT_ID,
+            systemPrompt: 'unused fallback',
+          },
+          source: validSource,
+          storeDir,
+          agentTransport: {} as any,
+          crypto: { signSSH: mock(() => 'sig') } as any,
+          onEvent: mock(() => {}),
+          onConnectorStateChanged: mock(() => {}),
+        });
+
+        const callArgs = createHarnessMock.mock.calls[0] as unknown as [{ systemPrompt: string }];
+        const modelPrompt = callArgs[0].systemPrompt;
+        // The model never sees its own control-plane marker.
+        expect(modelPrompt).not.toContain('workbench:memory-seed');
+        expect(modelPrompt).not.toContain('<!--');
+        // But the substantive prompt body survives.
+        expect(modelPrompt).toContain('Chief of Staff and Executive Assistant');
+
+        // And the workspace was seeded with the documented memory files.
+        const seeded = await fs.promises.readdir(path.join(storeDir, 'workspace'));
+        expect(seeded.sort()).toEqual(
+          ['CONTACTS.md', 'ERRORS.md', 'HUMAN.md', 'MEMORY.md', 'PENDING.md', 'SCRATCHPAD.md'].sort()
+        );
+      } finally {
+        await fs.promises.rm(storeDir, { recursive: true, force: true });
+      }
     });
 
     it('forwards reactor events to onEvent, skipping message.received', async () => {
