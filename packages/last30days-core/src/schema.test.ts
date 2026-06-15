@@ -1,6 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import { Citation, Engagement, Report, ResearchItem, SourceLabel } from './schema';
+import {
+  BestTake,
+  BriefCluster,
+  Citation,
+  Engagement,
+  Report,
+  ReportStats,
+  ResearchItem,
+  SourceLabel,
+  TopComment,
+} from './schema';
+
+const baseStats = {
+  sourceCount: 1,
+  itemCount: 1,
+  dateRange: { from: '2026-06-01T12:00:00Z', to: '2026-06-10T12:00:00Z' },
+};
 
 const baseItem = {
   url: 'https://news.ycombinator.com/item?id=1',
@@ -24,6 +40,7 @@ describe('SourceLabel', () => {
       'threads',
       'pinterest',
       'youtube',
+      'bluesky',
     ];
     for (const source of sources) {
       expect(SourceLabel(source) instanceof type.errors).toBe(false);
@@ -123,11 +140,79 @@ describe('Citation', () => {
   });
 });
 
+describe('TopComment', () => {
+  test('accepts a comment with author', () => {
+    const result = TopComment({ text: 'Where is the limewire link', author: 'u/joe', score: 1338 });
+    expect(result instanceof type.errors).toBe(false);
+  });
+
+  test('rejects a comment missing score', () => {
+    expect(TopComment({ text: 'no score' }) instanceof type.errors).toBe(true);
+  });
+});
+
+describe('ResearchItem enrichment fields', () => {
+  test('accepts an item with topComments', () => {
+    const result = ResearchItem({
+      ...baseItem,
+      topComments: [{ text: 'great take', score: 42 }],
+    });
+    expect(result instanceof type.errors).toBe(false);
+  });
+});
+
+describe('BriefCluster', () => {
+  test('accepts a cluster with required fields', () => {
+    const result = BriefCluster({
+      id: 'cluster-1',
+      title: 'Headline',
+      score: 1.5,
+      sources: ['hn', 'reddit'],
+      items: [baseItem],
+    });
+    expect(result instanceof type.errors).toBe(false);
+  });
+
+  test('rejects a cluster missing score', () => {
+    expect(
+      BriefCluster({ id: 'c', title: 't', sources: ['hn'], items: [] }) instanceof type.errors
+    ).toBe(true);
+  });
+});
+
+describe('BestTake', () => {
+  test('accepts a best take', () => {
+    const result = BestTake({
+      quote: 'this changes everything',
+      author: 'u/jane',
+      source: 'reddit',
+      engagement: 900,
+      url: 'https://reddit.com/x',
+    });
+    expect(result instanceof type.errors).toBe(false);
+  });
+});
+
+describe('ReportStats', () => {
+  test('accepts stats with a date range', () => {
+    const result = ReportStats(baseStats);
+    expect(result instanceof type.errors).toBe(false);
+  });
+
+  test('accepts stats without a dateRange (empty coverage window)', () => {
+    expect(ReportStats({ sourceCount: 0, itemCount: 0 }) instanceof type.errors).toBe(false);
+  });
+});
+
 describe('Report', () => {
   test('accepts valid report', () => {
     const result = Report({
       topic: 'AI',
       days: 30,
+      stats: baseStats,
+      leadInsight: 'Test post',
+      clusters: [{ id: 'c1', title: 'Test post', score: 1.2, sources: ['hn'], items: [baseItem] }],
+      bestTakes: [],
       items: [baseItem],
       citations: [{ url: baseItem.url, source: 'hn', retrievedAt: '2026-06-11T00:00:00Z' }],
       generatedAt: '2026-06-11T00:00:00Z',
@@ -139,6 +224,9 @@ describe('Report', () => {
     const result = Report({
       topic: 'AI',
       days: 7,
+      stats: { sourceCount: 0, itemCount: 0, dateRange: baseStats.dateRange },
+      clusters: [],
+      bestTakes: [],
       items: [],
       citations: [],
       generatedAt: '2026-06-11T00:00:00Z',
@@ -148,8 +236,29 @@ describe('Report', () => {
 
   test('rejects report missing topic', () => {
     expect(
-      Report({ days: 30, items: [], citations: [], generatedAt: '2026-06-11T00:00:00Z' }) instanceof
-        type.errors
+      Report({
+        days: 30,
+        stats: baseStats,
+        clusters: [],
+        bestTakes: [],
+        items: [],
+        citations: [],
+        generatedAt: '2026-06-11T00:00:00Z',
+      }) instanceof type.errors
+    ).toBe(true);
+  });
+
+  test('rejects report missing stats', () => {
+    expect(
+      Report({
+        topic: 'AI',
+        days: 30,
+        clusters: [],
+        bestTakes: [],
+        items: [],
+        citations: [],
+        generatedAt: '2026-06-11T00:00:00Z',
+      }) instanceof type.errors
     ).toBe(true);
   });
 });

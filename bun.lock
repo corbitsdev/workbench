@@ -41,6 +41,7 @@
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/tools-agents": "workspace:*",
+        "@workbench/tools-bluesky": "workspace:*",
         "@workbench/tools-browser": "workspace:*",
         "@workbench/tools-dispatch": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
@@ -53,6 +54,7 @@
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
         "@workbench/tools-x": "workspace:*",
+        "@workbench/tools-youtube": "workspace:*",
         "@workbench/workflow-core": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "^1.6.9",
@@ -103,6 +105,7 @@
         "@workbench/chat": "workspace:*",
         "@workbench/client": "workspace:*",
         "@workbench/gtm-workflows": "workspace:*",
+        "@workbench/last30days-core": "workspace:*",
         "@workbench/settings": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
@@ -611,6 +614,18 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-bluesky": {
+      "name": "@workbench/tools-bluesky",
+      "dependencies": {
+        "@workbench/last30days-core": "workspace:*",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-browser": {
       "name": "@workbench/tools-browser",
       "dependencies": {
@@ -729,6 +744,18 @@
     },
     "packages/tools-x": {
       "name": "@workbench/tools-x",
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-youtube": {
+      "name": "@workbench/tools-youtube",
+      "dependencies": {
+        "@workbench/last30days-core": "workspace:*",
+      },
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1692,6 +1719,8 @@
 
     "@workbench/tools-agents": ["@workbench/tools-agents@workspace:packages/tools-agents"],
 
+    "@workbench/tools-bluesky": ["@workbench/tools-bluesky@workspace:packages/tools-bluesky"],
+
     "@workbench/tools-browser": ["@workbench/tools-browser@workspace:packages/tools-browser"],
 
     "@workbench/tools-dispatch": ["@workbench/tools-dispatch@workspace:packages/tools-dispatch"],
@@ -1715,6 +1744,8 @@
     "@workbench/tools-scrapecreators": ["@workbench/tools-scrapecreators@workspace:packages/tools-scrapecreators"],
 
     "@workbench/tools-x": ["@workbench/tools-x@workspace:packages/tools-x"],
+
+    "@workbench/tools-youtube": ["@workbench/tools-youtube@workspace:packages/tools-youtube"],
 
     "@workbench/transcript": ["@workbench/transcript@workspace:packages/transcript"],
 

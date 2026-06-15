@@ -54,6 +54,10 @@ export interface Artifact {
   version: number;
   createdAt: string;
   updatedAt: string;
+  // Structured payload persisted alongside the markdown body (e.g. citations and,
+  // for research artifacts, a `brief` object the UI renders richly). Opaque here;
+  // consumers validate the shape they expect at the boundary.
+  source?: Record<string, unknown> | null;
 }
 
 export interface ArtifactVersion {

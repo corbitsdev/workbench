@@ -20,7 +20,7 @@ const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
 const LAST30DAYS_CORE_REPORT_DEFINITION: ToolDefinition = {
   name: 'last30days_core_report',
   description:
-    'Build a ranked research report from raw ResearchItems. Applies date filter, dedupe, cluster-merge, and rank scoring.',
+    'Build a structured research brief from raw ResearchItems. Applies date filter, dedupe, cluster-merge, and rank scoring, and returns ranked clusters, stats, a lead headline, best-takes, items, and citations. Pass the returned object verbatim as write_artifact { data } for rich rendering.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -45,8 +45,7 @@ const LAST30DAYS_CORE_REPORT_DEFINITION: ToolDefinition = {
 
 const LAST30DAYS_VALIDATE_DEFINITION: ToolDefinition = {
   name: 'last30days_validate',
-  description:
-    'Validate a report body against its citations. (Stub — full validation is CL-1569.)',
+  description: 'Validate a report body against its citations. (Stub — full validation is CL-1569.)',
   inputSchema: {
     type: 'object',
     properties: {

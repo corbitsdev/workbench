@@ -1,7 +1,7 @@
 import type { AgentTool } from '@intx/agent';
 import type { ToolDefinition } from '@intx/types/runtime';
 import { normalizeRedditPost } from './normalize';
-import type { RedditPost } from './types';
+import type { RedditPost, RedditTopComment } from './types';
 
 // Reddit is fetched through ScrapeCreators rather than Reddit's own API: the
 // public JSON endpoints get IP-blocked from datacenter hosts and the authenticated
@@ -120,6 +120,29 @@ function resolveSubreddit(rec: Record<string, unknown>): string {
   return stringField(rec, ['subreddit_name_prefixed']).replace(/^r\//, '');
 }
 
+// ScrapeCreators sometimes attaches the thread's top comment(s) on the post
+// (key varies: `top_comment`, `top_comments`, `comments`). When present they are
+// the strongest community signal, so pass them through; when absent the post is
+// still emitted without them.
+function extractTopComments(rec: Record<string, unknown>): RedditTopComment[] {
+  const raw = rec['top_comments'] ?? rec['comments'] ?? rec['top_comment'];
+  const list = Array.isArray(raw) ? raw : raw === undefined ? [] : [raw];
+  const comments: RedditTopComment[] = [];
+  for (const entry of list) {
+    if (!isRecord(entry)) continue;
+    const text = stringField(entry, ['body', 'text', 'comment']);
+    if (text.length === 0) continue;
+    const author = stringField(entry, ['author', 'username']);
+    const comment: RedditTopComment = {
+      text,
+      score: Math.floor(numberField(entry, ['ups', 'score', 'votes'])),
+    };
+    if (author.length > 0) comment.author = author;
+    comments.push(comment);
+  }
+  return comments;
+}
+
 // Returns null for any item we cannot turn into a usable research result. A post
 // without a thread permalink or a resolvable date is dropped rather than emitted as
 // a bare `reddit.com` URL or a 1970-01-01 date, either of which would corrupt the
@@ -133,7 +156,8 @@ function parseRedditPost(value: unknown): RedditPost | null {
   if (permalink.length === 0 || created_utc === 0) {
     return null;
   }
-  return {
+  const topComments = extractTopComments(value);
+  const post: RedditPost = {
     id: stringField(value, ['id', 'name']),
     title: stringField(value, ['title']),
     url: stringField(value, ['url']),
@@ -143,6 +167,10 @@ function parseRedditPost(value: unknown): RedditPost | null {
     num_comments: Math.floor(numberField(value, ['num_comments', 'comment_count'])),
     subreddit: resolveSubreddit(value),
   };
+  if (topComments.length > 0) {
+    post.topComments = topComments;
+  }
+  return post;
 }
 
 function resolveLimit(args: Record<string, unknown>): number {

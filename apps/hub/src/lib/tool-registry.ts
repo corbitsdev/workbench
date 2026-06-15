@@ -4,6 +4,7 @@ import { createPosixTools } from '@intx/tools-posix';
 import { TOOL_DEFINITIONS as MAIL_TOOL_DEFINITIONS } from '@intx/tools-mail';
 import type { ToolDefinition } from '@intx/types/runtime';
 import { AGENTS_HUB_TOOLS } from '@workbench/tools-agents';
+import { BLUESKY_HUB_TOOLS } from '@workbench/tools-bluesky';
 import { BROWSER_HUB_TOOLS } from '@workbench/tools-browser';
 import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
 import { FIRECRAWL_HUB_TOOLS } from '@workbench/tools-firecrawl';
@@ -15,6 +16,7 @@ import { POLYMARKET_HUB_TOOLS } from '@workbench/tools-polymarket';
 import { REDDIT_HUB_TOOLS } from '@workbench/tools-reddit';
 import { SCRAPECREATORS_HUB_TOOLS } from '@workbench/tools-scrapecreators';
 import { X_HUB_TOOLS } from '@workbench/tools-x';
+import { YOUTUBE_HUB_TOOLS } from '@workbench/tools-youtube';
 import { ARTIFACT_HUB_TOOLS } from './artifact-tools';
 import { DISPATCH_HUB_TOOLS } from '@workbench/tools-dispatch';
 import { WRITE_ARTIFACT_HUB_TOOLS } from '../tools/write-artifact';
@@ -29,6 +31,7 @@ import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@int
  * *_HUB_TOOLS object and spread it here. No other hub or sidecar changes needed.
  */
 export const KNOWN_TOOLS: Record<string, ToolEntry> = {
+  ...BLUESKY_HUB_TOOLS,
   ...BROWSER_HUB_TOOLS,
   ...EXA_HUB_TOOLS,
   ...FIRECRAWL_HUB_TOOLS,
@@ -40,6 +43,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...REDDIT_HUB_TOOLS,
   ...SCRAPECREATORS_HUB_TOOLS,
   ...X_HUB_TOOLS,
+  ...YOUTUBE_HUB_TOOLS,
   ...ARTIFACT_HUB_TOOLS,
   ...DISPATCH_HUB_TOOLS,
   ...AGENTS_HUB_TOOLS,

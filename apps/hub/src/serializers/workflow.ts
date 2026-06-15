@@ -28,6 +28,7 @@ export function serializeArtifact(a: ArtifactRow) {
     kind: a.kind,
     title: a.title,
     content: a.content,
+    source: a.source ?? null,
     status: a.status,
     version: a.version,
     createdAt:

@@ -71,6 +71,48 @@ describe('REDDIT_HUB_TOOLS', () => {
   });
 });
 
+describe('top comment extraction', () => {
+  it('surfaces top comments from the post payload as research-item topComments', async () => {
+    const response = {
+      posts: [
+        {
+          id: 'fun1',
+          title: 'Funny thread',
+          permalink: '/r/funny/comments/fun1/funny_thread/',
+          created_utc: 1700100000,
+          ups: 100,
+          num_comments: 10,
+          subreddit: 'funny',
+          top_comments: [{ body: 'where is the limewire link', author: 'u/ace', ups: 1338 }],
+        },
+      ],
+    };
+    const handler = getHandler(
+      createRedditTools({
+        apiKey: 'k',
+        fetcher: async () => new Response(JSON.stringify(response)),
+      }),
+      'reddit_search'
+    );
+    const items = JSON.parse(await handler({ query: 'funny' }, new AbortController().signal));
+    expect(items[0].topComments[0].text).toBe('where is the limewire link');
+    expect(items[0].topComments[0].score).toBe(1338);
+    expect(items[0].topComments[0].author).toBe('u/ace');
+  });
+
+  it('omits topComments when the payload carries none', async () => {
+    const handler = getHandler(
+      createRedditTools({
+        apiKey: 'k',
+        fetcher: async () => new Response(JSON.stringify(SEARCH_RESPONSE)),
+      }),
+      'reddit_search'
+    );
+    const items = JSON.parse(await handler({ query: 'x' }, new AbortController().signal));
+    expect('topComments' in items[0]).toBe(false);
+  });
+});
+
 describe('reddit_search', () => {
   it('calls the ScrapeCreators reddit search endpoint with the api key header', async () => {
     const captured: CapturedRequest[] = [];

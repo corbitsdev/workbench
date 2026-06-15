@@ -34,6 +34,9 @@ describe('LARRY_SKILL_CONTENT', () => {
       'scrapecreators_instagram',
       'scrapecreators_threads',
       'scrapecreators_pinterest',
+      'youtube_search',
+      'bluesky_search',
+      'web_search',
     ]) {
       expect(LARRY_SKILL_CONTENT).toContain(tool);
     }
@@ -41,6 +44,47 @@ describe('LARRY_SKILL_CONTENT', () => {
 
   it('instructs the agent to degrade gracefully when a source fails', () => {
     expect(LARRY_SKILL_CONTENT).toContain('never abort the report because one source failed');
+  });
+
+  it('names all four queryType modes', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('GENERAL');
+    expect(LARRY_SKILL_CONTENT).toContain('NEWS');
+    expect(LARRY_SKILL_CONTENT).toContain('COMPARISON');
+    expect(LARRY_SKILL_CONTENT).toContain('RECOMMENDATIONS');
+  });
+
+  it('instructs ELI5 rewrite behavior', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('ELI5');
+  });
+
+  it('requires bestTakes to be woven into prose, not a separate section', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('bestTakes');
+    expect(LARRY_SKILL_CONTENT).toContain('Do NOT create a separate');
+  });
+
+  it('requires data: brief on write_artifact call', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('data: brief');
+  });
+
+  it('prohibits em-dashes', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('No em-dashes');
+  });
+
+  it('describes the structured brief shape from last30days_core_report', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('clusters');
+    expect(LARRY_SKILL_CONTENT).toContain('bestTakes');
+    expect(LARRY_SKILL_CONTENT).toContain('citations');
+    expect(LARRY_SKILL_CONTENT).toContain('stats');
+  });
+
+  it('specifies COMPARISON contract structure', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('Quick verdict');
+    expect(LARRY_SKILL_CONTENT).toContain('Head-to-head');
+    expect(LARRY_SKILL_CONTENT).toContain('Bottom line');
+  });
+
+  it('specifies RECOMMENDATIONS contract leads with the winner', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('Signal-weighted winner');
   });
 });
 

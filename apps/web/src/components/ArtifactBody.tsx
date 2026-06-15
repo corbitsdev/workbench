@@ -1,8 +1,23 @@
 import PresentationBody from './PresentationBody';
+import ResearchBody, { parseResearchBrief } from './ResearchBody';
+
+interface ArtifactBodyArtifact {
+  content: string;
+  kind: string;
+  source?: unknown;
+}
 
 interface ArtifactBodyProps {
-  body: string;
-  type: string;
+  artifact: ArtifactBodyArtifact;
+}
+
+// The structured brief lives at source.brief; source is an opaque jsonb bag, so
+// pull the brief out defensively rather than asserting its shape here.
+function extractBrief(source: unknown): unknown {
+  if (typeof source === 'object' && source !== null && 'brief' in source) {
+    return (source as Record<string, unknown>).brief;
+  }
+  return undefined;
 }
 
 function parseMarkdownTable(text: string): { headers: string[]; rows: string[][] } | null {
@@ -179,7 +194,10 @@ function BattlecardBody({ body }: { body: string }) {
   return <p className="text-sm text-text-2 whitespace-pre-wrap">{body}</p>;
 }
 
-export default function ArtifactBody({ body, type }: ArtifactBodyProps) {
+export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
+  const body = artifact.content;
+  const type = artifact.kind;
+  const brief = extractBrief(artifact.source);
   switch (type) {
     // email
     case 'email':
@@ -223,12 +241,18 @@ export default function ArtifactBody({ body, type }: ArtifactBodyProps) {
       }
       if (!isValidUrl) {
         return (
-          <p className="text-sm text-text-3 p-4">
-            Presentation URL is invalid or unavailable.
-          </p>
+          <p className="text-sm text-text-3 p-4">Presentation URL is invalid or unavailable.</p>
         );
       }
       return <PresentationBody url={body} />;
+    }
+    // research
+    case 'research': {
+      const parsedBrief = parseResearchBrief(brief);
+      if (parsedBrief !== null) {
+        return <ResearchBody brief={parsedBrief} />;
+      }
+      return <OnePagerBody body={body} />;
     }
     // fallback
     default:

@@ -1,0 +1,45 @@
+{
+  "kind": "youtube#searchListResponse",
+  "etag": "someEtag",
+  "regionCode": "US",
+  "pageInfo": {
+    "totalResults": 2,
+    "resultsPerPage": 20
+  },
+  "items": [
+    {
+      "kind": "youtube#searchResult",
+      "etag": "etag1",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "dQw4w9WgXcQ"
+      },
+      "snippet": {
+        "publishedAt": "2024-05-20T14:00:00Z",
+        "channelId": "UCuAXFkgsw1L7xaCfnd5JJOw",
+        "title": "AI in Software Development: A Deep Dive",
+        "description": "We explore how AI tools are changing the way developers write code.",
+        "thumbnails": {},
+        "channelTitle": "TechInsider",
+        "liveBroadcastContent": "none"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "etag": "etag2",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "xvFZjo5PgG0"
+      },
+      "snippet": {
+        "publishedAt": "2024-05-25T09:30:00Z",
+        "channelId": "UCnUYZLuoy1rq1aVMwx4aTzw",
+        "title": "The Future of AI: What Experts Say",
+        "description": "Top AI researchers share their predictions for the next decade.",
+        "thumbnails": {},
+        "channelTitle": "FutureTech",
+        "liveBroadcastContent": "none"
+      }
+    }
+  ]
+}

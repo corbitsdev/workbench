@@ -19,6 +19,7 @@ type InsertedArtifact = {
   title: string;
   content: string;
   status: string;
+  source: { citations: unknown[]; brief?: Record<string, unknown> };
 };
 
 /**
@@ -35,6 +36,7 @@ function makeMockDb(
     prevMaxVersion?: number;
     captureVersionInserts?: InsertedVersion[];
     captureArtifactInserts?: InsertedArtifact[];
+    captureArtifactUpdates?: Record<string, unknown>[];
   } = {}
 ) {
   const {
@@ -42,6 +44,7 @@ function makeMockDb(
     prevMaxVersion = 0,
     captureVersionInserts = [],
     captureArtifactInserts = [],
+    captureArtifactUpdates = [],
   } = opts;
 
   let selectCallCount = 0;
@@ -62,14 +65,12 @@ function makeMockDb(
       from: mock(() => ({
         where: mock(() => {
           if (callNum % 2 === 1) {
-            // Odd calls: artifact lookup — needs .limit()
+            // Odd calls: artifact lookup — needs .limit().for('update')
+            const lookupResult = existingArtifactId
+              ? Promise.resolve([{ id: existingArtifactId }])
+              : Promise.resolve([]);
             return {
-              limit: mock(() => {
-                if (existingArtifactId) {
-                  return Promise.resolve([{ id: existingArtifactId }]);
-                }
-                return Promise.resolve([]);
-              }),
+              limit: mock(() => ({ for: mock(() => lookupResult) })),
             };
           }
           // Even calls: max version query — returns direct array
@@ -90,6 +91,15 @@ function makeMockDb(
         returning: mock(() => Promise.resolve([{ id: 'art-new-1' }])),
       };
     }),
+  }));
+
+  db.update = mock((_table: unknown) => ({
+    set: mock((vals: Record<string, unknown>) => ({
+      where: mock(() => {
+        captureArtifactUpdates.push(vals);
+        return Promise.resolve([]);
+      }),
+    })),
   }));
 
   return db;
@@ -113,7 +123,6 @@ describe('write_artifact tool', () => {
       db,
       tenantId: 'tnt-42',
       principalId: 'prn-1',
-      sessionId: 'sess-1',
     });
 
     await handler({ title: 'Report', body: 'Body', kind: 'research', citations: [] }, SIGNAL);
@@ -128,7 +137,6 @@ describe('write_artifact tool', () => {
       db,
       tenantId: 'tnt-1',
       principalId: 'prn-1',
-      sessionId: 'sess-1',
     });
 
     const resultJson = await handler(
@@ -171,13 +179,12 @@ describe('write_artifact tool', () => {
         from: mock(() => ({
           where: mock(() => {
             if (isArtifactLookup) {
+              const lookupResult =
+                transactionCount === 1
+                  ? Promise.resolve([])
+                  : Promise.resolve([{ id: 'art-new-1' }]);
               return {
-                limit: mock(() => {
-                  if (transactionCount === 1) {
-                    return Promise.resolve([]);
-                  }
-                  return Promise.resolve([{ id: 'art-new-1' }]);
-                }),
+                limit: mock(() => ({ for: mock(() => lookupResult) })),
               };
             }
             const maxVer = transactionCount === 1 ? 0 : 1;
@@ -197,11 +204,14 @@ describe('write_artifact tool', () => {
       }),
     }));
 
+    db.update = mock((_table: unknown) => ({
+      set: mock(() => ({ where: mock(() => Promise.resolve([])) })),
+    }));
+
     const handler = getStringHandler({
       db,
       tenantId: 'tnt-1',
       principalId: 'prn-1',
-      sessionId: 'sess-1',
     });
 
     const result1Json = await handler(
@@ -240,11 +250,82 @@ describe('write_artifact tool', () => {
       db,
       tenantId: 'tnt-1',
       principalId: 'prn-author-42',
-      sessionId: 'sess-1',
     });
 
     await handler({ title: 'T', body: 'B', kind: 'report', citations: [] }, SIGNAL);
     expect(versionInserts[0]?.authorId).toBe('prn-author-42');
+  });
+
+  it('data: structured brief is persisted under source.brief', async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-1',
+    });
+
+    const brief = { topic: 'AI', clusters: [], bestTakes: [] };
+    await handler(
+      { title: 'Brief', body: 'Body', kind: 'research', citations: [], data: brief },
+      SIGNAL
+    );
+
+    expect(artifactInserts[0]?.source.brief).toEqual(brief);
+  });
+
+  it('data: omitted leaves source without a brief key', async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-1',
+    });
+
+    await handler({ title: 'Plain', body: 'Body', kind: 'report', citations: [] }, SIGNAL);
+
+    expect('brief' in (artifactInserts[0]?.source ?? {})).toBe(false);
+  });
+
+  it('update path: refreshes the parent row content, source, and version', async () => {
+    const updates: Record<string, unknown>[] = [];
+    const db = makeMockDb({
+      existingArtifactId: 'art-existing',
+      prevMaxVersion: 2,
+      captureArtifactUpdates: updates,
+    });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-1',
+    });
+
+    const brief = { topic: 'AI', clusters: [], bestTakes: [] };
+    await handler(
+      { title: 'Brief', body: 'fresh body', kind: 'research', citations: [], data: brief },
+      SIGNAL
+    );
+
+    expect(updates).toHaveLength(1);
+    const update = updates[0];
+    if (!update) throw new Error('expected a parent-row update');
+    expect(update.content).toBe('fresh body');
+    expect(update.version).toBe(3);
+    expect((update.source as { brief?: unknown }).brief).toEqual(brief);
+  });
+
+  it('create path: does not issue a parent-row update', async () => {
+    const updates: Record<string, unknown>[] = [];
+    const db = makeMockDb({ captureArtifactUpdates: updates });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-1',
+    });
+
+    await handler({ title: 'New', body: 'b', kind: 'research', citations: [] }, SIGNAL);
+    expect(updates).toHaveLength(0);
   });
 
   it('missing title: throws before any DB write', async () => {
@@ -254,7 +335,6 @@ describe('write_artifact tool', () => {
       db,
       tenantId: 'tnt-1',
       principalId: 'prn-1',
-      sessionId: 'sess-1',
     });
 
     await expect(

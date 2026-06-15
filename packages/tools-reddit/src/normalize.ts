@@ -1,7 +1,7 @@
 import type { RedditPost } from './types';
 
 export function normalizeRedditPost(item: RedditPost) {
-  return {
+  const base = {
     url: `https://www.reddit.com${item.permalink}`,
     title: item.title,
     publishedAt: new Date(item.created_utc * 1000).toISOString(),
@@ -12,4 +12,8 @@ export function normalizeRedditPost(item: RedditPost) {
     },
     author: `r/${item.subreddit}`,
   };
+  if (item.topComments !== undefined && item.topComments.length > 0) {
+    return { ...base, topComments: item.topComments };
+  }
+  return base;
 }

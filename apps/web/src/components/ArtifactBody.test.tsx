@@ -11,105 +11,106 @@ afterEach(() => {
 const TEST_BODY = '# Hello\n\nThis is test content.';
 const containsHello = (content: string) => content.includes('Hello');
 
+function renderKind(kind: string, source?: Record<string, unknown> | null) {
+  return render(
+    React.createElement(ArtifactBody, { artifact: { content: TEST_BODY, kind, source } })
+  );
+}
+
 describe('ArtifactBody rendering', () => {
   it('renders email body for email', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'email' }));
-    expect(screen.getByText(containsHello)).toBeDefined();
+    renderKind('email');
+    expect(screen.getByText(containsHello)).not.toBeNull();
   });
 
   it('renders linkedin body for linkedin-post', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'linkedin-post' }));
-    expect(screen.getByText(containsHello)).toBeDefined();
+    renderKind('linkedin-post');
+    expect(screen.getByText(containsHello)).not.toBeNull();
   });
 
   it('renders linkedin body for twitter-post', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'twitter-post' }));
-    expect(screen.getByText(containsHello)).toBeDefined();
+    renderKind('twitter-post');
+    expect(screen.getByText(containsHello)).not.toBeNull();
   });
 
   it('renders linkedin body for founder-pov-post', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'founder-pov-post' }));
-    expect(screen.getByText(containsHello)).toBeDefined();
+    renderKind('founder-pov-post');
+    expect(screen.getByText(containsHello)).not.toBeNull();
   });
 
   it('renders one-pager body for one-pager', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'one-pager' }));
-    expect(screen.getByText('Hello')).toBeDefined();
+    renderKind('one-pager');
+    expect(screen.getByText('Hello')).not.toBeNull();
   });
 
   it('renders one-pager body for blog', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'blog' }));
-    expect(screen.getByText('Hello')).toBeDefined();
+    renderKind('blog');
+    expect(screen.getByText('Hello')).not.toBeNull();
   });
 
   it('renders one-pager body for case-study', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'case-study' }));
-    expect(screen.getByText('Hello')).toBeDefined();
+    renderKind('case-study');
+    expect(screen.getByText('Hello')).not.toBeNull();
   });
 
   it('renders one-pager body for objection-handling', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'objection-handling' }));
-    expect(screen.getByText('Hello')).toBeDefined();
+    renderKind('objection-handling');
+    expect(screen.getByText('Hello')).not.toBeNull();
   });
 
   it('renders one-pager body for customer-quotes', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'customer-quotes' }));
-    expect(screen.getByText('Hello')).toBeDefined();
+    renderKind('customer-quotes');
+    expect(screen.getByText('Hello')).not.toBeNull();
   });
 
   it('renders battlecard body for battlecard', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'battlecard' }));
-    expect(screen.getByText(containsHello)).toBeDefined();
+    renderKind('battlecard');
+    expect(screen.getByText(containsHello)).not.toBeNull();
   });
 
   it('renders markdown body for pain-points', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'pain-points' }));
-    expect(screen.getByText('Hello')).toBeDefined();
+    renderKind('pain-points');
+    expect(screen.getByText('Hello')).not.toBeNull();
   });
 
   it('renders markdown body for call-transcript', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'call-transcript' }));
-    expect(screen.getByText('Hello')).toBeDefined();
+    renderKind('call-transcript');
+    expect(screen.getByText('Hello')).not.toBeNull();
   });
 
   it('renders markdown body for unknown kind instead of blank screen', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'unknown-kind' as any }));
-    expect(screen.getByText('Hello')).toBeDefined();
+    renderKind('unknown-kind');
+    expect(screen.getByText('Hello')).not.toBeNull();
   });
 
   // Backward-compatibility: old artifact kind names still render
   it('renders email body for follow-up-email (legacy)', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'follow-up-email' as any }));
-    expect(screen.getByText(containsHello)).toBeDefined();
+    renderKind('follow-up-email');
+    expect(screen.getByText(containsHello)).not.toBeNull();
   });
 
   it('renders linkedin body for pain-points-linkedin-post (legacy)', () => {
-    render(
-      React.createElement(ArtifactBody, {
-        body: TEST_BODY,
-        type: 'pain-points-linkedin-post' as any,
-      })
-    );
-    expect(screen.getByText(containsHello)).toBeDefined();
+    renderKind('pain-points-linkedin-post');
+    expect(screen.getByText(containsHello)).not.toBeNull();
   });
 
   it('renders linkedin body for pain-points-twitter-post (legacy)', () => {
-    render(
-      React.createElement(ArtifactBody, {
-        body: TEST_BODY,
-        type: 'pain-points-twitter-post' as any,
-      })
-    );
-    expect(screen.getByText(containsHello)).toBeDefined();
+    renderKind('pain-points-twitter-post');
+    expect(screen.getByText(containsHello)).not.toBeNull();
   });
 
   it('renders one-pager body for sales-one-pager (legacy)', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'sales-one-pager' as any }));
-    expect(screen.getByText('Hello')).toBeDefined();
+    renderKind('sales-one-pager');
+    expect(screen.getByText('Hello')).not.toBeNull();
   });
 
   it('renders one-pager body for case-study-draft (legacy)', () => {
-    render(React.createElement(ArtifactBody, { body: TEST_BODY, type: 'case-study-draft' as any }));
-    expect(screen.getByText('Hello')).toBeDefined();
+    renderKind('case-study-draft');
+    expect(screen.getByText('Hello')).not.toBeNull();
+  });
+
+  it('falls back to markdown for a research artifact without a structured brief', () => {
+    renderKind('research');
+    expect(screen.getByText('Hello')).not.toBeNull();
   });
 });
