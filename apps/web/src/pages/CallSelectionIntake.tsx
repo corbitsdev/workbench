@@ -8,7 +8,8 @@ import type { IntakeRequest } from '../types/intake';
 const STEP_LABELS = {
   intake: 'Call source',
   analyze: 'Agent review',
-  generate: 'Approve collateral',
+  generate: 'Generate collateral',
+  approve: 'Approve',
 };
 
 const steps = buildSteps('intake', STEP_LABELS);

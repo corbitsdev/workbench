@@ -3,6 +3,7 @@ import {
   createPainPointArtifacts,
   createTranscriptArtifacts,
   deriveCollateralRunTitle,
+  isCollateralKind,
   selectCollateralTypeIds,
 } from './artifacts';
 
@@ -69,6 +70,34 @@ export const collateralGenerationWorkflow: WorkflowType = {
       runTitle: deriveCollateralRunTitle(input),
     }),
   selectGenerateArtifactKinds: selectCollateralTypeIds,
+  deriveCurrentStep: (status) => {
+    switch (status) {
+      case 'pending':
+      case 'analyzing':
+        return 'analyze';
+      case 'running':
+      case 'generating':
+      case 'reviewing':
+      case 'done':
+        return 'generate';
+      case 'failed':
+        return 'intake';
+      default:
+        throw new Error(`Unknown workflow status: ${status}`);
+    }
+  },
+  serializeStepState: ({ intakeTranscript, painPoints, artifacts }) => {
+    const collateral = artifacts.filter((a) => isCollateralKind(a.kind));
+    return {
+      intake: {
+        completed: true,
+        transcriptId: intakeTranscript?.id ?? null,
+        transcript: intakeTranscript?.content,
+      },
+      analyze: { completed: painPoints.length > 0, painPoints },
+      generate: { completed: collateral.length > 0, artifacts: collateral },
+    };
+  },
   outputSchema: {
     type: 'object',
     properties: {

@@ -815,6 +815,22 @@ export function createWorkflowRouter(
     });
 
     const stepConfig: WorkflowStepConfig = (wf.input as WorkflowInput)?.stepConfig ?? {};
+    const rawInput = (wf.input as Record<string, unknown>) ?? {};
+
+    // Each workflow owns how its steps serialize — the host stays
+    // domain-agnostic and never hardcodes a workflow's step list.
+    const workflowDef = workflowRegistry.get(wf.kind);
+    const intakeTranscript = tx
+      ? { id: transcriptId ?? null, content: tx.content }
+      : { id: transcriptId ?? null };
+    const steps =
+      workflowDef?.serializeStepState?.({
+        status: wf.status,
+        input: rawInput,
+        intakeTranscript,
+        painPoints: points.map(serializePainPoint),
+        artifacts: allArtifacts.map(serializeArtifact),
+      }) ?? {};
 
     return c.json({
       id,
@@ -823,21 +839,7 @@ export function createWorkflowRouter(
       currentStep,
       companyName: (wf.input as WorkflowInput)?.companyName ?? null,
       stepConfig,
-      steps: {
-        intake: { completed: true, transcriptId: transcriptId ?? null, transcript: tx?.content },
-        analyze: {
-          completed:
-            wf.status === 'running' ||
-            wf.status === 'generating' ||
-            wf.status === 'reviewing' ||
-            wf.status === 'done',
-          painPoints: points.map(serializePainPoint),
-        },
-        generate: {
-          completed: allArtifacts.some((a) => isCollateralKind(a.kind)),
-          artifacts: allArtifacts.filter((a) => isCollateralKind(a.kind)).map(serializeArtifact),
-        },
-      },
+      steps,
     });
   });
 
@@ -901,6 +903,7 @@ export function createWorkflowRouter(
           status: 'analyzing',
           input: {
             ...currentInput,
+            templateSubmitted: true,
             templateId: body.templateId,
             audience: body.audience,
             tone: body.tone,
@@ -935,6 +938,7 @@ export function createWorkflowRouter(
           });
           return c.json({ error: 'Source artifact not found' }, 404);
         }
+        const callTitle = body.callTitle?.trim() || sourceArtifact.title;
         await db
           .update(workflowRun)
           .set({
@@ -943,6 +947,7 @@ export function createWorkflowRouter(
               ...currentInput,
               transcriptSource: 'artifact',
               sourceArtifactId: body.sourceArtifactId,
+              callTitle,
             },
           })
           .where(eq(workflowRun.id, id));
@@ -1084,6 +1089,12 @@ export function createWorkflowRouter(
         });
         return c.json({ error: 'Geralt agent is not running. Launch it first.' }, 400);
       }
+      if (!instance.address) {
+        log.warn('Geralt agent instance has no address', {
+          agentInstanceId: body.agentInstanceId,
+        });
+        return c.json({ error: 'Geralt agent is not reachable yet. Try again in a moment.' }, 503);
+      }
       const wfInput = (wf.input as Record<string, unknown>) ?? {};
       const briefLines: string[] = [];
       if (typeof wfInput.templateId === 'string')
@@ -1098,23 +1109,50 @@ export function createWorkflowRouter(
           where: eq(transcript.id, wfInput.transcriptId),
         });
         transcriptContent = txRow?.content ?? '';
+      } else if (typeof wfInput.sourceArtifactId === 'string') {
+        // Artifact-sourced presentations carry their content on the artifact,
+        // not a transcript row — read it so the brief is not empty.
+        const sourceArtifact = await db.query.artifact.findFirst({
+          where: eq(artifact.id, wfInput.sourceArtifactId),
+        });
+        transcriptContent = sourceArtifact?.content ?? '';
       }
       const brief =
-        briefLines.join('\n') + (transcriptContent ? `\n\nTranscript:\n${transcriptContent}` : '');
+        briefLines.join('\n') + (transcriptContent ? `\n\nSource:\n${transcriptContent}` : '');
       const kp = await generateKeyPair();
       const cryptoProvider = createNodeCrypto(kp);
       const mailId = generateId('sessionMail');
-      await sessionService.sendUserMessage({
-        agentAddress: instance.address,
-        from: 'workflow@system',
-        messageId: `<${mailId}@system>`,
-        date: new Date(),
-        content: brief,
-        sessionId: instance.sessionId,
-        tenantId: userContext.tenantId,
-        cryptoProvider,
-      });
-      await db.update(workflowRun).set({ status: 'generating' }).where(eq(workflowRun.id, id));
+      try {
+        await sessionService.sendUserMessage({
+          agentAddress: instance.address,
+          from: 'workflow@system',
+          messageId: `<${mailId}@system>`,
+          date: new Date(),
+          content: brief,
+          sessionId: instance.sessionId,
+          tenantId: userContext.tenantId,
+          cryptoProvider,
+        });
+      } catch (err) {
+        log.error('Failed to dispatch presentation brief to Geralt', {
+          workflowId: id,
+          agentInstanceId: body.agentInstanceId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return c.json(
+          { error: 'Failed to reach the Geralt agent. Make sure it is running, then try again.' },
+          503
+        );
+      }
+      // Persist which Geralt received the brief so the selected-workflow panel
+      // links the user to the session that is actually building the deck.
+      await db
+        .update(workflowRun)
+        .set({
+          status: 'generating',
+          input: { ...wfInput, agentInstanceId: body.agentInstanceId },
+        })
+        .where(eq(workflowRun.id, id));
       log.info('Presentation generation dispatched to Geralt', {
         workflowId: id,
         agentInstanceId: body.agentInstanceId,

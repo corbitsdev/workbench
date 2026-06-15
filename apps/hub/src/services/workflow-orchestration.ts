@@ -37,44 +37,15 @@ export function getFirstRunnableStep(kind: string): string {
   return next;
 }
 
-/** Map a DB status to the conceptual step name for a given workflow. */
+/** Map a generic lifecycle status to the current step name. The mapping is
+ *  owned by the workflow definition — the host never branches on kind. */
 export function deriveCurrentStepForWorkflow(status: string, kind: string): string {
-  const steps = getWorkflowStepOrder(kind);
-  if (kind === 'presentation-generation') {
-    switch (status) {
-      case 'pending':
-      case 'failed':
-        return steps[0]!;
-      case 'analyzing':
-        return steps[1]!;
-      case 'running':
-      case 'generating':
-      case 'reviewing':
-      case 'done':
-        return steps[2]!;
-      default:
-        throw new Error(`Unknown workflow status: ${status}`);
-    }
+  const def = workflowRegistry.get(kind);
+  if (!def) throw new Error(`Workflow definition not found: ${kind}`);
+  if (!def.deriveCurrentStep) {
+    throw new Error(`Workflow ${kind} does not define deriveCurrentStep`);
   }
-  const firstPostIntake = steps[1];
-  const lastStep = steps[steps.length - 1];
-  if (!firstPostIntake || !lastStep) {
-    throw new Error(`Workflow ${kind} has too few steps to derive current step`);
-  }
-  switch (status) {
-    case 'pending':
-    case 'analyzing':
-      return firstPostIntake;
-    case 'running':
-    case 'generating':
-    case 'reviewing':
-    case 'done':
-      return lastStep;
-    case 'failed':
-      return 'intake';
-    default:
-      throw new Error(`Unknown workflow status: ${status}`);
-  }
+  return def.deriveCurrentStep(status);
 }
 
 export function deriveWorkflowDisplayName(

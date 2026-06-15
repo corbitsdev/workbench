@@ -45,6 +45,47 @@ export const presentationGenerationWorkflow: WorkflowType = {
     required: [],
   },
   deriveRunTitle: derivePresentationRunTitle,
+  serializeStepState: ({ status, input }) => {
+    const str = (value: unknown): string | undefined =>
+      typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+    // Completion reflects whether each step's own gate was passed, recorded
+    // explicitly by the step handler — never inferred from a later step.
+    return {
+      template: {
+        completed: input.templateSubmitted === true,
+        templateId: str(input.templateId),
+        audience: str(input.audience),
+        tone: str(input.tone),
+        goal: str(input.goal),
+      },
+      source: {
+        completed: Boolean(str(input.transcriptSource)),
+        transcriptSource: str(input.transcriptSource),
+        callTitle: str(input.callTitle),
+      },
+      generate: {
+        completed: status === 'done',
+        dispatched: status === 'generating' || status === 'done',
+        agentInstanceId: str(input.agentInstanceId),
+      },
+    };
+  },
+  deriveCurrentStep: (status) => {
+    switch (status) {
+      case 'pending':
+      case 'failed':
+        return 'template';
+      case 'analyzing':
+        return 'source';
+      case 'running':
+      case 'generating':
+      case 'reviewing':
+      case 'done':
+        return 'generate';
+      default:
+        throw new Error(`Unknown workflow status: ${status}`);
+    }
+  },
   createIntakeArtifacts: ({ input, content, callTitle }) => {
     const transcriptSource = input.transcriptSource;
     if (

@@ -463,9 +463,11 @@ describe('Workflow router', () => {
     };
     expect(Array.isArray(json.artifacts)).toBe(true);
     expect(json.artifacts).toHaveLength(1);
-    expect(json.artifacts[0].id).toBe('a-1');
-    expect(json.artifacts[0].sessionName).toBe('Acme Corp');
-    expect(json.artifacts[0].sessionStatus).toBe('done');
+    const [firstArtifact] = json.artifacts;
+    if (!firstArtifact) throw new Error('expected one artifact');
+    expect(firstArtifact.id).toBe('a-1');
+    expect(firstArtifact.sessionName).toBe('Acme Corp');
+    expect(firstArtifact.sessionStatus).toBe('done');
   });
 
   // Approval gate: PATCH artifact status drives the reviewing -> done transition.
@@ -651,7 +653,9 @@ describe('Workflow router', () => {
     expect(res.status).toBe(200);
 
     const json = (await res.json()) as { artifacts: Array<{ sessionName: string }> };
-    expect(json.artifacts[0].sessionName).toBe('Demo with Globex');
+    const [firstArtifact] = json.artifacts;
+    if (!firstArtifact) throw new Error('expected one artifact');
+    expect(firstArtifact.sessionName).toBe('Demo with Globex');
   });
 
   it('GET /artifacts returns an empty array when the user has no sessions', async () => {
@@ -2498,6 +2502,73 @@ describe('Workflow router', () => {
       expect(res.status).toBe(200);
       expect(sendUserMessage).toHaveBeenCalledTimes(1);
       expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'generating' }));
+    });
+
+    it('POST /workflows/id/steps generate returns 503 (not 500) when the agent has no address', async () => {
+      const db = createPresentationMockDb();
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'running',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: { templateId: 'tmpl-1', transcriptId: 'tx-1' } as unknown as {
+          companyName: string;
+          transcriptId: string;
+        },
+      }));
+      db.query.agentInstance.findFirst = mock<
+        () => { id: string; agentId: string; tenantId: string; address: null; sessionId: null }
+      >(() => ({
+        id: 'inst-geralt',
+        agentId: 'agent-geralt',
+        tenantId: 'tenant-personal',
+        address: null,
+        sessionId: 'ses-geralt' as unknown as null,
+      }));
+      const sendUserMessage = mock(() => Promise.resolve());
+      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step: 'generate', agentInstanceId: 'inst-geralt' }),
+        })
+      );
+      expect(res.status).toBe(503);
+      expect(sendUserMessage).not.toHaveBeenCalled();
+    });
+
+    it('POST /workflows/id/steps generate returns 503 (not 500) when dispatch throws', async () => {
+      const db = createPresentationMockDb();
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'running',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: { templateId: 'tmpl-1', transcriptId: 'tx-1' } as unknown as {
+          companyName: string;
+          transcriptId: string;
+        },
+      }));
+      db.query.agentInstance.findFirst = mock<
+        () => { id: string; agentId: string; tenantId: string; address: string; sessionId: null }
+      >(() => ({
+        id: 'inst-geralt',
+        agentId: 'agent-geralt',
+        tenantId: 'tenant-personal',
+        address: 'inst-geralt@global.example.com',
+        sessionId: 'ses-geralt' as unknown as null,
+      }));
+      const sendUserMessage = mock(() => Promise.reject(new Error('agent not routable')));
+      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step: 'generate', agentInstanceId: 'inst-geralt' }),
+        })
+      );
+      expect(res.status).toBe(503);
     });
   });
 

@@ -32,7 +32,7 @@ describe('@workbench/client artifacts', () => {
     // Use a real QueryClient (rather than module-mocking @tanstack/react-query,
     // which leaks globally under bun and poisons every later test that renders a
     // real query). Read the registered queryKey back from the cache.
-    const fetchMock = mock(() =>
+    const fetchMock = mock<(url?: unknown, init?: unknown) => Promise<Response>>(() =>
       Promise.resolve(new Response(JSON.stringify({ artifacts: [] }), { status: 200 }))
     );
     const fetcher: typeof fetch = Object.assign(

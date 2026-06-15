@@ -5,6 +5,8 @@ export type {
   UserContext,
   WorkflowArtifactDraft,
   WorkflowOutputOption,
+  WorkflowStepState,
+  WorkflowStepStateContext,
   MultiIOInput,
 } from './types';
 export {

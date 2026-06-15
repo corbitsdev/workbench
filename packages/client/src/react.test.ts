@@ -39,6 +39,7 @@ function newClient(): QueryClient {
 
 const fakeWorkflow: WorkflowSummary = {
   id: 'wf-1',
+  kind: 'collateral-generation',
   status: 'reviewing',
   createdAt: new Date().toISOString(),
   transcriptId: 'tx-1',

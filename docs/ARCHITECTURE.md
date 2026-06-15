@@ -101,7 +101,9 @@ The workbench product app contains no management UI — no credential settings p
 
 **State Management**: The frontend uses TanStack Query for all server state. Each stage page queries the workflow endpoint (`GET /workflows/:id`) and mutates via step endpoints (`POST /workflows/:id/steps`). No local session state is held in React context.
 
-**Step Derivation**: The workflow state includes a derived `currentStep` field that maps workflow `status` to the active step name. Mapping is defined in `apps/hub/src/routes/workflow.ts:deriveCurrentStep()`. Each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` to derive the sidebar step list dynamically.
+**Generic host, workflow-owned steps**: A workflow is generic — a series of steps with a lifecycle `status` and granted capabilities. The host (hub + web) is domain-agnostic; each workflow's step shapes, step inputs/outputs, current-step mapping, and UI live in its own package. On the backend, `WorkflowType` (`@workbench/workflow-core`) carries `serializeStepState(ctx)` (builds the workflow's named steps from generic run state) and `deriveCurrentStep(status)` (maps the lifecycle status to a step name). The `GET /workflows/:id` handler delegates to these — it never branches on workflow kind or hardcodes a step list. `status` values (`running`/`generating`/`reviewing`/`done`) are lifecycle labels, not steps. On the web, a kind→UI registry (`apps/web/src/workflows/registry.tsx`) maps each workflow kind to its package-provided `{ NewPane, SelectedPanel }`; `WorkbenchHome` renders the resolved components with no `workflowKind` branching, and the registry throws on an unregistered kind rather than guessing. Each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` to derive the sidebar step list dynamically.
+
+Step *execution* (the per-kind step handlers in `apps/hub/src/routes/workflow.ts`) is not yet extracted into the workflow packages — tracked in CL-1926.
 
 ### Backend (`apps/hub/`)
 

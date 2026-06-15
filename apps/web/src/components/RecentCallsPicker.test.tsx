@@ -16,7 +16,9 @@ function jsonResponse(body: unknown, ok = true): Response {
   } as unknown as Response;
 }
 
-const mockFetch = mock(() => Promise.resolve(jsonResponse({ calls: [] })));
+const mockFetch = mock<(input?: unknown, init?: unknown) => Promise<Response>>(() =>
+  Promise.resolve(jsonResponse({ calls: [] }))
+);
 
 function renderPicker() {
   const client = new QueryClient({

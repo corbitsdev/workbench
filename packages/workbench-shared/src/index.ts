@@ -118,6 +118,10 @@ export interface WorkflowState {
   status: SessionStatus;
   currentStep: string;
   companyName: string | null;
+  /**
+   * Generic per-step state. Each workflow's steps carry their own
+   * inputs/outputs here under the step name; the host stays domain-agnostic.
+   */
   steps: Record<string, unknown>;
 }
 

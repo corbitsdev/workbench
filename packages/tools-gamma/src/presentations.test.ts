@@ -6,6 +6,7 @@ function makeFetcher(responses: Array<{ status: number; body: unknown }>): Gamma
   let callIndex = 0;
   return async (_input, _init) => {
     const response = responses[callIndex++] ?? responses[responses.length - 1];
+    if (!response) throw new Error('no mock response configured');
     return new Response(JSON.stringify(response.body), {
       status: response.status,
       headers: { 'Content-Type': 'application/json' },
@@ -21,7 +22,14 @@ describe('gamma_duplicate_presentation', () => {
       ...baseConfig,
       fetcher: makeFetcher([
         { status: 200, body: { generationId: 'gen_copy' } },
-        { status: 200, body: { status: 'completed', gammaUrl: 'https://gamma.app/deck/copy-abc', gammaId: 'g_copy' } },
+        {
+          status: 200,
+          body: {
+            status: 'completed',
+            gammaUrl: 'https://gamma.app/deck/copy-abc',
+            gammaId: 'g_copy',
+          },
+        },
       ]),
     });
     const tool = tools.find((t) => t.definition.name === 'gamma_duplicate_presentation');
@@ -56,7 +64,11 @@ describe('gamma_duplicate_presentation', () => {
         });
       }
       return new Response(
-        JSON.stringify({ status: 'completed', gammaUrl: 'https://gamma.app/deck/d', gammaId: 'g_d' }),
+        JSON.stringify({
+          status: 'completed',
+          gammaUrl: 'https://gamma.app/deck/d',
+          gammaId: 'g_d',
+        }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     };
@@ -80,7 +92,11 @@ describe('gamma_duplicate_presentation', () => {
         });
       }
       return new Response(
-        JSON.stringify({ status: 'completed', gammaUrl: 'https://gamma.app/deck/x', gammaId: 'g_x' }),
+        JSON.stringify({
+          status: 'completed',
+          gammaUrl: 'https://gamma.app/deck/x',
+          gammaId: 'g_x',
+        }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     };
@@ -108,9 +124,9 @@ describe('gamma_duplicate_presentation', () => {
     });
     const tool = tools.find((t) => t.definition.name === 'gamma_duplicate_presentation');
     if (!tool || tool.kind !== 'string') throw new Error('tool not found');
-    await expect(
-      tool.handler({ gammaId: 'g_orig' }, new AbortController().signal)
-    ).rejects.toThrow('Gamma generation failed');
+    await expect(tool.handler({ gammaId: 'g_orig' }, new AbortController().signal)).rejects.toThrow(
+      'Gamma generation failed'
+    );
   });
 
   it('throws on non-2xx response', async () => {

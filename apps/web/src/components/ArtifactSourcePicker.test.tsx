@@ -51,14 +51,16 @@ function renderPicker(
 
 describe('ArtifactSourcePicker', () => {
   it('selecting an artifact and continuing reports source: artifact with its id', () => {
-    const onSelect = mock(() => {});
+    const onSelect = mock<(data: unknown) => void>(() => {});
     renderPicker([makeArtifact({})], { onSelect });
 
     fireEvent.click(screen.getByText('Acme Pain Points'));
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(onSelect).toHaveBeenCalledTimes(1);
-    expect(onSelect.mock.calls[0][0]).toEqual({
+    const [firstCall] = onSelect.mock.calls;
+    if (!firstCall) throw new Error('expected onSelect to be called');
+    expect(firstCall[0]).toEqual({
       source: 'artifact',
       sourceArtifactId: 'a-1',
       callTitle: 'Acme Pain Points',

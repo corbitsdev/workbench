@@ -16,7 +16,9 @@ function jsonResponse(body: unknown): Response {
   } as unknown as Response;
 }
 
-const mockFetch = mock(() => Promise.resolve(jsonResponse([])));
+const mockFetch = mock<(input?: unknown, init?: unknown) => Promise<Response>>(() =>
+  Promise.resolve(jsonResponse([]))
+);
 
 function Probe({ enabled }: { enabled: boolean }) {
   const { isFetching } = useGammaTemplates({ enabled });

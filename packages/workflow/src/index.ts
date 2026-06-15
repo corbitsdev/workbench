@@ -3,7 +3,13 @@ export {
   PresentationGenerationWizard,
   type PresentationGenerationWizardProps,
   type PresentationSourceData,
+  type GammaTemplate,
 } from './PresentationGenerationWizard';
+export {
+  PresentationWorkflowPanel,
+  type PresentationWorkflowPanelProps,
+  type PresentationWorkflowView,
+} from './PresentationWorkflowPanel';
 export type {
   PresentationStepArgs,
   PresentationTemplateStepArgs,

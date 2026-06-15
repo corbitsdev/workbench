@@ -31,6 +31,25 @@ export type WorkflowOutputOption = {
   label: string;
 };
 
+/** Generic per-step state. `completed` is required; everything else is the
+ *  step's own custom inputs/outputs, opaque to the host. */
+export type WorkflowStepState = {
+  completed: boolean;
+  [key: string]: unknown;
+};
+
+/** Host-supplied, already-serialized run state. The workflow turns this into
+ *  its own named steps — the host never hardcodes a workflow's step list. */
+export type WorkflowStepStateContext = {
+  /** Generic lifecycle status (pending/running/generating/reviewing/done/failed).
+   *  A status label, NOT a step. */
+  status: string;
+  input: Record<string, unknown>;
+  intakeTranscript?: { id: string | null; content?: string };
+  painPoints: Array<Record<string, unknown>>;
+  artifacts: Array<Record<string, unknown> & { kind: string; status: string }>;
+};
+
 export type WorkflowType = {
   kind: string;
   name: string;
@@ -51,6 +70,13 @@ export type WorkflowType = {
     companyName?: string | null;
   }) => WorkflowArtifactDraft[];
   selectGenerateArtifactKinds?: (requested: string[] | undefined) => string[];
+  /** Build this workflow's custom, named steps from generic run state. The host
+   *  serializes the raw rows and delegates here so step shapes stay in the
+   *  workflow package, not the hub. */
+  serializeStepState?: (context: WorkflowStepStateContext) => Record<string, WorkflowStepState>;
+  /** Map a generic lifecycle status to this workflow's current step name. Owned
+   *  by the workflow so the host never branches on kind to order steps. */
+  deriveCurrentStep?: (status: string) => string;
   /**
    * V2 generic pipeline: artifact kinds the user may select as inputs. Undefined
    * means any tenant artifact is eligible; an empty array means none.

@@ -15,6 +15,7 @@ export function createMockHubApi(overrides?: Record<string, any>) {
         userId: '',
         userName: '',
         personalTenantId: null,
+        rootTenantIds: [],
         paInstanceId: null,
         provisioned: false,
         credentialResolved: false,

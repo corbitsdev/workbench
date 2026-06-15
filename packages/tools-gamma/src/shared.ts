@@ -97,7 +97,7 @@ export async function gammaFetchJSON(
   const response = await fetcher(url.toString(), {
     method: request.method,
     headers: gammaHeaders(config.apiKey),
-    signal,
+    ...(signal !== undefined ? { signal } : {}),
     ...(request.body !== undefined ? { body: JSON.stringify(request.body) } : {}),
   } satisfies RequestInit);
 

@@ -6,6 +6,7 @@ function makeFetcher(responses: Array<{ status: number; body: unknown }>): Gamma
   let callIndex = 0;
   return async (_input, _init) => {
     const response = responses[callIndex++] ?? responses[responses.length - 1];
+    if (!response) throw new Error('no mock response configured');
     return new Response(JSON.stringify(response.body), {
       status: response.status,
       headers: { 'Content-Type': 'application/json' },

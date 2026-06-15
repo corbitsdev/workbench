@@ -20,11 +20,10 @@ describe('ErrorBoundary', () => {
 
   it('renders a custom fallback when provided', () => {
     render(
-      React.createElement(
-        ErrorBoundary,
-        { fallback: React.createElement('p', null, 'custom fallback') },
-        React.createElement(Boom, null)
-      )
+      React.createElement(ErrorBoundary, {
+        fallback: React.createElement('p', null, 'custom fallback'),
+        children: React.createElement(Boom, null),
+      })
     );
     screen.getByText('custom fallback');
   });

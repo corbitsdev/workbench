@@ -2,18 +2,12 @@ import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AgentChat } from '../components/AgentChat';
-import { WorkflowPanel } from '../components/WorkflowPanel';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { NewWorkflowPane } from '../components/NewWorkflowPane';
-import { PresentationGenerationWizard } from '@workbench/workflow';
-import RecentCallsPicker from '../components/RecentCallsPicker';
-import ArtifactSourcePicker from '../components/ArtifactSourcePicker';
 import {
-  useCreatePresentationWorkflow,
-  useSubmitPresentationStep,
-  useGeraltInstances,
-  useGammaTemplates,
-} from '../hooks/use-presentation-workflow';
+  getWorkflowUi,
+  type WorkflowNewPaneProps,
+  type WorkflowSelectedPanelProps,
+} from '../workflows/registry';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { UnifiedCatalogModal } from '../components/layout/UnifiedCatalogModal';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
@@ -22,6 +16,7 @@ import { useMediaQuery } from '../lib/use-media-query';
 import { deployAgentFromTemplate, getMe } from '../lib/hub-api';
 import { useWorkbenches } from '../hooks/use-workbenches';
 import { useRightPane } from '../hooks/use-right-pane';
+import { useWorkflow } from '../hooks/use-workflow';
 import { useChatLauncher } from '../lib/chat-launcher-context';
 import type { AgentSelection } from '../components/layout/LibraryRail';
 import type { MeResponse, WorkbenchEntry } from '../lib/hub-api';
@@ -173,6 +168,27 @@ function useWorkbenchContext(slug: string | undefined): {
   return { tenantId, workbenches, loaded };
 }
 
+// Resolve the workflow's package-owned UI from the registry. The page renders
+// these generically — no workflow-kind branching lives here. The selected
+// panel derives its kind from the loaded workflow, not a navigation prop.
+function SelectedWorkflowView({ workflowId, onClose, onOpenAgent }: WorkflowSelectedPanelProps) {
+  const { data: workflow } = useWorkflow(workflowId);
+  if (!workflow) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-[13px] text-text-3">Loading workflow…</p>
+      </div>
+    );
+  }
+  const { SelectedPanel } = getWorkflowUi(workflow.kind);
+  return <SelectedPanel workflowId={workflowId} onClose={onClose} onOpenAgent={onOpenAgent} />;
+}
+
+function NewWorkflowView(props: WorkflowNewPaneProps) {
+  const { NewPane } = getWorkflowUi(props.workflowKind);
+  return <NewPane {...props} />;
+}
+
 export default function WorkbenchHome() {
   const { state: provisioningState, retry: retryProvisioning } = useProvisioningGuard();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
@@ -183,8 +199,6 @@ export default function WorkbenchHome() {
   const { slug } = useParams<{ slug?: string }>();
   const navigate = useNavigate();
   const { setHidden: setLauncherHidden, notifyProvisioned } = useChatLauncher();
-  const createWorkflow = useCreatePresentationWorkflow();
-  const submitStep = useSubmitPresentationStep();
   const {
     rightPane,
     showGallery,
@@ -193,16 +207,9 @@ export default function WorkbenchHome() {
     showNewWorkflow,
     promoteCreatedWorkflow,
     closeWorkflow,
-    isPresentationWizardOpen,
   } = useRightPane({
     onShow: () => setLauncherHidden(true),
     onClose: () => setLauncherHidden(false),
-  });
-  const geraltInstances = useGeraltInstances({
-    enabled: isPresentationWizardOpen,
-  });
-  const gammaTemplates = useGammaTemplates({
-    enabled: isPresentationWizardOpen,
   });
   const {
     tenantId: workbenchTenantId,
@@ -337,54 +344,23 @@ export default function WorkbenchHome() {
           {...paneFade}
           className="min-h-0 flex-1 overflow-hidden"
         >
-          <WorkflowPanel
+          <SelectedWorkflowView
             workflowId={rightPane.workflowId}
-            onClose={() => {
-              showGallery();
-            }}
+            onOpenAgent={handleAgentSelect}
+            onClose={showGallery}
           />
         </motion.div>
       );
     }
     if (rightPane.view === 'new-workflow') {
-      const closeHandler = () => {
-        showGallery();
-      };
       return (
         <motion.div key="new-workflow" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
-          {rightPane.workflowKind === 'presentation-generation' ? (
-            <PresentationGenerationWizard
-              tenantId={workbenchTenantId}
-              onCreated={handleWorkflowCreated}
-              onClose={closeHandler}
-              createWorkflow={createWorkflow}
-              submitStep={submitStep}
-              geraltInstances={geraltInstances}
-              gammaTemplates={gammaTemplates}
-              renderRecentPicker={({ onSelect, isLoading }) => (
-                <RecentCallsPicker
-                  onSelect={onSelect}
-                  isLoading={isLoading}
-                  tenantId={workbenchTenantId}
-                  kind="presentation-generation"
-                />
-              )}
-              renderArtifactPicker={({ onSelect, isLoading }) => (
-                <ArtifactSourcePicker
-                  onSelect={onSelect}
-                  isLoading={isLoading}
-                  tenantId={workbenchTenantId}
-                />
-              )}
-            />
-          ) : (
-            <NewWorkflowPane
-              workflowKind={rightPane.workflowKind}
-              tenantId={workbenchTenantId}
-              onCreated={handleWorkflowCreated}
-              onClose={closeHandler}
-            />
-          )}
+          <NewWorkflowView
+            workflowKind={rightPane.workflowKind}
+            tenantId={workbenchTenantId}
+            onCreated={handleWorkflowCreated}
+            onClose={showGallery}
+          />
         </motion.div>
       );
     }
@@ -424,50 +400,18 @@ export default function WorkbenchHome() {
               }}
             />
           ) : rightPane.view === 'workflow' ? (
-            <WorkflowPanel
+            <SelectedWorkflowView
               workflowId={rightPane.workflowId}
-              onClose={() => {
-                showGallery();
-              }}
+              onOpenAgent={handleAgentSelect}
+              onClose={showGallery}
             />
           ) : rightPane.view === 'new-workflow' ? (
-            rightPane.workflowKind === 'presentation-generation' ? (
-              <PresentationGenerationWizard
-                tenantId={workbenchTenantId}
-                onCreated={handleWorkflowCreated}
-                onClose={() => {
-                  showGallery();
-                }}
-                createWorkflow={createWorkflow}
-                submitStep={submitStep}
-                geraltInstances={geraltInstances}
-                gammaTemplates={gammaTemplates}
-                renderRecentPicker={({ onSelect, isLoading }) => (
-                  <RecentCallsPicker
-                    onSelect={onSelect}
-                    isLoading={isLoading}
-                    tenantId={workbenchTenantId}
-                    kind="presentation-generation"
-                  />
-                )}
-                renderArtifactPicker={({ onSelect, isLoading }) => (
-                  <ArtifactSourcePicker
-                    onSelect={onSelect}
-                    isLoading={isLoading}
-                    tenantId={workbenchTenantId}
-                  />
-                )}
-              />
-            ) : (
-              <NewWorkflowPane
-                workflowKind={rightPane.workflowKind}
-                tenantId={workbenchTenantId}
-                onCreated={handleWorkflowCreated}
-                onClose={() => {
-                  showGallery();
-                }}
-              />
-            )
+            <NewWorkflowView
+              workflowKind={rightPane.workflowKind}
+              tenantId={workbenchTenantId}
+              onCreated={handleWorkflowCreated}
+              onClose={showGallery}
+            />
           ) : (
             <ArtifactGallery
               tenantId={workbenchTenantId}

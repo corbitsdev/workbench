@@ -2,8 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useWorkbenchAgents } from './use-workflow';
 import type { AgentInstance } from './use-workflow';
-import type { PresentationStepArgs } from '@workbench/workflow';
-import type { GammaTemplate } from '@workbench/tools-gamma';
+import type { PresentationStepArgs, GammaTemplate } from '@workbench/workflow';
 
 export { type PresentationStepArgs, type GammaTemplate };
 
