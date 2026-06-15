@@ -9,6 +9,7 @@ import {
   collateralGenerationWorkflow,
   presentationGenerationWorkflow,
   isCollateralKind,
+  sourceArtifactKindSkipsAnalysis,
 } from '@workbench/gtm-workflows';
 import type { SessionService } from '@intx/hub-sessions';
 import { generateKeyPair, createNodeCrypto } from '@intx/crypto-node';
@@ -344,6 +345,11 @@ export function createWorkflowRouter(
 
     let content: string;
     let callTitle = requestedCallTitle;
+    // Set when the run is seeded from an artifact whose kind already represents
+    // a completed analysis phase (a 'pain-points' artifact). Carries the origin
+    // session so its chosen pain points can be copied onto the new run, letting
+    // it skip analysis and go straight to generation.
+    let skipAnalysisOriginSessionId: string | null = null;
 
     if (workflowSource === 'paste') {
       if (!transcriptText || transcriptText.trim().length === 0) {
@@ -375,6 +381,12 @@ export function createWorkflowRouter(
         return c.json({ error: 'Source artifact has no usable content' }, 400);
       }
       if (!callTitle) callTitle = sourceArtifact.title;
+      if (
+        sourceArtifactKindSkipsAnalysis(workflowKind, sourceArtifact.kind) &&
+        sourceArtifact.sessionId
+      ) {
+        skipAnalysisOriginSessionId = sourceArtifact.sessionId;
+      }
       log.info('Artifact loaded as source', { sourceArtifactId, length: content.length });
     } else {
       if (!granolaId) {
@@ -484,6 +496,83 @@ export function createWorkflowRouter(
       kind: wfRow.kind,
       status: wfRow.status,
     });
+
+    // Seeding from an already-analyzed pain-points artifact: copy the origin
+    // run's pain points onto this run and jump straight to generation. Analysis
+    // is intentionally not triggered, so the pre-selected pain points are
+    // preserved rather than re-extracted.
+    if (skipAnalysisOriginSessionId) {
+      // Tenant isolation: the origin run must belong to the caller's tenant and
+      // be owned by the caller. A pain-points artifact only carries a session id;
+      // verify the backing run before copying its pain points, so a crafted
+      // request cannot pull another tenant's (or member's) pain points.
+      const originRun = await db.query.workflowRun.findFirst({
+        where: eq(workflowRun.id, skipAnalysisOriginSessionId),
+      });
+      if (!originRun) {
+        log.warn('Skip-analysis origin run not found', {
+          workflowId: wfRow.id,
+          originSessionId: skipAnalysisOriginSessionId,
+        });
+        return c.json({ error: 'Source artifact origin not found' }, 404);
+      }
+      if (originRun.tenantId !== userContext.tenantId || !isWorkflowOwner(originRun, userContext)) {
+        log.warn('Skip-analysis origin run not owned by caller', {
+          workflowId: wfRow.id,
+          originSessionId: skipAnalysisOriginSessionId,
+        });
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+
+      const originPainPoints = await db.query.painPoint.findMany({
+        where: eq(painPoint.sessionId, skipAnalysisOriginSessionId),
+      });
+
+      // Only skip analysis when there are pain points to copy. With zero, jumping
+      // to generate would dead-end (generate requires painPointIds), so fall
+      // through to the normal analyze auto-trigger using the artifact content
+      // already loaded as the transcript.
+      if (originPainPoints.length > 0) {
+        const copiedPainPoints = await db
+          .insert(painPoint)
+          .values(
+            originPainPoints.map((point) => ({
+              sessionId: wfRow.id,
+              severity: point.severity,
+              context: point.context,
+              quote: point.quote,
+              // A pain-points artifact is a curated set, so pre-select every
+              // copied point — the user can generate immediately.
+              selected: true,
+            }))
+          )
+          .returning();
+        await db.update(workflowRun).set({ status: 'running' }).where(eq(workflowRun.id, wfRow.id));
+        log.info('Seeded collateral run from pain-points artifact, skipping analysis', {
+          workflowId: wfRow.id,
+          originSessionId: skipAnalysisOriginSessionId,
+          painPointCount: copiedPainPoints.length,
+        });
+        return c.json(
+          {
+            id: wfRow.id,
+            status: mapDbStatusToSessionStatus('running'),
+            steps: {
+              intake: { completed: true, transcriptId: txRow.id },
+              analyze: {
+                completed: true,
+                painPoints: copiedPainPoints.map(serializePainPoint),
+              },
+            },
+          },
+          201
+        );
+      }
+      log.info('Pain-points artifact origin has no pain points; falling through to analysis', {
+        workflowId: wfRow.id,
+        originSessionId: skipAnalysisOriginSessionId,
+      });
+    }
 
     // Auto-trigger the first step after intake. We consult the workflow
     // definition so this works for any workflow shape, not just

@@ -143,6 +143,52 @@ describe('runAnalyze', () => {
     const res = await runAnalyze(db as unknown as HubDb, 'wf-missing', USER_CONTEXT, SOURCE);
     expect(res.status).toBe(404);
   });
+
+  it('replaces pain points on auto-analyze (delete-then-insert, idempotent) (CL-1950)', async () => {
+    const db = createMockDb();
+    const deleteSpy = mock(() => ({ where: mock(() => Promise.resolve()) }));
+    db.delete = deleteSpy;
+    const res = await runAnalyze(db as unknown as HubDb, 'wf-1', USER_CONTEXT, SOURCE);
+    expect(res.status).toBe(200);
+    expect(deleteSpy).toHaveBeenCalled();
+  });
+
+  it('replaces pain points on an explicit re-analyze with feedback (CL-1950)', async () => {
+    const db = createMockDb();
+    const deleteSpy = mock(() => ({ where: mock(() => Promise.resolve()) }));
+    db.delete = deleteSpy;
+    const res = await runAnalyze(
+      db as unknown as HubDb,
+      'wf-1',
+      USER_CONTEXT,
+      SOURCE,
+      'redo with more detail'
+    );
+    expect(res.status).toBe(200);
+    expect(deleteSpy).toHaveBeenCalled();
+  });
+
+  it('does not duplicate pain points across two auto-analyze runs (CL-1950)', async () => {
+    // Each run must delete-then-insert: the inserted set replaces, never adds to,
+    // the prior set. With a single extracted point, two runs must each insert one
+    // point and each must have issued a delete first.
+    let insertCount = 0;
+    const deleteSpy = mock(() => ({ where: mock(() => Promise.resolve()) }));
+    const db = createMockDb();
+    db.delete = deleteSpy;
+    const baseInsert = db.insert;
+    db.insert = mock((...args: unknown[]) => {
+      insertCount += 1;
+      return (baseInsert as (...a: unknown[]) => unknown)(...args);
+    }) as typeof db.insert;
+
+    const first = await runAnalyze(db as unknown as HubDb, 'wf-1', USER_CONTEXT, SOURCE);
+    const second = await runAnalyze(db as unknown as HubDb, 'wf-1', USER_CONTEXT, SOURCE);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(deleteSpy.mock.calls.length).toBe(2);
+    expect(insertCount).toBeGreaterThanOrEqual(2);
+  });
 });
 
 describe('runGenerate', () => {

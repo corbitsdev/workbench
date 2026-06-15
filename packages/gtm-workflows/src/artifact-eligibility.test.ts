@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
   canUseArtifactInWorkflow,
+  sourceArtifactKindSkipsAnalysis,
   workflowsAcceptingArtifactKind,
   workflowAcceptsArtifactKind,
 } from './artifact-eligibility';
@@ -45,5 +46,19 @@ describe('canUseArtifactInWorkflow', () => {
 
   it('treats an unknown kind as usable because the general workflow accepts it', () => {
     expect(canUseArtifactInWorkflow('some-future-kind')).toBe(true);
+  });
+});
+
+describe('sourceArtifactKindSkipsAnalysis', () => {
+  it('skips analysis when collateral generation seeds from an already-analyzed pain-points artifact', () => {
+    expect(sourceArtifactKindSkipsAnalysis('collateral-generation', 'pain-points')).toBe(true);
+  });
+
+  it('does not skip analysis when collateral generation seeds from a raw call transcript', () => {
+    expect(sourceArtifactKindSkipsAnalysis('collateral-generation', 'call-transcript')).toBe(false);
+  });
+
+  it('never skips analysis for other workflow kinds', () => {
+    expect(sourceArtifactKindSkipsAnalysis('presentation-generation', 'pain-points')).toBe(false);
   });
 });

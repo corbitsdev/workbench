@@ -175,6 +175,7 @@ describe('Workflow router', () => {
               | {
                   id: string;
                   status: string;
+                  tenantId?: string;
                   principalId: string;
                   kind: string;
                   input: { companyName: string; transcriptId: string };
@@ -184,6 +185,7 @@ describe('Workflow router', () => {
           >(() => ({
             id: 'wf-1',
             status: 'pending',
+            tenantId: PERSONAL_TENANT.id,
             principalId: PERSONAL_PRINCIPAL.id,
             kind: 'collateral-generation',
             input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
@@ -199,7 +201,7 @@ describe('Workflow router', () => {
         },
         artifact: {
           findMany: mock<() => unknown[]>(() => []),
-          findFirst: mock(() => null),
+          findFirst: mock<() => Record<string, unknown> | null>(() => null),
         },
         agentInstance: {
           findMany: mock<() => unknown[]>(() => []),
@@ -253,7 +255,13 @@ describe('Workflow router', () => {
               ? { id: 'tx-1', status: 'created', kind: 'transcript' }
               : { id: 'wf-1', status: 'analyzing', kind: 'collateral-generation' };
           return {
-            returning: mock(() => [row]),
+            // Array inserts (pain point copies) echo the inserted values so the
+            // route can serialize the copied rows back in its response.
+            returning: mock(() =>
+              Array.isArray(values)
+                ? values.map((value, index) => ({ id: `pp-${index + 1}`, ...value }))
+                : [row]
+            ),
             onConflictDoUpdate: mock(() => ({
               returning: mock(() => [
                 {
@@ -385,6 +393,252 @@ describe('Workflow router', () => {
         source: 'artifact',
       })
     );
+  });
+
+  it('POST /workflows from a pain-points artifact skips analysis and starts ready at generate (CL-1950)', async () => {
+    const statusUpdates: string[] = [];
+    const insertedValues: unknown[] = [];
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => {
+        if (typeof values.status === 'string') statusUpdates.push(values.status);
+      },
+      onInsertValues: (values) => insertedValues.push(values),
+    });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'pp-art',
+      tenantId: 'personal-tenant',
+      title: 'Acme Pain Points',
+      content: '## 1. Slow onboarding',
+      kind: 'pain-points',
+      sessionId: 'origin-wf',
+    }));
+    mockDb.query.painPoint.findMany = mock(() => [
+      {
+        id: 'origin-pp-1',
+        sessionId: 'origin-wf',
+        severity: 'high',
+        context: 'Slow onboarding',
+        quote: 'It takes weeks',
+        selected: true,
+      },
+    ]);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'artifact',
+        sourceArtifactId: 'pp-art',
+        workflowKind: 'collateral-generation',
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    // 'running' maps to the session-facing 'ready' state at the generate step.
+    expect(json.status).toBe('ready');
+    expect(statusUpdates).toContain('running');
+    expect(statusUpdates).not.toContain('analyzing');
+
+    // POST-response parity: copied pain points are returned under steps.analyze,
+    // mirroring the analyze path so a client reading the POST response sees them.
+    expect(json.steps.analyze.completed).toBe(true);
+    expect(json.steps.analyze.painPoints[0].context).toBe('Slow onboarding');
+
+    // The origin run's pain points are copied onto the new run, pre-selected, and
+    // the origin run's pain points are not deleted (no delete is issued here).
+    expect(insertedValues).toContainEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sessionId: 'wf-1',
+          context: 'Slow onboarding',
+          quote: 'It takes weeks',
+          severity: 'high',
+          selected: true,
+        }),
+      ])
+    );
+  });
+
+  it('POST /workflows from a pain-points artifact does not delete the origin run pain points (CL-1950)', async () => {
+    const deleteSpy = mock(() => ({ where: mock(() => Promise.resolve()) }));
+    const mockDb = createMockDb();
+    mockDb.delete = deleteSpy as unknown as typeof mockDb.delete;
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'pp-art',
+      tenantId: 'tenant-personal',
+      title: 'Acme Pain Points',
+      content: '## 1. Slow onboarding',
+      kind: 'pain-points',
+      sessionId: 'origin-wf',
+    }));
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'origin-wf',
+      status: 'done',
+      tenantId: 'tenant-personal',
+      principalId: PERSONAL_PRINCIPAL.id,
+      kind: 'collateral-generation',
+      input: { companyName: 'Acme', transcriptId: 'tx-origin' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.painPoint.findMany = mock(() => [
+      {
+        id: 'origin-pp-1',
+        sessionId: 'origin-wf',
+        severity: 'high',
+        context: 'Slow onboarding',
+        quote: 'It takes weeks',
+        selected: true,
+      },
+    ]);
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'artifact',
+          sourceArtifactId: 'pp-art',
+          workflowKind: 'collateral-generation',
+        }),
+      })
+    );
+    expect(res.status).toBe(201);
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('POST /workflows from a pain-points artifact with zero origin points falls through to analysis (CL-1950)', async () => {
+    const statusUpdates: string[] = [];
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => {
+        if (typeof values.status === 'string') statusUpdates.push(values.status);
+      },
+    });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'pp-art',
+      tenantId: 'tenant-personal',
+      title: 'Acme Pain Points',
+      content: '## 1. Slow onboarding',
+      kind: 'pain-points',
+      sessionId: 'origin-wf',
+    }));
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'origin-wf',
+      status: 'done',
+      tenantId: 'tenant-personal',
+      principalId: PERSONAL_PRINCIPAL.id,
+      kind: 'collateral-generation',
+      input: { companyName: 'Acme', transcriptId: 'tx-origin' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.painPoint.findMany = mock(() => []);
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'artifact',
+          sourceArtifactId: 'pp-art',
+          workflowKind: 'collateral-generation',
+        }),
+      })
+    );
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.status).toBe('analyzing');
+    expect(statusUpdates).toContain('analyzing');
+    expect(statusUpdates).not.toContain('running');
+  });
+
+  it('POST /workflows from a pain-points artifact whose origin run is another tenant is rejected (CL-1950)', async () => {
+    const insertedValues: unknown[] = [];
+    const mockDb = createMockDb({
+      onInsertValues: (values) => insertedValues.push(values),
+    });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'pp-art',
+      tenantId: 'tenant-personal',
+      title: 'Acme Pain Points',
+      content: '## 1. Slow onboarding',
+      kind: 'pain-points',
+      sessionId: 'origin-wf',
+    }));
+    // Origin run belongs to a different tenant: copy must be rejected.
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'origin-wf',
+      status: 'done',
+      tenantId: 'tenant-other',
+      principalId: 'prn-other',
+      kind: 'collateral-generation',
+      input: { companyName: 'Other', transcriptId: 'tx-origin' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    const painPointFindMany = mock(() => [
+      {
+        id: 'origin-pp-1',
+        sessionId: 'origin-wf',
+        severity: 'high',
+        context: 'Slow onboarding',
+        quote: 'It takes weeks',
+        selected: true,
+      },
+    ]);
+    mockDb.query.painPoint.findMany = painPointFindMany;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'artifact',
+          sourceArtifactId: 'pp-art',
+          workflowKind: 'collateral-generation',
+        }),
+      })
+    );
+    expect(res.status).toBe(403);
+    // No pain points were read or copied from the cross-tenant origin run.
+    expect(painPointFindMany).not.toHaveBeenCalled();
+    expect(insertedValues).not.toContainEqual(
+      expect.arrayContaining([expect.objectContaining({ context: 'Slow onboarding' })])
+    );
+  });
+
+  it('POST /workflows from a call-transcript artifact still auto-triggers analysis (CL-1950)', async () => {
+    const statusUpdates: string[] = [];
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => {
+        if (typeof values.status === 'string') statusUpdates.push(values.status);
+      },
+    });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'tx-art',
+      tenantId: 'personal-tenant',
+      title: 'Acme Call',
+      content: 'Customer said onboarding is slow.',
+      kind: 'call-transcript',
+      sessionId: 'origin-wf',
+    }));
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'artifact',
+        sourceArtifactId: 'tx-art',
+        workflowKind: 'collateral-generation',
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.status).toBe('analyzing');
+    expect(statusUpdates).toContain('analyzing');
   });
 
   it('POST /workflows with source artifact returns 404 when the artifact is missing', async () => {

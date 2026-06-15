@@ -78,6 +78,9 @@ export async function runAnalyze(
       );
     }
 
+    // Always replace: analyze owns the run's pain points, so a re-entrant
+    // auto-analyze must not double-insert. The skip-analysis seeding path never
+    // calls runAnalyze, so its pre-selected points are never reached here.
     await db.delete(painPoint).where(eq(painPoint.sessionId, id));
 
     inserted = extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
