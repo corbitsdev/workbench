@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'bun:test';
-import { createTemplateTools, GAMMA_TEMPLATE_REGISTRY } from './templates';
+import { GAMMA_TEMPLATES, createTemplateTools } from './templates';
 import type { GammaFetch } from './shared';
 
 function makeFetcher(responses: Array<{ status: number; body: unknown }>): GammaFetch {
   let callIndex = 0;
   return async (_input, _init) => {
     const response = responses[callIndex++] ?? responses[responses.length - 1];
+    if (!response) throw new Error('no mock response configured');
     return new Response(JSON.stringify(response.body), {
       status: response.status,
       headers: { 'Content-Type': 'application/json' },
@@ -16,39 +17,25 @@ function makeFetcher(responses: Array<{ status: number; body: unknown }>): Gamma
 const baseConfig = { apiKey: 'test-key' };
 
 describe('gamma_list_templates', () => {
-  it('returns the local registry without making any HTTP calls', async () => {
-    // The fetcher should never be called — list_templates reads a local registry.
-    let fetchCalled = false;
-    const tools = createTemplateTools({
-      ...baseConfig,
-      fetcher: async () => {
-        fetchCalled = true;
-        return new Response('{}', { status: 200 });
-      },
-    });
+  it('returns the curated registry without calling Gamma', async () => {
+    let fetcherCalled = false;
+    const fetcher: GammaFetch = async () => {
+      fetcherCalled = true;
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+    const tools = createTemplateTools({ ...baseConfig, fetcher });
     const tool = tools.find((t) => t.definition.name === 'gamma_list_templates');
     if (!tool || tool.kind !== 'string') throw new Error('tool not found');
 
     const result = await tool.handler({}, new AbortController().signal);
-    const parsed: unknown = JSON.parse(result);
+    const parsed = JSON.parse(result) as unknown[];
 
-    expect(fetchCalled).toBe(false);
     expect(Array.isArray(parsed)).toBe(true);
-    // Registry may be empty in test environment — just verify shape if entries exist.
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      const first = parsed[0] as Record<string, unknown>;
-      expect(typeof first['gammaId']).toBe('string');
-      expect(typeof first['name']).toBe('string');
-      expect(typeof first['description']).toBe('string');
-    }
-  });
-
-  it('registry entries have the expected shape', () => {
-    for (const entry of GAMMA_TEMPLATE_REGISTRY) {
-      expect(typeof entry.gammaId).toBe('string');
-      expect(typeof entry.name).toBe('string');
-      expect(typeof entry.description).toBe('string');
-    }
+    expect(parsed).toEqual(GAMMA_TEMPLATES);
+    expect(fetcherCalled).toBe(false);
   });
 });
 
@@ -64,7 +51,11 @@ describe('gamma_create_from_template', () => {
         // GET /generations/gen_abc → completed
         {
           status: 200,
-          body: { status: 'completed', gammaUrl: 'https://gamma.app/deck/abc', gammaId: 'g_abc' },
+          body: {
+            status: 'completed',
+            gammaUrl: 'https://gamma.app/deck/abc',
+            gammaId: 'g_abc',
+          },
         },
       ]),
     });
@@ -116,10 +107,7 @@ describe('gamma_create_from_template', () => {
     const tool = tools.find((t) => t.definition.name === 'gamma_create_from_template');
     if (!tool || tool.kind !== 'string') throw new Error('tool not found');
     await expect(
-      tool.handler(
-        { gammaId: 'g_template', prompt: 'Make a deck' },
-        new AbortController().signal
-      )
+      tool.handler({ gammaId: 'g_template', prompt: 'Make a deck' }, new AbortController().signal)
     ).rejects.toThrow('Gamma generation failed');
   });
 
@@ -146,10 +134,7 @@ describe('gamma_create_from_template', () => {
     const tool = tools.find((t) => t.definition.name === 'gamma_create_from_template');
     if (!tool || tool.kind !== 'string') throw new Error('tool not found');
     await expect(
-      tool.handler(
-        { gammaId: 'g_t', prompt: 'Make a deck' },
-        new AbortController().signal
-      )
+      tool.handler({ gammaId: 'g_t', prompt: 'Make a deck' }, new AbortController().signal)
     ).rejects.toThrow('Gamma API error: 500');
   });
 
@@ -164,7 +149,11 @@ describe('gamma_create_from_template', () => {
         });
       }
       return new Response(
-        JSON.stringify({ status: 'completed', gammaUrl: 'https://gamma.app/deck/x', gammaId: 'g_x' }),
+        JSON.stringify({
+          status: 'completed',
+          gammaUrl: 'https://gamma.app/deck/x',
+          gammaId: 'g_x',
+        }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     };
@@ -172,7 +161,12 @@ describe('gamma_create_from_template', () => {
     const tool = tools.find((t) => t.definition.name === 'gamma_create_from_template');
     if (!tool || tool.kind !== 'string') throw new Error('tool not found');
     await tool.handler(
-      { gammaId: 'g_t', prompt: 'Make a deck', title: 'Q3 Deck', themeId: 'theme-42' },
+      {
+        gammaId: 'g_t',
+        prompt: 'Make a deck',
+        title: 'Q3 Deck',
+        themeId: 'theme-42',
+      },
       new AbortController().signal
     );
     const body = JSON.parse(capturedBodies[0] ?? '{}') as Record<string, unknown>;

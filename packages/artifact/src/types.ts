@@ -11,6 +11,7 @@ export type {
   ArtifactStatus,
   ArtifactVersion,
   ArtifactWithSession,
+  ArtifactWithVersions,
   ArtifactKind,
 } from '@workbench/shared';
 

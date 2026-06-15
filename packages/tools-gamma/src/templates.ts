@@ -12,28 +12,6 @@ import {
   type ResolvedGammaConfig,
 } from './shared';
 
-// Gamma does not expose a list-templates API. This registry maps human-readable
-// names to the gammaId of the presentation used as a template in your workspace.
-// Update these entries when you add or retire templates in the Gamma workspace.
-export const GAMMA_TEMPLATE_REGISTRY: Array<{
-  gammaId: string;
-  name: string;
-  description: string;
-}> = [
-  // TODO: replace these placeholder entries with actual gammaIds from your Gamma workspace.
-  // Get a gammaId by opening a presentation in Gamma and copying the ID from the URL.
-  // { gammaId: 'g_xxxxxxxxxx', name: 'Sales Proposal', description: 'Standard sales proposal deck' },
-  // { gammaId: 'g_xxxxxxxxxx', name: 'Post-Call Summary', description: 'Summary deck after a discovery or demo call' },
-];
-
-function listTemplates(_args: Record<string, unknown>): unknown {
-  return GAMMA_TEMPLATE_REGISTRY.map(({ gammaId, name, description }) => ({
-    gammaId,
-    name,
-    description,
-  }));
-}
-
 // Direct HTTP to Gamma SaaS API — see AGENTS.md 'Third-party generation APIs' and packages/tools-gamma/README.md
 async function createFromTemplate(
   config: ResolvedGammaConfig,
@@ -71,10 +49,25 @@ async function createFromTemplate(
   return { gammaUrl: result.gammaUrl, gammaId: result.gammaId };
 }
 
+export type GammaTemplate = {
+  gammaId: string;
+  name: string;
+  description: string | null;
+};
+
+// Gamma's REST API has no list-templates (or list-gammas) endpoint — a "template" is just
+// an existing single-page gamma referenced by gammaId. We serve a workbench-owned curated
+// registry until OAuth/MCP auto-sourcing lands (CL-1875). See packages/tools-gamma/README.md.
+export const GAMMA_TEMPLATES: GammaTemplate[] = [];
+
+export function fetchGammaTemplates(): GammaTemplate[] {
+  return GAMMA_TEMPLATES;
+}
+
 export const GAMMA_LIST_TEMPLATES_DEFINITION: ToolDefinition = {
   name: 'gamma_list_templates',
   description:
-    'List available Gamma presentation templates from the workspace registry. Returns an array of templates with gammaId, name, and description. Use names when presenting options to the user; use gammaId internally when calling gamma_create_from_template.',
+    'List the workbench curated registry of Gamma presentation templates. Returns an array of templates with gammaId, name, and description (may be empty if none are configured). Use names when presenting options to the user; use gammaId internally when calling gamma_create_from_template.',
   inputSchema: {
     type: 'object',
     properties: {},
@@ -118,11 +111,7 @@ export const TEMPLATE_DEFINITIONS: ToolDefinition[] = [
 export function createTemplateTools(config: GammaToolsConfig): AgentTool[] {
   const resolved = resolveConfig(config);
   return [
-    {
-      kind: 'string',
-      definition: GAMMA_LIST_TEMPLATES_DEFINITION,
-      handler: (args) => Promise.resolve(JSON.stringify(listTemplates(args), null, 2)),
-    },
+    stringTool(GAMMA_LIST_TEMPLATES_DEFINITION, async () => GAMMA_TEMPLATES),
     stringTool(GAMMA_CREATE_FROM_TEMPLATE_DEFINITION, (args, signal) =>
       createFromTemplate(resolved, args, signal)
     ),

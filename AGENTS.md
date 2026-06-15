@@ -3,7 +3,9 @@
 ## Session Start
 
 1. Read this file
-2. Read `PRODUCT.md` for current product state
+2. Read `PRODUCT.md` (the product entrypoint), which points to the canonical
+   `docs/PRODUCT.md`; see `docs/README.md` for the full doc index and which
+   doc to read for a given task
 3. Do not proceed until these steps are complete
 
 ## Project
@@ -229,6 +231,7 @@ When implementing a Linear issue:
 - No emojis in code, comments, or messages
 - No IIFEs or dynamic imports in production code — use named async functions and static imports.
 - No fallbacks for required values — prefer explicit checks and fail loudly. Use `requireEnv()` for env vars; never silently substitute a default.
+- **Fallbacks (`?? default`, `|| default`, defaulted optionals) are allowed ONLY when absolutely necessary** — i.e. a genuinely optional value with a single, contract-guaranteed default (e.g. an empty string for an initially-empty controlled input). Otherwise do a proper check and handle the missing case explicitly. A reflexive `?? something` masks missing/invalid data, makes the code harder to test and validate, and turns a loud failure into a silent wrong-result. When in doubt, narrow and branch — don't default.
 - No nested ternaries or similarly compressed conditional expressions — use `if`/`else` or early returns.
 - Use full, descriptive variable and function names. Clean, readable design over brevity.
 - All env var validation lives in `apps/hub/src/config.ts`
@@ -246,6 +249,16 @@ export function createWorkflowRouter(db: DB['db'], config: Config): Hono { ... }
 ```
 
 In tests, mock at the module boundary (`mock.module(...)`) — do not inject fakes through function arguments.
+
+## Frontend conventions (apps/web)
+
+Detailed rules live in `apps/web/CLAUDE.md`; the non-negotiables:
+
+- **Data fetching is TanStack Query only.** `useEffect` + `useState` + `fetch` for data is prohibited — it bypasses the cache, breaks dedup, and loses abort-on-unmount.
+- **Gate queries with `enabled`** so they don't fire on every mount; set `staleTime ≥ 5 min` for catalog/static data, default for live workflow state.
+- **`mutateAsync` must have a `.catch()`** (or use `mutate` with `onError`/`onSuccess`) — never `void mutateAsync().then()`.
+- **Validate at the boundary with ArkType.** Parse API responses / `unknown` through an ArkType schema instead of casting; plain `interface`/`type` for internal, already-trusted shapes.
+- **Derive component behavior from the loaded resource** (e.g. `workflow.kind`), not from a prop threaded from the navigation origin.
 
 ## Configuration
 

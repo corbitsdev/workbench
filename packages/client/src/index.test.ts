@@ -159,7 +159,10 @@ describe('@workbench/client response and error handling', () => {
     const payload = [{ id: 'wf-1', companyName: 'Acme' }];
     const { fetcher } = makeFetch(() => Promise.resolve(jsonResponse(payload)));
 
-    const result = await listWorkflows({ baseUrl: 'http://localhost:4000', fetch: fetcher });
+    const result: unknown = await listWorkflows({
+      baseUrl: 'http://localhost:4000',
+      fetch: fetcher,
+    });
 
     expect(result).toEqual(payload);
   });
@@ -193,12 +196,13 @@ describe('@workbench/client response and error handling', () => {
   });
 
   it('uses the global fetch when no custom fetch is supplied', async () => {
-    const globalSpy = mock(() => Promise.resolve(jsonResponse([{ id: 'a' }])));
+    const page = { artifacts: [{ id: 'a' }], nextCursor: null };
+    const globalSpy = mock(() => Promise.resolve(jsonResponse(page)));
     globalThis.fetch = Object.assign(globalSpy, { preconnect: mock(() => {}) }) as typeof fetch;
 
-    const result = await listArtifacts({ baseUrl: 'http://localhost:4000' });
+    const result: unknown = await listArtifacts({ baseUrl: 'http://localhost:4000' });
 
     expect(globalSpy).toHaveBeenCalledTimes(1);
-    expect(result).toEqual([{ id: 'a' }]);
+    expect(result).toEqual(page);
   });
 });

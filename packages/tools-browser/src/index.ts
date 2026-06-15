@@ -18,6 +18,7 @@ import {
   removeSessionConnectURL,
   resolveConfig,
   storeSessionConnectURL,
+  waitForSessionRunning,
 } from './browserbase';
 import { ACTION_TIMEOUT_MS, CONNECT_TIMEOUT_MS, getPage, withTimeout } from './connect';
 import { FRAME_DELIMITER, pruneSnapshot, SNAPSHOT_SCRIPT, type RawSnapshot } from './snapshot';
@@ -57,6 +58,18 @@ function requiredString(args: Record<string, unknown>, key: string): string {
 }
 
 async function withSession<T>(
+  config: ResolvedBrowserConfig,
+  sessionId: string,
+  fn: (page: PageLike) => Promise<T>
+): Promise<T> {
+  return withTimeout(
+    runSession(config, sessionId, fn),
+    config.operationBudgetMs,
+    'browser operation'
+  );
+}
+
+async function runSession<T>(
   config: ResolvedBrowserConfig,
   sessionId: string,
   fn: (page: PageLike) => Promise<T>
@@ -254,6 +267,7 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
     stringTool(BROWSER_CREATE_SESSION_DEFINITION, async (args, signal) => {
       const timeoutSeconds = clampTimeoutSeconds(args.timeoutSeconds);
       const { sessionId, connectUrl } = await createSession(config, timeoutSeconds, signal);
+      await waitForSessionRunning(config, sessionId, signal);
       storeSessionConnectURL(sessionId, connectUrl);
       return { sessionId, timeoutSeconds };
     }),

@@ -39,6 +39,7 @@ function newClient(): QueryClient {
 
 const fakeWorkflow: WorkflowSummary = {
   id: 'wf-1',
+  kind: 'collateral-generation',
   status: 'reviewing',
   createdAt: new Date().toISOString(),
   transcriptId: 'tx-1',
@@ -161,7 +162,9 @@ describe('useArtifacts', () => {
   });
 
   it('fetches artifacts for the tenant and surfaces the data on success', async () => {
-    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([fakeArtifact])));
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifacts: [fakeArtifact], nextCursor: null }))
+    );
 
     const { result } = renderHook(
       () =>

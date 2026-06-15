@@ -8,7 +8,7 @@ import {
   resolveStatusFilter,
   type AgentInstanceStatus,
 } from '@workbench/tools-agents';
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from './sql-predicates';
 import { memberAgentInstance } from '../db/schema';
 import type { ContextToolEntry } from '../lib/tool-registry';
 
@@ -162,9 +162,7 @@ export function createListAgentsTool(context: ListAgentsContext): AgentTool[] {
           return JSON.stringify({ agents: [] }, null, 2);
         }
 
-        const conditions = [
-          inArray(intxSchema.agentInstance.id, instanceIds),
-        ];
+        const conditions = [inArray(intxSchema.agentInstance.id, instanceIds)];
         if (status !== undefined) {
           conditions.push(eq(intxSchema.agentInstance.status, status as AgentInstanceStatus));
         }

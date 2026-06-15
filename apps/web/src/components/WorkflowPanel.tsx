@@ -5,36 +5,28 @@ import {
   useApproveArtifact,
   useWorkbenchAgents,
 } from '../hooks/use-workflow';
-import { CheckIcon } from 'lucide-react';
 import PainPointsList from './PainPointsList';
+import { ReviewedArtifactsSummary } from './ReviewedArtifactsSummary';
 import FeedbackSection from './FeedbackSection';
 import ArtifactBody from './ArtifactBody';
 import { AgentChat } from './AgentChat';
 import { HorizontalStepper, buildSteps } from '@workbench/workflow';
 import { collateralTypeOptions, hasMultiVariantKind } from '@workbench/gtm-workflows';
-import type { ArtifactKind } from '@workbench/shared';
 import type { StepName } from '@workbench/workflow';
+import {
+  parsePainPoints,
+  parseWorkflowArtifacts,
+  type ParsedPainPoint,
+  type ParsedWorkflowArtifact,
+} from '../lib/schemas';
 
 interface WorkflowPanelProps {
   workflowId: string;
   onClose: () => void;
 }
 
-interface Artifact {
-  id: string;
-  kind: ArtifactKind;
-  title: string;
-  content: string;
-  status: string;
-}
-
-interface PainPointData {
-  id: string;
-  context: string;
-  quote: string;
-  severity?: 'low' | 'medium' | 'high' | 'critical';
-  selected?: boolean;
-}
+type Artifact = ParsedWorkflowArtifact;
+type PainPointData = ParsedPainPoint;
 
 // The pain points a generation run was started with: the current in-session
 // selection if present, else the server-persisted selection (survives remount).
@@ -56,9 +48,12 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const [collateralTypes, setCollateralTypes] = useState<Set<string>>(new Set());
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
   const [showLincolnChat, setShowLincolnChat] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
 
   const generateCompleted = Boolean(workflow?.steps.generate?.completed);
-  const { data: allAgents = [] } = useWorkbenchAgents({ enabled: generateCompleted });
+  const { data: allAgents = [] } = useWorkbenchAgents({
+    enabled: generateCompleted,
+  });
 
   if (isLoading) {
     return (
@@ -76,12 +71,12 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
     );
   }
 
+  const workflowKind = workflow.kind;
   const currentStep = workflow.currentStep;
   const analyzeStep = workflow.steps.analyze;
   const generateStep = workflow.steps.generate;
-  const painPoints: PainPointData[] =
-    (analyzeStep?.painPoints as PainPointData[] | undefined) ?? [];
-  const artifacts: Artifact[] = (generateStep?.artifacts as Artifact[] | undefined) ?? [];
+  const painPoints: PainPointData[] = parsePainPoints(analyzeStep?.painPoints);
+  const artifacts: Artifact[] = parseWorkflowArtifacts(generateStep?.artifacts);
   const analyzeCompleted = Boolean(analyzeStep?.completed);
   // Active generation is signalled by the server status 'generating' (which
   // survives the request, unlike runStep.isPending), or optimistically the
@@ -134,7 +129,10 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   };
 
   const handleAnalyze = () => {
-    void runStep.mutateAsync({ step: 'analyze', feedback: feedback.trim() || undefined });
+    void runStep.mutateAsync({
+      step: 'analyze',
+      feedback: feedback.trim() || undefined,
+    });
   };
 
   const handleGenerate = () => {
@@ -162,9 +160,22 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const handleApproveOrDeny = (status: 'approved' | 'rejected') => {
     if (!displayArtifact) return;
     const nextDraft = artifacts.find((a) => a.status === 'draft' && a.id !== displayArtifact.id);
-    void approveArtifact.mutateAsync({ artifactId: displayArtifact.id, status }).then(() => {
-      setActiveArtifactId(nextDraft?.id ?? null);
-    });
+    // mutate + callbacks (not `void mutateAsync(...).then()`): mutateAsync
+    // rejects on failure, and without a .catch() that becomes an unhandled
+    // rejection that leaves the UI stuck. onError surfaces the failure so the
+    // user can retry; advancing to the next draft only happens on success.
+    setApprovalError(null);
+    approveArtifact.mutate(
+      { artifactId: displayArtifact.id, status },
+      {
+        onSuccess: () => {
+          setActiveArtifactId(nextDraft?.id ?? null);
+        },
+        onError: () => {
+          setApprovalError('Could not save your review. Please try again.');
+        },
+      }
+    );
   };
 
   const kindLabel =
@@ -216,35 +227,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
         {/* Artifact pane — shown once generate is done */}
         {generateCompleted && !hasDraftArtifacts && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-green/[0.18]">
-                  <CheckIcon className="h-4 w-4 text-green" />
-                </div>
-                <p className="text-[14px] font-semibold text-text">All artifacts reviewed</p>
-              </div>
-              {approvedArtifacts.length > 0 ? (
-                <>
-                  <ul className="space-y-1.5">
-                    {approvedArtifacts.map((a) => (
-                      <li
-                        key={a.id}
-                        className="rounded-[8px] border border-border bg-surface px-3 py-2 text-[12px] text-text"
-                      >
-                        {a.title}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-[12px] text-text-3">
-                    Your approved pieces have been saved to Artifacts.
-                  </p>
-                </>
-              ) : (
-                <p className="text-[12px] text-text-3">
-                  All pieces were denied. No artifacts were saved.
-                </p>
-              )}
-            </div>
+            <ReviewedArtifactsSummary approvedArtifacts={approvedArtifacts} />
             <div className="border-t border-border bg-surface px-4 py-3 shrink-0 space-y-2">
               {hasLinkedInVariants && lincolnInstance !== null && (
                 <button
@@ -324,6 +307,11 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
                       Approve
                     </button>
                   </div>
+                  {approvalError !== null && (
+                    <p role="alert" className="text-[12px] text-orange-deep">
+                      {approvalError}
+                    </p>
+                  )}
                   {hasLinkedInVariants && lincolnInstance !== null && (
                     <button
                       type="button"
@@ -365,8 +353,8 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
           </div>
         )}
 
-        {/* Pain points + collateral selection — shown during analyze/generate phases */}
-        {!generateCompleted && !isGenerating && (
+        {/* Pain points + collateral selection — collateral-generation only */}
+        {workflowKind === 'collateral-generation' && !generateCompleted && !isGenerating && (
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
             {/* Pain points section */}
             <div>
@@ -412,15 +400,15 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
           </div>
         )}
 
-        {/* Bottom action bar */}
-        {!generateCompleted && isGenerating && (
+        {/* Bottom action bar — collateral-generation only */}
+        {workflowKind === 'collateral-generation' && !generateCompleted && isGenerating && (
           <div className="border-t border-border bg-surface px-4 py-3 shrink-0">
             <button type="button" disabled className="btn-primary w-full">
               Generating…
             </button>
           </div>
         )}
-        {!generateCompleted && !isGenerating && (
+        {workflowKind === 'collateral-generation' && !generateCompleted && !isGenerating && (
           <div className="border-t border-border bg-surface px-4 py-3 shrink-0 space-y-3">
             {!analyzeCompleted && (
               <FeedbackSection
@@ -437,7 +425,8 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
             {analyzeCompleted && (
               <>
                 <p className="text-xs text-text-3">
-                  {selectedIds.size} pain point{selectedIds.size !== 1 ? 's' : ''} selected
+                  {selectedIds.size} pain point
+                  {selectedIds.size !== 1 ? 's' : ''} selected
                 </p>
                 <button
                   type="button"

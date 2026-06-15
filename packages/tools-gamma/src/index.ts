@@ -7,10 +7,10 @@ import type { GammaToolsConfig } from './shared';
 
 export type { GammaFetch, GammaToolsConfig } from './shared';
 export { GAMMA_DEFAULT_BASE_URL } from './shared';
+export { fetchGammaTemplates, type GammaTemplate } from './templates';
 export {
   GAMMA_LIST_TEMPLATES_DEFINITION,
   GAMMA_CREATE_FROM_TEMPLATE_DEFINITION,
-  GAMMA_TEMPLATE_REGISTRY,
   TEMPLATE_DEFINITIONS,
   createTemplateTools,
 } from './templates';

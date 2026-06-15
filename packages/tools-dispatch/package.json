@@ -11,8 +11,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
-    "test": "bun test src || true",
-    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src || true"
+    "test": "bun test src",
+    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "devDependencies": {
     "@intx/agent": "workspace:*",

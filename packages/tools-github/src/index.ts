@@ -1,3 +1,8 @@
 export * from './normalize';
 export * from './tools';
-export type { GitHubPR, GitHubRepo, GitHubSearchIssuesResponse, GitHubSearchReposResponse } from './types';
+export type {
+  GitHubIssueOrPR,
+  GitHubRepo,
+  GitHubSearchIssuesResponse,
+  GitHubSearchReposResponse,
+} from './types';

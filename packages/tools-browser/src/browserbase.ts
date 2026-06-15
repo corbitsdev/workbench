@@ -10,7 +10,7 @@
  * an agent eviction, or a dropped socket, because it runs on Browserbase's side.
  */
 import type { BrowserFetch, BrowserToolsConfig, ResolvedBrowserConfig } from './types';
-import { realConnector } from './connect';
+import { OPERATION_BUDGET_MS, realConnector } from './connect';
 
 const DEFAULT_BASE_URL = 'https://api.browserbase.com/v1';
 
@@ -45,8 +45,13 @@ export function clearSessionConnectURLs(): void {
   SESSION_CONNECT_URLS.clear();
 }
 
-/** Browserbase session duration ceiling, in seconds. */
-export const DEFAULT_SESSION_TIMEOUT_SECONDS = 600;
+/**
+ * Default session lifetime, in seconds. Kept short because sessions are created
+ * with keepAlive and an abandoned one (agent crash, eviction, never-closed)
+ * burns this much paid browser-time before Browserbase auto-releases it. On the
+ * free tier's 1-hour monthly budget, a long default exhausts the allowance fast.
+ */
+export const DEFAULT_SESSION_TIMEOUT_SECONDS = 180;
 export const MIN_SESSION_TIMEOUT_SECONDS = 60;
 export const MAX_SESSION_TIMEOUT_SECONDS = 3600;
 
@@ -100,6 +105,7 @@ export function resolveConfig(config: BrowserToolsConfig): ResolvedBrowserConfig
     projectId,
     fetcher: config.fetcher ?? fetch,
     connector: config.connector ?? realConnector,
+    operationBudgetMs: config.operationBudgetMs ?? OPERATION_BUDGET_MS,
   };
 }
 
@@ -247,6 +253,59 @@ export async function reapStaleSessions(
     }
   }
   return { reaped, skipped };
+}
+
+const TERMINAL_SESSION_STATUSES = new Set(['ERROR', 'TIMED_OUT', 'COMPLETED', 'CANCELLED']);
+
+export type WaitForSessionRunningOptions = {
+  pollIntervalMs?: number;
+  maxWaitMs?: number;
+};
+
+const DEFAULT_WAIT_FOR_RUNNING_MAX_MS = 30_000;
+const DEFAULT_WAIT_FOR_RUNNING_POLL_MS = 1_000;
+
+/**
+ * Poll GET /sessions/{id} until status === RUNNING or a terminal/deadline condition fires.
+ * The browser process starts asynchronously after POST /sessions; connecting CDP before
+ * RUNNING produces a WebSocket timeout.
+ */
+export async function waitForSessionRunning(
+  config: ResolvedBrowserConfig,
+  sessionId: string,
+  signal: AbortSignal,
+  options?: WaitForSessionRunningOptions
+): Promise<void> {
+  const pollIntervalMs = options?.pollIntervalMs ?? DEFAULT_WAIT_FOR_RUNNING_POLL_MS;
+  const maxWaitMs = options?.maxWaitMs ?? DEFAULT_WAIT_FOR_RUNNING_MAX_MS;
+  const deadline = Date.now() + maxWaitMs;
+
+  while (Date.now() < deadline) {
+    const response = await config.fetcher(`${config.baseUrl}/sessions/${sessionId}`, {
+      method: 'GET',
+      headers: browserbaseHeaders(config.apiKey),
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Browserbase API error: ${response.status} ${await errorDetail(response)}`);
+    }
+    const data: unknown = await response.json();
+    if (!isRecord(data) || typeof data.status !== 'string') {
+      throw new Error('Browserbase session status response missing status');
+    }
+    const status = data.status;
+    if (status === 'RUNNING') {
+      return;
+    }
+    if (TERMINAL_SESSION_STATUSES.has(status)) {
+      throw new Error(`Browserbase session ${sessionId} reached terminal status: ${status}`);
+    }
+    if (pollIntervalMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+  }
+
+  throw new Error(`Browserbase session ${sessionId} did not reach RUNNING within ${maxWaitMs}ms`);
 }
 
 export type { BrowserFetch };

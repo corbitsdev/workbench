@@ -1,14 +1,17 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { DB } from '@intx/db';
 import { schema as intxSchema } from '@intx/db';
-import * as drizzleActual from 'drizzle-orm';
 
-// Mock the drizzle predicate builders so the conditions passed to .where() are
+// Mock the predicate builders so the conditions passed to .where() are
 // inspectable plain descriptors — this lets the tests assert tenant scoping and
-// the instance-id IN filter, not just the rows the mock was handed. Real exports
-// are preserved so @intx/db (loaded earlier with the real module) is unaffected.
-mock.module('drizzle-orm', () => ({
-  ...drizzleActual,
+// the instance-id IN filter, not just the rows the mock was handed.
+//
+// We mock the local `./sql-predicates` seam, NOT 'drizzle-orm' directly:
+// mock.module is process-global in Bun, so mocking the library leaked these
+// descriptor builders into every other suite that introspects real drizzle SQL
+// (workflow and agents tests), failing them order-dependently (CL-1825). Only
+// list-agents.ts imports this seam, so the mock stays contained.
+mock.module('./sql-predicates', () => ({
   and: (...conds: unknown[]) => ({ op: 'and', conds }),
   or: (...conds: unknown[]) => ({ op: 'or', conds }),
   eq: (col: unknown, val: unknown) => ({ op: 'eq', col, val }),
@@ -75,18 +78,18 @@ function handler(db: DB['db']) {
 describe('LIST_AGENTS_DEFINITION', () => {
   it('takes no required arguments and is registered under list_agents', () => {
     expect(LIST_AGENTS_DEFINITION.inputSchema.required).toEqual([]);
-    expect(LIST_AGENTS_HUB_TOOLS.list_agents.definition).toBe(LIST_AGENTS_DEFINITION);
+    expect(LIST_AGENTS_HUB_TOOLS.list_agents?.definition).toBe(LIST_AGENTS_DEFINITION);
   });
 });
 
 describe('resolveOwnedInstanceIds', () => {
   it("resolves the caller's owning member and returns instances across all tenants", async () => {
     const { db } = makeDb([
-      [{ id: 'ins_caller' }],                                           // caller instance lookup
-      [{ memberPrincipalId: 'prn_user' }],                             // owner row lookup
-      [{ refId: 'usr_1' }],                                            // owner principal refId
-      [{ id: 'prn_user' }, { id: 'prn_user_wb' }],                                         // all user principals
-      [{ instanceId: 'ins_caller' }, { instanceId: 'ins_oat' }],       // owned instances
+      [{ id: 'ins_caller' }], // caller instance lookup
+      [{ memberPrincipalId: 'prn_user' }], // owner row lookup
+      [{ refId: 'usr_1' }], // owner principal refId
+      [{ id: 'prn_user' }, { id: 'prn_user_wb' }], // all user principals
+      [{ instanceId: 'ins_caller' }, { instanceId: 'ins_oat' }], // owned instances
     ]);
 
     expect(await resolveOwnedInstanceIds(db, CONTEXT, undefined)).toEqual([

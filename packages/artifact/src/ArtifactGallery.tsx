@@ -3,6 +3,7 @@
 // The kind->viz/fill/span mapping lives in artifact-visuals (presentation is
 // kept out of the transport layer). This renders the grid and header only.
 
+import { useState } from 'react';
 import type { ArtifactWithSession } from '@workbench/shared';
 import type { GalleryArtifact } from './types';
 import { toGalleryArtifact } from './artifact-visuals';
@@ -23,6 +24,10 @@ export interface ArtifactGalleryProps {
   onNew?: () => void;
   /** When provided, renders a mobile-only control to open the library overlay. */
   onOpenLibrary?: () => void;
+  /** Current sort order. When omitted, the component manages its own state. */
+  sort?: 'newest' | 'oldest';
+  /** Called when the user toggles the sort order. */
+  onSortChange?: (sort: 'newest' | 'oldest') => void;
 }
 
 export function ArtifactGallery({
@@ -34,7 +39,20 @@ export function ArtifactGallery({
   onOpen,
   onNew,
   onOpenLibrary,
+  sort: sortProp,
+  onSortChange,
 }: ArtifactGalleryProps) {
+  const [internalSort, setInternalSort] = useState<'newest' | 'oldest'>('newest');
+  const sort = sortProp ?? internalSort;
+
+  function handleSortToggle() {
+    const next = sort === 'newest' ? 'oldest' : 'newest';
+    if (onSortChange) {
+      onSortChange(next);
+    } else {
+      setInternalSort(next);
+    }
+  }
   const tiles = artifacts.map(toGalleryArtifact);
   const isSearching = query.trim().length > 0;
 
@@ -73,6 +91,8 @@ export function ArtifactGallery({
         />
         <button
           type="button"
+          onClick={handleSortToggle}
+          aria-label={sort === 'newest' ? 'Sort oldest first' : 'Sort newest first'}
           className="flex items-center gap-[7px] rounded-[9px] border border-border px-[13px] py-[7px] text-[12.5px] font-semibold text-text-2 transition-colors hover:border-border-strong hover:bg-[var(--row-hover)]"
         >
           <svg
@@ -84,7 +104,7 @@ export function ArtifactGallery({
           >
             <path d="M3 6h18M6 12h12M10 18h4" />
           </svg>
-          Sort
+          {sort === 'newest' ? 'Newest' : 'Oldest'}
         </button>
         <button
           type="button"

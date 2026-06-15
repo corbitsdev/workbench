@@ -8,8 +8,11 @@ import {
 } from './normalize';
 import type { TikTokPost, InstagramPost, ThreadsPost, PinterestPin } from './types';
 
-// Endpoints verified against https://docs.scrapecreators.com — update if the API changes.
+// Endpoints verified against https://docs.scrapecreators.com/llms.txt and the reference
+// last30days skill (mvanhorn/last30days-skill). Update if the API changes.
 export const SCRAPECREATORS_DEFAULT_BASE_URL = 'https://api.scrapecreators.com';
+
+const MAX_ERROR_BODY_LENGTH = 500;
 
 export type ScrapeCreatorsFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -46,54 +49,162 @@ async function fetchJSON(
     signal,
   });
   if (!response.ok) {
-    throw new Error(`ScrapeCreators API error: ${response.status} ${response.statusText}`);
+    const body = await response.text().catch(() => '');
+    const detail = body.length > 0 ? `: ${body.slice(0, MAX_ERROR_BODY_LENGTH)}` : '';
+    throw new Error(`ScrapeCreators API error: ${response.status} ${response.statusText}${detail}`);
   }
   return response.json();
+}
+
+function resolveLimit(args: Record<string, unknown>): number {
+  if (typeof args.limit === 'number' && args.limit > 0) {
+    return Math.floor(args.limit);
+  }
+  return 20;
+}
+
+function stringField(rec: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = rec[key];
+    if (typeof value === 'string' && value.length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function numberField(rec: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = rec[key];
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value === 'string' && /^\d+$/.test(value)) {
+      return Number(value);
+    }
+  }
+  return undefined;
+}
+
+function authorField(rec: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const containerKey of ['author', 'user', 'owner', 'pinner']) {
+    const container = rec[containerKey];
+    if (isRecord(container)) {
+      const value = stringField(container, keys);
+      if (value !== undefined) {
+        return value;
+      }
+    }
+    if (typeof container === 'string' && container.length > 0) {
+      return container;
+    }
+  }
+  if (isRecord(rec.authorMeta)) {
+    const value = stringField(rec.authorMeta, ['name', 'nickName', 'uniqueId', 'unique_id']);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+// ScrapeCreators wraps results under different top-level keys depending on the
+// endpoint and occasionally returns a bare array. Try each candidate key in order.
+function extractArray(data: unknown, keys: string[]): unknown[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+  if (!isRecord(data)) {
+    throw new Error('ScrapeCreators response is not an object');
+  }
+  for (const key of keys) {
+    const value = data[key];
+    if (Array.isArray(value)) {
+      return value;
+    }
+  }
+  return [];
 }
 
 function parseTikTokPost(value: unknown): TikTokPost {
   if (!isRecord(value)) {
     throw new Error('TikTok item is not an object');
   }
-  const id = typeof value.id === 'string' ? value.id : String(value.id ?? '');
+  // The keyword search endpoint wraps each post under `aweme_info`.
+  const rec = isRecord(value.aweme_info) ? value.aweme_info : value;
+  const id = stringField(rec, ['aweme_id', 'id']) ?? '';
   const post: TikTokPost = { id };
-  if (typeof value.webVideoUrl === 'string') {
-    post.webVideoUrl = value.webVideoUrl;
+  const url = stringField(rec, ['share_url', 'webVideoUrl', 'url']);
+  if (url !== undefined) {
+    post.url = url;
   }
-  if (typeof value.desc === 'string') {
-    post.desc = value.desc;
+  const desc = stringField(rec, ['desc', 'description']);
+  if (desc !== undefined) {
+    post.desc = desc;
   }
-  if (typeof value.createTime === 'number') {
-    post.createTime = value.createTime;
+  const createTime = numberField(rec, ['create_time', 'createTime']);
+  if (createTime !== undefined) {
+    post.createTime = createTime;
   }
-  if (typeof value.diggCount === 'number') {
-    post.diggCount = value.diggCount;
+  const stats = isRecord(rec.statistics) ? rec.statistics : rec;
+  const likes = numberField(stats, ['digg_count', 'diggCount', 'like_count']);
+  if (likes !== undefined) {
+    post.likes = likes;
   }
-  if (isRecord(value.authorMeta) && typeof value.authorMeta.name === 'string') {
-    post.authorMeta = { name: value.authorMeta.name };
+  const comments = numberField(stats, ['comment_count', 'commentCount']);
+  if (comments !== undefined) {
+    post.comments = comments;
+  }
+  const author = authorField(rec, ['unique_id', 'uniqueId', 'nickname', 'name']);
+  if (author !== undefined) {
+    post.author = author;
   }
   return post;
+}
+
+function parseCaption(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.length > 0) {
+    return value;
+  }
+  if (isRecord(value) && typeof value.text === 'string' && value.text.length > 0) {
+    return value.text;
+  }
+  return undefined;
 }
 
 function parseInstagramPost(value: unknown): InstagramPost {
   if (!isRecord(value)) {
     throw new Error('Instagram item is not an object');
   }
+  const rec = value;
   const post: InstagramPost = {};
-  if (typeof value.shortCode === 'string') {
-    post.shortCode = value.shortCode;
+  const code = stringField(rec, ['shortcode', 'code', 'shortCode']);
+  if (code !== undefined) {
+    post.code = code;
   }
-  if (typeof value.caption === 'string') {
-    post.caption = value.caption;
+  const caption = parseCaption(rec.caption);
+  if (caption !== undefined) {
+    post.caption = caption;
   }
-  if (typeof value.timestamp === 'string') {
-    post.timestamp = value.timestamp;
+  if (typeof rec.taken_at === 'number') {
+    post.takenAt = rec.taken_at;
+  } else {
+    const takenAt = stringField(rec, ['taken_at', 'timestamp', 'taken_at_date']);
+    if (takenAt !== undefined) {
+      post.takenAt = takenAt;
+    }
   }
-  if (typeof value.likesCount === 'number') {
-    post.likesCount = value.likesCount;
+  const likes = numberField(rec, ['like_count', 'likesCount', 'likes']);
+  if (likes !== undefined) {
+    post.likes = likes;
   }
-  if (typeof value.ownerUsername === 'string') {
-    post.ownerUsername = value.ownerUsername;
+  const comments = numberField(rec, ['comment_count', 'commentsCount']);
+  if (comments !== undefined) {
+    post.comments = comments;
+  }
+  const author = authorField(rec, ['username', 'handle']);
+  if (author !== undefined) {
+    post.author = author;
   }
   return post;
 }
@@ -103,20 +214,25 @@ function parseThreadsPost(value: unknown): ThreadsPost {
     throw new Error('Threads item is not an object');
   }
   const post: ThreadsPost = {};
-  if (typeof value.code === 'string') {
-    post.code = value.code;
+  const code = stringField(value, ['code', 'shortcode']);
+  if (code !== undefined) {
+    post.code = code;
   }
-  if (typeof value.text === 'string') {
-    post.text = value.text;
+  const text = stringField(value, ['text', 'caption']);
+  if (text !== undefined) {
+    post.text = text;
   }
-  if (typeof value.taken_at === 'number') {
-    post.taken_at = value.taken_at;
+  const takenAt = numberField(value, ['taken_at', 'create_time']);
+  if (takenAt !== undefined) {
+    post.taken_at = takenAt;
   }
-  if (typeof value.like_count === 'number') {
-    post.like_count = value.like_count;
+  const likes = numberField(value, ['like_count', 'likes']);
+  if (likes !== undefined) {
+    post.like_count = likes;
   }
-  if (isRecord(value.user) && typeof value.user.username === 'string') {
-    post.user = { username: value.user.username };
+  const author = authorField(value, ['username', 'handle']);
+  if (author !== undefined) {
+    post.user = { username: author };
   }
   return post;
 }
@@ -126,39 +242,31 @@ function parsePinterestPin(value: unknown): PinterestPin {
     throw new Error('Pinterest item is not an object');
   }
   const pin: PinterestPin = {};
-  if (typeof value.id === 'string') {
-    pin.id = value.id;
+  const id = stringField(value, ['id', 'pin_id']);
+  if (id !== undefined) {
+    pin.id = id;
   }
-  if (typeof value.title === 'string') {
-    pin.title = value.title;
+  const title = stringField(value, ['title', 'grid_title']);
+  if (title !== undefined) {
+    pin.title = title;
   }
-  if (typeof value.description === 'string') {
-    pin.description = value.description;
+  const description = stringField(value, ['description']);
+  if (description !== undefined) {
+    pin.description = description;
   }
-  if (typeof value.created_at === 'string') {
-    pin.created_at = value.created_at;
+  const createdAt = stringField(value, ['created_at']);
+  if (createdAt !== undefined) {
+    pin.created_at = createdAt;
   }
-  if (typeof value.save_count === 'number') {
-    pin.save_count = value.save_count;
+  const saves = numberField(value, ['save_count', 'repin_count']);
+  if (saves !== undefined) {
+    pin.save_count = saves;
   }
-  if (isRecord(value.pinner) && typeof value.pinner.username === 'string') {
-    pin.pinner = { username: value.pinner.username };
+  const author = authorField(value, ['username', 'full_name']);
+  if (author !== undefined) {
+    pin.pinner = { username: author };
   }
   return pin;
-}
-
-function parsePostsArray<T>(data: unknown, key: string, parseItem: (v: unknown) => T): T[] {
-  if (!isRecord(data)) {
-    throw new Error(`ScrapeCreators response is not an object`);
-  }
-  const items = data[key];
-  if (!Array.isArray(items)) {
-    if (Array.isArray(data)) {
-      return (data as unknown[]).map(parseItem);
-    }
-    return [];
-  }
-  return items.map(parseItem);
 }
 
 export const SCRAPECREATORS_TIKTOK_DEFINITION: ToolDefinition = {
@@ -169,7 +277,10 @@ export const SCRAPECREATORS_TIKTOK_DEFINITION: ToolDefinition = {
     type: 'object',
     properties: {
       query: { type: 'string', description: 'Search query.' },
-      limit: { type: 'number', description: 'Maximum number of results (default 20).' },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of results (default 20).',
+      },
     },
     required: ['query'],
   },
@@ -178,15 +289,18 @@ export const SCRAPECREATORS_TIKTOK_DEFINITION: ToolDefinition = {
 export const SCRAPECREATORS_INSTAGRAM_DEFINITION: ToolDefinition = {
   name: 'scrapecreators_instagram',
   description:
-    'Search Instagram posts and reels by hashtag or keyword via ScrapeCreators. Returns normalized research items.',
+    'Search Instagram reels by keyword via ScrapeCreators. Returns normalized research items.',
   inputSchema: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
-        description: 'Hashtag (without #) or keyword to search.',
+        description: 'Keyword to search.',
       },
-      limit: { type: 'number', description: 'Maximum number of results (default 20).' },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of results (default 20).',
+      },
     },
     required: ['query'],
   },
@@ -200,7 +314,10 @@ export const SCRAPECREATORS_THREADS_DEFINITION: ToolDefinition = {
     type: 'object',
     properties: {
       query: { type: 'string', description: 'Search query.' },
-      limit: { type: 'number', description: 'Maximum number of results (default 20).' },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of results (default 20).',
+      },
     },
     required: ['query'],
   },
@@ -214,7 +331,10 @@ export const SCRAPECREATORS_PINTEREST_DEFINITION: ToolDefinition = {
     type: 'object',
     properties: {
       query: { type: 'string', description: 'Search query.' },
-      limit: { type: 'number', description: 'Maximum number of results (default 20).' },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of results (default 20).',
+      },
     },
     required: ['query'],
   },
@@ -229,12 +349,14 @@ async function searchTikTok(
   if (query.length === 0) {
     throw new Error('query is required');
   }
-  const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
-  const url = new URL(`${resolvedBaseURL(config)}/v1/tiktok/search/posts`);
+  const limit = resolveLimit(args);
+  const url = new URL(`${resolvedBaseURL(config)}/v1/tiktok/search/keyword`);
   url.searchParams.set('query', query);
-  url.searchParams.set('limit', limit.toString());
+  url.searchParams.set('sort_by', 'relevance');
   const data = await fetchJSON(config, url, signal);
-  const posts = parsePostsArray(data, 'posts', parseTikTokPost);
+  const posts = extractArray(data, ['search_item_list', 'aweme_list', 'data', 'posts'])
+    .slice(0, limit)
+    .map(parseTikTokPost);
   return JSON.stringify(posts.map(normalizeTikTokPost), null, 2);
 }
 
@@ -247,12 +369,13 @@ async function searchInstagram(
   if (query.length === 0) {
     throw new Error('query is required');
   }
-  const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
-  const url = new URL(`${resolvedBaseURL(config)}/v1/instagram/hashtag/posts`);
-  url.searchParams.set('hashtag', query);
-  url.searchParams.set('limit', limit.toString());
+  const limit = resolveLimit(args);
+  const url = new URL(`${resolvedBaseURL(config)}/v2/instagram/reels/search`);
+  url.searchParams.set('query', query);
   const data = await fetchJSON(config, url, signal);
-  const posts = parsePostsArray(data, 'posts', parseInstagramPost);
+  const posts = extractArray(data, ['reels', 'items', 'data', 'results'])
+    .slice(0, limit)
+    .map(parseInstagramPost);
   return JSON.stringify(posts.map(normalizeInstagramPost), null, 2);
 }
 
@@ -265,12 +388,13 @@ async function searchThreads(
   if (query.length === 0) {
     throw new Error('query is required');
   }
-  const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
+  const limit = resolveLimit(args);
   const url = new URL(`${resolvedBaseURL(config)}/v1/threads/search`);
   url.searchParams.set('query', query);
-  url.searchParams.set('limit', limit.toString());
   const data = await fetchJSON(config, url, signal);
-  const posts = parsePostsArray(data, 'posts', parseThreadsPost);
+  const posts = extractArray(data, ['posts', 'threads', 'items', 'data', 'search_results'])
+    .slice(0, limit)
+    .map(parseThreadsPost);
   return JSON.stringify(posts.map(normalizeThreadsPost), null, 2);
 }
 
@@ -283,12 +407,13 @@ async function searchPinterest(
   if (query.length === 0) {
     throw new Error('query is required');
   }
-  const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
-  const url = new URL(`${resolvedBaseURL(config)}/v1/pinterest/search/pins`);
+  const limit = resolveLimit(args);
+  const url = new URL(`${resolvedBaseURL(config)}/v1/pinterest/search`);
   url.searchParams.set('query', query);
-  url.searchParams.set('limit', limit.toString());
   const data = await fetchJSON(config, url, signal);
-  const pins = parsePostsArray(data, 'pins', parsePinterestPin);
+  const pins = extractArray(data, ['pins', 'items', 'data', 'results'])
+    .slice(0, limit)
+    .map(parsePinterestPin);
   return JSON.stringify(pins.map(normalizePinterestPin), null, 2);
 }
 

@@ -11,7 +11,7 @@
  *   BROWSERBASE_API_KEY=... BROWSERBASE_PROJECT_ID=... \
  *     bun run apps/hub/bin/reap-browser-sessions.ts
  *
- * REAP_MAX_AGE_SECONDS (default 1800) controls the age ceiling.
+ * REAP_MAX_AGE_SECONDS (default 300) controls the age ceiling.
  */
 import { reapStaleSessions, resolveConfig } from '@workbench/tools-browser';
 
@@ -27,7 +27,7 @@ function requireEnv(name: string): string {
 async function main(): Promise<void> {
   const apiKey = requireEnv('BROWSERBASE_API_KEY');
   const projectId = requireEnv('BROWSERBASE_PROJECT_ID');
-  const maxAgeSeconds = Number(process.env['REAP_MAX_AGE_SECONDS'] ?? '1800');
+  const maxAgeSeconds = Number(process.env['REAP_MAX_AGE_SECONDS'] ?? '300');
   if (!Number.isFinite(maxAgeSeconds) || maxAgeSeconds <= 0) {
     console.error('[reap-browser-sessions] REAP_MAX_AGE_SECONDS must be a positive number');
     process.exit(1);

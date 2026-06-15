@@ -9,6 +9,11 @@ type CredentialRequirementType = typeof CredentialRequirement.infer;
 export const BOBBY_GRANT_REQUIREMENTS: GrantRequirementType[] = [
   {
     source: 'invoker',
+    resource: 'tool:mail_search',
+    action: 'invoke',
+  },
+  {
+    source: 'invoker',
     resource: 'tool:mail_reply',
     action: 'invoke',
   },
@@ -34,6 +39,7 @@ export const BOBBY_CAPABILITIES = {
     'browser_get_text',
     'browser_screenshot',
     'browser_close_session',
+    'mail_search',
     'mail_reply',
   ],
 } as const;

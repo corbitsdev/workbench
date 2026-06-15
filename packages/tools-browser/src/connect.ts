@@ -5,8 +5,28 @@
 import { chromium } from 'playwright-core';
 import type { BrowserConnector, BrowserLike, PageLike } from './types';
 
-export const CONNECT_TIMEOUT_MS = 20_000;
-export const ACTION_TIMEOUT_MS = 15_000;
+/**
+ * The hub fronts `/tools/run` behind a request budget (~20s on the current
+ * Railway/Hono edge) after which the request is torn down. Every in-tool
+ * timeout below MUST stay under this so a hung browser op returns a clean
+ * `isError` result the agent can act on, rather than racing the teardown.
+ * Kept as a documented reference point for the ordering invariant, not a
+ * runtime limit we enforce ourselves.
+ */
+export const EDGE_REQUEST_BUDGET_MS = 20_000;
+
+/**
+ * Hard ceiling on a single browser tool call (connect + the one action). Below
+ * the edge budget by a margin so the tool always resolves/rejects first.
+ */
+export const OPERATION_BUDGET_MS = 18_000;
+
+// browser_create_session now guarantees the session is RUNNING before returning,
+// so CDP connect should succeed quickly. 15s gives headroom for Browserbase's
+// CDP bridge to become reachable after the status flip, while leaving 3s for
+// the action itself within the 18s operation budget.
+export const CONNECT_TIMEOUT_MS = 15_000;
+export const ACTION_TIMEOUT_MS = 9_000;
 
 export const realConnector: BrowserConnector = async (connectUrl: string) => {
   const browser = await chromium.connectOverCDP(connectUrl, { timeout: CONNECT_TIMEOUT_MS });

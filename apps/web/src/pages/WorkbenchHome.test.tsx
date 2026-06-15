@@ -34,6 +34,25 @@ mock.module('../lib/hub-api', () => ({
     ]),
   listAgentInstances: () => Promise.resolve([]),
   launchInstanceSession: () => Promise.resolve({ launched: true }),
+  // Superset members so a sibling file mocking the same hub-api module (which
+  // wins globally under bun's last-registration-wins mock.module) still has
+  // these. Keep in sync with UnifiedCatalogModal.test's mock.
+  listAgentTemplates: () =>
+    Promise.resolve([
+      {
+        key: 'oat',
+        name: 'Oat',
+        description: 'Granola notes agent',
+        tools: ['granola_list_notes'],
+      },
+      {
+        key: 'freddy',
+        name: 'Freddy',
+        description: 'Web research agent',
+        tools: ['firecrawl_scrape'],
+      },
+    ]),
+  deployAgentFromTemplate: (_tenantId: string, key: string) => Promise.resolve({ key }),
 }));
 
 import WorkbenchHome from './WorkbenchHome';

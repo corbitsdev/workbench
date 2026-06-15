@@ -1,1 +1,8 @@
-export { stripUnsendableAssistantTurns, type ContextRepairResult } from './context-repair';
+export {
+  stripUnsendableAssistantTurns,
+  repairToolCallPairing,
+  healTurns,
+  type ContextRepairResult,
+  type ToolPairingRepairResult,
+  type ContextHealResult,
+} from './context-repair';

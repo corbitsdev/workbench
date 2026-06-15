@@ -4,12 +4,13 @@
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
 import { useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useArtifacts } from '@workbench/client/react';
 import { ArtifactGallery as ArtifactGalleryView, ArtifactModal } from '@workbench/artifact';
 import type { GalleryArtifact, ArtifactWithSession } from '@workbench/artifact';
 import { clientOptions } from '../../lib/client-options';
 import ArtifactBody from '../ArtifactBody';
-import { collateralTypeOptions } from '@workbench/gtm-workflows';
+import { canUseArtifactInWorkflow, collateralTypeOptions } from '@workbench/gtm-workflows';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -23,9 +24,11 @@ interface ArtifactGalleryProps {
 }
 
 export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGalleryProps) {
+  const navigate = useNavigate();
   const [inputQuery, setInputQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
 
   const {
     data: artifacts,
@@ -34,6 +37,7 @@ export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGall
   } = useArtifacts(clientOptions, {
     tenantId,
     query: debouncedQuery || undefined,
+    sort,
   });
   const [selected, setSelected] = useState<ArtifactWithSession | null>(null);
 
@@ -50,6 +54,14 @@ export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGall
     setSelected(full);
   };
 
+  function buildMyraHref(artifact: ArtifactWithSession): string {
+    return `/chat?artifactId=${encodeURIComponent(artifact.id)}`;
+  }
+
+  function handleUseInWorkflow(artifact: ArtifactWithSession) {
+    void navigate(`/workflows/new?artifactId=${encodeURIComponent(artifact.id)}`);
+  }
+
   return (
     <>
       <ArtifactGalleryView
@@ -61,6 +73,8 @@ export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGall
         onOpen={handleOpen}
         onNew={onNew}
         onOpenLibrary={onOpenLibrary}
+        sort={sort}
+        onSortChange={setSort}
       />
       <ArtifactModal
         open={selected !== null}
@@ -71,6 +85,9 @@ export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGall
             ? (collateralTypeOptions.find((o) => o.id === selected.kind)?.label ?? selected.kind)
             : undefined
         }
+        myraHref={selected ? buildMyraHref(selected) : undefined}
+        onUseInWorkflow={handleUseInWorkflow}
+        canUseInWorkflow={(a) => canUseArtifactInWorkflow(a.kind)}
       >
         {selected && <ArtifactBody body={selected.content} type={selected.kind} />}
       </ArtifactModal>

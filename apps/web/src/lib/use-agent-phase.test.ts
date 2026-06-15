@@ -1,47 +1,68 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { act, renderHook } from '@testing-library/react';
+import '../test-setup';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { useAgentPhase } from './use-agent-phase';
 
-type Listener = (event: unknown) => void;
+// Drive useAgentPhase through the REAL instance-transport + shared-event-stream
+// by stubbing the EventSource boundary, rather than module-mocking
+// instance-transport. A local module mock leaks process-wide under bun and
+// replaces the real module in instance-transport.test, so we stub the global
+// network primitive instead (the pattern the rest of the suite uses).
+class FakeEventSource {
+  static open = new Set<FakeEventSource>();
+  url: string;
+  listeners: Record<string, (event: MessageEvent) => void> = {};
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
 
-// Controllable fake transport keyed by path; multiple subscribers per path are
-// fanned out, mirroring the real shared event stream.
-const channels = new Map<string, Set<Listener>>();
+  constructor(url: string) {
+    this.url = url;
+    FakeEventSource.open.add(this);
+  }
 
-mock.module('./instance-transport', () => ({
-  createHubTransport: () => ({
-    fetch: async () => undefined,
-    subscribe(path: string, onEvent: Listener) {
-      const listeners = channels.get(path) ?? new Set<Listener>();
-      listeners.add(onEvent);
-      channels.set(path, listeners);
-      return () => {
-        listeners.delete(onEvent);
-        if (listeners.size === 0) channels.delete(path);
-      };
-    },
-  }),
-}));
+  addEventListener(name: string, cb: (event: MessageEvent) => void): void {
+    this.listeners[name] = cb;
+  }
 
-function emit(instanceId: string, event: unknown): void {
-  const path = `/api/tenants/tenant_1/agents/instances/${instanceId}/events`;
-  const listeners = channels.get(path);
-  if (listeners) for (const listener of listeners) listener(event);
+  close(): void {
+    FakeEventSource.open.delete(this);
+  }
 }
 
-const { useAgentPhase } = await import('./use-agent-phase');
+const originalEventSource = globalThis.EventSource;
+
+function sourceFor(instanceId: string): FakeEventSource | undefined {
+  return [...FakeEventSource.open].find((s) => s.url.includes(`/instances/${instanceId}/events`));
+}
+
+function emit(instanceId: string, event: unknown): void {
+  const source = sourceFor(instanceId);
+  if (!source) return;
+  const frame = { data: JSON.stringify(event) } as MessageEvent;
+  for (const listener of Object.values(source.listeners)) listener(frame);
+}
 
 const target = { instanceId: 'inst_a', tenantId: 'tenant_1' };
 
+beforeEach(() => {
+  (
+    globalThis as unknown as { window: { happyDOM: { setURL: (u: string) => void } } }
+  ).window.happyDOM.setURL('http://localhost/');
+  FakeEventSource.open = new Set<FakeEventSource>();
+  globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+});
+
 afterEach(() => {
-  channels.clear();
+  cleanup();
+  globalThis.EventSource = originalEventSource;
 });
 
 describe('useAgentPhase', () => {
   it('returns null and opens no subscription when there is no agent to track', () => {
     const { result } = renderHook(() => useAgentPhase(null));
     expect(result.current).toBeNull();
-    expect(channels.size).toBe(0);
+    expect(FakeEventSource.open.size).toBe(0);
   });
 
   it('reports idle for a running agent with no live stream', () => {
@@ -106,9 +127,9 @@ describe('useAgentPhase', () => {
 
   it('tears down its subscription on unmount', () => {
     const { unmount } = renderHook(() => useAgentPhase(target));
-    expect(channels.size).toBe(1);
+    expect(FakeEventSource.open.size).toBe(1);
     unmount();
-    expect(channels.size).toBe(0);
+    expect(FakeEventSource.open.size).toBe(0);
   });
 
   it('tracks two agents independently without disturbing each other', () => {
@@ -124,6 +145,6 @@ describe('useAgentPhase', () => {
 
     // Unmounting one leaves the other's subscription intact.
     a.unmount();
-    expect(channels.has('/api/tenants/tenant_1/agents/instances/inst_b/events')).toBe(true);
+    expect(sourceFor('inst_b')).toBeTruthy();
   });
 });

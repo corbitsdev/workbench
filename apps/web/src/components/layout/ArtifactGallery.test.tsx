@@ -1,10 +1,12 @@
 /// <reference types="bun" />
 import '../../test-setup';
-import { describe, expect, it, mock } from 'bun:test';
-import { render, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router';
 import React from 'react';
 import type { ArtifactWithSession } from '@workbench/shared';
+import { ArtifactGallery } from './ArtifactGallery';
 
 const fakeArtifact: ArtifactWithSession = {
   id: 'a-1',
@@ -22,26 +24,35 @@ const fakeArtifact: ArtifactWithSession = {
   sessionStatus: 'done',
 };
 
-const mockUseArtifacts = mock((_options?: unknown, _params?: { tenantId?: string | null }) => ({
-  data: [fakeArtifact],
-  isLoading: false,
-  isError: false,
-}));
+afterEach(cleanup);
 
-mock.module('@workbench/client/react', () => ({
-  useArtifacts: mockUseArtifacts,
-  useLibraryResources: () => ({ data: [], isLoading: false, isError: false }),
-}));
-
-function renderWithClient(ui: React.ReactElement) {
+// Seed the real useArtifacts query cache rather than module-mocking
+// @workbench/client/react. Module mocks of that shared surface leak across the
+// whole bun run (mock.module is applied globally at collection), poisoning the
+// @workbench/client tests that import the real useArtifacts.
+function renderWithSeededArtifacts(
+  tenantId: string,
+  artifacts: ArtifactWithSession[],
+  ui: React.ReactElement
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(React.createElement(QueryClientProvider, { client }, ui));
+  client.setQueryData(['artifacts', tenantId, '', 'newest', '', ''], artifacts);
+  return render(
+    React.createElement(
+      MemoryRouter,
+      null,
+      React.createElement(QueryClientProvider, { client }, ui)
+    )
+  );
 }
 
 describe('ArtifactGallery', () => {
-  it('renders real artifacts from the client', async () => {
-    const { ArtifactGallery } = await import('./ArtifactGallery');
-    const view = renderWithClient(React.createElement(ArtifactGallery, {}));
+  it('renders artifacts returned by the artifacts query', async () => {
+    const view = renderWithSeededArtifacts(
+      'tenant-workbench',
+      [fakeArtifact],
+      React.createElement(ArtifactGallery, { tenantId: 'tenant-workbench' })
+    );
 
     await waitFor(() => {
       expect(view.getByText('Sales automation ROI')).toBeDefined();
@@ -49,14 +60,15 @@ describe('ArtifactGallery', () => {
     expect(view.getByText('Acme Corp')).toBeDefined();
   });
 
-  it('passes tenantId through to the artifacts hook', async () => {
-    const { ArtifactGallery } = await import('./ArtifactGallery');
-    renderWithClient(React.createElement(ArtifactGallery, { tenantId: 'tenant-workbench' }));
+  it('renders an empty state when the query returns no artifacts', async () => {
+    const view = renderWithSeededArtifacts(
+      'tenant-workbench',
+      [],
+      React.createElement(ArtifactGallery, { tenantId: 'tenant-workbench' })
+    );
 
     await waitFor(() => {
-      expect(mockUseArtifacts).toHaveBeenCalled();
+      expect(view.queryByText('Sales automation ROI')).toBeNull();
     });
-    const lastCall = mockUseArtifacts.mock.calls[mockUseArtifacts.mock.calls.length - 1];
-    expect(lastCall?.[1]).toEqual({ tenantId: 'tenant-workbench' });
   });
 });

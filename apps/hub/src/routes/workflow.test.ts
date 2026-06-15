@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { Hono } from 'hono';
-import { createWorkflowRouter } from './workflow';
+import { createWorkflowRouter, resolveResetStatus } from './workflow';
 
 import * as intxDb from '@intx/db';
 import type { HubDb } from '../db';
@@ -32,6 +32,23 @@ mock.module('@intx/db', () => ({
       model: 'agent-model',
     },
   ]),
+}));
+
+mock.module('@workbench/tools-gamma', () => ({
+  GAMMA_HUB_TOOLS: {},
+  fetchGammaTemplates: mock(() => [
+    { gammaId: 'tmpl-1', name: 'Sales Deck', description: 'A sales deck template' },
+    { gammaId: 'tmpl-2', name: 'Investor Pitch', description: null },
+  ]),
+}));
+
+mock.module('@intx/crypto-node', () => ({
+  generateKeyPair: mock(async () => ({ publicKey: 'pk', privateKey: 'sk' })),
+  createNodeCrypto: mock(() => ({ sign: mock(() => 'sig'), verify: mock(() => true) })),
+}));
+
+mock.module('@intx/hub-common', () => ({
+  generateId: mock((prefix: string) => `${prefix}-test-id`),
 }));
 
 mock.module('../config', () => ({
@@ -175,6 +192,7 @@ describe('Workflow router', () => {
         },
         transcript: {
           findFirst: mock(() => ({ content: 'Test transcript content' })),
+          findMany: mock<() => unknown[]>(() => []),
         },
         painPoint: {
           findMany: mock<() => unknown[]>(() => []),
@@ -213,6 +231,14 @@ describe('Workflow router', () => {
             name: providerNameQueue.length > 0 ? providerNameQueue.shift() : 'openai-compatible',
             metadata: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o' },
           })),
+          findMany: mock(() => [
+            {
+              id: 'prov-1',
+              plugin: 'openai',
+              name: providerNameQueue.length > 0 ? providerNameQueue.shift() : 'openai-compatible',
+              metadata: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o' },
+            },
+          ]),
         },
       },
       delete: mock(() => ({
@@ -395,6 +421,9 @@ describe('Workflow router', () => {
     expect(json.id).toBe('wf-1');
     expect(json.status).toBeString();
     expect(json.steps).toBeObject();
+    // The panel derives its mode from the workflow kind, so the read endpoint
+    // must return it rather than relying on the navigation-origin prop (CL-1894).
+    expect(json.kind).toBe('collateral-generation');
   });
 
   it('GET /artifacts returns the user artifacts enriched with session info', async () => {
@@ -429,12 +458,16 @@ describe('Workflow router', () => {
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
-    const json = await res.json();
-    expect(Array.isArray(json)).toBe(true);
-    expect(json).toHaveLength(1);
-    expect(json[0].id).toBe('a-1');
-    expect(json[0].sessionName).toBe('Acme Corp');
-    expect(json[0].sessionStatus).toBe('done');
+    const json = (await res.json()) as {
+      artifacts: Array<{ id: string; sessionName: string; sessionStatus: string }>;
+    };
+    expect(Array.isArray(json.artifacts)).toBe(true);
+    expect(json.artifacts).toHaveLength(1);
+    const [firstArtifact] = json.artifacts;
+    if (!firstArtifact) throw new Error('expected one artifact');
+    expect(firstArtifact.id).toBe('a-1');
+    expect(firstArtifact.sessionName).toBe('Acme Corp');
+    expect(firstArtifact.sessionStatus).toBe('done');
   });
 
   // Approval gate: PATCH artifact status drives the reviewing -> done transition.
@@ -619,8 +652,10 @@ describe('Workflow router', () => {
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
-    const json = await res.json();
-    expect(json[0].sessionName).toBe('Demo with Globex');
+    const json = (await res.json()) as { artifacts: Array<{ sessionName: string }> };
+    const [firstArtifact] = json.artifacts;
+    if (!firstArtifact) throw new Error('expected one artifact');
+    expect(firstArtifact.sessionName).toBe('Demo with Globex');
   });
 
   it('GET /artifacts returns an empty array when the user has no sessions', async () => {
@@ -632,8 +667,210 @@ describe('Workflow router', () => {
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
-    const json = await res.json();
-    expect(json).toEqual([]);
+    const json = (await res.json()) as { artifacts: unknown[] };
+    expect(json.artifacts).toEqual([]);
+  });
+
+  it('GET /artifacts excludes rejected artifacts by default (CL-1550)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    const findManyMock = mock(() => []);
+    mockDb.query.artifact.findMany = findManyMock;
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+
+    expect(findManyMock).toHaveBeenCalledTimes(1);
+    const callArgs = (findManyMock as any).mock.calls[0]?.[0] as { where?: unknown } | undefined;
+    expect(callArgs?.where).toBeDefined();
+
+    const json = (await res.json()) as { artifacts: unknown[]; nextCursor: string | null };
+    expect(json.artifacts).toEqual([]);
+    expect(json.nextCursor).toBeNull();
+  });
+
+  it('GET /artifacts returns rejected artifacts when ?status=rejected (CL-1550)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    const findManyMock = mock(() => [
+      {
+        id: 'a-rejected',
+        sessionId: null,
+        parentId: null,
+        painPointId: null,
+        kind: 'email',
+        title: 'Rejected Email',
+        content: 'body',
+        status: 'rejected',
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tenantId: 'tenant-personal',
+        principalId: PERSONAL_PRINCIPAL.id,
+      },
+    ]);
+    mockDb.query.artifact.findMany = findManyMock;
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?status=rejected', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as { artifacts: Array<{ id: string }> };
+    expect(json.artifacts.map((a) => a.id)).toContain('a-rejected');
+  });
+
+  it('GET /artifacts returns 400 for unknown status filter (CL-1553)', async () => {
+    const mockDb = createMockDb();
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?status=unknown-status', {
+      method: 'GET',
+    });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toBeDefined();
+  });
+
+  const captureArtifactQuery = async (
+    url: string
+  ): Promise<{ where?: unknown; orderBy?: unknown }> => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    const findManyMock = mock(() => []);
+    mockDb.query.artifact.findMany = findManyMock;
+    const res = await buildApp(mockDb).fetch(new Request(url, { method: 'GET' }));
+    expect(res.status).toBe(200);
+    return ((findManyMock as any).mock.calls[0]?.[0] ?? {}) as {
+      where?: unknown;
+      orderBy?: unknown;
+    };
+  };
+
+  it('GET /artifacts adds the kind filter to the DB query (CL-1553)', async () => {
+    const withKind = await captureArtifactQuery('http://localhost:4000/artifacts?kind=email');
+    const withoutKind = await captureArtifactQuery('http://localhost:4000/artifacts');
+    // The kind filter must change the where clause, not just be "present".
+    expect(withKind.where).not.toEqual(withoutKind.where);
+  });
+
+  it('GET /artifacts accepts valid status filter (CL-1553)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    mockDb.query.artifact.findMany = mock(() => []);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?status=approved', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+  });
+
+  it('GET /artifacts returns nextCursor when results exceed the page limit (CL-1554)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    const updatedAt = new Date('2026-01-15T10:00:00.000Z');
+    const artifacts = Array.from({ length: 21 }, (_, i) => ({
+      id: `a-${i + 1}`,
+      sessionId: null,
+      parentId: null,
+      painPointId: null,
+      kind: 'email',
+      title: `Artifact ${i + 1}`,
+      content: 'body',
+      status: 'draft',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt,
+      tenantId: 'tenant-personal',
+      principalId: PERSONAL_PRINCIPAL.id,
+    }));
+    mockDb.query.artifact.findMany = mock(() => artifacts);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts?limit=20', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as {
+      artifacts: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(json.artifacts).toHaveLength(20);
+    expect(json.nextCursor).not.toBeNull();
+    expect(typeof json.nextCursor).toBe('string');
+    expect(json.nextCursor).toContain('__');
+    const [datePart, idPart] = json.nextCursor!.split('__');
+    expect(new Date(datePart!).toISOString()).toBe(updatedAt.toISOString());
+    expect(idPart).toBe('a-20');
+  });
+
+  it('GET /artifacts returns null nextCursor when results fit within page limit (CL-1554)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    mockDb.query.artifact.findMany = mock(() => [
+      {
+        id: 'a-1',
+        sessionId: null,
+        parentId: null,
+        painPointId: null,
+        kind: 'email',
+        title: 'Only one',
+        content: 'body',
+        status: 'draft',
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date(),
+        tenantId: 'tenant-personal',
+        principalId: PERSONAL_PRINCIPAL.id,
+      },
+    ]);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as { artifacts: unknown[]; nextCursor: string | null };
+    expect(json.nextCursor).toBeNull();
+  });
+
+  it('GET /artifacts orders differently for oldest vs newest, with a tie-break (CL-1551)', async () => {
+    const oldest = await captureArtifactQuery('http://localhost:4000/artifacts?sort=oldest');
+    const newest = await captureArtifactQuery('http://localhost:4000/artifacts');
+    // Two order keys: updatedAt + id tie-break, in both directions.
+    expect(oldest.orderBy).toHaveLength(2);
+    expect(newest.orderBy).toHaveLength(2);
+    // Direction must actually flip with the sort param (asc vs desc).
+    expect(oldest.orderBy).not.toEqual(newest.orderBy);
+  });
+
+  it('GET /artifacts walks the cursor in the sort direction (CL-1554)', async () => {
+    const cursor = `${new Date('2026-01-15T10:00:00.000Z').toISOString()}__a-10`;
+    const enc = encodeURIComponent(cursor);
+    const oldest = await captureArtifactQuery(
+      `http://localhost:4000/artifacts?sort=oldest&cursor=${enc}`
+    );
+    const newest = await captureArtifactQuery(`http://localhost:4000/artifacts?cursor=${enc}`);
+    // oldest-first must page forward (gt), newest-first backward (lt): the cursor
+    // predicate must differ, otherwise keyset pagination corrupts for one direction.
+    expect(oldest.where).not.toEqual(newest.where);
+  });
+
+  it('GET /artifacts returns 400 for a malformed cursor (CL-1554)', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => []);
+    mockDb.query.artifact.findMany = mock(() => []);
+    const router = buildApp(mockDb);
+    for (const bad of ['no-separator', 'not-a-date__a-1', `${new Date().toISOString()}__`]) {
+      const res = await router.fetch(
+        new Request(`http://localhost:4000/artifacts?cursor=${encodeURIComponent(bad)}`, {
+          method: 'GET',
+        })
+      );
+      expect(res.status).toBe(400);
+    }
   });
 
   it('POST /workflows/:id/steps generate returns 404 when workflow belongs to another user', async () => {
@@ -1093,11 +1330,11 @@ describe('Workflow router', () => {
         kind: 'collateral-generation',
       },
     ]) as typeof mockDb.query.workflowRun.findMany;
-    mockDb.query.transcript.findFirst = mock(() => ({
-      content: 'A long transcript body here',
-    })) as typeof mockDb.query.transcript.findFirst;
+    mockDb.query.transcript.findMany = mock(() => [
+      { id: 'tx-1', content: 'A long transcript body here' },
+    ]) as typeof mockDb.query.transcript.findMany;
     mockDb.query.painPoint.findMany = mock(() => [
-      { id: 'p-1', context: 'pain context' },
+      { id: 'p-1', context: 'pain context', sessionId: 'wf-1' },
     ]) as typeof mockDb.query.painPoint.findMany;
 
     const router = buildApp(mockDb);
@@ -1115,6 +1352,50 @@ describe('Workflow router', () => {
       painPointCount: 1,
       firstPainPoint: 'pain context',
     });
+  });
+
+  it('GET /workflows batches enrichment into one query per table regardless of row count', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findMany = mock(() => [
+      {
+        id: 'wf-1',
+        status: 'done',
+        input: { companyName: 'Acme', transcriptId: 'tx-1' },
+        tenantId: 'tenant-personal',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'collateral-generation',
+      },
+      {
+        id: 'wf-2',
+        status: 'done',
+        input: { companyName: 'Beta', transcriptId: 'tx-2' },
+        tenantId: 'tenant-personal',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'collateral-generation',
+      },
+    ]) as typeof mockDb.query.workflowRun.findMany;
+    mockDb.query.transcript.findMany = mock(() => [
+      { id: 'tx-1', content: 'one' },
+      { id: 'tx-2', content: 'two' },
+    ]) as typeof mockDb.query.transcript.findMany;
+    mockDb.query.painPoint.findMany = mock(() => [
+      { id: 'p-1', context: 'a', sessionId: 'wf-1' },
+      { id: 'p-2', context: 'b', sessionId: 'wf-2' },
+    ]) as typeof mockDb.query.painPoint.findMany;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows', { method: 'GET' })
+    );
+
+    expect(res.status).toBe(200);
+    // Two workflow rows must not produce two transcript + two pain-point queries.
+    expect(mockDb.query.transcript.findFirst).not.toHaveBeenCalled();
+    expect(mockDb.query.transcript.findMany).toHaveBeenCalledTimes(1);
+    expect(mockDb.query.painPoint.findMany).toHaveBeenCalledTimes(1);
+    const json = (await res.json()) as Array<Record<string, unknown>>;
+    expect(json).toHaveLength(2);
+    expect(json[1]).toMatchObject({ id: 'wf-2', firstPainPoint: 'b', painPointCount: 1 });
   });
 
   it('GET /workflows returns 403 for an inaccessible requested tenant', async () => {
@@ -1138,6 +1419,26 @@ describe('Workflow router', () => {
     const res = await router.fetch(
       new Request('http://localhost:4000/workflows/missing', { method: 'GET' })
     );
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /workflows/:id returns 404 when the caller is not the workflow owner', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: 'reviewing',
+      principalId: 'prn-not-owner',
+      kind: 'collateral-generation',
+      input: { companyName: 'Secret Corp', transcriptId: 'tx-1' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows/wf-1', { method: 'GET' })
+    );
+    // Reads are principal-private; a non-owner tenant member must not see the
+    // run's transcript, and must not be able to distinguish "not yours" from
+    // "does not exist".
     expect(res.status).toBe(404);
   });
 
@@ -1502,6 +1803,172 @@ describe('Workflow router', () => {
     expect((await res.json()).error).toContain('No valid collateral types');
   });
 
+  it('POST /workflows/:id/steps generate restores the running status (not "ready") when collateral types are invalid', async () => {
+    const setStatuses: string[] = [];
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => {
+        if (typeof values.status === 'string') setStatuses.push(values.status);
+      },
+    });
+    mockDb.query.painPoint.findMany = mock(() => [
+      { id: 'p-1', sessionId: 'wf-1', severity: 'high', context: 'c', quote: 'q', selected: true },
+    ]) as typeof mockDb.query.painPoint.findMany;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows/wf-1/steps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'generate',
+          painPointIds: ['p-1'],
+          collateralTypes: ['not-a-collateral-type'],
+        }),
+      })
+    );
+
+    expect(res.status).toBe(400);
+    // 'ready' is a session status, not a DB status. Writing it to the column
+    // poisons every later GET because mapDbStatusToSessionStatus rejects it.
+    expect(setStatuses).not.toContain('ready');
+    // The workflow must return to the post-analyze selection state so the user
+    // can choose valid collateral types and retry.
+    expect(setStatuses).toContain('running');
+  });
+
+  it('POST /workflows/:id/steps source rejects a sourceArtifactId from another tenant', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: 'pending',
+      principalId: PERSONAL_PRINCIPAL.id,
+      kind: 'presentation-generation',
+      input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'art-cross',
+      tenantId: 'tenant-other',
+      principalId: 'prn-other',
+      sessionId: 'wf-other',
+    })) as unknown as typeof mockDb.query.artifact.findFirst;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows/wf-1/steps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'source',
+          transcriptSource: 'artifact',
+          sourceArtifactId: 'art-cross',
+        }),
+      })
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /workflows/:id/steps source accepts a sourceArtifactId in the caller tenant', async () => {
+    const setValues: Record<string, unknown>[] = [];
+    const mockDb = createMockDb({ onSetUpdate: (values) => setValues.push(values) });
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'wf-1',
+      status: 'pending',
+      principalId: PERSONAL_PRINCIPAL.id,
+      kind: 'presentation-generation',
+      input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'art-own',
+      tenantId: 'tenant-personal',
+      principalId: PERSONAL_PRINCIPAL.id,
+      sessionId: 'wf-1',
+    })) as unknown as typeof mockDb.query.artifact.findFirst;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows/wf-1/steps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'source',
+          transcriptSource: 'artifact',
+          sourceArtifactId: 'art-own',
+        }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(setValues.some((v) => v.status === 'running')).toBe(true);
+  });
+
+  describe('principal ownership on mutation routes', () => {
+    function dbWithForeignWorkflow() {
+      const mockDb = createMockDb();
+      mockDb.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-1',
+        status: 'reviewing',
+        principalId: 'prn-not-owner',
+        kind: 'collateral-generation',
+        input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+      })) as typeof mockDb.query.workflowRun.findFirst;
+      return mockDb;
+    }
+
+    const cases: Array<{ name: string; method: string; path: string; body?: unknown }> = [
+      {
+        name: 'PATCH /company',
+        method: 'PATCH',
+        path: '/workflows/wf-1/company',
+        body: { companyName: 'Hijack' },
+      },
+      { name: 'DELETE /workflows/:id', method: 'DELETE', path: '/workflows/wf-1' },
+      {
+        name: 'PATCH /step-config',
+        method: 'PATCH',
+        path: '/workflows/wf-1/step-config',
+        body: { stepConfig: { analyze: {} } },
+      },
+      {
+        name: 'PATCH /artifacts/:artifactId/status',
+        method: 'PATCH',
+        path: '/workflows/wf-1/artifacts/art-1/status',
+        body: { status: 'approved' },
+      },
+      {
+        name: 'POST /steps',
+        method: 'POST',
+        path: '/workflows/wf-1/steps',
+        body: { step: 'analyze' },
+      },
+    ];
+
+    for (const tc of cases) {
+      it(`${tc.name} returns 403 when the caller is not the workflow owner`, async () => {
+        const router = buildApp(dbWithForeignWorkflow());
+        const init: RequestInit = {
+          method: tc.method,
+          headers: { 'Content-Type': 'application/json' },
+        };
+        if (tc.body) init.body = JSON.stringify(tc.body);
+        const res = await router.fetch(new Request(`http://localhost:4000${tc.path}`, init));
+        expect(res.status).toBe(403);
+      });
+    }
+
+    it('PATCH /company succeeds for the workflow owner', async () => {
+      const router = buildApp(createMockDb());
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/company', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyName: 'Acme' }),
+        })
+      );
+      expect(res.status).toBe(200);
+    });
+  });
+
   it('POST /workflows/:id/steps inline step returns 400 when no LLM credential resolves', async () => {
     const mockDb = createMockDb();
     mockDb.query.enabledWorkflow.findMany = mock(
@@ -1586,6 +2053,46 @@ describe('Workflow router', () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as { calls: unknown[] };
     expect(json.calls).toHaveLength(1);
+  });
+
+  it('GET /recent-calls clamps an oversized limit to the maximum window', async () => {
+    getRecentNotesMock.mockClear();
+    getRecentNotesMock.mockResolvedValueOnce([{ id: 'n-1', title: 'Call' }]);
+
+    const router = buildApp(createMockDb());
+    const res = await router.fetch(
+      new Request('http://localhost:4000/recent-calls?limit=99999', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    // The handler must not forward an unbounded page size to Granola.
+    const passedLimit = (getRecentNotesMock.mock.calls[0] as unknown[] | undefined)?.[1];
+    expect(passedLimit).toBe(50);
+  });
+
+  it('GET /recent-calls floors a non-positive limit to at least 1', async () => {
+    getRecentNotesMock.mockClear();
+    getRecentNotesMock.mockResolvedValueOnce([{ id: 'n-1', title: 'Call' }]);
+
+    const router = buildApp(createMockDb());
+    const res = await router.fetch(
+      new Request('http://localhost:4000/recent-calls?limit=-5', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    const passedLimit = (getRecentNotesMock.mock.calls[0] as unknown[] | undefined)?.[1];
+    expect(passedLimit).toBe(1);
+  });
+
+  it('GET /recent-calls defaults a non-numeric limit to 10', async () => {
+    getRecentNotesMock.mockClear();
+    getRecentNotesMock.mockResolvedValueOnce([{ id: 'n-1', title: 'Call' }]);
+
+    const router = buildApp(createMockDb());
+    const res = await router.fetch(
+      new Request('http://localhost:4000/recent-calls?limit=abc', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    const passedLimit = (getRecentNotesMock.mock.calls[0] as unknown[] | undefined)?.[1];
+    expect(passedLimit).toBe(10);
   });
 
   it('GET /recent-calls returns 502 when Granola fetch fails', async () => {
@@ -1805,5 +2312,382 @@ describe('Workflow router', () => {
 
     const json = await res.json();
     expect(json.error).toBeString();
+  });
+
+  describe('presentation-generation workflow', () => {
+    function buildPresentationApp(
+      db: ReturnType<typeof createMockDb>,
+      deps?: { sessionService?: { sendUserMessage: (...args: unknown[]) => Promise<void> } }
+    ) {
+      const parent = new Hono<{ Variables: { userId: string } }>();
+      parent.use('*', async (c, next) => {
+        c.set('userId', 'test-user');
+        await next();
+      });
+      parent.route(
+        '/',
+        createWorkflowRouter(
+          db as unknown as HubDb,
+          deps as unknown as { sessionService?: import('./workflow').SessionServiceDep }
+        )
+      );
+      return parent;
+    }
+
+    function createPresentationMockDb(options: Parameters<typeof createMockDb>[0] = {}) {
+      const db = createMockDb(options);
+      db.query.enabledWorkflow.findFirst = mock(() => ({
+        id: 'ew-pres',
+        tenantId: 'tenant-personal',
+        principalId: 'prn-personal',
+        kind: 'presentation-generation',
+        enabledAt: new Date().toISOString(),
+        assignments: {} as unknown as {
+          analyze: { credentialIds: string[]; toolIds: never[] };
+          generate: { credentialIds: string[]; toolIds: never[] };
+        },
+      }));
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'pending',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: {} as { companyName: string; transcriptId: string },
+      }));
+      db.insert = mock(() => ({
+        values: mock((values: unknown) => {
+          options.onInsertValues?.(values);
+          return {
+            returning: mock(() => [
+              { id: 'wf-pres', status: 'pending', kind: 'presentation-generation' },
+            ]),
+            onConflictDoUpdate: mock(() => ({
+              returning: mock(() => []),
+            })),
+          };
+        }),
+      }));
+      return db;
+    }
+
+    it('GET /workflows/gamma/templates returns a template list', async () => {
+      const router = buildPresentationApp(createPresentationMockDb());
+      const res = await router.fetch(new Request('http://localhost/workflows/gamma/templates'));
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(Array.isArray(json)).toBe(true);
+    });
+
+    it('POST /workflows creates presentation-generation run without transcript', async () => {
+      const router = buildPresentationApp(createPresentationMockDb());
+      const res = await router.fetch(
+        new Request('http://localhost/workflows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workflowKind: 'presentation-generation' }),
+        })
+      );
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.id).toBeString();
+      expect(json.kind).toBe('presentation-generation');
+    });
+
+    it('POST /workflows/id/steps template step advances to analyzing', async () => {
+      const updatedValues: unknown[] = [];
+      const db = createPresentationMockDb({ onSetUpdate: (v) => updatedValues.push(v) });
+      const router = buildPresentationApp(db);
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            step: 'template',
+            templateId: 'tmpl-1',
+            audience: 'Executives',
+            tone: 'Formal',
+            goal: 'Close deal',
+          }),
+        })
+      );
+      expect(res.status).toBe(200);
+      expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'analyzing' }));
+    });
+
+    it('POST /workflows/id/steps source step (paste) advances to running', async () => {
+      const updatedValues: unknown[] = [];
+      const db = createPresentationMockDb({ onSetUpdate: (v) => updatedValues.push(v) });
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'analyzing',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: { templateId: 'tmpl-1' } as unknown as { companyName: string; transcriptId: string },
+      }));
+      const router = buildPresentationApp(db);
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            step: 'source',
+            transcriptSource: 'paste',
+            transcript: 'Hello world content for the deck',
+            callTitle: 'Test Call',
+          }),
+        })
+      );
+      expect(res.status).toBe(200);
+      expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'running' }));
+    });
+
+    it('POST /workflows/id/steps generate without agentInstanceId returns 400', async () => {
+      const db = createPresentationMockDb();
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'running',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: {
+          templateId: 'tmpl-1',
+          transcriptSource: 'paste',
+          transcriptId: 'tx-1',
+        } as unknown as { companyName: string; transcriptId: string },
+      }));
+      const sendUserMessage = mock(() => Promise.resolve());
+      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step: 'generate' }),
+        })
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('POST /workflows/id/steps generate dispatches mail and advances to generating', async () => {
+      const updatedValues: unknown[] = [];
+      const db = createPresentationMockDb({ onSetUpdate: (v) => updatedValues.push(v) });
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'running',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: {
+          templateId: 'tmpl-1',
+          transcriptSource: 'paste',
+          transcriptId: 'tx-1',
+          callTitle: 'Test Call',
+        } as unknown as { companyName: string; transcriptId: string },
+      }));
+      db.query.agentInstance.findFirst = mock<
+        () => { id: string; agentId: string; tenantId: string; address: string; sessionId: null }
+      >(() => ({
+        id: 'inst-geralt',
+        agentId: 'agent-geralt',
+        tenantId: 'tenant-personal',
+        address: 'inst-geralt@global.example.com',
+        sessionId: 'ses-geralt' as unknown as null,
+      }));
+      const sendUserMessage = mock(() => Promise.resolve());
+      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step: 'generate', agentInstanceId: 'inst-geralt' }),
+        })
+      );
+      expect(res.status).toBe(200);
+      expect(sendUserMessage).toHaveBeenCalledTimes(1);
+      expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'generating' }));
+    });
+
+    it('POST /workflows/id/steps generate returns 503 (not 500) when the agent has no address', async () => {
+      const db = createPresentationMockDb();
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'running',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: { templateId: 'tmpl-1', transcriptId: 'tx-1' } as unknown as {
+          companyName: string;
+          transcriptId: string;
+        },
+      }));
+      db.query.agentInstance.findFirst = mock<
+        () => { id: string; agentId: string; tenantId: string; address: null; sessionId: null }
+      >(() => ({
+        id: 'inst-geralt',
+        agentId: 'agent-geralt',
+        tenantId: 'tenant-personal',
+        address: null,
+        sessionId: 'ses-geralt' as unknown as null,
+      }));
+      const sendUserMessage = mock(() => Promise.resolve());
+      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step: 'generate', agentInstanceId: 'inst-geralt' }),
+        })
+      );
+      expect(res.status).toBe(503);
+      expect(sendUserMessage).not.toHaveBeenCalled();
+    });
+
+    it('POST /workflows/id/steps generate returns 503 (not 500) when dispatch throws', async () => {
+      const db = createPresentationMockDb();
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-pres',
+        status: 'running',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'presentation-generation',
+        input: { templateId: 'tmpl-1', transcriptId: 'tx-1' } as unknown as {
+          companyName: string;
+          transcriptId: string;
+        },
+      }));
+      db.query.agentInstance.findFirst = mock<
+        () => { id: string; agentId: string; tenantId: string; address: string; sessionId: null }
+      >(() => ({
+        id: 'inst-geralt',
+        agentId: 'agent-geralt',
+        tenantId: 'tenant-personal',
+        address: 'inst-geralt@global.example.com',
+        sessionId: 'ses-geralt' as unknown as null,
+      }));
+      const sendUserMessage = mock(() => Promise.reject(new Error('agent not routable')));
+      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-pres/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step: 'generate', agentInstanceId: 'inst-geralt' }),
+        })
+      );
+      expect(res.status).toBe(503);
+    });
+  });
+
+  describe('GET /workflows/gamma/templates', () => {
+    it('returns the curated template registry', async () => {
+      const router = buildApp(createMockDb());
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/gamma/templates', { method: 'GET' })
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as unknown[];
+      expect(Array.isArray(json)).toBe(true);
+      expect(json[0]).toMatchObject({ gammaId: 'tmpl-1', name: 'Sales Deck' });
+    });
+
+    it('does not depend on a Gamma credential (no 502/503 when none configured)', async () => {
+      const { resolveCredentialRequirement } = await import('@intx/db');
+      (resolveCredentialRequirement as ReturnType<typeof mock>).mockImplementationOnce(
+        async () => null
+      );
+      const router = buildApp(createMockDb());
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/gamma/templates', { method: 'GET' })
+      );
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('POST /workflows/:id/reset', () => {
+    function stuckDb(status: string, captured: Record<string, unknown>[]) {
+      const mockDb = createMockDb({ onSetUpdate: (values) => captured.push(values) });
+      mockDb.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-1',
+        status,
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'collateral-generation',
+        input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+      })) as typeof mockDb.query.workflowRun.findFirst;
+      return mockDb;
+    }
+
+    it("moves a stuck 'generating' run back to running", async () => {
+      const captured: Record<string, unknown>[] = [];
+      const router = buildApp(stuckDb('generating', captured));
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.status).toBe('ready');
+      expect(captured).toContainEqual(expect.objectContaining({ status: 'running' }));
+    });
+
+    it("moves a stuck 'analyzing' run to failed", async () => {
+      const captured: Record<string, unknown>[] = [];
+      const router = buildApp(stuckDb('analyzing', captured));
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.status).toBe('failed');
+      expect(captured).toContainEqual(expect.objectContaining({ status: 'failed' }));
+    });
+
+    it('returns 409 for a run that is not stuck', async () => {
+      const captured: Record<string, unknown>[] = [];
+      const router = buildApp(stuckDb('reviewing', captured));
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+      );
+      expect(res.status).toBe(409);
+      expect(captured).toHaveLength(0);
+    });
+
+    it('returns 404 when the workflow does not exist', async () => {
+      const mockDb = createMockDb();
+      mockDb.query.workflowRun.findFirst = mock(
+        () => null
+      ) as typeof mockDb.query.workflowRun.findFirst;
+      const router = buildApp(mockDb);
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 when the caller is not the workflow owner', async () => {
+      const captured: Record<string, unknown>[] = [];
+      const mockDb = createMockDb({ onSetUpdate: (values) => captured.push(values) });
+      mockDb.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-1',
+        status: 'generating',
+        principalId: 'someone-else',
+        kind: 'collateral-generation',
+        input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+      })) as typeof mockDb.query.workflowRun.findFirst;
+      const router = buildApp(mockDb);
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+      );
+      expect(res.status).toBe(403);
+      expect(captured).toHaveLength(0);
+    });
+  });
+});
+
+describe('resolveResetStatus', () => {
+  it("maps 'generating' to 'running' (resumable at selection)", () => {
+    expect(resolveResetStatus('generating')).toBe('running');
+  });
+
+  it("maps 'analyzing' to 'failed' (no usable partial output)", () => {
+    expect(resolveResetStatus('analyzing')).toBe('failed');
+  });
+
+  it('returns null for statuses that are not stuck', () => {
+    for (const status of ['pending', 'running', 'reviewing', 'done', 'failed']) {
+      expect(resolveResetStatus(status)).toBeNull();
+    }
   });
 });

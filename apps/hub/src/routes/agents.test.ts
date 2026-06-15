@@ -22,15 +22,15 @@ mock.module('@intx/db', () => ({
 }));
 
 import { Hono } from 'hono';
+import { createAgentProvisioningRouter } from './agents';
 import {
-  createAgentProvisioningRouter,
   persistInstanceToolGrants,
   persistInstanceGrantRequirements,
   launchAgentSession,
   relaunchInstanceIfNeeded,
   reconcileDisconnectedSession,
   registerDisconnectReconciler,
-} from './agents';
+} from '../services/agent-provisioning';
 
 function makeRequest(
   url: string,
@@ -252,7 +252,7 @@ describe('GET /agents', () => {
           findMany: mock(() => Promise.resolve([instance])),
         },
         memberAgentInstance: {
-          findMany: mock(() => Promise.resolve([])),
+          findMany: mock(() => Promise.resolve([{ instanceId: 'ins-1' }])),
         },
         provider: { findFirst: mock(() => Promise.resolve(undefined)) },
         credential: { findFirst: mock(() => Promise.resolve(undefined)) },
@@ -289,7 +289,9 @@ describe('GET /agents', () => {
         principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
         agent: { findMany: mock(() => Promise.resolve([])) },
         agentInstance: { findMany: mock(() => Promise.resolve([])) },
-        memberAgentInstance: { findMany: mock(() => Promise.resolve([])) },
+        // A membership is required for the route to reach the agentInstance
+        // query whose where-clause this test inspects.
+        memberAgentInstance: { findMany: mock(() => Promise.resolve([{ instanceId: 'ins-1' }])) },
       },
       // biome-ignore lint/suspicious/noExplicitAny: test mock
     } as any);
@@ -333,7 +335,7 @@ describe('POST /instances/:instanceId/sessions', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 403 when caller has no principal in the instance tenant', async () => {
+  it('returns 404 (not 403) when caller has no principal in the instance tenant, to avoid leaking instance existence', async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
     db.query.principal.findFirst = mock(() => Promise.resolve(undefined));
@@ -343,7 +345,7 @@ describe('POST /instances/:instanceId/sessions', () => {
         method: 'POST',
       })
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it('returns 200 with launched:true on successful session start', async () => {
@@ -749,16 +751,6 @@ describe('persistInstanceToolGrants', () => {
 
 describe('GET /agents — personal-agent exclusion', () => {
   it('filters out the caller personal-agent instance from the shared list', async () => {
-    const personalInstance = {
-      id: 'ins-myra',
-      agentId: 'agt-myra',
-      tenantId: 'tenant-1',
-      address: 'ins-myra@tenant-1.localhost',
-      status: 'running',
-      principalId: 'prn-agent-myra',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
     const sharedInstance = {
       id: 'ins-oat',
       agentId: 'agt-oat',
@@ -771,12 +763,13 @@ describe('GET /agents — personal-agent exclusion', () => {
     };
     const db = makeMockDb();
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
-    db.query.agentInstance.findMany = mock(() =>
-      Promise.resolve([personalInstance, sharedInstance])
-    );
+    // The personal exclusion is pushed into the membership query
+    // (notInArray(templateKey, personalKeys)), so its result already omits the
+    // myra mapping; the instance query is then scoped to the remaining ids.
     db.query.memberAgentInstance.findMany = mock(() =>
-      Promise.resolve([{ instanceId: 'ins-myra', templateKey: 'myra' }])
+      Promise.resolve([{ instanceId: 'ins-oat', templateKey: 'oat' }])
     );
+    db.query.agentInstance.findMany = mock(() => Promise.resolve([sharedInstance]));
     db.query.agent.findMany = mock(() =>
       Promise.resolve([{ id: 'agt-oat', name: 'Oat', tenantId: 'tenant-1' }])
     );
@@ -944,7 +937,7 @@ describe('POST /instances/:instanceId/sessions — branches', () => {
     sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 
     const setWhere = mock(() => Promise.resolve());
-    const setMock = mock(() => ({ where: setWhere }));
+    const setMock = mock((_set: { status?: string }) => ({ where: setWhere }));
     db.update = mock(() => ({ set: setMock }));
 
     const app = buildApp(db);
@@ -952,9 +945,7 @@ describe('POST /instances/:instanceId/sessions — branches', () => {
       makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
     );
     expect(res.status).toBe(200);
-    const resetCall = setMock.mock.calls.find(
-      (c) => (c[0] as { status?: string }).status === 'deployed'
-    );
+    const resetCall = setMock.mock.calls.find((c) => c[0].status === 'deployed');
     expect(resetCall).toBeTruthy();
   });
 
@@ -991,7 +982,7 @@ describe('POST /instances/:instanceId/sessions — branches', () => {
 // ─── GET /agents/templates ────────────────────────────────────────
 
 describe('GET /agents/templates', () => {
-  it('returns deployable, non-personal templates with key/name/description only', async () => {
+  it('returns deployable, non-personal templates with key/name/description/tools', async () => {
     const app = buildApp(makeMockDb());
     const res = await app.fetch(makeRequest('http://localhost/agents/templates'));
     expect(res.status).toBe(200);
@@ -1002,7 +993,8 @@ describe('GET /agents/templates', () => {
     expect(keys).not.toContain('myra');
     expect(keys).not.toContain('loop');
     for (const t of json.data) {
-      expect(Object.keys(t).sort()).toEqual(['description', 'key', 'name']);
+      expect(Object.keys(t).sort()).toEqual(['description', 'key', 'name', 'tools']);
+      expect(Array.isArray(t.tools)).toBe(true);
     }
   });
 });

@@ -11,6 +11,7 @@ import {
   removeSessionConnectURL,
   resolveConfig,
   storeSessionConnectURL,
+  waitForSessionRunning,
 } from './browserbase';
 import type { BrowserFetch, ResolvedBrowserConfig } from './types';
 
@@ -34,6 +35,7 @@ const baseConfig: ResolvedBrowserConfig = {
   projectId: 'proj-1',
   fetcher: makeFetchStub({}),
   connector: () => Promise.reject(new Error('unused')),
+  operationBudgetMs: 18_000,
 };
 
 beforeEach(() => {
@@ -78,7 +80,7 @@ describe('resolveConfig', () => {
 
 describe('clampTimeoutSeconds', () => {
   it('defaults when not a number', () => {
-    expect(clampTimeoutSeconds(undefined)).toBe(600);
+    expect(clampTimeoutSeconds(undefined)).toBe(180);
   });
   it('clamps below the floor', () => {
     expect(clampTimeoutSeconds(5)).toBe(60);
@@ -252,5 +254,96 @@ describe('reapStaleSessions', () => {
     expect(result.reaped).toEqual([]);
     expect(result.skipped).toEqual(['mystery']);
     expect(fetcher.posts).toEqual([]);
+  });
+});
+
+describe('waitForSessionRunning', () => {
+  it('resolves immediately when the session is already RUNNING', async () => {
+    const fetcher = makeFetchStub({ id: 'sess-1', status: 'RUNNING' });
+    await expect(
+      waitForSessionRunning({ ...baseConfig, fetcher }, 'sess-1', new AbortController().signal, {
+        pollIntervalMs: 0,
+        maxWaitMs: 5_000,
+      })
+    ).resolves.toBeUndefined();
+    expect(fetcher.mock.calls).toHaveLength(1);
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toBe('https://api.browserbase.com/v1/sessions/sess-1');
+    expect((init.method as string).toUpperCase()).toBe('GET');
+    expect((init.headers as Record<string, string>)['X-BB-API-Key']).toBe('bb-key');
+  });
+
+  it('polls until RUNNING then resolves', async () => {
+    let callCount = 0;
+    const fetcher = mock((_input: string, _init: RequestInit) => {
+      callCount++;
+      const status = callCount < 3 ? 'PENDING' : 'RUNNING';
+      return Promise.resolve(
+        new Response(JSON.stringify({ id: 'sess-1', status }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    }) as BrowserFetch & { mock: { calls: [string, RequestInit][] } };
+    await waitForSessionRunning(
+      { ...baseConfig, fetcher },
+      'sess-1',
+      new AbortController().signal,
+      {
+        pollIntervalMs: 0,
+        maxWaitMs: 5_000,
+      }
+    );
+    expect(fetcher.mock.calls).toHaveLength(3);
+  });
+
+  it('throws immediately when status is ERROR', async () => {
+    const fetcher = makeFetchStub({ id: 'sess-1', status: 'ERROR' });
+    await expect(
+      waitForSessionRunning({ ...baseConfig, fetcher }, 'sess-1', new AbortController().signal, {
+        pollIntervalMs: 0,
+        maxWaitMs: 5_000,
+      })
+    ).rejects.toThrow('ERROR');
+  });
+
+  it('throws immediately when status is TIMED_OUT', async () => {
+    const fetcher = makeFetchStub({ id: 'sess-1', status: 'TIMED_OUT' });
+    await expect(
+      waitForSessionRunning({ ...baseConfig, fetcher }, 'sess-1', new AbortController().signal, {
+        pollIntervalMs: 0,
+        maxWaitMs: 5_000,
+      })
+    ).rejects.toThrow('TIMED_OUT');
+  });
+
+  it('throws immediately when status is COMPLETED', async () => {
+    const fetcher = makeFetchStub({ id: 'sess-1', status: 'COMPLETED' });
+    await expect(
+      waitForSessionRunning({ ...baseConfig, fetcher }, 'sess-1', new AbortController().signal, {
+        pollIntervalMs: 0,
+        maxWaitMs: 5_000,
+      })
+    ).rejects.toThrow('COMPLETED');
+  });
+
+  it('throws after the deadline is exceeded', async () => {
+    const fetcher = makeFetchStub({ id: 'sess-1', status: 'PENDING' });
+    await expect(
+      waitForSessionRunning({ ...baseConfig, fetcher }, 'sess-1', new AbortController().signal, {
+        pollIntervalMs: 0,
+        maxWaitMs: 0,
+      })
+    ).rejects.toThrow('did not reach RUNNING');
+  });
+
+  it('surfaces API errors from the status poll', async () => {
+    const fetcher = makeFetchStub({ message: 'not found' }, 404);
+    await expect(
+      waitForSessionRunning({ ...baseConfig, fetcher }, 'sess-1', new AbortController().signal, {
+        pollIntervalMs: 0,
+        maxWaitMs: 5_000,
+      })
+    ).rejects.toThrow('Browserbase API error: 404');
   });
 });

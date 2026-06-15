@@ -4,7 +4,7 @@
 // its own hub by passing a `baseUrl` and/or a custom `fetch`. They return clean
 // `@workbench/shared` domain types and contain no presentation logic.
 
-import type { ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
+import type { ArtifactStatus, ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
 
 /** Configuration for a client call. All fields are optional. */
 export interface ClientOptions {
@@ -54,6 +54,16 @@ export interface ListWorkflowsParams {
 export interface ListArtifactsParams {
   tenantId?: string | null;
   query?: string;
+  sort?: 'newest' | 'oldest';
+  kind?: string;
+  status?: ArtifactStatus;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface ArtifactsPage {
+  artifacts: ArtifactWithSession[];
+  nextCursor: string | null;
 }
 
 /** Fetch the current user's jobs (`GET /workflows`). */
@@ -72,10 +82,15 @@ export function listWorkflows(
 export function listArtifacts(
   options: ClientOptions = {},
   params: ListArtifactsParams = {}
-): Promise<ArtifactWithSession[]> {
+): Promise<ArtifactsPage> {
   const qs = new URLSearchParams();
   if (params.tenantId) qs.set('tenantId', params.tenantId);
   if (params.query) qs.set('query', params.query);
+  if (params.sort) qs.set('sort', params.sort);
+  if (params.kind) qs.set('kind', params.kind);
+  if (params.status) qs.set('status', params.status);
+  if (params.cursor) qs.set('cursor', params.cursor);
+  if (params.limit !== undefined) qs.set('limit', String(params.limit));
   const search = qs.size > 0 ? `?${qs.toString()}` : '';
-  return request<ArtifactWithSession[]>(`artifacts${search}`, options);
+  return request<ArtifactsPage>(`artifacts${search}`, options);
 }

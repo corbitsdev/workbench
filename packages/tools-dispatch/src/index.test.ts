@@ -276,7 +276,7 @@ describe('dispatch_agent handler — agent-row guards', () => {
 
 describe('launchAgentInstance — via handler', () => {
   test('rejects when tenant has no domain', async () => {
-    const db = makeFakeDb({ agentRow: DEPLOYED_AGENT, tenantRow: { domain: undefined } });
+    const db = makeFakeDb({ agentRow: DEPLOYED_AGENT, tenantRow: {} });
     const handler = getHandler(makeContext({ db }));
     await expect(handler(VALID_ARGS, new AbortController().signal)).rejects.toThrow(
       'Tenant has no domain configured'

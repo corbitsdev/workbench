@@ -1,7 +1,7 @@
 import type { AgentTool } from '@intx/agent';
 import type { ToolDefinition } from '@intx/types/runtime';
-import { normalizeGitHubPR, normalizeGitHubRepo } from './normalize';
-import type { GitHubPR, GitHubRepo } from './types';
+import { normalizeGitHubIssueOrPR, normalizeGitHubRepo } from './normalize';
+import type { GitHubIssueOrPR, GitHubRepo } from './types';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const DEFAULT_DAYS = 30;
@@ -16,13 +16,14 @@ export type GitHubToolsConfig = {
 export const GITHUB_ACTIVITY_DEFINITION: ToolDefinition = {
   name: 'github_activity',
   description:
-    'Search GitHub for recently active repositories and pull requests matching a query. Returns normalized research items with star and reaction counts.',
+    'Search GitHub for recently active repositories, issues, and pull requests matching a topic. Pass keyword terms only — do not include GitHub search qualifiers like is:issue, is:pr, or repo: in the query; those are added automatically. Returns normalized research items with star, reaction, and comment counts.',
   inputSchema: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
-        description: 'The search query string.',
+        description:
+          'Topic keywords to search for (e.g. "AI agents", "LLM inference", "vector database"). Do not include GitHub qualifiers.',
       },
       days: {
         type: 'number',
@@ -50,18 +51,19 @@ function parseGitHubRepo(value: unknown): GitHubRepo {
   };
 }
 
-function parseGitHubPR(value: unknown): GitHubPR {
+function parseGitHubIssueOrPR(value: unknown): GitHubIssueOrPR {
   if (!isRecord(value)) {
-    throw new Error('GitHub PR item is not an object');
+    throw new Error('GitHub issue/PR item is not an object');
   }
   const reactions = isRecord(value.reactions) ? value.reactions : {};
   return {
     html_url: typeof value.html_url === 'string' ? value.html_url : '',
     title: typeof value.title === 'string' ? value.title : '',
+    comments: typeof value.comments === 'number' ? value.comments : 0,
     reactions: {
       total_count: typeof reactions.total_count === 'number' ? reactions.total_count : 0,
     },
-    created_at: typeof value.created_at === 'string' ? value.created_at : new Date().toISOString(),
+    updated_at: typeof value.updated_at === 'string' ? value.updated_at : new Date().toISOString(),
   };
 }
 
@@ -87,7 +89,16 @@ async function fetchGitHubJSON(
     signal,
   });
   if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+    let detail = '';
+    try {
+      const body = await response.text();
+      if (body.length > 0) {
+        detail = `: ${body}`;
+      }
+    } catch {
+      // body read failure is non-fatal; the status code is sufficient
+    }
+    throw new Error(`GitHub API error: ${response.status} ${response.statusText}${detail}`);
   }
   return response.json();
 }
@@ -103,35 +114,47 @@ async function searchGitHub(
   }
   const days =
     typeof args.days === 'number' && args.days > 0 ? Math.floor(args.days) : DEFAULT_DAYS;
-  const cutoffDate = new Date(Date.now() - days * 86400 * 1000).toISOString().slice(0, 10);
+  const cutoff = new Date(Date.now() - days * 86400 * 1000);
+  const cutoffDate = cutoff.toISOString().slice(0, 10);
 
   const reposUrl = new URL(`${GITHUB_API_BASE}/search/repositories`);
-  reposUrl.searchParams.set('q', `${query}+pushed:>=${cutoffDate}`);
+  reposUrl.searchParams.set('q', `${query} pushed:>=${cutoffDate}`);
   reposUrl.searchParams.set('sort', 'stars');
   reposUrl.searchParams.set('per_page', '20');
 
+  const issuesUrl = new URL(`${GITHUB_API_BASE}/search/issues`);
+  issuesUrl.searchParams.set('q', `${query} is:issue updated:>=${cutoffDate}`);
+  issuesUrl.searchParams.set('sort', 'reactions');
+  issuesUrl.searchParams.set('per_page', '10');
+
   const prsUrl = new URL(`${GITHUB_API_BASE}/search/issues`);
-  prsUrl.searchParams.set('q', `${query}+type:pr+created:>=${cutoffDate}`);
+  prsUrl.searchParams.set('q', `${query} is:pr updated:>=${cutoffDate}`);
   prsUrl.searchParams.set('sort', 'reactions');
   prsUrl.searchParams.set('per_page', '10');
 
-  const [reposRaw, prsRaw] = await Promise.all([
+  const [reposRaw, issuesRaw, prsRaw] = await Promise.all([
     fetchGitHubJSON(reposUrl, config, signal),
+    fetchGitHubJSON(issuesUrl, config, signal),
     fetchGitHubJSON(prsUrl, config, signal),
   ]);
 
-  const repoItems: GitHubRepo[] = isRecord(reposRaw) && Array.isArray(reposRaw.items)
-    ? reposRaw.items.map(parseGitHubRepo)
-    : [];
+  const repoItems: GitHubRepo[] =
+    isRecord(reposRaw) && Array.isArray(reposRaw.items) ? reposRaw.items.map(parseGitHubRepo) : [];
 
-  const prItems: GitHubPR[] = isRecord(prsRaw) && Array.isArray(prsRaw.items)
-    ? prsRaw.items.map(parseGitHubPR)
-    : [];
+  const issueItems: GitHubIssueOrPR[] =
+    isRecord(issuesRaw) && Array.isArray(issuesRaw.items)
+      ? issuesRaw.items.map(parseGitHubIssueOrPR)
+      : [];
 
-  const items = [
+  const prItems: GitHubIssueOrPR[] =
+    isRecord(prsRaw) && Array.isArray(prsRaw.items) ? prsRaw.items.map(parseGitHubIssueOrPR) : [];
+
+  const allItems = [
     ...repoItems.map(normalizeGitHubRepo),
-    ...prItems.map(normalizeGitHubPR),
+    ...issueItems.map(normalizeGitHubIssueOrPR),
+    ...prItems.map(normalizeGitHubIssueOrPR),
   ];
+  const items = allItems.filter((item) => new Date(item.publishedAt) >= cutoff);
 
   return JSON.stringify(items, null, 2);
 }

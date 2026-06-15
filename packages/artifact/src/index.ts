@@ -3,6 +3,7 @@ export type {
   ArtifactStatus,
   ArtifactVersion,
   ArtifactWithSession,
+  ArtifactWithVersions,
   ArtifactKind,
   VizKind,
   ArtifactVisual,

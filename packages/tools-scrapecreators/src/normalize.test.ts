@@ -10,11 +10,12 @@ describe('normalizeTikTokPost', () => {
   it('maps a full fixture to the expected fields', () => {
     const result = normalizeTikTokPost({
       id: 'vid_123',
-      webVideoUrl: 'https://www.tiktok.com/@creator/video/vid_123',
+      url: 'https://www.tiktok.com/@creator/video/vid_123',
       desc: 'Amazing product demo video',
       createTime: 1700000000,
-      diggCount: 4200,
-      authorMeta: { name: 'creator' },
+      likes: 4200,
+      comments: 18,
+      author: 'creator',
     });
 
     expect(result.url).toBe('https://www.tiktok.com/@creator/video/vid_123');
@@ -22,6 +23,7 @@ describe('normalizeTikTokPost', () => {
     expect(result.publishedAt).toBe(new Date(1700000000 * 1000).toISOString());
     expect(result.author).toBe('creator');
     expect(result.engagement.upvotes).toBe(4200);
+    expect(result.engagement.comments).toBe(18);
     expect(result.source).toBe('tiktok');
   });
 
@@ -39,19 +41,31 @@ describe('normalizeTikTokPost', () => {
 describe('normalizeInstagramPost', () => {
   it('maps a full fixture to the expected fields', () => {
     const result = normalizeInstagramPost({
-      shortCode: 'ABC123',
+      code: 'ABC123',
       caption: 'First line\nSecond line of caption',
-      timestamp: '2024-11-14T12:00:00.000Z',
-      likesCount: 800,
-      ownerUsername: 'brandaccount',
+      takenAt: '2024-11-14T12:00:00.000Z',
+      likes: 800,
+      comments: 9,
+      author: 'brandaccount',
     });
 
-    expect(result.url).toBe('https://instagram.com/p/ABC123');
+    expect(result.url).toBe('https://www.instagram.com/reel/ABC123');
     expect(result.title).toBe('First line');
     expect(result.publishedAt).toBe('2024-11-14T12:00:00.000Z');
     expect(result.author).toBe('brandaccount');
     expect(result.engagement.upvotes).toBe(800);
+    expect(result.engagement.comments).toBe(9);
     expect(result.source).toBe('instagram');
+  });
+
+  it('converts a unix taken_at to ISO', () => {
+    const result = normalizeInstagramPost({ code: 'XYZ', takenAt: 1700100000 });
+    expect(result.publishedAt).toBe(new Date(1700100000 * 1000).toISOString());
+  });
+
+  it('treats a millisecond taken_at as milliseconds, not seconds', () => {
+    const result = normalizeInstagramPost({ code: 'XYZ', takenAt: 1700100000000 });
+    expect(result.publishedAt).toBe(new Date(1700100000000).toISOString());
   });
 
   it('falls back gracefully when fields are missing', () => {
@@ -124,8 +138,15 @@ describe('normalizePinterestPin', () => {
     expect(result.publishedAt).toBeTruthy();
   });
 
+  it('normalizes an epoch-string created_at to ISO', () => {
+    const result = normalizePinterestPin({ id: 'p1', created_at: '1700000000' });
+    expect(result.publishedAt).toBe(new Date(1700000000 * 1000).toISOString());
+  });
+
   it('uses description first line as title when title is absent', () => {
-    const result = normalizePinterestPin({ description: 'Pin description first line\nMore text' });
+    const result = normalizePinterestPin({
+      description: 'Pin description first line\nMore text',
+    });
     expect(result.title).toBe('Pin description first line');
   });
 });

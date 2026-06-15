@@ -75,7 +75,7 @@ type CredentialEntry = {
   metadata?: Record<string, unknown>;
 };
 
-function buildEntries(): CredentialEntry[] {
+export function buildEntries(): CredentialEntry[] {
   const entries: CredentialEntry[] = [];
 
   // Unnumbered entry (backwards compat).
@@ -238,6 +238,16 @@ function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const githubKey = env('GITHUB_API_KEY');
+  if (githubKey) {
+    entries.push({
+      providerName: 'github',
+      providerPlugin: 'github',
+      credentialName: 'GitHub PAT',
+      secret: githubKey,
+    });
+  }
+
   return entries;
 }
 
@@ -319,78 +329,80 @@ async function resolveOrCreateProvider(
   fail(`create provider (${entry.providerName})`, createRes.status, createRes.data);
 }
 
-let cookies: CookieJar;
-if (SESSION_TOKEN) {
-  log('Using SESSION_TOKEN for authentication');
-  cookies = [
-    `better-auth.session_token=${SESSION_TOKEN}`,
-    `__Secure-better-auth.session_token=${SESSION_TOKEN}`,
-  ];
-} else {
-  const signIn = await api('POST', '/api/auth/sign-in/email', { email: EMAIL, password: PASSWORD });
-  if (signIn.cookies.length === 0) fail('sign in', signIn.status, signIn.data);
-  cookies = signIn.cookies;
-  log(`Signed in as ${EMAIL}`);
-}
-
-const principalsRes = await api('GET', '/api/me/principals', undefined, cookies);
-if (principalsRes.status !== 200)
-  fail('/api/me/principals', principalsRes.status, principalsRes.data);
-
-const principals =
-  (principalsRes.data as { data?: Array<{ tenantId: string; tenantSlug?: string }> }).data ?? [];
-const principal = principals.find((p) => p.tenantSlug === TENANT_SLUG) ?? principals[0];
-if (!principal) {
-  console.error('[seed-credentials] No tenant principal found');
-  process.exit(1);
-}
-const tenantId = principal.tenantId;
-log(`Tenant: ${TENANT_SLUG} (${tenantId})`);
-
-const entries = buildEntries();
-if (entries.length === 0) {
-  log('No credentials configured — set LLM_API_KEY, GRANOLA_API_KEY, etc. to seed credentials.');
-  process.exit(0);
-}
-
-const listRes = await api('GET', `/api/tenants/${tenantId}/credentials`, undefined, cookies);
-if (listRes.status !== 200) fail('list credentials', listRes.status, listRes.data);
-const existingCredentials =
-  (listRes.data as { data?: Array<{ id: string; name: string }> }).data ?? [];
-
-for (const entry of entries) {
-  const providerId = await resolveOrCreateProvider(tenantId, entry, cookies);
-  log(`Provider ${entry.providerName}: ${providerId}`);
-
-  const existing = existingCredentials.find((c) => c.name === entry.credentialName);
-
-  if (existing) {
-    const patch = await api(
-      'PATCH',
-      `/api/tenants/${tenantId}/credentials/${existing.id}`,
-      { secret: entry.secret, ...(entry.metadata ? { metadata: entry.metadata } : {}) },
-      cookies
-    );
-    if (patch.status !== 200)
-      fail(`patch credential (${entry.credentialName})`, patch.status, patch.data);
-    log(`  Updated credential: ${entry.credentialName}`);
+if (import.meta.main) {
+  let cookies: CookieJar;
+  if (SESSION_TOKEN) {
+    log('Using SESSION_TOKEN for authentication');
+    cookies = [
+      `better-auth.session_token=${SESSION_TOKEN}`,
+      `__Secure-better-auth.session_token=${SESSION_TOKEN}`,
+    ];
   } else {
-    const credRes = await api(
-      'POST',
-      `/api/tenants/${tenantId}/credentials`,
-      {
-        providerId,
-        name: entry.credentialName,
-        type: 'api_key',
-        secret: entry.secret,
-        ...(entry.metadata ? { metadata: entry.metadata } : {}),
-      },
-      cookies
-    );
-    if (credRes.status !== 201)
-      fail(`create credential (${entry.credentialName})`, credRes.status, credRes.data);
-    log(`  Created credential: ${entry.credentialName}`);
+    const signIn = await api('POST', '/api/auth/sign-in/email', { email: EMAIL, password: PASSWORD });
+    if (signIn.cookies.length === 0) fail('sign in', signIn.status, signIn.data);
+    cookies = signIn.cookies;
+    log(`Signed in as ${EMAIL}`);
   }
-}
 
-log('Done.');
+  const principalsRes = await api('GET', '/api/me/principals', undefined, cookies);
+  if (principalsRes.status !== 200)
+    fail('/api/me/principals', principalsRes.status, principalsRes.data);
+
+  const principals =
+    (principalsRes.data as { data?: Array<{ tenantId: string; tenantSlug?: string }> }).data ?? [];
+  const principal = principals.find((p) => p.tenantSlug === TENANT_SLUG) ?? principals[0];
+  if (!principal) {
+    console.error('[seed-credentials] No tenant principal found');
+    process.exit(1);
+  }
+  const tenantId = principal.tenantId;
+  log(`Tenant: ${TENANT_SLUG} (${tenantId})`);
+
+  const entries = buildEntries();
+  if (entries.length === 0) {
+    log('No credentials configured — set LLM_API_KEY, GRANOLA_API_KEY, etc. to seed credentials.');
+    process.exit(0);
+  }
+
+  const listRes = await api('GET', `/api/tenants/${tenantId}/credentials`, undefined, cookies);
+  if (listRes.status !== 200) fail('list credentials', listRes.status, listRes.data);
+  const existingCredentials =
+    (listRes.data as { data?: Array<{ id: string; name: string }> }).data ?? [];
+
+  for (const entry of entries) {
+    const providerId = await resolveOrCreateProvider(tenantId, entry, cookies);
+    log(`Provider ${entry.providerName}: ${providerId}`);
+
+    const existing = existingCredentials.find((c) => c.name === entry.credentialName);
+
+    if (existing) {
+      const patch = await api(
+        'PATCH',
+        `/api/tenants/${tenantId}/credentials/${existing.id}`,
+        { secret: entry.secret, ...(entry.metadata ? { metadata: entry.metadata } : {}) },
+        cookies
+      );
+      if (patch.status !== 200)
+        fail(`patch credential (${entry.credentialName})`, patch.status, patch.data);
+      log(`  Updated credential: ${entry.credentialName}`);
+    } else {
+      const credRes = await api(
+        'POST',
+        `/api/tenants/${tenantId}/credentials`,
+        {
+          providerId,
+          name: entry.credentialName,
+          type: 'api_key',
+          secret: entry.secret,
+          ...(entry.metadata ? { metadata: entry.metadata } : {}),
+        },
+        cookies
+      );
+      if (credRes.status !== 201)
+        fail(`create credential (${entry.credentialName})`, credRes.status, credRes.data);
+      log(`  Created credential: ${entry.credentialName}`);
+    }
+  }
+
+  log('Done.');
+}

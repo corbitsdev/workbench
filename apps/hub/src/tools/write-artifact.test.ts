@@ -13,7 +13,7 @@ type InsertedVersion = {
 };
 
 type InsertedArtifact = {
-  sessionId: string;
+  tenantId: string;
   principalId: string;
   kind: string;
   title: string;
@@ -29,12 +29,14 @@ type InsertedArtifact = {
  * We distinguish them by call order within a transaction: the first select is
  * always the artifact lookup, the second is always the max-version query.
  */
-function makeMockDb(opts: {
-  existingArtifactId?: string;
-  prevMaxVersion?: number;
-  captureVersionInserts?: InsertedVersion[];
-  captureArtifactInserts?: InsertedArtifact[];
-} = {}) {
+function makeMockDb(
+  opts: {
+    existingArtifactId?: string;
+    prevMaxVersion?: number;
+    captureVersionInserts?: InsertedVersion[];
+    captureArtifactInserts?: InsertedArtifact[];
+  } = {}
+) {
   const {
     existingArtifactId,
     prevMaxVersion = 0,
@@ -93,7 +95,9 @@ function makeMockDb(opts: {
   return db;
 }
 
-function getStringHandler(context: Parameters<typeof createWriteArtifactTool>[0]): StringToolHandler {
+function getStringHandler(
+  context: Parameters<typeof createWriteArtifactTool>[0]
+): StringToolHandler {
   const tools = createWriteArtifactTool(context);
   const tool = tools[0];
   if (!tool) throw new Error('No tool created');
@@ -102,17 +106,40 @@ function getStringHandler(context: Parameters<typeof createWriteArtifactTool>[0]
 }
 
 describe('write_artifact tool', () => {
+  it('tenantId: artifact insert includes tenantId from context', async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-42',
+      principalId: 'prn-1',
+      sessionId: 'sess-1',
+    });
+
+    await handler({ title: 'Report', body: 'Body', kind: 'research', citations: [] }, SIGNAL);
+
+    expect(artifactInserts[0]?.tenantId).toBe('tnt-42');
+  });
+
   it('round-trip: handler returns artifactId and version, matching inserted content', async () => {
     const versionInserts: InsertedVersion[] = [];
     const db = makeMockDb({ captureVersionInserts: versionInserts });
-    const handler = getStringHandler({ db, principalId: 'prn-1', sessionId: 'sess-1' });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-1',
+      sessionId: 'sess-1',
+    });
 
-    const resultJson = await handler({
-      title: 'My Report',
-      body: 'Report body text',
-      kind: 'report',
-      citations: [{ url: 'https://example.com', source: 'web', retrievedAt: '2026-01-01' }],
-    }, SIGNAL);
+    const resultJson = await handler(
+      {
+        title: 'My Report',
+        body: 'Report body text',
+        kind: 'report',
+        citations: [{ url: 'https://example.com', source: 'web', retrievedAt: '2026-01-01' }],
+      },
+      SIGNAL
+    );
 
     const result = JSON.parse(resultJson);
     expect(result.artifactId).toBe('art-new-1');
@@ -170,21 +197,32 @@ describe('write_artifact tool', () => {
       }),
     }));
 
-    const handler = getStringHandler({ db, principalId: 'prn-1', sessionId: 'sess-1' });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-1',
+      sessionId: 'sess-1',
+    });
 
-    const result1Json = await handler({
-      title: 'My Report',
-      body: 'Version one body',
-      kind: 'report',
-      citations: [],
-    }, SIGNAL);
+    const result1Json = await handler(
+      {
+        title: 'My Report',
+        body: 'Version one body',
+        kind: 'report',
+        citations: [],
+      },
+      SIGNAL
+    );
 
-    const result2Json = await handler({
-      title: 'My Report',
-      body: 'Version two body',
-      kind: 'report',
-      citations: [],
-    }, SIGNAL);
+    const result2Json = await handler(
+      {
+        title: 'My Report',
+        body: 'Version two body',
+        kind: 'report',
+        citations: [],
+      },
+      SIGNAL
+    );
 
     const r1 = JSON.parse(result1Json);
     const r2 = JSON.parse(result2Json);
@@ -198,7 +236,12 @@ describe('write_artifact tool', () => {
   it('author: authorId on inserted version equals provided principalId', async () => {
     const versionInserts: InsertedVersion[] = [];
     const db = makeMockDb({ captureVersionInserts: versionInserts });
-    const handler = getStringHandler({ db, principalId: 'prn-author-42', sessionId: 'sess-1' });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-author-42',
+      sessionId: 'sess-1',
+    });
 
     await handler({ title: 'T', body: 'B', kind: 'report', citations: [] }, SIGNAL);
     expect(versionInserts[0]?.authorId).toBe('prn-author-42');
@@ -207,7 +250,12 @@ describe('write_artifact tool', () => {
   it('missing title: throws before any DB write', async () => {
     const artifactInserts: InsertedArtifact[] = [];
     const db = makeMockDb({ captureArtifactInserts: artifactInserts });
-    const handler = getStringHandler({ db, principalId: 'prn-1', sessionId: 'sess-1' });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-1',
+      sessionId: 'sess-1',
+    });
 
     await expect(
       handler({ title: '', body: 'B', kind: 'report', citations: [] }, SIGNAL)

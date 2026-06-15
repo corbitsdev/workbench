@@ -1,5 +1,5 @@
 import { useLibraryResources } from '@workbench/client/react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { collateralTypeOptions } from '@workbench/gtm-workflows';
@@ -14,29 +14,39 @@ import {
 import type { AgentInstance, WorkbenchEntry, CredentialRequirement } from '../../lib/hub-api';
 import { useAgentPhase } from '../../lib/use-agent-phase';
 import type { AgentPhase } from '@workbench/agents/browser';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 type ResourceType = 'workflow' | 'agent';
 type ResourceStatus = 'run' | 'done' | 'idle';
 type RailGroup = 'Agents' | 'Workflows';
 
-interface RailItem {
+interface RailItemBase {
   id: string;
   group: RailGroup;
   name: string;
-  type: ResourceType;
   sub: string;
   status: ResourceStatus;
   who: string;
   color: string;
+}
+
+interface AgentRailItem extends RailItemBase {
+  type: 'agent';
   instanceId?: string;
   tenantId?: string;
   agentId?: string;
   agentStatus?: string;
   credentialRequirements?: CredentialRequirement[];
   capabilities?: Record<string, unknown> | null;
-  workflowStatus?: string;
 }
+
+interface WorkflowRailItem extends RailItemBase {
+  type: 'workflow';
+  workflowStatus: string;
+  workflowKind: string;
+}
+
+type RailItem = AgentRailItem | WorkflowRailItem;
 
 function agentStatusLabel(status: string): string {
   if (status === 'running') return 'Running';
@@ -52,7 +62,7 @@ const AGENT_PHASE_LABEL: Record<AgentPhase, string> = {
   typing: 'Typing',
 };
 
-function agentToRailItem(a: AgentInstance): RailItem {
+function agentToRailItem(a: AgentInstance): AgentRailItem {
   return {
     id: a.id,
     group: 'Agents',
@@ -71,51 +81,47 @@ function agentToRailItem(a: AgentInstance): RailItem {
   };
 }
 
+interface WorkbenchesAndAgents {
+  workbenches: WorkbenchEntry[];
+  agentItems: AgentRailItem[];
+  agentLoadError: boolean;
+}
+
+async function fetchWorkbenchesAndAgents(): Promise<WorkbenchesAndAgents> {
+  const entries = await listWorkbenches();
+  const agentResults = await Promise.allSettled(entries.map((w) => listAgentInstances(w.tenantId)));
+  const loadedAgents = agentResults.flatMap((result) =>
+    result.status === 'fulfilled' ? result.value : []
+  );
+  return {
+    workbenches: entries,
+    agentItems: loadedAgents.map(agentToRailItem),
+    agentLoadError: agentResults.some((result) => result.status === 'rejected'),
+  };
+}
+
 function useWorkbenchesAndAgents(externalTick = 0): {
   workbenches: WorkbenchEntry[];
-  agentItems: RailItem[];
+  agentItems: AgentRailItem[];
   isLoading: boolean;
   error: boolean;
   agentLoadError: boolean;
   retry: () => void;
 } {
-  const [workbenches, setWorkbenches] = useState<WorkbenchEntry[]>([]);
-  const [agentItems, setAgentItems] = useState<RailItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [agentLoadError, setAgentLoadError] = useState(false);
-  const [tick, setTick] = useState(0);
+  const query = useQuery<WorkbenchesAndAgents>({
+    queryKey: ['workbenches-and-agents', externalTick],
+    queryFn: fetchWorkbenchesAndAgents,
+    staleTime: 60 * 1000,
+  });
 
-  useEffect(() => {
-    setIsLoading(true);
-    setError(false);
-    setAgentLoadError(false);
-
-    void (async () => {
-      try {
-        const entries = await listWorkbenches();
-        setWorkbenches(entries);
-
-        const agentResults = await Promise.allSettled(
-          entries.map((w) => listAgentInstances(w.tenantId))
-        );
-        const loadedAgents = agentResults.flatMap((result) =>
-          result.status === 'fulfilled' ? result.value : []
-        );
-        setAgentItems(loadedAgents.map(agentToRailItem));
-        setAgentLoadError(agentResults.some((result) => result.status === 'rejected'));
-        setError(false);
-      } catch {
-        setError(true);
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, [tick, externalTick]);
-
-  const retry = () => setTick((n) => n + 1);
-
-  return { workbenches, agentItems, isLoading, error, agentLoadError, retry };
+  return {
+    workbenches: query.data?.workbenches ?? [],
+    agentItems: query.data?.agentItems ?? [],
+    isLoading: query.isLoading,
+    error: query.isError,
+    agentLoadError: query.data?.agentLoadError ?? false,
+    retry: () => void query.refetch(),
+  };
 }
 
 const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
@@ -150,7 +156,7 @@ function workflowKindLabel(kind: string): string {
   );
 }
 
-function workflowToRailItem(w: WorkflowSummary): RailItem {
+function workflowToRailItem(w: WorkflowSummary): WorkflowRailItem {
   const runNameRaw = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled';
   const runName = runNameRaw.length > 25 ? `${runNameRaw.slice(0, 24)}…` : runNameRaw;
   const statusLabel = STATUS_LABELS[w.status] ?? w.status;
@@ -165,6 +171,7 @@ function workflowToRailItem(w: WorkflowSummary): RailItem {
     who: 'GA',
     color: 'var(--orange)',
     workflowStatus: w.status,
+    workflowKind: w.kind,
   };
 }
 
@@ -242,6 +249,70 @@ function RailItemLead({ item, isRestarting }: { item: RailItem; isRestarting: bo
   );
 }
 
+// Pure presentational row for a completed workflow. Owns no data loading or
+// state — the container passes the item, the active flag, and the callbacks.
+export function CompletedWorkflowRow({
+  item,
+  isActive,
+  isDeleting,
+  onOpen,
+  onDelete,
+}: {
+  item: WorkflowRailItem;
+  isActive: boolean;
+  isDeleting: boolean;
+  onOpen?: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${onOpen ? 'hover:bg-[var(--row-hover)]' : ''} ${isActive ? 'bg-surface ring-1 ring-orange/60' : ''}`}
+    >
+      {onOpen ? (
+        <button
+          type="button"
+          aria-label={`Open workflow ${item.name}`}
+          onClick={onOpen}
+          className="absolute inset-0 z-0 cursor-pointer rounded-[12px]"
+        />
+      ) : null}
+      <div className="pointer-events-none relative z-[1] flex min-w-0 flex-1 items-center gap-[11px]">
+        <StatusDot status="done" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[14px] font-medium text-text">{item.name}</div>
+          <div className="mt-px font-mono text-[11.5px] text-text-3">{item.sub}</div>
+        </div>
+      </div>
+      <div className="relative z-[1] flex flex-none items-center gap-[11px]">
+        <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <button
+            type="button"
+            aria-label="Delete workflow"
+            disabled={isDeleting}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (window.confirm(`Delete ${item.name}?`)) onDelete();
+            }}
+            className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
+          >
+            <Trash2 className="h-[13px] w-[13px]" />
+          </button>
+        </div>
+        <span className="flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] bg-[rgba(233,132,40,0.16)] text-orange">
+          <span className="h-1.5 w-1.5 rounded-full bg-orange" />
+          Workflow
+        </span>
+        <div
+          className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
+          style={{ background: 'var(--orange)' }}
+        >
+          GA
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export interface AgentSelection {
   instanceId: string;
   tenantId: string;
@@ -251,9 +322,8 @@ export interface AgentSelection {
 export interface LibraryRailProps {
   onClose?: () => void;
   onNew?: () => void;
-  onNewAgent?: () => void;
   onAgentSelect?: (selection: AgentSelection) => void;
-  onWorkflowSelect?: (workflowId: string) => void;
+  onWorkflowSelect?: (workflowId: string, workflowKind: string) => void;
   onWorkbenchSelect?: (slug: string) => void;
   onAgentDeleted?: () => void;
   onWorkflowDeleted?: (workflowId: string) => void;
@@ -272,7 +342,6 @@ const SEGMENT_FILTER: Record<string, ResourceType | null> = {
 export function LibraryRail({
   onClose,
   onNew,
-  onNewAgent,
   onAgentSelect,
   onWorkflowSelect,
   onWorkbenchSelect,
@@ -462,9 +531,7 @@ export function LibraryRail({
           // Always render the Agents group header when onNew is provided so the
           // deploy button is accessible even before any agents exist. Do the same
           // for Jobs when onNewWorkflow is provided.
-          const showGroup =
-            inGroup.length > 0 ||
-            (group === 'Agents' && (onNew !== undefined || onNewAgent !== undefined));
+          const showGroup = inGroup.length > 0 || (group === 'Agents' && onNew !== undefined);
           if (!showGroup) return null;
 
           return (
@@ -475,10 +542,10 @@ export function LibraryRail({
                   {inGroup.length}
                 </span>
                 <span className="h-px flex-1 bg-border" />
-                {group === 'Agents' && (onNew ?? onNewAgent) && (
+                {group === 'Agents' && onNew && (
                   <button
                     type="button"
-                    onClick={onNewAgent ?? onNew}
+                    onClick={onNew}
                     aria-label="Add agent"
                     className="-m-[11px] grid h-[40px] w-[40px] flex-none place-items-center rounded-[5px] text-text-3 transition-colors hover:text-orange"
                   >
@@ -509,21 +576,29 @@ export function LibraryRail({
                 const isActiveAgent =
                   item.type === 'agent' && item.instanceId === activeAgentInstanceId;
                 const isActiveWorkflow = item.type === 'workflow' && item.id === activeWorkflowId;
-                const isRestarting = restartingInstanceId === item.instanceId;
+                const isRestarting =
+                  item.type === 'agent' && restartingInstanceId === item.instanceId;
 
                 const openItem = () => {
-                  if (isClickableAgent) {
+                  if (
+                    item.type === 'agent' &&
+                    isClickableAgent &&
+                    onAgentSelect &&
+                    item.instanceId &&
+                    item.tenantId
+                  ) {
                     onAgentSelect({
-                      instanceId: item.instanceId!,
-                      tenantId: item.tenantId!,
+                      instanceId: item.instanceId,
+                      tenantId: item.tenantId,
                       agentName: item.name,
                     });
-                  } else if (isClickableWorkflow) {
-                    onWorkflowSelect!(item.id);
+                  } else if (item.type === 'workflow' && onWorkflowSelect) {
+                    onWorkflowSelect(item.id, item.workflowKind);
                   }
                 };
 
                 const stopAgent = async () => {
+                  if (item.type !== 'agent') return;
                   if (!item.instanceId || !item.tenantId) return;
                   setStoppingInstanceId(item.instanceId);
                   try {
@@ -535,7 +610,7 @@ export function LibraryRail({
                 };
 
                 const restartAgent = async () => {
-                  if (!item.instanceId) return;
+                  if (item.type !== 'agent' || !item.instanceId) return;
                   setRestartingInstanceId(item.instanceId);
                   try {
                     await launchInstanceSession(item.instanceId);
@@ -549,32 +624,37 @@ export function LibraryRail({
                   setDeletingWorkflowId(item.id);
                   try {
                     await api('DELETE', `/workflows/${item.id}`);
-                    await queryClient.invalidateQueries({ queryKey: ['workflows'] });
+                    await queryClient.invalidateQueries({
+                      queryKey: ['workflows'],
+                    });
                     onWorkflowDeleted?.(item.id);
                   } finally {
                     setDeletingWorkflowId(null);
                   }
                 };
 
+                const rowLabel =
+                  item.type === 'workflow'
+                    ? `Open workflow ${item.name}`
+                    : `Open agent ${item.name}`;
+
                 return (
-                  <div key={item.id} className="rounded-[12px]">
-                    <div
-                      role={isClickable ? 'button' : undefined}
-                      tabIndex={isClickable ? 0 : undefined}
-                      onClick={isClickable ? openItem : undefined}
-                      onKeyDown={
-                        isClickable
-                          ? (e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                openItem();
-                              }
-                            }
-                          : undefined
-                      }
-                      className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${isClickable ? 'cursor-pointer hover:bg-[var(--row-hover)]' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
-                    >
+                  <div
+                    key={item.id}
+                    className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${isClickable ? 'hover:bg-[var(--row-hover)]' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
+                  >
+                    {isClickable ? (
+                      <button
+                        type="button"
+                        aria-label={rowLabel}
+                        onClick={openItem}
+                        className="absolute inset-0 z-0 cursor-pointer rounded-[12px]"
+                      />
+                    ) : null}
+                    <div className="pointer-events-none relative z-[1] flex min-w-0 flex-1 items-center gap-[11px]">
                       <RailItemLead item={item} isRestarting={isRestarting} />
+                    </div>
+                    <div className="relative z-[1] flex flex-none items-center gap-[11px]">
                       {item.type === 'agent' && item.agentId && item.tenantId && (
                         <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                           {item.agentStatus === 'stopped' ? (
@@ -668,7 +748,7 @@ export function LibraryRail({
                       >
                         <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
                         {item.type === 'workflow'
-                          ? (STATUS_LABELS[item.workflowStatus ?? ''] ?? 'Workflow')
+                          ? (STATUS_LABELS[item.workflowStatus] ?? 'Workflow')
                           : item.type}
                       </span>
                       <div
@@ -715,7 +795,9 @@ export function LibraryRail({
                     setDeletingWorkflowId(item.id);
                     try {
                       await api('DELETE', `/workflows/${item.id}`);
-                      await queryClient.invalidateQueries({ queryKey: ['workflows'] });
+                      await queryClient.invalidateQueries({
+                        queryKey: ['workflows'],
+                      });
                       onWorkflowDeleted?.(item.id);
                     } finally {
                       setDeletingWorkflowId(null);
@@ -723,58 +805,18 @@ export function LibraryRail({
                   };
 
                   return (
-                    <div key={item.id} className="rounded-[12px]">
-                      <div
-                        role={onWorkflowSelect ? 'button' : undefined}
-                        tabIndex={onWorkflowSelect ? 0 : undefined}
-                        onClick={onWorkflowSelect ? () => onWorkflowSelect(item.id) : undefined}
-                        onKeyDown={
-                          onWorkflowSelect
-                            ? (e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  onWorkflowSelect(item.id);
-                                }
-                              }
-                            : undefined
-                        }
-                        className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${onWorkflowSelect ? 'cursor-pointer hover:bg-[var(--row-hover)]' : ''} ${isActive ? 'bg-surface ring-1 ring-orange/60' : ''}`}
-                      >
-                        <StatusDot status="done" />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-[14px] font-medium text-text">
-                            {item.name}
-                          </div>
-                          <div className="mt-px font-mono text-[11.5px] text-text-3">
-                            {item.sub}
-                          </div>
-                        </div>
-                        <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                          <button
-                            type="button"
-                            aria-label="Delete workflow"
-                            disabled={isDeleting}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (window.confirm(`Delete ${item.name}?`)) void deleteWorkflow();
-                            }}
-                            className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
-                          >
-                            <Trash2 className="h-[13px] w-[13px]" />
-                          </button>
-                        </div>
-                        <span className="flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] bg-[rgba(233,132,40,0.16)] text-orange">
-                          <span className="h-1.5 w-1.5 rounded-full bg-orange" />
-                          Workflow
-                        </span>
-                        <div
-                          className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
-                          style={{ background: 'var(--orange)' }}
-                        >
-                          GA
-                        </div>
-                      </div>
-                    </div>
+                    <CompletedWorkflowRow
+                      key={item.id}
+                      item={item}
+                      isActive={isActive}
+                      isDeleting={isDeleting}
+                      onOpen={
+                        onWorkflowSelect
+                          ? () => onWorkflowSelect(item.id, item.workflowKind)
+                          : undefined
+                      }
+                      onDelete={() => void deleteWorkflow()}
+                    />
                   );
                 })}
             </div>

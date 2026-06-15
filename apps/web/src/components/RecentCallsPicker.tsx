@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { GranolaNote, IntakeRequest } from '../types/intake';
 import { api } from '../lib/api';
@@ -10,43 +11,47 @@ interface RecentCallsPickerProps {
   kind?: string;
 }
 
+async function fetchRecentCalls(
+  tenantId: string | null | undefined,
+  kind: string | undefined,
+  limit: number
+): Promise<GranolaNote[]> {
+  const params = new URLSearchParams();
+  if (tenantId) params.set('tenantId', tenantId);
+  if (kind) params.set('kind', kind);
+  params.set('limit', String(limit));
+  const qs = params.toString();
+  const data = await api<{ calls: GranolaNote[] }>(
+    'GET',
+    qs ? `recent-calls?${qs}` : 'recent-calls'
+  );
+  return data.calls ?? [];
+}
+
 export default function RecentCallsPicker({
   onSelect,
   isLoading = false,
   tenantId,
   kind,
 }: RecentCallsPickerProps) {
-  const [calls, setCalls] = useState<GranolaNote[]>([]);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [limit, setLimit] = useState(10);
 
-  useEffect(() => {
-    fetchRecentCalls();
-  }, [tenantId, kind, limit]);
+  const {
+    data: calls = [],
+    isLoading: loading,
+    isError,
+    error: queryError,
+  } = useQuery<GranolaNote[]>({
+    queryKey: ['recent-calls', tenantId ?? null, kind ?? null, limit],
+    queryFn: () => fetchRecentCalls(tenantId, kind, limit),
+  });
 
-  const fetchRecentCalls = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const params = new URLSearchParams();
-      if (tenantId) params.set('tenantId', tenantId);
-      if (kind) params.set('kind', kind);
-      params.set('limit', String(limit));
-      const qs = params.toString();
-      const data = await api<{ calls: GranolaNote[] }>(
-        'GET',
-        qs ? `recent-calls?${qs}` : 'recent-calls'
-      );
-      setCalls(data.calls || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load recent calls');
-      setCalls([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const error = isError
+    ? queryError instanceof Error
+      ? queryError.message
+      : 'Failed to load recent calls'
+    : '';
 
   const handleLoadMore = () => {
     setLimit((prev) => prev + 10);

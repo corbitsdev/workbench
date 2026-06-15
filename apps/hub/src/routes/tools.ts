@@ -77,7 +77,7 @@ export function createInternalToolsRouter(
           agentId,
           principalId,
           sessionId,
-          ...(hubServices ?? {}),
+          ...hubServices,
         })
         .find((candidate) => candidate.definition.name === toolName);
       if (!tool) {
@@ -96,7 +96,7 @@ export function createInternalToolsRouter(
         return c.json({ result, isError: false });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        log.warn('Tool execution failed', { tenantId, toolName, error: message });
+        log.error('Tool execution failed', { tenantId, toolName, error: message });
         return c.json({ result: message, isError: true });
       }
     }
@@ -112,12 +112,12 @@ export function createInternalToolsRouter(
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log.warn('Credential resolution failed', { tenantId, toolName, error: message });
+      log.error('Credential resolution failed', { tenantId, toolName, error: message });
       return c.json({ result: `Credential resolution failed: ${message}`, isError: true });
     }
 
     if (!resolved) {
-      log.warn('No credential configured for tool execution', {
+      log.error('No credential configured for tool execution', {
         tenantId,
         toolName,
         providerName: entry.providerName,
@@ -135,7 +135,7 @@ export function createInternalToolsRouter(
       baseURL = metadata.baseURL ?? '';
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log.warn('Provider lookup failed', {
+      log.error('Provider lookup failed', {
         tenantId,
         toolName,
         error: message,
@@ -149,7 +149,7 @@ export function createInternalToolsRouter(
       tool = tools.find((t) => t.definition.name === toolName);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log.warn('Tool factory failed', { tenantId, toolName, error: message });
+      log.error('Tool factory failed', { tenantId, toolName, error: message });
       return c.json({ result: `Tool initialization failed: ${message}`, isError: true });
     }
 
@@ -169,7 +169,7 @@ export function createInternalToolsRouter(
       return c.json({ result, isError: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log.warn('Tool execution failed', { tenantId, toolName, error: message });
+      log.error('Tool execution failed', { tenantId, toolName, error: message });
       return c.json({ result: message, isError: true });
     }
   });

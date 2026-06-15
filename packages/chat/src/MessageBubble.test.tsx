@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 
@@ -138,6 +138,68 @@ describe('MessageBubble', () => {
     const [first, second] = imgs;
     expect(first?.src).toContain('data:image/jpeg;base64,data1');
     expect(second?.src).toContain('data:image/png;base64,data2');
+  });
+
+  it('lifts a fenced ui block out of agent prose and renders it via the registry', () => {
+    const message: ChatMessage = {
+      id: 'ui1',
+      role: 'agent',
+      content: [
+        'Here is your call.',
+        '```ui',
+        '{"kind":"choice","prompt":"Which one?","options":[{"id":"a","label":"ABK Demo"}]}',
+        '```',
+      ].join('\n'),
+      createdAt: '2026-06-04T00:07:00Z',
+    };
+    render(<MessageBubble message={message} />);
+    expect(screen.getByText('Here is your call.')).not.toBeNull();
+    expect(screen.getByText('Which one?')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'ABK Demo' })).not.toBeNull();
+  });
+
+  it('forwards onRespond from an embedded choice block to the caller', () => {
+    const onRespond = mock(() => undefined);
+    const message: ChatMessage = {
+      id: 'ui2',
+      role: 'agent',
+      content: [
+        '```ui',
+        '{"kind":"choice","options":[{"id":"a","label":"Yes","value":"yes"}]}',
+        '```',
+      ].join('\n'),
+      createdAt: '2026-06-04T00:08:00Z',
+    };
+    render(<MessageBubble message={message} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+    expect(onRespond).toHaveBeenCalledWith({ blockKind: 'choice', value: 'yes' });
+  });
+
+  it('does not extract a ui block while the agent message is still streaming', () => {
+    const message: ChatMessage = {
+      id: 'ui3',
+      role: 'agent',
+      status: 'sending',
+      content: [
+        '```ui',
+        '{"kind":"choice","options":[{"id":"a","label":"Streamed option"}]}',
+        '```',
+      ].join('\n'),
+      createdAt: '2026-06-04T00:09:00Z',
+    };
+    render(<MessageBubble message={message} />);
+    expect(screen.queryByRole('button', { name: 'Streamed option' })).toBeNull();
+  });
+
+  it('renders nothing for an empty settled agent message', () => {
+    const message: ChatMessage = {
+      id: 'empty1',
+      role: 'agent',
+      content: '',
+      createdAt: '2026-06-04T00:10:00Z',
+    };
+    const { container } = render(<MessageBubble message={message} />);
+    expect(container.firstChild).toBeNull();
   });
 
   it('shows a broken-image fallback on load error without crashing', () => {

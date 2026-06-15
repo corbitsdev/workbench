@@ -36,8 +36,35 @@ describe('createXTools / x_search handler', () => {
     ],
   };
 
+  const responsesApiResponse = {
+    output: [
+      {
+        type: 'message',
+        content: [
+          {
+            type: 'output_text',
+            text: JSON.stringify({ items: apiResults }),
+          },
+        ],
+      },
+    ],
+  };
+
   function makeFetcher(response: unknown) {
     return async (_url: string, _init: RequestInit): Promise<Response> => {
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => response,
+        text: async () => JSON.stringify(response),
+      } as unknown as Response;
+    };
+  }
+
+  function makeCapturingFetcher(response: unknown, calls: { url: string; init: RequestInit }[]) {
+    return async (url: string, init: RequestInit): Promise<Response> => {
+      calls.push({ url, init });
       return {
         ok: true,
         status: 200,
@@ -57,7 +84,10 @@ describe('createXTools / x_search handler', () => {
   }
 
   it('returns normalized items with author x-grok', async () => {
-    const tools = createXTools({ apiKey: 'test-key', fetcher: makeFetcher(mockResponse) });
+    const tools = createXTools({
+      apiKey: 'test-key',
+      fetcher: makeFetcher(mockResponse),
+    });
     const xSearch = findStringTool(tools, 'x_search');
 
     const raw = await xSearch.handler({ query: 'AI funding' }, new AbortController().signal);
@@ -72,26 +102,82 @@ describe('createXTools / x_search handler', () => {
     expect(item.provenance).toBe('degraded');
   });
 
+  it('uses the xAI Responses x_search endpoint and forwards date range parameters', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const tools = createXTools({
+      apiKey: 'test-key',
+      fetcher: makeCapturingFetcher(responsesApiResponse, calls),
+    });
+    const xSearch = findStringTool(tools, 'x_search');
+
+    await xSearch.handler(
+      { query: 'AI funding', fromDate: '2026-05-15', toDate: '2026-06-14' },
+      new AbortController().signal
+    );
+
+    expect(calls[0]?.url).toBe('https://api.x.ai/v1/responses');
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      tools: [{ type: 'x_search', from_date: '2026-05-15', to_date: '2026-06-14' }],
+    });
+    expect(body).not.toHaveProperty('search_parameters');
+  });
+
+  it('ignores an empty hub baseURL and uses the xAI default endpoint', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const tools = createXTools({
+      apiKey: 'test-key',
+      baseURL: '',
+      fetcher: makeCapturingFetcher(responsesApiResponse, calls),
+    });
+    const xSearch = findStringTool(tools, 'x_search');
+
+    await xSearch.handler({ query: 'AI funding' }, new AbortController().signal);
+
+    expect(calls[0]?.url).toBe('https://api.x.ai/v1/responses');
+  });
+
+  it('accepts a hub baseURL that already includes /v1', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const tools = createXTools({
+      apiKey: 'test-key',
+      baseURL: 'https://api.x.ai/v1',
+      fetcher: makeCapturingFetcher(responsesApiResponse, calls),
+    });
+    const xSearch = findStringTool(tools, 'x_search');
+
+    await xSearch.handler({ query: 'AI funding' }, new AbortController().signal);
+
+    expect(calls[0]?.url).toBe('https://api.x.ai/v1/responses');
+  });
+
   it('throws when query is missing', async () => {
-    const tools = createXTools({ apiKey: 'test-key', fetcher: makeFetcher(mockResponse) });
+    const tools = createXTools({
+      apiKey: 'test-key',
+      fetcher: makeFetcher(mockResponse),
+    });
     const xSearch = findStringTool(tools, 'x_search');
     expect(xSearch.handler({}, new AbortController().signal)).rejects.toThrow('query is required');
   });
 
-  it('throws on non-ok response', async () => {
+  it('throws on non-ok response and includes the response body', async () => {
     const errorFetcher = async (): Promise<Response> =>
       ({
         ok: false,
         status: 429,
         statusText: 'Too Many Requests',
         json: async () => ({}),
-        text: async () => '',
+        text: async () => '{"error":"rate limit exceeded"}',
       }) as unknown as Response;
 
     const tools = createXTools({ apiKey: 'test-key', fetcher: errorFetcher });
     const xSearch = findStringTool(tools, 'x_search');
-    expect(xSearch.handler({ query: 'test' }, new AbortController().signal)).rejects.toThrow(
-      'xAI API error: 429'
-    );
+    const error = await xSearch
+      .handler({ query: 'test' }, new AbortController().signal)
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('xAI API error: 429');
+    expect((error as Error).message).toContain('rate limit exceeded');
   });
 });

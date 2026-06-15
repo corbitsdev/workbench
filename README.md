@@ -11,10 +11,13 @@ bun run coverage:report # merge the lcov reports into one monorepo number
 bun run coverage        # test:coverage + coverage:report in one shot
 ```
 
-**The target is 98.5% line coverage.** `coverage:report` merges every
-workspace's `coverage/lcov.info` and exits non-zero until the aggregate clears
-the target (set via `COVERAGE_THRESHOLD`, default 98.5). Track the ramp in the
-"Test coverage to 98.5%" Linear project.
+**80% merged line coverage is the enforced hard floor** — this matches
+`AGENTS.md` and is the value `coverage:report` actually enforces
+(`COVERAGE_THRESHOLD=80`). `coverage:report` merges every workspace's
+`coverage/lcov.info` and exits non-zero until the aggregate clears 80%. 80% is
+the floor, not the goal: every change should leave coverage equal or higher.
+98.5% remains the aspirational ramp target tracked in the "Test coverage to
+98.5%" Linear project, but it is not the CI gate.
 
 Notes on how the number is computed (`scripts/coverage-merge.ts`):
 

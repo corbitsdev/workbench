@@ -148,6 +148,28 @@ describe('subscribeSharedEventStream', () => {
     expect(received).toEqual([{ type: 'ok' }]);
   });
 
+  it('keeps separate connections for the same url under different event names', () => {
+    subscribe(URL_A, 'agent.event', () => undefined);
+    subscribe(URL_A, 'agent.phase', () => undefined);
+    expect(FakeEventSource.instances).toHaveLength(2);
+  });
+
+  it('resets backoff after a successful reopen so the next failure starts from the floor', () => {
+    subscribe(URL_A, 'agent.event', () => undefined);
+
+    // First failure schedules a reconnect at the 1s floor.
+    FakeEventSource.instances[0]!.onerror?.();
+    flushTimers();
+    // The reconnect doubled the delay to 2s; signal that the new source opened.
+    FakeEventSource.instances[1]!.onopen?.();
+
+    // A second failure after a healthy open must restart from the 1s floor, then
+    // double to 2s on its scheduled retry — not continue compounding from 2s.
+    FakeEventSource.instances[1]!.onerror?.();
+    flushTimers();
+    expect(FakeEventSource.instances).toHaveLength(3);
+  });
+
   it('does not deliver events to an unsubscribed listener', () => {
     const received: unknown[] = [];
     const stop = subscribe(URL_A, 'agent.event', (e) => received.push(e));

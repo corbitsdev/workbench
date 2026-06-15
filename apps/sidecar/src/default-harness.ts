@@ -14,30 +14,37 @@ import { createBlobReader } from '@intx/types/runtime';
 import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/runtime';
 import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
 import { createAskPrincipalTool } from '@workbench/approvals';
-import { stripUnsendableAssistantTurns } from '@workbench/context-repair';
+import { healTurns } from '@workbench/context-repair';
+import { createGuardedMailRunner } from './mail-guard';
 import type { ContextStore } from '@intx/types/runtime';
 import { createHubToolRunner } from './hub-tool-runner';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
 
 /**
- * Strip assistant turns that an OpenAI-compatible provider would reject
- * ("content or tool_calls must be set") from the durable context before the
- * harness loads it. Without this, a single poisoned turn replays on every
- * launch and the agent is permanently stuck — ending and relaunching the
- * session alone does not clear it, because the isogit store is reused.
+ * Repair the durable context before the harness loads it so an
+ * OpenAI-compatible provider does not reject it. Two failure modes are healed:
+ * null-body assistant turns ("content or tool_calls must be set") and orphaned
+ * tool_calls ("'tool_calls' must be followed by tool messages"). Both poison
+ * every replay until removed — ending and relaunching the session alone does
+ * not clear them, because the isogit store is reused.
  */
 export async function healContextStore(storage: ContextStore, agentAddress: string): Promise<void> {
   const { turns } = await storage.load();
-  const { turns: healed, removedCount } = stripUnsendableAssistantTurns(turns);
-  if (removedCount === 0) return;
+  const healed = healTurns(turns);
+  if (!healed.changed) return;
 
-  await storage.writeTurns(healed);
-  await storage.commit({ message: 'recover: drop unsendable assistant turns' });
-  logger.warn('Healed context for {address}: dropped {count} unsendable assistant turn(s)', {
-    address: agentAddress,
-    count: removedCount,
-  });
+  await storage.writeTurns(healed.turns);
+  await storage.commit({ message: 'recover: heal unsendable turns and tool_call pairing' });
+  logger.warn(
+    'Healed context for {address}: removed {removed} unsendable turn(s), synthesized {synth} tool result(s), dropped {dangling} dangling result(s)',
+    {
+      address: agentAddress,
+      removed: healed.unsendableRemoved,
+      synth: healed.toolResultsSynthesized,
+      dangling: healed.danglingResultsDropped,
+    }
+  );
 }
 
 function mergeToolRunners(runners: ToolRunner[]): ToolRunner & { definitions: ToolDefinition[] } {
@@ -152,6 +159,7 @@ export function createDefaultHarnessBuilder({
 
       const capabilities = createHarnessRuntimeCapabilities({ transport: agentTransport });
       const mailTools = createMailTools({ capabilities });
+      const guardedMailTools = createGuardedMailRunner(mailTools as DefinedRunner);
 
       const askPrincipalRunner = createToolRunner([
         createAskPrincipalTool({
@@ -181,7 +189,7 @@ export function createDefaultHarnessBuilder({
 
       const allTools = mergeToolRunners([
         posixTools,
-        mailTools,
+        guardedMailTools,
         askPrincipalRunner as DefinedRunner,
         hubToolRunner,
       ]);

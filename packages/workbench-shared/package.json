@@ -10,5 +10,6 @@
   },
   "devDependencies": {
     "typescript": "^5.9.0"
-  }
+  },
+  "//": "Pure type-only package (no runtime code); exempt from test / test:coverage scripts per AGENTS.md coverage policy."
 }
