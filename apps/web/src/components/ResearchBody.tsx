@@ -1,78 +1,19 @@
-import { type } from 'arktype';
+import { type Report, parseReport } from '@workbench/last30days-core';
 
-const researchItemSchema = type({
-  url: 'string',
-  title: 'string',
-  publishedAt: 'string',
-  source: 'string',
-  engagement: {
-    upvotes: 'number',
-    comments: 'number',
-    'views?': 'number',
-    'shares?': 'number',
-  },
-  'author?': 'string',
-  'topComments?': type({
-    text: 'string',
-    'author?': 'string',
-    score: 'number',
-  }).array(),
-  'funScore?': 'number',
-});
-
-const researchClusterSchema = type({
-  id: 'string',
-  title: 'string',
-  score: 'number',
-  sources: 'string[]',
-  items: researchItemSchema.array(),
-  'summary?': 'string',
-});
-
-const researchBriefSchema = type({
-  topic: 'string',
-  days: 'number',
-  'queryType?': "'GENERAL' | 'NEWS' | 'COMPARISON' | 'RECOMMENDATIONS'",
-  stats: {
-    sourceCount: 'number',
-    itemCount: 'number',
-    dateRange: {
-      from: 'string',
-      to: 'string',
-    },
-  },
-  'leadInsight?': 'string',
-  clusters: researchClusterSchema.array(),
-  bestTakes: type({
-    quote: 'string',
-    'author?': 'string',
-    source: 'string',
-    engagement: 'number',
-    url: 'string',
-  }).array(),
-  items: researchItemSchema.array(),
-  citations: type({
-    url: 'string',
-    source: 'string',
-    retrievedAt: 'string',
-    'title?': 'string',
-  }).array(),
-  generatedAt: 'string',
-});
-
-export type ResearchBrief = typeof researchBriefSchema.infer;
+// The brief contract is owned by @workbench/last30days-core; the web validates
+// the persisted artifact payload at the boundary via the package's parse helper
+// rather than re-declaring the schema (which would drift from the source of truth).
+export type ResearchBrief = Report;
 
 export function parseResearchBrief(value: unknown): ResearchBrief | null {
-  const result = researchBriefSchema(value);
-  if (result instanceof type.errors) return null;
-  return result;
+  return parseReport(value);
 }
 
 function StatsLine({ stats }: { stats: ResearchBrief['stats'] }) {
   return (
     <p className="text-sm text-text-3">
-      {stats.sourceCount} sources · {stats.itemCount} items · {stats.dateRange.from}–
-      {stats.dateRange.to}
+      {stats.sourceCount} sources · {stats.itemCount} items
+      {stats.dateRange ? ` · ${stats.dateRange.from}–${stats.dateRange.to}` : ''}
     </p>
   );
 }
