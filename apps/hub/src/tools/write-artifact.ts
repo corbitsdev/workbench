@@ -30,7 +30,12 @@ export const WRITE_ARTIFACT_DEFINITION: ToolDefinition = {
       },
       kind: {
         type: 'string',
-        description: 'Artifact kind, e.g. report, email, memo, article.',
+        description: 'Artifact kind, e.g. report, email, memo, article, research.',
+      },
+      data: {
+        type: 'object',
+        description:
+          'Optional structured payload for rich rendering (e.g. a research ResearchBrief). Stored under source.brief.',
       },
     },
     required: ['title', 'body', 'kind'],
@@ -65,6 +70,14 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
         const rawCitations = args.citations;
         const citations = Array.isArray(rawCitations) ? rawCitations : [];
 
+        const rawData = args.data;
+        const brief =
+          typeof rawData === 'object' && rawData !== null && !Array.isArray(rawData)
+            ? (rawData as Record<string, unknown>)
+            : undefined;
+        const source: Record<string, unknown> =
+          brief === undefined ? { citations } : { citations, brief };
+
         const result = await context.db.transaction(async (tx) => {
           // artifact.sessionId is a uuid FK to workflow_run — not suitable for agent sessions.
           // Deduplicate by (principalId, title, kind) instead, which is stable across sessions.
@@ -94,7 +107,7 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
                 kind,
                 title,
                 content: body,
-                source: { citations } as Record<string, unknown>,
+                source,
                 status: 'draft',
                 version: 1,
                 createdAt: now,

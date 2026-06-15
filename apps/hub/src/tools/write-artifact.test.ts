@@ -19,6 +19,7 @@ type InsertedArtifact = {
   title: string;
   content: string;
   status: string;
+  source: { citations: unknown[]; brief?: Record<string, unknown> };
 };
 
 /**
@@ -245,6 +246,40 @@ describe('write_artifact tool', () => {
 
     await handler({ title: 'T', body: 'B', kind: 'report', citations: [] }, SIGNAL);
     expect(versionInserts[0]?.authorId).toBe('prn-author-42');
+  });
+
+  it('data: structured brief is persisted under source.brief', async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-1',
+      sessionId: 'sess-1',
+    });
+
+    const brief = { topic: 'AI', clusters: [], bestTakes: [] };
+    await handler(
+      { title: 'Brief', body: 'Body', kind: 'research', citations: [], data: brief },
+      SIGNAL
+    );
+
+    expect(artifactInserts[0]?.source.brief).toEqual(brief);
+  });
+
+  it('data: omitted leaves source without a brief key', async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-1',
+      sessionId: 'sess-1',
+    });
+
+    await handler({ title: 'Plain', body: 'Body', kind: 'report', citations: [] }, SIGNAL);
+
+    expect('brief' in (artifactInserts[0]?.source ?? {})).toBe(false);
   });
 
   it('missing title: throws before any DB write', async () => {

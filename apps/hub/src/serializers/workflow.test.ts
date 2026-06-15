@@ -71,6 +71,7 @@ describe('serializeArtifact', () => {
       kind: 'one-pager',
       title: 'Title',
       content: 'Body',
+      source: null,
       status: 'draft',
       version: 1,
       createdAt: '2024-01-02T03:04:05.000Z',
@@ -96,5 +97,26 @@ describe('serializeArtifact', () => {
     const out = serializeArtifact(row);
     expect(out.parentId).toBe('a-1');
     expect(out.painPointId).toBe('pp-1');
+  });
+
+  it('passes through the structured source bag (e.g. a research brief)', () => {
+    const brief = { topic: 'AI', clusters: [], bestTakes: [] };
+    const row = {
+      id: 'a-3',
+      sessionId: null,
+      parentId: null,
+      painPointId: null,
+      kind: 'research',
+      title: 'Brief',
+      content: 'Body',
+      source: { citations: [], brief },
+      status: 'draft',
+      version: 1,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    } as unknown as ArtifactRow;
+
+    const out = serializeArtifact(row);
+    expect(out.source).toEqual({ citations: [], brief });
   });
 });
