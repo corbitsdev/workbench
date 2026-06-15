@@ -104,7 +104,7 @@ describe('ChatPanel', () => {
         activity={{ type: 'tool_call', name: 'exa_search' }}
       />
     );
-    expect(screen.getByText('Ada is calling exa_search')).toBeDefined();
+    expect(screen.getByText('Ada is calling Search')).toBeDefined();
   });
 
   it('shows a tool-running activity label when a tool is executing', () => {
@@ -116,7 +116,7 @@ describe('ChatPanel', () => {
         activity={{ type: 'tool_running', name: 'exa_search' }}
       />
     );
-    expect(screen.getByText('Ada is running exa_search')).toBeDefined();
+    expect(screen.getByText('Ada is running Search')).toBeDefined();
   });
 
   it('shows a rate-limited activity label with retry timing', () => {
@@ -211,7 +211,7 @@ describe('ChatPanel busy state', () => {
         activity={{ type: 'tool_running', name: 'draft_email' }}
       />
     );
-    expect(screen.getByText('Ada is running draft_email')).toBeDefined();
+    expect(screen.getByText('Ada is running Draft Email')).toBeDefined();
   });
 
   it('does not block Send after activity clears', () => {

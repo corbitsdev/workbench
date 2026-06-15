@@ -19,7 +19,7 @@ export {
   SidebarMenuItem,
   SidebarMenuButton,
 } from "./sidebar";
-export { cn } from "./utils";
+export { cn, toHumanLabel } from "./utils";
 export {
   useTheme,
   isTheme,

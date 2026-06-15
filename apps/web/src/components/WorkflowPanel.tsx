@@ -10,6 +10,8 @@ import { ReviewedArtifactsSummary } from './ReviewedArtifactsSummary';
 import FeedbackSection from './FeedbackSection';
 import ArtifactBody from './ArtifactBody';
 import { AgentChat } from './AgentChat';
+import { toHumanLabel } from '@workbench/ui';
+import { resolveKindLabel } from '../lib/resolve-kind-label';
 import { HorizontalStepper, buildSteps } from '@workbench/workflow';
 import { collateralTypeOptions, hasMultiVariantKind } from '@workbench/gtm-workflows';
 import type { StepName } from '@workbench/workflow';
@@ -178,10 +180,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
     );
   };
 
-  const kindLabel =
-    collateralTypeOptions.find((o) => o.id === displayArtifact?.kind)?.label ??
-    displayArtifact?.kind ??
-    null;
+  const kindLabel = resolveKindLabel(displayArtifact?.kind);
 
   // While generating, the form collapses to a read-only summary of what was
   // submitted. Prefer the in-session selection; after a remount (generation
@@ -196,8 +195,8 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
         <div className="min-w-0">
           <p className="truncate text-[14px] font-semibold text-text">{title}</p>
           <p className="text-[11px] text-text-3 font-mono mt-px">
-            {STEP_LABELS[stepperStep] ?? stepperStep} ·{' '}
-            {STATUS_LABELS[workflow.status] ?? workflow.status}
+            {STEP_LABELS[stepperStep] ?? toHumanLabel(stepperStep)} ·{' '}
+            {STATUS_LABELS[workflow.status] ?? toHumanLabel(workflow.status)}
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">

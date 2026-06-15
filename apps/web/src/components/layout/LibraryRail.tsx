@@ -2,7 +2,8 @@ import { useLibraryResources } from "@workbench/client/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { api } from "../../lib/api";
-import { collateralTypeOptions } from "@workbench/gtm-workflows";
+import { resolveKindLabel } from "../../lib/resolve-kind-label";
+import { toHumanLabel } from "@workbench/ui";
 import type { SessionStatus, WorkflowSummary } from "@workbench/shared";
 import { clientOptions } from "../../lib/client-options";
 import {
@@ -151,15 +152,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function workflowKindLabel(kind: string): string {
-  return (
-    (
-      collateralTypeOptions as ReadonlyArray<{ id: string; label: string }>
-    ).find((o) => o.id === kind)?.label ??
-    kind
-      .split("-")
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ")
-  );
+  return resolveKindLabel(kind) ?? kind;
 }
 
 function workflowToRailItem(w: WorkflowSummary): WorkflowRailItem {
@@ -167,7 +160,7 @@ function workflowToRailItem(w: WorkflowSummary): WorkflowRailItem {
     w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? "Untitled";
   const runName =
     runNameRaw.length > 25 ? `${runNameRaw.slice(0, 24)}…` : runNameRaw;
-  const statusLabel = STATUS_LABELS[w.status] ?? w.status;
+  const statusLabel = STATUS_LABELS[w.status] ?? toHumanLabel(w.status);
   const sub = `${runName} · ${statusLabel}`;
   return {
     id: w.id,
@@ -824,7 +817,7 @@ export function LibraryRail({
                           className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`}
                         />
                         {item.type === "workflow"
-                          ? (STATUS_LABELS[item.workflowStatus] ?? "Workflow")
+                          ? (STATUS_LABELS[item.workflowStatus] ?? toHumanLabel(item.workflowStatus))
                           : item.type}
                       </span>
                       <div

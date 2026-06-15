@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useArtifacts } from '@workbench/client/react';
 import type { PresentationSourceData } from '@workbench/workflow';
 import { clientOptions } from '../lib/client-options';
+import { resolveKindLabel } from '../lib/resolve-kind-label';
 
 interface ArtifactSourcePickerProps {
   onSelect: (data: PresentationSourceData) => void;
@@ -62,7 +63,7 @@ export default function ArtifactSourcePicker({
               }`}
             >
               <span className="text-[13px] font-medium text-text">{artifact.title}</span>
-              <span className="text-[11.5px] text-text-2">{artifact.kind}</span>
+              <span className="text-[11.5px] text-text-2">{resolveKindLabel(artifact.kind)}</span>
             </button>
           );
         })}

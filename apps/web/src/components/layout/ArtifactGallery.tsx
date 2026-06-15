@@ -12,10 +12,8 @@ import {
 import type { GalleryArtifact, ArtifactWithSession } from "@workbench/artifact";
 import { clientOptions } from "../../lib/client-options";
 import ArtifactBody from "../ArtifactBody";
-import {
-  canUseArtifactInWorkflow,
-  collateralTypeOptions,
-} from "@workbench/gtm-workflows";
+import { resolveKindLabel } from "../../lib/resolve-kind-label";
+import { canUseArtifactInWorkflow } from "@workbench/gtm-workflows";
 import { useChatLauncher } from "../../lib/chat-launcher-context";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -111,12 +109,7 @@ export function ArtifactGallery({
         open={selected !== null}
         artifact={selected}
         onClose={() => setSelected(null)}
-        kindLabel={
-          selected
-            ? (collateralTypeOptions.find((o) => o.id === selected.kind)
-                ?.label ?? selected.kind)
-            : undefined
-        }
+        kindLabel={selected ? resolveKindLabel(selected.kind) : undefined}
         onOpenInMyra={handleOpenInMyra}
         onUseInWorkflow={onUseInWorkflow ? handleUseInWorkflow : undefined}
         canUseInWorkflow={(a) => canUseArtifactInWorkflow(a.kind)}
