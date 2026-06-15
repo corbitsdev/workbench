@@ -7,6 +7,14 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./resource-enrichment": {
+      "types": "./src/resource-enrichment/index.ts",
+      "default": "./src/resource-enrichment/index.ts"
+    },
+    "./seo-enrichment": {
+      "types": "./src/seo-enrichment/index.ts",
+      "default": "./src/seo-enrichment/index.ts"
+    },
     "./collateral-generation": {
       "types": "./src/collateral-generation/index.ts",
       "default": "./src/collateral-generation/index.ts"
@@ -24,7 +32,9 @@
     "@intx/log": "workspace:*",
     "@intx/types": "workspace:*",
     "@workbench/prompts": "workspace:*",
-    "@workbench/workflow-core": "workspace:*"
+    "@workbench/workflow-core": "workspace:*",
+    "arktype": "catalog:",
+    "exceljs": "^4.4.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -1,10 +1,15 @@
 import PresentationBody from './PresentationBody';
 import ResearchBody, { parseResearchBrief } from './ResearchBody';
+import SelectionBody from './SelectionBody';
 
 interface ArtifactBodyArtifact {
   content: string;
   kind: string;
   source?: unknown;
+  // Used by the interactive `selection` renderer (to PATCH the pick back) and
+  // the `csv-export` download link; optional because most kinds don't need them.
+  id?: string;
+  sessionId?: string | null;
 }
 
 interface ArtifactBodyProps {
@@ -194,11 +199,48 @@ function BattlecardBody({ body }: { body: string }) {
   return <p className="text-sm text-text-2 whitespace-pre-wrap">{body}</p>;
 }
 
+function CsvExportBody({ body, artifactId }: { body: string; artifactId: string }) {
+  // Same-origin download route; the session cookie authorizes it. A plain anchor
+  // is sufficient — no JS fetch needed.
+  return (
+    <div className="space-y-3">
+      <a
+        href={`/api/v1/artifacts/${artifactId}/download`}
+        download
+        className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
+      >
+        Download CSV
+      </a>
+      <pre className="overflow-x-auto rounded border border-border bg-surface-2 p-3 text-xs text-text-2">
+        {body}
+      </pre>
+    </div>
+  );
+}
+
 export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
   const body = artifact.content;
   const type = artifact.kind;
   const brief = extractBrief(artifact.source);
   switch (type) {
+    // downloadable export
+    case 'csv-export': {
+      if (!artifact.id) {
+        return <pre className="overflow-x-auto p-3 text-xs text-text-2">{body}</pre>;
+      }
+      return <CsvExportBody body={body} artifactId={artifact.id} />;
+    }
+    // per-row HITL selection
+    case 'selection': {
+      if (!artifact.id || !artifact.sessionId) {
+        return (
+          <p className="text-sm text-text-3 p-4">Selection is unavailable outside its workflow.</p>
+        );
+      }
+      return (
+        <SelectionBody content={body} workflowId={artifact.sessionId} artifactId={artifact.id} />
+      );
+    }
     // email
     case 'email':
     case 'follow-up-email':

@@ -113,4 +113,23 @@ describe('ArtifactBody rendering', () => {
     renderKind('research');
     expect(screen.getByText('Hello')).not.toBeNull();
   });
+
+  it('renders a download link for a csv-export artifact', () => {
+    render(
+      React.createElement(ArtifactBody, {
+        artifact: { id: 'art-9', sessionId: 'wf-1', content: 'a,b\n1,2\n', kind: 'csv-export' },
+      })
+    );
+    const link = screen.getByRole('link', { name: /download csv/i }) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/api/v1/artifacts/art-9/download');
+  });
+
+  it('does not render a download link for non-export kinds', () => {
+    render(
+      React.createElement(ArtifactBody, {
+        artifact: { id: 'art-9', sessionId: 'wf-1', content: TEST_BODY, kind: 'one-pager' },
+      })
+    );
+    expect(screen.queryByRole('link', { name: /download csv/i })).toBeNull();
+  });
 });

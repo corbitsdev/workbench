@@ -86,6 +86,30 @@ describe('0016 creates member_agent_instance (CL-1532)', () => {
   });
 });
 
+describe('0020 creates upload (CL-1961)', () => {
+  const sql = readFileSync(join(import.meta.dir, '../../migrations/0020_upload.sql'), 'utf-8');
+
+  it('creates the table with the expected columns', () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "upload"/i);
+    for (const col of [
+      'id',
+      'tenant_id',
+      'principal_id',
+      'filename',
+      'mime_type',
+      'content',
+      'size',
+      'created_at',
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it('stores the file body as bytea', () => {
+    expect(sql).toMatch(/"content"\s+"?bytea"?/i);
+  });
+});
+
 describe('0018 drops member_agent_instance unique constraint (CL-1558)', () => {
   const sql = readFileSync(
     join(import.meta.dir, '../../migrations/0018_drop_member_agent_instance_uniq.sql'),

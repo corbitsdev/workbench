@@ -195,6 +195,23 @@ Each `outputType` generates independently in parallel via `@intx/agent`. Results
 | `POST` | `/workflows/enabled`   | `{ kind, tenantId?, assignments }`               | `{ kind, ..., assignments }`                                   |
 | `GET`  | `/recent-calls`        | `?tenantId&kind`                                 | `{ calls }`                                                    |
 
+### Resource Enrichment (seo-enrichment)
+
+| Method  | Route                                            | Input                          | Output                              |
+| ------- | ------------------------------------------------ | ------------------------------ | ----------------------------------- |
+| `POST`  | `/uploads`                                       | multipart `file` (`.xlsx`)     | `{ uploadId, filename, mimeType, size }` |
+| `POST`  | `/workflows` (`workflowKind: 'seo-enrichment'`)  | `{ uploadId }`                 | `{ id, status: 'running', kind }`   |
+| `POST`  | `/workflows/:id/steps` (`step: 'enrich'`)        | —                              | `202 { status: 'generating' }`      |
+| `POST`  | `/workflows/:id/steps` (`step: 'export'`)        | —                              | `{ id, status: 'done' }`            |
+| `PATCH` | `/workflows/:id/artifacts/:artifactId/selection` | `{ chosen: Record<field,int> }`| serialized artifact (new version)   |
+| `GET`   | `/artifacts/:id/download`                        | —                              | `text/csv` attachment               |
+
+- **Upload**: stored in the `upload` table (BYTEA), 10MB cap (`413`), `.xlsx` MIME/extension allowlist (`415`), tenant-owned.
+- **Intake** parses the xlsx with `exceljs` (`packages/gtm-workflows/src/seo-enrichment/parse.ts`), validates rows with ArkType (`SeoResourceRow`), caps at 500 rows, and writes a `parsed-resource` artifact.
+- **Enrich** is claimed optimistically (`running → generating`, `409` on a duplicate) and runs in the background: bounded batches of 8 (`ENRICH_CONCURRENCY`) of `loadProductImage` → `runSingleTurnAgentWithImage` (multimodal via `@intx/inference`) → `parseSeoReply` (5/5/5 gate) → `selection` artifact. Per-row failures become error-state selections (`image unavailable` / `response invalid` / `enrichment failed`).
+- **Image fetch** enforces `https` + a private/loopback/metadata host block (SSRF guard) and a 10MB body cap.
+- **Export** assembles a `csv-export` artifact (columns `product_slug, image_link, chosen_title, chosen_description, chosen_summary, timestamp`) from selections with `chosen !== null`; formula-leading cells are neutralized against CSV injection.
+
 #### Per-step credential & tool assignments
 
 A `WorkflowType` (`@workbench/workflow-core`) declares `steps[]`, where each step lists its own
@@ -289,6 +306,7 @@ Tracks which workflow kinds a principal has added, with per-step assignments.
 | `0005_workbench_user`                    | Adds provisional `workbench_user` cache table                                                                                                                                 |
 | `0012_workbench_workflow_assignments`    | Adds `workbench_workflows.assignments` (jsonb) for per-step credential/tool assignments                                                                                       |
 | `0015_workbench_workflows_per_principal` | Adds `workbench_workflows.principal_id` (NOT NULL), backfills from each tenant's user principal, re-keys the unique constraint to `(tenant_id, principal_id, kind)` (CL-1450) |
+| `0020_upload`                            | Adds the `upload` table (`id`, `tenant_id`, `principal_id`, `filename`, `mime_type`, `content` BYTEA, `size`, `created_at`) for pre-workflow binary files (xlsx) that arrive before a run exists (CL-1961)                          |
 
 **Data migration (not a schema migration):** `apps/hub/src/scripts/migrate-to-global-tenant.ts` moves existing users into the global tenant — re-parents workbenches, provisions a per-user Myra, and re-keys `workflow_run` / `artifact` / `artifact_version` / `workbench_workflows` from the old personal principal to the new global member principal. Dry-run by default (`--live` to write); per-user transaction; idempotent. An interrupted run MUST be re-run (Myra provisioning and the re-key transaction are intentionally not atomic, but re-running finishes the re-key). Run it once after deploying the cutover. `pain_point` is not re-keyed — it carries no tenant/principal columns and migrates implicitly with its `workflow_run` via `session_id`.
 

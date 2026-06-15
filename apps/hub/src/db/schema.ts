@@ -1,6 +1,7 @@
 import {
   type AnyPgColumn,
   boolean,
+  customType,
   integer,
   jsonb,
   pgTable,
@@ -9,6 +10,13 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+
+// Postgres bytea has no first-class Drizzle column helper; map it to Buffer.
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'bytea';
+  },
+});
 
 export const severity = ['low', 'medium', 'high', 'critical'] as const;
 export const artifactStatus = ['draft', 'approved', 'rejected'] as const;
@@ -20,6 +28,23 @@ export const transcript = pgTable('transcript', {
   source: text('source', { enum: transcriptSource }).notNull().default('paste'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// Binary files uploaded before any workflow run exists. Artifacts require a
+// sessionId (FK to workflow_run), but an xlsx arrives ahead of the run that
+// will consume it (CL-1961), so uploads live in their own tenant-owned table
+// and are referenced by id when the run is created.
+export const upload = pgTable('upload', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: text('tenant_id').notNull(),
+  principalId: text('principal_id').notNull(),
+  filename: text('filename').notNull(),
+  mimeType: text('mime_type').notNull(),
+  content: bytea('content').notNull(),
+  size: integer('size').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export type UploadRow = typeof upload.$inferSelect;
 
 export const workflowRun = pgTable('workflow_run', {
   id: uuid('id').primaryKey().defaultRandom(),

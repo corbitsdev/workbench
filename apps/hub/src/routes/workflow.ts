@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, ne, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, max, ne, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import { schema as intxSchema } from '@intx/db';
 import { fetchGammaTemplates } from '@workbench/tools-gamma';
@@ -10,6 +10,10 @@ import {
   presentationGenerationWorkflow,
   isCollateralKind,
   sourceArtifactKindSkipsAnalysis,
+  CSV_EXPORT_ARTIFACT_KIND,
+  SELECTION_ARTIFACT_KIND,
+  setSelectionChosen,
+  seoEnrichmentWorkflow,
 } from '@workbench/gtm-workflows';
 import type { SessionService } from '@intx/hub-sessions';
 import { generateKeyPair, createNodeCrypto } from '@intx/crypto-node';
@@ -23,12 +27,20 @@ import {
   painPoint,
   artifact,
   artifactStatus,
+  artifactVersion,
   enabledWorkflow,
 } from '../db/schema';
 import { getNoteWithTranscript, getRecentNotes, transcriptToText } from '../lib/granola';
 import { randomUUID } from 'node:crypto';
 import { serializePainPoint, serializeArtifact } from '../serializers/workflow';
 import { runAnalyze, runGenerate } from '../services/workflow-generation';
+import {
+  createResourceEnrichmentRun,
+  isResourceEnrichmentKind,
+  ResourceEnrichmentError,
+  runResourceEnrichmentEnrich,
+  runResourceEnrichmentExport,
+} from '../services/resource-enrichment';
 import {
   mapDbStatusToSessionStatus,
   getFirstRunnableStep,
@@ -56,6 +68,7 @@ const log = getLogger(['api', 'workflow']);
 
 workflowRegistry.register(collateralGenerationWorkflow);
 workflowRegistry.register(presentationGenerationWorkflow);
+workflowRegistry.register(seoEnrichmentWorkflow);
 
 // Per-step output-token caps applied when a step has no explicit override.
 // These are caps, not floors. Analyze is highest because reasoning models spend
@@ -68,6 +81,23 @@ const DEFAULT_STEP_MAX_OUTPUT_TOKENS = {
 } as const;
 
 const MAX_STEP_OUTPUT_TOKENS = 65536;
+
+// Artifact kinds whose raw content may be streamed as a file download. The list
+// is intentionally narrow: most artifact content is served as JSON via
+// GET /artifacts, and only terminal export kinds are safe to hand a browser as
+// an attachment.
+const DOWNLOADABLE_ARTIFACT_KINDS: ReadonlySet<string> = new Set([CSV_EXPORT_ARTIFACT_KIND]);
+
+// Build a safe Content-Disposition filename from an artifact title: strip quotes,
+// backslashes and control characters that would break the header, drop a trailing
+// .csv the title may already carry, and fall back to a stable default when empty.
+export function csvDownloadFilename(title: string): string {
+  const cleaned = title
+    .replace(/[\r\n"\\]/g, '')
+    .replace(/\.csv$/i, '')
+    .trim();
+  return `${cleaned.length > 0 ? cleaned : 'export'}.csv`;
+}
 
 // Resolve the recovery status for a workflow wedged mid-step. A run pinned in an
 // in-progress status (because its inference hung) is moved back to the last
@@ -316,6 +346,22 @@ export function createWorkflowRouter(
     }
 
     log.info('Creating workflow', { workflowKind, source });
+
+    if (isResourceEnrichmentKind(workflowKind)) {
+      const uploadId = typeof body.uploadId === 'string' ? body.uploadId : undefined;
+      if (!uploadId) {
+        return c.json({ error: 'uploadId is required' }, 400);
+      }
+      try {
+        const run = await createResourceEnrichmentRun(db, userContext, workflowKind, uploadId);
+        return c.json(run, 201);
+      } catch (err) {
+        if (err instanceof ResourceEnrichmentError) {
+          return c.json({ error: err.message }, err.status);
+        }
+        throw err;
+      }
+    }
 
     if (workflowKind === 'presentation-generation') {
       const [wfRow] = await db
@@ -720,6 +766,35 @@ export function createWorkflowRouter(
     return c.json(rows);
   });
 
+  // ─── Download a single artifact as a file ───────────────────────────
+  // GET /artifacts/:id returns JSON; this sub-action streams the raw content
+  // with an attachment disposition. Only terminal export kinds are downloadable.
+  router.get('/artifacts/:id/download', async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+
+    const art = await db.query.artifact.findFirst({ where: eq(artifact.id, id) });
+    if (!art) return c.json({ error: 'Artifact not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      art.tenantId
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
+    if (!userContext || art.tenantId !== userContext.tenantId) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    if (!DOWNLOADABLE_ARTIFACT_KINDS.has(art.kind)) {
+      return c.json({ error: `Artifact kind "${art.kind}" is not downloadable` }, 400);
+    }
+
+    c.header('Content-Type', 'text/csv; charset=utf-8');
+    c.header('Content-Disposition', `attachment; filename="${csvDownloadFilename(art.title)}"`);
+    return c.body(art.content);
+  });
+
   // ─── List artifacts (aggregate across the user's sessions) ──────────
   router.get('/artifacts', async (c) => {
     const userId = c.get('userId');
@@ -1002,6 +1077,63 @@ export function createWorkflowRouter(
     }
 
     const step = body.step ?? deriveCurrentStepForWorkflow(wf.status, wf.kind);
+
+    if (isResourceEnrichmentKind(wf.kind)) {
+      try {
+        if (step === 'enrich') {
+          const source = await resolveStepInferenceSource(
+            db,
+            userContext.tenantId,
+            userContext.principalId,
+            wf.kind,
+            'enrich'
+          );
+          if (!source) {
+            return c.json({ error: 'No LLM credential configured for the enrich step.' }, 400);
+          }
+          // Optimistically claim the run (running → generating) so a duplicate
+          // request cannot double-fire the fan-out. `generating` already maps to
+          // the enrich step and is recoverable via resolveResetStatus if it wedges.
+          const claimed = await db
+            .update(workflowRun)
+            .set({ status: 'generating' })
+            .where(and(eq(workflowRun.id, id), eq(workflowRun.status, 'running')))
+            .returning();
+          if (claimed.length === 0) {
+            return c.json({ error: 'Enrichment already in progress or run not ready' }, 409);
+          }
+          // Run the fan-out in the background and return promptly; a large catalog
+          // would otherwise hold the request past the proxy idle timeout. The
+          // client observes completion by polling the run status.
+          void runResourceEnrichmentEnrich(
+            db,
+            id,
+            userContext,
+            source,
+            DEFAULT_STEP_MAX_OUTPUT_TOKENS.generate
+          ).catch((err) => {
+            log.error('Resource enrichment enrich failed', {
+              workflowId: id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+          return c.json({ status: 'generating' }, 202);
+        }
+        if (step === 'export') {
+          if (wf.status !== 'reviewing') {
+            return c.json({ error: 'Export is only available once selections are ready' }, 409);
+          }
+          const result = await runResourceEnrichmentExport(db, id, userContext);
+          return c.json(result);
+        }
+        return c.json({ error: `Unsupported step for ${wf.kind}: ${step}` }, 400);
+      } catch (err) {
+        if (err instanceof ResourceEnrichmentError) {
+          return c.json({ error: err.message }, err.status);
+        }
+        throw err;
+      }
+    }
 
     if (step === 'template' && wf.kind === 'presentation-generation') {
       if (wf.status !== 'pending' && wf.status !== 'failed') {
@@ -1433,6 +1565,107 @@ export function createWorkflowRouter(
     }
 
     return c.json(serializeArtifact(row));
+  });
+
+  // ─── Write the reviewer's pick into a selection artifact ─────────────
+  // Selection content is immutable + versioned like any artifact, so a pick is a
+  // new version: merge `chosen` into the content and append an artifact_version
+  // row. `setSelectionChosen` validates every index against the artifact's own
+  // options and throws on a bad pick, which surfaces as a 400.
+  router.patch('/workflows/:id/artifacts/:artifactId/selection', async (c) => {
+    const id = c.req.param('id');
+    const artifactId = c.req.param('artifactId');
+    const userId = c.get('userId');
+    const body = (await c.req.json().catch(() => ({}))) as { chosen?: unknown };
+    const chosen = body.chosen;
+    if (typeof chosen !== 'object' || chosen === null || Array.isArray(chosen)) {
+      return c.json({ error: 'chosen must be an object mapping field name to option index' }, 400);
+    }
+    if (
+      !Object.values(chosen as Record<string, unknown>).every(
+        (v) => typeof v === 'number' && Number.isInteger(v)
+      )
+    ) {
+      return c.json({ error: 'chosen values must be integer option indexes' }, 400);
+    }
+    const chosenMap = chosen as Record<string, number>;
+
+    const wf = await db.query.workflowRun.findFirst({ where: eq(workflowRun.id, id) });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
+    if (!isWorkflowOwner(wf, userContext)) {
+      log.warn('Caller is not the workflow owner', { userId, workflowId: id });
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const art = await db.query.artifact.findFirst({
+      where: and(eq(artifact.id, artifactId), eq(artifact.sessionId, id)),
+    });
+    if (!art) return c.json({ error: 'Artifact not found' }, 404);
+    if (art.kind !== SELECTION_ARTIFACT_KIND) {
+      return c.json({ error: 'Artifact is not a selection' }, 400);
+    }
+
+    // Fast-fail the pick against the current content for a clean 400; the
+    // authoritative merge happens inside the transaction against a row-locked
+    // re-read so two concurrent picks on different fields can't clobber.
+    try {
+      setSelectionChosen(art.content, chosenMap);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : 'Invalid selection' }, 400);
+    }
+
+    let conflict = false;
+    const updated = await db.transaction(async (tx) => {
+      const [fresh] = await tx
+        .select({ content: artifact.content })
+        .from(artifact)
+        .where(eq(artifact.id, artifactId))
+        .for('update');
+      if (!fresh) return undefined;
+
+      let nextContent: string;
+      try {
+        nextContent = setSelectionChosen(fresh.content, chosenMap);
+      } catch {
+        conflict = true;
+        return undefined;
+      }
+
+      const maxVersionResult = await tx
+        .select({ maxVersion: max(artifactVersion.version) })
+        .from(artifactVersion)
+        .where(eq(artifactVersion.artifactId, artifactId));
+      const nextVersion = (maxVersionResult[0]?.maxVersion ?? 0) + 1;
+
+      const [row] = await tx
+        .update(artifact)
+        .set({ content: nextContent, version: nextVersion })
+        .where(eq(artifact.id, artifactId))
+        .returning();
+
+      await tx.insert(artifactVersion).values({
+        artifactId,
+        version: nextVersion,
+        title: art.title,
+        content: nextContent,
+        authorId: userContext.principalId,
+      });
+
+      return row;
+    });
+
+    if (conflict) {
+      return c.json({ error: 'Selection changed concurrently; please retry' }, 409);
+    }
+    if (!updated) return c.json({ error: 'Artifact not found' }, 404);
+    return c.json(serializeArtifact(updated));
   });
 
   // ─── Update company name ────────────────────────────────────────────

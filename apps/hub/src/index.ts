@@ -27,6 +27,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { createSidecarConnectionRegistry } from './sidecar-connections';
 import { createWorkflowRouter } from './routes/workflow';
+import { createUploadsRouter } from './routes/uploads';
 import { workflowRegistry } from '@workbench/workflow-core';
 import { createAgentProvisioningRouter } from './routes/agents';
 import {
@@ -534,6 +535,7 @@ v1.route(
 );
 v1.route('/', createWorkbenchesRouter(db));
 v1.route('/', createApprovalsRouter(db));
+v1.route('/', createUploadsRouter(db));
 
 app.route('/api/v1', v1);
 
