@@ -144,6 +144,32 @@ describe('rankScore', () => {
     expect(first).toEqual(second);
   });
 
+  test('cluster with a highly-upvoted top comment outranks an equivalent cluster without', () => {
+    const withTopComment = makeCluster(
+      [
+        makeItem({
+          url: 'https://a.com',
+          title: 'Viral thread',
+          engagement: { upvotes: 100, comments: 10 },
+          topComments: [{ text: 'the killer quote', score: 5000 }],
+        }),
+      ],
+      'fun'
+    );
+    const plain = makeCluster(
+      [
+        makeItem({
+          url: 'https://b.com',
+          title: 'Plain thread',
+          engagement: { upvotes: 100, comments: 10 },
+        }),
+      ],
+      'plain'
+    );
+    const result = rankScore([plain, withTopComment], { topic: 'test', nowIso: NOW_ISO });
+    expect(result[0]?.id).toBe('fun');
+  });
+
   test('empty input returns empty array', () => {
     expect(rankScore([], { topic: 'test', nowIso: NOW_ISO })).toEqual([]);
   });

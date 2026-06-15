@@ -101,4 +101,60 @@ describe('buildReport', () => {
     expect(report.items).toHaveLength(0);
     expect(report.citations).toHaveLength(0);
   });
+
+  test('exposes ranked clusters with scores and source labels', () => {
+    const report = buildReport(FIXTURE, { topic: 'test', days: 30, topK: 5, nowIso: NOW_ISO });
+    expect(report.clusters.length).toBeGreaterThan(0);
+    const first = report.clusters[0];
+    if (!first) throw new Error('expected at least one cluster');
+    const topItem = first.items[0];
+    if (!topItem) throw new Error('expected the cluster to have items');
+    expect(typeof first.score).toBe('number');
+    expect(first.sources.length).toBeGreaterThan(0);
+    expect(first.title).toBe(topItem.title);
+  });
+
+  test('clusters are ordered by descending score', () => {
+    const report = buildReport(FIXTURE, { topic: 'test', days: 30, topK: 10, nowIso: NOW_ISO });
+    const scores = report.clusters.map((c) => c.score);
+    const sorted = [...scores].sort((a, b) => b - a);
+    expect(scores).toEqual(sorted);
+  });
+
+  test('stats reflect item count, source breadth, and date range', () => {
+    const report = buildReport(FIXTURE, { topic: 'test', days: 30, topK: 10, nowIso: NOW_ISO });
+    expect(report.stats.itemCount).toBe(report.items.length);
+    expect(report.stats.sourceCount).toBe(new Set(report.items.map((i) => i.source)).size);
+    expect(new Date(report.stats.dateRange.from).getTime()).toBeLessThanOrEqual(
+      new Date(report.stats.dateRange.to).getTime()
+    );
+  });
+
+  test('leadInsight is the top cluster headline', () => {
+    const report = buildReport(FIXTURE, { topic: 'test', days: 30, topK: 5, nowIso: NOW_ISO });
+    expect(report.leadInsight).toBe(report.clusters[0]?.title);
+  });
+
+  test('bestTakes are drawn from item topComments, ranked by comment score', () => {
+    const enriched: ResearchItem[] = [
+      makeItem({
+        url: 'https://q.com',
+        title: 'Quip thread',
+        source: 'reddit',
+        topComments: [
+          { text: 'low signal', score: 5 },
+          { text: 'the killer quote', author: 'u/ace', score: 1338 },
+        ],
+      }),
+    ];
+    const report = buildReport(enriched, { topic: 'test', days: 30, topK: 5, nowIso: NOW_ISO });
+    expect(report.bestTakes[0]?.quote).toBe('the killer quote');
+    expect(report.bestTakes[0]?.engagement).toBe(1338);
+    expect(report.bestTakes[0]?.url).toBe('https://q.com');
+  });
+
+  test('bestTakes is empty when no items carry top comments', () => {
+    const report = buildReport(FIXTURE, { topic: 'test', days: 30, topK: 5, nowIso: NOW_ISO });
+    expect(report.bestTakes).toHaveLength(0);
+  });
 });
