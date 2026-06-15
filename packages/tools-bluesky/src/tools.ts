@@ -3,18 +3,31 @@ import type { ToolDefinition } from '@intx/types/runtime';
 import { normalizeBlueskyPost } from './normalize';
 import type { BlueskyPost, BlueskySearchResponse } from './types';
 
-const BLUESKY_SEARCH_URL = 'https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts';
+// The public AppView now gates searchPosts with 403 unless a User-Agent is set.
+// Authenticated search uses bsky.social PDS + AppView (bsky.network) with an
+// AT Protocol app-password session. The public AppView path remains as a fallback
+// when no credentials are configured.
+const BLUESKY_PUBLIC_SEARCH_URL = 'https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts';
+const BLUESKY_AUTHED_SEARCH_URL = 'https://bsky.network/xrpc/app.bsky.feed.searchPosts';
+const BLUESKY_CREATE_SESSION_URL = 'https://bsky.social/xrpc/com.atproto.server.createSession';
+const BLUESKY_USER_AGENT = 'gtm-workbench-bluesky/1.0';
 const DEFAULT_DAYS = 30;
 const MAX_ERROR_BODY_LENGTH = 500;
 
 export type BlueskyFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
-// Bluesky search runs against the unauthenticated AppView (public.api.bsky.app),
-// which needs no credential. Authenticated reads would require a real AT Protocol
-// createSession -> JWT bearer flow (not HTTP Basic); until there's a need for it,
-// this tool is public-only and takes no auth config.
 export type BlueskyToolsConfig = {
   fetcher?: BlueskyFetch;
+  /**
+   * AT Protocol handle (e.g. alice.bsky.social). When set alongside appPassword,
+   * search requests use an authenticated PDS session instead of the public AppView.
+   */
+  handle?: string;
+  /**
+   * AT Protocol app-password. Never the account password; generate one under
+   * Settings → App Passwords on bsky.app.
+   */
+  appPassword?: string;
 };
 
 export const BLUESKY_SEARCH_DEFINITION: ToolDefinition = {
@@ -88,6 +101,60 @@ function isWithinDaysWindow(dateString: string, cutoffMs: number): boolean {
   return postTime >= cutoffMs;
 }
 
+type AtSession = {
+  accessJwt: string;
+};
+
+function parseAtSession(value: unknown): AtSession {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error('Bluesky createSession response is not an object');
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.accessJwt !== 'string') {
+    throw new Error('Bluesky createSession response missing accessJwt');
+  }
+  return { accessJwt: record.accessJwt };
+}
+
+async function createAtSession(
+  fetcher: BlueskyFetch,
+  handle: string,
+  appPassword: string,
+  signal: AbortSignal
+): Promise<AtSession> {
+  const response = await fetcher(BLUESKY_CREATE_SESSION_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': BLUESKY_USER_AGENT,
+    },
+    body: JSON.stringify({ identifier: handle, password: appPassword }),
+    signal,
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    const detail = body.length > 0 ? `: ${body.slice(0, MAX_ERROR_BODY_LENGTH)}` : '';
+    throw new Error(
+      `Bluesky createSession error: ${response.status} ${response.statusText}${detail}`
+    );
+  }
+  const raw: unknown = await response.json();
+  return parseAtSession(raw);
+}
+
+async function executeSearchRequest(
+  fetcher: BlueskyFetch,
+  searchUrl: URL,
+  accessJwt: string | null,
+  signal: AbortSignal
+): Promise<Response> {
+  const headers: Record<string, string> = { 'User-Agent': BLUESKY_USER_AGENT };
+  if (accessJwt !== null) {
+    headers['Authorization'] = `Bearer ${accessJwt}`;
+  }
+  return fetcher(searchUrl.toString(), { headers, signal });
+}
+
 async function searchBluesky(
   config: BlueskyToolsConfig,
   args: Record<string, unknown>,
@@ -101,20 +168,48 @@ async function searchBluesky(
     typeof args.days === 'number' && args.days > 0 ? Math.floor(args.days) : DEFAULT_DAYS;
   const cutoffMs = Date.now() - days * 86400 * 1000;
 
-  const url = new URL(BLUESKY_SEARCH_URL);
-  url.searchParams.set('q', query);
-  url.searchParams.set('limit', '100');
-  url.searchParams.set('sort', 'top');
-
   const fetcher = config.fetcher ?? fetch;
-  const response = await fetcher(url.toString(), { signal });
+  const hasCredentials =
+    typeof config.handle === 'string' &&
+    config.handle.length > 0 &&
+    typeof config.appPassword === 'string' &&
+    config.appPassword.length > 0;
+
+  const searchUrl = new URL(hasCredentials ? BLUESKY_AUTHED_SEARCH_URL : BLUESKY_PUBLIC_SEARCH_URL);
+  searchUrl.searchParams.set('q', query);
+  searchUrl.searchParams.set('limit', '100');
+  searchUrl.searchParams.set('sort', 'top');
+
+  if (!hasCredentials) {
+    const response = await executeSearchRequest(fetcher, searchUrl, null, signal);
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      const detail = body.length > 0 ? `: ${body.slice(0, MAX_ERROR_BODY_LENGTH)}` : '';
+      throw new Error(`Bluesky API error: ${response.status} ${response.statusText}${detail}`);
+    }
+    return finishSearch(response, cutoffMs);
+  }
+
+  const handle = config.handle as string;
+  const appPassword = config.appPassword as string;
+
+  let session = await createAtSession(fetcher, handle, appPassword, signal);
+  let response = await executeSearchRequest(fetcher, searchUrl, session.accessJwt, signal);
+
+  if (response.status === 401) {
+    session = await createAtSession(fetcher, handle, appPassword, signal);
+    response = await executeSearchRequest(fetcher, searchUrl, session.accessJwt, signal);
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
     const detail = body.length > 0 ? `: ${body.slice(0, MAX_ERROR_BODY_LENGTH)}` : '';
     throw new Error(`Bluesky API error: ${response.status} ${response.statusText}${detail}`);
   }
+  return finishSearch(response, cutoffMs);
+}
 
+async function finishSearch(response: Response, cutoffMs: number): Promise<string> {
   const raw: unknown = await response.json();
   const parsed = parseBlueskySearchResponse(raw);
 
@@ -144,6 +239,11 @@ export function createBlueskyTools(config: BlueskyToolsConfig = {}): AgentTool[]
 export const BLUESKY_HUB_TOOLS = {
   bluesky_search: {
     definition: BLUESKY_SEARCH_DEFINITION,
-    createTools: () => createBlueskyTools(),
+    providerName: 'bluesky' as const,
+    createTools: (credential: { apiKey: string; baseURL: string }) =>
+      createBlueskyTools({
+        appPassword: credential.apiKey,
+        handle: credential.baseURL,
+      }),
   },
 };

@@ -57,6 +57,7 @@ export const LARRY_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
     'scrapecreators',
     'exa',
     'youtube',
+    'bluesky',
   ],
   defaultTools: [...LARRY_CAPABILITIES.tools],
   requiredTools: [...LARRY_CAPABILITIES.tools],

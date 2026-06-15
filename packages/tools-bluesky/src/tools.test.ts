@@ -25,8 +25,14 @@ function capturingFetcher(response: unknown, captured: CapturedRequest[], status
   };
 }
 
-function getHandler(fetcher: (url: string, init?: RequestInit) => Promise<Response>) {
-  const tool = createBlueskyTools({ fetcher }).find((t) => t.definition.name === 'bluesky_search');
+function getHandler(
+  fetcher: (url: string, init?: RequestInit) => Promise<Response>,
+  handle?: string,
+  appPassword?: string
+) {
+  const tool = createBlueskyTools({ fetcher, handle, appPassword }).find(
+    (t) => t.definition.name === 'bluesky_search'
+  );
   if (!tool || tool.kind !== 'string') throw new Error('bluesky_search tool not found');
   return tool.handler;
 }
@@ -35,14 +41,27 @@ const RECENT = new Date().toISOString();
 const OLD = '2020-01-01T00:00:00.000Z';
 
 describe('BLUESKY_HUB_TOOLS', () => {
-  it('exposes bluesky_search with no credential provider (public AppView)', () => {
+  it('exposes bluesky_search as a credential tool with providerName bluesky', () => {
     expect('bluesky_search' in BLUESKY_HUB_TOOLS).toBe(true);
-    expect('providerName' in BLUESKY_HUB_TOOLS.bluesky_search).toBe(false);
+    expect(
+      (BLUESKY_HUB_TOOLS.bluesky_search as { providerName: string }).providerName
+    ).toBe('bluesky');
   });
 });
 
-describe('bluesky_search', () => {
-  it('queries the public AppView searchPosts endpoint with q/limit/sort', async () => {
+describe('bluesky_search User-Agent', () => {
+  it('sends a gtm-workbench-bluesky User-Agent on every request', async () => {
+    const captured: CapturedRequest[] = [];
+    const handler = getHandler(capturingFetcher({ posts: [] }, captured));
+    await handler({ query: 'solana' }, new AbortController().signal);
+
+    const headers = new Headers(captured[0]!.init?.headers);
+    expect(headers.get('user-agent')).toContain('gtm-workbench-bluesky');
+  });
+});
+
+describe('bluesky_search unauthenticated path', () => {
+  it('queries the public AppView when no credentials are provided', async () => {
     const captured: CapturedRequest[] = [];
     const handler = getHandler(capturingFetcher({ posts: [] }, captured));
     await handler({ query: 'solana' }, new AbortController().signal);
@@ -54,14 +73,80 @@ describe('bluesky_search', () => {
     expect(url.searchParams.get('sort')).toBe('top');
   });
 
-  it('sends no Authorization header (unauthenticated)', async () => {
+  it('sends no Authorization header when no credentials are provided', async () => {
     const captured: CapturedRequest[] = [];
     const handler = getHandler(capturingFetcher({ posts: [] }, captured));
     await handler({ query: 'x' }, new AbortController().signal);
     const headers = new Headers(captured[0]!.init?.headers);
     expect(headers.has('authorization')).toBe(false);
   });
+});
 
+describe('bluesky_search authenticated path', () => {
+  it('creates an AT Protocol session then sends Bearer token on searchPosts', async () => {
+    const captured: CapturedRequest[] = [];
+
+    const fetcher = async (url: string, init?: RequestInit): Promise<Response> => {
+      captured.push({ url, init });
+      if (url.includes('createSession')) {
+        return new Response(JSON.stringify({ accessJwt: 'tok123', did: 'did:plc:test' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ posts: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    const handler = getHandler(fetcher, 'alice.bsky.social', 'xxxx-yyyy-zzzz');
+    await handler({ query: 'test' }, new AbortController().signal);
+
+    const createSessionCall = captured.find((r) => r.url.includes('createSession'));
+    expect(createSessionCall).toBeDefined();
+
+    const searchCall = captured.find((r) => r.url.includes('searchPosts'));
+    expect(searchCall).toBeDefined();
+    const searchHeaders = new Headers(searchCall!.init?.headers);
+    expect(searchHeaders.get('authorization')).toBe('Bearer tok123');
+  });
+
+  it('retries searchPosts exactly once after a 401 by creating a fresh session', async () => {
+    const captured: CapturedRequest[] = [];
+    let searchCallCount = 0;
+
+    const fetcher = async (url: string, init?: RequestInit): Promise<Response> => {
+      captured.push({ url, init });
+      if (url.includes('createSession')) {
+        return new Response(JSON.stringify({ accessJwt: 'fresh-tok', did: 'did:plc:test' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      searchCallCount++;
+      if (searchCallCount === 1) {
+        return new Response(JSON.stringify({ error: 'ExpiredToken' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ posts: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    const handler = getHandler(fetcher, 'alice.bsky.social', 'xxxx-yyyy-zzzz');
+    await handler({ query: 'test' }, new AbortController().signal);
+
+    expect(searchCallCount).toBe(2);
+    const sessionCalls = captured.filter((r) => r.url.includes('createSession'));
+    expect(sessionCalls).toHaveLength(2);
+  });
+});
+
+describe('bluesky_search behavior', () => {
   it('requires a query', async () => {
     const handler = getHandler(capturingFetcher({ posts: [] }, []));
     await expect(handler({}, new AbortController().signal)).rejects.toThrow('query is required');

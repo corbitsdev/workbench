@@ -258,6 +258,26 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  // Bluesky: app-password is the secret; handle rides on metadata.baseURL so the
+  // hub credential resolver forwards it to createBlueskyTools as `baseURL`.
+  const blueskyAppPassword = env('BLUESKY_APP_PASSWORD');
+  const blueskyHandle = env('BLUESKY_HANDLE');
+  if (blueskyAppPassword) {
+    if (!blueskyHandle) {
+      console.error(
+        '[seed-credentials] BLUESKY_APP_PASSWORD is set but BLUESKY_HANDLE is missing — skipping'
+      );
+    } else {
+      entries.push({
+        providerName: 'bluesky',
+        providerPlugin: 'bluesky',
+        credentialName: 'Bluesky',
+        secret: blueskyAppPassword,
+        metadata: { baseURL: blueskyHandle },
+      });
+    }
+  }
+
   return entries;
 }
 

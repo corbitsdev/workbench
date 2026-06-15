@@ -49,4 +49,35 @@ describe('seed-credentials buildEntries', () => {
 
     expect(entries.find((e) => e.providerName === 'youtube')).toBeUndefined();
   });
+
+  it('includes bluesky entry when both BLUESKY_APP_PASSWORD and BLUESKY_HANDLE are set', () => {
+    process.env['BLUESKY_APP_PASSWORD'] = 'xxxx-yyyy-zzzz';
+    process.env['BLUESKY_HANDLE'] = 'test.bsky.social';
+
+    const entries = buildEntries();
+
+    const bluesky = entries.find((e) => e.providerName === 'bluesky');
+    expect(bluesky).toBeDefined();
+    expect(bluesky?.secret).toBe('xxxx-yyyy-zzzz');
+    expect(bluesky?.providerPlugin).toBe('bluesky');
+    expect(bluesky?.metadata?.['baseURL']).toBe('test.bsky.social');
+  });
+
+  it('omits bluesky entry when BLUESKY_APP_PASSWORD is not set', () => {
+    delete process.env['BLUESKY_APP_PASSWORD'];
+    delete process.env['BLUESKY_HANDLE'];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === 'bluesky')).toBeUndefined();
+  });
+
+  it('omits bluesky entry when BLUESKY_APP_PASSWORD is set but BLUESKY_HANDLE is missing', () => {
+    process.env['BLUESKY_APP_PASSWORD'] = 'xxxx-yyyy-zzzz';
+    delete process.env['BLUESKY_HANDLE'];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === 'bluesky')).toBeUndefined();
+  });
 });
