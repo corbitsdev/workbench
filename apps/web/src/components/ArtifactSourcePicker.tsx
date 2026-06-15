@@ -9,6 +9,8 @@ interface ArtifactSourcePickerProps {
   tenantId?: string | null;
   /** When set, only artifacts of these kinds are offered as sources. */
   kinds?: readonly string[];
+  /** Preselect this artifact on mount (e.g. seeded from "Use in Workflow"). */
+  initialSelectedId?: string;
 }
 
 export default function ArtifactSourcePicker({
@@ -16,6 +18,7 @@ export default function ArtifactSourcePicker({
   isLoading = false,
   tenantId,
   kinds,
+  initialSelectedId,
 }: ArtifactSourcePickerProps) {
   const {
     data: artifacts,
@@ -24,7 +27,7 @@ export default function ArtifactSourcePicker({
   } = useArtifacts(clientOptions, {
     tenantId,
   });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
 
   if (artifactsLoading) {
     return <p className="text-[12px] text-text-2">Loading artifacts…</p>;

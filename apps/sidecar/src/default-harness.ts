@@ -15,6 +15,7 @@ import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/ru
 import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
 import { createAskPrincipalTool } from '@workbench/approvals';
 import { healTurns } from '@workbench/context-repair';
+import { withActiveContext } from '@workbench/prompts';
 import { createGuardedMailRunner } from './mail-guard';
 import type { ContextStore } from '@intx/types/runtime';
 import { createHubToolRunner } from './hub-tool-runner';
@@ -140,7 +141,14 @@ export function createDefaultHarnessBuilder({
       const mailStore = await createMailAuditStore(storeDir, signer);
 
       const deployTree = await readDeployTree(storeDir);
-      const systemPrompt = deployTree.systemPrompt ?? agentConfig.systemPrompt;
+      const basePrompt = deployTree.systemPrompt ?? agentConfig.systemPrompt;
+      // Append the unified active-context block at launch so every agent shares
+      // the same runtime context and is not anchored to its training cutoff
+      // (CL-1938). The human user's name is not resolvable at this seam — the
+      // agentConfig principal is the synthetic per-instance principal — so only
+      // the live date is populated until user identity is threaded through the
+      // launch config.
+      const systemPrompt = withActiveContext(basePrompt, { now: new Date() });
 
       const grantsRef = { current: agentConfig.grants };
       const { principalId, tenantId } = agentConfig;

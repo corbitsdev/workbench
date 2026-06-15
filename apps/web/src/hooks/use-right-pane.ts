@@ -4,7 +4,7 @@ export type RightPane =
   | { view: 'gallery' }
   | { view: 'agent'; instanceId: string; tenantId: string; agentName: string }
   | { view: 'workflow'; workflowId: string }
-  | { view: 'new-workflow'; workflowKind: string };
+  | { view: 'new-workflow'; workflowKind: string; seedArtifactId?: string };
 
 export interface AgentTarget {
   instanceId: string;
@@ -34,8 +34,12 @@ export function useRightPane(options: { onShow?: () => void; onClose?: () => voi
     onShow?.();
   };
 
-  const showNewWorkflow = (workflowKind: string) => {
-    setRightPane({ view: 'new-workflow', workflowKind });
+  const showNewWorkflow = (workflowKind: string, seedArtifactId?: string) => {
+    setRightPane({
+      view: 'new-workflow',
+      workflowKind,
+      ...(seedArtifactId ? { seedArtifactId } : {}),
+    });
     onShow?.();
   };
 

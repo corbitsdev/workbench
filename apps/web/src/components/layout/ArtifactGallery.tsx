@@ -4,13 +4,13 @@
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
 import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
 import { useArtifacts } from '@workbench/client/react';
 import { ArtifactGallery as ArtifactGalleryView, ArtifactModal } from '@workbench/artifact';
 import type { GalleryArtifact, ArtifactWithSession } from '@workbench/artifact';
 import { clientOptions } from '../../lib/client-options';
 import ArtifactBody from '../ArtifactBody';
 import { canUseArtifactInWorkflow, collateralTypeOptions } from '@workbench/gtm-workflows';
+import { useChatLauncher } from '../../lib/chat-launcher-context';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -21,10 +21,23 @@ interface ArtifactGalleryProps {
   onNew?: () => void;
   /** When provided, renders a mobile-only control to open the library overlay. */
   onOpenLibrary?: () => void;
+  /** Open the workflow catalog seeded with this artifact (owned by the page). */
+  onUseInWorkflow?: (artifact: ArtifactWithSession) => void;
 }
 
-export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGalleryProps) {
-  const navigate = useNavigate();
+// First line Myra sees when an artifact is handed off, followed by its content
+// so she has the full context to work from.
+function buildArtifactMessage(artifact: ArtifactWithSession): string {
+  return `I'd like to work with this artifact: "${artifact.title}".\n\n${artifact.content}`;
+}
+
+export function ArtifactGallery({
+  tenantId,
+  onNew,
+  onOpenLibrary,
+  onUseInWorkflow,
+}: ArtifactGalleryProps) {
+  const { openWithMessage } = useChatLauncher();
   const [inputQuery, setInputQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -54,12 +67,14 @@ export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGall
     setSelected(full);
   };
 
-  function buildMyraHref(artifact: ArtifactWithSession): string {
-    return `/chat?artifactId=${encodeURIComponent(artifact.id)}`;
+  function handleOpenInMyra(artifact: ArtifactWithSession) {
+    openWithMessage(buildArtifactMessage(artifact));
+    setSelected(null);
   }
 
   function handleUseInWorkflow(artifact: ArtifactWithSession) {
-    void navigate(`/workflows/new?artifactId=${encodeURIComponent(artifact.id)}`);
+    onUseInWorkflow?.(artifact);
+    setSelected(null);
   }
 
   return (
@@ -85,8 +100,8 @@ export function ArtifactGallery({ tenantId, onNew, onOpenLibrary }: ArtifactGall
             ? (collateralTypeOptions.find((o) => o.id === selected.kind)?.label ?? selected.kind)
             : undefined
         }
-        myraHref={selected ? buildMyraHref(selected) : undefined}
-        onUseInWorkflow={handleUseInWorkflow}
+        onOpenInMyra={handleOpenInMyra}
+        onUseInWorkflow={onUseInWorkflow ? handleUseInWorkflow : undefined}
         canUseInWorkflow={(a) => canUseArtifactInWorkflow(a.kind)}
       >
         {selected && <ArtifactBody body={selected.content} type={selected.kind} />}

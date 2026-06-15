@@ -15,6 +15,9 @@ export interface WorkflowNewPaneProps {
   tenantId: string | null;
   onCreated: (workflowId: string) => void;
   onClose: () => void;
+  /** Preselect an existing artifact as the workflow source (e.g. "Use in Workflow").
+   *  The pane loads the artifact by id; not every workflow supports seeding. */
+  seedArtifactId?: string;
 }
 
 export interface WorkflowSelectedPanelProps {

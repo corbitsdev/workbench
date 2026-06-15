@@ -11,6 +11,7 @@ import {
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { UnifiedCatalogModal } from '../components/layout/UnifiedCatalogModal';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
+import type { ArtifactWithSession } from '@workbench/artifact';
 import { useResizableRail } from '@workbench/ui';
 import { useMediaQuery } from '../lib/use-media-query';
 import { deployAgentFromTemplate, getMe } from '../lib/hub-api';
@@ -202,6 +203,10 @@ export default function WorkbenchHome() {
   const { width, min, max, dragging, containerRef, handleProps } = useResizableRail();
   const [railOpen, setRailOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<NewModal>('none');
+  // When the catalog is opened from an artifact ("Use in Workflow"), this holds
+  // the source artifact so the catalog can filter to accepting workflows and
+  // the chosen workflow's intake is seeded with its content.
+  const [workflowArtifact, setWorkflowArtifact] = useState<ArtifactWithSession | null>(null);
   const [agentRefreshTick, setAgentRefreshTick] = useState(0);
   const { slug } = useParams<{ slug?: string }>();
   const navigate = useNavigate();
@@ -293,12 +298,24 @@ export default function WorkbenchHome() {
   };
 
   const handleNewWorkflow = () => {
+    setWorkflowArtifact(null);
     setActiveModal('catalog');
+  };
+
+  const handleUseArtifactInWorkflow = (artifact: ArtifactWithSession) => {
+    setWorkflowArtifact(artifact);
+    setActiveModal('catalog');
+  };
+
+  const handleCatalogClose = () => {
+    setActiveModal('none');
+    setWorkflowArtifact(null);
   };
 
   const handleWorkflowKindSelected = (kind: string) => {
     setActiveModal('none');
-    showNewWorkflow(kind);
+    showNewWorkflow(kind, workflowArtifact?.id);
+    setWorkflowArtifact(null);
   };
 
   const handleWorkflowCreated = (workflowId: string) => {
@@ -367,6 +384,7 @@ export default function WorkbenchHome() {
             tenantId={workbenchTenantId}
             onCreated={handleWorkflowCreated}
             onClose={showGallery}
+            {...(rightPane.seedArtifactId ? { seedArtifactId: rightPane.seedArtifactId } : {})}
           />
         </motion.div>
       );
@@ -378,7 +396,11 @@ export default function WorkbenchHome() {
         {...paneFade}
         className="min-h-0 flex-1"
       >
-        <ArtifactGallery tenantId={workbenchTenantId} onNew={handleNewWorkflow} />
+        <ArtifactGallery
+          tenantId={workbenchTenantId}
+          onNew={handleNewWorkflow}
+          onUseInWorkflow={handleUseArtifactInWorkflow}
+        />
       </motion.div>
     );
   }
@@ -418,12 +440,14 @@ export default function WorkbenchHome() {
               tenantId={workbenchTenantId}
               onCreated={handleWorkflowCreated}
               onClose={showGallery}
+              {...(rightPane.seedArtifactId ? { seedArtifactId: rightPane.seedArtifactId } : {})}
             />
           ) : (
             <ArtifactGallery
               tenantId={workbenchTenantId}
               onNew={handleNewWorkflow}
               onOpenLibrary={() => setRailOpen(true)}
+              onUseInWorkflow={handleUseArtifactInWorkflow}
             />
           )}
         </ErrorBoundary>
@@ -447,12 +471,13 @@ export default function WorkbenchHome() {
         <UnifiedCatalogModal
           open={activeModal === 'catalog'}
           tenantId={workbenchTenantId ?? null}
-          onClose={() => setActiveModal('none')}
+          onClose={handleCatalogClose}
           onAgentDeployed={() => {
             setActiveModal('none');
             setAgentRefreshTick((n) => n + 1);
           }}
           onWorkflowSelected={handleWorkflowKindSelected}
+          artifactKind={workflowArtifact?.kind ?? null}
         />
       </div>
     );
@@ -505,12 +530,13 @@ export default function WorkbenchHome() {
       <UnifiedCatalogModal
         open={activeModal === 'catalog'}
         tenantId={workbenchTenantId ?? null}
-        onClose={() => setActiveModal('none')}
+        onClose={handleCatalogClose}
         onAgentDeployed={() => {
           setActiveModal('none');
           setAgentRefreshTick((n) => n + 1);
         }}
         onWorkflowSelected={handleWorkflowKindSelected}
+        artifactKind={workflowArtifact?.kind ?? null}
       />
     </>
   );

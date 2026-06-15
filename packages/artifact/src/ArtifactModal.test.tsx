@@ -193,21 +193,23 @@ describe('ArtifactModal', () => {
     });
   });
 
-  describe('CL-1556: Open in Myra deep-link', () => {
-    it('renders an Open in Myra link when myraHref is provided', () => {
+  describe('CL-1937: Open in Myra action', () => {
+    it('invokes onOpenInMyra with the artifact when the button is clicked', () => {
+      const onOpenInMyra = mock(() => {});
       render(
         React.createElement(ArtifactModal, {
           open: true,
           artifact,
           onClose: () => {},
-          myraHref: '/chat?artifactId=a-1',
+          onOpenInMyra,
         })
       );
-      const link = screen.getByRole('link', { name: /Open in Myra/i });
-      expect(link.getAttribute('href')).toBe('/chat?artifactId=a-1');
+      fireEvent.click(screen.getByRole('button', { name: /Open in Myra/i }));
+      expect(onOpenInMyra).toHaveBeenCalledTimes(1);
+      expect(onOpenInMyra).toHaveBeenCalledWith(artifact);
     });
 
-    it('does not render an Open in Myra link when myraHref is absent', () => {
+    it('does not render an Open in Myra control when onOpenInMyra is absent', () => {
       render(
         React.createElement(ArtifactModal, {
           open: true,
@@ -215,7 +217,7 @@ describe('ArtifactModal', () => {
           onClose: () => {},
         })
       );
-      expect(screen.queryByRole('link', { name: /Open in Myra/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Open in Myra/i })).toBeNull();
     });
   });
 });

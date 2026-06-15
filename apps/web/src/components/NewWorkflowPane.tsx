@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useArtifacts } from '@workbench/client/react';
 import RecentCallsPicker from './RecentCallsPicker';
 import { useCreateWorkflow } from '../hooks/use-workflow';
+import { clientOptions } from '../lib/client-options';
 import type { IntakeRequest } from '../types/intake';
 
 interface NewWorkflowPaneProps {
@@ -9,6 +11,8 @@ interface NewWorkflowPaneProps {
   onCreated: (workflowId: string) => void;
   onClose: () => void;
   tenantId?: string | null;
+  /** Seed the run from an existing artifact, loaded server-side by id. */
+  seedArtifactId?: string;
 }
 
 type IntakeMode = 'paste' | 'recent';
@@ -18,11 +22,16 @@ export function NewWorkflowPane({
   onCreated,
   onClose,
   tenantId,
+  seedArtifactId,
 }: NewWorkflowPaneProps) {
   const [mode, setMode] = useState<IntakeMode>('paste');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
   const createWorkflow = useCreateWorkflow();
+  const { data: artifacts } = useArtifacts(clientOptions, { tenantId });
+  const seedArtifact = seedArtifactId
+    ? (artifacts ?? []).find((a) => a.id === seedArtifactId)
+    : undefined;
 
   const handleSubmit = async (data: IntakeRequest) => {
     setError('');
@@ -45,6 +54,11 @@ export function NewWorkflowPane({
       return;
     }
     void handleSubmit({ transcript: transcript.trim(), source: 'paste' });
+  };
+
+  const handleArtifactSubmit = () => {
+    if (!seedArtifactId) return;
+    void handleSubmit({ source: 'artifact', sourceArtifactId: seedArtifactId });
   };
 
   const isLoading = createWorkflow.isPending;
@@ -73,71 +87,92 @@ export function NewWorkflowPane({
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
-        {/* Mode tabs */}
-        <div className="flex gap-1 p-1 bg-surface-2 rounded-[10px] w-52 mb-5">
-          {(['paste', 'recent'] as IntakeMode[]).map((m) => (
+        {seedArtifactId ? (
+          <div className="space-y-4">
+            <p className="text-[13px] text-text-2">
+              Starting from the selected artifact
+              {seedArtifact ? ` "${seedArtifact.title}"` : ''}. Its content will be analyzed for
+              pain points.
+            </p>
+            {error && <p className="text-[12px] text-orange">{error}</p>}
             <button
-              key={m}
               type="button"
-              onClick={() => setMode(m)}
-              className={`flex-1 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors ${
-                mode === m ? 'bg-surface text-text shadow-sm' : 'text-text-2 hover:text-text'
-              }`}
+              disabled={isLoading}
+              onClick={handleArtifactSubmit}
+              className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {m === 'paste' ? 'Paste' : 'Recent calls'}
+              {isLoading ? 'Starting…' : 'Start analysis'}
             </button>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <>
+            {/* Mode tabs */}
+            <div className="flex gap-1 p-1 bg-surface-2 rounded-[10px] w-52 mb-5">
+              {(['paste', 'recent'] as IntakeMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  className={`flex-1 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors ${
+                    mode === m ? 'bg-surface text-text shadow-sm' : 'text-text-2 hover:text-text'
+                  }`}
+                >
+                  {m === 'paste' ? 'Paste' : 'Recent calls'}
+                </button>
+              ))}
+            </div>
 
-        <AnimatePresence mode="wait">
-          {mode === 'paste' ? (
-            <motion.form
-              key="paste"
-              onSubmit={handlePasteSubmit}
-              className="space-y-3"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.12 }}
-            >
-              <textarea
-                value={transcript}
-                onChange={(e) => {
-                  setTranscript(e.target.value);
-                  setError('');
-                }}
-                placeholder="Speaker 1: Thanks for taking the time today..."
-                rows={10}
-                disabled={isLoading}
-                className="w-full px-3 py-3 text-[13px] border border-border rounded-lg bg-surface-2 text-text font-mono resize-none focus:outline-none focus:ring-2 focus:ring-orange disabled:opacity-50"
-              />
-              {error && <p className="text-[12px] text-orange">{error}</p>}
-              <button
-                type="submit"
-                disabled={isLoading || !transcript.trim()}
-                className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoading ? 'Starting…' : 'Start analysis'}
-              </button>
-            </motion.form>
-          ) : (
-            <motion.div
-              key="recent"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.12 }}
-            >
-              {error && <p className="text-[12px] text-orange mb-3">{error}</p>}
-              <RecentCallsPicker
-                onSelect={handleSubmit}
-                isLoading={isLoading}
-                tenantId={tenantId}
-                kind={workflowKind}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
+            <AnimatePresence mode="wait">
+              {mode === 'paste' ? (
+                <motion.form
+                  key="paste"
+                  onSubmit={handlePasteSubmit}
+                  className="space-y-3"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.12 }}
+                >
+                  <textarea
+                    value={transcript}
+                    onChange={(e) => {
+                      setTranscript(e.target.value);
+                      setError('');
+                    }}
+                    placeholder="Speaker 1: Thanks for taking the time today..."
+                    rows={10}
+                    disabled={isLoading}
+                    className="w-full px-3 py-3 text-[13px] border border-border rounded-lg bg-surface-2 text-text font-mono resize-none focus:outline-none focus:ring-2 focus:ring-orange disabled:opacity-50"
+                  />
+                  {error && <p className="text-[12px] text-orange">{error}</p>}
+                  <button
+                    type="submit"
+                    disabled={isLoading || !transcript.trim()}
+                    className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isLoading ? 'Starting…' : 'Start analysis'}
+                  </button>
+                </motion.form>
+              ) : (
+                <motion.div
+                  key="recent"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.12 }}
+                >
+                  {error && <p className="text-[12px] text-orange mb-3">{error}</p>}
+                  <RecentCallsPicker
+                    onSelect={handleSubmit}
+                    isLoading={isLoading}
+                    tenantId={tenantId}
+                    kind={workflowKind}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>
+        )}
       </div>
     </div>
   );

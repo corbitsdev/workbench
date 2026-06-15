@@ -47,6 +47,7 @@ COPY interchange/ interchange/
 COPY apps/sidecar/ apps/sidecar/
 COPY packages/approvals/ packages/approvals/
 COPY packages/context-repair/ packages/context-repair/
+COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
 COPY packages/tools-exa/ packages/tools-exa/
 

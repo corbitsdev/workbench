@@ -26,8 +26,8 @@ export interface ArtifactModalProps {
   children?: ReactNode;
   /** Human-readable label for the artifact kind, e.g. "LinkedIn Post". */
   kindLabel?: string;
-  /** When provided, renders an "Open in Myra" anchor in the footer. */
-  myraHref?: string;
+  /** When provided, renders an "Open in Myra" button that hands the artifact to the caller. */
+  onOpenInMyra?: (artifact: ArtifactWithSession) => void;
   /** When provided, renders a "Use in Workflow" button for eligible artifacts. */
   onUseInWorkflow?: (artifact: ArtifactWithSession) => void;
   /**
@@ -56,7 +56,7 @@ export function ArtifactModal({
   actions = [],
   children,
   kindLabel,
-  myraHref,
+  onOpenInMyra,
   onUseInWorkflow,
   canUseInWorkflow,
 }: ArtifactModalProps) {
@@ -187,15 +187,12 @@ export function ArtifactModal({
               {children ?? <p className="whitespace-pre-wrap">{artifact.content}</p>}
             </div>
 
-            {(actions.length > 0 || myraHref || showUseInWorkflow) && (
+            {(actions.length > 0 || onOpenInMyra || showUseInWorkflow) && (
               <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
-                {myraHref && (
-                  <a
-                    href={myraHref}
-                    className="flex items-center gap-[7px] rounded-[9px] border border-border px-[13px] py-[7px] text-[12.5px] font-semibold text-text-2 transition-colors hover:border-border-strong hover:bg-[var(--row-hover)]"
-                  >
+                {onOpenInMyra && (
+                  <Button variant="ghost" size="sm" onClick={() => onOpenInMyra(artifact)}>
                     Open in Myra
-                  </a>
+                  </Button>
                 )}
                 {showUseInWorkflow && artifact && onUseInWorkflow && (
                   <Button variant="secondary" size="sm" onClick={() => onUseInWorkflow(artifact)}>

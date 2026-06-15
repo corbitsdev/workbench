@@ -104,11 +104,11 @@ describe('collateral-generation input schema', () => {
     expect(schema.required).toEqual(['transcriptId', 'transcriptSource']);
   });
 
-  it('constrains transcriptSource to paste or granola', () => {
+  it('constrains transcriptSource to paste, granola, or artifact', () => {
     const schema = collateralGenerationWorkflow.inputSchema as {
       properties: { transcriptSource: { enum: string[] } };
     };
-    expect(schema.properties.transcriptSource.enum).toEqual(['paste', 'granola']);
+    expect(schema.properties.transcriptSource.enum).toEqual(['paste', 'granola', 'artifact']);
   });
 
   it('does not mark the optional companyName field as required', () => {

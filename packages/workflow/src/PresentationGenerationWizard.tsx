@@ -54,6 +54,9 @@ export interface PresentationGenerationWizardProps {
     onSelect: (data: PresentationSourceData) => void;
     isLoading: boolean;
   }) => React.ReactNode;
+  /** Preselect an existing artifact as the source (e.g. "Use in Workflow"). Opens
+   *  the Source step on the Artifact tab with this artifact already chosen. */
+  seedArtifactId?: string;
 }
 
 type WizardStep = 'template' | 'brief' | 'source' | 'generate';
@@ -178,6 +181,7 @@ export function PresentationGenerationWizard({
   gammaTemplates,
   renderRecentPicker,
   renderArtifactPicker,
+  seedArtifactId,
 }: PresentationGenerationWizardProps) {
   const [wizardStep, setWizardStep] = useState<WizardStep>('template');
   const [workflowId, setWorkflowId] = useState<string | null>(null);
@@ -190,7 +194,7 @@ export function PresentationGenerationWizard({
   const [tone, setTone] = useState<Tone | ''>('');
   const [goal, setGoal] = useState('');
 
-  const [sourceMode, setSourceMode] = useState<SourceMode>('recent');
+  const [sourceMode, setSourceMode] = useState<SourceMode>(seedArtifactId ? 'artifact' : 'recent');
   const [pasteText, setPasteText] = useState('');
 
   const sourceModes: SourceMode[] = renderArtifactPicker

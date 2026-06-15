@@ -259,12 +259,15 @@ export function createWorkflowRouter(
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const transcriptText = typeof body.transcript === 'string' ? body.transcript : undefined;
     const granolaId = typeof body.granolaId === 'string' ? body.granolaId : undefined;
+    const sourceArtifactId =
+      typeof body.sourceArtifactId === 'string' ? body.sourceArtifactId : undefined;
     const source = typeof body.source === 'string' ? body.source : undefined;
     const workflowKind = typeof body.workflowKind === 'string' ? body.workflowKind : undefined;
     const requestedTenantId = typeof body.tenantId === 'string' ? body.tenantId : null;
     const requestedCallTitle = typeof body.callTitle === 'string' ? body.callTitle.trim() : '';
 
-    const workflowSource = source === 'paste' || source === 'granola' ? source : undefined;
+    const workflowSource =
+      source === 'paste' || source === 'granola' || source === 'artifact' ? source : undefined;
 
     if (!workflowKind) {
       log.warn('Workflow kind is required');
@@ -354,6 +357,25 @@ export function createWorkflowRouter(
       content = transcriptText;
       if (!callTitle) callTitle = 'Pasted transcript';
       log.info('Transcript received', { length: content.length });
+    } else if (workflowSource === 'artifact') {
+      if (!sourceArtifactId) {
+        log.warn('Missing sourceArtifactId for artifact source');
+        return c.json({ error: 'sourceArtifactId is required' }, 400);
+      }
+      const sourceArtifact = await db.query.artifact.findFirst({
+        where: and(eq(artifact.id, sourceArtifactId), eq(artifact.tenantId, userContext.tenantId)),
+      });
+      if (!sourceArtifact) {
+        log.warn('Source artifact not found', { sourceArtifactId });
+        return c.json({ error: 'Source artifact not found' }, 404);
+      }
+      content = sourceArtifact.content;
+      if (content.trim().length === 0) {
+        log.warn('Source artifact has no content', { sourceArtifactId });
+        return c.json({ error: 'Source artifact has no usable content' }, 400);
+      }
+      if (!callTitle) callTitle = sourceArtifact.title;
+      log.info('Artifact loaded as source', { sourceArtifactId, length: content.length });
     } else {
       if (!granolaId) {
         log.warn('Missing granolaId for granola source');

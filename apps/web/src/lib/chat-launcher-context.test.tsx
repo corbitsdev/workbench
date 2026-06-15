@@ -50,4 +50,23 @@ describe('useChatLauncher', () => {
 
     expect(fired).toEqual(['second']);
   });
+
+  it('openWithMessage stores the pending message and reveals the launcher', () => {
+    const { result } = renderHook(() => useChatLauncher(), { wrapper });
+
+    act(() => result.current.setHidden(true));
+    act(() => result.current.openWithMessage('Work on artifact X'));
+
+    expect(result.current.pendingMessage).toBe('Work on artifact X');
+    expect(result.current.hidden).toBe(false);
+  });
+
+  it('clearPendingMessage resets the pending message so it is consumed once', () => {
+    const { result } = renderHook(() => useChatLauncher(), { wrapper });
+
+    act(() => result.current.openWithMessage('Work on artifact X'));
+    act(() => result.current.clearPendingMessage());
+
+    expect(result.current.pendingMessage).toBeNull();
+  });
 });

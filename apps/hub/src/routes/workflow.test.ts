@@ -353,6 +353,59 @@ describe('Workflow router', () => {
     );
   });
 
+  it('POST /workflows with source artifact loads the artifact content by id (CL-1946)', async () => {
+    const insertedValues: unknown[] = [];
+    const mockDb = createMockDb({ onInsertValues: (values) => insertedValues.push(values) });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'art-7',
+      tenantId: 'personal-tenant',
+      title: 'Acme Pain Points',
+      content: 'Pain point: onboarding is slow.',
+    }));
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'artifact',
+        sourceArtifactId: 'art-7',
+        workflowKind: 'collateral-generation',
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(201);
+
+    // The transcript persisted for the run carries the artifact's content and
+    // records the artifact provenance as the source.
+    expect(insertedValues).toContainEqual(
+      expect.objectContaining({
+        content: 'Pain point: onboarding is slow.',
+        source: 'artifact',
+      })
+    );
+  });
+
+  it('POST /workflows with source artifact returns 404 when the artifact is missing', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.artifact.findFirst = mock(() => null);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'artifact',
+        sourceArtifactId: 'does-not-exist',
+        workflowKind: 'collateral-generation',
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(404);
+  });
+
   it('POST /workflows stores a workflow under the requested workbench tenant', async () => {
     const insertedValues: unknown[] = [];
     const mockDb = createMockDb({ onInsertValues: (values) => insertedValues.push(values) });

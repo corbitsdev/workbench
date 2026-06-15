@@ -284,6 +284,7 @@ export function useCreateWorkflow() {
     mutationFn: async (body: {
       transcript?: string;
       granolaId?: string;
+      sourceArtifactId?: string;
       source: string;
       workflowKind: string;
       tenantId?: string;

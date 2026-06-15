@@ -11,7 +11,12 @@ import type { WorkflowNewPaneProps } from '../registry';
 
 // Self-contained creation pane for presentation-generation. Owns every
 // presentation-specific hook so the page never has to.
-export function PresentationNewPane({ tenantId, onCreated, onClose }: WorkflowNewPaneProps) {
+export function PresentationNewPane({
+  tenantId,
+  onCreated,
+  onClose,
+  seedArtifactId,
+}: WorkflowNewPaneProps) {
   const createWorkflow = useCreatePresentationWorkflow();
   const submitStep = useSubmitPresentationStep();
   const geraltInstances = useGeraltInstances();
@@ -26,6 +31,7 @@ export function PresentationNewPane({ tenantId, onCreated, onClose }: WorkflowNe
       submitStep={submitStep}
       geraltInstances={geraltInstances}
       gammaTemplates={gammaTemplates}
+      {...(seedArtifactId ? { seedArtifactId } : {})}
       renderRecentPicker={({ onSelect, isLoading }) => (
         <RecentCallsPicker
           onSelect={onSelect}
@@ -35,7 +41,12 @@ export function PresentationNewPane({ tenantId, onCreated, onClose }: WorkflowNe
         />
       )}
       renderArtifactPicker={({ onSelect, isLoading }) => (
-        <ArtifactSourcePicker onSelect={onSelect} isLoading={isLoading} tenantId={tenantId} />
+        <ArtifactSourcePicker
+          onSelect={onSelect}
+          isLoading={isLoading}
+          tenantId={tenantId}
+          {...(seedArtifactId ? { initialSelectedId: seedArtifactId } : {})}
+        />
       )}
     />
   );

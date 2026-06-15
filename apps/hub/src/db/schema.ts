@@ -12,7 +12,7 @@ import {
 
 export const severity = ['low', 'medium', 'high', 'critical'] as const;
 export const artifactStatus = ['draft', 'approved', 'rejected'] as const;
-export const transcriptSource = ['paste', 'granola'] as const;
+export const transcriptSource = ['paste', 'granola', 'artifact'] as const;
 
 export const transcript = pgTable('transcript', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -83,6 +83,7 @@
         "@intx/types": "workspace:*",
         "@workbench/approvals": "workspace:*",
         "@workbench/context-repair": "workspace:*",
+        "@workbench/prompts": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
       },
