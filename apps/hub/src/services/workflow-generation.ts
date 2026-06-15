@@ -3,7 +3,7 @@ import { getLogger } from '@intx/log';
 import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry } from '@workbench/workflow-core';
 import type { UserContext } from '@workbench/workflow-core';
-import { getVariantCount } from '@workbench/gtm-workflows';
+import { getVariantCount, resolveArtifactKind } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
 import { workflowRun, transcript, painPoint, artifact, artifactVersion } from '../db/schema';
 import { extractPainPoints } from '../lib/extraction';
@@ -200,7 +200,7 @@ export async function runGenerate(
               principalId: wf.principalId,
               sessionId: id,
               painPointId: p.id,
-              kind,
+              kind: resolveArtifactKind(kind),
               title,
               content: body,
               status: 'draft' as const,

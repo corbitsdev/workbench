@@ -188,6 +188,8 @@ export default function ArtifactBody({ body, type }: ArtifactBodyProps) {
     // social posts
     case 'linkedin':
     case 'linkedin-post':
+    // Legacy rows: pre-unification LinkedIn Daily drafts kept this kind.
+    case 'linkedin-daily':
     case 'pain-points-linkedin-post':
     case 'twitter-post':
     case 'pain-points-twitter-post':

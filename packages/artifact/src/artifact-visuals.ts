@@ -10,6 +10,9 @@ import type { ArtifactVisual, GalleryArtifact } from './types';
 const KIND_VISUALS: Record<string, ArtifactVisual> = {
   email: { label: 'Email', viz: 'lines', fill: 'bg-orange', span: 'row-span-3' },
   'linkedin-post': { label: 'LinkedIn Post', viz: 'lines', fill: 'bg-blue', span: 'row-span-2' },
+  // Legacy rows: LinkedIn Daily drafts were once stored with this kind before
+  // they were unified to 'linkedin-post'. They render as LinkedIn posts.
+  'linkedin-daily': { label: 'LinkedIn Post', viz: 'lines', fill: 'bg-blue', span: 'row-span-2' },
   'twitter-post': { label: 'Tweet', viz: 'lines', fill: 'bg-blue', span: 'row-span-2' },
   'founder-pov-post': { label: 'Founder POV', viz: 'lines', fill: 'bg-blue', span: 'row-span-2' },
   'one-pager': { label: 'One-Pager', viz: 'deck', fill: 'bg-charcoal', span: 'row-span-4' },

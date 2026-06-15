@@ -10,6 +10,7 @@ export {
   appendVariantSuffix,
   getVariantCount,
   hasMultiVariantKind,
+  resolveArtifactKind,
   type CollateralPainPoint,
   type WorkflowArtifactDraft,
 } from './artifacts';

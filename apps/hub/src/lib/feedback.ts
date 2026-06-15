@@ -21,8 +21,6 @@ function buildFeedbackSystemPrompt(type: ArtifactKind): string {
       return `You are a sales copywriter editing a GTM document. Apply the user's feedback. Keep every section grounded in the prospect's specific numbers, team size, and language. Return only the refined text, no explanations.`;
     case 'battlecard':
       return `You are a sales copywriter editing paid ad copy. Apply the user's feedback. Keep each variant distinct in angle, headlines specific (use numbers or language from the context), and CTAs active and concrete. Return only the refined text, no explanations.`;
-    case 'linkedin-daily':
-      return `You are a sales copywriter editing a LinkedIn post draft. Apply the user's feedback. Keep the opening hook distinctive and preserve the post's voice. Return only the refined text, no explanations.`;
     case 'pain-points':
     case 'call-transcript':
       return `You are editing a structured document. Apply the user's feedback carefully. Preserve the original format and structure. Return only the refined text, no explanations.`;

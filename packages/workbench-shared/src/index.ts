@@ -28,7 +28,6 @@ export type ArtifactKind =
   | 'battlecard'
   | 'pain-points'
   | 'call-transcript'
-  | 'linkedin-daily'
   | 'presentation';
 
 export type ArtifactStatus = 'draft' | 'approved' | 'rejected';

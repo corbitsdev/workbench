@@ -12,5 +12,6 @@ export {
   getVariantCount,
   hasMultiVariantKind,
   isCollateralKind,
+  resolveArtifactKind,
   selectCollateralTypeIds,
 } from './collateral-generation';

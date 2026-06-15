@@ -25,9 +25,14 @@ mock.module('../lib/extraction', () => ({
   ),
 }));
 
+const { appendVariantSuffix } = await import('@workbench/gtm-workflows');
+
 mock.module('../lib/generation', () => ({
-  generateCollateralWithLLM: mock((_id: string, _tx: string, _p: unknown, kind: string) =>
-    Promise.resolve({ title: `${kind} title`, body: `${kind} body` })
+  generateCollateralWithLLM: mock(
+    (_id: string, _tx: string, _p: unknown, kind: string, _s, _m, variantIndex: number) =>
+      Promise.resolve(
+        appendVariantSuffix({ title: `${kind} title`, body: `${kind} body` }, kind, variantIndex)
+      )
   ),
 }));
 
@@ -48,6 +53,7 @@ function createMockDb(
     workflowRow?: Record<string, unknown> | null;
     painPoints?: unknown[];
     onSetUpdate?: (values: Record<string, unknown>) => void;
+    onInsertArtifacts?: (values: Array<Record<string, unknown>>) => void;
   } = {}
 ) {
   const workflowRow =
@@ -93,13 +99,18 @@ function createMockDb(
     transaction: mock((fn: (trx: unknown) => unknown) =>
       fn({
         insert: mock(() => ({
-          values: mock((values: unknown) => ({
-            returning: mock(() =>
-              Array.isArray(values)
-                ? values.map((v, i) => ({ id: `a-${i + 1}`, ...v }))
-                : [{ id: 'a-1', ...(values as object) }]
-            ),
-          })),
+          values: mock((values: unknown) => {
+            if (Array.isArray(values)) {
+              options.onInsertArtifacts?.(values as Array<Record<string, unknown>>);
+            }
+            return {
+              returning: mock(() =>
+                Array.isArray(values)
+                  ? values.map((v, i) => ({ id: `a-${i + 1}`, ...v }))
+                  : [{ id: 'a-1', ...(values as object) }]
+              ),
+            };
+          }),
         })),
       })
     ),
@@ -158,6 +169,33 @@ describe('runGenerate', () => {
     };
     expect(body.status).toBe('reviewing');
     expect(body.steps.generate.artifacts.length).toBeGreaterThan(0);
+  });
+
+  it('stores a linkedin-daily selection as linkedin-post artifacts with Draft N titles', async () => {
+    const insertedArtifacts: Array<Record<string, unknown>> = [];
+    const db = createMockDb({
+      painPoints: [{ id: 'pp-1', sessionId: 'wf-1', context: 'c', quote: 'q', severity: 'high' }],
+      onInsertArtifacts: (values) => {
+        insertedArtifacts.push(...values);
+      },
+    });
+    const res = await runGenerate(
+      db as unknown as HubDb,
+      'wf-1',
+      ['pp-1'],
+      ['linkedin-daily'],
+      'prn-1',
+      SOURCE
+    );
+    expect(res.status).toBe(200);
+
+    const collateral = insertedArtifacts.filter((a) => a.kind === 'linkedin-post');
+    expect(collateral.length).toBe(3);
+    expect(insertedArtifacts.some((a) => a.kind === 'linkedin-daily')).toBe(false);
+    const titles = collateral.map((a) => a.title);
+    expect(titles).toContain('linkedin-daily title — Draft 1');
+    expect(titles).toContain('linkedin-daily title — Draft 2');
+    expect(titles).toContain('linkedin-daily title — Draft 3');
   });
 
   it('writes "running" (not "ready") and returns 400 for invalid collateral types', async () => {
