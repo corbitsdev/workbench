@@ -445,7 +445,9 @@ To seed providers and credentials locally, copy your API keys into the appropria
 cd apps/hub && bun run seed:credentials
 ```
 
-This reads `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GEMINI_API_KEY`, `GRANOLA_API_KEY`, `EXA_API_KEY`, and `FIRECRAWL_API_KEY` and upserts the corresponding providers and tenant credentials.
+This reads `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GEMINI_API_KEY`, `GRANOLA_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY` (+ `BROWSERBASE_PROJECT_ID`), `XAI_API_KEY`, `SCRAPECREATORS_API_KEY`, `GAMMA_API_KEY`, `GITHUB_API_KEY`, and `YOUTUBE_API_KEY` and upserts the corresponding providers and tenant credentials. The `buildEntries()` function is the single list of seeded providers; each entry is skipped silently when its key is unset.
+
+**Adding a credentialed tool:** when a new `@workbench/tools-*` package declares a credential `providerName`, you must add a matching entry to `buildEntries()` in `apps/hub/bin/seed-credentials.ts` (reading a `*_API_KEY` env var) and list that env var in `.env.example`, or the tool will resolve no credential in deployed environments and return nothing. Keyless tools (e.g. the public Bluesky AppView) need no entry.
 
 ### Running
 
