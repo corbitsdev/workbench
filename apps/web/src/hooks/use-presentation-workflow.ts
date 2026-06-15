@@ -1,25 +1,84 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../lib/api';
-import { useWorkbenchAgents } from './use-workflow';
-import type { AgentInstance } from './use-workflow';
-import type { PresentationStepArgs, GammaTemplate } from '@workbench/workflow';
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../lib/api";
+import { useWorkbenchAgents } from "./use-workflow";
+import type { AgentInstance } from "./use-workflow";
+import type { PresentationStepArgs, GammaTemplate } from "@workbench/workflow";
 
 export { type PresentationStepArgs, type GammaTemplate };
 
-export function useGammaTemplates({ enabled = true }: { enabled?: boolean } = {}) {
+export function useGammaTemplates({
+  enabled = true,
+}: { enabled?: boolean } = {}) {
   return useQuery<GammaTemplate[]>({
-    queryKey: ['gamma-templates'],
-    queryFn: () => api<GammaTemplate[]>('GET', '/workflows/gamma/templates'),
+    queryKey: ["gamma-templates"],
+    queryFn: () => api<GammaTemplate[]>("GET", "/workflows/gamma/templates"),
     enabled,
     staleTime: 5 * 60 * 1000,
   });
 }
 
-export function useGeraltInstances({ enabled = true }: { enabled?: boolean } = {}) {
+export function useCreateGammaTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      name: string;
+      gammaId: string;
+      systemPrompt: string;
+    }) => api<GammaTemplate>("POST", "/gamma-templates", body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gamma-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["gamma-templates-manage"] });
+    },
+  });
+}
+
+export function useUpdateGammaTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: string;
+      name: string;
+      gammaId: string;
+      systemPrompt: string;
+    }) => api<GammaTemplate>("PUT", `/gamma-templates/${id}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gamma-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["gamma-templates-manage"] });
+    },
+  });
+}
+
+export function useDeleteGammaTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ ok: boolean }>("DELETE", `/gamma-templates/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gamma-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["gamma-templates-manage"] });
+    },
+  });
+}
+
+export function useManageGammaTemplates() {
+  return useQuery<GammaTemplate[]>({
+    queryKey: ["gamma-templates-manage"],
+    queryFn: () => api<GammaTemplate[]>("GET", "/gamma-templates"),
+    staleTime: 0,
+  });
+}
+
+export function useGeraltInstances({
+  enabled = true,
+}: { enabled?: boolean } = {}) {
   const agents = useWorkbenchAgents({ enabled });
   return {
     ...agents,
-    data: agents.data?.filter((a: AgentInstance) => a.agentName === 'Geralt') ?? [],
+    data:
+      agents.data?.filter((a: AgentInstance) => a.agentName === "Geralt") ?? [],
   };
 }
 
@@ -33,13 +92,13 @@ export function useCreatePresentationWorkflow() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (body: { tenantId?: string | null }) => {
-      return api<PresentationWorkflowRun>('POST', '/workflows', {
-        workflowKind: 'presentation-generation',
+      return api<PresentationWorkflowRun>("POST", "/workflows", {
+        workflowKind: "presentation-generation",
         ...(body.tenantId ? { tenantId: body.tenantId } : {}),
       });
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', data.id] });
+      queryClient.invalidateQueries({ queryKey: ["workflow", data.id] });
     },
   });
 }
@@ -50,10 +109,14 @@ export function useSubmitPresentationStep() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ workflowId, ...body }: StepMutationArgs) => {
-      return api<{ status: string }>('POST', `/workflows/${workflowId}/steps`, body);
+      return api<{ status: string }>(
+        "POST",
+        `/workflows/${workflowId}/steps`,
+        body,
+      );
     },
     onSuccess: (_data, { workflowId }) => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+      queryClient.invalidateQueries({ queryKey: ["workflow", workflowId] });
     },
   });
 }

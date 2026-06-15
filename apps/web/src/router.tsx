@@ -1,17 +1,19 @@
-import { createBrowserRouter, Navigate, Outlet } from 'react-router';
-import { useAuth } from './components/AuthProvider';
-import { AppSidebar } from './components/layout/AppSidebar';
-import { PersonalAgentChat } from './components/PersonalAgentChat';
-import { ChatLauncherProvider } from './lib/chat-launcher-context';
-import { LoginPage } from './pages/LoginPage';
-import WorkbenchHome from './pages/WorkbenchHome';
-import Settings from './pages/Settings';
+import { createBrowserRouter, Navigate, Outlet } from "react-router";
+import { useAuth } from "./components/AuthProvider";
+import { AppSidebar } from "./components/layout/AppSidebar";
+import { PersonalAgentChat } from "./components/PersonalAgentChat";
+import { ChatLauncherProvider } from "./lib/chat-launcher-context";
+import { LoginPage } from "./pages/LoginPage";
+import WorkbenchHome from "./pages/WorkbenchHome";
+import Settings from "./pages/Settings";
+import GammaTemplates from "./pages/GammaTemplates";
 
 function ProtectedLayout() {
   const { session } = useAuth();
 
-  if (session.status === 'unauthenticated') return <Navigate to="/login" replace />;
-  if (session.status === 'loading') return null;
+  if (session.status === "unauthenticated")
+    return <Navigate to="/login" replace />;
+  if (session.status === "loading") return null;
   return <Outlet />;
 }
 
@@ -33,7 +35,7 @@ function AppShell() {
 
 export const router = createBrowserRouter([
   {
-    path: '/login',
+    path: "/login",
     element: <LoginPage />,
   },
   {
@@ -43,10 +45,11 @@ export const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <WorkbenchHome /> },
-          { path: '/onboarding', element: <Navigate to="/" replace /> },
-          { path: '/dashboard', element: <Navigate to="/" replace /> },
-          { path: '/settings', element: <Settings /> },
-          { path: '/workbenches/:slug', element: <WorkbenchHome /> },
+          { path: "/onboarding", element: <Navigate to="/" replace /> },
+          { path: "/dashboard", element: <Navigate to="/" replace /> },
+          { path: "/settings", element: <Settings /> },
+          { path: "/settings/templates", element: <GammaTemplates /> },
+          { path: "/workbenches/:slug", element: <WorkbenchHome /> },
         ],
       },
     ],

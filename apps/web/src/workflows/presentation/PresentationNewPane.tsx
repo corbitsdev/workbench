@@ -1,13 +1,13 @@
-import { PresentationGenerationWizard } from '@workbench/workflow';
-import RecentCallsPicker from '../../components/RecentCallsPicker';
-import ArtifactSourcePicker from '../../components/ArtifactSourcePicker';
+import { PresentationGenerationWizard } from "@workbench/workflow";
+import RecentCallsPicker from "../../components/RecentCallsPicker";
+import ArtifactSourcePicker from "../../components/ArtifactSourcePicker";
 import {
   useCreatePresentationWorkflow,
   useSubmitPresentationStep,
   useGeraltInstances,
   useGammaTemplates,
-} from '../../hooks/use-presentation-workflow';
-import type { WorkflowNewPaneProps } from '../registry';
+} from "../../hooks/use-presentation-workflow";
+import type { WorkflowNewPaneProps } from "../registry";
 
 // Self-contained creation pane for presentation-generation. Owns every
 // presentation-specific hook so the page never has to.
@@ -31,6 +31,7 @@ export function PresentationNewPane({
       submitStep={submitStep}
       geraltInstances={geraltInstances}
       gammaTemplates={gammaTemplates}
+      manageTemplatesHref="/settings/templates"
       {...(seedArtifactId ? { seedArtifactId } : {})}
       renderRecentPicker={({ onSelect, isLoading }) => (
         <RecentCallsPicker
