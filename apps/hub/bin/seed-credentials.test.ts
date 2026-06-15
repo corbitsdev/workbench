@@ -30,4 +30,23 @@ describe('seed-credentials buildEntries', () => {
 
     expect(entries.find((e) => e.providerName === 'github')).toBeUndefined();
   });
+
+  it('includes youtube entry when YOUTUBE_API_KEY is set', () => {
+    process.env['YOUTUBE_API_KEY'] = 'yt_test123';
+
+    const entries = buildEntries();
+
+    const youtube = entries.find((e) => e.providerName === 'youtube');
+    expect(youtube).toBeDefined();
+    expect(youtube?.secret).toBe('yt_test123');
+    expect(youtube?.providerPlugin).toBe('youtube');
+  });
+
+  it('omits youtube entry when YOUTUBE_API_KEY is not set', () => {
+    delete process.env['YOUTUBE_API_KEY'];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === 'youtube')).toBeUndefined();
+  });
 });

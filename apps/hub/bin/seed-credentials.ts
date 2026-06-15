@@ -248,6 +248,16 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const youtubeKey = env('YOUTUBE_API_KEY');
+  if (youtubeKey) {
+    entries.push({
+      providerName: 'youtube',
+      providerPlugin: 'youtube',
+      credentialName: 'YouTube Data API',
+      secret: youtubeKey,
+    });
+  }
+
   return entries;
 }
 
@@ -338,7 +348,10 @@ if (import.meta.main) {
       `__Secure-better-auth.session_token=${SESSION_TOKEN}`,
     ];
   } else {
-    const signIn = await api('POST', '/api/auth/sign-in/email', { email: EMAIL, password: PASSWORD });
+    const signIn = await api('POST', '/api/auth/sign-in/email', {
+      email: EMAIL,
+      password: PASSWORD,
+    });
     if (signIn.cookies.length === 0) fail('sign in', signIn.status, signIn.data);
     cookies = signIn.cookies;
     log(`Signed in as ${EMAIL}`);
