@@ -152,11 +152,10 @@ describe('TopComment', () => {
 });
 
 describe('ResearchItem enrichment fields', () => {
-  test('accepts an item with topComments and funScore', () => {
+  test('accepts an item with topComments', () => {
     const result = ResearchItem({
       ...baseItem,
       topComments: [{ text: 'great take', score: 42 }],
-      funScore: 0.8,
     });
     expect(result instanceof type.errors).toBe(false);
   });
@@ -200,8 +199,8 @@ describe('ReportStats', () => {
     expect(result instanceof type.errors).toBe(false);
   });
 
-  test('rejects stats missing dateRange', () => {
-    expect(ReportStats({ sourceCount: 1, itemCount: 1 }) instanceof type.errors).toBe(true);
+  test('accepts stats without a dateRange (empty coverage window)', () => {
+    expect(ReportStats({ sourceCount: 0, itemCount: 0 }) instanceof type.errors).toBe(false);
   });
 });
 

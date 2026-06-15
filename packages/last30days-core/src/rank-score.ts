@@ -51,7 +51,9 @@ function topCommentBonus(items: ResearchItem[]): number {
     }
   }
   if (bestScore <= 0) return 0;
-  return Math.min(Math.log10(bestScore) / 10, MAX_FUN_BONUS);
+  // Clamp the lower bound: a fractional comment score makes log10 negative, which
+  // would turn the bonus into a silent penalty below a comment-less cluster.
+  return Math.max(0, Math.min(Math.log10(bestScore) / 10, MAX_FUN_BONUS));
 }
 
 function capPerAuthor(items: ResearchItem[], max: number): ResearchItem[] {

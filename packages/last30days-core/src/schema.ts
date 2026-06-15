@@ -30,7 +30,6 @@ export const ResearchItem = type({
   'entityTag?': 'string',
   'author?': 'string',
   'topComments?': TopComment.array(),
-  'funScore?': 'number',
 });
 export type ResearchItem = typeof ResearchItem.infer;
 
@@ -54,7 +53,7 @@ export type DateRange = typeof DateRange.infer;
 export const ReportStats = type({
   sourceCount: 'number',
   itemCount: 'number',
-  dateRange: DateRange,
+  'dateRange?': DateRange,
 });
 export type ReportStats = typeof ReportStats.infer;
 
@@ -90,3 +89,13 @@ export const Report = type({
   generatedAt: 'string',
 });
 export type Report = typeof Report.infer;
+
+/**
+ * Validate an unknown value (e.g. a persisted artifact's source.brief) against
+ * the Report contract. Returns the validated brief or null — the single parse
+ * helper consumers should use instead of re-declaring the schema at each boundary.
+ */
+export function parseReport(value: unknown): Report | null {
+  const result = Report(value);
+  return result instanceof type.errors ? null : result;
+}

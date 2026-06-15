@@ -125,8 +125,10 @@ describe('buildReport', () => {
     const report = buildReport(FIXTURE, { topic: 'test', days: 30, topK: 10, nowIso: NOW_ISO });
     expect(report.stats.itemCount).toBe(report.items.length);
     expect(report.stats.sourceCount).toBe(new Set(report.items.map((i) => i.source)).size);
-    expect(new Date(report.stats.dateRange.from).getTime()).toBeLessThanOrEqual(
-      new Date(report.stats.dateRange.to).getTime()
+    const dateRange = report.stats.dateRange;
+    if (!dateRange) throw new Error('expected a dateRange for a non-empty report');
+    expect(new Date(dateRange.from).getTime()).toBeLessThanOrEqual(
+      new Date(dateRange.to).getTime()
     );
   });
 
@@ -156,5 +158,31 @@ describe('buildReport', () => {
   test('bestTakes is empty when no items carry top comments', () => {
     const report = buildReport(FIXTURE, { topic: 'test', days: 30, topK: 5, nowIso: NOW_ISO });
     expect(report.bestTakes).toHaveLength(0);
+  });
+
+  test('bestTakes dedupes the same quote cross-posted across sources', () => {
+    const enriched: ResearchItem[] = [
+      makeItem({
+        url: 'https://hn.com',
+        title: 'HN thread',
+        source: 'hn',
+        topComments: [{ text: 'Same killer line', score: 900 }],
+      }),
+      makeItem({
+        url: 'https://reddit.com',
+        title: 'Reddit thread',
+        source: 'reddit',
+        topComments: [{ text: 'same killer line', score: 400 }],
+      }),
+    ];
+    const report = buildReport(enriched, { topic: 'test', days: 30, topK: 5, nowIso: NOW_ISO });
+    const quotes = report.bestTakes.map((t) => t.quote.toLowerCase());
+    expect(quotes.filter((q) => q === 'same killer line')).toHaveLength(1);
+  });
+
+  test('omits dateRange when there are no items', () => {
+    const report = buildReport([], { topic: 'empty', days: 30, topK: 5, nowIso: NOW_ISO });
+    expect(report.stats.itemCount).toBe(0);
+    expect(report.stats.dateRange).toBeUndefined();
   });
 });

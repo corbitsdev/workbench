@@ -6,10 +6,12 @@ import type { BestTake, BriefCluster, Report, ResearchItem } from './schema';
 
 const MAX_BEST_TAKES = 5;
 
-function buildStats(items: ResearchItem[], nowIso: string): Report['stats'] {
+function buildStats(items: ResearchItem[]): Report['stats'] {
   const sourceCount = new Set(items.map((item) => item.source)).size;
   if (items.length === 0) {
-    return { sourceCount: 0, itemCount: 0, dateRange: { from: nowIso, to: nowIso } };
+    // No items means no real coverage window — omit dateRange rather than
+    // fabricating a now-to-now span that reads as if data were found.
+    return { sourceCount: 0, itemCount: 0 };
   }
   const times = items.map((item) => new Date(item.publishedAt).getTime());
   const from = new Date(Math.min(...times)).toISOString();
@@ -29,9 +31,15 @@ function toBriefCluster(cluster: RankedCluster): BriefCluster {
 
 function collectBestTakes(items: ResearchItem[]): BestTake[] {
   const takes: BestTake[] = [];
+  const seenQuotes = new Set<string>();
   for (const item of items) {
     if (item.topComments === undefined) continue;
     for (const comment of item.topComments) {
+      const quoteKey = comment.text.trim().toLowerCase();
+      // A quote cross-posted across sources (common HN+Reddit) should not waste
+      // the limited best-takes budget on duplicates.
+      if (seenQuotes.has(quoteKey)) continue;
+      seenQuotes.add(quoteKey);
       const take: BestTake = {
         quote: comment.text,
         source: item.source,
@@ -65,7 +73,7 @@ export function buildReport(
   const report: Report = {
     topic: opts.topic,
     days: opts.days,
-    stats: buildStats(topItems, opts.nowIso),
+    stats: buildStats(topItems),
     clusters: briefClusters,
     bestTakes: collectBestTakes(topItems),
     items: topItems,
