@@ -123,3 +123,12 @@ export {
   HUMANIZER_SECTION,
 } from './prompt-builder';
 export type { PromptSection, PromptFormat } from './prompt-builder';
+
+export {
+  FOPUS_DEPLOY_PROMPT,
+  FOPUS_GRANT_REQUIREMENTS,
+  FOPUS_CREDENTIAL_REQUIREMENTS,
+  FOPUS_CAPABILITIES,
+  FOPUS_MODEL_CONFIG,
+  FOPUS_DEPLOY_DESCRIPTOR,
+} from './fopus/definition';

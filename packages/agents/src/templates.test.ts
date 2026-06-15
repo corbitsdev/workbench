@@ -3,7 +3,7 @@ import { AGENT_TEMPLATES } from './templates';
 import { BOBBY_DEPLOY_DESCRIPTOR } from './bobby/definition';
 
 describe('AGENT_TEMPLATES', () => {
-  const inferenceProviderNames = new Set(['openai-compatible']);
+  const inferenceProviderNames = new Set(['anthropic', 'openai-compatible']);
   const knownToolProviderNames = new Set([
     'exa',
     'firecrawl',
@@ -13,10 +13,11 @@ describe('AGENT_TEMPLATES', () => {
     'xai',
   ]);
 
-  it('contains all ten templates', () => {
+  it('contains all eleven templates', () => {
     const keys = AGENT_TEMPLATES.map((t) => t.key).sort();
     expect(keys).toEqual([
       'bobby',
+      'fopus',
       'freddy',
       'geralt',
       'hammy',
@@ -27,6 +28,15 @@ describe('AGENT_TEMPLATES', () => {
       'oat',
       'walter',
     ]);
+  });
+
+  it('registers FOPus as deployable Opus-backed Fable prompt agent', () => {
+    const fopus = AGENT_TEMPLATES.find((t) => t.key === 'fopus');
+    expect(fopus).toBeDefined();
+    expect(fopus?.name).toBe('FOpus');
+    expect(fopus?.modelConfig).toEqual({ defaultModel: 'claude-opus-4-8' });
+    expect(fopus?.capabilities.tools).toContain('mail_reply');
+    expect(fopus?.capabilities.tools).not.toContain('mail_send');
   });
 
   it('registers Bobby with the browser toolset and the browserbase credential provider', () => {

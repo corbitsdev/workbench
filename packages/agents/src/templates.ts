@@ -60,6 +60,13 @@ import {
   LARRY_GRANT_REQUIREMENTS,
   LARRY_CAPABILITIES,
 } from './larry/definition';
+import {
+  FOPUS_DEPLOY_PROMPT,
+  FOPUS_CREDENTIAL_REQUIREMENTS,
+  FOPUS_GRANT_REQUIREMENTS,
+  FOPUS_CAPABILITIES,
+  FOPUS_MODEL_CONFIG,
+} from './fopus/definition';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -141,6 +148,17 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     grantRequirements: LOOP_GRANT_REQUIREMENTS,
     capabilities: { tools: [...LOOP_DEPLOY_DESCRIPTOR.defaultTools] },
     deployable: false,
+  },
+  {
+    key: 'fopus',
+    name: 'FOpus',
+    description:
+      'Fable-style Opus agent with broad research and local artifact-writing tools, excluding outbound mail send.',
+    systemPrompt: FOPUS_DEPLOY_PROMPT,
+    credentialRequirements: FOPUS_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: FOPUS_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...FOPUS_CAPABILITIES.tools] },
+    modelConfig: FOPUS_MODEL_CONFIG,
   },
   {
     key: 'freddy',
