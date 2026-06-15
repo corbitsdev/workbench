@@ -61,6 +61,13 @@ export function loadConfig() {
     granola: {
       baseUrl: 'https://public-api.granola.ai/v1',
     },
+    // Error reporting. Optional: when SENTRY_DSN is unset, Sentry and its log
+    // sink are a no-op (see setupObservability). Read directly by initSentry at
+    // startup; mirrored here for visibility. Default environment is 'production'.
+    sentry: {
+      dsn: optionalEnv('SENTRY_DSN'),
+      environment: optionalEnv('SENTRY_ENVIRONMENT') ?? 'production',
+    },
     databaseUrl: requireEnv('DATABASE_URL'),
     hub: {
       dataDir: requireEnv('HUB_DATA_DIR'),

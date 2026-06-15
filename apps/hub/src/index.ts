@@ -18,7 +18,7 @@ import {
 // dropped thinking/reply parts.
 import { createEventCollectorRegistry } from '@workbench/event-collector';
 import { hexEncode } from '@intx/types';
-import { getLogger, setup } from '@intx/log';
+import { getLogger } from '@intx/log';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -48,13 +48,12 @@ import {
   provisionMemberInstances,
   getMyraInstanceId,
 } from './lib/tenant-provisioning';
-import { initSentry } from '@workbench/sentry';
+import { setupObservability, flushSentry } from '@workbench/sentry';
 import { createFatalErrorRecovery } from './lib/fatal-error-recovery';
 import { resolveCorsAllowOrigin } from './lib/cors-origin';
 import { createRateLimiter } from './lib/rate-limit';
 
-await initSentry();
-await setup({ dev: process.env.NODE_ENV !== 'production' });
+await setupObservability({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
 
 const config = loadConfig();
@@ -481,7 +480,11 @@ v1.get('/me', async (c) => {
           sessionId: null,
         });
         credentialResolved = sources.length > 0;
-      } catch {
+      } catch (err) {
+        log.warn('Instance source resolution failed on /me', {
+          error: err,
+          tenantId: workingTenantId,
+        });
         credentialResolved = false;
       }
     }
@@ -506,8 +509,9 @@ v1.get('/me', async (c) => {
     for (const row of rootPrincipals) {
       rootTenantIds.push(row.tenantId);
     }
-  } catch {
+  } catch (err) {
     // non-fatal — frontend falls back to filtering only personalTenantId
+    log.warn('Root tenant lookup failed on /me', { error: err, userId });
   }
 
   return c.json({
@@ -591,13 +595,29 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
 }
 
 process.on('uncaughtException', (err) => {
+  // log.fatal routes to the Sentry sink; flush before exiting so the event is
+  // not dropped on process death.
   log.fatal('Uncaught exception', { error: err });
-  process.exit(1);
+  void flushSentry().finally(() => process.exit(1));
 });
 
 process.on('unhandledRejection', (reason) => {
   const err = reason instanceof Error ? reason : new Error(String(reason));
   log.fatal('Unhandled rejection', { error: err });
+  // The process keeps running here, but flush so the captured event is not
+  // left buffered indefinitely if the process later dies.
+  void flushSentry();
+});
+
+// Centralized handler for errors thrown out of any route. Logging at error
+// level routes to the Sentry sink, so no request error fails silent.
+app.onError((err, c) => {
+  log.error('Unhandled request error', {
+    error: err,
+    method: c.req.method,
+    path: c.req.path,
+  });
+  return c.json({ error: 'Internal Server Error' }, 500);
 });
 
 export { app };

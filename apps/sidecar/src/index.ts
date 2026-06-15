@@ -1,6 +1,5 @@
 import { sign as nodeSign } from 'node:crypto';
-import { setup } from '@intx/log';
-import { initSentry } from '@workbench/sentry';
+import { setupObservability } from '@workbench/sentry';
 import { createInMemoryTransport } from '@intx/mail-memory';
 import {
   createNodeCrypto,
@@ -12,8 +11,7 @@ import { createSidecarOrchestrator } from '@intx/hub-agent';
 import { createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
 import { resolveSidecarHeartbeat } from './config';
 
-await initSentry();
-await setup({ dev: process.env.NODE_ENV !== 'production' });
+await setupObservability({ dev: process.env.NODE_ENV !== 'production' });
 
 function requireEnv(name: string): string {
   const value = process.env[name];
