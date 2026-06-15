@@ -90,7 +90,7 @@ export function AppSidebar() {
       <div className="mt-auto flex flex-col items-center gap-2 pb-1">
         <div ref={themeMenuRef} className="relative">
           {themeMenuOpen && (
-            <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-[10px] border border-border bg-surface p-1 shadow-[var(--shadow)]">
+            <div className="absolute left-full top-1/2 ml-2 -translate-y-1/2 rounded-[10px] border border-border bg-surface p-1 shadow-[var(--shadow)]">
               {THEMES.map((t) => (
                 <button
                   key={t}
