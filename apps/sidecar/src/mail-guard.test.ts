@@ -78,6 +78,56 @@ describe('createGuardedMailRunner', () => {
     expect(JSON.stringify(lastBlocked?.content)).toContain('cap');
   });
 
+  it('uses a custom outbound cap when provided', async () => {
+    const inner = countingRunner();
+    const guarded = createGuardedMailRunner(inner, { maxOutboundPerTurn: 3 });
+    const signal = new AbortController().signal;
+
+    const results: ToolResult[] = [];
+    for (let i = 0; i < 5; i++) {
+      results.push(await guarded.run(send(`c${i}`, `distinct body ${i}`), signal));
+    }
+
+    expect(inner.calls).toHaveLength(3);
+    expect(results.filter((r) => r.isError)).toHaveLength(2);
+    expect(JSON.stringify(results.at(-1)?.content)).toContain('3 this turn');
+  });
+
+  it('resets the outbound budget for the next turn', async () => {
+    const inner = countingRunner();
+    const guarded = createGuardedMailRunner(inner);
+    const signal = new AbortController().signal;
+
+    for (let i = 0; i < MAX_OUTBOUND_PER_TURN; i++) {
+      await guarded.run(send(`c${i}`, `turn one body ${i}`), signal);
+    }
+
+    const blocked = await guarded.run(send('blocked', 'over budget'), signal);
+    expect(blocked.isError).toBe(true);
+
+    guarded.resetOutboundBudget();
+
+    const allowed = await guarded.run(send('next-turn', 'next turn body'), signal);
+    expect(allowed.isError).toBeUndefined();
+    expect(inner.calls).toHaveLength(MAX_OUTBOUND_PER_TURN + 1);
+  });
+
+  it('resets duplicate suppression for the next turn', async () => {
+    const inner = countingRunner();
+    const guarded = createGuardedMailRunner(inner);
+    const signal = new AbortController().signal;
+
+    await guarded.run(send('first', 'same follow-up'), signal);
+    const duplicate = await guarded.run(send('duplicate', 'same follow-up'), signal);
+    expect(duplicate.isError).toBe(true);
+
+    guarded.resetOutboundBudget();
+
+    const allowed = await guarded.run(send('next-turn', 'same follow-up'), signal);
+    expect(allowed.isError).toBeUndefined();
+    expect(inner.calls).toHaveLength(2);
+  });
+
   it('passes through non-mail-write tools untouched', async () => {
     const inner = countingRunner();
     const guarded = createGuardedMailRunner(inner);

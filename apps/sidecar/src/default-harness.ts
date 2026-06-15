@@ -14,6 +14,7 @@ import { createBlobReader } from '@intx/types/runtime';
 import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/runtime';
 import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
 import { hasSeedMarker, parseSeedMarker, stripSeedMarker } from '@workbench/agents/seed';
+import { PERSONAL_AGENT_NAME } from '@workbench/agents';
 import { createAskPrincipalTool } from '@workbench/approvals';
 import { seedWorkspaceFiles } from './seed-workspace-files';
 import { healTurns } from '@workbench/context-repair';
@@ -23,6 +24,8 @@ import type { ContextStore } from '@intx/types/runtime';
 import { createHubToolRunner } from './hub-tool-runner';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
+const DEFAULT_MAIL_OUTBOUND_PER_TURN = 8;
+const PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN = 100;
 
 /**
  * Repair the durable context before the harness loads it so an
@@ -87,6 +90,13 @@ export function wsUrlToHttp(wsUrl: string): string {
   const url = new URL(wsUrl);
   const protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
   return `${protocol}//${url.host}`;
+}
+
+export function resolveMailOutboundLimit(systemPrompt: string): number {
+  if (systemPrompt.includes(`${PERSONAL_AGENT_NAME} is a Chief of Staff and Executive Assistant`)) {
+    return PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN;
+  }
+  return DEFAULT_MAIL_OUTBOUND_PER_TURN;
 }
 
 /**
@@ -197,7 +207,9 @@ export function createDefaultHarnessBuilder({
 
       const capabilities = createHarnessRuntimeCapabilities({ transport: agentTransport });
       const mailTools = createMailTools({ capabilities });
-      const guardedMailTools = createGuardedMailRunner(mailTools as DefinedRunner);
+      const guardedMailTools = createGuardedMailRunner(mailTools as DefinedRunner, {
+        maxOutboundPerTurn: resolveMailOutboundLimit(cleanedPrompt),
+      });
 
       const askPrincipalRunner = createToolRunner([
         createAskPrincipalTool({
@@ -280,7 +292,10 @@ export function createDefaultHarnessBuilder({
         async function forwardEvents(): Promise<void> {
           try {
             for await (const event of harness.stream()) {
-              if (event.type === 'message.received') continue;
+              if (event.type === 'message.received') {
+                guardedMailTools.resetOutboundBudget();
+                continue;
+              }
               onEvent(event);
             }
           } catch (err) {

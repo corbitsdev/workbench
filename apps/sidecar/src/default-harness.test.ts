@@ -69,7 +69,12 @@ mock.module('@intx/types/runtime', () => ({
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { combineRunners, createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
+import {
+  combineRunners,
+  createDefaultHarnessBuilder,
+  resolveMailOutboundLimit,
+  wsUrlToHttp,
+} from './default-harness';
 import { buildPersonalAgentSystemPrompt } from '@workbench/agents';
 import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/runtime';
 const TEST_TENANT_ID = 'tenant-1';
@@ -95,6 +100,18 @@ describe('wsUrlToHttp', () => {
 
   it('handles a url with no path', () => {
     expect(wsUrlToHttp('ws://localhost:4000')).toBe('http://localhost:4000');
+  });
+});
+
+describe('resolveMailOutboundLimit', () => {
+  it('allows a higher per-turn outbound mail cap for Myra', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', { xml: true });
+
+    expect(resolveMailOutboundLimit(prompt)).toBe(100);
+  });
+
+  it('keeps the default cap for non-Myra agents', () => {
+    expect(resolveMailOutboundLimit('You are a specialist agent.')).toBe(8);
   });
 });
 
