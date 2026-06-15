@@ -24,6 +24,7 @@ export const workflowArtifactSchema = type({
   title: 'string',
   content: 'string',
   status: 'string',
+  'source?': 'unknown',
 });
 
 export type ParsedPainPoint = typeof painPointSchema.infer;

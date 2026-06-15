@@ -121,9 +121,7 @@ export function ArtifactGallery({
         onUseInWorkflow={onUseInWorkflow ? handleUseInWorkflow : undefined}
         canUseInWorkflow={(a) => canUseArtifactInWorkflow(a.kind)}
       >
-        {selected && (
-          <ArtifactBody body={selected.content} type={selected.kind} />
-        )}
+        {selected && <ArtifactBody artifact={selected} />}
       </ArtifactModal>
     </>
   );
