@@ -19,3 +19,4 @@ export {
   buildCollateralSystemPrompt,
   isPublicCollateralKind,
 } from './prompts';
+export { stripLeakedPromptTags } from './sanitize';

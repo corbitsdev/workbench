@@ -189,6 +189,29 @@ export function jsonOutputContract(shape: Record<string, string>): XmlNode {
   return xml("output", fields, { format: "json", fences: false });
 }
 
+// Every XML tag the structured-prompt builders emit as scaffolding: the section
+// tags used by structuredSection across prompts, the bulletList `item` tag, and
+// the `output`/`field` tags of the JSON output contract. This is the single
+// source of truth so any leak-stripper stays in sync with the builders — adding
+// a new structuredSection tag here keeps the stripper aware of it.
+export const SCAFFOLDING_TAGS = [
+  "role",
+  "structure",
+  "formatting",
+  "voice",
+  "hook-style",
+  "rules",
+  "ruleset",
+  "style",
+  "context",
+  "messaging",
+  "output",
+  "item",
+  "field",
+] as const;
+
+export type ScaffoldingTag = (typeof SCAFFOLDING_TAGS)[number];
+
 export const SPECIALIST_MAIL_SECTION: PromptSection = {
   tag: "messaging",
   content: `How to identify who sent the current message:

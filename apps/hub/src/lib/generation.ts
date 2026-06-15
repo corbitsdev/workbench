@@ -5,6 +5,7 @@ import {
   buildCollateralRulesBlock,
   buildCollateralSystemPrompt,
   isPublicCollateralKind,
+  stripLeakedPromptTags,
 } from '@workbench/gtm-workflows/collateral-generation';
 import { runSingleTurnAgent } from './inference';
 
@@ -37,7 +38,7 @@ const LONG_FORM_KINDS = new Set([
 ]);
 const LONG_FORM_MAX_TOKENS = 16384;
 
-function tryParseCollateral(
+export function tryParseCollateral(
   raw: string,
   workflowId: string,
   type: string
@@ -66,9 +67,12 @@ function tryParseCollateral(
     });
     throw new Error(`LLM response missing title or body for ${type}`);
   }
+  // No prompt-scaffolding XML belongs in any collateral body; the stripper owns
+  // that domain rule (it stays in sync with the prompt builders that emit the
+  // tags). We strip after parsing and before persisting.
   return {
     title: parsed.title.slice(0, 500),
-    body: parsed.body.slice(0, 10000),
+    body: stripLeakedPromptTags(parsed.body).slice(0, 10000),
   };
 }
 
