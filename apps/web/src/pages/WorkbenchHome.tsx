@@ -172,7 +172,14 @@ function useWorkbenchContext(slug: string | undefined): {
 // these generically — no workflow-kind branching lives here. The selected
 // panel derives its kind from the loaded workflow, not a navigation prop.
 function SelectedWorkflowView({ workflowId, onClose, onOpenAgent }: WorkflowSelectedPanelProps) {
-  const { data: workflow } = useWorkflow(workflowId);
+  const { data: workflow, isError } = useWorkflow(workflowId);
+  if (isError) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-[13px] text-text-3">Could not load workflow.</p>
+      </div>
+    );
+  }
   if (!workflow) {
     return (
       <div className="flex h-full items-center justify-center">

@@ -39,14 +39,6 @@ describe('useRightPane', () => {
     expect(onShow).toHaveBeenCalledTimes(1);
   });
 
-  it('flags the presentation wizard open only for that kind', () => {
-    render(React.createElement(Harness, {}));
-    act(() => api.showNewWorkflow('collateral-generation'));
-    expect(api.isPresentationWizardOpen).toBe(false);
-    act(() => api.showNewWorkflow('presentation-generation'));
-    expect(api.isPresentationWizardOpen).toBe(true);
-  });
-
   it('promotes a created workflow only while the wizard is the active pane', () => {
     render(React.createElement(Harness, {}));
     act(() => api.promoteCreatedWorkflow('wf-9'));

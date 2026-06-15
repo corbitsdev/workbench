@@ -64,6 +64,10 @@ export const presentationGenerationWorkflow: WorkflowType = {
         callTitle: str(input.callTitle),
       },
       generate: {
+        // The deck is built inside Geralt's chat session, out of band — the
+        // run terminates at 'generating' once dispatched. `completed` only
+        // flips if a 'done' transition is ever wired (none today); `dispatched`
+        // is the real terminal signal the panel renders.
         completed: status === 'done',
         dispatched: status === 'generating' || status === 'done',
         agentInstanceId: str(input.agentInstanceId),

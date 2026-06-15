@@ -52,9 +52,6 @@ export function useRightPane(options: { onShow?: () => void; onClose?: () => voi
     }
   };
 
-  const isPresentationWizardOpen =
-    rightPane.view === 'new-workflow' && rightPane.workflowKind === 'presentation-generation';
-
   return {
     rightPane,
     showGallery,
@@ -63,6 +60,5 @@ export function useRightPane(options: { onShow?: () => void; onClose?: () => voi
     showNewWorkflow,
     promoteCreatedWorkflow,
     closeWorkflow,
-    isPresentationWizardOpen,
   };
 }
