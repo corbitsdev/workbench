@@ -47,7 +47,7 @@ export const LARRY_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: 'Larry — last30days Research',
   name: 'Larry',
   systemPrompt: LARRY_DEPLOY_PROMPT,
-  credentialProviderNames: ['openai-compatible', 'xai', 'github', 'scrapecreators', 'reddit'],
+  credentialProviderNames: ['openai-compatible', 'xai', 'github', 'scrapecreators'],
   defaultTools: [...LARRY_CAPABILITIES.tools],
   requiredTools: [...LARRY_CAPABILITIES.tools],
 };

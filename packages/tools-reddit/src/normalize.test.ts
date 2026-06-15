@@ -7,7 +7,6 @@ const fixture: RedditPost = {
   title: 'Why TypeScript strict mode matters',
   url: 'https://example.com/ts-strict',
   permalink: '/r/typescript/comments/abc123/why_typescript_strict_mode_matters/',
-  selftext: 'A detailed post about strict mode.',
   created_utc: 1700000000,
   ups: 423,
   num_comments: 57,
