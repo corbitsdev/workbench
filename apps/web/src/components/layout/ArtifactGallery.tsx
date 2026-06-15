@@ -3,14 +3,20 @@
 // @workbench/client and passes the array + flags into the package component.
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
-import { useRef, useState } from 'react';
-import { useArtifacts } from '@workbench/client/react';
-import { ArtifactGallery as ArtifactGalleryView, ArtifactModal } from '@workbench/artifact';
-import type { GalleryArtifact, ArtifactWithSession } from '@workbench/artifact';
-import { clientOptions } from '../../lib/client-options';
-import ArtifactBody from '../ArtifactBody';
-import { canUseArtifactInWorkflow, collateralTypeOptions } from '@workbench/gtm-workflows';
-import { useChatLauncher } from '../../lib/chat-launcher-context';
+import { useRef, useState } from "react";
+import { useArtifacts } from "@workbench/client/react";
+import {
+  ArtifactGallery as ArtifactGalleryView,
+  ArtifactModal,
+} from "@workbench/artifact";
+import type { GalleryArtifact, ArtifactWithSession } from "@workbench/artifact";
+import { clientOptions } from "../../lib/client-options";
+import ArtifactBody from "../ArtifactBody";
+import {
+  canUseArtifactInWorkflow,
+  collateralTypeOptions,
+} from "@workbench/gtm-workflows";
+import { useChatLauncher } from "../../lib/chat-launcher-context";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -27,11 +33,15 @@ interface ArtifactGalleryProps {
 
 // Hand the agent a reference, not the body: it loads the current content via
 // the artifact_read tool, so the chat message stays small and never goes stale.
-export function buildArtifactMessage(artifact: ArtifactWithSession): string {
-  if (artifact.id === '') {
-    throw new Error('Cannot reference an artifact with an empty id');
+export function buildArtifactMessage(
+  artifact: ArtifactWithSession,
+  tenantId?: string,
+): string {
+  if (artifact.id === "") {
+    throw new Error("Cannot reference an artifact with an empty id");
   }
-  return `I'd like to work with the artifact ${JSON.stringify(artifact.title)} (id: ${artifact.id}). Load it with artifact_read before responding.`;
+  const tenantClause = tenantId ? ` in tenant ${tenantId}` : "";
+  return `I'd like to work with the artifact ${JSON.stringify(artifact.title)} (id: ${artifact.id}${tenantClause}). Load it with artifact_read before responding.`;
 }
 
 export function ArtifactGallery({
@@ -41,10 +51,10 @@ export function ArtifactGallery({
   onUseInWorkflow,
 }: ArtifactGalleryProps) {
   const { openWithMessage } = useChatLauncher();
-  const [inputQuery, setInputQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [inputQuery, setInputQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
+  const [sort, setSort] = useState<"newest" | "oldest">("newest");
 
   const {
     data: artifacts,
@@ -71,10 +81,10 @@ export function ArtifactGallery({
   };
 
   function handleOpenInMyra(artifact: ArtifactWithSession) {
-    if (artifact.id === '') {
-      throw new Error('Cannot open an artifact with an empty id in Myra');
+    if (artifact.id === "") {
+      throw new Error("Cannot open an artifact with an empty id in Myra");
     }
-    openWithMessage(buildArtifactMessage(artifact));
+    openWithMessage(buildArtifactMessage(artifact, tenantId ?? undefined));
     setSelected(null);
   }
 
@@ -103,14 +113,17 @@ export function ArtifactGallery({
         onClose={() => setSelected(null)}
         kindLabel={
           selected
-            ? (collateralTypeOptions.find((o) => o.id === selected.kind)?.label ?? selected.kind)
+            ? (collateralTypeOptions.find((o) => o.id === selected.kind)
+                ?.label ?? selected.kind)
             : undefined
         }
         onOpenInMyra={handleOpenInMyra}
         onUseInWorkflow={onUseInWorkflow ? handleUseInWorkflow : undefined}
         canUseInWorkflow={(a) => canUseArtifactInWorkflow(a.kind)}
       >
-        {selected && <ArtifactBody body={selected.content} type={selected.kind} />}
+        {selected && (
+          <ArtifactBody body={selected.content} type={selected.kind} />
+        )}
       </ArtifactModal>
     </>
   );
