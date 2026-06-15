@@ -24,6 +24,24 @@ describe('LARRY_SKILL_CONTENT', () => {
   it('contains engine footer pattern', () => {
     expect(LARRY_SKILL_CONTENT).toContain('Research by last30days');
   });
+
+  it('fans out to social, X, and Reddit sources', () => {
+    for (const tool of [
+      'x_search',
+      'reddit_search',
+      'reddit_subreddit_search',
+      'scrapecreators_tiktok',
+      'scrapecreators_instagram',
+      'scrapecreators_threads',
+      'scrapecreators_pinterest',
+    ]) {
+      expect(LARRY_SKILL_CONTENT).toContain(tool);
+    }
+  });
+
+  it('instructs the agent to degrade gracefully when a source fails', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('never abort the report because one source failed');
+  });
 });
 
 describe('LARRY_SKILL_CONTENT sync with SKILL.md', () => {

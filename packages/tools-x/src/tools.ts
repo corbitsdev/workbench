@@ -144,7 +144,10 @@ function resolveDays(args: Record<string, unknown>): number {
   return Math.max(1, Math.floor(args.days));
 }
 
-function resolveDateRange(args: Record<string, unknown>): { fromDate: string; toDate: string } {
+function resolveDateRange(args: Record<string, unknown>): {
+  fromDate: string;
+  toDate: string;
+} {
   const toDate =
     typeof args.toDate === 'string' && args.toDate.length > 0 ? args.toDate : undefined;
   const fromDate =
@@ -262,7 +265,9 @@ Return only valid JSON in this exact format, no prose:
   } satisfies RequestInit);
 
   if (!response.ok) {
-    throw new Error(`xAI API error: ${response.status} ${response.statusText}`);
+    const errorBody = await response.text().catch(() => '');
+    const detail = errorBody.length > 0 ? `: ${errorBody.slice(0, 500)}` : '';
+    throw new Error(`xAI API error: ${response.status} ${response.statusText}${detail}`);
   }
 
   const data: unknown = await response.json();

@@ -21,12 +21,22 @@ Call \`last30days_core_extract\` with the normalized topic string. This returns 
 
 ### Step 2 — Parallel source fetch
 
-Call all four source tools concurrently. Pass sharpened queries from Step 1 and \`days\` (default 30 unless the user specifies otherwise):
+Call the source tools concurrently. Pass sharpened queries from Step 1 and \`days\` (default 30 unless the user specifies otherwise). Always call the core sources; add the conditional sources when the topic fits.
+
+Core sources (always call):
 
 - \`hackernews_search\` — recent HN posts and comments
 - \`github_activity\` — repository stars, releases, issues
-- \`polymarket_odds\` — prediction market signals
 - \`exa_search\` — broad web coverage
+- \`reddit_search\` and \`reddit_subreddit_search\` — community discussion (use subreddits from Step 1)
+- \`x_search\` — real-time discussion and reactions on X
+
+Conditional sources (call when relevant):
+
+- \`polymarket_odds\` — only when the topic has a prediction-market angle (events, outcomes, elections, prices)
+- \`scrapecreators_tiktok\`, \`scrapecreators_instagram\`, \`scrapecreators_threads\`, \`scrapecreators_pinterest\` — for consumer, cultural, product, or creator-economy topics where social reception matters; skip them for narrow developer-infrastructure topics
+
+A source that errors or has no credential configured returns no items. Continue with whatever the other sources return and never abort the report because one source failed.
 
 ### Step 3 — Report
 

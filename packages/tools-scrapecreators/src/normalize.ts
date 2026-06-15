@@ -15,22 +15,39 @@ function firstLine(text: string): string {
   return text.slice(0, newlineIndex);
 }
 
+// Unix-second epochs are ~1e9-1e10; values at millisecond magnitude (>= 1e12)
+// are already in ms and must not be multiplied again.
+function epochToIso(epoch: number): string {
+  const millis = epoch >= 1e12 ? epoch : epoch * 1000;
+  return new Date(millis).toISOString();
+}
+
+function toIsoDate(value: number | string | undefined): string {
+  if (typeof value === 'number') {
+    return epochToIso(value);
+  }
+  if (typeof value === 'string' && value.length > 0) {
+    if (/^\d+$/.test(value)) {
+      return epochToIso(Number(value));
+    }
+    return value;
+  }
+  return new Date().toISOString();
+}
+
 export function normalizeTikTokPost(item: TikTokPost) {
   const caption = item.desc ?? '';
   return {
-    url: item.webVideoUrl ?? `https://www.tiktok.com/@unknown/video/${item.id}`,
+    url: item.url ?? `https://www.tiktok.com/@unknown/video/${item.id}`,
     title: truncate(caption, 100),
     summary: truncate(caption, 200),
-    publishedAt:
-      item.createTime !== undefined
-        ? new Date(item.createTime * 1000).toISOString()
-        : new Date().toISOString(),
+    publishedAt: toIsoDate(item.createTime),
     source: 'tiktok' as const,
     engagement: {
-      upvotes: item.diggCount ?? 0,
-      comments: 0,
+      upvotes: item.likes ?? 0,
+      comments: item.comments ?? 0,
     },
-    author: item.authorMeta?.name ?? '',
+    author: item.author ?? '',
   };
 }
 
@@ -38,18 +55,18 @@ export function normalizeInstagramPost(item: InstagramPost) {
   const caption = item.caption ?? '';
   return {
     url:
-      item.shortCode !== undefined
-        ? `https://instagram.com/p/${item.shortCode}`
+      item.code !== undefined
+        ? `https://www.instagram.com/reel/${item.code}`
         : 'https://instagram.com',
     title: firstLine(caption),
     summary: caption,
-    publishedAt: item.timestamp ?? new Date().toISOString(),
+    publishedAt: toIsoDate(item.takenAt),
     source: 'instagram' as const,
     engagement: {
-      upvotes: item.likesCount ?? 0,
-      comments: 0,
+      upvotes: item.likes ?? 0,
+      comments: item.comments ?? 0,
     },
-    author: item.ownerUsername ?? '',
+    author: item.author ?? '',
   };
 }
 
@@ -82,7 +99,7 @@ export function normalizePinterestPin(item: PinterestPin) {
     url: item.id !== undefined ? `https://pinterest.com/pin/${item.id}` : 'https://pinterest.com',
     title,
     summary: description,
-    publishedAt: item.created_at ?? new Date().toISOString(),
+    publishedAt: toIsoDate(item.created_at),
     source: 'pinterest' as const,
     engagement: {
       upvotes: item.save_count ?? 0,

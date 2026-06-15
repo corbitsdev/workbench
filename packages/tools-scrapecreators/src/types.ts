@@ -1,20 +1,20 @@
 export type TikTokPost = {
   id: string;
-  webVideoUrl?: string;
+  url?: string;
   desc?: string;
   createTime?: number;
-  diggCount?: number;
-  authorMeta?: {
-    name?: string;
-  };
+  likes?: number;
+  comments?: number;
+  author?: string;
 };
 
 export type InstagramPost = {
-  shortCode?: string;
+  code?: string;
   caption?: string;
-  timestamp?: string;
-  likesCount?: number;
-  ownerUsername?: string;
+  takenAt?: number | string;
+  likes?: number;
+  comments?: number;
+  author?: string;
 };
 
 export type ThreadsPost = {

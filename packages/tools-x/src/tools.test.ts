@@ -84,7 +84,10 @@ describe('createXTools / x_search handler', () => {
   }
 
   it('returns normalized items with author x-grok', async () => {
-    const tools = createXTools({ apiKey: 'test-key', fetcher: makeFetcher(mockResponse) });
+    const tools = createXTools({
+      apiKey: 'test-key',
+      fetcher: makeFetcher(mockResponse),
+    });
     const xSearch = findStringTool(tools, 'x_search');
 
     const raw = await xSearch.handler({ query: 'AI funding' }, new AbortController().signal);
@@ -149,25 +152,32 @@ describe('createXTools / x_search handler', () => {
   });
 
   it('throws when query is missing', async () => {
-    const tools = createXTools({ apiKey: 'test-key', fetcher: makeFetcher(mockResponse) });
+    const tools = createXTools({
+      apiKey: 'test-key',
+      fetcher: makeFetcher(mockResponse),
+    });
     const xSearch = findStringTool(tools, 'x_search');
     expect(xSearch.handler({}, new AbortController().signal)).rejects.toThrow('query is required');
   });
 
-  it('throws on non-ok response', async () => {
+  it('throws on non-ok response and includes the response body', async () => {
     const errorFetcher = async (): Promise<Response> =>
       ({
         ok: false,
         status: 429,
         statusText: 'Too Many Requests',
         json: async () => ({}),
-        text: async () => '',
+        text: async () => '{"error":"rate limit exceeded"}',
       }) as unknown as Response;
 
     const tools = createXTools({ apiKey: 'test-key', fetcher: errorFetcher });
     const xSearch = findStringTool(tools, 'x_search');
-    expect(xSearch.handler({ query: 'test' }, new AbortController().signal)).rejects.toThrow(
-      'xAI API error: 429'
-    );
+    const error = await xSearch
+      .handler({ query: 'test' }, new AbortController().signal)
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('xAI API error: 429');
+    expect((error as Error).message).toContain('rate limit exceeded');
   });
 });
