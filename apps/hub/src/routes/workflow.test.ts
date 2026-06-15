@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { Hono } from 'hono';
-import { createWorkflowRouter } from './workflow';
+import { createWorkflowRouter, resolveResetStatus } from './workflow';
 
 import * as intxDb from '@intx/db';
 import type { HubDb } from '../db';
@@ -2524,5 +2524,99 @@ describe('Workflow router', () => {
       );
       expect(res.status).toBe(200);
     });
+  });
+
+  describe('POST /workflows/:id/reset', () => {
+    function stuckDb(status: string, captured: Record<string, unknown>[]) {
+      const mockDb = createMockDb({ onSetUpdate: (values) => captured.push(values) });
+      mockDb.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-1',
+        status,
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'collateral-generation',
+        input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+      })) as typeof mockDb.query.workflowRun.findFirst;
+      return mockDb;
+    }
+
+    it("moves a stuck 'generating' run back to running", async () => {
+      const captured: Record<string, unknown>[] = [];
+      const router = buildApp(stuckDb('generating', captured));
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.status).toBe('ready');
+      expect(captured).toContainEqual(expect.objectContaining({ status: 'running' }));
+    });
+
+    it("moves a stuck 'analyzing' run to failed", async () => {
+      const captured: Record<string, unknown>[] = [];
+      const router = buildApp(stuckDb('analyzing', captured));
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.status).toBe('failed');
+      expect(captured).toContainEqual(expect.objectContaining({ status: 'failed' }));
+    });
+
+    it('returns 409 for a run that is not stuck', async () => {
+      const captured: Record<string, unknown>[] = [];
+      const router = buildApp(stuckDb('reviewing', captured));
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+      );
+      expect(res.status).toBe(409);
+      expect(captured).toHaveLength(0);
+    });
+
+    it('returns 404 when the workflow does not exist', async () => {
+      const mockDb = createMockDb();
+      mockDb.query.workflowRun.findFirst = mock(
+        () => null
+      ) as typeof mockDb.query.workflowRun.findFirst;
+      const router = buildApp(mockDb);
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 when the caller is not the workflow owner', async () => {
+      const captured: Record<string, unknown>[] = [];
+      const mockDb = createMockDb({ onSetUpdate: (values) => captured.push(values) });
+      mockDb.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-1',
+        status: 'generating',
+        principalId: 'someone-else',
+        kind: 'collateral-generation',
+        input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
+      })) as typeof mockDb.query.workflowRun.findFirst;
+      const router = buildApp(mockDb);
+      const res = await router.fetch(
+        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+      );
+      expect(res.status).toBe(403);
+      expect(captured).toHaveLength(0);
+    });
+  });
+});
+
+describe('resolveResetStatus', () => {
+  it("maps 'generating' to 'running' (resumable at selection)", () => {
+    expect(resolveResetStatus('generating')).toBe('running');
+  });
+
+  it("maps 'analyzing' to 'failed' (no usable partial output)", () => {
+    expect(resolveResetStatus('analyzing')).toBe('failed');
+  });
+
+  it('returns null for statuses that are not stuck', () => {
+    for (const status of ['pending', 'running', 'reviewing', 'done', 'failed']) {
+      expect(resolveResetStatus(status)).toBeNull();
+    }
   });
 });

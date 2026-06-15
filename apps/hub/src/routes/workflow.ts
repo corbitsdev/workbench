@@ -68,6 +68,18 @@ const DEFAULT_STEP_MAX_OUTPUT_TOKENS = {
 
 const MAX_STEP_OUTPUT_TOKENS = 65536;
 
+// Resolve the recovery status for a workflow wedged mid-step. A run pinned in an
+// in-progress status (because its inference hung) is moved back to the last
+// stable state the user can act on: `generating` returns to `running` (pain
+// points already exist, so the user re-selects and regenerates); `analyzing`
+// has no usable partial output, so it goes to `failed`. Any other status is not
+// stuck and is left untouched (returns null). See CL-1922.
+export function resolveResetStatus(status: string): string | null {
+  if (status === 'generating') return 'running';
+  if (status === 'analyzing') return 'failed';
+  return null;
+}
+
 export function createWorkflowRouter(
   db: HubDb,
   deps?: { sessionService?: SessionServiceDep }
@@ -1182,6 +1194,43 @@ export function createWorkflowRouter(
 
     log.warn('Invalid step', { workflowId: id, step });
     return c.json({ error: 'Invalid step' }, 400);
+  });
+
+  // ─── Reset a stuck workflow ─────────────────────────────────────────
+  // Recovery path for a run wedged in an in-progress status by a hung inference
+  // call (CL-1922). Moves it back to a state the user can act on.
+  router.post('/workflows/:id/reset', async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: eq(workflowRun.id, id),
+    });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
+    if (!isWorkflowOwner(wf, userContext)) {
+      log.warn('Caller is not the workflow owner', { userId, workflowId: id });
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const resetStatus = resolveResetStatus(wf.status);
+    if (!resetStatus) {
+      return c.json({ error: 'Workflow is not in a resettable (stuck) status' }, 409);
+    }
+
+    await db.update(workflowRun).set({ status: resetStatus }).where(eq(workflowRun.id, id));
+    log.info('Workflow reset from stuck status', {
+      workflowId: id,
+      from: wf.status,
+      to: resetStatus,
+    });
+    return c.json({ id, status: mapDbStatusToSessionStatus(resetStatus) });
   });
 
   // ─── Artifact approval ──────────────────────────────────────────────
