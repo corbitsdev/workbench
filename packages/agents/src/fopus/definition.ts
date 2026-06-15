@@ -23,7 +23,6 @@ export const FOPUS_MODEL_CONFIG = {
 } as const;
 
 export const FOPUS_CREDENTIAL_PROVIDER_NAMES = [
-  'anthropic',
   'firecrawl',
   'granola',
   'xai',

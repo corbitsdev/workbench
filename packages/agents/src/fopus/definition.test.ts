@@ -45,7 +45,6 @@ describe('FOPus definition', () => {
 
   it('keeps tool providers in onboarding metadata, not launch credential requirements', () => {
     expect(FOPUS_CREDENTIAL_PROVIDER_NAMES).toEqual([
-      'anthropic',
       'firecrawl',
       'granola',
       'xai',
