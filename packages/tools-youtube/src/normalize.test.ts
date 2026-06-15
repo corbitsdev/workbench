@@ -28,16 +28,16 @@ describe('normalizeYouTubeVideo', () => {
     expect(item.publishedAt).toBe('2024-06-01T12:00:00Z');
     expect(item.source).toBe('youtube');
     expect(item.author).toBe('TechChannel');
-    expect(item.engagement.upvotes).toBe(4200);
-    expect(item.engagement.comments).toBe(310);
-    expect(item.engagement.views).toBe(150000);
+    expect(item.engagement!.upvotes).toBe(4200);
+    expect(item.engagement!.comments).toBe(310);
+    expect(item.engagement!.views).toBe(150000);
   });
 
   test('uses 0 for missing statistics', () => {
     const item = normalizeYouTubeVideo(fixtureSearchItem, undefined);
-    expect(item.engagement.upvotes).toBe(0);
-    expect(item.engagement.comments).toBe(0);
-    expect(item.engagement.views).toBe(0);
+    expect(item.engagement!.upvotes).toBe(0);
+    expect(item.engagement!.comments).toBe(0);
+    expect(item.engagement!.views).toBe(0);
   });
 
   test('uses 0 when individual stat fields are undefined', () => {
@@ -47,9 +47,9 @@ describe('normalizeYouTubeVideo', () => {
       commentCount: undefined,
     };
     const item = normalizeYouTubeVideo(fixtureSearchItem, partialStats);
-    expect(item.engagement.upvotes).toBe(0);
-    expect(item.engagement.comments).toBe(0);
-    expect(item.engagement.views).toBe(5000);
+    expect(item.engagement!.upvotes).toBe(0);
+    expect(item.engagement!.comments).toBe(0);
+    expect(item.engagement!.views).toBe(5000);
   });
 
   test('constructs correct YouTube URL from videoId', () => {

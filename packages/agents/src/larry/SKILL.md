@@ -48,6 +48,13 @@ Call `last30days_core_report` with all raw items from Step 2 concatenated, plus 
 { topic, days, queryType?, stats: { sourceCount, itemCount, dateRange: { from, to } }, leadInsight?, clusters: [{ id, title, score, sources[], items[], summary? }], bestTakes: [{ quote, author?, source, engagement, url }], items[], citations[] }
 ```
 
+**Report tool input/output contract:**
+
+- `topic` is a required non-empty string; never omit it
+- `rawItems` MUST be a real JSON array passed as a JavaScript array — never a stringified blob (do not call `JSON.stringify` on the items before passing them)
+- Per-item shape: `{ url, title, publishedAt, source, engagement?, ... }` — `engagement` (`{ upvotes, comments }`) is included ONLY for sources that provide it (github, reddit, youtube, hn) and OMITTED entirely for sources that do not (web, x)
+- The returned brief is passed verbatim as `data: brief` to `write_artifact` — do not re-serialize or mutate it
+
 ### Step 4 — Validate
 
 Call `last30days_validate` with `{ body: <synthesized text>, citations: brief.citations, returnedItemUrls: <all item URLs from brief> }`.

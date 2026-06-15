@@ -201,4 +201,22 @@ describe('rankScore', () => {
   test('empty input returns empty array', () => {
     expect(rankScore([], { topic: 'test', nowIso: NOW_ISO })).toEqual([]);
   });
+
+  test('handles mix of items with and without engagement', () => {
+    const withEngagement = makeCluster(
+      [makeItem({ url: 'https://a.com', title: 'With Engagement', engagement: { upvotes: 100, comments: 10 } })],
+      'with'
+    );
+    // makeItem sets engagement by default; create one without by casting
+    const noEngItem = {
+      url: 'https://b.com',
+      title: 'No Engagement',
+      publishedAt: '2026-06-10T12:00:00Z',
+      source: 'web' as const,
+    } as ResearchItem;
+    const withoutEngagement = makeCluster([noEngItem], 'without');
+    // Should not throw and should return both clusters
+    const result = rankScore([withEngagement, withoutEngagement], { topic: 'test', nowIso: NOW_ISO });
+    expect(result).toHaveLength(2);
+  });
 });

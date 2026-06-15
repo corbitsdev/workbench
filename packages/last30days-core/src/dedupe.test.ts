@@ -101,4 +101,28 @@ describe('dedupe', () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual(item);
   });
+
+  test('handles items without engagement (web/x sources)', () => {
+    const noEngItem = {
+      url: 'https://web.com/article',
+      title: 'Web Article',
+      publishedAt: '2026-06-01T12:00:00Z',
+      source: 'web' as const,
+    } as ResearchItem;
+    const result = dedupe([noEngItem]);
+    expect(result).toHaveLength(1);
+  });
+
+  test('deduplicates items where one has engagement and one does not', () => {
+    const withEng = makeItem({ url: 'https://example.com/story', title: 'Story', source: 'hn', engagement: { upvotes: 100, comments: 10 } });
+    const withoutEng = {
+      url: 'https://example.com/story',
+      title: 'Story',
+      publishedAt: '2026-06-01T12:00:00Z',
+      source: 'web' as const,
+    } as ResearchItem;
+    // Same URL different sources — should collapse to 1
+    const result = dedupe([withoutEng, withEng]);
+    expect(result).toHaveLength(1);
+  });
 });

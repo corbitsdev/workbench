@@ -1,5 +1,5 @@
-import type { Cluster } from './cluster-merge';
-import type { ResearchItem } from './schema';
+import type { Cluster } from "./cluster-merge";
+import type { ResearchItem } from "./schema";
 
 export type RankScoreOptions = {
   topic: string;
@@ -10,10 +10,10 @@ export type RankScoreOptions = {
 export type RankedCluster = Cluster & { score: number };
 
 function engagementScore(items: ResearchItem[]): number {
-  const total = items.reduce(
-    (sum, item) => sum + item.engagement.upvotes + item.engagement.comments,
-    0
-  );
+  const total = items.reduce((sum, item) => {
+    if (item.engagement === undefined) return sum;
+    return sum + item.engagement.upvotes + item.engagement.comments;
+  }, 0);
   return Math.log(total + 1);
 }
 
@@ -33,7 +33,7 @@ function sourceBreadthBonus(cluster: Cluster): number {
 }
 
 function degradedPenalty(items: ResearchItem[]): number {
-  return items.some((i) => i.provenance === 'degraded') ? 0.25 : 0;
+  return items.some((i) => i.provenance === "degraded") ? 0.25 : 0;
 }
 
 // A highly-upvoted top comment is a strong "voice of the people" signal (a
@@ -60,7 +60,7 @@ function capPerAuthor(items: ResearchItem[], max: number): ResearchItem[] {
   const counts = new Map<string, number>();
   const result: ResearchItem[] = [];
   for (const item of items) {
-    const author = item.author ?? '__unknown__';
+    const author = item.author ?? "__unknown__";
     const count = counts.get(author) ?? 0;
     if (count < max) {
       result.push(item);
@@ -70,12 +70,18 @@ function capPerAuthor(items: ResearchItem[], max: number): ResearchItem[] {
   return result;
 }
 
-export function rankScore(clusters: Cluster[], opts: RankScoreOptions): RankedCluster[] {
+export function rankScore(
+  clusters: Cluster[],
+  opts: RankScoreOptions,
+): RankedCluster[] {
   const maxPerAuthor = opts.maxPerAuthor ?? 3;
   const nowMs = new Date(opts.nowIso).getTime();
 
   const pool = [...clusters];
-  const maxEngagement = Math.max(...pool.map((c) => engagementScore(c.items)), 1);
+  const maxEngagement = Math.max(
+    ...pool.map((c) => engagementScore(c.items)),
+    1,
+  );
 
   const scored = pool.map((cluster) => {
     const cappedItems = capPerAuthor(cluster.items, maxPerAuthor);

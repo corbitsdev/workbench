@@ -86,6 +86,23 @@ describe('LARRY_SKILL_CONTENT', () => {
   it('specifies RECOMMENDATIONS contract leads with the winner', () => {
     expect(LARRY_SKILL_CONTENT).toContain('Signal-weighted winner');
   });
+
+  it('specifies topic is a required non-empty string in the report contract', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('topic');
+    expect(LARRY_SKILL_CONTENT).toContain('required non-empty string');
+  });
+
+  it('prohibits stringified rawItems blob', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('never a stringified blob');
+  });
+
+  it('specifies engagement is omitted for web/x sources', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('web, x');
+  });
+
+  it('specifies engagement is included for github/reddit/youtube/hn', () => {
+    expect(LARRY_SKILL_CONTENT).toContain('github, reddit, youtube, hn');
+  });
 });
 
 describe('LARRY_SKILL_CONTENT sync with SKILL.md', () => {

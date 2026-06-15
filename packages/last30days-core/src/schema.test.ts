@@ -111,6 +111,26 @@ describe('ResearchItem', () => {
     const result = ResearchItem({ ...baseItem, provenance: 'standard' });
     expect(result instanceof type.errors).toBe(false);
   });
+
+  test('accepts web item with no engagement', () => {
+    const result = ResearchItem({
+      url: 'https://example.com',
+      title: 'Web Item',
+      publishedAt: '2026-06-01T12:00:00Z',
+      source: 'web',
+    });
+    expect(result instanceof type.errors).toBe(false);
+  });
+
+  test('accepts x item with no engagement', () => {
+    const result = ResearchItem({
+      url: 'https://x.com/post/1',
+      title: 'X Post',
+      publishedAt: '2026-06-01T12:00:00Z',
+      source: 'x',
+    });
+    expect(result instanceof type.errors).toBe(false);
+  });
 });
 
 describe('Citation', () => {

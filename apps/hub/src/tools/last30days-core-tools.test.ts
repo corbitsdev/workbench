@@ -33,6 +33,18 @@ describe('last30days_core_extract', () => {
     expect(result.subreddits).toContain('rust');
     expect(result.handles).toContain('openai');
   });
+
+  it('recovers topic from _raw fallback object', async () => {
+    const handler = getStringHandler('last30days_core_extract');
+    const rawArgs = JSON.stringify({ topic: 'rust async' });
+    const result = JSON.parse(await handler({ _raw: rawArgs }, SIGNAL));
+    expect(typeof result).toBe('object');
+  });
+
+  it('throws a clear error when _raw is invalid JSON', async () => {
+    const handler = getStringHandler('last30days_core_extract');
+    await expect(handler({ _raw: 'not-json' }, SIGNAL)).rejects.toThrow();
+  });
 });
 
 describe('last30days_core_report', () => {
@@ -79,6 +91,37 @@ describe('last30days_core_report', () => {
     const resultJson = await handler({ rawItems: [item], topic: 'defaults test' }, SIGNAL);
     const result = JSON.parse(resultJson);
     expect(result.days).toBe(30);
+  });
+
+  it('recovers topic and rawItems from _raw fallback', async () => {
+    const handler = getStringHandler('last30days_core_report');
+    const nowIso = new Date().toISOString();
+    const item = {
+      url: 'https://example.com/raw',
+      title: 'Raw Item',
+      publishedAt: nowIso,
+      source: 'web',
+      engagement: { upvotes: 5, comments: 1 },
+    };
+    const rawArgs = JSON.stringify({ topic: 'raw test', rawItems: [item] });
+    const resultJson = await handler({ _raw: rawArgs }, SIGNAL);
+    const result = JSON.parse(resultJson);
+    expect(result.topic).toBe('raw test');
+  });
+
+  it('recovers when rawItems is a stringified array', async () => {
+    const handler = getStringHandler('last30days_core_report');
+    const nowIso = new Date().toISOString();
+    const item = {
+      url: 'https://example.com/str',
+      title: 'Stringified Item',
+      publishedAt: nowIso,
+      source: 'hn',
+      engagement: { upvotes: 3, comments: 0 },
+    };
+    const resultJson = await handler({ topic: 'str test', rawItems: JSON.stringify([item]) }, SIGNAL);
+    const result = JSON.parse(resultJson);
+    expect(result.topic).toBe('str test');
   });
 });
 

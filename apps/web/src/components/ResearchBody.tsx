@@ -49,7 +49,7 @@ function ClusterSection({ cluster }: { cluster: ResearchBrief['clusters'][number
                 {item.title}
               </a>
               <span className="text-[11px] text-text-3 shrink-0 whitespace-nowrap">
-                {item.engagement.upvotes} up · {item.engagement.comments} comments
+                {item.engagement?.upvotes ?? 0} up · {item.engagement?.comments ?? 0} comments
               </span>
             </li>
           ))}

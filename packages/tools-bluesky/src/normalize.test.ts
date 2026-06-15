@@ -27,17 +27,17 @@ const basePost: BlueskyPost = {
 describe('normalizeBlueskyPost', () => {
   test('maps likeCount to upvotes', () => {
     const item = normalizeBlueskyPost(basePost);
-    expect(item.engagement.upvotes).toBe(312);
+    expect(item.engagement!.upvotes).toBe(312);
   });
 
   test('maps replyCount to comments', () => {
     const item = normalizeBlueskyPost(basePost);
-    expect(item.engagement.comments).toBe(47);
+    expect(item.engagement!.comments).toBe(47);
   });
 
   test('maps repostCount to shares', () => {
     const item = normalizeBlueskyPost(basePost);
-    expect(item.engagement.shares).toBe(89);
+    expect(item.engagement!.shares).toBe(89);
   });
 
   test('sets source to bluesky', () => {
