@@ -25,10 +25,13 @@ interface ArtifactGalleryProps {
   onUseInWorkflow?: (artifact: ArtifactWithSession) => void;
 }
 
-// First line Myra sees when an artifact is handed off, followed by its content
-// so she has the full context to work from.
-function buildArtifactMessage(artifact: ArtifactWithSession): string {
-  return `I'd like to work with this artifact: "${artifact.title}".\n\n${artifact.content}`;
+// Hand the agent a reference, not the body: it loads the current content via
+// the artifact_read tool, so the chat message stays small and never goes stale.
+export function buildArtifactMessage(artifact: ArtifactWithSession): string {
+  if (artifact.id === '') {
+    throw new Error('Cannot reference an artifact with an empty id');
+  }
+  return `I'd like to work with the artifact ${JSON.stringify(artifact.title)} (id: ${artifact.id}). Load it with artifact_read before responding.`;
 }
 
 export function ArtifactGallery({
@@ -68,6 +71,9 @@ export function ArtifactGallery({
   };
 
   function handleOpenInMyra(artifact: ArtifactWithSession) {
+    if (artifact.id === '') {
+      throw new Error('Cannot open an artifact with an empty id in Myra');
+    }
     openWithMessage(buildArtifactMessage(artifact));
     setSelected(null);
   }

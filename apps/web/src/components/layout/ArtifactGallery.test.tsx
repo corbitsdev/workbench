@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import React from 'react';
 import type { ArtifactWithSession } from '@workbench/shared';
-import { ArtifactGallery } from './ArtifactGallery';
+import { ArtifactGallery, buildArtifactMessage } from './ArtifactGallery';
 
 const fakeArtifact: ArtifactWithSession = {
   id: 'a-1',
@@ -45,6 +45,41 @@ function renderWithSeededArtifacts(
     )
   );
 }
+
+describe('buildArtifactMessage', () => {
+  it('references the artifact by id and title without inlining its content', () => {
+    const artifact: ArtifactWithSession = {
+      ...fakeArtifact,
+      id: 'a-42',
+      title: 'Sales automation ROI',
+      content: 'DISTINCTIVE_BODY_TEXT_should_not_be_sent',
+    };
+    const message = buildArtifactMessage(artifact);
+    expect(message).toContain('a-42');
+    expect(message).toContain('Sales automation ROI');
+    expect(message).toContain('artifact_read');
+    expect(message).not.toContain('DISTINCTIVE_BODY_TEXT_should_not_be_sent');
+  });
+
+  // Pins the message format the personal-agent prompt depends on: the `id:`
+  // token plus the `artifact_read` tool name. A silent reword here would
+  // decouple the message from the prompt nudge; this catches it.
+  it('emits the id token and artifact_read tool name the prompt relies on', () => {
+    const message = buildArtifactMessage(fakeArtifact);
+    expect(message).toContain(`(id: ${fakeArtifact.id})`);
+    expect(message).toContain('artifact_read');
+  });
+
+  it('escapes double quotes in the title so the framing cannot break', () => {
+    const message = buildArtifactMessage({ ...fakeArtifact, title: 'Q3 "final" deck' });
+    expect(message).toContain('"Q3 \\"final\\" deck"');
+    expect(message).toContain(`(id: ${fakeArtifact.id})`);
+  });
+
+  it('refuses to reference an artifact with an empty id rather than emit a dead-end message', () => {
+    expect(() => buildArtifactMessage({ ...fakeArtifact, id: '' })).toThrow();
+  });
+});
 
 describe('ArtifactGallery', () => {
   it('renders artifacts returned by the artifacts query', async () => {

@@ -191,4 +191,17 @@ describe('buildPersonalAgentSystemPrompt', () => {
     expect(prompt).toContain('older than');
     expect(prompt).toContain('unresolved');
   });
+
+  // CL-1951 — a referenced artifact id should be loaded via artifact_read, not asked about
+  it('directs Myra to load a referenced artifact id with artifact_read', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat).toLowerCase();
+    expect(prompt).toContain('artifact_read');
+    expect(prompt).toContain('that artifact is the subject of the request');
+  });
+
+  it('keeps the artifact_read nudge consistent with the <sources> recency rules', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat).toLowerCase();
+    expect(prompt).toContain('<sources> recency rules still govern');
+    expect(prompt).toContain('do not answer it from an artifact');
+  });
 });
