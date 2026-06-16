@@ -54,9 +54,12 @@ export const FIRECRAWL_CAPABILITIES = {
   ],
 } as const;
 
+export const FIRECRAWL_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+
 export const FIRECRAWL_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Freddy — Web Intelligence",
   name: "Freddy",
+  modelConfig: FIRECRAWL_MODEL_CONFIG,
   systemPrompt: FIRECRAWL_DEPLOY_PROMPT,
   credentialProviderNames: ["openai-compatible", "firecrawl"],
   defaultTools: [...FIRECRAWL_CAPABILITIES.tools],

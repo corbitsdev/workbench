@@ -53,9 +53,12 @@ export const GRANOLA_CAPABILITIES = {
   ],
 } as const;
 
+export const GRANOLA_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+
 export const GRANOLA_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Oat — Call Intelligence",
   name: "Oat",
+  modelConfig: GRANOLA_MODEL_CONFIG,
   systemPrompt: GRANOLA_DEPLOY_PROMPT,
   credentialProviderNames: ["openai-compatible", "granola"],
   defaultTools: [...GRANOLA_CAPABILITIES.tools],

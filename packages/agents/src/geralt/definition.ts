@@ -36,9 +36,12 @@ export const GERALT_TOOL_NAMES = [
   "mail_reply",
 ] as const;
 
+export const GERALT_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+
 export const GERALT_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Geralt — Presentation Builder",
   name: "Geralt",
+  modelConfig: GERALT_MODEL_CONFIG,
   systemPrompt: GERALT_DEPLOY_PROMPT,
   credentialProviderNames: ["openai-compatible", "gamma"],
   defaultTools: [...GERALT_TOOL_NAMES],

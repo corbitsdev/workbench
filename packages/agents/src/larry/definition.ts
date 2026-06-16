@@ -46,9 +46,12 @@ export const LARRY_CAPABILITIES = {
   ],
 } as const;
 
+export const LARRY_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+
 export const LARRY_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: 'Larry — last30days Research',
   name: 'Larry',
+  modelConfig: LARRY_MODEL_CONFIG,
   systemPrompt: LARRY_DEPLOY_PROMPT,
   credentialProviderNames: [
     'openai-compatible',

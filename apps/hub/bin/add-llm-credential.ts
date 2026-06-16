@@ -22,15 +22,14 @@ const TENANT_SLUG = env('GLOBAL_TENANT_SLUG', 'abklabs');
 
 // Auto-detect provider from well-known env vars if no explicit override is set.
 // Priority: LLM_PROVIDER_NAME > ANTHROPIC_API_KEY > OPENAI_API_KEY > openai-compatible default.
-function detectProvider(): { providerName: string; apiKey: string; model: string; baseURL: string; credentialName?: string } {
+// Model is NOT stored here — it belongs in each agent definition's modelConfig.
+function detectProvider(): { providerName: string; apiKey: string; baseURL?: string; credentialName?: string } {
   const explicit = process.env['LLM_PROVIDER_NAME'];
 
   if (explicit === 'anthropic' || (!explicit && process.env['ANTHROPIC_API_KEY'])) {
     return {
       providerName: 'anthropic',
       apiKey: process.env['ANTHROPIC_API_KEY'] ?? process.env['LLM_API_KEY'] ?? 'sk-dummy',
-      model: process.env['LLM_MODEL'] ?? 'claude-sonnet-4-6',
-      baseURL: process.env['LLM_BASE_URL'] ?? 'https://api.anthropic.com/v1',
       credentialName: process.env['ANTHROPIC_CREDENTIAL_NAME'] ?? 'anthropic-api',
     };
   }
@@ -39,20 +38,17 @@ function detectProvider(): { providerName: string; apiKey: string; model: string
     return {
       providerName: 'openai',
       apiKey: process.env['OPENAI_API_KEY'] ?? process.env['LLM_API_KEY'] ?? 'sk-dummy',
-      model: process.env['LLM_MODEL'] ?? 'gpt-4o',
-      baseURL: process.env['LLM_BASE_URL'] ?? 'https://api.openai.com/v1',
     };
   }
 
-  // openai-compatible (explicit or fallback) — keep legacy OPENAI_COMPATIBLE_* var names working
+  // openai-compatible (explicit or fallback) — keep legacy OPENAI_COMPATIBLE_* var names working.
+  // baseURL is required for openai-compatible since the endpoint varies per deployment.
   return {
     providerName: explicit ?? 'openai-compatible',
     apiKey:
       process.env['OPENAI_COMPATIBLE_API_KEY'] ??
       process.env['LLM_API_KEY'] ??
       'sk-dummy-key-for-local-dev',
-    model:
-      process.env['OPENAI_COMPATIBLE_MODEL'] ?? process.env['LLM_MODEL'] ?? 'gpt-4o',
     baseURL:
       process.env['OPENAI_COMPATIBLE_BASE_URL'] ??
       process.env['LLM_BASE_URL'] ??
@@ -66,9 +62,8 @@ const CREDENTIAL_NAME =
   process.env['LLM_CREDENTIAL_NAME'] ??
   detected.credentialName ??
   process.env['OPENAI_COMPATIBLE_CREDENTIAL_NAME'] ??
-  'Myra LLM';
+  'llm-credential';
 const LLM_API_KEY = detected.apiKey;
-const LLM_MODEL = detected.model;
 const LLM_BASE_URL = detected.baseURL;
 
 type CookieJar = string[];
@@ -155,14 +150,11 @@ let provider = (
 ).find((p) => p.name === PROVIDER_NAME);
 
 if (!provider) {
+  const providerMetadata = LLM_BASE_URL ? { baseURL: LLM_BASE_URL } : {};
   const createProvider = await api(
     'POST',
     `/api/tenants/${tenantId}/providers`,
-    {
-      name: PROVIDER_NAME,
-      plugin: PROVIDER_NAME,
-      metadata: { baseURL: LLM_BASE_URL, model: LLM_MODEL },
-    },
+    { name: PROVIDER_NAME, plugin: PROVIDER_NAME, metadata: providerMetadata },
     sessionCookies
   );
 
@@ -206,14 +198,15 @@ const existingCredential = (
 
 log(`Credential name: "${CREDENTIAL_NAME}"`);
 log(`  provider: ${PROVIDER_NAME}`);
-log(`  model:    ${LLM_MODEL}`);
-log(`  base URL: ${LLM_BASE_URL}`);
+if (LLM_BASE_URL) log(`  base URL: ${LLM_BASE_URL}`);
+
+const credentialMetadata = LLM_BASE_URL ? { baseURL: LLM_BASE_URL } : {};
 
 if (existingCredential) {
   const patch = await api(
     'PATCH',
     `/api/tenants/${tenantId}/credentials/${existingCredential.id}`,
-    { secret: LLM_API_KEY, metadata: { model: LLM_MODEL, baseURL: LLM_BASE_URL } },
+    { secret: LLM_API_KEY, metadata: credentialMetadata },
     sessionCookies
   );
   if (patch.status !== 200) fail('patch credential', patch.status, patch.data);
@@ -228,38 +221,11 @@ if (existingCredential) {
       type: 'api_key',
       secret: LLM_API_KEY,
       scopes: ['chat'],
-      metadata: { model: LLM_MODEL, baseURL: LLM_BASE_URL },
+      metadata: credentialMetadata,
     },
     sessionCookies
   );
   if (createCredential.status !== 201)
     fail('create credential', createCredential.status, createCredential.data);
   log(`Credential created (new): ${(createCredential.data as { id?: string }).id ?? CREDENTIAL_NAME}`);
-}
-
-// Patch any agent definitions in this tenant that are missing modelConfig.
-log(`Patching agent modelConfig (model: ${LLM_MODEL})...`);
-const agentsRes = await api(
-  'GET',
-  `/api/tenants/${tenantId}/agents/definitions`,
-  undefined,
-  sessionCookies
-);
-if (agentsRes.status !== 200) fail('list agents', agentsRes.status, agentsRes.data);
-
-const agents =
-  (agentsRes.data as { data?: Array<{ id: string; name: string; modelConfig?: unknown }> }).data ??
-  [];
-for (const a of agents) {
-  const patch = await api(
-    'PATCH',
-    `/api/tenants/${tenantId}/agents/definitions/${a.id}`,
-    { modelConfig: { defaultModel: LLM_MODEL } },
-    sessionCookies
-  );
-  if (patch.status !== 200) {
-    console.error(`[credential] WARN: failed to patch modelConfig on ${a.name}: ${patch.status}`);
-  } else {
-    log(`  Patched modelConfig on ${a.name}`);
-  }
 }
