@@ -19,16 +19,6 @@ interface SubmitStepMutation {
   mutateAsync: (args: PresentationStepArgs) => Promise<unknown>;
 }
 
-interface AgentInstance {
-  id: string;
-  agentName: string;
-}
-
-interface GeraltInstancesQuery {
-  isLoading: boolean;
-  data: AgentInstance[];
-}
-
 export interface GammaTemplate {
   id: string;
   gammaId: string;
@@ -48,7 +38,6 @@ export interface PresentationGenerationWizardProps {
   tenantId?: string | null;
   createWorkflow: CreateWorkflowMutation;
   submitStep: SubmitStepMutation;
-  geraltInstances: GeraltInstancesQuery;
   gammaTemplates: GammaTemplatesQuery;
   /** href for the template management page — shown when no templates are configured. */
   manageTemplatesHref?: string;
@@ -67,7 +56,7 @@ export interface PresentationGenerationWizardProps {
   seedArtifactId?: string;
 }
 
-type WizardStep = "template" | "brief" | "source" | "generate";
+type WizardStep = "template" | "brief" | "source";
 type SourceMode = "paste" | "recent" | "artifact";
 
 const SOURCE_MODE_LABELS: Record<SourceMode, string> = {
@@ -83,10 +72,9 @@ const STEP_LABELS: Record<WizardStep, string> = {
   template: "Template",
   brief: "Brief",
   source: "Source",
-  generate: "Generate",
 };
 
-const STEP_KEYS: WizardStep[] = ["template", "brief", "source", "generate"];
+const STEP_KEYS: WizardStep[] = ["template", "brief", "source"];
 
 const EASE_OUT: Easing = "easeOut";
 
@@ -187,7 +175,6 @@ export function PresentationGenerationWizard({
   tenantId,
   createWorkflow,
   submitStep,
-  geraltInstances,
   gammaTemplates,
   manageTemplatesHref,
   renderRecentPicker,
@@ -212,8 +199,6 @@ export function PresentationGenerationWizard({
   const sourceModes: SourceMode[] = renderArtifactPicker
     ? ["recent", "paste", "artifact"]
     : ["recent", "paste"];
-
-  const [selectedInstanceId, setSelectedInstanceId] = useState("");
 
   const handleTemplateNext = (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,7 +272,7 @@ export function PresentationGenerationWizard({
 
     try {
       await submitStep.mutateAsync(args);
-      setWizardStep("generate");
+      if (workflowId) onCreated(workflowId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save source");
     }
@@ -300,22 +285,6 @@ export function PresentationGenerationWizard({
       return;
     }
     void handleSourceSubmit({ source: "paste", transcript: pasteText.trim() });
-  };
-
-  const handleGenerate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!workflowId || !selectedInstanceId) return;
-    setError("");
-    try {
-      await submitStep.mutateAsync({
-        workflowId,
-        step: "generate",
-        agentInstanceId: selectedInstanceId,
-      });
-      onCreated(workflowId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to dispatch brief");
-    }
   };
 
   const handleClose = () => {
@@ -646,73 +615,6 @@ export function PresentationGenerationWizard({
             </motion.div>
           )}
 
-          {wizardStep === "generate" && (
-            <motion.form
-              key="generate"
-              onSubmit={handleGenerate}
-              className="space-y-4"
-              {...stepFade}
-            >
-              <p className="text-[13px] text-text-2">
-                Pick a running presentation agent session. The brief will be
-                dispatched into that chat.
-              </p>
-
-              {geraltInstances.isLoading ? (
-                <div className="text-[12px] text-text-3">Loading agents…</div>
-              ) : geraltInstances.data.length === 0 ? (
-                <div className="rounded-lg border border-border bg-surface-2 px-4 py-3">
-                  <p className="text-[13px] text-text-2">
-                    No presentation agents are running.
-                  </p>
-                  <p className="text-[12px] text-text-3 mt-1">
-                    Launch a presentation agent from the agent panel, then come
-                    back.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid gap-2">
-                  {geraltInstances.data.map((inst, idx) => (
-                    <label
-                      key={inst.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-[background-color,border-color] ${
-                        selectedInstanceId === inst.id
-                          ? "border-orange bg-orange/5"
-                          : "border-border hover:border-text-3"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="instance"
-                        value={inst.id}
-                        checked={selectedInstanceId === inst.id}
-                        onChange={() => setSelectedInstanceId(inst.id)}
-                        className="mt-0.5 accent-orange"
-                      />
-                      <div>
-                        <p className="text-[13px] font-medium text-text">
-                          {inst.agentName}
-                        </p>
-                        <p className="text-[12px] text-text-3">
-                          Session {idx + 1}
-                        </p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {error && <p className="text-[12px] text-orange">{error}</p>}
-
-              <button
-                type="submit"
-                disabled={submitStepLoading || !selectedInstanceId}
-                className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitStepLoading ? "Dispatching…" : "Send brief"}
-              </button>
-            </motion.form>
-          )}
         </AnimatePresence>
       </div>
     </div>

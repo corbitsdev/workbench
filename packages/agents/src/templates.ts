@@ -57,13 +57,6 @@ import {
   BOBBY_MODEL_CONFIG,
 } from './bobby/definition';
 import {
-  GERALT_DEPLOY_PROMPT,
-  GERALT_CREDENTIAL_REQUIREMENTS,
-  GERALT_GRANT_REQUIREMENTS,
-  GERALT_TOOL_NAMES,
-  GERALT_MODEL_CONFIG,
-} from './geralt/definition';
-import {
   LARRY_DEPLOY_PROMPT,
   LARRY_CREDENTIAL_REQUIREMENTS,
   LARRY_GRANT_REQUIREMENTS,
@@ -242,16 +235,6 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     grantRequirements: LINCOLN_GRANT_REQUIREMENTS,
     capabilities: { tools: [...LINCOLN_CAPABILITIES.tools] },
     modelConfig: LINCOLN_MODEL_CONFIG,
-  },
-  {
-    key: 'geralt',
-    name: 'Geralt',
-    description: 'Presentation builder — turns briefs and research into Gamma slide decks.',
-    systemPrompt: GERALT_DEPLOY_PROMPT,
-    credentialRequirements: GERALT_CREDENTIAL_REQUIREMENTS,
-    grantRequirements: GERALT_GRANT_REQUIREMENTS,
-    capabilities: { tools: [...GERALT_TOOL_NAMES] },
-    modelConfig: GERALT_MODEL_CONFIG,
   },
   {
     key: 'larry',

@@ -17,16 +17,9 @@ export type PresentationSourceStepArgs = {
   callTitle?: string;
 };
 
-export type PresentationGenerateStepArgs = {
-  workflowId: string;
-  step: "generate";
-  agentInstanceId: string;
-};
-
 export type PresentationStepArgs =
   | PresentationTemplateStepArgs
-  | PresentationSourceStepArgs
-  | PresentationGenerateStepArgs;
+  | PresentationSourceStepArgs;
 
 export interface PresentationSourceData {
   source: "paste" | "granola" | "artifact";

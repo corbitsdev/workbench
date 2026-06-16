@@ -1,7 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { useWorkbenchAgents } from "./use-workflow";
-import type { AgentInstance } from "./use-workflow";
 import type { PresentationStepArgs, GammaTemplate } from "@workbench/workflow";
 
 export { type PresentationStepArgs, type GammaTemplate };
@@ -69,17 +67,6 @@ export function useManageGammaTemplates() {
     queryFn: () => api<GammaTemplate[]>("GET", "/gamma-templates"),
     staleTime: 0,
   });
-}
-
-export function useGeraltInstances({
-  enabled = true,
-}: { enabled?: boolean } = {}) {
-  const agents = useWorkbenchAgents({ enabled });
-  return {
-    ...agents,
-    data:
-      agents.data?.filter((a: AgentInstance) => a.agentName === "Geralt") ?? [],
-  };
 }
 
 type PresentationWorkflowRun = {

@@ -4,7 +4,6 @@ import ArtifactSourcePicker from "../../components/ArtifactSourcePicker";
 import {
   useCreatePresentationWorkflow,
   useSubmitPresentationStep,
-  useGeraltInstances,
   useGammaTemplates,
 } from "../../hooks/use-presentation-workflow";
 import type { WorkflowNewPaneProps } from "../registry";
@@ -19,7 +18,6 @@ export function PresentationNewPane({
 }: WorkflowNewPaneProps) {
   const createWorkflow = useCreatePresentationWorkflow();
   const submitStep = useSubmitPresentationStep();
-  const geraltInstances = useGeraltInstances();
   const gammaTemplates = useGammaTemplates();
 
   return (
@@ -29,7 +27,6 @@ export function PresentationNewPane({
       onClose={onClose}
       createWorkflow={createWorkflow}
       submitStep={submitStep}
-      geraltInstances={geraltInstances}
       gammaTemplates={gammaTemplates}
       manageTemplatesHref="/settings/templates"
       {...(seedArtifactId ? { seedArtifactId } : {})}

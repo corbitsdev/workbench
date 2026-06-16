@@ -24,9 +24,11 @@ describe('presentationGenerationWorkflow', () => {
     expect(step?.tools).toContain('granola_get_note');
   });
 
-  it('generate step has empty credential requirements', () => {
+  it('generate step declares the LLM credential requirement for the pipeline', () => {
     const step = presentationGenerationWorkflow.steps.find((s) => s.name === 'generate');
-    expect(step?.credentialRequirements).toEqual([]);
+    expect(step?.credentialRequirements).toEqual([
+      { providerName: 'openai-compatible', source: 'tenant', name: 'zen-deepseek-v4-flash-free' },
+    ]);
   });
 
   it('deriveRunTitle returns companyName when present', () => {

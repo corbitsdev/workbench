@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import React from 'react';
 import {
   PresentationWorkflowPanel,
@@ -18,8 +18,8 @@ mock.module('framer-motion', () => ({
 
 function makeView({
   status = 'ready',
-  dispatched = false,
-}: { status?: string; dispatched?: boolean } = {}): PresentationWorkflowView {
+  gammaUrl,
+}: { status?: string; gammaUrl?: string } = {}): PresentationWorkflowView {
   return {
     status,
     companyName: 'Acme',
@@ -32,7 +32,15 @@ function makeView({
         goal: 'Close the deal',
       },
       source: { completed: true, callTitle: 'Acme discovery call' },
-      generate: { completed: status === 'done', dispatched },
+      generate: {
+        completed: status === 'done',
+        dispatched:
+          status === 'generating' ||
+          status === 'reviewing' ||
+          status === 'rendering' ||
+          status === 'done',
+        gammaUrl,
+      },
     },
   };
 }
@@ -48,24 +56,44 @@ describe('PresentationWorkflowPanel', () => {
     expect(screen.getByText('Close the deal')).not.toBeNull();
   });
 
-  it('shows a dispatched terminal state while generating', () => {
+  it('shows a generating state while the pipeline is running', () => {
     render(
-      <PresentationWorkflowPanel
-        workflow={makeView({ status: 'generating', dispatched: true })}
-        onClose={() => {}}
-      />
+      <PresentationWorkflowPanel workflow={makeView({ status: 'generating' })} onClose={() => {}} />
     );
-    expect(screen.getByText('Brief dispatched to Geralt')).not.toBeNull();
+    expect(screen.getByText('Generating content from brief')).not.toBeNull();
+  });
+
+  it('shows a reviewing state during the review round', () => {
+    render(
+      <PresentationWorkflowPanel workflow={makeView({ status: 'reviewing' })} onClose={() => {}} />
+    );
+    expect(screen.getByText('Reviewing against brand guidelines')).not.toBeNull();
+  });
+
+  it('shows a rendering state during Gamma render', () => {
+    render(
+      <PresentationWorkflowPanel workflow={makeView({ status: 'rendering' })} onClose={() => {}} />
+    );
+    expect(screen.getByText('Rendering in Gamma')).not.toBeNull();
   });
 
   it('shows a done state when the deck is generated', () => {
     render(
+      <PresentationWorkflowPanel workflow={makeView({ status: 'done' })} onClose={() => {}} />
+    );
+    expect(screen.getByText('Deck ready')).not.toBeNull();
+  });
+
+  it('shows an Open in Gamma link when done and gammaUrl is provided', () => {
+    render(
       <PresentationWorkflowPanel
-        workflow={makeView({ status: 'done', dispatched: true })}
+        workflow={makeView({ status: 'done', gammaUrl: 'https://gamma.app/deck/abc' })}
+        gammaUrl="https://gamma.app/deck/abc"
         onClose={() => {}}
       />
     );
-    expect(screen.getByText('Presentation generated')).not.toBeNull();
+    const link = screen.getByText('Open in Gamma');
+    expect(link).not.toBeNull();
   });
 
   it('shows a failure state without going blank', () => {
@@ -89,26 +117,5 @@ describe('PresentationWorkflowPanel', () => {
     );
     // No brief rows, but the awaiting state still renders — never empty.
     expect(screen.getByText('Awaiting generation')).not.toBeNull();
-  });
-
-  it('offers an Open Geralt session button that targets the provided instance', () => {
-    const onOpenAgent = mock(() => {});
-    render(
-      <PresentationWorkflowPanel
-        workflow={makeView({ status: 'generating' })}
-        geraltInstanceId="inst-9"
-        onOpenAgent={onOpenAgent}
-        onClose={() => {}}
-      />
-    );
-    fireEvent.click(screen.getByText('Open Geralt session'));
-    expect(onOpenAgent).toHaveBeenCalledWith('inst-9');
-  });
-
-  it('hides the open-session button when no Geralt instance is available', () => {
-    render(
-      <PresentationWorkflowPanel workflow={makeView({ status: 'generating' })} onClose={() => {}} />
-    );
-    expect(screen.queryByText('Open Geralt session')).toBeNull();
   });
 });

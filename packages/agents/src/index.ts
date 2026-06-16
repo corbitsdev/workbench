@@ -77,16 +77,6 @@ export {
   HAMMY_CAPABILITIES,
 } from './hammy-the-humanizer/definition';
 
-// Geralt agent
-export { buildGeraltSystemPrompt } from './geralt/prompt';
-export {
-  GERALT_GRANT_REQUIREMENTS,
-  GERALT_CREDENTIAL_REQUIREMENTS,
-  GERALT_DEPLOY_PROMPT,
-  GERALT_TOOL_NAMES,
-  GERALT_DEPLOY_DESCRIPTOR,
-} from './geralt/definition';
-
 // Larry — last30days research
 export { buildLarrySystemPrompt } from './larry/prompt';
 export { LARRY_SKILL_CONTENT } from './larry/skill';

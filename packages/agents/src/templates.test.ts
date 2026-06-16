@@ -17,9 +17,9 @@ describe('AGENT_TEMPLATES', () => {
     const keys = AGENT_TEMPLATES.map((t) => t.key).sort();
     expect(keys).toEqual([
       'bobby',
+      'fonnet',
       'fopus',
       'freddy',
-      'geralt',
       'hammy',
       'larry',
       'lincoln',

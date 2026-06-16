@@ -14,7 +14,6 @@ export type {
   PresentationStepArgs,
   PresentationTemplateStepArgs,
   PresentationSourceStepArgs,
-  PresentationGenerateStepArgs,
 } from './presentation-wizard-types';
 export { default as ProgressChecklist, type ProgressChecklistProps } from './ProgressChecklist';
 export { default as StepSidebar } from './StepSidebar';
