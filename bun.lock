@@ -633,6 +633,7 @@
     "packages/tools-browser": {
       "name": "@workbench/tools-browser",
       "dependencies": {
+        "arktype": "catalog:",
         "playwright-core": "^1.49.0",
       },
       "devDependencies": {
