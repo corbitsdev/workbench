@@ -53,7 +53,7 @@ export const GRANOLA_CAPABILITIES = {
   ],
 } as const;
 
-export const GRANOLA_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+export const GRANOLA_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;
 
 export const GRANOLA_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Oat — Call Intelligence",

@@ -54,7 +54,7 @@ export const FIRECRAWL_CAPABILITIES = {
   ],
 } as const;
 
-export const FIRECRAWL_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+export const FIRECRAWL_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;
 
 export const FIRECRAWL_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Freddy — Web Intelligence",

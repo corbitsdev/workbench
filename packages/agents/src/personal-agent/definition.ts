@@ -30,7 +30,7 @@ export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[]
   },
 ];
 
-export const PERSONAL_AGENT_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+export const PERSONAL_AGENT_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;
 
 /** Display name of the personal agent; also the per-tenant seed idempotency key. */
 export const PERSONAL_AGENT_NAME = 'Myra';

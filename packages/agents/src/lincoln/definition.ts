@@ -35,7 +35,7 @@ export const LINCOLN_CAPABILITIES = {
   ],
 } as const;
 
-export const LINCOLN_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+export const LINCOLN_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;
 
 export const LINCOLN_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Lincoln — LinkedIn Writer",

@@ -23,7 +23,7 @@ export const LOOP_DEPLOY_PROMPT: string = buildLoopAgentSystemPrompt("Loop", {
   xml: true,
 });
 
-export const LOOP_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+export const LOOP_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;
 
 export const LOOP_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Loop — Research Intelligence",
