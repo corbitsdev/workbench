@@ -17,8 +17,8 @@ describe('AGENT_TEMPLATES', () => {
     const keys = AGENT_TEMPLATES.map((t) => t.key).sort();
     expect(keys).toEqual([
       'bobby',
-      'fonnet',
-      'fopus',
+      'fannie',
+      'freddie',
       'freddy',
       'hammy',
       'larry',
@@ -30,13 +30,13 @@ describe('AGENT_TEMPLATES', () => {
     ]);
   });
 
-  it('registers FOPus as deployable Opus-backed Fable prompt agent', () => {
-    const fopus = AGENT_TEMPLATES.find((t) => t.key === 'fopus');
-    expect(fopus).toBeDefined();
-    expect(fopus?.name).toBe('FOpus');
-    expect(fopus?.modelConfig).toEqual({ defaultModel: 'claude-opus-4-8' });
-    expect(fopus?.capabilities.tools).toContain('mail_reply');
-    expect(fopus?.capabilities.tools).not.toContain('mail_send');
+  it('registers Freddie as deployable Opus-backed Fable prompt agent', () => {
+    const freddie = AGENT_TEMPLATES.find((t) => t.key === 'freddie');
+    expect(freddie).toBeDefined();
+    expect(freddie?.name).toBe('Freddie');
+    expect(freddie?.modelConfig).toEqual({ defaultModel: 'claude-opus-4-8' });
+    expect(freddie?.capabilities.tools).toContain('mail_reply');
+    expect(freddie?.capabilities.tools).not.toContain('mail_send');
   });
 
   it('registers Bobby with the browser toolset and the browserbase credential provider', () => {

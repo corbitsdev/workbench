@@ -1,6 +1,6 @@
 /**
  * Workbench-specific operating guidance appended to the shared Fable base
- * prompt for the FOpus and FOnnet agents. Kept separate from the archived
+ * prompt for the Freddie and Fannie agents. Kept separate from the archived
  * base prompt so it can evolve without touching the 126KB literal.
  */
 export const WORKBENCH_AGENT_GUIDANCE = `

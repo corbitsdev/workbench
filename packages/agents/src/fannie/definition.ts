@@ -1,18 +1,19 @@
 import { CredentialRequirement, GrantRequirement } from "@intx/types";
-import { FOPUS_DEPLOY_PROMPT as FABLE_BASE_PROMPT } from "./prompt";
-import { WORKBENCH_AGENT_GUIDANCE } from "./workbench-guidance";
+import { FREDDIE_DEPLOY_PROMPT as FABLE_BASE_PROMPT } from "../freddie/prompt";
+import { WORKBENCH_AGENT_GUIDANCE } from "../freddie/workbench-guidance";
 import type { AgentDeployDescriptor } from "../deploy-descriptor";
-export const FOPUS_DEPLOY_PROMPT = FABLE_BASE_PROMPT + WORKBENCH_AGENT_GUIDANCE;
+export const FANNIE_DEPLOY_PROMPT =
+  FABLE_BASE_PROMPT + WORKBENCH_AGENT_GUIDANCE;
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
-export const FOPUS_GRANT_REQUIREMENTS: GrantRequirementType[] = [
+export const FANNIE_GRANT_REQUIREMENTS: GrantRequirementType[] = [
   { source: "invoker", resource: "tool:mail_search", action: "invoke" },
   { source: "invoker", resource: "tool:mail_reply", action: "invoke" },
 ];
 
-export const FOPUS_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
+export const FANNIE_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
     providerName: "anthropic",
     source: "tenant",
@@ -20,11 +21,11 @@ export const FOPUS_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   },
 ];
 
-export const FOPUS_MODEL_CONFIG = {
-  defaultModel: "claude-opus-4-8",
+export const FANNIE_MODEL_CONFIG = {
+  defaultModel: "claude-sonnet-4-6",
 } as const;
 
-export const FOPUS_CREDENTIAL_PROVIDER_NAMES = [
+export const FANNIE_CREDENTIAL_PROVIDER_NAMES = [
   "firecrawl",
   "granola",
   "github",
@@ -32,7 +33,7 @@ export const FOPUS_CREDENTIAL_PROVIDER_NAMES = [
   "bluesky",
 ] as const;
 
-export const FOPUS_CAPABILITIES = {
+export const FANNIE_CAPABILITIES = {
   tools: [
     "firecrawl_scrape",
     "firecrawl_search",
@@ -68,12 +69,12 @@ export const FOPUS_CAPABILITIES = {
   ],
 } as const;
 
-export const FOPUS_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
-  label: "FOpus",
-  name: "FOpus",
-  modelConfig: FOPUS_MODEL_CONFIG,
-  systemPrompt: FOPUS_DEPLOY_PROMPT,
-  credentialProviderNames: [...FOPUS_CREDENTIAL_PROVIDER_NAMES],
-  defaultTools: [...FOPUS_CAPABILITIES.tools],
-  requiredTools: [...FOPUS_CAPABILITIES.tools],
+export const FANNIE_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
+  label: "Fannie",
+  name: "Fannie",
+  modelConfig: FANNIE_MODEL_CONFIG,
+  systemPrompt: FANNIE_DEPLOY_PROMPT,
+  credentialProviderNames: [...FANNIE_CREDENTIAL_PROVIDER_NAMES],
+  defaultTools: [...FANNIE_CAPABILITIES.tools],
+  requiredTools: [...FANNIE_CAPABILITIES.tools],
 };

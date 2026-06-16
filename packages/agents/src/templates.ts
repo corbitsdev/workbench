@@ -64,18 +64,18 @@ import {
   LARRY_MODEL_CONFIG,
 } from './larry/definition';
 import {
-  FOPUS_DEPLOY_PROMPT,
-  FOPUS_CREDENTIAL_REQUIREMENTS,
-  FOPUS_GRANT_REQUIREMENTS,
-  FOPUS_CAPABILITIES,
-  FOPUS_MODEL_CONFIG,
-} from './fopus/definition';
+  FREDDIE_DEPLOY_PROMPT,
+  FREDDIE_CREDENTIAL_REQUIREMENTS,
+  FREDDIE_GRANT_REQUIREMENTS,
+  FREDDIE_CAPABILITIES,
+  FREDDIE_MODEL_CONFIG,
+} from './freddie/definition';
 import {
-  FONNET_CREDENTIAL_REQUIREMENTS,
-  FONNET_GRANT_REQUIREMENTS,
-  FONNET_CAPABILITIES,
-  FONNET_MODEL_CONFIG,
-} from './fonnet/definition';
+  FANNIE_CREDENTIAL_REQUIREMENTS,
+  FANNIE_GRANT_REQUIREMENTS,
+  FANNIE_CAPABILITIES,
+  FANNIE_MODEL_CONFIG,
+} from './fannie/definition';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -124,7 +124,7 @@ export interface AgentTemplate {
  *   - Myra:   PERSONAL_AGENT_BASE_TOOLS (empty today; single source of truth)
  *   - Loop:   LOOP_DEPLOY_DESCRIPTOR.defaultTools
  *   - Oat:    GRANOLA_CAPABILITIES.tools
- *   - Freddy: FIRECRAWL_CAPABILITIES.tools
+ *   - Freddy: FIRECRAWL_CAPABILITIES.tools (Firecrawl agent)
  *   - Walter: WALTER_CAPABILITIES.tools
  *   - Hammy:  HAMMY_CAPABILITIES.tools
  */
@@ -162,26 +162,26 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     deployable: false,
   },
   {
-    key: 'fopus',
-    name: 'FOpus',
+    key: 'freddie',
+    name: 'Freddie',
     description:
       'Fable-style Opus agent with broad research and local artifact-writing tools, excluding outbound mail send.',
-    systemPrompt: FOPUS_DEPLOY_PROMPT,
-    credentialRequirements: FOPUS_CREDENTIAL_REQUIREMENTS,
-    grantRequirements: FOPUS_GRANT_REQUIREMENTS,
-    capabilities: { tools: [...FOPUS_CAPABILITIES.tools] },
-    modelConfig: FOPUS_MODEL_CONFIG,
+    systemPrompt: FREDDIE_DEPLOY_PROMPT,
+    credentialRequirements: FREDDIE_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: FREDDIE_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...FREDDIE_CAPABILITIES.tools] },
+    modelConfig: FREDDIE_MODEL_CONFIG,
   },
   {
-    key: 'fonnet',
-    name: 'FOnnet',
+    key: 'fannie',
+    name: 'Fannie',
     description:
       'Fable-style Sonnet agent with broad research and local artifact-writing tools, excluding outbound mail send.',
-    systemPrompt: FOPUS_DEPLOY_PROMPT,
-    credentialRequirements: FONNET_CREDENTIAL_REQUIREMENTS,
-    grantRequirements: FONNET_GRANT_REQUIREMENTS,
-    capabilities: { tools: [...FONNET_CAPABILITIES.tools] },
-    modelConfig: FONNET_MODEL_CONFIG,
+    systemPrompt: FREDDIE_DEPLOY_PROMPT,
+    credentialRequirements: FANNIE_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: FANNIE_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...FANNIE_CAPABILITIES.tools] },
+    modelConfig: FANNIE_MODEL_CONFIG,
   },
   {
     key: 'freddy',

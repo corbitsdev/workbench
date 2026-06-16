@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
-  FOPUS_CAPABILITIES,
-  FOPUS_CREDENTIAL_PROVIDER_NAMES,
-  FOPUS_CREDENTIAL_REQUIREMENTS,
-  FOPUS_DEPLOY_DESCRIPTOR,
-  FOPUS_DEPLOY_PROMPT,
-  FOPUS_MODEL_CONFIG,
+  FREDDIE_CAPABILITIES,
+  FREDDIE_CREDENTIAL_PROVIDER_NAMES,
+  FREDDIE_CREDENTIAL_REQUIREMENTS,
+  FREDDIE_DEPLOY_DESCRIPTOR,
+  FREDDIE_DEPLOY_PROMPT,
+  FREDDIE_MODEL_CONFIG,
 } from "./definition";
 
 const researchTools = [
@@ -23,10 +23,10 @@ const researchTools = [
   "write_file",
 ];
 
-describe("FOPus definition", () => {
+describe("Freddie definition", () => {
   it("requires one tenant-owned Anthropic LLM credential", () => {
-    expect(FOPUS_CREDENTIAL_REQUIREMENTS).toHaveLength(1);
-    expect(FOPUS_CREDENTIAL_REQUIREMENTS[0]).toEqual({
+    expect(FREDDIE_CREDENTIAL_REQUIREMENTS).toHaveLength(1);
+    expect(FREDDIE_CREDENTIAL_REQUIREMENTS[0]).toEqual({
       providerName: "anthropic",
       source: "tenant",
       name: "anthropic-api",
@@ -34,32 +34,32 @@ describe("FOPus definition", () => {
   });
 
   it("targets Anthropic Opus 4.8 through model config", () => {
-    expect(FOPUS_MODEL_CONFIG).toEqual({
+    expect(FREDDIE_MODEL_CONFIG).toEqual({
       defaultModel: "claude-opus-4-8",
     });
   });
 
   it("exposes broad existing research and local artifact tools without mail_send", () => {
-    const tools: readonly string[] = FOPUS_CAPABILITIES.tools;
+    const tools: readonly string[] = FREDDIE_CAPABILITIES.tools;
     for (const tool of researchTools) {
       expect(tools).toContain(tool);
     }
 
-    expect(FOPUS_CAPABILITIES.tools).not.toContain("mail_send");
+    expect(FREDDIE_CAPABILITIES.tools).not.toContain("mail_send");
   });
 
   it("appends Workbench mail-vs-chat guidance onto the base prompt", () => {
-    expect(FOPUS_DEPLOY_PROMPT).toContain("# Claude Fable 5");
-    expect(FOPUS_DEPLOY_PROMPT).toContain("Workbench operating context");
-    expect(FOPUS_DEPLOY_PROMPT).toContain(
+    expect(FREDDIE_DEPLOY_PROMPT).toContain("# Claude Fable 5");
+    expect(FREDDIE_DEPLOY_PROMPT).toContain("Workbench operating context");
+    expect(FREDDIE_DEPLOY_PROMPT).toContain(
       "Do not call a mail tool to answer the user",
     );
-    expect(FOPUS_DEPLOY_PROMPT).toContain("never pass `uid: 0`");
-    expect(FOPUS_DEPLOY_DESCRIPTOR.systemPrompt).toBe(FOPUS_DEPLOY_PROMPT);
+    expect(FREDDIE_DEPLOY_PROMPT).toContain("never pass `uid: 0`");
+    expect(FREDDIE_DEPLOY_DESCRIPTOR.systemPrompt).toBe(FREDDIE_DEPLOY_PROMPT);
   });
 
   it("keeps tool providers in onboarding metadata, not launch credential requirements", () => {
-    expect(FOPUS_CREDENTIAL_PROVIDER_NAMES).toEqual([
+    expect(FREDDIE_CREDENTIAL_PROVIDER_NAMES).toEqual([
       "firecrawl",
       "granola",
       "github",
@@ -67,7 +67,7 @@ describe("FOPus definition", () => {
       "bluesky",
     ]);
 
-    const requirementProviders = FOPUS_CREDENTIAL_REQUIREMENTS.map(
+    const requirementProviders = FREDDIE_CREDENTIAL_REQUIREMENTS.map(
       (r) => r.providerName,
     );
     expect(requirementProviders).toEqual(["anthropic"]);
