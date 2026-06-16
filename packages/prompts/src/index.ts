@@ -51,6 +51,50 @@ export function buildContextBlock(
   return formatSection({ tag: "context", content }, format);
 }
 
+// Runtime context shared by every agent so behaviour is unified: who the agent
+// is acting for, the live calendar date, and any other locally-relevant facts.
+// Fields are optional except the date — render only what is present so shared
+// agents (no single user) and personal agents use the same block.
+export interface ActiveContext {
+  now: Date;
+  userName?: string;
+  // Additional labelled facts (e.g. workbench, timezone). Rendered verbatim in
+  // insertion order beneath the standard fields. Keys must be non-numeric
+  // labels (object key order is only guaranteed for string keys).
+  extra?: Record<string, string>;
+}
+
+// Format a date as DD/MM/YYYY in UTC for a deterministic, server-side calendar
+// date. Pass the current Date at call time — never bind a module-level
+// constant, or the date freezes at process start.
+export function formatDate(now: Date): string {
+  const day = String(now.getUTCDate()).padStart(2, "0");
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const year = now.getUTCFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+// Build the unified active-context block. A plain labelled section that reads
+// correctly whether the host prompt is XML- or markdown-formatted, since it is
+// appended as a trailing block rather than merged into the prompt's own
+// sections.
+export function buildActiveContext(context: ActiveContext): string {
+  const lines = ["## Active Context"];
+  if (context.userName) lines.push(`User: ${context.userName}`);
+  lines.push(`Current date: ${formatDate(context.now)}`);
+  if (context.extra) {
+    for (const [label, value] of Object.entries(context.extra)) {
+      lines.push(`${label}: ${value}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+// Append the active-context block beneath an existing system prompt.
+export function withActiveContext(systemPrompt: string, context: ActiveContext): string {
+  return `${systemPrompt}\n\n${buildActiveContext(context)}`;
+}
+
 export type XmlValue =
   | string
   | number
@@ -144,6 +188,29 @@ export function jsonOutputContract(shape: Record<string, string>): XmlNode {
   );
   return xml("output", fields, { format: "json", fences: false });
 }
+
+// Every XML tag the structured-prompt builders emit as scaffolding: the section
+// tags used by structuredSection across prompts, the bulletList `item` tag, and
+// the `output`/`field` tags of the JSON output contract. This is the single
+// source of truth so any leak-stripper stays in sync with the builders — adding
+// a new structuredSection tag here keeps the stripper aware of it.
+export const SCAFFOLDING_TAGS = [
+  "role",
+  "structure",
+  "formatting",
+  "voice",
+  "hook-style",
+  "rules",
+  "ruleset",
+  "style",
+  "context",
+  "messaging",
+  "output",
+  "item",
+  "field",
+] as const;
+
+export type ScaffoldingTag = (typeof SCAFFOLDING_TAGS)[number];
 
 export const SPECIALIST_MAIL_SECTION: PromptSection = {
   tag: "messaging",

@@ -207,6 +207,42 @@ describe('UnifiedCatalogModal', () => {
     await waitFor(() => expect(onWorkflowSelected).toHaveBeenCalledWith('collateral-generation'));
   });
 
+  it('opens on the Workflows tab and hides workflows that reject the artifact kind', async () => {
+    render(
+      <UnifiedCatalogModal
+        open={true}
+        tenantId="tenant-1"
+        onClose={onClose}
+        onAgentDeployed={onAgentDeployed}
+        onWorkflowSelected={onWorkflowSelected}
+        artifactKind="email"
+      />,
+      { wrapper }
+    );
+
+    // 'email' is accepted by the general presentation workflow but not by
+    // collateral generation, which only seeds from transcripts/pain points.
+    await waitFor(() => screen.getByText('Presentation Generation'));
+    expect(screen.queryByText('Collateral Generation')).toBeNull();
+  });
+
+  it('shows both workflows for an artifact kind collateral accepts', async () => {
+    render(
+      <UnifiedCatalogModal
+        open={true}
+        tenantId="tenant-1"
+        onClose={onClose}
+        onAgentDeployed={onAgentDeployed}
+        onWorkflowSelected={onWorkflowSelected}
+        artifactKind="pain-points"
+      />,
+      { wrapper }
+    );
+
+    await waitFor(() => screen.getByText('Collateral Generation'));
+    screen.getByText('Presentation Generation');
+  });
+
   it('does not render when open is false', () => {
     render(
       <UnifiedCatalogModal

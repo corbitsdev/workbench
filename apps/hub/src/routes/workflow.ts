@@ -1,20 +1,20 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, ne, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, max, ne, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import { schema as intxSchema } from '@intx/db';
-import { fetchGammaTemplates } from '@workbench/tools-gamma';
+import { listLatestGammaTemplates } from '../lib/gamma-templates';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
 import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
 import {
   collateralGenerationWorkflow,
   presentationGenerationWorkflow,
   isCollateralKind,
+  sourceArtifactKindSkipsAnalysis,
+  CSV_EXPORT_ARTIFACT_KIND,
+  SELECTION_ARTIFACT_KIND,
+  setSelectionChosen,
+  seoEnrichmentWorkflow,
 } from '@workbench/gtm-workflows';
-import type { SessionService } from '@intx/hub-sessions';
-import { generateKeyPair, createNodeCrypto } from '@intx/crypto-node';
-import { generateId } from '@intx/hub-common';
-
-export type SessionServiceDep = Pick<SessionService, 'sendUserMessage'>;
 import type { HubDb } from '../db';
 import {
   workflowRun,
@@ -22,12 +22,20 @@ import {
   painPoint,
   artifact,
   artifactStatus,
+  artifactVersion,
   enabledWorkflow,
 } from '../db/schema';
 import { getNoteWithTranscript, getRecentNotes, transcriptToText } from '../lib/granola';
 import { randomUUID } from 'node:crypto';
 import { serializePainPoint, serializeArtifact } from '../serializers/workflow';
-import { runAnalyze, runGenerate } from '../services/workflow-generation';
+import { runAnalyze, runGenerate, runPresentationGenerate } from '../services/workflow-generation';
+import {
+  createResourceEnrichmentRun,
+  isResourceEnrichmentKind,
+  ResourceEnrichmentError,
+  runResourceEnrichmentEnrich,
+  runResourceEnrichmentExport,
+} from '../services/resource-enrichment';
 import {
   mapDbStatusToSessionStatus,
   getFirstRunnableStep,
@@ -55,6 +63,7 @@ const log = getLogger(['api', 'workflow']);
 
 workflowRegistry.register(collateralGenerationWorkflow);
 workflowRegistry.register(presentationGenerationWorkflow);
+workflowRegistry.register(seoEnrichmentWorkflow);
 
 // Per-step output-token caps applied when a step has no explicit override.
 // These are caps, not floors. Analyze is highest because reasoning models spend
@@ -68,6 +77,23 @@ const DEFAULT_STEP_MAX_OUTPUT_TOKENS = {
 
 const MAX_STEP_OUTPUT_TOKENS = 65536;
 
+// Artifact kinds whose raw content may be streamed as a file download. The list
+// is intentionally narrow: most artifact content is served as JSON via
+// GET /artifacts, and only terminal export kinds are safe to hand a browser as
+// an attachment.
+const DOWNLOADABLE_ARTIFACT_KINDS: ReadonlySet<string> = new Set([CSV_EXPORT_ARTIFACT_KIND]);
+
+// Build a safe Content-Disposition filename from an artifact title: strip quotes,
+// backslashes and control characters that would break the header, drop a trailing
+// .csv the title may already carry, and fall back to a stable default when empty.
+export function csvDownloadFilename(title: string): string {
+  const cleaned = title
+    .replace(/[\r\n"\\]/g, '')
+    .replace(/\.csv$/i, '')
+    .trim();
+  return `${cleaned.length > 0 ? cleaned : 'export'}.csv`;
+}
+
 // Resolve the recovery status for a workflow wedged mid-step. A run pinned in an
 // in-progress status (because its inference hung) is moved back to the last
 // stable state the user can act on: `generating` returns to `running` (pain
@@ -80,11 +106,7 @@ export function resolveResetStatus(status: string): string | null {
   return null;
 }
 
-export function createWorkflowRouter(
-  db: HubDb,
-  deps?: { sessionService?: SessionServiceDep }
-): Hono<{ Variables: { userId: string } }> {
-  const sessionService = deps?.sessionService;
+export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
   // ─── List available workflow types ───────────────────────────────
@@ -116,10 +138,15 @@ export function createWorkflowRouter(
   });
 
   // ─── Gamma template registry ─────────────────────────────────────
-  // Gamma has no list-templates API; we serve a workbench-owned curated registry.
-  // Tenant-scoped persistence + an add-template flow land in CL-1874.
-  router.get('/workflows/gamma/templates', (c) => {
-    return c.json(fetchGammaTemplates());
+  // Returns tenant-owned gamma templates from DB. Gamma has no list-templates API.
+  router.get('/workflows/gamma/templates', async (c) => {
+    const userId = c.get('userId');
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) {
+      return c.json([]);
+    }
+    const templates = await listLatestGammaTemplates(db, userContext.tenantId);
+    return c.json(templates);
   });
 
   // ─── List enabled workflows for tenant ───────────────────────────
@@ -217,7 +244,10 @@ export function createWorkflowRouter(
 
     const validation = await validateAssignments(db, userContext.tenantId, wt, body.assignments);
     if (!validation.ok) {
-      log.warn('Workflow assignment validation failed', { kind, error: validation.error });
+      log.warn('Workflow assignment validation failed', {
+        kind,
+        error: validation.error,
+      });
       return c.json({ error: validation.error }, 400);
     }
 
@@ -259,12 +289,15 @@ export function createWorkflowRouter(
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const transcriptText = typeof body.transcript === 'string' ? body.transcript : undefined;
     const granolaId = typeof body.granolaId === 'string' ? body.granolaId : undefined;
+    const sourceArtifactId =
+      typeof body.sourceArtifactId === 'string' ? body.sourceArtifactId : undefined;
     const source = typeof body.source === 'string' ? body.source : undefined;
     const workflowKind = typeof body.workflowKind === 'string' ? body.workflowKind : undefined;
     const requestedTenantId = typeof body.tenantId === 'string' ? body.tenantId : null;
     const requestedCallTitle = typeof body.callTitle === 'string' ? body.callTitle.trim() : '';
 
-    const workflowSource = source === 'paste' || source === 'granola' ? source : undefined;
+    const workflowSource =
+      source === 'paste' || source === 'granola' || source === 'artifact' ? source : undefined;
 
     if (!workflowKind) {
       log.warn('Workflow kind is required');
@@ -313,6 +346,22 @@ export function createWorkflowRouter(
 
     log.info('Creating workflow', { workflowKind, source });
 
+    if (isResourceEnrichmentKind(workflowKind)) {
+      const uploadId = typeof body.uploadId === 'string' ? body.uploadId : undefined;
+      if (!uploadId) {
+        return c.json({ error: 'uploadId is required' }, 400);
+      }
+      try {
+        const run = await createResourceEnrichmentRun(db, userContext, workflowKind, uploadId);
+        return c.json(run, 201);
+      } catch (err) {
+        if (err instanceof ResourceEnrichmentError) {
+          return c.json({ error: err.message }, err.status);
+        }
+        throw err;
+      }
+    }
+
     if (workflowKind === 'presentation-generation') {
       const [wfRow] = await db
         .insert(workflowRun)
@@ -330,7 +379,9 @@ export function createWorkflowRouter(
         });
         return c.json({ error: 'Failed to create workflow' }, 500);
       }
-      log.info('Presentation generation workflow created', { workflowId: wfRow.id });
+      log.info('Presentation generation workflow created', {
+        workflowId: wfRow.id,
+      });
       return c.json({ id: wfRow.id, status: wfRow.status, kind: wfRow.kind }, 201);
     }
 
@@ -341,6 +392,11 @@ export function createWorkflowRouter(
 
     let content: string;
     let callTitle = requestedCallTitle;
+    // Set when the run is seeded from an artifact whose kind already represents
+    // a completed analysis phase (a 'pain-points' artifact). Carries the origin
+    // session so its chosen pain points can be copied onto the new run, letting
+    // it skip analysis and go straight to generation.
+    let skipAnalysisOriginSessionId: string | null = null;
 
     if (workflowSource === 'paste') {
       if (!transcriptText || transcriptText.trim().length === 0) {
@@ -354,6 +410,34 @@ export function createWorkflowRouter(
       content = transcriptText;
       if (!callTitle) callTitle = 'Pasted transcript';
       log.info('Transcript received', { length: content.length });
+    } else if (workflowSource === 'artifact') {
+      if (!sourceArtifactId) {
+        log.warn('Missing sourceArtifactId for artifact source');
+        return c.json({ error: 'sourceArtifactId is required' }, 400);
+      }
+      const sourceArtifact = await db.query.artifact.findFirst({
+        where: and(eq(artifact.id, sourceArtifactId), eq(artifact.tenantId, userContext.tenantId)),
+      });
+      if (!sourceArtifact) {
+        log.warn('Source artifact not found', { sourceArtifactId });
+        return c.json({ error: 'Source artifact not found' }, 404);
+      }
+      content = sourceArtifact.content;
+      if (content.trim().length === 0) {
+        log.warn('Source artifact has no content', { sourceArtifactId });
+        return c.json({ error: 'Source artifact has no usable content' }, 400);
+      }
+      if (!callTitle) callTitle = sourceArtifact.title;
+      if (
+        sourceArtifactKindSkipsAnalysis(workflowKind, sourceArtifact.kind) &&
+        sourceArtifact.sessionId
+      ) {
+        skipAnalysisOriginSessionId = sourceArtifact.sessionId;
+      }
+      log.info('Artifact loaded as source', {
+        sourceArtifactId,
+        length: content.length,
+      });
     } else {
       if (!granolaId) {
         log.warn('Missing granolaId for granola source');
@@ -416,7 +500,11 @@ export function createWorkflowRouter(
       return c.json({ error: 'Failed to create transcript' }, 500);
     }
 
-    const workflowInput = { transcriptId: txRow.id, transcriptSource: workflowSource, callTitle };
+    const workflowInput = {
+      transcriptId: txRow.id,
+      transcriptSource: workflowSource,
+      callTitle,
+    };
 
     const [wfRow] = await db
       .insert(workflowRun)
@@ -462,6 +550,83 @@ export function createWorkflowRouter(
       kind: wfRow.kind,
       status: wfRow.status,
     });
+
+    // Seeding from an already-analyzed pain-points artifact: copy the origin
+    // run's pain points onto this run and jump straight to generation. Analysis
+    // is intentionally not triggered, so the pre-selected pain points are
+    // preserved rather than re-extracted.
+    if (skipAnalysisOriginSessionId) {
+      // Tenant isolation: the origin run must belong to the caller's tenant and
+      // be owned by the caller. A pain-points artifact only carries a session id;
+      // verify the backing run before copying its pain points, so a crafted
+      // request cannot pull another tenant's (or member's) pain points.
+      const originRun = await db.query.workflowRun.findFirst({
+        where: eq(workflowRun.id, skipAnalysisOriginSessionId),
+      });
+      if (!originRun) {
+        log.warn('Skip-analysis origin run not found', {
+          workflowId: wfRow.id,
+          originSessionId: skipAnalysisOriginSessionId,
+        });
+        return c.json({ error: 'Source artifact origin not found' }, 404);
+      }
+      if (originRun.tenantId !== userContext.tenantId || !isWorkflowOwner(originRun, userContext)) {
+        log.warn('Skip-analysis origin run not owned by caller', {
+          workflowId: wfRow.id,
+          originSessionId: skipAnalysisOriginSessionId,
+        });
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+
+      const originPainPoints = await db.query.painPoint.findMany({
+        where: eq(painPoint.sessionId, skipAnalysisOriginSessionId),
+      });
+
+      // Only skip analysis when there are pain points to copy. With zero, jumping
+      // to generate would dead-end (generate requires painPointIds), so fall
+      // through to the normal analyze auto-trigger using the artifact content
+      // already loaded as the transcript.
+      if (originPainPoints.length > 0) {
+        const copiedPainPoints = await db
+          .insert(painPoint)
+          .values(
+            originPainPoints.map((point) => ({
+              sessionId: wfRow.id,
+              severity: point.severity,
+              context: point.context,
+              quote: point.quote,
+              // A pain-points artifact is a curated set, so pre-select every
+              // copied point — the user can generate immediately.
+              selected: true,
+            }))
+          )
+          .returning();
+        await db.update(workflowRun).set({ status: 'running' }).where(eq(workflowRun.id, wfRow.id));
+        log.info('Seeded collateral run from pain-points artifact, skipping analysis', {
+          workflowId: wfRow.id,
+          originSessionId: skipAnalysisOriginSessionId,
+          painPointCount: copiedPainPoints.length,
+        });
+        return c.json(
+          {
+            id: wfRow.id,
+            status: mapDbStatusToSessionStatus('running'),
+            steps: {
+              intake: { completed: true, transcriptId: txRow.id },
+              analyze: {
+                completed: true,
+                painPoints: copiedPainPoints.map(serializePainPoint),
+              },
+            },
+          },
+          201
+        );
+      }
+      log.info('Pain-points artifact origin has no pain points; falling through to analysis', {
+        workflowId: wfRow.id,
+        originSessionId: skipAnalysisOriginSessionId,
+      });
+    }
 
     // Auto-trigger the first step after intake. We consult the workflow
     // definition so this works for any workflow shape, not just
@@ -534,7 +699,10 @@ export function createWorkflowRouter(
       });
 
       if (!requestedPrincipal) {
-        log.warn('User requested workflows for inaccessible tenant', { userId, requestedTenantId });
+        log.warn('User requested workflows for inaccessible tenant', {
+          userId,
+          requestedTenantId,
+        });
         return c.json({ error: 'Tenant not accessible' }, 403);
       }
 
@@ -609,6 +777,37 @@ export function createWorkflowRouter(
     return c.json(rows);
   });
 
+  // ─── Download a single artifact as a file ───────────────────────────
+  // GET /artifacts/:id returns JSON; this sub-action streams the raw content
+  // with an attachment disposition. Only terminal export kinds are downloadable.
+  router.get('/artifacts/:id/download', async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+
+    const art = await db.query.artifact.findFirst({
+      where: eq(artifact.id, id),
+    });
+    if (!art) return c.json({ error: 'Artifact not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      art.tenantId
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
+    if (!userContext || art.tenantId !== userContext.tenantId) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    if (!DOWNLOADABLE_ARTIFACT_KINDS.has(art.kind)) {
+      return c.json({ error: `Artifact kind "${art.kind}" is not downloadable` }, 400);
+    }
+
+    c.header('Content-Type', 'text/csv; charset=utf-8');
+    c.header('Content-Disposition', `attachment; filename="${csvDownloadFilename(art.title)}"`);
+    return c.body(art.content);
+  });
+
   // ─── List artifacts (aggregate across the user's sessions) ──────────
   router.get('/artifacts', async (c) => {
     const userId = c.get('userId');
@@ -643,7 +842,10 @@ export function createWorkflowRouter(
       requestedTenantId
     );
     if (forbidden) {
-      log.warn('User requested artifacts for inaccessible tenant', { userId, requestedTenantId });
+      log.warn('User requested artifacts for inaccessible tenant', {
+        userId,
+        requestedTenantId,
+      });
       return c.json({ error: 'Tenant not accessible' }, 403);
     }
     if (!userContext) {
@@ -781,7 +983,10 @@ export function createWorkflowRouter(
       wf.tenantId
     );
     if (forbidden || !userContext) {
-      log.warn('User does not have access to workflow tenant', { userId, workflowId: id });
+      log.warn('User does not have access to workflow tenant', {
+        userId,
+        workflowId: id,
+      });
       return c.json({ error: 'Workflow not found' }, 404);
     }
     // Workflow runs are principal-private (the list route is principal-scoped),
@@ -795,7 +1000,9 @@ export function createWorkflowRouter(
 
     const transcriptId = (wf.input as WorkflowInput)?.transcriptId;
     const tx = transcriptId
-      ? await db.query.transcript.findFirst({ where: eq(transcript.id, transcriptId) })
+      ? await db.query.transcript.findFirst({
+          where: eq(transcript.id, transcriptId),
+        })
       : null;
 
     const points = await db.query.painPoint.findMany({
@@ -832,6 +1039,9 @@ export function createWorkflowRouter(
         artifacts: allArtifacts.map(serializeArtifact),
       }) ?? {};
 
+    const wfOutput = (wf.output as Record<string, unknown> | null) ?? {};
+    const errorMessage = typeof wfOutput.errorMessage === 'string' ? wfOutput.errorMessage : null;
+
     return c.json({
       id,
       kind: wf.kind,
@@ -840,6 +1050,7 @@ export function createWorkflowRouter(
       companyName: (wf.input as WorkflowInput)?.companyName ?? null,
       stepConfig,
       steps,
+      errorMessage,
     });
   });
 
@@ -882,7 +1093,10 @@ export function createWorkflowRouter(
       wf.tenantId
     );
     if (forbidden || !userContext) {
-      log.warn('User does not have access to workflow tenant', { userId, workflowId: id });
+      log.warn('User does not have access to workflow tenant', {
+        userId,
+        workflowId: id,
+      });
       return c.json({ error: 'Workflow not found' }, 404);
     }
     if (!isWorkflowOwner(wf, userContext)) {
@@ -891,6 +1105,63 @@ export function createWorkflowRouter(
     }
 
     const step = body.step ?? deriveCurrentStepForWorkflow(wf.status, wf.kind);
+
+    if (isResourceEnrichmentKind(wf.kind)) {
+      try {
+        if (step === 'enrich') {
+          const source = await resolveStepInferenceSource(
+            db,
+            userContext.tenantId,
+            userContext.principalId,
+            wf.kind,
+            'enrich'
+          );
+          if (!source) {
+            return c.json({ error: 'No LLM credential configured for the enrich step.' }, 400);
+          }
+          // Optimistically claim the run (running → generating) so a duplicate
+          // request cannot double-fire the fan-out. `generating` already maps to
+          // the enrich step and is recoverable via resolveResetStatus if it wedges.
+          const claimed = await db
+            .update(workflowRun)
+            .set({ status: 'generating' })
+            .where(and(eq(workflowRun.id, id), eq(workflowRun.status, 'running')))
+            .returning();
+          if (claimed.length === 0) {
+            return c.json({ error: 'Enrichment already in progress or run not ready' }, 409);
+          }
+          // Run the fan-out in the background and return promptly; a large catalog
+          // would otherwise hold the request past the proxy idle timeout. The
+          // client observes completion by polling the run status.
+          void runResourceEnrichmentEnrich(
+            db,
+            id,
+            userContext,
+            source,
+            DEFAULT_STEP_MAX_OUTPUT_TOKENS.generate
+          ).catch((err) => {
+            log.error('Resource enrichment enrich failed', {
+              workflowId: id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+          return c.json({ status: 'generating' }, 202);
+        }
+        if (step === 'export') {
+          if (wf.status !== 'reviewing') {
+            return c.json({ error: 'Export is only available once selections are ready' }, 409);
+          }
+          const result = await runResourceEnrichmentExport(db, id, userContext);
+          return c.json(result);
+        }
+        return c.json({ error: `Unsupported step for ${wf.kind}: ${step}` }, 400);
+      } catch (err) {
+        if (err instanceof ResourceEnrichmentError) {
+          return c.json({ error: err.message }, err.status);
+        }
+        throw err;
+      }
+    }
 
     if (step === 'template' && wf.kind === 'presentation-generation') {
       if (wf.status !== 'pending' && wf.status !== 'failed') {
@@ -951,6 +1222,26 @@ export function createWorkflowRouter(
             },
           })
           .where(eq(workflowRun.id, id));
+        if (wf.kind === 'presentation-generation') {
+          const pSource = await resolveStepInferenceSource(
+            db,
+            userContext.tenantId,
+            userContext.principalId,
+            wf.kind,
+            'generate'
+          );
+          if (pSource) {
+            void runPresentationGenerate(db, id, userContext.tenantId, pSource).catch(
+              (err: unknown) => {
+                log.error('Presentation generate pipeline failed', {
+                  workflowId: id,
+                  error: String(err),
+                });
+              }
+            );
+            return c.json({ status: 'generating' }, 202);
+          }
+        }
         return c.json({ status: 'running' });
       }
 
@@ -992,6 +1283,26 @@ export function createWorkflowRouter(
           .update(workflowRun)
           .set({ status: 'running', input: newInput })
           .where(eq(workflowRun.id, id));
+        if (wf.kind === 'presentation-generation') {
+          const pSource = await resolveStepInferenceSource(
+            db,
+            userContext.tenantId,
+            userContext.principalId,
+            wf.kind,
+            'generate'
+          );
+          if (pSource) {
+            void runPresentationGenerate(db, id, userContext.tenantId, pSource).catch(
+              (err: unknown) => {
+                log.error('Presentation generate pipeline failed', {
+                  workflowId: id,
+                  error: String(err),
+                });
+              }
+            );
+            return c.json({ status: 'generating' }, 202);
+          }
+        }
         return c.json({ status: 'running' });
       }
 
@@ -1058,106 +1369,30 @@ export function createWorkflowRouter(
           .update(workflowRun)
           .set({ status: 'running', input: newInput })
           .where(eq(workflowRun.id, id));
+        if (wf.kind === 'presentation-generation') {
+          const pSource = await resolveStepInferenceSource(
+            db,
+            userContext.tenantId,
+            userContext.principalId,
+            wf.kind,
+            'generate'
+          );
+          if (pSource) {
+            void runPresentationGenerate(db, id, userContext.tenantId, pSource).catch(
+              (err: unknown) => {
+                log.error('Presentation generate pipeline failed', {
+                  workflowId: id,
+                  error: String(err),
+                });
+              }
+            );
+            return c.json({ status: 'generating' }, 202);
+          }
+        }
         return c.json({ status: 'running' });
       }
 
       return c.json({ error: 'transcriptSource must be paste, granola, or artifact' }, 400);
-    }
-
-    if (step === 'generate' && wf.kind === 'presentation-generation') {
-      if (!body.agentInstanceId) {
-        log.warn('Generate called without agentInstanceId', { workflowId: id });
-        return c.json({ error: 'agentInstanceId is required to dispatch to Geralt' }, 400);
-      }
-      if (!sessionService) {
-        log.error('sessionService not configured in workflow router');
-        return c.json({ error: 'Session service not configured' }, 500);
-      }
-      const instance = await db.query.agentInstance.findFirst({
-        where: eq(intxSchema.agentInstance.id, body.agentInstanceId),
-      });
-      if (!instance || instance.tenantId !== userContext.tenantId) {
-        log.warn('Geralt agent instance not found', {
-          agentInstanceId: body.agentInstanceId,
-          tenantId: userContext.tenantId,
-        });
-        return c.json({ error: 'Agent instance not found' }, 404);
-      }
-      if (!instance.sessionId) {
-        log.warn('Geralt agent instance is not running', {
-          agentInstanceId: body.agentInstanceId,
-        });
-        return c.json({ error: 'Geralt agent is not running. Launch it first.' }, 400);
-      }
-      if (!instance.address) {
-        log.warn('Geralt agent instance has no address', {
-          agentInstanceId: body.agentInstanceId,
-        });
-        return c.json({ error: 'Geralt agent is not reachable yet. Try again in a moment.' }, 503);
-      }
-      const wfInput = (wf.input as Record<string, unknown>) ?? {};
-      const briefLines: string[] = [];
-      if (typeof wfInput.templateId === 'string')
-        briefLines.push(`Template: ${wfInput.templateId}`);
-      if (typeof wfInput.audience === 'string') briefLines.push(`Audience: ${wfInput.audience}`);
-      if (typeof wfInput.tone === 'string') briefLines.push(`Tone: ${wfInput.tone}`);
-      if (typeof wfInput.goal === 'string') briefLines.push(`Goal: ${wfInput.goal}`);
-      if (typeof wfInput.callTitle === 'string') briefLines.push(`Call: ${wfInput.callTitle}`);
-      let transcriptContent = '';
-      if (typeof wfInput.transcriptId === 'string') {
-        const txRow = await db.query.transcript.findFirst({
-          where: eq(transcript.id, wfInput.transcriptId),
-        });
-        transcriptContent = txRow?.content ?? '';
-      } else if (typeof wfInput.sourceArtifactId === 'string') {
-        // Artifact-sourced presentations carry their content on the artifact,
-        // not a transcript row — read it so the brief is not empty.
-        const sourceArtifact = await db.query.artifact.findFirst({
-          where: eq(artifact.id, wfInput.sourceArtifactId),
-        });
-        transcriptContent = sourceArtifact?.content ?? '';
-      }
-      const brief =
-        briefLines.join('\n') + (transcriptContent ? `\n\nSource:\n${transcriptContent}` : '');
-      const kp = await generateKeyPair();
-      const cryptoProvider = createNodeCrypto(kp);
-      const mailId = generateId('sessionMail');
-      try {
-        await sessionService.sendUserMessage({
-          agentAddress: instance.address,
-          from: 'workflow@system',
-          messageId: `<${mailId}@system>`,
-          date: new Date(),
-          content: brief,
-          sessionId: instance.sessionId,
-          tenantId: userContext.tenantId,
-          cryptoProvider,
-        });
-      } catch (err) {
-        log.error('Failed to dispatch presentation brief to Geralt', {
-          workflowId: id,
-          agentInstanceId: body.agentInstanceId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        return c.json(
-          { error: 'Failed to reach the Geralt agent. Make sure it is running, then try again.' },
-          503
-        );
-      }
-      // Persist which Geralt received the brief so the selected-workflow panel
-      // links the user to the session that is actually building the deck.
-      await db
-        .update(workflowRun)
-        .set({
-          status: 'generating',
-          input: { ...wfInput, agentInstanceId: body.agentInstanceId },
-        })
-        .where(eq(workflowRun.id, id));
-      log.info('Presentation generation dispatched to Geralt', {
-        workflowId: id,
-        agentInstanceId: body.agentInstanceId,
-      });
-      return c.json({ status: 'generating' });
     }
 
     if (step === 'analyze' || step === 'generate') {
@@ -1191,7 +1426,9 @@ export function createWorkflowRouter(
             400
           );
         }
-        log.warn('No workflow LLM credential configured', { tenantId: userContext.tenantId });
+        log.warn('No workflow LLM credential configured', {
+          tenantId: userContext.tenantId,
+        });
         return c.json(
           {
             error: 'No LLM credential configured for this step. Add one in the workflow settings.',
@@ -1212,11 +1449,15 @@ export function createWorkflowRouter(
       }
       // step === 'generate'
       if (!Array.isArray(body.painPointIds) || body.painPointIds.length === 0) {
-        log.warn('Generate called without pain point selection', { workflowId: id });
+        log.warn('Generate called without pain point selection', {
+          workflowId: id,
+        });
         return c.json({ error: 'Select at least one pain point to generate collateral.' }, 400);
       }
       if (!Array.isArray(body.collateralTypes) || body.collateralTypes.length === 0) {
-        log.warn('Generate called without collateral type selection', { workflowId: id });
+        log.warn('Generate called without collateral type selection', {
+          workflowId: id,
+        });
         return c.json({ error: 'Select at least one collateral type to generate.' }, 400);
       }
       return runGenerate(
@@ -1280,7 +1521,9 @@ export function createWorkflowRouter(
     const status = body.status === 'approved' || body.status === 'rejected' ? body.status : null;
     if (!status) return c.json({ error: 'status must be approved or rejected' }, 400);
 
-    const wf = await db.query.workflowRun.findFirst({ where: eq(workflowRun.id, id) });
+    const wf = await db.query.workflowRun.findFirst({
+      where: eq(workflowRun.id, id),
+    });
     if (!wf) return c.json({ error: 'Workflow not found' }, 404);
 
     const { context: userContext, forbidden } = await getRequestedUserContext(
@@ -1324,11 +1567,121 @@ export function createWorkflowRouter(
     return c.json(serializeArtifact(row));
   });
 
+  // ─── Write the reviewer's pick into a selection artifact ─────────────
+  // Selection content is immutable + versioned like any artifact, so a pick is a
+  // new version: merge `chosen` into the content and append an artifact_version
+  // row. `setSelectionChosen` validates every index against the artifact's own
+  // options and throws on a bad pick, which surfaces as a 400.
+  router.patch('/workflows/:id/artifacts/:artifactId/selection', async (c) => {
+    const id = c.req.param('id');
+    const artifactId = c.req.param('artifactId');
+    const userId = c.get('userId');
+    const body = (await c.req.json().catch(() => ({}))) as { chosen?: unknown };
+    const chosen = body.chosen;
+    if (typeof chosen !== 'object' || chosen === null || Array.isArray(chosen)) {
+      return c.json(
+        {
+          error: 'chosen must be an object mapping field name to option index',
+        },
+        400
+      );
+    }
+    if (
+      !Object.values(chosen as Record<string, unknown>).every(
+        (v) => typeof v === 'number' && Number.isInteger(v)
+      )
+    ) {
+      return c.json({ error: 'chosen values must be integer option indexes' }, 400);
+    }
+    const chosenMap = chosen as Record<string, number>;
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: eq(workflowRun.id, id),
+    });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
+    if (!isWorkflowOwner(wf, userContext)) {
+      log.warn('Caller is not the workflow owner', { userId, workflowId: id });
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const art = await db.query.artifact.findFirst({
+      where: and(eq(artifact.id, artifactId), eq(artifact.sessionId, id)),
+    });
+    if (!art) return c.json({ error: 'Artifact not found' }, 404);
+    if (art.kind !== SELECTION_ARTIFACT_KIND) {
+      return c.json({ error: 'Artifact is not a selection' }, 400);
+    }
+
+    // Fast-fail the pick against the current content for a clean 400; the
+    // authoritative merge happens inside the transaction against a row-locked
+    // re-read so two concurrent picks on different fields can't clobber.
+    try {
+      setSelectionChosen(art.content, chosenMap);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : 'Invalid selection' }, 400);
+    }
+
+    let conflict = false;
+    const updated = await db.transaction(async (tx) => {
+      const [fresh] = await tx
+        .select({ content: artifact.content })
+        .from(artifact)
+        .where(eq(artifact.id, artifactId))
+        .for('update');
+      if (!fresh) return undefined;
+
+      let nextContent: string;
+      try {
+        nextContent = setSelectionChosen(fresh.content, chosenMap);
+      } catch {
+        conflict = true;
+        return undefined;
+      }
+
+      const maxVersionResult = await tx
+        .select({ maxVersion: max(artifactVersion.version) })
+        .from(artifactVersion)
+        .where(eq(artifactVersion.artifactId, artifactId));
+      const nextVersion = (maxVersionResult[0]?.maxVersion ?? 0) + 1;
+
+      const [row] = await tx
+        .update(artifact)
+        .set({ content: nextContent, version: nextVersion })
+        .where(eq(artifact.id, artifactId))
+        .returning();
+
+      await tx.insert(artifactVersion).values({
+        artifactId,
+        version: nextVersion,
+        title: art.title,
+        content: nextContent,
+        authorId: userContext.principalId,
+      });
+
+      return row;
+    });
+
+    if (conflict) {
+      return c.json({ error: 'Selection changed concurrently; please retry' }, 409);
+    }
+    if (!updated) return c.json({ error: 'Artifact not found' }, 404);
+    return c.json(serializeArtifact(updated));
+  });
+
   // ─── Update company name ────────────────────────────────────────────
   router.patch('/workflows/:id/company', async (c) => {
     const id = c.req.param('id');
     const userId = c.get('userId');
-    const body = (await c.req.json().catch(() => ({}))) as { companyName?: string };
+    const body = (await c.req.json().catch(() => ({}))) as {
+      companyName?: string;
+    };
 
     const companyName =
       typeof body.companyName === 'string' ? body.companyName.trim().slice(0, 200) : null;
@@ -1393,10 +1746,14 @@ export function createWorkflowRouter(
   router.patch('/workflows/:id/step-config', async (c) => {
     const id = c.req.param('id');
     const userId = c.get('userId');
-    const body = (await c.req.json().catch(() => ({}))) as { stepConfig?: unknown };
+    const body = (await c.req.json().catch(() => ({}))) as {
+      stepConfig?: unknown;
+    };
 
     if (!body.stepConfig || typeof body.stepConfig !== 'object' || Array.isArray(body.stepConfig)) {
-      log.warn('Missing or invalid stepConfig in request body', { workflowId: id });
+      log.warn('Missing or invalid stepConfig in request body', {
+        workflowId: id,
+      });
       return c.json({ error: 'stepConfig object is required' }, 400);
     }
 
@@ -1404,7 +1761,10 @@ export function createWorkflowRouter(
     const keys = Object.keys(body.stepConfig as object);
     const invalidKeys = keys.filter((k) => !CONFIGURABLE_STEPS.includes(k as ConfigurableStep));
     if (invalidKeys.length > 0) {
-      log.warn('stepConfig contains unknown step keys', { workflowId: id, invalidKeys });
+      log.warn('stepConfig contains unknown step keys', {
+        workflowId: id,
+        invalidKeys,
+      });
       return c.json(
         {
           error: `Unknown step keys: ${invalidKeys.join(', ')}. Valid steps: ${CONFIGURABLE_STEPS.join(', ')}`,
@@ -1492,7 +1852,10 @@ export function createWorkflowRouter(
       const foundIds = new Set(instances.map((i: { id: string }) => i.id));
       const unauthorized = agentIds.filter((aid) => !foundIds.has(aid));
       if (unauthorized.length > 0) {
-        log.warn('agentId not found in tenant', { workflowId: id, unauthorized });
+        log.warn('agentId not found in tenant', {
+          workflowId: id,
+          unauthorized,
+        });
         return c.json({ error: 'One or more agentIds not found' }, 400);
       }
     }
@@ -1506,7 +1869,10 @@ export function createWorkflowRouter(
       .set({ input: updatedInput as Record<string, unknown> })
       .where(eq(workflowRun.id, id));
 
-    log.info('Step config updated', { workflowId: id, steps: Object.keys(validatedConfig) });
+    log.info('Step config updated', {
+      workflowId: id,
+      steps: Object.keys(validatedConfig),
+    });
     return c.json({ id, stepConfig: validatedConfig });
   });
 

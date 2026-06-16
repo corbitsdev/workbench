@@ -14,6 +14,10 @@
     "./granola-definition": {
       "types": "./src/granola/definition.ts",
       "default": "./src/granola/definition.ts"
+    },
+    "./seed": {
+      "types": "./src/seed.ts",
+      "default": "./src/seed.ts"
     }
   },
   "scripts": {

@@ -3,7 +3,7 @@ import { AGENT_TEMPLATES } from './templates';
 import { BOBBY_DEPLOY_DESCRIPTOR } from './bobby/definition';
 
 describe('AGENT_TEMPLATES', () => {
-  const inferenceProviderNames = new Set(['openai-compatible']);
+  const inferenceProviderNames = new Set(['anthropic', 'openai-compatible']);
   const knownToolProviderNames = new Set([
     'exa',
     'firecrawl',
@@ -13,12 +13,13 @@ describe('AGENT_TEMPLATES', () => {
     'xai',
   ]);
 
-  it('contains all ten templates', () => {
+  it('contains all eleven templates', () => {
     const keys = AGENT_TEMPLATES.map((t) => t.key).sort();
     expect(keys).toEqual([
       'bobby',
+      'fannie',
+      'freddie',
       'freddy',
-      'geralt',
       'hammy',
       'larry',
       'lincoln',
@@ -27,6 +28,15 @@ describe('AGENT_TEMPLATES', () => {
       'oat',
       'walter',
     ]);
+  });
+
+  it('registers Freddie as deployable Opus-backed Fable prompt agent', () => {
+    const freddie = AGENT_TEMPLATES.find((t) => t.key === 'freddie');
+    expect(freddie).toBeDefined();
+    expect(freddie?.name).toBe('Freddie');
+    expect(freddie?.modelConfig).toEqual({ defaultModel: 'claude-opus-4-8' });
+    expect(freddie?.capabilities.tools).toContain('mail_reply');
+    expect(freddie?.capabilities.tools).not.toContain('mail_send');
   });
 
   it('registers Bobby with the browser toolset and the browserbase credential provider', () => {

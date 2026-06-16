@@ -191,4 +191,28 @@ describe('buildPersonalAgentSystemPrompt', () => {
     expect(prompt).toContain('older than');
     expect(prompt).toContain('unresolved');
   });
+
+  // CL-1951 — a referenced artifact id should be loaded via artifact_read, not asked about
+  it('directs Myra to load a referenced artifact id with artifact_read', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat).toLowerCase();
+    expect(prompt).toContain('artifact_read');
+    expect(prompt).toContain('that artifact is the subject of the request');
+  });
+
+  it('keeps the artifact_read nudge consistent with the <sources> recency rules', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat).toLowerCase();
+    expect(prompt).toContain('<sources> recency rules still govern');
+    expect(prompt).toContain('do not answer it from an artifact');
+  });
+
+  // CL-1952 — the base prompt carries the memory-seed marker so the sidecar can
+  // parse the file list out of the effective (personalized) prompt.
+  it('embeds the memory-seed marker in the base prompt regardless of format', () => {
+    expect(buildPersonalAgentSystemPrompt('Myra', xmlFormat)).toContain(
+      '<!-- workbench:memory-seed='
+    );
+    expect(buildPersonalAgentSystemPrompt('Myra', markdownFormat)).toContain(
+      '<!-- workbench:memory-seed='
+    );
+  });
 });

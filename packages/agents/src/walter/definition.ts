@@ -35,9 +35,12 @@ export const WALTER_CAPABILITIES = {
   ],
 } as const;
 
+export const WALTER_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+
 export const WALTER_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Walter - Writer",
   name: "Walter",
+  modelConfig: WALTER_MODEL_CONFIG,
   systemPrompt: WALTER_DEPLOY_PROMPT,
   credentialProviderNames: ["openai-compatible"],
   defaultTools: [...WALTER_CAPABILITIES.tools],

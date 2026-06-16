@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useRef, useState } from 'react';
 
 interface ChatLauncherContextValue {
   hidden: boolean;
@@ -8,6 +8,12 @@ interface ChatLauncherContextValue {
   notifyProvisioned: () => void;
   // PersonalAgentChat registers its reconnect callback here on mount.
   registerReconnect: (fn: () => void) => void;
+  // Open the Myra chat seeded with a message (e.g. "Open in Myra" from an
+  // artifact). PersonalAgentChat consumes the pending message once its session
+  // is ready, then calls clearPendingMessage.
+  pendingMessage: string | null;
+  openWithMessage: (message: string) => void;
+  clearPendingMessage: () => void;
 }
 
 const ChatLauncherContext = createContext<ChatLauncherContextValue>({
@@ -15,10 +21,14 @@ const ChatLauncherContext = createContext<ChatLauncherContextValue>({
   setHidden: () => {},
   notifyProvisioned: () => {},
   registerReconnect: () => {},
+  pendingMessage: null,
+  openWithMessage: () => {},
+  clearPendingMessage: () => {},
 });
 
 export function ChatLauncherProvider({ children }: { children: React.ReactNode }) {
   const [hidden, setHidden] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const reconnectRef = useRef<(() => void) | null>(null);
 
   const registerReconnect = (fn: () => void) => {
@@ -29,8 +39,27 @@ export function ChatLauncherProvider({ children }: { children: React.ReactNode }
     reconnectRef.current?.();
   };
 
+  const openWithMessage = useCallback((message: string) => {
+    setHidden(false);
+    setPendingMessage(message);
+  }, []);
+
+  const clearPendingMessage = useCallback(() => {
+    setPendingMessage(null);
+  }, []);
+
   return (
-    <ChatLauncherContext value={{ hidden, setHidden, notifyProvisioned, registerReconnect }}>
+    <ChatLauncherContext
+      value={{
+        hidden,
+        setHidden,
+        notifyProvisioned,
+        registerReconnect,
+        pendingMessage,
+        openWithMessage,
+        clearPendingMessage,
+      }}
+    >
       {children}
     </ChatLauncherContext>
   );

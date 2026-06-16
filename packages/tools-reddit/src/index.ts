@@ -1,3 +1,3 @@
 export * from './normalize';
 export * from './tools';
-export type { RedditPost, RedditSearchResponse } from './types';
+export type { RedditPost } from './types';

@@ -30,7 +30,12 @@ export const WRITE_ARTIFACT_DEFINITION: ToolDefinition = {
       },
       kind: {
         type: 'string',
-        description: 'Artifact kind, e.g. report, email, memo, article.',
+        description: 'Artifact kind, e.g. report, email, memo, article, research.',
+      },
+      data: {
+        type: 'object',
+        description:
+          'Optional structured payload for rich rendering (e.g. a research ResearchBrief). Stored under source.brief.',
       },
     },
     required: ['title', 'body', 'kind'],
@@ -41,7 +46,6 @@ type WriteArtifactContext = {
   db: DB['db'];
   tenantId: string;
   principalId: string;
-  sessionId: string;
 };
 
 function requireString(args: Record<string, unknown>, key: string): string {
@@ -65,6 +69,14 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
         const rawCitations = args.citations;
         const citations = Array.isArray(rawCitations) ? rawCitations : [];
 
+        const rawData = args.data;
+        const brief =
+          typeof rawData === 'object' && rawData !== null && !Array.isArray(rawData)
+            ? (rawData as Record<string, unknown>)
+            : undefined;
+        const source: Record<string, unknown> =
+          brief === undefined ? { citations } : { citations, brief };
+
         const result = await context.db.transaction(async (tx) => {
           // artifact.sessionId is a uuid FK to workflow_run — not suitable for agent sessions.
           // Deduplicate by (principalId, title, kind) instead, which is stable across sessions.
@@ -78,14 +90,18 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
                 eq(artifact.kind, kind)
               )
             )
-            .limit(1);
+            .limit(1)
+            // Lock the matched row so two concurrent writes (e.g. a synthesis
+            // retry) cannot both read the same max version and insert dupes.
+            .for('update');
 
+          const existingId = existingRows.length > 0 ? existingRows[0]?.id : undefined;
+          const now = new Date();
           let artifactId: string;
 
-          if (existingRows.length > 0 && existingRows[0]) {
-            artifactId = existingRows[0].id;
+          if (existingId !== undefined) {
+            artifactId = existingId;
           } else {
-            const now = new Date();
             const [created] = await tx
               .insert(artifact)
               .values({
@@ -94,7 +110,7 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
                 kind,
                 title,
                 content: body,
-                source: { citations } as Record<string, unknown>,
+                source,
                 status: 'draft',
                 version: 1,
                 createdAt: now,
@@ -113,8 +129,7 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
             .from(artifactVersion)
             .where(eq(artifactVersion.artifactId, artifactId));
 
-          const previousMax = maxVersionResult[0]?.maxVersion ?? 0;
-          const nextVersion = (previousMax ?? 0) + 1;
+          const nextVersion = (maxVersionResult[0]?.maxVersion ?? 0) + 1;
 
           await tx.insert(artifactVersion).values({
             artifactId,
@@ -124,6 +139,17 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
             authorId: context.principalId,
             createdAt: new Date(),
           });
+
+          // On an update, the parent row is what the gallery/list renders, so it
+          // must carry the latest content/source/version — otherwise re-running
+          // research on the same topic accumulates versions while the UI is stuck
+          // on v1's brief.
+          if (existingId !== undefined) {
+            await tx
+              .update(artifact)
+              .set({ content: body, source, version: nextVersion, updatedAt: now })
+              .where(eq(artifact.id, artifactId));
+          }
 
           return { artifactId, version: nextVersion };
         });
@@ -142,7 +168,6 @@ export const WRITE_ARTIFACT_HUB_TOOLS: Record<string, ContextToolEntry> = {
         db: context.db,
         tenantId: context.tenantId,
         principalId: context.principalId,
-        sessionId: context.sessionId,
       }),
   },
 };

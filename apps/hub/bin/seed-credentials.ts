@@ -138,8 +138,9 @@ export function buildEntries(): CredentialEntry[] {
     entries.push({
       providerName: 'anthropic',
       providerPlugin: 'anthropic',
-      credentialName: 'Anthropic',
+      credentialName: 'anthropic-api',
       secret: anthropicKey,
+      metadata: { baseURL: 'https://api.anthropic.com' },
     });
   }
 
@@ -248,6 +249,36 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const youtubeKey = env('YOUTUBE_API_KEY');
+  if (youtubeKey) {
+    entries.push({
+      providerName: 'youtube',
+      providerPlugin: 'youtube',
+      credentialName: 'YouTube Data API',
+      secret: youtubeKey,
+    });
+  }
+
+  // Bluesky: app-password is the secret; handle rides on metadata.baseURL so the
+  // hub credential resolver forwards it to createBlueskyTools as `baseURL`.
+  const blueskyAppPassword = env('BLUESKY_APP_PASSWORD');
+  const blueskyHandle = env('BLUESKY_HANDLE');
+  if (blueskyAppPassword) {
+    if (!blueskyHandle) {
+      console.error(
+        '[seed-credentials] BLUESKY_APP_PASSWORD is set but BLUESKY_HANDLE is missing — skipping'
+      );
+    } else {
+      entries.push({
+        providerName: 'bluesky',
+        providerPlugin: 'bluesky',
+        credentialName: 'Bluesky',
+        secret: blueskyAppPassword,
+        metadata: { baseURL: blueskyHandle },
+      });
+    }
+  }
+
   return entries;
 }
 
@@ -338,7 +369,10 @@ if (import.meta.main) {
       `__Secure-better-auth.session_token=${SESSION_TOKEN}`,
     ];
   } else {
-    const signIn = await api('POST', '/api/auth/sign-in/email', { email: EMAIL, password: PASSWORD });
+    const signIn = await api('POST', '/api/auth/sign-in/email', {
+      email: EMAIL,
+      password: PASSWORD,
+    });
     if (signIn.cookies.length === 0) fail('sign in', signIn.status, signIn.data);
     cookies = signIn.cookies;
     log(`Signed in as ${EMAIL}`);

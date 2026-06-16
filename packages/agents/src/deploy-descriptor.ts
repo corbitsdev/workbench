@@ -22,4 +22,6 @@ export type AgentDeployDescriptor = {
    * (checked, non-toggleable) in the UI. Must be a subset of defaultTools.
    */
   requiredTools: string[];
+  /** Interchange modelConfig patched onto the agent definition at deploy time. */
+  modelConfig?: { defaultModel: string };
 };

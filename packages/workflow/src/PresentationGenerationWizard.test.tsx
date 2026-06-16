@@ -43,13 +43,22 @@ function makeProps(overrides: Partial<Parameters<typeof PresentationGenerationWi
       kind: 'presentation-generation',
     }),
     submitStep: makeMutation({ status: 'ok' }),
-    geraltInstances: { isLoading: false, data: [{ id: 'inst-1', agentName: 'Geralt' }] },
     gammaTemplates: {
       isLoading: false,
       isError: false,
       data: [
-        { gammaId: 'tmpl-1', name: 'Sales Deck', description: 'A sales template' },
-        { gammaId: 'tmpl-2', name: 'Investor Pitch', description: null },
+        {
+          id: 'tpl-1',
+          gammaId: 'tmpl-1',
+          name: 'Sales Deck',
+          systemPrompt: 'A sales template',
+        },
+        {
+          id: 'tpl-2',
+          gammaId: 'tmpl-2',
+          name: 'Investor Pitch',
+          systemPrompt: 'An investor pitch template',
+        },
       ],
     },
     renderRecentPicker: mock(
@@ -82,9 +91,9 @@ async function advanceToStep(targetText: string | RegExp, fn: () => void) {
 
 describe('PresentationGenerationWizard', () => {
   describe('Template step', () => {
-    it('renders the template step with Auto and fetched templates', () => {
+    it('renders the template step with fetched templates and no Auto option', () => {
       render(<PresentationGenerationWizard {...makeProps()} />);
-      expect(screen.getByText('Auto')).toBeDefined();
+      expect(screen.queryByText('Auto')).toBeNull();
       expect(screen.getByText('Sales Deck')).toBeDefined();
       expect(screen.getByText('Investor Pitch')).toBeDefined();
     });
@@ -93,7 +102,11 @@ describe('PresentationGenerationWizard', () => {
       render(
         <PresentationGenerationWizard
           {...makeProps({
-            gammaTemplates: { isLoading: true, isError: false, data: undefined },
+            gammaTemplates: {
+              isLoading: true,
+              isError: false,
+              data: undefined,
+            },
           })}
         />
       );
@@ -104,7 +117,11 @@ describe('PresentationGenerationWizard', () => {
       render(
         <PresentationGenerationWizard
           {...makeProps({
-            gammaTemplates: { isLoading: false, isError: true, data: undefined },
+            gammaTemplates: {
+              isLoading: false,
+              isError: true,
+              data: undefined,
+            },
           })}
         />
       );
@@ -120,12 +137,20 @@ describe('PresentationGenerationWizard', () => {
       expect(radio).toBeDefined();
     });
 
-    it('advances to brief step without calling any mutation', async () => {
+    it('advances to brief step after selecting a template', async () => {
       const props = makeProps();
       render(<PresentationGenerationWizard {...props} />);
+      fireEvent.click(screen.getByText('Sales Deck'));
       await advanceToStep('Describe the presentation goal.', () => submitForm());
       expect(props.createWorkflow.mutateAsync).not.toHaveBeenCalled();
       expect(props.submitStep.mutateAsync).not.toHaveBeenCalled();
+    });
+
+    it('shows an error and stays on template step when no template is selected', async () => {
+      render(<PresentationGenerationWizard {...makeProps()} />);
+      submitForm();
+      expect(screen.getByText('Select a template to continue')).toBeDefined();
+      expect(screen.queryByText('Describe the presentation goal.')).toBeNull();
     });
 
     it('selects a template via the Enter key', async () => {
@@ -146,6 +171,7 @@ describe('PresentationGenerationWizard', () => {
   describe('Brief step', () => {
     async function renderAtBrief(props = makeProps()) {
       render(<PresentationGenerationWizard {...props} />);
+      fireEvent.click(screen.getByText('Sales Deck'));
       await advanceToStep('Describe the presentation goal.', () => submitForm());
       return props;
     }
@@ -159,7 +185,7 @@ describe('PresentationGenerationWizard', () => {
 
     it('shows a Back button that returns to the template step', async () => {
       await renderAtBrief();
-      await advanceToStep('Auto', () => fireEvent.click(screen.getByText('Back')));
+      await advanceToStep('Choose a template', () => fireEvent.click(screen.getByText('Back')));
     });
 
     it('calls createWorkflow then submitStep with template args on Continue', async () => {
@@ -189,13 +215,13 @@ describe('PresentationGenerationWizard', () => {
       );
     });
 
-    it('omits templateId when Auto is selected', async () => {
+    it('always includes templateId in the brief step submission', async () => {
       const props = await renderAtBrief(makeProps());
       await advanceToStep('Choose the source for this presentation.', () => submitForm());
       const calls = (props.submitStep.mutateAsync as ReturnType<typeof mock>).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
       const call = calls[0]![0] as Record<string, unknown>;
-      expect('templateId' in call).toBe(false);
+      expect(typeof call['templateId']).toBe('string');
     });
 
     it('shows error message when createWorkflow fails', async () => {
@@ -221,6 +247,7 @@ describe('PresentationGenerationWizard', () => {
   describe('Source step', () => {
     async function renderAtSource(props = makeProps()) {
       render(<PresentationGenerationWizard {...props} />);
+      fireEvent.click(screen.getByText('Sales Deck'));
       await advanceToStep('Describe the presentation goal.', () => submitForm());
       await advanceToStep('Choose the source for this presentation.', () => submitForm());
       return props;
@@ -285,14 +312,21 @@ describe('PresentationGenerationWizard', () => {
       });
       fireEvent.change(
         screen.getByPlaceholderText('Speaker 1: Thanks for taking the time today...'),
-        { target: { value: 'Speaker 1: Here is a long enough transcript to pass validation.' } }
+        {
+          target: {
+            value: 'Speaker 1: Here is a long enough transcript to pass validation.',
+          },
+        }
       );
       await act(async () => {
         submitForm();
       });
       await waitFor(() =>
         expect(props.submitStep.mutateAsync).toHaveBeenLastCalledWith(
-          expect.objectContaining({ step: 'source', transcriptSource: 'paste' })
+          expect.objectContaining({
+            step: 'source',
+            transcriptSource: 'paste',
+          })
         )
       );
     });
@@ -311,16 +345,19 @@ describe('PresentationGenerationWizard', () => {
       });
       await waitFor(() =>
         expect(
-          screen.queryByText('Paste a transcript of at least a few lines', { exact: false })
+          screen.queryByText('Paste a transcript of at least a few lines', {
+            exact: false,
+          })
         ).not.toBeNull()
       );
     });
 
-    it('advances to generate step via recent picker selection', async () => {
+    it('calls onCreated after source step via recent picker selection', async () => {
       const props = await renderAtSource();
-      await advanceToStep('Pick a running presentation agent session.', () =>
-        fireEvent.click(screen.getByText('Pick recent'))
-      );
+      await act(async () => {
+        fireEvent.click(screen.getByText('Pick recent'));
+      });
+      await waitFor(() => expect(props.onCreated).toHaveBeenCalledWith('wf-1'));
       expect(props.submitStep.mutateAsync).toHaveBeenLastCalledWith(
         expect.objectContaining({
           step: 'source',
@@ -344,9 +381,10 @@ describe('PresentationGenerationWizard', () => {
             ),
         })
       );
-      await advanceToStep('Pick a running presentation agent session.', () =>
-        fireEvent.click(screen.getByText('Pick granola'))
-      );
+      await act(async () => {
+        fireEvent.click(screen.getByText('Pick granola'));
+      });
+      await waitFor(() => expect(props.onCreated).toHaveBeenCalledWith('wf-1'));
       expect(props.submitStep.mutateAsync).toHaveBeenLastCalledWith(
         expect.objectContaining({
           step: 'source',
@@ -362,7 +400,10 @@ describe('PresentationGenerationWizard', () => {
           renderArtifactPicker: ({ onSelect }) =>
             React.createElement(
               'button',
-              { type: 'button', onClick: () => onSelect({ source: 'artifact' }) },
+              {
+                type: 'button',
+                onClick: () => onSelect({ source: 'artifact' }),
+              },
               'Pick artifact'
             ),
         })
@@ -375,7 +416,9 @@ describe('PresentationGenerationWizard', () => {
       });
       await waitFor(() =>
         expect(
-          screen.queryByText('Select an artifact to use as the source', { exact: false })
+          screen.queryByText('Select an artifact to use as the source', {
+            exact: false,
+          })
         ).not.toBeNull()
       );
       expect(props.submitStep.mutateAsync).not.toHaveBeenCalledWith(
@@ -399,7 +442,9 @@ describe('PresentationGenerationWizard', () => {
       });
       await waitFor(() =>
         expect(
-          screen.queryByText('Paste a transcript of at least a few lines', { exact: false })
+          screen.queryByText('Paste a transcript of at least a few lines', {
+            exact: false,
+          })
         ).not.toBeNull()
       );
       expect(props.submitStep.mutateAsync).not.toHaveBeenCalledWith(
@@ -425,69 +470,6 @@ describe('PresentationGenerationWizard', () => {
       await waitFor(() =>
         expect(screen.queryByText('Source save boom', { exact: false })).not.toBeNull()
       );
-    });
-  });
-
-  describe('Generate step', () => {
-    async function renderAtGenerate(props = makeProps()) {
-      render(<PresentationGenerationWizard {...props} />);
-      await advanceToStep('Describe the presentation goal.', () => submitForm());
-      await advanceToStep('Choose the source for this presentation.', () => submitForm());
-      await advanceToStep('Pick a running presentation agent session.', () =>
-        fireEvent.click(screen.getByText('Pick recent'))
-      );
-      return props;
-    }
-
-    it('lists Geralt instances', async () => {
-      await renderAtGenerate();
-      expect(screen.getByText('Geralt')).toBeDefined();
-    });
-
-    it('shows empty state when no instances are running', async () => {
-      const props = makeProps({ geraltInstances: { isLoading: false, data: [] } });
-      await renderAtGenerate(props);
-      expect(
-        screen.queryByText('No presentation agents are running.', { exact: false })
-      ).not.toBeNull();
-    });
-
-    it('calls submitStep generate and invokes onCreated', async () => {
-      const props = await renderAtGenerate();
-      const label = screen.getByText('Session 1').closest('label');
-      if (!label) throw new Error('label not found');
-      fireEvent.click(label);
-      await act(async () => {
-        submitForm();
-      });
-      await waitFor(() => expect(props.onCreated).toHaveBeenCalledWith('wf-1'));
-      expect(props.submitStep.mutateAsync).toHaveBeenLastCalledWith(
-        expect.objectContaining({ step: 'generate', agentInstanceId: 'inst-1' })
-      );
-    });
-
-    it('surfaces an error when dispatching the brief fails', async () => {
-      const props = await renderAtGenerate(
-        makeProps({
-          submitStep: {
-            isPending: false,
-            mutateAsync: mock(async (args: { step: string }) => {
-              if (args.step === 'generate') throw new Error('Dispatch boom');
-              return { status: 'ok' };
-            }),
-          },
-        })
-      );
-      const label = screen.getByText('Session 1').closest('label');
-      if (!label) throw new Error('label not found');
-      fireEvent.click(label);
-      await act(async () => {
-        submitForm();
-      });
-      await waitFor(() =>
-        expect(screen.queryByText('Dispatch boom', { exact: false })).not.toBeNull()
-      );
-      expect(props.onCreated).not.toHaveBeenCalled();
     });
   });
 

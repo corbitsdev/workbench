@@ -55,7 +55,7 @@ export const collateralGenerationWorkflow: WorkflowType = {
     type: 'object',
     properties: {
       transcriptId: { type: 'string', description: 'Transcript ID from intake' },
-      transcriptSource: { type: 'string', enum: ['paste', 'granola'] },
+      transcriptSource: { type: 'string', enum: ['paste', 'granola', 'artifact'] },
       companyName: { type: 'string', description: 'Company name (optional)' },
     },
     required: ['transcriptId', 'transcriptSource'],

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cn } from '@workbench/ui';
+import { cn, toHumanLabel } from '@workbench/ui';
 import { motion } from 'framer-motion';
 import type { ToolCall } from './types';
 import { parseToolResult, type UIBlock, type UIResponse } from './ui-block';
@@ -74,7 +74,7 @@ function defaultSummary(call: ToolCall): string {
   if (call.label !== undefined) return call.label;
   // Anthropic raw call IDs look like "call_01_AbCdEf…" — not readable
   if (/^call_[0-9A-Za-z_]{10,}$/.test(call.name)) return 'Tool call';
-  return call.name.replace(/_/g, ' ');
+  return toHumanLabel(call.name);
 }
 
 // A concise, human-readable summary of what the tool was invoked with, e.g.

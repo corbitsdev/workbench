@@ -9,6 +9,7 @@ import {
   getVariantCount,
   hasMultiVariantKind,
   isCollateralKind,
+  resolveArtifactKind,
   selectCollateralTypeIds,
   type CollateralPainPoint,
 } from './artifacts';
@@ -83,6 +84,24 @@ describe('isCollateralKind', () => {
   it('treats every other kind as collateral', () => {
     expect(isCollateralKind('linkedin-post')).toBe(true);
     expect(isCollateralKind('blog')).toBe(true);
+  });
+});
+
+describe('resolveArtifactKind', () => {
+  it('maps the linkedin-daily selection kind to the linkedin-post artifact kind', () => {
+    expect(resolveArtifactKind('linkedin-daily')).toBe('linkedin-post');
+  });
+
+  it('leaves linkedin-post unchanged', () => {
+    expect(resolveArtifactKind('linkedin-post')).toBe('linkedin-post');
+  });
+
+  it('returns an unmapped kind unchanged', () => {
+    expect(resolveArtifactKind('battlecard')).toBe('battlecard');
+  });
+
+  it('passes a truly-unknown selection through unchanged', () => {
+    expect(resolveArtifactKind('totally-unknown')).toBe('totally-unknown');
   });
 });
 

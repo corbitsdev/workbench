@@ -15,14 +15,14 @@ describe('ToolNarrative', () => {
     const calls: ToolCall[] = [
       {
         id: 'c1',
-        name: 'exa search',
+        name: 'Exa Search',
         arguments: { query: 'minimax m3', numResults: 5 },
         result: 'some results',
         isError: false,
       },
     ];
     render(<ToolNarrative toolCalls={calls} />);
-    expect(screen.getByText('exa search')).toBeDefined();
+    expect(screen.getByText('Exa Search')).toBeDefined();
     expect(screen.getByText('· minimax m3')).toBeDefined();
   });
 
@@ -30,7 +30,7 @@ describe('ToolNarrative', () => {
     const calls: ToolCall[] = [
       {
         id: 'c1',
-        name: 'exa search',
+        name: 'Exa Search',
         arguments: { query: 'minimax m3' },
         result: 'the full result body',
         isError: false,
@@ -38,7 +38,7 @@ describe('ToolNarrative', () => {
     ];
     render(<ToolNarrative toolCalls={calls} />);
     expect(screen.queryByText('the full result body')).toBeNull();
-    fireEvent.click(screen.getByText('exa search'));
+    fireEvent.click(screen.getByText('Exa Search'));
     expect(screen.getByText('the full result body')).toBeDefined();
   });
 
@@ -46,21 +46,21 @@ describe('ToolNarrative', () => {
     const calls: ToolCall[] = [
       {
         id: 'c1',
-        name: 'exa search',
+        name: 'Exa Search',
         arguments: { query: 'x' },
         result: 'No matching grants for tool:exa_search/invoke',
         isError: true,
       },
     ];
     render(<ToolNarrative toolCalls={calls} />);
-    fireEvent.click(screen.getByText('exa search'));
+    fireEvent.click(screen.getByText('Exa Search'));
     expect(screen.getByText('No matching grants for tool:exa_search/invoke')).toBeDefined();
   });
 
   it('does not expand a pending call', () => {
-    const calls: ToolCall[] = [{ id: 'c1', name: 'exa search', arguments: { query: 'x' } }];
+    const calls: ToolCall[] = [{ id: 'c1', name: 'Exa Search', arguments: { query: 'x' } }];
     render(<ToolNarrative toolCalls={calls} />);
-    fireEvent.click(screen.getByText('exa search'));
+    fireEvent.click(screen.getByText('Exa Search'));
     // No result to show; the args pre block must not appear.
     expect(screen.queryByText(/"query"/)).toBeNull();
   });

@@ -1,5 +1,5 @@
-import type { Cluster } from './cluster-merge';
-import type { ResearchItem } from './schema';
+import type { Cluster } from "./cluster-merge";
+import type { ResearchItem } from "./schema";
 
 export type RankScoreOptions = {
   topic: string;
@@ -7,11 +7,13 @@ export type RankScoreOptions = {
   maxPerAuthor?: number;
 };
 
+export type RankedCluster = Cluster & { score: number };
+
 function engagementScore(items: ResearchItem[]): number {
-  const total = items.reduce(
-    (sum, item) => sum + item.engagement.upvotes + item.engagement.comments,
-    0
-  );
+  const total = items.reduce((sum, item) => {
+    if (item.engagement === undefined) return sum;
+    return sum + item.engagement.upvotes + item.engagement.comments;
+  }, 0);
   return Math.log(total + 1);
 }
 
@@ -31,14 +33,34 @@ function sourceBreadthBonus(cluster: Cluster): number {
 }
 
 function degradedPenalty(items: ResearchItem[]): number {
-  return items.some((i) => i.provenance === 'degraded') ? 0.25 : 0;
+  return items.some((i) => i.provenance === "degraded") ? 0.25 : 0;
+}
+
+// A highly-upvoted top comment is a strong "voice of the people" signal (a
+// 1000-upvote reply often outweighs the parent post). Mirrors the reference
+// skill's dedicated top-comment slot: capped so it nudges ordering without
+// dominating engagement/freshness. log10(1000)/10 = 0.3 is the ceiling.
+const MAX_FUN_BONUS = 0.3;
+
+function topCommentBonus(items: ResearchItem[]): number {
+  let bestScore = 0;
+  for (const item of items) {
+    if (item.topComments === undefined) continue;
+    for (const comment of item.topComments) {
+      if (comment.score > bestScore) bestScore = comment.score;
+    }
+  }
+  if (bestScore <= 0) return 0;
+  // Clamp the lower bound: a fractional comment score makes log10 negative, which
+  // would turn the bonus into a silent penalty below a comment-less cluster.
+  return Math.max(0, Math.min(Math.log10(bestScore) / 10, MAX_FUN_BONUS));
 }
 
 function capPerAuthor(items: ResearchItem[], max: number): ResearchItem[] {
   const counts = new Map<string, number>();
   const result: ResearchItem[] = [];
   for (const item of items) {
-    const author = item.author ?? '__unknown__';
+    const author = item.author ?? "__unknown__";
     const count = counts.get(author) ?? 0;
     if (count < max) {
       result.push(item);
@@ -48,20 +70,27 @@ function capPerAuthor(items: ResearchItem[], max: number): ResearchItem[] {
   return result;
 }
 
-export function rankScore(clusters: Cluster[], opts: RankScoreOptions): Cluster[] {
+export function rankScore(
+  clusters: Cluster[],
+  opts: RankScoreOptions,
+): RankedCluster[] {
   const maxPerAuthor = opts.maxPerAuthor ?? 3;
   const nowMs = new Date(opts.nowIso).getTime();
 
   const pool = [...clusters];
-  const maxEngagement = Math.max(...pool.map((c) => engagementScore(c.items)), 1);
+  const maxEngagement = Math.max(
+    ...pool.map((c) => engagementScore(c.items)),
+    1,
+  );
 
   const scored = pool.map((cluster) => {
     const cappedItems = capPerAuthor(cluster.items, maxPerAuthor);
     const normalizedEngagement = engagementScore(cappedItems) / maxEngagement;
     const freshness = freshnessScore(cappedItems, nowMs);
     const breadth = sourceBreadthBonus(cluster);
+    const fun = topCommentBonus(cappedItems);
     const penalty = degradedPenalty(cappedItems);
-    const score = normalizedEngagement + freshness + breadth - penalty;
+    const score = normalizedEngagement + freshness + breadth + fun - penalty;
     const topItem = cappedItems.includes(cluster.topItem)
       ? cluster.topItem
       : (cappedItems[0] ?? cluster.topItem);
@@ -75,5 +104,5 @@ export function rankScore(clusters: Cluster[], opts: RankScoreOptions): Cluster[
     return bTime - aTime;
   });
 
-  return scored.map((s) => s.cluster);
+  return scored.map((s) => ({ ...s.cluster, score: s.score }));
 }

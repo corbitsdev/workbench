@@ -209,6 +209,17 @@ Each image (`hub`, `sidecar`, `admin-ui`, `web`) uses a targeted `COPY` list ins
 
 The manifest-copy section (all the `COPY packages/*/package.json` lines before `bun install`) must list every workspace member regardless of whether the image uses it — bun needs the full graph to resolve the lockfile.
 
+## Credential Seeding Maintenance
+
+Tool credentials are not auto-discovered. When you add a `@workbench/tools-*` package whose hub-tool entry declares a credential `providerName`, you must wire the credential into the seed path or the tool resolves nothing in any deployed environment:
+
+- Add an entry to `buildEntries()` in `apps/hub/bin/seed-credentials.ts` (`providerName`, `providerPlugin`, `credentialName`, secret read from a `*_API_KEY` env var; include `metadata.baseURL` only when the tool reads it rather than hardcoding it).
+- Add the env var to `.env.example`.
+- Add a `buildEntries()` test asserting the entry appears when the key is set and is absent when it is not.
+- Also add the provider name to the consuming agent's `credentialProviderNames` (never to `credentialRequirements` — tool providers are not inference providers).
+
+Keyless tools (e.g. an unauthenticated public API) need no seed entry — say so in the package README.
+
 ## Issue Workflow
 
 When implementing a Linear issue:

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError } from '../lib/api';
+import { type } from 'arktype';
+import { api, ApiError, uploadFile } from '../lib/api';
 import { logger } from '../lib/logger';
 import { listWorkbenches, listAgentInstances } from '../lib/hub-api';
 import type { AgentInstance } from '../lib/hub-api';
@@ -35,6 +36,7 @@ export interface FrontendWorkflowState extends WorkflowState {
   currentStep: StepName;
   steps: Record<StepName, WorkflowStep>;
   stepConfig: WorkflowStepConfig;
+  errorMessage?: string | null;
 }
 
 export function useWorkflowTypes() {
@@ -111,6 +113,26 @@ export function useApproveArtifact(workflowId: string) {
     }) => {
       return api<unknown>('PATCH', `/workflows/${workflowId}/artifacts/${artifactId}/status`, {
         status,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+    },
+  });
+}
+
+export function useUpdateSelection(workflowId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      artifactId,
+      chosen,
+    }: {
+      artifactId: string;
+      chosen: Record<string, number>;
+    }) => {
+      return api<unknown>('PATCH', `/workflows/${workflowId}/artifacts/${artifactId}/selection`, {
+        chosen,
       });
     },
     onSuccess: () => {
@@ -278,13 +300,36 @@ export function useWorkbenchAgents({ enabled = true }: { enabled?: boolean } = {
   });
 }
 
+const uploadResultSchema = type({
+  uploadId: 'string',
+  filename: 'string',
+  mimeType: 'string',
+  size: 'number',
+});
+export type UploadResult = typeof uploadResultSchema.infer;
+
+export function useUploadFile() {
+  return useMutation({
+    mutationFn: async (file: File): Promise<UploadResult> => {
+      const raw = await uploadFile<unknown>('/uploads', file);
+      const parsed = uploadResultSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected upload response: ${parsed.summary}`);
+      }
+      return parsed;
+    },
+  });
+}
+
 export function useCreateWorkflow() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (body: {
       transcript?: string;
       granolaId?: string;
-      source: string;
+      sourceArtifactId?: string;
+      uploadId?: string;
+      source?: string;
       workflowKind: string;
       tenantId?: string;
     }) => {

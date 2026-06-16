@@ -14,15 +14,16 @@ export interface PresentationWorkflowView {
   companyName?: string | null;
   /** Generic per-step state, as serialized by the presentation workflow. */
   steps?: Record<string, PresentationStepView> | null;
+  /** Error detail persisted by the hub on pipeline failure. */
+  errorMessage?: string | null;
 }
 
 export interface PresentationWorkflowPanelProps {
   workflow: PresentationWorkflowView | null | undefined;
   isLoading?: boolean;
   isError?: boolean;
-  /** A running Geralt instance the brief was (or will be) dispatched to. */
-  geraltInstanceId?: string | null;
-  onOpenAgent?: (instanceId: string) => void;
+  /** URL to open the generated Gamma deck. Available once status is 'done'. */
+  gammaUrl?: string | null;
   onClose: () => void;
 }
 
@@ -60,11 +61,7 @@ function briefRows(
   const source = steps.source ?? {};
   const rows: { label: string; value: string }[] = [];
   const templateId = readString(template.templateId);
-  if (templateId)
-    rows.push({
-      label: 'Template',
-      value: templateId === 'auto' ? 'Auto (Geralt chooses)' : templateId,
-    });
+  if (templateId) rows.push({ label: 'Template', value: templateId });
   const audience = readString(template.audience);
   if (audience) rows.push({ label: 'Audience', value: audience });
   const tone = readString(template.tone);
@@ -75,15 +72,6 @@ function briefRows(
   if (callTitle) rows.push({ label: 'Source', value: callTitle });
   return rows;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: 'Setting up',
-  running: 'Ready to generate',
-  ready: 'Ready to generate',
-  generating: 'Generating',
-  done: 'Done',
-  failed: 'Failed',
-};
 
 function CloseButton({ onClose }: { onClose: () => void }) {
   return (
@@ -106,12 +94,115 @@ function CloseButton({ onClose }: { onClose: () => void }) {
   );
 }
 
+function isSafePresentationUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function PresentationFrame({ url }: { url: string }) {
+  return (
+    <div className="overflow-hidden rounded-[10px] border border-border bg-surface">
+      <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+        <iframe
+          src={url}
+          allow="fullscreen"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+          className="absolute inset-0 h-full w-full border-0"
+          title="Generated Gamma presentation"
+        />
+      </div>
+    </div>
+  );
+}
+
+function StatusBody({
+  status,
+  gammaUrl,
+  errorMessage,
+}: {
+  status: string;
+  gammaUrl?: string | null;
+  errorMessage?: string | null;
+}) {
+  if (status === 'generating') {
+    return (
+      <div className="rounded-[10px] border border-border bg-surface px-4 py-3 space-y-1">
+        <p className="text-[13px] font-medium text-text">Generating content from brief</p>
+        <p className="text-[12px] text-text-3">
+          Writing slide content from your transcript and brief.
+        </p>
+      </div>
+    );
+  }
+  if (status === 'reviewing') {
+    return (
+      <div className="rounded-[10px] border border-border bg-surface px-4 py-3 space-y-1">
+        <p className="text-[13px] font-medium text-text">Reviewing against brand guidelines</p>
+        <p className="text-[12px] text-text-3">
+          Checking tone, messaging, and storytelling quality.
+        </p>
+      </div>
+    );
+  }
+  if (status === 'rendering') {
+    return (
+      <div className="rounded-[10px] border border-border bg-surface px-4 py-3 space-y-1">
+        <p className="text-[13px] font-medium text-text">Rendering in Gamma</p>
+        <p className="text-[12px] text-text-3">Building the deck in your Gamma workspace.</p>
+      </div>
+    );
+  }
+  if (status === 'done') {
+    return (
+      <div className="rounded-[10px] border border-border bg-surface px-4 py-3 space-y-1">
+        <p className="text-[13px] font-medium text-text">Deck ready</p>
+        <p className="text-[12px] text-text-3">
+          {gammaUrl ? 'Your presentation has been built in Gamma.' : 'Deck generated.'}
+        </p>
+      </div>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <div className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3">
+        <p className="text-[13px] font-medium text-text">Generation failed</p>
+        <p className="text-[12px] text-text-3 mt-1">
+          {errorMessage ?? 'The deck could not be generated. Try again.'}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-[10px] border border-border bg-surface px-4 py-3">
+      <p className="text-[13px] font-medium text-text">Awaiting generation</p>
+      <p className="text-[12px] text-text-3 mt-1">
+        Source saved. The deck will be generated automatically.
+      </p>
+    </div>
+  );
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Setting up',
+  running: 'Ready to generate',
+  ready: 'Ready to generate',
+  generating: 'Generating',
+  reviewing: 'Reviewing',
+  rendering: 'Rendering',
+  done: 'Done',
+  failed: 'Failed',
+};
+
 export function PresentationWorkflowPanel({
   workflow,
   isLoading,
   isError,
-  geraltInstanceId,
-  onOpenAgent,
+  gammaUrl,
   onClose,
 }: PresentationWorkflowPanelProps) {
   if (isLoading) {
@@ -139,10 +230,8 @@ export function PresentationWorkflowPanel({
   const steps = workflow.steps ?? {};
   const stepperSteps = buildPresentationSteps(steps);
   const rows = briefRows(steps);
-  const dispatched = Boolean(steps.generate?.dispatched);
   const title = workflow.companyName ?? 'Presentation';
   const statusLabel = STATUS_LABELS[workflow.status] ?? workflow.status;
-  const openAgent = geraltInstanceId && onOpenAgent ? () => onOpenAgent(geraltInstanceId) : null;
 
   return (
     <div className="relative flex flex-col h-full overflow-hidden rounded-panel border border-border bg-bg">
@@ -171,41 +260,33 @@ export function PresentationWorkflowPanel({
           </div>
         )}
 
-        {dispatched ? (
-          <div className="rounded-[10px] border border-border bg-surface px-4 py-3 space-y-2">
-            <p className="text-[13px] font-medium text-text">
-              {workflow.status === 'done' ? 'Presentation generated' : 'Brief dispatched to Geralt'}
+        <StatusBody
+          status={workflow.status}
+          gammaUrl={gammaUrl ?? null}
+          errorMessage={workflow.errorMessage ?? null}
+        />
+
+        {workflow.status === 'done' &&
+          gammaUrl &&
+          (isSafePresentationUrl(gammaUrl) ? (
+            <PresentationFrame url={gammaUrl} />
+          ) : (
+            <p className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3 text-[12px] text-text-3">
+              Presentation URL is invalid or unavailable.
             </p>
-            <p className="text-[12px] text-text-3">
-              {workflow.status === 'done'
-                ? 'The deck has been built. Open the Geralt session to view or refine it.'
-                : 'Geralt is building the deck in its chat session. Open the session to follow along and review the result.'}
-            </p>
-          </div>
-        ) : workflow.status === 'failed' ? (
-          <div className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3">
-            <p className="text-[13px] font-medium text-text">Generation failed</p>
-            <p className="text-[12px] text-text-3 mt-1">
-              The brief could not be dispatched. Make sure a Geralt agent is running, then try
-              again.
-            </p>
-          </div>
-        ) : (
-          <div className="rounded-[10px] border border-border bg-surface px-4 py-3">
-            <p className="text-[13px] font-medium text-text">Awaiting generation</p>
-            <p className="text-[12px] text-text-3 mt-1">
-              This presentation is set up. Dispatch the brief to a running Geralt session to build
-              the deck.
-            </p>
-          </div>
-        )}
+          ))}
       </div>
 
       <div className="border-t border-border bg-surface px-4 py-3 shrink-0 space-y-2">
-        {openAgent && (
-          <button type="button" onClick={openAgent} className="btn-primary w-full">
-            Open Geralt session
-          </button>
+        {isSafePresentationUrl(gammaUrl) && workflow.status === 'done' && (
+          <a
+            href={gammaUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="btn-primary w-full text-center block"
+          >
+            Open in Gamma
+          </a>
         )}
         <button
           type="button"

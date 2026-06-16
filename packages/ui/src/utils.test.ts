@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { cn } from './utils';
+import { cn, toHumanLabel } from './utils';
 
 describe('cn', () => {
   it('joins truthy class names and drops falsy ones', () => {
@@ -13,5 +13,24 @@ describe('cn', () => {
 
   it('flattens arrays and conditional objects', () => {
     expect(cn(['a', 'b'], { c: true, d: false })).toBe('a b c');
+  });
+});
+
+describe('toHumanLabel', () => {
+  it.each([
+    ['', ''],
+    ['search', 'Search'],
+    ['x_search', 'X Search'],
+    ['granola_list_notes', 'List Notes'],
+    ['firecrawl_scrape', 'Scrape'],
+    ['exa_search', 'Search'],
+    ['exa_firecrawl_test', 'Firecrawl Test'],
+    ['pending_review', 'Pending Review'],
+    ['call-transcript', 'Call Transcript'],
+    ['ToolCall', 'Tool Call'],
+    ['linkedin-post', 'LinkedIn Post'],
+    ['founder-pov-post', 'Founder POV Post'],
+  ])('formats %s as %s', (input, expected) => {
+    expect(toHumanLabel(input)).toBe(expected);
   });
 });

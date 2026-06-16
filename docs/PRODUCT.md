@@ -30,6 +30,18 @@ Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staf
 - One-pager
 - Email draft
 
+## Resource Enrichment
+
+A second workflow family for enriching tabular resources row by row. The user uploads a
+resource file (`.xlsx`), the workflow generates option variants for each row, the user picks
+one option per field in a review step, and the approved choices are downloaded as a CSV.
+
+The first concrete kind is **SEO Enrichment**: from a product-catalog spreadsheet it generates
+five SEO title, description, and summary variants per product (grounded in the product's image
+and metadata), the user selects the best of each, and exports a CSV of the chosen copy. The
+generic base (upload → enrich → review → export, the per-row "selection" picker, CSV download)
+is reusable; new enrichment domains are added as new kinds, not forks.
+
 ## Target Users
 
 - Sales and marketing teams who want to turn call insights into usable content

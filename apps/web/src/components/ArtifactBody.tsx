@@ -1,8 +1,28 @@
 import PresentationBody from './PresentationBody';
+import ResearchBody, { parseResearchBrief } from './ResearchBody';
+import SelectionBody from './SelectionBody';
+
+interface ArtifactBodyArtifact {
+  content: string;
+  kind: string;
+  source?: unknown;
+  // Used by the interactive `selection` renderer (to PATCH the pick back) and
+  // the `csv-export` download link; optional because most kinds don't need them.
+  id?: string;
+  sessionId?: string | null;
+}
 
 interface ArtifactBodyProps {
-  body: string;
-  type: string;
+  artifact: ArtifactBodyArtifact;
+}
+
+// The structured brief lives at source.brief; source is an opaque jsonb bag, so
+// pull the brief out defensively rather than asserting its shape here.
+function extractBrief(source: unknown): unknown {
+  if (typeof source === 'object' && source !== null && 'brief' in source) {
+    return (source as Record<string, unknown>).brief;
+  }
+  return undefined;
 }
 
 function parseMarkdownTable(text: string): { headers: string[]; rows: string[][] } | null {
@@ -179,8 +199,48 @@ function BattlecardBody({ body }: { body: string }) {
   return <p className="text-sm text-text-2 whitespace-pre-wrap">{body}</p>;
 }
 
-export default function ArtifactBody({ body, type }: ArtifactBodyProps) {
+function CsvExportBody({ body, artifactId }: { body: string; artifactId: string }) {
+  // Same-origin download route; the session cookie authorizes it. A plain anchor
+  // is sufficient — no JS fetch needed.
+  return (
+    <div className="space-y-3">
+      <a
+        href={`/api/v1/artifacts/${artifactId}/download`}
+        download
+        className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
+      >
+        Download CSV
+      </a>
+      <pre className="overflow-x-auto rounded border border-border bg-surface-2 p-3 text-xs text-text-2">
+        {body}
+      </pre>
+    </div>
+  );
+}
+
+export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
+  const body = artifact.content;
+  const type = artifact.kind;
+  const brief = extractBrief(artifact.source);
   switch (type) {
+    // downloadable export
+    case 'csv-export': {
+      if (!artifact.id) {
+        return <pre className="overflow-x-auto p-3 text-xs text-text-2">{body}</pre>;
+      }
+      return <CsvExportBody body={body} artifactId={artifact.id} />;
+    }
+    // per-row HITL selection
+    case 'selection': {
+      if (!artifact.id || !artifact.sessionId) {
+        return (
+          <p className="text-sm text-text-3 p-4">Selection is unavailable outside its workflow.</p>
+        );
+      }
+      return (
+        <SelectionBody content={body} workflowId={artifact.sessionId} artifactId={artifact.id} />
+      );
+    }
     // email
     case 'email':
     case 'follow-up-email':
@@ -188,6 +248,8 @@ export default function ArtifactBody({ body, type }: ArtifactBodyProps) {
     // social posts
     case 'linkedin':
     case 'linkedin-post':
+    // Legacy rows: pre-unification LinkedIn Daily drafts kept this kind.
+    case 'linkedin-daily':
     case 'pain-points-linkedin-post':
     case 'twitter-post':
     case 'pain-points-twitter-post':
@@ -221,12 +283,18 @@ export default function ArtifactBody({ body, type }: ArtifactBodyProps) {
       }
       if (!isValidUrl) {
         return (
-          <p className="text-sm text-text-3 p-4">
-            Presentation URL is invalid or unavailable.
-          </p>
+          <p className="text-sm text-text-3 p-4">Presentation URL is invalid or unavailable.</p>
         );
       }
       return <PresentationBody url={body} />;
+    }
+    // research
+    case 'research': {
+      const parsedBrief = parseResearchBrief(brief);
+      if (parsedBrief !== null) {
+        return <ResearchBody brief={parsedBrief} />;
+      }
+      return <OnePagerBody body={body} />;
     }
     // fallback
     default:

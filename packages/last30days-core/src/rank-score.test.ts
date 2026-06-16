@@ -144,7 +144,79 @@ describe('rankScore', () => {
     expect(first).toEqual(second);
   });
 
+  test('cluster with a highly-upvoted top comment outranks an equivalent cluster without', () => {
+    const withTopComment = makeCluster(
+      [
+        makeItem({
+          url: 'https://a.com',
+          title: 'Viral thread',
+          engagement: { upvotes: 100, comments: 10 },
+          topComments: [{ text: 'the killer quote', score: 5000 }],
+        }),
+      ],
+      'fun'
+    );
+    const plain = makeCluster(
+      [
+        makeItem({
+          url: 'https://b.com',
+          title: 'Plain thread',
+          engagement: { upvotes: 100, comments: 10 },
+        }),
+      ],
+      'plain'
+    );
+    const result = rankScore([plain, withTopComment], { topic: 'test', nowIso: NOW_ISO });
+    expect(result[0]?.id).toBe('fun');
+  });
+
+  test('a fractional top-comment score never demotes a cluster below a comment-less peer', () => {
+    const fractional = makeCluster(
+      [
+        makeItem({
+          url: 'https://a.com',
+          title: 'Fractional',
+          engagement: { upvotes: 100, comments: 10 },
+          topComments: [{ text: 'meh', score: 0.5 }],
+        }),
+      ],
+      'fractional'
+    );
+    const plain = makeCluster(
+      [
+        makeItem({
+          url: 'https://b.com',
+          title: 'Plain',
+          engagement: { upvotes: 100, comments: 10 },
+        }),
+      ],
+      'plain'
+    );
+    const result = rankScore([fractional, plain], { topic: 'test', nowIso: NOW_ISO });
+    const fractionalRank = result.findIndex((c) => c.id === 'fractional');
+    const plainRank = result.findIndex((c) => c.id === 'plain');
+    expect(fractionalRank).toBeLessThanOrEqual(plainRank);
+  });
+
   test('empty input returns empty array', () => {
     expect(rankScore([], { topic: 'test', nowIso: NOW_ISO })).toEqual([]);
+  });
+
+  test('handles mix of items with and without engagement', () => {
+    const withEngagement = makeCluster(
+      [makeItem({ url: 'https://a.com', title: 'With Engagement', engagement: { upvotes: 100, comments: 10 } })],
+      'with'
+    );
+    // makeItem sets engagement by default; create one without by casting
+    const noEngItem = {
+      url: 'https://b.com',
+      title: 'No Engagement',
+      publishedAt: '2026-06-10T12:00:00Z',
+      source: 'web' as const,
+    } as ResearchItem;
+    const withoutEngagement = makeCluster([noEngItem], 'without');
+    // Should not throw and should return both clusters
+    const result = rankScore([withEngagement, withoutEngagement], { topic: 'test', nowIso: NOW_ISO });
+    expect(result).toHaveLength(2);
   });
 });

@@ -1,12 +1,17 @@
-import { useState } from 'react';
-import { AnimatePresence, motion, type Easing } from 'framer-motion';
-import type { PresentationSourceData, PresentationStepArgs } from './presentation-wizard-types';
+import { useState } from "react";
+import { AnimatePresence, motion, type Easing } from "framer-motion";
+import type {
+  PresentationSourceData,
+  PresentationStepArgs,
+} from "./presentation-wizard-types";
 
-export type { PresentationSourceData } from './presentation-wizard-types';
+export type { PresentationSourceData } from "./presentation-wizard-types";
 
 interface CreateWorkflowMutation {
   isPending: boolean;
-  mutateAsync: (args: { tenantId?: string | null | undefined }) => Promise<{ id: string }>;
+  mutateAsync: (args: {
+    tenantId?: string | null | undefined;
+  }) => Promise<{ id: string }>;
 }
 
 interface SubmitStepMutation {
@@ -14,20 +19,11 @@ interface SubmitStepMutation {
   mutateAsync: (args: PresentationStepArgs) => Promise<unknown>;
 }
 
-interface AgentInstance {
-  id: string;
-  agentName: string;
-}
-
-interface GeraltInstancesQuery {
-  isLoading: boolean;
-  data: AgentInstance[];
-}
-
 export interface GammaTemplate {
+  id: string;
   gammaId: string;
   name: string;
-  description: string | null;
+  systemPrompt: string;
 }
 
 interface GammaTemplatesQuery {
@@ -42,8 +38,9 @@ export interface PresentationGenerationWizardProps {
   tenantId?: string | null;
   createWorkflow: CreateWorkflowMutation;
   submitStep: SubmitStepMutation;
-  geraltInstances: GeraltInstancesQuery;
   gammaTemplates: GammaTemplatesQuery;
+  /** href for the template management page — shown when no templates are configured. */
+  manageTemplatesHref?: string;
   renderRecentPicker: (props: {
     onSelect: (data: PresentationSourceData) => void;
     isLoading: boolean;
@@ -54,30 +51,32 @@ export interface PresentationGenerationWizardProps {
     onSelect: (data: PresentationSourceData) => void;
     isLoading: boolean;
   }) => React.ReactNode;
+  /** Preselect an existing artifact as the source (e.g. "Use in Workflow"). Opens
+   *  the Source step on the Artifact tab with this artifact already chosen. */
+  seedArtifactId?: string;
 }
 
-type WizardStep = 'template' | 'brief' | 'source' | 'generate';
-type SourceMode = 'paste' | 'recent' | 'artifact';
+type WizardStep = "template" | "brief" | "source";
+type SourceMode = "paste" | "recent" | "artifact";
 
 const SOURCE_MODE_LABELS: Record<SourceMode, string> = {
-  recent: 'Recent',
-  paste: 'Paste',
-  artifact: 'Artifact',
+  recent: "Recent",
+  paste: "Paste",
+  artifact: "Artifact",
 };
-type Tone = 'Formal' | 'Conversational' | 'Technical';
+type Tone = "Formal" | "Conversational" | "Technical";
 
-const TONES: Tone[] = ['Formal', 'Conversational', 'Technical'];
+const TONES: Tone[] = ["Formal", "Conversational", "Technical"];
 
 const STEP_LABELS: Record<WizardStep, string> = {
-  template: 'Template',
-  brief: 'Brief',
-  source: 'Source',
-  generate: 'Generate',
+  template: "Template",
+  brief: "Brief",
+  source: "Source",
 };
 
-const STEP_KEYS: WizardStep[] = ['template', 'brief', 'source', 'generate'];
+const STEP_KEYS: WizardStep[] = ["template", "brief", "source"];
 
-const EASE_OUT: Easing = 'easeOut';
+const EASE_OUT: Easing = "easeOut";
 
 const stepFade = {
   initial: { opacity: 0, y: 8 },
@@ -102,11 +101,11 @@ function StepCircle({
   isCurrent: boolean;
   index: number;
 }) {
-  let circleClass = 'bg-surface-2 text-text-3';
+  let circleClass = "bg-surface-2 text-text-3";
   if (isDone) {
-    circleClass = 'bg-surface-2 text-text-2';
+    circleClass = "bg-surface-2 text-text-2";
   } else if (isCurrent) {
-    circleClass = 'bg-orange text-white';
+    circleClass = "bg-orange text-white";
   }
   return (
     <div
@@ -138,13 +137,15 @@ function StepLabel({
   isCurrent: boolean;
   label: string;
 }) {
-  let labelClass = 'text-text-3';
+  let labelClass = "text-text-3";
   if (isCurrent) {
-    labelClass = 'text-text';
+    labelClass = "text-text";
   } else if (isDone) {
-    labelClass = 'text-text-2';
+    labelClass = "text-text-2";
   }
-  return <span className={`text-[12px] font-medium ${labelClass}`}>{label}</span>;
+  return (
+    <span className={`text-[12px] font-medium ${labelClass}`}>{label}</span>
+  );
 }
 
 function BackButton({ onClick }: { onClick: () => void }) {
@@ -174,128 +175,116 @@ export function PresentationGenerationWizard({
   tenantId,
   createWorkflow,
   submitStep,
-  geraltInstances,
   gammaTemplates,
+  manageTemplatesHref,
   renderRecentPicker,
   renderArtifactPicker,
+  seedArtifactId,
 }: PresentationGenerationWizardProps) {
-  const [wizardStep, setWizardStep] = useState<WizardStep>('template');
+  const [wizardStep, setWizardStep] = useState<WizardStep>("template");
   const [workflowId, setWorkflowId] = useState<string | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
-  const [useAutoTemplate, setUseAutoTemplate] = useState(true);
-  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
-  const [audience, setAudience] = useState('');
-  const [tone, setTone] = useState<Tone | ''>('');
-  const [goal, setGoal] = useState('');
+  const [audience, setAudience] = useState("");
+  const [tone, setTone] = useState<Tone | "">("");
+  const [goal, setGoal] = useState("");
 
-  const [sourceMode, setSourceMode] = useState<SourceMode>('recent');
-  const [pasteText, setPasteText] = useState('');
+  const [sourceMode, setSourceMode] = useState<SourceMode>(
+    seedArtifactId ? "artifact" : "recent",
+  );
+  const [pasteText, setPasteText] = useState("");
 
   const sourceModes: SourceMode[] = renderArtifactPicker
-    ? ['recent', 'paste', 'artifact']
-    : ['recent', 'paste'];
-
-  const [selectedInstanceId, setSelectedInstanceId] = useState('');
+    ? ["recent", "paste", "artifact"]
+    : ["recent", "paste"];
 
   const handleTemplateNext = (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setWizardStep('brief');
+    setError("");
+    if (!selectedTemplateId) {
+      setError("Select a template to continue");
+      return;
+    }
+    setWizardStep("brief");
   };
 
   const handleBriefNext = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     try {
       const run = await createWorkflow.mutateAsync({ tenantId });
       setWorkflowId(run.id);
-      const templateArgs: PresentationStepArgs & { step: 'template' } = {
+      const templateArgs: PresentationStepArgs & { step: "template" } = {
         workflowId: run.id,
-        step: 'template',
+        step: "template",
+        templateId: selectedTemplateId,
       };
-      if (!useAutoTemplate && selectedTemplateId.trim()) {
-        templateArgs.templateId = selectedTemplateId.trim();
-      }
       if (audience.trim()) templateArgs.audience = audience.trim();
       if (tone) templateArgs.tone = tone;
       if (goal.trim()) templateArgs.goal = goal.trim();
       await submitStep.mutateAsync(templateArgs);
-      setWizardStep('source');
+      setWizardStep("source");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create workflow');
+      setError(
+        err instanceof Error ? err.message : "Failed to create workflow",
+      );
     }
   };
 
   const handleSourceSubmit = async (data: PresentationSourceData) => {
     if (!workflowId) return;
-    setError('');
+    setError("");
 
     let args: PresentationStepArgs;
-    if (data.source === 'granola') {
+    if (data.source === "granola") {
       args = {
         workflowId,
-        step: 'source',
-        transcriptSource: 'granola',
+        step: "source",
+        transcriptSource: "granola",
         ...(data.granolaId ? { granolaId: data.granolaId } : {}),
       };
-    } else if (data.source === 'artifact') {
+    } else if (data.source === "artifact") {
       if (!data.sourceArtifactId) {
-        setError('Select an artifact to use as the source');
+        setError("Select an artifact to use as the source");
         return;
       }
       args = {
         workflowId,
-        step: 'source',
-        transcriptSource: 'artifact',
+        step: "source",
+        transcriptSource: "artifact",
         sourceArtifactId: data.sourceArtifactId,
         ...(data.callTitle ? { callTitle: data.callTitle } : {}),
       };
     } else {
       if (!data.transcript) {
-        setError('Paste a transcript of at least a few lines');
+        setError("Paste a transcript of at least a few lines");
         return;
       }
       args = {
         workflowId,
-        step: 'source',
-        transcriptSource: 'paste',
+        step: "source",
+        transcriptSource: "paste",
         transcript: data.transcript,
       };
     }
 
     try {
       await submitStep.mutateAsync(args);
-      setWizardStep('generate');
+      if (workflowId) onCreated(workflowId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save source');
+      setError(err instanceof Error ? err.message : "Failed to save source");
     }
   };
 
   const handlePasteSourceSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!pasteText.trim() || pasteText.trim().length < 10) {
-      setError('Paste a transcript of at least a few lines');
+      setError("Paste a transcript of at least a few lines");
       return;
     }
-    void handleSourceSubmit({ source: 'paste', transcript: pasteText.trim() });
-  };
-
-  const handleGenerate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!workflowId || !selectedInstanceId) return;
-    setError('');
-    try {
-      await submitStep.mutateAsync({
-        workflowId,
-        step: 'generate',
-        agentInstanceId: selectedInstanceId,
-      });
-      onCreated(workflowId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to dispatch brief');
-    }
+    void handleSourceSubmit({ source: "paste", transcript: pasteText.trim() });
   };
 
   const handleClose = () => {
@@ -308,7 +297,9 @@ export function PresentationGenerationWizard({
   return (
     <div className="flex flex-col h-full overflow-hidden rounded-panel border border-border bg-bg">
       <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border bg-surface shrink-0">
-        <p className="text-[14px] font-semibold text-text">Create a presentation</p>
+        <p className="text-[14px] font-semibold text-text">
+          Create a presentation
+        </p>
         <button
           type="button"
           onClick={handleClose}
@@ -335,10 +326,16 @@ export function PresentationGenerationWizard({
             <div key={s} className="flex items-center gap-0">
               <div className="flex items-center gap-2">
                 <StepCircle isDone={isDone} isCurrent={isCurrent} index={i} />
-                <StepLabel isDone={isDone} isCurrent={isCurrent} label={STEP_LABELS[s]} />
+                <StepLabel
+                  isDone={isDone}
+                  isCurrent={isCurrent}
+                  label={STEP_LABELS[s]}
+                />
               </div>
               {i < STEP_KEYS.length - 1 && (
-                <div className={`h-px w-6 mx-2 ${isDone ? 'bg-orange' : 'bg-border'}`} />
+                <div
+                  className={`h-px w-6 mx-2 ${isDone ? "bg-orange" : "bg-border"}`}
+                />
               )}
             </div>
           );
@@ -347,116 +344,134 @@ export function PresentationGenerationWizard({
 
       <div className="flex-1 overflow-y-auto p-5">
         <AnimatePresence mode="wait" initial={false}>
-          {wizardStep === 'template' && (
+          {wizardStep === "template" && (
             <motion.form
               key="template"
               onSubmit={handleTemplateNext}
               className="space-y-4"
               {...stepFade}
             >
-              <p className="text-[13px] text-text-2">
-                Choose a template to guide the deck structure, or let Geralt decide.
-              </p>
-              <div className="grid gap-2">
-                <div
-                  role="radio"
-                  aria-checked={useAutoTemplate}
-                  tabIndex={0}
-                  onClick={() => setUseAutoTemplate(true)}
-                  onKeyDown={(e) => e.key === 'Enter' && setUseAutoTemplate(true)}
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-[background-color,border-color] ${
-                    useAutoTemplate
-                      ? 'border-orange bg-orange/5'
-                      : 'border-border hover:border-text-3'
-                  }`}
-                >
-                  <div
-                    className={`mt-0.5 h-4 w-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
-                      useAutoTemplate ? 'border-orange' : 'border-border'
-                    }`}
+              <div className="flex items-center justify-between">
+                <p className="text-[13px] text-text-2">
+                  Choose a template to guide the deck structure.
+                </p>
+                {manageTemplatesHref && (
+                  <a
+                    href={manageTemplatesHref}
+                    className="text-[12px] text-text-3 hover:text-text-2 transition-[color] shrink-0"
                   >
-                    {useAutoTemplate && <div className="h-2 w-2 rounded-full bg-orange" />}
-                  </div>
-                  <div>
-                    <p className="text-[13px] font-medium text-text">Auto</p>
-                    <p className="text-[12px] text-text-3">Let Geralt choose the best template</p>
-                  </div>
-                </div>
+                    Manage templates
+                  </a>
+                )}
+              </div>
 
-                {gammaTemplates.isLoading && (
-                  <div className="text-[12px] text-text-3 py-2">Loading templates…</div>
-                )}
-                {!gammaTemplates.isLoading && gammaTemplates.isError && (
-                  <div className="text-[12px] text-text-3 py-2">
-                    Could not load templates — Gamma credential may not be configured.
+              {gammaTemplates.isLoading && (
+                <div className="text-[12px] text-text-3 py-2">
+                  Loading templates…
+                </div>
+              )}
+              {!gammaTemplates.isLoading && gammaTemplates.isError && (
+                <div className="text-[12px] text-text-3 py-2">
+                  Could not load templates.
+                </div>
+              )}
+              {!gammaTemplates.isLoading &&
+                !gammaTemplates.isError &&
+                (gammaTemplates.data ?? []).length === 0 && (
+                  <div className="rounded-lg border border-border bg-surface-2 px-4 py-3">
+                    <p className="text-[13px] text-text-2">
+                      No templates configured yet.
+                    </p>
+                    {manageTemplatesHref && (
+                      <a
+                        href={manageTemplatesHref}
+                        className="text-[12px] text-orange hover:underline mt-1 inline-block"
+                      >
+                        Add your first template
+                      </a>
+                    )}
                   </div>
                 )}
-                {!gammaTemplates.isLoading &&
-                  !gammaTemplates.isError &&
-                  (gammaTemplates.data ?? []).map((tmpl) => (
-                    <div
-                      key={tmpl.gammaId}
-                      role="radio"
-                      aria-checked={selectedTemplateId === tmpl.gammaId}
-                      tabIndex={0}
-                      onClick={() => {
-                        setUseAutoTemplate(false);
-                        setSelectedTemplateId(tmpl.gammaId);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          setUseAutoTemplate(false);
-                          setSelectedTemplateId(tmpl.gammaId);
-                        }
-                      }}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-[background-color,border-color] ${
-                        selectedTemplateId === tmpl.gammaId
-                          ? 'border-orange bg-orange/5'
-                          : 'border-border hover:border-text-3'
-                      }`}
-                    >
+              {!gammaTemplates.isLoading &&
+                !gammaTemplates.isError &&
+                (gammaTemplates.data ?? []).length > 0 && (
+                  <div className="grid gap-2">
+                    {(gammaTemplates.data ?? []).map((tmpl) => (
                       <div
-                        className={`mt-0.5 h-4 w-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
-                          selectedTemplateId === tmpl.gammaId ? 'border-orange' : 'border-border'
+                        key={tmpl.gammaId}
+                        role="radio"
+                        aria-checked={selectedTemplateId === tmpl.gammaId}
+                        tabIndex={0}
+                        onClick={() => setSelectedTemplateId(tmpl.gammaId)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter")
+                            setSelectedTemplateId(tmpl.gammaId);
+                        }}
+                        className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-[background-color,border-color] ${
+                          selectedTemplateId === tmpl.gammaId
+                            ? "border-orange bg-orange/5"
+                            : "border-border hover:border-text-3"
                         }`}
                       >
-                        {selectedTemplateId === tmpl.gammaId && (
-                          <div className="h-2 w-2 rounded-full bg-orange" />
-                        )}
+                        <div
+                          className={`mt-0.5 h-4 w-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
+                            selectedTemplateId === tmpl.gammaId
+                              ? "border-orange"
+                              : "border-border"
+                          }`}
+                        >
+                          {selectedTemplateId === tmpl.gammaId && (
+                            <div className="h-2 w-2 rounded-full bg-orange" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-[13px] font-medium text-text">
+                            {tmpl.name}
+                          </p>
+                          <p className="text-[12px] text-text-3 line-clamp-2">
+                            {tmpl.systemPrompt}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[13px] font-medium text-text">{tmpl.name}</p>
-                        {tmpl.description && (
-                          <p className="text-[12px] text-text-3">{tmpl.description}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-              </div>
+                    ))}
+                  </div>
+                )}
 
               {error && <p className="text-[12px] text-orange">{error}</p>}
 
-              <button type="submit" className="w-full btn-primary">
+              <button
+                type="submit"
+                disabled={!selectedTemplateId}
+                className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 Continue
               </button>
             </motion.form>
           )}
 
-          {wizardStep === 'brief' && (
-            <motion.form key="brief" onSubmit={handleBriefNext} className="space-y-4" {...stepFade}>
+          {wizardStep === "brief" && (
+            <motion.form
+              key="brief"
+              onSubmit={handleBriefNext}
+              className="space-y-4"
+              {...stepFade}
+            >
               <div className="flex items-center justify-between">
-                <p className="text-[13px] text-text-2">Describe the presentation goal.</p>
+                <p className="text-[13px] text-text-2">
+                  Describe the presentation goal.
+                </p>
                 <BackButton
                   onClick={() => {
-                    setError('');
-                    setWizardStep('template');
+                    setError("");
+                    setWizardStep("template");
                   }}
                 />
               </div>
               <div className="grid gap-3">
                 <div>
                   <label className="block text-[12px] font-medium text-text-2 mb-1">
-                    audience <span className="text-text-3 font-normal">(optional)</span>
+                    audience{" "}
+                    <span className="text-text-3 font-normal">(optional)</span>
                   </label>
                   <input
                     type="text"
@@ -469,18 +484,19 @@ export function PresentationGenerationWizard({
 
                 <div>
                   <label className="block text-[12px] font-medium text-text-2 mb-1">
-                    tone <span className="text-text-3 font-normal">(optional)</span>
+                    tone{" "}
+                    <span className="text-text-3 font-normal">(optional)</span>
                   </label>
                   <div className="flex gap-2">
                     {TONES.map((t) => (
                       <button
                         key={t}
                         type="button"
-                        onClick={() => setTone(tone === t ? '' : t)}
+                        onClick={() => setTone(tone === t ? "" : t)}
                         className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-[background-color,border-color,color] ${
                           tone === t
-                            ? 'border-orange bg-orange/5 text-text'
-                            : 'border-border text-text-2 hover:border-text-3 hover:text-text'
+                            ? "border-orange bg-orange/5 text-text"
+                            : "border-border text-text-2 hover:border-text-3 hover:text-text"
                         }`}
                       >
                         {t}
@@ -491,7 +507,8 @@ export function PresentationGenerationWizard({
 
                 <div>
                   <label className="block text-[12px] font-medium text-text-2 mb-1">
-                    goal <span className="text-text-3 font-normal">(optional)</span>
+                    goal{" "}
+                    <span className="text-text-3 font-normal">(optional)</span>
                   </label>
                   <input
                     type="text"
@@ -510,14 +527,16 @@ export function PresentationGenerationWizard({
                 disabled={briefLoading}
                 className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {briefLoading ? 'Creating…' : 'Continue'}
+                {briefLoading ? "Creating…" : "Continue"}
               </button>
             </motion.form>
           )}
 
-          {wizardStep === 'source' && (
+          {wizardStep === "source" && (
             <motion.div key="source" className="space-y-4" {...stepFade}>
-              <p className="text-[13px] text-text-2">Choose the source for this presentation.</p>
+              <p className="text-[13px] text-text-2">
+                Choose the source for this presentation.
+              </p>
 
               <div className="flex gap-1 p-1 bg-surface-2 rounded-[10px] w-fit">
                 {sourceModes.map((m) => (
@@ -526,12 +545,12 @@ export function PresentationGenerationWizard({
                     type="button"
                     onClick={() => {
                       setSourceMode(m);
-                      setError('');
+                      setError("");
                     }}
                     className={`flex-1 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-[background-color,color] ${
                       sourceMode === m
-                        ? 'bg-surface text-text shadow-sm'
-                        : 'text-text-2 hover:text-text'
+                        ? "bg-surface text-text shadow-sm"
+                        : "text-text-2 hover:text-text"
                     }`}
                   >
                     {SOURCE_MODE_LABELS[m]}
@@ -540,7 +559,7 @@ export function PresentationGenerationWizard({
               </div>
 
               <AnimatePresence mode="wait">
-                {sourceMode === 'paste' && (
+                {sourceMode === "paste" && (
                   <motion.form
                     key="paste"
                     onSubmit={handlePasteSourceSubmit}
@@ -551,35 +570,41 @@ export function PresentationGenerationWizard({
                       value={pasteText}
                       onChange={(e) => {
                         setPasteText(e.target.value);
-                        setError('');
+                        setError("");
                       }}
                       placeholder="Speaker 1: Thanks for taking the time today..."
                       rows={8}
                       disabled={submitStepLoading}
                       className="w-full px-3 py-3 text-[13px] border border-border rounded-lg bg-surface-2 text-text font-mono resize-none focus:outline-none focus:ring-2 focus:ring-orange disabled:opacity-50"
                     />
-                    {error && <p className="text-[12px] text-orange">{error}</p>}
+                    {error && (
+                      <p className="text-[12px] text-orange">{error}</p>
+                    )}
                     <button
                       type="submit"
                       disabled={submitStepLoading || !pasteText.trim()}
                       className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {submitStepLoading ? 'Saving…' : 'Continue'}
+                      {submitStepLoading ? "Saving…" : "Continue"}
                     </button>
                   </motion.form>
                 )}
-                {sourceMode === 'recent' && (
+                {sourceMode === "recent" && (
                   <motion.div key="recent" {...tabFade}>
-                    {error && <p className="text-[12px] text-orange mb-3">{error}</p>}
+                    {error && (
+                      <p className="text-[12px] text-orange mb-3">{error}</p>
+                    )}
                     {renderRecentPicker({
                       onSelect: handleSourceSubmit,
                       isLoading: submitStepLoading,
                     })}
                   </motion.div>
                 )}
-                {sourceMode === 'artifact' && renderArtifactPicker && (
+                {sourceMode === "artifact" && renderArtifactPicker && (
                   <motion.div key="artifact" {...tabFade}>
-                    {error && <p className="text-[12px] text-orange mb-3">{error}</p>}
+                    {error && (
+                      <p className="text-[12px] text-orange mb-3">{error}</p>
+                    )}
                     {renderArtifactPicker({
                       onSelect: handleSourceSubmit,
                       isLoading: submitStepLoading,
@@ -590,66 +615,6 @@ export function PresentationGenerationWizard({
             </motion.div>
           )}
 
-          {wizardStep === 'generate' && (
-            <motion.form
-              key="generate"
-              onSubmit={handleGenerate}
-              className="space-y-4"
-              {...stepFade}
-            >
-              <p className="text-[13px] text-text-2">
-                Pick a running presentation agent session. The brief will be dispatched into that
-                chat.
-              </p>
-
-              {geraltInstances.isLoading ? (
-                <div className="text-[12px] text-text-3">Loading agents…</div>
-              ) : geraltInstances.data.length === 0 ? (
-                <div className="rounded-lg border border-border bg-surface-2 px-4 py-3">
-                  <p className="text-[13px] text-text-2">No presentation agents are running.</p>
-                  <p className="text-[12px] text-text-3 mt-1">
-                    Launch a presentation agent from the agent panel, then come back.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid gap-2">
-                  {geraltInstances.data.map((inst, idx) => (
-                    <label
-                      key={inst.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-[background-color,border-color] ${
-                        selectedInstanceId === inst.id
-                          ? 'border-orange bg-orange/5'
-                          : 'border-border hover:border-text-3'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="instance"
-                        value={inst.id}
-                        checked={selectedInstanceId === inst.id}
-                        onChange={() => setSelectedInstanceId(inst.id)}
-                        className="mt-0.5 accent-orange"
-                      />
-                      <div>
-                        <p className="text-[13px] font-medium text-text">{inst.agentName}</p>
-                        <p className="text-[12px] text-text-3">Session {idx + 1}</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {error && <p className="text-[12px] text-orange">{error}</p>}
-
-              <button
-                type="submit"
-                disabled={submitStepLoading || !selectedInstanceId}
-                className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitStepLoading ? 'Dispatching…' : 'Send brief'}
-              </button>
-            </motion.form>
-          )}
         </AnimatePresence>
       </div>
     </div>

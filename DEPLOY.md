@@ -212,8 +212,17 @@ OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1 \
 GRANOLA_API_KEY=... \
 EXA_API_KEY=... \
 FIRECRAWL_API_KEY=... \
+BLUESKY_HANDLE=yourhandle.bsky.social \
+BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx \
 bun run apps/hub/bin/seed-credentials.ts
 ```
+
+**Bluesky**: the public search endpoint now requires authentication. Create an app
+password at **bsky.app → Settings → Privacy and Security → App Passwords** (separate
+from your account password, revocable), then set `BLUESKY_HANDLE` (e.g.
+`yourhandle.bsky.social`) and `BLUESKY_APP_PASSWORD`. Both must be present — if the
+password is set without the handle, the Bluesky entry is skipped with a warning. Without
+this credential the Bluesky search tool falls back to unauthenticated and returns 403.
 
 Entries without a key set in the environment are skipped silently. Running the script again after adding new keys is safe — 409 responses (provider or credential already exists) are treated as no-ops.
 

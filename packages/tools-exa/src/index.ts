@@ -22,6 +22,44 @@ type ExaSearchResponse = {
   results: ExaSearchResult[];
 };
 
+// Structurally compatible with @workbench/last30days-core ResearchItem (source 'web').
+// Kept as a local literal type so tools-exa stays dependency-free, matching the
+// other source packages (reddit/hackernews normalize inline rather than importing).
+type WebResearchItem = {
+  url: string;
+  title: string;
+  publishedAt: string;
+  source: 'web';
+  engagement: { upvotes: number; comments: number };
+  author?: string;
+  provenance?: 'degraded';
+};
+
+// Web results carry no engagement signal and often no publish date. Rather than
+// force the agent to reshape Exa output before last30days_core_report (the "exa
+// vs web" friction), emit ResearchItems directly: zero engagement, and when the
+// page has no date fall back to retrieval time tagged `degraded` so it stays in
+// the window but ranks below dated, voted sources instead of being dropped.
+function normalizeExaResult(result: ExaSearchResult, retrievedAt: string): WebResearchItem | null {
+  if (result.url.length === 0) {
+    return null;
+  }
+  const item: WebResearchItem = {
+    url: result.url,
+    title: result.title,
+    publishedAt: result.publishedDate ?? retrievedAt,
+    source: 'web',
+    engagement: { upvotes: 0, comments: 0 },
+  };
+  if (result.author !== undefined) {
+    item.author = result.author;
+  }
+  if (result.publishedDate === undefined) {
+    item.provenance = 'degraded';
+  }
+  return item;
+}
+
 const DEFAULT_BASE_URL = 'https://api.exa.ai';
 const DEFAULT_NUM_RESULTS = 5;
 const MAX_NUM_RESULTS = 25;
@@ -174,53 +212,78 @@ async function searchExa(
     body.excludeDomains = excludeDomains;
   }
 
-  return parseSearchResponse(await fetchExaJSON(config, url, body, signal));
+  const response = parseSearchResponse(await fetchExaJSON(config, url, body, signal));
+  const retrievedAt = new Date().toISOString();
+  return response.results
+    .map((result) => normalizeExaResult(result, retrievedAt))
+    .filter((item): item is WebResearchItem => item !== null);
 }
+
+const WEB_SEARCH_INPUT_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    query: {
+      type: 'string',
+      description: 'The search query string.',
+    },
+    numResults: {
+      type: 'number',
+      description: 'Maximum number of results to return (1-25, default 5).',
+    },
+    type: {
+      type: 'string',
+      description: 'Search depth: auto, instant, neural, fast, deep. Optional, default auto.',
+    },
+    includeDomains: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Optional list of domains to include.',
+    },
+    excludeDomains: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Optional list of domains to exclude.',
+    },
+  },
+  required: ['query'],
+};
+
+const RESULT_SHAPE_NOTE =
+  'Returns normalized research items (source "web") with title, URL, author, and publish date, ready to pass straight into last30days_core_report.';
 
 export const EXA_SEARCH_DEFINITION: ToolDefinition = {
   name: 'exa_search',
-  description:
-    'Search the web using Exa. Returns a list of relevant results with title, URL, and optional text/summary. Use this to find current information, research topics, or verify facts.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      query: {
-        type: 'string',
-        description: 'The search query string.',
-      },
-      numResults: {
-        type: 'number',
-        description: 'Maximum number of results to return (1-25, default 5).',
-      },
-      type: {
-        type: 'string',
-        description: 'Search type: auto, instant, neural, fast, deep. Default is auto.',
-      },
-      includeDomains: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'List of domains to include in results.',
-      },
-      excludeDomains: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'List of domains to exclude from results.',
-      },
-    },
-    required: ['query'],
-  },
+  description: `Search the web. Use this to find current information, research topics, or verify facts. ${RESULT_SHAPE_NOTE}`,
+  inputSchema: WEB_SEARCH_INPUT_SCHEMA,
 };
+
+// web_search is the generic, provider-agnostic name for the same capability so the
+// agent does not have to reason about "exa vs web"; both names resolve to the same
+// handler and normalized output.
+export const WEB_SEARCH_DEFINITION: ToolDefinition = {
+  name: 'web_search',
+  description: `General web search. Pass a query; provider selection is handled server-side. ${RESULT_SHAPE_NOTE}`,
+  inputSchema: WEB_SEARCH_INPUT_SCHEMA,
+};
+
+function buildExaHandler(config: ExaToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await searchExa(config, args, signal));
+}
 
 export function createExaTools(config: ExaToolsConfig): AgentTool[] {
   validateConfig(config);
+  const handler = buildExaHandler(config);
 
   return [
-    {
-      kind: 'string',
-      definition: EXA_SEARCH_DEFINITION,
-      handler: async (args, signal) => jsonResult(await searchExa(config, args, signal)),
-    },
+    { kind: 'string', definition: EXA_SEARCH_DEFINITION, handler },
+    { kind: 'string', definition: WEB_SEARCH_DEFINITION, handler },
   ];
+}
+
+function createExaToolFor(config: ExaToolsConfig, definition: ToolDefinition): AgentTool[] {
+  validateConfig(config);
+  return [{ kind: 'string', definition, handler: buildExaHandler(config) }];
 }
 
 /**
@@ -236,6 +299,12 @@ export const EXA_HUB_TOOLS = {
     definition: EXA_SEARCH_DEFINITION,
     providerName: 'exa' as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
-      createExaTools({ apiKey: config.apiKey }),
+      createExaToolFor({ apiKey: config.apiKey }, EXA_SEARCH_DEFINITION),
+  },
+  web_search: {
+    definition: WEB_SEARCH_DEFINITION,
+    providerName: 'exa' as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createExaToolFor({ apiKey: config.apiKey }, WEB_SEARCH_DEFINITION),
   },
 };

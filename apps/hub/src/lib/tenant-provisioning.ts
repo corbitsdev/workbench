@@ -383,6 +383,7 @@ export async function seedAgentTemplates(db: ProductionDB): Promise<void> {
           credentialRequirements: template.credentialRequirements,
           grantRequirements: template.grantRequirements,
           capabilities: template.capabilities,
+          modelConfig: template.modelConfig ?? existing.modelConfig,
           updatedAt: new Date(),
         })
         .where(eq(agent.id, existing.id));

@@ -7,7 +7,7 @@ import { type } from 'arktype';
 // renderable artifacts. The boundary parser must not be stricter than the
 // renderer — `kind` is validated only as a string below.
 export const artifactKindSchema = type(
-  "'email' | 'linkedin-post' | 'twitter-post' | 'blog' | 'founder-pov-post' | 'one-pager' | 'case-study' | 'objection-handling' | 'customer-quotes' | 'battlecard' | 'pain-points' | 'call-transcript' | 'linkedin-daily' | 'presentation'"
+  "'email' | 'linkedin-post' | 'twitter-post' | 'blog' | 'founder-pov-post' | 'one-pager' | 'case-study' | 'objection-handling' | 'customer-quotes' | 'battlecard' | 'pain-points' | 'call-transcript' | 'presentation'"
 );
 
 export const painPointSchema = type({
@@ -24,6 +24,7 @@ export const workflowArtifactSchema = type({
   title: 'string',
   content: 'string',
   status: 'string',
+  'source?': 'unknown',
 });
 
 export type ParsedPainPoint = typeof painPointSchema.infer;

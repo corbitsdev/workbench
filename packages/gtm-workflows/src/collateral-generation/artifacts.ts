@@ -28,12 +28,39 @@ export const collateralTypeOptions = [
 
 type CollateralTypeId = (typeof collateralTypeOptions)[number]['id'];
 
-const MULTI_VARIANT_KINDS: Partial<Record<CollateralTypeId, number>> = {
-  'linkedin-daily': 3,
+type StoredArtifactKind =
+  | 'email'
+  | 'linkedin-post'
+  | 'twitter-post'
+  | 'blog'
+  | 'founder-pov-post'
+  | 'one-pager'
+  | 'case-study'
+  | 'objection-handling'
+  | 'customer-quotes'
+  | 'battlecard';
+
+interface CollateralSelectionDescriptor {
+  artifactKind: StoredArtifactKind;
+  variantCount: number;
+}
+
+// A collateral selection is what the user picks; its descriptor declares the
+// artifact kind it is stored as and how many variants it fans out into. A
+// selection without a descriptor maps to itself with a single variant.
+const COLLATERAL_SELECTION_DESCRIPTORS: Partial<
+  Record<CollateralTypeId, CollateralSelectionDescriptor>
+> = {
+  'linkedin-daily': { artifactKind: 'linkedin-post', variantCount: 3 },
 };
 
 export function getVariantCount(kind: string): number {
-  return MULTI_VARIANT_KINDS[kind as CollateralTypeId] ?? 1;
+  return COLLATERAL_SELECTION_DESCRIPTORS[kind as CollateralTypeId]?.variantCount ?? 1;
+}
+
+export function resolveArtifactKind(selectionKind: string): string {
+  return COLLATERAL_SELECTION_DESCRIPTORS[selectionKind as CollateralTypeId]?.artifactKind ??
+    selectionKind;
 }
 
 export function hasMultiVariantKind(artifacts: { kind: string }[]): boolean {

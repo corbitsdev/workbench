@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useArtifacts } from '@workbench/client/react';
 import type { PresentationSourceData } from '@workbench/workflow';
 import { clientOptions } from '../lib/client-options';
+import { resolveKindLabel } from '../lib/resolve-kind-label';
 
 interface ArtifactSourcePickerProps {
   onSelect: (data: PresentationSourceData) => void;
@@ -9,6 +10,8 @@ interface ArtifactSourcePickerProps {
   tenantId?: string | null;
   /** When set, only artifacts of these kinds are offered as sources. */
   kinds?: readonly string[];
+  /** Preselect this artifact on mount (e.g. seeded from "Use in Workflow"). */
+  initialSelectedId?: string;
 }
 
 export default function ArtifactSourcePicker({
@@ -16,6 +19,7 @@ export default function ArtifactSourcePicker({
   isLoading = false,
   tenantId,
   kinds,
+  initialSelectedId,
 }: ArtifactSourcePickerProps) {
   const {
     data: artifacts,
@@ -24,7 +28,7 @@ export default function ArtifactSourcePicker({
   } = useArtifacts(clientOptions, {
     tenantId,
   });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
 
   if (artifactsLoading) {
     return <p className="text-[12px] text-text-2">Loading artifacts…</p>;
@@ -59,7 +63,7 @@ export default function ArtifactSourcePicker({
               }`}
             >
               <span className="text-[13px] font-medium text-text">{artifact.title}</span>
-              <span className="text-[11.5px] text-text-2">{artifact.kind}</span>
+              <span className="text-[11.5px] text-text-2">{resolveKindLabel(artifact.kind)}</span>
             </button>
           );
         })}

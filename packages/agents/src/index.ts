@@ -11,6 +11,12 @@ export {
   PERSONAL_AGENT_NAME,
 } from './personal-agent/definition';
 export { createPersonalAgentDirector } from './personal-agent/director';
+export {
+  PERSONAL_AGENT_SEED_FILES,
+  buildSeedMarker,
+  parseSeedMarker,
+  type SeedWorkspaceFile,
+} from './personal-agent/seed-files';
 
 // Loop agent
 export { buildLoopAgentSystemPrompt } from './loop/prompt';
@@ -71,16 +77,6 @@ export {
   HAMMY_CAPABILITIES,
 } from './hammy-the-humanizer/definition';
 
-// Geralt agent
-export { buildGeraltSystemPrompt } from './geralt/prompt';
-export {
-  GERALT_GRANT_REQUIREMENTS,
-  GERALT_CREDENTIAL_REQUIREMENTS,
-  GERALT_DEPLOY_PROMPT,
-  GERALT_TOOL_NAMES,
-  GERALT_DEPLOY_DESCRIPTOR,
-} from './geralt/definition';
-
 // Larry — last30days research
 export { buildLarrySystemPrompt } from './larry/prompt';
 export { LARRY_SKILL_CONTENT } from './larry/skill';
@@ -117,3 +113,21 @@ export {
   HUMANIZER_SECTION,
 } from './prompt-builder';
 export type { PromptSection, PromptFormat } from './prompt-builder';
+
+export {
+  FREDDIE_DEPLOY_PROMPT,
+  FREDDIE_GRANT_REQUIREMENTS,
+  FREDDIE_CREDENTIAL_REQUIREMENTS,
+  FREDDIE_CAPABILITIES,
+  FREDDIE_MODEL_CONFIG,
+  FREDDIE_DEPLOY_DESCRIPTOR,
+} from './freddie/definition';
+
+export {
+  FANNIE_DEPLOY_PROMPT,
+  FANNIE_GRANT_REQUIREMENTS,
+  FANNIE_CREDENTIAL_REQUIREMENTS,
+  FANNIE_CAPABILITIES,
+  FANNIE_MODEL_CONFIG,
+  FANNIE_DEPLOY_DESCRIPTOR,
+} from './fannie/definition';

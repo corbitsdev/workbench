@@ -3,6 +3,7 @@ import { WorkflowPanel } from '../components/WorkflowPanel';
 import { NewWorkflowPane } from '../components/NewWorkflowPane';
 import { PresentationNewPane } from './presentation/PresentationNewPane';
 import { PresentationSelectedPanel } from './presentation/PresentationSelectedPanel';
+import { SeoEnrichmentNewPane } from './seo-enrichment/SeoEnrichmentNewPane';
 
 export interface AgentSelectionTarget {
   instanceId: string;
@@ -15,6 +16,9 @@ export interface WorkflowNewPaneProps {
   tenantId: string | null;
   onCreated: (workflowId: string) => void;
   onClose: () => void;
+  /** Preselect an existing artifact as the workflow source (e.g. "Use in Workflow").
+   *  The pane loads the artifact by id; not every workflow supports seeding. */
+  seedArtifactId?: string;
 }
 
 export interface WorkflowSelectedPanelProps {
@@ -32,6 +36,13 @@ function CollateralSelectedPanel({ workflowId, onClose }: WorkflowSelectedPanelP
   return <WorkflowPanel workflowId={workflowId} onClose={onClose} />;
 }
 
+// seo-enrichment reuses the generic workflow panel: it renders the run's
+// artifacts, and the `selection` kind drives the interactive HITL picker
+// (SelectionBody) directly.
+function SeoEnrichmentSelectedPanel({ workflowId, onClose }: WorkflowSelectedPanelProps) {
+  return <WorkflowPanel workflowId={workflowId} onClose={onClose} />;
+}
+
 // Each workflow kind registers its own UI here. Adding a new workflow means
 // adding an entry (and its components) — no branching anywhere in the page.
 const WORKFLOW_UI: Record<string, WorkflowUiEntry> = {
@@ -42,6 +53,10 @@ const WORKFLOW_UI: Record<string, WorkflowUiEntry> = {
   'presentation-generation': {
     NewPane: PresentationNewPane,
     SelectedPanel: PresentationSelectedPanel,
+  },
+  'seo-enrichment': {
+    NewPane: SeoEnrichmentNewPane,
+    SelectedPanel: SeoEnrichmentSelectedPanel,
   },
 };
 

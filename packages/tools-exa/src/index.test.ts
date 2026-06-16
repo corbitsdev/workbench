@@ -18,10 +18,10 @@ function makeFetchStub(response: unknown, status = 200): FetchStub {
 }
 
 describe('createExaTools', () => {
-  it('returns one tool', () => {
+  it('exposes exa_search and the generic web_search alias', () => {
     const tools = createExaTools({ apiKey: 'test-key' });
-    expect(tools).toHaveLength(1);
-    expect(tools[0]?.definition.name).toBe('exa_search');
+    const names = tools.map((t) => t.definition.name).sort();
+    expect(names).toEqual(['exa_search', 'web_search']);
   });
 
   it('throws when apiKey is empty', () => {
@@ -59,7 +59,32 @@ describe('exa_search handler', () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(String(result.content))).toEqual(stubResponse);
+    expect(JSON.parse(String(result.content))).toEqual([
+      {
+        url: 'https://example.com',
+        title: 'Test Result',
+        publishedAt: '2024-01-01T00:00:00.000Z',
+        source: 'web',
+        engagement: { upvotes: 0, comments: 0 },
+        author: 'Test Author',
+      },
+    ]);
+  });
+
+  it('tags undated web results degraded and dates them to retrieval time', async () => {
+    const fetcher = makeFetchStub({ results: [{ title: 'No date', url: 'https://nodate.com' }] });
+    const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
+
+    const result = await runner.run(
+      { id: 'call_1', name: 'web_search', arguments: { query: 'q' } },
+      new AbortController().signal
+    );
+
+    const items = JSON.parse(String(result.content));
+    expect(items[0].source).toBe('web');
+    expect(items[0].provenance).toBe('degraded');
+    expect(typeof items[0].publishedAt).toBe('string');
+    expect(items[0].publishedAt.length).toBeGreaterThan(0);
   });
 
   it('respects numResults cap', async () => {
@@ -149,7 +174,7 @@ describe('exa_search handler', () => {
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 
-  it('coerces missing result fields to empty strings and omits optionals', async () => {
+  it('drops results without a usable url', async () => {
     const fetcher = makeFetchStub({ results: [{ publishedDate: '' }] });
     const runner = createToolRunner(createExaTools({ apiKey: 'test-key', fetcher }));
 
@@ -159,7 +184,7 @@ describe('exa_search handler', () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(String(result.content))).toEqual({ results: [{ title: '', url: '' }] });
+    expect(JSON.parse(String(result.content))).toEqual([]);
   });
 
   it('errors when a search result is not an object', async () => {
@@ -228,5 +253,15 @@ describe('EXA_HUB_TOOLS', () => {
     const tools = entry.createTools({ apiKey: 'k', baseURL: 'https://api.exa.ai' });
     expect(tools).toHaveLength(1);
     expect(tools[0]?.definition.name).toBe('exa_search');
+  });
+
+  it('exposes a web_search alias resolved through the same exa provider', () => {
+    const entry = EXA_HUB_TOOLS.web_search;
+    expect(entry.providerName).toBe('exa');
+    expect(entry.definition.name).toBe('web_search');
+
+    const tools = entry.createTools({ apiKey: 'k', baseURL: 'https://api.exa.ai' });
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.definition.name).toBe('web_search');
   });
 });

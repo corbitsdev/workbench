@@ -1,11 +1,14 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
+import { resolveCredentialRequirement } from '@intx/db';
 import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry } from '@workbench/workflow-core';
 import type { UserContext } from '@workbench/workflow-core';
-import { getVariantCount } from '@workbench/gtm-workflows';
+import { getVariantCount, resolveArtifactKind } from '@workbench/gtm-workflows';
+import { generateFromTemplate } from '@workbench/tools-gamma';
 import type { HubDb } from '../db';
 import { workflowRun, transcript, painPoint, artifact, artifactVersion } from '../db/schema';
+import { runSingleTurnAgent } from '../lib/inference';
 import { extractPainPoints } from '../lib/extraction';
 import { generateCollateralWithLLM } from '../lib/generation';
 import {
@@ -17,6 +20,8 @@ import {
 import { mapDbStatusToSessionStatus } from './workflow-status';
 
 const log = getLogger(['api', 'workflow']);
+
+const PRESENTATION_MAX_OUTPUT_TOKENS = 16384;
 
 interface WorkflowInput {
   transcriptId?: string;
@@ -78,6 +83,9 @@ export async function runAnalyze(
       );
     }
 
+    // Always replace: analyze owns the run's pain points, so a re-entrant
+    // auto-analyze must not double-insert. The skip-analysis seeding path never
+    // calls runAnalyze, so its pre-selected points are never reached here.
     await db.delete(painPoint).where(eq(painPoint.sessionId, id));
 
     inserted = extracted.length > 0 ? await db.insert(painPoint).values(extracted).returning() : [];
@@ -200,7 +208,7 @@ export async function runGenerate(
               principalId: wf.principalId,
               sessionId: id,
               painPointId: p.id,
-              kind,
+              kind: resolveArtifactKind(kind),
               title,
               content: body,
               status: 'draft' as const,
@@ -283,4 +291,177 @@ export async function runGenerate(
       generate: { completed: true, artifacts: inserted.map(serializeArtifact) },
     },
   });
+}
+
+const PRESENTATION_GENERATE_SYSTEM_PROMPT = `You write slide content for branded presentations. Given a call brief and transcript, generate slide-by-slide content for a Gamma presentation.
+
+Guidelines:
+- Voice is direct and confident — no corporate superlatives, no padding
+- No em dashes, no hashtags, no bullet threads
+- Never position Corbits as the hero — the customer and their problem are central
+- Lead with the tension or question the audience already has
+- Each slide earns its place — no filler
+
+Format each slide as:
+SLIDE N: [Title]
+[Content — 2-5 sentences or a clean list, no padding]
+
+Generate the number of slides appropriate for the template and brief.`;
+
+const PRESENTATION_REVIEW_SYSTEM_PROMPT = `You are a brand editor reviewing a presentation draft. Edit and tighten the content. Return the improved version in the same SLIDE N: format.
+
+Remove:
+- Em dashes (rewrite the sentence instead)
+- Hashtags
+- Corporate superlatives ("best in class", "revolutionary", "cutting-edge")
+- Opener padding ("We're excited to announce", "Today we're thrilled to share")
+- Filler slides that add no substance
+
+Fix:
+- Voice must be direct and confident, never corporate
+- Naming must be consistent (use "workbench", not "workspace")
+- Tone must match the brief
+
+Storytelling:
+- Customer and their problem are the hero — not Corbits
+- Open with a question or tension, not a claim
+- Every slide must earn its place`;
+
+function buildPresentationUserMessage(briefContext: string, sourceContent: string): string {
+  const parts = [briefContext];
+  if (sourceContent.trim()) parts.push(`Source content:\n${sourceContent}`);
+  return parts.join('\n\n');
+}
+
+function resolvePresentationErrorMessage(internalMessage: string): string {
+  if (internalMessage.includes('Generate step returned empty content')) {
+    return 'Generation produced no content. The model may have hit a token limit — try again.';
+  }
+  if (internalMessage.includes('No Gamma credential configured')) {
+    return 'No Gamma credential is configured for this workspace. Add one in Settings.';
+  }
+  if (internalMessage.includes('No templateId in workflow input')) {
+    return 'No deck template was selected. Return to the template step and choose one.';
+  }
+  return 'An unexpected error occurred during generation. Try again or contact support.';
+}
+
+export async function runPresentationGenerate(
+  db: HubDb,
+  workflowId: string,
+  tenantId: string,
+  source: InferenceSource
+): Promise<void> {
+  const wf = await db.query.workflowRun.findFirst({ where: eq(workflowRun.id, workflowId) });
+  if (!wf) {
+    log.warn('Workflow not found for presentation generate', { workflowId });
+    return;
+  }
+
+  const wfInput = (wf.input as Record<string, unknown>) ?? {};
+
+  let sourceContent = '';
+  if (typeof wfInput.transcriptId === 'string') {
+    const txRow = await db.query.transcript.findFirst({
+      where: eq(transcript.id, wfInput.transcriptId),
+    });
+    sourceContent = txRow?.content ?? '';
+  } else if (typeof wfInput.sourceArtifactId === 'string') {
+    const sourceArtifact = await db.query.artifact.findFirst({
+      where: eq(artifact.id, wfInput.sourceArtifactId),
+    });
+    sourceContent = sourceArtifact?.content ?? '';
+  }
+
+  const briefParts: string[] = [];
+  if (typeof wfInput.templateId === 'string') briefParts.push(`Template: ${wfInput.templateId}`);
+  if (typeof wfInput.audience === 'string') briefParts.push(`Audience: ${wfInput.audience}`);
+  if (typeof wfInput.tone === 'string') briefParts.push(`Tone: ${wfInput.tone}`);
+  if (typeof wfInput.goal === 'string') briefParts.push(`Goal: ${wfInput.goal}`);
+  if (typeof wfInput.callTitle === 'string') briefParts.push(`Source call: ${wfInput.callTitle}`);
+  const briefContext = briefParts.join('\n');
+
+  try {
+    await db
+      .update(workflowRun)
+      .set({ status: 'generating' })
+      .where(eq(workflowRun.id, workflowId));
+    log.info('Presentation pipeline: round 1 generating content', { workflowId });
+    const generatedContent = await runSingleTurnAgent(
+      source,
+      PRESENTATION_GENERATE_SYSTEM_PROMPT,
+      buildPresentationUserMessage(briefContext, sourceContent),
+      'presentation-generate',
+      PRESENTATION_MAX_OUTPUT_TOKENS
+    );
+
+    if (!generatedContent.trim()) {
+      throw new Error('Generate step returned empty content');
+    }
+
+    await db.update(workflowRun).set({ status: 'reviewing' }).where(eq(workflowRun.id, workflowId));
+    log.info('Presentation pipeline: round 2 reviewing content', { workflowId });
+    const reviewedContent = await runSingleTurnAgent(
+      source,
+      PRESENTATION_REVIEW_SYSTEM_PROMPT,
+      generatedContent,
+      'presentation-review',
+      PRESENTATION_MAX_OUTPUT_TOKENS
+    );
+
+    await db.update(workflowRun).set({ status: 'rendering' }).where(eq(workflowRun.id, workflowId));
+    log.info('Presentation pipeline: round 3 rendering in Gamma', { workflowId });
+
+    let gammaResolved;
+    try {
+      gammaResolved = await resolveCredentialRequirement(
+        db,
+        tenantId,
+        { providerName: 'gamma', source: 'tenant' as const },
+        null,
+        null
+      );
+    } catch {
+      gammaResolved = null;
+    }
+    if (!gammaResolved) throw new Error('No Gamma credential configured for this tenant');
+
+    const templateId = typeof wfInput.templateId === 'string' ? wfInput.templateId : '';
+    if (!templateId) throw new Error('No templateId in workflow input');
+    const callTitle = typeof wfInput.callTitle === 'string' ? wfInput.callTitle : 'Presentation';
+
+    const controller = new AbortController();
+    const { gammaUrl, gammaId } = await generateFromTemplate(
+      { apiKey: gammaResolved.secret },
+      { gammaId: templateId, prompt: reviewedContent, title: callTitle },
+      controller.signal
+    );
+
+    await db.insert(artifact).values({
+      tenantId: wf.tenantId,
+      principalId: wf.principalId,
+      sessionId: workflowId,
+      kind: 'presentation',
+      title: callTitle,
+      content: gammaUrl,
+      source: { gammaUrl, gammaId, reviewedContent },
+      status: 'draft',
+      version: 1,
+    });
+
+    await db
+      .update(workflowRun)
+      .set({ status: 'done', input: { ...wfInput, gammaUrl, gammaId } })
+      .where(eq(workflowRun.id, workflowId));
+
+    log.info('Presentation pipeline: complete', { workflowId, gammaUrl });
+  } catch (error) {
+    const internalMessage = String(error);
+    const userMessage = resolvePresentationErrorMessage(internalMessage);
+    log.error('Presentation pipeline failed', { workflowId, error: internalMessage });
+    await db
+      .update(workflowRun)
+      .set({ status: 'failed', output: { errorMessage: userMessage } })
+      .where(eq(workflowRun.id, workflowId));
+  }
 }

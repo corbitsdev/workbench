@@ -12,6 +12,22 @@ import {
   type ResolvedGammaConfig,
 } from './shared';
 
+/** Call Gamma's from-template generation API directly from hub services. */
+export async function generateFromTemplate(
+  config: GammaToolsConfig,
+  args: { gammaId: string; prompt: string; title?: string },
+  signal: AbortSignal
+): Promise<{ gammaUrl: string; gammaId: string }> {
+  const resolved = resolveConfig(config);
+  const argsMap: Record<string, unknown> = {
+    gammaId: args.gammaId,
+    prompt: args.prompt,
+  };
+  if (args.title !== undefined) argsMap['title'] = args.title;
+  const result = await createFromTemplate(resolved, argsMap, signal);
+  return result as { gammaUrl: string; gammaId: string };
+}
+
 // Direct HTTP to Gamma SaaS API — see AGENTS.md 'Third-party generation APIs' and packages/tools-gamma/README.md
 async function createFromTemplate(
   config: ResolvedGammaConfig,
@@ -49,25 +65,20 @@ async function createFromTemplate(
   return { gammaUrl: result.gammaUrl, gammaId: result.gammaId };
 }
 
+// Tenant-owned templates are stored in the hub DB and listed via the hub
+// ContextToolEntry (GAMMA_LIST_TEMPLATES_HUB_TOOL in apps/hub). This type
+// describes a single template as returned to the agent at runtime.
 export type GammaTemplate = {
+  id: string;
   gammaId: string;
   name: string;
-  description: string | null;
+  systemPrompt: string;
 };
-
-// Gamma's REST API has no list-templates (or list-gammas) endpoint — a "template" is just
-// an existing single-page gamma referenced by gammaId. We serve a workbench-owned curated
-// registry until OAuth/MCP auto-sourcing lands (CL-1875). See packages/tools-gamma/README.md.
-export const GAMMA_TEMPLATES: GammaTemplate[] = [];
-
-export function fetchGammaTemplates(): GammaTemplate[] {
-  return GAMMA_TEMPLATES;
-}
 
 export const GAMMA_LIST_TEMPLATES_DEFINITION: ToolDefinition = {
   name: 'gamma_list_templates',
   description:
-    'List the workbench curated registry of Gamma presentation templates. Returns an array of templates with gammaId, name, and description (may be empty if none are configured). Use names when presenting options to the user; use gammaId internally when calling gamma_create_from_template.',
+    "List tenant-owned Gamma presentation templates. Returns an array of templates with gammaId, name, and systemPrompt. Use names when presenting options to the user; use gammaId internally when calling gamma_create_from_template. Incorporate the systemPrompt into the generation prompt to match the template's intended structure.",
   inputSchema: {
     type: 'object',
     properties: {},
@@ -108,10 +119,12 @@ export const TEMPLATE_DEFINITIONS: ToolDefinition[] = [
   GAMMA_CREATE_FROM_TEMPLATE_DEFINITION,
 ];
 
+// gamma_list_templates is excluded from this factory — it is registered in the
+// hub as a ContextToolEntry (GAMMA_LIST_TEMPLATES_HUB_TOOL) that reads from the
+// tenant DB rather than requiring Gamma API credentials.
 export function createTemplateTools(config: GammaToolsConfig): AgentTool[] {
   const resolved = resolveConfig(config);
   return [
-    stringTool(GAMMA_LIST_TEMPLATES_DEFINITION, async () => GAMMA_TEMPLATES),
     stringTool(GAMMA_CREATE_FROM_TEMPLATE_DEFINITION, (args, signal) =>
       createFromTemplate(resolved, args, signal)
     ),

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { cn } from '@workbench/ui';
+import { cn, toHumanLabel } from '@workbench/ui';
 import { type ChatMessage, type ChatActivity } from './types';
 import { MessageBubble } from './MessageBubble';
 import { ToolNarrative, type ToolNarrativeProps } from './ToolNarrative';
@@ -11,9 +11,9 @@ function formatActivityLabel(activity: ChatActivity, agentName: string): string 
     case 'thinking':
       return `${agentName} is thinking`;
     case 'tool_call':
-      return `${agentName} is calling ${activity.name}`;
+      return `${agentName} is calling ${toHumanLabel(activity.name)}`;
     case 'tool_running':
-      return `${agentName} is running ${activity.name}`;
+      return `${agentName} is running ${toHumanLabel(activity.name)}`;
     case 'rate_limited':
       return `${agentName} is rate-limited, retrying in ${Math.ceil(activity.retryAfterMs / 1000)}s`;
   }

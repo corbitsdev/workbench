@@ -30,4 +30,67 @@ describe('seed-credentials buildEntries', () => {
 
     expect(entries.find((e) => e.providerName === 'github')).toBeUndefined();
   });
+
+  it('includes youtube entry when YOUTUBE_API_KEY is set', () => {
+    process.env['YOUTUBE_API_KEY'] = 'yt_test123';
+
+    const entries = buildEntries();
+
+    const youtube = entries.find((e) => e.providerName === 'youtube');
+    expect(youtube).toBeDefined();
+    expect(youtube?.secret).toBe('yt_test123');
+    expect(youtube?.providerPlugin).toBe('youtube');
+  });
+
+  it('omits youtube entry when YOUTUBE_API_KEY is not set', () => {
+    delete process.env['YOUTUBE_API_KEY'];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === 'youtube')).toBeUndefined();
+  });
+
+  it('includes anthropic provider metadata when ANTHROPIC_API_KEY is set', () => {
+    process.env['ANTHROPIC_API_KEY'] = 'sk-ant-test123';
+
+    const entries = buildEntries();
+
+    const anthropic = entries.find((e) => e.providerName === 'anthropic');
+    expect(anthropic).toBeDefined();
+    expect(anthropic?.secret).toBe('sk-ant-test123');
+    expect(anthropic?.providerPlugin).toBe('anthropic');
+    expect(anthropic?.credentialName).toBe('anthropic-api');
+    expect(anthropic?.metadata).toEqual({ baseURL: 'https://api.anthropic.com' });
+  });
+
+  it('includes bluesky entry when both BLUESKY_APP_PASSWORD and BLUESKY_HANDLE are set', () => {
+    process.env['BLUESKY_APP_PASSWORD'] = 'xxxx-yyyy-zzzz';
+    process.env['BLUESKY_HANDLE'] = 'test.bsky.social';
+
+    const entries = buildEntries();
+
+    const bluesky = entries.find((e) => e.providerName === 'bluesky');
+    expect(bluesky).toBeDefined();
+    expect(bluesky?.secret).toBe('xxxx-yyyy-zzzz');
+    expect(bluesky?.providerPlugin).toBe('bluesky');
+    expect(bluesky?.metadata?.['baseURL']).toBe('test.bsky.social');
+  });
+
+  it('omits bluesky entry when BLUESKY_APP_PASSWORD is not set', () => {
+    delete process.env['BLUESKY_APP_PASSWORD'];
+    delete process.env['BLUESKY_HANDLE'];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === 'bluesky')).toBeUndefined();
+  });
+
+  it('omits bluesky entry when BLUESKY_APP_PASSWORD is set but BLUESKY_HANDLE is missing', () => {
+    process.env['BLUESKY_APP_PASSWORD'] = 'xxxx-yyyy-zzzz';
+    delete process.env['BLUESKY_HANDLE'];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === 'bluesky')).toBeUndefined();
+  });
 });

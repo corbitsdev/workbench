@@ -100,11 +100,19 @@ Every tool package exports:
 
 No tool package reads env vars or resolves credentials. Config (`apiKey`, `baseURL`) is always supplied by the caller.
 
-**`packages/tools-exa`** (`@workbench/tools-exa`): Exa search API. Exports `EXA_HUB_TOOLS` with `exa_search` (providerName: `'exa'`).
+**`packages/tools-exa`** (`@workbench/tools-exa`): Exa search API. Exports `EXA_HUB_TOOLS` with `exa_search` and a provider-agnostic `web_search` alias resolving to the same handler (providerName: `'exa'`). Both return normalized `ResearchItem[]` (`source: 'web'`); results without a publish date fall back to retrieval time tagged `provenance: 'degraded'` so they stay in-window but rank below dated, voted sources.
 
 **`packages/tools-granola`** (`@workbench/tools-granola`): Granola notes API. Exports `GRANOLA_HUB_TOOLS` with `granola_list_notes`, `granola_get_note`, and `granola_list_folders` (providerName: `'granola'`). `granola_list_notes` paginates with `page_size` (default 10, max 30) and accepts `created_after`/`created_before`/`updated_after`/`folder_id` filters; `granola_list_folders` surfaces folder IDs for that `folder_id` filter.
 
 **`packages/tools-firecrawl`** (`@workbench/tools-firecrawl`): Firecrawl v2 API. Exports `FIRECRAWL_HUB_TOOLS` with `firecrawl_scrape`, crawl start/status/active/errors/cancel/params-preview tools, batch scrape start/status/errors/cancel tools, `firecrawl_map`, `firecrawl_search`, extract start/status tools, `firecrawl_agent` (autonomous research via POST /agent), `firecrawl_parse` (document parsing), `firecrawl_interact`, `firecrawl_browser_sessions_list`, `firecrawl_browser_session_delete`, monitor CRUD (create/get/update/delete/list/run/check), `firecrawl_credit_usage`, `firecrawl_historical_credit_usage`, `firecrawl_token_usage`, `firecrawl_historical_token_usage`, and `firecrawl_activity` (providerName: `'firecrawl'`). Long-running endpoints return job IDs and require explicit polling tools.
+
+#### last30days research (Larry)
+
+The `last30days` research capability is split into per-source fetch tools, a deterministic core, and a portable skill, all attachable to the **Larry** agent (`packages/agents/src/larry`).
+
+- **Source tools** each normalize their API into a shared `ResearchItem` (`{ url, title, publishedAt, source, engagement, author?, topComments? }`): `tools-hackernews`, `tools-github`, `tools-exa` (web), `tools-reddit` (`reddit_search`/`reddit_subreddit_search` via ScrapeCreators, passing through top comments when the payload carries them), `tools-x`, `tools-polymarket`, `tools-scrapecreators` (tiktok/instagram/threads/pinterest), `tools-youtube` (`youtube_search`, providerName `'youtube'`), and `tools-bluesky` (`bluesky_search`, unauthenticated public AppView — no credential).
+- **`packages/last30days-core`** (`@workbench/last30days-core`): pure pipeline — `entityExtract`, `dateFilter`, `dedupe`, `clusterMerge`, `rankScore` (engagement + freshness + source-breadth + a capped top-comment "fun" bonus, minus a degraded penalty), and `buildReport`, which returns a typed, ArkType-validated `ResearchBrief`: `{ topic, days, queryType?, stats: { sourceCount, itemCount, dateRange? }, leadInsight?, clusters[], bestTakes[], items[], citations[] }`. `parseReport(unknown)` is the canonical boundary parser consumers use instead of re-declaring the schema.
+- **`last30days_core_report`** returns the brief; the agent persists it via `write_artifact { kind: 'research', data: brief }`, which stores the structured brief at `artifact.source.brief` (and refreshes the parent row on a same-title/kind update so the gallery never shows a stale version). `apps/web` `ResearchBody` validates `source.brief` through `parseReport` and renders clusters, best-takes, stats, and citations; it falls back to markdown when no valid brief is present.
 
 #### `packages/tool-template` (scaffold)
 
@@ -186,6 +194,23 @@ Each `outputType` generates independently in parallel via `@intx/agent`. Results
 | `GET`  | `/workflows/enabled`   | `?tenantId`                                      | `[{ kind, ..., assignments }]`                                 |
 | `POST` | `/workflows/enabled`   | `{ kind, tenantId?, assignments }`               | `{ kind, ..., assignments }`                                   |
 | `GET`  | `/recent-calls`        | `?tenantId&kind`                                 | `{ calls }`                                                    |
+
+### Resource Enrichment (seo-enrichment)
+
+| Method  | Route                                            | Input                          | Output                              |
+| ------- | ------------------------------------------------ | ------------------------------ | ----------------------------------- |
+| `POST`  | `/uploads`                                       | multipart `file` (`.xlsx`)     | `{ uploadId, filename, mimeType, size }` |
+| `POST`  | `/workflows` (`workflowKind: 'seo-enrichment'`)  | `{ uploadId }`                 | `{ id, status: 'running', kind }`   |
+| `POST`  | `/workflows/:id/steps` (`step: 'enrich'`)        | —                              | `202 { status: 'generating' }`      |
+| `POST`  | `/workflows/:id/steps` (`step: 'export'`)        | —                              | `{ id, status: 'done' }`            |
+| `PATCH` | `/workflows/:id/artifacts/:artifactId/selection` | `{ chosen: Record<field,int> }`| serialized artifact (new version)   |
+| `GET`   | `/artifacts/:id/download`                        | —                              | `text/csv` attachment               |
+
+- **Upload**: stored in the `upload` table (BYTEA), 10MB cap (`413`), `.xlsx` MIME/extension allowlist (`415`), tenant-owned.
+- **Intake** parses the xlsx with `exceljs` (`packages/gtm-workflows/src/seo-enrichment/parse.ts`), validates rows with ArkType (`SeoResourceRow`), caps at 500 rows, and writes a `parsed-resource` artifact.
+- **Enrich** is claimed optimistically (`running → generating`, `409` on a duplicate) and runs in the background: bounded batches of 8 (`ENRICH_CONCURRENCY`) of `loadProductImage` → `runSingleTurnAgentWithImage` (multimodal via `@intx/inference`) → `parseSeoReply` (5/5/5 gate) → `selection` artifact. Per-row failures become error-state selections (`image unavailable` / `response invalid` / `enrichment failed`).
+- **Image fetch** enforces `https` + a private/loopback/metadata host block (SSRF guard) and a 10MB body cap.
+- **Export** assembles a `csv-export` artifact (columns `product_slug, image_link, chosen_title, chosen_description, chosen_summary, timestamp`) from selections with `chosen !== null`; formula-leading cells are neutralized against CSV injection.
 
 #### Per-step credential & tool assignments
 
@@ -281,6 +306,7 @@ Tracks which workflow kinds a principal has added, with per-step assignments.
 | `0005_workbench_user`                    | Adds provisional `workbench_user` cache table                                                                                                                                 |
 | `0012_workbench_workflow_assignments`    | Adds `workbench_workflows.assignments` (jsonb) for per-step credential/tool assignments                                                                                       |
 | `0015_workbench_workflows_per_principal` | Adds `workbench_workflows.principal_id` (NOT NULL), backfills from each tenant's user principal, re-keys the unique constraint to `(tenant_id, principal_id, kind)` (CL-1450) |
+| `0020_upload`                            | Adds the `upload` table (`id`, `tenant_id`, `principal_id`, `filename`, `mime_type`, `content` BYTEA, `size`, `created_at`) for pre-workflow binary files (xlsx) that arrive before a run exists (CL-1961)                          |
 
 **Data migration (not a schema migration):** `apps/hub/src/scripts/migrate-to-global-tenant.ts` moves existing users into the global tenant — re-parents workbenches, provisions a per-user Myra, and re-keys `workflow_run` / `artifact` / `artifact_version` / `workbench_workflows` from the old personal principal to the new global member principal. Dry-run by default (`--live` to write); per-user transaction; idempotent. An interrupted run MUST be re-run (Myra provisioning and the re-key transaction are intentionally not atomic, but re-running finishes the re-key). Run it once after deploying the cutover. `pain_point` is not re-keyed — it carries no tenant/principal columns and migrates implicitly with its `workflow_run` via `session_id`.
 
@@ -437,7 +463,9 @@ To seed providers and credentials locally, copy your API keys into the appropria
 cd apps/hub && bun run seed:credentials
 ```
 
-This reads `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GEMINI_API_KEY`, `GRANOLA_API_KEY`, `EXA_API_KEY`, and `FIRECRAWL_API_KEY` and upserts the corresponding providers and tenant credentials.
+This reads `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GEMINI_API_KEY`, `GRANOLA_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY` (+ `BROWSERBASE_PROJECT_ID`), `XAI_API_KEY`, `SCRAPECREATORS_API_KEY`, `GAMMA_API_KEY`, `GITHUB_API_KEY`, and `YOUTUBE_API_KEY` and upserts the corresponding providers and tenant credentials. The `buildEntries()` function is the single list of seeded providers; each entry is skipped silently when its key is unset.
+
+**Adding a credentialed tool:** when a new `@workbench/tools-*` package declares a credential `providerName`, you must add a matching entry to `buildEntries()` in `apps/hub/bin/seed-credentials.ts` (reading a `*_API_KEY` env var) and list that env var in `.env.example`, or the tool will resolve no credential in deployed environments and return nothing. Keyless tools (e.g. the public Bluesky AppView) need no entry.
 
 ### Running
 

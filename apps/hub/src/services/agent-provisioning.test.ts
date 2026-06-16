@@ -7,7 +7,9 @@ import type { GrantStore } from '@intx/types/authz';
 const TEST_API_KEY = 'sk-test-key';
 
 mock.module('../config', () => ({
-  getConfig: () => ({}),
+  getConfig: () => ({
+    globalTenant: { slug: 'global-org', name: 'Global Org', domain: 'global.example.com' },
+  }),
 }));
 
 // Launch outcome is driven by resolveInstanceSources: tests set `sourcesImpl`

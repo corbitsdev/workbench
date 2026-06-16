@@ -7,7 +7,6 @@ const fixture: RedditPost = {
   title: 'Why TypeScript strict mode matters',
   url: 'https://example.com/ts-strict',
   permalink: '/r/typescript/comments/abc123/why_typescript_strict_mode_matters/',
-  selftext: 'A detailed post about strict mode.',
   created_utc: 1700000000,
   ups: 423,
   num_comments: 57,
@@ -50,5 +49,20 @@ describe('normalizeRedditPost', () => {
   it('prefixes subreddit with r/ in author', () => {
     const result = normalizeRedditPost(fixture);
     expect(result.author).toBe('r/typescript');
+  });
+
+  it('omits topComments when the post has none', () => {
+    const result = normalizeRedditPost(fixture);
+    expect('topComments' in result).toBe(false);
+  });
+
+  it('passes through topComments when present', () => {
+    const result = normalizeRedditPost({
+      ...fixture,
+      topComments: [{ text: 'this is the way', author: 'u/mando', score: 980 }],
+    });
+    if (!('topComments' in result)) throw new Error('expected topComments to be present');
+    expect(result.topComments?.[0]?.text).toBe('this is the way');
+    expect(result.topComments?.[0]?.score).toBe(980);
   });
 });

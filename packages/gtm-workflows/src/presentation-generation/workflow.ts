@@ -4,7 +4,7 @@ import { createPresentationIntakeArtifacts, derivePresentationRunTitle } from '.
 export const presentationGenerationWorkflow: WorkflowType = {
   kind: 'presentation-generation',
   name: 'Presentation Generation',
-  description: 'Turn call transcripts and notes into branded Gamma presentations via Geralt',
+  description: 'Turn call transcripts and notes into branded Gamma presentations',
   steps: [
     {
       name: 'template',
@@ -23,8 +23,14 @@ export const presentationGenerationWorkflow: WorkflowType = {
     {
       name: 'generate',
       label: 'Generate',
-      description: 'Dispatch to your Geralt session to build the deck.',
-      credentialRequirements: [],
+      description: 'Run generate → review → Gamma render pipeline to produce the deck.',
+      credentialRequirements: [
+        {
+          providerName: 'openai-compatible',
+          source: 'tenant',
+          name: 'zen-deepseek-v4-flash-free',
+        },
+      ],
     },
   ],
   inputSchema: {
@@ -64,13 +70,14 @@ export const presentationGenerationWorkflow: WorkflowType = {
         callTitle: str(input.callTitle),
       },
       generate: {
-        // The deck is built inside Geralt's chat session, out of band — the
-        // run terminates at 'generating' once dispatched. `completed` only
-        // flips if a 'done' transition is ever wired (none today); `dispatched`
-        // is the real terminal signal the panel renders.
         completed: status === 'done',
-        dispatched: status === 'generating' || status === 'done',
-        agentInstanceId: str(input.agentInstanceId),
+        dispatched:
+          status === 'generating' ||
+          status === 'reviewing' ||
+          status === 'rendering' ||
+          status === 'done',
+        gammaUrl: str(input.gammaUrl),
+        gammaId: str(input.gammaId),
       },
     };
   },
@@ -84,6 +91,7 @@ export const presentationGenerationWorkflow: WorkflowType = {
       case 'running':
       case 'generating':
       case 'reviewing':
+      case 'rendering':
       case 'done':
         return 'generate';
       default:

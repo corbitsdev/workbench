@@ -36,15 +36,35 @@ mock.module('@intx/db', () => ({
 
 mock.module('@workbench/tools-gamma', () => ({
   GAMMA_HUB_TOOLS: {},
-  fetchGammaTemplates: mock(() => [
-    { gammaId: 'tmpl-1', name: 'Sales Deck', description: 'A sales deck template' },
-    { gammaId: 'tmpl-2', name: 'Investor Pitch', description: null },
+}));
+
+mock.module('../lib/gamma-templates', () => ({
+  listLatestGammaTemplates: mock(async () => [
+    {
+      id: 'tpl-1',
+      gammaId: 'tmpl-1',
+      name: 'Sales Deck',
+      systemPrompt: 'A sales deck template',
+      version: 1,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'tpl-2',
+      gammaId: 'tmpl-2',
+      name: 'Investor Pitch',
+      systemPrompt: 'An investor pitch template',
+      version: 1,
+      createdAt: new Date().toISOString(),
+    },
   ]),
 }));
 
 mock.module('@intx/crypto-node', () => ({
   generateKeyPair: mock(async () => ({ publicKey: 'pk', privateKey: 'sk' })),
-  createNodeCrypto: mock(() => ({ sign: mock(() => 'sig'), verify: mock(() => true) })),
+  createNodeCrypto: mock(() => ({
+    sign: mock(() => 'sig'),
+    verify: mock(() => true),
+  })),
 }));
 
 mock.module('@intx/hub-common', () => ({
@@ -53,7 +73,11 @@ mock.module('@intx/hub-common', () => ({
 
 mock.module('../config', () => ({
   getConfig: mock(() => ({
-    globalTenant: { slug: 'global-org', name: 'Global Org', domain: 'global.example.com' },
+    globalTenant: {
+      slug: 'global-org',
+      name: 'Global Org',
+      domain: 'global.example.com',
+    },
   })),
   loadConfig: mock(() => {}),
 }));
@@ -175,6 +199,7 @@ describe('Workflow router', () => {
               | {
                   id: string;
                   status: string;
+                  tenantId?: string;
                   principalId: string;
                   kind: string;
                   input: { companyName: string; transcriptId: string };
@@ -184,6 +209,7 @@ describe('Workflow router', () => {
           >(() => ({
             id: 'wf-1',
             status: 'pending',
+            tenantId: PERSONAL_TENANT.id,
             principalId: PERSONAL_PRINCIPAL.id,
             kind: 'collateral-generation',
             input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
@@ -199,7 +225,7 @@ describe('Workflow router', () => {
         },
         artifact: {
           findMany: mock<() => unknown[]>(() => []),
-          findFirst: mock(() => null),
+          findFirst: mock<() => Record<string, unknown> | null>(() => null),
         },
         agentInstance: {
           findMany: mock<() => unknown[]>(() => []),
@@ -236,7 +262,10 @@ describe('Workflow router', () => {
               id: 'prov-1',
               plugin: 'openai',
               name: providerNameQueue.length > 0 ? providerNameQueue.shift() : 'openai-compatible',
-              metadata: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o' },
+              metadata: {
+                baseURL: 'https://api.openai.com/v1',
+                model: 'gpt-4o',
+              },
             },
           ]),
         },
@@ -251,9 +280,22 @@ describe('Workflow router', () => {
           const row =
             insertCount === 1
               ? { id: 'tx-1', status: 'created', kind: 'transcript' }
-              : { id: 'wf-1', status: 'analyzing', kind: 'collateral-generation' };
+              : {
+                  id: 'wf-1',
+                  status: 'analyzing',
+                  kind: 'collateral-generation',
+                };
           return {
-            returning: mock(() => [row]),
+            // Array inserts (pain point copies) echo the inserted values so the
+            // route can serialize the copied rows back in its response.
+            returning: mock(() =>
+              Array.isArray(values)
+                ? values.map((value, index) => ({
+                    id: `pp-${index + 1}`,
+                    ...value,
+                  }))
+                : [row]
+            ),
             onConflictDoUpdate: mock(() => ({
               returning: mock(() => [
                 {
@@ -273,7 +315,9 @@ describe('Workflow router', () => {
           // where() is awaited directly by status-only updates and chained with
           // returning() by updates that need the modified row.
           return {
-            where: mock(() => ({ returning: mock(() => options.updateReturning ?? []) })),
+            where: mock(() => ({
+              returning: mock(() => options.updateReturning ?? []),
+            })),
           };
         }),
       })),
@@ -283,7 +327,10 @@ describe('Workflow router', () => {
             values: mock((values: unknown) => ({
               returning: mock(() =>
                 Array.isArray(values)
-                  ? values.map((value, index) => ({ id: `a-${index + 1}`, ...value }))
+                  ? values.map((value, index) => ({
+                      id: `a-${index + 1}`,
+                      ...value,
+                    }))
                   : [{ id: 'a-1', ...(values as object) }]
               ),
             })),
@@ -326,7 +373,9 @@ describe('Workflow router', () => {
 
   it('POST /workflows creates a transcript artifact linked to the call', async () => {
     const insertedValues: unknown[] = [];
-    const mockDb = createMockDb({ onInsertValues: (values) => insertedValues.push(values) });
+    const mockDb = createMockDb({
+      onInsertValues: (values) => insertedValues.push(values),
+    });
 
     const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/workflows', {
@@ -353,9 +402,312 @@ describe('Workflow router', () => {
     );
   });
 
+  it('POST /workflows with source artifact loads the artifact content by id (CL-1946)', async () => {
+    const insertedValues: unknown[] = [];
+    const mockDb = createMockDb({
+      onInsertValues: (values) => insertedValues.push(values),
+    });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'art-7',
+      tenantId: 'personal-tenant',
+      title: 'Acme Pain Points',
+      content: 'Pain point: onboarding is slow.',
+    }));
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'artifact',
+        sourceArtifactId: 'art-7',
+        workflowKind: 'collateral-generation',
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(201);
+
+    // The transcript persisted for the run carries the artifact's content and
+    // records the artifact provenance as the source.
+    expect(insertedValues).toContainEqual(
+      expect.objectContaining({
+        content: 'Pain point: onboarding is slow.',
+        source: 'artifact',
+      })
+    );
+  });
+
+  it('POST /workflows from a pain-points artifact skips analysis and starts ready at generate (CL-1950)', async () => {
+    const statusUpdates: string[] = [];
+    const insertedValues: unknown[] = [];
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => {
+        if (typeof values.status === 'string') statusUpdates.push(values.status);
+      },
+      onInsertValues: (values) => insertedValues.push(values),
+    });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'pp-art',
+      tenantId: 'personal-tenant',
+      title: 'Acme Pain Points',
+      content: '## 1. Slow onboarding',
+      kind: 'pain-points',
+      sessionId: 'origin-wf',
+    }));
+    mockDb.query.painPoint.findMany = mock(() => [
+      {
+        id: 'origin-pp-1',
+        sessionId: 'origin-wf',
+        severity: 'high',
+        context: 'Slow onboarding',
+        quote: 'It takes weeks',
+        selected: true,
+      },
+    ]);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'artifact',
+        sourceArtifactId: 'pp-art',
+        workflowKind: 'collateral-generation',
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    // 'running' maps to the session-facing 'ready' state at the generate step.
+    expect(json.status).toBe('ready');
+    expect(statusUpdates).toContain('running');
+    expect(statusUpdates).not.toContain('analyzing');
+
+    // POST-response parity: copied pain points are returned under steps.analyze,
+    // mirroring the analyze path so a client reading the POST response sees them.
+    expect(json.steps.analyze.completed).toBe(true);
+    expect(json.steps.analyze.painPoints[0].context).toBe('Slow onboarding');
+
+    // The origin run's pain points are copied onto the new run, pre-selected, and
+    // the origin run's pain points are not deleted (no delete is issued here).
+    expect(insertedValues).toContainEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sessionId: 'wf-1',
+          context: 'Slow onboarding',
+          quote: 'It takes weeks',
+          severity: 'high',
+          selected: true,
+        }),
+      ])
+    );
+  });
+
+  it('POST /workflows from a pain-points artifact does not delete the origin run pain points (CL-1950)', async () => {
+    const deleteSpy = mock(() => ({ where: mock(() => Promise.resolve()) }));
+    const mockDb = createMockDb();
+    mockDb.delete = deleteSpy as unknown as typeof mockDb.delete;
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'pp-art',
+      tenantId: 'tenant-personal',
+      title: 'Acme Pain Points',
+      content: '## 1. Slow onboarding',
+      kind: 'pain-points',
+      sessionId: 'origin-wf',
+    }));
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'origin-wf',
+      status: 'done',
+      tenantId: 'tenant-personal',
+      principalId: PERSONAL_PRINCIPAL.id,
+      kind: 'collateral-generation',
+      input: { companyName: 'Acme', transcriptId: 'tx-origin' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.painPoint.findMany = mock(() => [
+      {
+        id: 'origin-pp-1',
+        sessionId: 'origin-wf',
+        severity: 'high',
+        context: 'Slow onboarding',
+        quote: 'It takes weeks',
+        selected: true,
+      },
+    ]);
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'artifact',
+          sourceArtifactId: 'pp-art',
+          workflowKind: 'collateral-generation',
+        }),
+      })
+    );
+    expect(res.status).toBe(201);
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('POST /workflows from a pain-points artifact with zero origin points falls through to analysis (CL-1950)', async () => {
+    const statusUpdates: string[] = [];
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => {
+        if (typeof values.status === 'string') statusUpdates.push(values.status);
+      },
+    });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'pp-art',
+      tenantId: 'tenant-personal',
+      title: 'Acme Pain Points',
+      content: '## 1. Slow onboarding',
+      kind: 'pain-points',
+      sessionId: 'origin-wf',
+    }));
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'origin-wf',
+      status: 'done',
+      tenantId: 'tenant-personal',
+      principalId: PERSONAL_PRINCIPAL.id,
+      kind: 'collateral-generation',
+      input: { companyName: 'Acme', transcriptId: 'tx-origin' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    mockDb.query.painPoint.findMany = mock(() => []);
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'artifact',
+          sourceArtifactId: 'pp-art',
+          workflowKind: 'collateral-generation',
+        }),
+      })
+    );
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.status).toBe('analyzing');
+    expect(statusUpdates).toContain('analyzing');
+    expect(statusUpdates).not.toContain('running');
+  });
+
+  it('POST /workflows from a pain-points artifact whose origin run is another tenant is rejected (CL-1950)', async () => {
+    const insertedValues: unknown[] = [];
+    const mockDb = createMockDb({
+      onInsertValues: (values) => insertedValues.push(values),
+    });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'pp-art',
+      tenantId: 'tenant-personal',
+      title: 'Acme Pain Points',
+      content: '## 1. Slow onboarding',
+      kind: 'pain-points',
+      sessionId: 'origin-wf',
+    }));
+    // Origin run belongs to a different tenant: copy must be rejected.
+    mockDb.query.workflowRun.findFirst = mock(() => ({
+      id: 'origin-wf',
+      status: 'done',
+      tenantId: 'tenant-other',
+      principalId: 'prn-other',
+      kind: 'collateral-generation',
+      input: { companyName: 'Other', transcriptId: 'tx-origin' },
+    })) as typeof mockDb.query.workflowRun.findFirst;
+    const painPointFindMany = mock(() => [
+      {
+        id: 'origin-pp-1',
+        sessionId: 'origin-wf',
+        severity: 'high',
+        context: 'Slow onboarding',
+        quote: 'It takes weeks',
+        selected: true,
+      },
+    ]);
+    mockDb.query.painPoint.findMany = painPointFindMany;
+
+    const router = buildApp(mockDb);
+    const res = await router.fetch(
+      new Request('http://localhost:4000/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'artifact',
+          sourceArtifactId: 'pp-art',
+          workflowKind: 'collateral-generation',
+        }),
+      })
+    );
+    expect(res.status).toBe(403);
+    // No pain points were read or copied from the cross-tenant origin run.
+    expect(painPointFindMany).not.toHaveBeenCalled();
+    expect(insertedValues).not.toContainEqual(
+      expect.arrayContaining([expect.objectContaining({ context: 'Slow onboarding' })])
+    );
+  });
+
+  it('POST /workflows from a call-transcript artifact still auto-triggers analysis (CL-1950)', async () => {
+    const statusUpdates: string[] = [];
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => {
+        if (typeof values.status === 'string') statusUpdates.push(values.status);
+      },
+    });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'tx-art',
+      tenantId: 'personal-tenant',
+      title: 'Acme Call',
+      content: 'Customer said onboarding is slow.',
+      kind: 'call-transcript',
+      sessionId: 'origin-wf',
+    }));
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'artifact',
+        sourceArtifactId: 'tx-art',
+        workflowKind: 'collateral-generation',
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.status).toBe('analyzing');
+    expect(statusUpdates).toContain('analyzing');
+  });
+
+  it('POST /workflows with source artifact returns 404 when the artifact is missing', async () => {
+    const mockDb = createMockDb();
+    mockDb.query.artifact.findFirst = mock(() => null);
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'artifact',
+        sourceArtifactId: 'does-not-exist',
+        workflowKind: 'collateral-generation',
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(404);
+  });
+
   it('POST /workflows stores a workflow under the requested workbench tenant', async () => {
     const insertedValues: unknown[] = [];
-    const mockDb = createMockDb({ onInsertValues: (values) => insertedValues.push(values) });
+    const mockDb = createMockDb({
+      onInsertValues: (values) => insertedValues.push(values),
+    });
     mockDb.query.principal.findFirst = createPrincipalSequence(
       PERSONAL_PRINCIPAL,
       WORKSPACE_PRINCIPAL
@@ -454,12 +806,18 @@ describe('Workflow router', () => {
     ]);
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const req = new Request('http://localhost:4000/artifacts', {
+      method: 'GET',
+    });
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
     const json = (await res.json()) as {
-      artifacts: Array<{ id: string; sessionName: string; sessionStatus: string }>;
+      artifacts: Array<{
+        id: string;
+        sessionName: string;
+        sessionStatus: string;
+      }>;
     };
     expect(Array.isArray(json.artifacts)).toBe(true);
     expect(json.artifacts).toHaveLength(1);
@@ -500,7 +858,11 @@ describe('Workflow router', () => {
       input: { companyName: 'Test Corp', transcriptId: 'tx-1' },
     }));
     mockDb.query.artifact.findMany = mock(() =>
-      opts.remainingArtifacts.map((a, i) => ({ id: `a-${i + 1}`, sessionId: 'wf-1', ...a }))
+      opts.remainingArtifacts.map((a, i) => ({
+        id: `a-${i + 1}`,
+        sessionId: 'wf-1',
+        ...a,
+      }))
     );
 
     return { app: buildApp(mockDb), statusUpdates };
@@ -648,11 +1010,15 @@ describe('Workflow router', () => {
     ]);
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const req = new Request('http://localhost:4000/artifacts', {
+      method: 'GET',
+    });
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
-    const json = (await res.json()) as { artifacts: Array<{ sessionName: string }> };
+    const json = (await res.json()) as {
+      artifacts: Array<{ sessionName: string }>;
+    };
     const [firstArtifact] = json.artifacts;
     if (!firstArtifact) throw new Error('expected one artifact');
     expect(firstArtifact.sessionName).toBe('Demo with Globex');
@@ -663,7 +1029,9 @@ describe('Workflow router', () => {
     mockDb.query.workflowRun.findMany = mock(() => []);
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const req = new Request('http://localhost:4000/artifacts', {
+      method: 'GET',
+    });
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
@@ -678,7 +1046,9 @@ describe('Workflow router', () => {
     mockDb.query.artifact.findMany = findManyMock;
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const req = new Request('http://localhost:4000/artifacts', {
+      method: 'GET',
+    });
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
@@ -686,7 +1056,10 @@ describe('Workflow router', () => {
     const callArgs = (findManyMock as any).mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(callArgs?.where).toBeDefined();
 
-    const json = (await res.json()) as { artifacts: unknown[]; nextCursor: string | null };
+    const json = (await res.json()) as {
+      artifacts: unknown[];
+      nextCursor: string | null;
+    };
     expect(json.artifacts).toEqual([]);
     expect(json.nextCursor).toBeNull();
   });
@@ -714,7 +1087,9 @@ describe('Workflow router', () => {
     mockDb.query.artifact.findMany = findManyMock;
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/artifacts?status=rejected', { method: 'GET' });
+    const req = new Request('http://localhost:4000/artifacts?status=rejected', {
+      method: 'GET',
+    });
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
@@ -762,7 +1137,9 @@ describe('Workflow router', () => {
     mockDb.query.artifact.findMany = mock(() => []);
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/artifacts?status=approved', { method: 'GET' });
+    const req = new Request('http://localhost:4000/artifacts?status=approved', {
+      method: 'GET',
+    });
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
   });
@@ -789,7 +1166,9 @@ describe('Workflow router', () => {
     mockDb.query.artifact.findMany = mock(() => artifacts);
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/artifacts?limit=20', { method: 'GET' });
+    const req = new Request('http://localhost:4000/artifacts?limit=20', {
+      method: 'GET',
+    });
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
@@ -828,11 +1207,16 @@ describe('Workflow router', () => {
     ]);
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/artifacts', { method: 'GET' });
+    const req = new Request('http://localhost:4000/artifacts', {
+      method: 'GET',
+    });
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
 
-    const json = (await res.json()) as { artifacts: unknown[]; nextCursor: string | null };
+    const json = (await res.json()) as {
+      artifacts: unknown[];
+      nextCursor: string | null;
+    };
     expect(json.nextCursor).toBeNull();
   });
 
@@ -1011,7 +1395,9 @@ describe('Workflow router', () => {
     })) as typeof mockDb.delete;
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/workflows/wf-1', { method: 'DELETE' });
+    const req = new Request('http://localhost:4000/workflows/wf-1', {
+      method: 'DELETE',
+    });
 
     const res = await router.fetch(req);
     expect(res.status).toBe(200);
@@ -1025,7 +1411,9 @@ describe('Workflow router', () => {
     mockDb.query.workflowRun.findFirst = mock(() => null);
 
     const router = buildApp(mockDb);
-    const req = new Request('http://localhost:4000/workflows/wf-other', { method: 'DELETE' });
+    const req = new Request('http://localhost:4000/workflows/wf-other', {
+      method: 'DELETE',
+    });
 
     const res = await router.fetch(req);
     expect(res.status).toBe(404);
@@ -1033,7 +1421,9 @@ describe('Workflow router', () => {
 
   it('POST /workflows/:id/steps analyze creates pain points as a document artifact', async () => {
     const insertedValues: unknown[] = [];
-    const mockDb = createMockDb({ onInsertValues: (values) => insertedValues.push(values) });
+    const mockDb = createMockDb({
+      onInsertValues: (values) => insertedValues.push(values),
+    });
 
     const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
@@ -1060,7 +1450,10 @@ describe('Workflow router', () => {
     const req = new Request('http://localhost:4000/workflows/wf-1/steps', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ step: 'analyze', feedback: 'focus on automation pain' }),
+      body: JSON.stringify({
+        step: 'analyze',
+        feedback: 'focus on automation pain',
+      }),
     });
 
     const res = await router.fetch(req);
@@ -1146,7 +1539,10 @@ describe('Workflow router', () => {
   });
 
   const VALID_COLLATERAL_ASSIGNMENTS = {
-    intake: { credentialIds: ['granola-cred'], toolIds: ['granola_list_notes'] },
+    intake: {
+      credentialIds: ['granola-cred'],
+      toolIds: ['granola_list_notes'],
+    },
     analyze: { credentialIds: ['llm-cred'], toolIds: [] },
     generate: { credentialIds: ['llm-cred'], toolIds: [] },
   };
@@ -1395,7 +1791,11 @@ describe('Workflow router', () => {
     expect(mockDb.query.painPoint.findMany).toHaveBeenCalledTimes(1);
     const json = (await res.json()) as Array<Record<string, unknown>>;
     expect(json).toHaveLength(2);
-    expect(json[1]).toMatchObject({ id: 'wf-2', firstPainPoint: 'b', painPointCount: 1 });
+    expect(json[1]).toMatchObject({
+      id: 'wf-2',
+      firstPainPoint: 'b',
+      painPointCount: 1,
+    });
   });
 
   it('GET /workflows returns 403 for an inaccessible requested tenant', async () => {
@@ -1404,7 +1804,9 @@ describe('Workflow router', () => {
 
     const router = buildApp(mockDb);
     const res = await router.fetch(
-      new Request('http://localhost:4000/workflows?tenantId=tenant-other', { method: 'GET' })
+      new Request('http://localhost:4000/workflows?tenantId=tenant-other', {
+        method: 'GET',
+      })
     );
     expect(res.status).toBe(403);
   });
@@ -1515,7 +1917,10 @@ describe('Workflow router', () => {
       new Request('http://localhost:4000/workflows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: 'granola', workflowKind: 'collateral-generation' }),
+        body: JSON.stringify({
+          source: 'granola',
+          workflowKind: 'collateral-generation',
+        }),
       })
     );
     expect(res.status).toBe(400);
@@ -1572,13 +1977,22 @@ describe('Workflow router', () => {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          stepConfig: { analyze: { agentId: 'inst-oat', maxOutputTokens: 2048, toolIds: [] } },
+          stepConfig: {
+            analyze: {
+              agentId: 'inst-oat',
+              maxOutputTokens: 2048,
+              toolIds: [],
+            },
+          },
         }),
       })
     );
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.stepConfig.analyze).toMatchObject({ agentId: 'inst-oat', maxOutputTokens: 2048 });
+    expect(json.stepConfig.analyze).toMatchObject({
+      agentId: 'inst-oat',
+      maxOutputTokens: 2048,
+    });
     expect(setValues[0]).toMatchObject({
       input: expect.objectContaining({
         stepConfig: expect.objectContaining({
@@ -1659,7 +2073,9 @@ describe('Workflow router', () => {
       new Request('http://localhost:4000/workflows/wf-1/step-config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stepConfig: { analyze: { maxOutputTokens: 999999 } } }),
+        body: JSON.stringify({
+          stepConfig: { analyze: { maxOutputTokens: 999999 } },
+        }),
       })
     );
     expect(res.status).toBe(400);
@@ -1694,7 +2110,9 @@ describe('Workflow router', () => {
       new Request('http://localhost:4000/workflows/wf-1/step-config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stepConfig: { analyze: { agentId: 'inst-foreign' } } }),
+        body: JSON.stringify({
+          stepConfig: { analyze: { agentId: 'inst-foreign' } },
+        }),
       })
     );
     expect(res.status).toBe(400);
@@ -1761,7 +2179,11 @@ describe('Workflow router', () => {
       new Request('http://localhost:4000/workflows/wf-1/steps', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ step: 'generate', painPointIds: [], collateralTypes: ['blog'] }),
+        body: JSON.stringify({
+          step: 'generate',
+          painPointIds: [],
+          collateralTypes: ['blog'],
+        }),
       })
     );
     expect(res.status).toBe(400);
@@ -1774,7 +2196,11 @@ describe('Workflow router', () => {
       new Request('http://localhost:4000/workflows/wf-1/steps', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ step: 'generate', painPointIds: ['p-1'], collateralTypes: [] }),
+        body: JSON.stringify({
+          step: 'generate',
+          painPointIds: ['p-1'],
+          collateralTypes: [],
+        }),
       })
     );
     expect(res.status).toBe(400);
@@ -1784,7 +2210,14 @@ describe('Workflow router', () => {
   it('POST /workflows/:id/steps generate returns 400 for unknown collateral types', async () => {
     const mockDb = createMockDb();
     mockDb.query.painPoint.findMany = mock(() => [
-      { id: 'p-1', sessionId: 'wf-1', severity: 'high', context: 'c', quote: 'q', selected: true },
+      {
+        id: 'p-1',
+        sessionId: 'wf-1',
+        severity: 'high',
+        context: 'c',
+        quote: 'q',
+        selected: true,
+      },
     ]) as typeof mockDb.query.painPoint.findMany;
 
     const router = buildApp(mockDb);
@@ -1811,7 +2244,14 @@ describe('Workflow router', () => {
       },
     });
     mockDb.query.painPoint.findMany = mock(() => [
-      { id: 'p-1', sessionId: 'wf-1', severity: 'high', context: 'c', quote: 'q', selected: true },
+      {
+        id: 'p-1',
+        sessionId: 'wf-1',
+        severity: 'high',
+        context: 'c',
+        quote: 'q',
+        selected: true,
+      },
     ]) as typeof mockDb.query.painPoint.findMany;
 
     const router = buildApp(mockDb);
@@ -1870,7 +2310,9 @@ describe('Workflow router', () => {
 
   it('POST /workflows/:id/steps source accepts a sourceArtifactId in the caller tenant', async () => {
     const setValues: Record<string, unknown>[] = [];
-    const mockDb = createMockDb({ onSetUpdate: (values) => setValues.push(values) });
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => setValues.push(values),
+    });
     mockDb.query.workflowRun.findFirst = mock(() => ({
       id: 'wf-1',
       status: 'pending',
@@ -1898,7 +2340,8 @@ describe('Workflow router', () => {
       })
     );
 
-    expect(res.status).toBe(200);
+    // Credential mock resolves, pipeline auto-triggers, returns 202 + generating.
+    expect(res.status).toBe(202);
     expect(setValues.some((v) => v.status === 'running')).toBe(true);
   });
 
@@ -1915,14 +2358,23 @@ describe('Workflow router', () => {
       return mockDb;
     }
 
-    const cases: Array<{ name: string; method: string; path: string; body?: unknown }> = [
+    const cases: Array<{
+      name: string;
+      method: string;
+      path: string;
+      body?: unknown;
+    }> = [
       {
         name: 'PATCH /company',
         method: 'PATCH',
         path: '/workflows/wf-1/company',
         body: { companyName: 'Hijack' },
       },
-      { name: 'DELETE /workflows/:id', method: 'DELETE', path: '/workflows/wf-1' },
+      {
+        name: 'DELETE /workflows/:id',
+        method: 'DELETE',
+        path: '/workflows/wf-1',
+      },
       {
         name: 'PATCH /step-config',
         method: 'PATCH',
@@ -2048,7 +2500,9 @@ describe('Workflow router', () => {
 
     const router = buildApp(createMockDb());
     const res = await router.fetch(
-      new Request('http://localhost:4000/recent-calls?limit=5', { method: 'GET' })
+      new Request('http://localhost:4000/recent-calls?limit=5', {
+        method: 'GET',
+      })
     );
     expect(res.status).toBe(200);
     const json = (await res.json()) as { calls: unknown[] };
@@ -2061,7 +2515,9 @@ describe('Workflow router', () => {
 
     const router = buildApp(createMockDb());
     const res = await router.fetch(
-      new Request('http://localhost:4000/recent-calls?limit=99999', { method: 'GET' })
+      new Request('http://localhost:4000/recent-calls?limit=99999', {
+        method: 'GET',
+      })
     );
     expect(res.status).toBe(200);
     // The handler must not forward an unbounded page size to Granola.
@@ -2075,7 +2531,9 @@ describe('Workflow router', () => {
 
     const router = buildApp(createMockDb());
     const res = await router.fetch(
-      new Request('http://localhost:4000/recent-calls?limit=-5', { method: 'GET' })
+      new Request('http://localhost:4000/recent-calls?limit=-5', {
+        method: 'GET',
+      })
     );
     expect(res.status).toBe(200);
     const passedLimit = (getRecentNotesMock.mock.calls[0] as unknown[] | undefined)?.[1];
@@ -2088,7 +2546,9 @@ describe('Workflow router', () => {
 
     const router = buildApp(createMockDb());
     const res = await router.fetch(
-      new Request('http://localhost:4000/recent-calls?limit=abc', { method: 'GET' })
+      new Request('http://localhost:4000/recent-calls?limit=abc', {
+        method: 'GET',
+      })
     );
     expect(res.status).toBe(200);
     const passedLimit = (getRecentNotesMock.mock.calls[0] as unknown[] | undefined)?.[1];
@@ -2177,7 +2637,9 @@ describe('Workflow router', () => {
 
     const router = buildApp(mockDb);
     const res = await router.fetch(
-      new Request('http://localhost:4000/workflows?tenantId=tenant-workbench', { method: 'GET' })
+      new Request('http://localhost:4000/workflows?tenantId=tenant-workbench', {
+        method: 'GET',
+      })
     );
     expect(res.status).toBe(200);
     expect(mockDb.query.workflowRun.findMany).toHaveBeenCalledTimes(1);
@@ -2194,7 +2656,9 @@ describe('Workflow router', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           kind: 'collateral-generation',
-          assignments: { intake: { credentialIds: ['ghost-cred'], toolIds: [] } },
+          assignments: {
+            intake: { credentialIds: ['ghost-cred'], toolIds: [] },
+          },
         }),
       })
     );
@@ -2219,7 +2683,14 @@ describe('Workflow router', () => {
     generatedKinds.length = 0;
     const mockDb = createMockDb({ updateReturning: [] });
     mockDb.query.painPoint.findMany = mock(() => [
-      { id: 'p-1', sessionId: 'wf-1', severity: 'high', context: 'c', quote: 'q', selected: true },
+      {
+        id: 'p-1',
+        sessionId: 'wf-1',
+        severity: 'high',
+        context: 'c',
+        quote: 'q',
+        selected: true,
+      },
     ]) as typeof mockDb.query.painPoint.findMany;
     (
       (await import('../lib/generation')).generateCollateralWithLLM as ReturnType<typeof mock>
@@ -2315,22 +2786,13 @@ describe('Workflow router', () => {
   });
 
   describe('presentation-generation workflow', () => {
-    function buildPresentationApp(
-      db: ReturnType<typeof createMockDb>,
-      deps?: { sessionService?: { sendUserMessage: (...args: unknown[]) => Promise<void> } }
-    ) {
+    function buildPresentationApp(db: ReturnType<typeof createMockDb>) {
       const parent = new Hono<{ Variables: { userId: string } }>();
       parent.use('*', async (c, next) => {
         c.set('userId', 'test-user');
         await next();
       });
-      parent.route(
-        '/',
-        createWorkflowRouter(
-          db as unknown as HubDb,
-          deps as unknown as { sessionService?: import('./workflow').SessionServiceDep }
-        )
-      );
+      parent.route('/', createWorkflowRouter(db as unknown as HubDb));
       return parent;
     }
 
@@ -2359,7 +2821,11 @@ describe('Workflow router', () => {
           options.onInsertValues?.(values);
           return {
             returning: mock(() => [
-              { id: 'wf-pres', status: 'pending', kind: 'presentation-generation' },
+              {
+                id: 'wf-pres',
+                status: 'pending',
+                kind: 'presentation-generation',
+              },
             ]),
             onConflictDoUpdate: mock(() => ({
               returning: mock(() => []),
@@ -2395,7 +2861,9 @@ describe('Workflow router', () => {
 
     it('POST /workflows/id/steps template step advances to analyzing', async () => {
       const updatedValues: unknown[] = [];
-      const db = createPresentationMockDb({ onSetUpdate: (v) => updatedValues.push(v) });
+      const db = createPresentationMockDb({
+        onSetUpdate: (v) => updatedValues.push(v),
+      });
       const router = buildPresentationApp(db);
       const res = await router.fetch(
         new Request('http://localhost/workflows/wf-pres/steps', {
@@ -2414,15 +2882,20 @@ describe('Workflow router', () => {
       expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'analyzing' }));
     });
 
-    it('POST /workflows/id/steps source step (paste) advances to running', async () => {
+    it('POST /workflows/id/steps source step (paste) triggers pipeline and returns 202', async () => {
       const updatedValues: unknown[] = [];
-      const db = createPresentationMockDb({ onSetUpdate: (v) => updatedValues.push(v) });
+      const db = createPresentationMockDb({
+        onSetUpdate: (v) => updatedValues.push(v),
+      });
       db.query.workflowRun.findFirst = mock(() => ({
         id: 'wf-pres',
         status: 'analyzing',
         principalId: PERSONAL_PRINCIPAL.id,
         kind: 'presentation-generation',
-        input: { templateId: 'tmpl-1' } as unknown as { companyName: string; transcriptId: string },
+        input: { templateId: 'tmpl-1' } as unknown as {
+          companyName: string;
+          transcriptId: string;
+        },
       }));
       const router = buildPresentationApp(db);
       const res = await router.fetch(
@@ -2437,138 +2910,12 @@ describe('Workflow router', () => {
           }),
         })
       );
-      expect(res.status).toBe(200);
+      // The route resolves the LLM credential and fires the pipeline, returning 202 + generating.
+      expect(res.status).toBe(202);
+      const json = (await res.json()) as { status: string };
+      expect(json.status).toBe('generating');
+      // DB should have been set to running before the auto-trigger checked the credential.
       expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'running' }));
-    });
-
-    it('POST /workflows/id/steps generate without agentInstanceId returns 400', async () => {
-      const db = createPresentationMockDb();
-      db.query.workflowRun.findFirst = mock(() => ({
-        id: 'wf-pres',
-        status: 'running',
-        principalId: PERSONAL_PRINCIPAL.id,
-        kind: 'presentation-generation',
-        input: {
-          templateId: 'tmpl-1',
-          transcriptSource: 'paste',
-          transcriptId: 'tx-1',
-        } as unknown as { companyName: string; transcriptId: string },
-      }));
-      const sendUserMessage = mock(() => Promise.resolve());
-      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
-      const res = await router.fetch(
-        new Request('http://localhost/workflows/wf-pres/steps', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ step: 'generate' }),
-        })
-      );
-      expect(res.status).toBe(400);
-    });
-
-    it('POST /workflows/id/steps generate dispatches mail and advances to generating', async () => {
-      const updatedValues: unknown[] = [];
-      const db = createPresentationMockDb({ onSetUpdate: (v) => updatedValues.push(v) });
-      db.query.workflowRun.findFirst = mock(() => ({
-        id: 'wf-pres',
-        status: 'running',
-        principalId: PERSONAL_PRINCIPAL.id,
-        kind: 'presentation-generation',
-        input: {
-          templateId: 'tmpl-1',
-          transcriptSource: 'paste',
-          transcriptId: 'tx-1',
-          callTitle: 'Test Call',
-        } as unknown as { companyName: string; transcriptId: string },
-      }));
-      db.query.agentInstance.findFirst = mock<
-        () => { id: string; agentId: string; tenantId: string; address: string; sessionId: null }
-      >(() => ({
-        id: 'inst-geralt',
-        agentId: 'agent-geralt',
-        tenantId: 'tenant-personal',
-        address: 'inst-geralt@global.example.com',
-        sessionId: 'ses-geralt' as unknown as null,
-      }));
-      const sendUserMessage = mock(() => Promise.resolve());
-      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
-      const res = await router.fetch(
-        new Request('http://localhost/workflows/wf-pres/steps', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ step: 'generate', agentInstanceId: 'inst-geralt' }),
-        })
-      );
-      expect(res.status).toBe(200);
-      expect(sendUserMessage).toHaveBeenCalledTimes(1);
-      expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'generating' }));
-    });
-
-    it('POST /workflows/id/steps generate returns 503 (not 500) when the agent has no address', async () => {
-      const db = createPresentationMockDb();
-      db.query.workflowRun.findFirst = mock(() => ({
-        id: 'wf-pres',
-        status: 'running',
-        principalId: PERSONAL_PRINCIPAL.id,
-        kind: 'presentation-generation',
-        input: { templateId: 'tmpl-1', transcriptId: 'tx-1' } as unknown as {
-          companyName: string;
-          transcriptId: string;
-        },
-      }));
-      db.query.agentInstance.findFirst = mock<
-        () => { id: string; agentId: string; tenantId: string; address: null; sessionId: null }
-      >(() => ({
-        id: 'inst-geralt',
-        agentId: 'agent-geralt',
-        tenantId: 'tenant-personal',
-        address: null,
-        sessionId: 'ses-geralt' as unknown as null,
-      }));
-      const sendUserMessage = mock(() => Promise.resolve());
-      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
-      const res = await router.fetch(
-        new Request('http://localhost/workflows/wf-pres/steps', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ step: 'generate', agentInstanceId: 'inst-geralt' }),
-        })
-      );
-      expect(res.status).toBe(503);
-      expect(sendUserMessage).not.toHaveBeenCalled();
-    });
-
-    it('POST /workflows/id/steps generate returns 503 (not 500) when dispatch throws', async () => {
-      const db = createPresentationMockDb();
-      db.query.workflowRun.findFirst = mock(() => ({
-        id: 'wf-pres',
-        status: 'running',
-        principalId: PERSONAL_PRINCIPAL.id,
-        kind: 'presentation-generation',
-        input: { templateId: 'tmpl-1', transcriptId: 'tx-1' } as unknown as {
-          companyName: string;
-          transcriptId: string;
-        },
-      }));
-      db.query.agentInstance.findFirst = mock<
-        () => { id: string; agentId: string; tenantId: string; address: string; sessionId: null }
-      >(() => ({
-        id: 'inst-geralt',
-        agentId: 'agent-geralt',
-        tenantId: 'tenant-personal',
-        address: 'inst-geralt@global.example.com',
-        sessionId: 'ses-geralt' as unknown as null,
-      }));
-      const sendUserMessage = mock(() => Promise.reject(new Error('agent not routable')));
-      const router = buildPresentationApp(db, { sessionService: { sendUserMessage } });
-      const res = await router.fetch(
-        new Request('http://localhost/workflows/wf-pres/steps', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ step: 'generate', agentInstanceId: 'inst-geralt' }),
-        })
-      );
-      expect(res.status).toBe(503);
     });
   });
 
@@ -2576,7 +2923,9 @@ describe('Workflow router', () => {
     it('returns the curated template registry', async () => {
       const router = buildApp(createMockDb());
       const res = await router.fetch(
-        new Request('http://localhost:4000/workflows/gamma/templates', { method: 'GET' })
+        new Request('http://localhost:4000/workflows/gamma/templates', {
+          method: 'GET',
+        })
       );
       expect(res.status).toBe(200);
       const json = (await res.json()) as unknown[];
@@ -2591,7 +2940,9 @@ describe('Workflow router', () => {
       );
       const router = buildApp(createMockDb());
       const res = await router.fetch(
-        new Request('http://localhost:4000/workflows/gamma/templates', { method: 'GET' })
+        new Request('http://localhost:4000/workflows/gamma/templates', {
+          method: 'GET',
+        })
       );
       expect(res.status).toBe(200);
     });
@@ -2599,7 +2950,9 @@ describe('Workflow router', () => {
 
   describe('POST /workflows/:id/reset', () => {
     function stuckDb(status: string, captured: Record<string, unknown>[]) {
-      const mockDb = createMockDb({ onSetUpdate: (values) => captured.push(values) });
+      const mockDb = createMockDb({
+        onSetUpdate: (values) => captured.push(values),
+      });
       mockDb.query.workflowRun.findFirst = mock(() => ({
         id: 'wf-1',
         status,
@@ -2614,7 +2967,9 @@ describe('Workflow router', () => {
       const captured: Record<string, unknown>[] = [];
       const router = buildApp(stuckDb('generating', captured));
       const res = await router.fetch(
-        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+        new Request('http://localhost:4000/workflows/wf-1/reset', {
+          method: 'POST',
+        })
       );
       expect(res.status).toBe(200);
       const json = await res.json();
@@ -2626,7 +2981,9 @@ describe('Workflow router', () => {
       const captured: Record<string, unknown>[] = [];
       const router = buildApp(stuckDb('analyzing', captured));
       const res = await router.fetch(
-        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+        new Request('http://localhost:4000/workflows/wf-1/reset', {
+          method: 'POST',
+        })
       );
       expect(res.status).toBe(200);
       const json = await res.json();
@@ -2638,7 +2995,9 @@ describe('Workflow router', () => {
       const captured: Record<string, unknown>[] = [];
       const router = buildApp(stuckDb('reviewing', captured));
       const res = await router.fetch(
-        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+        new Request('http://localhost:4000/workflows/wf-1/reset', {
+          method: 'POST',
+        })
       );
       expect(res.status).toBe(409);
       expect(captured).toHaveLength(0);
@@ -2651,14 +3010,18 @@ describe('Workflow router', () => {
       ) as typeof mockDb.query.workflowRun.findFirst;
       const router = buildApp(mockDb);
       const res = await router.fetch(
-        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+        new Request('http://localhost:4000/workflows/wf-1/reset', {
+          method: 'POST',
+        })
       );
       expect(res.status).toBe(404);
     });
 
     it('returns 403 when the caller is not the workflow owner', async () => {
       const captured: Record<string, unknown>[] = [];
-      const mockDb = createMockDb({ onSetUpdate: (values) => captured.push(values) });
+      const mockDb = createMockDb({
+        onSetUpdate: (values) => captured.push(values),
+      });
       mockDb.query.workflowRun.findFirst = mock(() => ({
         id: 'wf-1',
         status: 'generating',
@@ -2668,7 +3031,9 @@ describe('Workflow router', () => {
       })) as typeof mockDb.query.workflowRun.findFirst;
       const router = buildApp(mockDb);
       const res = await router.fetch(
-        new Request('http://localhost:4000/workflows/wf-1/reset', { method: 'POST' })
+        new Request('http://localhost:4000/workflows/wf-1/reset', {
+          method: 'POST',
+        })
       );
       expect(res.status).toBe(403);
       expect(captured).toHaveLength(0);

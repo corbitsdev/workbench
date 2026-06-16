@@ -30,6 +30,7 @@
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
+    "@intx/inference": "workspace:*",
     "@intx/log": "workspace:*",
     "@intx/storage-isogit": "workspace:*",
     "@intx/tools-mail": "workspace:*",
@@ -42,6 +43,7 @@
     "@workbench/sentry": "workspace:*",
     "@workbench/shared": "workspace:*",
     "@workbench/tools-agents": "workspace:*",
+    "@workbench/tools-bluesky": "workspace:*",
     "@workbench/tools-browser": "workspace:*",
     "@workbench/tools-dispatch": "workspace:*",
     "@workbench/tools-exa": "workspace:*",
@@ -54,6 +56,7 @@
     "@workbench/tools-reddit": "workspace:*",
     "@workbench/tools-scrapecreators": "workspace:*",
     "@workbench/tools-x": "workspace:*",
+    "@workbench/tools-youtube": "workspace:*",
     "@workbench/workflow-core": "workspace:*",
     "arktype": "catalog:",
     "better-auth": "^1.6.9",
@@ -63,6 +66,7 @@
   "devDependencies": {
     "@types/bun": "latest",
     "drizzle-kit": "^0.31.1",
+    "exceljs": "^4.4.0",
     "typescript": "^5.9.0"
   }
 }

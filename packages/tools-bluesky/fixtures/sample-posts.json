@@ -1,0 +1,58 @@
+{
+  "posts": [
+    {
+      "uri": "at://did:plc:abc123/app.bsky.feed.post/3kpost1",
+      "cid": "bafyreia1111111111111111111111111111111111111111111111111111",
+      "author": {
+        "did": "did:plc:abc123",
+        "handle": "alice.bsky.social",
+        "displayName": "Alice"
+      },
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "text": "AI startups are changing the GTM playbook. Less spray-and-pray, more signal-driven outreach. Here is what we are seeing in Q2 2025.",
+        "createdAt": "2025-06-10T14:00:00.000Z"
+      },
+      "likeCount": 312,
+      "replyCount": 47,
+      "repostCount": 89,
+      "indexedAt": "2025-06-10T14:01:00.000Z"
+    },
+    {
+      "uri": "at://did:plc:def456/app.bsky.feed.post/3kpost2",
+      "cid": "bafyreia2222222222222222222222222222222222222222222222222222",
+      "author": {
+        "did": "did:plc:def456",
+        "handle": "bob.bsky.social",
+        "displayName": "Bob"
+      },
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "text": "Product-led growth is not dead. It just requires better tooling and cleaner data pipelines.",
+        "createdAt": "2025-06-08T09:30:00.000Z"
+      },
+      "likeCount": 198,
+      "replyCount": 22,
+      "repostCount": 41,
+      "indexedAt": "2025-06-08T09:31:00.000Z"
+    },
+    {
+      "uri": "at://did:plc:ghi789/app.bsky.feed.post/3kpost3",
+      "cid": "bafyreia3333333333333333333333333333333333333333333333333333",
+      "author": {
+        "did": "did:plc:ghi789",
+        "handle": "carol.bsky.social",
+        "displayName": "Carol"
+      },
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "text": "Old post outside any reasonable window",
+        "createdAt": "2020-01-01T00:00:00.000Z"
+      },
+      "likeCount": 5,
+      "replyCount": 0,
+      "repostCount": 0,
+      "indexedAt": "2020-01-01T00:01:00.000Z"
+    }
+  ]
+}

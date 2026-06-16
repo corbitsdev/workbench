@@ -53,6 +53,7 @@ export function buildCollateralRulesBlock(type: string): string {
       'output',
       [
         'Return a single JSON object with exactly two keys: "title" and "body". No markdown fences, no preamble, no trailing text — raw JSON only.',
+        'Never echo the XML tags used in these instructions (such as role, structure, formatting, rules, output, field, or item) into the body. Emit only the requested content.',
         xml('field', 'Short artifact title (plain text, no quotes).', { name: 'title' }),
         xml(
           'field',

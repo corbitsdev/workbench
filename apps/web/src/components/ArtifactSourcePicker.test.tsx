@@ -36,7 +36,7 @@ afterEach(cleanup);
 // that import the real useArtifacts.
 function renderPicker(
   artifacts: ArtifactWithSession[],
-  props: { onSelect: (data: unknown) => void; kinds?: string[] }
+  props: { onSelect: (data: unknown) => void; kinds?: string[]; initialSelectedId?: string }
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(['artifacts', TENANT_ID, '', 'newest', '', ''], artifacts);
@@ -89,6 +89,26 @@ describe('ArtifactSourcePicker', () => {
 
     expect(screen.queryByText('Pains')).not.toBeNull();
     expect(screen.queryByText('An Email')).toBeNull();
+  });
+
+  it('preselects initialSelectedId so the artifact can be confirmed without clicking it (CL-1935)', () => {
+    const onSelect = mock<(data: unknown) => void>(() => {});
+    renderPicker(
+      [makeArtifact({ id: 'a-1', title: 'First' }), makeArtifact({ id: 'a-2', title: 'Seeded' })],
+      { onSelect, initialSelectedId: 'a-2' }
+    );
+
+    const continueButton = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
+    expect(continueButton.disabled).toBe(false);
+
+    fireEvent.click(continueButton);
+    const [firstCall] = onSelect.mock.calls;
+    if (!firstCall) throw new Error('expected onSelect to be called');
+    expect(firstCall[0]).toEqual({
+      source: 'artifact',
+      sourceArtifactId: 'a-2',
+      callTitle: 'Seeded',
+    });
   });
 
   it('shows an empty state when there are no eligible artifacts', () => {

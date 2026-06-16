@@ -23,9 +23,12 @@ export const LOOP_DEPLOY_PROMPT: string = buildLoopAgentSystemPrompt("Loop", {
   xml: true,
 });
 
+export const LOOP_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+
 export const LOOP_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Loop — Research Intelligence",
   name: "Loop",
+  modelConfig: LOOP_MODEL_CONFIG,
   systemPrompt: LOOP_DEPLOY_PROMPT,
   credentialProviderNames: ["openai-compatible"],
   defaultTools: ["mail_search", "mail_reply"],

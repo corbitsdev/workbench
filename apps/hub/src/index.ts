@@ -27,6 +27,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { createSidecarConnectionRegistry } from './sidecar-connections';
 import { createWorkflowRouter } from './routes/workflow';
+import { createUploadsRouter } from './routes/uploads';
 import { workflowRegistry } from '@workbench/workflow-core';
 import { createAgentProvisioningRouter } from './routes/agents';
 import {
@@ -35,6 +36,7 @@ import {
   persistInstanceToolGrants,
 } from './services/agent-provisioning';
 import { createWorkbenchesRouter } from './routes/workbenches';
+import { createGammaTemplatesRouter } from './routes/gamma-templates';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createInternalToolsRouter } from './routes/tools';
 import { buildToolDefinitions, getToolNamesFromCapabilities } from './lib/tool-registry';
@@ -527,13 +529,15 @@ v1.get('/me', async (c) => {
   });
 });
 
-v1.route('/', createWorkflowRouter(db, { sessionService }));
+v1.route('/', createWorkflowRouter(db));
 v1.route(
   '/',
   createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors)
 );
 v1.route('/', createWorkbenchesRouter(db));
+v1.route('/', createGammaTemplatesRouter(db));
 v1.route('/', createApprovalsRouter(db));
+v1.route('/', createUploadsRouter(db));
 
 app.route('/api/v1', v1);
 
@@ -583,7 +587,9 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
       // Close sidecar sockets deliberately so each sidecar sees a clean close
       // and reconnects on its short reconnect delay, rather than waiting for its
       // heartbeat to time out the zombie socket left by an abrupt exit (CL-1654).
-      log.info('Closing sidecar connections', { count: sidecarConnections.size() });
+      log.info('Closing sidecar connections', {
+        count: sidecarConnections.size(),
+      });
       sidecarConnections.closeAll();
       log.info('Server stopped, exiting');
       process.exit(0);

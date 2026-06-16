@@ -30,6 +30,26 @@ import { useChatLauncher } from '../lib/chat-launcher-context';
 
 const MYRA: ChatAgentIdentity = { name: 'Myra', tagline: 'Personal agent' };
 
+// Send a message to Myra, recovering from a dropped session once. A hub or
+// sidecar restart leaves the instance not running, so the first send 409s;
+// relaunching the session and retrying heals it without losing the message.
+async function deliverMessage(
+  session: InstanceSession,
+  instanceId: string | null,
+  content: string
+): Promise<void> {
+  try {
+    await session.sendMail(content);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409 && instanceId !== null) {
+      await launchInstanceSession(instanceId);
+      await session.sendMail(content);
+      return;
+    }
+    throw err;
+  }
+}
+
 const DOCK_STATE_KEY = 'myra-chat-dock-state';
 
 function readDockState(): ChatDockState {
@@ -76,11 +96,40 @@ export function PersonalAgentChat() {
   const reasoningRef = useRef<ReasoningTracker | null>(null);
   const imageTrackerRef = useRef<ImageTracker | null>(null);
 
-  const { registerReconnect } = useChatLauncher();
+  const {
+    hidden: launcherHidden,
+    registerReconnect,
+    pendingMessage,
+    clearPendingMessage,
+  } = useChatLauncher();
 
   useEffect(() => {
     registerReconnect(() => setAttempt((n) => n + 1));
   }, [registerReconnect]);
+
+  // Deliver a message requested via "Open in Myra". Opening the panel is
+  // immediate; the send waits until the session is ready, then clears the
+  // pending message so it is delivered exactly once.
+  useEffect(() => {
+    if (pendingMessage === null) return;
+    setOpen(true);
+    // Drop the pending message on a terminal session state so it cannot be
+    // delivered out of nowhere when an unrelated session later reaches 'ready'.
+    if (sessionState.phase === 'error' || sessionState.phase === 'credential-error') {
+      clearPendingMessage();
+      return;
+    }
+    if (sessionState.phase !== 'ready') return;
+    const { session } = sessionState;
+    const instanceId = instanceIdRef.current;
+    void deliverMessage(session, instanceId, pendingMessage).catch(() => {
+      setSessionState({
+        phase: 'error',
+        message: 'Could not reach Myra. Check your connection and try again.',
+      });
+    });
+    clearPendingMessage();
+  }, [pendingMessage, sessionState, clearPendingMessage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,25 +348,8 @@ export function PersonalAgentChat() {
 
     const activity: ChatActivity | null = toChatActivity(session.activity);
 
-    // Send mail, recovering from a dropped session. A hub or sidecar restart
-    // leaves the instance not running, so the first send 409s; relaunching the
-    // session and retrying once heals it without bouncing the user to an error
-    // state or silently losing their message.
-    const sendWithRecovery = async (content: string) => {
-      try {
-        await session.sendMail(content);
-      } catch (err) {
-        const instanceId = instanceIdRef.current;
-        if (!(err instanceof ApiError && err.status === 409) || instanceId === null) {
-          throw err;
-        }
-        await launchInstanceSession(instanceId);
-        await session.sendMail(content);
-      }
-    };
-
     const handleSend = (text: string) => {
-      void sendWithRecovery(text).catch(() => {
+      void deliverMessage(session, instanceIdRef.current, text).catch(() => {
         setSessionState({
           phase: 'error',
           message: 'Could not reach Myra. Check your connection and try again.',
@@ -345,7 +377,6 @@ export function PersonalAgentChat() {
     );
   }
 
-  const { hidden: launcherHidden } = useChatLauncher();
   const panel = renderPanel();
 
   if (dockState === 'docked') {

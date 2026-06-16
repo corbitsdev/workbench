@@ -41,6 +41,7 @@ Every same-domain user **auto-joins the global tenant as a `member` principal** 
 | **Myra**   | Personal Chief of Staff / Executive Assistant for each user       |
 | **Oat**    | Processes Granola calls into call document artifacts when prompted |
 | **Freddy** | Firecrawl-backed web research agent                               |
+| **Larry**  | last30days research agent — mines HN/GitHub/Reddit/X/YouTube/Bluesky/web for recent signal and emits a structured research brief |
 | **Walter** | Workflow orchestration agent                                      |
 | **Loop**   | Iterative refinement agent                                        |
 
@@ -105,11 +106,14 @@ The workbench product app contains no management UI — no credential settings p
 
 Step *execution* (the per-kind step handlers in `apps/hub/src/routes/workflow.ts`) is not yet extracted into the workflow packages — tracked in CL-1926.
 
+**Two-layer workflows (Resource Enrichment)**: A generic `resource-enrichment` base `WorkflowType` defines the step shape (intake → enrich → review → export) and a domain-agnostic artifact model; specific kinds compose it. The artifacts are: `parsed-resource` (intake snapshot of parsed rows), `selection` (one per row — JSON `{ label, fields: Record<field, string[]>, chosen: Record<field, index> | null }` rendered as a HITL radio picker, content-driven with no domain knowledge), and `csv-export` (the downloadable result). `seo-enrichment` is the first specific kind: xlsx intake, per-row image fetch + multimodal inference producing 5/5/5 SEO variants, CSV export. The domain logic (parse, image fetch, prompt assembly, per-row `enrichSeoRow`, CSV assembly) lives in `packages/gtm-workflows`; the hub injects only the credential-backed inference call and persists results. The enrich step fans out per row with `Promise.allSettled` in bounded batches, isolating per-row failures as error-state selections so one bad row never aborts the batch. Because Interchange's `agent.send` carries text only, the multimodal turn (text + base64 image) goes through `@intx/inference` `runInference` directly (`runSingleTurnAgentWithImage`).
+
 ### Backend (`apps/hub/`)
 
 - **Authentication**: Google OAuth with optional domain allowlisting. Session state stored in secure HTTP-only cookies. CORS origins configurable via trusted origins.
 - **Interchange App**: Hub calls `createApp` from Interchange, registering all tenant/principal/grant/agent/instance routes.
 - **Workflow Routes**: `POST /workflows`, `GET /workflows/:id`, `POST /workflows/:id/steps`
+- **Upload + Download Routes**: `POST /uploads` stores a pre-workflow binary file (xlsx) in an `upload` table (BYTEA, tenant-owned) before any run exists, returning an `uploadId`; `GET /artifacts/:id/download` streams a downloadable artifact (`csv-export` allowlist) as an attachment. `PATCH /workflows/:id/artifacts/:artifactId/selection` writes a reviewer's pick into a `selection` artifact as a new version (row-locked re-read to avoid lost updates).
 - **Collateral Generation Route**: `POST /collateral-generation` — accepts `inputArtifactIds[]` and `outputTypes[]`; each output type generates independently in parallel via `@intx/agent`; results stored as artifact rows with `kind = output type`
 - **Agent Runtime**: Uses `@intx/agent` (from `interchange/`) with structured JSON outputs
 - **Persistence Layer**: PostgreSQL + Drizzle ORM
@@ -171,6 +175,7 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 - `sessionId` is nullable (workflow-level artifacts have no session)
 - `workflowId` links artifacts to collateral generation workflows
 - `kind` is typed as `CollateralType` (case-study, one-pager, email-draft, call-document, etc.)
+- `content` holds the human-readable body; `source` is an opaque JSON bag for structured payloads alongside it. For `kind: 'research'`, `source.brief` carries the typed `ResearchBrief` (clusters, best-takes, stats, citations) that the UI renders richly, with `content` as the prose/markdown fallback. The renderer validates `source.brief` at the boundary and degrades to markdown if absent.
 
 ## Data Flow
 

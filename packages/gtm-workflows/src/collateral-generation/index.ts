@@ -10,6 +10,7 @@ export {
   appendVariantSuffix,
   getVariantCount,
   hasMultiVariantKind,
+  resolveArtifactKind,
   type CollateralPainPoint,
   type WorkflowArtifactDraft,
 } from './artifacts';
@@ -18,3 +19,4 @@ export {
   buildCollateralSystemPrompt,
   isPublicCollateralKind,
 } from './prompts';
+export { stripLeakedPromptTags } from './sanitize';

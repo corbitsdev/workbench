@@ -103,7 +103,7 @@ describe('ChatThread', () => {
         activity={{ type: 'tool_call', name: 'lookup' }}
       />
     );
-    expect(screen.getByText('Ada is calling lookup')).toBeDefined();
+    expect(screen.getByText('Ada is calling Lookup')).toBeDefined();
 
     rerender(
       <ChatThread
@@ -112,7 +112,7 @@ describe('ChatThread', () => {
         activity={{ type: 'tool_running', name: 'lookup' }}
       />
     );
-    expect(screen.getByText('Ada is running lookup')).toBeDefined();
+    expect(screen.getByText('Ada is running Lookup')).toBeDefined();
 
     rerender(
       <ChatThread

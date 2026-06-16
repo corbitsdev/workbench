@@ -24,6 +24,7 @@ COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
 COPY packages/tools-agents/package.json packages/tools-agents/
+COPY packages/tools-bluesky/package.json packages/tools-bluesky/
 COPY packages/tools-browser/package.json packages/tools-browser/
 COPY packages/tools-dispatch/package.json packages/tools-dispatch/
 COPY packages/tools-exa/package.json packages/tools-exa/
@@ -36,6 +37,7 @@ COPY packages/tools-polymarket/package.json packages/tools-polymarket/
 COPY packages/tools-reddit/package.json packages/tools-reddit/
 COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
 COPY packages/tools-x/package.json packages/tools-x/
+COPY packages/tools-youtube/package.json packages/tools-youtube/
 COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
@@ -45,8 +47,10 @@ RUN bun install --frozen-lockfile
 
 COPY interchange/ interchange/
 COPY apps/sidecar/ apps/sidecar/
+COPY packages/agents/ packages/agents/
 COPY packages/approvals/ packages/approvals/
 COPY packages/context-repair/ packages/context-repair/
+COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
 COPY packages/tools-exa/ packages/tools-exa/
 

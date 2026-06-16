@@ -27,6 +27,7 @@ export const LARRY_CAPABILITIES = {
     'github_activity',
     'polymarket_odds',
     'exa_search',
+    'web_search',
     'last30days_core_extract',
     'last30days_core_report',
     'last30days_validate',
@@ -34,6 +35,8 @@ export const LARRY_CAPABILITIES = {
     'reddit_search',
     'reddit_subreddit_search',
     'x_search',
+    'youtube_search',
+    'bluesky_search',
     'scrapecreators_tiktok',
     'scrapecreators_instagram',
     'scrapecreators_threads',
@@ -43,11 +46,22 @@ export const LARRY_CAPABILITIES = {
   ],
 } as const;
 
+export const LARRY_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+
 export const LARRY_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: 'Larry — last30days Research',
   name: 'Larry',
+  modelConfig: LARRY_MODEL_CONFIG,
   systemPrompt: LARRY_DEPLOY_PROMPT,
-  credentialProviderNames: ['openai-compatible', 'xai', 'github', 'scrapecreators', 'reddit'],
+  credentialProviderNames: [
+    'openai-compatible',
+    'xai',
+    'github',
+    'scrapecreators',
+    'exa',
+    'youtube',
+    'bluesky',
+  ],
   defaultTools: [...LARRY_CAPABILITIES.tools],
   requiredTools: [...LARRY_CAPABILITIES.tools],
 };

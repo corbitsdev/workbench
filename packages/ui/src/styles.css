@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 /*
  * Scan this package's own source so Tailwind v4 generates the utilities used
@@ -10,14 +10,18 @@
 /*
  * Brand tokens as first-class Tailwind v4 theme tokens. Colors are declared
  * `inline` so the generated utilities reference the runtime CSS variables
- * (defined in :root below and swapped under [data-theme='light']), giving us
- * live light/dark theming. Radius/font/easing do not theme-switch, so they
+ * (defined in :root below and swapped by html[data-theme='<name>'] selectors),
+ * giving us live multi-brand theming. Radius/font/easing do not theme-switch,
+ * so they
  * carry literal values.
  */
 @theme inline {
-  --color-orange: var(--orange);
-  --color-orange-deep: var(--orange-deep);
-  --color-orange-soft: var(--orange-soft);
+  --color-orange: var(--accent);
+  --color-orange-deep: var(--accent-deep);
+  --color-orange-soft: var(--accent-soft);
+  --color-accent: var(--accent);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-soft: var(--accent-soft);
   --color-blue: var(--blue);
   --color-blue-deep: var(--blue-deep);
   --color-blue-soft: var(--blue-soft);
@@ -56,17 +60,17 @@
   --radius-xl: 24px;
   --radius-panel: 28px;
 
-  --font-body: 'Red Hat Display', 'Open Sans', Roboto, Arial, sans-serif;
-  --font-mono: 'Space Mono', 'Fira Code', Monaco, Consolas, monospace;
+  --font-body: "Red Hat Display", "Open Sans", Roboto, Arial, sans-serif;
+  --font-mono: "Space Mono", "Fira Code", Monaco, Consolas, monospace;
 
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 :root {
   /* Color palette */
-  --orange: #e98428;
-  --orange-deep: #bf6b20;
-  --orange-soft: #f2b277;
+  --accent: #e98428;
+  --accent-deep: #bf6b20;
+  --accent-soft: #f2b277;
   --blue: #607c9a;
   --blue-deep: #2d455c;
   --blue-soft: #c5d2de;
@@ -98,18 +102,42 @@
   --border-strong: rgba(247, 234, 213, 0.22);
   --row-hover: rgba(247, 234, 213, 0.05);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 22px 60px rgba(0, 0, 0, 0.45);
-  --orange-glow: 0 4px 14px rgba(233, 132, 40, 0.45);
+  --accent-glow: 0 4px 14px rgba(233, 132, 40, 0.45);
 
   /* Sidebar colors */
   --sidebar: var(--surface);
   --sidebar-foreground: var(--text);
   --sidebar-border: var(--border-strong);
-  --sidebar-accent: var(--orange);
+  --sidebar-accent: var(--accent);
   --sidebar-accent-foreground: var(--text);
-  --sidebar-ring: var(--orange);
+  --sidebar-ring: var(--accent);
 }
 
-html[data-theme='light'] {
+html[data-theme="corbits-dark"] {
+  --page: #151112;
+  --bg: #221d1e;
+  --surface: #2b2627;
+  --surface-2: #322c2d;
+  --text: #f7ead5;
+  --text-2: #c3b6a3;
+  --text-3: #8a8079;
+  --border: rgba(247, 234, 213, 0.1);
+  --border-strong: rgba(247, 234, 213, 0.22);
+  --row-hover: rgba(247, 234, 213, 0.05);
+  --shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 22px 60px rgba(0, 0, 0, 0.45);
+  --accent: #e98428;
+  --accent-deep: #bf6b20;
+  --accent-soft: #f2b277;
+  --accent-glow: 0 4px 14px rgba(233, 132, 40, 0.45);
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--text);
+  --sidebar-border: var(--border-strong);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-ring: var(--accent);
+}
+
+html[data-theme="corbits-light"] {
   --page: #efdcbe;
   --bg: #f7ead5;
   --surface: #ffffff;
@@ -121,6 +149,64 @@ html[data-theme='light'] {
   --border-strong: rgba(43, 38, 39, 0.22);
   --row-hover: rgba(43, 38, 39, 0.05);
   --shadow: 0 2px 6px rgba(43, 38, 39, 0.05), 0 18px 50px rgba(43, 38, 39, 0.1);
+  --accent: #e98428;
+  --accent-deep: #bf6b20;
+  --accent-soft: #f2b277;
+  --accent-glow: 0 4px 14px rgba(233, 132, 40, 0.35);
+  --sidebar: #efdcbe;
+  --sidebar-foreground: #2b2627;
+  --sidebar-border: rgba(43, 38, 39, 0.22);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-ring: var(--accent);
+}
+
+html[data-theme="tkww"] {
+  --page: #f7faf6;
+  --bg: #f0f4ee;
+  --surface: #ffffff;
+  --surface-2: #eef3ec;
+  --text: #15241a;
+  --text-2: #5d6f60;
+  --text-3: #6a7a6e;
+  --border: #dce5da;
+  --border-strong: #c4d4c0;
+  --row-hover: rgba(21, 36, 26, 0.04);
+  --shadow: 0 2px 6px rgba(21, 36, 26, 0.06), 0 18px 50px rgba(21, 36, 26, 0.1);
+  --accent: #2e7d50;
+  --accent-deep: #1f5c3a;
+  --accent-soft: #7bbf96;
+  --accent-glow: 0 4px 14px rgba(46, 125, 80, 0.35);
+  --sidebar: #f0f4ee;
+  --sidebar-foreground: #15241a;
+  --sidebar-border: #dce5da;
+  --sidebar-accent: #2e7d50;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-ring: #2e7d50;
+}
+
+html[data-theme="notion"] {
+  --page: #ffffff;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f7f6f3;
+  --text: #37352f;
+  --text-2: #787774;
+  --text-3: #9b9994;
+  --border: #e3e2e0;
+  --border-strong: #cbc9c3;
+  --row-hover: rgba(55, 53, 47, 0.04);
+  --shadow: 0 2px 6px rgba(55, 53, 47, 0.05), 0 18px 50px rgba(55, 53, 47, 0.1);
+  --accent: #000000;
+  --accent-deep: #1a1a1a;
+  --accent-soft: #4a4a4a;
+  --accent-glow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  --sidebar: #f7f6f3;
+  --sidebar-foreground: #37352f;
+  --sidebar-border: #e3e2e0;
+  --sidebar-accent: #000000;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-ring: #37352f;
 }
 
 button {
@@ -138,11 +224,11 @@ button {
 @layer components {
   .btn-primary {
     @apply px-4 py-2 text-sm font-semibold text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
-    background-color: var(--orange);
+    background-color: var(--accent);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: var(--orange-deep);
+    background-color: var(--accent-deep);
   }
 
   .btn-secondary {
