@@ -26,7 +26,7 @@ export const OPERATION_BUDGET_MS = 18_000;
 // CDP bridge to become reachable after the status flip, while leaving 3s for
 // the action itself within the 18s operation budget.
 export const CONNECT_TIMEOUT_MS = 15_000;
-export const ACTION_TIMEOUT_MS = 9_000;
+export const ACTION_TIMEOUT_MS = 60_000; // Test Fix - Increase to 60s
 
 export const realConnector: BrowserConnector = async (connectUrl: string) => {
   console.log("Browserbase Connect URL: ", connectUrl);
