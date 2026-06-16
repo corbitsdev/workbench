@@ -70,6 +70,7 @@ export const FOPUS_CAPABILITIES = {
 export const FOPUS_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: 'FOpus',
   name: 'FOpus',
+  modelConfig: FOPUS_MODEL_CONFIG,
   systemPrompt: FOPUS_DEPLOY_PROMPT,
   credentialProviderNames: [...FOPUS_CREDENTIAL_PROVIDER_NAMES],
   defaultTools: [...FOPUS_CAPABILITIES.tools],
