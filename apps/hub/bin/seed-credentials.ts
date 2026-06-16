@@ -138,7 +138,7 @@ export function buildEntries(): CredentialEntry[] {
     entries.push({
       providerName: 'anthropic',
       providerPlugin: 'anthropic',
-      credentialName: 'Anthropic',
+      credentialName: 'anthropic-api',
       secret: anthropicKey,
     });
   }
