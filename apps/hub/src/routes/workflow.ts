@@ -1039,6 +1039,9 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         artifacts: allArtifacts.map(serializeArtifact),
       }) ?? {};
 
+    const wfOutput = (wf.output as Record<string, unknown> | null) ?? {};
+    const errorMessage = typeof wfOutput.errorMessage === 'string' ? wfOutput.errorMessage : null;
+
     return c.json({
       id,
       kind: wf.kind,
@@ -1047,6 +1050,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       companyName: (wf.input as WorkflowInput)?.companyName ?? null,
       stepConfig,
       steps,
+      errorMessage,
     });
   });
 

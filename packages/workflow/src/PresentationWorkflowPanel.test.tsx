@@ -103,6 +103,26 @@ describe('PresentationWorkflowPanel', () => {
     expect(screen.getByText('Generation failed')).not.toBeNull();
   });
 
+  it('shows the actual error message in the failure panel when provided', () => {
+    render(
+      <PresentationWorkflowPanel
+        workflow={{
+          ...makeView({ status: 'failed' }),
+          errorMessage: 'Generate step returned empty content',
+        }}
+        onClose={() => {}}
+      />
+    );
+    expect(screen.getByText('Generate step returned empty content')).not.toBeNull();
+  });
+
+  it('shows a generic fallback in the failure panel when no errorMessage is provided', () => {
+    render(
+      <PresentationWorkflowPanel workflow={makeView({ status: 'failed' })} onClose={() => {}} />
+    );
+    expect(screen.getByText('The deck could not be generated. Try again.')).not.toBeNull();
+  });
+
   it('renders an error state rather than nothing when the run cannot load', () => {
     render(<PresentationWorkflowPanel workflow={null} isError onClose={() => {}} />);
     expect(screen.getByText('Could not load this presentation.')).not.toBeNull();

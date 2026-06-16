@@ -14,6 +14,8 @@ export interface PresentationWorkflowView {
   companyName?: string | null;
   /** Generic per-step state, as serialized by the presentation workflow. */
   steps?: Record<string, PresentationStepView> | null;
+  /** Error detail persisted by the hub on pipeline failure. */
+  errorMessage?: string | null;
 }
 
 export interface PresentationWorkflowPanelProps {
@@ -92,7 +94,15 @@ function CloseButton({ onClose }: { onClose: () => void }) {
   );
 }
 
-function StatusBody({ status, gammaUrl }: { status: string; gammaUrl?: string | null }) {
+function StatusBody({
+  status,
+  gammaUrl,
+  errorMessage,
+}: {
+  status: string;
+  gammaUrl?: string | null;
+  errorMessage?: string | null;
+}) {
   if (status === 'generating') {
     return (
       <div className="rounded-[10px] border border-border bg-surface px-4 py-3 space-y-1">
@@ -136,8 +146,7 @@ function StatusBody({ status, gammaUrl }: { status: string; gammaUrl?: string | 
       <div className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3">
         <p className="text-[13px] font-medium text-text">Generation failed</p>
         <p className="text-[12px] text-text-3 mt-1">
-          The deck could not be generated. Check that your LLM and Gamma credentials are configured,
-          then try again.
+          {errorMessage ?? 'The deck could not be generated. Try again.'}
         </p>
       </div>
     );
@@ -225,7 +234,11 @@ export function PresentationWorkflowPanel({
           </div>
         )}
 
-        <StatusBody status={workflow.status} gammaUrl={gammaUrl ?? null} />
+        <StatusBody
+          status={workflow.status}
+          gammaUrl={gammaUrl ?? null}
+          errorMessage={workflow.errorMessage ?? null}
+        />
       </div>
 
       <div className="border-t border-border bg-surface px-4 py-3 shrink-0 space-y-2">

@@ -36,6 +36,7 @@ export interface FrontendWorkflowState extends WorkflowState {
   currentStep: StepName;
   steps: Record<StepName, WorkflowStep>;
   stepConfig: WorkflowStepConfig;
+  errorMessage?: string | null;
 }
 
 export function useWorkflowTypes() {

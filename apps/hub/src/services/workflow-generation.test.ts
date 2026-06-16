@@ -1,4 +1,4 @@
-import { describe, expect, it, mock, beforeAll } from 'bun:test';
+import { describe, expect, it, mock, beforeAll, afterEach } from 'bun:test';
 import { workflowRegistry } from '@workbench/workflow-core';
 import {
   collateralGenerationWorkflow,
@@ -36,7 +36,37 @@ mock.module('../lib/generation', () => ({
   ),
 }));
 
-import { runAnalyze, runGenerate } from './workflow-generation';
+const mockRunSingleTurnAgent = mock(
+  (
+    _src: unknown,
+    _sys: string,
+    _user: string,
+    _prefix: string,
+    _maxTokens?: number
+  ): Promise<string> => Promise.resolve('generated slide content')
+);
+
+mock.module('../lib/inference', () => ({
+  runSingleTurnAgent: mockRunSingleTurnAgent,
+}));
+
+const mockResolveCredentialRequirement = mock(() =>
+  Promise.resolve({ id: 'cred-1', secret: 'gamma-key-test' })
+);
+
+mock.module('@intx/db', () => ({
+  resolveCredentialRequirement: mockResolveCredentialRequirement,
+}));
+
+const mockGenerateFromTemplate = mock(() =>
+  Promise.resolve({ gammaUrl: 'https://gamma.app/deck/test-123', gammaId: 'gid-test-123' })
+);
+
+mock.module('@workbench/tools-gamma', () => ({
+  generateFromTemplate: mockGenerateFromTemplate,
+}));
+
+import { runAnalyze, runGenerate, runPresentationGenerate } from './workflow-generation';
 
 const SOURCE: InferenceSource = {
   id: 'src-1',
@@ -265,5 +295,160 @@ describe('runGenerate', () => {
     // 'ready', which is not a valid DB status.
     expect(statusUpdates).toContain('running');
     expect(statusUpdates).not.toContain('ready');
+  });
+});
+
+const PRESENTATION_WORKFLOW_ROW = {
+  id: 'wf-pres-1',
+  status: 'ready',
+  tenantId: 'tenant-1',
+  principalId: 'prn-1',
+  kind: 'presentation-generation',
+  input: {
+    transcriptId: 'tx-1',
+    templateId: 'tmpl-abc',
+    callTitle: 'Acme Discovery Call',
+    audience: 'Sales',
+    tone: 'confident',
+    goal: 'Close deal',
+  },
+};
+
+function createPresentationMockDb(
+  options: {
+    workflowRow?: Record<string, unknown> | null;
+    onSetUpdate?: (values: Record<string, unknown>) => void;
+  } = {}
+) {
+  const workflowRow =
+    options.workflowRow === undefined ? PRESENTATION_WORKFLOW_ROW : options.workflowRow;
+
+  return {
+    query: {
+      workflowRun: {
+        findFirst: mock(() => workflowRow),
+      },
+      transcript: {
+        findFirst: mock(() => ({ content: 'Test transcript content for presentation' })),
+      },
+      artifact: {
+        findFirst: mock(() => null),
+      },
+    },
+    delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
+    insert: mock(() => ({
+      values: mock((values: unknown) => ({
+        returning: mock(() => [{ id: 'art-1', ...(values as object) }]),
+      })),
+    })),
+    update: mock(() => ({
+      set: mock((values: Record<string, unknown>) => {
+        options.onSetUpdate?.(values);
+        return { where: mock(() => Promise.resolve()) };
+      }),
+    })),
+    transaction: mock((fn: (trx: unknown) => unknown) => fn({})),
+  };
+}
+
+describe('runPresentationGenerate', () => {
+  afterEach(() => {
+    mockRunSingleTurnAgent.mockClear();
+    mockGenerateFromTemplate.mockClear();
+    mockResolveCredentialRequirement.mockClear();
+  });
+
+  it('calls runSingleTurnAgent with PRESENTATION_MAX_OUTPUT_TOKENS for both generate and review', async () => {
+    let callCount = 0;
+    const capturedMaxTokens: Array<number | undefined> = [];
+    mockRunSingleTurnAgent.mockImplementation(
+      (_src: unknown, _sys: string, _user: string, _prefix: string, maxTokens?: number) => {
+        callCount += 1;
+        capturedMaxTokens.push(maxTokens);
+        return Promise.resolve('slide content from generate round');
+      }
+    );
+
+    const db = createPresentationMockDb();
+    await runPresentationGenerate(db as unknown as HubDb, 'wf-pres-1', 'tenant-1', SOURCE);
+
+    expect(callCount).toBe(2);
+    expect(capturedMaxTokens[0]).toBe(16384);
+    expect(capturedMaxTokens[1]).toBe(16384);
+  });
+
+  it('sets status to failed without calling review when generate returns empty content', async () => {
+    let callCount = 0;
+    mockRunSingleTurnAgent.mockImplementation(() => {
+      callCount += 1;
+      return Promise.resolve('');
+    });
+
+    const statusUpdates: string[] = [];
+    const setValues: Array<Record<string, unknown>> = [];
+    const db = createPresentationMockDb({
+      onSetUpdate: (v) => {
+        setValues.push(v);
+        if (typeof v.status === 'string') statusUpdates.push(v.status);
+      },
+    });
+
+    await runPresentationGenerate(db as unknown as HubDb, 'wf-pres-1', 'tenant-1', SOURCE);
+
+    expect(callCount).toBe(1);
+    expect(statusUpdates).toContain('failed');
+    expect(statusUpdates).not.toContain('reviewing');
+    const failedUpdate = setValues.find((v) => v.status === 'failed');
+    expect(failedUpdate).toBeDefined();
+    const output = failedUpdate?.output as Record<string, unknown> | undefined;
+    const errorMsg = output?.errorMessage;
+    expect(typeof errorMsg).toBe('string');
+    expect(errorMsg as string).toContain('Generation produced no content');
+  });
+
+  it('persists a user-friendly errorMessage in output when the pipeline throws', async () => {
+    mockRunSingleTurnAgent.mockImplementation(
+      (_src: unknown, _sys: string, _user: string, prefix: string) => {
+        if (prefix === 'presentation-review') {
+          return Promise.reject(new Error('LLM timeout'));
+        }
+        return Promise.resolve('generated slide content');
+      }
+    );
+
+    const setValues: Array<Record<string, unknown>> = [];
+    const db = createPresentationMockDb({
+      onSetUpdate: (v) => setValues.push(v),
+    });
+
+    await runPresentationGenerate(db as unknown as HubDb, 'wf-pres-1', 'tenant-1', SOURCE);
+
+    const failedUpdate = setValues.find((v) => v.status === 'failed');
+    expect(failedUpdate).toBeDefined();
+    const output = failedUpdate?.output as Record<string, unknown> | undefined;
+    const errorMsg = output?.errorMessage;
+    expect(typeof errorMsg).toBe('string');
+    expect(errorMsg as string).toContain('unexpected error');
+  });
+
+  it('sets status to done and writes gammaUrl on successful pipeline', async () => {
+    mockRunSingleTurnAgent.mockImplementation(() => Promise.resolve('reviewed slide content'));
+
+    const statusUpdates: string[] = [];
+    const setValues: Array<Record<string, unknown>> = [];
+    const db = createPresentationMockDb({
+      onSetUpdate: (v) => {
+        setValues.push(v);
+        if (typeof v.status === 'string') statusUpdates.push(v.status);
+      },
+    });
+
+    await runPresentationGenerate(db as unknown as HubDb, 'wf-pres-1', 'tenant-1', SOURCE);
+
+    expect(statusUpdates).toContain('done');
+    const doneUpdate = setValues.find((v) => v.status === 'done');
+    expect(doneUpdate).toBeDefined();
+    const input = doneUpdate?.input as Record<string, unknown> | undefined;
+    expect(input?.gammaUrl).toBe('https://gamma.app/deck/test-123');
   });
 });

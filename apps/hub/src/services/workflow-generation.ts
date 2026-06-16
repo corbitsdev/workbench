@@ -21,6 +21,8 @@ import { mapDbStatusToSessionStatus } from './workflow-status';
 
 const log = getLogger(['api', 'workflow']);
 
+const PRESENTATION_MAX_OUTPUT_TOKENS = 16384;
+
 interface WorkflowInput {
   transcriptId?: string;
   companyName?: string;
@@ -331,6 +333,19 @@ function buildPresentationUserMessage(briefContext: string, sourceContent: strin
   return parts.join('\n\n');
 }
 
+function resolvePresentationErrorMessage(internalMessage: string): string {
+  if (internalMessage.includes('Generate step returned empty content')) {
+    return 'Generation produced no content. The model may have hit a token limit — try again.';
+  }
+  if (internalMessage.includes('No Gamma credential configured')) {
+    return 'No Gamma credential is configured for this workspace. Add one in Settings.';
+  }
+  if (internalMessage.includes('No templateId in workflow input')) {
+    return 'No deck template was selected. Return to the template step and choose one.';
+  }
+  return 'An unexpected error occurred during generation. Try again or contact support.';
+}
+
 export async function runPresentationGenerate(
   db: HubDb,
   workflowId: string,
@@ -376,8 +391,13 @@ export async function runPresentationGenerate(
       source,
       PRESENTATION_GENERATE_SYSTEM_PROMPT,
       buildPresentationUserMessage(briefContext, sourceContent),
-      'presentation-generate'
+      'presentation-generate',
+      PRESENTATION_MAX_OUTPUT_TOKENS
     );
+
+    if (!generatedContent.trim()) {
+      throw new Error('Generate step returned empty content');
+    }
 
     await db.update(workflowRun).set({ status: 'reviewing' }).where(eq(workflowRun.id, workflowId));
     log.info('Presentation pipeline: round 2 reviewing content', { workflowId });
@@ -385,7 +405,8 @@ export async function runPresentationGenerate(
       source,
       PRESENTATION_REVIEW_SYSTEM_PROMPT,
       generatedContent,
-      'presentation-review'
+      'presentation-review',
+      PRESENTATION_MAX_OUTPUT_TOKENS
     );
 
     await db.update(workflowRun).set({ status: 'rendering' }).where(eq(workflowRun.id, workflowId));
@@ -434,7 +455,12 @@ export async function runPresentationGenerate(
 
     log.info('Presentation pipeline: complete', { workflowId, gammaUrl });
   } catch (error) {
-    log.error('Presentation pipeline failed', { workflowId, error: String(error) });
-    await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, workflowId));
+    const internalMessage = String(error);
+    const userMessage = resolvePresentationErrorMessage(internalMessage);
+    log.error('Presentation pipeline failed', { workflowId, error: internalMessage });
+    await db
+      .update(workflowRun)
+      .set({ status: 'failed', output: { errorMessage: userMessage } })
+      .where(eq(workflowRun.id, workflowId));
   }
 }
