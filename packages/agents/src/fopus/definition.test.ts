@@ -10,12 +10,15 @@ const researchTools = [
   'firecrawl_search',
   'firecrawl_scrape',
   'granola_search',
-  'x_search',
-  'reddit_search',
-  'exa_search',
+  'hackernews_search',
+  'github_activity',
+  'bluesky_search',
+  'scrapecreators_tiktok',
   'write_artifact',
   'mail_search',
   'mail_reply',
+  'read_file',
+  'write_file',
 ];
 
 describe('FOPus definition', () => {
@@ -47,12 +50,8 @@ describe('FOPus definition', () => {
     expect(FOPUS_CREDENTIAL_PROVIDER_NAMES).toEqual([
       'firecrawl',
       'granola',
-      'xai',
-      'reddit',
-      'exa',
       'github',
       'scrapecreators',
-      'youtube',
       'bluesky',
     ]);
 

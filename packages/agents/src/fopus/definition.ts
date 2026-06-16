@@ -1,5 +1,6 @@
 import { CredentialRequirement, GrantRequirement } from '@intx/types';
 import { FOPUS_DEPLOY_PROMPT } from './prompt';
+import type { AgentDeployDescriptor } from '../deploy-descriptor';
 export { FOPUS_DEPLOY_PROMPT } from './prompt';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
@@ -25,12 +26,8 @@ export const FOPUS_MODEL_CONFIG = {
 export const FOPUS_CREDENTIAL_PROVIDER_NAMES = [
   'firecrawl',
   'granola',
-  'xai',
-  'reddit',
-  'exa',
   'github',
   'scrapecreators',
-  'youtube',
   'bluesky',
 ] as const;
 
@@ -52,24 +49,30 @@ export const FOPUS_CAPABILITIES = {
     'granola_search',
     'hackernews_search',
     'github_activity',
-    'polymarket_odds',
-    'exa_search',
-    'web_search',
-    'last30days_core_extract',
-    'last30days_core_report',
-    'last30days_validate',
+    'read_file',
+    'write_file',
+    'edit_file',
+    'search_files',
+    'run_shell',
+    'grep',
     'write_artifact',
-    'reddit_search',
-    'reddit_subreddit_search',
-    'x_search',
-    'youtube_search',
+    'artifact_create',
+    'mail_search',
+    'mail_reply',
     'bluesky_search',
     'scrapecreators_tiktok',
     'scrapecreators_instagram',
     'scrapecreators_threads',
     'scrapecreators_pinterest',
-    'mail_search',
-    'mail_reply',
   ],
 } as const;
+
+export const FOPUS_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
+  label: 'FOpus',
+  name: 'FOpus',
+  systemPrompt: FOPUS_DEPLOY_PROMPT,
+  credentialProviderNames: [...FOPUS_CREDENTIAL_PROVIDER_NAMES],
+  defaultTools: [...FOPUS_CAPABILITIES.tools],
+  requiredTools: [...FOPUS_CAPABILITIES.tools],
+};
 
