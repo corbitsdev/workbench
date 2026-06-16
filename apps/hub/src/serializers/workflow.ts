@@ -31,6 +31,7 @@ export function serializeArtifact(a: ArtifactRow) {
     source: a.source ?? null,
     status: a.status,
     version: a.version,
+    ownerPrincipalId: a.ownerPrincipalId ?? null,
     createdAt:
       typeof a.createdAt === 'string'
         ? a.createdAt

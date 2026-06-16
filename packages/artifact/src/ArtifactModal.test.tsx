@@ -16,10 +16,12 @@ const artifact: ArtifactWithSession = {
   content: 'Hello there',
   status: 'approved',
   version: 2,
+  ownerPrincipalId: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   sessionName: 'Acme Corp',
   sessionStatus: 'done',
+  ownerName: null,
 };
 
 afterEach(cleanup);

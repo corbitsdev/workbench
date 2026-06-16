@@ -3,7 +3,7 @@
 // The kind->viz/fill/span mapping lives in artifact-visuals (presentation is
 // kept out of the transport layer). This renders the grid and header only.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ArtifactWithSession } from '@workbench/shared';
 import type { GalleryArtifact } from './types';
 import { toGalleryArtifact } from './artifact-visuals';
@@ -28,6 +28,10 @@ export interface ArtifactGalleryProps {
   sort?: 'newest' | 'oldest';
   /** Called when the user toggles the sort order. */
   onSortChange?: (sort: 'newest' | 'oldest') => void;
+  /** Current owner principal ID filter. Undefined means no filter. */
+  ownerPrincipalId?: string;
+  /** Called when the user changes the owner filter. */
+  onOwnerFilterChange?: (ownerPrincipalId: string | undefined) => void;
 }
 
 export function ArtifactGallery({
@@ -41,6 +45,8 @@ export function ArtifactGallery({
   onOpenLibrary,
   sort: sortProp,
   onSortChange,
+  ownerPrincipalId,
+  onOwnerFilterChange,
 }: ArtifactGalleryProps) {
   const [internalSort, setInternalSort] = useState<'newest' | 'oldest'>('newest');
   const sort = sortProp ?? internalSort;
@@ -53,6 +59,20 @@ export function ArtifactGallery({
       setInternalSort(next);
     }
   }
+
+  // Derive unique owners from the loaded artifacts for the filter dropdown.
+  const owners = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const a of artifacts) {
+      if (a.ownerPrincipalId && a.ownerName) {
+        seen.set(a.ownerPrincipalId, a.ownerName);
+      } else if (a.ownerPrincipalId) {
+        seen.set(a.ownerPrincipalId, a.ownerPrincipalId.slice(0, 8));
+      }
+    }
+    return [...seen.entries()].map(([id, name]) => ({ id, name }));
+  }, [artifacts]);
+
   const tiles = artifacts.map(toGalleryArtifact);
   const isSearching = query.trim().length > 0;
 
@@ -82,6 +102,22 @@ export function ArtifactGallery({
           {tiles.length} items
         </span>
         <div className="flex-1" />
+        {owners.length > 0 && onOwnerFilterChange && (
+          <select
+            value={ownerPrincipalId ?? ''}
+            onChange={(e) =>
+              onOwnerFilterChange(e.target.value === '' ? undefined : e.target.value)
+            }
+            className="h-[34px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text focus:border-border-strong focus:outline-none"
+          >
+            <option value="">All owners</option>
+            {owners.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           type="search"
           placeholder="Search artifacts"

@@ -1131,6 +1131,14 @@ describe('Workflow router', () => {
     expect(withKind.where).not.toEqual(withoutKind.where);
   });
 
+  it('GET /artifacts adds the owner filter to the DB query (CL-2035)', async () => {
+    const withOwner = await captureArtifactQuery(
+      'http://localhost:4000/artifacts?ownerPrincipalId=principal-abc'
+    );
+    const withoutOwner = await captureArtifactQuery('http://localhost:4000/artifacts');
+    expect(withOwner.where).not.toEqual(withoutOwner.where);
+  });
+
   it('GET /artifacts accepts valid status filter (CL-1553)', async () => {
     const mockDb = createMockDb();
     mockDb.query.workflowRun.findMany = mock(() => []);

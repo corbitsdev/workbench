@@ -251,6 +251,7 @@ function createLinkFileHandler(context: ArtifactToolContext): AgentTool {
         sessionId: context.sessionId,
       };
       const now = new Date();
+      const ownerMemberId = await resolveOwnerMemberPrincipalId(context.db, context);
 
       const row = await context.db.transaction(async (tx) => {
         const [created] = await tx
@@ -258,6 +259,7 @@ function createLinkFileHandler(context: ArtifactToolContext): AgentTool {
           .values({
             tenantId: context.tenantId,
             principalId: context.principalId,
+            ownerPrincipalId: ownerMemberId ?? undefined,
             kind,
             title,
             content,
@@ -302,6 +304,7 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
         sessionId: context.sessionId,
       };
       const now = new Date();
+      const ownerMemberId = await resolveOwnerMemberPrincipalId(context.db, context);
 
       const row = await context.db.transaction(async (tx) => {
         const [created] = await tx
@@ -309,6 +312,7 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
           .values({
             tenantId: context.tenantId,
             principalId: context.principalId,
+            ownerPrincipalId: ownerMemberId ?? undefined,
             kind,
             title,
             content,
@@ -339,14 +343,17 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
   };
 }
 
-// Verify the agent's owning user is an active member of targetTenantId.
-// Walks: agent instance → member_agent_instance → owner principal → refId →
-// principal in target tenant. Fails closed (returns false) at any missing step.
-async function ownerIsMemberOfTenant(
+/**
+ * Resolve the human member principal id (`memberPrincipalId`) that owns
+ * the agent identified by the tool context. Returns null when the agent
+ * has no owning member (e.g. a system agent).
+ *
+ * Walks: context.principalId -> agent_instance -> member_agent_instance
+ */
+async function resolveOwnerMemberPrincipalId(
   db: DB["db"],
   context: { tenantId: string; principalId: string },
-  targetTenantId: string,
-): Promise<boolean> {
+): Promise<string | null> {
   const instanceRows = await db
     .select({ id: intxSchema.agentInstance.id })
     .from(intxSchema.agentInstance)
@@ -358,7 +365,7 @@ async function ownerIsMemberOfTenant(
     )
     .limit(1);
   const instanceId = instanceRows[0]?.id;
-  if (!instanceId) return false;
+  if (!instanceId) return null;
 
   const ownerRows = await db
     .select({ memberPrincipalId: memberAgentInstance.memberPrincipalId })
@@ -370,7 +377,18 @@ async function ownerIsMemberOfTenant(
       ),
     )
     .limit(1);
-  const ownerPrincipalId = ownerRows[0]?.memberPrincipalId;
+  return ownerRows[0]?.memberPrincipalId ?? null;
+}
+
+// Verify the agent's owning user is an active member of targetTenantId.
+// Walks: agent instance -> member_agent_instance -> owner principal -> refId ->
+// principal in target tenant. Fails closed (returns false) at any missing step.
+async function ownerIsMemberOfTenant(
+  db: DB["db"],
+  context: { tenantId: string; principalId: string },
+  targetTenantId: string,
+): Promise<boolean> {
+  const ownerPrincipalId = await resolveOwnerMemberPrincipalId(db, context);
   if (!ownerPrincipalId) return false;
 
   const refIdRows = await db
@@ -588,6 +606,7 @@ function createLinkPresentationHandler(
         });
       }
 
+      const ownerMemberId = await resolveOwnerMemberPrincipalId(context.db, context);
       const source = {
         type: "inline",
         agentId: context.agentId,
@@ -600,6 +619,7 @@ function createLinkPresentationHandler(
           .values({
             tenantId: context.tenantId,
             principalId: context.principalId,
+            ownerPrincipalId: ownerMemberId ?? undefined,
             kind: "presentation",
             title,
             content: url,

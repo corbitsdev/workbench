@@ -18,10 +18,12 @@ function makeArtifact(overrides: Partial<ArtifactWithSession>): ArtifactWithSess
     content: 'body',
     status: 'approved',
     version: 1,
+    ownerPrincipalId: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sessionName: 'Acme Corp',
     sessionStatus: 'done',
+    ownerName: null,
     ...overrides,
   };
 }
@@ -39,7 +41,7 @@ function renderPicker(
   props: { onSelect: (data: unknown) => void; kinds?: string[]; initialSelectedId?: string }
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  client.setQueryData(['artifacts', TENANT_ID, '', 'newest', '', ''], artifacts);
+  client.setQueryData(['artifacts', TENANT_ID, '', 'newest', '', '', ''], artifacts);
   return render(
     React.createElement(
       QueryClientProvider,

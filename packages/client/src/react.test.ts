@@ -59,10 +59,12 @@ const fakeArtifact: ArtifactWithSession = {
   content: 'Body',
   status: 'draft',
   version: 1,
+  ownerPrincipalId: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   sessionName: 'Acme call',
   sessionStatus: 'reviewing',
+  ownerName: null,
 };
 
 afterEach(cleanup);

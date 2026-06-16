@@ -53,6 +53,7 @@ export function ArtifactGallery({
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
+  const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined);
 
   const {
     data: artifacts,
@@ -62,6 +63,7 @@ export function ArtifactGallery({
     tenantId,
     query: debouncedQuery || undefined,
     sort,
+    ownerPrincipalId: ownerFilter,
   });
   const [selected, setSelected] = useState<ArtifactWithSession | null>(null);
 
@@ -104,6 +106,8 @@ export function ArtifactGallery({
         onOpenLibrary={onOpenLibrary}
         sort={sort}
         onSortChange={setSort}
+        ownerPrincipalId={ownerFilter}
+        onOwnerFilterChange={setOwnerFilter}
       />
       <ArtifactModal
         open={selected !== null}

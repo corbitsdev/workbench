@@ -29,6 +29,7 @@ export interface UseArtifactsParams {
   sort?: 'newest' | 'oldest';
   kind?: string;
   status?: ArtifactStatus;
+  ownerPrincipalId?: string;
 }
 
 /** Query the current user's artifacts across all jobs for the gallery. */
@@ -44,6 +45,7 @@ export function useArtifacts(
       params.sort ?? 'newest',
       params.kind ?? '',
       params.status ?? '',
+      params.ownerPrincipalId ?? '',
     ],
     queryFn: () => listArtifacts(options, params).then((page) => page.artifacts),
     enabled: params.tenantId != null,

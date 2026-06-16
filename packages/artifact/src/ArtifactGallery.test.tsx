@@ -20,10 +20,12 @@ const artifact: ArtifactWithSession = {
   content: 'body',
   status: 'approved',
   version: 1,
+  ownerPrincipalId: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   sessionName: 'Acme Corp',
   sessionStatus: 'done',
+  ownerName: null,
 };
 
 describe('ArtifactCard', () => {
@@ -69,5 +71,54 @@ describe('ArtifactGallery', () => {
     render(React.createElement(ArtifactGallery, { artifacts: [], onNew }));
     fireEvent.click(screen.getByRole('button', { name: 'New' }));
     expect(onNew).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the owner filter dropdown when artifacts have owners and onOwnerFilterChange is provided', () => {
+    const ownerArtifacts: ArtifactWithSession[] = [
+      {
+        ...artifact,
+        ownerPrincipalId: 'p-1',
+        ownerName: 'Alice',
+      },
+      {
+        ...artifact,
+        id: 'a-2',
+        title: 'Another artifact',
+        ownerPrincipalId: 'p-1',
+        ownerName: 'Alice',
+      },
+    ];
+    const onOwnerFilterChange = mock(() => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: ownerArtifacts,
+        onOwnerFilterChange,
+      })
+    );
+    // The dropdown should show "All owners"
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    expect(select).toBeDefined();
+    expect(select.value).toBe('');
+    expect(screen.getByText('Alice')).toBeDefined();
+  });
+
+  it('calls onOwnerFilterChange when the owner dropdown selection changes', () => {
+    const ownerArtifacts: ArtifactWithSession[] = [
+      {
+        ...artifact,
+        ownerPrincipalId: 'p-1',
+        ownerName: 'Alice',
+      },
+    ];
+    const onOwnerFilterChange = mock(() => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: ownerArtifacts,
+        onOwnerFilterChange,
+      })
+    );
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'p-1' } });
+    expect(onOwnerFilterChange).toHaveBeenCalledWith('p-1');
   });
 });

@@ -57,6 +57,7 @@ export interface ListArtifactsParams {
   sort?: 'newest' | 'oldest';
   kind?: string;
   status?: ArtifactStatus;
+  ownerPrincipalId?: string;
   cursor?: string;
   limit?: number;
 }
@@ -89,6 +90,7 @@ export function listArtifacts(
   if (params.sort) qs.set('sort', params.sort);
   if (params.kind) qs.set('kind', params.kind);
   if (params.status) qs.set('status', params.status);
+  if (params.ownerPrincipalId) qs.set('ownerPrincipalId', params.ownerPrincipalId);
   if (params.cursor) qs.set('cursor', params.cursor);
   if (params.limit !== undefined) qs.set('limit', String(params.limit));
   const search = qs.size > 0 ? `?${qs.toString()}` : '';

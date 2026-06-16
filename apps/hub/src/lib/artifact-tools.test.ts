@@ -47,7 +47,16 @@ function makeContext(opts: { createdId?: string | null } = {}) {
     }),
   };
 
+  const selectChain = {
+    from: () => selectChain,
+    where: () => selectChain,
+    orderBy: () => selectChain,
+    for: () => selectChain,
+    limit: () => Promise.resolve([] as Record<string, unknown>[]),
+  };
+
   const db = {
+    select: mock(() => selectChain),
     transaction: mock((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   } as unknown as DB["db"];
 
