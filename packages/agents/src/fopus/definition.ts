@@ -15,7 +15,7 @@ export const FOPUS_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
     providerName: 'anthropic',
     source: 'tenant',
-    name: 'Anthropic',
+    name: 'anthropic-api',
   },
 ];
 

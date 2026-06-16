@@ -27,7 +27,7 @@ describe('FOPus definition', () => {
     expect(FOPUS_CREDENTIAL_REQUIREMENTS[0]).toEqual({
       providerName: 'anthropic',
       source: 'tenant',
-      name: 'Anthropic',
+      name: 'anthropic-api',
     });
   });
 

@@ -19,20 +19,57 @@ const PASSWORD = env('SUPERADMIN_PASS', 'password123');
 // In DevTools: Application → Cookies → copy the value of the `better-auth.session_token` cookie.
 const SESSION_TOKEN = process.env['SESSION_TOKEN'];
 const TENANT_SLUG = env('GLOBAL_TENANT_SLUG', 'abklabs');
-const PROVIDER_NAME = env('LLM_PROVIDER_NAME', 'openai-compatible');
-const CREDENTIAL_NAME = env(
-  'OPENAI_COMPATIBLE_CREDENTIAL_NAME',
-  env('LLM_CREDENTIAL_NAME', 'Myra LLM')
-);
-const LLM_API_KEY = env(
-  'OPENAI_COMPATIBLE_API_KEY',
-  env('LLM_API_KEY', 'sk-dummy-key-for-local-dev')
-);
-const LLM_MODEL = env('OPENAI_COMPATIBLE_MODEL', env('LLM_MODEL', 'gpt-4o'));
-const LLM_BASE_URL = env(
-  'OPENAI_COMPATIBLE_BASE_URL',
-  env('LLM_BASE_URL', 'https://api.openai.com/v1')
-);
+
+// Auto-detect provider from well-known env vars if no explicit override is set.
+// Priority: LLM_PROVIDER_NAME > ANTHROPIC_API_KEY > OPENAI_API_KEY > openai-compatible default.
+function detectProvider(): { providerName: string; apiKey: string; model: string; baseURL: string; credentialName?: string } {
+  const explicit = process.env['LLM_PROVIDER_NAME'];
+
+  if (explicit === 'anthropic' || (!explicit && process.env['ANTHROPIC_API_KEY'])) {
+    return {
+      providerName: 'anthropic',
+      apiKey: process.env['ANTHROPIC_API_KEY'] ?? process.env['LLM_API_KEY'] ?? 'sk-dummy',
+      model: process.env['LLM_MODEL'] ?? 'claude-sonnet-4-6',
+      baseURL: process.env['LLM_BASE_URL'] ?? 'https://api.anthropic.com/v1',
+      credentialName: process.env['ANTHROPIC_CREDENTIAL_NAME'] ?? 'anthropic-api',
+    };
+  }
+
+  if (explicit === 'openai' || (!explicit && process.env['OPENAI_API_KEY'])) {
+    return {
+      providerName: 'openai',
+      apiKey: process.env['OPENAI_API_KEY'] ?? process.env['LLM_API_KEY'] ?? 'sk-dummy',
+      model: process.env['LLM_MODEL'] ?? 'gpt-4o',
+      baseURL: process.env['LLM_BASE_URL'] ?? 'https://api.openai.com/v1',
+    };
+  }
+
+  // openai-compatible (explicit or fallback) — keep legacy OPENAI_COMPATIBLE_* var names working
+  return {
+    providerName: explicit ?? 'openai-compatible',
+    apiKey:
+      process.env['OPENAI_COMPATIBLE_API_KEY'] ??
+      process.env['LLM_API_KEY'] ??
+      'sk-dummy-key-for-local-dev',
+    model:
+      process.env['OPENAI_COMPATIBLE_MODEL'] ?? process.env['LLM_MODEL'] ?? 'gpt-4o',
+    baseURL:
+      process.env['OPENAI_COMPATIBLE_BASE_URL'] ??
+      process.env['LLM_BASE_URL'] ??
+      'https://api.openai.com/v1',
+  };
+}
+
+const detected = detectProvider();
+const PROVIDER_NAME = detected.providerName;
+const CREDENTIAL_NAME =
+  process.env['LLM_CREDENTIAL_NAME'] ??
+  detected.credentialName ??
+  process.env['OPENAI_COMPATIBLE_CREDENTIAL_NAME'] ??
+  'Myra LLM';
+const LLM_API_KEY = detected.apiKey;
+const LLM_MODEL = detected.model;
+const LLM_BASE_URL = detected.baseURL;
 
 type CookieJar = string[];
 
@@ -152,7 +189,7 @@ if (!provider) {
   console.error(`[credential] Could not resolve provider ${PROVIDER_NAME}`);
   process.exit(1);
 }
-log(`Provider ID: ${provider.id}`);
+log(`Provider: ${provider.name} (${provider.id})`);
 
 const listCredentials = await api(
   'GET',
@@ -167,6 +204,11 @@ const existingCredential = (
   (listCredentials.data as { data?: Array<{ id: string; name: string }> }).data ?? []
 ).find((c) => c.name === CREDENTIAL_NAME);
 
+log(`Credential name: "${CREDENTIAL_NAME}"`);
+log(`  provider: ${PROVIDER_NAME}`);
+log(`  model:    ${LLM_MODEL}`);
+log(`  base URL: ${LLM_BASE_URL}`);
+
 if (existingCredential) {
   const patch = await api(
     'PATCH',
@@ -175,7 +217,7 @@ if (existingCredential) {
     sessionCookies
   );
   if (patch.status !== 200) fail('patch credential', patch.status, patch.data);
-  log(`Credential updated: ${existingCredential.id}`);
+  log(`Credential updated (existing): ${existingCredential.id}`);
 } else {
   const createCredential = await api(
     'POST',
@@ -192,11 +234,11 @@ if (existingCredential) {
   );
   if (createCredential.status !== 201)
     fail('create credential', createCredential.status, createCredential.data);
-  log(`Credential created: ${(createCredential.data as { id?: string }).id ?? CREDENTIAL_NAME}`);
+  log(`Credential created (new): ${(createCredential.data as { id?: string }).id ?? CREDENTIAL_NAME}`);
 }
 
 // Patch any agent definitions in this tenant that are missing modelConfig.
-log('Patching agent modelConfig...');
+log(`Patching agent modelConfig (model: ${LLM_MODEL})...`);
 const agentsRes = await api(
   'GET',
   `/api/tenants/${tenantId}/agents/definitions`,
