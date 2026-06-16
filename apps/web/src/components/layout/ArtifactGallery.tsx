@@ -4,7 +4,7 @@
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
 import { useRef, useState } from "react";
-import { useArtifacts } from "@workbench/client/react";
+import { useArtifacts, useTenantMembers } from "@workbench/client/react";
 import {
   ArtifactGallery as ArtifactGalleryView,
   ArtifactModal,
@@ -65,6 +65,9 @@ export function ArtifactGallery({
     sort,
     ownerPrincipalId: ownerFilter,
   });
+
+  const { data: members } = useTenantMembers(clientOptions, { tenantId });
+
   const [selected, setSelected] = useState<ArtifactWithSession | null>(null);
 
   const handleQueryChange = (value: string) => {
@@ -108,6 +111,7 @@ export function ArtifactGallery({
         onSortChange={setSort}
         ownerPrincipalId={ownerFilter}
         onOwnerFilterChange={setOwnerFilter}
+        owners={members}
       />
       <ArtifactModal
         open={selected !== null}

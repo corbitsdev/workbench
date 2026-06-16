@@ -4,7 +4,26 @@
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { ArtifactStatus, ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
-import { listArtifacts, listWorkflows, type ClientOptions } from './index';
+import { listArtifacts, listWorkflows, listMembers, type ClientOptions, type TenantMember } from './index';
+
+export type { TenantMember };
+
+export interface UseTenantMembersParams {
+  tenantId?: string | null;
+}
+
+/** Query the list of user principals in the tenant for owner-filter dropdowns. */
+export function useTenantMembers(
+  options: ClientOptions = {},
+  params: UseTenantMembersParams = {}
+): UseQueryResult<TenantMember[]> {
+  return useQuery({
+    queryKey: ['members', params.tenantId ?? null],
+    queryFn: () => listMembers(options, params),
+    enabled: params.tenantId != null,
+    staleTime: 5 * 60_000,
+  });
+}
 
 export interface UseLibraryResourcesParams {
   tenantId?: string | null;

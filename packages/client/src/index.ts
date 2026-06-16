@@ -4,6 +4,7 @@
 // its own hub by passing a `baseUrl` and/or a custom `fetch`. They return clean
 // `@workbench/shared` domain types and contain no presentation logic.
 
+import { type } from 'arktype';
 import type { ArtifactStatus, ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
 
 /** Configuration for a client call. All fields are optional. */
@@ -45,6 +46,29 @@ async function request<T>(path: string, options: ClientOptions): Promise<T> {
     throw new Error(body.error ?? `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
+}
+
+const TenantMemberSchema = type({ id: 'string', name: 'string' });
+const MembersResponseSchema = type({ members: TenantMemberSchema.array() });
+
+export type TenantMember = typeof TenantMemberSchema.infer;
+
+export interface ListMembersParams {
+  tenantId?: string | null;
+}
+
+/** Fetch user principals for a tenant (`GET /members`). */
+export async function listMembers(
+  options: ClientOptions = {},
+  params: ListMembersParams = {}
+): Promise<TenantMember[]> {
+  const search = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  const raw = await request<unknown>(`members${search}`, options);
+  const parsed = MembersResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /members response: ${parsed.summary}`);
+  }
+  return parsed.members;
 }
 
 export interface ListWorkflowsParams {

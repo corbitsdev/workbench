@@ -507,6 +507,7 @@
       "name": "@workbench/client",
       "dependencies": {
         "@workbench/shared": "workspace:*",
+        "arktype": "^2.2.0",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.9.0",

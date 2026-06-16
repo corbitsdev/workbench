@@ -36,6 +36,7 @@ import {
   persistInstanceToolGrants,
 } from './services/agent-provisioning';
 import { createWorkbenchesRouter } from './routes/workbenches';
+import { createMembersRouter } from './routes/members';
 import { createGammaTemplatesRouter } from './routes/gamma-templates';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createInternalToolsRouter } from './routes/tools';
@@ -535,6 +536,7 @@ v1.route(
   createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors)
 );
 v1.route('/', createWorkbenchesRouter(db));
+v1.route('/', createMembersRouter(db));
 v1.route('/', createGammaTemplatesRouter(db));
 v1.route('/', createApprovalsRouter(db));
 v1.route('/', createUploadsRouter(db));

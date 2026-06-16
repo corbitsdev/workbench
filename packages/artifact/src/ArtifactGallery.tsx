@@ -3,7 +3,7 @@
 // The kind->viz/fill/span mapping lives in artifact-visuals (presentation is
 // kept out of the transport layer). This renders the grid and header only.
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { ArtifactWithSession } from '@workbench/shared';
 import type { GalleryArtifact } from './types';
 import { toGalleryArtifact } from './artifact-visuals';
@@ -32,6 +32,8 @@ export interface ArtifactGalleryProps {
   ownerPrincipalId?: string;
   /** Called when the user changes the owner filter. */
   onOwnerFilterChange?: (ownerPrincipalId: string | undefined) => void;
+  /** Tenant members for the owner filter. Dropdown shows only when two or more are provided. */
+  owners?: { id: string; name: string }[];
 }
 
 export function ArtifactGallery({
@@ -47,6 +49,7 @@ export function ArtifactGallery({
   onSortChange,
   ownerPrincipalId,
   onOwnerFilterChange,
+  owners,
 }: ArtifactGalleryProps) {
   const [internalSort, setInternalSort] = useState<'newest' | 'oldest'>('newest');
   const sort = sortProp ?? internalSort;
@@ -59,19 +62,6 @@ export function ArtifactGallery({
       setInternalSort(next);
     }
   }
-
-  // Derive unique owners from the loaded artifacts for the filter dropdown.
-  const owners = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const a of artifacts) {
-      if (a.ownerPrincipalId && a.ownerName) {
-        seen.set(a.ownerPrincipalId, a.ownerName);
-      } else if (a.ownerPrincipalId) {
-        seen.set(a.ownerPrincipalId, a.ownerPrincipalId.slice(0, 8));
-      }
-    }
-    return [...seen.entries()].map(([id, name]) => ({ id, name }));
-  }, [artifacts]);
 
   const tiles = artifacts.map(toGalleryArtifact);
   const isSearching = query.trim().length > 0;
@@ -102,7 +92,7 @@ export function ArtifactGallery({
           {tiles.length} items
         </span>
         <div className="flex-1" />
-        {owners.length > 0 && onOwnerFilterChange && (
+        {owners && owners.length > 1 && onOwnerFilterChange && (
           <select
             value={ownerPrincipalId ?? ''}
             onChange={(e) =>
