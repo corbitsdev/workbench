@@ -77,6 +77,12 @@ import {
   FOPUS_CAPABILITIES,
   FOPUS_MODEL_CONFIG,
 } from './fopus/definition';
+import {
+  FONNET_CREDENTIAL_REQUIREMENTS,
+  FONNET_GRANT_REQUIREMENTS,
+  FONNET_CAPABILITIES,
+  FONNET_MODEL_CONFIG,
+} from './fonnet/definition';
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -172,6 +178,17 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     grantRequirements: FOPUS_GRANT_REQUIREMENTS,
     capabilities: { tools: [...FOPUS_CAPABILITIES.tools] },
     modelConfig: FOPUS_MODEL_CONFIG,
+  },
+  {
+    key: 'fonnet',
+    name: 'FOnnet',
+    description:
+      'Fable-style Sonnet agent with broad research and local artifact-writing tools, excluding outbound mail send.',
+    systemPrompt: FOPUS_DEPLOY_PROMPT,
+    credentialRequirements: FONNET_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: FONNET_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...FONNET_CAPABILITIES.tools] },
+    modelConfig: FONNET_MODEL_CONFIG,
   },
   {
     key: 'freddy',
