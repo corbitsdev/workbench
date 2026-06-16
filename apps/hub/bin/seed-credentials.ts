@@ -140,6 +140,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: 'anthropic',
       credentialName: 'anthropic-api',
       secret: anthropicKey,
+      metadata: { baseURL: 'https://api.anthropic.com' },
     });
   }
 

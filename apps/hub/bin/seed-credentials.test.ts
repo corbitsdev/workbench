@@ -50,6 +50,19 @@ describe('seed-credentials buildEntries', () => {
     expect(entries.find((e) => e.providerName === 'youtube')).toBeUndefined();
   });
 
+  it('includes anthropic provider metadata when ANTHROPIC_API_KEY is set', () => {
+    process.env['ANTHROPIC_API_KEY'] = 'sk-ant-test123';
+
+    const entries = buildEntries();
+
+    const anthropic = entries.find((e) => e.providerName === 'anthropic');
+    expect(anthropic).toBeDefined();
+    expect(anthropic?.secret).toBe('sk-ant-test123');
+    expect(anthropic?.providerPlugin).toBe('anthropic');
+    expect(anthropic?.credentialName).toBe('anthropic-api');
+    expect(anthropic?.metadata).toEqual({ baseURL: 'https://api.anthropic.com' });
+  });
+
   it('includes bluesky entry when both BLUESKY_APP_PASSWORD and BLUESKY_HANDLE are set', () => {
     process.env['BLUESKY_APP_PASSWORD'] = 'xxxx-yyyy-zzzz';
     process.env['BLUESKY_HANDLE'] = 'test.bsky.social';
