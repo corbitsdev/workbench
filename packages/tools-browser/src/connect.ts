@@ -29,7 +29,9 @@ export const CONNECT_TIMEOUT_MS = 15_000;
 export const ACTION_TIMEOUT_MS = 9_000;
 
 export const realConnector: BrowserConnector = async (connectUrl: string) => {
-  const browser = await chromium.connectOverCDP(connectUrl, { timeout: CONNECT_TIMEOUT_MS });
+  console.log("Browserbase Connect URL: ", connectUrl);
+  const browser = await chromium.connectOverCDP(connectUrl); // Temp Removal Experiment, --  { timeout: CONNECT_TIMEOUT_MS }
+  console.log("Browser: ", browser)
   return browser as unknown as BrowserLike;
 };
 
