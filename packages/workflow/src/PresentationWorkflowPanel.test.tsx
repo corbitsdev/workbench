@@ -84,7 +84,7 @@ describe('PresentationWorkflowPanel', () => {
     expect(screen.getByText('Deck ready')).not.toBeNull();
   });
 
-  it('shows an Open in Gamma link when done and gammaUrl is provided', () => {
+  it('shows an embedded deck and Open in Gamma link when done and gammaUrl is provided', () => {
     render(
       <PresentationWorkflowPanel
         workflow={makeView({ status: 'done', gammaUrl: 'https://gamma.app/deck/abc' })}
@@ -92,8 +92,22 @@ describe('PresentationWorkflowPanel', () => {
         onClose={() => {}}
       />
     );
+    const frame = screen.getByTitle('Generated Gamma presentation') as HTMLIFrameElement;
+    expect(frame.src).toBe('https://gamma.app/deck/abc');
     const link = screen.getByText('Open in Gamma');
     expect(link).not.toBeNull();
+  });
+
+  it('does not embed an unsafe presentation URL', () => {
+    render(
+      <PresentationWorkflowPanel
+        workflow={makeView({ status: 'done', gammaUrl: 'javascript:alert(1)' })}
+        gammaUrl="javascript:alert(1)"
+        onClose={() => {}}
+      />
+    );
+    expect(screen.queryByTitle('Generated Gamma presentation')).toBeNull();
+    expect(screen.getByText('Presentation URL is invalid or unavailable.')).not.toBeNull();
   });
 
   it('shows a failure state without going blank', () => {

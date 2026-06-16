@@ -318,6 +318,7 @@ function createPresentationMockDb(
   options: {
     workflowRow?: Record<string, unknown> | null;
     onSetUpdate?: (values: Record<string, unknown>) => void;
+    onInsert?: (values: Record<string, unknown>) => void;
   } = {}
 ) {
   const workflowRow =
@@ -337,9 +338,12 @@ function createPresentationMockDb(
     },
     delete: mock(() => ({ where: mock(() => Promise.resolve()) })),
     insert: mock(() => ({
-      values: mock((values: unknown) => ({
-        returning: mock(() => [{ id: 'art-1', ...(values as object) }]),
-      })),
+      values: mock((values: unknown) => {
+        options.onInsert?.(values as Record<string, unknown>);
+        return {
+          returning: mock(() => [{ id: 'art-1', ...(values as object) }]),
+        };
+      }),
     })),
     update: mock(() => ({
       set: mock((values: Record<string, unknown>) => {
@@ -431,16 +435,18 @@ describe('runPresentationGenerate', () => {
     expect(errorMsg as string).toContain('unexpected error');
   });
 
-  it('sets status to done and writes gammaUrl on successful pipeline', async () => {
+  it('sets status to done, writes gammaUrl, and stores the deck URL in the presentation artifact', async () => {
     mockRunSingleTurnAgent.mockImplementation(() => Promise.resolve('reviewed slide content'));
 
     const statusUpdates: string[] = [];
     const setValues: Array<Record<string, unknown>> = [];
+    const insertedValues: Array<Record<string, unknown>> = [];
     const db = createPresentationMockDb({
       onSetUpdate: (v) => {
         setValues.push(v);
         if (typeof v.status === 'string') statusUpdates.push(v.status);
       },
+      onInsert: (v) => insertedValues.push(v),
     });
 
     await runPresentationGenerate(db as unknown as HubDb, 'wf-pres-1', 'tenant-1', SOURCE);
@@ -450,5 +456,13 @@ describe('runPresentationGenerate', () => {
     expect(doneUpdate).toBeDefined();
     const input = doneUpdate?.input as Record<string, unknown> | undefined;
     expect(input?.gammaUrl).toBe('https://gamma.app/deck/test-123');
+
+    const insertedArtifact = insertedValues.find((v) => v.kind === 'presentation');
+    expect(insertedArtifact?.content).toBe('https://gamma.app/deck/test-123');
+    expect(insertedArtifact?.source).toEqual({
+      gammaUrl: 'https://gamma.app/deck/test-123',
+      gammaId: 'gid-test-123',
+      reviewedContent: 'reviewed slide content',
+    });
   });
 });

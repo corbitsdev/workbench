@@ -443,7 +443,8 @@ export async function runPresentationGenerate(
       sessionId: workflowId,
       kind: 'presentation',
       title: callTitle,
-      content: reviewedContent,
+      content: gammaUrl,
+      source: { gammaUrl, gammaId, reviewedContent },
       status: 'draft',
       version: 1,
     });

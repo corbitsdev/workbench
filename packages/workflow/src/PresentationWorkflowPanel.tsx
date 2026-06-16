@@ -94,6 +94,32 @@ function CloseButton({ onClose }: { onClose: () => void }) {
   );
 }
 
+function isSafePresentationUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function PresentationFrame({ url }: { url: string }) {
+  return (
+    <div className="overflow-hidden rounded-[10px] border border-border bg-surface">
+      <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+        <iframe
+          src={url}
+          allow="fullscreen"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+          className="absolute inset-0 h-full w-full border-0"
+          title="Generated Gamma presentation"
+        />
+      </div>
+    </div>
+  );
+}
+
 function StatusBody({
   status,
   gammaUrl,
@@ -239,10 +265,20 @@ export function PresentationWorkflowPanel({
           gammaUrl={gammaUrl ?? null}
           errorMessage={workflow.errorMessage ?? null}
         />
+
+        {workflow.status === 'done' &&
+          gammaUrl &&
+          (isSafePresentationUrl(gammaUrl) ? (
+            <PresentationFrame url={gammaUrl} />
+          ) : (
+            <p className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3 text-[12px] text-text-3">
+              Presentation URL is invalid or unavailable.
+            </p>
+          ))}
       </div>
 
       <div className="border-t border-border bg-surface px-4 py-3 shrink-0 space-y-2">
-        {gammaUrl && workflow.status === 'done' && (
+        {isSafePresentationUrl(gammaUrl) && workflow.status === 'done' && (
           <a
             href={gammaUrl}
             target="_blank"
