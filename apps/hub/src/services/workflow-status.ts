@@ -14,6 +14,7 @@ export function mapDbStatusToSessionStatus(status: string): string {
     running: 'ready',
     generating: 'generating',
     reviewing: 'reviewing',
+    feedback: 'feedback',
     done: 'done',
     failed: 'failed',
   };
