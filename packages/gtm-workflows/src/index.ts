@@ -63,3 +63,27 @@ export {
   resolveArtifactKind,
   selectCollateralTypeIds,
 } from './collateral-generation';
+export {
+  redditOpportunityScannerWorkflow,
+  redditOpportunityScanArtifactSchema,
+  redditOpportunityRecommendationSchema,
+} from './reddit-opportunity-scanner';
+export {
+  blindAbComparisonWorkflow,
+  AB_COMPARISON_WORKFLOW_KIND,
+  AB_COMPARISON_MODELS_BY_PLUGIN,
+  AB_COMPARISON_PROVIDER_PLUGINS,
+  ANTHROPIC_AB_COMPARISON_MODELS,
+  GOOGLE_GENAI_AB_COMPARISON_MODELS,
+  OPENAI_AB_COMPARISON_MODELS,
+  OPENCODE_ZEN_CHAT_COMPLETIONS_MODELS,
+  defaultAbComparisonModel,
+  isAbComparisonModelAllowed,
+  listAbComparisonModels,
+  validateAbComparisonProviders,
+  type AbComparisonProviderOption,
+  type AbComparisonProviderPlugin,
+  type AbComparisonInput,
+  type AbComparisonBranch,
+  type AbComparisonRanking,
+} from './blind-ab-comparison';

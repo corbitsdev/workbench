@@ -180,6 +180,52 @@ export async function getWorkflowAssignments(
   return raw ?? {};
 }
 
+export function providerMetadataModel(metadata: unknown): string | undefined {
+  const model = (metadata as { model?: unknown } | null)?.model;
+  return typeof model === 'string' && model.trim().length > 0 ? model.trim() : undefined;
+}
+
+/**
+ * Resolve an inference source from a stored credential id. Model comes from an
+ * explicit override (e.g. blind A/B provider option) or the provider metadata
+ * `model` field seeded with the credential — never a generic "default" placeholder.
+ */
+export async function resolveCredentialInferenceSource(
+  db: HubDb,
+  tenantId: string,
+  credentialId: string,
+  modelOverride?: string
+): Promise<InferenceSource | null> {
+  const cred = await resolveCredentialById(db, tenantId, credentialId);
+  if (!cred) return null;
+
+  const providerRow = await db.query.provider.findFirst({
+    where: eq(intxSchema.provider.id, cred.providerId),
+  });
+  if (!providerRow) return null;
+
+  const meta = ProviderMetadata(providerRow.metadata ?? {});
+  if (meta instanceof type.errors) return null;
+
+  const model = modelOverride ?? providerMetadataModel(providerRow.metadata);
+  if (!model) {
+    log.warn('Credential has no inference model configured', {
+      credentialId,
+      providerName: providerRow.name,
+    });
+    return null;
+  }
+
+  return {
+    id: `${providerRow.plugin}:${model}`,
+    provider: providerRow.plugin,
+    baseURL: meta.baseURL,
+    apiKey: cred.secret,
+    model,
+    ...(meta.maxTokens !== undefined ? { defaults: { maxTokens: meta.maxTokens } } : {}),
+  };
+}
+
 /**
  * Resolve the inference source for a workflow step.
  * Uses the workflow definition's credential requirements (resolved via Interchange's

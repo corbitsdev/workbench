@@ -4,6 +4,7 @@ import { api, ApiError, uploadFile } from '../lib/api';
 import { logger } from '../lib/logger';
 import { listWorkbenches, listAgentInstances } from '../lib/hub-api';
 import type { AgentInstance } from '../lib/hub-api';
+import type { AbComparisonInput, AbComparisonProviderOption } from '@workbench/gtm-workflows';
 import type { WorkflowState } from '@workbench/shared';
 
 export type { AgentInstance };
@@ -25,7 +26,20 @@ export interface WorkflowTypeDefinition {
   description: string;
 }
 
-export type StepName = 'intake' | 'analyze' | 'generate';
+export type StepName =
+  | 'intake'
+  | 'analyze'
+  | 'generate'
+  | 'approve'
+  | 'review'
+  | 'scan'
+  | 'providers'
+  | 'configure'
+  | 'input'
+  | 'execute'
+  | 'compare'
+  | 'feedback'
+  | 'persist';
 
 export interface WorkflowStep {
   completed: boolean;
@@ -68,6 +82,12 @@ export function useWorkflow(workflowId: string) {
       // another client is observed.
       const status = data.status;
       const settled = status === 'done' || status === 'failed' || status === 'ready';
+      if (
+        data.kind === 'blind-ab-comparison' &&
+        (data.currentStep === 'execute' || status === 'reviewing')
+      ) {
+        return 1000;
+      }
       return settled ? false : 5000;
     },
   });
@@ -155,6 +175,53 @@ export function useUpdateSelection(workflowId: string) {
   });
 }
 
+export function useUpdateRedditScanReview(workflowId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      artifactId,
+      recommendations,
+      scanConfig,
+    }: {
+      artifactId: string;
+      recommendations: unknown;
+      scanConfig: unknown;
+    }) => {
+      return api<unknown>('PATCH', `/workflows/${workflowId}/artifacts/${artifactId}/reddit-scan`, {
+        recommendations,
+        scanConfig,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+    },
+  });
+}
+
+export function useUpdateRedditOpportunityStatus(workflowId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      artifactId,
+      opportunityId,
+      status,
+    }: {
+      artifactId: string;
+      opportunityId: string;
+      status: string;
+    }) => {
+      return api<unknown>(
+        'PATCH',
+        `/workflows/${workflowId}/artifacts/${artifactId}/reddit-opportunity`,
+        { opportunityId, status }
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+    },
+  });
+}
+
 export function useUpdateCompanyName(workflowId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -232,6 +299,7 @@ export interface WorkflowInferenceCredential {
   providerName: string;
   providerPlugin: string;
   baseURL: string;
+  model?: string;
 }
 
 export interface EnabledWorkflowEntry {
@@ -393,6 +461,13 @@ export function useCreateWorkflow() {
       source?: string;
       workflowKind: string;
       tenantId?: string;
+      inputUrl?: string;
+      brandName?: string;
+      targetGeography?: string;
+      icpHints?: string;
+      providers?: AbComparisonProviderOption[];
+      systemPrompt?: string;
+      input?: AbComparisonInput;
     }) => {
       logger.info('Creating workflow', {
         source: body.source,

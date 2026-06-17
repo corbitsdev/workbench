@@ -24,6 +24,7 @@ describe('mapDbStatusToSessionStatus', () => {
     expect(mapDbStatusToSessionStatus('running')).toBe('ready');
     expect(mapDbStatusToSessionStatus('generating')).toBe('generating');
     expect(mapDbStatusToSessionStatus('reviewing')).toBe('reviewing');
+    expect(mapDbStatusToSessionStatus('feedback')).toBe('feedback');
     expect(mapDbStatusToSessionStatus('done')).toBe('done');
     expect(mapDbStatusToSessionStatus('failed')).toBe('failed');
   });

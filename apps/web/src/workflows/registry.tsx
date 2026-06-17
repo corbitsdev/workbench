@@ -5,6 +5,10 @@ import { PresentationNewPane } from './presentation/PresentationNewPane';
 import { PresentationSelectedPanel } from './presentation/PresentationSelectedPanel';
 import { SeoEnrichmentNewPane } from './seo-enrichment/SeoEnrichmentNewPane';
 import { SeoEnrichmentSelectedPanel } from './seo-enrichment/SeoEnrichmentSelectedPanel';
+import { AbComparisonNewPane } from './blind-ab-comparison/AbComparisonNewPane';
+import { AbComparisonSelectedPanel } from './blind-ab-comparison/AbComparisonSelectedPanel';
+import { RedditOpportunityNewPane } from './reddit-opportunity-scanner/RedditOpportunityNewPane';
+import { RedditOpportunitySelectedPanel } from './reddit-opportunity-scanner/RedditOpportunitySelectedPanel';
 
 export interface AgentSelectionTarget {
   instanceId: string;
@@ -51,6 +55,14 @@ const WORKFLOW_UI: Record<string, WorkflowUiEntry> = {
   'seo-enrichment': {
     NewPane: SeoEnrichmentNewPane,
     SelectedPanel: SeoEnrichmentSelectedPanel,
+  },
+  'blind-ab-comparison': {
+    NewPane: AbComparisonNewPane,
+    SelectedPanel: AbComparisonSelectedPanel,
+  },
+  'reddit-opportunity-scanner': {
+    NewPane: RedditOpportunityNewPane,
+    SelectedPanel: RedditOpportunitySelectedPanel,
   },
 };
 

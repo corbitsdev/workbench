@@ -22,6 +22,10 @@
     "./presentation-generation": {
       "types": "./src/presentation-generation/index.ts",
       "default": "./src/presentation-generation/index.ts"
+    },
+    "./reddit-opportunity-scanner": {
+      "types": "./src/reddit-opportunity-scanner/index.ts",
+      "default": "./src/reddit-opportunity-scanner/index.ts"
     }
   },
   "scripts": {

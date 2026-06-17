@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { parseSelectionArtifactContent, SELECTION_ARTIFACT_KIND } from '../resource-enrichment';
 import {
   buildErrorSelectionDraft,
+  buildSeoResponseSeed,
   buildSeoSelectionDraft,
   buildSeoUserMessage,
   enrichSeoRow,
@@ -22,6 +23,7 @@ const validPayload: SeoPayload = {
 
 const row = {
   productSlug: 'eucalyptus-frame',
+  imageLink: 'https://example.com/eucalyptus-frame.png',
   productName: 'Eucalyptus Frame',
   tertiaryCategory: '',
   subCategory: 'Invitations',
@@ -77,6 +79,7 @@ describe('buildSeoSelectionDraft', () => {
     expect(content.fields.Title).toHaveLength(5);
     expect(content.fields.Description).toHaveLength(5);
     expect(content.fields.Summary).toHaveLength(5);
+    expect(content.imageLink).toBe('https://example.com/eucalyptus-frame.png');
     expect(content.chosen).toBeNull();
   });
 });
@@ -94,7 +97,19 @@ describe('buildSeoUserMessage', () => {
   it('includes the product metadata and the generate instruction', () => {
     const message = buildSeoUserMessage(row);
     expect(message).toContain('eucalyptus-frame');
-    expect(message).toContain('5x3 SEO variants');
+    expect(message).toContain('"seo_titles": []');
+    expect(message).toContain('exactly 5 non-empty string variants');
+  });
+});
+
+describe('buildSeoResponseSeed', () => {
+  it('anchors the required response shape to the row slug', () => {
+    expect(buildSeoResponseSeed(row)).toEqual({
+      sku_id: 'eucalyptus-frame',
+      seo_titles: [],
+      seo_descriptions: [],
+      product_summaries: [],
+    });
   });
 });
 

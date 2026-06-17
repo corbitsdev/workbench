@@ -2,6 +2,8 @@ import { usesSocialPostPreview } from '@workbench/artifact';
 import PresentationBody from './PresentationBody';
 import ResearchBody, { parseResearchBrief } from './ResearchBody';
 import SelectionBody from './SelectionBody';
+import RedditOpportunityBody, { parseRedditOpportunityScan } from './RedditOpportunityBody';
+import { buildApiUrl } from '../lib/api';
 
 interface ArtifactBodyArtifact {
   content: string;
@@ -46,7 +48,7 @@ function parseMarkdownTable(text: string): { headers: string[]; rows: string[][]
   return { headers, rows };
 }
 
-function MarkdownBlock({ text }: { text: string }) {
+export function MarkdownBlock({ text }: { text: string }) {
   const lines = text.split('\n');
   const elements: React.ReactNode[] = [];
   let i = 0;
@@ -206,7 +208,7 @@ function CsvExportBody({ body, artifactId }: { body: string; artifactId: string 
   return (
     <div className="space-y-3">
       <a
-        href={`/api/v1/artifacts/${artifactId}/download`}
+        href={buildApiUrl(`/artifacts/${artifactId}/download`)}
         download
         className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
       >
@@ -291,6 +293,17 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
         return <ResearchBody brief={parsedBrief} />;
       }
       return <OnePagerBody body={body} />;
+    }
+    case 'reddit-opportunity-scan': {
+      for (const candidate of [brief, artifact.source, body]) {
+        const parsedScan = parseRedditOpportunityScan(candidate);
+        if (parsedScan !== null) {
+          return <RedditOpportunityBody scan={parsedScan} mode="results" />;
+        }
+      }
+      return (
+        <p className="text-sm text-red-500 p-4">Invalid reddit opportunity artifact payload.</p>
+      );
     }
     // fallback
     default:

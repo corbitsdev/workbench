@@ -1,12 +1,16 @@
-import { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from '@workbench/agents';
 import type { WorkflowCredentialRequirement, WorkflowType } from '@workbench/workflow-core';
 import { resourceEnrichmentSteps, resourceEnrichmentWorkflow } from '../resource-enrichment';
+import {
+  SEO_INFERENCE_CREDENTIAL_NAME,
+  SEO_INFERENCE_MODEL,
+  SEO_INFERENCE_PROVIDER,
+} from './constants';
 
 const SEO_INFERENCE_REQUIREMENT: WorkflowCredentialRequirement = {
-  providerName: 'openai-compatible',
+  providerName: SEO_INFERENCE_PROVIDER,
   source: 'tenant',
-  name: LLM_CREDENTIAL_NAME,
-  defaultModel: LLM_DEFAULT_MODEL,
+  name: SEO_INFERENCE_CREDENTIAL_NAME,
+  defaultModel: SEO_INFERENCE_MODEL,
 };
 
 // Specific kind: composes the resource-enrichment base (step shape + generic

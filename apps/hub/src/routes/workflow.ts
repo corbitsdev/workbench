@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, max, ne, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
+import { reportLoggedError } from '@workbench/sentry';
 import { schema as intxSchema, getAncestorChain, ProviderMetadata } from '@intx/db';
 import { type } from 'arktype';
 import { listLatestGammaTemplates } from '../lib/gamma-templates';
@@ -15,6 +16,11 @@ import {
   SELECTION_ARTIFACT_KIND,
   setSelectionChosen,
   seoEnrichmentWorkflow,
+  redditOpportunityScannerWorkflow,
+  blindAbComparisonWorkflow,
+  validateAbComparisonProviders,
+  type AbComparisonBranch,
+  type AbComparisonInput,
 } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
 import {
@@ -38,6 +44,18 @@ import {
   runResourceEnrichmentEnrich,
   runResourceEnrichmentExport,
 } from '../services/resource-enrichment';
+import { runAbComparisonExecution, persistAbComparisonResults } from '../services/ab-comparison';
+import {
+  RedditOpportunityScannerError,
+  runRedditOpportunityAnalyze,
+  runRedditOpportunityScan,
+  updateRedditScanArtifactContent,
+} from '../services/reddit-opportunity-scanner';
+import {
+  mergeRedditScanReview,
+  updateOpportunityStatus,
+  REDDIT_OPPORTUNITY_SCAN_ARTIFACT_KIND,
+} from '@workbench/gtm-workflows/reddit-opportunity-scanner';
 import {
   mapDbStatusToSessionStatus,
   deriveCurrentStepForWorkflow,
@@ -45,6 +63,8 @@ import {
   validateWorkflowInput,
   isWorkflowOwner,
   resolveStepInferenceSource,
+  resolveCredentialInferenceSource,
+  providerMetadataModel,
   resolveAgentStepInferenceSource,
   resolveStepGranolaApiKey,
   resolveGranolaApiKey,
@@ -64,6 +84,8 @@ const log = getLogger(['api', 'workflow']);
 workflowRegistry.register(collateralGenerationWorkflow);
 workflowRegistry.register(presentationGenerationWorkflow);
 workflowRegistry.register(seoEnrichmentWorkflow);
+workflowRegistry.register(redditOpportunityScannerWorkflow);
+workflowRegistry.register(blindAbComparisonWorkflow);
 
 // Per-step output-token caps applied when a step has no explicit override.
 // These are caps, not floors. Analyze is highest because reasoning models spend
@@ -155,6 +177,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       providerName: string;
       providerPlugin: string;
       baseURL: string;
+      model?: string;
     }> = [];
 
     const INFERENCE_PLUGINS = new Set(['openai-compatible', 'anthropic', 'google-genai', 'openai']);
@@ -165,12 +188,14 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       if (!INFERENCE_PLUGINS.has(provider.plugin)) continue;
       const parsed = ProviderMetadata(provider.metadata ?? {});
       if (parsed instanceof type.errors) continue;
+      const model = providerMetadataModel(provider.metadata);
       result.push({
         id: cred.id,
         name: cred.name,
         providerName: provider.name,
         providerPlugin: provider.plugin,
         baseURL: parsed.baseURL,
+        ...(model ? { model } : {}),
       });
     }
 
@@ -432,6 +457,95 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       log.info('Presentation generation workflow created', {
         workflowId: wfRow.id,
       });
+      return c.json({ id: wfRow.id, status: wfRow.status, kind: wfRow.kind }, 201);
+    }
+
+    if (workflowKind === 'blind-ab-comparison') {
+      const providers =
+        typeof body.providers === 'object' && Array.isArray(body.providers)
+          ? body.providers
+          : undefined;
+      const systemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined;
+      const inputDef =
+        typeof body.input === 'object' && body.input !== null ? body.input : undefined;
+
+      if (!providers || !Array.isArray(providers)) {
+        return c.json({ error: 'At least two providers are required' }, 400);
+      }
+      const providerValidation = validateAbComparisonProviders(
+        providers as Array<{ providerPlugin?: string; model?: string }>
+      );
+      if (!providerValidation.valid) {
+        return c.json({ error: providerValidation.error }, 400);
+      }
+      if (!inputDef) {
+        return c.json({ error: 'Input definition is required' }, 400);
+      }
+
+      const [wfRow] = await db
+        .insert(workflowRun)
+        .values({
+          tenantId: userContext.tenantId,
+          principalId: userContext.principalId,
+          kind: workflowKind,
+          status: 'pending',
+          input: {
+            providers,
+            systemPrompt,
+            input: inputDef,
+          },
+        })
+        .returning();
+      if (!wfRow) {
+        log.error('Failed to create A/B comparison workflow row', {
+          tenantId: userContext.tenantId,
+        });
+        return c.json({ error: 'Failed to create workflow' }, 500);
+      }
+      log.info('A/B comparison workflow created', { workflowId: wfRow.id });
+      return c.json({ id: wfRow.id, status: wfRow.status, kind: wfRow.kind }, 201);
+    }
+
+    if (workflowKind === 'reddit-opportunity-scanner') {
+      const inputUrl = typeof body.inputUrl === 'string' ? body.inputUrl.trim() : undefined;
+      if (!inputUrl) {
+        log.warn('Missing inputUrl for reddit-opportunity-scanner');
+        return c.json({ error: 'inputUrl is required' }, 400);
+      }
+      if (!inputUrl.startsWith('http://') && !inputUrl.startsWith('https://')) {
+        log.warn('Invalid inputUrl for reddit-opportunity-scanner', { inputUrl });
+        return c.json(
+          { error: 'inputUrl must be a valid URL starting with http:// or https://' },
+          400
+        );
+      }
+      const brandName = typeof body.brandName === 'string' ? body.brandName.trim() : undefined;
+      const targetGeography =
+        typeof body.targetGeography === 'string' ? body.targetGeography.trim() : undefined;
+      const icpHints = typeof body.icpHints === 'string' ? body.icpHints.trim() : undefined;
+
+      const [wfRow] = await db
+        .insert(workflowRun)
+        .values({
+          tenantId: userContext.tenantId,
+          principalId: userContext.principalId,
+          kind: workflowKind,
+          status: 'pending',
+          input: {
+            inputUrl,
+            brandName,
+            targetGeography,
+            icpHints,
+          },
+        })
+        .returning();
+      if (!wfRow) {
+        log.error('Failed to create reddit opportunity scanner workflow row', {
+          tenantId: userContext.tenantId,
+        });
+        return c.json({ error: 'Failed to create workflow' }, 500);
+      }
+      log.info('Reddit opportunity scanner workflow created', { workflowId: wfRow.id });
       return c.json({ id: wfRow.id, status: wfRow.status, kind: wfRow.kind }, 201);
     }
 
@@ -1126,6 +1240,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       callTitle?: string;
       sourceArtifactId?: string;
       agentInstanceId?: string;
+      ranking?: { branchIds?: string[]; feedback?: Record<string, string> };
     };
 
     log.info('Running step', { workflowId: id, step: body.step });
@@ -1190,11 +1305,12 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
             userContext,
             source,
             DEFAULT_STEP_MAX_OUTPUT_TOKENS.generate
-          ).catch((err) => {
+          ).catch(async (err) => {
             log.error('Resource enrichment enrich failed', {
               workflowId: id,
-              error: err instanceof Error ? err.message : String(err),
+              error: err instanceof Error ? err : new Error(String(err)),
             });
+            await db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
           });
           return c.json({ status: 'generating' }, 202);
         }
@@ -1446,6 +1562,193 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       }
 
       return c.json({ error: 'transcriptSource must be paste, granola, or artifact' }, 400);
+    }
+
+    if (wf.kind === 'reddit-opportunity-scanner') {
+      if (step === 'analyze') {
+        if (wf.status !== 'pending' && wf.status !== 'failed') {
+          return c.json(
+            { error: 'Analyze step can only be submitted from pending or failed status' },
+            409
+          );
+        }
+        const source = await resolveStepInferenceSource(
+          db,
+          userContext.tenantId,
+          userContext.principalId,
+          wf.kind,
+          'analyze'
+        );
+        if (!source) {
+          return c.json({ error: 'No LLM credential configured for the analyze step' }, 400);
+        }
+        await db.update(workflowRun).set({ status: 'analyzing' }).where(eq(workflowRun.id, id));
+        void runRedditOpportunityAnalyze(
+          db,
+          id,
+          userContext,
+          source,
+          DEFAULT_STEP_MAX_OUTPUT_TOKENS.analyze
+        ).catch(async (err) => {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          await reportLoggedError(log, 'Reddit opportunity analyze failed', err, {
+            workflowId: id,
+          });
+          await db
+            .update(workflowRun)
+            .set({ status: 'failed', output: { errorMessage } })
+            .where(eq(workflowRun.id, id));
+        });
+        return c.json({ status: 'analyzing' }, 202);
+      }
+      if (step === 'scan') {
+        if (wf.status !== 'reviewing') {
+          return c.json({ error: 'Scan step can only be submitted from reviewing status' }, 409);
+        }
+        const source = await resolveStepInferenceSource(
+          db,
+          userContext.tenantId,
+          userContext.principalId,
+          wf.kind,
+          'scan'
+        );
+        if (!source) {
+          return c.json({ error: 'No LLM credential configured for the scan step' }, 400);
+        }
+        await db.update(workflowRun).set({ status: 'running' }).where(eq(workflowRun.id, id));
+        void runRedditOpportunityScan(
+          db,
+          id,
+          userContext,
+          source,
+          DEFAULT_STEP_MAX_OUTPUT_TOKENS.generate
+        ).catch(async (err) => {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          await reportLoggedError(log, 'Reddit opportunity scan failed', err, { workflowId: id });
+          await db
+            .update(workflowRun)
+            .set({ status: 'reviewing', output: { errorMessage } })
+            .where(eq(workflowRun.id, id));
+        });
+        return c.json({ status: 'running' }, 202);
+      }
+      return c.json({ error: `Invalid step for reddit workflow: ${step}` }, 400);
+    }
+
+    if (step === 'execute' && wf.kind === 'blind-ab-comparison') {
+      const currentInput = (wf.input as Record<string, unknown>) ?? {};
+      const providers = currentInput['providers'] as
+        | Array<{
+            credentialId: string;
+            providerName: string;
+            providerPlugin: string;
+            model?: string;
+            skillIds: string[];
+          }>
+        | undefined;
+      const inputDef = currentInput['input'] as AbComparisonInput | undefined;
+      const systemPrompt =
+        typeof currentInput['systemPrompt'] === 'string' ? currentInput['systemPrompt'] : undefined;
+
+      if (!providers) {
+        return c.json({ error: 'At least two providers are required' }, 400);
+      }
+      const executeProviderValidation = validateAbComparisonProviders(providers);
+      if (!executeProviderValidation.valid) {
+        return c.json({ error: executeProviderValidation.error }, 400);
+      }
+      if (!inputDef) {
+        return c.json({ error: 'Input definition is required' }, 400);
+      }
+
+      await db.update(workflowRun).set({ status: 'running' }).where(eq(workflowRun.id, id));
+
+      void runAbComparisonExecution(
+        db,
+        id,
+        userContext,
+        providers,
+        inputDef,
+        systemPrompt,
+        async (option) =>
+          resolveCredentialInferenceSource(
+            db,
+            userContext.tenantId,
+            option.credentialId,
+            option.model
+          )
+      ).catch((err) => {
+        log.error('A/B comparison execution failed', {
+          workflowId: id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        void db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
+      });
+
+      return c.json({ status: 'running' }, 202);
+    }
+
+    if (step === 'compare' && wf.kind === 'blind-ab-comparison') {
+      const currentInput = (wf.input as Record<string, unknown>) ?? {};
+      const ranking = body.ranking;
+      if (
+        !ranking ||
+        !Array.isArray(ranking.branchIds) ||
+        !ranking.branchIds.every((id) => typeof id === 'string')
+      ) {
+        return c.json({ error: 'Ranking is required' }, 400);
+      }
+      await db
+        .update(workflowRun)
+        .set({
+          status: 'feedback',
+          input: {
+            ...currentInput,
+            ranking: {
+              branchIds: ranking.branchIds,
+              feedback: ranking.feedback,
+            },
+          },
+        })
+        .where(eq(workflowRun.id, id));
+      return c.json({ status: 'feedback' }, 200);
+    }
+
+    if (step === 'persist' && wf.kind === 'blind-ab-comparison') {
+      const currentInput = (wf.input as Record<string, unknown>) ?? {};
+      const branches = currentInput['branches'] as AbComparisonBranch[] | undefined;
+      // Merge request body into currentInput so the API contract is respected
+      const bodyRanking = body['ranking'];
+      const bodyFeedback = body['feedback'];
+      const ranking = (bodyRanking !== undefined ? bodyRanking : currentInput['ranking']) as
+        | { branchIds: string[]; feedback?: Record<string, string> }
+        | undefined;
+      const feedback = (bodyFeedback !== undefined ? bodyFeedback : currentInput['feedback']) as
+        | Record<string, string>
+        | undefined;
+
+      if (!branches || branches.length === 0) {
+        return c.json({ error: 'No branches to persist' }, 400);
+      }
+
+      // Persist merged ranking/feedback back into the workflow input so
+      // subsequent reads see the same data.
+      if (bodyRanking !== undefined || bodyFeedback !== undefined) {
+        const mergedInput = { ...currentInput };
+        if (bodyRanking !== undefined) mergedInput['ranking'] = bodyRanking;
+        if (bodyFeedback !== undefined) mergedInput['feedback'] = bodyFeedback;
+        await db.update(workflowRun).set({ input: mergedInput }).where(eq(workflowRun.id, id));
+      }
+
+      const result = await persistAbComparisonResults(
+        db,
+        id,
+        userContext,
+        branches,
+        ranking,
+        feedback
+      );
+      return c.json({ status: 'done', artifactIds: result.artifactIds });
     }
 
     if (step === 'analyze' || step === 'generate') {
@@ -1728,6 +2031,129 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     return c.json(serializeArtifact(updated));
   });
 
+  router.patch('/workflows/:id/artifacts/:artifactId/reddit-scan', async (c) => {
+    const id = c.req.param('id');
+    const artifactId = c.req.param('artifactId');
+    const userId = c.get('userId');
+    const body = (await c.req.json().catch(() => ({}))) as {
+      recommendations?: unknown;
+      scanConfig?: unknown;
+    };
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
+    });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+    if (wf.kind !== 'reddit-opportunity-scanner' || wf.status !== 'reviewing') {
+      return c.json({ error: 'Reddit scan review is only editable while reviewing' }, 409);
+    }
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
+    if (!isWorkflowOwner(wf, userContext)) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const art = await db.query.artifact.findFirst({
+      where: and(eq(artifact.id, artifactId), eq(artifact.sessionId, id)),
+    });
+    if (!art) return c.json({ error: 'Artifact not found' }, 404);
+    if (art.kind !== REDDIT_OPPORTUNITY_SCAN_ARTIFACT_KIND) {
+      return c.json({ error: 'Artifact is not a reddit opportunity scan' }, 400);
+    }
+
+    let nextContent: string;
+    try {
+      nextContent = mergeRedditScanReview(art.content, {
+        recommendations: body.recommendations,
+        scanConfig: body.scanConfig,
+      });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : 'Invalid review patch' }, 400);
+    }
+
+    try {
+      const updated = await updateRedditScanArtifactContent(
+        db,
+        id,
+        artifactId,
+        userContext.principalId,
+        nextContent
+      );
+      return c.json(serializeArtifact(updated));
+    } catch (err) {
+      if (err instanceof RedditOpportunityScannerError) {
+        return c.json({ error: err.message }, err.status);
+      }
+      throw err;
+    }
+  });
+
+  router.patch('/workflows/:id/artifacts/:artifactId/reddit-opportunity', async (c) => {
+    const id = c.req.param('id');
+    const artifactId = c.req.param('artifactId');
+    const userId = c.get('userId');
+    const body = (await c.req.json().catch(() => ({}))) as {
+      opportunityId?: string;
+      status?: string;
+    };
+    const opportunityId = typeof body.opportunityId === 'string' ? body.opportunityId : '';
+    const status = typeof body.status === 'string' ? body.status : '';
+    if (!opportunityId || !status) {
+      return c.json({ error: 'opportunityId and status are required' }, 400);
+    }
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
+    });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
+    if (!isWorkflowOwner(wf, userContext)) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const art = await db.query.artifact.findFirst({
+      where: and(eq(artifact.id, artifactId), eq(artifact.sessionId, id)),
+    });
+    if (!art) return c.json({ error: 'Artifact not found' }, 404);
+    if (art.kind !== REDDIT_OPPORTUNITY_SCAN_ARTIFACT_KIND) {
+      return c.json({ error: 'Artifact is not a reddit opportunity scan' }, 400);
+    }
+
+    let nextContent: string;
+    try {
+      nextContent = updateOpportunityStatus(art.content, opportunityId, status);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : 'Invalid status update' }, 400);
+    }
+
+    try {
+      const updated = await updateRedditScanArtifactContent(
+        db,
+        id,
+        artifactId,
+        userContext.principalId,
+        nextContent
+      );
+      return c.json(serializeArtifact(updated));
+    } catch (err) {
+      if (err instanceof RedditOpportunityScannerError) {
+        return c.json({ error: err.message }, err.status);
+      }
+      throw err;
+    }
+  });
+
   // ─── Update company name ────────────────────────────────────────────
   router.patch('/workflows/:id/company', async (c) => {
     const id = c.req.param('id');
@@ -2006,6 +2432,57 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       steps: Object.keys(validatedConfig),
     });
     return c.json({ id, stepConfig: validatedConfig });
+  });
+
+  // ─── Update workflow step data (ranking, feedback, etc.) ───────────────
+  router.patch('/workflows/:id/step-data', async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
+    });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
+    if (!isWorkflowOwner(wf, userContext)) {
+      log.warn('Caller is not the workflow owner', { userId, workflowId: id });
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const currentInput = (wf.input as Record<string, unknown>) ?? {};
+    const updatedInput: Record<string, unknown> = { ...currentInput };
+
+    if (body['ranking'] !== undefined) {
+      const ranking = body['ranking'];
+      if (
+        typeof ranking !== 'object' ||
+        ranking === null ||
+        Array.isArray(ranking) ||
+        !Array.isArray((ranking as Record<string, unknown>)['branchIds'])
+      ) {
+        return c.json({ error: 'ranking must be an object with branchIds array' }, 400);
+      }
+      updatedInput['ranking'] = ranking;
+    }
+    if (body['feedback'] !== undefined) {
+      const feedback = body['feedback'];
+      if (typeof feedback !== 'object' || feedback === null || Array.isArray(feedback)) {
+        return c.json({ error: 'feedback must be an object' }, 400);
+      }
+      updatedInput['feedback'] = feedback;
+    }
+
+    await db.update(workflowRun).set({ input: updatedInput }).where(eq(workflowRun.id, id));
+
+    log.info('Workflow step data updated', { workflowId: id, keys: Object.keys(body) });
+    return c.json({ id, updated: Object.keys(body) });
   });
 
   // ─── Granola helper ─────────────────────────────────────────────────

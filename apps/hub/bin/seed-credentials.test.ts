@@ -93,4 +93,38 @@ describe('seed-credentials buildEntries', () => {
 
     expect(entries.find((e) => e.providerName === 'bluesky')).toBeUndefined();
   });
+
+  it('includes google-ai entry when GOOGLE_GEMINI_API_KEY is set', () => {
+    process.env['GOOGLE_GEMINI_API_KEY'] = 'gem-test-key';
+
+    const entries = buildEntries();
+
+    const google = entries.find((e) => e.credentialName === 'google-ai');
+    expect(google).toBeDefined();
+    expect(google?.providerName).toBe('google-genai');
+    expect(google?.secret).toBe('gem-test-key');
+    expect(google?.metadata).toEqual({
+      baseURL: 'https://generativelanguage.googleapis.com',
+      model: 'gemini-3.1-flash-lite',
+    });
+  });
+
+  it('accepts GEMINI_API_KEY as an alias for the google-ai entry', () => {
+    delete process.env['GOOGLE_GEMINI_API_KEY'];
+    process.env['GEMINI_API_KEY'] = 'gem-alias-key';
+
+    const entries = buildEntries();
+
+    const google = entries.find((e) => e.credentialName === 'google-ai');
+    expect(google?.secret).toBe('gem-alias-key');
+  });
+
+  it('omits google-ai entry when no Gemini key is set', () => {
+    delete process.env['GOOGLE_GEMINI_API_KEY'];
+    delete process.env['GEMINI_API_KEY'];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.credentialName === 'google-ai')).toBeUndefined();
+  });
 });

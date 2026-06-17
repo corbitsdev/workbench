@@ -1,8 +1,6 @@
-import { Home, Settings, Palette, LogOut } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { Home, Settings, LogOut, BookOpen } from "lucide-react";
 import { NavLink, Link, useLocation } from "react-router";
 import { useAuth } from "../AuthProvider";
-import { useTheme, THEMES, THEME_LABELS } from "@workbench/ui";
 
 export function AppSidebar() {
   const { session, signOut } = useAuth();
@@ -14,25 +12,8 @@ export function AppSidebar() {
       .join("")
       .slice(0, 2)
       .toUpperCase() || "··";
-  const { theme, setTheme } = useTheme();
   const location = useLocation();
   const settingsActive = location.pathname.startsWith("/settings");
-  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
-  const themeMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!themeMenuOpen) return;
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        themeMenuRef.current &&
-        !themeMenuRef.current.contains(event.target as Node)
-      ) {
-        setThemeMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [themeMenuOpen]);
 
   const navIconClass = (isActive: boolean) =>
     `grid h-[40px] w-[40px] place-items-center rounded-[10px] transition-colors duration-150 ease-in-out ${
@@ -77,6 +58,15 @@ export function AppSidebar() {
           <Home size={18} />
         </NavLink>
 
+        <NavLink
+          to="/skills"
+          title="Skills Library"
+          aria-label="Skills Library"
+          className={({ isActive }) => navIconClass(isActive)}
+        >
+          <BookOpen size={18} />
+        </NavLink>
+
         <Link
           to="/settings"
           title="Settings"
@@ -88,42 +78,6 @@ export function AppSidebar() {
       </nav>
 
       <div className="mt-auto flex flex-col items-center gap-2 pb-1">
-        <div ref={themeMenuRef} className="relative">
-          {themeMenuOpen && (
-            <div className="absolute left-full top-1/2 ml-2 -translate-y-1/2 rounded-[10px] border border-border bg-surface p-1 shadow-[var(--shadow)]">
-              {THEMES.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => {
-                    setTheme(t);
-                    setThemeMenuOpen(false);
-                  }}
-                  className={`block w-full whitespace-nowrap rounded-[6px] px-3 py-1.5 text-left text-xs transition-colors ${
-                    t === theme
-                      ? "bg-orange text-white"
-                      : "text-text-2 hover:bg-row-hover hover:text-text"
-                  }`}
-                >
-                  {THEME_LABELS[t]}
-                </button>
-              ))}
-            </div>
-          )}
-          <button
-            type="button"
-            title="Switch theme"
-            aria-label="Switch theme"
-            aria-expanded={themeMenuOpen}
-            onClick={() => setThemeMenuOpen((open) => !open)}
-            className={`grid h-[40px] w-[40px] place-items-center rounded-[10px] transition-colors duration-150 ease-in-out ${
-              themeMenuOpen ? "text-orange" : "text-text-3 hover:text-text"
-            }`}
-          >
-            <Palette size={18} />
-          </button>
-        </div>
-
         <div
           className="grid h-[30px] w-[30px] place-items-center rounded-full bg-blue text-[10px] font-bold text-white"
           title={name}

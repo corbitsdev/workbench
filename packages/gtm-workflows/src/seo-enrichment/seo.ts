@@ -1,3 +1,4 @@
+import { getLogger } from '@intx/log';
 import type { ImageBlock } from '@intx/types/runtime';
 import type { WorkflowArtifactDraft } from '@workbench/workflow-core';
 import {
@@ -11,6 +12,8 @@ import { defaultSystemPrompt } from './prompts';
 import type { SeoResourceRow } from './types';
 
 export { SEO_SELECTION_FIELDS, SEO_VARIANT_COUNT };
+
+const log = getLogger(['workflow', 'seo-enrichment']);
 
 // The JSON Schema enforced on the model's response: exactly five variants of
 // each field. Omits `additionalProperties` (Gemini rejects it); the OpenAI path
@@ -124,6 +127,15 @@ export function parseSeoReply(text: string): SeoPayload {
   return validation.payload;
 }
 
+export function buildSeoResponseSeed(row: Pick<SeoResourceRow, 'productSlug'>): SeoPayload {
+  return {
+    sku_id: row.productSlug,
+    seo_titles: [],
+    seo_descriptions: [],
+    product_summaries: [],
+  };
+}
+
 // A concise, model-facing projection of the product plus the generate
 // instruction. The full row carries ingest-only fields that would be noise.
 export function buildSeoUserMessage(row: SeoResourceRow): string {
@@ -137,17 +149,23 @@ export function buildSeoUserMessage(row: SeoResourceRow): string {
     current_description: row.productMetadataDescription,
     current_summary: row.summary,
   };
-  return `PRODUCT METADATA (JSON):\n${JSON.stringify(metadata, null, 2)}\n\nGenerate the ${SEO_VARIANT_COUNT}x3 SEO variants for this product.`;
+  return [
+    `PRODUCT METADATA (JSON):\n${JSON.stringify(metadata, null, 2)}`,
+    'Return one JSON object matching this exact shape and field names:',
+    JSON.stringify(buildSeoResponseSeed(row), null, 2),
+    `Fill each array with exactly ${SEO_VARIANT_COUNT} non-empty string variants.`,
+  ].join('\n\n');
 }
 
 // Map a validated SEO payload onto a selection artifact draft (5 options per
 // field, no pick yet).
 export function buildSeoSelectionDraft(
-  row: Pick<SeoResourceRow, 'productSlug'>,
+  row: Pick<SeoResourceRow, 'productSlug' | 'imageLink'>,
   payload: SeoPayload
 ): WorkflowArtifactDraft {
   return createSelectionArtifactDraft({
     label: row.productSlug,
+    imageLink: row.imageLink,
     fields: {
       Title: payload.seo_titles,
       Description: payload.seo_descriptions,
@@ -177,6 +195,10 @@ export async function enrichSeoRow(
   try {
     const image = await loadProductImage(row.imageLink);
     if (!image.ok) {
+      log.warn('SEO row image unavailable', {
+        productSlug: row.productSlug,
+        reason: image.reason,
+      });
       return buildErrorSelectionDraft(row, 'image unavailable');
     }
     const text = await infer({
@@ -190,6 +212,12 @@ export async function enrichSeoRow(
     // (which can carry model names, request ids, or rate-limit detail).
     const message = err instanceof Error ? err.message : String(err);
     const reason = /JSON|5\/5\/5/.test(message) ? 'response invalid' : 'enrichment failed';
+    const error = err instanceof Error ? err : new Error(message);
+    log.error('SEO row enrichment failed', {
+      productSlug: row.productSlug,
+      category: reason,
+      error,
+    });
     return buildErrorSelectionDraft(row, reason);
   }
 }
