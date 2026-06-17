@@ -23,264 +23,153 @@ GTM Workbench is an AI-assisted GTM workspace built on top of Interchange. Users
 
 ### Apps stay generic; packages own the domain
 
-`apps/*` should be as generic as possible. Domain knowledge — workflow definitions, status vocabularies, credential requirements, prompts, artifact kinds, business rules — lives in `packages/*` and is imported by the apps. An app is a thin host: it wires HTTP routes, renders UI, and delegates every product decision to a package.
-
-Concretely:
-
-- Define domain types and unions in the owning package, not in an app. An app consuming a value it does not own treats it as an opaque `string` rather than re-declaring the type.
-- If you find yourself encoding a product rule (what a workflow needs, what a status means, what to generate) inside `apps/web` or `apps/hub`, it belongs in a package.
-- Prefer the most specific package over the catch-all. A workflow concept belongs in the workflow package, not in a generic `shared` grab-bag.
+Domain knowledge — workflow definitions, status vocabularies, credential requirements, prompts, artifact kinds, business rules — lives in `packages/*`. Apps are thin hosts: wire HTTP routes, render UI, delegate every product decision to a package. If you find yourself encoding a product rule inside `apps/web` or `apps/hub`, it belongs in a package.
 
 ### Stack
 
-- Package manager: Bun (1.2+)
-- Frontend: React, Vite, Tailwind CSS, Framer Motion
-- Backend: Hono, TypeScript, Drizzle ORM
+- Bun (1.2+), Hono, TypeScript, Drizzle ORM, PostgreSQL (port 5433)
+- Frontend: React 19, Vite, Tailwind CSS, Framer Motion
 - Agent runtime: `@intx/agent`
-- Persistence: PostgreSQL (port 5433 in compose)
 
 ## Interchange Is the Operating System
 
-Interchange is not a library we use occasionally. It is the operating system this product runs on. Every agent lifecycle operation, credential flow, session, grant, and inference call goes through Interchange. The workbench hub is a thin product layer on top of it — not a reimplementation of it.
+Every agent lifecycle operation, credential flow, session, grant, and inference call goes through Interchange. Stop and read Interchange before writing anything in these domains.
 
-**This has burned us before.** We once wrote a full credential-grant-at-launch flow (passing credentialIds manually, granting them to instance principals, building inference sources by hand) when Interchange already does all of this via `credentialRequirements` on the agent definition + `resolveCredentialRequirement` at launch. The result was a broken onboarding flow, a week of debugging, and code we had to throw away.
+### Mandatory lookup before implementing
 
-**Do not repeat this. Stop and read Interchange before writing anything.**
-
-### Mandatory lookup before implementing anything
-
-1. `interchange/docs/` — read AUTH.md, ARCHITECTURE.md, CREDENTIALS.md, MESSAGE.md, API.md for the domain you're touching
-2. `interchange/packages/` — search for the relevant package and read its source
+1. `interchange/docs/` — AUTH.md, ARCHITECTURE.md, CREDENTIALS.md, MESSAGE.md, API.md
+2. `interchange/packages/` — search the relevant package source
 3. Check exports of `@intx/hub-common`, `@intx/db`, `@intx/types`, `@intx/hub-api`, `@intx/hub-sessions`
-4. Only implement from scratch if Interchange genuinely does not cover it — and if so, explain why in the PR
+4. Only implement from scratch if Interchange genuinely does not cover it — explain why in the PR
 
-### What Interchange owns — never reimplement these
+### What Interchange owns — never reimplement
 
-| Domain                  | What Interchange does                                                                     | Where to look                                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Credential resolution   | Resolves credentials from tenant hierarchy by `providerName` + `source` + optional `name` | `@intx/db` → `resolveCredentialRequirement`, `resolveOneCredential`                                  |
-| Agent launch            | Resolves `credentialRequirements` → builds inference sources → launches via sidecar       | `@intx/hub-sessions` → `SessionService.launchSession`                                                |
-| Credential requirements | Agent definitions declare what they need; Interchange finds and resolves them at launch   | `@intx/types` → `CredentialRequirement`; `source: 'tenant'` means tenant-owned (`principalId: null`) |
-| Grant resolution        | Collects all grants for a principal including role-based grants                           | `@intx/db` → `createGrantStore` → `collectGrants`                                                    |
-| Session orchestration   | Manages session lifecycle, sidecar registration, reconnect                                | `@intx/hub-sessions` → `createHubSessionOrchestrator`                                                |
-| ID generation           | Typed, prefixed IDs for every entity                                                      | `@intx/hub-common` → `generateId`                                                                    |
-| LLM inference           | All inference calls go through the agent runtime                                          | `@intx/agent` — never direct fetch to LLM endpoints                                                  |
-| DB schema + types       | Tables, ID formats, row types                                                             | `@intx/db/schema`, `@intx/types`                                                                     |
+| Domain                  | What Interchange does | Where to look |
+| ----------------------- | --------------------- | ------------- |
+| Credential resolution   | Resolves from tenant hierarchy by `providerName` + `source` + optional `name` | `@intx/db` → `resolveCredentialRequirement`, `resolveOneCredential` |
+| Agent launch            | Resolves `credentialRequirements` → builds inference sources → launches via sidecar | `@intx/hub-sessions` → `SessionService.launchSession` |
+| Credential requirements | Interchange resolves them at launch; `source: 'tenant'` = tenant-owned (`principalId: null`) | `@intx/types` → `CredentialRequirement` |
+| Grant resolution        | Collects all grants for a principal including role-based grants | `@intx/db` → `createGrantStore` → `collectGrants` |
+| Session orchestration   | Session lifecycle, sidecar registration, reconnect | `@intx/hub-sessions` → `createHubSessionOrchestrator` |
+| ID generation           | Typed, prefixed IDs for every entity | `@intx/hub-common` → `generateId` |
+| LLM inference           | All inference calls go through the agent runtime | `@intx/agent` — never direct fetch to LLM endpoints |
+| DB schema + types       | Tables, ID formats, row types | `@intx/db/schema`, `@intx/types` |
 
-### The correct credential + launch pattern
-
-Credentials are stored **tenant-owned** (`principalId: null`). Agent definitions declare **credential requirements**. Interchange resolves them at launch time by walking the tenant hierarchy.
+### Credential + launch pattern
 
 ```ts
 // Agent definition — declare what you need
 credentialRequirements: [{ providerName: 'openai-compatible', source: 'tenant', name: 'Myra LLM' }]
-
-// Credential creation — tenant-owned, not principal-owned
+// Credential — tenant-owned, not principal-owned
 { principalId: null, tenantId, providerId, name: 'Myra LLM', ... }
-
 // Launch — no credentialIds; Interchange resolves from requirements
-sessionService.launchSession({ agentId, instanceId, ... }) // sources resolved internally
+sessionService.launchSession({ agentId, instanceId, ... })
 ```
-
-The frontend's job is to save the credential. The hub's job is to launch the agent. Neither should pass credential IDs through the launch call.
 
 ### Agent credentials vs tool credentials
 
-`credentialRequirements` on an Interchange agent definition are launch-time inference credentials in the current Interchange implementation. `resolveInstanceSources` turns each requirement into an `InferenceSource`, and the sidecar validates each source against the inference provider registry. Do not put tool-only providers such as `firecrawl`, `granola`, `exa`, `xai`, `reddit`, or `scrapecreators` in an agent template's `credentialRequirements`; they will be pushed to the sidecar as inference sources and can break launch or reconnect with errors like `Source provider "firecrawl" is not registered`.
-
-For Workbench tool credentials, keep the provider in the agent deploy descriptor's `credentialProviderNames` so the UI asks for it, and let the hub tool registry resolve it at tool execution time through `resolveCredentialRequirement`. The tool API key stays server-side; the sidecar proxies tool calls to the hub and the agent only sees the tool result.
-
-### Third-party generation APIs (Gamma)
-
-Gamma's `POST /generations/from-template` is a SaaS generation endpoint, not an LLM inference provider. Direct HTTP from a hub tool is acceptable here — the same pattern as Firecrawl. Do NOT add gamma to an agent's `credentialRequirements`. Resolve the Gamma API key via `resolveCredentialRequirement` in the hub tool registry. Document this decision in `packages/tools-gamma/README.md`.
-
-### Specific rules
-
-- `generateId` — import from `@intx/hub-common`, never reimplement
-- LLM inference — use `@intx/agent`, never direct `fetch()` to LLM endpoints
-- Tenant/principal/grant operations — use Interchange's DB schema and resolution functions from `@intx/db`
-- ID formats, table schemas, type definitions — read `@intx/db/schema` and `@intx/types` before defining your own
-- Credential resolution — use `resolveCredentialRequirement` from `@intx/db`
-- Agent launch — use `SessionService.launchSession`; never build inference sources manually
-- Tool credentials — do not add tool-only providers to agent `credentialRequirements`; expose them through `credentialProviderNames` and resolve them inside the hub tool registry
-- Do not modify `interchange/` unless explicitly asked
+- `credentialRequirements` are **inference-only**. Tool-only providers (`firecrawl`, `granola`, `exa`, `xai`, `reddit`, `scrapecreators`) must NOT go in `credentialRequirements` — they break sidecar launch with `Source provider "X" is not registered`.
+- For tool credentials: add the `providerName` to `credentialProviderNames` on the deploy descriptor; resolve at tool execution time via `resolveCredentialRequirement` in the hub tool registry.
+- Third-party generation APIs (e.g. Gamma): direct HTTP from a hub tool is fine; resolve the key via `resolveCredentialRequirement`; document in the package README.
 
 ## Worktree Setup
-
-Every new worktree requires these steps before doing any work:
 
 ```bash
 git submodule update --init   # Interchange submodule is not auto-initialized
 bun install                   # node_modules are not shared between worktrees
 ```
 
-Missing either step causes `@intx/*` imports to fail at test/build time.
-
 ## Commit Process
 
-Follow this workflow. Each step is a separate commit.
+Each step is a separate commit.
 
-### Step 1 — Tests first (red)
+1. **Red** — write tests, confirm they fail. Commit: `"Add tests for <feature/fix>"`
+2. **Green** — minimal change to pass tests, run full build pipeline. Commit: `"<feature/fix>: <what changed>"`
+3. **Docs** — run the scribe skill if product/architecture/implementation docs are affected. Commit: `"Update docs: <what changed>"`
 
-```
-Write tests for what you are about to change
-→ Confirm they fail
-→ Commit: "Add tests for <feature/fix>"
-```
-
-### Step 2 — Implement (green)
-
-```
-Make the minimal change to pass the tests
-→ Run full build pipeline
-→ Commit: "<feature/fix>: <what changed>"
-```
-
-### Step 3 — Docs
-
-```
-Run the scribe skill if the change affects product, architecture, or implementation docs
-→ Commit: "Update docs: <what changed>"
-```
-
-### Commit discipline
-
-- One logical change per commit
-- Messages are precise and auditable — describe the change, not the task
-- Do not auto-commit unless the user explicitly says so
-- Always present the commit message and wait for user confirmation
+- One logical change per commit; messages describe the change, not the task
+- Never auto-commit; present the message and wait for confirmation
 
 ## Testing
 
-Tests are not an afterthought and not a cleanup pass. Every behavioral change is developed **red → green**: write the test first, watch it fail for the right reason, then write the minimal code to make it pass. New code ships with its tests in the same change — never "tests later."
-
-### Red/green workflow
-
-1. **Red** — write the test for the new or changed behavior first. Run it; confirm it fails for the reason you expect.
-2. **Green** — implement the minimal change to make it pass.
-3. **Refactor** — clean up with the test green.
-
-This is the same sequence the Commit Process encodes (tests-first commit, then implementation). A change that adds or alters behavior with no accompanying test is incomplete.
-
-### Coverage policy
-
-- Measure with `bun run coverage` (whole repo, merged) or `bun run test:coverage` (one package). The merged gate lives in `scripts/coverage-merge.ts`.
-- **80% merged line coverage is a hard floor. Never let a change drop below it.** If your change lowers coverage, add tests in the same change until it recovers — do not push a regression.
-- **80% is the floor, not the goal.** Every change should leave coverage equal or higher; the standing target is always _higher_ than where we are now. An uncovered line you touch is yours to cover.
-- Any package containing runnable code must define `test` and `test:coverage` scripts so the merged gate sees it. Pure type-only packages are exempt (document the exemption).
-- Coverage is line coverage only (Bun emits no branch/per-function lcov).
-
-### Test quality bar
-
-This is the difference between regression protection and theater:
-
-- **Assert behavior, not execution.** No tautologies (`expect(true).toBe(true)`), no render-without-crash tests, no test whose only point is that code ran.
-- **A throwing query is already the assertion.** `screen.getByText('X')` throws if absent — do not append `.toBeDefined()` to it. For an explicit presence/absence check, use `queryBy…()` with `.not.toBeNull()` / `.toBeNull()`.
-- **Never assert the mock.** A test that only checks a value the test itself fed to a mock proves nothing about the code under test.
-- **Mock only at the Interchange (`@intx/*`) or a true module boundary**, via `mock.module(...)`. Inject stateful collaborators (db, services) as arguments — never module-mock your own package's public surface. (See Dependency Injection.)
-- Assert user-visible behavior and call contracts. For generated text such as prompts, assert structure/contract — never brittle full-string equality.
+- **80% merged line coverage is a hard floor.** Measure with `bun run coverage`. Never let a change drop below it.
+- Every package with runnable code must define `test` and `test:coverage` scripts. Pure type-only packages exempt (document it).
+- Assert behavior, not execution — no tautologies, no render-without-crash tests.
+- `screen.getByText('X')` throws if absent — do not append `.toBeDefined()`.
+- Never assert the mock. A test that checks a value it fed to a mock proves nothing.
+- Mock only at the `@intx/*` or a true module boundary via `mock.module(...)`.
 
 ## Build Requirements
 
-Run the full pipeline before declaring any task complete:
-
 ```bash
-bun run format
-bun run lint
-bun run check   # tsc -b across the full project graph
-bun run test
+bun run format && bun run lint && bun run check && bun run test
 ```
 
-Pre-existing failures must be identified explicitly. Never silently skip a failing step.
-
-### Typecheck gate
-
-`bun run check` (typecheck) **must pass with zero errors in our code** before any commit, push, or PR. Errors inside `interchange/` are pre-existing upstream issues and may be ignored, but every error in `apps/`, `packages/`, and `scripts/` must be resolved first.
-
-Do not merge or push while typecheck is red on our code. If a change introduces a new type error, fix it before committing — do not defer it.
+`bun run check` must pass with zero errors in `apps/`, `packages/`, `scripts/` before any commit. Errors inside `interchange/` are pre-existing upstream issues.
 
 ## Dockerfile Maintenance
 
-Each image (`hub`, `sidecar`, `admin-ui`, `web`) uses a targeted `COPY` list instead of `COPY . .`. When you add, remove, or rename a package or app, you must update every affected Dockerfile:
+Each image uses a targeted `COPY` list. When you add/remove/rename a package or app:
 
-- Adding a new `packages/*` entry as a dependency of hub or sidecar → add a `COPY packages/<name>/ packages/<name>/` line and a `COPY packages/<name>/package.json packages/<name>/` line in every image that depends on it (directly or transitively).
-- Removing a package → remove its lines from all Dockerfiles.
-- Adding a new `apps/*` entry → create a new Dockerfile following the same pattern; do not use `COPY . .`.
-
-The manifest-copy section (all the `COPY packages/*/package.json` lines before `bun install`) must list every workspace member regardless of whether the image uses it — bun needs the full graph to resolve the lockfile.
+- New `packages/*` dep → add `COPY packages/<name>/` and `COPY packages/<name>/package.json` in every image that depends on it.
+- Removed package → remove its lines from all Dockerfiles.
+- The manifest-copy section (`COPY packages/*/package.json` before `bun install`) must list every workspace member.
 
 ## Credential Seeding Maintenance
 
-Tool credentials are not auto-discovered. When you add a `@workbench/tools-*` package whose hub-tool entry declares a credential `providerName`, you must wire the credential into the seed path or the tool resolves nothing in any deployed environment:
+When you add a `@workbench/tools-*` package with a credential `providerName`:
 
-- Add an entry to `buildEntries()` in `apps/hub/bin/seed-credentials.ts` (`providerName`, `providerPlugin`, `credentialName`, secret read from a `*_API_KEY` env var; include `metadata.baseURL` only when the tool reads it rather than hardcoding it).
+- Add an entry to `buildEntries()` in `apps/hub/bin/seed-credentials.ts`.
 - Add the env var to `.env.example`.
-- Add a `buildEntries()` test asserting the entry appears when the key is set and is absent when it is not.
-- Also add the provider name to the consuming agent's `credentialProviderNames` (never to `credentialRequirements` — tool providers are not inference providers).
+- Add a `buildEntries()` test asserting the entry appears/disappears with the env var.
+- Add the `providerName` to the agent's `credentialProviderNames` (never `credentialRequirements`).
 
-Keyless tools (e.g. an unauthenticated public API) need no seed entry — say so in the package README.
+Keyless tools need no seed entry — say so in the package README.
 
 ## Issue Workflow
 
-When implementing a Linear issue:
-
-- Mark the issue In Progress before starting
-- Create a worktree off `origin/staging` (not local staging)
-- Run `git submodule update --init && bun install` in the worktree
-- Follow the test → implement → docs commit sequence
-- Self-review before pushing
-- Rebase on `origin/staging` before creating the PR
-- Create the PR targeting `staging`
-- Post self-review summary as a PR comment
-- Mark the issue Done after the PR is created
+- Mark In Progress before starting
+- Create a worktree off `origin/staging` (not local staging); run submodule + bun install
+- Follow red → green → docs commit sequence
+- Self-review before pushing; rebase on `origin/staging`; PR targets `staging`
+- Post self-review summary as a PR comment; mark Done after PR is created
 
 ## Code Style
 
-- No comments unless the WHY is non-obvious (hidden constraint, subtle invariant, workaround for a specific bug). If removing the comment wouldn't confuse a future reader, don't write it. Never narrate what the code does.
-- TypeScript strict mode. Load the `gaas:typescript` skill before writing or reviewing TypeScript.
-- No `console.log` — use `@intx/log` structured logging in hub/sidecar, nothing in web
-- No emojis in code, comments, or messages
-- No IIFEs or dynamic imports in production code — use named async functions and static imports.
-- No fallbacks for required values — prefer explicit checks and fail loudly. Use `requireEnv()` for env vars; never silently substitute a default.
-- **Fallbacks (`?? default`, `|| default`, defaulted optionals) are allowed ONLY when absolutely necessary** — i.e. a genuinely optional value with a single, contract-guaranteed default (e.g. an empty string for an initially-empty controlled input). Otherwise do a proper check and handle the missing case explicitly. A reflexive `?? something` masks missing/invalid data, makes the code harder to test and validate, and turns a loud failure into a silent wrong-result. When in doubt, narrow and branch — don't default.
-- No nested ternaries or similarly compressed conditional expressions — use `if`/`else` or early returns.
-- Use full, descriptive variable and function names. Clean, readable design over brevity.
-- All env var validation lives in `apps/hub/src/config.ts`
+- No comments unless the WHY is non-obvious. Never narrate what the code does.
+- TypeScript strict mode. Load `gaas:typescript` before writing or reviewing TypeScript.
+- No `console.log` — use `@intx/log` in hub/sidecar, nothing in web.
+- No IIFEs or dynamic imports in production — use named async functions and static imports.
+- No fallbacks for required values — `requireEnv()` for env vars, fail loudly. Fallbacks only for genuinely optional values with a single contract-guaranteed default.
+- No nested ternaries — use `if`/`else` or early returns.
+- All env var validation lives in `apps/hub/src/config.ts`.
+- Do not modify `eslint`, `prettier`, `tsconfig`, or `package.json` unless explicitly asked.
 
 ## Dependency Injection
 
-Inject stateful resources (DB connections, HTTP clients). Import stateless singletons (config, loggers, constants) directly.
+Inject stateful resources (DB, HTTP clients). Import stateless singletons (config, loggers) directly.
 
 ```ts
-// correct — db is stateful
-export function createWorkflowRouter(db: DB['db']): Hono { ... }
-
-// wrong — config is not stateful
-export function createWorkflowRouter(db: DB['db'], config: Config): Hono { ... }
+export function createWorkflowRouter(db: DB['db']): Hono { ... }  // correct
+export function createWorkflowRouter(db: DB['db'], config: Config): Hono { ... }  // wrong
 ```
 
-In tests, mock at the module boundary (`mock.module(...)`) — do not inject fakes through function arguments.
+In tests, mock at the module boundary (`mock.module(...)`) — do not inject fakes as function arguments.
 
-## Frontend conventions (apps/web)
+## Frontend (apps/web)
 
-Detailed rules live in `apps/web/CLAUDE.md`; the non-negotiables:
+Detailed rules in `apps/web/CLAUDE.md`; non-negotiables:
 
-- **Data fetching is TanStack Query only.** `useEffect` + `useState` + `fetch` for data is prohibited — it bypasses the cache, breaks dedup, and loses abort-on-unmount.
-- **Gate queries with `enabled`** so they don't fire on every mount; set `staleTime ≥ 5 min` for catalog/static data, default for live workflow state.
-- **`mutateAsync` must have a `.catch()`** (or use `mutate` with `onError`/`onSuccess`) — never `void mutateAsync().then()`.
-- **Validate at the boundary with ArkType.** Parse API responses / `unknown` through an ArkType schema instead of casting; plain `interface`/`type` for internal, already-trusted shapes.
-- **Derive component behavior from the loaded resource** (e.g. `workflow.kind`), not from a prop threaded from the navigation origin.
-
-## Configuration
-
-Do not modify `eslint`, `prettier`, `tsconfig`, or `package.json` unless explicitly asked.
+- **TanStack Query only** for data fetching. No `useEffect` + `fetch`.
+- **Gate queries with `enabled`**; `staleTime ≥ 5 min` for catalog/static data.
+- **`mutateAsync` must have `.catch()`** — never `void mutateAsync().then()`.
+- **ArkType at the boundary.** Parse API responses / `unknown` through ArkType; plain types for already-trusted shapes.
+- Derive component behavior from the loaded resource, not from navigation props.
 
 ## Constraints
 
 - Do not make CRM sync (Attio) a dependency for v1
 - Do not build a fully automated pipeline — keep humans in the loop
-- Do not modify `interchange/` unless explicitly asked
-- Session state must be persisted and resumable
 - Exports: markdown, clipboard, email draft, Slack, Typefully
 
 ## Personality
