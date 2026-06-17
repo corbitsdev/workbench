@@ -1,4 +1,4 @@
-See [AGENTS.md](./AGENTS.md).
+@AGENTS.md
 
 # Web App Guidelines
 
