@@ -7,11 +7,19 @@ import {
   importPrivateKeyBytes,
   verifySSHSignature,
 } from '@intx/crypto-node';
+import { installGeminiThoughtSignaturePatch } from './gemini-thought-signature-patch';
 import { createSidecarOrchestrator } from '@intx/hub-agent';
 import { createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
 import { resolveSidecarHeartbeat } from './config';
 
 await setupObservability({ dev: process.env.NODE_ENV !== 'production' });
+
+// Install the google-genai thoughtSignature workaround before any inference
+// happens. This wraps the registered adapter to strip orphan
+// `thoughtSignature` parts that Gemini 3.x models emit, which the upstream
+// parser cannot handle (BD-394). Remove once the vendored Interchange commit
+// contains the fix.
+installGeminiThoughtSignaturePatch();
 
 function requireEnv(name: string): string {
   const value = process.env[name];
