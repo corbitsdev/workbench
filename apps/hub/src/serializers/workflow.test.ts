@@ -74,6 +74,7 @@ describe('serializeArtifact', () => {
       source: null,
       status: 'draft',
       version: 1,
+      ownerPrincipalId: null,
       createdAt: '2024-01-02T03:04:05.000Z',
       updatedAt: '2024-02-03T04:05:06.000Z',
     });

@@ -43,6 +43,7 @@ async function insertArtifactWithVersion(
   values: {
     tenantId: string;
     principalId: string;
+    ownerPrincipalId: string;
     sessionId: string;
     kind: string;
     title: string;
@@ -110,6 +111,7 @@ export async function createResourceEnrichmentRun(
   await insertArtifactWithVersion(db, {
     tenantId: userContext.tenantId,
     principalId: userContext.principalId,
+    ownerPrincipalId: userContext.principalId,
     sessionId: wfRow.id,
     kind: PARSED_RESOURCE_ARTIFACT_KIND,
     title: uploadRow.filename,
@@ -204,6 +206,7 @@ export async function runResourceEnrichmentEnrich(
       await insertArtifactWithVersion(db, {
         tenantId: userContext.tenantId,
         principalId: userContext.principalId,
+        ownerPrincipalId: userContext.principalId,
         sessionId: workflowId,
         kind: draft.kind,
         title: draft.title,
@@ -255,6 +258,7 @@ export async function runResourceEnrichmentExport(
   const created = await insertArtifactWithVersion(db, {
     tenantId: userContext.tenantId,
     principalId: userContext.principalId,
+    ownerPrincipalId: userContext.principalId,
     sessionId: workflowId,
     kind: CSV_EXPORT_ARTIFACT_KIND,
     title: 'Enriched resources',

@@ -100,6 +100,7 @@ export async function runAnalyze(
       await db.insert(artifact).values({
         tenantId: currentWf.tenantId,
         principalId: currentWf.principalId,
+        ownerPrincipalId: currentWf.principalId,
         sessionId: id,
         kind: draft.kind,
         title: draft.title,
@@ -206,6 +207,7 @@ export async function runGenerate(
             ).then(({ title, body }) => ({
               tenantId: wf.tenantId,
               principalId: wf.principalId,
+              ownerPrincipalId: wf.principalId,
               sessionId: id,
               painPointId: p.id,
               kind: resolveArtifactKind(kind),
@@ -224,6 +226,7 @@ export async function runGenerate(
         r: PromiseSettledResult<{
           tenantId: string;
           principalId: string;
+          ownerPrincipalId: string;
           sessionId: string;
           painPointId: string;
           kind: string;

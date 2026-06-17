@@ -1,3 +1,4 @@
+import { LLM_CREDENTIAL_NAME } from '@workbench/agents';
 import type { WorkflowType } from '@workbench/workflow-core';
 import {
   createPainPointArtifacts,
@@ -34,7 +35,7 @@ export const collateralGenerationWorkflow: WorkflowType = {
         {
           providerName: 'openai-compatible',
           source: 'tenant',
-          name: 'zen-deepseek-v4-flash-free',
+          name: LLM_CREDENTIAL_NAME,
         },
       ],
     },
@@ -46,7 +47,7 @@ export const collateralGenerationWorkflow: WorkflowType = {
         {
           providerName: 'openai-compatible',
           source: 'tenant',
-          name: 'zen-deepseek-v4-flash-free',
+          name: LLM_CREDENTIAL_NAME,
         },
       ],
     },

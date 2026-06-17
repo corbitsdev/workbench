@@ -15,6 +15,7 @@ describe('ArtifactWithVersions type export (CL-1552)', () => {
       content: 'Body',
       status: 'draft',
       version: 1,
+      ownerPrincipalId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       versions: [],
@@ -34,6 +35,7 @@ describe('ArtifactWithVersions type export (CL-1552)', () => {
       content: 'Body',
       status: 'draft',
       version: 2,
+      ownerPrincipalId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       versions: [

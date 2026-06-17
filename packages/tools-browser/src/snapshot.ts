@@ -12,14 +12,14 @@
  * click/type resolve via frameLocator). Cross-origin iframes cannot be read from
  * page script (same-origin policy); they are counted, not traversed.
  */
-import type { RawElement, SnapshotElement } from './types';
+import type { RawElement, SnapshotElement } from "./types";
 
 /** Hard cap on elements returned to the model, to bound token cost. */
 export const MAX_SNAPSHOT_ELEMENTS = 100;
 /** Max characters of an element's accessible name. */
 const MAX_NAME_LENGTH = 120;
 /** Separates frame selectors from the element selector in a ref. */
-export const FRAME_DELIMITER = ' >>> ';
+export const FRAME_DELIMITER = " >>> ";
 
 /**
  * Script evaluated in the page. Returns interactive elements (across shadow
@@ -129,14 +129,15 @@ function attrSelector(attr: string, value: string): string {
  * nth-of-type path.
  */
 export function buildRef(element: RawElement): string {
-  if (element.id && element.id.length > 0) return attrSelector('id', element.id);
+  if (element.id && element.id.length > 0)
+    return attrSelector("id", element.id);
   if (element.testId && element.testId.length > 0)
-    return attrSelector('data-testid', element.testId);
+    return attrSelector("data-testid", element.testId);
   if (element.nameAttr && element.nameAttr.length > 0) {
-    return `${element.tag}${attrSelector('name', element.nameAttr)}`;
+    return `${element.tag}${attrSelector("name", element.nameAttr)}`;
   }
   if (element.ariaLabel && element.ariaLabel.length > 0) {
-    return `${element.tag}${attrSelector('aria-label', element.ariaLabel)}`;
+    return `${element.tag}${attrSelector("aria-label", element.ariaLabel)}`;
   }
   return element.path;
 }
@@ -158,7 +159,7 @@ function countRefs(entries: { ref: string }[]): Map<string, number> {
 function uniquifyInner(entries: { el: RawElement; ref: string }[]) {
   const stableCounts = countRefs(entries);
   const demoted = entries.map(({ el, ref }) =>
-    (stableCounts.get(ref) ?? 0) > 1 ? { el, ref: el.path } : { el, ref }
+    (stableCounts.get(ref) ?? 0) > 1 ? { el, ref: el.path } : { el, ref },
   );
   const finalCounts = countRefs(demoted);
   const seen = new Map<string, number>();
@@ -183,7 +184,7 @@ export function pruneSnapshot(raw: RawSnapshot, url: string) {
   // Group by frame — each frame is its own selector scope.
   const byFrame = new Map<string, RawElement[]>();
   for (const el of visible) {
-    const key = el.frame ?? '';
+    const key = el.frame ?? "";
     const group = byFrame.get(key);
     if (group) group.push(el);
     else byFrame.set(key, [el]);
@@ -192,18 +193,26 @@ export function pruneSnapshot(raw: RawSnapshot, url: string) {
   // Preserve original document order across the flattened result.
   const refByElement = new Map<RawElement, string>();
   for (const [frame, group] of byFrame) {
-    const unique = uniquifyInner(group.map((el) => ({ el, ref: buildRef(el) })));
+    const unique = uniquifyInner(
+      group.map((el) => ({ el, ref: buildRef(el) })),
+    );
     for (const { el, ref } of unique) {
-      refByElement.set(el, frame.length > 0 ? `${frame}${FRAME_DELIMITER}${ref}` : ref);
+      refByElement.set(
+        el,
+        frame.length > 0 ? `${frame}${FRAME_DELIMITER}${ref}` : ref,
+      );
     }
   }
 
-  const ordered = visible.map((el) => ({ el, ref: refByElement.get(el) ?? buildRef(el) }));
+  const ordered = visible.map((el) => ({
+    el,
+    ref: refByElement.get(el) ?? buildRef(el),
+  }));
   const capped = ordered.slice(0, MAX_SNAPSHOT_ELEMENTS);
   const elements: SnapshotElement[] = capped.map(({ el, ref }) => ({
     ref,
     role: el.role ?? el.tag,
-    name: el.name ?? el.text ?? '',
+    name: el.name ?? el.text ?? "",
   }));
 
   return {

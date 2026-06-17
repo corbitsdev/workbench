@@ -18,10 +18,12 @@ const fakeArtifact: ArtifactWithSession = {
   content: 'body',
   status: 'approved',
   version: 1,
+  ownerPrincipalId: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   sessionName: 'Acme Corp',
   sessionStatus: 'done',
+  ownerName: null,
 };
 
 afterEach(cleanup);
@@ -36,7 +38,7 @@ function renderWithSeededArtifacts(
   ui: React.ReactElement
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  client.setQueryData(['artifacts', tenantId, '', 'newest', '', ''], artifacts);
+  client.setQueryData(['artifacts', tenantId, '', 'newest', '', '', ''], artifacts);
   return render(
     React.createElement(
       MemoryRouter,

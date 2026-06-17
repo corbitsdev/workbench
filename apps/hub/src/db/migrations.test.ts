@@ -122,3 +122,20 @@ describe('0018 drops member_agent_instance unique constraint (CL-1558)', () => {
     );
   });
 });
+
+describe('0021 adds owner_principal_id to artifact (CL-2035)', () => {
+  const sql = readFileSync(
+    join(import.meta.dir, '../../migrations/0021_artifact_owner_principal_id.sql'),
+    'utf-8'
+  );
+
+  it('adds the owner_principal_id column', () => {
+    expect(sql).toMatch(/ALTER TABLE "artifact"/i);
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "owner_principal_id"/i);
+  });
+
+  it('keeps the column nullable (no NOT NULL or default)', () => {
+    expect(sql).not.toMatch(/NOT NULL/i);
+    expect(sql).not.toMatch(/DEFAULT/i);
+  });
+});

@@ -535,6 +535,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       await db.insert(artifact).values({
         tenantId: userContext.tenantId,
         principalId: userContext.principalId,
+        ownerPrincipalId: userContext.principalId,
         sessionId: wfRow.id,
         kind: draft.kind,
         title: draft.title,
@@ -819,6 +820,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const sortParam = c.req.query('sort');
     const kindParam = c.req.query('kind');
     const statusParam = c.req.query('status');
+    const ownerPrincipalIdParam = c.req.query('ownerPrincipalId');
     const cursorParam = c.req.query('cursor');
     const limitParam = c.req.query('limit');
 
@@ -896,6 +898,9 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     // kind is a legitimate (empty) filter rather than a 400. This asymmetry with
     // `status` (a closed enum) is deliberate.
     const kindWhere = kindParam ? eq(artifact.kind, kindParam) : undefined;
+    const ownerWhere = ownerPrincipalIdParam
+      ? eq(artifact.ownerPrincipalId, ownerPrincipalIdParam)
+      : undefined;
 
     let cursorWhere: ReturnType<typeof or> | undefined;
     if (cursorParam !== undefined) {
@@ -924,6 +929,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       hideRejectedWhere,
       statusWhere,
       kindWhere,
+      ownerWhere,
       searchWhere,
       cursorWhere,
     ].filter((c): c is NonNullable<typeof c> => c != null);
@@ -957,8 +963,35 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           ? deriveWorkflowDisplayName(session.kind, session.input as WorkflowInput)
           : null,
         sessionStatus: session ? mapDbStatusToSessionStatus(session.status) : null,
+        ownerName: null,
       };
     });
+
+    // Resolve owner names for the fetched page to populate the frontend filter.
+    const ownerIds = [...new Set(rows.map((r) => r.ownerPrincipalId).filter((id): id is string => id !== null))];
+    if (ownerIds.length > 0) {
+      const ownerPrincipals = await db
+        .select({ id: intxSchema.principal.id, refId: intxSchema.principal.refId })
+        .from(intxSchema.principal)
+        .where(inArray(intxSchema.principal.id, ownerIds));
+      const principalRefIds = [...new Set(ownerPrincipals.map((p) => p.refId))];
+      const users =
+        principalRefIds.length > 0
+          ? await db
+              .select({ id: intxSchema.user.id, name: intxSchema.user.name })
+              .from(intxSchema.user)
+              .where(inArray(intxSchema.user.id, principalRefIds))
+          : [];
+      const ownerNameByRefId = new Map(users.map((u) => [u.id, u.name]));
+      for (const p of ownerPrincipals) {
+        const name = ownerNameByRefId.get(p.refId) ?? null;
+        for (const r of rows) {
+          if (r.ownerPrincipalId === p.id) {
+            (r as { ownerName: string | null }).ownerName = name;
+          }
+        }
+      }
+    }
 
     return c.json({ artifacts: rows, nextCursor });
   });
@@ -1271,6 +1304,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           await db.insert(artifact).values({
             tenantId: userContext.tenantId,
             principalId: userContext.principalId,
+            ownerPrincipalId: userContext.principalId,
             sessionId: wf.id,
             kind: draft.kind,
             title: draft.title,
@@ -1357,6 +1391,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           await db.insert(artifact).values({
             tenantId: userContext.tenantId,
             principalId: userContext.principalId,
+            ownerPrincipalId: userContext.principalId,
             sessionId: wf.id,
             kind: draft.kind,
             title: draft.title,

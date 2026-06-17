@@ -1,3 +1,4 @@
+import { LLM_CREDENTIAL_NAME } from '@workbench/agents';
 import type { WorkflowType } from '@workbench/workflow-core';
 import { createPresentationIntakeArtifacts, derivePresentationRunTitle } from './artifacts';
 
@@ -28,7 +29,7 @@ export const presentationGenerationWorkflow: WorkflowType = {
         {
           providerName: 'openai-compatible',
           source: 'tenant',
-          name: 'zen-deepseek-v4-flash-free',
+          name: LLM_CREDENTIAL_NAME,
         },
       ],
     },

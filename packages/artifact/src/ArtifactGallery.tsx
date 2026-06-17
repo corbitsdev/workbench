@@ -28,6 +28,12 @@ export interface ArtifactGalleryProps {
   sort?: 'newest' | 'oldest';
   /** Called when the user toggles the sort order. */
   onSortChange?: (sort: 'newest' | 'oldest') => void;
+  /** Current owner principal ID filter. Undefined means no filter. */
+  ownerPrincipalId?: string;
+  /** Called when the user changes the owner filter. */
+  onOwnerFilterChange?: (ownerPrincipalId: string | undefined) => void;
+  /** Tenant members for the owner filter. Dropdown shows only when two or more are provided. */
+  owners?: { id: string; name: string }[];
 }
 
 export function ArtifactGallery({
@@ -41,6 +47,9 @@ export function ArtifactGallery({
   onOpenLibrary,
   sort: sortProp,
   onSortChange,
+  ownerPrincipalId,
+  onOwnerFilterChange,
+  owners,
 }: ArtifactGalleryProps) {
   const [internalSort, setInternalSort] = useState<'newest' | 'oldest'>('newest');
   const sort = sortProp ?? internalSort;
@@ -53,6 +62,7 @@ export function ArtifactGallery({
       setInternalSort(next);
     }
   }
+
   const tiles = artifacts.map(toGalleryArtifact);
   const isSearching = query.trim().length > 0;
 
@@ -82,6 +92,22 @@ export function ArtifactGallery({
           {tiles.length} items
         </span>
         <div className="flex-1" />
+        {owners && owners.length > 1 && onOwnerFilterChange && (
+          <select
+            value={ownerPrincipalId ?? ''}
+            onChange={(e) =>
+              onOwnerFilterChange(e.target.value === '' ? undefined : e.target.value)
+            }
+            className="h-[34px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text focus:border-border-strong focus:outline-none"
+          >
+            <option value="">All owners</option>
+            {owners.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           type="search"
           placeholder="Search artifacts"

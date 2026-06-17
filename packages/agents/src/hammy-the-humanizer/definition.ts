@@ -34,7 +34,7 @@ export const HAMMY_CAPABILITIES = {
   ],
 } as const;
 
-export const HAMMY_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash-free' } as const;
+export const HAMMY_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;
 
 export const HAMMY_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Hammy - Humanizer",

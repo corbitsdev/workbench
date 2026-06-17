@@ -4,7 +4,7 @@
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
 import { useRef, useState } from "react";
-import { useArtifacts } from "@workbench/client/react";
+import { useArtifacts, useTenantMembers } from "@workbench/client/react";
 import {
   ArtifactGallery as ArtifactGalleryView,
   ArtifactModal,
@@ -53,6 +53,7 @@ export function ArtifactGallery({
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
+  const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined);
 
   const {
     data: artifacts,
@@ -62,7 +63,11 @@ export function ArtifactGallery({
     tenantId,
     query: debouncedQuery || undefined,
     sort,
+    ownerPrincipalId: ownerFilter,
   });
+
+  const { data: members } = useTenantMembers(clientOptions, { tenantId });
+
   const [selected, setSelected] = useState<ArtifactWithSession | null>(null);
 
   const handleQueryChange = (value: string) => {
@@ -104,6 +109,9 @@ export function ArtifactGallery({
         onOpenLibrary={onOpenLibrary}
         sort={sort}
         onSortChange={setSort}
+        ownerPrincipalId={ownerFilter}
+        onOwnerFilterChange={setOwnerFilter}
+        owners={members}
       />
       <ArtifactModal
         open={selected !== null}

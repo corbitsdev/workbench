@@ -64,10 +64,12 @@ const baseArtifact: ArtifactWithSession = {
   content: 'body',
   status: 'approved',
   version: 1,
+  ownerPrincipalId: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   sessionName: 'Acme Corp',
   sessionStatus: 'done',
+  ownerName: null,
 };
 
 describe('artifact-visuals', () => {

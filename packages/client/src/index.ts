@@ -4,6 +4,7 @@
 // its own hub by passing a `baseUrl` and/or a custom `fetch`. They return clean
 // `@workbench/shared` domain types and contain no presentation logic.
 
+import { type } from 'arktype';
 import type { ArtifactStatus, ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
 
 /** Configuration for a client call. All fields are optional. */
@@ -47,6 +48,29 @@ async function request<T>(path: string, options: ClientOptions): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+const TenantMemberSchema = type({ id: 'string', name: 'string' });
+const MembersResponseSchema = type({ members: TenantMemberSchema.array() });
+
+export type TenantMember = typeof TenantMemberSchema.infer;
+
+export interface ListMembersParams {
+  tenantId?: string | null;
+}
+
+/** Fetch user principals for a tenant (`GET /members`). */
+export async function listMembers(
+  options: ClientOptions = {},
+  params: ListMembersParams = {}
+): Promise<TenantMember[]> {
+  const search = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  const raw = await request<unknown>(`members${search}`, options);
+  const parsed = MembersResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /members response: ${parsed.summary}`);
+  }
+  return parsed.members;
+}
+
 export interface ListWorkflowsParams {
   tenantId?: string | null;
 }
@@ -57,6 +81,7 @@ export interface ListArtifactsParams {
   sort?: 'newest' | 'oldest';
   kind?: string;
   status?: ArtifactStatus;
+  ownerPrincipalId?: string;
   cursor?: string;
   limit?: number;
 }
@@ -89,6 +114,7 @@ export function listArtifacts(
   if (params.sort) qs.set('sort', params.sort);
   if (params.kind) qs.set('kind', params.kind);
   if (params.status) qs.set('status', params.status);
+  if (params.ownerPrincipalId) qs.set('ownerPrincipalId', params.ownerPrincipalId);
   if (params.cursor) qs.set('cursor', params.cursor);
   if (params.limit !== undefined) qs.set('limit', String(params.limit));
   const search = qs.size > 0 ? `?${qs.toString()}` : '';

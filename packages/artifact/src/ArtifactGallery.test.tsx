@@ -20,10 +20,12 @@ const artifact: ArtifactWithSession = {
   content: 'body',
   status: 'approved',
   version: 1,
+  ownerPrincipalId: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   sessionName: 'Acme Corp',
   sessionStatus: 'done',
+  ownerName: null,
 };
 
 describe('ArtifactCard', () => {
@@ -69,5 +71,88 @@ describe('ArtifactGallery', () => {
     render(React.createElement(ArtifactGallery, { artifacts: [], onNew }));
     fireEvent.click(screen.getByRole('button', { name: 'New' }));
     expect(onNew).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the owner filter dropdown when multiple owners are provided', () => {
+    const owners = [
+      { id: 'p-1', name: 'Alice' },
+      { id: 'p-2', name: 'Bob' },
+    ];
+    const onOwnerFilterChange = mock(() => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        owners,
+        onOwnerFilterChange,
+      })
+    );
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    expect(select).toBeDefined();
+    expect(select.value).toBe('');
+    expect(screen.getByText('Alice')).toBeDefined();
+    expect(screen.getByText('Bob')).toBeDefined();
+  });
+
+  it('does not render the dropdown when fewer than two owners are provided', () => {
+    const onOwnerFilterChange = mock(() => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        owners: [{ id: 'p-1', name: 'Alice' }],
+        onOwnerFilterChange,
+      })
+    );
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('does not render the dropdown when owners is undefined', () => {
+    const onOwnerFilterChange = mock(() => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        onOwnerFilterChange,
+      })
+    );
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('dropdown is stable when filtering filters out some artifacts', () => {
+    const owners = [
+      { id: 'p-1', name: 'Alice' },
+      { id: 'p-2', name: 'Bob' },
+    ];
+    const onOwnerFilterChange = mock(() => {});
+    // Only Alice's artifact is in the filtered view, but both owners still show
+    const filteredArtifacts = [{ ...artifact, ownerPrincipalId: 'p-1', ownerName: 'Alice' }];
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: filteredArtifacts,
+        owners,
+        ownerPrincipalId: 'p-1',
+        onOwnerFilterChange,
+      })
+    );
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    expect(select.value).toBe('p-1');
+    expect(screen.getByText('Alice')).toBeDefined();
+    expect(screen.getByText('Bob')).toBeDefined();
+  });
+
+  it('calls onOwnerFilterChange when the owner dropdown selection changes', () => {
+    const owners = [
+      { id: 'p-1', name: 'Alice' },
+      { id: 'p-2', name: 'Bob' },
+    ];
+    const onOwnerFilterChange = mock(() => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        owners,
+        onOwnerFilterChange,
+      })
+    );
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'p-1' } });
+    expect(onOwnerFilterChange).toHaveBeenCalledWith('p-1');
   });
 });

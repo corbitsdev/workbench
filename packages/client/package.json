@@ -19,7 +19,8 @@
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
-    "@workbench/shared": "workspace:*"
+    "@workbench/shared": "workspace:*",
+    "arktype": "^2.2.0"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.9.0",

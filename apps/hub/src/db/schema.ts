@@ -80,6 +80,7 @@ export const artifact = pgTable("artifact", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: text("tenant_id"),
   principalId: text("principal_id"),
+  ownerPrincipalId: text("owner_principal_id"),
   sessionId: uuid("session_id").references(() => workflowRun.id, {
     onDelete: "cascade",
   }),

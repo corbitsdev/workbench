@@ -52,6 +52,7 @@ export interface Artifact {
   content: string;
   status: ArtifactStatus;
   version: number;
+  ownerPrincipalId: string | null;
   createdAt: string;
   updatedAt: string;
   // Structured payload persisted alongside the markdown body (e.g. citations and,
@@ -83,6 +84,7 @@ export interface ArtifactWithVersions extends Artifact {
 export interface ArtifactWithSession extends Artifact {
   sessionName: string | null;
   sessionStatus: SessionStatus;
+  ownerName: string | null;
 }
 
 /**

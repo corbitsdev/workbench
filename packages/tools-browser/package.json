@@ -16,6 +16,7 @@
     "smoke": "bun run scripts/smoke.ts"
   },
   "dependencies": {
+    "arktype": "catalog:",
     "playwright-core": "^1.49.0"
   },
   "devDependencies": {

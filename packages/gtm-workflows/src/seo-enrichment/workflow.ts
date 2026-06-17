@@ -1,10 +1,11 @@
+import { LLM_CREDENTIAL_NAME } from '@workbench/agents';
 import type { WorkflowCredentialRequirement, WorkflowType } from '@workbench/workflow-core';
 import { resourceEnrichmentSteps, resourceEnrichmentWorkflow } from '../resource-enrichment';
 
 const SEO_INFERENCE_REQUIREMENT: WorkflowCredentialRequirement = {
   providerName: 'openai-compatible',
   source: 'tenant',
-  name: 'zen-deepseek-v4-flash-free',
+  name: LLM_CREDENTIAL_NAME,
 };
 
 // Specific kind: composes the resource-enrichment base (step shape + generic

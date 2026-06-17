@@ -507,6 +507,7 @@
       "name": "@workbench/client",
       "dependencies": {
         "@workbench/shared": "workspace:*",
+        "arktype": "^2.2.0",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.9.0",
@@ -551,6 +552,7 @@
       "dependencies": {
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
+        "@workbench/agents": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/workflow-core": "workspace:*",
         "arktype": "catalog:",
@@ -633,6 +635,7 @@
     "packages/tools-browser": {
       "name": "@workbench/tools-browser",
       "dependencies": {
+        "arktype": "catalog:",
         "playwright-core": "^1.49.0",
       },
       "devDependencies": {
