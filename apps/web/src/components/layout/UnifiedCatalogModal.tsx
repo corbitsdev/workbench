@@ -6,11 +6,7 @@ import {
   listAgentTemplates,
   type AgentCatalogEntry,
 } from '../../lib/hub-api';
-import {
-  useWorkflowCatalog,
-  useInstallWorkflow,
-  type WorkflowCatalogEntry,
-} from '../../hooks/use-workflow';
+import { useWorkflowCatalog, useInstallWorkflow, type WorkflowCatalogEntry } from '../../hooks/use-workflow';
 import { workflowAcceptsArtifactKind } from '@workbench/gtm-workflows';
 
 const FOCUSABLE =

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { LLM_CREDENTIAL_NAME } from '@workbench/agents';
+import { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from '@workbench/agents';
 import { collateralGenerationWorkflow } from './workflow';
 import type { WorkflowStepDefinition } from '@workbench/workflow-core';
 
@@ -65,7 +65,7 @@ describe('collateral-generation per-step credential requirements', () => {
   it('requires a tenant-owned openai-compatible LLM on analyze and generate', () => {
     for (const name of ['analyze', 'generate']) {
       expect(stepByName(name).credentialRequirements).toEqual([
-        { providerName: 'openai-compatible', source: 'tenant', name: LLM_CREDENTIAL_NAME },
+        { providerName: 'openai-compatible', source: 'tenant', name: LLM_CREDENTIAL_NAME, defaultModel: LLM_DEFAULT_MODEL },
       ]);
     }
   });

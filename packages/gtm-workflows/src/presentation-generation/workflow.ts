@@ -1,4 +1,4 @@
-import { LLM_CREDENTIAL_NAME } from '@workbench/agents';
+import { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from '@workbench/agents';
 import type { WorkflowType } from '@workbench/workflow-core';
 import { createPresentationIntakeArtifacts, derivePresentationRunTitle } from './artifacts';
 
@@ -30,6 +30,7 @@ export const presentationGenerationWorkflow: WorkflowType = {
           providerName: 'openai-compatible',
           source: 'tenant',
           name: LLM_CREDENTIAL_NAME,
+          defaultModel: LLM_DEFAULT_MODEL,
         },
       ],
     },

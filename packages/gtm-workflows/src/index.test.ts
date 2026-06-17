@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { LLM_CREDENTIAL_NAME } from '@workbench/agents';
+import { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from '@workbench/agents';
 import { collateralGenerationWorkflow as fromRoot } from './index';
 import { collateralGenerationWorkflow as fromSubpath } from './collateral-generation';
 import { collateralGenerationWorkflow as fromModule } from './collateral-generation/workflow';
@@ -43,7 +43,7 @@ describe('flattened credential requirements (mirrors catalog endpoint)', () => {
     const flat = flattenStepCredentialRequirements(fromRoot);
     expect(flat).toEqual([
       { providerName: 'granola', source: 'tenant', name: 'Granola' },
-      { providerName: 'openai-compatible', source: 'tenant', name: LLM_CREDENTIAL_NAME },
+      { providerName: 'openai-compatible', source: 'tenant', name: LLM_CREDENTIAL_NAME, defaultModel: LLM_DEFAULT_MODEL },
     ]);
   });
 });

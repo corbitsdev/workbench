@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, max, ne, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
-import { schema as intxSchema } from '@intx/db';
+import { schema as intxSchema, getAncestorChain, ProviderMetadata } from '@intx/db';
+import { type } from 'arktype';
 import { listLatestGammaTemplates } from '../lib/gamma-templates';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
 import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
@@ -125,6 +126,56 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       credentialRequirements: flattenStepCredentialRequirements(wt),
     }));
     return c.json(catalog);
+  });
+
+  // ─── Inference credentials available for workflow configuration ──────
+  router.get('/workflows/credentials', async (c) => {
+    const userId = c.get('userId');
+    const userContext = await getUserContext(db, userId);
+    if (!userContext) return c.json([]);
+
+    const tenantIds = await getAncestorChain(db as never, userContext.tenantId);
+
+    const credentials = await db.query.credential.findMany({
+      where: inArray(intxSchema.credential.tenantId, tenantIds),
+      orderBy: [asc(intxSchema.credential.name)],
+    });
+
+    const providerIds = [...new Set(credentials.map((c) => c.providerId))];
+    const providers =
+      providerIds.length > 0
+        ? await db.query.provider.findMany({
+            where: inArray(intxSchema.provider.id, providerIds),
+          })
+        : [];
+    const providerById = new Map(providers.map((p) => [p.id, p]));
+
+    const result: Array<{
+      id: string;
+      name: string;
+      providerName: string;
+      providerPlugin: string;
+      baseURL: string;
+    }> = [];
+
+    const INFERENCE_PLUGINS = new Set(['openai-compatible', 'anthropic', 'google-genai', 'openai']);
+
+    for (const cred of credentials) {
+      const provider = providerById.get(cred.providerId);
+      if (!provider) continue;
+      if (!INFERENCE_PLUGINS.has(provider.plugin)) continue;
+      const parsed = ProviderMetadata(provider.metadata ?? {});
+      if (parsed instanceof type.errors) continue;
+      result.push({
+        id: cred.id,
+        name: cred.name,
+        providerName: provider.name,
+        providerPlugin: provider.plugin,
+        baseURL: parsed.baseURL,
+      });
+    }
+
+    return c.json(result);
   });
 
   // ─── Tool catalog (metadata for the install UI) ──────────────────────

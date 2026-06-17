@@ -185,6 +185,7 @@ export interface WorkflowCredentialRequirement {
   source: string;
   name?: string;
   scopes?: string[];
+  defaultModel?: string;
 }
 
 export interface WorkflowStepDefinition {
@@ -206,9 +207,18 @@ export interface WorkflowCatalogEntry {
 export interface StepAssignment {
   credentialIds: string[];
   toolIds: string[];
+  model?: string;
 }
 
 export type WorkflowAssignments = Record<string, StepAssignment>;
+
+export interface WorkflowInferenceCredential {
+  id: string;
+  name: string;
+  providerName: string;
+  providerPlugin: string;
+  baseURL: string;
+}
 
 export interface EnabledWorkflowEntry {
   id: string;
@@ -224,6 +234,14 @@ export interface WorkflowToolMeta {
   name: string;
   providerName: string;
   description: string;
+}
+
+export function useWorkflowCredentials() {
+  return useQuery<WorkflowInferenceCredential[]>({
+    queryKey: ['workflow-credentials'],
+    queryFn: () => api<WorkflowInferenceCredential[]>('GET', '/workflows/credentials'),
+    staleTime: 5 * 60 * 1000,
+  });
 }
 
 export function useWorkflowCatalog() {
