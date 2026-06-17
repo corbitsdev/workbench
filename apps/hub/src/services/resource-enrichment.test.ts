@@ -27,6 +27,7 @@ import {
 } from './resource-enrichment';
 
 const USER = { tenantId: 'tenant-global', principalId: 'prn-1' };
+const WORKBENCH_USER = { tenantId: 'tenant-wb', principalId: 'prn-2' };
 const FAKE_SOURCE = { provider: 'openai', model: 'gpt-4o' } as never;
 
 // A full, schema-valid SeoResourceRow — readParsedRows now validates with
@@ -204,6 +205,21 @@ describe('createResourceEnrichmentRun', () => {
     await expect(createResourceEnrichmentRun(db, USER, 'seo-enrichment', 'nope')).rejects.toThrow(
       ResourceEnrichmentError
     );
+  });
+
+  it('accepts an upload stored under the same workbench tenant', async () => {
+    const db = createMockDb({
+      upload: {
+        id: 'upl-1',
+        tenantId: 'tenant-wb',
+        filename: 'catalog.xlsx',
+        content: await workbookBuffer(3),
+      },
+    });
+
+    const run = await createResourceEnrichmentRun(db, WORKBENCH_USER, 'seo-enrichment', 'upl-1');
+
+    expect(run.status).toBe('running');
   });
 
   it('rejects an upload owned by another tenant', async () => {

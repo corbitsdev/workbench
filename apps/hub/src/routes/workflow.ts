@@ -1195,7 +1195,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           ).catch((err) => {
             log.error('Resource enrichment enrich failed', {
               workflowId: id,
-              error: err instanceof Error ? err.message : String(err),
+              error: err instanceof Error ? err : new Error(String(err)),
             });
           });
           return c.json({ status: 'generating' }, 202);

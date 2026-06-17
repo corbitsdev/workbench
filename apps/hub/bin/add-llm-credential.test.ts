@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { detectProvider } from "./add-llm-credential";
+import { detectGoogleAi, detectProvider } from "./add-llm-credential";
 
 describe("add-llm-credential detectProvider", () => {
   const originalEnv = process.env;
@@ -54,5 +54,43 @@ describe("add-llm-credential detectProvider", () => {
 
     expect(detected.providerName).toBe("openai-compatible");
     expect(detected.baseURL).toBe("https://llm.example.com/v1");
+  });
+});
+
+describe("add-llm-credential detectGoogleAi", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env["GOOGLE_GEMINI_API_KEY"];
+    delete process.env["GEMINI_API_KEY"];
+    delete process.env["GOOGLE_AI_CREDENTIAL_NAME"];
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("returns google-genai config when GOOGLE_GEMINI_API_KEY is set", () => {
+    process.env["GOOGLE_GEMINI_API_KEY"] = "gem-test";
+
+    const detected = detectGoogleAi();
+
+    expect(detected).toEqual({
+      providerName: "google-genai",
+      apiKey: "gem-test",
+      baseURL: "https://generativelanguage.googleapis.com",
+      credentialName: "google-ai",
+    });
+  });
+
+  it("accepts GEMINI_API_KEY as an alias", () => {
+    process.env["GEMINI_API_KEY"] = "gem-alias";
+
+    expect(detectGoogleAi()?.apiKey).toBe("gem-alias");
+  });
+
+  it("returns null when no Gemini key is configured", () => {
+    expect(detectGoogleAi()).toBeNull();
   });
 });
