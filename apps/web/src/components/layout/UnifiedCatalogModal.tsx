@@ -6,13 +6,7 @@ import {
   listAgentTemplates,
   type AgentCatalogEntry,
 } from '../../lib/hub-api';
-import {
-  useWorkflowCatalog,
-  useInstallWorkflow,
-  type WorkflowCatalogEntry,
-  type WorkflowAssignments,
-} from '../../hooks/use-workflow';
-import { WorkflowConfigPanel } from '../WorkflowConfigPanel';
+import { useWorkflowCatalog, useInstallWorkflow, type WorkflowCatalogEntry } from '../../hooks/use-workflow';
 import { workflowAcceptsArtifactKind } from '@workbench/gtm-workflows';
 
 const FOCUSABLE =
@@ -74,7 +68,6 @@ export function UnifiedCatalogModal({
   const [deploying, setDeploying] = useState<string | null>(null);
   const [installingKind, setInstallingKind] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [configuringWorkflow, setConfiguringWorkflow] = useState<WorkflowCatalogEntry | null>(null);
 
   const { data: agentCatalog = [] } = useQuery<AgentCatalogEntry[]>({
     queryKey: ['agent-templates'],
@@ -88,7 +81,6 @@ export function UnifiedCatalogModal({
   const handleClose = useCallback(() => {
     setError(null);
     setSearch('');
-    setConfiguringWorkflow(null);
     onClose();
   }, [onClose]);
 
@@ -161,20 +153,14 @@ export function UnifiedCatalogModal({
     }
   };
 
-  const handleStartWorkflow = (entry: WorkflowCatalogEntry) => {
+  const handleStartWorkflow = async (entry: WorkflowCatalogEntry) => {
     if (installingKind) return;
-    setError(null);
-    setConfiguringWorkflow(entry);
-  };
-
-  const handleConfiguredStart = async (assignments: WorkflowAssignments) => {
-    if (!configuringWorkflow) return;
-    setInstallingKind(configuringWorkflow.kind);
+    setInstallingKind(entry.kind);
     setError(null);
     try {
-      await installWorkflow.mutateAsync({ kind: configuringWorkflow.kind, assignments });
+      await installWorkflow.mutateAsync({ kind: entry.kind, assignments: {} });
       handleClose();
-      onWorkflowSelected(configuringWorkflow.kind);
+      onWorkflowSelected(entry.kind);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start workflow');
     } finally {
@@ -209,15 +195,6 @@ export function UnifiedCatalogModal({
             transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
             className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
           >
-            {configuringWorkflow ? (
-              <WorkflowConfigPanel
-                entry={configuringWorkflow}
-                onBack={() => setConfiguringWorkflow(null)}
-                onStart={(assignments) => void handleConfiguredStart(assignments)}
-                isLoading={installingKind === configuringWorkflow.kind}
-              />
-            ) : (
-            <>
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <div className="text-[16px] font-bold text-text">New</div>
@@ -388,8 +365,6 @@ export function UnifiedCatalogModal({
                 </div>
               )}
             </div>
-            </>
-            )}
           </motion.div>
         </motion.div>
       )}
