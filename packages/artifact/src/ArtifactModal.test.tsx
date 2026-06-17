@@ -5,6 +5,7 @@ import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import type { ArtifactWithSession } from '@workbench/shared';
 import { ArtifactModal } from './ArtifactModal';
+import { LINKEDIN_LINE_BREAK_ANCHOR } from './linkedin-clipboard';
 
 const artifact: ArtifactWithSession = {
   id: 'a-1',
@@ -192,6 +193,119 @@ describe('ArtifactModal', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Use in Workflow' }));
       expect(onUseInWorkflow).toHaveBeenCalledTimes(1);
       expect(onUseInWorkflow).toHaveBeenCalledWith(artifact);
+    });
+  });
+
+  describe('CL-2043: LinkedIn clipboard formatting', () => {
+    const linkedInArtifact: ArtifactWithSession = {
+      ...artifact,
+      kind: 'linkedin-post',
+      title: 'Field observation',
+      content: 'Hook line\n\nSecond paragraph.',
+    };
+
+    it('shows the manual format gate for linkedin-post artifacts', () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact: linkedInArtifact,
+          onClose: () => {},
+        })
+      );
+      expect(screen.queryByLabelText('Format for LinkedIn paste')).not.toBeNull();
+    });
+
+    it('hides the manual format gate for non-linkedin artifacts', () => {
+      render(React.createElement(ArtifactModal, { open: true, artifact, onClose: () => {} }));
+      expect(screen.queryByLabelText('Format for LinkedIn paste')).toBeNull();
+    });
+
+    it('copies linkedin-formatted text when the manual gate is enabled', async () => {
+      const writeText = mock(() => Promise.resolve());
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact: linkedInArtifact,
+          onClose: () => {},
+        })
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Copy content' }));
+      expect(writeText).toHaveBeenCalledWith(
+        `Hook line\n${LINKEDIN_LINE_BREAK_ANCHOR}\nSecond paragraph.`
+      );
+      await screen.findByRole('button', { name: 'Copied' });
+    });
+
+    it('copies raw text when the manual gate is disabled', async () => {
+      const writeText = mock(() => Promise.resolve());
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact: linkedInArtifact,
+          onClose: () => {},
+        })
+      );
+      fireEvent.click(screen.getByLabelText('Format for LinkedIn paste'));
+      fireEvent.click(screen.getByRole('button', { name: 'Copy content' }));
+      expect(writeText).toHaveBeenCalledWith('Hook line\n\nSecond paragraph.');
+    });
+
+    it('resets the format gate when the modal reopens', () => {
+      const props = {
+        open: true,
+        artifact: linkedInArtifact,
+        onClose: () => {},
+      };
+      const { rerender } = render(React.createElement(ArtifactModal, props));
+      const checkbox = screen.getByLabelText('Format for LinkedIn paste') as HTMLInputElement;
+      fireEvent.click(checkbox);
+      expect(checkbox.checked).toBe(false);
+
+      rerender(React.createElement(ArtifactModal, { ...props, open: false, artifact: null }));
+      rerender(React.createElement(ArtifactModal, props));
+      expect((screen.getByLabelText('Format for LinkedIn paste') as HTMLInputElement).checked).toBe(
+        true
+      );
+    });
+
+    it('shows copy failed when clipboard write is rejected', async () => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: mock(() => Promise.reject(new Error('denied'))) },
+        configurable: true,
+      });
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact: linkedInArtifact,
+          onClose: () => {},
+        })
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Copy content' }));
+      await screen.findByRole('button', { name: 'Copy failed' });
+      expect(screen.queryByRole('button', { name: 'Copied' })).toBeNull();
+    });
+
+    it('shows the format gate for legacy linkedin kinds', () => {
+      const legacyArtifact = {
+        ...linkedInArtifact,
+        kind: 'linkedin-daily',
+      } as unknown as ArtifactWithSession;
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact: legacyArtifact,
+          onClose: () => {},
+        })
+      );
+      expect(screen.queryByLabelText('Format for LinkedIn paste')).not.toBeNull();
     });
   });
 

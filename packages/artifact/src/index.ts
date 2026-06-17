@@ -14,3 +14,8 @@ export { ArtifactViz } from './ArtifactViz';
 export { ArtifactCard } from './ArtifactCard';
 export { ArtifactGallery, type ArtifactGalleryProps } from './ArtifactGallery';
 export { ArtifactModal, type ArtifactModalProps, type ArtifactModalAction } from './ArtifactModal';
+export {
+  isLinkedInPostArtifactKind,
+  usesSocialPostPreview,
+  type LinkedInPostArtifactKind,
+} from './artifact-kinds';

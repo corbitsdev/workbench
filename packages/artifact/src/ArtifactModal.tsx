@@ -6,6 +6,8 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@workbench/ui';
 import type { ArtifactWithSession } from '@workbench/shared';
+import { isLinkedInPostArtifactKind } from './artifact-kinds';
+import { resolveArtifactClipboardText } from './linkedin-clipboard';
 
 export interface ArtifactModalAction {
   label: string;
@@ -65,6 +67,14 @@ export function ArtifactModal({
   );
   const panelRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  const [formatForLinkedIn, setFormatForLinkedIn] = useState(true);
+  const showLinkedInFormatGate = Boolean(artifact && isLinkedInPostArtifactKind(artifact.kind));
+
+  useEffect(() => {
+    if (!open) return;
+    setFormatForLinkedIn(true);
+  }, [open, artifact?.id, artifact?.kind]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -158,18 +168,44 @@ export function ArtifactModal({
             </div>
 
             <div className="relative flex-1 overflow-y-auto px-6 py-5 text-[14px] leading-relaxed text-text-2">
+              {showLinkedInFormatGate && (
+                <label className="absolute right-4 top-12 flex cursor-pointer items-center gap-1.5 text-[11px] text-text-3">
+                  <input
+                    type="checkbox"
+                    checked={formatForLinkedIn}
+                    onChange={(e) => setFormatForLinkedIn(e.target.checked)}
+                    className="accent-charcoal"
+                  />
+                  Format for LinkedIn paste
+                </label>
+              )}
               <button
                 type="button"
-                aria-label={copied ? 'Copied' : 'Copy content'}
+                aria-label={copyFailed ? 'Copy failed' : copied ? 'Copied' : 'Copy content'}
                 onClick={() => {
-                  void navigator.clipboard.writeText(artifact.content).then(() => {
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  });
+                  const text = resolveArtifactClipboardText(
+                    artifact.content,
+                    artifact.kind,
+                    formatForLinkedIn
+                  );
+                  setCopied(false);
+                  setCopyFailed(false);
+                  void navigator.clipboard
+                    .writeText(text)
+                    .then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1500);
+                    })
+                    .catch(() => {
+                      setCopyFailed(true);
+                      setTimeout(() => setCopyFailed(false), 1500);
+                    });
                 }}
                 className="absolute right-4 top-4 flex items-center gap-1.5 rounded-[7px] border border-border bg-surface px-2 py-1 text-[11px] text-text-3 transition-colors hover:text-text active:scale-[0.97]"
               >
-                {copied ? (
+                {copyFailed ? (
+                  'Copy failed'
+                ) : copied ? (
                   'Copied'
                 ) : (
                   <svg
