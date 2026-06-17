@@ -68,3 +68,11 @@ export {
   redditOpportunityScanArtifactSchema,
   redditOpportunityRecommendationSchema,
 } from './reddit-opportunity-scanner';
+export {
+  blindAbComparisonWorkflow,
+  AB_COMPARISON_WORKFLOW_KIND,
+  type AbComparisonProviderOption,
+  type AbComparisonInput,
+  type AbComparisonBranch,
+  type AbComparisonRanking,
+} from './blind-ab-comparison';

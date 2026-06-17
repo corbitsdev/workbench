@@ -1,4 +1,4 @@
-import { Home, Settings, LogOut } from "lucide-react";
+import { Home, Settings, LogOut, BookOpen } from "lucide-react";
 import { NavLink, Link, useLocation } from "react-router";
 import { useAuth } from "../AuthProvider";
 
@@ -56,6 +56,15 @@ export function AppSidebar() {
           className={({ isActive }) => navIconClass(isActive)}
         >
           <Home size={18} />
+        </NavLink>
+
+        <NavLink
+          to="/skills"
+          title="Skills Library"
+          aria-label="Skills Library"
+          className={({ isActive }) => navIconClass(isActive)}
+        >
+          <BookOpen size={18} />
         </NavLink>
 
         <Link
