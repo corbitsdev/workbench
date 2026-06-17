@@ -8,20 +8,20 @@ import type { WorkflowNewPaneProps } from '../registry';
 import { useWorkflowCredentials } from '../../hooks/use-workflow';
 import ArtifactSourcePicker from '../../components/ArtifactSourcePicker';
 
-type StepName = 'providers' | 'configure' | 'input';
+type StepName = 'comparisons' | 'configure' | 'input';
 
 type Mode = 'text' | 'artifact';
 
 const PROVIDER_WHITELIST = new Set(['openai-compatible', 'openai', 'anthropic', 'google-genai']);
 
 const STEP_LABELS: Record<StepName, string> = {
-  providers: 'Providers',
+  comparisons: 'Comparisons',
   configure: 'Configure',
   input: 'Input',
 };
 
 function StepBar({ currentStep }: { currentStep: StepName }) {
-  const steps: StepName[] = ['providers', 'configure', 'input'];
+  const steps: StepName[] = ['comparisons', 'configure', 'input'];
   const index = steps.indexOf(currentStep);
   return (
     <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0">
@@ -60,8 +60,11 @@ export function AbComparisonNewPane({
   onClose,
   seedArtifactId,
 }: WorkflowNewPaneProps) {
-  const [step, setStep] = useState<StepName>('providers');
-  const [options, setOptions] = useState<AbComparisonProviderOption[]>([]);
+  const [step, setStep] = useState<StepName>('comparisons');
+  const [options, setOptions] = useState<AbComparisonProviderOption[]>([
+    { credentialId: '', providerName: '', providerPlugin: '', skillIds: [] },
+    { credentialId: '', providerName: '', providerPlugin: '', skillIds: [] },
+  ]);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [inputMode, setInputMode] = useState<Mode>('text');
   const [textInput, setTextInput] = useState('');
@@ -80,43 +83,49 @@ export function AbComparisonNewPane({
     [credentialsQuery.data]
   );
 
-  const toggleOption = useCallback(
-    (credentialId: string) => {
+  const addSlot = () => {
+    setOptions((prev) => [
+      ...prev,
+      { credentialId: '', providerName: '', providerPlugin: '', skillIds: [] },
+    ]);
+  };
+
+  const removeSlot = (index: number) => {
+    setOptions((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateSlotCredential = useCallback(
+    (index: number, credentialId: string) => {
       setOptions((prev) => {
-        const exists = prev.find((o) => o.credentialId === credentialId);
-        if (exists) {
-          return prev.filter((o) => o.credentialId !== credentialId);
-        }
+        const next = [...prev];
         const cred = whitelistedCredentials.find((c) => c.id === credentialId);
-        if (!cred) return prev;
-        return [
-          ...prev,
-          {
-            credentialId: cred.id,
-            providerName: cred.providerName,
-            providerPlugin: cred.providerPlugin,
-            model: cred.model,
-            skillIds: [],
-          },
-        ];
+        next[index] = {
+          credentialId: cred?.id ?? '',
+          providerName: cred?.providerName ?? '',
+          providerPlugin: cred?.providerPlugin ?? '',
+          model: cred?.model,
+          skillIds: [],
+        };
+        return next;
       });
     },
     [whitelistedCredentials]
   );
 
   const updateOptionSkills = useCallback(
-    (credentialId: string, skillIds: string[]) => {
-      setOptions((prev) =>
-        prev.map((o) =>
-          o.credentialId === credentialId ? { ...o, skillIds } : o
-        )
-      );
+    (index: number, skillIds: string[]) => {
+      setOptions((prev) => {
+        const next = [...prev];
+        next[index] = { ...next[index], skillIds };
+        return next;
+      });
     },
     []
   );
 
   const validateProviders = () => {
-    if (options.length < 2) {
+    const valid = options.filter((o) => o.credentialId);
+    if (valid.length < 2) {
       setError('Select at least two providers to compare.');
       return false;
     }
@@ -140,7 +149,7 @@ export function AbComparisonNewPane({
 
   const handleNext = () => {
     setError('');
-    if (step === 'providers') {
+    if (step === 'comparisons') {
       if (!validateProviders()) return;
       setStep('configure');
     } else if (step === 'configure') {
@@ -153,7 +162,7 @@ export function AbComparisonNewPane({
 
   const handleBack = () => {
     setError('');
-    if (step === 'configure') setStep('providers');
+    if (step === 'configure') setStep('comparisons');
     else if (step === 'input') setStep('configure');
   };
 
@@ -168,7 +177,7 @@ export function AbComparisonNewPane({
         body: JSON.stringify({
           workflowKind: 'blind-ab-comparison',
           tenantId,
-          providers: options,
+          providers: options.filter((o) => o.credentialId),
           systemPrompt: systemPrompt.trim() || undefined,
           input: {
             source: inputMode,
@@ -220,9 +229,9 @@ export function AbComparisonNewPane({
 
       <div className="flex-1 overflow-y-auto p-5">
         <AnimatePresence mode="wait">
-          {step === 'providers' && (
+          {step === 'comparisons' && (
             <motion.div
-              key="providers"
+              key="comparisons"
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
@@ -230,8 +239,7 @@ export function AbComparisonNewPane({
               className="space-y-4"
             >
               <p className="text-[13px] text-text-2">
-                Select two or more inference providers from the whitelist
-                (openai-compatible, OpenAI, Anthropic).
+                Choose how many comparisons you want and pick a provider for each slot. You can use the same provider multiple times.
               </p>
               {credentialsQuery.isLoading && (
                 <p className="text-[13px] text-text-3">Loading credentials…</p>
@@ -241,37 +249,53 @@ export function AbComparisonNewPane({
                   Could not load credentials.
                 </p>
               )}
-              <div className="grid grid-cols-1 gap-2">
-                {whitelistedCredentials.map((cred) => {
-                  const active = options.some(
-                    (o) => o.credentialId === cred.id
-                  );
-                  return (
-                    <label
-                      key={cred.id}
-                      className={`flex cursor-pointer items-center gap-3 rounded-[10px] border p-4 transition-colors ${
-                        active
-                          ? 'border-orange bg-orange/[0.06]'
-                          : 'border-border hover:bg-[var(--row-hover)]'
-                      }`}
+              <div className="space-y-3">
+                {options.map((option, index) => (
+                  <div
+                    key={index}
+                    className="rounded-[10px] border border-border p-4 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[13px] font-medium text-text">
+                        Comparison {index + 1}
+                      </span>
+                      {options.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => removeSlot(index)}
+                          className="text-[11px] text-text-3 hover:text-red transition-colors"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <select
+                      value={option.credentialId}
+                      onChange={(e) => updateSlotCredential(index, e.target.value)}
+                      className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text focus:outline-none focus:ring-1 focus:ring-orange/40"
                     >
-                      <input
-                        type="checkbox"
-                        checked={active}
-                        onChange={() => toggleOption(cred.id)}
-                        className="h-4 w-4 accent-orange"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[13px] font-medium text-text">
-                          {cred.name}
-                        </p>
-                        <p className="text-[11px] text-text-3">
-                          {cred.providerName} · {cred.providerPlugin}
-                        </p>
-                      </div>
-                    </label>
-                  );
-                })}
+                      <option value="">Select a provider…</option>
+                      {whitelistedCredentials.map((cred) => (
+                        <option key={cred.id} value={cred.id}>
+                          {cred.name} ({cred.providerName} · {cred.providerPlugin})
+                        </option>
+                      ))}
+                    </select>
+                    {option.credentialId && (
+                      <p className="text-[11px] text-text-3">
+                        {option.providerName} · {option.providerPlugin}
+                        {option.model ? ` · ${option.model}` : ''}
+                      </p>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addSlot}
+                  className="w-full rounded-[9px] border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
+                >
+                  Add comparison
+                </button>
               </div>
               {whitelistedCredentials.length === 0 && !credentialsQuery.isLoading && (
                 <p className="text-[13px] text-text-3">
@@ -307,16 +331,18 @@ export function AbComparisonNewPane({
               {/* Per-provider skills */}
               <div>
                 <label className="block text-[13px] font-medium text-text mb-2">
-                  Skills per provider
+                  Skills per comparison
                 </label>
                 <div className="space-y-3">
-                  {options.map((option) => (
+                  {options.map((option, index) => (
                     <div
-                      key={option.credentialId}
+                      key={index}
                       className="rounded-[10px] border border-border p-3"
                     >
                       <p className="text-[13px] font-medium text-text mb-2">
-                        {option.providerName}
+                        {option.providerName
+                          ? `Comparison ${index + 1}: ${option.providerName}`
+                          : `Comparison ${index + 1}`}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {SKILLS_REGISTRY.map((skill) => {
@@ -329,7 +355,7 @@ export function AbComparisonNewPane({
                                 const next = active
                                   ? option.skillIds.filter((id) => id !== skill.id)
                                   : [...option.skillIds, skill.id];
-                                updateOptionSkills(option.credentialId, next);
+                                updateOptionSkills(index, next);
                               }}
                               className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium transition-colors ${
                                 active
@@ -405,7 +431,7 @@ export function AbComparisonNewPane({
       <div className="border-t border-border bg-surface px-5 py-3 shrink-0 flex items-center justify-between gap-3">
         <button
           type="button"
-          disabled={step === 'providers' || isLoading}
+          disabled={step === 'comparisons' || isLoading}
           onClick={handleBack}
           className="rounded-[9px] border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text disabled:opacity-50"
         >
