@@ -3,6 +3,8 @@ import { describe, expect, it } from 'bun:test';
 import { getWorkflowUi } from './registry';
 import { PresentationNewPane } from './presentation/PresentationNewPane';
 import { PresentationSelectedPanel } from './presentation/PresentationSelectedPanel';
+import { RedditOpportunityNewPane } from './reddit-opportunity-scanner/RedditOpportunityNewPane';
+import { RedditOpportunitySelectedPanel } from './reddit-opportunity-scanner/RedditOpportunitySelectedPanel';
 
 describe('workflow UI registry', () => {
   it('resolves the presentation-generation kind to its own package-owned panels', () => {
@@ -22,5 +24,11 @@ describe('workflow UI registry', () => {
     expect(() => getWorkflowUi('some-future-workflow')).toThrow(
       'No workflow UI registered for kind: some-future-workflow'
     );
+  });
+
+  it('resolves the reddit-opportunity-scanner kind to its own package-owned panels', () => {
+    const entry = getWorkflowUi('reddit-opportunity-scanner');
+    expect(entry.NewPane).toBe(RedditOpportunityNewPane);
+    expect(entry.SelectedPanel).toBe(RedditOpportunitySelectedPanel);
   });
 });

@@ -25,7 +25,7 @@ export interface WorkflowTypeDefinition {
   description: string;
 }
 
-export type StepName = 'intake' | 'analyze' | 'generate';
+export type StepName = 'intake' | 'analyze' | 'generate' | 'approve' | 'review' | 'scan';
 
 export interface WorkflowStep {
   completed: boolean;
@@ -393,6 +393,10 @@ export function useCreateWorkflow() {
       source?: string;
       workflowKind: string;
       tenantId?: string;
+      inputUrl?: string;
+      brandName?: string;
+      targetGeography?: string;
+      icpHints?: string;
     }) => {
       logger.info('Creating workflow', {
         source: body.source,

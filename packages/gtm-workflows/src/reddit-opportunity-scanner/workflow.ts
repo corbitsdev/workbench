@@ -72,4 +72,33 @@ export const redditOpportunityScannerWorkflow: WorkflowType = {
         throw new Error(`Unknown workflow status: ${status}`);
     }
   },
+  serializeStepState: ({ status, input, artifacts }) => {
+    const intake = status !== 'pending' && status !== 'failed';
+    const analyze = status === 'analyzing' || status === 'reviewing' || status === 'running' || status === 'generating' || status === 'done';
+    const review = status === 'reviewing' || status === 'running' || status === 'generating' || status === 'done';
+    const scan = status === 'done';
+
+    const redditArtifacts = (artifacts ?? []).filter(
+      (a: { kind?: string }) => a.kind === 'reddit-opportunity-scan'
+    );
+
+    const parseArtifactContent = (a: { content?: string } | undefined): unknown => {
+      if (!a || typeof a.content !== 'string') return undefined;
+      try {
+        return JSON.parse(a.content);
+      } catch {
+        return undefined;
+      }
+    };
+
+    const draftArtifact = redditArtifacts.find((a: { status?: string }) => a.status === 'draft');
+    const approvedArtifact = redditArtifacts.find((a: { status?: string }) => a.status === 'approved');
+
+    return {
+      intake: { completed: intake, input },
+      analyze: { completed: analyze },
+      review: { completed: review, artifact: parseArtifactContent(draftArtifact) },
+      scan: { completed: scan, artifact: parseArtifactContent(approvedArtifact) },
+    };
+  },
 };
