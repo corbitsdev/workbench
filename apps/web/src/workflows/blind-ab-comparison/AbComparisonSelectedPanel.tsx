@@ -2,14 +2,18 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { useWorkflow } from '../../hooks/use-workflow';
-import { SKILLS_REGISTRY } from '@workbench/agents';
 import type { AbComparisonBranch, AbComparisonRanking } from '@workbench/gtm-workflows';
 import type { WorkflowSelectedPanelProps } from '../registry';
 
-export function AbComparisonSelectedPanel({
-  workflowId,
-  onClose,
-}: WorkflowSelectedPanelProps) {
+function formatRankLabel(rankIndex: number): string {
+  if (rankIndex < 0) return 'Unranked';
+  if (rankIndex === 0) return '1st';
+  if (rankIndex === 1) return '2nd';
+  if (rankIndex === 2) return '3rd';
+  return `${rankIndex + 1}th`;
+}
+
+export function AbComparisonSelectedPanel({ workflowId, onClose }: WorkflowSelectedPanelProps) {
   const { data: workflow, isLoading, isError } = useWorkflow(workflowId);
   const queryClient = useQueryClient();
   const [ranking, setRanking] = useState<AbComparisonRanking | null>(null);
@@ -83,11 +87,11 @@ export function AbComparisonSelectedPanel({
   const executeStep = steps['execute'];
   const compareStep = steps['compare'];
   const feedbackStep = steps['feedback'];
-  const persistStepData = steps['persist'];
 
   const branches = (executeStep?.branches as AbComparisonBranch[] | undefined) ?? [];
   const doneBranches = branches.filter((b) => b.status === 'done' || b.status === 'error');
-  const allDone = branches.length > 0 && branches.every((b) => b.status === 'done' || b.status === 'error');
+  const allDone =
+    branches.length > 0 && branches.every((b) => b.status === 'done' || b.status === 'error');
   const serverRanking = compareStep?.ranking as AbComparisonRanking | undefined;
   const serverFeedback = feedbackStep?.ranking as { feedback?: Record<string, string> } | undefined;
 
@@ -95,7 +99,8 @@ export function AbComparisonSelectedPanel({
   const activeFeedback = { ...serverFeedback?.feedback, ...feedbackByBranch };
 
   const currentStep = workflow.currentStep ?? 'pending';
-  const isRunning = currentStep === 'execute' || (workflow.status === 'running' && currentStep === 'execute');
+  const isRunning =
+    currentStep === 'execute' || (workflow.status === 'running' && currentStep === 'execute');
   const isReviewing = currentStep === 'compare';
   const isFeedback = currentStep === 'feedback';
   const isPersist = currentStep === 'persist' || workflow.status === 'done';
@@ -131,9 +136,7 @@ export function AbComparisonSelectedPanel({
       {/* Header */}
       <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border bg-surface shrink-0">
         <div className="min-w-0">
-          <p className="truncate text-[14px] font-semibold text-text">
-            Blind A/B Comparison
-          </p>
+          <p className="truncate text-[14px] font-semibold text-text">Blind A/B Comparison</p>
           <p className="text-[11px] text-text-3 font-mono mt-px">
             {workflow.currentStep} · {workflow.status}
           </p>
@@ -144,7 +147,13 @@ export function AbComparisonSelectedPanel({
           aria-label="Close"
           className="grid h-[28px] w-[28px] place-items-center rounded-[8px] border border-border text-text-2 hover:text-text hover:bg-surface-2 transition-colors"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-4 w-4"
+          >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </button>
@@ -156,7 +165,10 @@ export function AbComparisonSelectedPanel({
           <p className="text-[13px] font-semibold text-text">Configuration</p>
           <div className="space-y-2">
             <p className="text-[12px] text-text-3">
-              Providers: {((providersStep?.providers as Array<{ providerName: string }> | undefined) ?? []).map((p) => p.providerName).join(', ') || 'None'}
+              Providers:{' '}
+              {((providersStep?.providers as Array<{ providerName: string }> | undefined) ?? [])
+                .map((p) => p.providerName)
+                .join(', ') || 'None'}
             </p>
             {(configureStep?.systemPrompt as string | undefined) && (
               <p className="text-[12px] text-text-3">
@@ -164,7 +176,9 @@ export function AbComparisonSelectedPanel({
               </p>
             )}
             <p className="text-[12px] text-text-3">
-              Input: {((inputStep?.input as { source?: string; text?: string } | undefined)?.source) ?? 'none'}
+              Input:{' '}
+              {(inputStep?.input as { source?: string; text?: string } | undefined)?.source ??
+                'none'}
             </p>
           </div>
         </div>
@@ -187,14 +201,23 @@ export function AbComparisonSelectedPanel({
             <p className="text-[13px] text-text-2">Running {branches.length} branches…</p>
             <div className="space-y-2">
               {branches.map((b) => (
-                <div key={b.id} className="flex items-center justify-between rounded-[8px] border border-border p-3">
+                <div
+                  key={b.id}
+                  className="flex items-center justify-between rounded-[8px] border border-border p-3"
+                >
                   <div className="flex items-center gap-2">
                     <div
                       className={`h-2 w-2 rounded-full ${
-                        b.status === 'done' ? 'bg-green' : b.status === 'error' ? 'bg-red' : 'bg-orange animate-pulse'
+                        b.status === 'done'
+                          ? 'bg-green'
+                          : b.status === 'error'
+                            ? 'bg-red'
+                            : 'bg-orange animate-pulse'
                       }`}
                     />
-                    <span className="text-[12px] font-medium text-text">Branch {b.id.slice(0, 6)}</span>
+                    <span className="text-[12px] font-medium text-text">
+                      Branch {b.id.slice(0, 6)}
+                    </span>
                   </div>
                   <span className="text-[11px] text-text-3">{b.status}</span>
                 </div>
@@ -214,7 +237,7 @@ export function AbComparisonSelectedPanel({
             <div className="grid grid-cols-1 gap-3">
               {doneBranches.map((branch) => {
                 const rankIndex = activeRanking?.branchIds.indexOf(branch.id) ?? -1;
-                const rankLabel = rankIndex === 0 ? '1st' : rankIndex === 1 ? '2nd' : rankIndex === 2 ? '3rd' : rankIndex >= 0 ? `${rankIndex + 1}th` : 'Unranked';
+                const rankLabel = formatRankLabel(rankIndex);
                 return (
                   <div
                     key={branch.id}
@@ -227,7 +250,9 @@ export function AbComparisonSelectedPanel({
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-[12px] font-semibold text-text">Output {branch.id.slice(0, 6)}</span>
+                      <span className="text-[12px] font-semibold text-text">
+                        Output {branch.id.slice(0, 6)}
+                      </span>
                       <span className="text-[11px] font-medium text-text-3">{rankLabel}</span>
                     </div>
                     <div className="rounded-[8px] border border-border bg-bg p-3">
@@ -254,7 +279,9 @@ export function AbComparisonSelectedPanel({
                       </button>
                       <button
                         type="button"
-                        disabled={rankIndex === (activeRanking?.branchIds.length ?? 0) - 1 || !activeRanking}
+                        disabled={
+                          rankIndex === (activeRanking?.branchIds.length ?? 0) - 1 || !activeRanking
+                        }
                         onClick={() => {
                           if (!activeRanking) return;
                           const ids = [...activeRanking.branchIds];
@@ -271,7 +298,12 @@ export function AbComparisonSelectedPanel({
                       {!activeRanking && (
                         <button
                           type="button"
-                          onClick={() => handleRank([branch.id, ...doneBranches.filter((b) => b.id !== branch.id).map((b) => b.id)])}
+                          onClick={() =>
+                            handleRank([
+                              branch.id,
+                              ...doneBranches.filter((b) => b.id !== branch.id).map((b) => b.id),
+                            ])
+                          }
                           className="rounded-[7px] border border-orange/40 bg-orange/10 px-2 py-1 text-[11px] font-medium text-orange hover:bg-orange/[0.16]"
                         >
                           Pick as best
@@ -346,9 +378,7 @@ export function AbComparisonSelectedPanel({
           </div>
         )}
 
-        {submitError && (
-          <p className="text-[12px] text-orange-deep">{submitError}</p>
-        )}
+        {submitError && <p className="text-[12px] text-orange-deep">{submitError}</p>}
       </div>
     </div>
   );

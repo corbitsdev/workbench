@@ -1,11 +1,9 @@
 import { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  SKILLS_REGISTRY,
-  type AbComparisonProviderOption,
-} from '@workbench/agents';
+import { SKILLS_REGISTRY } from '@workbench/agents';
+import type { AbComparisonProviderOption } from '@workbench/gtm-workflows';
 import type { WorkflowNewPaneProps } from '../registry';
-import { useWorkflowCredentials } from '../../hooks/use-workflow';
+import { useCreateWorkflow, useWorkflowCredentials } from '../../hooks/use-workflow';
 import ArtifactSourcePicker from '../../components/ArtifactSourcePicker';
 
 type StepName = 'comparisons' | 'configure' | 'input';
@@ -38,16 +36,10 @@ function StepBar({ currentStep }: { currentStep: StepName }) {
           >
             {i < index ? '✓' : i + 1}
           </div>
-          <span
-            className={`text-[12px] font-medium ${
-              i === index ? 'text-text' : 'text-text-3'
-            }`}
-          >
+          <span className={`text-[12px] font-medium ${i === index ? 'text-text' : 'text-text-3'}`}>
             {STEP_LABELS[step]}
           </span>
-          {i < steps.length - 1 && (
-            <span className="mx-1 text-text-3">›</span>
-          )}
+          {i < steps.length - 1 && <span className="mx-1 text-text-3">›</span>}
         </div>
       ))}
     </div>
@@ -55,6 +47,7 @@ function StepBar({ currentStep }: { currentStep: StepName }) {
 }
 
 export function AbComparisonNewPane({
+  workflowKind,
   tenantId,
   onCreated,
   onClose,
@@ -68,18 +61,13 @@ export function AbComparisonNewPane({
   const [systemPrompt, setSystemPrompt] = useState('');
   const [inputMode, setInputMode] = useState<Mode>('text');
   const [textInput, setTextInput] = useState('');
-  const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>(
-    seedArtifactId
-  );
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>(seedArtifactId);
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
 
+  const createWorkflow = useCreateWorkflow();
   const credentialsQuery = useWorkflowCredentials();
   const whitelistedCredentials = useMemo(
-    () =>
-      (credentialsQuery.data ?? []).filter((c) =>
-        PROVIDER_WHITELIST.has(c.providerPlugin)
-      ),
+    () => (credentialsQuery.data ?? []).filter((c) => PROVIDER_WHITELIST.has(c.providerPlugin)),
     [credentialsQuery.data]
   );
 
@@ -112,16 +100,13 @@ export function AbComparisonNewPane({
     [whitelistedCredentials]
   );
 
-  const updateOptionSkills = useCallback(
-    (index: number, skillIds: string[]) => {
-      setOptions((prev) => {
-        const next = [...prev];
-        next[index] = { ...next[index], skillIds };
-        return next;
-      });
-    },
-    []
-  );
+  const updateOptionSkills = useCallback((index: number, skillIds: string[]) => {
+    setOptions((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], skillIds };
+      return next;
+    });
+  }, []);
 
   const validateProviders = () => {
     const valid = options.filter((o) => o.credentialId);
@@ -166,40 +151,26 @@ export function AbComparisonNewPane({
     else if (step === 'input') setStep('configure');
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     setError('');
-    setIsLoading(true);
-    try {
-      const res = await fetch('/api/v1/workflows', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workflowKind: 'blind-ab-comparison',
-          tenantId,
-          providers: options.filter((o) => o.credentialId),
-          systemPrompt: systemPrompt.trim() || undefined,
-          input: {
-            source: inputMode,
-            text: inputMode === 'text' ? textInput.trim() : undefined,
-            artifactId:
-              inputMode === 'artifact' ? selectedArtifactId : undefined,
-          },
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `HTTP ${res.status}`);
+    createWorkflow.mutate(
+      {
+        workflowKind,
+        tenantId: tenantId ?? undefined,
+        providers: options.filter((o) => o.credentialId),
+        systemPrompt: systemPrompt.trim() || undefined,
+        input: {
+          source: inputMode,
+          text: inputMode === 'text' ? textInput.trim() : undefined,
+          artifactId: inputMode === 'artifact' ? selectedArtifactId : undefined,
+        },
+      },
+      {
+        onSuccess: (workflow) => onCreated(workflow.id),
+        onError: (err) =>
+          setError(err instanceof Error ? err.message : 'Failed to create workflow'),
       }
-      const data = (await res.json()) as { id: string };
-      onCreated(data.id);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to create workflow'
-      );
-    } finally {
-      setIsLoading(false);
-    }
+    );
   };
 
   return (
@@ -239,22 +210,18 @@ export function AbComparisonNewPane({
               className="space-y-4"
             >
               <p className="text-[13px] text-text-2">
-                Choose how many comparisons you want and pick a provider for each slot. You can use the same provider multiple times.
+                Choose how many comparisons you want and pick a provider for each slot. You can use
+                the same provider multiple times.
               </p>
               {credentialsQuery.isLoading && (
                 <p className="text-[13px] text-text-3">Loading credentials…</p>
               )}
               {credentialsQuery.isError && (
-                <p className="text-[13px] text-orange-deep">
-                  Could not load credentials.
-                </p>
+                <p className="text-[13px] text-orange-deep">Could not load credentials.</p>
               )}
               <div className="space-y-3">
                 {options.map((option, index) => (
-                  <div
-                    key={index}
-                    className="rounded-[10px] border border-border p-4 space-y-2"
-                  >
+                  <div key={index} className="rounded-[10px] border border-border p-4 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[13px] font-medium text-text">
                         Comparison {index + 1}
@@ -299,7 +266,8 @@ export function AbComparisonNewPane({
               </div>
               {whitelistedCredentials.length === 0 && !credentialsQuery.isLoading && (
                 <p className="text-[13px] text-text-3">
-                  No whitelisted credentials available. Add an OpenAI-compatible, OpenAI, or Anthropic credential first.
+                  No whitelisted credentials available. Add an OpenAI-compatible, OpenAI, or
+                  Anthropic credential first.
                 </p>
               )}
             </motion.div>
@@ -335,10 +303,7 @@ export function AbComparisonNewPane({
                 </label>
                 <div className="space-y-3">
                   {options.map((option, index) => (
-                    <div
-                      key={index}
-                      className="rounded-[10px] border border-border p-3"
-                    >
+                    <div key={index} className="rounded-[10px] border border-border p-3">
                       <p className="text-[13px] font-medium text-text mb-2">
                         {option.providerName
                           ? `Comparison ${index + 1}: ${option.providerName}`
@@ -422,16 +387,14 @@ export function AbComparisonNewPane({
           )}
         </AnimatePresence>
 
-        {error && (
-          <p className="mt-3 text-[12px] text-orange-deep">{error}</p>
-        )}
+        {error && <p className="mt-3 text-[12px] text-orange-deep">{error}</p>}
       </div>
 
       {/* Footer actions */}
       <div className="border-t border-border bg-surface px-5 py-3 shrink-0 flex items-center justify-between gap-3">
         <button
           type="button"
-          disabled={step === 'comparisons' || isLoading}
+          disabled={step === 'comparisons' || createWorkflow.isPending}
           onClick={handleBack}
           className="rounded-[9px] border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text disabled:opacity-50"
         >
@@ -439,15 +402,11 @@ export function AbComparisonNewPane({
         </button>
         <button
           type="button"
-          disabled={isLoading}
+          disabled={createWorkflow.isPending}
           onClick={handleNext}
           className="rounded-[9px] bg-orange px-4 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {isLoading
-            ? 'Starting…'
-            : step === 'input'
-              ? 'Run comparison'
-              : 'Next'}
+          {createWorkflow.isPending ? 'Starting…' : step === 'input' ? 'Run comparison' : 'Next'}
         </button>
       </div>
     </div>

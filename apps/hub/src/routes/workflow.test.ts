@@ -3097,6 +3097,160 @@ describe('Workflow router', () => {
       expect(captured).toHaveLength(0);
     });
   });
+
+  describe('blind-ab-comparison workflow', () => {
+    function buildAbComparisonApp(db: ReturnType<typeof createMockDb>) {
+      const parent = new Hono<{ Variables: { userId: string } }>();
+      parent.use('*', async (c, next) => {
+        c.set('userId', 'test-user');
+        await next();
+      });
+      parent.route('/', createWorkflowRouter(db as unknown as HubDb));
+      return parent;
+    }
+
+    function createAbComparisonMockDb(options: Parameters<typeof createMockDb>[0] = {}) {
+      const db = createMockDb(options);
+      db.query.enabledWorkflow.findFirst = mock(() => ({
+        id: 'ew-ab',
+        tenantId: 'tenant-personal',
+        principalId: 'prn-personal',
+        kind: 'blind-ab-comparison',
+        enabledAt: new Date().toISOString(),
+        assignments: {} as unknown as {
+          analyze: { credentialIds: string[]; toolIds: never[] };
+          generate: { credentialIds: string[]; toolIds: never[] };
+        },
+      }));
+      db.query.workflowRun.findFirst = mock(() => ({
+        id: 'wf-ab',
+        status: 'pending',
+        tenantId: 'tenant-personal',
+        principalId: PERSONAL_PRINCIPAL.id,
+        kind: 'blind-ab-comparison',
+        input: {
+          providers: [
+            {
+              credentialId: 'cred-1',
+              providerName: 'OpenAI',
+              providerPlugin: 'openai',
+              skillIds: [],
+            },
+            {
+              credentialId: 'cred-2',
+              providerName: 'Anthropic',
+              providerPlugin: 'anthropic',
+              skillIds: [],
+            },
+          ],
+          input: { source: 'text', text: 'Compare this prompt' },
+        } as Record<string, unknown>,
+      }));
+      db.insert = mock(() => ({
+        values: mock((values: unknown) => {
+          options.onInsertValues?.(values);
+          return {
+            returning: mock(() => [
+              {
+                id: 'wf-ab',
+                status: 'pending',
+                kind: 'blind-ab-comparison',
+              },
+            ]),
+            onConflictDoUpdate: mock(() => ({
+              returning: mock(() => []),
+            })),
+          };
+        }),
+      }));
+      return db;
+    }
+
+    it('POST /workflows creates blind-ab-comparison run with providers and input', async () => {
+      const insertedValues: unknown[] = [];
+      const router = buildAbComparisonApp(
+        createAbComparisonMockDb({
+          onInsertValues: (values) => insertedValues.push(values),
+        })
+      );
+      const res = await router.fetch(
+        new Request('http://localhost/workflows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workflowKind: 'blind-ab-comparison',
+            providers: [
+              {
+                credentialId: 'cred-1',
+                providerName: 'OpenAI',
+                providerPlugin: 'openai',
+                skillIds: [],
+              },
+              {
+                credentialId: 'cred-2',
+                providerName: 'Anthropic',
+                providerPlugin: 'anthropic',
+                skillIds: [],
+              },
+            ],
+            input: { source: 'text', text: 'Compare this prompt' },
+          }),
+        })
+      );
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.id).toBeString();
+      expect(json.kind).toBe('blind-ab-comparison');
+      expect(insertedValues).toContainEqual(
+        expect.objectContaining({
+          kind: 'blind-ab-comparison',
+          status: 'pending',
+        })
+      );
+    });
+
+    it('POST /workflows rejects blind-ab-comparison without two providers', async () => {
+      const router = buildAbComparisonApp(createAbComparisonMockDb());
+      const res = await router.fetch(
+        new Request('http://localhost/workflows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workflowKind: 'blind-ab-comparison',
+            providers: [
+              {
+                credentialId: 'cred-1',
+                providerName: 'OpenAI',
+                providerPlugin: 'openai',
+                skillIds: [],
+              },
+            ],
+            input: { source: 'text', text: 'Compare this prompt' },
+          }),
+        })
+      );
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('At least two providers are required');
+    });
+
+    it('POST /workflows/:id/steps execute returns 202', async () => {
+      const updatedValues: unknown[] = [];
+      const db = createAbComparisonMockDb({
+        onSetUpdate: (values) => updatedValues.push(values),
+      });
+      const router = buildAbComparisonApp(db);
+      const res = await router.fetch(
+        new Request('http://localhost/workflows/wf-ab/steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step: 'execute' }),
+        })
+      );
+      expect(res.status).toBe(202);
+      expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'running' }));
+    });
+  });
 });
 
 describe('resolveResetStatus', () => {

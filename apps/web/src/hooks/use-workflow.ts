@@ -4,6 +4,7 @@ import { api, ApiError, uploadFile } from '../lib/api';
 import { logger } from '../lib/logger';
 import { listWorkbenches, listAgentInstances } from '../lib/hub-api';
 import type { AgentInstance } from '../lib/hub-api';
+import type { AbComparisonInput, AbComparisonProviderOption } from '@workbench/gtm-workflows';
 import type { WorkflowState } from '@workbench/shared';
 
 export type { AgentInstance };
@@ -397,6 +398,9 @@ export function useCreateWorkflow() {
       brandName?: string;
       targetGeography?: string;
       icpHints?: string;
+      providers?: AbComparisonProviderOption[];
+      systemPrompt?: string;
+      input?: AbComparisonInput;
     }) => {
       logger.info('Creating workflow', {
         source: body.source,
