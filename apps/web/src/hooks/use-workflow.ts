@@ -340,10 +340,39 @@ const uploadResultSchema = type({
 });
 export type UploadResult = typeof uploadResultSchema.infer;
 
+export function useRunResourceEnrichmentStep(workflowId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (step: 'enrich' | 'export') => {
+      logger.info('Running resource enrichment step', { workflowId, step });
+      const res = await api<{ status: string }>('POST', `/workflows/${workflowId}/steps`, {
+        step,
+      });
+      logger.info('Resource enrichment step completed', { workflowId, step, status: res.status });
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+    },
+    onError: (error) => {
+      logger.error('Resource enrichment step failed', {
+        workflowId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
+}
+
 export function useUploadFile() {
   return useMutation({
-    mutationFn: async (file: File): Promise<UploadResult> => {
-      const raw = await uploadFile<unknown>('/uploads', file);
+    mutationFn: async ({
+      file,
+      tenantId,
+    }: {
+      file: File;
+      tenantId?: string | null;
+    }): Promise<UploadResult> => {
+      const raw = await uploadFile<unknown>('/uploads', file, { tenantId });
       const parsed = uploadResultSchema(raw);
       if (parsed instanceof type.errors) {
         throw new Error(`Unexpected upload response: ${parsed.summary}`);

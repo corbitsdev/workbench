@@ -11,13 +11,26 @@ mock.module('../config', () => ({
 }));
 
 const GLOBAL_TENANT = { id: 'tenant-global', slug: 'global-org' };
-const MEMBER_PRINCIPAL = { id: 'prn-1', tenantId: 'tenant-global', kind: 'user' };
+const GLOBAL_PRINCIPAL = { id: 'prn-1', tenantId: 'tenant-global', kind: 'user', refId: 'user-1' };
+const WORKBENCH_PRINCIPAL = {
+  id: 'prn-2',
+  tenantId: 'tenant-wb',
+  kind: 'user',
+  refId: 'user-1',
+  status: 'active',
+};
 
 function buildApp(options: { onInsert?: (values: Record<string, unknown>) => void } = {}) {
+  let principalCalls = 0;
   const db = {
     query: {
       tenant: { findFirst: mock(() => GLOBAL_TENANT) },
-      principal: { findFirst: mock(() => MEMBER_PRINCIPAL) },
+      principal: {
+        findFirst: mock(() => {
+          principalCalls += 1;
+          return principalCalls === 1 ? GLOBAL_PRINCIPAL : WORKBENCH_PRINCIPAL;
+        }),
+      },
     },
     insert: mock(() => ({
       values: mock((values: Record<string, unknown>) => {
@@ -89,5 +102,22 @@ describe('POST /uploads', () => {
     const file = new File(['data'], 'catalog.xlsx', { type: '' });
     const res = await app.request(uploadRequest(file));
     expect(res.status).toBe(201);
+  });
+
+  it('stores uploads in the requested workbench tenant', async () => {
+    let inserted: Record<string, unknown> | undefined;
+    const app = buildApp({ onInsert: (v) => (inserted = v) });
+    const file = new File(['data'], 'catalog.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const res = await app.request(
+      new Request('http://local/uploads?tenantId=tenant-wb', {
+        method: 'POST',
+        body: uploadRequest(file).body,
+      })
+    );
+    expect(res.status).toBe(201);
+    expect(inserted?.tenantId).toBe('tenant-wb');
+    expect(inserted?.principalId).toBe('prn-2');
   });
 });

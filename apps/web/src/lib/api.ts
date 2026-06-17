@@ -48,17 +48,25 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
 // Multipart upload seam. `api()` JSON-encodes its body, so a file upload needs
 // its own path: a FormData POST with no explicit Content-Type (the browser sets
 // the multipart boundary). Shares the base-URL and error-handling rules.
-export async function uploadFile<T>(path: string, file: File): Promise<T> {
+export async function uploadFile<T>(
+  path: string,
+  file: File,
+  options?: { tenantId?: string | null }
+): Promise<T> {
   const url = new URL(
     `/api/v1/${path.replace(/^\//, '')}`,
     apiBase || window.location.origin
-  ).toString();
+  );
+  if (options?.tenantId) {
+    url.searchParams.set('tenantId', options.tenantId);
+  }
+  const urlString = url.toString();
   const form = new FormData();
   form.set('file', file);
 
-  logger.info('API upload', { url, filename: file.name, size: file.size });
+  logger.info('API upload', { url: urlString, filename: file.name, size: file.size });
 
-  const res = await fetch(url, { method: 'POST', credentials: 'include', body: form });
+  const res = await fetch(urlString, { method: 'POST', credentials: 'include', body: form });
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => null);
     const message =
@@ -68,7 +76,7 @@ export async function uploadFile<T>(path: string, file: File): Promise<T> {
       typeof (body as Record<string, unknown>).error === 'string'
         ? (body as { error: string }).error
         : `HTTP ${res.status}`;
-    logger.error('API upload failed', { url, status: res.status, error: message });
+    logger.error('API upload failed', { url: urlString, status: res.status, error: message });
     throw new ApiError(message, res.status);
   }
 
