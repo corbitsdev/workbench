@@ -156,6 +156,53 @@ export function useUpdateSelection(workflowId: string) {
   });
 }
 
+export function useUpdateRedditScanReview(workflowId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      artifactId,
+      recommendations,
+      scanConfig,
+    }: {
+      artifactId: string;
+      recommendations: unknown;
+      scanConfig: unknown;
+    }) => {
+      return api<unknown>('PATCH', `/workflows/${workflowId}/artifacts/${artifactId}/reddit-scan`, {
+        recommendations,
+        scanConfig,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+    },
+  });
+}
+
+export function useUpdateRedditOpportunityStatus(workflowId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      artifactId,
+      opportunityId,
+      status,
+    }: {
+      artifactId: string;
+      opportunityId: string;
+      status: string;
+    }) => {
+      return api<unknown>(
+        'PATCH',
+        `/workflows/${workflowId}/artifacts/${artifactId}/reddit-opportunity`,
+        { opportunityId, status }
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+    },
+  });
+}
+
 export function useUpdateCompanyName(workflowId: string) {
   const queryClient = useQueryClient();
   return useMutation({

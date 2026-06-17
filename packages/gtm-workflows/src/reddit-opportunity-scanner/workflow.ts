@@ -27,7 +27,7 @@ export const redditOpportunityScannerWorkflow: WorkflowType = {
       description:
         'Use the site content to infer what the business sells, its keywords, competitors, and audience signals.',
       credentialRequirements: [INFERENCE_REQUIREMENT],
-      tools: ['firecrawl_crawl_start', 'firecrawl_crawl_status'],
+      tools: ['firecrawl_scrape'],
     },
     {
       name: 'review',
@@ -74,8 +74,17 @@ export const redditOpportunityScannerWorkflow: WorkflowType = {
   },
   serializeStepState: ({ status, input, artifacts }) => {
     const intake = status !== 'pending' && status !== 'failed';
-    const analyze = status === 'analyzing' || status === 'reviewing' || status === 'running' || status === 'generating' || status === 'done';
-    const review = status === 'reviewing' || status === 'running' || status === 'generating' || status === 'done';
+    const analyze =
+      status === 'analyzing' ||
+      status === 'reviewing' ||
+      status === 'running' ||
+      status === 'generating' ||
+      status === 'done';
+    const review =
+      status === 'reviewing' ||
+      status === 'running' ||
+      status === 'generating' ||
+      status === 'done';
     const scan = status === 'done';
 
     const redditArtifacts = (artifacts ?? []).filter(
@@ -92,13 +101,23 @@ export const redditOpportunityScannerWorkflow: WorkflowType = {
     };
 
     const draftArtifact = redditArtifacts.find((a: { status?: string }) => a.status === 'draft');
-    const approvedArtifact = redditArtifacts.find((a: { status?: string }) => a.status === 'approved');
+    const approvedArtifact = redditArtifacts.find(
+      (a: { status?: string }) => a.status === 'approved'
+    );
 
     return {
       intake: { completed: intake, input },
       analyze: { completed: analyze },
-      review: { completed: review, artifact: parseArtifactContent(draftArtifact) },
-      scan: { completed: scan, artifact: parseArtifactContent(approvedArtifact) },
+      review: {
+        completed: review,
+        artifactId: draftArtifact?.id,
+        artifact: parseArtifactContent(draftArtifact),
+      },
+      scan: {
+        completed: scan,
+        artifactId: approvedArtifact?.id,
+        artifact: parseArtifactContent(approvedArtifact),
+      },
     };
   },
 };
