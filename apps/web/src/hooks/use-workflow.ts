@@ -26,7 +26,20 @@ export interface WorkflowTypeDefinition {
   description: string;
 }
 
-export type StepName = 'intake' | 'analyze' | 'generate' | 'approve' | 'review' | 'scan';
+export type StepName =
+  | 'intake'
+  | 'analyze'
+  | 'generate'
+  | 'approve'
+  | 'review'
+  | 'scan'
+  | 'providers'
+  | 'configure'
+  | 'input'
+  | 'execute'
+  | 'compare'
+  | 'feedback'
+  | 'persist';
 
 export interface WorkflowStep {
   completed: boolean;
@@ -69,6 +82,12 @@ export function useWorkflow(workflowId: string) {
       // another client is observed.
       const status = data.status;
       const settled = status === 'done' || status === 'failed' || status === 'ready';
+      if (
+        data.kind === 'blind-ab-comparison' &&
+        (data.currentStep === 'execute' || status === 'reviewing')
+      ) {
+        return 1000;
+      }
       return settled ? false : 5000;
     },
   });

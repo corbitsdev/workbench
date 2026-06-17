@@ -19,6 +19,8 @@ import {
   redditOpportunityScannerWorkflow,
   blindAbComparisonWorkflow,
   validateAbComparisonProviders,
+  type AbComparisonBranch,
+  type AbComparisonInput,
 } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
 import {
@@ -1238,6 +1240,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       callTitle?: string;
       sourceArtifactId?: string;
       agentInstanceId?: string;
+      ranking?: { branchIds?: string[]; feedback?: Record<string, string> };
     };
 
     log.info('Running step', { workflowId: id, step: body.step });
@@ -1643,9 +1646,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
             skillIds: string[];
           }>
         | undefined;
-      const inputDef = currentInput['input'] as
-        | { source: string; text?: string; artifactId?: string }
-        | undefined;
+      const inputDef = currentInput['input'] as AbComparisonInput | undefined;
       const systemPrompt =
         typeof currentInput['systemPrompt'] === 'string' ? currentInput['systemPrompt'] : undefined;
 
@@ -1687,17 +1688,35 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       return c.json({ status: 'running' }, 202);
     }
 
+    if (step === 'compare' && wf.kind === 'blind-ab-comparison') {
+      const currentInput = (wf.input as Record<string, unknown>) ?? {};
+      const ranking = body.ranking;
+      if (
+        !ranking ||
+        !Array.isArray(ranking.branchIds) ||
+        !ranking.branchIds.every((id) => typeof id === 'string')
+      ) {
+        return c.json({ error: 'Ranking is required' }, 400);
+      }
+      await db
+        .update(workflowRun)
+        .set({
+          status: 'feedback',
+          input: {
+            ...currentInput,
+            ranking: {
+              branchIds: ranking.branchIds,
+              feedback: ranking.feedback,
+            },
+          },
+        })
+        .where(eq(workflowRun.id, id));
+      return c.json({ status: 'feedback' }, 200);
+    }
+
     if (step === 'persist' && wf.kind === 'blind-ab-comparison') {
       const currentInput = (wf.input as Record<string, unknown>) ?? {};
-      const branches = currentInput['branches'] as
-        | Array<{
-            id: string;
-            option: { providerName: string; model?: string; providerPlugin: string };
-            output?: string;
-            status: string;
-            errorMessage?: string;
-          }>
-        | undefined;
+      const branches = currentInput['branches'] as AbComparisonBranch[] | undefined;
       // Merge request body into currentInput so the API contract is respected
       const bodyRanking = body['ranking'];
       const bodyFeedback = body['feedback'];

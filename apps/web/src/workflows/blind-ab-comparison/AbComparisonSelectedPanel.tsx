@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { useWorkflow } from '../../hooks/use-workflow';
+import { MarkdownBlock } from '../../components/ArtifactBody';
 import type { AbComparisonBranch, AbComparisonRanking } from '@workbench/gtm-workflows';
 import type { WorkflowSelectedPanelProps } from '../registry';
 
@@ -44,7 +45,8 @@ export function AbComparisonSelectedPanel({ workflowId, onClose }: WorkflowSelec
 
   const updateRanking = useMutation({
     mutationFn: async (next: AbComparisonRanking) => {
-      return api<{ status: string }>('PATCH', `/workflows/${workflowId}/step-data`, {
+      return api<{ status: string }>('POST', `/workflows/${workflowId}/steps`, {
+        step: 'compare',
         ranking: next,
       });
     },
@@ -99,8 +101,7 @@ export function AbComparisonSelectedPanel({ workflowId, onClose }: WorkflowSelec
   const activeFeedback = { ...serverFeedback?.feedback, ...feedbackByBranch };
 
   const currentStep = workflow.currentStep ?? 'pending';
-  const isRunning =
-    currentStep === 'execute' || (workflow.status === 'running' && currentStep === 'execute');
+  const isRunning = currentStep === 'execute';
   const isReviewing = currentStep === 'compare';
   const isFeedback = currentStep === 'feedback';
   const isPersist = currentStep === 'persist' || workflow.status === 'done';
@@ -112,9 +113,13 @@ export function AbComparisonSelectedPanel({ workflowId, onClose }: WorkflowSelec
 
   const handleRank = (branchIds: string[]) => {
     setSubmitError('');
-    const next: AbComparisonRanking = { branchIds, feedback: activeFeedback };
-    setRanking(next);
-    updateRanking.mutate(next);
+    setRanking({ branchIds, feedback: activeFeedback });
+  };
+
+  const handleContinueToFeedback = () => {
+    if (!activeRanking) return;
+    setSubmitError('');
+    updateRanking.mutate(activeRanking);
   };
 
   const handleFeedbackChange = (branchId: string, value: string) => {
@@ -199,7 +204,7 @@ export function AbComparisonSelectedPanel({ workflowId, onClose }: WorkflowSelec
         {isRunning && branches.length > 0 && (
           <div className="space-y-3">
             <p className="text-[13px] text-text-2">Running {branches.length} branches…</p>
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {branches.map((b) => (
                 <div
                   key={b.id}
@@ -234,7 +239,7 @@ export function AbComparisonSelectedPanel({ workflowId, onClose }: WorkflowSelec
               Rank the outputs from best to worst. Provider identities are hidden until you finish.
             </p>
 
-            <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start">
               {doneBranches.map((branch) => {
                 const rankIndex = activeRanking?.branchIds.indexOf(branch.id) ?? -1;
                 const rankLabel = formatRankLabel(rankIndex);
@@ -255,10 +260,12 @@ export function AbComparisonSelectedPanel({ workflowId, onClose }: WorkflowSelec
                       </span>
                       <span className="text-[11px] font-medium text-text-3">{rankLabel}</span>
                     </div>
-                    <div className="rounded-[8px] border border-border bg-bg p-3">
-                      <pre className="text-[12px] text-text-2 whitespace-pre-wrap font-mono leading-relaxed max-h-48 overflow-y-auto">
-                        {branch.output ?? 'No output'}
-                      </pre>
+                    <div className="max-h-[520px] overflow-y-auto rounded-[8px] border border-border bg-bg p-3">
+                      {branch.output ? (
+                        <MarkdownBlock text={branch.output} />
+                      ) : (
+                        <p className="text-[12px] text-text-3">No output</p>
+                      )}
                     </div>
                     <div className="mt-3 flex items-center gap-2">
                       <button
@@ -333,7 +340,7 @@ export function AbComparisonSelectedPanel({ workflowId, onClose }: WorkflowSelec
               <button
                 type="button"
                 disabled={updateRanking.isPending}
-                onClick={() => handleRank(activeRanking.branchIds)}
+                onClick={handleContinueToFeedback}
                 className="w-full rounded-[9px] bg-orange px-4 py-2 text-[14px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 Continue to feedback

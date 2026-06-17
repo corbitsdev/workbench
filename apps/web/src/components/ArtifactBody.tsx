@@ -47,7 +47,7 @@ function parseMarkdownTable(text: string): { headers: string[]; rows: string[][]
   return { headers, rows };
 }
 
-function MarkdownBlock({ text }: { text: string }) {
+export function MarkdownBlock({ text }: { text: string }) {
   const lines = text.split('\n');
   const elements: React.ReactNode[] = [];
   let i = 0;
@@ -300,7 +300,9 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
           return <RedditOpportunityBody scan={parsedScan} mode="results" />;
         }
       }
-      return <p className="text-sm text-red-500 p-4">Invalid reddit opportunity artifact payload.</p>;
+      return (
+        <p className="text-sm text-red-500 p-4">Invalid reddit opportunity artifact payload.</p>
+      );
     }
     // fallback
     default:
