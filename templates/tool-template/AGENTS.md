@@ -7,4 +7,4 @@ Scaffold template for new tool packages. Copy this directory to create a new too
 
 ## Testing
 
-Follow the repository testing standards in the [root AGENTS.md](../../AGENTS.md#testing) — red/green (tests first), the 80% coverage floor (always aim higher), and the test-quality bar.
+Follow root [AGENTS.md](../../AGENTS.md) testing standards.

@@ -145,6 +145,10 @@ Keyless tools need no seed entry — say so in the package README.
 - All env var validation lives in `apps/hub/src/config.ts`.
 - Do not modify `eslint`, `prettier`, `tsconfig`, or `package.json` unless explicitly asked.
 
+## Types (packages/ only)
+
+Prefer `type(...)` from `arktype` over `interface` or `type` aliases for new types in `packages/`. When you encounter a raw type outside tests or build output, upgrade it in a separate commit — check downstream `infer` and narrowing usage before upgrading. `interchange/` and `apps/` are out of scope.
+
 ## Dependency Injection
 
 Inject stateful resources (DB, HTTP clients). Import stateless singletons (config, loggers) directly.
