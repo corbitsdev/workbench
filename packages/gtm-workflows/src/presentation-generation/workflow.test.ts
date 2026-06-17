@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { LLM_CREDENTIAL_NAME } from '@workbench/agents';
+import { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from '@workbench/agents';
 import { presentationGenerationWorkflow } from './workflow';
 
 describe('presentationGenerationWorkflow', () => {
@@ -28,7 +28,7 @@ describe('presentationGenerationWorkflow', () => {
   it('generate step declares the LLM credential requirement for the pipeline', () => {
     const step = presentationGenerationWorkflow.steps.find((s) => s.name === 'generate');
     expect(step?.credentialRequirements).toEqual([
-      { providerName: 'openai-compatible', source: 'tenant', name: LLM_CREDENTIAL_NAME },
+      { providerName: 'openai-compatible', source: 'tenant', name: LLM_CREDENTIAL_NAME, defaultModel: LLM_DEFAULT_MODEL },
     ]);
   });
 

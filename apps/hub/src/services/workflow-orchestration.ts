@@ -1,15 +1,15 @@
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import {
-  resolveCredentialRequirement,
   resolveCredentialById,
+  resolveCredentialRequirement,
   resolveInstanceSources,
+  resolveOneCredential,
   schema as intxSchema,
 } from '@intx/db';
 import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry } from '@workbench/workflow-core';
 import type { WorkflowType, UserContext } from '@workbench/workflow-core';
-import { randomUUID } from 'node:crypto';
 import { KNOWN_TOOLS } from '../lib/tool-registry';
 import type { HubDb } from '../db';
 import { workflowRun, enabledWorkflow } from '../db/schema';
@@ -147,25 +147,6 @@ export async function resolveGranolaApiKey(db: HubDb, tenantId: string): Promise
   return resolved.secret;
 }
 
-/** Build an InferenceSource from a resolved credential's provider row + plaintext secret. */
-export function buildInferenceSource(
-  providerRow: { plugin: string; metadata: unknown },
-  secret: string
-): InferenceSource | null {
-  const meta = providerRow.metadata as { baseURL?: string; model?: string } | null;
-  if (!meta?.baseURL || !meta.model) return null;
-
-  const apiKey = secret;
-
-  return {
-    id: `workflow-llm-${randomUUID()}`,
-    provider: providerRow.plugin,
-    baseURL: meta.baseURL,
-    apiKey,
-    model: meta.model,
-  };
-}
-
 // ─── Per-step assignment resolution ──────────────────────────────────
 
 export interface StepAssignment {
@@ -208,48 +189,34 @@ export async function resolveStepInferenceSource(
   kind: string,
   step: string
 ): Promise<InferenceSource | null> {
+  const workflowDef = workflowRegistry.get(kind);
+  const stepDef = workflowDef?.steps.find((s) => s.name === step);
+  const req = stepDef?.credentialRequirements?.find((r) => r.providerName !== 'granola');
+  if (!req || !req.defaultModel) return null;
+
   const assignments = await getWorkflowAssignments(db, tenantId, principalId, kind);
   const credentialIds = assignments[step]?.credentialIds ?? [];
   for (const credentialId of credentialIds) {
     const cred = await resolveCredentialById(db, tenantId, credentialId);
     if (!cred) continue;
-    const providerRow = await db.query.provider.findFirst({
-      where: eq(intxSchema.provider.id, cred.providerId),
-    });
-    if (!providerRow) continue;
-    const source = buildInferenceSource(providerRow, cred.secret);
-    if (source) return source;
+    const outcome = await resolveOneCredential(db, tenantId, req, null, null, req.defaultModel);
+    if (outcome.ok) return outcome.source;
   }
 
-  const workflowDef = workflowRegistry.get(kind);
-  const stepDef = workflowDef?.steps.find((s) => s.name === step);
-  const req = stepDef?.credentialRequirements?.find((r) => r.providerName !== 'granola');
-  if (!req) return null;
-
-  // resolveCredentialRequirement throws when more than one active credential
-  // matches with no name to disambiguate. Treat that as "unresolved" so the
-  // caller returns a clear 400 (configure the credential) instead of a 500.
-  let resolved;
-  try {
-    resolved = await resolveCredentialRequirement(db, tenantId, req, null, null);
-  } catch (err) {
-    log.warn('Workflow LLM credential resolution failed', {
-      tenantId,
-      kind,
-      step,
-      providerName: req.providerName,
-      error: err instanceof Error ? err.message : String(err),
-    });
+  const outcome = await resolveOneCredential(db, tenantId, req, null, null, req.defaultModel);
+  if (!outcome.ok) {
+    if (outcome.reason !== 'credential_missing' && outcome.reason !== 'skipped') {
+      log.warn('Workflow LLM credential resolution failed', {
+        tenantId,
+        kind,
+        step,
+        providerName: req.providerName,
+        reason: outcome.reason,
+      });
+    }
     return null;
   }
-  if (!resolved) return null;
-
-  const providerRow = await db.query.provider.findFirst({
-    where: eq(intxSchema.provider.id, resolved.providerId),
-  });
-  if (!providerRow) return null;
-
-  return buildInferenceSource(providerRow, resolved.secret);
+  return outcome.source;
 }
 
 /**

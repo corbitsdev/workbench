@@ -5,6 +5,7 @@ export type WorkflowCredentialRequirement = {
   scopes?: string[];
   source: CredentialRequirementSource;
   name?: string;
+  defaultModel?: string;
 };
 
 export type WorkflowStepDefinition = {
