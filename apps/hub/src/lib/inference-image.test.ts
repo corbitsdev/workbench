@@ -17,7 +17,7 @@ mock.module('@intx/inference', () => ({
   },
 }));
 
-const { runSingleTurnAgentWithImage } = await import('./inference');
+const { runSingleTurnAgentWithImage, stripGeminiThoughtSignatures } = await import('./inference');
 
 const SOURCE = {
   provider: 'openai',
@@ -36,6 +36,23 @@ async function* yieldEvents(events: unknown[]) {
 }
 
 describe('runSingleTurnAgentWithImage', () => {
+  it('strips google-genai thought signatures from streamed chunks', () => {
+    const chunk = JSON.stringify({
+      candidates: [
+        {
+          content: { parts: [{ text: '', thoughtSignature: 'EjQKMg...' }] },
+          finishReason: 'STOP',
+        },
+      ],
+      usageMetadata: { totalTokenCount: 42 },
+    });
+
+    const parsed = JSON.parse(stripGeminiThoughtSignatures(chunk));
+    expect(parsed.candidates[0].content.parts[0].thoughtSignature).toBeUndefined();
+    expect(parsed.candidates[0].content.parts[0].text).toBe('');
+    expect(parsed.usageMetadata.totalTokenCount).toBe(42);
+  });
+
   it('sends a multimodal turn and returns the accumulated reply text', async () => {
     inferenceImpl = () =>
       yieldEvents([

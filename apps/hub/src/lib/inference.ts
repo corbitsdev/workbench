@@ -1,5 +1,11 @@
 import { createAgent, defineAgent, createDefaultDirectorRegistry } from '@intx/agent';
-import { runInference, createDefaultDependencies } from '@intx/inference';
+import {
+  createDefaultDependencies,
+  createGoogleGenAIAdapter,
+  registerProvider,
+  runInference,
+  type ProviderAdapter,
+} from '@intx/inference';
 import type {
   ConversationTurn,
   ImageBlock,
@@ -19,6 +25,43 @@ import { rm } from 'node:fs/promises';
 // slow-but-working reasoning calls.
 const DEFAULT_INFERENCE_TIMEOUT_MS = 180_000;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+export function stripGeminiThoughtSignatures(sseData: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(sseData);
+  } catch {
+    return sseData;
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.candidates)) return sseData;
+  for (const candidate of parsed.candidates) {
+    if (!isRecord(candidate) || !isRecord(candidate.content)) continue;
+    const parts = candidate.content.parts;
+    if (!Array.isArray(parts)) continue;
+    for (const part of parts) {
+      if (isRecord(part)) delete part.thoughtSignature;
+    }
+  }
+  return JSON.stringify(parsed);
+}
+
+let geminiPatchInstalled = false;
+
+function installGeminiThoughtSignaturePatch(): void {
+  if (geminiPatchInstalled) return;
+  geminiPatchInstalled = true;
+  registerProvider('google-genai', (source): ProviderAdapter => {
+    const inner = createGoogleGenAIAdapter(source);
+    return {
+      ...inner,
+      parseResponse: (sseData) => inner.parseResponse(stripGeminiThoughtSignatures(sseData)),
+    };
+  });
+}
+
 // DELIBERATE DEVIATION FROM CL-1971's "extend runSingleTurnAgent" framing:
 // Interchange's agent `send` path CANNOT carry an image — it builds a text-only
 // turn and ignores attachments (confirmed in @intx/agent and documented by the
@@ -34,6 +77,8 @@ export async function runSingleTurnAgentWithImage(
   maxOutputTokens?: number,
   timeoutMs: number = DEFAULT_INFERENCE_TIMEOUT_MS
 ): Promise<string> {
+  if (source.provider === 'google-genai') installGeminiThoughtSignaturePatch();
+
   const turns: ConversationTurn[] = [
     {
       role: 'user',
