@@ -88,7 +88,9 @@ describe('SeoEnrichmentNewPane', () => {
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     await userEvent.upload(input, xlsx());
     await screen.findByText(/catalog\.xlsx/);
-    expect(calls.some((c) => c.url.includes('/uploads') && c.bodyIsFormData)).toBe(true);
+    const uploadCall = calls.find((c) => c.url.includes('/uploads') && c.bodyIsFormData);
+    expect(uploadCall).toBeDefined();
+    expect(uploadCall?.url).toContain('tenantId=tenant-1');
   });
 
   it('creates the workflow with the returned uploadId', async () => {

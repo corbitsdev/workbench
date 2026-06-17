@@ -5,6 +5,8 @@ import { MessageBubble } from './MessageBubble';
 import { ToolNarrative, type ToolNarrativeProps } from './ToolNarrative';
 import { TypingIndicator } from './TypingIndicator';
 import type { UIBlock, UIResponse } from './ui-block';
+import { extractImageURLs } from './url-image';
+import { UrlImageCard } from './UrlImageCard';
 
 function formatActivityLabel(activity: ChatActivity, agentName: string): string {
   switch (activity.type) {
@@ -86,26 +88,37 @@ export function ChatThread({
             <p className="text-sm text-text-3">Send a message to get started.</p>
           </div>
         ))}
-      {messages.map((message) => (
-        <div key={message.id} className="flex flex-col gap-1.5">
-          <MessageBubble
-            message={message}
-            {...(onRespond !== undefined ? { onRespond } : {})}
-            {...(onAction !== undefined ? { onAction } : {})}
-          />
-          {message.role === 'agent' &&
-            message.toolCalls !== undefined &&
-            message.toolCalls.length > 0 && (
-              <ToolNarrative
-                toolCalls={message.toolCalls}
-                {...(formatToolSummary !== undefined ? { formatSummary: formatToolSummary } : {})}
-                {...(onRespond !== undefined ? { onRespond } : {})}
-                {...(onAction !== undefined ? { onAction } : {})}
-                className="pl-1"
-              />
-            )}
-        </div>
-      ))}
+      {messages.map((message) => {
+        const isSettledAgent = message.role === 'agent' && message.status !== 'sending';
+        const { cleanedText, urls } = isSettledAgent
+          ? extractImageURLs(message.content)
+          : { cleanedText: message.content, urls: [] };
+        const displayMessage = urls.length > 0 ? { ...message, content: cleanedText } : message;
+
+        return (
+          <div key={message.id} className="flex flex-col gap-1.5">
+            <MessageBubble
+              message={displayMessage}
+              {...(onRespond !== undefined ? { onRespond } : {})}
+              {...(onAction !== undefined ? { onAction } : {})}
+            />
+            {urls.map((url) => (
+              <UrlImageCard key={url} url={url} />
+            ))}
+            {message.role === 'agent' &&
+              message.toolCalls !== undefined &&
+              message.toolCalls.length > 0 && (
+                <ToolNarrative
+                  toolCalls={message.toolCalls}
+                  {...(formatToolSummary !== undefined ? { formatSummary: formatToolSummary } : {})}
+                  {...(onRespond !== undefined ? { onRespond } : {})}
+                  {...(onAction !== undefined ? { onAction } : {})}
+                  className="pl-1"
+                />
+              )}
+          </div>
+        );
+      })}
       {hasActivity && agentName !== undefined && (
         <div className="flex items-start" aria-live="polite">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">

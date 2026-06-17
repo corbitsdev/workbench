@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { getLogger } from '@intx/log';
 import type { HubDb } from '../db';
 import { upload } from '../db/schema';
-import { getUserContext } from '../services/workflow-orchestration';
+import { getRequestedUserContext } from '../services/workflow-orchestration';
 
 const log = getLogger(['api', 'uploads']);
 
@@ -26,8 +26,14 @@ export function createUploadsRouter(db: HubDb): Hono<{ Variables: { userId: stri
 
   router.post('/uploads', async (c) => {
     const userId = c.get('userId');
+    const requestedTenantId = c.req.query('tenantId');
 
-    const userContext = await getUserContext(db, userId);
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      requestedTenantId
+    );
+    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
     if (!userContext) return c.json({ error: 'User context not found' }, 403);
 
     const body = await c.req.parseBody();

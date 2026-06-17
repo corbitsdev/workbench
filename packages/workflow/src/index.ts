@@ -10,6 +10,12 @@ export {
   type PresentationWorkflowPanelProps,
   type PresentationWorkflowView,
 } from './PresentationWorkflowPanel';
+export {
+  ResourceEnrichmentWorkflowPanel,
+  type ResourceEnrichmentWorkflowPanelProps,
+  type ResourceEnrichmentWorkflowView,
+  type ResourceEnrichmentArtifactView,
+} from './ResourceEnrichmentWorkflowPanel';
 export type {
   PresentationStepArgs,
   PresentationTemplateStepArgs,

@@ -4,6 +4,7 @@ import { NewWorkflowPane } from '../components/NewWorkflowPane';
 import { PresentationNewPane } from './presentation/PresentationNewPane';
 import { PresentationSelectedPanel } from './presentation/PresentationSelectedPanel';
 import { SeoEnrichmentNewPane } from './seo-enrichment/SeoEnrichmentNewPane';
+import { SeoEnrichmentSelectedPanel } from './seo-enrichment/SeoEnrichmentSelectedPanel';
 
 export interface AgentSelectionTarget {
   instanceId: string;
@@ -33,13 +34,6 @@ export interface WorkflowUiEntry {
 }
 
 function CollateralSelectedPanel({ workflowId, onClose }: WorkflowSelectedPanelProps) {
-  return <WorkflowPanel workflowId={workflowId} onClose={onClose} />;
-}
-
-// seo-enrichment reuses the generic workflow panel: it renders the run's
-// artifacts, and the `selection` kind drives the interactive HITL picker
-// (SelectionBody) directly.
-function SeoEnrichmentSelectedPanel({ workflowId, onClose }: WorkflowSelectedPanelProps) {
   return <WorkflowPanel workflowId={workflowId} onClose={onClose} />;
 }
 

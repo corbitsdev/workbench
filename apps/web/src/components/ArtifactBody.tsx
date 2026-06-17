@@ -1,3 +1,4 @@
+import { usesSocialPostPreview } from '@workbench/artifact';
 import PresentationBody from './PresentationBody';
 import ResearchBody, { parseResearchBrief } from './ResearchBody';
 import SelectionBody from './SelectionBody';
@@ -222,6 +223,11 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
   const body = artifact.content;
   const type = artifact.kind;
   const brief = extractBrief(artifact.source);
+
+  if (usesSocialPostPreview(type)) {
+    return <LinkedInBody body={body} />;
+  }
+
   switch (type) {
     // downloadable export
     case 'csv-export': {
@@ -245,16 +251,6 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
     case 'email':
     case 'follow-up-email':
       return <EmailBody body={body} />;
-    // social posts
-    case 'linkedin':
-    case 'linkedin-post':
-    // Legacy rows: pre-unification LinkedIn Daily drafts kept this kind.
-    case 'linkedin-daily':
-    case 'pain-points-linkedin-post':
-    case 'twitter-post':
-    case 'pain-points-twitter-post':
-    case 'founder-pov-post':
-      return <LinkedInBody body={body} />;
     // documents
     case 'one-pager':
     case 'sales-one-pager':

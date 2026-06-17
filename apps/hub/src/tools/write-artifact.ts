@@ -107,6 +107,7 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
               .values({
                 tenantId: context.tenantId,
                 principalId: context.principalId,
+                sessionId: null,
                 kind,
                 title,
                 content: body,

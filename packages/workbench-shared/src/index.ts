@@ -1,3 +1,5 @@
+import { type } from 'arktype';
+
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 
 // 'pending' = created, analysis not yet started.
@@ -32,60 +34,58 @@ export type ArtifactKind =
 
 export type ArtifactStatus = 'draft' | 'approved' | 'rejected';
 
-export interface PainPoint {
-  id: string;
-  workflowId: string;
-  severity: Severity;
-  context: string;
-  quote: string;
-  selected: boolean;
-  createdAt: string;
-}
+export const PainPoint = type({
+  id: 'string',
+  workflowId: 'string',
+  severity: "'low' | 'medium' | 'high' | 'critical'",
+  context: 'string',
+  quote: 'string',
+  selected: 'boolean',
+  createdAt: 'string',
+});
+export type PainPoint = typeof PainPoint.infer;
 
-export interface Artifact {
-  id: string;
-  sessionId: string;
-  parentId: string | null;
-  painPointId: string | null;
-  kind: ArtifactKind;
-  title: string;
-  content: string;
-  status: ArtifactStatus;
-  version: number;
-  ownerPrincipalId: string | null;
-  createdAt: string;
-  updatedAt: string;
-  // Structured payload persisted alongside the markdown body (e.g. citations and,
-  // for research artifacts, a `brief` object the UI renders richly). Opaque here;
-  // consumers validate the shape they expect at the boundary.
-  source?: Record<string, unknown> | null;
-}
+export const Artifact = type({
+  id: 'string',
+  sessionId: 'string | null',
+  parentId: 'string | null',
+  painPointId: 'string | null',
+  kind: 'string',
+  title: 'string',
+  content: 'string',
+  status: "'draft' | 'approved' | 'rejected'",
+  version: 'number',
+  ownerPrincipalId: 'string | null',
+  createdAt: 'string',
+  updatedAt: 'string',
+  'source?': 'Record<string, unknown> | null',
+});
+export type Artifact = typeof Artifact.infer;
 
-export interface ArtifactVersion {
-  id: string;
-  artifactId: string;
-  version: number;
-  title: string;
-  content: string;
-  authorId: string;
-  createdAt: string;
-}
+export const ArtifactVersion = type({
+  id: 'string',
+  artifactId: 'string',
+  version: 'number',
+  title: 'string',
+  content: 'string',
+  authorId: 'string',
+  createdAt: 'string',
+});
+export type ArtifactVersion = typeof ArtifactVersion.infer;
 
 /** An artifact with its full version history. */
-export interface ArtifactWithVersions extends Artifact {
-  versions: ArtifactVersion[];
-}
+export type ArtifactWithVersions = Artifact & { versions: ArtifactVersion[] };
 
 /**
  * An artifact enriched with the session it belongs to. Returned by the
  * aggregate `GET /artifacts` endpoint so the library can show a "from" label
  * without a second round-trip.
  */
-export interface ArtifactWithSession extends Artifact {
+export type ArtifactWithSession = Artifact & {
   sessionName: string | null;
   sessionStatus: SessionStatus;
   ownerName: string | null;
-}
+};
 
 /**
  * One row from `GET /workflows` — a summary of a user's session, used to

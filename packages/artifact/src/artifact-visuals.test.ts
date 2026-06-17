@@ -8,6 +8,11 @@ describe('visualForKind', () => {
     expect(visualForKind('battlecard').viz).toBe('grid');
   });
 
+  it('maps legacy linkedin kinds through the canonical linkedin-post visual', () => {
+    expect(visualForKind('linkedin-daily').label).toBe('LinkedIn Post');
+    expect(visualForKind('pain-points-linkedin-post').viz).toBe('lines');
+  });
+
   it('falls back to a neutral document tile for unknown kinds', () => {
     const v = visualForKind('totally-unknown-kind');
     expect(v.label).toBe('Document');
