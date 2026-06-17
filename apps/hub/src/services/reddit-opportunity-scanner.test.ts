@@ -50,6 +50,7 @@ function createDb() {
     kind: string;
     status: string;
     content: string;
+    source?: Record<string, unknown>;
     createdAt: Date;
   }> = [];
 
@@ -85,6 +86,7 @@ function createDb() {
             kind: row.kind as string,
             status: row.status as string,
             content: row.content as string,
+            source: row.source as Record<string, unknown> | undefined,
             createdAt: new Date(),
           });
           return [{ id }];
@@ -117,9 +119,12 @@ describe('reddit opportunity scanner service', () => {
 
     expect(mockRunCredentialTool).toHaveBeenCalled();
     expect(mockRunSingleTurnAgent).toHaveBeenCalled();
-    expect(
-      artifacts.some((a) => a.kind === 'reddit-opportunity-scan' && a.status === 'draft')
-    ).toBe(true);
+    const draft = artifacts.find((a) => a.kind === 'reddit-opportunity-scan' && a.status === 'draft');
+    expect(draft).toBeDefined();
+    expect(draft?.source?.brief).toMatchObject({
+      artifactType: 'reddit-opportunity-scan',
+      inputUrl: 'https://corbits.dev',
+    });
   });
 
   it('scan persists an approved artifact with opportunities', async () => {
@@ -128,8 +133,13 @@ describe('reddit opportunity scanner service', () => {
     await runRedditOpportunityScan(db, 'wf-1', USER, SOURCE);
 
     expect(mockRunCredentialTool.mock.calls.some((call) => call[2] === 'reddit_search')).toBe(true);
-    expect(
-      artifacts.some((a) => a.kind === 'reddit-opportunity-scan' && a.status === 'approved')
-    ).toBe(true);
+    const approved = artifacts.find(
+      (a) => a.kind === 'reddit-opportunity-scan' && a.status === 'approved'
+    );
+    expect(approved).toBeDefined();
+    expect(approved?.source?.brief).toMatchObject({
+      artifactType: 'reddit-opportunity-scan',
+      inputUrl: 'https://corbits.dev',
+    });
   });
 });

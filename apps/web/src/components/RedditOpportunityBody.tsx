@@ -19,12 +19,22 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+function approvedLabels(
+  items: RedditOpportunityScan['recommendations']['keywords']
+): string[] {
+  return items
+    .filter((item) => item.source !== 'rejected')
+    .map((item) => item.label.replace(/^r\//i, ''));
+}
+
 export default function RedditOpportunityBody({
   scan,
+  mode = 'review',
   editableStatuses = false,
   onStatusChange,
 }: {
   scan: RedditOpportunityScan;
+  mode?: 'review' | 'results';
   editableStatuses?: boolean;
   onStatusChange?: (opportunityId: string, status: string) => void;
 }) {
@@ -45,6 +55,9 @@ export default function RedditOpportunityBody({
   }, [scan.opportunities, statusFilter, subredditFilter]);
 
   const topOpportunities = filtered.slice(0, 12);
+  const approvedKeywords = approvedLabels(scan.recommendations.keywords);
+  const approvedSubreddits = approvedLabels(scan.recommendations.subreddits);
+  const isResults = mode === 'results';
 
   return (
     <div className="space-y-4">
@@ -54,6 +67,23 @@ export default function RedditOpportunityBody({
         <p className="text-xs text-text-3 break-all">{scan.inputUrl}</p>
       </div>
 
+      {isResults && (
+        <section className="space-y-2 rounded border border-border bg-surface-2 p-4">
+          <h2 className="text-sm font-semibold text-text">Scan results</h2>
+          <p className="text-sm text-text-2">
+            Found {scan.opportunities.length} ranked opportunit
+            {scan.opportunities.length === 1 ? 'y' : 'ies'} across {approvedSubreddits.length}{' '}
+            subreddit{approvedSubreddits.length === 1 ? '' : 's'} using {approvedKeywords.length}{' '}
+            keyword{approvedKeywords.length === 1 ? '' : 's'} ({scan.scanConfig.timeWindow}{' '}
+            window).
+          </p>
+          <p className="text-xs text-text-3">
+            Last scanned {new Date(scan.watchlist.lastScannedAt).toLocaleString()}
+          </p>
+        </section>
+      )}
+
+      {!isResults && (
       <Section title="Business profile">
         <p className="text-sm text-text-2">{scan.businessProfile.whatTheySell}</p>
         <p className="text-xs text-text-3">
@@ -66,26 +96,26 @@ export default function RedditOpportunityBody({
           <p className="text-xs text-text-3">Audience: {scan.businessProfile.audienceNotes}</p>
         )}
       </Section>
+      )}
 
+      {!isResults && (
       <Section title="Recommendations">
+        <p className="text-xs text-text-3">Keywords: {approvedKeywords.join(', ')}</p>
         <p className="text-xs text-text-3">
-          Keywords:{' '}
-          {scan.recommendations.keywords
-            .filter((k) => k.source !== 'rejected')
-            .map((item) => item.label)
-            .join(', ')}
-        </p>
-        <p className="text-xs text-text-3">
-          Subreddits:{' '}
-          {scan.recommendations.subreddits
-            .filter((s) => s.source !== 'rejected')
-            .map((item) => `r/${item.label.replace(/^r\//i, '')}`)
-            .join(', ')}
+          Subreddits: {approvedSubreddits.map((sub) => `r/${sub}`).join(', ')}
         </p>
       </Section>
+      )}
 
-      {scan.opportunities.length > 0 && (
+      {(isResults || scan.opportunities.length > 0) && (
         <Section title="Ranked opportunities">
+          {scan.opportunities.length === 0 && (
+            <p className="text-sm text-text-2">
+              No posts matched your approved keywords and subreddits in the selected time window.
+              Try widening the window, lowering the score threshold, or adding more search terms.
+            </p>
+          )}
+          {scan.opportunities.length > 0 && (
           <div className="flex flex-wrap gap-2 pb-2">
             <select
               value={subredditFilter}
@@ -111,6 +141,7 @@ export default function RedditOpportunityBody({
               <option value="handled">Handled</option>
             </select>
           </div>
+          )}
           <div className="space-y-3">
             {topOpportunities.map((opportunity) => (
               <article

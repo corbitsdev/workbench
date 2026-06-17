@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, max, ne, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
+import { reportLoggedError } from '@workbench/sentry';
 import {
   schema as intxSchema,
   getAncestorChain,
@@ -1580,7 +1581,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           DEFAULT_STEP_MAX_OUTPUT_TOKENS.analyze
         ).catch(async (err) => {
           const errorMessage = err instanceof Error ? err.message : String(err);
-          log.error('Reddit opportunity analyze failed', { workflowId: id, error: errorMessage });
+          await reportLoggedError(log, 'Reddit opportunity analyze failed', err, { workflowId: id });
           await db
             .update(workflowRun)
             .set({ status: 'failed', output: { errorMessage } })
@@ -1611,7 +1612,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           DEFAULT_STEP_MAX_OUTPUT_TOKENS.generate
         ).catch(async (err) => {
           const errorMessage = err instanceof Error ? err.message : String(err);
-          log.error('Reddit opportunity scan failed', { workflowId: id, error: errorMessage });
+          await reportLoggedError(log, 'Reddit opportunity scan failed', err, { workflowId: id });
           await db
             .update(workflowRun)
             .set({ status: 'reviewing', output: { errorMessage } })

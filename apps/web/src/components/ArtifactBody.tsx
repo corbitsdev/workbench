@@ -294,9 +294,11 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
       return <OnePagerBody body={body} />;
     }
     case 'reddit-opportunity-scan': {
-      const parsedScan = parseRedditOpportunityScan(brief ?? artifact.source ?? body);
-      if (parsedScan !== null) {
-        return <RedditOpportunityBody scan={parsedScan} />;
+      for (const candidate of [brief, artifact.source, body]) {
+        const parsedScan = parseRedditOpportunityScan(candidate);
+        if (parsedScan !== null) {
+          return <RedditOpportunityBody scan={parsedScan} mode="results" />;
+        }
       }
       return <p className="text-sm text-red-500 p-4">Invalid reddit opportunity artifact payload.</p>;
     }

@@ -53,16 +53,6 @@ function redditScanData(workflow: FrontendWorkflowState | undefined): {
     return { scan: parseRedditOpportunityScan(output) };
   }
 
-  const reviewStep = (workflow as Record<string, unknown>)?.steps?.review as
-    | { artifact?: unknown; artifactId?: string }
-    | undefined;
-  if (reviewStep?.artifact) {
-    return {
-      scan: parseRedditOpportunityScan(reviewStep.artifact),
-      artifactId: reviewStep.artifactId,
-    };
-  }
-
   const scanStep = (workflow as Record<string, unknown>)?.steps?.scan as
     | { artifact?: unknown; artifactId?: string }
     | undefined;
@@ -72,7 +62,23 @@ function redditScanData(workflow: FrontendWorkflowState | undefined): {
       artifactId: scanStep.artifactId,
     };
   }
+
+  const reviewStep = (workflow as Record<string, unknown>)?.steps?.review as
+    | { artifact?: unknown; artifactId?: string }
+    | undefined;
+  if (reviewStep?.artifact) {
+    return {
+      scan: parseRedditOpportunityScan(reviewStep.artifact),
+      artifactId: reviewStep.artifactId,
+    };
+  }
   return { scan: null };
+}
+
+function scanProgressMessage(scan: RedditOpportunityScan): string {
+  const keywords = scan.recommendations.keywords.filter((k) => k.source !== 'rejected').length;
+  const subreddits = scan.recommendations.subreddits.filter((s) => s.source !== 'rejected').length;
+  return `Searching Reddit for ${keywords} keyword${keywords === 1 ? '' : 's'} across ${subreddits} subreddit${subreddits === 1 ? '' : 's'} (${scan.scanConfig.timeWindow} window)…`;
 }
 
 export function RedditOpportunitySelectedPanel({
@@ -103,12 +109,13 @@ export function RedditOpportunitySelectedPanel({
     (workflow?.input as Record<string, unknown> | undefined)?.inputUrl ??
     'Reddit Opportunity Scanner';
 
-  const isBusy =
-    runStep.isPending ||
-    updateReview.isPending ||
-    workflow?.status === 'analyzing' ||
+  const isScanning =
+    workflow?.status === 'ready' ||
     workflow?.status === 'running' ||
     workflow?.status === 'generating';
+
+  const isBusy =
+    runStep.isPending || updateReview.isPending || workflow?.status === 'analyzing' || isScanning;
 
   const handleAnalyze = () => {
     setStepError(null);
@@ -277,22 +284,29 @@ export function RedditOpportunitySelectedPanel({
           </div>
         )}
 
-        {(workflow.status === 'running' || workflow.status === 'generating') && (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-[13px] text-text-3">Searching Reddit and scoring opportunities…</p>
+        {isScanning && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 px-5 text-center">
+            <p className="text-[13px] text-text-2 font-medium">Reddit scan in progress</p>
+            <p className="text-[13px] text-text-3">
+              {scanData ? scanProgressMessage(scanData) : 'Searching Reddit and scoring opportunities…'}
+            </p>
           </div>
         )}
 
         {workflow.status === 'done' && (
-          <div className="flex-1 overflow-y-auto p-5">
+          <div className="flex-1 overflow-y-auto p-5 space-y-3">
+            {workflow.errorMessage && (
+              <p className="text-[12px] text-orange-deep">{workflow.errorMessage}</p>
+            )}
             {scanData ? (
               <RedditOpportunityBody
                 scan={scanData}
+                mode="results"
                 editableStatuses
                 onStatusChange={handleStatusChange}
               />
             ) : (
-              <p className="text-sm text-text-3">No scan data available.</p>
+              <p className="text-sm text-text-3">No scan results available.</p>
             )}
           </div>
         )}

@@ -39,9 +39,31 @@ function RecommendationList({
     setNewLabel('');
   };
 
+  const setAllSource = (source: Recommendation['source']) => {
+    onChange(items.map((item) => ({ ...item, source })));
+  };
+
   return (
     <section className="space-y-2 rounded border border-border bg-surface-2 p-4">
-      <h3 className="text-sm font-semibold text-text">{title}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-text">{title}</h3>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="text-[11px] text-accent"
+            onClick={() => setAllSource('accepted')}
+          >
+            Accept all
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-text-3"
+            onClick={() => setAllSource('rejected')}
+          >
+            Reject all
+          </button>
+        </div>
+      </div>
       <div className="space-y-2">
         {items.map((item, index) => (
           <div key={`${item.label}-${index}`} className="flex flex-wrap items-center gap-2">

@@ -27,6 +27,12 @@ export class RedditOpportunityScannerError extends Error {
   }
 }
 
+function redditArtifactSource(content: string): Record<string, unknown> | undefined {
+  const parsed = parseRedditOpportunityScanArtifact(JSON.parse(content));
+  if (!parsed) return undefined;
+  return { brief: parsed };
+}
+
 async function insertArtifactWithVersion(
   db: HubDb,
   values: {
@@ -40,10 +46,11 @@ async function insertArtifactWithVersion(
     status: 'draft' | 'approved';
   }
 ): Promise<{ id: string }> {
+  const source = redditArtifactSource(values.content);
   return db.transaction(async (tx) => {
     const [row] = await tx
       .insert(artifact)
-      .values({ ...values, version: 1 })
+      .values({ ...values, source, version: 1 })
       .returning({ id: artifact.id });
     if (!row) throw new Error('Failed to insert artifact');
     await tx.insert(artifactVersion).values({
@@ -214,9 +221,10 @@ export async function updateRedditScanArtifactContent(
       .where(eq(artifactVersion.artifactId, artifactId));
     const nextVersion = (maxVersionResult[0]?.maxVersion ?? 0) + 1;
 
+    const source = redditArtifactSource(nextContent);
     const [row] = await tx
       .update(artifact)
-      .set({ content: nextContent, version: nextVersion })
+      .set({ content: nextContent, source, version: nextVersion })
       .where(eq(artifact.id, artifactId))
       .returning();
 

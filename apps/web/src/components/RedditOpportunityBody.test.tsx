@@ -1,5 +1,15 @@
-import { describe, expect, it } from 'bun:test';
-import { parseRedditOpportunityScan, type RedditOpportunityScan } from './RedditOpportunityBody';
+/// <reference types="bun" />
+import { afterEach, describe, expect, it } from 'bun:test';
+import { cleanup, render, screen } from '@testing-library/react';
+import React from 'react';
+import RedditOpportunityBody, {
+  parseRedditOpportunityScan,
+  type RedditOpportunityScan,
+} from './RedditOpportunityBody';
+
+afterEach(() => {
+  cleanup();
+});
 
 const validScan: RedditOpportunityScan = {
   artifactType: 'reddit-opportunity-scan',
@@ -56,8 +66,26 @@ describe('parseRedditOpportunityScan', () => {
     expect(parseRedditOpportunityScan(validScan)).toEqual(validScan);
   });
 
+  it('accepts JSON-serialized artifact content from persistence', () => {
+    expect(parseRedditOpportunityScan(JSON.stringify(validScan))).toEqual(validScan);
+  });
+
   it('rejects incomplete scan artifacts', () => {
     expect(parseRedditOpportunityScan({ ...validScan, opportunities: 'not-list' })).toBeNull();
     expect(parseRedditOpportunityScan({ ...validScan, artifactType: 'research' })).toBeNull();
+  });
+});
+
+describe('RedditOpportunityBody', () => {
+  it('explains an empty results scan in results mode', () => {
+    render(
+      React.createElement(RedditOpportunityBody, {
+        scan: { ...validScan, opportunities: [], summary: 'Found 0 Reddit opportunities for https://example.com.' },
+        mode: 'results',
+      })
+    );
+
+    expect(screen.getByText(/Found 0 ranked opportunities/i)).not.toBeNull();
+    expect(screen.getByText(/No posts matched your approved keywords/i)).not.toBeNull();
   });
 });

@@ -65,10 +65,21 @@ export const redditOpportunityScanArtifactSchema = type({
 
 export type RedditOpportunityScanArtifact = typeof redditOpportunityScanArtifactSchema.infer;
 
+function normalizeRedditOpportunityScanInput(value: unknown): unknown {
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
 export function parseRedditOpportunityScanArtifact(
   value: unknown
 ): RedditOpportunityScanArtifact | null {
-  const parsed = redditOpportunityScanArtifactSchema(value);
+  const parsed = redditOpportunityScanArtifactSchema(normalizeRedditOpportunityScanInput(value));
   if (parsed instanceof type.errors) return null;
   return parsed;
 }
