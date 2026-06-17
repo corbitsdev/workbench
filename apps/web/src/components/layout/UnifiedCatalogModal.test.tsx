@@ -58,12 +58,24 @@ mock.module('../../hooks/use-workflow', () => ({
         kind: 'collateral-generation',
         name: 'Collateral Generation',
         description: 'Turn transcripts into collateral',
-        steps: [],
+        credentialRequirements: [
+          { providerName: 'openai-compatible', source: 'tenant', name: 'opencode-zen', defaultModel: 'deepseek-v4-flash' },
+        ],
+        steps: [
+          {
+            name: 'analyze',
+            label: 'Analyze',
+            credentialRequirements: [
+              { providerName: 'openai-compatible', source: 'tenant', name: 'opencode-zen', defaultModel: 'deepseek-v4-flash' },
+            ],
+          },
+        ],
       },
       {
         kind: 'presentation-generation',
         name: 'Presentation Generation',
         description: 'Build Gamma decks',
+        credentialRequirements: [],
         steps: [],
       },
     ],
@@ -71,6 +83,18 @@ mock.module('../../hooks/use-workflow', () => ({
   useInstallWorkflow: () => ({
     isPending: false,
     mutateAsync: async ({ kind }: { kind: string }) => ({ kind }),
+  }),
+  useWorkflowCredentials: () => ({
+    isLoading: false,
+    data: [
+      {
+        id: 'cred-1',
+        name: 'opencode-zen',
+        providerName: 'openai-compatible',
+        providerPlugin: 'openai-compatible',
+        baseURL: 'https://openrouter.ai/api/v1',
+      },
+    ],
   }),
 }));
 
@@ -187,7 +211,7 @@ describe('UnifiedCatalogModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onWorkflowSelected with kind after clicking a workflow card', async () => {
+  it('calls onWorkflowSelected with kind after configuring and starting a workflow', async () => {
     render(
       <UnifiedCatalogModal
         open={true}
@@ -202,7 +226,12 @@ describe('UnifiedCatalogModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Workflows' }));
     await waitFor(() => screen.getByText('Collateral Generation'));
 
+    // Click Start on the card to open the configure panel.
     fireEvent.click(screen.getAllByRole('button', { name: 'Start' })[0]!);
+
+    // Configure panel renders; click the confirm Start button.
+    await waitFor(() => screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
 
     await waitFor(() => expect(onWorkflowSelected).toHaveBeenCalledWith('collateral-generation'));
   });

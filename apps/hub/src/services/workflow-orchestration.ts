@@ -375,8 +375,11 @@ export async function validateAssignments(
       }
     }
 
-    if (credentialIds.length > 0 || toolIds.length > 0) {
-      result[step.name] = { credentialIds, toolIds };
+    const model =
+      typeof stepVal.model === 'string' && stepVal.model.trim() ? stepVal.model.trim() : undefined;
+
+    if (credentialIds.length > 0 || toolIds.length > 0 || model !== undefined) {
+      result[step.name] = { credentialIds, toolIds, ...(model !== undefined ? { model } : {}) };
     }
   }
 

@@ -812,8 +812,12 @@ describe('seedAgentTemplates', () => {
 
     await seedAgentTemplates(db as never);
 
-    // The last update call should set modelConfig with the model from provider metadata.
-    const modelConfigUpdate = updateCapture.find((v) => v['modelConfig'] !== undefined);
+    // patchMissingModelConfigs should have written a modelConfig derived from provider metadata.
+    // Template upserts may also write a modelConfig from the template definition, so we look
+    // specifically for the value that patchMissingModelConfigs derives from provider metadata.
+    const modelConfigUpdate = updateCapture.find(
+      (v) => (v['modelConfig'] as { defaultModel?: string } | null)?.defaultModel === 'gpt-4o'
+    );
     expect(modelConfigUpdate?.['modelConfig']).toEqual({ defaultModel: 'gpt-4o' });
   });
 
@@ -853,9 +857,14 @@ describe('seedAgentTemplates', () => {
 
     await seedAgentTemplates(db as never);
 
-    // No modelConfig update should have been written.
-    const modelConfigUpdate = updateCapture.find((v) => v['modelConfig'] !== undefined);
-    expect(modelConfigUpdate).toBeUndefined();
+    // patchMissingModelConfigs should not have run. Its update signature is minimal:
+    // only { modelConfig, updatedAt }. Template upserts include many more fields.
+    const patchUpdate = updateCapture.find(
+      (v) =>
+        'modelConfig' in v &&
+        Object.keys(v).filter((k) => k !== 'updatedAt').length === 1
+    );
+    expect(patchUpdate).toBeUndefined();
   });
 });
 
