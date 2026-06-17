@@ -127,6 +127,15 @@ export function parseSeoReply(text: string): SeoPayload {
   return validation.payload;
 }
 
+export function buildSeoResponseSeed(row: Pick<SeoResourceRow, 'productSlug'>): SeoPayload {
+  return {
+    sku_id: row.productSlug,
+    seo_titles: [],
+    seo_descriptions: [],
+    product_summaries: [],
+  };
+}
+
 // A concise, model-facing projection of the product plus the generate
 // instruction. The full row carries ingest-only fields that would be noise.
 export function buildSeoUserMessage(row: SeoResourceRow): string {
@@ -140,7 +149,12 @@ export function buildSeoUserMessage(row: SeoResourceRow): string {
     current_description: row.productMetadataDescription,
     current_summary: row.summary,
   };
-  return `PRODUCT METADATA (JSON):\n${JSON.stringify(metadata, null, 2)}\n\nGenerate the ${SEO_VARIANT_COUNT}x3 SEO variants for this product.`;
+  return [
+    `PRODUCT METADATA (JSON):\n${JSON.stringify(metadata, null, 2)}`,
+    'Return one JSON object matching this exact shape and field names:',
+    JSON.stringify(buildSeoResponseSeed(row), null, 2),
+    `Fill each array with exactly ${SEO_VARIANT_COUNT} non-empty string variants.`,
+  ].join('\n\n');
 }
 
 // Map a validated SEO payload onto a selection artifact draft (5 options per

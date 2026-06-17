@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { parseSelectionArtifactContent, SELECTION_ARTIFACT_KIND } from '../resource-enrichment';
 import {
   buildErrorSelectionDraft,
+  buildSeoResponseSeed,
   buildSeoSelectionDraft,
   buildSeoUserMessage,
   enrichSeoRow,
@@ -94,7 +95,19 @@ describe('buildSeoUserMessage', () => {
   it('includes the product metadata and the generate instruction', () => {
     const message = buildSeoUserMessage(row);
     expect(message).toContain('eucalyptus-frame');
-    expect(message).toContain('5x3 SEO variants');
+    expect(message).toContain('"seo_titles": []');
+    expect(message).toContain('exactly 5 non-empty string variants');
+  });
+});
+
+describe('buildSeoResponseSeed', () => {
+  it('anchors the required response shape to the row slug', () => {
+    expect(buildSeoResponseSeed(row)).toEqual({
+      sku_id: 'eucalyptus-frame',
+      seo_titles: [],
+      seo_descriptions: [],
+      product_summaries: [],
+    });
   });
 });
 
