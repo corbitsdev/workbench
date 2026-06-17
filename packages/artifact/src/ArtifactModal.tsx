@@ -114,7 +114,7 @@ export function ArtifactModal({
     <AnimatePresence>
       {open && artifact && (
         <motion.div
-          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(0,0,0,0.55)] p-4 backdrop-blur-[2px]"
+          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(0,0,0,0.55)] p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -133,7 +133,7 @@ export function ArtifactModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
             transition={{ duration: 0.18 }}
-            className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
+            className="flex max-h-[85vh] w-[50vw] min-w-[min(50vw,42rem)] max-w-[90vw] flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
           >
             <div className="flex items-start gap-3 border-b border-border px-6 py-4">
               <div className="min-w-0 flex-1">

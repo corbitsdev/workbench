@@ -35,7 +35,10 @@ describe('ArtifactModal', () => {
 
   it('renders the artifact content when open', () => {
     render(React.createElement(ArtifactModal, { open: true, artifact, onClose: () => {} }));
-    expect(screen.queryByRole('dialog')).not.toBeNull();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).not.toBeNull();
+    expect(dialog.className).toContain('w-[50vw]');
+    expect(dialog.className).toContain('bg-surface');
     expect(screen.queryByText('Hello there')).not.toBeNull();
     expect(screen.queryByText('Outreach email')).not.toBeNull();
   });
