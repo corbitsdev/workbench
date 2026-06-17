@@ -158,9 +158,12 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       baseURL: string;
     }> = [];
 
+    const INFERENCE_PLUGINS = new Set(['openai-compatible', 'anthropic', 'google-genai', 'openai']);
+
     for (const cred of credentials) {
       const provider = providerById.get(cred.providerId);
       if (!provider) continue;
+      if (!INFERENCE_PLUGINS.has(provider.plugin)) continue;
       const parsed = ProviderMetadata(provider.metadata ?? {});
       if (parsed instanceof type.errors) continue;
       result.push({
