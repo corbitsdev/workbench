@@ -282,7 +282,7 @@ describe('Workflow router', () => {
               ? { id: 'tx-1', status: 'created', kind: 'transcript' }
               : {
                   id: 'wf-1',
-                  status: 'analyzing',
+                  status: 'pending',
                   kind: 'collateral-generation',
                 };
           return {
@@ -367,7 +367,7 @@ describe('Workflow router', () => {
 
     const json = await res.json();
     expect(json.id).toBeString();
-    expect(json.status).toBe('analyzing');
+    expect(json.status).toBe('pending');
     expect(json.steps.intake.completed).toBe(true);
   });
 
@@ -591,8 +591,8 @@ describe('Workflow router', () => {
     );
     expect(res.status).toBe(201);
     const json = await res.json();
-    expect(json.status).toBe('analyzing');
-    expect(statusUpdates).toContain('analyzing');
+    expect(json.status).toBe('pending');
+    expect(statusUpdates).not.toContain('analyzing');
     expect(statusUpdates).not.toContain('running');
   });
 
@@ -650,13 +650,8 @@ describe('Workflow router', () => {
     );
   });
 
-  it('POST /workflows from a call-transcript artifact still auto-triggers analysis (CL-1950)', async () => {
-    const statusUpdates: string[] = [];
-    const mockDb = createMockDb({
-      onSetUpdate: (values) => {
-        if (typeof values.status === 'string') statusUpdates.push(values.status);
-      },
-    });
+  it('POST /workflows from a call-transcript artifact creates workflow with pending status (CL-1950)', async () => {
+    const mockDb = createMockDb();
     mockDb.query.artifact.findFirst = mock(() => ({
       id: 'tx-art',
       tenantId: 'personal-tenant',
@@ -680,8 +675,7 @@ describe('Workflow router', () => {
     const res = await router.fetch(req);
     expect(res.status).toBe(201);
     const json = await res.json();
-    expect(json.status).toBe('analyzing');
-    expect(statusUpdates).toContain('analyzing');
+    expect(json.status).toBe('pending');
   });
 
   it('POST /workflows with source artifact returns 404 when the artifact is missing', async () => {
@@ -1392,15 +1386,16 @@ describe('Workflow router', () => {
     expect(extractionMaxTokens.at(-1)).toBe(32000);
   });
 
-  it('DELETE /workflows/:id removes the workflow', async () => {
-    const deleteWheres: unknown[] = [];
-    const mockDb = createMockDb();
-    mockDb.delete = mock(() => ({
-      where: mock((arg: unknown) => {
-        deleteWheres.push(arg);
-        return Promise.resolve();
-      }),
-    })) as typeof mockDb.delete;
+  it('DELETE /workflows/:id soft-deletes by setting deletedAt instead of hard deleting', async () => {
+    const setUpdates: Record<string, unknown>[] = [];
+    let hardDeleteCalled = false;
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => setUpdates.push(values),
+    });
+    mockDb.delete = mock(() => {
+      hardDeleteCalled = true;
+      return { where: mock(() => Promise.resolve()) };
+    }) as typeof mockDb.delete;
 
     const router = buildApp(mockDb);
     const req = new Request('http://localhost:4000/workflows/wf-1', {
@@ -1411,7 +1406,62 @@ describe('Workflow router', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { id: string; deleted: boolean };
     expect(body).toEqual({ id: 'wf-1', deleted: true });
-    expect(deleteWheres.length).toBe(1);
+    expect(hardDeleteCalled).toBe(false);
+    expect(setUpdates.some((u) => u.deletedAt instanceof Date)).toBe(true);
+  });
+
+  it('POST /workflows/:id/artifacts/:artifactId/regenerate re-generates a single artifact with feedback', async () => {
+    const setUpdates: Record<string, unknown>[] = [];
+    generatedKinds.length = 0;
+    const mockDb = createMockDb({
+      onSetUpdate: (values) => setUpdates.push(values),
+      updateReturning: [
+        {
+          id: 'art-1',
+          kind: 'linkedin-post',
+          title: 'linkedin-post title',
+          content: 'linkedin-post body',
+          status: 'draft',
+          version: 2,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          painPointId: 'pp-1',
+          sessionId: 'wf-1',
+          tenantId: PERSONAL_TENANT.id,
+          principalId: PERSONAL_PRINCIPAL.id,
+          ownerPrincipalId: PERSONAL_PRINCIPAL.id,
+        },
+      ],
+    });
+    mockDb.query.artifact.findFirst = mock(() => ({
+      id: 'art-1',
+      kind: 'linkedin-post',
+      status: 'rejected',
+      painPointId: 'pp-1',
+      sessionId: 'wf-1',
+      tenantId: PERSONAL_TENANT.id,
+      principalId: PERSONAL_PRINCIPAL.id,
+    })) as typeof mockDb.query.artifact.findFirst;
+    mockDb.query.painPoint.findFirst = mock(() => ({
+      id: 'pp-1',
+      sessionId: 'wf-1',
+      severity: 'high',
+      context: 'Manual data entry is painful',
+      quote: 'We spend hours copying data',
+      selected: true,
+    })) as typeof mockDb.query.painPoint.findFirst;
+
+    const router = buildApp(mockDb);
+    const req = new Request('http://localhost:4000/workflows/wf-1/artifacts/art-1/regenerate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feedback: 'Make it more concise' }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(202);
+    expect(generatedKinds).toContain('linkedin-post');
+    expect(setUpdates.some((u) => u.status === 'draft')).toBe(true);
   });
 
   it('DELETE /workflows/:id returns 404 when the workflow belongs to another user', async () => {

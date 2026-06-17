@@ -83,7 +83,8 @@ export async function generateCollateralWithLLM(
   type: string,
   source: InferenceSource,
   maxOutputTokens?: number,
-  variantIndex = 0
+  variantIndex = 0,
+  feedback?: string
 ): Promise<GeneratedCollateral> {
   log.info('Generating collateral', {
     workflowId,
@@ -95,7 +96,8 @@ export async function generateCollateralWithLLM(
   const resolvedMaxTokens =
     maxOutputTokens ?? (LONG_FORM_KINDS.has(type) ? LONG_FORM_MAX_TOKENS : undefined);
 
-  const userMessage = `Transcript (for context):\n\n${transcript.slice(0, 60000)}\n\n---\n\nPain point to address:\n- Summary: ${point.context}\n- Severity: ${point.severity}\n- Verbatim quote: "${point.quote}"\n\nGenerate the ${type} collateral now.`;
+  const feedbackNote = feedback ? `\n\nFeedback on the previous version: ${feedback}` : '';
+  const userMessage = `Transcript (for context):\n\n${transcript.slice(0, 60000)}\n\n---\n\nPain point to address:\n- Summary: ${point.context}\n- Severity: ${point.severity}\n- Verbatim quote: "${point.quote}"${feedbackNote}\n\nGenerate the ${type} collateral now.`;
 
   const systemPrompt = buildCollateralSystemPrompt(type, variantIndex);
 

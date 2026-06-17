@@ -30,6 +30,7 @@ import { getNoteWithTranscript, getRecentNotes, transcriptToText } from '../lib/
 import { randomUUID } from 'node:crypto';
 import { serializePainPoint, serializeArtifact } from '../serializers/workflow';
 import { runAnalyze, runGenerate, runPresentationGenerate } from '../services/workflow-generation';
+import { generateCollateralWithLLM } from '../lib/generation';
 import {
   createResourceEnrichmentRun,
   isResourceEnrichmentKind,
@@ -39,12 +40,10 @@ import {
 } from '../services/resource-enrichment';
 import {
   mapDbStatusToSessionStatus,
-  getFirstRunnableStep,
   deriveCurrentStepForWorkflow,
   deriveWorkflowDisplayName,
   validateWorkflowInput,
   isWorkflowOwner,
-  triggerStep,
   resolveStepInferenceSource,
   resolveAgentStepInferenceSource,
   resolveStepGranolaApiKey,
@@ -680,46 +679,10 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       });
     }
 
-    // Auto-trigger the first step after intake. We consult the workflow
-    // definition so this works for any workflow shape, not just
-    // collateral-generation's hardcoded analyze step.
-    const firstStep = getFirstRunnableStep(workflowKind);
-    let autoTriggerStatus = wfRow.status;
-    if (firstStep) {
-      const stepSource = await resolveStepInferenceSource(
-        db,
-        userContext.tenantId,
-        userContext.principalId,
-        wfRow.kind,
-        firstStep
-      );
-      if (stepSource) {
-        autoTriggerStatus = 'analyzing';
-        await db
-          .update(workflowRun)
-          .set({ status: 'analyzing' })
-          .where(eq(workflowRun.id, wfRow.id));
-        void triggerStep(
-          db,
-          wfRow.id,
-          userContext,
-          firstStep,
-          stepSource,
-          DEFAULT_STEP_MAX_OUTPUT_TOKENS[firstStep as keyof typeof DEFAULT_STEP_MAX_OUTPUT_TOKENS]
-        );
-      } else {
-        log.warn('Step credentials not resolvable — auto-trigger skipped', {
-          workflowId: wfRow.id,
-          tenantId: userContext.tenantId,
-          step: firstStep,
-        });
-      }
-    }
-
     return c.json(
       {
         id: wfRow.id,
-        status: mapDbStatusToSessionStatus(autoTriggerStatus),
+        status: mapDbStatusToSessionStatus(wfRow.status),
         steps: {
           intake: { completed: true, transcriptId: txRow.id },
         },
@@ -765,9 +728,10 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       where: requestedTenantId
         ? and(
             eq(workflowRun.tenantId, requestedTenantId),
-            eq(workflowRun.principalId, workflowPrincipalId)
+            eq(workflowRun.principalId, workflowPrincipalId),
+            isNull(workflowRun.deletedAt)
           )
-        : eq(workflowRun.principalId, workflowPrincipalId),
+        : and(eq(workflowRun.principalId, workflowPrincipalId), isNull(workflowRun.deletedAt)),
       orderBy: [desc(workflowRun.createdAt)],
       limit: 50,
     });
@@ -910,9 +874,10 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       where: requestedTenantId
         ? and(
             eq(workflowRun.tenantId, userContext.tenantId),
-            eq(workflowRun.principalId, userContext.principalId)
+            eq(workflowRun.principalId, userContext.principalId),
+            isNull(workflowRun.deletedAt)
           )
-        : eq(workflowRun.principalId, userContext.principalId),
+        : and(eq(workflowRun.principalId, userContext.principalId), isNull(workflowRun.deletedAt)),
       orderBy: [desc(workflowRun.createdAt)],
       limit: 50,
     });
@@ -1019,7 +984,9 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     });
 
     // Resolve owner names for the fetched page to populate the frontend filter.
-    const ownerIds = [...new Set(rows.map((r) => r.ownerPrincipalId).filter((id): id is string => id !== null))];
+    const ownerIds = [
+      ...new Set(rows.map((r) => r.ownerPrincipalId).filter((id): id is string => id !== null)),
+    ];
     if (ownerIds.length > 0) {
       const ownerPrincipals = await db
         .select({ id: intxSchema.principal.id, refId: intxSchema.principal.refId })
@@ -1054,7 +1021,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     log.info('Fetching workflow', { workflowId: id });
 
     const wf = await db.query.workflowRun.findFirst({
-      where: eq(workflowRun.id, id),
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
     });
     if (!wf) {
       log.warn('Workflow not found', { workflowId: id });
@@ -1164,7 +1131,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     log.info('Running step', { workflowId: id, step: body.step });
 
     const wf = await db.query.workflowRun.findFirst({
-      where: eq(workflowRun.id, id),
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
     });
     if (!wf) {
       log.warn('Workflow not found for step', { workflowId: id });
@@ -1569,7 +1536,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const userId = c.get('userId');
 
     const wf = await db.query.workflowRun.findFirst({
-      where: eq(workflowRun.id, id),
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
     });
     if (!wf) return c.json({ error: 'Workflow not found' }, 404);
 
@@ -1608,7 +1575,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     if (!status) return c.json({ error: 'status must be approved or rejected' }, 400);
 
     const wf = await db.query.workflowRun.findFirst({
-      where: eq(workflowRun.id, id),
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
     });
     if (!wf) return c.json({ error: 'Workflow not found' }, 404);
 
@@ -1682,7 +1649,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     const chosenMap = chosen as Record<string, number>;
 
     const wf = await db.query.workflowRun.findFirst({
-      where: eq(workflowRun.id, id),
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
     });
     if (!wf) return c.json({ error: 'Workflow not found' }, 404);
 
@@ -1773,7 +1740,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       typeof body.companyName === 'string' ? body.companyName.trim().slice(0, 200) : null;
 
     const wf = await db.query.workflowRun.findFirst({
-      where: eq(workflowRun.id, id),
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
     });
     if (!wf) return c.json({ error: 'Workflow not found' }, 404);
 
@@ -1799,13 +1766,94 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     return c.json({ id, companyName });
   });
 
+  // ─── Regenerate a single artifact with optional feedback ────────────
+  router.post('/workflows/:id/artifacts/:artifactId/regenerate', async (c) => {
+    const workflowId = c.req.param('id');
+    const artifactId = c.req.param('artifactId');
+    const userId = c.get('userId');
+    const body = (await c.req.json().catch(() => ({}))) as { feedback?: string };
+    const feedback = typeof body.feedback === 'string' ? body.feedback.trim() : undefined;
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: and(eq(workflowRun.id, workflowId), isNull(workflowRun.deletedAt)),
+    });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
+    if (!isWorkflowOwner(wf, userContext)) return c.json({ error: 'Forbidden' }, 403);
+
+    const art = await db.query.artifact.findFirst({
+      where: eq(artifact.id, artifactId),
+    });
+    if (!art || art.sessionId !== workflowId) return c.json({ error: 'Artifact not found' }, 404);
+
+    const input = wf.input as WorkflowInput;
+    const transcriptRow = input?.transcriptId
+      ? await db.query.transcript.findFirst({ where: eq(transcript.id, input.transcriptId) })
+      : null;
+    if (!transcriptRow) return c.json({ error: 'Transcript not found' }, 422);
+
+    const point = art.painPointId
+      ? await db.query.painPoint.findFirst({ where: eq(painPoint.id, art.painPointId) })
+      : null;
+    if (!point) return c.json({ error: 'Pain point not found' }, 422);
+
+    const source = await resolveStepInferenceSource(
+      db,
+      userContext.tenantId,
+      userContext.principalId,
+      wf.kind,
+      'generate'
+    );
+    if (!source) return c.json({ error: 'No LLM credential configured for generate step' }, 400);
+
+    let generated: Awaited<ReturnType<typeof generateCollateralWithLLM>>;
+    try {
+      generated = await generateCollateralWithLLM(
+        workflowId,
+        transcriptRow.content,
+        point,
+        art.kind,
+        source,
+        undefined,
+        0,
+        feedback || undefined
+      );
+    } catch (err) {
+      log.error('Artifact regeneration failed', {
+        workflowId,
+        artifactId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return c.json({ error: 'Generation failed' }, 500);
+    }
+
+    const [updated] = await db
+      .update(artifact)
+      .set({
+        title: generated.title,
+        content: generated.body,
+        status: 'draft',
+        version: art.version + 1,
+      })
+      .where(eq(artifact.id, artifactId))
+      .returning();
+
+    return c.json(updated, 202);
+  });
+
   // ─── Delete workflow ────────────────────────────────────────────────
   router.delete('/workflows/:id', async (c) => {
     const id = c.req.param('id');
     const userId = c.get('userId');
 
     const wf = await db.query.workflowRun.findFirst({
-      where: eq(workflowRun.id, id),
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
     });
     if (!wf) return c.json({ error: 'Workflow not found' }, 404);
 
@@ -1820,11 +1868,9 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       return c.json({ error: 'Forbidden' }, 403);
     }
 
-    // pain_point and artifact rows reference workflow_run with onDelete cascade,
-    // so removing the run removes its derived rows.
-    await db.delete(workflowRun).where(eq(workflowRun.id, id));
+    await db.update(workflowRun).set({ deletedAt: new Date() }).where(eq(workflowRun.id, id));
 
-    log.info('Workflow deleted', { workflowId: id, tenantId: wf.tenantId });
+    log.info('Workflow archived', { workflowId: id, tenantId: wf.tenantId });
     return c.json({ id, deleted: true });
   });
 
@@ -1903,7 +1949,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
     }
 
     const wf = await db.query.workflowRun.findFirst({
-      where: eq(workflowRun.id, id),
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
     });
     if (!wf) {
       log.warn('Workflow not found for step-config update', { workflowId: id });

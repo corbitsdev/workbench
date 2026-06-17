@@ -59,6 +59,7 @@ export const workflowRun = pgTable("workflow_run", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at"),
 });
 
 export const painPoint = pgTable("pain_point", {

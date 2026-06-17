@@ -3,6 +3,7 @@ import {
   useWorkflow,
   useRunStep,
   useApproveArtifact,
+  useRegenerateArtifact,
   useWorkbenchAgents,
 } from '../hooks/use-workflow';
 import PainPointsList from './PainPointsList';
@@ -44,6 +45,7 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const { data: workflow, isLoading, isError } = useWorkflow(workflowId);
   const runStep = useRunStep(workflowId);
   const approveArtifact = useApproveArtifact(workflowId);
+  const regenerateArtifact = useRegenerateArtifact(workflowId);
 
   const [feedback, setFeedback] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -51,6 +53,8 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
   const [showLincolnChat, setShowLincolnChat] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [showDenyDialog, setShowDenyDialog] = useState(false);
+  const [denyFeedback, setDenyFeedback] = useState('');
 
   const generateCompleted = Boolean(workflow?.steps.generate?.completed);
   const { data: allAgents = [] } = useWorkbenchAgents({
@@ -131,19 +135,23 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   };
 
   const handleAnalyze = () => {
-    void runStep.mutateAsync({
-      step: 'analyze',
-      feedback: feedback.trim() || undefined,
-    });
+    runStep
+      .mutateAsync({
+        step: 'analyze',
+        feedback: feedback.trim() || undefined,
+      })
+      .catch(() => {});
   };
 
   const handleGenerate = () => {
     if (selectedIds.size === 0 || collateralTypes.size === 0) return;
-    void runStep.mutateAsync({
-      step: 'generate',
-      painPointIds: [...selectedIds],
-      collateralTypes: [...collateralTypes],
-    });
+    runStep
+      .mutateAsync({
+        step: 'generate',
+        painPointIds: [...selectedIds],
+        collateralTypes: [...collateralTypes],
+      })
+      .catch(() => {});
   };
 
   // Determine active artifact — prefer explicit selection, fall back to first draft, then last
@@ -162,16 +170,43 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
   const handleApproveOrDeny = (status: 'approved' | 'rejected') => {
     if (!displayArtifact) return;
     const nextDraft = artifacts.find((a) => a.status === 'draft' && a.id !== displayArtifact.id);
-    // mutate + callbacks (not `void mutateAsync(...).then()`): mutateAsync
-    // rejects on failure, and without a .catch() that becomes an unhandled
-    // rejection that leaves the UI stuck. onError surfaces the failure so the
-    // user can retry; advancing to the next draft only happens on success.
     setApprovalError(null);
     approveArtifact.mutate(
       { artifactId: displayArtifact.id, status },
       {
         onSuccess: () => {
           setActiveArtifactId(nextDraft?.id ?? null);
+        },
+        onError: () => {
+          setApprovalError('Could not save your review. Please try again.');
+        },
+      }
+    );
+  };
+
+  const handleDenyWithFeedback = (regenerate: boolean) => {
+    if (!displayArtifact) return;
+    const artifactId = displayArtifact.id;
+    const nextDraft = artifacts.find((a) => a.status === 'draft' && a.id !== artifactId);
+    setApprovalError(null);
+    setShowDenyDialog(false);
+    approveArtifact.mutate(
+      { artifactId, status: 'rejected' },
+      {
+        onSuccess: () => {
+          if (regenerate) {
+            regenerateArtifact.mutate(
+              { artifactId, feedback: denyFeedback.trim() || undefined },
+              {
+                onError: () => {
+                  setApprovalError('Denied, but regeneration failed. Please try again.');
+                },
+              }
+            );
+          } else {
+            setActiveArtifactId(nextDraft?.id ?? null);
+          }
+          setDenyFeedback('');
         },
         onError: () => {
           setApprovalError('Could not save your review. Please try again.');
@@ -291,8 +326,8 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      disabled={approveArtifact.isPending}
-                      onClick={() => handleApproveOrDeny('rejected')}
+                      disabled={approveArtifact.isPending || regenerateArtifact.isPending}
+                      onClick={() => setShowDenyDialog(true)}
                       className="flex-1 rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.97] disabled:opacity-50"
                     >
                       Deny
@@ -440,6 +475,49 @@ export function WorkflowPanel({ workflowId, onClose }: WorkflowPanelProps) {
           </div>
         )}
       </div>
+
+      {showDenyDialog && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center rounded-panel bg-bg/80 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-sm rounded-[14px] border border-border bg-bg p-5 shadow-lg">
+            <p className="text-[14px] font-semibold text-text mb-3">Deny collateral</p>
+            <textarea
+              value={denyFeedback}
+              onChange={(e) => setDenyFeedback(e.target.value)}
+              placeholder="Optional feedback for regeneration…"
+              rows={3}
+              className="w-full resize-none rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40 mb-3"
+            />
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                disabled={approveArtifact.isPending}
+                onClick={() => handleDenyWithFeedback(true)}
+                className="w-full rounded-[9px] border border-orange/40 bg-orange/10 px-3 py-2 text-[13px] font-medium text-orange transition-colors hover:bg-orange/[0.16] active:scale-[0.97] disabled:opacity-50"
+              >
+                Deny and regenerate
+              </button>
+              <button
+                type="button"
+                disabled={approveArtifact.isPending}
+                onClick={() => handleDenyWithFeedback(false)}
+                className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.97] disabled:opacity-50"
+              >
+                Deny
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDenyDialog(false);
+                  setDenyFeedback('');
+                }}
+                className="w-full rounded-[9px] px-3 py-2 text-[13px] text-text-3 hover:text-text transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

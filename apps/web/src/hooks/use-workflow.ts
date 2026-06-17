@@ -121,6 +121,20 @@ export function useApproveArtifact(workflowId: string) {
   });
 }
 
+export function useRegenerateArtifact(workflowId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ artifactId, feedback }: { artifactId: string; feedback?: string }) => {
+      return api<unknown>('POST', `/workflows/${workflowId}/artifacts/${artifactId}/regenerate`, {
+        feedback: feedback ?? '',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+    },
+  });
+}
+
 export function useUpdateSelection(workflowId: string) {
   const queryClient = useQueryClient();
   return useMutation({
