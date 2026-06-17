@@ -16,3 +16,8 @@ interchange
 apps/hub/data
 apps/sidecar/data
 coverage
+.agent-state
+.worktrees
+.claire
+.claude
+.intercode
