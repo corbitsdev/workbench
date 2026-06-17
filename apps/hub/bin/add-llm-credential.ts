@@ -2,7 +2,11 @@
 /* eslint-disable no-console */
 
 /**
- * Add a local LLM credential through standard Interchange API routes.
+ * Add or update LLM credentials through standard Interchange API routes.
+ *
+ * When both ANTHROPIC_API_KEY and OPENAI_COMPATIBLE_API_KEY are set the script
+ * upserts both credentials in a single run — Anthropic first, then the
+ * openai-compatible credential (e.g. opencode-zen for Myra).
  *
  * Requires the dev user to have owner/admin grants. Run seed:superadmin first.
  */
@@ -76,15 +80,29 @@ export function detectProvider(): {
   };
 }
 
-const detected = detectProvider();
-const PROVIDER_NAME = detected.providerName;
-const CREDENTIAL_NAME =
-  process.env["LLM_CREDENTIAL_NAME"] ??
-  detected.credentialName ??
-  process.env["OPENAI_COMPATIBLE_CREDENTIAL_NAME"] ??
-  "llm-credential";
-const LLM_API_KEY = detected.apiKey;
-const LLM_BASE_URL = detected.baseURL;
+/** Detect the openai-compatible credential config independently of detectProvider(). */
+function detectOpenaiCompatible(): {
+  providerName: string;
+  apiKey: string;
+  baseURL: string;
+  credentialName: string;
+} | null {
+  const apiKey =
+    process.env["OPENAI_COMPATIBLE_API_KEY"] ?? process.env["LLM_API_KEY"];
+  const baseURL =
+    process.env["OPENAI_COMPATIBLE_BASE_URL"] ?? process.env["LLM_BASE_URL"];
+  const credentialName =
+    process.env["OPENAI_COMPATIBLE_CREDENTIAL_NAME"] ?? "opencode-zen";
+
+  if (!apiKey) return null;
+
+  return {
+    providerName: "openai-compatible",
+    apiKey,
+    baseURL: baseURL ?? "https://api.openai.com/v1",
+    credentialName,
+  };
+}
 
 type CookieJar = string[];
 
@@ -132,6 +150,123 @@ function fail(label: string, status: number, data: unknown): never {
   process.exit(1);
 }
 
+async function upsertCredential(
+  tenantId: string,
+  sessionCookies: CookieJar,
+  config: {
+    providerName: string;
+    apiKey: string;
+    baseURL?: string;
+    credentialName: string;
+  },
+): Promise<void> {
+  const { providerName, apiKey, baseURL, credentialName } = config;
+
+  const providersRes = await api(
+    "GET",
+    `/api/tenants/${tenantId}/providers?inherited=true`,
+    undefined,
+    sessionCookies,
+  );
+  if (providersRes.status !== 200)
+    fail("list providers", providersRes.status, providersRes.data);
+
+  let provider = (
+    (providersRes.data as { data?: Array<{ id: string; name: string }> })
+      .data ?? []
+  ).find((p) => p.name === providerName);
+
+  if (!provider) {
+    const providerMetadata = baseURL ? { baseURL } : {};
+    const createProvider = await api(
+      "POST",
+      `/api/tenants/${tenantId}/providers`,
+      {
+        name: providerName,
+        plugin: providerName,
+        metadata: providerMetadata,
+      },
+      sessionCookies,
+    );
+
+    if (createProvider.status !== 201 && createProvider.status !== 409) {
+      fail("create provider", createProvider.status, createProvider.data);
+    }
+
+    if (createProvider.status === 201) {
+      provider = createProvider.data as { id: string; name: string };
+    } else {
+      const refreshed = await api(
+        "GET",
+        `/api/tenants/${tenantId}/providers?inherited=true`,
+        undefined,
+        sessionCookies,
+      );
+      provider = (
+        (refreshed.data as { data?: Array<{ id: string; name: string }> })
+          .data ?? []
+      ).find((p) => p.name === providerName);
+    }
+  }
+
+  if (!provider) {
+    console.error(`[credential] Could not resolve provider ${providerName}`);
+    process.exit(1);
+  }
+  log(`Provider: ${provider.name} (${provider.id})`);
+
+  const listCredentials = await api(
+    "GET",
+    `/api/tenants/${tenantId}/credentials`,
+    undefined,
+    sessionCookies,
+  );
+  if (listCredentials.status !== 200)
+    fail("list credentials", listCredentials.status, listCredentials.data);
+
+  const existingCredential = (
+    (listCredentials.data as { data?: Array<{ id: string; name: string }> })
+      .data ?? []
+  ).find((c) => c.name === credentialName);
+
+  log(`Credential name: "${credentialName}"`);
+  log(`  provider: ${providerName}`);
+  if (baseURL) log(`  base URL: ${baseURL}`);
+
+  const credentialMetadata = baseURL ? { baseURL } : {};
+
+  if (existingCredential) {
+    const patch = await api(
+      "PATCH",
+      `/api/tenants/${tenantId}/credentials/${existingCredential.id}`,
+      { secret: apiKey, metadata: credentialMetadata },
+      sessionCookies,
+    );
+    if (patch.status !== 200)
+      fail("patch credential", patch.status, patch.data);
+    log(`Credential updated (existing): ${existingCredential.id}`);
+  } else {
+    const createCredential = await api(
+      "POST",
+      `/api/tenants/${tenantId}/credentials`,
+      {
+        providerId: provider.id,
+        name: credentialName,
+        type: "api_key",
+        secret: apiKey,
+        scopes: ["chat"],
+        metadata: credentialMetadata,
+      },
+      sessionCookies,
+    );
+    if (createCredential.status !== 201)
+      fail("create credential", createCredential.status, createCredential.data);
+    log(
+      `Credential created (new): ${(createCredential.data as { id?: string }).id ?? credentialName}`,
+    );
+  }
+}
+
 if (import.meta.main) {
   let sessionCookies: CookieJar;
   if (SESSION_TOKEN) {
@@ -175,107 +310,26 @@ if (import.meta.main) {
   const tenantId = principal.tenantId;
   log(`Tenant ID: ${tenantId}`);
 
-  const providersRes = await api(
-    "GET",
-    `/api/tenants/${tenantId}/providers?inherited=true`,
-    undefined,
-    sessionCookies,
-  );
-  if (providersRes.status !== 200)
-    fail("list providers", providersRes.status, providersRes.data);
+  // Primary provider (Anthropic, OpenAI, or openai-compatible depending on env vars).
+  const detected = detectProvider();
+  const primaryCredentialName =
+    process.env["LLM_CREDENTIAL_NAME"] ??
+    detected.credentialName ??
+    "llm-credential";
 
-  let provider = (
-    (providersRes.data as { data?: Array<{ id: string; name: string }> })
-      .data ?? []
-  ).find((p) => p.name === PROVIDER_NAME);
+  await upsertCredential(tenantId, sessionCookies, {
+    ...detected,
+    credentialName: primaryCredentialName,
+  });
 
-  if (!provider) {
-    const providerMetadata = LLM_BASE_URL ? { baseURL: LLM_BASE_URL } : {};
-    const createProvider = await api(
-      "POST",
-      `/api/tenants/${tenantId}/providers`,
-      {
-        name: PROVIDER_NAME,
-        plugin: PROVIDER_NAME,
-        metadata: providerMetadata,
-      },
-      sessionCookies,
-    );
-
-    if (createProvider.status !== 201 && createProvider.status !== 409) {
-      fail("create provider", createProvider.status, createProvider.data);
+  // If ANTHROPIC_API_KEY drove the primary credential, also upsert the
+  // openai-compatible credential (opencode-zen) when its key is present.
+  if (detected.providerName === "anthropic") {
+    const compat = detectOpenaiCompatible();
+    if (compat) {
+      log(""); // blank line for readability
+      log("Also upserting openai-compatible credential...");
+      await upsertCredential(tenantId, sessionCookies, compat);
     }
-
-    if (createProvider.status === 201) {
-      provider = createProvider.data as { id: string; name: string };
-    } else {
-      const refreshed = await api(
-        "GET",
-        `/api/tenants/${tenantId}/providers?inherited=true`,
-        undefined,
-        sessionCookies,
-      );
-      provider = (
-        (refreshed.data as { data?: Array<{ id: string; name: string }> })
-          .data ?? []
-      ).find((p) => p.name === PROVIDER_NAME);
-    }
-  }
-
-  if (!provider) {
-    console.error(`[credential] Could not resolve provider ${PROVIDER_NAME}`);
-    process.exit(1);
-  }
-  log(`Provider: ${provider.name} (${provider.id})`);
-
-  const listCredentials = await api(
-    "GET",
-    `/api/tenants/${tenantId}/credentials`,
-    undefined,
-    sessionCookies,
-  );
-  if (listCredentials.status !== 200)
-    fail("list credentials", listCredentials.status, listCredentials.data);
-
-  const existingCredential = (
-    (listCredentials.data as { data?: Array<{ id: string; name: string }> })
-      .data ?? []
-  ).find((c) => c.name === CREDENTIAL_NAME);
-
-  log(`Credential name: "${CREDENTIAL_NAME}"`);
-  log(`  provider: ${PROVIDER_NAME}`);
-  if (LLM_BASE_URL) log(`  base URL: ${LLM_BASE_URL}`);
-
-  const credentialMetadata = LLM_BASE_URL ? { baseURL: LLM_BASE_URL } : {};
-
-  if (existingCredential) {
-    const patch = await api(
-      "PATCH",
-      `/api/tenants/${tenantId}/credentials/${existingCredential.id}`,
-      { secret: LLM_API_KEY, metadata: credentialMetadata },
-      sessionCookies,
-    );
-    if (patch.status !== 200)
-      fail("patch credential", patch.status, patch.data);
-    log(`Credential updated (existing): ${existingCredential.id}`);
-  } else {
-    const createCredential = await api(
-      "POST",
-      `/api/tenants/${tenantId}/credentials`,
-      {
-        providerId: provider.id,
-        name: CREDENTIAL_NAME,
-        type: "api_key",
-        secret: LLM_API_KEY,
-        scopes: ["chat"],
-        metadata: credentialMetadata,
-      },
-      sessionCookies,
-    );
-    if (createCredential.status !== 201)
-      fail("create credential", createCredential.status, createCredential.data);
-    log(
-      `Credential created (new): ${(createCredential.data as { id?: string }).id ?? CREDENTIAL_NAME}`,
-    );
   }
 }

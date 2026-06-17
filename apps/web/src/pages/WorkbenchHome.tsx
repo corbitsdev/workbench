@@ -1,6 +1,8 @@
 import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useArtifacts } from '@workbench/client/react';
+import { clientOptions } from '../lib/client-options';
 import { AgentChat } from '../components/AgentChat';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import {
@@ -235,6 +237,43 @@ export default function WorkbenchHome() {
     const first = workbenches[0];
     if (first) void navigate(`/workbenches/${first.tenantSlug}`, { replace: true });
   }, [workbenchesLoaded, workbenches, slug, navigate]);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const artifactIdFromURL = searchParams.get('artifactId');
+
+  const { data: artifactsForURL, isSuccess: artifactsLoaded } = useArtifacts(clientOptions, {
+    tenantId: workbenchTenantId,
+    enabled: !!workbenchTenantId && !!artifactIdFromURL,
+  });
+
+  const handledArtifactIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!artifactIdFromURL || !artifactsForURL) return;
+    if (handledArtifactIdRef.current === artifactIdFromURL) return;
+
+    const artifact = artifactsForURL.find((a) => a.id === artifactIdFromURL);
+
+    handledArtifactIdRef.current = artifactIdFromURL;
+
+    if (artifact) {
+      setWorkflowArtifact(artifact);
+      setActiveModal('catalog');
+    }
+
+    // Strip the param whether or not the artifact was found — once the query
+    // has settled, keeping a stale ?artifactId= in the URL serves no purpose.
+    if (artifactsLoaded) {
+      setSearchParams(
+        (params) => {
+          const next = new URLSearchParams(params);
+          next.delete('artifactId');
+          return next;
+        },
+        { replace: true }
+      );
+    }
+  }, [artifactIdFromURL, artifactsForURL, artifactsLoaded, setSearchParams, setWorkflowArtifact, setActiveModal]);
 
   if (provisioningState.status === 'error') {
     return (
