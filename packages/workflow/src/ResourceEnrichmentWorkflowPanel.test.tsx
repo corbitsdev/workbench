@@ -89,7 +89,7 @@ describe('ResourceEnrichmentWorkflowPanel', () => {
     expect(onEnrich).toHaveBeenCalledTimes(1);
   });
 
-  it('renders selection artifacts during review', () => {
+  it('pages through one selection artifact at a time during review', () => {
     render(
       <ResourceEnrichmentWorkflowPanel
         workflow={makeView({ status: 'reviewing', selectionCount: 2 })}
@@ -97,7 +97,14 @@ describe('ResourceEnrichmentWorkflowPanel', () => {
         renderSelection={(artifact) => <p>Selection for {artifact.title}</p>}
       />
     );
+    expect(screen.getByText('Row 1 of 2')).not.toBeNull();
     expect(screen.getByText('Selection for product-0')).not.toBeNull();
+    expect(screen.queryByText('Selection for product-1')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /next row/i }));
+
+    expect(screen.getByText('Row 2 of 2')).not.toBeNull();
+    expect(screen.queryByText('Selection for product-0')).toBeNull();
     expect(screen.getByText('Selection for product-1')).not.toBeNull();
   });
 

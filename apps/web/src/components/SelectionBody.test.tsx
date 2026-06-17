@@ -68,7 +68,7 @@ describe('SelectionBody', () => {
     expect(view.getAllByRole('radio')).toHaveLength(5);
     expect(view.getAllByText('Title')).toHaveLength(2);
     const user = userEvent.setup();
-    await user.click(view.getByRole('button', { name: 'Next' }));
+    await user.click(view.getByRole('button', { name: 'Next section' }));
     expect(view.getAllByText('Description')).toHaveLength(2);
     expect(view.getAllByRole('radio')).toHaveLength(5);
   });
@@ -79,8 +79,22 @@ describe('SelectionBody', () => {
     );
     expect((view.getByDisplayValue('Title:2') as HTMLInputElement).checked).toBe(true);
     const user = userEvent.setup();
-    await user.click(view.getByRole('button', { name: 'Next' }));
+    await user.click(view.getByRole('button', { name: 'Next section' }));
     expect((view.getByDisplayValue('Description:0') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('supports arbitrary field names for a row', async () => {
+    const view = renderBody(
+      buildSelectionArtifactContent({
+        label: 'Row 1',
+        fields: { 'Meta Title': ['mt1'], 'Alt Text': ['alt1'] },
+        chosen: null,
+      })
+    );
+    expect(view.getAllByText('Meta Title')).toHaveLength(2);
+    const user = userEvent.setup();
+    await user.click(view.getByRole('button', { name: 'Alt Text' }));
+    expect(view.getByDisplayValue('Alt Text:0')).not.toBeNull();
   });
 
   it('PATCHes the chosen indices on submit', async () => {

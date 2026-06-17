@@ -15,6 +15,11 @@ type StepName = 'comparisons' | 'configure' | 'input';
 
 type Mode = 'text' | 'artifact';
 
+type CustomSkillDraft = {
+  title: string;
+  content: string;
+};
+
 const PROVIDER_WHITELIST = new Set(['openai-compatible', 'openai', 'anthropic', 'google-genai']);
 
 const STEP_LABELS: Record<StepName, string> = {
@@ -60,8 +65,20 @@ export function AbComparisonNewPane({
 }: WorkflowNewPaneProps) {
   const [step, setStep] = useState<StepName>('comparisons');
   const [options, setOptions] = useState<AbComparisonProviderOption[]>([
-    { credentialId: '', providerName: '', providerPlugin: '', skillIds: [] },
-    { credentialId: '', providerName: '', providerPlugin: '', skillIds: [] },
+    {
+      credentialId: '',
+      providerName: '',
+      providerPlugin: '',
+      skillIds: [],
+      customSkills: [],
+    },
+    {
+      credentialId: '',
+      providerName: '',
+      providerPlugin: '',
+      skillIds: [],
+      customSkills: [],
+    },
   ]);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [inputMode, setInputMode] = useState<Mode>('text');
@@ -79,7 +96,13 @@ export function AbComparisonNewPane({
   const addSlot = () => {
     setOptions((prev) => [
       ...prev,
-      { credentialId: '', providerName: '', providerPlugin: '', skillIds: [] },
+      {
+        credentialId: '',
+        providerName: '',
+        providerPlugin: '',
+        skillIds: [],
+        customSkills: [],
+      },
     ]);
   };
 
@@ -98,6 +121,7 @@ export function AbComparisonNewPane({
           providerPlugin: cred?.providerPlugin ?? '',
           model: defaultAbComparisonModel(cred?.providerPlugin ?? ''),
           skillIds: [],
+          customSkills: [],
         };
         return next;
       });
@@ -121,6 +145,67 @@ export function AbComparisonNewPane({
     });
   }, []);
 
+  const updateCustomSkills = useCallback((index: number, customSkills: CustomSkillDraft[]) => {
+    setOptions((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], customSkills };
+      return next;
+    });
+  }, []);
+
+  const addCustomSkill = useCallback(
+    (index: number) => {
+      const nextSkills = [...(options[index]?.customSkills ?? []), { title: '', content: '' }];
+      updateCustomSkills(index, nextSkills);
+    },
+    [options, updateCustomSkills]
+  );
+
+  const updateCustomSkill = useCallback(
+    (index: number, skillIndex: number, patch: Partial<CustomSkillDraft>) => {
+      const nextSkills = (options[index]?.customSkills ?? []).map((skill, i) =>
+        i === skillIndex ? { ...skill, ...patch } : skill
+      );
+      updateCustomSkills(index, nextSkills);
+    },
+    [options, updateCustomSkills]
+  );
+
+  const removeCustomSkill = useCallback(
+    (index: number, skillIndex: number) => {
+      updateCustomSkills(
+        index,
+        (options[index]?.customSkills ?? []).filter((_, i) => i !== skillIndex)
+      );
+    },
+    [options, updateCustomSkills]
+  );
+
+  const readSkillFile = useCallback(
+    (index: number, skillIndex: number, file: File | undefined) => {
+      if (!file) return;
+      if (
+        !file.name.endsWith('.md') &&
+        file.type !== 'text/markdown' &&
+        file.type !== 'text/plain'
+      ) {
+        setError('Upload markdown skill files only.');
+        return;
+      }
+      file
+        .text()
+        .then((content) => {
+          updateCustomSkill(index, skillIndex, {
+            title:
+              options[index]?.customSkills?.[skillIndex]?.title || file.name.replace(/\.md$/i, ''),
+            content,
+          });
+        })
+        .catch(() => setError('Could not read that skill file.'));
+    },
+    [options, updateCustomSkill]
+  );
+
   const validateProviders = () => {
     const valid = options.filter((o) => o.credentialId);
     if (valid.length < 2) {
@@ -135,6 +220,12 @@ export function AbComparisonNewPane({
       if (!isAbComparisonModelAllowed(option.providerPlugin, option.model)) {
         setError(`Model ${option.model} is not available for ${option.providerName}.`);
         return false;
+      }
+      for (const skill of option.customSkills ?? []) {
+        if (!skill.title.trim() || !skill.content.trim()) {
+          setError('Custom skills need both a name and markdown content.');
+          return false;
+        }
       }
     }
     return true;
@@ -180,7 +271,17 @@ export function AbComparisonNewPane({
       {
         workflowKind,
         tenantId: tenantId ?? undefined,
-        providers: options.filter((o) => o.credentialId),
+        providers: options
+          .filter((o) => o.credentialId)
+          .map((option) => ({
+            ...option,
+            customSkills: option.customSkills
+              ?.map((skill) => ({
+                title: skill.title.trim(),
+                content: skill.content.trim(),
+              }))
+              .filter((skill) => skill.title && skill.content),
+          })),
         systemPrompt: systemPrompt.trim() || undefined,
         input: {
           source: inputMode,
@@ -369,6 +470,59 @@ export function AbComparisonNewPane({
                           );
                         })}
                       </div>
+                      {(option.customSkills ?? []).map((skill, skillIndex) => (
+                        <div
+                          key={skillIndex}
+                          className="mt-3 rounded-[8px] border border-border bg-surface p-3 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <input
+                              type="text"
+                              value={skill.title}
+                              onChange={(e) =>
+                                updateCustomSkill(index, skillIndex, {
+                                  title: e.target.value,
+                                })
+                              }
+                              placeholder="Skill name"
+                              className="min-w-0 flex-1 rounded-[7px] border border-border bg-bg px-2.5 py-1.5 text-[12px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeCustomSkill(index, skillIndex)}
+                              className="text-[11px] text-text-3 hover:text-red transition-colors"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <input
+                            type="file"
+                            accept=".md,text/markdown,text/plain"
+                            onChange={(e) =>
+                              readSkillFile(index, skillIndex, e.currentTarget.files?.[0])
+                            }
+                            className="block w-full text-[12px] text-text-3 file:mr-3 file:rounded-[7px] file:border file:border-border file:bg-surface-2 file:px-2.5 file:py-1 file:text-[12px] file:font-medium file:text-text-2"
+                          />
+                          <textarea
+                            value={skill.content}
+                            onChange={(e) =>
+                              updateCustomSkill(index, skillIndex, {
+                                content: e.target.value,
+                              })
+                            }
+                            placeholder="Paste markdown skill instructions…"
+                            rows={5}
+                            className="w-full resize-none rounded-[7px] border border-border bg-bg px-2.5 py-1.5 text-[12px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+                          />
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => addCustomSkill(index)}
+                        className="mt-3 rounded-[7px] border border-border px-2.5 py-1 text-[12px] font-medium text-text-2 transition-colors hover:text-text"
+                      >
+                        Add custom skill
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -414,7 +568,7 @@ export function AbComparisonNewPane({
               ) : (
                 <ArtifactSourcePicker
                   tenantId={tenantId}
-                  onSelect={(id) => setSelectedArtifactId(id)}
+                  onSelect={(data) => setSelectedArtifactId(data.sourceArtifactId)}
                   isLoading={false}
                   initialSelectedId={selectedArtifactId}
                 />

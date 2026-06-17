@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import HorizontalStepper from './HorizontalStepper';
 import type { Step } from './types';
 
@@ -183,6 +183,8 @@ export function ResourceEnrichmentWorkflowPanel({
   renderSelection,
   renderCsvDownload,
 }: ResourceEnrichmentWorkflowPanelProps) {
+  const [activeSelectionIndex, setActiveSelectionIndex] = useState(0);
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center rounded-panel border border-border bg-bg">
@@ -212,6 +214,8 @@ export function ResourceEnrichmentWorkflowPanel({
   const review = steps.review ?? {};
   const exportStep = steps.export ?? {};
   const selections = enrich.selections ?? [];
+  const currentSelectionIndex = Math.min(activeSelectionIndex, Math.max(selections.length - 1, 0));
+  const activeSelection = selections[currentSelectionIndex];
   const csvArtifacts = exportStep.artifacts ?? [];
   const displayTitle = title ?? workflow.companyName ?? 'Resource enrichment';
   const statusLabel = STATUS_LABELS[workflow.status] ?? workflow.status;
@@ -240,16 +244,42 @@ export function ResourceEnrichmentWorkflowPanel({
             {...(workflow.errorMessage ? { errorMessage: workflow.errorMessage } : {})}
           />
 
-          {workflow.status === 'reviewing' && selections.length > 0 && renderSelection && (
-            <div className="space-y-6">
-              {selections.map((artifact) => (
-                <div
-                  key={artifact.id}
-                  className="rounded-[10px] border border-border bg-surface p-4"
-                >
-                  {renderSelection(artifact)}
+          {workflow.status === 'reviewing' && activeSelection && renderSelection && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-border bg-surface px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-medium text-text">{activeSelection.title}</p>
+                  <p className="text-[12px] text-text-3">
+                    Row {currentSelectionIndex + 1} of {selections.length}
+                  </p>
                 </div>
-              ))}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveSelectionIndex(Math.max(0, currentSelectionIndex - 1))}
+                    disabled={currentSelectionIndex === 0}
+                    className="rounded border border-border px-3 py-1.5 text-xs font-medium text-text-2 disabled:opacity-50"
+                  >
+                    Previous row
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveSelectionIndex(Math.min(selections.length - 1, currentSelectionIndex + 1))
+                    }
+                    disabled={currentSelectionIndex >= selections.length - 1}
+                    className="rounded border border-border px-3 py-1.5 text-xs font-medium text-text-2 disabled:opacity-50"
+                  >
+                    Next row
+                  </button>
+                </div>
+              </div>
+              <div
+                key={activeSelection.id}
+                className="rounded-[10px] border border-border bg-surface p-4"
+              >
+                {renderSelection(activeSelection)}
+              </div>
             </div>
           )}
 

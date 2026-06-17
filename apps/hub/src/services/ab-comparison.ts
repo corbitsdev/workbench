@@ -1,4 +1,5 @@
 import { getLogger } from '@intx/log';
+import { getSkillById } from '@workbench/agents';
 import { runSingleTurnAgent } from '../lib/inference';
 import type { InferenceSource } from '@intx/types/runtime';
 import type { HubDb } from '../db';
@@ -16,6 +17,30 @@ const log = getLogger(['ab-workflow']);
 
 const DEFAULT_INFERENCE_TIMEOUT_MS = 180_000;
 const MAX_CONCURRENT_BRANCHES = 3;
+
+function buildBranchSystemPrompt(
+  option: AbComparisonProviderOption,
+  systemPrompt: string | undefined
+): string {
+  const sections: string[] = [];
+  if (systemPrompt?.trim()) {
+    sections.push(systemPrompt.trim());
+  }
+  for (const skillId of option.skillIds) {
+    const skill = getSkillById(skillId);
+    if (skill) {
+      sections.push(`Skill: ${skill.title}\n\n${skill.content}`);
+    }
+  }
+  for (const skill of option.customSkills ?? []) {
+    const title = skill.title.trim();
+    const content = skill.content.trim();
+    if (title && content) {
+      sections.push(`Skill: ${title}\n\n${content}`);
+    }
+  }
+  return sections.join('\n\n---\n\n');
+}
 
 function coerceToString(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -68,7 +93,9 @@ export async function runAbComparisonExecution(
   }));
 
   // Update workflow with branches and status.
-  const runBefore = await db.query.workflowRun.findFirst({ where: eq(workflowRun.id, workflowId) });
+  const runBefore = await db.query.workflowRun.findFirst({
+    where: eq(workflowRun.id, workflowId),
+  });
   if (!runBefore) {
     throw new Error(`Workflow run not found: ${workflowId}`);
   }
@@ -97,7 +124,7 @@ export async function runAbComparisonExecution(
 
       const output = await runSingleTurnAgent(
         source,
-        systemPrompt ?? '',
+        buildBranchSystemPrompt(branch.option, systemPrompt),
         userMessage,
         `ab-compare-${workflowId}`,
         undefined,
@@ -125,7 +152,9 @@ export async function runAbComparisonExecution(
   }
 
   // Persist updated branches.
-  const runAfter = await db.query.workflowRun.findFirst({ where: eq(workflowRun.id, workflowId) });
+  const runAfter = await db.query.workflowRun.findFirst({
+    where: eq(workflowRun.id, workflowId),
+  });
   if (!runAfter) {
     throw new Error(`Workflow run not found at completion: ${workflowId}`);
   }
@@ -178,17 +207,20 @@ export async function persistAbComparisonResults(
     2
   );
 
-  const [topLevel] = await db.insert(artifact).values({
-    tenantId: userContext.tenantId,
-    principalId: userContext.principalId,
-    ownerPrincipalId: userContext.principalId,
-    sessionId: workflowId,
-    kind: 'ab-comparison-result',
-    title: 'A/B Comparison Results',
-    content: topLevelContent,
-    status: 'draft',
-    version: 1,
-  }).returning();
+  const [topLevel] = await db
+    .insert(artifact)
+    .values({
+      tenantId: userContext.tenantId,
+      principalId: userContext.principalId,
+      ownerPrincipalId: userContext.principalId,
+      sessionId: workflowId,
+      kind: 'ab-comparison-result',
+      title: 'A/B Comparison Results',
+      content: topLevelContent,
+      status: 'draft',
+      version: 1,
+    })
+    .returning();
   if (topLevel) artifactIds.push(topLevel.id);
 
   // Per-branch artifacts with provenance revealed.
@@ -209,25 +241,25 @@ export async function persistAbComparisonResults(
       2
     );
 
-    const [inserted] = await db.insert(artifact).values({
-      tenantId: userContext.tenantId,
-      principalId: userContext.principalId,
-      ownerPrincipalId: userContext.principalId,
-      sessionId: workflowId,
-      kind: 'ab-comparison-branch',
-      title: `Branch ${branch.id.slice(0, 6)} — ${branch.option.providerName}`,
-      content: branchContent,
-      status: 'draft',
-      version: 1,
-    }).returning();
+    const [inserted] = await db
+      .insert(artifact)
+      .values({
+        tenantId: userContext.tenantId,
+        principalId: userContext.principalId,
+        ownerPrincipalId: userContext.principalId,
+        sessionId: workflowId,
+        kind: 'ab-comparison-branch',
+        title: `Branch ${branch.id.slice(0, 6)} — ${branch.option.providerName}`,
+        content: branchContent,
+        status: 'draft',
+        version: 1,
+      })
+      .returning();
     if (inserted) artifactIds.push(inserted.id);
   }
 
   // Mark workflow done.
-  await db
-    .update(workflowRun)
-    .set({ status: 'done' })
-    .where(eq(workflowRun.id, workflowId));
+  await db.update(workflowRun).set({ status: 'done' }).where(eq(workflowRun.id, workflowId));
 
   return { artifactIds };
 }

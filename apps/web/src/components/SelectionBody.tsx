@@ -57,7 +57,7 @@ export default function SelectionBody({ content, workflowId, artifactId }: Selec
         <div>
           <h3 className="text-base font-semibold text-text">{parsed.label}</h3>
           <p className="text-xs text-text-3">
-            Option {activeIndex + 1} of {fieldNames.length}
+            Section {activeIndex + 1} of {fieldNames.length}
           </p>
         </div>
         <div className="flex gap-2">
@@ -67,7 +67,7 @@ export default function SelectionBody({ content, workflowId, artifactId }: Selec
             disabled={activeIndex === 0}
             className="rounded border border-border px-3 py-1.5 text-xs font-medium text-text-2 disabled:opacity-50"
           >
-            Previous
+            Previous section
           </button>
           <button
             type="button"
@@ -75,7 +75,7 @@ export default function SelectionBody({ content, workflowId, artifactId }: Selec
             disabled={activeIndex >= fieldNames.length - 1}
             className="rounded border border-border px-3 py-1.5 text-xs font-medium text-text-2 disabled:opacity-50"
           >
-            Next
+            Next section
           </button>
         </div>
       </div>
