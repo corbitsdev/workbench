@@ -1,12 +1,14 @@
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import {
+  ProviderMetadata,
   resolveCredentialById,
   resolveCredentialRequirement,
   resolveInstanceSources,
   resolveOneCredential,
   schema as intxSchema,
 } from '@intx/db';
+import { type } from 'arktype';
 import type { InferenceSource } from '@intx/types/runtime';
 import { workflowRegistry } from '@workbench/workflow-core';
 import type { WorkflowType, UserContext } from '@workbench/workflow-core';
@@ -152,6 +154,7 @@ export async function resolveGranolaApiKey(db: HubDb, tenantId: string): Promise
 export interface StepAssignment {
   credentialIds: string[];
   toolIds: string[];
+  model?: string;
 }
 export type WorkflowAssignments = Record<string, StepAssignment>;
 
@@ -195,15 +198,31 @@ export async function resolveStepInferenceSource(
   if (!req || !req.defaultModel) return null;
 
   const assignments = await getWorkflowAssignments(db, tenantId, principalId, kind);
-  const credentialIds = assignments[step]?.credentialIds ?? [];
-  for (const credentialId of credentialIds) {
+  const stepAssignment = assignments[step];
+  const model = stepAssignment?.model ?? req.defaultModel;
+
+  // If the user explicitly assigned a credential, use it directly.
+  for (const credentialId of stepAssignment?.credentialIds ?? []) {
     const cred = await resolveCredentialById(db, tenantId, credentialId);
     if (!cred) continue;
-    const outcome = await resolveOneCredential(db, tenantId, req, null, null, req.defaultModel);
-    if (outcome.ok) return outcome.source;
+    const providerRow = await db.query.provider.findFirst({
+      where: eq(intxSchema.provider.id, cred.providerId),
+    });
+    if (!providerRow) continue;
+    const meta = ProviderMetadata(providerRow.metadata ?? {});
+    if (meta instanceof type.errors) continue;
+    return {
+      id: `${providerRow.plugin}:${model}`,
+      provider: providerRow.plugin,
+      baseURL: meta.baseURL,
+      apiKey: cred.secret,
+      model,
+      ...(meta.maxTokens !== undefined ? { defaults: { maxTokens: meta.maxTokens } } : {}),
+    };
   }
 
-  const outcome = await resolveOneCredential(db, tenantId, req, null, null, req.defaultModel);
+  // Fall back to resolving by credential name from the workflow definition.
+  const outcome = await resolveOneCredential(db, tenantId, req, null, null, model);
   if (!outcome.ok) {
     if (outcome.reason !== 'credential_missing' && outcome.reason !== 'skipped') {
       log.warn('Workflow LLM credential resolution failed', {
