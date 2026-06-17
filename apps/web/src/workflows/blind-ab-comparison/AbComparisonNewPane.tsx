@@ -12,7 +12,7 @@ type StepName = 'providers' | 'configure' | 'input';
 
 type Mode = 'text' | 'artifact';
 
-const PROVIDER_WHITELIST = new Set(['openai-compatible', 'openai', 'anthropic']);
+const PROVIDER_WHITELIST = new Set(['openai-compatible', 'openai', 'anthropic', 'google-genai']);
 
 const STEP_LABELS: Record<StepName, string> = {
   providers: 'Providers',
