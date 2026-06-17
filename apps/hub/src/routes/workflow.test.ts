@@ -3134,12 +3134,14 @@ describe('Workflow router', () => {
               credentialId: 'cred-1',
               providerName: 'OpenAI',
               providerPlugin: 'openai',
+              model: 'gpt-5.5',
               skillIds: [],
             },
             {
               credentialId: 'cred-2',
               providerName: 'Anthropic',
               providerPlugin: 'anthropic',
+              model: 'claude-opus-4-8',
               skillIds: [],
             },
           ],
@@ -3184,12 +3186,14 @@ describe('Workflow router', () => {
                 credentialId: 'cred-1',
                 providerName: 'OpenAI',
                 providerPlugin: 'openai',
+                model: 'gpt-5.5',
                 skillIds: [],
               },
               {
                 credentialId: 'cred-2',
                 providerName: 'Anthropic',
                 providerPlugin: 'anthropic',
+                model: 'claude-opus-4-8',
                 skillIds: [],
               },
             ],
@@ -3232,6 +3236,39 @@ describe('Workflow router', () => {
       expect(res.status).toBe(400);
       const json = await res.json();
       expect(json.error).toBe('At least two providers are required');
+    });
+
+    it('POST /workflows rejects blind-ab-comparison with a disallowed model', async () => {
+      const router = buildAbComparisonApp(createAbComparisonMockDb());
+      const res = await router.fetch(
+        new Request('http://localhost/workflows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workflowKind: 'blind-ab-comparison',
+            providers: [
+              {
+                credentialId: 'cred-zen',
+                providerName: 'openai-compatible',
+                providerPlugin: 'openai-compatible',
+                model: 'gpt-4o',
+                skillIds: [],
+              },
+              {
+                credentialId: 'cred-2',
+                providerName: 'Anthropic',
+                providerPlugin: 'anthropic',
+                model: 'claude-sonnet-4-6',
+                skillIds: [],
+              },
+            ],
+            input: { source: 'text', text: 'Compare this prompt' },
+          }),
+        })
+      );
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('Model gpt-4o is not allowed for openai-compatible');
     });
 
     it('POST /workflows/:id/steps execute returns 202', async () => {

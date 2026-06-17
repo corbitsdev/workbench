@@ -18,6 +18,7 @@ import {
   seoEnrichmentWorkflow,
   redditOpportunityScannerWorkflow,
   blindAbComparisonWorkflow,
+  validateAbComparisonProviders,
 } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
 import {
@@ -466,8 +467,14 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       const inputDef =
         typeof body.input === 'object' && body.input !== null ? body.input : undefined;
 
-      if (!providers || !Array.isArray(providers) || providers.length < 2) {
+      if (!providers || !Array.isArray(providers)) {
         return c.json({ error: 'At least two providers are required' }, 400);
+      }
+      const providerValidation = validateAbComparisonProviders(
+        providers as Array<{ providerPlugin?: string; model?: string }>
+      );
+      if (!providerValidation.valid) {
+        return c.json({ error: providerValidation.error }, 400);
       }
       if (!inputDef) {
         return c.json({ error: 'Input definition is required' }, 400);
@@ -1642,8 +1649,12 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       const systemPrompt =
         typeof currentInput['systemPrompt'] === 'string' ? currentInput['systemPrompt'] : undefined;
 
-      if (!providers || providers.length < 2) {
+      if (!providers) {
         return c.json({ error: 'At least two providers are required' }, 400);
+      }
+      const executeProviderValidation = validateAbComparisonProviders(providers);
+      if (!executeProviderValidation.valid) {
+        return c.json({ error: executeProviderValidation.error }, 400);
       }
       if (!inputDef) {
         return c.json({ error: 'Input definition is required' }, 400);

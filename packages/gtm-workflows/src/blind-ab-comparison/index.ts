@@ -1,5 +1,19 @@
 import type { WorkflowType } from '@workbench/workflow-core';
 
+export {
+  AB_COMPARISON_MODELS_BY_PLUGIN,
+  AB_COMPARISON_PROVIDER_PLUGINS,
+  ANTHROPIC_AB_COMPARISON_MODELS,
+  GOOGLE_GENAI_AB_COMPARISON_MODELS,
+  OPENAI_AB_COMPARISON_MODELS,
+  OPENCODE_ZEN_CHAT_COMPLETIONS_MODELS,
+  defaultAbComparisonModel,
+  isAbComparisonModelAllowed,
+  listAbComparisonModels,
+  validateAbComparisonProviders,
+  type AbComparisonProviderPlugin,
+} from './models';
+
 export const AB_COMPARISON_WORKFLOW_KIND = 'blind-ab-comparison';
 
 export type AbComparisonProviderOption = {
@@ -32,7 +46,8 @@ export type AbComparisonRanking = {
 export const blindAbComparisonWorkflow: WorkflowType = {
   kind: AB_COMPARISON_WORKFLOW_KIND,
   name: 'Blind A/B Comparison',
-  description: 'Run the same prompt through multiple inference providers, compare outputs blind, and rank the results.',
+  description:
+    'Run the same prompt through multiple inference providers, compare outputs blind, and rank the results.',
   steps: [
     {
       name: 'providers',
@@ -169,7 +184,9 @@ export const blindAbComparisonWorkflow: WorkflowType = {
         input: runInput,
       },
       execute: {
-        completed: branches !== undefined && branches.every((b) => b.status === 'done' || b.status === 'error'),
+        completed:
+          branches !== undefined &&
+          branches.every((b) => b.status === 'done' || b.status === 'error'),
         branches,
       },
       compare: {

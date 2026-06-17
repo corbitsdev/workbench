@@ -134,16 +134,36 @@ describe('AbComparisonNewPane', () => {
         expect.objectContaining({
           credentialId: 'cred-1',
           providerPlugin: 'openai',
-          model: 'gpt-4o',
+          model: 'gpt-5.5',
         }),
         expect.objectContaining({
           credentialId: 'cred-2',
           providerPlugin: 'anthropic',
-          model: 'claude-sonnet-4',
+          model: 'claude-opus-4-8',
         }),
       ],
       input: { source: 'text', text: 'Run this across providers' },
     });
+  });
+
+  it('lets the user pick a catalog model per comparison slot', async () => {
+    const user = userEvent.setup();
+    renderPane();
+    await waitFor(() => {
+      expect(document.querySelectorAll('select').length).toBeGreaterThanOrEqual(2);
+    });
+    const selects = document.querySelectorAll('select');
+    await user.selectOptions(selects[0] as HTMLSelectElement, 'cred-1');
+    await user.selectOptions(selects[1] as HTMLSelectElement, 'cred-2');
+    await waitFor(() => {
+      expect(document.querySelectorAll('select').length).toBe(4);
+    });
+    const modelSelects = [...document.querySelectorAll('select')].filter((select) =>
+      [...(select as HTMLSelectElement).options].some((option) => option.value === 'gpt-5.4-mini')
+    );
+    expect(modelSelects.length).toBeGreaterThanOrEqual(1);
+    await user.selectOptions(modelSelects[0] as HTMLSelectElement, 'gpt-5.4-mini');
+    expect((modelSelects[0] as HTMLSelectElement).value).toBe('gpt-5.4-mini');
   });
 
   it('surfaces a server error when workflow creation fails', async () => {

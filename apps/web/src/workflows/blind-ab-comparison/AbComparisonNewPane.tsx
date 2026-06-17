@@ -1,7 +1,12 @@
 import { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SKILLS_REGISTRY } from '@workbench/agents';
-import type { AbComparisonProviderOption } from '@workbench/gtm-workflows';
+import {
+  defaultAbComparisonModel,
+  isAbComparisonModelAllowed,
+  listAbComparisonModels,
+  type AbComparisonProviderOption,
+} from '@workbench/gtm-workflows';
 import type { WorkflowNewPaneProps } from '../registry';
 import { useCreateWorkflow, useWorkflowCredentials } from '../../hooks/use-workflow';
 import ArtifactSourcePicker from '../../components/ArtifactSourcePicker';
@@ -91,7 +96,7 @@ export function AbComparisonNewPane({
           credentialId: cred?.id ?? '',
           providerName: cred?.providerName ?? '',
           providerPlugin: cred?.providerPlugin ?? '',
-          model: cred?.model,
+          model: defaultAbComparisonModel(cred?.providerPlugin ?? ''),
           skillIds: [],
         };
         return next;
@@ -99,6 +104,14 @@ export function AbComparisonNewPane({
     },
     [whitelistedCredentials]
   );
+
+  const updateSlotModel = useCallback((index: number, model: string) => {
+    setOptions((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], model };
+      return next;
+    });
+  }, []);
 
   const updateOptionSkills = useCallback((index: number, skillIds: string[]) => {
     setOptions((prev) => {
@@ -113,6 +126,16 @@ export function AbComparisonNewPane({
     if (valid.length < 2) {
       setError('Select at least two providers to compare.');
       return false;
+    }
+    for (const option of valid) {
+      if (!option.model) {
+        setError('Select a model for each comparison.');
+        return false;
+      }
+      if (!isAbComparisonModelAllowed(option.providerPlugin, option.model)) {
+        setError(`Model ${option.model} is not available for ${option.providerName}.`);
+        return false;
+      }
     }
     return true;
   };
@@ -249,10 +272,23 @@ export function AbComparisonNewPane({
                       ))}
                     </select>
                     {option.credentialId && (
-                      <p className="text-[11px] text-text-3">
-                        {option.providerName} · {option.providerPlugin}
-                        {option.model ? ` · ${option.model}` : ''}
-                      </p>
+                      <div className="space-y-1">
+                        <label className="block text-[12px] font-medium text-text">Model</label>
+                        <select
+                          value={option.model ?? ''}
+                          onChange={(e) => updateSlotModel(index, e.target.value)}
+                          className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text focus:outline-none focus:ring-1 focus:ring-orange/40"
+                        >
+                          {listAbComparisonModels(option.providerPlugin).map((model) => (
+                            <option key={model} value={model}>
+                              {model}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[11px] text-text-3">
+                          {option.providerName} · {option.providerPlugin}
+                        </p>
+                      </div>
                     )}
                   </div>
                 ))}
