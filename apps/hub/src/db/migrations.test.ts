@@ -139,3 +139,15 @@ describe('0021 adds owner_principal_id to artifact (CL-2035)', () => {
     expect(sql).not.toMatch(/DEFAULT/i);
   });
 });
+
+describe('0023 makes artifact.session_id nullable (CL-1679)', () => {
+  const sql = readFileSync(
+    join(import.meta.dir, '../../migrations/0023_artifact_session_nullable.sql'),
+    'utf-8'
+  );
+
+  it('drops not null on session_id', () => {
+    expect(sql).toMatch(/ALTER TABLE "artifact"/i);
+    expect(sql).toMatch(/ALTER COLUMN "session_id" DROP NOT NULL/i);
+  });
+});
