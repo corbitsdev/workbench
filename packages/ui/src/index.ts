@@ -1,5 +1,4 @@
 export { Button, buttonVariants } from "./Button";
-export { FileInput } from "./FileInput";
 export {
   Steps,
   Step,

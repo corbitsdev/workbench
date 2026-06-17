@@ -80,25 +80,6 @@ export function detectProvider(): {
   };
 }
 
-/** Detect the google-genai credential used by SEO enrichment (tkww-pilot parity). */
-export function detectGoogleAi(): {
-  providerName: string;
-  apiKey: string;
-  baseURL: string;
-  credentialName: string;
-} | null {
-  const apiKey =
-    process.env["GOOGLE_GEMINI_API_KEY"] ?? process.env["GEMINI_API_KEY"];
-  if (!apiKey) return null;
-
-  return {
-    providerName: "google-genai",
-    apiKey,
-    baseURL: "https://generativelanguage.googleapis.com",
-    credentialName: process.env["GOOGLE_AI_CREDENTIAL_NAME"] ?? "google-ai",
-  };
-}
-
 /** Detect the openai-compatible credential config independently of detectProvider(). */
 function detectOpenaiCompatible(): {
   providerName: string;
@@ -350,12 +331,5 @@ if (import.meta.main) {
       log("Also upserting openai-compatible credential...");
       await upsertCredential(tenantId, sessionCookies, compat);
     }
-  }
-
-  const googleAi = detectGoogleAi();
-  if (googleAi) {
-    log("");
-    log("Also upserting google-genai credential for SEO enrichment...");
-    await upsertCredential(tenantId, sessionCookies, googleAi);
   }
 }

@@ -11,6 +11,10 @@ mock.module('../AuthProvider', () => ({
   }),
 }));
 
+mock.module('@workbench/ui', () => ({
+  useTheme: () => ({ theme: 'light', setTheme: () => {} }),
+}));
+
 // No hub-api mock needed — AppSidebar should not call hub-api at all
 
 const { AppSidebar } = require('./AppSidebar');

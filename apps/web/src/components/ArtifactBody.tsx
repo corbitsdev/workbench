@@ -2,7 +2,6 @@ import { usesSocialPostPreview } from '@workbench/artifact';
 import PresentationBody from './PresentationBody';
 import ResearchBody, { parseResearchBrief } from './ResearchBody';
 import SelectionBody from './SelectionBody';
-import RedditOpportunityBody, { parseRedditOpportunityScan } from './RedditOpportunityBody';
 
 interface ArtifactBodyArtifact {
   content: string;
@@ -292,13 +291,6 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
         return <ResearchBody brief={parsedBrief} />;
       }
       return <OnePagerBody body={body} />;
-    }
-    case 'reddit-opportunity-scan': {
-      const parsedScan = parseRedditOpportunityScan(brief ?? artifact.source ?? body);
-      if (parsedScan !== null) {
-        return <RedditOpportunityBody scan={parsedScan} />;
-      }
-      return <p className="text-sm text-red-500 p-4">Invalid reddit opportunity artifact payload.</p>;
     }
     // fallback
     default:

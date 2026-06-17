@@ -1,4 +1,3 @@
-import { getLogger } from '@intx/log';
 import type { ImageBlock } from '@intx/types/runtime';
 import type { WorkflowArtifactDraft } from '@workbench/workflow-core';
 import {
@@ -12,8 +11,6 @@ import { defaultSystemPrompt } from './prompts';
 import type { SeoResourceRow } from './types';
 
 export { SEO_SELECTION_FIELDS, SEO_VARIANT_COUNT };
-
-const log = getLogger(['workflow', 'seo-enrichment']);
 
 // The JSON Schema enforced on the model's response: exactly five variants of
 // each field. Omits `additionalProperties` (Gemini rejects it); the OpenAI path
@@ -180,10 +177,6 @@ export async function enrichSeoRow(
   try {
     const image = await loadProductImage(row.imageLink);
     if (!image.ok) {
-      log.warn('SEO row image unavailable', {
-        productSlug: row.productSlug,
-        reason: image.reason,
-      });
       return buildErrorSelectionDraft(row, 'image unavailable');
     }
     const text = await infer({
@@ -197,12 +190,6 @@ export async function enrichSeoRow(
     // (which can carry model names, request ids, or rate-limit detail).
     const message = err instanceof Error ? err.message : String(err);
     const reason = /JSON|5\/5\/5/.test(message) ? 'response invalid' : 'enrichment failed';
-    const error = err instanceof Error ? err : new Error(message);
-    log.error('SEO row enrichment failed', {
-      productSlug: row.productSlug,
-      category: reason,
-      error,
-    });
     return buildErrorSelectionDraft(row, reason);
   }
 }

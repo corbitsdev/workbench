@@ -7,7 +7,6 @@ import { LoginPage } from "./pages/LoginPage";
 import WorkbenchHome from "./pages/WorkbenchHome";
 import Settings from "./pages/Settings";
 import GammaTemplates from "./pages/GammaTemplates";
-import { SkillsLibrary } from "./pages/SkillsLibrary";
 
 function ProtectedLayout() {
   const { session } = useAuth();
@@ -50,7 +49,6 @@ export const router = createBrowserRouter([
           { path: "/dashboard", element: <Navigate to="/" replace /> },
           { path: "/settings", element: <Settings /> },
           { path: "/settings/templates", element: <GammaTemplates /> },
-          { path: "/skills", element: <SkillsLibrary /> },
           { path: "/workbenches/:slug", element: <WorkbenchHome /> },
         ],
       },
