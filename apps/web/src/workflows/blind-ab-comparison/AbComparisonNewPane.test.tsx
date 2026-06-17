@@ -42,6 +42,7 @@ beforeEach(() => {
             providerName: 'OpenAI',
             providerPlugin: 'openai',
             baseURL: 'https://api.openai.com/v1',
+            model: 'gpt-4o',
           },
           {
             id: 'cred-2',
@@ -49,6 +50,7 @@ beforeEach(() => {
             providerName: 'Anthropic',
             providerPlugin: 'anthropic',
             baseURL: 'https://api.anthropic.com',
+            model: 'claude-sonnet-4',
           },
         ])
       );
@@ -129,8 +131,16 @@ describe('AbComparisonNewPane', () => {
       workflowKind: 'blind-ab-comparison',
       tenantId: 'tenant-1',
       providers: [
-        expect.objectContaining({ credentialId: 'cred-1', providerPlugin: 'openai' }),
-        expect.objectContaining({ credentialId: 'cred-2', providerPlugin: 'anthropic' }),
+        expect.objectContaining({
+          credentialId: 'cred-1',
+          providerPlugin: 'openai',
+          model: 'gpt-4o',
+        }),
+        expect.objectContaining({
+          credentialId: 'cred-2',
+          providerPlugin: 'anthropic',
+          model: 'claude-sonnet-4',
+        }),
       ],
       input: { source: 'text', text: 'Run this across providers' },
     });

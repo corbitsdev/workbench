@@ -2,12 +2,7 @@ import { Hono } from 'hono';
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, max, ne, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import { reportLoggedError } from '@workbench/sentry';
-import {
-  schema as intxSchema,
-  getAncestorChain,
-  ProviderMetadata,
-  resolveCredentialById,
-} from '@intx/db';
+import { schema as intxSchema, getAncestorChain, ProviderMetadata } from '@intx/db';
 import { type } from 'arktype';
 import { listLatestGammaTemplates } from '../lib/gamma-templates';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
@@ -65,6 +60,8 @@ import {
   validateWorkflowInput,
   isWorkflowOwner,
   resolveStepInferenceSource,
+  resolveCredentialInferenceSource,
+  providerMetadataModel,
   resolveAgentStepInferenceSource,
   resolveStepGranolaApiKey,
   resolveGranolaApiKey,
@@ -177,6 +174,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       providerName: string;
       providerPlugin: string;
       baseURL: string;
+      model?: string;
     }> = [];
 
     const INFERENCE_PLUGINS = new Set(['openai-compatible', 'anthropic', 'google-genai', 'openai']);
@@ -187,12 +185,14 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       if (!INFERENCE_PLUGINS.has(provider.plugin)) continue;
       const parsed = ProviderMetadata(provider.metadata ?? {});
       if (parsed instanceof type.errors) continue;
+      const model = providerMetadataModel(provider.metadata);
       result.push({
         id: cred.id,
         name: cred.name,
         providerName: provider.name,
         providerPlugin: provider.plugin,
         baseURL: parsed.baseURL,
+        ...(model ? { model } : {}),
       });
     }
 
@@ -1581,7 +1581,9 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           DEFAULT_STEP_MAX_OUTPUT_TOKENS.analyze
         ).catch(async (err) => {
           const errorMessage = err instanceof Error ? err.message : String(err);
-          await reportLoggedError(log, 'Reddit opportunity analyze failed', err, { workflowId: id });
+          await reportLoggedError(log, 'Reddit opportunity analyze failed', err, {
+            workflowId: id,
+          });
           await db
             .update(workflowRun)
             .set({ status: 'failed', output: { errorMessage } })
@@ -1656,23 +1658,13 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         providers,
         inputDef,
         systemPrompt,
-        async (option) => {
-          const cred = await resolveCredentialById(db, userContext.tenantId, option.credentialId);
-          if (!cred) return null;
-          const providerRow = await db.query.provider.findFirst({
-            where: eq(intxSchema.provider.id, cred.providerId),
-          });
-          if (!providerRow) return null;
-          const meta = ProviderMetadata(providerRow.metadata ?? {});
-          if (meta instanceof type.errors) return null;
-          return {
-            id: `${providerRow.plugin}:${option.model ?? cred.model ?? 'default'}`,
-            provider: providerRow.plugin,
-            baseURL: meta.baseURL,
-            apiKey: cred.secret,
-            model: option.model ?? cred.model ?? 'default',
-          };
-        }
+        async (option) =>
+          resolveCredentialInferenceSource(
+            db,
+            userContext.tenantId,
+            option.credentialId,
+            option.model
+          )
       ).catch((err) => {
         log.error('A/B comparison execution failed', {
           workflowId: id,

@@ -280,6 +280,7 @@ export interface WorkflowInferenceCredential {
   providerName: string;
   providerPlugin: string;
   baseURL: string;
+  model?: string;
 }
 
 export interface EnabledWorkflowEntry {

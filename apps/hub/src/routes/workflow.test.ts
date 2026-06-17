@@ -3250,6 +3250,59 @@ describe('Workflow router', () => {
       expect(res.status).toBe(202);
       expect(updatedValues).toContainEqual(expect.objectContaining({ status: 'running' }));
     });
+
+    it('GET /workflows/credentials includes provider metadata model', async () => {
+      const db = createMockDb();
+      db.query.credential = {
+        findMany: mock(() => [
+          {
+            id: 'cred-zen',
+            name: 'opencode-zen',
+            providerId: 'prov-zen',
+            tenantId: 'tenant-personal',
+          },
+          {
+            id: 'cred-openai',
+            name: 'OpenAI',
+            providerId: 'prov-openai',
+            tenantId: 'tenant-personal',
+          },
+        ]),
+      } as typeof db.query.credential;
+      db.query.provider.findMany = mock(() => [
+        {
+          id: 'prov-zen',
+          name: 'openai-compatible',
+          plugin: 'openai-compatible',
+          metadata: { baseURL: 'https://opencode.ai/zen/v1', model: 'claude-sonnet-4' },
+        },
+        {
+          id: 'prov-openai',
+          name: 'openai',
+          plugin: 'openai',
+          metadata: { baseURL: 'https://api.openai.com/v1' },
+        },
+      ]) as typeof db.query.provider.findMany;
+
+      const router = buildAbComparisonApp(db);
+      const res = await router.fetch(new Request('http://localhost/workflows/credentials'));
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as Array<{ id: string; model?: string }>;
+      expect(json).toEqual([
+        expect.objectContaining({
+          id: 'cred-zen',
+          name: 'opencode-zen',
+          providerPlugin: 'openai-compatible',
+          model: 'claude-sonnet-4',
+        }),
+        expect.objectContaining({
+          id: 'cred-openai',
+          name: 'OpenAI',
+          providerPlugin: 'openai',
+        }),
+      ]);
+      expect(json.find((entry) => entry.id === 'cred-openai')?.model).toBeUndefined();
+    });
   });
 });
 
