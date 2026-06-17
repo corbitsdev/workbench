@@ -144,13 +144,17 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
-  const geminiKey = env('GOOGLE_GEMINI_API_KEY');
+  const geminiKey = env('GOOGLE_GEMINI_API_KEY') ?? env('GEMINI_API_KEY');
   if (geminiKey) {
     entries.push({
       providerName: 'google-genai',
       providerPlugin: 'google-genai',
-      credentialName: 'Google Gemini',
+      credentialName: env('GOOGLE_AI_CREDENTIAL_NAME', 'google-ai') as string,
       secret: geminiKey,
+      metadata: {
+        baseURL: 'https://generativelanguage.googleapis.com',
+        model: env('GOOGLE_AI_MODEL', 'gemini-3.1-flash-lite'),
+      },
     });
   }
 

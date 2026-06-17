@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, max, ne, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
-import { schema as intxSchema, getAncestorChain, ProviderMetadata } from '@intx/db';
+import { schema as intxSchema, getAncestorChain, ProviderMetadata, resolveCredentialById } from '@intx/db';
 import { type } from 'arktype';
 import { listLatestGammaTemplates } from '../lib/gamma-templates';
 import { workflowRegistry, flattenStepCredentialRequirements } from '@workbench/workflow-core';
@@ -15,6 +15,8 @@ import {
   SELECTION_ARTIFACT_KIND,
   setSelectionChosen,
   seoEnrichmentWorkflow,
+  redditOpportunityScannerWorkflow,
+  blindAbComparisonWorkflow,
 } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
 import {
@@ -38,6 +40,10 @@ import {
   runResourceEnrichmentEnrich,
   runResourceEnrichmentExport,
 } from '../services/resource-enrichment';
+import {
+  runAbComparisonExecution,
+  persistAbComparisonResults,
+} from '../services/ab-comparison';
 import {
   mapDbStatusToSessionStatus,
   deriveCurrentStepForWorkflow,
@@ -64,6 +70,8 @@ const log = getLogger(['api', 'workflow']);
 workflowRegistry.register(collateralGenerationWorkflow);
 workflowRegistry.register(presentationGenerationWorkflow);
 workflowRegistry.register(seoEnrichmentWorkflow);
+workflowRegistry.register(redditOpportunityScannerWorkflow);
+workflowRegistry.register(blindAbComparisonWorkflow);
 
 // Per-step output-token caps applied when a step has no explicit override.
 // These are caps, not floors. Analyze is highest because reasoning models spend
@@ -432,6 +440,42 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       log.info('Presentation generation workflow created', {
         workflowId: wfRow.id,
       });
+      return c.json({ id: wfRow.id, status: wfRow.status, kind: wfRow.kind }, 201);
+    }
+
+    if (workflowKind === 'blind-ab-comparison') {
+      const providers = typeof body.providers === 'object' && Array.isArray(body.providers) ? body.providers : undefined;
+      const systemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined;
+      const inputDef = typeof body.input === 'object' && body.input !== null ? body.input : undefined;
+
+      if (!providers || !Array.isArray(providers) || providers.length < 2) {
+        return c.json({ error: 'At least two providers are required' }, 400);
+      }
+      if (!inputDef) {
+        return c.json({ error: 'Input definition is required' }, 400);
+      }
+
+      const [wfRow] = await db
+        .insert(workflowRun)
+        .values({
+          tenantId: userContext.tenantId,
+          principalId: userContext.principalId,
+          kind: workflowKind,
+          status: 'pending',
+          input: {
+            providers,
+            systemPrompt,
+            input: inputDef,
+          },
+        })
+        .returning();
+      if (!wfRow) {
+        log.error('Failed to create A/B comparison workflow row', {
+          tenantId: userContext.tenantId,
+        });
+        return c.json({ error: 'Failed to create workflow' }, 500);
+      }
+      log.info('A/B comparison workflow created', { workflowId: wfRow.id });
       return c.json({ id: wfRow.id, status: wfRow.status, kind: wfRow.kind }, 201);
     }
 
@@ -1193,7 +1237,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
           ).catch((err) => {
             log.error('Resource enrichment enrich failed', {
               workflowId: id,
-              error: err instanceof Error ? err.message : String(err),
+              error: err instanceof Error ? err : new Error(String(err)),
             });
           });
           return c.json({ status: 'generating' }, 202);
@@ -1446,6 +1490,89 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       }
 
       return c.json({ error: 'transcriptSource must be paste, granola, or artifact' }, 400);
+    }
+
+    if (step === 'execute' && wf.kind === 'blind-ab-comparison') {
+      const currentInput = (wf.input as Record<string, unknown>) ?? {};
+      const providers = currentInput['providers'] as Array<{ credentialId: string; providerName: string; providerPlugin: string; model?: string; skillIds: string[] }> | undefined;
+      const inputDef = currentInput['input'] as { source: string; text?: string; artifactId?: string } | undefined;
+      const systemPrompt = typeof currentInput['systemPrompt'] === 'string' ? currentInput['systemPrompt'] : undefined;
+
+      if (!providers || providers.length < 2) {
+        return c.json({ error: 'At least two providers are required' }, 400);
+      }
+      if (!inputDef) {
+        return c.json({ error: 'Input definition is required' }, 400);
+      }
+
+      await db.update(workflowRun).set({ status: 'running' }).where(eq(workflowRun.id, id));
+
+      void runAbComparisonExecution(
+        db,
+        id,
+        userContext,
+        providers,
+        inputDef,
+        systemPrompt,
+        async (option) => {
+          const cred = await resolveCredentialById(db, userContext.tenantId, option.credentialId);
+          if (!cred) return null;
+          const providerRow = await db.query.provider.findFirst({
+            where: eq(intxSchema.provider.id, cred.providerId),
+          });
+          if (!providerRow) return null;
+          const meta = ProviderMetadata(providerRow.metadata ?? {});
+          if (meta instanceof type.errors) return null;
+          return {
+            id: `${providerRow.plugin}:${option.model ?? cred.model ?? 'default'}`,
+            provider: providerRow.plugin,
+            baseURL: meta.baseURL,
+            apiKey: cred.secret,
+            model: option.model ?? cred.model ?? 'default',
+          };
+        }
+      ).catch((err) => {
+        log.error('A/B comparison execution failed', {
+          workflowId: id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        void db.update(workflowRun).set({ status: 'failed' }).where(eq(workflowRun.id, id));
+      });
+
+      return c.json({ status: 'running' }, 202);
+    }
+
+    if (step === 'persist' && wf.kind === 'blind-ab-comparison') {
+      const currentInput = (wf.input as Record<string, unknown>) ?? {};
+      const branches = currentInput['branches'] as Array<{ id: string; option: { providerName: string; model?: string; providerPlugin: string }; output?: string; status: string; errorMessage?: string }> | undefined;
+      // Merge request body into currentInput so the API contract is respected
+      const bodyRanking = body['ranking'];
+      const bodyFeedback = body['feedback'];
+      const ranking = (bodyRanking !== undefined ? bodyRanking : currentInput['ranking']) as { branchIds: string[]; feedback?: Record<string, string> } | undefined;
+      const feedback = (bodyFeedback !== undefined ? bodyFeedback : currentInput['feedback']) as Record<string, string> | undefined;
+
+      if (!branches || branches.length === 0) {
+        return c.json({ error: 'No branches to persist' }, 400);
+      }
+
+      // Persist merged ranking/feedback back into the workflow input so
+      // subsequent reads see the same data.
+      if (bodyRanking !== undefined || bodyFeedback !== undefined) {
+        const mergedInput = { ...currentInput };
+        if (bodyRanking !== undefined) mergedInput['ranking'] = bodyRanking;
+        if (bodyFeedback !== undefined) mergedInput['feedback'] = bodyFeedback;
+        await db.update(workflowRun).set({ input: mergedInput }).where(eq(workflowRun.id, id));
+      }
+
+      const result = await persistAbComparisonResults(
+        db,
+        id,
+        userContext,
+        branches,
+        ranking,
+        feedback
+      );
+      return c.json({ status: 'done', artifactIds: result.artifactIds });
     }
 
     if (step === 'analyze' || step === 'generate') {
@@ -2006,6 +2133,60 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
       steps: Object.keys(validatedConfig),
     });
     return c.json({ id, stepConfig: validatedConfig });
+  });
+
+  // ─── Update workflow step data (ranking, feedback, etc.) ───────────────
+  router.patch('/workflows/:id/step-data', async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+
+    const wf = await db.query.workflowRun.findFirst({
+      where: and(eq(workflowRun.id, id), isNull(workflowRun.deletedAt)),
+    });
+    if (!wf) return c.json({ error: 'Workflow not found' }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      wf.tenantId
+    );
+    if (forbidden || !userContext) return c.json({ error: 'Workflow not found' }, 404);
+    if (!isWorkflowOwner(wf, userContext)) {
+      log.warn('Caller is not the workflow owner', { userId, workflowId: id });
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const currentInput = (wf.input as Record<string, unknown>) ?? {};
+    const updatedInput: Record<string, unknown> = { ...currentInput };
+
+    if (body['ranking'] !== undefined) {
+      const ranking = body['ranking'];
+      if (
+        typeof ranking !== 'object' ||
+        ranking === null ||
+        Array.isArray(ranking) ||
+        !Array.isArray((ranking as Record<string, unknown>)['branchIds'])
+      ) {
+        return c.json({ error: 'ranking must be an object with branchIds array' }, 400);
+      }
+      updatedInput['ranking'] = ranking;
+    }
+    if (body['feedback'] !== undefined) {
+      const feedback = body['feedback'];
+      if (typeof feedback !== 'object' || feedback === null || Array.isArray(feedback)) {
+        return c.json({ error: 'feedback must be an object' }, 400);
+      }
+      updatedInput['feedback'] = feedback;
+    }
+
+    await db
+      .update(workflowRun)
+      .set({ input: updatedInput })
+      .where(eq(workflowRun.id, id));
+
+    log.info('Workflow step data updated', { workflowId: id, keys: Object.keys(body) });
+    return c.json({ id, updated: Object.keys(body) });
   });
 
   // ─── Granola helper ─────────────────────────────────────────────────

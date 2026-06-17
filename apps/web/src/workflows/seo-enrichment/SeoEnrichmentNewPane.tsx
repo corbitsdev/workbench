@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { ChangeEvent } from 'react';
+import { Button, FileInput } from '@workbench/ui';
 import { useCreateWorkflow, useUploadFile, type UploadResult } from '../../hooks/use-workflow';
 import type { WorkflowNewPaneProps } from '../registry';
 
@@ -15,7 +16,6 @@ export function SeoEnrichmentNewPane({
   onCreated,
   onClose,
 }: WorkflowNewPaneProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadFile = useUploadFile();
   const createWorkflow = useCreateWorkflow();
   const [upload, setUpload] = useState<UploadResult | null>(null);
@@ -53,11 +53,13 @@ export function SeoEnrichmentNewPane({
     <div className="flex flex-col h-full overflow-hidden rounded-panel border border-border bg-bg">
       <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border bg-surface shrink-0">
         <p className="text-[14px] font-semibold text-text">SEO Enrichment</p>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={onClose}
           aria-label="Close new workflow"
-          className="grid h-[28px] w-[28px] flex-none place-items-center rounded-[8px] border border-border text-text-2 hover:text-text hover:bg-surface-2 transition-colors"
+          className="grid h-[28px] w-[28px] flex-none place-items-center rounded-[8px] border border-border p-0 text-text-2 hover:text-text hover:bg-surface-2"
         >
           <svg
             viewBox="0 0 24 24"
@@ -68,7 +70,7 @@ export function SeoEnrichmentNewPane({
           >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
-        </button>
+        </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -78,22 +80,14 @@ export function SeoEnrichmentNewPane({
         </p>
 
         <div>
-          <input
-            ref={fileInputRef}
-            type="file"
+          <FileInput
             accept=".xlsx"
             onChange={handleFileChange}
             disabled={isLoading}
-            className="sr-only"
+            isPending={uploadFile.isPending}
+            triggerLabel="Choose .xlsx file"
+            pendingLabel="Uploading…"
           />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading}
-            className="w-full rounded-[10px] border border-dashed border-border bg-surface-2 px-4 py-6 text-[13px] font-medium text-text-2 transition-colors hover:border-orange/60 hover:text-text disabled:opacity-50"
-          >
-            {uploadFile.isPending ? 'Uploading…' : 'Choose .xlsx file'}
-          </button>
           {upload && (
             <p className="text-[12px] text-text-2 mt-2">
               {upload.filename} · {formatSize(upload.size)}
@@ -102,15 +96,17 @@ export function SeoEnrichmentNewPane({
         </div>
 
         {error && <p className="text-[12px] text-orange">{error}</p>}
+      </div>
 
-        <button
+      <div className="shrink-0 border-t border-border px-5 py-4">
+        <Button
           type="button"
           onClick={handleSubmit}
           disabled={!upload || isLoading}
-          className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full"
         >
           {createWorkflow.isPending ? 'Starting…' : 'Start enrichment'}
-        </button>
+        </Button>
       </div>
     </div>
   );

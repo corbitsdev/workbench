@@ -18,6 +18,8 @@ describe('seoEnrichmentWorkflow definition', () => {
     const enrich = seoEnrichmentWorkflow.steps.find((s) => s.name === 'enrich');
     if (!enrich) throw new Error('enrich step missing');
     expect(enrich.credentialRequirements.length).toBeGreaterThan(0);
-    expect(enrich.credentialRequirements[0]?.providerName).toBe('openai-compatible');
+    expect(enrich.credentialRequirements[0]?.providerName).toBe('google-genai');
+    expect(enrich.credentialRequirements[0]?.name).toBe('google-ai');
+    expect(enrich.credentialRequirements[0]?.defaultModel).toBe('gemini-3.1-flash-lite');
   });
 });

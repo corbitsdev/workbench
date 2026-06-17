@@ -167,9 +167,11 @@ bun --env-file=.env run apps/hub/bin/seed.ts
 
 ---
 
-## Step 5 — Add LLM credentials
+## Step 5 — Add credentials
 
-Agents cannot launch until credentials are in place. Add them via admin-ui or via script.
+Agents cannot launch until credentials are in place. The SEO enrichment workflow also
+requires a separate Google Gemini credential (multimodal image+text inference). Add
+credentials via admin-ui or via script.
 
 ### Via admin-ui
 
@@ -183,32 +185,48 @@ Agents cannot launch until credentials are in place. Add them via admin-ui or vi
    - Base URL: e.g. `https://api.openai.com/v1`
 4. Credentials are stored tenant-owned and resolve to all agents automatically
 
-### Via script (single credential)
+### Via script (single or primary LLM credential)
+
+`add-llm-credential.ts` upserts the primary agent LLM credential (Anthropic, OpenAI,
+or openai-compatible depending on env vars). When `GOOGLE_GEMINI_API_KEY` or
+`GEMINI_API_KEY` is also set, it upserts the SEO enrichment credential in the same
+run. Prefer `seed-credentials.ts` for Google (see below) — it reconciles stale
+provider metadata that `add-llm-credential` does not patch.
+
+On OAuth-only deployments where email/password sign-in is disabled, pass
+`SESSION_TOKEN` (the `__Secure-better-auth.session_token` cookie from browser
+DevTools) instead of `SUPERADMIN_EMAIL` / `SUPERADMIN_PASS`.
 
 ```bash
 HUB_URL=https://<hub domain> \
-SUPERADMIN_EMAIL=<admin email> \
-SUPERADMIN_PASS=<admin password> \
 GLOBAL_TENANT_SLUG=<your slug> \
+SESSION_TOKEN=<session cookie> \
 OPENAI_COMPATIBLE_API_KEY=<your key> \
 OPENAI_COMPATIBLE_MODEL=gpt-4o \
 OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1 \
 LLM_CREDENTIAL_NAME="Myra LLM" \
+GOOGLE_GEMINI_API_KEY=<gemini api key> \
 bun run apps/hub/bin/add-llm-credential.ts
 ```
 
-### Via script (all credentials at once)
+### Via script (all credentials at once) — preferred
 
-Set any combination of the following and run the batch seed:
+`seed-credentials.ts` is the canonical batch seed. It creates or updates each
+provider (reconciling `metadata.baseURL` on existing tenant-owned rows) and upserts
+the matching tenant credential. Entries without a key in the environment are
+skipped silently. Safe to re-run after adding keys or upgrading workflow credential
+requirements.
+
+Set any combination of the following and run:
 
 ```bash
 HUB_URL=https://<hub domain> \
-SUPERADMIN_EMAIL=<admin email> \
-SUPERADMIN_PASS=<admin password> \
 GLOBAL_TENANT_SLUG=<your slug> \
+SESSION_TOKEN=<session cookie> \
 OPENAI_COMPATIBLE_API_KEY=sk-... \
 OPENAI_COMPATIBLE_MODEL=gpt-4o \
 OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1 \
+GOOGLE_GEMINI_API_KEY=<gemini api key> \
 GRANOLA_API_KEY=... \
 EXA_API_KEY=... \
 FIRECRAWL_API_KEY=... \
@@ -216,6 +234,33 @@ BLUESKY_HANDLE=yourhandle.bsky.social \
 BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx \
 bun run apps/hub/bin/seed-credentials.ts
 ```
+
+`GEMINI_API_KEY` is accepted as an alias for `GOOGLE_GEMINI_API_KEY`. Optional
+overrides: `GOOGLE_AI_CREDENTIAL_NAME` (default `google-ai`),
+`GOOGLE_AI_MODEL` (default `gemini-3.1-flash-lite`, stored in credential metadata
+only — the enrich step uses the workflow's `defaultModel`, not this env var).
+
+### SEO enrichment (Google Gemini)
+
+The `seo-enrichment` workflow's enrich step resolves a **tenant-owned** credential
+named **`google-ai`** on provider **`google-genai`**, model
+**`gemini-3.1-flash-lite`**, base URL `https://generativelanguage.googleapis.com`.
+This is separate from the Myra/agent `openai-compatible` credential and requires
+multimodal inference (product image + prompt per row).
+
+After deploying a release that switches SEO enrich to Gemini, **re-run
+`seed-credentials.ts`** with a Gemini API key. Existing credentials named
+`Google Gemini` or bound to `opencode-zen` will not satisfy the new requirement.
+Workflow runs that already failed will not self-heal — start a new run after seeding.
+
+Verify in admin-ui (Tenants → your org → Providers / Credentials):
+
+- Provider `google-genai` has `metadata.baseURL` =
+  `https://generativelanguage.googleapis.com`
+- Credential name is exactly `google-ai`
+
+Gemini API keys are **not** read from hub runtime environment variables. They must
+be seeded into the database via the script above (or added manually in admin-ui).
 
 **Bluesky**: the public search endpoint now requires authentication. Create an app
 password at **bsky.app → Settings → Privacy and Security → App Passwords** (separate
@@ -233,8 +278,15 @@ Entries without a key set in the environment are skipped silently. Running the s
 1. Open `https://<web domain>` and sign in with a Google account matching `GOOGLE_ALLOWED_DOMAINS`
 2. The hub auto-provisions your Myra instance on first sign-in
 3. Open Myra chat — if it loads and responds, the hub, sidecar, and credentials are all wired up correctly
+4. If SEO enrichment is enabled: start a **new** SEO enrichment workflow in a workbench,
+   upload an `.xlsx`, run enrich, and confirm rows with valid image URLs reach review
+   (not `enrichment failed` on every row)
 
-Check hub logs for any `launchError` output on the first `/v1/me` request. A `resolveCredentialRequirement failed` error means the credential name does not match the agent definition's requirement (`Myra LLM`).
+Check hub logs for any `launchError` output on the first `/v1/me` request. A `resolveCredentialRequirement failed` error means the credential name does not match the agent definition's requirement (`Myra LLM` for agents, `google-ai` for SEO enrich).
+
+Per-row enrich failures are logged at `workflow.seo-enrichment` and surface in Sentry when
+`SENTRY_DSN` is set, while the UI shows sanitized reasons (`image unavailable`,
+`enrichment failed`, `response invalid`).
 
 ---
 

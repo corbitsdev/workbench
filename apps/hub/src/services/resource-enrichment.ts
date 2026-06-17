@@ -196,13 +196,22 @@ export async function runResourceEnrichmentEnrich(
     const settled = await Promise.allSettled(batch.map((row) => enrichSeoRow(row, infer)));
     for (let j = 0; j < settled.length; j++) {
       const outcome = settled[j];
-      const draft =
-        outcome?.status === 'fulfilled'
-          ? outcome.value
-          : buildErrorSelectionDraft(
-              batch[j] ?? { productSlug: `row-${start + j}` },
-              'enrichment failed'
-            );
+      const row = batch[j] ?? { productSlug: `row-${start + j}` };
+      let draft;
+      if (outcome?.status === 'fulfilled') {
+        draft = outcome.value;
+      } else {
+        const rejection =
+          outcome?.status === 'rejected'
+            ? outcome.reason
+            : new Error('enrichSeoRow settled without a value');
+        log.error('SEO row enrichment rejected unexpectedly', {
+          workflowId,
+          productSlug: row.productSlug,
+          error: rejection instanceof Error ? rejection : new Error(String(rejection)),
+        });
+        draft = buildErrorSelectionDraft(row, 'enrichment failed');
+      }
       await insertArtifactWithVersion(db, {
         tenantId: userContext.tenantId,
         principalId: userContext.principalId,
