@@ -15,6 +15,7 @@ import {
   SELECTION_ARTIFACT_KIND,
   setSelectionChosen,
   seoEnrichmentWorkflow,
+  redditOpportunityScannerWorkflow,
 } from '@workbench/gtm-workflows';
 import type { HubDb } from '../db';
 import {
@@ -64,6 +65,7 @@ const log = getLogger(['api', 'workflow']);
 workflowRegistry.register(collateralGenerationWorkflow);
 workflowRegistry.register(presentationGenerationWorkflow);
 workflowRegistry.register(seoEnrichmentWorkflow);
+workflowRegistry.register(redditOpportunityScannerWorkflow);
 
 // Per-step output-token caps applied when a step has no explicit override.
 // These are caps, not floors. Analyze is highest because reasoning models spend

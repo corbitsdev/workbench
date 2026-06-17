@@ -63,3 +63,8 @@ export {
   resolveArtifactKind,
   selectCollateralTypeIds,
 } from './collateral-generation';
+export {
+  redditOpportunityScannerWorkflow,
+  redditOpportunityScanArtifactSchema,
+  redditOpportunityRecommendationSchema,
+} from './reddit-opportunity-scanner';
