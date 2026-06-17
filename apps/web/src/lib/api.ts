@@ -3,6 +3,10 @@ import { logger } from './logger';
 // Empty string means same-origin (frontend served from the API).
 const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
+export function buildApiUrl(path: string): string {
+  return new URL(`/api/v1/${path.replace(/^\//, '')}`, apiBase || window.location.origin).toString();
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,

@@ -19,11 +19,13 @@ describe('selection artifact content', () => {
   it('round-trips through build and parse', () => {
     const raw = buildSelectionArtifactContent({
       label: 'Row 1',
+      imageLink: 'https://example.com/row-1.png',
       fields: sampleFields,
       chosen: null,
     });
     const parsed = parseSelectionArtifactContent(raw);
     expect(parsed.label).toBe('Row 1');
+    expect(parsed.imageLink).toBe('https://example.com/row-1.png');
     expect(parsed.fields.Title).toEqual(['t1', 't2', 't3']);
     expect(parsed.chosen).toBeNull();
   });
@@ -49,6 +51,7 @@ describe('setSelectionChosen', () => {
   it('writes chosen indices into the content', () => {
     const raw = buildSelectionArtifactContent({
       label: 'Row 1',
+      imageLink: 'https://example.com/row-1.png',
       fields: sampleFields,
       chosen: null,
     });
@@ -59,6 +62,7 @@ describe('setSelectionChosen', () => {
   it('rejects an unknown field', () => {
     const raw = buildSelectionArtifactContent({
       label: 'Row 1',
+      imageLink: 'https://example.com/row-1.png',
       fields: sampleFields,
       chosen: null,
     });
@@ -68,6 +72,7 @@ describe('setSelectionChosen', () => {
   it('rejects an out-of-range index', () => {
     const raw = buildSelectionArtifactContent({
       label: 'Row 1',
+      imageLink: 'https://example.com/row-1.png',
       fields: sampleFields,
       chosen: null,
     });

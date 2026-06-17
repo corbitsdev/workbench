@@ -23,6 +23,7 @@ const validPayload: SeoPayload = {
 
 const row = {
   productSlug: 'eucalyptus-frame',
+  imageLink: 'https://example.com/eucalyptus-frame.png',
   productName: 'Eucalyptus Frame',
   tertiaryCategory: '',
   subCategory: 'Invitations',
@@ -78,6 +79,7 @@ describe('buildSeoSelectionDraft', () => {
     expect(content.fields.Title).toHaveLength(5);
     expect(content.fields.Description).toHaveLength(5);
     expect(content.fields.Summary).toHaveLength(5);
+    expect(content.imageLink).toBe('https://example.com/eucalyptus-frame.png');
     expect(content.chosen).toBeNull();
   });
 });

@@ -160,11 +160,12 @@ export function buildSeoUserMessage(row: SeoResourceRow): string {
 // Map a validated SEO payload onto a selection artifact draft (5 options per
 // field, no pick yet).
 export function buildSeoSelectionDraft(
-  row: Pick<SeoResourceRow, 'productSlug'>,
+  row: Pick<SeoResourceRow, 'productSlug' | 'imageLink'>,
   payload: SeoPayload
 ): WorkflowArtifactDraft {
   return createSelectionArtifactDraft({
     label: row.productSlug,
+    imageLink: row.imageLink,
     fields: {
       Title: payload.seo_titles,
       Description: payload.seo_descriptions,

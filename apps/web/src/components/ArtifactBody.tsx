@@ -3,6 +3,7 @@ import PresentationBody from './PresentationBody';
 import ResearchBody, { parseResearchBrief } from './ResearchBody';
 import SelectionBody from './SelectionBody';
 import RedditOpportunityBody, { parseRedditOpportunityScan } from './RedditOpportunityBody';
+import { buildApiUrl } from '../lib/api';
 
 interface ArtifactBodyArtifact {
   content: string;
@@ -207,7 +208,7 @@ function CsvExportBody({ body, artifactId }: { body: string; artifactId: string 
   return (
     <div className="space-y-3">
       <a
-        href={`/api/v1/artifacts/${artifactId}/download`}
+        href={buildApiUrl(`/artifacts/${artifactId}/download`)}
         download
         className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
       >

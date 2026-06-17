@@ -16,6 +16,7 @@ export const CSV_EXPORT_ARTIFACT_KIND = 'csv-export';
 // no SEO-specific knowledge.
 export const selectionArtifactContentSchema = type({
   label: 'string',
+  'imageLink?': 'string',
   fields: { '[string]': 'string[]' },
   chosen: type({ '[string]': 'number' }).or('null'),
 });
@@ -46,16 +47,21 @@ export function parseSelectionArtifactContent(raw: string): SelectionArtifactCon
 
 export function createSelectionArtifactDraft(input: {
   label: string;
+  imageLink?: string;
   fields: Record<string, string[]>;
 }): WorkflowArtifactDraft {
+  const content: SelectionArtifactContent = {
+    label: input.label,
+    fields: input.fields,
+    chosen: null,
+  };
+  if (input.imageLink !== undefined) {
+    content.imageLink = input.imageLink;
+  }
   return {
     kind: SELECTION_ARTIFACT_KIND,
     title: input.label,
-    content: buildSelectionArtifactContent({
-      label: input.label,
-      fields: input.fields,
-      chosen: null,
-    }),
+    content: buildSelectionArtifactContent(content),
     status: 'draft',
   };
 }

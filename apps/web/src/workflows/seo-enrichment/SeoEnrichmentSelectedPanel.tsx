@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { selectionHasChosen } from '@workbench/gtm-workflows';
 import { ResourceEnrichmentWorkflowPanel } from '@workbench/workflow';
+import { buildApiUrl } from '../../lib/api';
 import {
   useRunResourceEnrichmentStep,
   useWorkflow,
@@ -63,7 +64,7 @@ export function SeoEnrichmentSelectedPanel({ workflowId, onClose }: WorkflowSele
       )}
       renderCsvDownload={(artifact) => (
         <a
-          href={`/api/v1/artifacts/${artifact.id}/download`}
+          href={buildApiUrl(`/artifacts/${artifact.id}/download`)}
           className="btn-primary w-full text-center block"
         >
           Download CSV

@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import '../test-setup';
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -63,25 +63,33 @@ function renderBody(content: string, props: { workflowId?: string; artifactId?: 
 }
 
 describe('SelectionBody', () => {
-  it('renders one radio per option across all fields', () => {
-    renderBody(buildSelectionArtifactContent({ label: 'Row 1', fields: FIELDS, chosen: null }));
-    expect(screen.getAllByRole('radio')).toHaveLength(10);
+  it('shows one field at a time with stepper controls', async () => {
+    const view = renderBody(buildSelectionArtifactContent({ label: 'Row 1', fields: FIELDS, chosen: null }));
+    expect(view.getAllByRole('radio')).toHaveLength(5);
+    expect(view.getAllByText('Title')).toHaveLength(2);
+    const user = userEvent.setup();
+    await user.click(view.getByRole('button', { name: 'Next' }));
+    expect(view.getAllByText('Description')).toHaveLength(2);
+    expect(view.getAllByRole('radio')).toHaveLength(5);
   });
 
-  it('pre-selects the chosen option when present', () => {
-    renderBody(
+  it('keeps the chosen value selected for the active field', async () => {
+    const view = renderBody(
       buildSelectionArtifactContent({ label: 'Row 1', fields: FIELDS, chosen: { Title: 2 } })
     );
-    const titleThird = screen.getByDisplayValue('Title:2') as HTMLInputElement;
-    expect(titleThird.checked).toBe(true);
+    expect((view.getByDisplayValue('Title:2') as HTMLInputElement).checked).toBe(true);
+    const user = userEvent.setup();
+    await user.click(view.getByRole('button', { name: 'Next' }));
+    expect((view.getByDisplayValue('Description:0') as HTMLInputElement).checked).toBe(false);
   });
 
   it('PATCHes the chosen indices on submit', async () => {
-    renderBody(buildSelectionArtifactContent({ label: 'Row 1', fields: FIELDS, chosen: null }));
+    const view = renderBody(buildSelectionArtifactContent({ label: 'Row 1', fields: FIELDS, chosen: null }));
     const user = userEvent.setup();
-    await user.click(screen.getByDisplayValue('Title:1'));
-    await user.click(screen.getByDisplayValue('Description:0'));
-    await user.click(screen.getByRole('button', { name: /save/i }));
+    await user.click(view.getByDisplayValue('Title:1'));
+    await user.click(view.getByRole('button', { name: 'Description' }));
+    await user.click(view.getByDisplayValue('Description:0'));
+    await user.click(view.getByRole('button', { name: /save/i }));
     await waitFor(() => expect(patches).toHaveLength(1));
     expect(patches[0].url).toContain('/workflows/wf-1/artifacts/a-1/selection');
     expect(patches[0].body).toEqual({ chosen: { Title: 1, Description: 0 } });
