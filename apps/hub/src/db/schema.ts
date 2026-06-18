@@ -72,7 +72,7 @@ export const skillVersion = pgTable(
       .references(() => skill.id, { onDelete: 'cascade' }),
     version: integer('version').notNull(),
     entrypointPath: text('entrypoint_path').notNull(),
-    assetId: uuid('asset_id').notNull(),
+    assetId: text('asset_id').notNull(),
     assetName: text('asset_name').notNull(),
     manifest: jsonb('manifest').$type<Record<string, unknown>>().notNull(),
     checksum: text('checksum').notNull(),
