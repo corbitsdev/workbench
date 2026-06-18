@@ -8,13 +8,47 @@ mock.module('../services/workflow-orchestration', () => ({
   getUserContext: mock(() => Promise.resolve({ tenantId: 'tenant-1', principalId: 'prn-1' })),
 }));
 
+const mockCreateSkill = mock(() =>
+  Promise.resolve({
+    id: 'ast-1',
+    name: 'test-skill',
+    displayName: 'Test Skill',
+    createdAt: '2026-06-17T00:00:00.000Z',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  })
+);
+
+const mockUpdateSkill = mock(() =>
+  Promise.resolve({
+    id: 'ast-1',
+    name: 'test-skill',
+    displayName: 'Test Skill',
+    createdAt: '2026-06-17T00:00:00.000Z',
+    updatedAt: '2026-06-17T01:00:00.000Z',
+  })
+);
+
+const mockListSkills = mock(() =>
+  Promise.resolve([
+    {
+      id: 'ast-1',
+      name: 'test-skill',
+      displayName: 'Test Skill',
+      createdAt: '2026-06-17T00:00:00.000Z',
+      updatedAt: '2026-06-17T00:00:00.000Z',
+    },
+  ])
+);
+
+const mockGetSkillAsset = mock(() => Promise.resolve(null));
+const mockGetSkillContent = mock(() => Promise.resolve([{ path: 'SKILL.md', content: '# Hi' }]));
+
 mock.module('../services/skill-library', () => ({
-  listSkills: mock(() => Promise.resolve([])),
-  getSkillDetail: mock(() => Promise.resolve(null)),
-  getSkillVersionPreview: mock(() => Promise.resolve(null)),
-  createSkillVersionFromBundle: mock(() =>
-    Promise.resolve({ id: 'skill-1', name: 'Test Skill', latestVersionId: 'sv-1' })
-  ),
+  listSkills: mockListSkills,
+  getSkillAsset: mockGetSkillAsset,
+  getSkillContent: mockGetSkillContent,
+  createSkill: mockCreateSkill,
+  updateSkill: mockUpdateSkill,
   filesFromZip: mock(() => Promise.resolve([])),
   SkillLibraryError: class SkillLibraryError extends Error {
     status: number;
@@ -31,9 +65,8 @@ import { createSkillsRouter } from './skills';
 function makeMockDb(overrides: Record<string, any> = {}): any {
   return {
     query: {
-      skillVersion: {
+      asset: {
         findFirst: mock(() => Promise.resolve(null)),
-        findMany: mock(() => Promise.resolve([])),
       },
       ...overrides.query,
     },
@@ -44,10 +77,8 @@ function makeMockDb(overrides: Record<string, any> = {}): any {
   };
 }
 
-function makeAssetService(
-  // biome-ignore lint/suspicious/noExplicitAny: test mock
-  overrides: Partial<Record<string, any>> = {}
-) {
+// biome-ignore lint/suspicious/noExplicitAny: test mock
+function makeAssetService(overrides: Partial<Record<string, any>> = {}) {
   return {
     createAsset: mock(() => Promise.reject(new Error('not implemented'))),
     populateAsset: mock(() => Promise.reject(new Error('not implemented'))),
@@ -55,7 +86,7 @@ function makeAssetService(
       Promise.resolve({
         id: 'aa-1',
         agentId: 'agent-1',
-        assetId: 'asset-1',
+        assetId: 'ast-1',
         ref: 'refs/heads/main',
       })
     ),
@@ -64,13 +95,8 @@ function makeAssetService(
   };
 }
 
-function buildApp(
-  // biome-ignore lint/suspicious/noExplicitAny: test mock
-  db: any,
-  // biome-ignore lint/suspicious/noExplicitAny: test mock
-  assetService: any,
-  userId = 'user-1'
-) {
+// biome-ignore lint/suspicious/noExplicitAny: test mock
+function buildApp(db: any, assetService: any, userId = 'user-1') {
   const parent = new Hono<{ Variables: { userId: string } }>();
   parent.use('*', async (c, next) => {
     c.set('userId', userId);
@@ -80,30 +106,132 @@ function buildApp(
   return parent;
 }
 
-describe('POST /agents/:agentId/skills/:skillId', () => {
-  it('returns 404 when the skill version is not found', async () => {
+describe('GET /skills', () => {
+  it('returns the skill list', async () => {
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills?tenantId=tenant-1')
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json() as { skills: unknown[] };
+    expect(Array.isArray(json.skills)).toBe(true);
+    expect(json.skills.length).toBe(1);
+  });
+});
+
+describe('GET /skills/:assetId', () => {
+  it('returns 404 when skill is not found', async () => {
+    mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills/ast-missing?tenantId=tenant-1')
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('returns skill and files when found', async () => {
+    mockGetSkillAsset.mockImplementation(() =>
+      Promise.resolve({
+        id: 'ast-1',
+        name: 'test-skill',
+        displayName: 'Test Skill',
+        createdAt: '2026-06-17T00:00:00.000Z',
+        updatedAt: '2026-06-17T00:00:00.000Z',
+      })
+    );
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills/ast-1?tenantId=tenant-1')
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json() as { skill: { id: string }; files: unknown[] };
+    expect(json.skill.id).toBe('ast-1');
+    expect(Array.isArray(json.files)).toBe(true);
+    // restore
+    mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
+  });
+});
+
+describe('POST /skills (JSON create)', () => {
+  it('returns 201 with the created skill', async () => {
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Test Skill', text: '# My skill' }),
+      })
+    );
+    expect(res.status).toBe(201);
+    const json = await res.json() as { skill: { id: string } };
+    expect(json.skill.id).toBe('ast-1');
+    expect(mockCreateSkill).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 400 when name is missing', async () => {
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: '# My skill' }),
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when text is missing', async () => {
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'My Skill' }),
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /skills (JSON update)', () => {
+  it('calls updateSkill and returns 200 when assetId is present', async () => {
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ assetId: 'ast-1', text: '# Updated' }),
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(mockUpdateSkill).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('POST /agents/:agentId/skills/:assetId', () => {
+  it('returns 404 when the skill asset is not found', async () => {
     const db = makeMockDb();
-    db.query.skillVersion.findFirst = mock(() => Promise.resolve(null));
+    db.query.asset.findFirst = mock(() => Promise.resolve(null));
     const app = buildApp(db, makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/agents/agent-1/skills/skill-missing?tenantId=tenant-1', {
+      new Request('http://localhost/agents/agent-1/skills/ast-missing?tenantId=tenant-1', {
         method: 'POST',
       })
     );
     expect(res.status).toBe(404);
-    const json = await res.json();
+    const json = await res.json() as { error: string };
     expect(json.error).toBeTruthy();
   });
 
   it('calls assetService.attachAsset and returns 201 when skill exists', async () => {
     const db = makeMockDb();
-    db.query.skillVersion.findFirst = mock(() =>
-      Promise.resolve({ assetId: 'asset-abc', version: 3 })
+    db.query.asset.findFirst = mock(() =>
+      Promise.resolve({ id: 'ast-1', name: 'test-skill', tenantId: 'tenant-1', kind: 'skill' })
     );
     const assetService = makeAssetService();
     const app = buildApp(db, assetService);
     const res = await app.fetch(
-      new Request('http://localhost/agents/agent-1/skills/skill-1?tenantId=tenant-1', {
+      new Request('http://localhost/agents/agent-1/skills/ast-1?tenantId=tenant-1', {
         method: 'POST',
       })
     );
@@ -113,17 +241,17 @@ describe('POST /agents/:agentId/skills/:skillId', () => {
       { agentId: string; assetId: string; ref: string },
     ];
     expect(callArgs.agentId).toBe('agent-1');
-    expect(callArgs.assetId).toBe('asset-abc');
+    expect(callArgs.assetId).toBe('ast-1');
   });
 });
 
-describe('DELETE /agents/:agentId/skills/:skillId', () => {
-  it('returns 404 when no versions exist for the skill', async () => {
+describe('DELETE /agents/:agentId/skills/:assetId', () => {
+  it('returns 404 when the skill asset is not found', async () => {
     const db = makeMockDb();
-    db.query.skillVersion.findMany = mock(() => Promise.resolve([]));
+    db.query.asset.findFirst = mock(() => Promise.resolve(null));
     const app = buildApp(db, makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/agents/agent-1/skills/skill-missing?tenantId=tenant-1', {
+      new Request('http://localhost/agents/agent-1/skills/ast-missing?tenantId=tenant-1', {
         method: 'DELETE',
       })
     );
@@ -132,39 +260,35 @@ describe('DELETE /agents/:agentId/skills/:skillId', () => {
 
   it('returns 404 when skill is not attached to the agent', async () => {
     const db = makeMockDb();
-    db.query.skillVersion.findMany = mock(() =>
-      Promise.resolve([{ assetId: 'asset-abc', version: 1 }])
+    db.query.asset.findFirst = mock(() =>
+      Promise.resolve({ id: 'ast-1', name: 'test-skill', tenantId: 'tenant-1', kind: 'skill' })
     );
     const returning = mock(() => Promise.resolve([]));
     db.delete = mock(() => ({ where: mock(() => ({ returning })) }));
     const app = buildApp(db, makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/agents/agent-1/skills/skill-1?tenantId=tenant-1', {
+      new Request('http://localhost/agents/agent-1/skills/ast-1?tenantId=tenant-1', {
         method: 'DELETE',
       })
     );
     expect(res.status).toBe(404);
   });
 
-  it('deletes all version asset rows and returns 200 when skill is attached', async () => {
+  it('deletes from agentAsset and returns 200 when skill is attached', async () => {
     const db = makeMockDb();
-    db.query.skillVersion.findMany = mock(() =>
-      Promise.resolve([
-        { assetId: 'asset-v1', version: 1 },
-        { assetId: 'asset-v2', version: 2 },
-      ])
+    db.query.asset.findFirst = mock(() =>
+      Promise.resolve({ id: 'ast-1', name: 'test-skill', tenantId: 'tenant-1', kind: 'skill' })
     );
     const returning = mock(() => Promise.resolve([{ id: 'aa-1' }]));
     const deleteWhere = mock(() => ({ returning }));
     db.delete = mock(() => ({ where: deleteWhere }));
     const app = buildApp(db, makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/agents/agent-1/skills/skill-1?tenantId=tenant-1', {
+      new Request('http://localhost/agents/agent-1/skills/ast-1?tenantId=tenant-1', {
         method: 'DELETE',
       })
     );
     expect(res.status).toBe(200);
     expect(db.delete).toHaveBeenCalledTimes(1);
-    expect(deleteWhere).toHaveBeenCalledTimes(1);
   });
 });

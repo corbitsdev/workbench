@@ -64,6 +64,21 @@ describe('buildSkillTree', () => {
     expect(skillMd).toContain('name: new-skill');
   });
 
+  it('does not produce a ghost SKILL.md copy when entrypoint is nested', () => {
+    const bundle = buildSkillBundle([
+      file('docs/SKILL.md', '# Nested'),
+      file('docs/ref.md', 'ref'),
+    ]);
+    const contents = new Map(bundle.files.map((f) => [f.path, f.content]));
+    const tree = buildSkillTree('nested-skill', null, bundle.manifest, contents);
+    // canonical entrypoint must exist
+    expect('nested-skill/SKILL.md' in tree).toBe(true);
+    // original nested path must not remain as a ghost copy
+    expect('nested-skill/docs/SKILL.md' in tree).toBe(false);
+    // sibling files get the bundle prefix stripped too (docs/ is the common prefix)
+    expect('nested-skill/ref.md' in tree).toBe(true);
+  });
+
   it('throws if a manifest file has no content in the map', () => {
     const bundle = buildSkillBundle([file('SKILL.md', '# ASAP')]);
     expect(() =>

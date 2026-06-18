@@ -103,10 +103,7 @@ export function listWorkflows(
 export type SkillItem = {
   id: string;
   name: string;
-  description: string | null;
-  visibility: string;
-  latestVersionId: string | null;
-  latestVersion: number | null;
+  displayName: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -122,25 +119,29 @@ export interface CreateSkillParams {
   text: string;
 }
 
+export interface UpdateSkillParams {
+  tenantId?: string | null;
+  assetId: string;
+  description?: string | null;
+  text: string;
+}
+
 export interface AttachSkillParams {
   tenantId?: string | null;
   agentId: string;
-  skillId: string;
+  assetId: string;
 }
 
 export interface DetachSkillParams {
   tenantId?: string | null;
   agentId: string;
-  skillId: string;
+  assetId: string;
 }
 
 const SkillItemSchema = type({
   id: 'string',
   name: 'string',
-  description: 'string | null',
-  visibility: 'string',
-  latestVersionId: 'string | null',
-  latestVersion: 'number | null',
+  displayName: 'string | null',
   createdAt: 'string',
   updatedAt: 'string',
 });
@@ -186,12 +187,37 @@ export async function createSkill(
   return parsed.skill;
 }
 
+export async function updateSkill(
+  options: ClientOptions = {},
+  params: UpdateSkillParams
+): Promise<SkillItem> {
+  const qs = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  const raw = await request<unknown>(`skills${qs}`, {
+    ...options,
+    init: {
+      ...options.init,
+      method: 'POST',
+      body: JSON.stringify({
+        assetId: params.assetId,
+        description: params.description,
+        text: params.text,
+      }),
+      headers: { 'Content-Type': 'application/json', ...options.init?.headers },
+    },
+  });
+  const parsed = SkillResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /skills response: ${parsed.summary}`);
+  }
+  return parsed.skill;
+}
+
 export async function attachSkill(
   options: ClientOptions = {},
   params: AttachSkillParams
 ): Promise<void> {
   const qs = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
-  await request<unknown>(`agents/${params.agentId}/skills/${params.skillId}${qs}`, {
+  await request<unknown>(`agents/${params.agentId}/skills/${params.assetId}${qs}`, {
     ...options,
     init: { ...options.init, method: 'POST' },
   });
@@ -202,7 +228,7 @@ export async function detachSkill(
   params: DetachSkillParams
 ): Promise<void> {
   const qs = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
-  await request<unknown>(`agents/${params.agentId}/skills/${params.skillId}${qs}`, {
+  await request<unknown>(`agents/${params.agentId}/skills/${params.assetId}${qs}`, {
     ...options,
     init: { ...options.init, method: 'DELETE' },
   });

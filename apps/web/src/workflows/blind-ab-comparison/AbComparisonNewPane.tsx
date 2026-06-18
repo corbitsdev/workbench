@@ -67,13 +67,13 @@ export function AbComparisonNewPane({
       credentialId: '',
       providerName: '',
       providerPlugin: '',
-      skillVersionIds: [],
+      skillAssetIds: [],
     },
     {
       credentialId: '',
       providerName: '',
       providerPlugin: '',
-      skillVersionIds: [],
+      skillAssetIds: [],
     },
   ]);
   const [systemPrompt, setSystemPrompt] = useState('');
@@ -97,7 +97,7 @@ export function AbComparisonNewPane({
         credentialId: '',
         providerName: '',
         providerPlugin: '',
-        skillVersionIds: [],
+        skillAssetIds: [],
       },
     ]);
   };
@@ -116,7 +116,7 @@ export function AbComparisonNewPane({
           providerName: cred?.providerName ?? '',
           providerPlugin: cred?.providerPlugin ?? '',
           model: defaultAbComparisonModel(cred?.providerPlugin ?? ''),
-          skillVersionIds: [],
+          skillAssetIds: [],
         };
         return next;
       });
@@ -132,10 +132,10 @@ export function AbComparisonNewPane({
     });
   }, []);
 
-  const updateOptionSkillVersions = useCallback((index: number, skillVersionIds: string[]) => {
+  const updateOptionSkillAssets = useCallback((index: number, skillAssetIds: string[]) => {
     setOptions((prev) => {
       const next = [...prev];
-      next[index] = { ...next[index], skillVersionIds };
+      next[index] = { ...next[index], skillAssetIds };
       return next;
     });
   }, []);
@@ -367,19 +367,17 @@ export function AbComparisonNewPane({
                       {skillLibraryQuery.data && skillLibraryQuery.data.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {skillLibraryQuery.data.map((skill) => {
-                            const versionId = skill.latestVersionId;
-                            if (!versionId) return null;
-                            const active = (option.skillVersionIds ?? []).includes(versionId);
+                            const active = (option.skillAssetIds ?? []).includes(skill.id);
                             return (
                               <button
                                 key={skill.id}
                                 type="button"
                                 onClick={() => {
-                                  const current = option.skillVersionIds ?? [];
+                                  const current = option.skillAssetIds ?? [];
                                   const next = active
-                                    ? current.filter((id) => id !== versionId)
-                                    : [...current, versionId];
-                                  updateOptionSkillVersions(index, next);
+                                    ? current.filter((id) => id !== skill.id)
+                                    : [...current, skill.id];
+                                  updateOptionSkillAssets(index, next);
                                 }}
                                 className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium transition-colors ${
                                   active
@@ -387,7 +385,7 @@ export function AbComparisonNewPane({
                                     : 'border-border text-text-2 hover:text-text'
                                 }`}
                               >
-                                {skill.name} v{skill.latestVersion ?? 1}
+                                {skill.displayName ?? skill.name}
                               </button>
                             );
                           })}

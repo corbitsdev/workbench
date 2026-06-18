@@ -450,43 +450,12 @@ export function useUploadFile() {
   });
 }
 
-const skillManifestFileSchema = type({
-  path: 'string',
-  size: 'number',
-  mimeType: 'string',
-  sha256: 'string',
-  promptReadable: 'boolean',
-  executableLike: 'boolean',
-});
-
-const skillVersionSchema = type({
-  id: 'string',
-  skillId: 'string',
-  version: 'number',
-  entrypointPath: 'string',
-  manifest: {
-    files: skillManifestFileSchema.array(),
-    entrypointPath: 'string',
-    totalSize: 'number',
-    checksum: 'string',
-  },
-  checksum: 'string',
-  'source?': 'string|null',
-  createdAt: 'string',
-});
-
 const skillSchema = type({
   id: 'string',
   name: 'string',
-  description: 'string|null',
-  visibility: 'string',
-  latestVersionId: 'string|null',
-  latestVersion: 'number|null',
-  'source?': 'string|null',
-  'fileCount?': 'number|null',
+  displayName: 'string|null',
   createdAt: 'string',
   updatedAt: 'string',
-  'versions?': skillVersionSchema.array(),
 });
 
 const skillsResponseSchema = type({ skills: skillSchema.array() });
@@ -512,22 +481,34 @@ export function useSkillLibrary(tenantId?: string | null) {
   });
 }
 
-export function useSkillDetail(skillId: string | null, tenantId?: string | null) {
-  return useQuery<SkillLibraryItem>({
-    queryKey: ['skill', skillId, tenantId ?? null],
+const skillDetailFileSchema = type({
+  path: 'string',
+  'content?': 'string',
+});
+
+const skillDetailResponseSchema = type({
+  skill: skillSchema,
+  files: skillDetailFileSchema.array(),
+});
+
+export type SkillDetail = typeof skillDetailResponseSchema.infer;
+
+export function useSkillDetail(assetId: string | null, tenantId?: string | null) {
+  return useQuery<SkillDetail>({
+    queryKey: ['skill', assetId, tenantId ?? null],
     queryFn: async () => {
-      if (!skillId) throw new Error('Skill id is required');
+      if (!assetId) throw new Error('Skill asset id is required');
       const raw = await api<unknown>(
         'GET',
-        `/skills/${skillId}${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`
+        `/skills/${assetId}${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`
       );
-      const parsed = skillResponseSchema(raw);
+      const parsed = skillDetailResponseSchema(raw);
       if (parsed instanceof type.errors) {
         throw new Error(`Unexpected skill response: ${parsed.summary}`);
       }
-      return parsed.skill;
+      return parsed;
     },
-    enabled: Boolean(skillId),
+    enabled: Boolean(assetId),
     staleTime: 5 * 60_000,
   });
 }
@@ -572,38 +553,6 @@ export function useCreateSkill() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['skills', variables.tenantId ?? null] });
     },
-  });
-}
-
-const skillPreviewFileSchema = type({
-  path: 'string',
-  'content?': 'string',
-});
-
-const skillPreviewSchema = type({
-  version: skillVersionSchema,
-  files: skillPreviewFileSchema.array(),
-});
-
-export type SkillVersionPreview = typeof skillPreviewSchema.infer;
-
-export function useSkillVersionPreview(versionId: string | null, tenantId?: string | null) {
-  return useQuery<SkillVersionPreview>({
-    queryKey: ['skill-version-preview', versionId, tenantId ?? null],
-    queryFn: async () => {
-      if (!versionId) throw new Error('Skill version id is required');
-      const raw = await api<unknown>(
-        'GET',
-        `/skill-versions/${versionId}/preview${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`
-      );
-      const parsed = skillPreviewSchema(raw);
-      if (parsed instanceof type.errors) {
-        throw new Error(`Unexpected skill preview response: ${parsed.summary}`);
-      }
-      return parsed;
-    },
-    enabled: Boolean(versionId),
-    staleTime: 5 * 60_000,
   });
 }
 

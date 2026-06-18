@@ -1,6 +1,7 @@
 import { getLogger } from '@intx/log';
 import { runSingleTurnAgent } from '../lib/inference';
-import { resolveSkillVersionPrompt } from './skill-library';
+import { readSkillPrompt } from './skill-library';
+import { schema as intxSchema } from '@intx/db';
 import type { RepoStore } from '@intx/hub-sessions';
 import type { InferenceSource } from '@intx/types/runtime';
 import type { HubDb } from '../db';
@@ -30,15 +31,22 @@ async function buildBranchSystemPrompt(
   if (systemPrompt?.trim()) {
     sections.push(systemPrompt.trim());
   }
-  const skillVersionPrompts = await Promise.all(
-    (option.skillVersionIds ?? []).map((versionId) =>
-      resolveSkillVersionPrompt(db, repoStore, tenantId, versionId).then((prompt) => {
-        if (!prompt) throw new Error(`Skill version not found or inaccessible: ${versionId}`);
-        return prompt;
-      })
-    )
+  const skillPrompts = await Promise.all(
+    (option.skillAssetIds ?? []).map(async (assetId) => {
+      const asset = await db.query.asset.findFirst({
+        where: and(
+          eq(intxSchema.asset.id, assetId),
+          eq(intxSchema.asset.tenantId, tenantId),
+          eq(intxSchema.asset.kind, 'skill')
+        ),
+      });
+      if (!asset) throw new Error(`Skill asset not found or inaccessible: ${assetId}`);
+      const prompt = await readSkillPrompt(repoStore, assetId, asset.name);
+      if (!prompt) throw new Error(`Skill content missing for asset: ${assetId}`);
+      return prompt;
+    })
   );
-  sections.push(...skillVersionPrompts);
+  sections.push(...skillPrompts);
   return sections.join('\n\n---\n\n');
 }
 

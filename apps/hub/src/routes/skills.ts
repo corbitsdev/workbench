@@ -1,23 +1,25 @@
 import { Hono, type Context } from 'hono';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { schema as intxSchema } from '@intx/db';
 import type { HubDb } from '../db';
-import { schema } from '../db';
 import type { AssetService, RepoStore } from '@intx/hub-sessions';
 import { AssetServiceError } from '@intx/hub-sessions';
 import { getRequestedUserContext } from '../services/workflow-orchestration';
 import {
   SkillLibraryError,
-  createSkillVersionFromBundle,
+  createSkill,
+  updateSkill,
   filesFromZip,
-  getSkillDetail,
-  getSkillVersionPreview,
+  getSkillAsset,
+  getSkillContent,
   listSkills,
   type SkillBundleFileInput,
 } from '../services/skill-library';
 
 function errorResponse(c: Context, err: unknown) {
   if (err instanceof SkillLibraryError) {
-    return c.json({ error: err.message }, err.status as 400);
+    const status = err.status as 400 | 404 | 409 | 413;
+    return c.json({ error: err.message }, status);
   }
   throw err;
 }
@@ -48,7 +50,7 @@ export function createSkillsRouter(
     return c.json({ skills: await listSkills(db, context.tenantId) });
   });
 
-  router.get('/skills/:id', async (c) => {
+  router.get('/skills/:assetId', async (c) => {
     const { context, forbidden } = await getRequestedUserContext(
       db,
       c.get('userId'),
@@ -56,27 +58,10 @@ export function createSkillsRouter(
     );
     if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
-    const detail = await getSkillDetail(db, context.tenantId, c.req.param('id'));
-    if (!detail) return c.json({ error: 'Skill not found' }, 404);
-    return c.json({ skill: detail });
-  });
-
-  router.get('/skill-versions/:id/preview', async (c) => {
-    const { context, forbidden } = await getRequestedUserContext(
-      db,
-      c.get('userId'),
-      c.req.query('tenantId')
-    );
-    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
-    if (!context) return c.json({ error: 'User context not found' }, 403);
-    const preview = await getSkillVersionPreview(
-      db,
-      repoStore,
-      context.tenantId,
-      c.req.param('id')
-    );
-    if (!preview) return c.json({ error: 'Skill version not found' }, 404);
-    return c.json(preview);
+    const skill = await getSkillAsset(db, context.tenantId, c.req.param('assetId'));
+    if (!skill) return c.json({ error: 'Skill not found' }, 404);
+    const files = await getSkillContent(repoStore, skill.id, skill.name);
+    return c.json({ skill, files });
   });
 
   router.post('/skills', async (c) => {
@@ -95,14 +80,24 @@ export function createSkillsRouter(
         const name = readString(body.name)?.trim() ?? '';
         const description = readString(body.description) ?? null;
         const text = readString(body.text)?.trim() ?? '';
-        const existingSkillId = readString(body.skillId);
+        const existingAssetId = readString(body.assetId);
+
+        if (existingAssetId) {
+          if (!text) throw new SkillLibraryError('Skill text is required');
+          const skill = await updateSkill(assetService, db, context, {
+            assetId: existingAssetId,
+            description,
+            files: [textFile('SKILL.md', text)],
+          });
+          return c.json({ skill }, 200);
+        }
+
         if (!name) throw new SkillLibraryError('Skill name is required');
         if (!text) throw new SkillLibraryError('Skill text is required');
-        const skill = await createSkillVersionFromBundle(db, context, assetService, {
+        const skill = await createSkill(assetService, db, context, {
           name,
           description,
           files: [textFile('SKILL.md', text)],
-          ...(existingSkillId ? { existingSkillId } : {}),
         });
         return c.json({ skill }, 201);
       }
@@ -110,8 +105,7 @@ export function createSkillsRouter(
       const body = await c.req.parseBody({ all: true });
       const name = readString(body.name)?.trim() ?? '';
       const description = readString(body.description) ?? null;
-      const existingSkillId = readString(body.skillId);
-      if (!name) throw new SkillLibraryError('Skill name is required');
+      const existingAssetId = readString(body.assetId);
 
       const fileValues = body.files ?? body.file;
       const files = Array.isArray(fileValues) ? fileValues : fileValues ? [fileValues] : [];
@@ -122,17 +116,14 @@ export function createSkillsRouter(
           ? [pathValues]
           : [];
       const bundleFiles: SkillBundleFileInput[] = [];
-      let source: 'file' | 'folder' | 'zip' = 'file';
 
       for (const [index, value] of files.entries()) {
         if (!(value instanceof File)) continue;
         const relativePath = paths[index] || value.webkitRelativePath || value.name;
         const content = Buffer.from(await value.arrayBuffer());
         if (files.length === 1 && value.name.toLowerCase().endsWith('.zip')) {
-          source = 'zip';
           bundleFiles.push(...(await filesFromZip(content)));
         } else {
-          if (relativePath.includes('/')) source = 'folder';
           bundleFiles.push({
             path: relativePath,
             content,
@@ -141,12 +132,20 @@ export function createSkillsRouter(
         }
       }
 
-      const skill = await createSkillVersionFromBundle(db, context, assetService, {
+      if (existingAssetId) {
+        const skill = await updateSkill(assetService, db, context, {
+          assetId: existingAssetId,
+          description,
+          files: bundleFiles,
+        });
+        return c.json({ skill }, 200);
+      }
+
+      if (!name) throw new SkillLibraryError('Skill name is required');
+      const skill = await createSkill(assetService, db, context, {
         name,
         description,
-        source,
         files: bundleFiles,
-        ...(existingSkillId ? { existingSkillId } : {}),
       });
       return c.json({ skill }, 201);
     } catch (err) {
@@ -154,7 +153,7 @@ export function createSkillsRouter(
     }
   });
 
-  router.post('/agents/:agentId/skills/:skillId', async (c) => {
+  router.post('/agents/:agentId/skills/:assetId', async (c) => {
     const { context, forbidden } = await getRequestedUserContext(
       db,
       c.get('userId'),
@@ -164,18 +163,21 @@ export function createSkillsRouter(
     if (!context) return c.json({ error: 'User context not found' }, 403);
 
     const agentId = c.req.param('agentId');
-    const skillId = c.req.param('skillId');
+    const assetId = c.req.param('assetId');
 
-    const latestVersion = await db.query.skillVersion.findFirst({
-      where: eq(schema.skillVersion.skillId, skillId),
-      orderBy: [desc(schema.skillVersion.version)],
+    const asset = await db.query.asset.findFirst({
+      where: and(
+        eq(intxSchema.asset.id, assetId),
+        eq(intxSchema.asset.tenantId, context.tenantId),
+        eq(intxSchema.asset.kind, 'skill')
+      ),
     });
-    if (!latestVersion) return c.json({ error: 'Skill not found' }, 404);
+    if (!asset) return c.json({ error: 'Skill not found' }, 404);
 
     try {
       const agentAsset = await assetService.attachAsset({
         agentId,
-        assetId: latestVersion.assetId,
+        assetId,
         ref: 'refs/heads/main',
       });
       return c.json({ agentAsset }, 201);
@@ -187,7 +189,7 @@ export function createSkillsRouter(
     }
   });
 
-  router.delete('/agents/:agentId/skills/:skillId', async (c) => {
+  router.delete('/agents/:agentId/skills/:assetId', async (c) => {
     const { context, forbidden } = await getRequestedUserContext(
       db,
       c.get('userId'),
@@ -197,17 +199,23 @@ export function createSkillsRouter(
     if (!context) return c.json({ error: 'User context not found' }, 403);
 
     const agentId = c.req.param('agentId');
-    const skillId = c.req.param('skillId');
+    const assetId = c.req.param('assetId');
 
-    const versions = await db.query.skillVersion.findMany({
-      where: eq(schema.skillVersion.skillId, skillId),
+    const asset = await db.query.asset.findFirst({
+      where: and(
+        eq(intxSchema.asset.id, assetId),
+        eq(intxSchema.asset.tenantId, context.tenantId),
+        eq(intxSchema.asset.kind, 'skill')
+      ),
     });
-    if (versions.length === 0) return c.json({ error: 'Skill not found' }, 404);
+    if (!asset) return c.json({ error: 'Skill not found' }, 404);
 
-    const assetIds = versions.map((v) => v.assetId);
+    // AssetService has no detachAsset method; delete the agentAsset row directly.
     const deleted = await db
-      .delete(schema.agentAsset)
-      .where(and(eq(schema.agentAsset.agentId, agentId), inArray(schema.agentAsset.assetId, assetIds)))
+      .delete(intxSchema.agentAsset)
+      .where(
+        and(eq(intxSchema.agentAsset.agentId, agentId), eq(intxSchema.agentAsset.assetId, assetId))
+      )
       .returning();
     if (deleted.length === 0) return c.json({ error: 'Skill not attached to this agent' }, 404);
     return c.json({ ok: true });

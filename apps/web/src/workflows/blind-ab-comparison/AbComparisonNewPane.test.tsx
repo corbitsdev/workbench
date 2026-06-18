@@ -227,12 +227,9 @@ describe('AbComparisonNewPane', () => {
           jsonResponse(true, {
             skills: [
               {
-                id: 'skill-1',
-                name: 'ASAP',
-                description: null,
-                visibility: 'workspace',
-                latestVersionId: 'sv-1',
-                latestVersion: 2,
+                id: 'ast-1',
+                name: 'asap',
+                displayName: 'ASAP',
                 createdAt: '2026-06-17T00:00:00.000Z',
                 updatedAt: '2026-06-17T00:00:00.000Z',
               },
@@ -257,10 +254,10 @@ describe('AbComparisonNewPane', () => {
     await user.selectOptions(selects[0] as HTMLSelectElement, 'cred-1');
     await user.selectOptions(selects[1] as HTMLSelectElement, 'cred-2');
     await user.click(nextButton());
-    await waitFor(() => expect(document.body.textContent).toContain('ASAP v2'));
+    await waitFor(() => expect(document.body.textContent).toContain('ASAP'));
     await user.click(
       [...document.querySelectorAll('button')].find(
-        (button) => button.textContent === 'ASAP v2'
+        (button) => button.textContent === 'ASAP'
       ) as HTMLButtonElement
     );
     await user.click(nextButton());
@@ -282,8 +279,8 @@ describe('AbComparisonNewPane', () => {
     );
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('wf-ab'));
     const createCall = calls.find((c) => c.url.includes('/workflows') && c.method === 'POST');
-    const createJson = createCall?.json as { providers: Array<{ skillVersionIds?: string[] }> };
-    expect(createJson.providers[0].skillVersionIds).toEqual(['sv-1']);
+    const createJson = createCall?.json as { providers: Array<{ skillAssetIds?: string[] }> };
+    expect(createJson.providers[0].skillAssetIds).toEqual(['ast-1']);
   });
 
   it('surfaces a server error when workflow creation fails', async () => {
