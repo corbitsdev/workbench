@@ -185,6 +185,11 @@ export function providerMetadataModel(metadata: unknown): string | undefined {
   return typeof model === 'string' && model.trim().length > 0 ? model.trim() : undefined;
 }
 
+function providerMetadataMaxTokens(metadata: unknown): number | undefined {
+  const v = (metadata as { maxTokens?: unknown } | null)?.maxTokens;
+  return typeof v === 'number' ? v : undefined;
+}
+
 /**
  * Resolve an inference source from a stored credential id. Model comes from an
  * explicit override (e.g. blind A/B provider option) or the provider metadata
@@ -216,13 +221,14 @@ export async function resolveCredentialInferenceSource(
     return null;
   }
 
+  const maxTokens = providerMetadataMaxTokens(providerRow.metadata);
   return {
     id: `${providerRow.plugin}:${model}`,
     provider: providerRow.plugin,
     baseURL: meta.baseURL,
     apiKey: cred.secret,
     model,
-    ...(meta.maxTokens !== undefined ? { defaults: { maxTokens: meta.maxTokens } } : {}),
+    ...(maxTokens !== undefined ? { defaults: { maxTokens } } : {}),
   };
 }
 
@@ -257,13 +263,14 @@ export async function resolveStepInferenceSource(
     if (!providerRow) continue;
     const meta = ProviderMetadata(providerRow.metadata ?? {});
     if (meta instanceof type.errors) continue;
+    const maxTokens = providerMetadataMaxTokens(providerRow.metadata);
     return {
       id: `${providerRow.plugin}:${model}`,
       provider: providerRow.plugin,
       baseURL: meta.baseURL,
       apiKey: cred.secret,
       model,
-      ...(meta.maxTokens !== undefined ? { defaults: { maxTokens: meta.maxTokens } } : {}),
+      ...(maxTokens !== undefined ? { defaults: { maxTokens } } : {}),
     };
   }
 

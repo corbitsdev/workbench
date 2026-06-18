@@ -30,9 +30,11 @@ function getHandler(
   handle?: string,
   appPassword?: string
 ) {
-  const tool = createBlueskyTools({ fetcher, handle, appPassword }).find(
-    (t) => t.definition.name === 'bluesky_search'
-  );
+  const tool = createBlueskyTools({
+    fetcher,
+    ...(handle !== undefined ? { handle } : {}),
+    ...(appPassword !== undefined ? { appPassword } : {}),
+  }).find((t) => t.definition.name === 'bluesky_search');
   if (!tool || tool.kind !== 'string') throw new Error('bluesky_search tool not found');
   return tool.handler;
 }

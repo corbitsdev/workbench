@@ -86,7 +86,7 @@ function createDb() {
             kind: row.kind as string,
             status: row.status as string,
             content: row.content as string,
-            source: row.source as Record<string, unknown> | undefined,
+            ...(row.source !== undefined ? { source: row.source as Record<string, unknown> } : {}),
             createdAt: new Date(),
           });
           return [{ id }];

@@ -57,7 +57,7 @@ export type WorkflowType = {
   description: string;
   steps: WorkflowStepDefinition[];
   inputSchema?: Record<string, unknown>;
-  outputSchema?: Record<string, unknown>;
+  outputSchema?: object;
   outputOptions?: WorkflowOutputOption[];
   deriveRunTitle?: (input: Record<string, unknown> | undefined) => string | null;
   createIntakeArtifacts?: (context: {

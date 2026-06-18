@@ -100,7 +100,7 @@ export async function scanOpportunities(
         systemPrompt: buildExportSystemPrompt(),
         userMessage: buildExportUserMessage({
           inputUrl: draft.inputUrl,
-          brandName: draft.brandName,
+          ...(draft.brandName !== undefined ? { brandName: draft.brandName } : {}),
           businessSummary: draft.businessProfile.whatTheySell,
           opportunities: opportunities.slice(0, 8).map((o) => ({
             subreddit: o.subreddit,

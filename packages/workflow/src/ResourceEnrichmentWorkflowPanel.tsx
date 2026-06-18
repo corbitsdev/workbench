@@ -211,7 +211,6 @@ export function ResourceEnrichmentWorkflowPanel({
   const stepperSteps = buildResourceSteps(steps);
   const intake = steps.intake ?? {};
   const enrich = steps.enrich ?? {};
-  const review = steps.review ?? {};
   const exportStep = steps.export ?? {};
   const selections = enrich.selections ?? [];
   const currentSelectionIndex = Math.min(activeSelectionIndex, Math.max(selections.length - 1, 0));

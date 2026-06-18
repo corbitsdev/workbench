@@ -32,14 +32,14 @@ export async function analyzeWebsite(
     title,
     summary: `Business analysis for ${input.inputUrl}. Review keywords and subreddits before scanning Reddit.`,
     inputUrl: input.inputUrl,
-    brandName: input.brandName,
-    targetGeography: input.targetGeography,
-    icpHints: input.icpHints,
+    ...(input.brandName !== undefined ? { brandName: input.brandName } : {}),
+    ...(input.targetGeography !== undefined ? { targetGeography: input.targetGeography } : {}),
+    ...(input.icpHints !== undefined ? { icpHints: input.icpHints } : {}),
     businessProfile: {
       whatTheySell: parsed.whatTheySell,
       mainKeywords: parsed.mainKeywords,
       competitors: parsed.competitors,
-      audienceNotes: parsed.audienceNotes,
+      ...(parsed.audienceNotes !== undefined ? { audienceNotes: parsed.audienceNotes } : {}),
       evidence: parsed.evidence,
     },
     recommendations: {

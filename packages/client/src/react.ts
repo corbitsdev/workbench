@@ -55,6 +55,7 @@ export interface UseArtifactsParams {
   kind?: string;
   status?: ArtifactStatus;
   ownerPrincipalId?: string;
+  enabled?: boolean;
 }
 
 /** Query the current user's artifacts across all jobs for the gallery. */
@@ -73,6 +74,6 @@ export function useArtifacts(
       params.ownerPrincipalId ?? '',
     ],
     queryFn: () => listArtifacts(options, params).then((page) => page.artifacts),
-    enabled: params.tenantId != null,
+    enabled: params.tenantId != null && (params.enabled ?? true),
   });
 }

@@ -3,7 +3,7 @@ WORKDIR /app
 
 # Install git and clone interchange before any COPY — this layer caches until the Dockerfile changes
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
-    git clone --depth 1 --single-branch --branch cl-1529-workbench-compat \
+    git clone --depth 1 --single-branch --branch main \
       https://github.com/faremeter/interchange.git interchange
 
 # Copy only manifests so bun install caches until a package.json or lockfile changes

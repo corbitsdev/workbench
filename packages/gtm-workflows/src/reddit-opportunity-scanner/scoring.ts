@@ -12,11 +12,6 @@ function daysSince(isoDate: string): number {
   return Math.max(0, ms / (1000 * 60 * 60 * 24));
 }
 
-function matchTerms(text: string, terms: string[]): string[] {
-  const lower = text.toLowerCase();
-  return terms.filter((term) => term.length > 0 && lower.includes(term.toLowerCase()));
-}
-
 export function collectSearchTerms(context: RedditScanContext): string[] {
   const keywords = context.recommendations.keywords
     .filter((item) => item.source !== 'rejected')

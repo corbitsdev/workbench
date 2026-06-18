@@ -48,28 +48,20 @@ function redditScanData(workflow: FrontendWorkflowState | undefined): {
   artifactId?: string;
 } {
   if (!workflow) return { scan: null };
-  const output = (workflow as Record<string, unknown>)?.output;
-  if (output && typeof output === 'object') {
-    return { scan: parseRedditOpportunityScan(output) };
-  }
 
-  const scanStep = (workflow as Record<string, unknown>)?.steps?.scan as
-    | { artifact?: unknown; artifactId?: string }
-    | undefined;
+  const scanStep = workflow.steps.scan;
   if (scanStep?.artifact) {
     return {
       scan: parseRedditOpportunityScan(scanStep.artifact),
-      artifactId: scanStep.artifactId,
+      artifactId: typeof scanStep.artifactId === 'string' ? scanStep.artifactId : undefined,
     };
   }
 
-  const reviewStep = (workflow as Record<string, unknown>)?.steps?.review as
-    | { artifact?: unknown; artifactId?: string }
-    | undefined;
-  if (reviewStep?.artifact) {
+  const reviewStep = workflow.steps.review;
+  if (reviewStep.artifact) {
     return {
       scan: parseRedditOpportunityScan(reviewStep.artifact),
-      artifactId: reviewStep.artifactId,
+      artifactId: typeof reviewStep.artifactId === 'string' ? reviewStep.artifactId : undefined,
     };
   }
   return { scan: null };
@@ -105,14 +97,10 @@ export function RedditOpportunitySelectedPanel({
     }
   }, [workflow?.status, scanData]);
 
-  const title =
-    (workflow?.input as Record<string, unknown> | undefined)?.inputUrl ??
-    'Reddit Opportunity Scanner';
+  const rawTitle = workflow?.steps.intake?.inputUrl;
+  const title = typeof rawTitle === 'string' ? rawTitle : 'Reddit Opportunity Scanner';
 
-  const isScanning =
-    workflow?.status === 'ready' ||
-    workflow?.status === 'running' ||
-    workflow?.status === 'generating';
+  const isScanning = workflow?.status === 'ready' || workflow?.status === 'generating';
 
   const isBusy =
     runStep.isPending || updateReview.isPending || workflow?.status === 'analyzing' || isScanning;

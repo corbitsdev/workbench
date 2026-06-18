@@ -338,6 +338,7 @@ const hubApp = createApp({
   grantStore,
   assetService,
   repoStore: repoStore.repoStore,
+  maxTarballBytes: 10 * 1024 * 1024,
   sidecarWsHandler: upgradeWebSocket((_c) => {
     let handle: WsHandle;
     return {

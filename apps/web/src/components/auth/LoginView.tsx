@@ -59,7 +59,9 @@ export function LoginView({
             </span>
             Workbench
           </div>
-          <p className="text-sm text-text-2">Stop prompting and start operating with your AI Workbench</p>
+          <p className="text-sm text-text-2">
+            Stop prompting and start operating with your AI Workbench
+          </p>
         </div>
 
         <div className="flex flex-col gap-2">

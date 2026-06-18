@@ -112,8 +112,8 @@ export function createSkillsRouter(
     const limit = Number.parseInt(c.req.query('limit') ?? '', 10);
     const offset = Number.parseInt(c.req.query('offset') ?? '', 10);
     const page = await listSkillVersions(repoStore, skill.id, {
-      limit: Number.isNaN(limit) ? undefined : limit,
-      offset: Number.isNaN(offset) ? undefined : offset,
+      ...(Number.isNaN(limit) ? {} : { limit }),
+      ...(Number.isNaN(offset) ? {} : { offset }),
     });
     return c.json(page);
   });

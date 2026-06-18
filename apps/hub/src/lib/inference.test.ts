@@ -8,7 +8,10 @@ mock.module('@intx/storage-isogit', () => ({
   createIsogitStore: async () => ({}),
 }));
 
+// Stub isAnnotatedPluginFactory so @intx/tool-packaging (which imports it
+// transitively via @intx/hub-sessions) doesn't crash in combined test runs.
 mock.module('@intx/agent', () => ({
+  isAnnotatedPluginFactory: (_value: unknown): _value is never => false,
   defineAgent: () => ({}),
   createDefaultDirectorRegistry: () => ({}),
   createAgent: async () => ({

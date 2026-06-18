@@ -39,7 +39,8 @@ export type StepName =
   | 'execute'
   | 'compare'
   | 'feedback'
-  | 'persist';
+  | 'persist'
+  | 'enrich';
 
 export interface WorkflowStep {
   completed: boolean;

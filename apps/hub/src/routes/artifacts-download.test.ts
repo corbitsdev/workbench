@@ -2,6 +2,9 @@ import { describe, expect, it, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { createWorkflowRouter } from './workflow';
 import type { HubDb } from '../db';
+import type { RepoStore } from '@intx/hub-sessions';
+
+const stubRepoStore = null as unknown as RepoStore;
 
 mock.module('../config', () => ({
   getConfig: mock(() => ({
@@ -41,7 +44,7 @@ function buildApp(options: {
     c.set('userId', 'user-1');
     await next();
   });
-  parent.route('/', createWorkflowRouter(db));
+  parent.route('/', createWorkflowRouter(db, stubRepoStore));
   return parent;
 }
 

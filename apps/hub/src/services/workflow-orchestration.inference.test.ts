@@ -3,7 +3,16 @@ import * as intxDb from '@intx/db';
 import type { HubDb } from '../db';
 import { providerMetadataModel, resolveCredentialInferenceSource } from './workflow-orchestration';
 
-const resolveCredentialById = mock(async () => ({
+const resolveCredentialById = mock<
+  () => Promise<{
+    id: string;
+    providerId: string;
+    secret: string;
+    tenantId: string;
+    principalId: null;
+    name: string;
+  } | null>
+>(async () => ({
   id: 'cred-zen',
   providerId: 'prov-zen',
   secret: 'sk-zen',
@@ -12,7 +21,14 @@ const resolveCredentialById = mock(async () => ({
   name: 'opencode-zen',
 }));
 
-const providerFindFirst = mock(async () => ({
+const providerFindFirst = mock<
+  () => Promise<{
+    id: string;
+    plugin: string;
+    name: string;
+    metadata: Record<string, unknown>;
+  } | null>
+>(async () => ({
   id: 'prov-zen',
   plugin: 'openai-compatible',
   name: 'openai-compatible',

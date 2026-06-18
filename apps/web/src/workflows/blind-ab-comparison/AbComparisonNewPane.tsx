@@ -1,40 +1,35 @@
-import { useState, useCallback, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   defaultAbComparisonModel,
   isAbComparisonModelAllowed,
   listAbComparisonModels,
   type AbComparisonProviderOption,
-} from "@workbench/gtm-workflows";
-import type { WorkflowNewPaneProps } from "../registry";
+} from '@workbench/gtm-workflows';
+import type { WorkflowNewPaneProps } from '../registry';
 import {
   useCreateWorkflow,
   useSkillLibrary,
   useWorkflowCredentials,
-} from "../../hooks/use-workflow";
-import ArtifactSourcePicker from "../../components/ArtifactSourcePicker";
-import { getMe } from "../../lib/hub-api";
+} from '../../hooks/use-workflow';
+import ArtifactSourcePicker from '../../components/ArtifactSourcePicker';
+import { getMe } from '../../lib/hub-api';
 
-type StepName = "comparisons" | "configure" | "input";
+type StepName = 'comparisons' | 'configure' | 'input';
 
-type Mode = "text" | "artifact";
+type Mode = 'text' | 'artifact';
 
-const PROVIDER_WHITELIST = new Set([
-  "openai-compatible",
-  "openai",
-  "anthropic",
-  "google-genai",
-]);
+const PROVIDER_WHITELIST = new Set(['openai-compatible', 'openai', 'anthropic', 'google-genai']);
 
 const STEP_LABELS: Record<StepName, string> = {
-  comparisons: "Comparisons",
-  configure: "Configure",
-  input: "Input",
+  comparisons: 'Comparisons',
+  configure: 'Configure',
+  input: 'Input',
 };
 
 function StepBar({ currentStep }: { currentStep: StepName }) {
-  const steps: StepName[] = ["comparisons", "configure", "input"];
+  const steps: StepName[] = ['comparisons', 'configure', 'input'];
   const index = steps.indexOf(currentStep);
   return (
     <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0">
@@ -43,17 +38,15 @@ function StepBar({ currentStep }: { currentStep: StepName }) {
           <div
             className={`grid h-6 w-6 place-items-center rounded-full text-[11px] font-semibold ${
               i < index
-                ? "bg-green text-white"
+                ? 'bg-green text-white'
                 : i === index
-                  ? "bg-orange text-white"
-                  : "bg-surface-2 text-text-3"
+                  ? 'bg-orange text-white'
+                  : 'bg-surface-2 text-text-3'
             }`}
           >
-            {i < index ? "✓" : i + 1}
+            {i < index ? '✓' : i + 1}
           </div>
-          <span
-            className={`text-[12px] font-medium ${i === index ? "text-text" : "text-text-3"}`}
-          >
+          <span className={`text-[12px] font-medium ${i === index ? 'text-text' : 'text-text-3'}`}>
             {STEP_LABELS[step]}
           </span>
           {i < steps.length - 1 && <span className="mx-1 text-text-3">›</span>}
@@ -70,28 +63,26 @@ export function AbComparisonNewPane({
   onClose,
   seedArtifactId,
 }: WorkflowNewPaneProps) {
-  const [step, setStep] = useState<StepName>("comparisons");
+  const [step, setStep] = useState<StepName>('comparisons');
   const [options, setOptions] = useState<AbComparisonProviderOption[]>([
     {
-      credentialId: "",
-      providerName: "",
-      providerPlugin: "",
+      credentialId: '',
+      providerName: '',
+      providerPlugin: '',
       skillAssetIds: [],
     },
     {
-      credentialId: "",
-      providerName: "",
-      providerPlugin: "",
+      credentialId: '',
+      providerName: '',
+      providerPlugin: '',
       skillAssetIds: [],
     },
   ]);
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [inputMode, setInputMode] = useState<Mode>("text");
-  const [textInput, setTextInput] = useState("");
-  const [selectedArtifactId, setSelectedArtifactId] = useState<
-    string | undefined
-  >(seedArtifactId);
-  const [error, setError] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [inputMode, setInputMode] = useState<Mode>('text');
+  const [textInput, setTextInput] = useState('');
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>(seedArtifactId);
+  const [error, setError] = useState('');
 
   const createWorkflow = useCreateWorkflow();
   const credentialsQuery = useWorkflowCredentials();
@@ -99,28 +90,23 @@ export function AbComparisonNewPane({
   // listed, and invalidated (SkillsLibrary/SkillsNew/SkillDetail). Use the
   // same tenant here so the list matches and create/delete invalidations land.
   const meQuery = useQuery({
-    queryKey: ["me"],
+    queryKey: ['me'],
     queryFn: getMe,
     staleTime: 5 * 60_000,
   });
-  const skillLibraryQuery = useSkillLibrary(
-    meQuery.data?.personalTenantId ?? null,
-  );
+  const skillLibraryQuery = useSkillLibrary(meQuery.data?.personalTenantId ?? null);
   const whitelistedCredentials = useMemo(
-    () =>
-      (credentialsQuery.data ?? []).filter((c) =>
-        PROVIDER_WHITELIST.has(c.providerPlugin),
-      ),
-    [credentialsQuery.data],
+    () => (credentialsQuery.data ?? []).filter((c) => PROVIDER_WHITELIST.has(c.providerPlugin)),
+    [credentialsQuery.data]
   );
 
   const addSlot = () => {
     setOptions((prev) => [
       ...prev,
       {
-        credentialId: "",
-        providerName: "",
-        providerPlugin: "",
+        credentialId: '',
+        providerName: '',
+        providerPlugin: '',
         skillAssetIds: [],
       },
     ]);
@@ -136,16 +122,16 @@ export function AbComparisonNewPane({
         const next = [...prev];
         const cred = whitelistedCredentials.find((c) => c.id === credentialId);
         next[index] = {
-          credentialId: cred?.id ?? "",
-          providerName: cred?.providerName ?? "",
-          providerPlugin: cred?.providerPlugin ?? "",
-          model: defaultAbComparisonModel(cred?.providerPlugin ?? ""),
+          credentialId: cred?.id ?? '',
+          providerName: cred?.providerName ?? '',
+          providerPlugin: cred?.providerPlugin ?? '',
+          model: defaultAbComparisonModel(cred?.providerPlugin ?? ''),
           skillAssetIds: [],
         };
         return next;
       });
     },
-    [whitelistedCredentials],
+    [whitelistedCredentials]
   );
 
   const updateSlotModel = useCallback((index: number, model: string) => {
@@ -156,32 +142,27 @@ export function AbComparisonNewPane({
     });
   }, []);
 
-  const updateOptionSkillAssets = useCallback(
-    (index: number, skillAssetIds: string[]) => {
-      setOptions((prev) => {
-        const next = [...prev];
-        next[index] = { ...next[index], skillAssetIds };
-        return next;
-      });
-    },
-    [],
-  );
+  const updateOptionSkillAssets = useCallback((index: number, skillAssetIds: string[]) => {
+    setOptions((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], skillAssetIds };
+      return next;
+    });
+  }, []);
 
   const validateProviders = () => {
     const valid = options.filter((o) => o.credentialId);
     if (valid.length < 2) {
-      setError("Select at least two providers to compare.");
+      setError('Select at least two providers to compare.');
       return false;
     }
     for (const option of valid) {
       if (!option.model) {
-        setError("Select a model for each comparison.");
+        setError('Select a model for each comparison.');
         return false;
       }
       if (!isAbComparisonModelAllowed(option.providerPlugin, option.model)) {
-        setError(
-          `Model ${option.model} is not available for ${option.providerName}.`,
-        );
+        setError(`Model ${option.model} is not available for ${option.providerName}.`);
         return false;
       }
     }
@@ -189,14 +170,14 @@ export function AbComparisonNewPane({
   };
 
   const validateInput = () => {
-    if (inputMode === "text") {
+    if (inputMode === 'text') {
       if (!textInput.trim()) {
-        setError("Enter some text to run.");
+        setError('Enter some text to run.');
         return false;
       }
-    } else if (inputMode === "artifact") {
+    } else if (inputMode === 'artifact') {
       if (!selectedArtifactId) {
-        setError("Select an artifact.");
+        setError('Select an artifact.');
         return false;
       }
     }
@@ -204,26 +185,26 @@ export function AbComparisonNewPane({
   };
 
   const handleNext = () => {
-    setError("");
-    if (step === "comparisons") {
+    setError('');
+    if (step === 'comparisons') {
       if (!validateProviders()) return;
-      setStep("configure");
-    } else if (step === "configure") {
-      setStep("input");
-    } else if (step === "input") {
+      setStep('configure');
+    } else if (step === 'configure') {
+      setStep('input');
+    } else if (step === 'input') {
       if (!validateInput()) return;
       handleSubmit();
     }
   };
 
   const handleBack = () => {
-    setError("");
-    if (step === "configure") setStep("comparisons");
-    else if (step === "input") setStep("configure");
+    setError('');
+    if (step === 'configure') setStep('comparisons');
+    else if (step === 'input') setStep('configure');
   };
 
   const handleSubmit = () => {
-    setError("");
+    setError('');
     createWorkflow.mutate(
       {
         workflowKind,
@@ -232,17 +213,15 @@ export function AbComparisonNewPane({
         systemPrompt: systemPrompt.trim() || undefined,
         input: {
           source: inputMode,
-          text: inputMode === "text" ? textInput.trim() : undefined,
-          artifactId: inputMode === "artifact" ? selectedArtifactId : undefined,
+          text: inputMode === 'text' ? textInput.trim() : undefined,
+          artifactId: inputMode === 'artifact' ? selectedArtifactId : undefined,
         },
       },
       {
         onSuccess: (workflow) => onCreated(workflow.id),
         onError: (err) =>
-          setError(
-            err instanceof Error ? err.message : "Failed to create workflow",
-          ),
-      },
+          setError(err instanceof Error ? err.message : 'Failed to create workflow'),
+      }
     );
   };
 
@@ -250,9 +229,7 @@ export function AbComparisonNewPane({
     <div className="flex flex-col h-full overflow-hidden rounded-panel border border-border bg-bg">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border bg-surface shrink-0">
-        <p className="text-[14px] font-semibold text-text">
-          New A/B Comparison
-        </p>
+        <p className="text-[14px] font-semibold text-text">New A/B Comparison</p>
         <button
           type="button"
           onClick={onClose}
@@ -275,7 +252,7 @@ export function AbComparisonNewPane({
 
       <div className="flex-1 overflow-y-auto p-5">
         <AnimatePresence mode="wait">
-          {step === "comparisons" && (
+          {step === 'comparisons' && (
             <motion.div
               key="comparisons"
               initial={{ opacity: 0, y: 6 }}
@@ -285,23 +262,18 @@ export function AbComparisonNewPane({
               className="space-y-4"
             >
               <p className="text-[13px] text-text-2">
-                Choose how many comparisons you want and pick a provider for
-                each slot. You can use the same provider multiple times.
+                Choose how many comparisons you want and pick a provider for each slot. You can use
+                the same provider multiple times.
               </p>
               {credentialsQuery.isLoading && (
                 <p className="text-[13px] text-text-3">Loading credentials…</p>
               )}
               {credentialsQuery.isError && (
-                <p className="text-[13px] text-orange-deep">
-                  Could not load credentials.
-                </p>
+                <p className="text-[13px] text-orange-deep">Could not load credentials.</p>
               )}
               <div className="space-y-3">
                 {options.map((option, index) => (
-                  <div
-                    key={index}
-                    className="rounded-[10px] border border-border p-4 space-y-2"
-                  >
+                  <div key={index} className="rounded-[10px] border border-border p-4 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[13px] font-medium text-text">
                         Comparison {index + 1}
@@ -318,38 +290,29 @@ export function AbComparisonNewPane({
                     </div>
                     <select
                       value={option.credentialId}
-                      onChange={(e) =>
-                        updateSlotCredential(index, e.target.value)
-                      }
+                      onChange={(e) => updateSlotCredential(index, e.target.value)}
                       className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text focus:outline-none focus:ring-1 focus:ring-orange/40"
                     >
                       <option value="">Select a provider…</option>
                       {whitelistedCredentials.map((cred) => (
                         <option key={cred.id} value={cred.id}>
-                          {cred.name} ({cred.providerName} ·{" "}
-                          {cred.providerPlugin})
+                          {cred.name} ({cred.providerName} · {cred.providerPlugin})
                         </option>
                       ))}
                     </select>
                     {option.credentialId && (
                       <div className="space-y-1">
-                        <label className="block text-[12px] font-medium text-text">
-                          Model
-                        </label>
+                        <label className="block text-[12px] font-medium text-text">Model</label>
                         <select
-                          value={option.model ?? ""}
-                          onChange={(e) =>
-                            updateSlotModel(index, e.target.value)
-                          }
+                          value={option.model ?? ''}
+                          onChange={(e) => updateSlotModel(index, e.target.value)}
                           className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text focus:outline-none focus:ring-1 focus:ring-orange/40"
                         >
-                          {listAbComparisonModels(option.providerPlugin).map(
-                            (model) => (
-                              <option key={model} value={model}>
-                                {model}
-                              </option>
-                            ),
-                          )}
+                          {listAbComparisonModels(option.providerPlugin).map((model) => (
+                            <option key={model} value={model}>
+                              {model}
+                            </option>
+                          ))}
                         </select>
                         <p className="text-[11px] text-text-3">
                           {option.providerName} · {option.providerPlugin}
@@ -366,17 +329,16 @@ export function AbComparisonNewPane({
                   Add comparison
                 </button>
               </div>
-              {whitelistedCredentials.length === 0 &&
-                !credentialsQuery.isLoading && (
-                  <p className="text-[13px] text-text-3">
-                    No whitelisted credentials available. Add an
-                    OpenAI-compatible, OpenAI, or Anthropic credential first.
-                  </p>
-                )}
+              {whitelistedCredentials.length === 0 && !credentialsQuery.isLoading && (
+                <p className="text-[13px] text-text-3">
+                  No whitelisted credentials available. Add an OpenAI-compatible, OpenAI, or
+                  Anthropic credential first.
+                </p>
+              )}
             </motion.div>
           )}
 
-          {step === "configure" && (
+          {step === 'configure' && (
             <motion.div
               key="configure"
               initial={{ opacity: 0, y: 6 }}
@@ -406,50 +368,43 @@ export function AbComparisonNewPane({
                 </label>
                 <div className="space-y-3">
                   {options.map((option, index) => (
-                    <div
-                      key={index}
-                      className="rounded-[10px] border border-border p-3"
-                    >
+                    <div key={index} className="rounded-[10px] border border-border p-3">
                       <p className="text-[13px] font-medium text-text mb-2">
                         {option.providerName
                           ? `Comparison ${index + 1}: ${option.providerName}`
                           : `Comparison ${index + 1}`}
                       </p>
-                      {skillLibraryQuery.data &&
-                        skillLibraryQuery.data.length > 0 && (
-                          <div className="flex flex-wrap gap-2">
-                            {skillLibraryQuery.data.map((skill) => {
-                              const active = (
-                                option.skillAssetIds ?? []
-                              ).includes(skill.id);
-                              return (
-                                <button
-                                  key={skill.id}
-                                  type="button"
-                                  title={skill.ownerName ?? undefined}
-                                  onClick={() => {
-                                    const current = option.skillAssetIds ?? [];
-                                    const next = active
-                                      ? current.filter((id) => id !== skill.id)
-                                      : [...current, skill.id];
-                                    updateOptionSkillAssets(index, next);
-                                  }}
-                                  className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium transition-colors ${
-                                    active
-                                      ? "border-green bg-green/8 text-text"
-                                      : "border-border text-text-2 hover:text-text"
-                                  }`}
-                                >
-                                  {skill.displayName ?? skill.name}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      {!skillLibraryQuery.data ||
-                      skillLibraryQuery.data.length === 0 ? (
+                      {skillLibraryQuery.data && skillLibraryQuery.data.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {skillLibraryQuery.data.map((skill) => {
+                            const active = (option.skillAssetIds ?? []).includes(skill.id);
+                            return (
+                              <button
+                                key={skill.id}
+                                type="button"
+                                title={skill.ownerName ?? undefined}
+                                onClick={() => {
+                                  const current = option.skillAssetIds ?? [];
+                                  const next = active
+                                    ? current.filter((id) => id !== skill.id)
+                                    : [...current, skill.id];
+                                  updateOptionSkillAssets(index, next);
+                                }}
+                                className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                                  active
+                                    ? 'border-green bg-green/8 text-text'
+                                    : 'border-border text-text-2 hover:text-text'
+                                }`}
+                              >
+                                {skill.displayName ?? skill.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {!skillLibraryQuery.data || skillLibraryQuery.data.length === 0 ? (
                         <p className="text-[12px] text-text-3">
-                          No skills in your library yet. Add some from the{" "}
+                          No skills in your library yet. Add some from the{' '}
                           <a href="/skills" className="underline">
                             Skills Library
                           </a>
@@ -463,7 +418,7 @@ export function AbComparisonNewPane({
             </motion.div>
           )}
 
-          {step === "input" && (
+          {step === 'input' && (
             <motion.div
               key="input"
               initial={{ opacity: 0, y: 6 }}
@@ -474,23 +429,23 @@ export function AbComparisonNewPane({
             >
               {/* Mode tabs */}
               <div className="flex gap-1 p-1 bg-surface-2 rounded-[10px] w-52">
-                {(["text", "artifact"] as Mode[]).map((m) => (
+                {(['text', 'artifact'] as Mode[]).map((m) => (
                   <button
                     key={m}
                     type="button"
                     onClick={() => setInputMode(m)}
                     className={`flex-1 px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors ${
                       inputMode === m
-                        ? "bg-surface text-text shadow-sm"
-                        : "text-text-2 hover:text-text"
+                        ? 'bg-surface text-text shadow-sm'
+                        : 'text-text-2 hover:text-text'
                     }`}
                   >
-                    {m === "text" ? "Text" : "Artifact"}
+                    {m === 'text' ? 'Text' : 'Artifact'}
                   </button>
                 ))}
               </div>
 
-              {inputMode === "text" ? (
+              {inputMode === 'text' ? (
                 <textarea
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
@@ -501,9 +456,7 @@ export function AbComparisonNewPane({
               ) : (
                 <ArtifactSourcePicker
                   tenantId={tenantId}
-                  onSelect={(data) =>
-                    setSelectedArtifactId(data.sourceArtifactId)
-                  }
+                  onSelect={(data) => setSelectedArtifactId(data.sourceArtifactId)}
                   isLoading={false}
                   initialSelectedId={selectedArtifactId}
                 />
@@ -519,7 +472,7 @@ export function AbComparisonNewPane({
       <div className="border-t border-border bg-surface px-5 py-3 shrink-0 flex items-center justify-between gap-3">
         <button
           type="button"
-          disabled={step === "comparisons" || createWorkflow.isPending}
+          disabled={step === 'comparisons' || createWorkflow.isPending}
           onClick={handleBack}
           className="rounded-[9px] border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text disabled:opacity-50"
         >
@@ -531,11 +484,7 @@ export function AbComparisonNewPane({
           onClick={handleNext}
           className="rounded-[9px] bg-orange px-4 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {createWorkflow.isPending
-            ? "Starting…"
-            : step === "input"
-              ? "Run comparison"
-              : "Next"}
+          {createWorkflow.isPending ? 'Starting…' : step === 'input' ? 'Run comparison' : 'Next'}
         </button>
       </div>
     </div>

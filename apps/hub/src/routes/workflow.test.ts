@@ -1,9 +1,12 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { createWorkflowRouter, resolveResetStatus } from './workflow';
+import type { RepoStore } from '@intx/hub-sessions';
 
 import * as intxDb from '@intx/db';
 import type { HubDb } from '../db';
+
+const stubRepoStore = null as unknown as RepoStore;
 
 mock.module('@intx/db', () => ({
   ...intxDb,
@@ -202,7 +205,7 @@ describe('Workflow router', () => {
                   tenantId?: string;
                   principalId: string;
                   kind: string;
-                  input: { companyName: string; transcriptId: string };
+                  input: Record<string, unknown>;
                 }
               | null
               | undefined
@@ -221,6 +224,10 @@ describe('Workflow router', () => {
           findMany: mock<() => unknown[]>(() => []),
         },
         painPoint: {
+          findFirst: mock<() => unknown | null>(() => null),
+          findMany: mock<() => unknown[]>(() => []),
+        },
+        credential: {
           findMany: mock<() => unknown[]>(() => []),
         },
         artifact: {
@@ -346,7 +353,7 @@ describe('Workflow router', () => {
       c.set('userId', userId);
       await next();
     });
-    parent.route('/', createWorkflowRouter(db as unknown as HubDb));
+    parent.route('/', createWorkflowRouter(db as unknown as HubDb, stubRepoStore));
     return parent;
   }
 
@@ -2850,7 +2857,7 @@ describe('Workflow router', () => {
         c.set('userId', 'test-user');
         await next();
       });
-      parent.route('/', createWorkflowRouter(db as unknown as HubDb));
+      parent.route('/', createWorkflowRouter(db as unknown as HubDb, stubRepoStore));
       return parent;
     }
 
@@ -3105,7 +3112,7 @@ describe('Workflow router', () => {
         c.set('userId', 'test-user');
         await next();
       });
-      parent.route('/', createWorkflowRouter(db as unknown as HubDb));
+      parent.route('/', createWorkflowRouter(db as unknown as HubDb, stubRepoStore));
       return parent;
     }
 

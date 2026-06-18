@@ -14,15 +14,15 @@ const createDefaultDirectorRegistryMock = mock(() => ({}));
 let refineFeedbackWithLLM: (typeof import('./feedback'))['refineFeedbackWithLLM'];
 
 beforeAll(async () => {
+  // Stub isAnnotatedPluginFactory so @intx/tool-packaging doesn't crash
+  // in combined test runs (Bun process-global mock).
   mock.module('@intx/agent', () => ({
+    isAnnotatedPluginFactory: (_value: unknown): _value is never => false,
     createAgent: createAgentMock,
     defineAgent: defineAgentMock,
     createDefaultDirectorRegistry: createDefaultDirectorRegistryMock,
   }));
 
-  // Spread the real module: mock.module is process-global in Bun and persists
-  // past mock.restore(), so dropping unmocked exports (e.g. createDeployPack,
-  // which hub-agent imports) breaks later suites order-dependently (CL-1825).
   mock.module('@intx/storage-isogit', () => ({
     ...storageIsogitActual,
     createIsogitStore: mock(async () => ({})),

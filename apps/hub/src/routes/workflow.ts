@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, max, ne, or } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import { reportLoggedError } from '@workbench/sentry';
@@ -435,7 +436,7 @@ export function createWorkflowRouter(
         return c.json(run, 201);
       } catch (err) {
         if (err instanceof ResourceEnrichmentError) {
-          return c.json({ error: err.message }, err.status);
+          return c.json({ error: err.message }, err.status as ContentfulStatusCode);
         }
         throw err;
       }
@@ -1328,7 +1329,7 @@ export function createWorkflowRouter(
         return c.json({ error: `Unsupported step for ${wf.kind}: ${step}` }, 400);
       } catch (err) {
         if (err instanceof ResourceEnrichmentError) {
-          return c.json({ error: err.message }, err.status);
+          return c.json({ error: err.message }, err.status as ContentfulStatusCode);
         }
         throw err;
       }
@@ -2092,7 +2093,7 @@ export function createWorkflowRouter(
       return c.json(serializeArtifact(updated));
     } catch (err) {
       if (err instanceof RedditOpportunityScannerError) {
-        return c.json({ error: err.message }, err.status);
+        return c.json({ error: err.message }, err.status as ContentfulStatusCode);
       }
       throw err;
     }
@@ -2153,7 +2154,7 @@ export function createWorkflowRouter(
       return c.json(serializeArtifact(updated));
     } catch (err) {
       if (err instanceof RedditOpportunityScannerError) {
-        return c.json({ error: err.message }, err.status);
+        return c.json({ error: err.message }, err.status as ContentfulStatusCode);
       }
       throw err;
     }

@@ -131,6 +131,8 @@ function readHeaderIndex(sheet: ExcelJS.Worksheet): Map<string, number> {
 // the boundary contract is broken.
 export async function parseSeoResourceWorkbook(data: Buffer): Promise<SeoIngestResult> {
   const workbook = new ExcelJS.Workbook();
+  // ExcelJS 4.4 types predate TS5.9's Buffer<T> generics — the types diverge but runtime is compatible.
+  // @ts-expect-error
   await workbook.xlsx.load(data);
 
   const sheet = workbook.getWorksheet(SHEET_NAME);

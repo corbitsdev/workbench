@@ -91,7 +91,9 @@ export const redditOpportunityScannerWorkflow: WorkflowType = {
       (a: { kind?: string }) => a.kind === 'reddit-opportunity-scan'
     );
 
-    const parseArtifactContent = (a: { content?: string } | undefined): unknown => {
+    const parseArtifactContent = (
+      a: { content?: string; [key: string]: unknown } | undefined
+    ): unknown => {
       if (!a || typeof a.content !== 'string') return undefined;
       try {
         return JSON.parse(a.content);

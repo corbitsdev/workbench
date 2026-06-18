@@ -60,6 +60,7 @@ async function insertArtifactWithVersion(
       content: values.content,
       authorId: values.principalId,
     });
+    if (!row) throw new RedditOpportunityScannerError('Artifact creation failed', 500);
     return row;
   });
 }
@@ -109,10 +110,11 @@ export async function runRedditOpportunityAnalyze(
   const draft = await analyzeWebsite(
     {
       inputUrl,
-      brandName: typeof input['brandName'] === 'string' ? input['brandName'] : undefined,
-      targetGeography:
-        typeof input['targetGeography'] === 'string' ? input['targetGeography'] : undefined,
-      icpHints: typeof input['icpHints'] === 'string' ? input['icpHints'] : undefined,
+      ...(typeof input['brandName'] === 'string' ? { brandName: input['brandName'] } : {}),
+      ...(typeof input['targetGeography'] === 'string'
+        ? { targetGeography: input['targetGeography'] }
+        : {}),
+      ...(typeof input['icpHints'] === 'string' ? { icpHints: input['icpHints'] } : {}),
     },
     {
       infer: ({ systemPrompt, userMessage }) =>
@@ -236,6 +238,7 @@ export async function updateRedditScanArtifactContent(
       authorId: principalId,
     });
 
+    if (!row) throw new RedditOpportunityScannerError('Artifact update failed', 500);
     return row;
   });
 }
