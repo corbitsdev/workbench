@@ -434,8 +434,9 @@ export async function getSkillContent(
       dir,
       trees: [git.TREE({ ref: SKILL_BUNDLE_REF })],
       map: async (filepath, [entry]) => {
-        if (!entry || (await entry.type()) !== 'blob') return null;
-        if (!filepath.startsWith(prefix)) return null;
+        if (!entry) return null;
+        if ((await entry.type()) !== 'blob') return undefined;
+        if (!filepath.startsWith(prefix)) return undefined;
         const relativePath = filepath.slice(prefix.length);
         if (!relativePath) return null;
         const blob = await entry.content();
