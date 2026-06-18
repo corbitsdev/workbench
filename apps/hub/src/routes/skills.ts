@@ -14,8 +14,13 @@ import {
   getSkillAsset,
   getSkillContent,
   listSkills,
+  type SkillAccessScope,
   type SkillBundleFileInput,
 } from '../services/skill-library';
+
+function parseScope(value: unknown): SkillAccessScope {
+  return value === 'private' ? 'private' : 'tenant';
+}
 
 function errorResponse(c: Context, err: unknown) {
   if (err instanceof SkillLibraryError) {
@@ -48,7 +53,8 @@ export function createSkillsRouter(
     );
     if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
-    return c.json({ skills: await listSkills(db, context.tenantId) });
+    const skills = await listSkills(db, { tenantId: context.tenantId, userId: c.get('userId') });
+    return c.json({ skills });
   });
 
   router.get('/skills/:assetId', async (c) => {
@@ -59,7 +65,11 @@ export function createSkillsRouter(
     );
     if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
-    const skill = await getSkillAsset(db, context.tenantId, c.req.param('assetId'));
+    const skill = await getSkillAsset(
+      db,
+      { tenantId: context.tenantId, userId: c.get('userId') },
+      c.req.param('assetId')
+    );
     if (!skill) return c.json({ error: 'Skill not found' }, 404);
     const files = await getSkillContent(repoStore, skill.id, skill.name);
     return c.json({ skill, files });
@@ -99,6 +109,8 @@ export function createSkillsRouter(
           name,
           description,
           files: [textFile('SKILL.md', text)],
+          scope: parseScope(body.scope),
+          ownerUserId: c.get('userId'),
         });
         return c.json({ skill }, 201);
       }
@@ -147,6 +159,8 @@ export function createSkillsRouter(
         name,
         description,
         files: bundleFiles,
+        scope: parseScope(body.scope),
+        ownerUserId: c.get('userId'),
       });
       return c.json({ skill }, 201);
     } catch (err) {

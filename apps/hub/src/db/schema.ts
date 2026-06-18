@@ -223,6 +223,32 @@ export const workbenchTemplateVersion = pgTable(
   })
 );
 
+// ─── Skill access ──────────────────────────────────────────────────
+//
+// Interchange's `asset` table is @intx-owned and cannot carry workbench access
+// metadata, so sharing scope for skill assets lives here (CL-2121). One row per
+// skill asset.
+//
+//   scope = 'tenant'  → visible to everyone whose tenant ancestor chain includes
+//                       the asset's tenant (the walk-up share target).
+//   scope = 'private' → visible only to the creating user (matched by
+//                       owner_user_id, since principal ids are per-tenant and a
+//                       user views from different tenants).
+//
+// A skill asset with no row here predates this feature and is treated as
+// 'tenant' (org-wide), preserving the prior implicit behaviour.
+export const skillAccessScope = ['private', 'tenant'] as const;
+
+export const skillAccess = pgTable('skill_access', {
+  assetId: text('asset_id').primaryKey(),
+  scope: text('scope', { enum: skillAccessScope }).notNull(),
+  ownerUserId: text('owner_user_id').notNull(),
+  ownerPrincipalId: text('owner_principal_id').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export type SkillAccessRow = typeof skillAccess.$inferSelect;
+
 // ─── Approvals ─────────────────────────────────────────────────────
 
 export const approvalStatus = ['pending', 'approved', 'rejected'] as const;

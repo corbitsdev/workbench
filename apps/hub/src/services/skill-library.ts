@@ -1,12 +1,14 @@
+import { type } from 'arktype';
 import { createHash } from 'node:crypto';
 import { normalize, sep } from 'node:path';
 import nodefs from 'node:fs';
 import git from 'isomorphic-git';
 import JSZip from 'jszip';
-import { and, asc, eq } from 'drizzle-orm';
-import { schema as intxSchema } from '@intx/db';
+import { and, asc, eq, inArray } from 'drizzle-orm';
+import { schema as intxSchema, getAncestorChain } from '@intx/db';
 import { getLogger } from '@intx/log';
 import type { HubDb } from '../db';
+import { skillAccess } from '../db/schema';
 import type { AssetService, RepoStore } from '@intx/hub-sessions';
 import { AssetServiceError } from '@intx/hub-sessions';
 import type { UserContext } from '@workbench/workflow-core';
@@ -84,13 +86,36 @@ export type SkillBundleManifest = {
   checksum: string;
 };
 
-export type SkillItem = {
-  id: string;
-  name: string;
-  displayName: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+export const skillAccessScopeSchema = type("'private' | 'tenant'");
+export type SkillAccessScope = typeof skillAccessScopeSchema.infer;
+
+export const skillItemSchema = type({
+  id: 'string',
+  name: 'string',
+  displayName: 'string | null',
+  createdAt: 'string',
+  updatedAt: 'string',
+  scope: skillAccessScopeSchema,
+  accessTenantId: 'string',
+  ownerUserId: 'string | null',
+});
+export type SkillItem = typeof skillItemSchema.infer;
+
+/**
+ * Pure visibility rule for a skill asset given the viewer's tenant ancestor
+ * chain and user id. A skill is visible when its tenant is somewhere in the
+ * viewer's chain (the walk-up share target) and either it is tenant-scoped (or
+ * a legacy row with no scope) or it is private and owned by the viewer.
+ */
+export function isSkillVisible(
+  row: { assetTenantId: string; scope: SkillAccessScope | null; ownerUserId: string | null },
+  viewer: { ancestorTenantIds: string[]; userId: string }
+): boolean {
+  if (!viewer.ancestorTenantIds.includes(row.assetTenantId)) return false;
+  const scope = row.scope ?? 'tenant';
+  if (scope === 'tenant') return true;
+  return row.ownerUserId === viewer.userId;
+}
 
 export class SkillLibraryError extends Error {
   constructor(
@@ -333,6 +358,8 @@ export async function deleteSkill(
   // git repo from disk. If the fs.rm fails we log and continue; the row is
   // already gone so the skill is invisible regardless.
   await db.delete(intxSchema.asset).where(eq(intxSchema.asset.id, assetId));
+  // skill_access has no FK to asset (asset is @intx-owned), so clear it here.
+  await db.delete(skillAccess).where(eq(skillAccess.assetId, assetId));
   const repoDir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
   await nodefs.promises.rm(repoDir, { recursive: true, force: true }).catch((err) => {
     log.error('Failed to remove skill git repo after delete', {
@@ -343,48 +370,87 @@ export async function deleteSkill(
   });
 }
 
-export async function listSkills(db: HubDb, tenantId: string): Promise<SkillItem[]> {
-  const rows = await db
-    .select({
-      id: intxSchema.asset.id,
-      name: intxSchema.asset.name,
-      displayName: intxSchema.asset.displayName,
-      createdAt: intxSchema.asset.createdAt,
-      updatedAt: intxSchema.asset.updatedAt,
-    })
-    .from(intxSchema.asset)
-    .where(and(eq(intxSchema.asset.tenantId, tenantId), eq(intxSchema.asset.kind, 'skill')))
-    .orderBy(asc(intxSchema.asset.createdAt));
+export type SkillViewer = { tenantId: string; userId: string };
 
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    displayName: row.displayName ?? null,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  }));
-}
+type SkillRow = {
+  id: string;
+  name: string;
+  displayName: string | null;
+  tenantId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  scope: SkillAccessScope | null;
+  ownerUserId: string | null;
+};
 
-export async function getSkillAsset(
-  db: HubDb,
-  tenantId: string,
-  assetId: string
-): Promise<SkillItem | null> {
-  const row = await db.query.asset.findFirst({
-    where: and(
-      eq(intxSchema.asset.id, assetId),
-      eq(intxSchema.asset.tenantId, tenantId),
-      eq(intxSchema.asset.kind, 'skill')
-    ),
-  });
-  if (!row) return null;
+function toSkillItem(row: SkillRow): SkillItem {
   return {
     id: row.id,
     name: row.name,
     displayName: row.displayName ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    scope: row.scope ?? 'tenant',
+    accessTenantId: row.tenantId,
+    ownerUserId: row.ownerUserId ?? null,
   };
+}
+
+const skillRowColumns = {
+  id: intxSchema.asset.id,
+  name: intxSchema.asset.name,
+  displayName: intxSchema.asset.displayName,
+  tenantId: intxSchema.asset.tenantId,
+  createdAt: intxSchema.asset.createdAt,
+  updatedAt: intxSchema.asset.updatedAt,
+  scope: skillAccess.scope,
+  ownerUserId: skillAccess.ownerUserId,
+};
+
+export async function listSkills(db: HubDb, viewer: SkillViewer): Promise<SkillItem[]> {
+  const ancestorTenantIds = await getAncestorChain(db as never, viewer.tenantId);
+  const rows = await db
+    .select(skillRowColumns)
+    .from(intxSchema.asset)
+    .leftJoin(skillAccess, eq(skillAccess.assetId, intxSchema.asset.id))
+    .where(
+      and(inArray(intxSchema.asset.tenantId, ancestorTenantIds), eq(intxSchema.asset.kind, 'skill'))
+    )
+    .orderBy(asc(intxSchema.asset.createdAt));
+
+  return rows
+    .filter((row) =>
+      isSkillVisible(
+        { assetTenantId: row.tenantId, scope: row.scope, ownerUserId: row.ownerUserId },
+        { ancestorTenantIds, userId: viewer.userId }
+      )
+    )
+    .map(toSkillItem);
+}
+
+export async function getSkillAsset(
+  db: HubDb,
+  viewer: SkillViewer,
+  assetId: string
+): Promise<SkillItem | null> {
+  const ancestorTenantIds = await getAncestorChain(db as never, viewer.tenantId);
+  const rows = await db
+    .select(skillRowColumns)
+    .from(intxSchema.asset)
+    .leftJoin(skillAccess, eq(skillAccess.assetId, intxSchema.asset.id))
+    .where(and(eq(intxSchema.asset.id, assetId), eq(intxSchema.asset.kind, 'skill')))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  if (
+    !isSkillVisible(
+      { assetTenantId: row.tenantId, scope: row.scope, ownerUserId: row.ownerUserId },
+      { ancestorTenantIds, userId: viewer.userId }
+    )
+  ) {
+    return null;
+  }
+  return toSkillItem(row);
 }
 
 async function readAssetFile(
@@ -477,6 +543,8 @@ export async function createSkill(
     name: string;
     description?: string | null;
     files: SkillBundleFileInput[];
+    scope: SkillAccessScope;
+    ownerUserId: string;
   }
 ): Promise<SkillItem> {
   const name = input.name.trim();
@@ -523,12 +591,22 @@ export async function createSkill(
     throw err;
   }
 
+  await db.insert(skillAccess).values({
+    assetId: asset.id,
+    scope: input.scope,
+    ownerUserId: input.ownerUserId,
+    ownerPrincipalId: userContext.principalId,
+  });
+
   return {
     id: asset.id,
     name: asset.name,
     displayName: asset.displayName ?? null,
     createdAt: asset.createdAt.toISOString(),
     updatedAt: asset.updatedAt.toISOString(),
+    scope: input.scope,
+    accessTenantId: asset.tenantId,
+    ownerUserId: input.ownerUserId,
   };
 }
 
@@ -576,6 +654,9 @@ export async function updateSkill(
   const refreshed = await db.query.asset.findFirst({
     where: eq(intxSchema.asset.id, existing.id),
   });
+  const access = await db.query.skillAccess.findFirst({
+    where: eq(skillAccess.assetId, existing.id),
+  });
 
   return {
     id: existing.id,
@@ -583,5 +664,8 @@ export async function updateSkill(
     displayName: existing.displayName ?? null,
     createdAt: existing.createdAt.toISOString(),
     updatedAt: (refreshed?.updatedAt ?? new Date()).toISOString(),
+    scope: access?.scope ?? 'tenant',
+    accessTenantId: existing.tenantId,
+    ownerUserId: access?.ownerUserId ?? null,
   };
 }
