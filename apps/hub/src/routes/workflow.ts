@@ -1647,7 +1647,7 @@ export function createWorkflowRouter(
             providerName: string;
             providerPlugin: string;
             model?: string;
-            skillIds: string[];
+            skillVersionIds?: string[];
           }>
         | undefined;
       const inputDef = currentInput['input'] as AbComparisonInput | undefined;

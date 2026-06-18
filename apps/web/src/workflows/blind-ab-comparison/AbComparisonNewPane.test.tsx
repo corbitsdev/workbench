@@ -168,62 +168,30 @@ describe('AbComparisonNewPane', () => {
     expect((modelSelects[0] as HTMLSelectElement).value).toBe('gpt-5.4-mini');
   });
 
-  it('submits pasted custom markdown skills per comparison', async () => {
+  it('does not include customSkills or skillIds in the submission', async () => {
     const user = userEvent.setup();
     const onCreated = renderPane();
-    await waitFor(() => {
-      expect(document.querySelectorAll('select').length).toBeGreaterThanOrEqual(2);
-    });
-    const selects = document.querySelectorAll('select');
-    await user.selectOptions(selects[0] as HTMLSelectElement, 'cred-1');
-    await user.selectOptions(selects[1] as HTMLSelectElement, 'cred-2');
-    await user.click(nextButton());
-    await waitFor(() => {
-      expect(document.body.textContent).toContain('Skills per comparison');
-    });
-    await user.click(
-      [...document.querySelectorAll('button')].find((button) =>
-        /add custom skill/i.test(button.textContent ?? '')
-      ) as HTMLButtonElement
-    );
-    await waitFor(() => {
-      expect(document.querySelector('input[placeholder="Skill name"]')).not.toBeNull();
-    });
-    await user.type(
-      document.querySelector('input[placeholder="Skill name"]') as HTMLInputElement,
-      'ASAP'
-    );
-    await user.type(
-      document.querySelector(
-        'textarea[placeholder*="markdown skill instructions"]'
-      ) as HTMLTextAreaElement,
-      '# ASAP\nShip faster.'
-    );
-    await user.click(nextButton());
+    await advanceToInputStep(user);
     await waitFor(() => {
       expect(
         document.querySelector('textarea[placeholder*="prompt you want to run"]')
       ).not.toBeNull();
     });
-    await user.type(
-      document.querySelector(
-        'textarea[placeholder*="prompt you want to run"]'
-      ) as HTMLTextAreaElement,
-      'Run this across providers'
-    );
-    await user.click(
-      [...document.querySelectorAll('button')].find((button) =>
-        /run comparison/i.test(button.textContent ?? '')
-      ) as HTMLButtonElement
-    );
+    const textarea = document.querySelector(
+      'textarea[placeholder*="prompt you want to run"]'
+    ) as HTMLTextAreaElement;
+    await user.type(textarea, 'Run this across providers');
+    const runButton = [...document.querySelectorAll('button')].find((button) =>
+      /run comparison/i.test(button.textContent ?? '')
+    ) as HTMLButtonElement;
+    await user.click(runButton);
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('wf-ab'));
     const createCall = calls.find((c) => c.url.includes('/workflows') && c.method === 'POST');
-    const createJson = createCall?.json as {
-      providers: Array<{ customSkills?: unknown }>;
-    };
-    expect(createJson.providers[0].customSkills).toEqual([
-      { title: 'ASAP', content: '# ASAP\nShip faster.' },
-    ]);
+    const createJson = createCall?.json as { providers: Array<Record<string, unknown>> };
+    for (const provider of createJson.providers) {
+      expect('customSkills' in provider).toBe(false);
+      expect('skillIds' in provider).toBe(false);
+    }
   });
 
   it('submits selected reusable skill versions per comparison', async () => {

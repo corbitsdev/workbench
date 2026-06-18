@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BookOpen, FileArchive, Search, Upload, X } from 'lucide-react';
-import { SKILLS_REGISTRY, type SkillEntry } from '@workbench/agents';
 import {
   useCreateSkill,
   useSkillDetail,
@@ -13,32 +12,7 @@ import { getMe } from '../lib/hub-api';
 
 type FileWithRelativePath = File & { webkitRelativePath?: string };
 
-type SelectedSkill =
-  | { kind: 'library'; skill: SkillLibraryItem }
-  | { kind: 'built-in'; skill: SkillEntry };
-
-function BuiltInCard({ skill, onSelect }: { skill: SkillEntry; onSelect: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 text-left transition-colors hover:bg-[var(--row-hover)]"
-    >
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[14px] font-semibold text-text">{skill.title}</span>
-          <span className="rounded-[5px] bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-text-2">
-            Built-in
-          </span>
-        </div>
-        <p className="mt-1.5 text-[12px] leading-[1.4] text-text-3 line-clamp-3">
-          {skill.description}
-        </p>
-      </div>
-      <span className="text-[11px] text-text-3">by {skill.author}</span>
-    </button>
-  );
-}
+type SelectedSkill = { kind: 'library'; skill: SkillLibraryItem };
 
 function LibraryCard({ skill, onSelect }: { skill: SkillLibraryItem; onSelect: () => void }) {
   return (
@@ -84,17 +58,6 @@ export function SkillsLibrary() {
   const selectedLibrarySkill =
     skillDetailQuery.data ?? (selected?.kind === 'library' ? selected.skill : null);
   const previewQuery = useSkillVersionPreview(selectedVersionId, tenantId);
-
-  const filteredBuiltIns = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return SKILLS_REGISTRY.filter(
-      (skill) =>
-        !q ||
-        skill.title.toLowerCase().includes(q) ||
-        skill.description.toLowerCase().includes(q) ||
-        skill.author.toLowerCase().includes(q)
-    ).sort((a, b) => a.title.localeCompare(b.title));
-  }, [query]);
 
   const filteredLibrary = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -144,7 +107,7 @@ export function SkillsLibrary() {
 
   const selectLibrary = (skill: SkillLibraryItem) => {
     setSelected({ kind: 'library', skill });
-    setSelectedVersionId(skill.latestVersionId);
+    setSelectedVersionId(skill.latestVersionId ?? null);
   };
 
   return (
@@ -155,7 +118,7 @@ export function SkillsLibrary() {
             <BookOpen className="h-4 w-4 text-text-3" />
             <p className="text-[14px] font-semibold text-text">Skills Library</p>
           </div>
-          <p className="text-[12px] text-text-3">Reusable immutable skills and built-in skills</p>
+          <p className="text-[12px] text-text-3">Reusable immutable skills</p>
         </div>
 
         <div className="border-b border-border p-5 space-y-3 shrink-0">
@@ -273,19 +236,6 @@ export function SkillsLibrary() {
               </p>
             )}
           </section>
-
-          <section>
-            <p className="mb-2 text-[13px] font-semibold text-text">Built-in skills</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredBuiltIns.map((skill) => (
-                <BuiltInCard
-                  key={skill.id}
-                  skill={skill}
-                  onSelect={() => setSelected({ kind: 'built-in', skill })}
-                />
-              ))}
-            </div>
-          </section>
         </div>
       </div>
 
@@ -298,14 +248,8 @@ export function SkillsLibrary() {
           >
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <div>
-                <p className="text-[16px] font-bold text-text">
-                  {selected.kind === 'library' ? selected.skill.name : selected.skill.title}
-                </p>
-                <p className="text-[12px] text-text-3">
-                  {selected.kind === 'library'
-                    ? 'Workspace reusable skill'
-                    : `Built-in by ${selected.skill.author}`}
-                </p>
+                <p className="text-[16px] font-bold text-text">{selected.skill.name}</p>
+                <p className="text-[12px] text-text-3">Workspace reusable skill</p>
               </div>
               <button
                 type="button"
@@ -317,80 +261,72 @@ export function SkillsLibrary() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-              {selected.kind === 'built-in' ? (
-                <pre className="max-h-[55vh] overflow-y-auto whitespace-pre-wrap rounded-[8px] border border-border bg-bg p-3 font-mono text-[12px] leading-relaxed text-text-2">
-                  {selected.skill.content}
-                </pre>
-              ) : (
-                <>
-                  <div className="flex flex-wrap gap-2">
-                    {(selectedLibrarySkill?.versions ?? []).map((version) => (
-                      <button
-                        key={version.id}
-                        type="button"
-                        onClick={() => setSelectedVersionId(version.id)}
-                        className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium ${selectedVersionId === version.id ? 'border-orange bg-orange/8 text-text' : 'border-border text-text-2'}`}
-                      >
-                        v{version.version} · {version.source ?? 'file'} ·{' '}
-                        {version.manifest.files.length} files
-                      </button>
-                    ))}
-                  </div>
-                  {skillDetailQuery.isLoading && (
-                    <p className="text-[12px] text-text-3">Loading versions...</p>
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {(selectedLibrarySkill?.versions ?? []).map((version) => (
+                    <button
+                      key={version.id}
+                      type="button"
+                      onClick={() => setSelectedVersionId(version.id)}
+                      className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium ${selectedVersionId === version.id ? 'border-orange bg-orange/8 text-text' : 'border-border text-text-2'}`}
+                    >
+                      v{version.version} · {version.source ?? 'file'} ·{' '}
+                      {version.manifest.files.length} files
+                    </button>
+                  ))}
+                </div>
+                {skillDetailQuery.isLoading && (
+                  <p className="text-[12px] text-text-3">Loading versions...</p>
+                )}
+                {!skillDetailQuery.isLoading &&
+                  (selectedLibrarySkill?.versions ?? []).length === 0 && (
+                    <p className="text-[12px] text-text-3">No versions available for this skill.</p>
                   )}
-                  {!skillDetailQuery.isLoading &&
-                    (selectedLibrarySkill?.versions ?? []).length === 0 && (
-                      <p className="text-[12px] text-text-3">
-                        No versions available for this skill.
+                {previewQuery.data && (
+                  <div className="grid gap-3 lg:grid-cols-[240px_minmax(0,1fr)]">
+                    <div className="rounded-[8px] border border-border bg-bg p-3">
+                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-text-3">
+                        Bundle files
                       </p>
-                    )}
-                  {previewQuery.data && (
-                    <div className="grid gap-3 lg:grid-cols-[240px_minmax(0,1fr)]">
-                      <div className="rounded-[8px] border border-border bg-bg p-3">
-                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-text-3">
-                          Bundle files
-                        </p>
-                        <div className="space-y-1">
-                          {previewQuery.data.version.manifest.files.map((file) => (
-                            <div
-                              key={file.path}
-                              className="rounded-[6px] bg-surface px-2 py-1 text-[11px] text-text-2"
-                            >
-                              <p className="break-all font-mono">{file.path}</p>
-                              <p className="text-text-3">
-                                {file.promptReadable ? 'prompt-readable' : 'stored-only asset'}
-                                {file.executableLike ? ' · code-like inert' : ''}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="space-y-3">
-                        {previewQuery.data.files.map((file) => (
+                      <div className="space-y-1">
+                        {previewQuery.data.version.manifest.files.map((file) => (
                           <div
                             key={file.path}
-                            className="rounded-[8px] border border-border bg-bg p-3"
+                            className="rounded-[6px] bg-surface px-2 py-1 text-[11px] text-text-2"
                           >
-                            <p className="mb-2 break-all font-mono text-[11px] text-text-3">
-                              {file.path}
+                            <p className="break-all font-mono">{file.path}</p>
+                            <p className="text-text-3">
+                              {file.promptReadable ? 'prompt-readable' : 'stored-only asset'}
+                              {file.executableLike ? ' · code-like inert' : ''}
                             </p>
-                            {file.content !== undefined ? (
-                              <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-text-2">
-                                {file.content}
-                              </pre>
-                            ) : (
-                              <p className="text-[12px] text-text-3">
-                                Stored-only asset. Not injected into prompts and never executed.
-                              </p>
-                            )}
                           </div>
                         ))}
                       </div>
                     </div>
-                  )}
-                </>
-              )}
+                    <div className="space-y-3">
+                      {previewQuery.data.files.map((file) => (
+                        <div
+                          key={file.path}
+                          className="rounded-[8px] border border-border bg-bg p-3"
+                        >
+                          <p className="mb-2 break-all font-mono text-[11px] text-text-3">
+                            {file.path}
+                          </p>
+                          {file.content !== undefined ? (
+                            <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-text-2">
+                              {file.content}
+                            </pre>
+                          ) : (
+                            <p className="text-[12px] text-text-3">
+                              Stored-only asset. Not injected into prompts and never executed.
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             </div>
           </div>
         </div>

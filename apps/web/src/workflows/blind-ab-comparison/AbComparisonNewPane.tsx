@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SKILLS_REGISTRY } from '@workbench/agents';
 import {
   defaultAbComparisonModel,
   isAbComparisonModelAllowed,
@@ -9,7 +8,6 @@ import {
 } from '@workbench/gtm-workflows';
 import type { WorkflowNewPaneProps } from '../registry';
 import {
-  useCreateSkill,
   useCreateWorkflow,
   useSkillLibrary,
   useWorkflowCredentials,
@@ -19,13 +17,6 @@ import ArtifactSourcePicker from '../../components/ArtifactSourcePicker';
 type StepName = 'comparisons' | 'configure' | 'input';
 
 type Mode = 'text' | 'artifact';
-
-type CustomSkillDraft = {
-  title: string;
-  content: string;
-};
-
-type FileWithRelativePath = File & { webkitRelativePath?: string };
 
 const PROVIDER_WHITELIST = new Set(['openai-compatible', 'openai', 'anthropic', 'google-genai']);
 
@@ -76,16 +67,12 @@ export function AbComparisonNewPane({
       credentialId: '',
       providerName: '',
       providerPlugin: '',
-      skillIds: [],
-      customSkills: [],
       skillVersionIds: [],
     },
     {
       credentialId: '',
       providerName: '',
       providerPlugin: '',
-      skillIds: [],
-      customSkills: [],
       skillVersionIds: [],
     },
   ]);
@@ -94,13 +81,10 @@ export function AbComparisonNewPane({
   const [textInput, setTextInput] = useState('');
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>(seedArtifactId);
   const [error, setError] = useState('');
-  const [skillName, setSkillName] = useState('');
-  const [skillText, setSkillText] = useState('');
 
   const createWorkflow = useCreateWorkflow();
   const credentialsQuery = useWorkflowCredentials();
   const skillLibraryQuery = useSkillLibrary(tenantId);
-  const createSkill = useCreateSkill();
   const whitelistedCredentials = useMemo(
     () => (credentialsQuery.data ?? []).filter((c) => PROVIDER_WHITELIST.has(c.providerPlugin)),
     [credentialsQuery.data]
@@ -113,8 +97,6 @@ export function AbComparisonNewPane({
         credentialId: '',
         providerName: '',
         providerPlugin: '',
-        skillIds: [],
-        customSkills: [],
         skillVersionIds: [],
       },
     ]);
@@ -134,8 +116,6 @@ export function AbComparisonNewPane({
           providerName: cred?.providerName ?? '',
           providerPlugin: cred?.providerPlugin ?? '',
           model: defaultAbComparisonModel(cred?.providerPlugin ?? ''),
-          skillIds: [],
-          customSkills: [],
           skillVersionIds: [],
         };
         return next;
@@ -152,14 +132,6 @@ export function AbComparisonNewPane({
     });
   }, []);
 
-  const updateOptionSkills = useCallback((index: number, skillIds: string[]) => {
-    setOptions((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], skillIds };
-      return next;
-    });
-  }, []);
-
   const updateOptionSkillVersions = useCallback((index: number, skillVersionIds: string[]) => {
     setOptions((prev) => {
       const next = [...prev];
@@ -167,104 +139,6 @@ export function AbComparisonNewPane({
       return next;
     });
   }, []);
-
-  const updateCustomSkills = useCallback((index: number, customSkills: CustomSkillDraft[]) => {
-    setOptions((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], customSkills };
-      return next;
-    });
-  }, []);
-
-  const addCustomSkill = useCallback(
-    (index: number) => {
-      const nextSkills = [...(options[index]?.customSkills ?? []), { title: '', content: '' }];
-      updateCustomSkills(index, nextSkills);
-    },
-    [options, updateCustomSkills]
-  );
-
-  const updateCustomSkill = useCallback(
-    (index: number, skillIndex: number, patch: Partial<CustomSkillDraft>) => {
-      const nextSkills = (options[index]?.customSkills ?? []).map((skill, i) =>
-        i === skillIndex ? { ...skill, ...patch } : skill
-      );
-      updateCustomSkills(index, nextSkills);
-    },
-    [options, updateCustomSkills]
-  );
-
-  const removeCustomSkill = useCallback(
-    (index: number, skillIndex: number) => {
-      updateCustomSkills(
-        index,
-        (options[index]?.customSkills ?? []).filter((_, i) => i !== skillIndex)
-      );
-    },
-    [options, updateCustomSkills]
-  );
-
-  const readSkillFile = useCallback(
-    (index: number, skillIndex: number, file: File | undefined) => {
-      if (!file) return;
-      if (
-        !file.name.endsWith('.md') &&
-        file.type !== 'text/markdown' &&
-        file.type !== 'text/plain'
-      ) {
-        setError('Upload markdown skill files only.');
-        return;
-      }
-      file
-        .text()
-        .then((content) => {
-          updateCustomSkill(index, skillIndex, {
-            title:
-              options[index]?.customSkills?.[skillIndex]?.title || file.name.replace(/\.md$/i, ''),
-            content,
-          });
-        })
-        .catch(() => setError('Could not read that skill file.'));
-    },
-    [options, updateCustomSkill]
-  );
-
-  const createTextSkill = () => {
-    setError('');
-    createSkill.mutate(
-      { tenantId, name: skillName.trim(), text: skillText.trim() },
-      {
-        onSuccess: () => {
-          setSkillName('');
-          setSkillText('');
-        },
-        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to create skill'),
-      }
-    );
-  };
-
-  const createFileSkill = (files: FileList | null, folder: boolean) => {
-    const selected = Array.from(files ?? []) as FileWithRelativePath[];
-    if (selected.length === 0) return;
-    const first = selected[0];
-    const inferredName = folder
-      ? (first.webkitRelativePath?.split('/')[0] ?? first.name.replace(/\.[^.]+$/, ''))
-      : first.name.replace(/\.[^.]+$/, '');
-    createSkill.mutate(
-      {
-        tenantId,
-        name: skillName.trim() || inferredName,
-        files: selected.map((file) => ({
-          file,
-          path: folder ? file.webkitRelativePath || file.name : file.name,
-        })),
-      },
-      {
-        onSuccess: () => setSkillName(''),
-        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to create skill'),
-      }
-    );
-  };
 
   const validateProviders = () => {
     const valid = options.filter((o) => o.credentialId);
@@ -280,12 +154,6 @@ export function AbComparisonNewPane({
       if (!isAbComparisonModelAllowed(option.providerPlugin, option.model)) {
         setError(`Model ${option.model} is not available for ${option.providerName}.`);
         return false;
-      }
-      for (const skill of option.customSkills ?? []) {
-        if (!skill.title.trim() || !skill.content.trim()) {
-          setError('Custom skills need both a name and markdown content.');
-          return false;
-        }
       }
     }
     return true;
@@ -331,17 +199,7 @@ export function AbComparisonNewPane({
       {
         workflowKind,
         tenantId: tenantId ?? undefined,
-        providers: options
-          .filter((o) => o.credentialId)
-          .map((option) => ({
-            ...option,
-            customSkills: option.customSkills
-              ?.map((skill) => ({
-                title: skill.title.trim(),
-                content: skill.content.trim(),
-              }))
-              .filter((skill) => skill.title && skill.content),
-          })),
+        providers: options.filter((o) => o.credentialId),
         systemPrompt: systemPrompt.trim() || undefined,
         input: {
           source: inputMode,
@@ -493,59 +351,6 @@ export function AbComparisonNewPane({
                 />
               </div>
 
-              <div className="rounded-[10px] border border-border p-3 space-y-3">
-                <div>
-                  <p className="text-[13px] font-medium text-text">Skill library</p>
-                  <p className="text-[12px] text-text-3">
-                    Create reusable skills from pasted text, a markdown file, or a folder. Code and
-                    non-text assets are stored as inert bundle files and are never executed.
-                  </p>
-                </div>
-                <input
-                  type="text"
-                  value={skillName}
-                  onChange={(e) => setSkillName(e.target.value)}
-                  placeholder="Skill name (required for pasted text)"
-                  className="w-full rounded-[8px] border border-border bg-surface px-3 py-2 text-[12px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
-                />
-                <textarea
-                  value={skillText}
-                  onChange={(e) => setSkillText(e.target.value)}
-                  placeholder="Paste a single-file markdown skill…"
-                  rows={4}
-                  className="w-full resize-none rounded-[8px] border border-border bg-surface px-3 py-2 text-[12px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
-                />
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={createTextSkill}
-                    disabled={createSkill.isPending}
-                    className="rounded-[7px] border border-border px-2.5 py-1 text-[12px] font-medium text-text-2 transition-colors hover:text-text disabled:opacity-50"
-                  >
-                    Save pasted skill
-                  </button>
-                  <label className="cursor-pointer rounded-[7px] border border-border px-2.5 py-1 text-[12px] font-medium text-text-2 transition-colors hover:text-text">
-                    Upload file
-                    <input
-                      type="file"
-                      className="hidden"
-                      onChange={(e) => createFileSkill(e.currentTarget.files, false)}
-                    />
-                  </label>
-                  <label className="cursor-pointer rounded-[7px] border border-border px-2.5 py-1 text-[12px] font-medium text-text-2 transition-colors hover:text-text">
-                    Upload folder
-                    <input
-                      type="file"
-                      multiple
-                      // @ts-expect-error webkitdirectory is the browser folder-upload API.
-                      webkitdirectory=""
-                      className="hidden"
-                      onChange={(e) => createFileSkill(e.currentTarget.files, true)}
-                    />
-                  </label>
-                </div>
-              </div>
-
               {/* Per-provider skills */}
               <div>
                 <label className="block text-[13px] font-medium text-text mb-2">
@@ -559,118 +364,44 @@ export function AbComparisonNewPane({
                           ? `Comparison ${index + 1}: ${option.providerName}`
                           : `Comparison ${index + 1}`}
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        {SKILLS_REGISTRY.map((skill) => {
-                          const active = option.skillIds.includes(skill.id);
-                          return (
-                            <button
-                              key={skill.id}
-                              type="button"
-                              onClick={() => {
-                                const next = active
-                                  ? option.skillIds.filter((id) => id !== skill.id)
-                                  : [...option.skillIds, skill.id];
-                                updateOptionSkills(index, next);
-                              }}
-                              className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium transition-colors ${
-                                active
-                                  ? 'border-orange bg-orange/8 text-text'
-                                  : 'border-border text-text-2 hover:text-text'
-                              }`}
-                            >
-                              {skill.title}
-                            </button>
-                          );
-                        })}
-                      </div>
-
                       {skillLibraryQuery.data && skillLibraryQuery.data.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          <p className="text-[12px] font-medium text-text">
-                            Reusable library skills
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {skillLibraryQuery.data.map((skill) => {
-                              const versionId = skill.latestVersionId;
-                              if (!versionId) return null;
-                              const active = (option.skillVersionIds ?? []).includes(versionId);
-                              return (
-                                <button
-                                  key={skill.id}
-                                  type="button"
-                                  onClick={() => {
-                                    const current = option.skillVersionIds ?? [];
-                                    const next = active
-                                      ? current.filter((id) => id !== versionId)
-                                      : [...current, versionId];
-                                    updateOptionSkillVersions(index, next);
-                                  }}
-                                  className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium transition-colors ${
-                                    active
-                                      ? 'border-green bg-green/8 text-text'
-                                      : 'border-border text-text-2 hover:text-text'
-                                  }`}
-                                >
-                                  {skill.name} v{skill.latestVersion ?? 1}
-                                </button>
-                              );
-                            })}
-                          </div>
+                        <div className="flex flex-wrap gap-2">
+                          {skillLibraryQuery.data.map((skill) => {
+                            const versionId = skill.latestVersionId;
+                            if (!versionId) return null;
+                            const active = (option.skillVersionIds ?? []).includes(versionId);
+                            return (
+                              <button
+                                key={skill.id}
+                                type="button"
+                                onClick={() => {
+                                  const current = option.skillVersionIds ?? [];
+                                  const next = active
+                                    ? current.filter((id) => id !== versionId)
+                                    : [...current, versionId];
+                                  updateOptionSkillVersions(index, next);
+                                }}
+                                className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                                  active
+                                    ? 'border-green bg-green/8 text-text'
+                                    : 'border-border text-text-2 hover:text-text'
+                                }`}
+                              >
+                                {skill.name} v{skill.latestVersion ?? 1}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
-                      {(option.customSkills ?? []).map((skill, skillIndex) => (
-                        <div
-                          key={skillIndex}
-                          className="mt-3 rounded-[8px] border border-border bg-surface p-3 space-y-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <input
-                              type="text"
-                              value={skill.title}
-                              onChange={(e) =>
-                                updateCustomSkill(index, skillIndex, {
-                                  title: e.target.value,
-                                })
-                              }
-                              placeholder="Skill name"
-                              className="min-w-0 flex-1 rounded-[7px] border border-border bg-bg px-2.5 py-1.5 text-[12px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeCustomSkill(index, skillIndex)}
-                              className="text-[11px] text-text-3 hover:text-red transition-colors"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                          <input
-                            type="file"
-                            accept=".md,text/markdown,text/plain"
-                            onChange={(e) =>
-                              readSkillFile(index, skillIndex, e.currentTarget.files?.[0])
-                            }
-                            className="block w-full text-[12px] text-text-3 file:mr-3 file:rounded-[7px] file:border file:border-border file:bg-surface-2 file:px-2.5 file:py-1 file:text-[12px] file:font-medium file:text-text-2"
-                          />
-                          <textarea
-                            value={skill.content}
-                            onChange={(e) =>
-                              updateCustomSkill(index, skillIndex, {
-                                content: e.target.value,
-                              })
-                            }
-                            placeholder="Paste markdown skill instructions…"
-                            rows={5}
-                            className="w-full resize-none rounded-[7px] border border-border bg-bg px-2.5 py-1.5 text-[12px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
-                          />
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => addCustomSkill(index)}
-                        className="mt-3 rounded-[7px] border border-border px-2.5 py-1 text-[12px] font-medium text-text-2 transition-colors hover:text-text"
-                      >
-                        Add custom skill
-                      </button>
+                      {!skillLibraryQuery.data || skillLibraryQuery.data.length === 0 ? (
+                        <p className="text-[12px] text-text-3">
+                          No skills in your library yet. Add some from the{' '}
+                          <a href="/skills" className="underline">
+                            Skills Library
+                          </a>
+                          .
+                        </p>
+                      ) : null}
                     </div>
                   ))}
                 </div>

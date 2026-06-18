@@ -88,14 +88,6 @@ export {
   LARRY_DEPLOY_DESCRIPTOR,
 } from './larry/definition';
 
-// Skills registry
-export {
-  SKILLS_REGISTRY,
-  getSkillById,
-  listSkills,
-  type SkillEntry,
-} from './skills-registry';
-
 // Agent templates registry
 export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
 

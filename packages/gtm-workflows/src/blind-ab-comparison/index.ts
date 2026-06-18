@@ -21,14 +21,7 @@ export type AbComparisonProviderOption = {
   providerName: string;
   providerPlugin: string;
   model?: string;
-  skillIds: string[];
-  customSkills?: AbComparisonCustomSkill[];
   skillVersionIds?: string[];
-};
-
-export type AbComparisonCustomSkill = {
-  title: string;
-  content: string;
 };
 
 export type AbComparisonInput = {

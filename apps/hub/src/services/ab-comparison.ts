@@ -1,5 +1,4 @@
 import { getLogger } from '@intx/log';
-import { getSkillById } from '@workbench/agents';
 import { runSingleTurnAgent } from '../lib/inference';
 import { resolveSkillVersionPrompt } from './skill-library';
 import type { RepoStore } from '@intx/hub-sessions';
@@ -31,12 +30,6 @@ async function buildBranchSystemPrompt(
   if (systemPrompt?.trim()) {
     sections.push(systemPrompt.trim());
   }
-  for (const skillId of option.skillIds) {
-    const skill = getSkillById(skillId);
-    if (skill) {
-      sections.push(`Skill: ${skill.title}\n\n${skill.content}`);
-    }
-  }
   const skillVersionPrompts = await Promise.all(
     (option.skillVersionIds ?? []).map((versionId) =>
       resolveSkillVersionPrompt(db, repoStore, tenantId, versionId).then((prompt) => {
@@ -46,13 +39,6 @@ async function buildBranchSystemPrompt(
     )
   );
   sections.push(...skillVersionPrompts);
-  for (const skill of option.customSkills ?? []) {
-    const title = skill.title.trim();
-    const content = skill.content.trim();
-    if (title && content) {
-      sections.push(`Skill: ${title}\n\n${content}`);
-    }
-  }
   return sections.join('\n\n---\n\n');
 }
 
@@ -139,7 +125,13 @@ export async function runAbComparisonExecution(
 
       const output = await runSingleTurnAgent(
         source,
-        await buildBranchSystemPrompt(db, repoStore, userContext.tenantId, branch.option, systemPrompt),
+        await buildBranchSystemPrompt(
+          db,
+          repoStore,
+          userContext.tenantId,
+          branch.option,
+          systemPrompt
+        ),
         userMessage,
         `ab-compare-${workflowId}`,
         undefined,

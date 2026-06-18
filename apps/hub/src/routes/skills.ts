@@ -1,6 +1,9 @@
 import { Hono, type Context } from 'hono';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { HubDb } from '../db';
+import { schema } from '../db';
 import type { AssetService, RepoStore } from '@intx/hub-sessions';
+import { AssetServiceError } from '@intx/hub-sessions';
 import { getRequestedUserContext } from '../services/workflow-orchestration';
 import {
   SkillLibraryError,
@@ -66,7 +69,12 @@ export function createSkillsRouter(
     );
     if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
-    const preview = await getSkillVersionPreview(db, repoStore, context.tenantId, c.req.param('id'));
+    const preview = await getSkillVersionPreview(
+      db,
+      repoStore,
+      context.tenantId,
+      c.req.param('id')
+    );
     if (!preview) return c.json({ error: 'Skill version not found' }, 404);
     return c.json(preview);
   });
@@ -144,6 +152,65 @@ export function createSkillsRouter(
     } catch (err) {
       return errorResponse(c, err);
     }
+  });
+
+  router.post('/agents/:agentId/skills/:skillId', async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get('userId'),
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
+
+    const agentId = c.req.param('agentId');
+    const skillId = c.req.param('skillId');
+
+    const latestVersion = await db.query.skillVersion.findFirst({
+      where: eq(schema.skillVersion.skillId, skillId),
+      orderBy: [desc(schema.skillVersion.version)],
+    });
+    if (!latestVersion) return c.json({ error: 'Skill not found' }, 404);
+
+    try {
+      const agentAsset = await assetService.attachAsset({
+        agentId,
+        assetId: latestVersion.assetId,
+        ref: 'refs/heads/main',
+      });
+      return c.json({ agentAsset }, 201);
+    } catch (err) {
+      if (err instanceof AssetServiceError && err.reason === 'duplicate_attachment') {
+        return c.json({ error: 'Skill already attached to this agent' }, 409);
+      }
+      throw err;
+    }
+  });
+
+  router.delete('/agents/:agentId/skills/:skillId', async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get('userId'),
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
+
+    const agentId = c.req.param('agentId');
+    const skillId = c.req.param('skillId');
+
+    const versions = await db.query.skillVersion.findMany({
+      where: eq(schema.skillVersion.skillId, skillId),
+    });
+    if (versions.length === 0) return c.json({ error: 'Skill not found' }, 404);
+
+    const assetIds = versions.map((v) => v.assetId);
+    const deleted = await db
+      .delete(schema.agentAsset)
+      .where(and(eq(schema.agentAsset.agentId, agentId), inArray(schema.agentAsset.assetId, assetIds)))
+      .returning();
+    if (deleted.length === 0) return c.json({ error: 'Skill not attached to this agent' }, 404);
+    return c.json({ ok: true });
   });
 
   return router;
