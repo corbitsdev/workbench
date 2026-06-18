@@ -2,10 +2,8 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { BookOpen, Plus, Search, X } from 'lucide-react';
-import { useSkillDetail, useSkillLibrary, type SkillLibraryItem } from '../hooks/use-workflow';
+import { useSkillLibrary, type SkillLibraryItem } from '../hooks/use-workflow';
 import { getMe } from '../lib/hub-api';
-
-type SelectedSkill = { kind: 'library'; skill: SkillLibraryItem };
 
 function LibraryCard({ skill, onSelect }: { skill: SkillLibraryItem; onSelect: () => void }) {
   return (
@@ -32,11 +30,8 @@ export function SkillsLibrary() {
   const meQuery = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: 5 * 60_000 });
   const tenantId = meQuery.data?.personalTenantId ?? null;
   const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState<SelectedSkill | null>(null);
 
   const skillsQuery = useSkillLibrary(tenantId);
-  const selectedSkillId = selected?.kind === 'library' ? selected.skill.id : null;
-  const skillDetailQuery = useSkillDetail(selectedSkillId, tenantId);
 
   const filteredLibrary = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -47,10 +42,6 @@ export function SkillsLibrary() {
         (skill.displayName ?? '').toLowerCase().includes(q)
     );
   }, [query, skillsQuery.data]);
-
-  const selectLibrary = (skill: SkillLibraryItem) => {
-    setSelected({ kind: 'library', skill });
-  };
 
   return (
     <div className="flex h-full overflow-hidden bg-bg">
@@ -100,7 +91,11 @@ export function SkillsLibrary() {
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {filteredLibrary.map((skill) => (
-                <LibraryCard key={skill.id} skill={skill} onSelect={() => selectLibrary(skill)} />
+                <LibraryCard
+                  key={skill.id}
+                  skill={skill}
+                  onSelect={() => navigate(`/skills/${skill.id}`)}
+                />
               ))}
             </div>
             {!skillsQuery.isLoading && filteredLibrary.length === 0 && (
@@ -118,54 +113,6 @@ export function SkillsLibrary() {
           </section>
         </div>
       </div>
-
-      {selected && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(0,0,0,0.55)] p-4 backdrop-blur-[2px]">
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
-          >
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div>
-                <p className="text-[16px] font-bold text-text">
-                  {selected.skill.displayName ?? selected.skill.name}
-                </p>
-                <p className="text-[12px] text-text-3">{selected.skill.name}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                aria-label="Close"
-                className="grid h-8 w-8 place-items-center rounded-[9px] border border-border text-text-2 hover:text-text"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-              {skillDetailQuery.isLoading && <p className="text-[12px] text-text-3">Loading...</p>}
-              {skillDetailQuery.data && (
-                <div className="space-y-3">
-                  {skillDetailQuery.data.files.map((file) => (
-                    <div key={file.path} className="rounded-[8px] border border-border bg-bg p-3">
-                      <p className="mb-2 break-all font-mono text-[11px] text-text-3">
-                        {file.path}
-                      </p>
-                      {file.content !== undefined ? (
-                        <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-text-2">
-                          {file.content}
-                        </pre>
-                      ) : (
-                        <p className="text-[12px] text-text-3">Stored-only asset.</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

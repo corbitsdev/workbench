@@ -9,6 +9,7 @@ import {
   SkillLibraryError,
   createSkill,
   updateSkill,
+  deleteSkill,
   filesFromZip,
   getSkillAsset,
   getSkillContent,
@@ -148,6 +149,22 @@ export function createSkillsRouter(
         files: bundleFiles,
       });
       return c.json({ skill }, 201);
+    } catch (err) {
+      return errorResponse(c, err);
+    }
+  });
+
+  router.delete('/skills/:assetId', async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get('userId'),
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
+    try {
+      await deleteSkill(db, context.tenantId, c.req.param('assetId'), context.principalId);
+      return c.json({ ok: true });
     } catch (err) {
       return errorResponse(c, err);
     }

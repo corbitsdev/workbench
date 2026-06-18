@@ -310,6 +310,26 @@ export function buildSkillTree(
   return files;
 }
 
+export async function deleteSkill(
+  db: HubDb,
+  tenantId: string,
+  assetId: string,
+  principalId: string
+): Promise<void> {
+  const row = await db.query.asset.findFirst({
+    where: and(
+      eq(intxSchema.asset.id, assetId),
+      eq(intxSchema.asset.tenantId, tenantId),
+      eq(intxSchema.asset.kind, 'skill')
+    ),
+  });
+  if (!row) throw new SkillLibraryError('Skill not found', 404);
+  if (row.creatorPrincipalId !== principalId) {
+    throw new SkillLibraryError('You do not have permission to delete this skill', 403);
+  }
+  await db.delete(intxSchema.asset).where(eq(intxSchema.asset.id, assetId));
+}
+
 export async function listSkills(db: HubDb, tenantId: string): Promise<SkillItem[]> {
   const rows = await db
     .select({

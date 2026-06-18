@@ -9,6 +9,7 @@ import Settings from './pages/Settings';
 import GammaTemplates from './pages/GammaTemplates';
 import { SkillsLibrary } from './pages/SkillsLibrary';
 import { SkillsNew } from './pages/SkillsNew';
+import { SkillDetail } from './pages/SkillDetail';
 
 function ProtectedLayout() {
   const { session } = useAuth();
@@ -52,6 +53,7 @@ export const router = createBrowserRouter([
           { path: '/settings/templates', element: <GammaTemplates /> },
           { path: '/skills', element: <SkillsLibrary /> },
           { path: '/skills/new', element: <SkillsNew /> },
+          { path: '/skills/:id', element: <SkillDetail /> },
           { path: '/workbenches/:slug', element: <WorkbenchHome /> },
         ],
       },

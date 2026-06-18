@@ -556,6 +556,24 @@ export function useCreateSkill() {
   });
 }
 
+export function useDeleteSkill() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { assetId: string; tenantId?: string | null }) => {
+      await api<unknown>(
+        'DELETE',
+        `/skills/${body.assetId}${body.tenantId ? `?tenantId=${encodeURIComponent(body.tenantId)}` : ''}`
+      );
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['skills', variables.tenantId ?? null] });
+      queryClient.removeQueries({
+        queryKey: ['skill', variables.assetId, variables.tenantId ?? null],
+      });
+    },
+  });
+}
+
 export function useCreateWorkflow() {
   const queryClient = useQueryClient();
   return useMutation({
