@@ -43,12 +43,40 @@ const mockListSkills = mock(() =>
 const mockGetSkillAsset = mock(() => Promise.resolve(null));
 const mockGetSkillContent = mock(() => Promise.resolve([{ path: 'SKILL.md', content: '# Hi' }]));
 
+const mockListSkillVersions = mock(() =>
+  Promise.resolve([
+    {
+      sha: 'abc1234def',
+      shortSha: 'abc1234',
+      version: 2,
+      message: 'Edit',
+      authorName: 'Mae',
+      createdAt: '2026-06-17T00:00:00.000Z',
+    },
+  ])
+);
+
+const mockRestoreSkillVersion = mock(() =>
+  Promise.resolve({
+    id: 'ast-1',
+    name: 'test-skill',
+    displayName: 'Test Skill',
+    createdAt: '2026-06-17T00:00:00.000Z',
+    updatedAt: '2026-06-17T02:00:00.000Z',
+    scope: 'tenant',
+    accessTenantId: 'tenant-1',
+    ownerUserId: 'user-1',
+  })
+);
+
 mock.module('../services/skill-library', () => ({
   listSkills: mockListSkills,
   getSkillAsset: mockGetSkillAsset,
   getSkillContent: mockGetSkillContent,
   createSkill: mockCreateSkill,
   updateSkill: mockUpdateSkill,
+  listSkillVersions: mockListSkillVersions,
+  restoreSkillVersion: mockRestoreSkillVersion,
   filesFromZip: mock(() => Promise.resolve([])),
   SkillLibraryError: class SkillLibraryError extends Error {
     status: number;
@@ -162,6 +190,93 @@ describe('POST /skills (JSON create)', () => {
     const json = (await res.json()) as { skill: { id: string } };
     expect(json.skill.id).toBe('ast-1');
     expect(mockCreateSkill).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards the chosen access scope and owning user to createSkill', async () => {
+    mockCreateSkill.mockClear();
+    const app = buildApp(makeMockDb(), makeAssetService());
+    await app.fetch(
+      new Request('http://localhost/skills?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Private Skill', text: '# secret', scope: 'private' }),
+      })
+    );
+    const arg = mockCreateSkill.mock.calls[0]?.[3] as { scope: string; ownerUserId: string };
+    expect(arg.scope).toBe('private');
+    expect(arg.ownerUserId).toBe('user-1');
+  });
+
+  it('defaults an unknown scope to tenant-wide', async () => {
+    mockCreateSkill.mockClear();
+    const app = buildApp(makeMockDb(), makeAssetService());
+    await app.fetch(
+      new Request('http://localhost/skills?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Open Skill', text: '# open', scope: 'nonsense' }),
+      })
+    );
+    const arg = mockCreateSkill.mock.calls[0]?.[3] as { scope: string };
+    expect(arg.scope).toBe('tenant');
+  });
+});
+
+describe('GET /skills/:assetId/versions', () => {
+  it('returns version history for a visible skill', async () => {
+    mockGetSkillAsset.mockImplementation(() =>
+      Promise.resolve({
+        id: 'ast-1',
+        name: 'test-skill',
+        displayName: 'Test Skill',
+        createdAt: '2026-06-17T00:00:00.000Z',
+        updatedAt: '2026-06-17T00:00:00.000Z',
+      })
+    );
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills/ast-1/versions?tenantId=tenant-1')
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { versions: { shortSha: string }[] };
+    expect(json.versions[0]?.shortSha).toBe('abc1234');
+    mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
+  });
+
+  it('returns 404 when the skill is not visible', async () => {
+    mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills/ast-x/versions?tenantId=tenant-1')
+    );
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /skills/:assetId/restore', () => {
+  it('restores a version and returns the refreshed skill', async () => {
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills/ast-1/restore?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sha: 'abc1234def' }),
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(mockRestoreSkillVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 400 when sha is missing', async () => {
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills/ast-1/restore?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+    );
+    expect(res.status).toBe(400);
   });
 
   it('returns 400 when name is missing', async () => {

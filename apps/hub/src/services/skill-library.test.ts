@@ -7,7 +7,42 @@ import {
   isSkillVisible,
   SkillLibraryError,
   toAssetName,
+  toVersionEntries,
 } from './skill-library';
+
+describe('toVersionEntries', () => {
+  const commits = [
+    {
+      oid: 'cccccccdef',
+      commit: { message: 'Update guide\n', author: { name: 'Mae', timestamp: 1700000200 } },
+    },
+    {
+      oid: 'bbbbbbbdef',
+      commit: { message: 'Edit\n', author: { name: 'Mae', timestamp: 1700000100 } },
+    },
+    {
+      oid: 'aaaaaaadef',
+      commit: { message: 'Add skill\n', author: { name: 'Mae', timestamp: 1700000000 } },
+    },
+  ];
+
+  it('numbers oldest commit v1 and newest highest', () => {
+    const entries = toVersionEntries(commits);
+    expect(entries.map((e) => e.version)).toEqual([3, 2, 1]);
+    expect(entries[2]?.message).toBe('Add skill');
+  });
+
+  it('exposes a 7-character short sha and ISO timestamp', () => {
+    const [latest] = toVersionEntries(commits);
+    expect(latest?.shortSha).toBe('ccccccc');
+    expect(latest?.sha).toBe('cccccccdef');
+    expect(latest?.createdAt).toBe(new Date(1700000200 * 1000).toISOString());
+  });
+
+  it('returns an empty list for no commits', () => {
+    expect(toVersionEntries([])).toEqual([]);
+  });
+});
 
 describe('isSkillVisible', () => {
   const viewer = { ancestorTenantIds: ['workbench-1', 'org-1', 'root-1'], userId: 'usr-me' };
