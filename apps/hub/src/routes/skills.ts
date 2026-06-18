@@ -13,9 +13,17 @@ import {
   filesFromZip,
   getSkillAsset,
   getSkillContent,
+  listShareTargets,
   listSkills,
+  listSkillVersions,
+  restoreSkillVersion,
+  type SkillAccessScope,
   type SkillBundleFileInput,
 } from '../services/skill-library';
+
+function parseScope(value: unknown): SkillAccessScope {
+  return value === 'private' ? 'private' : 'tenant';
+}
 
 function errorResponse(c: Context, err: unknown) {
   if (err instanceof SkillLibraryError) {
@@ -33,12 +41,16 @@ function readString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+function toActor(context: { tenantId: string; principalId: string }, userId: string) {
+  return { tenantId: context.tenantId, userId, principalId: context.principalId };
+}
+
 export function createSkillsRouter(
   db: HubDb,
   assetService: AssetService,
   repoStore: RepoStore
-): Hono<{ Variables: { userId: string } }> {
-  const router = new Hono<{ Variables: { userId: string } }>();
+): Hono<{ Variables: { userId: string; userName: string } }> {
+  const router = new Hono<{ Variables: { userId: string; userName: string } }>();
 
   router.get('/skills', async (c) => {
     const { context, forbidden } = await getRequestedUserContext(
@@ -48,7 +60,21 @@ export function createSkillsRouter(
     );
     if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
-    return c.json({ skills: await listSkills(db, context.tenantId) });
+    const skills = await listSkills(db, { tenantId: context.tenantId, userId: c.get('userId') });
+    return c.json({ skills });
+  });
+
+  // Registered before /skills/:assetId so "share-targets" is not captured as an id.
+  router.get('/skills/share-targets', async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get('userId'),
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
+    const targets = await listShareTargets(db, c.get('userId'), context.tenantId);
+    return c.json({ targets });
   });
 
   router.get('/skills/:assetId', async (c) => {
@@ -59,10 +85,63 @@ export function createSkillsRouter(
     );
     if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
-    const skill = await getSkillAsset(db, context.tenantId, c.req.param('assetId'));
+    const skill = await getSkillAsset(
+      db,
+      { tenantId: context.tenantId, userId: c.get('userId') },
+      c.req.param('assetId')
+    );
     if (!skill) return c.json({ error: 'Skill not found' }, 404);
     const files = await getSkillContent(repoStore, skill.id, skill.name);
     return c.json({ skill, files });
+  });
+
+  router.get('/skills/:assetId/versions', async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get('userId'),
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
+    const skill = await getSkillAsset(
+      db,
+      { tenantId: context.tenantId, userId: c.get('userId') },
+      c.req.param('assetId')
+    );
+    if (!skill) return c.json({ error: 'Skill not found' }, 404);
+    const limit = Number.parseInt(c.req.query('limit') ?? '', 10);
+    const offset = Number.parseInt(c.req.query('offset') ?? '', 10);
+    const page = await listSkillVersions(repoStore, skill.id, {
+      limit: Number.isNaN(limit) ? undefined : limit,
+      offset: Number.isNaN(offset) ? undefined : offset,
+    });
+    return c.json(page);
+  });
+
+  router.post('/skills/:assetId/restore', async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get('userId'),
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      const sha = readString(body.sha)?.trim() ?? '';
+      if (!sha) throw new SkillLibraryError('Version sha is required');
+      const skill = await restoreSkillVersion(
+        assetService,
+        db,
+        repoStore,
+        toActor(context, c.get('userId')),
+        c.req.param('assetId'),
+        sha
+      );
+      return c.json({ skill });
+    } catch (err) {
+      return errorResponse(c, err);
+    }
   });
 
   router.post('/skills', async (c) => {
@@ -85,7 +164,7 @@ export function createSkillsRouter(
 
         if (existingAssetId) {
           if (!text) throw new SkillLibraryError('Skill text is required');
-          const skill = await updateSkill(assetService, db, context, {
+          const skill = await updateSkill(assetService, db, toActor(context, c.get('userId')), {
             assetId: existingAssetId,
             description,
             files: [textFile('SKILL.md', text)],
@@ -99,6 +178,9 @@ export function createSkillsRouter(
           name,
           description,
           files: [textFile('SKILL.md', text)],
+          scope: parseScope(body.scope),
+          ownerUserId: c.get('userId'),
+          ownerName: c.get('userName'),
         });
         return c.json({ skill }, 201);
       }
@@ -134,7 +216,7 @@ export function createSkillsRouter(
       }
 
       if (existingAssetId) {
-        const skill = await updateSkill(assetService, db, context, {
+        const skill = await updateSkill(assetService, db, toActor(context, c.get('userId')), {
           assetId: existingAssetId,
           description,
           files: bundleFiles,
@@ -147,6 +229,9 @@ export function createSkillsRouter(
         name,
         description,
         files: bundleFiles,
+        scope: parseScope(body.scope),
+        ownerUserId: c.get('userId'),
+        ownerName: c.get('userName'),
       });
       return c.json({ skill }, 201);
     } catch (err) {
@@ -163,13 +248,7 @@ export function createSkillsRouter(
     if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
     try {
-      await deleteSkill(
-        db,
-        repoStore,
-        context.tenantId,
-        c.req.param('assetId'),
-        context.principalId
-      );
+      await deleteSkill(db, repoStore, toActor(context, c.get('userId')), c.req.param('assetId'));
       return c.json({ ok: true });
     } catch (err) {
       return errorResponse(c, err);
@@ -188,14 +267,14 @@ export function createSkillsRouter(
     const agentId = c.req.param('agentId');
     const assetId = c.req.param('assetId');
 
-    const asset = await db.query.asset.findFirst({
-      where: and(
-        eq(intxSchema.asset.id, assetId),
-        eq(intxSchema.asset.tenantId, context.tenantId),
-        eq(intxSchema.asset.kind, 'skill')
-      ),
-    });
-    if (!asset) return c.json({ error: 'Skill not found' }, 404);
+    // Gate on the same visibility rule as reads, so a private skill the caller
+    // cannot see can't be attached to (and read through) an agent.
+    const skill = await getSkillAsset(
+      db,
+      { tenantId: context.tenantId, userId: c.get('userId') },
+      assetId
+    );
+    if (!skill) return c.json({ error: 'Skill not found' }, 404);
 
     try {
       const agentAsset = await assetService.attachAsset({
@@ -224,14 +303,14 @@ export function createSkillsRouter(
     const agentId = c.req.param('agentId');
     const assetId = c.req.param('assetId');
 
-    const asset = await db.query.asset.findFirst({
-      where: and(
-        eq(intxSchema.asset.id, assetId),
-        eq(intxSchema.asset.tenantId, context.tenantId),
-        eq(intxSchema.asset.kind, 'skill')
-      ),
-    });
-    if (!asset) return c.json({ error: 'Skill not found' }, 404);
+    // Gate on the same visibility rule as reads, so a private skill the caller
+    // cannot see can't be attached to (and read through) an agent.
+    const skill = await getSkillAsset(
+      db,
+      { tenantId: context.tenantId, userId: c.get('userId') },
+      assetId
+    );
+    if (!skill) return c.json({ error: 'Skill not found' }, 404);
 
     // AssetService has no detachAsset method; delete the agentAsset row directly.
     const deleted = await db

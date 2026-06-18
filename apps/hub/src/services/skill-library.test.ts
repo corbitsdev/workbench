@@ -3,10 +3,150 @@ import JSZip from 'jszip';
 import {
   buildSkillBundle,
   buildSkillTree,
+  canManageSkill,
   filesFromZip,
+  isSkillVisible,
   SkillLibraryError,
   toAssetName,
+  toVersionEntries,
 } from './skill-library';
+
+describe('canManageSkill', () => {
+  it('lets the recorded owner manage, by stable user id', () => {
+    expect(
+      canManageSkill(
+        { ownerUserId: 'usr-me', creatorPrincipalId: 'prn-other' },
+        { userId: 'usr-me', principalId: 'prn-mine' }
+      )
+    ).toBe(true);
+  });
+
+  it('blocks a non-owner even when their per-tenant principal differs from the creator', () => {
+    expect(
+      canManageSkill(
+        { ownerUserId: 'usr-owner', creatorPrincipalId: 'prn-owner' },
+        { userId: 'usr-me', principalId: 'prn-mine' }
+      )
+    ).toBe(false);
+  });
+
+  it('owner check ignores principal id (shared skill managed from another tenant)', () => {
+    // Same user, different per-tenant principal than the creator — still owns it.
+    expect(
+      canManageSkill(
+        { ownerUserId: 'usr-me', creatorPrincipalId: 'prn-in-creating-tenant' },
+        { userId: 'usr-me', principalId: 'prn-in-viewing-tenant' }
+      )
+    ).toBe(true);
+  });
+
+  it('falls back to creator principal for legacy rows with no access entry', () => {
+    expect(
+      canManageSkill(
+        { ownerUserId: null, creatorPrincipalId: 'prn-mine' },
+        { userId: 'usr-me', principalId: 'prn-mine' }
+      )
+    ).toBe(true);
+    expect(
+      canManageSkill(
+        { ownerUserId: null, creatorPrincipalId: 'prn-other' },
+        { userId: 'usr-me', principalId: 'prn-mine' }
+      )
+    ).toBe(false);
+  });
+
+  it('denies a legacy row whose creator principal is null', () => {
+    expect(
+      canManageSkill(
+        { ownerUserId: null, creatorPrincipalId: null },
+        { userId: 'usr-me', principalId: 'prn-mine' }
+      )
+    ).toBe(false);
+  });
+});
+
+describe('toVersionEntries', () => {
+  const commits = [
+    {
+      oid: 'cccccccdef',
+      commit: { message: 'Update guide\n', author: { name: 'Mae', timestamp: 1700000200 } },
+    },
+    {
+      oid: 'bbbbbbbdef',
+      commit: { message: 'Edit\n', author: { name: 'Mae', timestamp: 1700000100 } },
+    },
+    {
+      oid: 'aaaaaaadef',
+      commit: { message: 'Add skill\n', author: { name: 'Mae', timestamp: 1700000000 } },
+    },
+  ];
+
+  it('numbers oldest commit v1 and newest highest', () => {
+    const entries = toVersionEntries(commits);
+    expect(entries.map((e) => e.version)).toEqual([3, 2, 1]);
+    expect(entries[2]?.message).toBe('Add skill');
+  });
+
+  it('exposes a 7-character short sha and ISO timestamp', () => {
+    const [latest] = toVersionEntries(commits);
+    expect(latest?.shortSha).toBe('ccccccc');
+    expect(latest?.sha).toBe('cccccccdef');
+    expect(latest?.createdAt).toBe(new Date(1700000200 * 1000).toISOString());
+  });
+
+  it('returns an empty list for no commits', () => {
+    expect(toVersionEntries([])).toEqual([]);
+  });
+});
+
+describe('isSkillVisible', () => {
+  const viewer = { ancestorTenantIds: ['workbench-1', 'org-1', 'root-1'], userId: 'usr-me' };
+
+  it('hides skills whose tenant is outside the viewer ancestor chain', () => {
+    expect(
+      isSkillVisible(
+        { assetTenantId: 'other-workbench', scope: 'tenant', ownerUserId: 'usr-them' },
+        viewer
+      )
+    ).toBe(false);
+  });
+
+  it('shows tenant-scoped skills shared at any ancestor level', () => {
+    expect(
+      isSkillVisible({ assetTenantId: 'org-1', scope: 'tenant', ownerUserId: 'usr-them' }, viewer)
+    ).toBe(true);
+  });
+
+  it('treats a missing access row as tenant-wide (legacy behaviour)', () => {
+    expect(isSkillVisible({ assetTenantId: 'org-1', scope: null, ownerUserId: null }, viewer)).toBe(
+      true
+    );
+  });
+
+  it('shows a private skill only to its owner', () => {
+    expect(
+      isSkillVisible(
+        { assetTenantId: 'workbench-1', scope: 'private', ownerUserId: 'usr-me' },
+        viewer
+      )
+    ).toBe(true);
+    expect(
+      isSkillVisible(
+        { assetTenantId: 'workbench-1', scope: 'private', ownerUserId: 'usr-them' },
+        viewer
+      )
+    ).toBe(false);
+  });
+
+  it('hides a private skill from the owner when its tenant is out of chain', () => {
+    expect(
+      isSkillVisible(
+        { assetTenantId: 'unrelated', scope: 'private', ownerUserId: 'usr-me' },
+        viewer
+      )
+    ).toBe(false);
+  });
+});
 
 function file(path: string, content: string, mimeType = 'text/markdown') {
   return { path, content: Buffer.from(content), mimeType };

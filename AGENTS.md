@@ -145,9 +145,21 @@ Keyless tools need no seed entry — say so in the package README.
 - All env var validation lives in `apps/hub/src/config.ts`.
 - Do not modify `eslint`, `prettier`, `tsconfig`, or `package.json` unless explicitly asked.
 
-## Types (packages/ only)
+## Types — arktype is the default (`packages/` and `apps/`)
 
-Prefer `type(...)` from `arktype` over `interface` or `type` aliases for new types in `packages/`. When you encounter a raw type outside tests or build output, upgrade it in a separate commit — check downstream `infer` and narrowing usage before upgrading. `interchange/` and `apps/` are out of scope.
+Define new types with `type(...)` from `arktype`, deriving the TypeScript type via
+`typeof Schema.infer`. This is the rule for new code in **both `packages/` and `apps/`**
+(`apps/hub` and `apps/web`) — prefer it over `interface` or bare `type` aliases.
+
+- **Parse at every trust boundary.** API responses, request bodies, anything typed
+  `unknown` — validate through an arktype schema, never cast (`as T`) untrusted data.
+- **Internal, already-trusted shapes** (React props, local state, values you just
+  constructed) may stay plain `type`/`interface` — arktype's runtime validation buys
+  nothing there. When a shape is also serialized across the API, define it once as an
+  arktype schema and share it.
+- When you touch a raw type that crosses a boundary, upgrade it to arktype — in a
+  separate commit, after checking downstream `infer`/narrowing usage.
+- `interchange/` (`@intx/*`) is out of scope — never modify upstream types.
 
 ## Dependency Injection
 

@@ -3,7 +3,13 @@ import { useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import Markdown from 'react-markdown';
 import { ChevronRight, File, Folder, Trash2, ArrowLeft, Code, Eye } from 'lucide-react';
-import { useSkillDetail, useDeleteSkill } from '../hooks/use-skills';
+import {
+  useSkillDetail,
+  useDeleteSkill,
+  useSkillVersions,
+  useRestoreSkillVersion,
+  SKILL_VERSION_PAGE_SIZE,
+} from '../hooks/use-skills';
 import { getMe } from '../lib/hub-api';
 
 type TreeNode =
@@ -102,9 +108,13 @@ export function SkillDetail() {
   const meQuery = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: 5 * 60_000 });
   const tenantId = meQuery.data?.personalTenantId ?? null;
   const detailQuery = useSkillDetail(id ?? null, tenantId);
+  const [versionLimit, setVersionLimit] = useState(SKILL_VERSION_PAGE_SIZE);
+  const versionsQuery = useSkillVersions(id ?? null, tenantId, versionLimit);
   const deleteMutation = useDeleteSkill();
+  const restoreMutation = useRestoreSkillVersion();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
 
@@ -114,6 +124,22 @@ export function SkillDetail() {
 
   const effectivePath = selectedPath ?? files[0]?.path ?? null;
   const selectedFile = files.find((f) => f.path === effectivePath) ?? null;
+
+  const versions = [...(versionsQuery.data?.versions ?? [])].sort((a, b) => b.version - a.version);
+  const totalVersions = versionsQuery.data?.total ?? 0;
+  const latestVersion = versions[0]?.version ?? null;
+
+  const handleRestore = (sha: string) => {
+    if (!id) return;
+    setRestoreError(null);
+    restoreMutation.mutate(
+      { assetId: id, sha, tenantId },
+      {
+        onError: (err) =>
+          setRestoreError(err instanceof Error ? err.message : 'Failed to restore version'),
+      }
+    );
+  };
 
   const handleDelete = async () => {
     if (!id) return;
@@ -202,7 +228,60 @@ export function SkillDetail() {
             </div>
           )}
 
-          <div className="relative flex-1 overflow-y-auto p-5">
+          <div className="relative flex-1 overflow-y-auto p-5 space-y-5">
+            {versions.length > 0 && (
+              <section className="rounded-[10px] border border-border bg-surface">
+                <div className="border-b border-border px-4 py-2">
+                  <p className="text-[13px] font-semibold text-text">Version history</p>
+                </div>
+                <ul className="divide-y divide-border">
+                  {versions.map((version) => {
+                    const isCurrent = version.version === latestVersion;
+                    return (
+                      <li
+                        key={version.sha}
+                        className="flex items-center justify-between gap-3 px-4 py-2 text-[12px]"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="font-medium text-text">v{version.version}</span>
+                          <span className="font-mono text-text-3">{version.shortSha}</span>
+                          <span className="truncate text-text-2">{version.authorName}</span>
+                          <span className="shrink-0 text-text-3">
+                            {new Date(version.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        {isCurrent ? (
+                          <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[11px] text-text-3">
+                            current
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleRestore(version.sha)}
+                            disabled={restoreMutation.isPending}
+                            className="shrink-0 rounded-[9px] border border-border px-2.5 py-1 text-[12px] text-text-2 hover:text-text disabled:opacity-50"
+                          >
+                            Restore
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {versions.length < totalVersions && (
+                  <button
+                    type="button"
+                    onClick={() => setVersionLimit((limit) => limit + SKILL_VERSION_PAGE_SIZE)}
+                    className="w-full border-t border-border px-4 py-2 text-[12px] text-text-3 hover:text-text"
+                  >
+                    Show older versions ({totalVersions - versions.length} more)
+                  </button>
+                )}
+                {restoreError && (
+                  <p className="px-4 py-2 text-[12px] text-red-500">{restoreError}</p>
+                )}
+              </section>
+            )}
             {selectedFile ? (
               <div className="rounded-[10px] border border-border bg-surface">
                 <div className="flex items-center justify-between border-b border-border px-4 py-2">

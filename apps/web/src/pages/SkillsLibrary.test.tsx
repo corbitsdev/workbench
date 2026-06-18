@@ -2,9 +2,14 @@
 import '../test-setup';
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, render, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+declare global {
+  interface Window {
+    happyDOM: { setURL: (url: string) => void };
+  }
+}
 
 mock.module('../lib/hub-api', () => ({
   getMe: () =>
@@ -17,6 +22,10 @@ mock.module('../lib/hub-api', () => ({
       provisioned: true,
       credentialResolved: true,
     }),
+}));
+
+mock.module('react-router', () => ({
+  useNavigate: () => mock(() => {}),
 }));
 
 import { SkillsLibrary } from './SkillsLibrary';
@@ -32,77 +41,41 @@ function jsonResponse(body: unknown): Response {
   } as unknown as Response;
 }
 
-const skillSummary = {
-  id: 'skill-1',
-  name: 'ASAP',
-  description: null,
-  visibility: 'workspace',
-  latestVersionId: 'sv-2',
-  latestVersion: 2,
-  source: 'folder',
-  fileCount: 2,
-  createdAt: '2026-06-17T00:00:00.000Z',
-  updatedAt: '2026-06-17T00:00:00.000Z',
-};
-
-const manifest = {
-  files: [
-    {
-      path: 'SKILL.md',
-      size: 12,
-      mimeType: 'text/markdown',
-      sha256: 'hash',
-      promptReadable: true,
-      executableLike: false,
-    },
-  ],
-  entrypointPath: 'SKILL.md',
-  totalSize: 12,
-  checksum: 'checksum',
-};
+const skills = [
+  {
+    id: 'skill-1',
+    name: 'asap',
+    displayName: 'ASAP',
+    createdAt: '2026-06-17T00:00:00.000Z',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+    scope: 'tenant',
+    accessTenantId: 'tenant-root',
+    ownerUserId: 'usr-1',
+    ownerName: 'Ada Lovelace',
+  },
+  {
+    id: 'skill-2',
+    name: 'private-one',
+    displayName: 'Private One',
+    createdAt: '2026-06-17T00:00:00.000Z',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+    scope: 'private',
+    accessTenantId: 'tenant-1',
+    ownerUserId: 'usr-2',
+    ownerName: 'Grace Hopper',
+  },
+];
 
 beforeEach(() => {
+  window.happyDOM.setURL('http://localhost/');
   globalThis.fetch = mock((url: string) => {
-    if (String(url).includes('/skill-versions/sv-2/preview')) {
+    if (String(url).includes('/skills/share-targets')) {
       return Promise.resolve(
-        jsonResponse({
-          version: {
-            id: 'sv-2',
-            skillId: 'skill-1',
-            version: 2,
-            entrypointPath: 'SKILL.md',
-            manifest,
-            checksum: 'checksum',
-            source: 'folder',
-            createdAt: '2026-06-17T00:00:00.000Z',
-          },
-          files: [{ path: 'SKILL.md', content: '# ASAP' }],
-        })
-      );
-    }
-    if (String(url).includes('/skills/skill-1')) {
-      return Promise.resolve(
-        jsonResponse({
-          skill: {
-            ...skillSummary,
-            versions: [
-              {
-                id: 'sv-2',
-                skillId: 'skill-1',
-                version: 2,
-                entrypointPath: 'SKILL.md',
-                manifest,
-                checksum: 'checksum',
-                source: 'folder',
-                createdAt: '2026-06-17T00:00:00.000Z',
-              },
-            ],
-          },
-        })
+        jsonResponse({ targets: [{ tenantId: 'tenant-root', name: 'Corbits' }] })
       );
     }
     if (String(url).includes('/skills')) {
-      return Promise.resolve(jsonResponse({ skills: [skillSummary] }));
+      return Promise.resolve(jsonResponse({ skills }));
     }
     return Promise.resolve(jsonResponse({}));
   }) as unknown as typeof fetch;
@@ -119,18 +92,19 @@ function renderPage() {
 }
 
 describe('SkillsLibrary', () => {
-  it('loads skill detail versions and previews a selected version', async () => {
-    const user = userEvent.setup();
+  it('shows owner and a resolved access label per skill', async () => {
     renderPage();
 
     await waitFor(() => expect(document.body.textContent).toContain('ASAP'));
-    await user.click(
-      [...document.querySelectorAll('button')].find((button) =>
-        button.textContent?.includes('ASAP')
-      ) as HTMLButtonElement
-    );
+    expect(document.body.textContent).toContain('Ada Lovelace');
+    expect(document.body.textContent).toContain('Corbits');
+  });
 
-    await waitFor(() => expect(document.body.textContent).toContain('v2 · folder · 1 files'));
-    await waitFor(() => expect(document.body.textContent).toContain('# ASAP'));
+  it('labels private skills as Private', async () => {
+    renderPage();
+
+    await waitFor(() => expect(document.body.textContent).toContain('Private One'));
+    expect(document.body.textContent).toContain('Grace Hopper');
+    expect(document.body.textContent).toContain('Private');
   });
 });

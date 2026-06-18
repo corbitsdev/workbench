@@ -250,37 +250,55 @@ branches on `agentId` to pick the resolver.
 
 ### Skill Library
 
-| Method   | Route                                     | Input                                                        | Output                              |
-| -------- | ----------------------------------------- | ------------------------------------------------------------ | ----------------------------------- |
-| `GET`    | `/skills`                                 | `?tenantId=...`                                              | `{ skills: SkillItem[] }`           |
-| `GET`    | `/skills/:assetId`                        | `?tenantId=...`                                              | `{ skill: SkillItem, files: SkillFile[] }` |
-| `POST`   | `/skills`                                 | JSON `{ name, text, description? }` or multipart files      | `{ skill: SkillItem }` 201/200      |
-| `DELETE` | `/skills/:assetId`                        | `?tenantId=...`                                              | `{ ok: true }` 200                  |
-| `POST`   | `/agents/:agentId/skills/:assetId`        | `?tenantId=...`                                              | `{ agentAsset }` 201                |
-| `DELETE` | `/agents/:agentId/skills/:assetId`        | `?tenantId=...`                                              | `{ ok: true }` 200                  |
+| Method   | Route                              | Input                                                                          | Output                                      |
+| -------- | ---------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------- |
+| `GET`    | `/skills`                          | `?tenantId=...`                                                                | `{ skills: SkillItem[] }` (access-filtered) |
+| `GET`    | `/skills/share-targets`            | `?tenantId=...`                                                                | `{ targets: { tenantId, name }[] }`         |
+| `GET`    | `/skills/:assetId`                 | `?tenantId=...`                                                                | `{ skill: SkillItem, files: SkillFile[] }`  |
+| `GET`    | `/skills/:assetId/versions`        | `?tenantId=...&limit=&offset=` (limit default 20, max 100)                     | `{ versions: SkillVersion[], total }`       |
+| `POST`   | `/skills`                          | JSON `{ name, text, description?, scope? }` or multipart files (`scope` field) | `{ skill: SkillItem }` 201/200              |
+| `POST`   | `/skills/:assetId/restore`         | JSON `{ sha }`                                                                 | `{ skill: SkillItem }` 200                  |
+| `DELETE` | `/skills/:assetId`                 | `?tenantId=...`                                                                | `{ ok: true }` 200                          |
+| `POST`   | `/agents/:agentId/skills/:assetId` | `?tenantId=...`                                                                | `{ agentAsset }` 201                        |
+| `DELETE` | `/agents/:agentId/skills/:assetId` | `?tenantId=...`                                                                | `{ ok: true }` 200                          |
 
-**`SkillItem`**: `{ id, name, displayName: string | null, createdAt, updatedAt }` — `name` is the kebab asset name; `displayName` is the human label entered at upload.
+**`SkillItem`**: `{ id, name, displayName: string | null, createdAt, updatedAt, scope: 'private' | 'tenant', accessTenantId: string, ownerUserId: string | null, ownerName: string | null }` — `name` is the kebab asset name; `displayName` is the human label; `scope`/`accessTenantId` describe sharing; `ownerName` is resolved by joining the `user` table on `owner_user_id`.
+
+**`SkillVersion`**: `{ sha, shortSha, version, message, authorName, createdAt }` — `version` is the sequential number (v1 = oldest); `shortSha` is the 7-char git oid.
 
 **`SkillFile`**: `{ path: string, content?: string }` — `content` is absent for binary files. `path` is relative to the `<assetName>/` prefix (e.g. `SKILL.md`, `examples/demo.md`).
+
+**Access metadata** — hub-owned `skill_access` table (`apps/hub/src/db/schema.ts`, migration `0026`): `{ assetId (PK), scope, ownerUserId, ownerPrincipalId, createdAt }`. No FK to `asset` (Interchange-owned), so `deleteSkill` clears the row explicitly. Types are defined with arktype (`skillItemSchema`, `skillVersionSchema`, `skillAccessScopeSchema`).
 
 **Service** — `apps/hub/src/services/skill-library.ts`:
 
 - `buildSkillBundle(files)` — validates paths (path traversal rejection, junk file filter), enforces 20 MB / 200 file limits, picks an entrypoint (`SKILL.md` preferred), computes a content checksum
 - `buildSkillTree(assetName, description, bundle, fileContents)` — maps bundle files to `<assetName>/` tree paths, synthesises YAML frontmatter for the entrypoint (required by Interchange's `skillKindHandler`)
-- `createSkill` — calls `AssetService.createAsset` then `populateAsset`; catches `AssetServiceError { reason: 'duplicate_asset' }` and re-raises as `SkillLibraryError` (409)
+- `isSkillVisible(row, viewer)` — pure access rule (ancestor-chain membership + tenant/legacy/private-owner); drives `listSkills`/`getSkillAsset` filtering
+- `canManageSkill(row, actor)` — pure ownership rule for delete/update/restore: stable user id when an access row exists, else the creator principal (legacy). `loadManageableSkill` resolves the asset across the ancestor chain and applies it (404 not-visible, 403 not-owned)
+- `listSkills`/`getSkillAsset` — take a `{ tenantId, userId }` viewer, join `skill_access` + `user`, filter via `getAncestorChain` + `isSkillVisible`
+- `listShareTargets(db, userId, tenantId)` — ancestor tenants the user is an active member of, closest first
+- `createSkill` — calls `AssetService.createAsset` then `populateAsset`, then writes the `skill_access` row; catches `AssetServiceError { reason: 'duplicate_asset' }` → `SkillLibraryError` (409)
+- `toVersionEntries(commits)` / `listSkillVersions` — git log → absolutely-numbered version entries (v1 = oldest), paginated (`{ versions, total }`, newest first); `SkillDetail` pages with a "Show older versions" control
+- `restoreSkillVersion` — reads the tree at a commit and re-commits it to `refs/heads/main` (creator-only)
 - `getSkillContent` — `git.walk` over `refs/heads/main`; returns `undefined` from `map` for directories (descent) and `null` only to hard-prune; strips frontmatter from `SKILL.md` before returning
-- `deleteSkill` — deletes `asset` row (cascades `agent_asset`), then `fs.rm` the git repo dir; logs but does not throw on fs failure
+- `deleteSkill` — deletes `asset` row (cascades `agent_asset`) and the `skill_access` row, then `fs.rm` the git repo dir; logs but does not throw on fs failure
 
 **Frontend** — `apps/web/src/hooks/use-skills.ts`:
 
-All skill hooks live here (`useSkillLibrary`, `useSkillDetail`, `useCreateSkill`, `useDeleteSkill`). `use-workflow.ts` re-exports them for backward compatibility. ArkType schemas validate API responses at the boundary.
+All skill hooks live here (`useSkillLibrary`, `useSkillDetail`, `useCreateSkill`, `useDeleteSkill`, `useSkillShareTargets`, `useSkillVersions`, `useRestoreSkillVersion`). `use-workflow.ts` re-exports them for backward compatibility. ArkType schemas validate API responses at the boundary; `useCreateSkill` threads the chosen `scope`.
 
 **Detail page** — `apps/web/src/pages/SkillDetail.tsx`:
 
 - Builds a `TreeNode` tree from the flat `files` array; renders a collapsible sidebar tree with `TreeItem`
 - Auto-selects the first file (`selectedPath ?? files[0]?.path`)
 - Renders `SKILL.md` through `react-markdown` with a source/preview toggle (bottom-left corner)
+- Version-history panel (`useSkillVersions`): newest-first list with `v{n}`, short sha, author, date; current version flagged, others offer Restore via `useRestoreSkillVersion`
 - Inline delete: "Delete" → confirm/cancel buttons → `mutateAsync` → navigate to `/skills` on success; surfaces errors inline without swallowing them
+
+**Upload page** — `apps/web/src/pages/SkillsNew.tsx`: a "Who can access this skill?" radio set (Just Me + each `useSkillShareTargets` tenant) threads `scope` + the target `tenantId` into create.
+
+**Library page** — `apps/web/src/pages/SkillsLibrary.tsx`: cards show owner, last-edited date, and an access label (`Private` or the resolved share-target tenant name).
 
 **Routing** — `/skills` (library), `/skills/new` (upload form), `/skills/:id` (detail + delete)
 
