@@ -434,7 +434,13 @@ export async function getSkillContent(
             // binary file — omit content
           }
         }
-        return { path: relativePath, content };
+        // Strip the Interchange-injected YAML frontmatter from the entrypoint
+        // file — it is an internal contract with the skillKindHandler, not user content.
+        const displayContent =
+          relativePath === 'SKILL.md' && content
+            ? content.replace(/^---[\s\S]*?---\n?/, '')
+            : content;
+        return { path: relativePath, content: displayContent };
       },
     });
     return (entries.filter(Boolean) as { path: string; content?: string }[]).sort((a, b) =>

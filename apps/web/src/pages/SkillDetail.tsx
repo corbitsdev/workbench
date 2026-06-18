@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronRight, File, Folder, Trash2, ArrowLeft } from 'lucide-react';
+import Markdown from 'react-markdown';
+import { ChevronRight, File, Folder, Trash2, ArrowLeft, Code, Eye } from 'lucide-react';
 import { useSkillDetail, useDeleteSkill } from '../hooks/use-workflow';
 import { getMe } from '../lib/hub-api';
 
@@ -104,6 +105,7 @@ export function SkillDetail() {
   const deleteMutation = useDeleteSkill();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [showSource, setShowSource] = useState(false);
 
   const skill = detailQuery.data?.skill;
   const files = detailQuery.data?.files ?? [];
@@ -190,17 +192,38 @@ export function SkillDetail() {
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto p-5">
+          <div className="relative flex-1 overflow-y-auto p-5">
             {selectedFile ? (
               <div className="rounded-[10px] border border-border bg-surface">
-                <div className="border-b border-border px-4 py-2">
+                <div className="flex items-center justify-between border-b border-border px-4 py-2">
                   <p className="font-mono text-[12px] text-text-3">{selectedFile.path}</p>
                 </div>
-                <div className="p-4">
+                <div className="p-5">
                   {selectedFile.content !== undefined ? (
-                    <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-text-2">
-                      {selectedFile.content}
-                    </pre>
+                    showSource ? (
+                      <pre className="whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-text-2">
+                        {selectedFile.content}
+                      </pre>
+                    ) : (
+                      <div
+                        className="prose prose-sm prose-invert max-w-none text-text-2
+                        [&_h1]:text-[20px] [&_h1]:font-bold [&_h1]:text-text [&_h1]:mb-3
+                        [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-text [&_h2]:mb-2 [&_h2]:mt-5
+                        [&_h3]:text-[14px] [&_h3]:font-semibold [&_h3]:text-text [&_h3]:mb-1.5 [&_h3]:mt-4
+                        [&_p]:text-[13px] [&_p]:leading-relaxed [&_p]:mb-3
+                        [&_ul]:pl-5 [&_ul]:mb-3 [&_li]:text-[13px] [&_li]:mb-1
+                        [&_ol]:pl-5 [&_ol]:mb-3
+                        [&_code]:font-mono [&_code]:text-[12px] [&_code]:bg-bg [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
+                        [&_pre]:bg-bg [&_pre]:rounded-[8px] [&_pre]:p-3 [&_pre]:overflow-x-auto [&_pre]:mb-3
+                        [&_pre_code]:bg-transparent [&_pre_code]:p-0
+                        [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-text-3
+                        [&_hr]:border-border [&_hr]:my-4
+                        [&_a]:text-orange [&_a]:no-underline hover:[&_a]:underline
+                        [&_strong]:text-text [&_strong]:font-semibold"
+                      >
+                        <Markdown>{selectedFile.content}</Markdown>
+                      </div>
+                    )
                   ) : (
                     <p className="text-[13px] text-text-3">Binary file — content not displayed.</p>
                   )}
@@ -208,6 +231,17 @@ export function SkillDetail() {
               </div>
             ) : (
               <p className="text-[13px] text-text-3">Select a file to view its contents.</p>
+            )}
+
+            {selectedFile?.content !== undefined && (
+              <button
+                type="button"
+                onClick={() => setShowSource((v) => !v)}
+                className="absolute bottom-9 left-9 flex items-center gap-1.5 rounded-[9px] border border-border bg-surface px-3 py-1.5 text-[12px] text-text-3 shadow-sm hover:text-text"
+              >
+                {showSource ? <Eye className="h-3.5 w-3.5" /> : <Code className="h-3.5 w-3.5" />}
+                {showSource ? 'Preview' : 'Source'}
+              </button>
             )}
           </div>
         </div>
