@@ -4,6 +4,13 @@ import React from 'react';
 
 GlobalRegistrator.register();
 
+// Happy DOM defaults to about:blank, leaving window.location.origin empty so any
+// code that resolves a same-origin URL (e.g. buildApiUrl's `new URL(path, origin)`)
+// throws "Invalid URL" at render time. Set a concrete origin once for all tests.
+(window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM.setURL(
+  'http://localhost/'
+);
+
 // framer-motion is not compatible with Happy DOM. Provide a complete mock here
 // (rather than per-test partial mocks of motion.div) so the mock is registered
 // once before any test file evaluates its component imports. Per-file partial

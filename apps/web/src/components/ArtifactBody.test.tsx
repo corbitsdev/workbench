@@ -121,7 +121,8 @@ describe('ArtifactBody rendering', () => {
       })
     );
     const link = screen.getByRole('link', { name: /download csv/i }) as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toBe('/api/v1/artifacts/art-9/download');
+    // buildApiUrl resolves to an absolute same-origin URL; assert the path suffix.
+    expect(link.getAttribute('href')).toMatch(/\/api\/v1\/artifacts\/art-9\/download$/);
   });
 
   it('renders reddit opportunity scan artifacts from JSON content', () => {

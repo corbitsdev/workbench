@@ -16,7 +16,7 @@ interface ChatLauncherContextValue {
   clearPendingMessage: () => void;
 }
 
-const ChatLauncherContext = createContext<ChatLauncherContextValue>({
+export const ChatLauncherContext = createContext<ChatLauncherContextValue>({
   hidden: false,
   setHidden: () => {},
   notifyProvisioned: () => {},
