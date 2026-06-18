@@ -23,6 +23,7 @@ export type AbComparisonProviderOption = {
   model?: string;
   skillIds: string[];
   customSkills?: AbComparisonCustomSkill[];
+  skillVersionIds?: string[];
 };
 
 export type AbComparisonCustomSkill = {

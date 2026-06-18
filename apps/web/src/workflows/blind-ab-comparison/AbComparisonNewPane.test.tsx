@@ -226,6 +226,98 @@ describe('AbComparisonNewPane', () => {
     ]);
   });
 
+  it('submits selected reusable skill versions per comparison', async () => {
+    globalThis.fetch = mock((url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      const entry: (typeof calls)[number] = { url: String(url), method };
+      if (typeof init?.body === 'string') entry.json = JSON.parse(init.body);
+      calls.push(entry);
+      if (String(url).includes('/workflows/credentials')) {
+        return Promise.resolve(
+          jsonResponse(true, [
+            {
+              id: 'cred-1',
+              name: 'OpenAI',
+              providerName: 'OpenAI',
+              providerPlugin: 'openai',
+              baseURL: 'https://api.openai.com/v1',
+              model: 'gpt-4o',
+            },
+            {
+              id: 'cred-2',
+              name: 'Anthropic',
+              providerName: 'Anthropic',
+              providerPlugin: 'anthropic',
+              baseURL: 'https://api.anthropic.com',
+              model: 'claude-sonnet-4',
+            },
+          ])
+        );
+      }
+      if (String(url).includes('/skills')) {
+        return Promise.resolve(
+          jsonResponse(true, {
+            skills: [
+              {
+                id: 'skill-1',
+                name: 'ASAP',
+                description: null,
+                visibility: 'workspace',
+                latestVersionId: 'sv-1',
+                latestVersion: 2,
+                createdAt: '2026-06-17T00:00:00.000Z',
+                updatedAt: '2026-06-17T00:00:00.000Z',
+              },
+            ],
+          })
+        );
+      }
+      if (String(url).includes('/workflows') && method === 'POST') {
+        return Promise.resolve(
+          jsonResponse(true, { id: 'wf-ab', status: 'pending', kind: 'blind-ab-comparison' }, 201)
+        );
+      }
+      return Promise.resolve(jsonResponse(true, {}));
+    }) as unknown as typeof fetch;
+
+    const user = userEvent.setup();
+    const onCreated = renderPane();
+    await waitFor(() => {
+      expect(document.querySelectorAll('select').length).toBeGreaterThanOrEqual(2);
+    });
+    const selects = document.querySelectorAll('select');
+    await user.selectOptions(selects[0] as HTMLSelectElement, 'cred-1');
+    await user.selectOptions(selects[1] as HTMLSelectElement, 'cred-2');
+    await user.click(nextButton());
+    await waitFor(() => expect(document.body.textContent).toContain('ASAP v2'));
+    await user.click(
+      [...document.querySelectorAll('button')].find(
+        (button) => button.textContent === 'ASAP v2'
+      ) as HTMLButtonElement
+    );
+    await user.click(nextButton());
+    await waitFor(() => {
+      expect(
+        document.querySelector('textarea[placeholder*="prompt you want to run"]')
+      ).not.toBeNull();
+    });
+    await user.type(
+      document.querySelector(
+        'textarea[placeholder*="prompt you want to run"]'
+      ) as HTMLTextAreaElement,
+      'Run this across providers'
+    );
+    await user.click(
+      [...document.querySelectorAll('button')].find((button) =>
+        /run comparison/i.test(button.textContent ?? '')
+      ) as HTMLButtonElement
+    );
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('wf-ab'));
+    const createCall = calls.find((c) => c.url.includes('/workflows') && c.method === 'POST');
+    const createJson = createCall?.json as { providers: Array<{ skillVersionIds?: string[] }> };
+    expect(createJson.providers[0].skillVersionIds).toEqual(['sv-1']);
+  });
+
   it('surfaces a server error when workflow creation fails', async () => {
     globalThis.fetch = mock((url: string, init?: RequestInit) => {
       const method = init?.method ?? 'GET';

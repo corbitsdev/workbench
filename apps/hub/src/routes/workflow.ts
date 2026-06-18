@@ -45,6 +45,7 @@ import {
   runResourceEnrichmentExport,
 } from '../services/resource-enrichment';
 import { runAbComparisonExecution, persistAbComparisonResults } from '../services/ab-comparison';
+import type { RepoStore } from '@intx/hub-sessions';
 import {
   RedditOpportunityScannerError,
   runRedditOpportunityAnalyze,
@@ -128,7 +129,10 @@ export function resolveResetStatus(status: string): string | null {
   return null;
 }
 
-export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: string } }> {
+export function createWorkflowRouter(
+  db: HubDb,
+  repoStore: RepoStore
+): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
   // ─── List available workflow types ───────────────────────────────
@@ -1665,6 +1669,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
 
       void runAbComparisonExecution(
         db,
+        repoStore,
         id,
         userContext,
         providers,

@@ -6,6 +6,7 @@ import { schema as intxSchema, createGrantStore, resolveInstanceSources } from '
 import { createApp } from '@intx/hub-api';
 import {
   createAgentRepoStore,
+  createAssetService,
   createHubSessionLookups,
   createHubSessionOrchestrator,
   createSessionService,
@@ -28,6 +29,7 @@ import { loadConfig } from './config';
 import { createSidecarConnectionRegistry } from './sidecar-connections';
 import { createWorkflowRouter } from './routes/workflow';
 import { createUploadsRouter } from './routes/uploads';
+import { createSkillsRouter } from './routes/skills';
 import { workflowRegistry } from '@workbench/workflow-core';
 import { createAgentProvisioningRouter } from './routes/agents';
 import {
@@ -189,16 +191,19 @@ log.info('Loaded signing key registry: active version {version}', {
 
 // ─── Agent repo store ──────────────────────────────────────────────
 
-const agentRepoStore = createAgentRepoStore({
+const repoStore = createAgentRepoStore({
   dataDir: hub.dataDir,
   signingKey: registry.active,
 });
+// ─── Skill asset substrate ─────────────────────────────────────────
+
+const assetService = createAssetService({ db, repoStore: repoStore.repoStore });
 
 // ─── Hub services ──────────────────────────────────────────────────
 
 const grantStore = createGrantStore(db);
 
-const lookups = createHubSessionLookups({ db, agentRepoStore });
+const lookups = createHubSessionLookups({ db, agentRepoStore: repoStore });
 
 const sidecarRouter = createSidecarRouter({
   hubPublicKey: hexEncode(registry.active.publicKey),
@@ -236,7 +241,7 @@ createHubSessionOrchestrator({
   db,
   eventCollectors,
   grantStore,
-  agentRepoStore,
+  agentRepoStore: repoStore,
 });
 
 // The orchestrator above only abandons event collectors on sidecar.disconnect;
@@ -256,7 +261,7 @@ registerDisconnectReconciler({ db, router: sidecarRouter });
 
 const rawSessionService = createSessionService({
   sidecarRouter,
-  agentRepoStore,
+  agentRepoStore: repoStore,
 });
 
 // Wrap launchSession so that Interchange's native instance-creation path
@@ -331,8 +336,8 @@ const hubApp = createApp({
   sessionService,
   eventCollectors,
   grantStore,
-  assetService: null,
-  repoStore: null,
+  assetService,
+  repoStore: repoStore.repoStore,
   sidecarWsHandler: upgradeWebSocket((_c) => {
     let handle: WsHandle;
     return {
@@ -530,7 +535,7 @@ v1.get('/me', async (c) => {
   });
 });
 
-v1.route('/', createWorkflowRouter(db));
+v1.route('/', createWorkflowRouter(db, repoStore.repoStore));
 v1.route(
   '/',
   createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors)
@@ -540,6 +545,7 @@ v1.route('/', createMembersRouter(db));
 v1.route('/', createGammaTemplatesRouter(db));
 v1.route('/', createApprovalsRouter(db));
 v1.route('/', createUploadsRouter(db));
+v1.route('/', createSkillsRouter(db, assetService, repoStore.repoStore));
 
 app.route('/api/v1', v1);
 

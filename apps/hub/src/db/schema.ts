@@ -21,6 +21,7 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 export const severity = ['low', 'medium', 'high', 'critical'] as const;
 export const artifactStatus = ['draft', 'approved', 'rejected'] as const;
 export const transcriptSource = ['paste', 'granola', 'artifact'] as const;
+export const skillVisibility = ['private', 'workspace'] as const;
 
 export const transcript = pgTable('transcript', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -45,6 +46,45 @@ export const upload = pgTable('upload', {
 });
 
 export type UploadRow = typeof upload.$inferSelect;
+
+export const skill = pgTable('skill', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: text('tenant_id').notNull(),
+  name: text('name').notNull(),
+  description: text('description'),
+  visibility: text('visibility', { enum: skillVisibility }).notNull().default('workspace'),
+  latestVersionId: uuid('latest_version_id'),
+  createdBy: text('created_by').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at')
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  archivedAt: timestamp('archived_at'),
+});
+
+export const skillVersion = pgTable(
+  'skill_version',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skillId: uuid('skill_id')
+      .notNull()
+      .references(() => skill.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    entrypointPath: text('entrypoint_path').notNull(),
+    assetId: uuid('asset_id').notNull(),
+    assetName: text('asset_name').notNull(),
+    manifest: jsonb('manifest').$type<Record<string, unknown>>().notNull(),
+    checksum: text('checksum').notNull(),
+    source: text('source').notNull().default('file'),
+    fileCount: integer('file_count').notNull().default(0),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => ({
+    skillVersionUniq: unique('skill_version_skill_id_version_uniq').on(t.skillId, t.version),
+  })
+);
 
 export const workflowRun = pgTable('workflow_run', {
   id: uuid('id').primaryKey().defaultRandom(),

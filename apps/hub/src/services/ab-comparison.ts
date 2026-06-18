@@ -1,6 +1,8 @@
 import { getLogger } from '@intx/log';
 import { getSkillById } from '@workbench/agents';
 import { runSingleTurnAgent } from '../lib/inference';
+import { resolveSkillVersionPrompt } from './skill-library';
+import type { RepoStore } from '@intx/hub-sessions';
 import type { InferenceSource } from '@intx/types/runtime';
 import type { HubDb } from '../db';
 import { workflowRun, artifact } from '../db/schema';
@@ -18,10 +20,13 @@ const log = getLogger(['ab-workflow']);
 const DEFAULT_INFERENCE_TIMEOUT_MS = 180_000;
 const MAX_CONCURRENT_BRANCHES = 3;
 
-function buildBranchSystemPrompt(
+async function buildBranchSystemPrompt(
+  db: HubDb,
+  repoStore: RepoStore,
+  tenantId: string,
   option: AbComparisonProviderOption,
   systemPrompt: string | undefined
-): string {
+): Promise<string> {
   const sections: string[] = [];
   if (systemPrompt?.trim()) {
     sections.push(systemPrompt.trim());
@@ -32,6 +37,15 @@ function buildBranchSystemPrompt(
       sections.push(`Skill: ${skill.title}\n\n${skill.content}`);
     }
   }
+  const skillVersionPrompts = await Promise.all(
+    (option.skillVersionIds ?? []).map((versionId) =>
+      resolveSkillVersionPrompt(db, repoStore, tenantId, versionId).then((prompt) => {
+        if (!prompt) throw new Error(`Skill version not found or inaccessible: ${versionId}`);
+        return prompt;
+      })
+    )
+  );
+  sections.push(...skillVersionPrompts);
   for (const skill of option.customSkills ?? []) {
     const title = skill.title.trim();
     const content = skill.content.trim();
@@ -59,6 +73,7 @@ function coerceToString(value: unknown): string {
  */
 export async function runAbComparisonExecution(
   db: HubDb,
+  repoStore: RepoStore,
   workflowId: string,
   userContext: UserContext,
   options: AbComparisonProviderOption[],
@@ -124,7 +139,7 @@ export async function runAbComparisonExecution(
 
       const output = await runSingleTurnAgent(
         source,
-        buildBranchSystemPrompt(branch.option, systemPrompt),
+        await buildBranchSystemPrompt(db, repoStore, userContext.tenantId, branch.option, systemPrompt),
         userMessage,
         `ab-compare-${workflowId}`,
         undefined,

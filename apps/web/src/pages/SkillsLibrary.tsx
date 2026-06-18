@@ -1,185 +1,396 @@
-import { useRef, useState, useMemo } from 'react';
-import { BookOpen, Search, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { BookOpen, FileArchive, Search, Upload, X } from 'lucide-react';
 import { SKILLS_REGISTRY, type SkillEntry } from '@workbench/agents';
+import {
+  useCreateSkill,
+  useSkillDetail,
+  useSkillLibrary,
+  useSkillVersionPreview,
+  type SkillLibraryItem,
+} from '../hooks/use-workflow';
+import { getMe } from '../lib/hub-api';
 
-const SEARCH_DEBOUNCE_MS = 300;
+type FileWithRelativePath = File & { webkitRelativePath?: string };
 
-export function SkillsLibrary() {
-  const [inputQuery, setInputQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [sort, setSort] = useState<'name' | 'original'>('name');
-  const [selected, setSelected] = useState<SkillEntry | null>(null);
+type SelectedSkill =
+  | { kind: 'library'; skill: SkillLibraryItem }
+  | { kind: 'built-in'; skill: SkillEntry };
 
-  const handleQueryChange = (value: string) => {
-    setInputQuery(value);
-    if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      setDebouncedQuery(value);
-    }, SEARCH_DEBOUNCE_MS);
-  };
-
-  const filteredSkills = useMemo(() => {
-    let result = [...SKILLS_REGISTRY];
-    const q = debouncedQuery.trim().toLowerCase();
-    if (q) {
-      result = result.filter(
-        (s) =>
-          s.title.toLowerCase().includes(q) ||
-          s.description.toLowerCase().includes(q) ||
-          s.author.toLowerCase().includes(q)
-      );
-    }
-    if (sort === 'name') {
-      result.sort((a, b) => a.title.localeCompare(b.title));
-    }
-    return result;
-  }, [debouncedQuery, sort]);
-
+function BuiltInCard({ skill, onSelect }: { skill: SkillEntry; onSelect: () => void }) {
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3 shrink-0">
-        <div className="flex items-center gap-2">
-          <BookOpen className="h-4 w-4 text-text-3" />
-          <p className="text-[14px] font-semibold text-text">Skills Library</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Sort toggle */}
-          <div className="flex gap-1 rounded-[8px] bg-surface-2 p-[3px]">
-            <button
-              type="button"
-              onClick={() => setSort('name')}
-              className={`rounded-[6px] px-2.5 py-1 text-[12px] font-medium transition-colors ${
-                sort === 'name'
-                  ? 'bg-surface text-text shadow-sm'
-                  : 'text-text-2 hover:text-text'
-              }`}
-            >
-              A–Z
-            </button>
     <button
       type="button"
-      onClick={() => setSort('original')}
-      className={`rounded-[6px] px-2.5 py-1 text-[12px] font-medium transition-colors ${
-        sort === 'original'
-          ? 'bg-surface text-text shadow-sm'
-          : 'text-text-2 hover:text-text'
-      }`}
+      onClick={onSelect}
+      className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 text-left transition-colors hover:bg-[var(--row-hover)]"
     >
-      Original
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-[14px] font-semibold text-text">{skill.title}</span>
+          <span className="rounded-[5px] bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-text-2">
+            Built-in
+          </span>
+        </div>
+        <p className="mt-1.5 text-[12px] leading-[1.4] text-text-3 line-clamp-3">
+          {skill.description}
+        </p>
+      </div>
+      <span className="text-[11px] text-text-3">by {skill.author}</span>
     </button>
+  );
+}
+
+function LibraryCard({ skill, onSelect }: { skill: SkillLibraryItem; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 text-left transition-colors hover:bg-[var(--row-hover)]"
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-[14px] font-semibold text-text">{skill.name}</span>
+          <span className="rounded-[5px] bg-green/10 px-1.5 py-0.5 text-[11px] font-medium text-green">
+            v{skill.latestVersion ?? 1}
+          </span>
+        </div>
+        <p className="mt-1.5 text-[12px] leading-[1.4] text-text-3 line-clamp-3">
+          {skill.description ||
+            `${skill.fileCount ?? 0} bundled file${skill.fileCount === 1 ? '' : 's'}`}
+        </p>
+      </div>
+      <div className="flex items-center justify-between text-[11px] text-text-3">
+        <span>{skill.source ?? 'library'}</span>
+        <span>{new Date(skill.updatedAt).toLocaleDateString()}</span>
+      </div>
+    </button>
+  );
+}
+
+export function SkillsLibrary() {
+  const meQuery = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: 5 * 60_000 });
+  const tenantId = meQuery.data?.personalTenantId ?? null;
+  const [query, setQuery] = useState('');
+  const [name, setName] = useState('');
+  const [text, setText] = useState('');
+  const [selected, setSelected] = useState<SelectedSkill | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  const skillsQuery = useSkillLibrary(tenantId);
+  const createSkill = useCreateSkill();
+  const selectedLibrarySkillId = selected?.kind === 'library' ? selected.skill.id : null;
+  const skillDetailQuery = useSkillDetail(selectedLibrarySkillId, tenantId);
+  const selectedLibrarySkill =
+    skillDetailQuery.data ?? (selected?.kind === 'library' ? selected.skill : null);
+  const previewQuery = useSkillVersionPreview(selectedVersionId, tenantId);
+
+  const filteredBuiltIns = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return SKILLS_REGISTRY.filter(
+      (skill) =>
+        !q ||
+        skill.title.toLowerCase().includes(q) ||
+        skill.description.toLowerCase().includes(q) ||
+        skill.author.toLowerCase().includes(q)
+    ).sort((a, b) => a.title.localeCompare(b.title));
+  }, [query]);
+
+  const filteredLibrary = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (skillsQuery.data ?? []).filter(
+      (skill) =>
+        !q || skill.name.toLowerCase().includes(q) || skill.description?.toLowerCase().includes(q)
+    );
+  }, [query, skillsQuery.data]);
+
+  const savePastedSkill = () => {
+    setError('');
+    createSkill.mutate(
+      { tenantId, name: name.trim(), text: text.trim() },
+      {
+        onSuccess: () => {
+          setName('');
+          setText('');
+        },
+        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save skill'),
+      }
+    );
+  };
+
+  const saveFiles = (files: FileList | null, folder: boolean) => {
+    setError('');
+    const selectedFiles = Array.from(files ?? []) as FileWithRelativePath[];
+    if (selectedFiles.length === 0) return;
+    const first = selectedFiles[0];
+    const inferredName = folder
+      ? (first.webkitRelativePath?.split('/')[0] ?? first.name.replace(/\.[^.]+$/, ''))
+      : first.name.replace(/\.[^.]+$/, '');
+    createSkill.mutate(
+      {
+        tenantId,
+        name: name.trim() || inferredName,
+        files: selectedFiles.map((file) => ({
+          file,
+          path: folder ? file.webkitRelativePath || file.name : file.name,
+        })),
+      },
+      {
+        onSuccess: () => setName(''),
+        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save skill'),
+      }
+    );
+  };
+
+  const selectLibrary = (skill: SkillLibraryItem) => {
+    setSelected({ kind: 'library', skill });
+    setSelectedVersionId(skill.latestVersionId);
+  };
+
+  return (
+    <div className="flex h-full overflow-hidden bg-bg">
+      <div className="flex flex-1 flex-col overflow-hidden rounded-panel border border-border bg-bg">
+        <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-text-3" />
+            <p className="text-[14px] font-semibold text-text">Skills Library</p>
           </div>
+          <p className="text-[12px] text-text-3">Reusable immutable skills and built-in skills</p>
         </div>
-      </div>
 
-      {/* Search bar */}
-      <div className="border-b border-border px-5 py-3 shrink-0">
-        <div className="flex items-center gap-2 rounded-[12px] border border-border bg-surface px-3 py-2 focus-within:border-orange">
-          <Search className="h-4 w-4 text-text-3" />
-          <input
-            type="text"
-            value={inputQuery}
-            onChange={(e) => handleQueryChange(e.target.value)}
-            placeholder="Search skills…"
-            className="w-full bg-transparent text-[14px] text-text outline-none placeholder:text-text-3"
-          />
-          {inputQuery && (
-            <button
-              type="button"
-              onClick={() => handleQueryChange('')}
-              className="grid h-5 w-5 place-items-center rounded-full text-text-3 hover:text-text"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Grid */}
-      <div className="flex-1 overflow-y-auto px-5 py-4">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredSkills.map((skill) => (
-            <button
-              key={skill.id}
-              type="button"
-              onClick={() => setSelected(skill)}
-              className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 text-left transition-colors hover:bg-[var(--row-hover)]"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[14px] font-semibold text-text">{skill.title}</span>
-                  <span className="rounded-[5px] bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-text-2">
-                    v{skill.version}
-                  </span>
-                </div>
-                <p className="mt-1.5 text-[12px] leading-[1.4] text-text-3 line-clamp-3">
-                  {skill.description}
+        <div className="border-b border-border p-5 space-y-3 shrink-0">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+            <div className="space-y-3 rounded-[12px] border border-border bg-surface p-4">
+              <div>
+                <p className="text-[13px] font-medium text-text">Create reusable skill</p>
+                <p className="text-[12px] text-text-3">
+                  Paste markdown, upload one file, upload a folder, or import a zip. Code and assets
+                  are stored but never executed.
                 </p>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-text-3">by {skill.author}</span>
-                <span className="text-[11px] font-medium text-orange">View</span>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Skill name (required for pasted text; uploads can infer it)"
+                className="w-full rounded-[9px] border border-border bg-bg px-3 py-2 text-[13px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+              />
+              <textarea
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                placeholder="Paste a single-file markdown skill..."
+                rows={5}
+                className="w-full resize-none rounded-[9px] border border-border bg-bg px-3 py-2 text-[13px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={savePastedSkill}
+                  disabled={createSkill.isPending}
+                  className="btn-primary disabled:opacity-50"
+                >
+                  Save pasted skill
+                </button>
+                <label className="cursor-pointer rounded-[9px] border border-border px-3 py-2 text-[13px] font-medium text-text-2 hover:text-text">
+                  <Upload className="mr-1 inline h-3.5 w-3.5" /> Upload file
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={(event) => saveFiles(event.currentTarget.files, false)}
+                  />
+                </label>
+                <label className="cursor-pointer rounded-[9px] border border-border px-3 py-2 text-[13px] font-medium text-text-2 hover:text-text">
+                  <Upload className="mr-1 inline h-3.5 w-3.5" /> Upload folder
+                  <input
+                    type="file"
+                    multiple
+                    // @ts-expect-error webkitdirectory is required for browser folder selection.
+                    webkitdirectory=""
+                    className="hidden"
+                    onChange={(event) => saveFiles(event.currentTarget.files, true)}
+                  />
+                </label>
+                <label className="cursor-pointer rounded-[9px] border border-border px-3 py-2 text-[13px] font-medium text-text-2 hover:text-text">
+                  <FileArchive className="mr-1 inline h-3.5 w-3.5" /> Import zip
+                  <input
+                    type="file"
+                    accept=".zip,application/zip"
+                    className="hidden"
+                    onChange={(event) => saveFiles(event.currentTarget.files, false)}
+                  />
+                </label>
               </div>
-            </button>
-          ))}
-        </div>
-        {filteredSkills.length === 0 && (
-          <div className="flex h-48 flex-col items-center justify-center gap-2">
-            <p className="text-[13px] text-text-3">No skills match your search.</p>
+              {error && <p className="text-[12px] text-orange-deep">{error}</p>}
+            </div>
+
+            <div className="rounded-[12px] border border-border bg-surface p-4 space-y-3">
+              <p className="text-[13px] font-medium text-text">Safety model</p>
+              <ul className="space-y-2 text-[12px] text-text-3">
+                <li>Immutable versions keep old workflow runs reproducible.</li>
+                <li>Non-text files are stored as assets and not prompt-injected.</li>
+                <li>Code-like files are allowed as inert bundle contents only.</li>
+                <li>
+                  Unsafe paths, symlinks, traversal, and empty bundles are rejected server-side.
+                </li>
+              </ul>
+            </div>
           </div>
-        )}
+
+          <div className="flex items-center gap-2 rounded-[12px] border border-border bg-surface px-3 py-2 focus-within:border-orange">
+            <Search className="h-4 w-4 text-text-3" />
+            <input
+              type="text"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search skills..."
+              className="w-full bg-transparent text-[14px] text-text outline-none placeholder:text-text-3"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className="grid h-5 w-5 place-items-center rounded-full text-text-3 hover:text-text"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          <section>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[13px] font-semibold text-text">Workspace skills</p>
+              {skillsQuery.isLoading && <p className="text-[12px] text-text-3">Loading...</p>}
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredLibrary.map((skill) => (
+                <LibraryCard key={skill.id} skill={skill} onSelect={() => selectLibrary(skill)} />
+              ))}
+            </div>
+            {!skillsQuery.isLoading && filteredLibrary.length === 0 && (
+              <p className="rounded-[10px] border border-border p-4 text-[13px] text-text-3">
+                No reusable workspace skills yet.
+              </p>
+            )}
+          </section>
+
+          <section>
+            <p className="mb-2 text-[13px] font-semibold text-text">Built-in skills</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredBuiltIns.map((skill) => (
+                <BuiltInCard
+                  key={skill.id}
+                  skill={skill}
+                  onSelect={() => setSelected({ kind: 'built-in', skill })}
+                />
+              ))}
+            </div>
+          </section>
+        </div>
       </div>
 
-      {/* Detail modal */}
       {selected && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(0,0,0,0.55)] p-4 backdrop-blur-[2px]">
           <div
             role="dialog"
             aria-modal="true"
-            aria-label={selected.title}
-            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
+            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
           >
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-text-3" />
-                <div className="text-[16px] font-bold text-text">{selected.title}</div>
+              <div>
+                <p className="text-[16px] font-bold text-text">
+                  {selected.kind === 'library' ? selected.skill.name : selected.skill.title}
+                </p>
+                <p className="text-[12px] text-text-3">
+                  {selected.kind === 'library'
+                    ? 'Workspace reusable skill'
+                    : `Built-in by ${selected.skill.author}`}
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => setSelected(null)}
                 aria-label="Close"
-                className="grid h-8 w-8 flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
+                className="grid h-8 w-8 place-items-center rounded-[9px] border border-border text-text-2 hover:text-text"
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className="h-4 w-4"
-                >
-                  <path d="M6 6l12 12M18 6L6 18" />
-                </svg>
+                <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-[5px] bg-surface-2 px-2 py-0.5 text-[12px] font-medium text-text-2">
-                  Version {selected.version}
-                </span>
-                <span className="rounded-[5px] bg-surface-2 px-2 py-0.5 text-[12px] font-medium text-text-2">
-                  by {selected.author}
-                </span>
-              </div>
-              <p className="text-[13px] text-text-2 leading-relaxed">{selected.description}</p>
-              <div className="rounded-[8px] border border-border bg-surface p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-text-3 mb-2">
-                  Skill content
-                </p>
-                <pre className="text-[12px] text-text-2 whitespace-pre-wrap font-mono leading-relaxed max-h-64 overflow-y-auto">
-                  {selected.content}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {selected.kind === 'built-in' ? (
+                <pre className="max-h-[55vh] overflow-y-auto whitespace-pre-wrap rounded-[8px] border border-border bg-bg p-3 font-mono text-[12px] leading-relaxed text-text-2">
+                  {selected.skill.content}
                 </pre>
-              </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    {(selectedLibrarySkill?.versions ?? []).map((version) => (
+                      <button
+                        key={version.id}
+                        type="button"
+                        onClick={() => setSelectedVersionId(version.id)}
+                        className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium ${selectedVersionId === version.id ? 'border-orange bg-orange/8 text-text' : 'border-border text-text-2'}`}
+                      >
+                        v{version.version} · {version.source ?? 'file'} ·{' '}
+                        {version.manifest.files.length} files
+                      </button>
+                    ))}
+                  </div>
+                  {skillDetailQuery.isLoading && (
+                    <p className="text-[12px] text-text-3">Loading versions...</p>
+                  )}
+                  {!skillDetailQuery.isLoading &&
+                    (selectedLibrarySkill?.versions ?? []).length === 0 && (
+                      <p className="text-[12px] text-text-3">
+                        No versions available for this skill.
+                      </p>
+                    )}
+                  {previewQuery.data && (
+                    <div className="grid gap-3 lg:grid-cols-[240px_minmax(0,1fr)]">
+                      <div className="rounded-[8px] border border-border bg-bg p-3">
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-text-3">
+                          Bundle files
+                        </p>
+                        <div className="space-y-1">
+                          {previewQuery.data.version.manifest.files.map((file) => (
+                            <div
+                              key={file.path}
+                              className="rounded-[6px] bg-surface px-2 py-1 text-[11px] text-text-2"
+                            >
+                              <p className="break-all font-mono">{file.path}</p>
+                              <p className="text-text-3">
+                                {file.promptReadable ? 'prompt-readable' : 'stored-only asset'}
+                                {file.executableLike ? ' · code-like inert' : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {previewQuery.data.files.map((file) => (
+                          <div
+                            key={file.path}
+                            className="rounded-[8px] border border-border bg-bg p-3"
+                          >
+                            <p className="mb-2 break-all font-mono text-[11px] text-text-3">
+                              {file.path}
+                            </p>
+                            {file.content !== undefined ? (
+                              <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-text-2">
+                                {file.content}
+                              </pre>
+                            ) : (
+                              <p className="text-[12px] text-text-3">
+                                Stored-only asset. Not injected into prompts and never executed.
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>

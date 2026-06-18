@@ -8,7 +8,12 @@ import {
   type AbComparisonProviderOption,
 } from '@workbench/gtm-workflows';
 import type { WorkflowNewPaneProps } from '../registry';
-import { useCreateWorkflow, useWorkflowCredentials } from '../../hooks/use-workflow';
+import {
+  useCreateSkill,
+  useCreateWorkflow,
+  useSkillLibrary,
+  useWorkflowCredentials,
+} from '../../hooks/use-workflow';
 import ArtifactSourcePicker from '../../components/ArtifactSourcePicker';
 
 type StepName = 'comparisons' | 'configure' | 'input';
@@ -19,6 +24,8 @@ type CustomSkillDraft = {
   title: string;
   content: string;
 };
+
+type FileWithRelativePath = File & { webkitRelativePath?: string };
 
 const PROVIDER_WHITELIST = new Set(['openai-compatible', 'openai', 'anthropic', 'google-genai']);
 
@@ -71,6 +78,7 @@ export function AbComparisonNewPane({
       providerPlugin: '',
       skillIds: [],
       customSkills: [],
+      skillVersionIds: [],
     },
     {
       credentialId: '',
@@ -78,6 +86,7 @@ export function AbComparisonNewPane({
       providerPlugin: '',
       skillIds: [],
       customSkills: [],
+      skillVersionIds: [],
     },
   ]);
   const [systemPrompt, setSystemPrompt] = useState('');
@@ -85,9 +94,13 @@ export function AbComparisonNewPane({
   const [textInput, setTextInput] = useState('');
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>(seedArtifactId);
   const [error, setError] = useState('');
+  const [skillName, setSkillName] = useState('');
+  const [skillText, setSkillText] = useState('');
 
   const createWorkflow = useCreateWorkflow();
   const credentialsQuery = useWorkflowCredentials();
+  const skillLibraryQuery = useSkillLibrary(tenantId);
+  const createSkill = useCreateSkill();
   const whitelistedCredentials = useMemo(
     () => (credentialsQuery.data ?? []).filter((c) => PROVIDER_WHITELIST.has(c.providerPlugin)),
     [credentialsQuery.data]
@@ -102,6 +115,7 @@ export function AbComparisonNewPane({
         providerPlugin: '',
         skillIds: [],
         customSkills: [],
+        skillVersionIds: [],
       },
     ]);
   };
@@ -122,6 +136,7 @@ export function AbComparisonNewPane({
           model: defaultAbComparisonModel(cred?.providerPlugin ?? ''),
           skillIds: [],
           customSkills: [],
+          skillVersionIds: [],
         };
         return next;
       });
@@ -141,6 +156,14 @@ export function AbComparisonNewPane({
     setOptions((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], skillIds };
+      return next;
+    });
+  }, []);
+
+  const updateOptionSkillVersions = useCallback((index: number, skillVersionIds: string[]) => {
+    setOptions((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], skillVersionIds };
       return next;
     });
   }, []);
@@ -205,6 +228,43 @@ export function AbComparisonNewPane({
     },
     [options, updateCustomSkill]
   );
+
+  const createTextSkill = () => {
+    setError('');
+    createSkill.mutate(
+      { tenantId, name: skillName.trim(), text: skillText.trim() },
+      {
+        onSuccess: () => {
+          setSkillName('');
+          setSkillText('');
+        },
+        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to create skill'),
+      }
+    );
+  };
+
+  const createFileSkill = (files: FileList | null, folder: boolean) => {
+    const selected = Array.from(files ?? []) as FileWithRelativePath[];
+    if (selected.length === 0) return;
+    const first = selected[0];
+    const inferredName = folder
+      ? (first.webkitRelativePath?.split('/')[0] ?? first.name.replace(/\.[^.]+$/, ''))
+      : first.name.replace(/\.[^.]+$/, '');
+    createSkill.mutate(
+      {
+        tenantId,
+        name: skillName.trim() || inferredName,
+        files: selected.map((file) => ({
+          file,
+          path: folder ? file.webkitRelativePath || file.name : file.name,
+        })),
+      },
+      {
+        onSuccess: () => setSkillName(''),
+        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to create skill'),
+      }
+    );
+  };
 
   const validateProviders = () => {
     const valid = options.filter((o) => o.credentialId);
@@ -433,6 +493,59 @@ export function AbComparisonNewPane({
                 />
               </div>
 
+              <div className="rounded-[10px] border border-border p-3 space-y-3">
+                <div>
+                  <p className="text-[13px] font-medium text-text">Skill library</p>
+                  <p className="text-[12px] text-text-3">
+                    Create reusable skills from pasted text, a markdown file, or a folder. Code and
+                    non-text assets are stored as inert bundle files and are never executed.
+                  </p>
+                </div>
+                <input
+                  type="text"
+                  value={skillName}
+                  onChange={(e) => setSkillName(e.target.value)}
+                  placeholder="Skill name (required for pasted text)"
+                  className="w-full rounded-[8px] border border-border bg-surface px-3 py-2 text-[12px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+                />
+                <textarea
+                  value={skillText}
+                  onChange={(e) => setSkillText(e.target.value)}
+                  placeholder="Paste a single-file markdown skill…"
+                  rows={4}
+                  className="w-full resize-none rounded-[8px] border border-border bg-surface px-3 py-2 text-[12px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={createTextSkill}
+                    disabled={createSkill.isPending}
+                    className="rounded-[7px] border border-border px-2.5 py-1 text-[12px] font-medium text-text-2 transition-colors hover:text-text disabled:opacity-50"
+                  >
+                    Save pasted skill
+                  </button>
+                  <label className="cursor-pointer rounded-[7px] border border-border px-2.5 py-1 text-[12px] font-medium text-text-2 transition-colors hover:text-text">
+                    Upload file
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => createFileSkill(e.currentTarget.files, false)}
+                    />
+                  </label>
+                  <label className="cursor-pointer rounded-[7px] border border-border px-2.5 py-1 text-[12px] font-medium text-text-2 transition-colors hover:text-text">
+                    Upload folder
+                    <input
+                      type="file"
+                      multiple
+                      // @ts-expect-error webkitdirectory is the browser folder-upload API.
+                      webkitdirectory=""
+                      className="hidden"
+                      onChange={(e) => createFileSkill(e.currentTarget.files, true)}
+                    />
+                  </label>
+                </div>
+              </div>
+
               {/* Per-provider skills */}
               <div>
                 <label className="block text-[13px] font-medium text-text mb-2">
@@ -470,6 +583,41 @@ export function AbComparisonNewPane({
                           );
                         })}
                       </div>
+
+                      {skillLibraryQuery.data && skillLibraryQuery.data.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          <p className="text-[12px] font-medium text-text">
+                            Reusable library skills
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {skillLibraryQuery.data.map((skill) => {
+                              const versionId = skill.latestVersionId;
+                              if (!versionId) return null;
+                              const active = (option.skillVersionIds ?? []).includes(versionId);
+                              return (
+                                <button
+                                  key={skill.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const current = option.skillVersionIds ?? [];
+                                    const next = active
+                                      ? current.filter((id) => id !== versionId)
+                                      : [...current, versionId];
+                                    updateOptionSkillVersions(index, next);
+                                  }}
+                                  className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                                    active
+                                      ? 'border-green bg-green/8 text-text'
+                                      : 'border-border text-text-2 hover:text-text'
+                                  }`}
+                                >
+                                  {skill.name} v{skill.latestVersion ?? 1}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                       {(option.customSkills ?? []).map((skill, skillIndex) => (
                         <div
                           key={skillIndex}
