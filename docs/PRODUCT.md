@@ -49,11 +49,13 @@ Users can build and manage a personal library of **skills** — reusable AI inst
 Key capabilities:
 
 - **Upload** — create a skill from pasted markdown, a single file, a folder, or a zip archive
-- **Browse** — view all skills in the library; each card navigates to the skill's detail page
+- **Choose who can access it** — at upload, pick "Just Me" (private to the creator) or "Everyone in &lt;workbench/org&gt;" for any tenant up the hierarchy the user belongs to
+- **Browse** — view all skills the user can access; each card shows the owner, when it was last edited, and its access label (Private or the sharing tenant's name)
 - **Inspect** — the detail page renders the skill's files in a file-tree sidebar; `SKILL.md` is shown as rendered markdown with a source/preview toggle
+- **Version history** — the detail page lists every saved version (sequential `v1, v2, …` with a short commit id, author, and date); the creator can restore any prior version, which is recorded as a new version
 - **Delete** — owners can permanently remove a skill and its git store from the detail page; deletion requires an inline confirmation step
 
-Skills are currently scoped to the user's personal tenant context; sharing across the org is a forward work item.
+A shared skill is visible to everyone in the tenant it was shared into and that tenant's descendants (e.g. a skill shared at the org is visible in every workbench under it). A private skill is visible only to its creator. Skills with no explicit sharing predate this feature and are treated as tenant-wide.
 
 ## Target Users
 
