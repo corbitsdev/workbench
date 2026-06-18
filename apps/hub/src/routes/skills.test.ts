@@ -8,7 +8,7 @@ mock.module('../services/workflow-orchestration', () => ({
   getUserContext: mock(() => Promise.resolve({ tenantId: 'tenant-1', principalId: 'prn-1' })),
 }));
 
-const mockCreateSkill = mock(() =>
+const mockCreateSkill = mock((..._args: unknown[]) =>
   Promise.resolve({
     id: 'ast-1',
     name: 'test-skill',
@@ -40,7 +40,7 @@ const mockListSkills = mock(() =>
   ])
 );
 
-const mockGetSkillAsset = mock(() => Promise.resolve(null));
+const mockGetSkillAsset = mock((): Promise<unknown> => Promise.resolve(null));
 const mockGetSkillContent = mock(() => Promise.resolve([{ path: 'SKILL.md', content: '# Hi' }]));
 
 const mockListSkillVersions = mock(() =>
@@ -338,11 +338,22 @@ describe('POST /skills (JSON update)', () => {
   });
 });
 
+const visibleSkill = {
+  id: 'ast-1',
+  name: 'test-skill',
+  displayName: 'Test Skill',
+  createdAt: '2026-06-17T00:00:00.000Z',
+  updatedAt: '2026-06-17T00:00:00.000Z',
+  scope: 'tenant',
+  accessTenantId: 'tenant-1',
+  ownerUserId: 'user-1',
+  ownerName: 'Test User',
+};
+
 describe('POST /agents/:agentId/skills/:assetId', () => {
-  it('returns 404 when the skill asset is not found', async () => {
-    const db = makeMockDb();
-    db.query.asset.findFirst = mock(() => Promise.resolve(null));
-    const app = buildApp(db, makeAssetService());
+  it('returns 404 when the skill is not visible to the caller', async () => {
+    mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
+    const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
       new Request('http://localhost/agents/agent-1/skills/ast-missing?tenantId=tenant-1', {
         method: 'POST',
@@ -353,11 +364,9 @@ describe('POST /agents/:agentId/skills/:assetId', () => {
     expect(json.error).toBeTruthy();
   });
 
-  it('calls assetService.attachAsset and returns 201 when skill exists', async () => {
+  it('calls assetService.attachAsset and returns 201 when skill is visible', async () => {
+    mockGetSkillAsset.mockImplementation(() => Promise.resolve(visibleSkill));
     const db = makeMockDb();
-    db.query.asset.findFirst = mock(() =>
-      Promise.resolve({ id: 'ast-1', name: 'test-skill', tenantId: 'tenant-1', kind: 'skill' })
-    );
     const assetService = makeAssetService();
     const app = buildApp(db, assetService);
     const res = await app.fetch(
@@ -376,10 +385,9 @@ describe('POST /agents/:agentId/skills/:assetId', () => {
 });
 
 describe('DELETE /agents/:agentId/skills/:assetId', () => {
-  it('returns 404 when the skill asset is not found', async () => {
-    const db = makeMockDb();
-    db.query.asset.findFirst = mock(() => Promise.resolve(null));
-    const app = buildApp(db, makeAssetService());
+  it('returns 404 when the skill is not visible to the caller', async () => {
+    mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
+    const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
       new Request('http://localhost/agents/agent-1/skills/ast-missing?tenantId=tenant-1', {
         method: 'DELETE',
@@ -389,10 +397,8 @@ describe('DELETE /agents/:agentId/skills/:assetId', () => {
   });
 
   it('returns 404 when skill is not attached to the agent', async () => {
+    mockGetSkillAsset.mockImplementation(() => Promise.resolve(visibleSkill));
     const db = makeMockDb();
-    db.query.asset.findFirst = mock(() =>
-      Promise.resolve({ id: 'ast-1', name: 'test-skill', tenantId: 'tenant-1', kind: 'skill' })
-    );
     const returning = mock(() => Promise.resolve([]));
     db.delete = mock(() => ({ where: mock(() => ({ returning })) }));
     const app = buildApp(db, makeAssetService());
@@ -405,10 +411,8 @@ describe('DELETE /agents/:agentId/skills/:assetId', () => {
   });
 
   it('deletes from agentAsset and returns 200 when skill is attached', async () => {
+    mockGetSkillAsset.mockImplementation(() => Promise.resolve(visibleSkill));
     const db = makeMockDb();
-    db.query.asset.findFirst = mock(() =>
-      Promise.resolve({ id: 'ast-1', name: 'test-skill', tenantId: 'tenant-1', kind: 'skill' })
-    );
     const returning = mock(() => Promise.resolve([{ id: 'aa-1' }]));
     const deleteWhere = mock(() => ({ returning }));
     db.delete = mock(() => ({ where: deleteWhere }));

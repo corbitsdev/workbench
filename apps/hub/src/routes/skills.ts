@@ -41,6 +41,10 @@ function readString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+function toActor(context: { tenantId: string; principalId: string }, userId: string) {
+  return { tenantId: context.tenantId, userId, principalId: context.principalId };
+}
+
 export function createSkillsRouter(
   db: HubDb,
   assetService: AssetService,
@@ -124,7 +128,7 @@ export function createSkillsRouter(
         assetService,
         db,
         repoStore,
-        context,
+        toActor(context, c.get('userId')),
         c.req.param('assetId'),
         sha
       );
@@ -154,7 +158,7 @@ export function createSkillsRouter(
 
         if (existingAssetId) {
           if (!text) throw new SkillLibraryError('Skill text is required');
-          const skill = await updateSkill(assetService, db, context, {
+          const skill = await updateSkill(assetService, db, toActor(context, c.get('userId')), {
             assetId: existingAssetId,
             description,
             files: [textFile('SKILL.md', text)],
@@ -206,7 +210,7 @@ export function createSkillsRouter(
       }
 
       if (existingAssetId) {
-        const skill = await updateSkill(assetService, db, context, {
+        const skill = await updateSkill(assetService, db, toActor(context, c.get('userId')), {
           assetId: existingAssetId,
           description,
           files: bundleFiles,
@@ -238,13 +242,7 @@ export function createSkillsRouter(
     if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
     try {
-      await deleteSkill(
-        db,
-        repoStore,
-        context.tenantId,
-        c.req.param('assetId'),
-        context.principalId
-      );
+      await deleteSkill(db, repoStore, toActor(context, c.get('userId')), c.req.param('assetId'));
       return c.json({ ok: true });
     } catch (err) {
       return errorResponse(c, err);
@@ -263,14 +261,14 @@ export function createSkillsRouter(
     const agentId = c.req.param('agentId');
     const assetId = c.req.param('assetId');
 
-    const asset = await db.query.asset.findFirst({
-      where: and(
-        eq(intxSchema.asset.id, assetId),
-        eq(intxSchema.asset.tenantId, context.tenantId),
-        eq(intxSchema.asset.kind, 'skill')
-      ),
-    });
-    if (!asset) return c.json({ error: 'Skill not found' }, 404);
+    // Gate on the same visibility rule as reads, so a private skill the caller
+    // cannot see can't be attached to (and read through) an agent.
+    const skill = await getSkillAsset(
+      db,
+      { tenantId: context.tenantId, userId: c.get('userId') },
+      assetId
+    );
+    if (!skill) return c.json({ error: 'Skill not found' }, 404);
 
     try {
       const agentAsset = await assetService.attachAsset({
@@ -299,14 +297,14 @@ export function createSkillsRouter(
     const agentId = c.req.param('agentId');
     const assetId = c.req.param('assetId');
 
-    const asset = await db.query.asset.findFirst({
-      where: and(
-        eq(intxSchema.asset.id, assetId),
-        eq(intxSchema.asset.tenantId, context.tenantId),
-        eq(intxSchema.asset.kind, 'skill')
-      ),
-    });
-    if (!asset) return c.json({ error: 'Skill not found' }, 404);
+    // Gate on the same visibility rule as reads, so a private skill the caller
+    // cannot see can't be attached to (and read through) an agent.
+    const skill = await getSkillAsset(
+      db,
+      { tenantId: context.tenantId, userId: c.get('userId') },
+      assetId
+    );
+    if (!skill) return c.json({ error: 'Skill not found' }, 404);
 
     // AssetService has no detachAsset method; delete the agentAsset row directly.
     const deleted = await db

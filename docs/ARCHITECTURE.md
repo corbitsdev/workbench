@@ -176,6 +176,8 @@ Visibility is a pure rule (`isSkillVisible`): a skill is visible to a viewer whe
 
 `listShareTargets` returns the ancestor tenants the caller is an active member of (closest first); the create-time toggle offers these plus "Just Me" (private).
 
+**Managing a shared skill** (delete/update/restore) resolves the asset across the actor's ancestor chain — not just the working tenant, since a shared skill lives in a parent tenant — and authorizes via `canManageSkill`: ownership is keyed on the stable **user id** recorded in `skill_access` (legacy rows with no entry fall back to the creator principal). Keying on user id rather than the per-tenant principal is required because the same user has a different principal in each tenant. Attaching/detaching a skill to an agent enforces the same `isSkillVisible` read rule, so a private skill the caller cannot see cannot be attached to (and read through) an agent.
+
 ### Routes
 
 | Method   | Path                               | Action                                                        |

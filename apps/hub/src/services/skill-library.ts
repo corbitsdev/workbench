@@ -337,24 +337,89 @@ export function buildSkillTree(
   return files;
 }
 
+// An actor managing a skill: the working tenant (for the visibility chain), the
+// stable user id (for ownership), and the per-tenant principal (legacy fallback).
+export type SkillActor = { tenantId: string; userId: string; principalId: string };
+
+/**
+ * Pure ownership rule for managing (delete/update/restore) a skill. New skills
+ * carry an access row, so ownership is the stable user id; legacy rows with no
+ * access entry fall back to the original creator principal. Keyed on user id —
+ * not principal id — because principals are per-tenant and a shared skill is
+ * managed from a tenant whose principal differs from the creator's.
+ */
+export function canManageSkill(
+  row: { ownerUserId: string | null; creatorPrincipalId: string | null },
+  actor: { userId: string; principalId: string }
+): boolean {
+  if (row.ownerUserId !== null) return row.ownerUserId === actor.userId;
+  return row.creatorPrincipalId !== null && row.creatorPrincipalId === actor.principalId;
+}
+
+type ManageableSkill = {
+  id: string;
+  name: string;
+  displayName: string | null;
+  tenantId: string;
+  creatorPrincipalId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  scope: SkillAccessScope | null;
+  ownerUserId: string | null;
+};
+
+/**
+ * Loads a skill the actor may manage (delete/update/restore). Resolves the asset
+ * across the actor's tenant ancestor chain — not just the working tenant, since a
+ * shared skill lives in a parent tenant — then asserts ownership by stable user id
+ * (the access row), falling back to the creator principal for legacy rows with no
+ * access entry. Throws 404 if not visible, 403 if visible but not owned.
+ */
+async function loadManageableSkill(
+  db: HubDb,
+  actor: SkillActor,
+  assetId: string
+): Promise<ManageableSkill> {
+  const ancestorTenantIds = await getAncestorChain(db as never, actor.tenantId);
+  const rows = await db
+    .select({
+      id: intxSchema.asset.id,
+      name: intxSchema.asset.name,
+      displayName: intxSchema.asset.displayName,
+      tenantId: intxSchema.asset.tenantId,
+      creatorPrincipalId: intxSchema.asset.creatorPrincipalId,
+      createdAt: intxSchema.asset.createdAt,
+      updatedAt: intxSchema.asset.updatedAt,
+      scope: skillAccess.scope,
+      ownerUserId: skillAccess.ownerUserId,
+    })
+    .from(intxSchema.asset)
+    .leftJoin(skillAccess, eq(skillAccess.assetId, intxSchema.asset.id))
+    .where(and(eq(intxSchema.asset.id, assetId), eq(intxSchema.asset.kind, 'skill')))
+    .limit(1);
+  const row = rows[0];
+  if (
+    !row ||
+    !isSkillVisible(
+      { assetTenantId: row.tenantId, scope: row.scope, ownerUserId: row.ownerUserId },
+      { ancestorTenantIds, userId: actor.userId }
+    )
+  ) {
+    throw new SkillLibraryError('Skill not found', 404);
+  }
+  if (!canManageSkill(row, actor)) {
+    throw new SkillLibraryError('You do not have permission to modify this skill', 403);
+  }
+  return row;
+}
+
 export async function deleteSkill(
   db: HubDb,
   repoStore: RepoStore,
-  tenantId: string,
-  assetId: string,
-  principalId: string
+  actor: SkillActor,
+  assetId: string
 ): Promise<void> {
-  const row = await db.query.asset.findFirst({
-    where: and(
-      eq(intxSchema.asset.id, assetId),
-      eq(intxSchema.asset.tenantId, tenantId),
-      eq(intxSchema.asset.kind, 'skill')
-    ),
-  });
-  if (!row) throw new SkillLibraryError('Skill not found', 404);
-  if (row.creatorPrincipalId !== principalId) {
-    throw new SkillLibraryError('You do not have permission to delete this skill', 403);
-  }
+  await loadManageableSkill(db, actor, assetId);
   // Delete DB row first — cascade removes agent_asset rows. Then remove the
   // git repo from disk. If the fs.rm fails we log and continue; the row is
   // already gone so the skill is invisible regardless.
@@ -623,27 +688,24 @@ export async function listSkillVersions(
 
 /**
  * Restores a skill to a prior commit by reading that commit's tree and writing
- * it back to refs/heads/main as a new commit. Creator-only, matching delete.
+ * it back to refs/heads/main as a new commit. Owner-only, matching delete.
  */
 export async function restoreSkillVersion(
   assetService: AssetService,
   db: HubDb,
   repoStore: RepoStore,
-  userContext: UserContext,
+  actor: SkillActor,
   assetId: string,
   sha: string,
   fs: typeof nodefs = nodefs
 ): Promise<SkillItem> {
-  const existing = await db.query.asset.findFirst({
-    where: and(
-      eq(intxSchema.asset.id, assetId),
-      eq(intxSchema.asset.tenantId, userContext.tenantId),
-      eq(intxSchema.asset.kind, 'skill')
-    ),
-  });
-  if (!existing) throw new SkillLibraryError('Skill not found', 404);
-  if (existing.creatorPrincipalId !== userContext.principalId) {
-    throw new SkillLibraryError('You do not have permission to edit this skill', 403);
+  const existing = await loadManageableSkill(db, actor, assetId);
+
+  // Only restore a sha that is actually in this skill's version history —
+  // never an arbitrary (e.g. dangling) commit object the caller names.
+  const versions = await listSkillVersions(repoStore, assetId, fs);
+  if (!versions.some((version) => version.sha === sha)) {
+    throw new SkillLibraryError('Version not found', 404);
   }
 
   const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
@@ -679,21 +741,13 @@ export async function restoreSkillVersion(
     principal: { kind: 'hub' },
   });
 
-  const refreshed = await db.query.asset.findFirst({ where: eq(intxSchema.asset.id, assetId) });
-  const access = await db.query.skillAccess.findFirst({
-    where: eq(skillAccess.assetId, assetId),
-  });
-  return {
-    id: existing.id,
-    name: existing.name,
-    displayName: existing.displayName ?? null,
-    createdAt: existing.createdAt.toISOString(),
-    updatedAt: (refreshed?.updatedAt ?? new Date()).toISOString(),
-    scope: access?.scope ?? 'tenant',
-    accessTenantId: existing.tenantId,
-    ownerUserId: access?.ownerUserId ?? null,
-    ownerName: null,
-  };
+  const refreshed = await getSkillAsset(
+    db,
+    { tenantId: actor.tenantId, userId: actor.userId },
+    assetId
+  );
+  if (!refreshed) throw new SkillLibraryError('Skill not found', 404);
+  return refreshed;
 }
 
 export async function createSkill(
@@ -739,26 +793,33 @@ export async function createSkill(
       tree: { files: treeFiles, clearPrefix: `${assetName}/`, message: `Add ${name}` },
       principal: { kind: 'hub' },
     });
+    // Write the access row in the same guarded scope: if it fails, the asset is
+    // rolled back below rather than left as an implicit (org-wide) skill with no
+    // owner — which would silently widen a skill the user marked private.
+    await db.insert(skillAccess).values({
+      assetId: asset.id,
+      scope: input.scope,
+      ownerUserId: input.ownerUserId,
+      ownerPrincipalId: userContext.principalId,
+    });
   } catch (err) {
-    // populateAsset failed — delete the orphaned asset row so the caller can retry.
+    // populate or access-row write failed — delete the orphaned asset (and any
+    // access row) so the caller can retry cleanly.
     await db
       .delete(intxSchema.asset)
       .where(eq(intxSchema.asset.id, asset.id))
       .catch((deleteErr) => {
-        log.error('Failed to clean up orphaned asset after populateAsset failure', {
+        log.error('Failed to clean up orphaned asset after create failure', {
           assetId: asset.id,
           error: String(deleteErr),
         });
       });
+    await db
+      .delete(skillAccess)
+      .where(eq(skillAccess.assetId, asset.id))
+      .catch(() => {});
     throw err;
   }
-
-  await db.insert(skillAccess).values({
-    assetId: asset.id,
-    scope: input.scope,
-    ownerUserId: input.ownerUserId,
-    ownerPrincipalId: userContext.principalId,
-  });
 
   return {
     id: asset.id,
@@ -776,21 +837,14 @@ export async function createSkill(
 export async function updateSkill(
   assetService: AssetService,
   db: HubDb,
-  userContext: UserContext,
+  actor: SkillActor,
   input: {
     assetId: string;
     description?: string | null;
     files: SkillBundleFileInput[];
   }
 ): Promise<SkillItem> {
-  const existing = await db.query.asset.findFirst({
-    where: and(
-      eq(intxSchema.asset.id, input.assetId),
-      eq(intxSchema.asset.tenantId, userContext.tenantId),
-      eq(intxSchema.asset.kind, 'skill')
-    ),
-  });
-  if (!existing) throw new SkillLibraryError('Skill not found', 404);
+  const existing = await loadManageableSkill(db, actor, input.assetId);
 
   const assetName = existing.name;
   const bundle = buildSkillBundle(input.files);
@@ -813,23 +867,13 @@ export async function updateSkill(
     principal: { kind: 'hub' },
   });
 
-  // Re-read updatedAt from DB so the returned timestamp reflects what was actually written.
-  const refreshed = await db.query.asset.findFirst({
-    where: eq(intxSchema.asset.id, existing.id),
-  });
-  const access = await db.query.skillAccess.findFirst({
-    where: eq(skillAccess.assetId, existing.id),
-  });
-
-  return {
-    id: existing.id,
-    name: existing.name,
-    displayName: existing.displayName ?? null,
-    createdAt: existing.createdAt.toISOString(),
-    updatedAt: (refreshed?.updatedAt ?? new Date()).toISOString(),
-    scope: access?.scope ?? 'tenant',
-    accessTenantId: existing.tenantId,
-    ownerUserId: access?.ownerUserId ?? null,
-    ownerName: null,
-  };
+  // Re-resolve through the read path so the response carries the fresh updatedAt
+  // and the joined owner name (not a hardcoded null).
+  const refreshed = await getSkillAsset(
+    db,
+    { tenantId: actor.tenantId, userId: actor.userId },
+    existing.id
+  );
+  if (!refreshed) throw new SkillLibraryError('Skill not found', 404);
+  return refreshed;
 }

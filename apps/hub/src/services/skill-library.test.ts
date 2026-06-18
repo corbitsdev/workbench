@@ -3,12 +3,67 @@ import JSZip from 'jszip';
 import {
   buildSkillBundle,
   buildSkillTree,
+  canManageSkill,
   filesFromZip,
   isSkillVisible,
   SkillLibraryError,
   toAssetName,
   toVersionEntries,
 } from './skill-library';
+
+describe('canManageSkill', () => {
+  it('lets the recorded owner manage, by stable user id', () => {
+    expect(
+      canManageSkill(
+        { ownerUserId: 'usr-me', creatorPrincipalId: 'prn-other' },
+        { userId: 'usr-me', principalId: 'prn-mine' }
+      )
+    ).toBe(true);
+  });
+
+  it('blocks a non-owner even when their per-tenant principal differs from the creator', () => {
+    expect(
+      canManageSkill(
+        { ownerUserId: 'usr-owner', creatorPrincipalId: 'prn-owner' },
+        { userId: 'usr-me', principalId: 'prn-mine' }
+      )
+    ).toBe(false);
+  });
+
+  it('owner check ignores principal id (shared skill managed from another tenant)', () => {
+    // Same user, different per-tenant principal than the creator — still owns it.
+    expect(
+      canManageSkill(
+        { ownerUserId: 'usr-me', creatorPrincipalId: 'prn-in-creating-tenant' },
+        { userId: 'usr-me', principalId: 'prn-in-viewing-tenant' }
+      )
+    ).toBe(true);
+  });
+
+  it('falls back to creator principal for legacy rows with no access entry', () => {
+    expect(
+      canManageSkill(
+        { ownerUserId: null, creatorPrincipalId: 'prn-mine' },
+        { userId: 'usr-me', principalId: 'prn-mine' }
+      )
+    ).toBe(true);
+    expect(
+      canManageSkill(
+        { ownerUserId: null, creatorPrincipalId: 'prn-other' },
+        { userId: 'usr-me', principalId: 'prn-mine' }
+      )
+    ).toBe(false);
+  });
+
+  it('denies a legacy row whose creator principal is null', () => {
+    expect(
+      canManageSkill(
+        { ownerUserId: null, creatorPrincipalId: null },
+        { userId: 'usr-me', principalId: 'prn-mine' }
+      )
+    ).toBe(false);
+  });
+});
 
 describe('toVersionEntries', () => {
   const commits = [

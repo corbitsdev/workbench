@@ -275,6 +275,7 @@ branches on `agentId` to pick the resolver.
 - `buildSkillBundle(files)` — validates paths (path traversal rejection, junk file filter), enforces 20 MB / 200 file limits, picks an entrypoint (`SKILL.md` preferred), computes a content checksum
 - `buildSkillTree(assetName, description, bundle, fileContents)` — maps bundle files to `<assetName>/` tree paths, synthesises YAML frontmatter for the entrypoint (required by Interchange's `skillKindHandler`)
 - `isSkillVisible(row, viewer)` — pure access rule (ancestor-chain membership + tenant/legacy/private-owner); drives `listSkills`/`getSkillAsset` filtering
+- `canManageSkill(row, actor)` — pure ownership rule for delete/update/restore: stable user id when an access row exists, else the creator principal (legacy). `loadManageableSkill` resolves the asset across the ancestor chain and applies it (404 not-visible, 403 not-owned)
 - `listSkills`/`getSkillAsset` — take a `{ tenantId, userId }` viewer, join `skill_access` + `user`, filter via `getAncestorChain` + `isSkillVisible`
 - `listShareTargets(db, userId, tenantId)` — ancestor tenants the user is an active member of, closest first
 - `createSkill` — calls `AssetService.createAsset` then `populateAsset`, then writes the `skill_access` row; catches `AssetServiceError { reason: 'duplicate_asset' }` → `SkillLibraryError` (409)
