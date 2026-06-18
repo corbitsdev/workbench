@@ -44,16 +44,16 @@ Every agent lifecycle operation, credential flow, session, grant, and inference 
 
 ### What Interchange owns — never reimplement
 
-| Domain                  | What Interchange does | Where to look |
-| ----------------------- | --------------------- | ------------- |
-| Credential resolution   | Resolves from tenant hierarchy by `providerName` + `source` + optional `name` | `@intx/db` → `resolveCredentialRequirement`, `resolveOneCredential` |
-| Agent launch            | Resolves `credentialRequirements` → builds inference sources → launches via sidecar | `@intx/hub-sessions` → `SessionService.launchSession` |
-| Credential requirements | Interchange resolves them at launch; `source: 'tenant'` = tenant-owned (`principalId: null`) | `@intx/types` → `CredentialRequirement` |
-| Grant resolution        | Collects all grants for a principal including role-based grants | `@intx/db` → `createGrantStore` → `collectGrants` |
-| Session orchestration   | Session lifecycle, sidecar registration, reconnect | `@intx/hub-sessions` → `createHubSessionOrchestrator` |
-| ID generation           | Typed, prefixed IDs for every entity | `@intx/hub-common` → `generateId` |
-| LLM inference           | All inference calls go through the agent runtime | `@intx/agent` — never direct fetch to LLM endpoints |
-| DB schema + types       | Tables, ID formats, row types | `@intx/db/schema`, `@intx/types` |
+| Domain                  | What Interchange does                                                                        | Where to look                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Credential resolution   | Resolves from tenant hierarchy by `providerName` + `source` + optional `name`                | `@intx/db` → `resolveCredentialRequirement`, `resolveOneCredential` |
+| Agent launch            | Resolves `credentialRequirements` → builds inference sources → launches via sidecar          | `@intx/hub-sessions` → `SessionService.launchSession`               |
+| Credential requirements | Interchange resolves them at launch; `source: 'tenant'` = tenant-owned (`principalId: null`) | `@intx/types` → `CredentialRequirement`                             |
+| Grant resolution        | Collects all grants for a principal including role-based grants                              | `@intx/db` → `createGrantStore` → `collectGrants`                   |
+| Session orchestration   | Session lifecycle, sidecar registration, reconnect                                           | `@intx/hub-sessions` → `createHubSessionOrchestrator`               |
+| ID generation           | Typed, prefixed IDs for every entity                                                         | `@intx/hub-common` → `generateId`                                   |
+| LLM inference           | All inference calls go through the agent runtime                                             | `@intx/agent` — never direct fetch to LLM endpoints                 |
+| DB schema + types       | Tables, ID formats, row types                                                                | `@intx/db/schema`, `@intx/types`                                    |
 
 ### Credential + launch pattern
 

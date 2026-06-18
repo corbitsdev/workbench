@@ -36,14 +36,14 @@ Every same-domain user **auto-joins the global tenant as a `member` principal** 
 
 **Agent templates** (`@workbench/agents`) are materialized as first-class Interchange agent definitions in the global tenant at hub boot via `seedAgentTemplates(db)`. This is idempotent — re-boot is a no-op. Definitions become visible and editable in admin-ui automatically.
 
-| Template   | Role                                                              |
-| ---------- | ----------------------------------------------------------------- |
-| **Myra**   | Personal Chief of Staff / Executive Assistant for each user       |
-| **Oat**    | Processes Granola calls into call document artifacts when prompted |
-| **Freddy** | Firecrawl-backed web research agent                               |
+| Template   | Role                                                                                                                             |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **Myra**   | Personal Chief of Staff / Executive Assistant for each user                                                                      |
+| **Oat**    | Processes Granola calls into call document artifacts when prompted                                                               |
+| **Freddy** | Firecrawl-backed web research agent                                                                                              |
 | **Larry**  | last30days research agent — mines HN/GitHub/Reddit/X/YouTube/Bluesky/web for recent signal and emits a structured research brief |
-| **Walter** | Workflow orchestration agent                                      |
-| **Loop**   | Iterative refinement agent                                        |
+| **Walter** | Workflow orchestration agent                                                                                                     |
+| **Loop**   | Iterative refinement agent                                                                                                       |
 
 The enabled-template set (which definitions members auto-get on join) defaults to `['myra']` in code. No runtime config.
 
@@ -104,7 +104,7 @@ The workbench product app contains no management UI — no credential settings p
 
 **Generic host, workflow-owned steps**: A workflow is generic — a series of steps with a lifecycle `status` and granted capabilities. The host (hub + web) is domain-agnostic; each workflow's step shapes, step inputs/outputs, current-step mapping, and UI live in its own package. On the backend, `WorkflowType` (`@workbench/workflow-core`) carries `serializeStepState(ctx)` (builds the workflow's named steps from generic run state) and `deriveCurrentStep(status)` (maps the lifecycle status to a step name). The `GET /workflows/:id` handler delegates to these — it never branches on workflow kind or hardcodes a step list. `status` values (`running`/`generating`/`reviewing`/`done`) are lifecycle labels, not steps. On the web, a kind→UI registry (`apps/web/src/workflows/registry.tsx`) maps each workflow kind to its package-provided `{ NewPane, SelectedPanel }`; `WorkbenchHome` renders the resolved components with no `workflowKind` branching, and the registry throws on an unregistered kind rather than guessing. Each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` to derive the sidebar step list dynamically.
 
-Step *execution* (the per-kind step handlers in `apps/hub/src/routes/workflow.ts`) is not yet extracted into the workflow packages — tracked in CL-1926.
+Step _execution_ (the per-kind step handlers in `apps/hub/src/routes/workflow.ts`) is not yet extracted into the workflow packages — tracked in CL-1926.
 
 **Two-layer workflows (Resource Enrichment)**: A generic `resource-enrichment` base `WorkflowType` defines the step shape (intake → enrich → review → export) and a domain-agnostic artifact model; specific kinds compose it. The artifacts are: `parsed-resource` (intake snapshot of parsed rows), `selection` (one per row — JSON `{ label, fields: Record<field, string[]>, chosen: Record<field, index> | null }` rendered as a HITL radio picker, content-driven with no domain knowledge), and `csv-export` (the downloadable result). `seo-enrichment` is the first specific kind: xlsx intake, per-row image fetch + multimodal inference producing 5/5/5 SEO variants, CSV export. The enrich step resolves a dedicated tenant-owned inference credential (`google-ai` on `google-genai`), separate from agent chat credentials. The domain logic (parse, image fetch, prompt assembly, per-row `enrichSeoRow`, CSV assembly) lives in `packages/gtm-workflows`; the hub injects only the credential-backed inference call and persists results. The enrich step fans out per row with `Promise.allSettled` in bounded batches, isolating per-row failures as error-state selections so one bad row never aborts the batch. Because Interchange's `agent.send` carries text only, the multimodal turn (text + base64 image) goes through `@intx/inference` `runInference` directly (`runSingleTurnAgentWithImage`).
 
