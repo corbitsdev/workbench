@@ -98,6 +98,7 @@ export const skillItemSchema = type({
   scope: skillAccessScopeSchema,
   accessTenantId: 'string',
   ownerUserId: 'string | null',
+  ownerName: 'string | null',
 });
 export type SkillItem = typeof skillItemSchema.infer;
 
@@ -381,6 +382,7 @@ type SkillRow = {
   updatedAt: Date;
   scope: SkillAccessScope | null;
   ownerUserId: string | null;
+  ownerName: string | null;
 };
 
 function toSkillItem(row: SkillRow): SkillItem {
@@ -393,6 +395,7 @@ function toSkillItem(row: SkillRow): SkillItem {
     scope: row.scope ?? 'tenant',
     accessTenantId: row.tenantId,
     ownerUserId: row.ownerUserId ?? null,
+    ownerName: row.ownerName ?? null,
   };
 }
 
@@ -405,6 +408,7 @@ const skillRowColumns = {
   updatedAt: intxSchema.asset.updatedAt,
   scope: skillAccess.scope,
   ownerUserId: skillAccess.ownerUserId,
+  ownerName: intxSchema.user.name,
 };
 
 export async function listSkills(db: HubDb, viewer: SkillViewer): Promise<SkillItem[]> {
@@ -413,6 +417,7 @@ export async function listSkills(db: HubDb, viewer: SkillViewer): Promise<SkillI
     .select(skillRowColumns)
     .from(intxSchema.asset)
     .leftJoin(skillAccess, eq(skillAccess.assetId, intxSchema.asset.id))
+    .leftJoin(intxSchema.user, eq(intxSchema.user.id, skillAccess.ownerUserId))
     .where(
       and(inArray(intxSchema.asset.tenantId, ancestorTenantIds), eq(intxSchema.asset.kind, 'skill'))
     )
@@ -428,6 +433,37 @@ export async function listSkills(db: HubDb, viewer: SkillViewer): Promise<SkillI
     .map(toSkillItem);
 }
 
+export type SkillShareTarget = { tenantId: string; name: string };
+
+/**
+ * The tenants a user may share a skill with, walking up the ancestor chain from
+ * the working tenant and keeping only those the user is an active member of,
+ * closest first. The "Just Me" (private) option is added client-side.
+ */
+export async function listShareTargets(
+  db: HubDb,
+  userId: string,
+  tenantId: string
+): Promise<SkillShareTarget[]> {
+  const chain = await getAncestorChain(db as never, tenantId);
+  const rows = await db
+    .select({ id: intxSchema.tenant.id, name: intxSchema.tenant.name })
+    .from(intxSchema.principal)
+    .innerJoin(intxSchema.tenant, eq(intxSchema.tenant.id, intxSchema.principal.tenantId))
+    .where(
+      and(
+        eq(intxSchema.principal.refId, userId),
+        eq(intxSchema.principal.kind, 'user'),
+        eq(intxSchema.principal.status, 'active'),
+        inArray(intxSchema.principal.tenantId, chain)
+      )
+    );
+  const byId = new Map(rows.map((row) => [row.id, row.name]));
+  return chain
+    .filter((id) => byId.has(id))
+    .map((id) => ({ tenantId: id, name: byId.get(id) ?? id }));
+}
+
 export async function getSkillAsset(
   db: HubDb,
   viewer: SkillViewer,
@@ -438,6 +474,7 @@ export async function getSkillAsset(
     .select(skillRowColumns)
     .from(intxSchema.asset)
     .leftJoin(skillAccess, eq(skillAccess.assetId, intxSchema.asset.id))
+    .leftJoin(intxSchema.user, eq(intxSchema.user.id, skillAccess.ownerUserId))
     .where(and(eq(intxSchema.asset.id, assetId), eq(intxSchema.asset.kind, 'skill')))
     .limit(1);
   const row = rows[0];
@@ -655,6 +692,7 @@ export async function restoreSkillVersion(
     scope: access?.scope ?? 'tenant',
     accessTenantId: existing.tenantId,
     ownerUserId: access?.ownerUserId ?? null,
+    ownerName: null,
   };
 }
 
@@ -668,6 +706,7 @@ export async function createSkill(
     files: SkillBundleFileInput[];
     scope: SkillAccessScope;
     ownerUserId: string;
+    ownerName: string;
   }
 ): Promise<SkillItem> {
   const name = input.name.trim();
@@ -730,6 +769,7 @@ export async function createSkill(
     scope: input.scope,
     accessTenantId: asset.tenantId,
     ownerUserId: input.ownerUserId,
+    ownerName: input.ownerName,
   };
 }
 
@@ -790,5 +830,6 @@ export async function updateSkill(
     scope: access?.scope ?? 'tenant',
     accessTenantId: existing.tenantId,
     ownerUserId: access?.ownerUserId ?? null,
+    ownerName: null,
   };
 }

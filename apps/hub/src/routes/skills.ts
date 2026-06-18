@@ -13,6 +13,7 @@ import {
   filesFromZip,
   getSkillAsset,
   getSkillContent,
+  listShareTargets,
   listSkills,
   listSkillVersions,
   restoreSkillVersion,
@@ -44,8 +45,8 @@ export function createSkillsRouter(
   db: HubDb,
   assetService: AssetService,
   repoStore: RepoStore
-): Hono<{ Variables: { userId: string } }> {
-  const router = new Hono<{ Variables: { userId: string } }>();
+): Hono<{ Variables: { userId: string; userName: string } }> {
+  const router = new Hono<{ Variables: { userId: string; userName: string } }>();
 
   router.get('/skills', async (c) => {
     const { context, forbidden } = await getRequestedUserContext(
@@ -57,6 +58,19 @@ export function createSkillsRouter(
     if (!context) return c.json({ error: 'User context not found' }, 403);
     const skills = await listSkills(db, { tenantId: context.tenantId, userId: c.get('userId') });
     return c.json({ skills });
+  });
+
+  // Registered before /skills/:assetId so "share-targets" is not captured as an id.
+  router.get('/skills/share-targets', async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get('userId'),
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
+    const targets = await listShareTargets(db, c.get('userId'), context.tenantId);
+    return c.json({ targets });
   });
 
   router.get('/skills/:assetId', async (c) => {
@@ -156,6 +170,7 @@ export function createSkillsRouter(
           files: [textFile('SKILL.md', text)],
           scope: parseScope(body.scope),
           ownerUserId: c.get('userId'),
+          ownerName: c.get('userName'),
         });
         return c.json({ skill }, 201);
       }
@@ -206,6 +221,7 @@ export function createSkillsRouter(
         files: bundleFiles,
         scope: parseScope(body.scope),
         ownerUserId: c.get('userId'),
+        ownerName: c.get('userName'),
       });
       return c.json({ skill }, 201);
     } catch (err) {

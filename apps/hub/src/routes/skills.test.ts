@@ -77,6 +77,12 @@ mock.module('../services/skill-library', () => ({
   updateSkill: mockUpdateSkill,
   listSkillVersions: mockListSkillVersions,
   restoreSkillVersion: mockRestoreSkillVersion,
+  listShareTargets: mock(() =>
+    Promise.resolve([
+      { tenantId: 'tenant-1', name: 'Acme Org' },
+      { tenantId: 'root-1', name: 'Acme Root' },
+    ])
+  ),
   filesFromZip: mock(() => Promise.resolve([])),
   SkillLibraryError: class SkillLibraryError extends Error {
     status: number;
@@ -125,9 +131,10 @@ function makeAssetService(overrides: Partial<Record<string, any>> = {}) {
 
 // biome-ignore lint/suspicious/noExplicitAny: test mock
 function buildApp(db: any, assetService: any, userId = 'user-1') {
-  const parent = new Hono<{ Variables: { userId: string } }>();
+  const parent = new Hono<{ Variables: { userId: string; userName: string } }>();
   parent.use('*', async (c, next) => {
     c.set('userId', userId);
+    c.set('userName', 'Test User');
     await next();
   });
   parent.route('/', createSkillsRouter(db, assetService, {} as never));
@@ -142,6 +149,18 @@ describe('GET /skills', () => {
     const json = (await res.json()) as { skills: unknown[] };
     expect(Array.isArray(json.skills)).toBe(true);
     expect(json.skills.length).toBe(1);
+  });
+});
+
+describe('GET /skills/share-targets', () => {
+  it('returns the shareable tenants for the caller', async () => {
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request('http://localhost/skills/share-targets?tenantId=tenant-1')
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { targets: { tenantId: string; name: string }[] };
+    expect(json.targets.map((t) => t.tenantId)).toEqual(['tenant-1', 'root-1']);
   });
 });
 
