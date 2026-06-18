@@ -4,9 +4,59 @@ import {
   buildSkillBundle,
   buildSkillTree,
   filesFromZip,
+  isSkillVisible,
   SkillLibraryError,
   toAssetName,
 } from './skill-library';
+
+describe('isSkillVisible', () => {
+  const viewer = { ancestorTenantIds: ['workbench-1', 'org-1', 'root-1'], userId: 'usr-me' };
+
+  it('hides skills whose tenant is outside the viewer ancestor chain', () => {
+    expect(
+      isSkillVisible(
+        { assetTenantId: 'other-workbench', scope: 'tenant', ownerUserId: 'usr-them' },
+        viewer
+      )
+    ).toBe(false);
+  });
+
+  it('shows tenant-scoped skills shared at any ancestor level', () => {
+    expect(
+      isSkillVisible({ assetTenantId: 'org-1', scope: 'tenant', ownerUserId: 'usr-them' }, viewer)
+    ).toBe(true);
+  });
+
+  it('treats a missing access row as tenant-wide (legacy behaviour)', () => {
+    expect(isSkillVisible({ assetTenantId: 'org-1', scope: null, ownerUserId: null }, viewer)).toBe(
+      true
+    );
+  });
+
+  it('shows a private skill only to its owner', () => {
+    expect(
+      isSkillVisible(
+        { assetTenantId: 'workbench-1', scope: 'private', ownerUserId: 'usr-me' },
+        viewer
+      )
+    ).toBe(true);
+    expect(
+      isSkillVisible(
+        { assetTenantId: 'workbench-1', scope: 'private', ownerUserId: 'usr-them' },
+        viewer
+      )
+    ).toBe(false);
+  });
+
+  it('hides a private skill from the owner when its tenant is out of chain', () => {
+    expect(
+      isSkillVisible(
+        { assetTenantId: 'unrelated', scope: 'private', ownerUserId: 'usr-me' },
+        viewer
+      )
+    ).toBe(false);
+  });
+});
 
 function file(path: string, content: string, mimeType = 'text/markdown') {
   return { path, content: Buffer.from(content), mimeType };
