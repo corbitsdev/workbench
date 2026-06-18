@@ -80,7 +80,11 @@ describe('RedditOpportunityBody', () => {
   it('explains an empty results scan in results mode', () => {
     render(
       React.createElement(RedditOpportunityBody, {
-        scan: { ...validScan, opportunities: [], summary: 'Found 0 Reddit opportunities for https://example.com.' },
+        scan: {
+          ...validScan,
+          opportunities: [],
+          summary: 'Found 0 Reddit opportunities for https://example.com.',
+        },
         mode: 'results',
       })
     );

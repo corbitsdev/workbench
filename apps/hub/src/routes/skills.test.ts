@@ -109,11 +109,9 @@ function buildApp(db: any, assetService: any, userId = 'user-1') {
 describe('GET /skills', () => {
   it('returns the skill list', async () => {
     const app = buildApp(makeMockDb(), makeAssetService());
-    const res = await app.fetch(
-      new Request('http://localhost/skills?tenantId=tenant-1')
-    );
+    const res = await app.fetch(new Request('http://localhost/skills?tenantId=tenant-1'));
     expect(res.status).toBe(200);
-    const json = await res.json() as { skills: unknown[] };
+    const json = (await res.json()) as { skills: unknown[] };
     expect(Array.isArray(json.skills)).toBe(true);
     expect(json.skills.length).toBe(1);
   });
@@ -140,11 +138,9 @@ describe('GET /skills/:assetId', () => {
       })
     );
     const app = buildApp(makeMockDb(), makeAssetService());
-    const res = await app.fetch(
-      new Request('http://localhost/skills/ast-1?tenantId=tenant-1')
-    );
+    const res = await app.fetch(new Request('http://localhost/skills/ast-1?tenantId=tenant-1'));
     expect(res.status).toBe(200);
-    const json = await res.json() as { skill: { id: string }; files: unknown[] };
+    const json = (await res.json()) as { skill: { id: string }; files: unknown[] };
     expect(json.skill.id).toBe('ast-1');
     expect(Array.isArray(json.files)).toBe(true);
     // restore
@@ -163,7 +159,7 @@ describe('POST /skills (JSON create)', () => {
       })
     );
     expect(res.status).toBe(201);
-    const json = await res.json() as { skill: { id: string } };
+    const json = (await res.json()) as { skill: { id: string } };
     expect(json.skill.id).toBe('ast-1');
     expect(mockCreateSkill).toHaveBeenCalledTimes(1);
   });
@@ -219,7 +215,7 @@ describe('POST /agents/:agentId/skills/:assetId', () => {
       })
     );
     expect(res.status).toBe(404);
-    const json = await res.json() as { error: string };
+    const json = (await res.json()) as { error: string };
     expect(json.error).toBeTruthy();
   });
 

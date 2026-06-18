@@ -60,12 +60,15 @@ describe('last30days_core_report', () => {
       engagement: { upvotes: 10, comments: 2 },
     };
 
-    const resultJson = await handler({
-      rawItems: [item],
-      topic: 'test topic',
-      days: 30,
-      topK: 20,
-    }, SIGNAL);
+    const resultJson = await handler(
+      {
+        rawItems: [item],
+        topic: 'test topic',
+        days: 30,
+        topK: 20,
+      },
+      SIGNAL
+    );
 
     const result = JSON.parse(resultJson);
     const validated = Report(result);
@@ -119,7 +122,10 @@ describe('last30days_core_report', () => {
       source: 'hn',
       engagement: { upvotes: 3, comments: 0 },
     };
-    const resultJson = await handler({ topic: 'str test', rawItems: JSON.stringify([item]) }, SIGNAL);
+    const resultJson = await handler(
+      { topic: 'str test', rawItems: JSON.stringify([item]) },
+      SIGNAL
+    );
     const result = JSON.parse(resultJson);
     expect(result.topic).toBe('str test');
   });
@@ -128,22 +134,28 @@ describe('last30days_core_report', () => {
 describe('last30days_validate', () => {
   it('always returns { ok: true } regardless of input', async () => {
     const handler = getStringHandler('last30days_validate');
-    const resultJson = await handler({
-      body: 'some report body',
-      citations: [{ url: 'https://x.com', source: 'web', retrievedAt: '2026-01-01' }],
-      returnedItemUrls: ['https://x.com'],
-    }, SIGNAL);
+    const resultJson = await handler(
+      {
+        body: 'some report body',
+        citations: [{ url: 'https://x.com', source: 'web', retrievedAt: '2026-01-01' }],
+        returnedItemUrls: ['https://x.com'],
+      },
+      SIGNAL
+    );
     const result = JSON.parse(resultJson);
     expect(result.ok).toBe(true);
   });
 
   it('returns the body string in the response', async () => {
     const handler = getStringHandler('last30days_validate');
-    const resultJson = await handler({
-      body: 'hello',
-      citations: [],
-      returnedItemUrls: [],
-    }, SIGNAL);
+    const resultJson = await handler(
+      {
+        body: 'hello',
+        citations: [],
+        returnedItemUrls: [],
+      },
+      SIGNAL
+    );
     const result = JSON.parse(resultJson);
     expect(result.body).toBe('hello');
   });

@@ -1,11 +1,11 @@
-import { useState } from "react";
-import type { GammaTemplate } from "@workbench/workflow";
+import { useState } from 'react';
+import type { GammaTemplate } from '@workbench/workflow';
 import {
   useManageGammaTemplates,
   useCreateGammaTemplate,
   useUpdateGammaTemplate,
   useDeleteGammaTemplate,
-} from "../hooks/use-presentation-workflow";
+} from '../hooks/use-presentation-workflow';
 
 type FormState = {
   name: string;
@@ -13,7 +13,7 @@ type FormState = {
   systemPrompt: string;
 };
 
-const EMPTY_FORM: FormState = { name: "", gammaId: "", systemPrompt: "" };
+const EMPTY_FORM: FormState = { name: '', gammaId: '', systemPrompt: '' };
 
 function TemplateForm({
   initial,
@@ -27,28 +27,22 @@ function TemplateForm({
   isSaving: boolean;
 }) {
   const [values, setValues] = useState<FormState>(initial);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (
-      !values.name.trim() ||
-      !values.gammaId.trim() ||
-      !values.systemPrompt.trim()
-    ) {
-      setError("All fields are required");
+    if (!values.name.trim() || !values.gammaId.trim() || !values.systemPrompt.trim()) {
+      setError('All fields are required');
       return;
     }
-    setError("");
+    setError('');
     onSave(values);
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <label className="block text-[12px] font-medium text-text-2 mb-1">
-          Name
-        </label>
+        <label className="block text-[12px] font-medium text-text-2 mb-1">Name</label>
         <input
           type="text"
           value={values.name}
@@ -59,33 +53,25 @@ function TemplateForm({
         />
       </div>
       <div>
-        <label className="block text-[12px] font-medium text-text-2 mb-1">
-          Gamma template ID
-        </label>
+        <label className="block text-[12px] font-medium text-text-2 mb-1">Gamma template ID</label>
         <input
           type="text"
           value={values.gammaId}
-          onChange={(e) =>
-            setValues((v) => ({ ...v, gammaId: e.target.value }))
-          }
+          onChange={(e) => setValues((v) => ({ ...v, gammaId: e.target.value }))}
           placeholder="e.g. abc123xyz"
           disabled={isSaving}
           className="w-full px-3 py-2 text-[13px] border border-border rounded-lg bg-surface-2 text-text font-mono focus:outline-none focus:ring-2 focus:ring-orange disabled:opacity-50"
         />
         <p className="mt-1 text-[11px] text-text-3">
-          Open the template in Gamma, then copy the ID from the URL (the part
-          after <code className="font-mono">/deck/</code>).
+          Open the template in Gamma, then copy the ID from the URL (the part after{' '}
+          <code className="font-mono">/deck/</code>).
         </p>
       </div>
       <div>
-        <label className="block text-[12px] font-medium text-text-2 mb-1">
-          System prompt
-        </label>
+        <label className="block text-[12px] font-medium text-text-2 mb-1">System prompt</label>
         <textarea
           value={values.systemPrompt}
-          onChange={(e) =>
-            setValues((v) => ({ ...v, systemPrompt: e.target.value }))
-          }
+          onChange={(e) => setValues((v) => ({ ...v, systemPrompt: e.target.value }))}
           placeholder="Describe the purpose and structure of this template so the agent knows how to use it…"
           rows={4}
           disabled={isSaving}
@@ -107,7 +93,7 @@ function TemplateForm({
           disabled={isSaving}
           className="px-4 py-1.5 text-[13px] bg-orange text-white rounded-lg font-medium hover:bg-orange-deep transition-[background-color] disabled:opacity-50"
         >
-          {isSaving ? "Saving…" : "Save"}
+          {isSaving ? 'Saving…' : 'Save'}
         </button>
       </div>
     </form>
@@ -132,9 +118,7 @@ function TemplateCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-text">{template.name}</p>
-          <p className="text-[11px] font-mono text-text-3 truncate">
-            {template.gammaId}
-          </p>
+          <p className="text-[11px] font-mono text-text-3 truncate">{template.gammaId}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
@@ -152,7 +136,7 @@ function TemplateCard({
                 disabled={isDeleting}
                 className="text-[12px] text-orange hover:underline disabled:opacity-50"
               >
-                {isDeleting ? "Deleting…" : "Confirm"}
+                {isDeleting ? 'Deleting…' : 'Confirm'}
               </button>
               <button
                 type="button"
@@ -173,9 +157,7 @@ function TemplateCard({
           )}
         </div>
       </div>
-      <p className="text-[12px] text-text-3 line-clamp-3">
-        {template.systemPrompt}
-      </p>
+      <p className="text-[12px] text-text-3 line-clamp-3">{template.systemPrompt}</p>
     </div>
   );
 }
@@ -188,16 +170,14 @@ export default function GammaTemplates() {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [pageError, setPageError] = useState("");
+  const [pageError, setPageError] = useState('');
 
   const handleCreate = (values: FormState) => {
     createTemplate
       .mutateAsync(values)
       .then(() => setShowAddForm(false))
       .catch((err: unknown) => {
-        setPageError(
-          err instanceof Error ? err.message : "Failed to create template",
-        );
+        setPageError(err instanceof Error ? err.message : 'Failed to create template');
       });
   };
 
@@ -206,17 +186,13 @@ export default function GammaTemplates() {
       .mutateAsync({ id, ...values })
       .then(() => setEditingId(null))
       .catch((err: unknown) => {
-        setPageError(
-          err instanceof Error ? err.message : "Failed to update template",
-        );
+        setPageError(err instanceof Error ? err.message : 'Failed to update template');
       });
   };
 
   const handleDelete = (id: string) => {
     deleteTemplate.mutateAsync(id).catch((err: unknown) => {
-      setPageError(
-        err instanceof Error ? err.message : "Failed to delete template",
-      );
+      setPageError(err instanceof Error ? err.message : 'Failed to delete template');
     });
   };
 
@@ -225,12 +201,10 @@ export default function GammaTemplates() {
       <div className="mx-auto max-w-2xl px-4 py-8 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-[16px] font-semibold text-text">
-              Presentation Templates
-            </h1>
+            <h1 className="text-[16px] font-semibold text-text">Presentation Templates</h1>
             <p className="text-[13px] text-text-3 mt-0.5">
-              Shared across the workbench. Each template pairs a Gamma deck
-              structure with a system prompt that guides the presentation agent.
+              Shared across the workbench. Each template pairs a Gamma deck structure with a system
+              prompt that guides the presentation agent.
             </p>
           </div>
           {!showAddForm && (
@@ -238,7 +212,7 @@ export default function GammaTemplates() {
               type="button"
               onClick={() => {
                 setShowAddForm(true);
-                setPageError("");
+                setPageError('');
               }}
               className="px-3 py-1.5 text-[13px] bg-orange text-white rounded-lg font-medium hover:bg-orange-deep transition-[background-color] shrink-0"
             >
@@ -251,24 +225,20 @@ export default function GammaTemplates() {
 
         {showAddForm && (
           <div className="rounded-lg border border-border bg-surface p-4">
-            <p className="text-[13px] font-medium text-text mb-3">
-              New template
-            </p>
+            <p className="text-[13px] font-medium text-text mb-3">New template</p>
             <TemplateForm
               initial={EMPTY_FORM}
               onSave={handleCreate}
               onCancel={() => {
                 setShowAddForm(false);
-                setPageError("");
+                setPageError('');
               }}
               isSaving={createTemplate.isPending}
             />
           </div>
         )}
 
-        {templates.isLoading && (
-          <p className="text-[13px] text-text-3">Loading templates…</p>
-        )}
+        {templates.isLoading && <p className="text-[13px] text-text-3">Loading templates…</p>}
 
         {!templates.isLoading &&
           !templates.isError &&
@@ -287,13 +257,8 @@ export default function GammaTemplates() {
           (templates.data ?? []).map((tmpl) => {
             if (editingId === tmpl.id) {
               return (
-                <div
-                  key={tmpl.id}
-                  className="rounded-lg border border-border bg-surface p-4"
-                >
-                  <p className="text-[13px] font-medium text-text mb-3">
-                    Edit template
-                  </p>
+                <div key={tmpl.id} className="rounded-lg border border-border bg-surface p-4">
+                  <p className="text-[13px] font-medium text-text mb-3">Edit template</p>
                   <TemplateForm
                     initial={{
                       name: tmpl.name,
@@ -313,13 +278,10 @@ export default function GammaTemplates() {
                 template={tmpl}
                 onEdit={() => {
                   setEditingId(tmpl.id);
-                  setPageError("");
+                  setPageError('');
                 }}
                 onDelete={() => handleDelete(tmpl.id)}
-                isDeleting={
-                  deleteTemplate.isPending &&
-                  deleteTemplate.variables === tmpl.id
-                }
+                isDeleting={deleteTemplate.isPending && deleteTemplate.variables === tmpl.id}
               />
             );
           })}

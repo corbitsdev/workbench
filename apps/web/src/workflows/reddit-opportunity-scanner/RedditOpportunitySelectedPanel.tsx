@@ -288,7 +288,9 @@ export function RedditOpportunitySelectedPanel({
           <div className="flex-1 flex flex-col items-center justify-center gap-2 px-5 text-center">
             <p className="text-[13px] text-text-2 font-medium">Reddit scan in progress</p>
             <p className="text-[13px] text-text-3">
-              {scanData ? scanProgressMessage(scanData) : 'Searching Reddit and scoring opportunities…'}
+              {scanData
+                ? scanProgressMessage(scanData)
+                : 'Searching Reddit and scoring opportunities…'}
             </p>
           </div>
         )}

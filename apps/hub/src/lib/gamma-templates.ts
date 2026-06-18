@@ -29,10 +29,14 @@ export function configToRow(
   const systemPrompt = config['systemPrompt'];
 
   if (typeof gammaId !== 'string' || gammaId === '') {
-    throw new Error(`Template ${templateId} has invalid config: gammaId must be a non-empty string`);
+    throw new Error(
+      `Template ${templateId} has invalid config: gammaId must be a non-empty string`
+    );
   }
   if (typeof systemPrompt !== 'string' || systemPrompt === '') {
-    throw new Error(`Template ${templateId} has invalid config: systemPrompt must be a non-empty string`);
+    throw new Error(
+      `Template ${templateId} has invalid config: systemPrompt must be a non-empty string`
+    );
   }
 
   return {

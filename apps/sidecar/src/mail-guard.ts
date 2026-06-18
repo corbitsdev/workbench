@@ -63,7 +63,7 @@ function recipientOf(call: ToolCall): string {
  */
 export function createGuardedMailRunner(
   inner: DefinedRunner,
-  options: GuardedMailRunnerOptions = {},
+  options: GuardedMailRunnerOptions = {}
 ): GuardedMailRunner {
   const maxOutboundPerTurn = options.maxOutboundPerTurn ?? MAX_OUTBOUND_PER_TURN;
   let outboundCount = 0;

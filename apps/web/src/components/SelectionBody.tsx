@@ -83,11 +83,7 @@ export default function SelectionBody({ content, workflowId, artifactId }: Selec
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         <div className="overflow-hidden rounded-[10px] border border-border bg-surface">
           {parsed.imageLink ? (
-            <img
-              src={parsed.imageLink}
-              alt={parsed.label}
-              className="h-full w-full object-cover"
-            />
+            <img src={parsed.imageLink} alt={parsed.label} className="h-full w-full object-cover" />
           ) : (
             <div className="grid min-h-[280px] place-items-center p-6 text-center text-sm text-text-3">
               Image unavailable.

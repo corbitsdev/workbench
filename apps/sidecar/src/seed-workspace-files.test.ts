@@ -16,7 +16,9 @@ afterEach(async () => {
 
 describe('seedWorkspaceFiles (CL-1952)', () => {
   it('creates missing declared files with their stub content', async () => {
-    const result = await seedWorkspaceFiles(workDir, [{ path: 'MEMORY.md', content: '# Memory\n' }]);
+    const result = await seedWorkspaceFiles(workDir, [
+      { path: 'MEMORY.md', content: '# Memory\n' },
+    ]);
 
     const written = await fs.promises.readFile(path.join(workDir, 'MEMORY.md'), 'utf-8');
     expect(written).toBe('# Memory\n');
@@ -27,7 +29,9 @@ describe('seedWorkspaceFiles (CL-1952)', () => {
     const target = path.join(workDir, 'MEMORY.md');
     await fs.promises.writeFile(target, 'accumulated memory the agent already wrote');
 
-    const result = await seedWorkspaceFiles(workDir, [{ path: 'MEMORY.md', content: '# Memory\n' }]);
+    const result = await seedWorkspaceFiles(workDir, [
+      { path: 'MEMORY.md', content: '# Memory\n' },
+    ]);
 
     const after = await fs.promises.readFile(target, 'utf-8');
     expect(after).toBe('accumulated memory the agent already wrote');

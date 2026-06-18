@@ -261,7 +261,14 @@ describe('createDefaultHarnessBuilder', () => {
         // And the workspace was seeded with the documented memory files.
         const seeded = await fs.promises.readdir(path.join(storeDir, 'workspace'));
         expect(seeded.sort()).toEqual(
-          ['CONTACTS.md', 'ERRORS.md', 'HUMAN.md', 'MEMORY.md', 'PENDING.md', 'SCRATCHPAD.md'].sort()
+          [
+            'CONTACTS.md',
+            'ERRORS.md',
+            'HUMAN.md',
+            'MEMORY.md',
+            'PENDING.md',
+            'SCRATCHPAD.md',
+          ].sort()
         );
       } finally {
         await fs.promises.rm(storeDir, { recursive: true, force: true });

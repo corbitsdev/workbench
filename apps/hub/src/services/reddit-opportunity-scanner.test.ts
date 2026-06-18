@@ -119,7 +119,9 @@ describe('reddit opportunity scanner service', () => {
 
     expect(mockRunCredentialTool).toHaveBeenCalled();
     expect(mockRunSingleTurnAgent).toHaveBeenCalled();
-    const draft = artifacts.find((a) => a.kind === 'reddit-opportunity-scan' && a.status === 'draft');
+    const draft = artifacts.find(
+      (a) => a.kind === 'reddit-opportunity-scan' && a.status === 'draft'
+    );
     expect(draft).toBeDefined();
     expect(draft?.source?.brief).toMatchObject({
       artifactType: 'reddit-opportunity-scan',

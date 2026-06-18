@@ -64,7 +64,9 @@ function renderBody(content: string, props: { workflowId?: string; artifactId?: 
 
 describe('SelectionBody', () => {
   it('shows one field at a time with stepper controls', async () => {
-    const view = renderBody(buildSelectionArtifactContent({ label: 'Row 1', fields: FIELDS, chosen: null }));
+    const view = renderBody(
+      buildSelectionArtifactContent({ label: 'Row 1', fields: FIELDS, chosen: null })
+    );
     expect(view.getAllByRole('radio')).toHaveLength(5);
     expect(view.getAllByText('Title')).toHaveLength(2);
     const user = userEvent.setup();
@@ -98,7 +100,9 @@ describe('SelectionBody', () => {
   });
 
   it('PATCHes the chosen indices on submit', async () => {
-    const view = renderBody(buildSelectionArtifactContent({ label: 'Row 1', fields: FIELDS, chosen: null }));
+    const view = renderBody(
+      buildSelectionArtifactContent({ label: 'Row 1', fields: FIELDS, chosen: null })
+    );
     const user = userEvent.setup();
     await user.click(view.getByDisplayValue('Title:1'));
     await user.click(view.getByRole('button', { name: 'Description' }));

@@ -273,7 +273,14 @@ export default function WorkbenchHome() {
         { replace: true }
       );
     }
-  }, [artifactIdFromURL, artifactsForURL, artifactsLoaded, setSearchParams, setWorkflowArtifact, setActiveModal]);
+  }, [
+    artifactIdFromURL,
+    artifactsForURL,
+    artifactsLoaded,
+    setSearchParams,
+    setWorkflowArtifact,
+    setActiveModal,
+  ]);
 
   if (provisioningState.status === 'error') {
     return (

@@ -860,9 +860,7 @@ describe('seedAgentTemplates', () => {
     // patchMissingModelConfigs should not have run. Its update signature is minimal:
     // only { modelConfig, updatedAt }. Template upserts include many more fields.
     const patchUpdate = updateCapture.find(
-      (v) =>
-        'modelConfig' in v &&
-        Object.keys(v).filter((k) => k !== 'updatedAt').length === 1
+      (v) => 'modelConfig' in v && Object.keys(v).filter((k) => k !== 'updatedAt').length === 1
     );
     expect(patchUpdate).toBeUndefined();
   });

@@ -103,7 +103,8 @@ describe('tryParseCollateral', () => {
   });
 
   it('returns a body with no structural tags unchanged', () => {
-    const body = '## Heading\n\nA normal paragraph with <strong>emphasis</strong> and a list.\n\n- one\n- two';
+    const body =
+      '## Heading\n\nA normal paragraph with <strong>emphasis</strong> and a list.\n\n- one\n- two';
     const raw = JSON.stringify({ title: 'Blog', body });
 
     const result = tryParseCollateral(raw, 'wf_1', 'blog');

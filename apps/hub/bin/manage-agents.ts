@@ -95,17 +95,8 @@ async function getMe(cookies: CookieJar): Promise<{ tenants: TenantRow[] }> {
   return { tenants };
 }
 
-async function listInstances(
-  tenantId: string,
-  cookies: CookieJar
-): Promise<AgentInstanceRow[]> {
-  const res = await api(
-    BASE,
-    'GET',
-    `/api/v1/agents?tenantId=${tenantId}`,
-    undefined,
-    cookies
-  );
+async function listInstances(tenantId: string, cookies: CookieJar): Promise<AgentInstanceRow[]> {
+  const res = await api(BASE, 'GET', `/api/v1/agents?tenantId=${tenantId}`, undefined, cookies);
   if (res.status !== 200) {
     log(`  Could not list agents for tenant ${tenantId}: ${res.status}`);
     return [];
@@ -199,7 +190,9 @@ async function main() {
   console.log('\nRunning instances by tenant:');
   const running = allInstances.filter((i) => i.status === 'running' || i.status === 'deployed');
   for (const inst of running) {
-    console.log(`  --tenant ${inst.tenantId} --stop ${inst.id}  # ${inst.agentName} @ ${inst.tenantSlug}`);
+    console.log(
+      `  --tenant ${inst.tenantId} --stop ${inst.id}  # ${inst.agentName} @ ${inst.tenantSlug}`
+    );
   }
 }
 

@@ -57,7 +57,7 @@ function statusTag(status: string): string {
   const tags: Record<string, string> = {
     running: 'RUNNING ',
     deployed: 'DEPLOYED',
-    error:   'ERROR   ',
+    error: 'ERROR   ',
     stopped: 'STOPPED ',
   };
   return tags[status] ?? status.slice(0, 8).padEnd(8).toUpperCase();
@@ -87,8 +87,18 @@ async function listInstances(tenantId: string, cookies: CookieJar): Promise<Inst
   return (res.data as { data: Instance[] }).data ?? [];
 }
 
-async function stopInstance(tenantId: string, instanceId: string, cookies: CookieJar): Promise<boolean> {
-  const res = await api(BASE, 'DELETE', `/api/tenants/${tenantId}/agents/instances/${instanceId}`, undefined, cookies);
+async function stopInstance(
+  tenantId: string,
+  instanceId: string,
+  cookies: CookieJar
+): Promise<boolean> {
+  const res = await api(
+    BASE,
+    'DELETE',
+    `/api/tenants/${tenantId}/agents/instances/${instanceId}`,
+    undefined,
+    cookies
+  );
   const ok = res.status === 200 || res.status === 204;
   console.log(ok ? `  ✓ stopped ${instanceId}` : `  ✗ failed  ${instanceId} (${res.status})`);
   return ok;
@@ -100,7 +110,9 @@ function printInstances(instances: Instance[]): void {
     return;
   }
   instances.forEach((inst, i) => {
-    console.log(`  ${String(i + 1).padStart(2)}.  [${statusTag(inst.status)}]  ${inst.agentName.padEnd(14)}  ${inst.id}  ${inst.address}`);
+    console.log(
+      `  ${String(i + 1).padStart(2)}.  [${statusTag(inst.status)}]  ${inst.agentName.padEnd(14)}  ${inst.id}  ${inst.address}`
+    );
   });
 }
 
@@ -133,7 +145,10 @@ async function handleTenant(tenant: Tenant, cookies: CookieJar): Promise<void> {
   while (true) {
     const input = await ask('\n> ');
 
-    if (input === 'q') { rl.close(); process.exit(0); }
+    if (input === 'q') {
+      rl.close();
+      process.exit(0);
+    }
     if (input === 'done' || input === '') break;
 
     if (input === 'all') {
@@ -145,7 +160,10 @@ async function handleTenant(tenant: Tenant, cookies: CookieJar): Promise<void> {
     // By instance ID
     if (input.startsWith('ins_')) {
       const inst = instances.find((i) => i.id === input);
-      if (!inst) { console.log('  Instance not found.'); continue; }
+      if (!inst) {
+        console.log('  Instance not found.');
+        continue;
+      }
       await stopInstance(inst.tenantId, inst.id, cookies);
       continue;
     }
@@ -155,8 +173,14 @@ async function handleTenant(tenant: Tenant, cookies: CookieJar): Promise<void> {
     if (nums.every((n) => !isNaN(n))) {
       for (const n of nums) {
         const inst = instances[n - 1];
-        if (!inst) { console.log(`  No instance at position ${n}.`); continue; }
-        if (inst.status === 'stopped') { console.log(`  ${inst.agentName} is already stopped.`); continue; }
+        if (!inst) {
+          console.log(`  No instance at position ${n}.`);
+          continue;
+        }
+        if (inst.status === 'stopped') {
+          console.log(`  ${inst.agentName} is already stopped.`);
+          continue;
+        }
         await stopInstance(inst.tenantId, inst.id, cookies);
       }
       continue;
@@ -172,7 +196,10 @@ async function main() {
 
   if (FLAG_TENANT) {
     const tenant = tenants.find((t) => t.id === FLAG_TENANT || t.name === FLAG_TENANT);
-    if (!tenant) { log(`Tenant not found: ${FLAG_TENANT}`); process.exit(1); }
+    if (!tenant) {
+      log(`Tenant not found: ${FLAG_TENANT}`);
+      process.exit(1);
+    }
     await handleTenant(tenant, cookies);
     rl.close();
     return;
@@ -194,7 +221,10 @@ async function main() {
       tenant = tenants.find((t) => t.id === input || t.name === input);
     }
 
-    if (!tenant) { console.log('  Not found.'); continue; }
+    if (!tenant) {
+      console.log('  Not found.');
+      continue;
+    }
     await handleTenant(tenant, cookies);
   }
 

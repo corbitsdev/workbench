@@ -8,9 +8,7 @@ const log = getLogger(['api', 'members']);
 
 const { principal, user } = intxSchema;
 
-export function createMembersRouter(
-  db: DB['db']
-): Hono<{ Variables: { userId: string } }> {
+export function createMembersRouter(db: DB['db']): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
   router.get('/members', async (c) => {

@@ -65,7 +65,13 @@ async function listAllPrincipals(tenantId: string, cookies: CookieJar): Promise<
   let cursor: string | null = null;
   do {
     const qs = `kind=user&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
-    const res = await api(BASE, 'GET', `/api/tenants/${tenantId}/principals?${qs}`, undefined, cookies);
+    const res = await api(
+      BASE,
+      'GET',
+      `/api/tenants/${tenantId}/principals?${qs}`,
+      undefined,
+      cookies
+    );
     if (res.status !== 200) fail(`list principals for tenant ${tenantId}`, res.status, res.data);
     const page = res.data as PaginatedPrincipals;
     all.push(...page.data);

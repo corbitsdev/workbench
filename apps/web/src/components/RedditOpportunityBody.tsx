@@ -19,9 +19,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function approvedLabels(
-  items: RedditOpportunityScan['recommendations']['keywords']
-): string[] {
+function approvedLabels(items: RedditOpportunityScan['recommendations']['keywords']): string[] {
   return items
     .filter((item) => item.source !== 'rejected')
     .map((item) => item.label.replace(/^r\//i, ''));
@@ -74,8 +72,7 @@ export default function RedditOpportunityBody({
             Found {scan.opportunities.length} ranked opportunit
             {scan.opportunities.length === 1 ? 'y' : 'ies'} across {approvedSubreddits.length}{' '}
             subreddit{approvedSubreddits.length === 1 ? '' : 's'} using {approvedKeywords.length}{' '}
-            keyword{approvedKeywords.length === 1 ? '' : 's'} ({scan.scanConfig.timeWindow}{' '}
-            window).
+            keyword{approvedKeywords.length === 1 ? '' : 's'} ({scan.scanConfig.timeWindow} window).
           </p>
           <p className="text-xs text-text-3">
             Last scanned {new Date(scan.watchlist.lastScannedAt).toLocaleString()}
@@ -84,27 +81,27 @@ export default function RedditOpportunityBody({
       )}
 
       {!isResults && (
-      <Section title="Business profile">
-        <p className="text-sm text-text-2">{scan.businessProfile.whatTheySell}</p>
-        <p className="text-xs text-text-3">
-          Keywords: {scan.businessProfile.mainKeywords.join(', ')}
-        </p>
-        <p className="text-xs text-text-3">
-          Competitors: {scan.businessProfile.competitors.join(', ') || 'None identified'}
-        </p>
-        {scan.businessProfile.audienceNotes && (
-          <p className="text-xs text-text-3">Audience: {scan.businessProfile.audienceNotes}</p>
-        )}
-      </Section>
+        <Section title="Business profile">
+          <p className="text-sm text-text-2">{scan.businessProfile.whatTheySell}</p>
+          <p className="text-xs text-text-3">
+            Keywords: {scan.businessProfile.mainKeywords.join(', ')}
+          </p>
+          <p className="text-xs text-text-3">
+            Competitors: {scan.businessProfile.competitors.join(', ') || 'None identified'}
+          </p>
+          {scan.businessProfile.audienceNotes && (
+            <p className="text-xs text-text-3">Audience: {scan.businessProfile.audienceNotes}</p>
+          )}
+        </Section>
       )}
 
       {!isResults && (
-      <Section title="Recommendations">
-        <p className="text-xs text-text-3">Keywords: {approvedKeywords.join(', ')}</p>
-        <p className="text-xs text-text-3">
-          Subreddits: {approvedSubreddits.map((sub) => `r/${sub}`).join(', ')}
-        </p>
-      </Section>
+        <Section title="Recommendations">
+          <p className="text-xs text-text-3">Keywords: {approvedKeywords.join(', ')}</p>
+          <p className="text-xs text-text-3">
+            Subreddits: {approvedSubreddits.map((sub) => `r/${sub}`).join(', ')}
+          </p>
+        </Section>
       )}
 
       {(isResults || scan.opportunities.length > 0) && (
@@ -116,31 +113,31 @@ export default function RedditOpportunityBody({
             </p>
           )}
           {scan.opportunities.length > 0 && (
-          <div className="flex flex-wrap gap-2 pb-2">
-            <select
-              value={subredditFilter}
-              onChange={(e) => setSubredditFilter(e.target.value)}
-              className="rounded border border-border bg-surface px-2 py-1 text-xs text-text"
-            >
-              <option value="all">All subreddits</option>
-              {subreddits.map((sub) => (
-                <option key={sub} value={sub}>
-                  r/{sub}
-                </option>
-              ))}
-            </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded border border-border bg-surface px-2 py-1 text-xs text-text"
-            >
-              <option value="all">All statuses</option>
-              <option value="new">New</option>
-              <option value="saved">Saved</option>
-              <option value="dismissed">Dismissed</option>
-              <option value="handled">Handled</option>
-            </select>
-          </div>
+            <div className="flex flex-wrap gap-2 pb-2">
+              <select
+                value={subredditFilter}
+                onChange={(e) => setSubredditFilter(e.target.value)}
+                className="rounded border border-border bg-surface px-2 py-1 text-xs text-text"
+              >
+                <option value="all">All subreddits</option>
+                {subreddits.map((sub) => (
+                  <option key={sub} value={sub}>
+                    r/{sub}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="rounded border border-border bg-surface px-2 py-1 text-xs text-text"
+              >
+                <option value="all">All statuses</option>
+                <option value="new">New</option>
+                <option value="saved">Saved</option>
+                <option value="dismissed">Dismissed</option>
+                <option value="handled">Handled</option>
+              </select>
+            </div>
           )}
           <div className="space-y-3">
             {topOpportunities.map((opportunity) => (

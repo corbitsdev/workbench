@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import JSZip from 'jszip';
-import { buildSkillBundle, buildSkillTree, filesFromZip, SkillLibraryError, toAssetName } from './skill-library';
+import {
+  buildSkillBundle,
+  buildSkillTree,
+  filesFromZip,
+  SkillLibraryError,
+  toAssetName,
+} from './skill-library';
 
 function file(path: string, content: string, mimeType = 'text/markdown') {
   return { path, content: Buffer.from(content), mimeType };
@@ -81,9 +87,9 @@ describe('buildSkillTree', () => {
 
   it('throws if a manifest file has no content in the map', () => {
     const bundle = buildSkillBundle([file('SKILL.md', '# ASAP')]);
-    expect(() =>
-      buildSkillTree('asap', null, bundle.manifest, new Map())
-    ).toThrow('Missing content for bundle file');
+    expect(() => buildSkillTree('asap', null, bundle.manifest, new Map())).toThrow(
+      'Missing content for bundle file'
+    );
   });
 });
 

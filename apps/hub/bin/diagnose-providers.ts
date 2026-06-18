@@ -20,9 +20,9 @@
  * finds openai-compatible rows to rewrite).
  */
 
-import postgres from "postgres";
+import postgres from 'postgres';
 
-const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+const ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 
 /**
  * Normalize an anthropic provider baseURL to the bare host the adapter
@@ -32,8 +32,8 @@ const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 export function normalizeAnthropicBaseURL(current?: string | null): string {
   if (!current) return ANTHROPIC_BASE_URL;
   let value = current.trim();
-  while (value.endsWith("/")) value = value.slice(0, -1);
-  if (value.endsWith("/v1")) value = value.slice(0, -"/v1".length);
+  while (value.endsWith('/')) value = value.slice(0, -1);
+  if (value.endsWith('/v1')) value = value.slice(0, -'/v1'.length);
   return value.length > 0 ? value : ANTHROPIC_BASE_URL;
 }
 
@@ -59,31 +59,27 @@ async function printProvider(sql: postgres.Sql, p: ProviderRow): Promise<void> {
   console.log(`provider ${p.id}`);
   console.log(`  tenant:  ${p.tenant_id}`);
   console.log(`  plugin:  ${p.plugin}`);
-  console.log(`  baseURL: ${md["baseURL"] ?? "(none)"}`);
-  if (md["model"]) console.log(`  model:   ${md["model"]}`);
+  console.log(`  baseURL: ${md['baseURL'] ?? '(none)'}`);
+  if (md['model']) console.log(`  model:   ${md['model']}`);
 
-  const creds = await sql<
-    { id: string; name: string; tenant_id: string; status: string }[]
-  >`
+  const creds = await sql<{ id: string; name: string; tenant_id: string; status: string }[]>`
     select id, name, tenant_id, status
     from credential
     where provider_id = ${p.id}
   `;
   if (creds.length === 0) {
-    console.log("  credentials: (none bound)");
+    console.log('  credentials: (none bound)');
   } else {
     for (const c of creds) {
-      console.log(
-        `  credential ${c.id} name="${c.name}" status=${c.status} tenant=${c.tenant_id}`,
-      );
+      console.log(`  credential ${c.id} name="${c.name}" status=${c.status} tenant=${c.tenant_id}`);
     }
   }
-  console.log("");
+  console.log('');
 }
 
 if (import.meta.main) {
-  const fix = process.argv.includes("--fix");
-  const sql = postgres(requireEnv("DATABASE_URL"), { max: 1 });
+  const fix = process.argv.includes('--fix');
+  const sql = postgres(requireEnv('DATABASE_URL'), { max: 1 });
 
   try {
     const openaiProviders = await sql<ProviderRow[]>`
@@ -99,22 +95,18 @@ if (import.meta.main) {
       order by tenant_id
     `;
 
-    console.log(
-      `Found ${openaiProviders.length} openai-compatible provider row(s):\n`,
-    );
+    console.log(`Found ${openaiProviders.length} openai-compatible provider row(s):\n`);
     for (const p of openaiProviders) await printProvider(sql, p);
 
-    console.log(
-      `Found ${anthropicProviders.length} anthropic provider row(s):\n`,
-    );
+    console.log(`Found ${anthropicProviders.length} anthropic provider row(s):\n`);
     for (const p of anthropicProviders) await printProvider(sql, p);
 
     if (fix) {
       if (openaiProviders.length > 0) {
-        const baseURL = requireEnv("OPENAI_COMPATIBLE_BASE_URL");
-        const model = process.env["OPENAI_COMPATIBLE_MODEL"];
+        const baseURL = requireEnv('OPENAI_COMPATIBLE_BASE_URL');
+        const model = process.env['OPENAI_COMPATIBLE_MODEL'];
         console.log(
-          `\nFixing openai-compatible baseURL -> ${baseURL}${model ? `, model -> ${model}` : ""}`,
+          `\nFixing openai-compatible baseURL -> ${baseURL}${model ? `, model -> ${model}` : ''}`
         );
         for (const p of openaiProviders) {
           const md = (p.metadata ?? {}) as Record<string, unknown>;
@@ -127,10 +119,7 @@ if (import.meta.main) {
       console.log(`\nNormalizing anthropic baseURL -> ${ANTHROPIC_BASE_URL}`);
       for (const p of anthropicProviders) {
         const md = (p.metadata ?? {}) as Record<string, unknown>;
-        const current =
-          typeof md["baseURL"] === "string"
-            ? (md["baseURL"] as string)
-            : undefined;
+        const current = typeof md['baseURL'] === 'string' ? (md['baseURL'] as string) : undefined;
         const baseURL = normalizeAnthropicBaseURL(current);
         if (current === baseURL) {
           console.log(`  Skipped provider ${p.id} (already ${baseURL})`);
@@ -139,13 +128,11 @@ if (import.meta.main) {
         const next = { ...md, baseURL };
         await sql`update provider set metadata = ${sql.json(next)} where id = ${p.id}`;
         console.log(
-          `  Updated provider ${p.id} (tenant ${p.tenant_id}): ${current ?? "(none)"} -> ${baseURL}`,
+          `  Updated provider ${p.id} (tenant ${p.tenant_id}): ${current ?? '(none)'} -> ${baseURL}`
         );
       }
 
-      console.log(
-        "\nDone. Re-launch affected agent sessions to pick up the new baseURL.",
-      );
+      console.log('\nDone. Re-launch affected agent sessions to pick up the new baseURL.');
     }
   } finally {
     await sql.end();

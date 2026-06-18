@@ -76,8 +76,8 @@ export function RedditOpportunityNewPane({
 
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
         <p className="text-[13px] text-text-2">
-          Enter a website URL to scan for Reddit opportunities. We will analyze the site,
-          suggest keywords and subreddits, then search Reddit for high-value threads.
+          Enter a website URL to scan for Reddit opportunities. We will analyze the site, suggest
+          keywords and subreddits, then search Reddit for high-value threads.
         </p>
 
         <div className="space-y-3">
@@ -111,9 +111,7 @@ export function RedditOpportunityNewPane({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-text mb-1">
-              Target geography
-            </label>
+            <label className="block text-[13px] font-medium text-text mb-1">Target geography</label>
             <input
               type="text"
               value={targetGeography}
@@ -125,7 +123,9 @@ export function RedditOpportunityNewPane({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-text mb-1">ICP / audience hints</label>
+            <label className="block text-[13px] font-medium text-text mb-1">
+              ICP / audience hints
+            </label>
             <textarea
               value={icpHints}
               onChange={(e) => setIcpHints(e.target.value)}

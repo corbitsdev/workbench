@@ -1,10 +1,7 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import * as intxDb from '@intx/db';
 import type { HubDb } from '../db';
-import {
-  providerMetadataModel,
-  resolveCredentialInferenceSource,
-} from './workflow-orchestration';
+import { providerMetadataModel, resolveCredentialInferenceSource } from './workflow-orchestration';
 
 const resolveCredentialById = mock(async () => ({
   id: 'cred-zen',
