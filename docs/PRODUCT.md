@@ -42,6 +42,19 @@ and metadata), the user selects the best of each, and exports a CSV of the chose
 generic base (upload → enrich → review → export, the per-row "selection" picker, CSV download)
 is reusable; new enrichment domains are added as new kinds, not forks.
 
+## Skill Library
+
+Users can build and manage a personal library of **skills** — reusable AI instruction sets that extend agent behavior. A skill is a markdown file (or a bundle of files) that defines a prompt, persona, or procedure. Skills are attached to agents to shape how those agents respond.
+
+Key capabilities:
+
+- **Upload** — create a skill from pasted markdown, a single file, a folder, or a zip archive
+- **Browse** — view all skills in the library; each card navigates to the skill's detail page
+- **Inspect** — the detail page renders the skill's files in a file-tree sidebar; `SKILL.md` is shown as rendered markdown with a source/preview toggle
+- **Delete** — owners can permanently remove a skill and its git store from the detail page; deletion requires an inline confirmation step
+
+Skills are currently scoped to the user's personal tenant context; sharing across the org is a forward work item.
+
 ## Target Users
 
 - Sales and marketing teams who want to turn call insights into usable content

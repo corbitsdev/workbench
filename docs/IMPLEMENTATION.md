@@ -248,6 +248,42 @@ Both modes produce an `InferenceSource` consumed identically by the step runners
 difference is where the source originates. The run-step handler in `apps/hub/src/routes/workflow.ts`
 branches on `agentId` to pick the resolver.
 
+### Skill Library
+
+| Method   | Route                                     | Input                                                        | Output                              |
+| -------- | ----------------------------------------- | ------------------------------------------------------------ | ----------------------------------- |
+| `GET`    | `/skills`                                 | `?tenantId=...`                                              | `{ skills: SkillItem[] }`           |
+| `GET`    | `/skills/:assetId`                        | `?tenantId=...`                                              | `{ skill: SkillItem, files: SkillFile[] }` |
+| `POST`   | `/skills`                                 | JSON `{ name, text, description? }` or multipart files      | `{ skill: SkillItem }` 201/200      |
+| `DELETE` | `/skills/:assetId`                        | `?tenantId=...`                                              | `{ ok: true }` 200                  |
+| `POST`   | `/agents/:agentId/skills/:assetId`        | `?tenantId=...`                                              | `{ agentAsset }` 201                |
+| `DELETE` | `/agents/:agentId/skills/:assetId`        | `?tenantId=...`                                              | `{ ok: true }` 200                  |
+
+**`SkillItem`**: `{ id, name, displayName: string | null, createdAt, updatedAt }` — `name` is the kebab asset name; `displayName` is the human label entered at upload.
+
+**`SkillFile`**: `{ path: string, content?: string }` — `content` is absent for binary files. `path` is relative to the `<assetName>/` prefix (e.g. `SKILL.md`, `examples/demo.md`).
+
+**Service** — `apps/hub/src/services/skill-library.ts`:
+
+- `buildSkillBundle(files)` — validates paths (path traversal rejection, junk file filter), enforces 20 MB / 200 file limits, picks an entrypoint (`SKILL.md` preferred), computes a content checksum
+- `buildSkillTree(assetName, description, bundle, fileContents)` — maps bundle files to `<assetName>/` tree paths, synthesises YAML frontmatter for the entrypoint (required by Interchange's `skillKindHandler`)
+- `createSkill` — calls `AssetService.createAsset` then `populateAsset`; catches `AssetServiceError { reason: 'duplicate_asset' }` and re-raises as `SkillLibraryError` (409)
+- `getSkillContent` — `git.walk` over `refs/heads/main`; returns `undefined` from `map` for directories (descent) and `null` only to hard-prune; strips frontmatter from `SKILL.md` before returning
+- `deleteSkill` — deletes `asset` row (cascades `agent_asset`), then `fs.rm` the git repo dir; logs but does not throw on fs failure
+
+**Frontend** — `apps/web/src/hooks/use-skills.ts`:
+
+All skill hooks live here (`useSkillLibrary`, `useSkillDetail`, `useCreateSkill`, `useDeleteSkill`). `use-workflow.ts` re-exports them for backward compatibility. ArkType schemas validate API responses at the boundary.
+
+**Detail page** — `apps/web/src/pages/SkillDetail.tsx`:
+
+- Builds a `TreeNode` tree from the flat `files` array; renders a collapsible sidebar tree with `TreeItem`
+- Auto-selects the first file (`selectedPath ?? files[0]?.path`)
+- Renders `SKILL.md` through `react-markdown` with a source/preview toggle (bottom-left corner)
+- Inline delete: "Delete" → confirm/cancel buttons → `mutateAsync` → navigate to `/skills` on success; surfaces errors inline without swallowing them
+
+**Routing** — `/skills` (library), `/skills/new` (upload form), `/skills/:id` (detail + delete)
+
 ### Health
 
 | Method | Route     | Output                              |

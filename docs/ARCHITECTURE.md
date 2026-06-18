@@ -158,6 +158,45 @@ See [CREATING_AGENTS_AND_TOOLS.md](./CREATING_AGENTS_AND_TOOLS.md) for the full 
 
 These grants **must** be persisted, not synthesized in memory at launch. Interchange's reconnect path (`collectGrants` → `sendGrantsUpdate`) re-sends only what it reads from the `grant` table, so in-memory tool grants are dropped on every sidecar reconnect — the agent then fails every tool call with `No matching grants for tool:<name>`. Persisting makes launch and reconnect agree, since both resolve grants the same way.
 
+## Skill Library
+
+Skills are first-class **Interchange assets** (`kind: 'skill'`). Their lifecycle is owned entirely by the Interchange asset substrate — the workbench never reimplements asset storage or versioning.
+
+### Storage model
+
+Each skill is an Interchange asset row (`asset` table, Interchange-owned) backed by a git repository on disk managed by `RepoStore`. The git repo holds all skill files under an `<assetName>/` path prefix. The entrypoint file `<assetName>/SKILL.md` carries Interchange-injected YAML frontmatter consumed by `skillKindHandler`; the workbench strips this frontmatter before returning content to the UI.
+
+Skills are committed to `refs/heads/main` via `AssetService.populateAsset`. `AssetService.createAsset` initialises the git repo; `populateAsset` commits the tree content.
+
+### Routes
+
+| Method   | Path                        | Action                                    |
+| -------- | --------------------------- | ----------------------------------------- |
+| `GET`    | `/skills`                   | List skills for the caller's tenant       |
+| `GET`    | `/skills/:assetId`          | Fetch skill metadata + full file tree     |
+| `POST`   | `/skills`                   | Create or update a skill                  |
+| `DELETE` | `/skills/:assetId`          | Delete skill — removes asset row + git dir |
+| `POST`   | `/agents/:agentId/skills/:assetId` | Attach a skill to an agent         |
+| `DELETE` | `/agents/:agentId/skills/:assetId` | Detach a skill from an agent       |
+
+### Deletion
+
+`AssetService` has no delete method (assets are git-backed immutable versions). Deletion is a two-step workbench operation:
+
+1. Delete the `asset` row — `agent_asset` rows cascade automatically via FK `onDelete: 'cascade'`
+2. Remove the git repo directory via `RepoStore.getRepoDir()` + `fs.rm({ recursive: true })`
+
+Only the asset's `creatorPrincipalId` may delete it; the route returns 403 otherwise.
+
+### File tree reading
+
+`GET /skills/:assetId` walks the git tree with `isomorphic-git`'s `git.walk`, resolving `refs/heads/main` explicitly (HEAD is not set in Interchange-created repos). The map callback returns `undefined` for directory entries (to allow descent) and `null` only to prune; returning `null` for a directory would prune the entire subtree. Binary files are returned without a `content` field.
+
+### Known forward items
+
+- Skills are currently scoped to the caller's `personalTenantId`; this will move to the shared global org tenant when CL-1445 lands
+- Agent attachment is owned by the hub via `agent_asset` FK; no detach method exists in `AssetService` so detach deletes the row directly
+
 ## Database Schema
 
 Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
