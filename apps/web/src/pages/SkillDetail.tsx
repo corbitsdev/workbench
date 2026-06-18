@@ -109,8 +109,8 @@ export function SkillDetail() {
   const files = detailQuery.data?.files ?? [];
   const tree = buildTree(files);
 
-  const selectedFile =
-    files.find((f) => f.path === selectedPath) ?? (files.length === 1 ? files[0] : null);
+  const effectivePath = selectedPath ?? files[0]?.path ?? null;
+  const selectedFile = files.find((f) => f.path === effectivePath) ?? null;
 
   const handleDelete = async () => {
     if (!id) return;
@@ -176,7 +176,7 @@ export function SkillDetail() {
 
       {detailQuery.data && (
         <div className="flex flex-1 overflow-hidden">
-          {files.length > 1 && (
+          {tree.length > 0 && (
             <div className="w-56 shrink-0 overflow-y-auto border-r border-border bg-surface py-2">
               {tree.map((node) => (
                 <TreeItem
@@ -184,7 +184,7 @@ export function SkillDetail() {
                   node={node}
                   depth={0}
                   onSelect={(n) => setSelectedPath(n.path)}
-                  selectedPath={selectedPath ?? files[0]?.path ?? null}
+                  selectedPath={effectivePath}
                 />
               ))}
             </div>
