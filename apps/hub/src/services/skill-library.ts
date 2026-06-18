@@ -652,6 +652,16 @@ type RawCommit = {
   commit: { message: string; author: { name: string; timestamp: number } };
 };
 
+// Interchange's storage-isogit lays down a genesis commit with this message
+// (containing only .gitignore) when it inits an asset repo, before any content
+// is written. It's platform bookkeeping, not a skill version, so it's excluded
+// from history — otherwise every freshly created skill shows a spurious v1.
+const REPO_INIT_COMMIT_MESSAGE = 'Initialize repository';
+
+export function excludeRepoInitCommit(commits: RawCommit[]): RawCommit[] {
+  return commits.filter((entry) => entry.commit.message.trim() !== REPO_INIT_COMMIT_MESSAGE);
+}
+
 /**
  * Assigns sequential version numbers to git log output, which arrives
  * newest-first: the oldest commit is v1 and the newest gets the highest number.
@@ -683,7 +693,7 @@ async function readAllVersions(
   const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
   try {
     const commits = await git.log({ fs, dir, ref: SKILL_BUNDLE_REF });
-    return toVersionEntries(commits as RawCommit[]);
+    return toVersionEntries(excludeRepoInitCommit(commits as RawCommit[]));
   } catch (err) {
     const name = err instanceof Error ? err.name : '';
     if (name !== 'NotFoundError' && name !== 'TreeOrBlobNotFoundError') {
