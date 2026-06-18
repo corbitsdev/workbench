@@ -409,11 +409,44 @@ export async function readSkillPrompt(
 export async function getSkillContent(
   repoStore: RepoStore,
   assetId: string,
-  assetName: string
+  assetName: string,
+  fs: typeof nodefs = nodefs
 ): Promise<{ path: string; content?: string }[]> {
-  const skillMd = await readAssetFile(repoStore, assetId, `${assetName}/SKILL.md`);
-  if (!skillMd) return [];
-  return [{ path: 'SKILL.md', content: skillMd.toString('utf8') }];
+  const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
+  const prefix = `${assetName}/`;
+
+  try {
+    const entries = await git.walk({
+      fs,
+      dir,
+      trees: [git.TREE({ ref: 'HEAD' })],
+      map: async (filepath, [entry]) => {
+        if (!entry || (await entry.type()) !== 'blob') return undefined;
+        if (!filepath.startsWith(prefix)) return undefined;
+        const relativePath = filepath.slice(prefix.length);
+        if (!relativePath) return undefined;
+        const blob = await entry.content();
+        let content: string | undefined;
+        if (blob) {
+          try {
+            content = new TextDecoder('utf-8', { fatal: true }).decode(blob);
+          } catch {
+            // binary file — omit content
+          }
+        }
+        return { path: relativePath, content };
+      },
+    });
+    return (entries.filter(Boolean) as { path: string; content?: string }[]).sort((a, b) =>
+      a.path.localeCompare(b.path)
+    );
+  } catch (err) {
+    const name = err instanceof Error ? err.name : '';
+    if (name !== 'NotFoundError' && name !== 'TreeOrBlobNotFoundError') {
+      log.error('Unexpected error reading skill content', { assetId, error: String(err) });
+    }
+    return [];
+  }
 }
 
 export async function createSkill(
