@@ -4,6 +4,7 @@ import {
   buildSkillBundle,
   buildSkillTree,
   canManageSkill,
+  excludeRepoInitCommit,
   filesFromZip,
   isSkillVisible,
   SkillLibraryError,
@@ -62,6 +63,34 @@ describe('canManageSkill', () => {
         { userId: 'usr-me', principalId: 'prn-mine' }
       )
     ).toBe(false);
+  });
+});
+
+describe('excludeRepoInitCommit', () => {
+  const content = (oid: string, message: string) => ({
+    oid,
+    commit: { message, author: { name: 'Mae', timestamp: 1700000000 } },
+  });
+
+  it('drops the trailing repo-init genesis commit', () => {
+    const commits = [
+      content('ccc', 'Update'),
+      content('bbb', 'Add my-skill'),
+      content('aaa', 'Initialize repository'),
+    ];
+    expect(excludeRepoInitCommit(commits).map((c) => c.oid)).toEqual(['ccc', 'bbb']);
+  });
+
+  it('numbers the first content commit v1 (no spurious extra version)', () => {
+    const commits = [content('bbb', 'Add my-skill'), content('aaa', 'Initialize repository')];
+    const entries = toVersionEntries(excludeRepoInitCommit(commits));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ version: 1, message: 'Add my-skill' });
+  });
+
+  it('leaves a normal history untouched', () => {
+    const commits = [content('bbb', 'Update'), content('aaa', 'Add my-skill')];
+    expect(excludeRepoInitCommit(commits).map((c) => c.oid)).toEqual(['bbb', 'aaa']);
   });
 });
 
