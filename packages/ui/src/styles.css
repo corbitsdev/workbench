@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /*
  * Scan this package's own source so Tailwind v4 generates the utilities used
@@ -60,8 +60,8 @@
   --radius-xl: 24px;
   --radius-panel: 28px;
 
-  --font-body: "Red Hat Display", "Open Sans", Roboto, Arial, sans-serif;
-  --font-mono: "Space Mono", "Fira Code", Monaco, Consolas, monospace;
+  --font-body: 'Red Hat Display', 'Open Sans', Roboto, Arial, sans-serif;
+  --font-mono: 'Space Mono', 'Fira Code', Monaco, Consolas, monospace;
 
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -113,7 +113,7 @@
   --sidebar-ring: var(--accent);
 }
 
-html[data-theme="corbits-dark"] {
+html[data-theme='corbits-dark'] {
   --page: #151112;
   --bg: #221d1e;
   --surface: #2b2627;
@@ -137,7 +137,7 @@ html[data-theme="corbits-dark"] {
   --sidebar-ring: var(--accent);
 }
 
-html[data-theme="corbits-light"] {
+html[data-theme='corbits-light'] {
   --page: #efdcbe;
   --bg: #f7ead5;
   --surface: #ffffff;
@@ -161,7 +161,7 @@ html[data-theme="corbits-light"] {
   --sidebar-ring: var(--accent);
 }
 
-html[data-theme="tkww"] {
+html[data-theme='tkww'] {
   --page: #f7faf6;
   --bg: #f0f4ee;
   --surface: #ffffff;
@@ -185,7 +185,7 @@ html[data-theme="tkww"] {
   --sidebar-ring: #2e7d50;
 }
 
-html[data-theme="notion"] {
+html[data-theme='notion'] {
   --page: #ffffff;
   --bg: #ffffff;
   --surface: #ffffff;

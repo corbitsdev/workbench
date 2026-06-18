@@ -248,7 +248,9 @@ export function ResourceEnrichmentWorkflowPanel({
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-border bg-surface px-4 py-3">
                 <div className="min-w-0">
-                  <p className="truncate text-[13px] font-medium text-text">{activeSelection.title}</p>
+                  <p className="truncate text-[13px] font-medium text-text">
+                    {activeSelection.title}
+                  </p>
                   <p className="text-[12px] text-text-3">
                     Row {currentSelectionIndex + 1} of {selections.length}
                   </p>
@@ -265,7 +267,9 @@ export function ResourceEnrichmentWorkflowPanel({
                   <button
                     type="button"
                     onClick={() =>
-                      setActiveSelectionIndex(Math.min(selections.length - 1, currentSelectionIndex + 1))
+                      setActiveSelectionIndex(
+                        Math.min(selections.length - 1, currentSelectionIndex + 1)
+                      )
                     }
                     disabled={currentSelectionIndex >= selections.length - 1}
                     className="rounded border border-border px-3 py-1.5 text-xs font-medium text-text-2 disabled:opacity-50"

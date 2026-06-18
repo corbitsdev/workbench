@@ -1,35 +1,30 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from 'react';
 
-export type Theme = "corbits-dark" | "corbits-light" | "tkww" | "notion";
+export type Theme = 'corbits-dark' | 'corbits-light' | 'tkww' | 'notion';
 
-export const THEMES: readonly Theme[] = [
-  "corbits-dark",
-  "corbits-light",
-  "tkww",
-  "notion",
-];
+export const THEMES: readonly Theme[] = ['corbits-dark', 'corbits-light', 'tkww', 'notion'];
 
 export const THEME_LABELS: Readonly<Record<Theme, string>> = {
-  "corbits-dark": "Corbits Dark",
-  "corbits-light": "Corbits Light",
-  tkww: "TKWW",
-  notion: "Notion",
+  'corbits-dark': 'Corbits Dark',
+  'corbits-light': 'Corbits Light',
+  tkww: 'TKWW',
+  notion: 'Notion',
 };
 
 const THEMES_SET = new Set<string>(THEMES);
 
 export function isTheme(value: unknown): value is Theme {
-  return typeof value === "string" && THEMES_SET.has(value);
+  return typeof value === 'string' && THEMES_SET.has(value);
 }
 
 // Maps legacy stored values to their current Theme equivalents.
 const LEGACY_THEME_MAP = new Map<string, Theme>([
-  ["dark", "corbits-dark"],
-  ["light", "corbits-light"],
+  ['dark', 'corbits-dark'],
+  ['light', 'corbits-light'],
 ]);
 
-const STORAGE_KEY = "cw-theme";
-const DEFAULT_THEME: Theme = "corbits-dark";
+const STORAGE_KEY = 'cw-theme';
+const DEFAULT_THEME: Theme = 'corbits-dark';
 
 function readStoredTheme(): Theme {
   try {
@@ -50,7 +45,7 @@ function readStoredTheme(): Theme {
 }
 
 function applyTheme(theme: Theme): void {
-  document.documentElement.setAttribute("data-theme", theme);
+  document.documentElement.setAttribute('data-theme', theme);
 }
 
 export function useTheme(): { theme: Theme; setTheme: (theme: Theme) => void } {
