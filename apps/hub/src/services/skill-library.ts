@@ -395,7 +395,7 @@ async function readAssetFile(
 ): Promise<Buffer | null> {
   const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
   try {
-    const { blob } = await git.readBlob({ fs, dir, oid: 'HEAD', filepath: treePath });
+    const { blob } = await git.readBlob({ fs, dir, oid: SKILL_BUNDLE_REF, filepath: treePath });
     return Buffer.from(blob);
   } catch (err) {
     // Distinguish "file not in tree" (NotFoundError) from storage failures.
@@ -432,7 +432,7 @@ export async function getSkillContent(
     const entries = await git.walk({
       fs,
       dir,
-      trees: [git.TREE({ ref: 'HEAD' })],
+      trees: [git.TREE({ ref: SKILL_BUNDLE_REF })],
       map: async (filepath, [entry]) => {
         if (!entry || (await entry.type()) !== 'blob') return null;
         if (!filepath.startsWith(prefix)) return null;
