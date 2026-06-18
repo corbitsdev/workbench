@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { BookOpen, FileArchive, Upload } from 'lucide-react';
-import { useCreateSkill } from '../hooks/use-workflow';
+import { useCreateSkill } from '../hooks/use-skills';
 import { getMe } from '../lib/hub-api';
 
 type FileWithRelativePath = File & { webkitRelativePath?: string };

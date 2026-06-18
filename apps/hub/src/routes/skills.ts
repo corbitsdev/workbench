@@ -19,7 +19,7 @@ import {
 
 function errorResponse(c: Context, err: unknown) {
   if (err instanceof SkillLibraryError) {
-    const status = err.status as 400 | 404 | 409 | 413;
+    const status = err.status as 400 | 403 | 404 | 409 | 413;
     return c.json({ error: err.message }, status);
   }
   throw err;
@@ -163,7 +163,13 @@ export function createSkillsRouter(
     if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
     try {
-      await deleteSkill(db, context.tenantId, c.req.param('assetId'), context.principalId);
+      await deleteSkill(
+        db,
+        repoStore,
+        context.tenantId,
+        c.req.param('assetId'),
+        context.principalId
+      );
       return c.json({ ok: true });
     } catch (err) {
       return errorResponse(c, err);

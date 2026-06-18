@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import Markdown from 'react-markdown';
 import { ChevronRight, File, Folder, Trash2, ArrowLeft, Code, Eye } from 'lucide-react';
-import { useSkillDetail, useDeleteSkill } from '../hooks/use-workflow';
+import { useSkillDetail, useDeleteSkill } from '../hooks/use-skills';
 import { getMe } from '../lib/hub-api';
 
 type TreeNode =
@@ -104,6 +104,7 @@ export function SkillDetail() {
   const detailQuery = useSkillDetail(id ?? null, tenantId);
   const deleteMutation = useDeleteSkill();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
 
@@ -116,8 +117,16 @@ export function SkillDetail() {
 
   const handleDelete = async () => {
     if (!id) return;
-    await deleteMutation.mutateAsync({ assetId: id, tenantId }).catch(() => {});
-    navigate('/skills');
+    setDeleteError(null);
+    deleteMutation
+      .mutateAsync({ assetId: id, tenantId })
+      .then(() => {
+        navigate('/skills');
+      })
+      .catch((err: unknown) => {
+        setDeleteError(err instanceof Error ? err.message : 'Failed to delete skill');
+        setConfirmDelete(false);
+      });
   };
 
   return (
@@ -144,6 +153,7 @@ export function SkillDetail() {
           </div>
         </div>
 
+        {deleteError && <p className="text-[12px] text-red-500">{deleteError}</p>}
         {skill && !confirmDelete && (
           <button
             type="button"

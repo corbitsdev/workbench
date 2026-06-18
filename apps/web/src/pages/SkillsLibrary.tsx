@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { BookOpen, Plus, Search, X } from 'lucide-react';
-import { useSkillLibrary, type SkillLibraryItem } from '../hooks/use-workflow';
+import { useSkillLibrary, type SkillLibraryItem } from '../hooks/use-skills';
 import { getMe } from '../lib/hub-api';
 
 function LibraryCard({ skill, onSelect }: { skill: SkillLibraryItem; onSelect: () => void }) {

@@ -8,6 +8,7 @@ import { schema as intxSchema } from '@intx/db';
 import { getLogger } from '@intx/log';
 import type { HubDb } from '../db';
 import type { AssetService, RepoStore } from '@intx/hub-sessions';
+import { AssetServiceError } from '@intx/hub-sessions';
 import type { UserContext } from '@workbench/workflow-core';
 
 const log = getLogger(['skill-library']);
@@ -312,6 +313,7 @@ export function buildSkillTree(
 
 export async function deleteSkill(
   db: HubDb,
+  repoStore: RepoStore,
   tenantId: string,
   assetId: string,
   principalId: string
@@ -327,7 +329,18 @@ export async function deleteSkill(
   if (row.creatorPrincipalId !== principalId) {
     throw new SkillLibraryError('You do not have permission to delete this skill', 403);
   }
+  // Delete DB row first — cascade removes agent_asset rows. Then remove the
+  // git repo from disk. If the fs.rm fails we log and continue; the row is
+  // already gone so the skill is invisible regardless.
   await db.delete(intxSchema.asset).where(eq(intxSchema.asset.id, assetId));
+  const repoDir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
+  await nodefs.promises.rm(repoDir, { recursive: true, force: true }).catch((err) => {
+    log.error('Failed to remove skill git repo after delete', {
+      assetId,
+      repoDir,
+      error: String(err),
+    });
+  });
 }
 
 export async function listSkills(db: HubDb, tenantId: string): Promise<SkillItem[]> {
@@ -421,10 +434,10 @@ export async function getSkillContent(
       dir,
       trees: [git.TREE({ ref: 'HEAD' })],
       map: async (filepath, [entry]) => {
-        if (!entry || (await entry.type()) !== 'blob') return undefined;
-        if (!filepath.startsWith(prefix)) return undefined;
+        if (!entry || (await entry.type()) !== 'blob') return null;
+        if (!filepath.startsWith(prefix)) return null;
         const relativePath = filepath.slice(prefix.length);
-        if (!relativePath) return undefined;
+        if (!relativePath) return null;
         const blob = await entry.content();
         let content: string | undefined;
         if (blob) {
@@ -482,8 +495,7 @@ export async function createSkill(
       creatorPrincipalId: userContext.principalId,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('asset_tenant_kind_name')) {
+    if (err instanceof AssetServiceError && err.reason === 'duplicate_asset') {
       throw new SkillLibraryError(`A skill named "${name}" already exists`, 409);
     }
     throw err;
