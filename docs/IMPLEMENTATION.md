@@ -296,7 +296,7 @@ All skill hooks live here (`useSkillLibrary`, `useSkillDetail`, `useCreateSkill`
 - Version-history panel (`useSkillVersions`): newest-first list with `v{n}`, short sha, author, date; current version flagged, others offer Restore via `useRestoreSkillVersion`
 - Inline delete: "Delete" → confirm/cancel buttons → `mutateAsync` → navigate to `/skills` on success; surfaces errors inline without swallowing them
 
-**Upload page** — `apps/web/src/pages/SkillsNew.tsx`: a "Who can access this skill?" radio set (Just Me + each `useSkillShareTargets` tenant) threads `scope` + the target `tenantId` into create.
+**Upload page** — `apps/web/src/pages/SkillsNew.tsx`: when `useSkillShareTargets` returns more than one tenant, a "Who can access this skill?" radio set lets the user pick which one; with a single target the chooser is hidden and that tenant is used. Create is always `scope: 'tenant'` with the selected `tenantId`. (The "Just Me"/`private` path was dropped pending a personal-tenant story; the backend `private` scope remains unused.)
 
 **Library page** — `apps/web/src/pages/SkillsLibrary.tsx`: cards show owner, last-edited date, and an access label (`Private` or the resolved share-target tenant name).
 

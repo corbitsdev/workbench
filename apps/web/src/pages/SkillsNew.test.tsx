@@ -34,6 +34,7 @@ import { SkillsNew } from './SkillsNew';
 
 const originalFetch = globalThis.fetch;
 let calls: Array<{ url: string; method: string; json?: unknown }> = [];
+let shareTargets: Array<{ tenantId: string; name: string }> = [];
 
 function jsonResponse(body: unknown): Response {
   return {
@@ -59,15 +60,15 @@ const createdSkill = {
 beforeEach(() => {
   window.happyDOM.setURL('http://localhost/');
   calls = [];
+  // Default: a single shareable tenant (the org) — no real choice to make.
+  shareTargets = [{ tenantId: 'tenant-1', name: 'Corbits' }];
   globalThis.fetch = mock((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     const entry: (typeof calls)[number] = { url: String(url), method };
     if (typeof init?.body === 'string') entry.json = JSON.parse(init.body);
     calls.push(entry);
     if (String(url).includes('/skills/share-targets')) {
-      return Promise.resolve(
-        jsonResponse({ targets: [{ tenantId: 'tenant-root', name: 'Corbits' }] })
-      );
+      return Promise.resolve(jsonResponse({ targets: shareTargets }));
     }
     if (String(url).includes('/skills') && method === 'POST') {
       return Promise.resolve(jsonResponse({ skill: createdSkill }));
@@ -87,17 +88,21 @@ function renderPage() {
 }
 
 describe('SkillsNew', () => {
-  it('renders access options from share targets', async () => {
+  it('hides the access chooser and never offers "Just Me" when there is one tenant', async () => {
     renderPage();
-    await waitFor(() => expect(document.body.textContent).toContain('Who can access this skill?'));
-    expect(document.body.textContent).toContain('Just Me');
-    await waitFor(() => expect(document.body.textContent).toContain('Everyone in Corbits'));
+    await waitFor(() =>
+      expect(document.querySelector('input[placeholder*="Skill name"]')).not.toBeNull()
+    );
+    expect(document.body.textContent).not.toContain('Who can access this skill?');
+    expect(document.body.textContent).not.toContain('Just Me');
   });
 
-  it('defaults to private and sends scope private with the working tenant', async () => {
+  it('creates in the single available tenant as a tenant-scoped skill', async () => {
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() => expect(document.body.textContent).toContain('Who can access this skill?'));
+    await waitFor(() =>
+      expect(document.querySelector('input[placeholder*="Skill name"]')).not.toBeNull()
+    );
 
     await user.type(
       document.querySelector('input[placeholder*="Skill name"]') as HTMLInputElement,
@@ -110,20 +115,24 @@ describe('SkillsNew', () => {
       ) as HTMLButtonElement
     );
 
-    await waitFor(() => {
-      expect(calls.some((c) => c.method === 'POST')).toBe(true);
-    });
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
     const post = calls.find((c) => c.method === 'POST');
     expect(post?.url).toContain('tenantId=tenant-1');
-    expect(post?.json).toMatchObject({ scope: 'private', name: 'My Skill' });
+    expect(post?.json).toMatchObject({ scope: 'tenant', name: 'My Skill' });
   });
 
-  it('sends scope tenant with the chosen target tenant', async () => {
+  it('shows the chooser and sends the chosen tenant when more than one is available', async () => {
+    shareTargets = [
+      { tenantId: 'tenant-wb', name: 'My Workbench' },
+      { tenantId: 'tenant-1', name: 'Corbits' },
+    ];
     const user = userEvent.setup();
     renderPage();
+    await waitFor(() => expect(document.body.textContent).toContain('Who can access this skill?'));
+    expect(document.body.textContent).not.toContain('Just Me');
     await waitFor(() => expect(document.body.textContent).toContain('Everyone in Corbits'));
 
-    await user.click(document.querySelector('input[value="tenant-root"]') as HTMLInputElement);
+    await user.click(document.querySelector('input[value="tenant-1"]') as HTMLInputElement);
     await user.type(
       document.querySelector('input[placeholder*="Skill name"]') as HTMLInputElement,
       'Shared Skill'
@@ -135,11 +144,9 @@ describe('SkillsNew', () => {
       ) as HTMLButtonElement
     );
 
-    await waitFor(() => {
-      expect(calls.some((c) => c.method === 'POST')).toBe(true);
-    });
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
     const post = calls.find((c) => c.method === 'POST');
-    expect(post?.url).toContain('tenantId=tenant-root');
+    expect(post?.url).toContain('tenantId=tenant-1');
     expect(post?.json).toMatchObject({ scope: 'tenant', name: 'Shared Skill' });
   });
 });

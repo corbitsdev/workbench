@@ -7,31 +7,28 @@ import { getMe } from '../lib/hub-api';
 
 type FileWithRelativePath = File & { webkitRelativePath?: string };
 
-const PRIVATE_CHOICE = 'private';
-
 export function SkillsNew() {
   const navigate = useNavigate();
   const meQuery = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: 5 * 60_000 });
   const tenantId = meQuery.data?.personalTenantId ?? null;
   const shareTargetsQuery = useSkillShareTargets(tenantId);
+  const shareTargets = shareTargetsQuery.data ?? [];
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [error, setError] = useState('');
-  const [accessChoice, setAccessChoice] = useState<string>(PRIVATE_CHOICE);
+  const [accessChoice, setAccessChoice] = useState<string | null>(null);
   const createSkill = useCreateSkill();
 
-  const accessFor = (choice: string) => {
-    if (choice === PRIVATE_CHOICE) {
-      return { scope: 'private' as const, tenantId };
-    }
-    return { scope: 'tenant' as const, tenantId: choice };
-  };
+  // Default to the closest shareable tenant; only surface a chooser when the
+  // user actually has more than one. Falls back to the working tenant before
+  // share targets have loaded.
+  const selectedTenantId = accessChoice ?? shareTargets[0]?.tenantId ?? tenantId;
+  const showAccessChooser = shareTargets.length >= 2;
 
   const savePastedSkill = () => {
     setError('');
-    const access = accessFor(accessChoice);
     createSkill.mutate(
-      { tenantId: access.tenantId, scope: access.scope, name: name.trim(), text: text.trim() },
+      { tenantId: selectedTenantId, scope: 'tenant', name: name.trim(), text: text.trim() },
       {
         onSuccess: () => navigate('/skills'),
         onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save skill'),
@@ -47,11 +44,10 @@ export function SkillsNew() {
     const inferredName = folder
       ? (first.webkitRelativePath?.split('/')[0] ?? first.name.replace(/\.[^.]+$/, ''))
       : first.name.replace(/\.[^.]+$/, '');
-    const access = accessFor(accessChoice);
     createSkill.mutate(
       {
-        tenantId: access.tenantId,
-        scope: access.scope,
+        tenantId: selectedTenantId,
+        scope: 'tenant',
         name: name.trim() || inferredName,
         files: selectedFiles.map((file) => ({
           file,
@@ -103,38 +99,29 @@ export function SkillsNew() {
               rows={10}
               className="w-full resize-none rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
             />
-            <fieldset className="rounded-[12px] border border-border bg-surface p-4 space-y-2">
-              <legend className="px-1 text-[13px] font-medium text-text">
-                Who can access this skill?
-              </legend>
-              <label className="flex items-center gap-2 text-[13px] text-text-2">
-                <input
-                  type="radio"
-                  name="skill-access"
-                  value={PRIVATE_CHOICE}
-                  checked={accessChoice === PRIVATE_CHOICE}
-                  onChange={() => setAccessChoice(PRIVATE_CHOICE)}
-                  className="accent-orange"
-                />
-                Just Me
-              </label>
-              {(shareTargetsQuery.data ?? []).map((target) => (
-                <label
-                  key={target.tenantId}
-                  className="flex items-center gap-2 text-[13px] text-text-2"
-                >
-                  <input
-                    type="radio"
-                    name="skill-access"
-                    value={target.tenantId}
-                    checked={accessChoice === target.tenantId}
-                    onChange={() => setAccessChoice(target.tenantId)}
-                    className="accent-orange"
-                  />
-                  Everyone in {target.name}
-                </label>
-              ))}
-            </fieldset>
+            {showAccessChooser && (
+              <fieldset className="rounded-[12px] border border-border bg-surface p-4 space-y-2">
+                <legend className="px-1 text-[13px] font-medium text-text">
+                  Who can access this skill?
+                </legend>
+                {shareTargets.map((target) => (
+                  <label
+                    key={target.tenantId}
+                    className="flex items-center gap-2 text-[13px] text-text-2"
+                  >
+                    <input
+                      type="radio"
+                      name="skill-access"
+                      value={target.tenantId}
+                      checked={selectedTenantId === target.tenantId}
+                      onChange={() => setAccessChoice(target.tenantId)}
+                      className="accent-orange"
+                    />
+                    Everyone in {target.name}
+                  </label>
+                ))}
+              </fieldset>
+            )}
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
