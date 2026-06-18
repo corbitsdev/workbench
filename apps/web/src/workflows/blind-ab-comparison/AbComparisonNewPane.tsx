@@ -426,6 +426,7 @@ export function AbComparisonNewPane({
                                 <button
                                   key={skill.id}
                                   type="button"
+                                  title={skill.ownerName ?? undefined}
                                   onClick={() => {
                                     const current = option.skillAssetIds ?? [];
                                     const next = active

@@ -2,10 +2,18 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { BookOpen, Plus, Search, X } from 'lucide-react';
-import { useSkillLibrary, type SkillLibraryItem } from '../hooks/use-skills';
+import { useSkillLibrary, useSkillShareTargets, type SkillLibraryItem } from '../hooks/use-skills';
 import { getMe } from '../lib/hub-api';
 
-function LibraryCard({ skill, onSelect }: { skill: SkillLibraryItem; onSelect: () => void }) {
+function LibraryCard({
+  skill,
+  accessLabel,
+  onSelect,
+}: {
+  skill: SkillLibraryItem;
+  accessLabel: string;
+  onSelect: () => void;
+}) {
   return (
     <button
       type="button"
@@ -17,9 +25,12 @@ function LibraryCard({ skill, onSelect }: { skill: SkillLibraryItem; onSelect: (
           {skill.displayName ?? skill.name}
         </span>
       </div>
-      <div className="flex items-center justify-between text-[11px] text-text-3">
-        <span>{skill.name}</span>
-        <span>{new Date(skill.updatedAt).toLocaleDateString()}</span>
+      <div className="flex items-center justify-between gap-2 text-[11px] text-text-3">
+        <span className="truncate">{skill.ownerName ?? '—'}</span>
+        <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5">
+          {accessLabel}
+        </span>
+        <span className="shrink-0">{new Date(skill.updatedAt).toLocaleDateString()}</span>
       </div>
     </button>
   );
@@ -32,6 +43,13 @@ export function SkillsLibrary() {
   const [query, setQuery] = useState('');
 
   const skillsQuery = useSkillLibrary(tenantId);
+  const shareTargetsQuery = useSkillShareTargets(tenantId);
+
+  const accessLabel = (skill: SkillLibraryItem) => {
+    if (skill.scope === 'private') return 'Private';
+    const target = (shareTargetsQuery.data ?? []).find((t) => t.tenantId === skill.accessTenantId);
+    return target ? target.name : 'Shared';
+  };
 
   const filteredLibrary = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -94,6 +112,7 @@ export function SkillsLibrary() {
                 <LibraryCard
                   key={skill.id}
                   skill={skill}
+                  accessLabel={accessLabel(skill)}
                   onSelect={() => navigate(`/skills/${skill.id}`)}
                 />
               ))}

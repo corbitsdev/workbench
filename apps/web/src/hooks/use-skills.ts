@@ -8,12 +8,32 @@ const skillSchema = type({
   displayName: 'string|null',
   createdAt: 'string',
   updatedAt: 'string',
+  scope: "'private'|'tenant'",
+  accessTenantId: 'string',
+  ownerUserId: 'string|null',
+  ownerName: 'string|null',
 });
 
 const skillsResponseSchema = type({ skills: skillSchema.array() });
 const skillResponseSchema = type({ skill: skillSchema });
 
 export type SkillLibraryItem = typeof skillSchema.infer;
+export type SkillAccessScope = SkillLibraryItem['scope'];
+
+const shareTargetSchema = type({ tenantId: 'string', name: 'string' });
+const shareTargetsResponseSchema = type({ targets: shareTargetSchema.array() });
+export type SkillShareTarget = typeof shareTargetSchema.infer;
+
+const skillVersionSchema = type({
+  sha: 'string',
+  shortSha: 'string',
+  version: 'number',
+  message: 'string',
+  authorName: 'string',
+  createdAt: 'string',
+});
+const skillVersionsResponseSchema = type({ versions: skillVersionSchema.array() });
+export type SkillVersion = typeof skillVersionSchema.infer;
 
 const skillDetailFileSchema = type({
   path: 'string',
@@ -74,12 +94,14 @@ export function useCreateSkill() {
       description?: string | null;
       text?: string;
       files?: Array<{ file: File; path?: string }>;
+      scope?: SkillAccessScope;
     }) => {
       let raw: unknown;
       if (body.files && body.files.length > 0) {
         const form = new FormData();
         form.set('name', body.name);
         if (body.description) form.set('description', body.description);
+        if (body.scope) form.set('scope', body.scope);
         for (const item of body.files) {
           form.append('files', item.file);
           form.append('paths', item.path || item.file.webkitRelativePath || item.file.name);
@@ -93,6 +115,7 @@ export function useCreateSkill() {
             name: body.name,
             description: body.description,
             text: body.text,
+            scope: body.scope,
           }
         );
       }
@@ -121,6 +144,70 @@ export function useDeleteSkill() {
       queryClient.invalidateQueries({ queryKey: ['skills', variables.tenantId ?? null] });
       queryClient.removeQueries({
         queryKey: ['skill', variables.assetId, variables.tenantId ?? null],
+      });
+    },
+  });
+}
+
+export function useSkillShareTargets(tenantId?: string | null) {
+  return useQuery<SkillShareTarget[]>({
+    queryKey: ['skill-share-targets', tenantId ?? null],
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        'GET',
+        `/skills/share-targets${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`
+      );
+      const parsed = shareTargetsResponseSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected share targets response: ${parsed.summary}`);
+      }
+      return parsed.targets;
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useSkillVersions(assetId: string | null, tenantId?: string | null) {
+  return useQuery<SkillVersion[]>({
+    queryKey: ['skill-versions', assetId, tenantId ?? null],
+    queryFn: async () => {
+      if (!assetId) throw new Error('Skill asset id is required');
+      const raw = await api<unknown>(
+        'GET',
+        `/skills/${assetId}/versions${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`
+      );
+      const parsed = skillVersionsResponseSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected skill versions response: ${parsed.summary}`);
+      }
+      return parsed.versions;
+    },
+    enabled: Boolean(assetId),
+  });
+}
+
+export function useRestoreSkillVersion() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { assetId: string; sha: string; tenantId?: string | null }) => {
+      const raw = await api<unknown>(
+        'POST',
+        `/skills/${body.assetId}/restore${body.tenantId ? `?tenantId=${encodeURIComponent(body.tenantId)}` : ''}`,
+        { sha: body.sha }
+      );
+      const parsed = skillResponseSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected skill response: ${parsed.summary}`);
+      }
+      return parsed.skill;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['skills', variables.tenantId ?? null] });
+      queryClient.invalidateQueries({
+        queryKey: ['skill', variables.assetId, variables.tenantId ?? null],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['skill-versions', variables.assetId, variables.tenantId ?? null],
       });
     },
   });
