@@ -1,16 +1,14 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { BookOpen, FileArchive, Search, Upload, X } from 'lucide-react';
+import { BookOpen, Plus, Search, X } from 'lucide-react';
 import {
-  useCreateSkill,
   useSkillDetail,
   useSkillLibrary,
   useSkillVersionPreview,
   type SkillLibraryItem,
 } from '../hooks/use-workflow';
 import { getMe } from '../lib/hub-api';
-
-type FileWithRelativePath = File & { webkitRelativePath?: string };
 
 type SelectedSkill = { kind: 'library'; skill: SkillLibraryItem };
 
@@ -42,17 +40,14 @@ function LibraryCard({ skill, onSelect }: { skill: SkillLibraryItem; onSelect: (
 }
 
 export function SkillsLibrary() {
+  const navigate = useNavigate();
   const meQuery = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: 5 * 60_000 });
   const tenantId = meQuery.data?.personalTenantId ?? null;
   const [query, setQuery] = useState('');
-  const [name, setName] = useState('');
-  const [text, setText] = useState('');
   const [selected, setSelected] = useState<SelectedSkill | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
-  const [error, setError] = useState('');
 
   const skillsQuery = useSkillLibrary(tenantId);
-  const createSkill = useCreateSkill();
   const selectedLibrarySkillId = selected?.kind === 'library' ? selected.skill.id : null;
   const skillDetailQuery = useSkillDetail(selectedLibrarySkillId, tenantId);
   const selectedLibrarySkill =
@@ -67,44 +62,6 @@ export function SkillsLibrary() {
     );
   }, [query, skillsQuery.data]);
 
-  const savePastedSkill = () => {
-    setError('');
-    createSkill.mutate(
-      { tenantId, name: name.trim(), text: text.trim() },
-      {
-        onSuccess: () => {
-          setName('');
-          setText('');
-        },
-        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save skill'),
-      }
-    );
-  };
-
-  const saveFiles = (files: FileList | null, folder: boolean) => {
-    setError('');
-    const selectedFiles = Array.from(files ?? []) as FileWithRelativePath[];
-    if (selectedFiles.length === 0) return;
-    const first = selectedFiles[0];
-    const inferredName = folder
-      ? (first.webkitRelativePath?.split('/')[0] ?? first.name.replace(/\.[^.]+$/, ''))
-      : first.name.replace(/\.[^.]+$/, '');
-    createSkill.mutate(
-      {
-        tenantId,
-        name: name.trim() || inferredName,
-        files: selectedFiles.map((file) => ({
-          file,
-          path: folder ? file.webkitRelativePath || file.name : file.name,
-        })),
-      },
-      {
-        onSuccess: () => setName(''),
-        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save skill'),
-      }
-    );
-  };
-
   const selectLibrary = (skill: SkillLibraryItem) => {
     setSelected({ kind: 'library', skill });
     setSelectedVersionId(skill.latestVersionId ?? null);
@@ -118,86 +75,17 @@ export function SkillsLibrary() {
             <BookOpen className="h-4 w-4 text-text-3" />
             <p className="text-[14px] font-semibold text-text">Skills Library</p>
           </div>
-          <p className="text-[12px] text-text-3">Reusable immutable skills</p>
+          <button
+            type="button"
+            onClick={() => navigate('/skills/new')}
+            className="flex items-center gap-1.5 rounded-[9px] bg-orange px-3 py-1.5 text-[13px] font-medium text-white hover:bg-orange/90"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Skill
+          </button>
         </div>
 
-        <div className="border-b border-border p-5 space-y-3 shrink-0">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
-            <div className="space-y-3 rounded-[12px] border border-border bg-surface p-4">
-              <div>
-                <p className="text-[13px] font-medium text-text">Create reusable skill</p>
-                <p className="text-[12px] text-text-3">
-                  Paste markdown, upload one file, upload a folder, or import a zip. Code and assets
-                  are stored but never executed.
-                </p>
-              </div>
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Skill name (required for pasted text; uploads can infer it)"
-                className="w-full rounded-[9px] border border-border bg-bg px-3 py-2 text-[13px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
-              />
-              <textarea
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                placeholder="Paste a single-file markdown skill..."
-                rows={5}
-                className="w-full resize-none rounded-[9px] border border-border bg-bg px-3 py-2 text-[13px] text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
-              />
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={savePastedSkill}
-                  disabled={createSkill.isPending}
-                  className="btn-primary disabled:opacity-50"
-                >
-                  Save pasted skill
-                </button>
-                <label className="cursor-pointer rounded-[9px] border border-border px-3 py-2 text-[13px] font-medium text-text-2 hover:text-text">
-                  <Upload className="mr-1 inline h-3.5 w-3.5" /> Upload file
-                  <input
-                    type="file"
-                    className="hidden"
-                    onChange={(event) => saveFiles(event.currentTarget.files, false)}
-                  />
-                </label>
-                <label className="cursor-pointer rounded-[9px] border border-border px-3 py-2 text-[13px] font-medium text-text-2 hover:text-text">
-                  <Upload className="mr-1 inline h-3.5 w-3.5" /> Upload folder
-                  <input
-                    type="file"
-                    multiple
-                    // @ts-expect-error webkitdirectory is required for browser folder selection.
-                    webkitdirectory=""
-                    className="hidden"
-                    onChange={(event) => saveFiles(event.currentTarget.files, true)}
-                  />
-                </label>
-                <label className="cursor-pointer rounded-[9px] border border-border px-3 py-2 text-[13px] font-medium text-text-2 hover:text-text">
-                  <FileArchive className="mr-1 inline h-3.5 w-3.5" /> Import zip
-                  <input
-                    type="file"
-                    accept=".zip,application/zip"
-                    className="hidden"
-                    onChange={(event) => saveFiles(event.currentTarget.files, false)}
-                  />
-                </label>
-              </div>
-              {error && <p className="text-[12px] text-orange-deep">{error}</p>}
-            </div>
-
-            <div className="rounded-[12px] border border-border bg-surface p-4 space-y-3">
-              <p className="text-[13px] font-medium text-text">Safety model</p>
-              <ul className="space-y-2 text-[12px] text-text-3">
-                <li>Immutable versions keep old workflow runs reproducible.</li>
-                <li>Non-text files are stored as assets and not prompt-injected.</li>
-                <li>Code-like files are allowed as inert bundle contents only.</li>
-                <li>
-                  Unsafe paths, symlinks, traversal, and empty bundles are rejected server-side.
-                </li>
-              </ul>
-            </div>
-          </div>
-
+        <div className="border-b border-border px-5 py-3 shrink-0">
           <div className="flex items-center gap-2 rounded-[12px] border border-border bg-surface px-3 py-2 focus-within:border-orange">
             <Search className="h-4 w-4 text-text-3" />
             <input
@@ -232,7 +120,14 @@ export function SkillsLibrary() {
             </div>
             {!skillsQuery.isLoading && filteredLibrary.length === 0 && (
               <p className="rounded-[10px] border border-border p-4 text-[13px] text-text-3">
-                No reusable workspace skills yet.
+                No skills yet.{' '}
+                <button
+                  type="button"
+                  onClick={() => navigate('/skills/new')}
+                  className="text-orange hover:underline"
+                >
+                  Add your first skill
+                </button>
               </p>
             )}
           </section>
