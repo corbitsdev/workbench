@@ -535,6 +535,129 @@ export async function getSkillContent(
   }
 }
 
+export const skillVersionSchema = type({
+  sha: 'string',
+  shortSha: 'string',
+  version: 'number',
+  message: 'string',
+  authorName: 'string',
+  createdAt: 'string',
+});
+export type SkillVersion = typeof skillVersionSchema.infer;
+
+type RawCommit = {
+  oid: string;
+  commit: { message: string; author: { name: string; timestamp: number } };
+};
+
+/**
+ * Assigns sequential version numbers to git log output, which arrives
+ * newest-first: the oldest commit is v1 and the newest gets the highest number.
+ */
+export function toVersionEntries(commits: RawCommit[]): SkillVersion[] {
+  const total = commits.length;
+  return commits.map((entry, index) => ({
+    sha: entry.oid,
+    shortSha: entry.oid.slice(0, 7),
+    version: total - index,
+    message: entry.commit.message.trim(),
+    authorName: entry.commit.author.name,
+    createdAt: new Date(entry.commit.author.timestamp * 1000).toISOString(),
+  }));
+}
+
+export async function listSkillVersions(
+  repoStore: RepoStore,
+  assetId: string,
+  fs: typeof nodefs = nodefs
+): Promise<SkillVersion[]> {
+  const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
+  try {
+    const commits = await git.log({ fs, dir, ref: SKILL_BUNDLE_REF });
+    return toVersionEntries(commits as RawCommit[]);
+  } catch (err) {
+    const name = err instanceof Error ? err.name : '';
+    if (name !== 'NotFoundError' && name !== 'TreeOrBlobNotFoundError') {
+      log.error('Unexpected error reading skill versions', { assetId, error: String(err) });
+    }
+    return [];
+  }
+}
+
+/**
+ * Restores a skill to a prior commit by reading that commit's tree and writing
+ * it back to refs/heads/main as a new commit. Creator-only, matching delete.
+ */
+export async function restoreSkillVersion(
+  assetService: AssetService,
+  db: HubDb,
+  repoStore: RepoStore,
+  userContext: UserContext,
+  assetId: string,
+  sha: string,
+  fs: typeof nodefs = nodefs
+): Promise<SkillItem> {
+  const existing = await db.query.asset.findFirst({
+    where: and(
+      eq(intxSchema.asset.id, assetId),
+      eq(intxSchema.asset.tenantId, userContext.tenantId),
+      eq(intxSchema.asset.kind, 'skill')
+    ),
+  });
+  if (!existing) throw new SkillLibraryError('Skill not found', 404);
+  if (existing.creatorPrincipalId !== userContext.principalId) {
+    throw new SkillLibraryError('You do not have permission to edit this skill', 403);
+  }
+
+  const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
+  const prefix = `${existing.name}/`;
+  const files: Record<string, Uint8Array> = {};
+  try {
+    await git.walk({
+      fs,
+      dir,
+      trees: [git.TREE({ ref: sha })],
+      map: async (filepath, [entry]) => {
+        if (!entry) return null;
+        if ((await entry.type()) !== 'blob') return undefined;
+        if (!filepath.startsWith(prefix)) return undefined;
+        const blob = await entry.content();
+        if (blob) files[filepath] = blob;
+        return filepath;
+      },
+    });
+  } catch (err) {
+    const name = err instanceof Error ? err.name : '';
+    if (name === 'NotFoundError' || name === 'TreeOrBlobNotFoundError') {
+      throw new SkillLibraryError('Version not found', 404);
+    }
+    throw err;
+  }
+  if (Object.keys(files).length === 0) throw new SkillLibraryError('Version not found', 404);
+
+  await assetService.populateAsset({
+    assetId,
+    ref: SKILL_BUNDLE_REF,
+    tree: { files, clearPrefix: prefix, message: `Restore ${sha.slice(0, 7)}` },
+    principal: { kind: 'hub' },
+  });
+
+  const refreshed = await db.query.asset.findFirst({ where: eq(intxSchema.asset.id, assetId) });
+  const access = await db.query.skillAccess.findFirst({
+    where: eq(skillAccess.assetId, assetId),
+  });
+  return {
+    id: existing.id,
+    name: existing.name,
+    displayName: existing.displayName ?? null,
+    createdAt: existing.createdAt.toISOString(),
+    updatedAt: (refreshed?.updatedAt ?? new Date()).toISOString(),
+    scope: access?.scope ?? 'tenant',
+    accessTenantId: existing.tenantId,
+    ownerUserId: access?.ownerUserId ?? null,
+  };
+}
+
 export async function createSkill(
   assetService: AssetService,
   db: HubDb,

@@ -14,6 +14,8 @@ import {
   getSkillAsset,
   getSkillContent,
   listSkills,
+  listSkillVersions,
+  restoreSkillVersion,
   type SkillAccessScope,
   type SkillBundleFileInput,
 } from '../services/skill-library';
@@ -73,6 +75,49 @@ export function createSkillsRouter(
     if (!skill) return c.json({ error: 'Skill not found' }, 404);
     const files = await getSkillContent(repoStore, skill.id, skill.name);
     return c.json({ skill, files });
+  });
+
+  router.get('/skills/:assetId/versions', async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get('userId'),
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
+    const skill = await getSkillAsset(
+      db,
+      { tenantId: context.tenantId, userId: c.get('userId') },
+      c.req.param('assetId')
+    );
+    if (!skill) return c.json({ error: 'Skill not found' }, 404);
+    return c.json({ versions: await listSkillVersions(repoStore, skill.id) });
+  });
+
+  router.post('/skills/:assetId/restore', async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get('userId'),
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      const sha = readString(body.sha)?.trim() ?? '';
+      if (!sha) throw new SkillLibraryError('Version sha is required');
+      const skill = await restoreSkillVersion(
+        assetService,
+        db,
+        repoStore,
+        context,
+        c.req.param('assetId'),
+        sha
+      );
+      return c.json({ skill });
+    } catch (err) {
+      return errorResponse(c, err);
+    }
   });
 
   router.post('/skills', async (c) => {
