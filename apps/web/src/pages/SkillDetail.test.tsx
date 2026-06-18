@@ -84,7 +84,7 @@ beforeEach(() => {
     if (typeof init?.body === 'string') entry.json = JSON.parse(init.body);
     calls.push(entry);
     if (String(url).includes('/skills/skill-1/versions')) {
-      return Promise.resolve(jsonResponse({ versions }));
+      return Promise.resolve(jsonResponse({ versions, total: versions.length }));
     }
     if (String(url).includes('/skills/skill-1/restore')) {
       return Promise.resolve(jsonResponse({ skill }));

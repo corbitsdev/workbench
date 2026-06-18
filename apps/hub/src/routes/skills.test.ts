@@ -44,16 +44,19 @@ const mockGetSkillAsset = mock((): Promise<unknown> => Promise.resolve(null));
 const mockGetSkillContent = mock(() => Promise.resolve([{ path: 'SKILL.md', content: '# Hi' }]));
 
 const mockListSkillVersions = mock(() =>
-  Promise.resolve([
-    {
-      sha: 'abc1234def',
-      shortSha: 'abc1234',
-      version: 2,
-      message: 'Edit',
-      authorName: 'Mae',
-      createdAt: '2026-06-17T00:00:00.000Z',
-    },
-  ])
+  Promise.resolve({
+    versions: [
+      {
+        sha: 'abc1234def',
+        shortSha: 'abc1234',
+        version: 2,
+        message: 'Edit',
+        authorName: 'Mae',
+        createdAt: '2026-06-17T00:00:00.000Z',
+      },
+    ],
+    total: 2,
+  })
 );
 
 const mockRestoreSkillVersion = mock(() =>

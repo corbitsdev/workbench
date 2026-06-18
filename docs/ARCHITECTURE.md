@@ -196,7 +196,7 @@ Visibility is a pure rule (`isSkillVisible`): a skill is visible to a viewer whe
 
 ### Versioning
 
-`listSkillVersions` reads the asset's git log on `refs/heads/main`; `toVersionEntries` assigns sequential numbers (v1 = oldest commit, newest gets the highest) and exposes a 7-char short sha. `restoreSkillVersion` reads the tree at a target commit and writes it back to `refs/heads/main` as a new commit via `populateAsset`, so a restore is itself a new version. Restore is creator-only (matching delete); the route returns 403 otherwise.
+`listSkillVersions` reads the asset's git log on `refs/heads/main`; `toVersionEntries` assigns sequential numbers (v1 = oldest commit, newest gets the highest) and exposes a 7-char short sha. The endpoint paginates (`limit`/`offset`, newest first) and returns `total` so the detail page bounds what it renders; version numbers stay absolute regardless of the page window. `restoreSkillVersion` reads the tree at a target commit and writes it back to `refs/heads/main` as a new commit via `populateAsset`, so a restore is itself a new version. Restore is creator-only (matching delete); the route returns 403 otherwise.
 
 ### Deletion
 

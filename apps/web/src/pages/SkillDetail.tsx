@@ -8,6 +8,7 @@ import {
   useDeleteSkill,
   useSkillVersions,
   useRestoreSkillVersion,
+  SKILL_VERSION_PAGE_SIZE,
 } from '../hooks/use-skills';
 import { getMe } from '../lib/hub-api';
 
@@ -107,7 +108,8 @@ export function SkillDetail() {
   const meQuery = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: 5 * 60_000 });
   const tenantId = meQuery.data?.personalTenantId ?? null;
   const detailQuery = useSkillDetail(id ?? null, tenantId);
-  const versionsQuery = useSkillVersions(id ?? null, tenantId);
+  const [versionLimit, setVersionLimit] = useState(SKILL_VERSION_PAGE_SIZE);
+  const versionsQuery = useSkillVersions(id ?? null, tenantId, versionLimit);
   const deleteMutation = useDeleteSkill();
   const restoreMutation = useRestoreSkillVersion();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -123,7 +125,8 @@ export function SkillDetail() {
   const effectivePath = selectedPath ?? files[0]?.path ?? null;
   const selectedFile = files.find((f) => f.path === effectivePath) ?? null;
 
-  const versions = [...(versionsQuery.data ?? [])].sort((a, b) => b.version - a.version);
+  const versions = [...(versionsQuery.data?.versions ?? [])].sort((a, b) => b.version - a.version);
+  const totalVersions = versionsQuery.data?.total ?? 0;
   const latestVersion = versions[0]?.version ?? null;
 
   const handleRestore = (sha: string) => {
@@ -265,6 +268,15 @@ export function SkillDetail() {
                     );
                   })}
                 </ul>
+                {versions.length < totalVersions && (
+                  <button
+                    type="button"
+                    onClick={() => setVersionLimit((limit) => limit + SKILL_VERSION_PAGE_SIZE)}
+                    className="w-full border-t border-border px-4 py-2 text-[12px] text-text-3 hover:text-text"
+                  >
+                    Show older versions ({totalVersions - versions.length} more)
+                  </button>
+                )}
                 {restoreError && (
                   <p className="px-4 py-2 text-[12px] text-red-500">{restoreError}</p>
                 )}

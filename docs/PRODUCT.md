@@ -55,7 +55,7 @@ Key capabilities:
 - **Version history** — the detail page lists every saved version (sequential `v1, v2, …` with a short commit id, author, and date); the creator can restore any prior version, which is recorded as a new version
 - **Delete** — owners can permanently remove a skill and its git store from the detail page; deletion requires an inline confirmation step
 
-A shared skill is visible to everyone in the tenant it was shared into and that tenant's descendants (e.g. a skill shared at the org is visible in every workbench under it). A private skill is visible only to its creator. Skills with no explicit sharing predate this feature and are treated as tenant-wide.
+A shared skill is visible to everyone in the tenant it was shared into and that tenant's descendants (e.g. a skill shared at the org is visible in every workbench under it). A private skill is visible only to its creator.
 
 ## Target Users
 

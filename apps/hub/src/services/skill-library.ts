@@ -668,10 +668,17 @@ export function toVersionEntries(commits: RawCommit[]): SkillVersion[] {
   }));
 }
 
-export async function listSkillVersions(
+export const DEFAULT_VERSION_PAGE_SIZE = 20;
+export const MAX_VERSION_PAGE_SIZE = 100;
+
+export type SkillVersionPage = { versions: SkillVersion[]; total: number };
+
+// Full, absolutely-numbered version list (v1 = oldest). Kept private so callers
+// that need the whole history (pagination, sha validation) share one git walk.
+async function readAllVersions(
   repoStore: RepoStore,
   assetId: string,
-  fs: typeof nodefs = nodefs
+  fs: typeof nodefs
 ): Promise<SkillVersion[]> {
   const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
   try {
@@ -684,6 +691,26 @@ export async function listSkillVersions(
     }
     return [];
   }
+}
+
+/**
+ * Returns a page of version history (newest first) plus the total count, so the
+ * UI can bound how much it renders. Version numbers stay absolute (v1 = oldest)
+ * regardless of the page window.
+ */
+export async function listSkillVersions(
+  repoStore: RepoStore,
+  assetId: string,
+  opts: { limit?: number; offset?: number } = {},
+  fs: typeof nodefs = nodefs
+): Promise<SkillVersionPage> {
+  const all = await readAllVersions(repoStore, assetId, fs);
+  const offset = Math.max(0, opts.offset ?? 0);
+  const limit = Math.min(
+    MAX_VERSION_PAGE_SIZE,
+    Math.max(1, opts.limit ?? DEFAULT_VERSION_PAGE_SIZE)
+  );
+  return { versions: all.slice(offset, offset + limit), total: all.length };
 }
 
 /**
@@ -702,9 +729,10 @@ export async function restoreSkillVersion(
   const existing = await loadManageableSkill(db, actor, assetId);
 
   // Only restore a sha that is actually in this skill's version history —
-  // never an arbitrary (e.g. dangling) commit object the caller names.
-  const versions = await listSkillVersions(repoStore, assetId, fs);
-  if (!versions.some((version) => version.sha === sha)) {
+  // never an arbitrary (e.g. dangling) commit object the caller names. Validate
+  // against the full history, not a single page.
+  const history = await readAllVersions(repoStore, assetId, fs);
+  if (!history.some((version) => version.sha === sha)) {
     throw new SkillLibraryError('Version not found', 404);
   }
 

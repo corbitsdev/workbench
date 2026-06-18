@@ -32,8 +32,14 @@ const skillVersionSchema = type({
   authorName: 'string',
   createdAt: 'string',
 });
-const skillVersionsResponseSchema = type({ versions: skillVersionSchema.array() });
+const skillVersionsResponseSchema = type({
+  versions: skillVersionSchema.array(),
+  total: 'number',
+});
 export type SkillVersion = typeof skillVersionSchema.infer;
+export type SkillVersionPage = typeof skillVersionsResponseSchema.infer;
+
+export const SKILL_VERSION_PAGE_SIZE = 20;
 
 const skillDetailFileSchema = type({
   path: 'string',
@@ -167,20 +173,23 @@ export function useSkillShareTargets(tenantId?: string | null) {
   });
 }
 
-export function useSkillVersions(assetId: string | null, tenantId?: string | null) {
-  return useQuery<SkillVersion[]>({
-    queryKey: ['skill-versions', assetId, tenantId ?? null],
+export function useSkillVersions(
+  assetId: string | null,
+  tenantId?: string | null,
+  limit: number = SKILL_VERSION_PAGE_SIZE
+) {
+  return useQuery<SkillVersionPage>({
+    queryKey: ['skill-versions', assetId, tenantId ?? null, limit],
     queryFn: async () => {
       if (!assetId) throw new Error('Skill asset id is required');
-      const raw = await api<unknown>(
-        'GET',
-        `/skills/${assetId}/versions${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`
-      );
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (tenantId) params.set('tenantId', tenantId);
+      const raw = await api<unknown>('GET', `/skills/${assetId}/versions?${params.toString()}`);
       const parsed = skillVersionsResponseSchema(raw);
       if (parsed instanceof type.errors) {
         throw new Error(`Unexpected skill versions response: ${parsed.summary}`);
       }
-      return parsed.versions;
+      return parsed;
     },
     enabled: Boolean(assetId),
   });

@@ -109,7 +109,13 @@ export function createSkillsRouter(
       c.req.param('assetId')
     );
     if (!skill) return c.json({ error: 'Skill not found' }, 404);
-    return c.json({ versions: await listSkillVersions(repoStore, skill.id) });
+    const limit = Number.parseInt(c.req.query('limit') ?? '', 10);
+    const offset = Number.parseInt(c.req.query('offset') ?? '', 10);
+    const page = await listSkillVersions(repoStore, skill.id, {
+      limit: Number.isNaN(limit) ? undefined : limit,
+      offset: Number.isNaN(offset) ? undefined : offset,
+    });
+    return c.json(page);
   });
 
   router.post('/skills/:assetId/restore', async (c) => {
