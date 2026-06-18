@@ -413,13 +413,22 @@ export async function createSkill(
   const fileContents = new Map<string, Buffer>(bundle.files.map((f) => [f.path, f.content]));
   const treeFiles = buildSkillTree(assetName, input.description, bundle.manifest, fileContents);
 
-  const asset = await assetService.createAsset({
-    tenantId: userContext.tenantId,
-    kind: 'skill',
-    name: assetName,
-    displayName: name,
-    creatorPrincipalId: userContext.principalId,
-  });
+  let asset;
+  try {
+    asset = await assetService.createAsset({
+      tenantId: userContext.tenantId,
+      kind: 'skill',
+      name: assetName,
+      displayName: name,
+      creatorPrincipalId: userContext.principalId,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('asset_tenant_kind_name')) {
+      throw new SkillLibraryError(`A skill named "${name}" already exists`, 409);
+    }
+    throw err;
+  }
 
   try {
     await assetService.populateAsset({
@@ -430,12 +439,15 @@ export async function createSkill(
     });
   } catch (err) {
     // populateAsset failed — delete the orphaned asset row so the caller can retry.
-    await db.delete(intxSchema.asset).where(eq(intxSchema.asset.id, asset.id)).catch((deleteErr) => {
-      log.error('Failed to clean up orphaned asset after populateAsset failure', {
-        assetId: asset.id,
-        error: String(deleteErr),
+    await db
+      .delete(intxSchema.asset)
+      .where(eq(intxSchema.asset.id, asset.id))
+      .catch((deleteErr) => {
+        log.error('Failed to clean up orphaned asset after populateAsset failure', {
+          assetId: asset.id,
+          error: String(deleteErr),
+        });
       });
-    });
     throw err;
   }
 
