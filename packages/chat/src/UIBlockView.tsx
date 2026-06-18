@@ -24,9 +24,7 @@ export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
     case 'markdown':
       return <MarkdownBlock block={block} />;
     case 'document':
-      return (
-        <DocumentBlock block={block} {...(onAction !== undefined ? { onAction } : {})} />
-      );
+      return <DocumentBlock block={block} {...(onAction !== undefined ? { onAction } : {})} />;
     case 'table':
       return <TableBlock block={block} />;
     case 'link':
@@ -34,9 +32,7 @@ export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
     case 'error':
       return <ErrorBlock block={block} />;
     case 'choice':
-      return (
-        <ChoiceBlock block={block} {...(onRespond !== undefined ? { onRespond } : {})} />
-      );
+      return <ChoiceBlock block={block} {...(onRespond !== undefined ? { onRespond } : {})} />;
     case 'canvas':
       return (
         <div className="space-y-3" data-testid="ui-canvas">

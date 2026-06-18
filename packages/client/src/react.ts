@@ -4,7 +4,13 @@
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { ArtifactStatus, ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
-import { listArtifacts, listWorkflows, listMembers, type ClientOptions, type TenantMember } from './index';
+import {
+  listArtifacts,
+  listWorkflows,
+  listMembers,
+  type ClientOptions,
+  type TenantMember,
+} from './index';
 
 export type { TenantMember };
 

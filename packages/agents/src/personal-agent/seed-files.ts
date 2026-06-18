@@ -113,9 +113,7 @@ export function parseSeedMarker(systemPrompt: string): SeedWorkspaceFile[] {
     assertPlainBasename(name);
     const file = seedFileByPath.get(name);
     if (!file) {
-      throw new Error(
-        `Seed marker declares "${name}" but no stub content is registered for it`
-      );
+      throw new Error(`Seed marker declares "${name}" but no stub content is registered for it`);
     }
     return file;
   });
@@ -130,5 +128,8 @@ export function parseSeedMarker(systemPrompt: string): SeedWorkspaceFile[] {
  * trailing line are collapsed so the cleaned prompt has no dangling whitespace.
  */
 export function stripSeedMarker(systemPrompt: string): string {
-  return systemPrompt.replace(SEED_MARKER_PATTERN_GLOBAL, '').replace(/\n{3,}/g, '\n\n').trimEnd();
+  return systemPrompt
+    .replace(SEED_MARKER_PATTERN_GLOBAL, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
 }
