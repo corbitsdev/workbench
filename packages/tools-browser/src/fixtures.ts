@@ -2,20 +2,20 @@
 // itself with `mock.module('playwright-core', playwrightMockFactory)` at the top
 // — bun only hoists `mock.module` above static imports when it lives in the test
 // file, not when buried in an imported module.
-import { mock } from "bun:test";
-import type { Browser, FrameLocator, Locator, Page } from "playwright-core";
-import type { BrowserFetch, RawElement } from "./types";
+import { mock } from 'bun:test';
+import type { Browser, FrameLocator, Locator, Page } from 'playwright-core';
+import type { BrowserFetch, RawElement } from './types';
 
 export const cdpControl: {
   browser: Browser | null;
   lastConnectUrl: string;
   hang: boolean;
   error: Error | null;
-} = { browser: null, lastConnectUrl: "", hang: false, error: null };
+} = { browser: null, lastConnectUrl: '', hang: false, error: null };
 
 export function resetCdpControl(): void {
   cdpControl.browser = null;
-  cdpControl.lastConnectUrl = "";
+  cdpControl.lastConnectUrl = '';
   cdpControl.hang = false;
   cdpControl.error = null;
 }
@@ -39,15 +39,15 @@ export function playwrightMockFactory() {
 
 export function makeFetchStub(
   response: unknown,
-  status = 200,
+  status = 200
 ): BrowserFetch & { mock: { calls: [string, RequestInit][] } } {
   return mock((_input: string, _init: RequestInit) =>
     Promise.resolve(
       new Response(JSON.stringify(response), {
         status,
-        headers: { "Content-Type": "application/json" },
-      }),
-    ),
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
   );
 }
 
@@ -56,20 +56,20 @@ export type RoutedFetch = BrowserFetch & { posts: string[] };
 export function routedFetch(sessions: unknown[]): RoutedFetch {
   const posts: string[] = [];
   const fetcher = ((input: string, init: RequestInit) => {
-    if ((init.method ?? "GET") === "GET") {
+    if ((init.method ?? 'GET') === 'GET') {
       return Promise.resolve(
         new Response(JSON.stringify(sessions), {
           status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
+          headers: { 'Content-Type': 'application/json' },
+        })
       );
     }
     posts.push(input);
     return Promise.resolve(
-      new Response(JSON.stringify({ status: "RELEASED" }), {
+      new Response(JSON.stringify({ status: 'RELEASED' }), {
         status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+        headers: { 'Content-Type': 'application/json' },
+      })
     );
   }) as RoutedFetch;
   fetcher.posts = posts;
@@ -77,17 +77,14 @@ export function routedFetch(sessions: unknown[]): RoutedFetch {
 }
 
 // Routes the full session lifecycle: create, status (RUNNING), release.
-export function makeSessionFetchStub(
-  sessionId = "sess-1",
-  connectUrl = "wss://fake-connect",
-) {
+export function makeSessionFetchStub(sessionId = 'sess-1', connectUrl = 'wss://fake-connect') {
   return mock((input: string, init: RequestInit) => {
-    const method = (init.method ?? "GET").toUpperCase();
-    if (method === "POST" && !input.endsWith(`/${sessionId}`)) {
+    const method = (init.method ?? 'GET').toUpperCase();
+    if (method === 'POST' && !input.endsWith(`/${sessionId}`)) {
       return jsonResponse({ id: sessionId, connectUrl });
     }
-    if (method === "GET") {
-      return jsonResponse({ id: sessionId, status: "RUNNING" });
+    if (method === 'GET') {
+      return jsonResponse({ id: sessionId, status: 'RUNNING' });
     }
     return jsonResponse({});
   }) as BrowserFetch & { mock: { calls: [string, RequestInit][] } };
@@ -97,8 +94,8 @@ function jsonResponse(body: unknown): Promise<Response> {
   return Promise.resolve(
     new Response(JSON.stringify(body), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
+      headers: { 'Content-Type': 'application/json' },
+    })
   );
 }
 
@@ -121,16 +118,13 @@ function makeLocator(selector: string, opts: FakePageOptions): Locator {
       opts.onClick?.();
       return Promise.resolve();
     },
-    fill: () =>
-      opts.fillThrows
-        ? Promise.reject(new Error("not fillable"))
-        : Promise.resolve(),
+    fill: () => (opts.fillThrows ? Promise.reject(new Error('not fillable')) : Promise.resolve()),
     pressSequentially: () => {
       opts.onPressSequentially?.();
       return Promise.resolve();
     },
     first: () => locator,
-    innerText: () => Promise.resolve(opts.texts?.[selector] ?? ""),
+    innerText: () => Promise.resolve(opts.texts?.[selector] ?? ''),
   };
   return locator as unknown as Locator;
 }
@@ -140,8 +134,7 @@ function makeLocator(selector: string, opts: FakePageOptions): Locator {
 function makeFrameLocator(prefix: string, opts: FakePageOptions): FrameLocator {
   return {
     locator: (inner: string) => makeLocator(`${prefix} >>> ${inner}`, opts),
-    frameLocator: (next: string) =>
-      makeFrameLocator(`${prefix} >>> ${next}`, opts),
+    frameLocator: (next: string) => makeFrameLocator(`${prefix} >>> ${next}`, opts),
   } as unknown as FrameLocator;
 }
 
@@ -158,7 +151,7 @@ export function makeBrowser(opts: FakePageOptions): {
     locator: (selector: string) => makeLocator(selector, opts),
     frameLocator: (selector: string) => makeFrameLocator(selector, opts),
     screenshot: () => Promise.resolve(Buffer.from([1, 2, 3])),
-    url: () => opts.url ?? "https://example.com",
+    url: () => opts.url ?? 'https://example.com',
   } as unknown as Page;
   const browser = {
     contexts: () => [{ pages: () => [page] }],

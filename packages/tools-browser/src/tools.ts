@@ -1,12 +1,8 @@
-import type { AgentTool } from "@intx/agent";
-import type { ToolDefinition } from "@intx/types/runtime";
-import type { Locator, Page } from "playwright-core";
-import { ACTION_TIMEOUT_MS, connect, getPage, withTimeout } from "./cdp";
-import {
-  clampTimeoutSeconds,
-  parseBrowserbaseBaseURL,
-  resolveConfig,
-} from "./config";
+import type { AgentTool } from '@intx/agent';
+import type { ToolDefinition } from '@intx/types/runtime';
+import type { Locator, Page } from 'playwright-core';
+import { ACTION_TIMEOUT_MS, connect, getPage, withTimeout } from './cdp';
+import { clampTimeoutSeconds, parseBrowserbaseBaseURL, resolveConfig } from './config';
 import {
   createSession,
   endSession,
@@ -14,14 +10,9 @@ import {
   removeSessionConnectURL,
   storeSessionConnectURL,
   waitForSessionRunning,
-} from "./client";
-import {
-  FRAME_DELIMITER,
-  pruneSnapshot,
-  SNAPSHOT_SCRIPT,
-  type RawSnapshot,
-} from "./snapshot";
-import type { BrowserToolsConfig, ResolvedBrowserConfig } from "./types";
+} from './client';
+import { FRAME_DELIMITER, pruneSnapshot, SNAPSHOT_SCRIPT, type RawSnapshot } from './snapshot';
+import type { BrowserToolsConfig, ResolvedBrowserConfig } from './types';
 
 function jsonResult(value: unknown): string {
   return JSON.stringify(value, null, 2);
@@ -29,7 +20,7 @@ function jsonResult(value: unknown): string {
 
 function requiredString(args: Record<string, unknown>, key: string): string {
   const value = args[key];
-  if (typeof value !== "string" || value.length === 0) {
+  if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`${key} is required`);
   }
   return value;
@@ -38,19 +29,19 @@ function requiredString(args: Record<string, unknown>, key: string): string {
 async function withSession<T>(
   config: ResolvedBrowserConfig,
   sessionId: string,
-  fn: (page: Page) => Promise<T>,
+  fn: (page: Page) => Promise<T>
 ): Promise<T> {
   return withTimeout(
     runSession(config, sessionId, fn),
     config.operationBudgetMs,
-    "browser operation",
+    'browser operation'
   );
 }
 
 async function runSession<T>(
   config: ResolvedBrowserConfig,
   sessionId: string,
-  fn: (page: Page) => Promise<T>,
+  fn: (page: Page) => Promise<T>
 ): Promise<T> {
   const browser = await connect(lookupSessionConnectURL(sessionId));
   try {
@@ -68,7 +59,7 @@ function locatorForRef(page: Page, ref: string): Locator {
   }
   const parts = ref.split(FRAME_DELIMITER);
   const inner = parts.pop() ?? ref;
-  let frame = page.frameLocator(parts[0] ?? "");
+  let frame = page.frameLocator(parts[0] ?? '');
   for (const frameSelector of parts.slice(1)) {
     frame = frame.frameLocator(frameSelector);
   }
@@ -81,34 +72,32 @@ async function resolveUnique(page: Page, ref: string): Promise<Locator> {
   const count = await locator.count();
   if (count === 0) {
     throw new Error(
-      `No element matches ref "${ref}". The page likely changed — call browser_get_snapshot again for fresh refs.`,
+      `No element matches ref "${ref}". The page likely changed — call browser_get_snapshot again for fresh refs.`
     );
   }
   if (count > 1) {
     throw new Error(
-      `Ref "${ref}" matches ${count} elements (ambiguous). Call browser_get_snapshot again for a fresh, unique ref.`,
+      `Ref "${ref}" matches ${count} elements (ambiguous). Call browser_get_snapshot again for a fresh, unique ref.`
     );
   }
   return locator;
 }
 
 async function settle(page: Page): Promise<void> {
-  await page
-    .waitForLoadState("networkidle", { timeout: 3000 })
-    .catch(() => undefined);
+  await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => undefined);
 }
 
 export const BROWSER_CREATE_SESSION_DEFINITION: ToolDefinition = {
-  name: "browser_create_session",
+  name: 'browser_create_session',
   description:
-    "Start a new hosted browser session and return its sessionId. Pass this sessionId to every other browser tool. Always close the session with browser_close_session when finished.",
+    'Start a new hosted browser session and return its sessionId. Pass this sessionId to every other browser tool. Always close the session with browser_close_session when finished.',
   inputSchema: {
-    type: "object",
+    type: 'object',
     properties: {
       timeoutSeconds: {
-        type: "number",
+        type: 'number',
         description:
-          "Max session lifetime in seconds (60-3600, default 180). The session auto-closes after this.",
+          'Max session lifetime in seconds (60-3600, default 180). The session auto-closes after this.',
       },
     },
     required: [],
@@ -116,131 +105,127 @@ export const BROWSER_CREATE_SESSION_DEFINITION: ToolDefinition = {
 };
 
 export const BROWSER_NAVIGATE_DEFINITION: ToolDefinition = {
-  name: "browser_navigate",
-  description: "Navigate the session to a URL and wait for the page to load.",
+  name: 'browser_navigate',
+  description: 'Navigate the session to a URL and wait for the page to load.',
   inputSchema: {
-    type: "object",
+    type: 'object',
     properties: {
       sessionId: {
-        type: "string",
-        description: "Session id from browser_create_session.",
+        type: 'string',
+        description: 'Session id from browser_create_session.',
       },
-      url: { type: "string", description: "Absolute URL to navigate to." },
+      url: { type: 'string', description: 'Absolute URL to navigate to.' },
     },
-    required: ["sessionId", "url"],
+    required: ['sessionId', 'url'],
   },
 };
 
 export const BROWSER_GET_SNAPSHOT_DEFINITION: ToolDefinition = {
-  name: "browser_get_snapshot",
+  name: 'browser_get_snapshot',
   description:
-    "Return the interactive elements on the current page as a list of { ref, role, name }. Pass a ref to browser_click or browser_type. Refs can go stale after the page changes — re-snapshot if a click fails. The list may be truncated and does not include iframe contents.",
+    'Return the interactive elements on the current page as a list of { ref, role, name }. Pass a ref to browser_click or browser_type. Refs can go stale after the page changes — re-snapshot if a click fails. The list may be truncated and does not include iframe contents.',
   inputSchema: {
-    type: "object",
+    type: 'object',
     properties: {
       sessionId: {
-        type: "string",
-        description: "Session id from browser_create_session.",
+        type: 'string',
+        description: 'Session id from browser_create_session.',
       },
     },
-    required: ["sessionId"],
+    required: ['sessionId'],
   },
 };
 
 export const BROWSER_CLICK_DEFINITION: ToolDefinition = {
-  name: "browser_click",
-  description:
-    "Click the element identified by a ref from browser_get_snapshot.",
+  name: 'browser_click',
+  description: 'Click the element identified by a ref from browser_get_snapshot.',
   inputSchema: {
-    type: "object",
+    type: 'object',
     properties: {
       sessionId: {
-        type: "string",
-        description: "Session id from browser_create_session.",
+        type: 'string',
+        description: 'Session id from browser_create_session.',
       },
       ref: {
-        type: "string",
-        description: "Element ref from a recent browser_get_snapshot.",
+        type: 'string',
+        description: 'Element ref from a recent browser_get_snapshot.',
       },
     },
-    required: ["sessionId", "ref"],
+    required: ['sessionId', 'ref'],
   },
 };
 
 export const BROWSER_TYPE_DEFINITION: ToolDefinition = {
-  name: "browser_type",
-  description:
-    "Type text into the element identified by a ref from browser_get_snapshot.",
+  name: 'browser_type',
+  description: 'Type text into the element identified by a ref from browser_get_snapshot.',
   inputSchema: {
-    type: "object",
+    type: 'object',
     properties: {
       sessionId: {
-        type: "string",
-        description: "Session id from browser_create_session.",
+        type: 'string',
+        description: 'Session id from browser_create_session.',
       },
       ref: {
-        type: "string",
-        description: "Element ref from a recent browser_get_snapshot.",
+        type: 'string',
+        description: 'Element ref from a recent browser_get_snapshot.',
       },
-      text: { type: "string", description: "Text to enter into the field." },
+      text: { type: 'string', description: 'Text to enter into the field.' },
     },
-    required: ["sessionId", "ref", "text"],
+    required: ['sessionId', 'ref', 'text'],
   },
 };
 
 export const BROWSER_GET_TEXT_DEFINITION: ToolDefinition = {
-  name: "browser_get_text",
-  description:
-    "Return the visible text content of the first element matching a CSS selector.",
+  name: 'browser_get_text',
+  description: 'Return the visible text content of the first element matching a CSS selector.',
   inputSchema: {
-    type: "object",
+    type: 'object',
     properties: {
       sessionId: {
-        type: "string",
-        description: "Session id from browser_create_session.",
+        type: 'string',
+        description: 'Session id from browser_create_session.',
       },
       selector: {
-        type: "string",
-        description: "CSS selector to read text from.",
+        type: 'string',
+        description: 'CSS selector to read text from.',
       },
     },
-    required: ["sessionId", "selector"],
+    required: ['sessionId', 'selector'],
   },
 };
 
 export const BROWSER_SCREENSHOT_DEFINITION: ToolDefinition = {
-  name: "browser_screenshot",
-  description:
-    "Capture a PNG screenshot of the current page, returned as base64.",
+  name: 'browser_screenshot',
+  description: 'Capture a PNG screenshot of the current page, returned as base64.',
   inputSchema: {
-    type: "object",
+    type: 'object',
     properties: {
       sessionId: {
-        type: "string",
-        description: "Session id from browser_create_session.",
+        type: 'string',
+        description: 'Session id from browser_create_session.',
       },
       fullPage: {
-        type: "boolean",
-        description: "Capture the full scrollable page (default false).",
+        type: 'boolean',
+        description: 'Capture the full scrollable page (default false).',
       },
     },
-    required: ["sessionId"],
+    required: ['sessionId'],
   },
 };
 
 export const BROWSER_CLOSE_SESSION_DEFINITION: ToolDefinition = {
-  name: "browser_close_session",
+  name: 'browser_close_session',
   description:
-    "Release the hosted browser session. Always call this when finished to avoid leaking a paid session.",
+    'Release the hosted browser session. Always call this when finished to avoid leaking a paid session.',
   inputSchema: {
-    type: "object",
+    type: 'object',
     properties: {
       sessionId: {
-        type: "string",
-        description: "Session id from browser_create_session.",
+        type: 'string',
+        description: 'Session id from browser_create_session.',
       },
     },
-    required: ["sessionId"],
+    required: ['sessionId'],
   },
 };
 
@@ -257,13 +242,10 @@ export const BROWSER_DEFINITIONS: ToolDefinition[] = [
 
 function stringTool(
   definition: ToolDefinition,
-  call: (
-    args: Record<string, unknown>,
-    signal: AbortSignal,
-  ) => Promise<unknown>,
+  call: (args: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>
 ): AgentTool {
   return {
-    kind: "string",
+    kind: 'string',
     definition,
     handler: async (args, signal) => jsonResult(await call(args, signal)),
   };
@@ -275,22 +257,18 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
   return [
     stringTool(BROWSER_CREATE_SESSION_DEFINITION, async (args, signal) => {
       const timeoutSeconds = clampTimeoutSeconds(args.timeoutSeconds);
-      const { sessionId, connectUrl } = await createSession(
-        config,
-        timeoutSeconds,
-        signal,
-      );
+      const { sessionId, connectUrl } = await createSession(config, timeoutSeconds, signal);
       await waitForSessionRunning(config, sessionId, signal);
       storeSessionConnectURL(sessionId, connectUrl);
       return { sessionId, timeoutSeconds };
     }),
 
     stringTool(BROWSER_NAVIGATE_DEFINITION, async (args) => {
-      const sessionId = requiredString(args, "sessionId");
-      const url = requiredString(args, "url");
+      const sessionId = requiredString(args, 'sessionId');
+      const url = requiredString(args, 'url');
       return withSession(config, sessionId, async (page) => {
         await page.goto(url, {
-          waitUntil: "domcontentloaded",
+          waitUntil: 'domcontentloaded',
           timeout: ACTION_TIMEOUT_MS,
         });
         await settle(page);
@@ -299,7 +277,7 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
     }),
 
     stringTool(BROWSER_GET_SNAPSHOT_DEFINITION, async (args) => {
-      const sessionId = requiredString(args, "sessionId");
+      const sessionId = requiredString(args, 'sessionId');
       return withSession(config, sessionId, async (page) => {
         await settle(page);
         const raw = await page.evaluate<RawSnapshot>(SNAPSHOT_SCRIPT);
@@ -308,8 +286,8 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
     }),
 
     stringTool(BROWSER_CLICK_DEFINITION, async (args) => {
-      const sessionId = requiredString(args, "sessionId");
-      const ref = requiredString(args, "ref");
+      const sessionId = requiredString(args, 'sessionId');
+      const ref = requiredString(args, 'ref');
       return withSession(config, sessionId, async (page) => {
         const locator = await resolveUnique(page, ref);
         await locator.click({ timeout: ACTION_TIMEOUT_MS });
@@ -318,9 +296,9 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
     }),
 
     stringTool(BROWSER_TYPE_DEFINITION, async (args) => {
-      const sessionId = requiredString(args, "sessionId");
-      const ref = requiredString(args, "ref");
-      const text = requiredString(args, "text");
+      const sessionId = requiredString(args, 'sessionId');
+      const ref = requiredString(args, 'ref');
+      const text = requiredString(args, 'text');
       return withSession(config, sessionId, async (page) => {
         const locator = await resolveUnique(page, ref);
         // fill() is fastest and covers inputs/textarea/contenteditable. Custom
@@ -328,18 +306,18 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
         // fall back to focusing and typing key-by-key.
         try {
           await locator.fill(text, { timeout: ACTION_TIMEOUT_MS });
-          return { typed: ref, method: "fill" };
+          return { typed: ref, method: 'fill' };
         } catch {
           await locator.click({ timeout: ACTION_TIMEOUT_MS });
           await locator.pressSequentially(text, { timeout: ACTION_TIMEOUT_MS });
-          return { typed: ref, method: "pressSequentially" };
+          return { typed: ref, method: 'pressSequentially' };
         }
       });
     }),
 
     stringTool(BROWSER_GET_TEXT_DEFINITION, async (args) => {
-      const sessionId = requiredString(args, "sessionId");
-      const selector = requiredString(args, "selector");
+      const sessionId = requiredString(args, 'sessionId');
+      const selector = requiredString(args, 'selector');
       return withSession(config, sessionId, async (page) => {
         const locator = page.locator(selector);
         if ((await locator.count()) === 0) {
@@ -352,20 +330,20 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
     }),
 
     stringTool(BROWSER_SCREENSHOT_DEFINITION, async (args) => {
-      const sessionId = requiredString(args, "sessionId");
+      const sessionId = requiredString(args, 'sessionId');
       const fullPage = args.fullPage === true;
       return withSession(config, sessionId, async (page) => {
         const bytes = await page.screenshot({ fullPage });
         return {
-          mimeType: "image/png",
-          encoding: "base64",
-          imageBase64: Buffer.from(bytes).toString("base64"),
+          mimeType: 'image/png',
+          encoding: 'base64',
+          imageBase64: Buffer.from(bytes).toString('base64'),
         };
       });
     }),
 
     stringTool(BROWSER_CLOSE_SESSION_DEFINITION, async (args, signal) => {
-      const sessionId = requiredString(args, "sessionId");
+      const sessionId = requiredString(args, 'sessionId');
       try {
         await endSession(config, sessionId, signal);
       } finally {
@@ -376,13 +354,8 @@ export function createBrowserTools(rawConfig: BrowserToolsConfig): AgentTool[] {
   ];
 }
 
-function createBrowserToolByName(
-  config: BrowserToolsConfig,
-  name: string,
-): AgentTool[] {
-  return createBrowserTools(config).filter(
-    (tool) => tool.definition.name === name,
-  );
+function createBrowserToolByName(config: BrowserToolsConfig, name: string): AgentTool[] {
+  return createBrowserTools(config).filter((tool) => tool.definition.name === name);
 }
 
 // Hub registry entries. The project id rides on the credential `baseURL` as
@@ -392,7 +365,7 @@ export const BROWSER_HUB_TOOLS = Object.fromEntries(
     definition.name,
     {
       definition,
-      providerName: "browserbase" as const,
+      providerName: 'browserbase' as const,
       createTools: (config: { apiKey: string; baseURL: string }) => {
         const { baseUrl, projectId } = parseBrowserbaseBaseURL(config.baseURL);
         return createBrowserToolByName(
@@ -401,9 +374,9 @@ export const BROWSER_HUB_TOOLS = Object.fromEntries(
             baseUrl,
             ...(projectId ? { projectId } : {}),
           },
-          definition.name,
+          definition.name
         );
       },
     },
-  ]),
+  ])
 );

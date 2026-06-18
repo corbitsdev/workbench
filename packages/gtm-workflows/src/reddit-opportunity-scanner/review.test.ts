@@ -66,9 +66,7 @@ describe('reddit opportunity review', () => {
         status: 'new',
       },
     ];
-    const updated = JSON.parse(
-      updateOpportunityStatus(JSON.stringify(withOpp), 'opp-1', 'saved')
-    );
+    const updated = JSON.parse(updateOpportunityStatus(JSON.stringify(withOpp), 'opp-1', 'saved'));
     expect(updated.opportunities[0].status).toBe('saved');
   });
 });

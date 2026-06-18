@@ -1,7 +1,4 @@
-export type BrowserFetch = (
-  input: string,
-  init: RequestInit,
-) => Promise<Response>;
+export type BrowserFetch = (input: string, init: RequestInit) => Promise<Response>;
 
 export type BrowserToolsConfig = {
   apiKey: string;

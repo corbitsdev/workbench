@@ -59,8 +59,10 @@ export function getVariantCount(kind: string): number {
 }
 
 export function resolveArtifactKind(selectionKind: string): string {
-  return COLLATERAL_SELECTION_DESCRIPTORS[selectionKind as CollateralTypeId]?.artifactKind ??
-    selectionKind;
+  return (
+    COLLATERAL_SELECTION_DESCRIPTORS[selectionKind as CollateralTypeId]?.artifactKind ??
+    selectionKind
+  );
 }
 
 export function hasMultiVariantKind(artifacts: { kind: string }[]): boolean {

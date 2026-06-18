@@ -43,7 +43,12 @@ describe('flattened credential requirements (mirrors catalog endpoint)', () => {
     const flat = flattenStepCredentialRequirements(fromRoot);
     expect(flat).toEqual([
       { providerName: 'granola', source: 'tenant', name: 'Granola' },
-      { providerName: 'openai-compatible', source: 'tenant', name: LLM_CREDENTIAL_NAME, defaultModel: LLM_DEFAULT_MODEL },
+      {
+        providerName: 'openai-compatible',
+        source: 'tenant',
+        name: LLM_CREDENTIAL_NAME,
+        defaultModel: LLM_DEFAULT_MODEL,
+      },
     ]);
   });
 });

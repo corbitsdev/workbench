@@ -12,16 +12,16 @@ beyond the connectUrl store.
 
 ## Module layout
 
-| File          | Owns                                                                    |
-| ------------- | ----------------------------------------------------------------------- |
-| `budgets.ts`  | The four timeout constants and their ordering invariant. Zero imports.  |
+| File          | Owns                                                                     |
+| ------------- | ------------------------------------------------------------------------ |
+| `budgets.ts`  | The four timeout constants and their ordering invariant. Zero imports.   |
 | `config.ts`   | Base-URL / project-id parsing, `resolveConfig`, session-timeout clamp.   |
-| `schemas.ts`  | ArkType schemas for the Browserbase REST responses we read.             |
-| `client.ts`   | Browserbase REST client (one fetch helper) + the connectUrl store.      |
+| `schemas.ts`  | ArkType schemas for the Browserbase REST responses we read.              |
+| `client.ts`   | Browserbase REST client (one fetch helper) + the connectUrl store.       |
 | `cdp.ts`      | CDP connect (the only importer of `chromium`), `getPage`, `withTimeout`. |
-| `snapshot.ts` | Page snapshot script + pure pruning/ref logic.                          |
-| `tools.ts`    | Tool definitions, `createBrowserTools`, the hub registry.               |
-| `index.ts`    | Thin barrel: the public surface only.                                   |
+| `snapshot.ts` | Page snapshot script + pure pruning/ref logic.                           |
+| `tools.ts`    | Tool definitions, `createBrowserTools`, the hub registry.                |
+| `index.ts`    | Thin barrel: the public surface only.                                    |
 
 ## Credentials
 
@@ -55,9 +55,9 @@ Two seams, two mechanisms — deliberately asymmetric:
 that drives CDP installs the mock itself at the top of the file:
 
 ```ts
-import { playwrightMockFactory, cdpControl } from "./fixtures";
-mock.module("playwright-core", playwrightMockFactory);
-import { connect } from "./cdp";
+import { playwrightMockFactory, cdpControl } from './fixtures';
+mock.module('playwright-core', playwrightMockFactory);
+import { connect } from './cdp';
 ```
 
 `mock.module` is hoisted above static imports only when it lives in the test

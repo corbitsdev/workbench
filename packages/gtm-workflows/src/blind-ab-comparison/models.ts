@@ -42,12 +42,13 @@ export const GOOGLE_GENAI_AB_COMPARISON_MODELS = [
   'gemini-3.1-flash-lite',
 ] as const;
 
-export const AB_COMPARISON_MODELS_BY_PLUGIN: Record<AbComparisonProviderPlugin, readonly string[]> = {
-  anthropic: ANTHROPIC_AB_COMPARISON_MODELS,
-  'openai-compatible': OPENCODE_ZEN_CHAT_COMPLETIONS_MODELS,
-  openai: OPENAI_AB_COMPARISON_MODELS,
-  'google-genai': GOOGLE_GENAI_AB_COMPARISON_MODELS,
-};
+export const AB_COMPARISON_MODELS_BY_PLUGIN: Record<AbComparisonProviderPlugin, readonly string[]> =
+  {
+    anthropic: ANTHROPIC_AB_COMPARISON_MODELS,
+    'openai-compatible': OPENCODE_ZEN_CHAT_COMPLETIONS_MODELS,
+    openai: OPENAI_AB_COMPARISON_MODELS,
+    'google-genai': GOOGLE_GENAI_AB_COMPARISON_MODELS,
+  };
 
 export function listAbComparisonModels(providerPlugin: string): readonly string[] {
   if (!(providerPlugin in AB_COMPARISON_MODELS_BY_PLUGIN)) return [];

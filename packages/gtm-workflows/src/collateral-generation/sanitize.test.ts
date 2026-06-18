@@ -64,14 +64,7 @@ describe('stripLeakedPromptTags', () => {
   });
 
   it('leaves fenced code blocks with trailing spaces and intentional blank lines untouched', () => {
-    const body = [
-      '```ts',
-      'const x = 1;   ',
-      '',
-      '',
-      'const y = 2;',
-      '```',
-    ].join('\n');
+    const body = ['```ts', 'const x = 1;   ', '', '', 'const y = 2;', '```'].join('\n');
 
     const result = stripLeakedPromptTags(body);
 

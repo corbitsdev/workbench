@@ -1,7 +1,7 @@
-import { OPERATION_BUDGET_MS } from "./budgets";
-import type { BrowserToolsConfig, ResolvedBrowserConfig } from "./types";
+import { OPERATION_BUDGET_MS } from './budgets';
+import type { BrowserToolsConfig, ResolvedBrowserConfig } from './types';
 
-export const DEFAULT_BASE_URL = "https://api.browserbase.com/v1";
+export const DEFAULT_BASE_URL = 'https://api.browserbase.com/v1';
 
 // Short by default: with keepAlive, an abandoned session burns this much paid
 // browser-time before Browserbase auto-releases it.
@@ -23,32 +23,27 @@ export function parseBrowserbaseBaseURL(baseURL: string | undefined): {
   try {
     url = new URL(trimmed);
   } catch {
-    throw new Error("Browserbase baseURL must be a valid URL");
+    throw new Error('Browserbase baseURL must be a valid URL');
   }
-  const projectId = url.searchParams.get("projectId") ?? undefined;
-  const baseUrl = `${url.origin}${url.pathname}`.replace(/\/$/, "");
+  const projectId = url.searchParams.get('projectId') ?? undefined;
+  const baseUrl = `${url.origin}${url.pathname}`.replace(/\/$/, '');
   return { baseUrl, projectId };
 }
 
-export function resolveConfig(
-  config: BrowserToolsConfig,
-): ResolvedBrowserConfig {
+export function resolveConfig(config: BrowserToolsConfig): ResolvedBrowserConfig {
   if (config.apiKey.length === 0) {
-    throw new Error("Browserbase apiKey is required");
+    throw new Error('Browserbase apiKey is required');
   }
-  const baseUrl = (config.baseUrl?.trim() || DEFAULT_BASE_URL).replace(
-    /\/$/,
-    "",
-  );
+  const baseUrl = (config.baseUrl?.trim() || DEFAULT_BASE_URL).replace(/\/$/, '');
   try {
     new URL(baseUrl);
   } catch {
-    throw new Error("Browserbase baseUrl must be a valid URL");
+    throw new Error('Browserbase baseUrl must be a valid URL');
   }
   const projectId = config.projectId?.trim();
   if (!projectId) {
     throw new Error(
-      "Browserbase projectId is required — set it on the provider metadata baseURL as ?projectId=<id>",
+      'Browserbase projectId is required — set it on the provider metadata baseURL as ?projectId=<id>'
     );
   }
   return {
@@ -61,11 +56,11 @@ export function resolveConfig(
 }
 
 export function clampTimeoutSeconds(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
     return DEFAULT_SESSION_TIMEOUT_SECONDS;
   }
   return Math.min(
     MAX_SESSION_TIMEOUT_SECONDS,
-    Math.max(MIN_SESSION_TIMEOUT_SECONDS, Math.floor(value)),
+    Math.max(MIN_SESSION_TIMEOUT_SECONDS, Math.floor(value))
   );
 }

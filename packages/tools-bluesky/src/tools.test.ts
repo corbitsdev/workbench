@@ -43,9 +43,9 @@ const OLD = '2020-01-01T00:00:00.000Z';
 describe('BLUESKY_HUB_TOOLS', () => {
   it('exposes bluesky_search as a credential tool with providerName bluesky', () => {
     expect('bluesky_search' in BLUESKY_HUB_TOOLS).toBe(true);
-    expect(
-      (BLUESKY_HUB_TOOLS.bluesky_search as { providerName: string }).providerName
-    ).toBe('bluesky');
+    expect((BLUESKY_HUB_TOOLS.bluesky_search as { providerName: string }).providerName).toBe(
+      'bluesky'
+    );
   });
 });
 

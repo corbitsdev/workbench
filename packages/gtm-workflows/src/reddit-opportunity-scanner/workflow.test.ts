@@ -59,8 +59,12 @@ describe('reddit opportunity scanner workflow', () => {
         evidence: ['Homepage'],
       },
       recommendations: {
-        keywords: [{ label: 'analytics', reason: 'Core product', confidence: 0.9, source: 'accepted' }],
-        subreddits: [{ label: 'SaaS', reason: 'Buyer community', confidence: 0.8, source: 'accepted' }],
+        keywords: [
+          { label: 'analytics', reason: 'Core product', confidence: 0.9, source: 'accepted' },
+        ],
+        subreddits: [
+          { label: 'SaaS', reason: 'Buyer community', confidence: 0.8, source: 'accepted' },
+        ],
       },
       scanConfig: {
         timeWindow: '30d',

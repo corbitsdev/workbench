@@ -28,7 +28,12 @@ describe('presentationGenerationWorkflow', () => {
   it('generate step declares the LLM credential requirement for the pipeline', () => {
     const step = presentationGenerationWorkflow.steps.find((s) => s.name === 'generate');
     expect(step?.credentialRequirements).toEqual([
-      { providerName: 'openai-compatible', source: 'tenant', name: LLM_CREDENTIAL_NAME, defaultModel: LLM_DEFAULT_MODEL },
+      {
+        providerName: 'openai-compatible',
+        source: 'tenant',
+        name: LLM_CREDENTIAL_NAME,
+        defaultModel: LLM_DEFAULT_MODEL,
+      },
     ]);
   });
 
