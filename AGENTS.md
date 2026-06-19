@@ -114,6 +114,8 @@ Each image uses a targeted `COPY` list. When you add/remove/rename a package or 
 - New `packages/*` dep → add `COPY packages/<name>/` and `COPY packages/<name>/package.json` in every image that depends on it.
 - Removed package → remove its lines from all Dockerfiles.
 - The manifest-copy section (`COPY packages/*/package.json` before `bun install`) must list every workspace member.
+- **Interchange pin SHA** — each image clones interchange at a hardcoded commit (the `git -C interchange checkout <sha>` line). When you bump the `interchange` submodule pin, bump that SHA in all four Dockerfiles too, or `bun install --frozen-lockfile` validates against the wrong `@intx/*` graph and the build fails.
+- **Bun version** — the `FROM oven/bun:<ver>` in all four images must match the bun that authored `bun.lock`. A mismatch can pass `--frozen-lockfile` but produce a node_modules layout where interchange's undeclared hoisted deps (e.g. `@intx/log` from `@intx/agent`) don't resolve at runtime. Relock and bump the image together.
 
 ## Credential Seeding Maintenance
 

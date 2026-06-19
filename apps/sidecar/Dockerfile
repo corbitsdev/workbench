@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.13
+FROM oven/bun:1.3.14
 WORKDIR /app
 
 # Clone interchange at the PINNED commit (keep in sync with the submodule SHA in
