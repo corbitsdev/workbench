@@ -24,8 +24,9 @@ export type PublishOptions = {
   tenantName: string;
   registryName: string;
   fromDir: string;
-  // Auth: either a pre-minted session cookie (preferred for CI/deploy — no admin
-  // password on the box) or admin email + password to sign in for a session.
+  // Auth: either a pre-minted session token (preferred for CI/deploy — no admin
+  // password on the box; bare better-auth token, not a full cookie) or admin
+  // email + password to sign in for a session.
   sessionCookie?: string;
   adminEmail?: string;
   adminPassword?: string;
@@ -195,12 +196,17 @@ async function listTarballs(fromDir: string): Promise<string[]> {
  * every tarball under `opts.fromDir`. Idempotent — re-running overwrites
  * same-name entries. Returns one record per uploaded file.
  */
-// Prefer a pre-minted session cookie; otherwise sign in with admin creds. The
-// cookie is sent verbatim as the Cookie header, so pass the full `name=value`
-// (e.g. `better-auth.session_token=...`).
+// Prefer a pre-minted session token; otherwise sign in with admin creds. Pass
+// the bare better-auth session token (grabbed from the browser) — we emit both
+// the plain and `__Secure-` cookie variants so it works against http and https
+// hubs alike. This matches the convention in the other hub bins (_lib.ts signIn,
+// reset-myra, seed-credentials, add-llm-credential).
 async function resolveAuthCookies(opts: PublishOptions): Promise<CookieJar> {
   if (opts.sessionCookie !== undefined && opts.sessionCookie !== '') {
-    return [opts.sessionCookie];
+    return [
+      `better-auth.session_token=${opts.sessionCookie}`,
+      `__Secure-better-auth.session_token=${opts.sessionCookie}`,
+    ];
   }
   if (opts.adminEmail === undefined || opts.adminPassword === undefined) {
     throw new Error(

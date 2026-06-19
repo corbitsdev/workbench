@@ -7,7 +7,7 @@ import { publishToolPackages } from './publish-tool-packages';
 
 const realFetch = globalThis.fetch;
 
-type Call = { method: string; url: string; body: unknown };
+type Call = { method: string; url: string; body: unknown; cookie: string | undefined };
 
 const principal = {
   principalId: 'p1',
@@ -57,7 +57,8 @@ function installFetchStub(): void {
       init?.body !== undefined && typeof init.body === 'string'
         ? (JSON.parse(init.body) as unknown)
         : init?.body;
-    calls.push({ method, url, body });
+    const cookie = new Headers(init?.headers).get('Cookie') ?? undefined;
+    calls.push({ method, url, body, cookie });
     const json = (status: number, data: unknown): Response =>
       new Response(JSON.stringify(data), {
         status,
@@ -113,7 +114,7 @@ describe('publishToolPackages', () => {
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method ?? 'GET';
-      calls.push({ method, url, body: undefined });
+      calls.push({ method, url, body: undefined, cookie: undefined });
       const json = (status: number, data: unknown): Response =>
         new Response(JSON.stringify(data), {
           status,
@@ -146,11 +147,11 @@ describe('publishToolPackages', () => {
     expect(calls.some((c) => c.url.includes('ast_existing/tarballs/'))).toBe(true);
   });
 
-  test('uses a session cookie and skips admin sign-in', async () => {
+  test('uses a bare session token and skips admin sign-in', async () => {
     installFetchStub();
     await publishToolPackages({
       hubURL: 'https://hub.test',
-      sessionCookie: 'better-auth.session_token=tok123',
+      sessionCookie: 'tok123',
       tenantSlug: 'corbits',
       tenantName: 'Corbits',
       registryName: 'workspace-builtins',
@@ -158,8 +159,11 @@ describe('publishToolPackages', () => {
     });
     // No sign-up/sign-in calls were made.
     expect(calls.some((c) => c.url.includes('/api/auth/'))).toBe(false);
-    // The session cookie is sent on the authenticated requests.
-    expect(calls.some((c) => c.url.includes('/api/me/principals'))).toBe(true);
+    // The bare token is sent as both the plain and __Secure- cookie variants so
+    // it authenticates against http and https hubs alike.
+    const principalsCall = calls.find((c) => c.url.includes('/api/me/principals'));
+    expect(principalsCall?.cookie).toContain('better-auth.session_token=tok123');
+    expect(principalsCall?.cookie).toContain('__Secure-better-auth.session_token=tok123');
     expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(2);
   });
 });
