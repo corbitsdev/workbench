@@ -21,7 +21,6 @@ const TOOL_PROVIDER_LABELS: Record<string, string> = {
   firecrawl: 'Firecrawl',
   gamma: 'Gamma',
   exa: 'Exa',
-  browserbase: 'Browserbase',
   reddit: 'Reddit',
   scrapecreators: 'ScrapeCreators',
 };

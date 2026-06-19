@@ -5,7 +5,6 @@ import { TOOL_DEFINITIONS as MAIL_TOOL_DEFINITIONS } from '@intx/tools-mail';
 import type { ToolDefinition } from '@intx/types/runtime';
 import { AGENTS_HUB_TOOLS } from '@workbench/tools-agents';
 import { BLUESKY_HUB_TOOLS } from '@workbench/tools-bluesky';
-import { BROWSER_HUB_TOOLS } from '@workbench/tools-browser';
 import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
 import { FIRECRAWL_HUB_TOOLS } from '@workbench/tools-firecrawl';
 import { GAMMA_HUB_TOOLS } from '@workbench/tools-gamma';
@@ -25,15 +24,13 @@ import { LAST30DAYS_CORE_HUB_TOOLS } from '../tools/last30days-core-tools';
 import { GAMMA_LIST_TEMPLATES_HUB_TOOL } from '../tools/gamma-templates';
 import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
 
-/**
- * All hub-managed tools, assembled from tool packages.
- *
- * To add a new tool: create a @workbench/tools-* package that exports a
- * *_HUB_TOOLS object and spread it here. No other hub or sidecar changes needed.
- */
+// Hub-session-token rail. Native-migrated tools (the first group) are
+// here only as the coexistence fallback and are removed once the native
+// path is verified on staging; hub-backed tools (the second group) have
+// no tarball form and stay permanently. See docs/CREATING_AGENTS_AND_TOOLS.md.
 export const KNOWN_TOOLS: Record<string, ToolEntry> = {
+  // Native-migrated (coexistence fallback)
   ...BLUESKY_HUB_TOOLS,
-  ...BROWSER_HUB_TOOLS,
   ...EXA_HUB_TOOLS,
   ...FIRECRAWL_HUB_TOOLS,
   // gamma_list_templates is a ContextToolEntry (reads tenant DB), not a credential tool.
@@ -48,12 +45,13 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...SCRAPECREATORS_HUB_TOOLS,
   ...X_HUB_TOOLS,
   ...YOUTUBE_HUB_TOOLS,
+  ...LAST30DAYS_CORE_HUB_TOOLS,
+  // Hub-backed (permanent; need hub db/services)
   ...ARTIFACT_HUB_TOOLS,
   ...DISPATCH_HUB_TOOLS,
   ...AGENTS_HUB_TOOLS,
   ...LIST_AGENTS_HUB_TOOLS,
   ...WRITE_ARTIFACT_HUB_TOOLS,
-  ...LAST30DAYS_CORE_HUB_TOOLS,
 };
 
 export type CredentialToolEntry = {

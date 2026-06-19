@@ -11,6 +11,7 @@ import {
   createHubSessionOrchestrator,
   createSessionService,
   createSidecarRouter,
+  WORKSPACE_BUILTINS_REGISTRY,
   type WsHandle,
 } from '@intx/hub-sessions';
 // Per-agent serialized event-collector registry (CL-1656). Drop-in for
@@ -41,7 +42,8 @@ import { createWorkbenchesRouter } from './routes/workbenches';
 import { createMembersRouter } from './routes/members';
 import { createGammaTemplatesRouter } from './routes/gamma-templates';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
-import { createInternalToolsRouter } from './routes/tools';
+import { createHubToolsRouter } from './routes/hub-tools';
+import { createToolCredentialsRouter } from './routes/tool-credentials';
 import { buildToolDefinitions, getToolNamesFromCapabilities } from './lib/tool-registry';
 import { schema } from './db';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
@@ -262,6 +264,17 @@ registerDisconnectReconciler({ db, router: sidecarRouter });
 const rawSessionService = createSessionService({
   sidecarRouter,
   agentRepoStore: repoStore,
+  assetService,
+  db,
+  // Asset-sourced tool packages: the resolver auto-includes every
+  // package-registry asset visible to the agent's tenant keyed by
+  // asset.name, so the workspace-builtins asset satisfies the default
+  // registry. No HTTP registries — our tarballs are self-contained.
+  // Only consulted for agents with non-empty toolPackagePins.
+  toolPackageRegistries: {
+    httpRegistries: new Map(),
+    defaultRegistry: WORKSPACE_BUILTINS_REGISTRY,
+  },
 });
 
 // Wrap launchSession so that Interchange's native instance-creation path
@@ -555,13 +568,14 @@ app.route('/api/v1', v1);
 app.route('/api/internal', createInternalApprovalsRouter(db, config.sidecarToken));
 app.route(
   '/api/internal',
-  createInternalToolsRouter(db, config.sidecarToken, {
+  createHubToolsRouter(db, config.sidecarToken, {
     sessionService,
     eventCollectors,
     sidecarRouter,
     buildToolDefinitions,
   })
 );
+app.route('/api/internal', createToolCredentialsRouter(db, config.sidecarToken));
 
 // The web SPA is deployed as its own static Railway service (apps/web),
 // not served from here. The hub is API-only.

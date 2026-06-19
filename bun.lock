@@ -41,9 +41,10 @@
         "@workbench/last30days-core": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tool-credentials": "workspace:*",
         "@workbench/tools-agents": "workspace:*",
+        "@workbench/tools-artifact": "workspace:*",
         "@workbench/tools-bluesky": "workspace:*",
-        "@workbench/tools-browser": "workspace:*",
         "@workbench/tools-dispatch": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
         "@workbench/tools-firecrawl": "workspace:*",
@@ -51,6 +52,7 @@
         "@workbench/tools-github": "workspace:*",
         "@workbench/tools-granola": "workspace:*",
         "@workbench/tools-hackernews": "workspace:*",
+        "@workbench/tools-last30days": "workspace:*",
         "@workbench/tools-polymarket": "workspace:*",
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
@@ -65,8 +67,11 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "@types/ssri": "^7.1.5",
         "drizzle-kit": "^0.31.1",
         "exceljs": "^4.4.0",
+        "ssri": "^12.0.0",
+        "tar": "^7.5.1",
         "typescript": "^5.9.0",
       },
     },
@@ -82,6 +87,7 @@
         "@intx/log": "workspace:*",
         "@intx/mail-memory": "workspace:*",
         "@intx/storage-isogit": "workspace:*",
+        "@intx/tool-packaging": "workspace:*",
         "@intx/tools-lsp": "workspace:*",
         "@intx/tools-mail": "workspace:*",
         "@intx/tools-posix": "workspace:*",
@@ -91,6 +97,7 @@
         "@workbench/context-repair": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/sentry": "workspace:*",
+        "@workbench/tool-credentials": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
       },
       "devDependencies": {
@@ -652,8 +659,25 @@
         "react": "*",
       },
     },
+    "packages/tool-credentials": {
+      "name": "@workbench/tool-credentials",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-agents": {
       "name": "@workbench/tools-agents",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/db": "workspace:*",
@@ -662,23 +686,25 @@
         "typescript": "^5.9.0",
       },
     },
-    "packages/tools-bluesky": {
-      "name": "@workbench/tools-bluesky",
+    "packages/tools-artifact": {
+      "name": "@workbench/tools-artifact",
+      "version": "0.1.0",
       "dependencies": {
-        "@workbench/last30days-core": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@workbench/tool-credentials": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.0",
       },
     },
-    "packages/tools-browser": {
-      "name": "@workbench/tools-browser",
+    "packages/tools-bluesky": {
+      "name": "@workbench/tools-bluesky",
+      "version": "0.1.0",
       "dependencies": {
-        "arktype": "catalog:",
-        "playwright-core": "^1.49.0",
+        "@workbench/last30days-core": "workspace:*",
+        "@workbench/tool-credentials": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -689,6 +715,10 @@
     },
     "packages/tools-dispatch": {
       "name": "@workbench/tools-dispatch",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/crypto-node": "workspace:*",
@@ -703,6 +733,10 @@
     },
     "packages/tools-exa": {
       "name": "@workbench/tools-exa",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -712,6 +746,10 @@
     },
     "packages/tools-firecrawl": {
       "name": "@workbench/tools-firecrawl",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -721,6 +759,10 @@
     },
     "packages/tools-gamma": {
       "name": "@workbench/tools-gamma",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -730,8 +772,10 @@
     },
     "packages/tools-github": {
       "name": "@workbench/tools-github",
+      "version": "0.1.0",
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/tool-credentials": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -742,6 +786,10 @@
     },
     "packages/tools-granola": {
       "name": "@workbench/tools-granola",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -751,6 +799,7 @@
     },
     "packages/tools-hackernews": {
       "name": "@workbench/tools-hackernews",
+      "version": "0.1.0",
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
       },
@@ -761,8 +810,23 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-last30days": {
+      "name": "@workbench/tools-last30days",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/last30days-core": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-polymarket": {
       "name": "@workbench/tools-polymarket",
+      "version": "0.1.0",
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
       },
@@ -775,6 +839,10 @@
     },
     "packages/tools-reddit": {
       "name": "@workbench/tools-reddit",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -784,6 +852,10 @@
     },
     "packages/tools-scrapecreators": {
       "name": "@workbench/tools-scrapecreators",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -793,6 +865,10 @@
     },
     "packages/tools-x": {
       "name": "@workbench/tools-x",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -802,8 +878,10 @@
     },
     "packages/tools-youtube": {
       "name": "@workbench/tools-youtube",
+      "version": "0.1.0",
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/tool-credentials": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -1790,11 +1868,13 @@
 
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
 
+    "@workbench/tool-credentials": ["@workbench/tool-credentials@workspace:packages/tool-credentials"],
+
     "@workbench/tools-agents": ["@workbench/tools-agents@workspace:packages/tools-agents"],
 
-    "@workbench/tools-bluesky": ["@workbench/tools-bluesky@workspace:packages/tools-bluesky"],
+    "@workbench/tools-artifact": ["@workbench/tools-artifact@workspace:packages/tools-artifact"],
 
-    "@workbench/tools-browser": ["@workbench/tools-browser@workspace:packages/tools-browser"],
+    "@workbench/tools-bluesky": ["@workbench/tools-bluesky@workspace:packages/tools-bluesky"],
 
     "@workbench/tools-dispatch": ["@workbench/tools-dispatch@workspace:packages/tools-dispatch"],
 
@@ -1809,6 +1889,8 @@
     "@workbench/tools-granola": ["@workbench/tools-granola@workspace:packages/tools-granola"],
 
     "@workbench/tools-hackernews": ["@workbench/tools-hackernews@workspace:packages/tools-hackernews"],
+
+    "@workbench/tools-last30days": ["@workbench/tools-last30days@workspace:packages/tools-last30days"],
 
     "@workbench/tools-polymarket": ["@workbench/tools-polymarket@workspace:packages/tools-polymarket"],
 
@@ -2785,8 +2867,6 @@
     "pify": ["pify@4.0.1", "", {}, "sha512-uB80kBFb/tfd68bVleG9T5GGsGPjJrLAUpR5PZIrhBnIaRTQRjqdJSsIKkOP6OAIFbj7GOrcudc5pNjZ+geV2g=="],
 
     "pkce-challenge": ["pkce-challenge@5.0.1", "", {}, "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ=="],
-
-    "playwright-core": ["playwright-core@1.60.0", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-9bW6zvX/m0lEbgTKJ6YppOKx8H3VOPBMOCFh2irXFOT4BbHgrx5hPjwJYLT40Lu+4qtD36qKc/Hn56StUW57IA=="],
 
     "points-on-curve": ["points-on-curve@0.2.0", "", {}, "sha512-0mYKnYYe9ZcqMCWhUjItv/oHjvgEsfKvnUTg8sAtnHr3GVy7rGkXCb6d5cSyqrWqL4k81b9CPg3urd+T7aop3A=="],
 

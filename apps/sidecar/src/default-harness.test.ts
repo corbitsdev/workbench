@@ -121,6 +121,9 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
+        cacheRoot: '/tmp/wb-test-tool-cache',
+        cacheMaxBytes: 1024 * 1024,
+        registryMaxTarballBytes: 1024 * 1024,
       });
       expect(() => builder.canBuildSource(validSource)).not.toThrow();
     });
@@ -129,6 +132,9 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
+        cacheRoot: '/tmp/wb-test-tool-cache',
+        cacheMaxBytes: 1024 * 1024,
+        registryMaxTarballBytes: 1024 * 1024,
       });
       const unknownSource: InferenceSource = { ...validSource, provider: 'unknown-provider-xyz' };
       expect(() => builder.canBuildSource(unknownSource)).toThrow(
@@ -142,6 +148,9 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
+        cacheRoot: '/tmp/wb-test-tool-cache',
+        cacheMaxBytes: 1024 * 1024,
+        registryMaxTarballBytes: 1024 * 1024,
       });
 
       const bundle = await builder.build({
@@ -182,6 +191,9 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
+        cacheRoot: '/tmp/wb-test-tool-cache',
+        cacheMaxBytes: 1024 * 1024,
+        registryMaxTarballBytes: 1024 * 1024,
       });
 
       await builder.build({
@@ -226,6 +238,9 @@ describe('createDefaultHarnessBuilder', () => {
         const builder = createDefaultHarnessBuilder({
           hubHttpUrl: 'http://localhost:4000',
           sidecarToken: 'test-token',
+          cacheRoot: '/tmp/wb-test-tool-cache',
+          cacheMaxBytes: 1024 * 1024,
+          registryMaxTarballBytes: 1024 * 1024,
         });
 
         await builder.build({
@@ -294,6 +309,9 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
+        cacheRoot: '/tmp/wb-test-tool-cache',
+        cacheMaxBytes: 1024 * 1024,
+        registryMaxTarballBytes: 1024 * 1024,
       });
 
       const bundle = await builder.build({
@@ -367,6 +385,9 @@ describe('createDefaultHarnessBuilder', () => {
       const builder = createDefaultHarnessBuilder({
         hubHttpUrl: 'http://localhost:4000',
         sidecarToken: 'test-token',
+        cacheRoot: '/tmp/wb-test-tool-cache',
+        cacheMaxBytes: 1024 * 1024,
+        registryMaxTarballBytes: 1024 * 1024,
       });
 
       const bundle = await builder.build({

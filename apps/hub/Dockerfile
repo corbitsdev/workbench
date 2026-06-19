@@ -23,9 +23,10 @@ COPY packages/last30days-core/package.json packages/last30days-core/
 COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
+COPY packages/tool-credentials/package.json packages/tool-credentials/
 COPY packages/tools-agents/package.json packages/tools-agents/
+COPY packages/tools-artifact/package.json packages/tools-artifact/
 COPY packages/tools-bluesky/package.json packages/tools-bluesky/
-COPY packages/tools-browser/package.json packages/tools-browser/
 COPY packages/tools-dispatch/package.json packages/tools-dispatch/
 COPY packages/tools-exa/package.json packages/tools-exa/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
@@ -33,6 +34,7 @@ COPY packages/tools-gamma/package.json packages/tools-gamma/
 COPY packages/tools-github/package.json packages/tools-github/
 COPY packages/tools-granola/package.json packages/tools-granola/
 COPY packages/tools-hackernews/package.json packages/tools-hackernews/
+COPY packages/tools-last30days/package.json packages/tools-last30days/
 COPY packages/tools-polymarket/package.json packages/tools-polymarket/
 COPY packages/tools-reddit/package.json packages/tools-reddit/
 COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
@@ -56,9 +58,10 @@ COPY packages/gtm-workflows/ packages/gtm-workflows/
 COPY packages/last30days-core/ packages/last30days-core/
 COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
+COPY packages/tool-credentials/ packages/tool-credentials/
 COPY packages/tools-agents/ packages/tools-agents/
+COPY packages/tools-artifact/ packages/tools-artifact/
 COPY packages/tools-bluesky/ packages/tools-bluesky/
-COPY packages/tools-browser/ packages/tools-browser/
 COPY packages/tools-dispatch/ packages/tools-dispatch/
 COPY packages/tools-exa/ packages/tools-exa/
 COPY packages/tools-firecrawl/ packages/tools-firecrawl/
@@ -66,6 +69,7 @@ COPY packages/tools-gamma/ packages/tools-gamma/
 COPY packages/tools-github/ packages/tools-github/
 COPY packages/tools-granola/ packages/tools-granola/
 COPY packages/tools-hackernews/ packages/tools-hackernews/
+COPY packages/tools-last30days/ packages/tools-last30days/
 COPY packages/tools-polymarket/ packages/tools-polymarket/
 COPY packages/tools-reddit/ packages/tools-reddit/
 COPY packages/tools-scrapecreators/ packages/tools-scrapecreators/

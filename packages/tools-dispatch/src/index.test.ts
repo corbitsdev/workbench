@@ -10,6 +10,14 @@
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+// bun's `mock.module` is process-global, so the partial mocks below would
+// otherwise bleed into sibling test files (e.g. interchange-tools.test.ts):
+// their graphs import the real `drizzle-orm` / `@intx/crypto-node` and would
+// hit a partial mock missing exports like `desc` / `armorEncode`. Spread the
+// real modules so the mocks override only the specific exports under test.
+const realDrizzle = await import('drizzle-orm');
+const realCrypto = await import('@intx/crypto-node');
+
 let idCounter = 0;
 mock.module('@intx/hub-common', () => ({
   generateId: (prefix: string) => `${prefix}_${++idCounter}`,
@@ -30,6 +38,7 @@ mock.module('@intx/log', () => ({
 // drizzle-orm's and/eq build SQL predicates; in tests they only need to be
 // opaque tokens since the fake db ignores `where` and serves programmed rows.
 mock.module('drizzle-orm', () => ({
+  ...realDrizzle,
   and: (...args: unknown[]) => ({ _and: args }),
   eq: (col: unknown, val: unknown) => ({ _eq: [col, val] }),
 }));
@@ -54,6 +63,7 @@ mock.module('@intx/db', () => ({
 
 let generateKeyPairCalls = 0;
 mock.module('@intx/crypto-node', () => ({
+  ...realCrypto,
   generateKeyPair: async () => {
     generateKeyPairCalls += 1;
     return { publicKey: 'pub', privateKey: 'priv' };

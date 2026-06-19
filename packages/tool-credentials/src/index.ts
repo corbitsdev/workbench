@@ -1,0 +1,94 @@
+// Credential rail for in-sidecar native tool packages: a credentialed
+// factory declares `requires: [toolCredentialEnvKey(p)]` and reads the key
+// via `getToolCredential(env, p)`; the sidecar injects it from the hub.
+// Kept off `credentialRequirements` (which is inference-only).
+// See docs/CREATING_AGENTS_AND_TOOLS.md.
+
+import { type } from 'arktype';
+
+/** Env-key prefix for an injected tool credential, namespaced by provider. */
+export const TOOL_CREDENTIAL_ENV_PREFIX = 'workbench.cred.';
+
+/** Build the env key / `requires` entry for a provider's credential. */
+export function toolCredentialEnvKey(providerName: string): string {
+  return `${TOOL_CREDENTIAL_ENV_PREFIX}${providerName}`;
+}
+
+/** If `key` is a tool-credential env key, return the provider name it carries. */
+export function providerFromEnvKey(key: string): string | undefined {
+  if (!key.startsWith(TOOL_CREDENTIAL_ENV_PREFIX)) return undefined;
+  const provider = key.slice(TOOL_CREDENTIAL_ENV_PREFIX.length);
+  return provider.length > 0 ? provider : undefined;
+}
+
+/** A resolved provider credential delivered to an in-sidecar tool. */
+export const ToolCredential = type({
+  apiKey: 'string',
+  baseURL: 'string',
+});
+export type ToolCredential = typeof ToolCredential.infer;
+
+/** Request body for the hub's tool-credential resolution endpoint. */
+export const ToolCredentialsRequest = type({
+  tenantId: 'string',
+  agentId: 'string',
+  providerNames: 'string[]',
+});
+export type ToolCredentialsRequest = typeof ToolCredentialsRequest.infer;
+
+/** Response body: resolved credentials keyed by provider name. */
+export const ToolCredentialsResponse = type({
+  credentials: type.Record('string', ToolCredential),
+});
+export type ToolCredentialsResponse = typeof ToolCredentialsResponse.infer;
+
+/**
+ * Read a resolved tool credential from the agent env. Throws if the host
+ * did not inject it — a credentialed factory that declared the matching
+ * `requires` entry should always find it, so a miss is a wiring fault
+ * worth surfacing loudly rather than degrading to an unauthenticated call.
+ */
+export function getToolCredential(
+  env: Record<string, unknown>,
+  providerName: string
+): ToolCredential {
+  const value = env[toolCredentialEnvKey(providerName)];
+  const parsed = ToolCredential(value);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `tool credential for provider "${providerName}" was not injected into env: ${parsed.summary}`
+    );
+  }
+  return parsed;
+}
+
+// ─── Hub-RPC rail ──────────────────────────────────────────────────────
+//
+// Hub-backed tools (artifact/dispatch/list_agents) run in the sidecar but
+// execute against the hub db. They reach the hub the same documented way
+// the sidecar already does: the shared sidecar token over TLS plus the
+// agent's identity, with the hub authorizing each call against the
+// instance principal's grants. The sidecar injects this context into env
+// under `HUB_RPC_ENV_KEY`; a hub-backed package declares it via `requires`.
+
+/** Env key carrying the hub-RPC context for hub-backed tool packages. */
+export const HUB_RPC_ENV_KEY = 'workbench.hubRpc';
+
+export const HubRpcContext = type({
+  baseURL: 'string',
+  token: 'string',
+  tenantId: 'string',
+  agentId: 'string',
+  principalId: 'string',
+  sessionId: 'string',
+});
+export type HubRpcContext = typeof HubRpcContext.infer;
+
+/** Read the hub-RPC context the sidecar injected. Throws if absent. */
+export function getHubRpc(env: Record<string, unknown>): HubRpcContext {
+  const parsed = HubRpcContext(env[HUB_RPC_ENV_KEY]);
+  if (parsed instanceof type.errors) {
+    throw new Error(`hub-RPC context was not injected into env: ${parsed.summary}`);
+  }
+  return parsed;
+}

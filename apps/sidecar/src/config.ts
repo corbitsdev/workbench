@@ -7,8 +7,16 @@
 // tunables with safe defaults — overridable via env when an environment
 // needs different timing.
 
+import path from 'node:path';
+
 const DEFAULT_PING_INTERVAL_MS = 5_000;
 const DEFAULT_RECONNECT_DELAY_MS = 1_000;
+
+// Content-addressable tarball cache for materialized tool packages.
+// 512 MiB holds many deduped tool-package extractions; 64 MiB caps any
+// single registry tarball fetch. Both overridable for tighter environments.
+const DEFAULT_TOOL_CACHE_MAX_BYTES = 512 * 1024 * 1024;
+const DEFAULT_REGISTRY_MAX_TARBALL_BYTES = 64 * 1024 * 1024;
 
 export type SidecarHeartbeat = {
   pingIntervalMs: number;
@@ -24,6 +32,32 @@ function parsePositiveInt(name: string, raw: string | undefined, fallback: numbe
     throw new Error(`${name} must be a positive integer (got "${raw}")`);
   }
   return value;
+}
+
+export type ToolPackageCache = {
+  cacheRoot: string;
+  cacheMaxBytes: number;
+  registryMaxTarballBytes: number;
+};
+
+export function resolveToolPackageCache(
+  env: Record<string, string | undefined>,
+  dataDir: string
+): ToolPackageCache {
+  const cacheRoot = env.SIDECAR_TOOL_CACHE_DIR ?? path.join(dataDir, 'cache', 'tool-packages');
+  return {
+    cacheRoot,
+    cacheMaxBytes: parsePositiveInt(
+      'SIDECAR_TOOL_CACHE_MAX_BYTES',
+      env.SIDECAR_TOOL_CACHE_MAX_BYTES,
+      DEFAULT_TOOL_CACHE_MAX_BYTES
+    ),
+    registryMaxTarballBytes: parsePositiveInt(
+      'SIDECAR_REGISTRY_MAX_TARBALL_BYTES',
+      env.SIDECAR_REGISTRY_MAX_TARBALL_BYTES,
+      DEFAULT_REGISTRY_MAX_TARBALL_BYTES
+    ),
+  };
 }
 
 export function resolveSidecarHeartbeat(env: Record<string, string | undefined>): SidecarHeartbeat {

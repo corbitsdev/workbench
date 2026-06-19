@@ -1,7 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { type } from 'arktype';
 import { evaluateGrants } from '@intx/authz';
 import { createToolRunner, createDefaultDirectorRegistry, defineTool } from '@intx/agent';
+import { createTarballCache, createToolLoader } from '@intx/tool-packaging';
+import { ToolPackageManifest } from '@intx/types/tool-packages';
+import {
+  HUB_RPC_ENV_KEY,
+  ToolCredentialsResponse,
+  providerFromEnvKey,
+  toolCredentialEnvKey,
+} from '@workbench/tool-credentials';
 import { createHarness, createHarnessRuntimeCapabilities } from '@intx/harness';
 import { readDeployTree } from '@intx/hub-agent';
 import { hasProvider } from '@intx/inference';
@@ -21,7 +30,6 @@ import { healTurns } from '@workbench/context-repair';
 import { withActiveContext } from '@workbench/prompts';
 import { createGuardedMailRunner } from './mail-guard';
 import type { ContextStore } from '@intx/types/runtime';
-import { createHubToolRunner } from './hub-tool-runner';
 
 const logger = getLogger(['sidecar', 'harness-builder']);
 const DEFAULT_MAIL_OUTBOUND_PER_TURN = 8;
@@ -120,14 +128,126 @@ function filterToolRunner(runner: DefinedRunner, allowedNames: Set<string>): Def
   };
 }
 
+// Materialize the agent's pinned tool packages via the tool-packaging
+// loader. Fail-HARD: there is no hub-side tool proxy to fall back to, so a
+// manifest that the hub wrote but the sidecar cannot parse, validate, or
+// load is a genuine integrity fault — it fails the launch loudly rather
+// than silently dropping the agent's tools. No manifest (no pins) is the
+// only soft case: the agent simply has local tools only.
+async function loadToolPackages(args: {
+  rawManifestBytes: string | undefined;
+  assetMounts: ReadonlyMap<string, string>;
+  storeDir: string;
+  agentAddress: string;
+  cacheRoot: string;
+  cacheMaxBytes: number;
+  registryMaxTarballBytes: number;
+}): Promise<Awaited<ReturnType<ReturnType<typeof createToolLoader>['loadManifest']>>> {
+  if (args.rawManifestBytes === undefined) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(args.rawManifestBytes);
+  } catch (err) {
+    throw new Error(
+      `tool-package manifest for ${args.agentAddress} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+  const validated = ToolPackageManifest(parsed);
+  if (validated instanceof type.errors) {
+    throw new Error(
+      `tool-package manifest for ${args.agentAddress} failed validation: ${validated.summary}`
+    );
+  }
+
+  const cache = createTarballCache({ rootDir: args.cacheRoot, maxBytes: args.cacheMaxBytes });
+  const loader = createToolLoader({
+    cache,
+    // Our tarballs are self-contained and asset-sourced, so no HTTP
+    // registry is consulted; asset entries resolve via assetMounts.
+    registries: new Map(),
+    host: { os: process.platform, cpu: process.arch },
+    maxRegistryTarballBytes: args.registryMaxTarballBytes,
+  });
+  const scratchDir = path.join(args.storeDir, 'tool-packages');
+  await fs.promises.mkdir(scratchDir, { recursive: true });
+  return loader.loadManifest({
+    manifest: validated,
+    instanceScratchDir: scratchDir,
+    assetRoot: path.join(args.storeDir, 'workspace'),
+    assetMounts: args.assetMounts,
+  });
+}
+
+// Resolve provider credentials for in-sidecar tool packages over the hub's
+// authenticated channel, returned as env entries keyed by
+// `toolCredentialEnvKey(provider)`. Fail-soft: errors omit the entries.
+export async function fetchToolCredentials(args: {
+  hubHttpUrl: string;
+  sidecarToken: string;
+  tenantId: string;
+  agentId: string;
+  providerNames: readonly string[];
+  agentAddress: string;
+}): Promise<Record<string, { apiKey: string; baseURL: string }>> {
+  if (args.providerNames.length === 0) return {};
+  let response: Response;
+  try {
+    response = await fetch(`${args.hubHttpUrl}/api/internal/tools/credentials`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${args.sidecarToken}`,
+      },
+      body: JSON.stringify({
+        tenantId: args.tenantId,
+        agentId: args.agentId,
+        providerNames: [...args.providerNames],
+      }),
+    });
+  } catch (err) {
+    logger.warn('Tool-credential fetch failed for {address}: {msg}', {
+      address: args.agentAddress,
+      msg: err instanceof Error ? err.message : String(err),
+    });
+    return {};
+  }
+  if (!response.ok) {
+    logger.warn('Tool-credential fetch for {address} returned {status}', {
+      address: args.agentAddress,
+      status: response.status,
+    });
+    return {};
+  }
+  const parsed = ToolCredentialsResponse(await response.json());
+  if (parsed instanceof type.errors) {
+    logger.warn('Tool-credential response for {address} failed validation: {summary}', {
+      address: args.agentAddress,
+      summary: parsed.summary,
+    });
+    return {};
+  }
+  const entries: Record<string, { apiKey: string; baseURL: string }> = {};
+  for (const [provider, credential] of Object.entries(parsed.credentials)) {
+    entries[toolCredentialEnvKey(provider)] = credential;
+  }
+  return entries;
+}
+
 type HarnessBuilderOpts = {
   hubHttpUrl: string;
   sidecarToken: string;
+  cacheRoot: string;
+  cacheMaxBytes: number;
+  registryMaxTarballBytes: number;
 };
 
 export function createDefaultHarnessBuilder({
   hubHttpUrl,
   sidecarToken,
+  cacheRoot,
+  cacheMaxBytes,
+  registryMaxTarballBytes,
 }: HarnessBuilderOpts): HarnessBuilder {
   return {
     canBuildSource(source: InferenceSource): void {
@@ -221,29 +341,116 @@ export function createDefaultHarnessBuilder({
         }),
       ]);
 
-      const localToolNames = new Set([
-        ...posixTools.definitions.map((d) => d.name),
-        ...mailTools.definitions.map((d) => d.name),
-        ...askPrincipalRunner.definitions.map((d) => d.name),
-      ]);
+      // Materialize the agent's pinned tool packages, then resolve the
+      // credentials they declare via `requires: [workbench.cred.<provider>]`
+      // and inject them into env before instantiating each factory. A
+      // factory that throws is skipped (fail-soft); only the names that
+      // actually load are shadowed away from the proxy.
+      const loadedPackages = await loadToolPackages({
+        rawManifestBytes: deployTree.toolPackageManifestRaw,
+        assetMounts: deployTree.assetMounts,
+        storeDir,
+        agentAddress,
+        cacheRoot,
+        cacheMaxBytes,
+        registryMaxTarballBytes,
+      });
 
-      const hubToolRunner = createHubToolRunner({
+      const requiredProviders = new Set<string>();
+      for (const pkg of loadedPackages) {
+        for (const factory of pkg.factories) {
+          for (const key of factory.requires) {
+            const provider = providerFromEnvKey(key);
+            if (provider !== undefined) requiredProviders.add(provider);
+          }
+        }
+      }
+      const credentialEnv = await fetchToolCredentials({
         hubHttpUrl,
         sidecarToken,
         tenantId,
         agentId: agentConfig.agentId,
-        principalId,
-        sessionId: agentConfig.sessionId,
-        toolDefinitions: agentConfig.tools.filter((t) => !localToolNames.has(t.name)),
+        providerNames: [...requiredProviders],
+        agentAddress,
       });
 
+      // Hub-RPC context for hub-backed native tool packages (artifact,
+      // agents, dispatch). Their factory declares `requires: [HUB_RPC_ENV_KEY]`
+      // and forwards each call to the hub's scoped endpoint with this identity.
+      const hubRpcContext = {
+        baseURL: hubHttpUrl,
+        token: sidecarToken,
+        tenantId,
+        agentId: agentConfig.agentId,
+        principalId,
+        sessionId: agentConfig.sessionId,
+      };
+
+      const env = {
+        source,
+        storage,
+        workdir: workDir,
+        audit: storage,
+        authorize,
+        directors: createDefaultDirectorRegistry(),
+        transport: agentTransport,
+        address: agentAddress,
+        onConnectorStateChanged,
+        ...credentialEnv,
+        [HUB_RPC_ENV_KEY]: hubRpcContext,
+      };
+
+      const loadedRunners: DefinedRunner[] = [];
+      const loadedDisposers: Array<() => Promise<void>> = [];
+      const loadedToolNames = new Set<string>();
+      for (const pkg of loadedPackages) {
+        for (const factory of pkg.factories) {
+          // Fail-soft per-package: construction depends on runtime resources
+          // (e.g. a credential the hub fetched fail-soft — fetchToolCredentials
+          // returns {} on a transient blip), so a throw here drops THIS
+          // package's tools and logs, rather than bricking the whole agent
+          // launch (including its local tools + inference). Manifest integrity
+          // is the hard gate — that lives in loadToolPackages, not here.
+          let bundle: ReturnType<typeof factory>;
+          try {
+            bundle = factory(env);
+          } catch (err) {
+            logger.warn('Tool-package factory {id} failed to construct for {address}: {msg}', {
+              id: factory.id,
+              address: agentAddress,
+              msg: err instanceof Error ? err.message : String(err),
+            });
+            continue;
+          }
+          loadedRunners.push({
+            definitions: [...bundle.definitions],
+            run: (call, signal) => bundle.run(call, signal),
+          });
+          for (const def of bundle.definitions) loadedToolNames.add(def.name);
+          if (bundle.dispose !== undefined) {
+            loadedDisposers.push(async () => {
+              await bundle.dispose?.();
+            });
+          }
+        }
+      }
+      if (loadedToolNames.size > 0) {
+        logger.info('Loaded {count} native tool(s) for {address}: {names}', {
+          count: loadedToolNames.size,
+          address: agentAddress,
+          names: [...loadedToolNames].join(', '),
+        });
+      }
+
+      // Agent tools come from local runners (posix/mail/ask-principal) plus
+      // the materialized native packages — there is no hub-side tool proxy.
       const allTools = mergeToolRunners([
         posixTools,
         guardedMailTools,
         askPrincipalRunner as DefinedRunner,
-        hubToolRunner,
+        ...loadedRunners,
       ]);
-      const allowedNames = new Set(agentConfig.tools.map((t) => t.name));
+      const allowedNames = new Set([...agentConfig.tools.map((t) => t.name), ...loadedToolNames]);
       const tools = filterToolRunner(allTools as DefinedRunner, allowedNames);
 
       try {
@@ -261,18 +468,6 @@ export function createDefaultHarnessBuilder({
           toolFactories: [toolsFactory] as const,
           capabilities: [],
           inference: { sources: [] as const },
-        };
-
-        const env = {
-          source,
-          storage,
-          workdir: workDir,
-          audit: storage,
-          authorize,
-          directors: createDefaultDirectorRegistry(),
-          transport: agentTransport,
-          address: agentAddress,
-          onConnectorStateChanged,
         };
 
         const harness = await createHarness(def, env);
@@ -313,7 +508,12 @@ export function createDefaultHarnessBuilder({
           updateGrants(grants) {
             grantsRef.current = grants;
           },
-          disposers: [() => mailTools.dispose(), () => posixTools.dispose(), () => eventForwarding],
+          disposers: [
+            () => mailTools.dispose(),
+            () => posixTools.dispose(),
+            ...loadedDisposers,
+            () => eventForwarding,
+          ],
         };
       } catch (err) {
         try {

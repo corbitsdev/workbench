@@ -23,9 +23,9 @@ COPY packages/last30days-core/package.json packages/last30days-core/
 COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
+COPY packages/tool-credentials/package.json packages/tool-credentials/
 COPY packages/tools-agents/package.json packages/tools-agents/
 COPY packages/tools-bluesky/package.json packages/tools-bluesky/
-COPY packages/tools-browser/package.json packages/tools-browser/
 COPY packages/tools-dispatch/package.json packages/tools-dispatch/
 COPY packages/tools-exa/package.json packages/tools-exa/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
@@ -52,6 +52,7 @@ COPY packages/approvals/ packages/approvals/
 COPY packages/context-repair/ packages/context-repair/
 COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
+COPY packages/tool-credentials/ packages/tool-credentials/
 COPY packages/tools-exa/ packages/tools-exa/
 
 CMD ["bun", "run", "apps/sidecar/src/index.ts"]

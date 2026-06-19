@@ -1,7 +1,28 @@
 import type { CredentialRequirement, GrantRequirement } from '@intx/types';
+import type { ToolPackagePin } from '@intx/types/tool-packages';
 import { buildLarrySystemPrompt } from './prompt';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
 import { LLM_CREDENTIAL_NAME } from '../constants';
+
+/**
+ * Native tool packages Larry pins. `hackernews_search` is served by the
+ * materialized package; it stays in `LARRY_CAPABILITIES.tools` so the
+ * instance is granted it, and the sidecar lets the package shadow the
+ * hub-proxy entry of the same name during the coexistence window.
+ */
+export const LARRY_TOOL_PACKAGES: ToolPackagePin[] = [
+  { name: '@workbench/tools-hackernews', version: '^0.1.0' },
+  { name: '@workbench/tools-polymarket', version: '^0.1.0' },
+  { name: '@workbench/tools-last30days', version: '^0.1.0' },
+  { name: '@workbench/tools-exa', version: '^0.1.0' },
+  { name: '@workbench/tools-github', version: '^0.1.0' },
+  { name: '@workbench/tools-reddit', version: '^0.1.0' },
+  { name: '@workbench/tools-x', version: '^0.1.0' },
+  { name: '@workbench/tools-youtube', version: '^0.1.0' },
+  { name: '@workbench/tools-bluesky', version: '^0.1.0' },
+  { name: '@workbench/tools-scrapecreators', version: '^0.1.0' },
+  { name: '@workbench/tools-artifact', version: '^0.1.0' },
+];
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -64,4 +85,5 @@ export const LARRY_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   ],
   defaultTools: [...LARRY_CAPABILITIES.tools],
   requiredTools: [...LARRY_CAPABILITIES.tools],
+  toolPackages: LARRY_TOOL_PACKAGES,
 };

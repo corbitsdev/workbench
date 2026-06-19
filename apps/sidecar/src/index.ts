@@ -10,7 +10,7 @@ import {
 import { installGeminiThoughtSignaturePatch } from './gemini-thought-signature-patch';
 import { createSidecarOrchestrator } from '@intx/hub-agent';
 import { createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
-import { resolveSidecarHeartbeat } from './config';
+import { resolveSidecarHeartbeat, resolveToolPackageCache } from './config';
 
 await setupObservability({ dev: process.env.NODE_ENV !== 'production' });
 
@@ -30,18 +30,23 @@ function requireEnv(name: string): string {
 }
 
 const heartbeat = resolveSidecarHeartbeat(process.env);
+const dataDir = requireEnv('SIDECAR_DATA_DIR');
+const toolPackageCache = resolveToolPackageCache(process.env, dataDir);
 
 const orchestrator = createSidecarOrchestrator({
   hubURL: requireEnv('HUB_WS_URL'),
   sidecarId: requireEnv('SIDECAR_ID'),
   token: requireEnv('SIDECAR_TOKEN'),
-  dataDir: requireEnv('SIDECAR_DATA_DIR'),
+  dataDir,
   pingIntervalMs: heartbeat.pingIntervalMs,
   reconnectDelayMs: heartbeat.reconnectDelayMs,
   transport: createInMemoryTransport(),
   buildHarness: createDefaultHarnessBuilder({
     hubHttpUrl: wsUrlToHttp(requireEnv('HUB_WS_URL')),
     sidecarToken: requireEnv('SIDECAR_TOKEN'),
+    cacheRoot: toolPackageCache.cacheRoot,
+    cacheMaxBytes: toolPackageCache.cacheMaxBytes,
+    registryMaxTarballBytes: toolPackageCache.registryMaxTarballBytes,
   }),
   createAgentCrypto: createNodeCrypto,
   cryptoOps: {

@@ -1,46 +1,11 @@
 import type { AgentTool } from '@intx/agent';
 import type { DB } from '@intx/db';
-import type { ToolDefinition } from '@intx/types/runtime';
+import { WRITE_ARTIFACT_DEFINITION } from '@workbench/tools-artifact';
 import { and, eq, max } from 'drizzle-orm';
 import { artifact, artifactVersion } from '../db/schema';
 import type { ContextToolEntry } from '../lib/tool-registry';
 
-export const WRITE_ARTIFACT_DEFINITION: ToolDefinition = {
-  name: 'write_artifact',
-  description:
-    'Create or update a Workbench artifact with body text and optional citations. Returns artifactId, version, and title.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      title: { type: 'string', description: 'Artifact title.' },
-      body: { type: 'string', description: 'Full text body of the artifact.' },
-      citations: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            url: { type: 'string' },
-            source: { type: 'string' },
-            retrievedAt: { type: 'string' },
-            title: { type: 'string' },
-          },
-          required: ['url', 'source', 'retrievedAt'],
-        },
-        description: 'Optional list of citations for this artifact.',
-      },
-      kind: {
-        type: 'string',
-        description: 'Artifact kind, e.g. report, email, memo, article, research.',
-      },
-      data: {
-        type: 'object',
-        description:
-          'Optional structured payload for rich rendering (e.g. a research ResearchBrief). Stored under source.brief.',
-      },
-    },
-    required: ['title', 'body', 'kind'],
-  },
-};
+export { WRITE_ARTIFACT_DEFINITION };
 
 type WriteArtifactContext = {
   db: DB['db'];

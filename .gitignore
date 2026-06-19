@@ -3,6 +3,8 @@
 .env
 .env.hub
 .env.sidecar
+.env.staging
+.env.production
 node_modules
 .agents
 .claude/settings.local.json

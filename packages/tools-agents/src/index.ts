@@ -75,6 +75,33 @@ export function parseListLimit(value: unknown): number {
  * exposes the principal directory and the shared, db-free query helpers it
  * reuses.
  */
+export const LIST_AGENTS_DEFINITION: ToolDefinition = {
+  name: 'list_agents',
+  description:
+    'List the agents you can address. Returns each agent instance with its name, description (what the agent is for — use it to pick the right specialist), mail address, status, definition id, and instance id. Use the address with mail_send to message an agent. By default returns your own operator\'s running agents — the agents owned by the same user you act for. Pass a status to filter (or "all" for every status), and a principals array of member principal ids (from list_principals) to list another operator\'s agents instead.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      status: {
+        type: 'string',
+        description:
+          'Status filter: deployed, running, updating, error, stopped, or all. Defaults to running (agents reachable right now). Use all to return every status.',
+      },
+      principals: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          "Member (user) principal ids whose agents to list. Defaults to your own operator. Get ids from list_principals to address another operator's agents.",
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of agents to return (1-200, default 50).',
+      },
+    },
+    required: [],
+  },
+};
+
 export const AGENTS_HUB_TOOLS = {
   list_principals: {
     definition: LIST_PRINCIPALS_DEFINITION,

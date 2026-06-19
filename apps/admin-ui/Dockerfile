@@ -23,7 +23,6 @@ COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
 COPY packages/tools-agents/package.json packages/tools-agents/
-COPY packages/tools-browser/package.json packages/tools-browser/
 COPY packages/tools-dispatch/package.json packages/tools-dispatch/
 COPY packages/tools-exa/package.json packages/tools-exa/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/

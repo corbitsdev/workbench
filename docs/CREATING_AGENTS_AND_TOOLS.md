@@ -10,112 +10,158 @@ This guide explains how to build and wire new capabilities in GTM Workbench. It 
 
 **Workflows** are step-by-step pipelines. Each step declares its own credentials and tools independently. At workflow install time, the user assigns a specific credential and tool set to each step. This is how the same workflow can use different credentials per step (e.g. Granola for intake, OpenAI for generation).
 
-The hub's tool registry is the source of truth. Every tool that exists in the registry is available for assignment to any agent or workflow step — no code changes required on the agent or workflow side.
+A tool is a native Interchange tool **package** (a tarball). An agent pins the
+packages it needs; the sidecar materializes them in-process at launch. There is
+no agent-side tool proxy. (Workflow steps still resolve tools through the hub's
+`KNOWN_TOOLS` registry server-side — a separate path that M4/M5 migrates.)
 
 ```
-packages/tools-<name>/   →   hub KNOWN_TOOLS registry   →   agent capabilities.tools
-                                                          →   workflow step tools
+packages/tools-<name>/  →  workspace-builtins package-registry asset
+                        →  agent toolPackages pin  →  sidecar loader (in-process)
 ```
 
 ---
 
 ## Creating a Tool Package
 
-Use `packages/tool-template` as a starting point. Copy the directory, rename it, and fill in the stubs.
+Tools are **native Interchange tool packages**: an `interchange.tools` entry
+exporting `defineTool` factories, bundled into a self-contained tarball,
+published to the `workspace-builtins` `package-registry` asset, pinned per
+agent via `toolPackages`, and materialized **in-process by the sidecar
+loader**. There is no hub round-trip at call time.
 
-### 1. Scaffold
+> **Status.** The agent-session tool proxy (`createHubToolRunner` →
+> `POST /api/internal/tools/run`) has been **removed** — agents get every tool
+> from pinned packages, with no hub round-trip at call time. `KNOWN_TOOLS` in
+> `apps/hub/src/lib/tool-registry.ts` still exists, but **only as the workflow
+> runtime's server-side tool registry** (`workflow-orchestration`,
+> `run-credential-tool`); it is no longer in any agent's path. Migrating the
+> workflow tool-execution path off `KNOWN_TOOLS` is workflow-runtime (M4/M5)
+> scope.
 
-```bash
-cp -r packages/tool-template packages/tools-<name>
+### 1. Author the tool logic
+
+Keep the tool implementation as before — a factory returning `AgentTool[]`:
+
+```ts
+export function createMyTools(config: { apiKey: string; baseURL: string }): AgentTool[] {
+  return [{ kind: 'string', definition: MY_DEFINITION, handler: async (args) => '...' }];
+}
 ```
 
-Update `package.json`:
+Tools never read `process.env`; credentials/baseURL come from the caller.
+
+### 2. Add the `interchange.tools` entry
+
+In `package.json` add a `version` (required — the registry rejects versionless
+tarballs) and the entry path:
 
 ```json
 {
   "name": "@workbench/tools-<name>",
-  "version": "0.0.1",
-  "private": true,
-  "exports": { ".": "./src/index.ts" }
+  "version": "0.1.0",
+  "interchange": { "tools": "./dist/interchange-tools.js" }
 }
 ```
 
-Add to `tsconfig.json` references and `bun` workspaces as with other packages.
-
-### 2. Implement `src/index.ts`
-
-Every tool package exports exactly two things:
+Create `src/interchange-tools.ts`. **Keyless** tools:
 
 ```ts
-import type { AgentTool, ToolEntry } from '@intx/types';
+import { createToolRunner, defineTool } from '@intx/agent';
+import { createMyTools } from './tools';
 
-// Tool definition — this is what the model sees (name, description, parameters schema)
-const myToolDefinition = {
-  name: 'my_tool',
-  description: 'What this tool does, written for the model.',
-  parameters: {
-    type: 'object',
-    properties: {
-      query: { type: 'string', description: 'The search query.' },
-    },
-    required: ['query'],
-  },
-};
-
-// Factory — returns AgentTool handlers; config is supplied by the hub at call time
-export function createMyTools(config: { apiKey: string }): AgentTool[] {
-  return [
-    {
-      definition: myToolDefinition,
-      async run({ query }) {
-        // Call the external API using config.apiKey — never process.env
-        const result = await fetch('https://api.example.com/search', {
-          headers: { Authorization: `Bearer ${config.apiKey}` },
-          // ...
-        });
-        return { result: await result.text(), isError: false };
-      },
-    },
-  ];
-}
-
-// Hub registry entry — tells the hub which credential to resolve and how to invoke the factory
-export const MY_HUB_TOOLS: Record<string, ToolEntry> = {
-  my_tool: {
-    providerName: 'my-provider', // matches the credential provider name in Interchange
-    definition: myToolDefinition,
-    createTools: (config) => createMyTools(config),
-  },
-};
+export const myTools = defineTool({
+  id: '@workbench/tools-<name>/<name>',
+  factory: () => createToolRunner(createMyTools()),
+});
 ```
 
-**Rules:**
-
-- Tools never read `process.env`. Config (API key, base URL) is always supplied by the caller.
-- Tools are data-only. They fetch from external APIs and return raw results. No LLM calls inside a tool.
-- Return `{ result: string, isError: boolean }`. On error, set `isError: true` and put the message in `result`.
-
-### 3. Register with the hub
-
-In `apps/hub/src/lib/tool-registry.ts`, spread your registry entry into `KNOWN_TOOLS`:
+**Credentialed** tools use the credential rail — declare the provider and read
+the key from env (delivered separately from inference sources, never via
+`credentialRequirements`):
 
 ```ts
-import { MY_HUB_TOOLS } from '@workbench/tools-<name>';
+import { defineCredentialedToolPackage } from '@workbench/tool-credentials';
+import { MY_HUB_TOOLS } from './index';
 
-export const KNOWN_TOOLS = {
-  ...EXA_HUB_TOOLS,
-  ...GRANOLA_HUB_TOOLS,
-  ...MY_HUB_TOOLS, // add this line
-};
+export const myTools = defineCredentialedToolPackage({
+  id: '@workbench/tools-<name>/<name>',
+  provider: 'my-provider', // tenant credential provider name
+  entries: MY_HUB_TOOLS, // entries' createTools({ apiKey, baseURL }) are reused
+});
 ```
 
-That's it. The sidecar's `HubToolRunner` is generic — it proxies all tool calls to `POST /api/internal/tools/run` without knowing anything about specific tools. No sidecar changes are ever needed when adding a tool.
+### 3. Register in the build, pin on agents, seed the credential
 
-### 4. Register the credential provider (if new)
+- Add the package to `TOOL_PACKAGES` in `apps/hub/bin/build-tool-packages.ts`
+  and a `COPY` line in `apps/hub/Dockerfile`.
+- Pin it on each agent that uses it via `toolPackages: [{ name, version }]` on
+  the agent's deploy descriptor **and** its `AGENT_TEMPLATES` entry (launch
+  reads pins by agent name through `toolPackagePinsForAgentName`).
+- Credentialed tools: seed the provider (`apps/hub/bin/seed-credentials.ts`)
+  and add its `providerName` to the agent's `credentialProviderNames`. Keyless
+  tools need no seed entry.
+- Agents need no `KNOWN_TOOLS` entry. Only register a tool in `KNOWN_TOOLS` if a
+  **workflow step** runs it server-side (that registry is workflow-only now).
 
-If your tool requires a credential that doesn't already exist in the hub, add it as a provider via `ensureProvider` in the credential creation flow, and add the provider name to the Settings UI's provider list so tenants can save credentials for it.
+### 4. Build and push
 
-The credential's `providerName` must match the `providerName` field in your `*_HUB_TOOLS` entry — this is how the hub resolves the right credential at call time.
+Per environment, copy `.env.tools.example` to `.env.staging` / `.env.production`
+(both gitignored), fill in `HUB_URL` + admin creds + `HUB_TENANT_SLUG`, then:
+
+```bash
+bun run tools:push:staging      # build + publish using .env.staging
+bun run tools:push:production   # build + publish using .env.production
+```
+
+`tools:build` packs the tarballs (`dist/tool-packages/`); `tools:publish` find-or-creates
+the `workspace-builtins` `package-registry` asset and PUTs each one. Interchange's
+`SessionService` then resolves each agent's pinned closure at launch, ships the
+manifest, and the sidecar materializes it.
+
+Two pieces are ours, both for concrete reasons:
+
+- **Packer** (`build-tool-packages.ts`) — interchange's `bin/build-builtins.ts`
+  hardcodes its `BUILTINS` to `@intx/tools-*` and isn't exported; the upstream
+  comment directs downstreams to bring their own.
+- **Publish client** (`publish-tool-packages.ts`) — interchange ships an
+  equivalent `bin/publish-tool-packages.ts`, but it lives *inside* the submodule,
+  so invoking it resolves its own `@intx/*` imports from `interchange/`, which in
+  a git-worktree layout can leak into a sibling worktree. Our client lives in
+  `apps/hub/` and resolves cleanly. It still imports the **same** `@intx/types`
+  schemas the hub's `GET /openapi.json` is generated from (`AssetResponse`, …), so
+  it's aligned with the REST contract at its source — no `openapi-arktype`
+  round-trip needed.
+
+> **Deploy auth:** the client signs in with `HUB_ADMIN_EMAIL`/`HUB_ADMIN_PASSWORD`
+> to get a session. Wiring `tools:push` into the deploy pipeline is intentionally
+> deferred — for now it's a deliberate manual step per environment.
+
+**Deploy ordering.** `tools:publish` MUST run for the target tenant before any
+agent that pins a new package/version launches there — otherwise the closure
+resolver finds no tarball and the launch **fails loudly** (the sidecar loader is
+fail-hard now: a manifest it can't load fails the launch rather than silently
+dropping tools). Wire `tools:push` into the deploy step so a deploy cannot
+complete without it.
+
+### Every tool is a tarball — including the hub-backed ones
+
+All tool packages are **identical in shape**: an `interchange.tools` entry, a
+tarball, a per-agent pin, loaded in-process. There is no agent-side tool proxy.
+
+- **External tools** (firecrawl, exa, granola, reddit, x, scrapecreators,
+  github, youtube, bluesky, gamma, hackernews, polymarket, last30days) run
+  entirely in the sidecar; provider keys arrive via the credential rail.
+- **Hub-backed tools** (`artifact_*`, `write_artifact`, `list_agents`,
+  `list_principals`, `dispatch_agent`) are also tarballs — built with
+  `defineHubBackedToolPackage`. Their definitions live in the package; each call
+  forwards over the `workbench.hubRpc` rail to the scoped
+  `POST /api/internal/hub-tools/run`, which executes hub-side and authorizes
+  against the instance principal's grants. No tool secrets in the sidecar.
+
+The agent-session proxy (`createHubToolRunner` → `/api/internal/tools/run`) is
+**gone**. `KNOWN_TOOLS` remains only as the workflow runtime's server-side tool
+registry — migrating that off `KNOWN_TOOLS` is M4/M5 scope.
 
 ---
 
@@ -256,7 +302,7 @@ Once a tool is registered in `KNOWN_TOOLS`, it is available for assignment to an
 
 **To give an ad-hoc agent access to a tool**: set `capabilities.tools` to include the tool name when provisioning the agent via `POST /v1/agents`. No other code change is required.
 
-This is the key property: the tool package, the hub registry, and the agent/workflow capability list are the only three things that need to change. The sidecar, the credential system, and the inference layer are all tool-agnostic.
+This is the key property: the tool package and the agent's `toolPackages` pin are the only things that need to change. The sidecar, the credential system, and the inference layer are all tool-agnostic.
 
 ---
 
@@ -276,12 +322,14 @@ A director may still allow a system sender address (e.g. `scheduler@system`) for
 
 ## Checklist: Shipping a New Tool
 
-- [ ] `packages/tools-<name>/` created from `tool-template`, builds cleanly
-- [ ] Exports `create<Name>Tools(config)` and `*_HUB_TOOLS`
+- [ ] `packages/tools-<name>/` builds cleanly; `package.json` has `version` + `interchange.tools`
+- [ ] `src/interchange-tools.ts` exports a `defineTool` factory (keyless) or `defineCredentialedToolPackage` (credentialed)
 - [ ] No `process.env` reads; no LLM calls
-- [ ] Spread into `KNOWN_TOOLS` in `apps/hub/src/lib/tool-registry.ts`
-- [ ] Credential provider registered if new
-- [ ] Added to at least one agent's `capabilities.tools` or one workflow step's `tools`
+- [ ] Added to `TOOL_PACKAGES` in `bin/build-tool-packages.ts` and a `COPY` line in `apps/hub/Dockerfile`
+- [ ] Pinned via `toolPackages` on each using agent's descriptor **and** `AGENT_TEMPLATES` entry
+- [ ] Credentialed: provider seeded in `seed-credentials.ts` + added to the agent's `credentialProviderNames`
+- [ ] Only if a **workflow step** runs the tool: register it in `KNOWN_TOOLS` (workflow-only registry; agents need no entry)
+- [ ] `bun run tools:push` publishes to the registry; tool verified loading in the sidecar
 - [ ] Unit tests at ≥95% function coverage
 
 ## Checklist: Shipping a New Agent

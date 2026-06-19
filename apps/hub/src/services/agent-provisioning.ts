@@ -8,6 +8,7 @@ import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { composePersonalAgentPromptForInstance } from '../lib/operator-profile';
 import { buildToolDefinitions, getToolNamesFromCapabilities } from '../lib/tool-registry';
+import { toolPackagePinsForAgentName } from '@workbench/agents';
 import { buildToolGrantRows, TOOL_GRANT_RESOURCE_PREFIX } from '../lib/tool-grants';
 
 const log = getLogger(['api', 'agents']);
@@ -268,6 +269,10 @@ export async function launchAgentSession(
       defaultSource,
     },
     deployContent: { systemPrompt: effectiveSystemPrompt },
+    // Native tool packages the agent pins, resolved by display name. The
+    // closure resolver runs only when this is non-empty; the hub-proxy
+    // tool definitions above coexist until each tool is migrated.
+    toolPackagePins: toolPackagePinsForAgentName(agentRow.name),
   };
 
   let lastError: unknown;

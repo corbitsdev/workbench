@@ -48,16 +48,6 @@ export {
   WALTER_DEPLOY_PROMPT,
 } from './walter/definition';
 
-// Bobby — the browser
-export { buildBobbySystemPrompt } from './bobby/prompt';
-export {
-  BOBBY_GRANT_REQUIREMENTS,
-  BOBBY_CREDENTIAL_REQUIREMENTS,
-  BOBBY_DEPLOY_PROMPT,
-  BOBBY_CAPABILITIES,
-  BOBBY_DEPLOY_DESCRIPTOR,
-} from './bobby/definition';
-
 // Lincoln agent
 export { buildLincolnSystemPrompt } from './lincoln/prompt';
 export {
@@ -86,10 +76,11 @@ export {
   LARRY_DEPLOY_PROMPT,
   LARRY_CAPABILITIES,
   LARRY_DEPLOY_DESCRIPTOR,
+  LARRY_TOOL_PACKAGES,
 } from './larry/definition';
 
 // Agent templates registry
-export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
+export { AGENT_TEMPLATES, type AgentTemplate, toolPackagePinsForAgentName } from './templates';
 
 // Shared adapter
 export { convertInstanceEvents } from './adapter';

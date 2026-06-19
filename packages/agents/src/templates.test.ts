@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test';
 import { AGENT_TEMPLATES } from './templates';
-import { BOBBY_DEPLOY_DESCRIPTOR } from './bobby/definition';
 
 describe('AGENT_TEMPLATES', () => {
   const inferenceProviderNames = new Set(['anthropic', 'openai-compatible']);
@@ -13,10 +12,9 @@ describe('AGENT_TEMPLATES', () => {
     'xai',
   ]);
 
-  it('contains all eleven templates', () => {
+  it('contains all ten templates', () => {
     const keys = AGENT_TEMPLATES.map((t) => t.key).sort();
     expect(keys).toEqual([
-      'bobby',
       'fannie',
       'freddie',
       'freddy',
@@ -37,13 +35,6 @@ describe('AGENT_TEMPLATES', () => {
     expect(freddie?.modelConfig).toEqual({ defaultModel: 'claude-opus-4-8' });
     expect(freddie?.capabilities.tools).toContain('mail_reply');
     expect(freddie?.capabilities.tools).not.toContain('mail_send');
-  });
-
-  it('registers Bobby with the browser toolset and the browserbase credential provider', () => {
-    const bobby = AGENT_TEMPLATES.find((t) => t.key === 'bobby');
-    expect(bobby).toBeDefined();
-    expect(bobby?.capabilities.tools).toContain('browser_create_session');
-    expect(BOBBY_DEPLOY_DESCRIPTOR.credentialProviderNames).toContain('browserbase');
   });
 
   it('every template has a non-empty name, systemPrompt, and credentialRequirements', () => {
@@ -91,10 +82,10 @@ describe('AGENT_TEMPLATES', () => {
   });
 
   it('every dispatch-capable specialist has mail_search and mail_reply grants', () => {
-    // Includes Bobby: a specialist that can reply to a dispatcher MUST be able
-    // to search for the message ref first — granting mail_reply without
-    // mail_search leaves "never construct a ref from scratch" impossible to
-    // obey, which produced fabricated recipient addresses (CL-1808).
+    // A specialist that can reply to a dispatcher MUST be able to search for
+    // the message ref first — granting mail_reply without mail_search leaves
+    // "never construct a ref from scratch" impossible to obey, which produced
+    // fabricated recipient addresses (CL-1808).
     const specialists = AGENT_TEMPLATES.filter((t) => t.key !== 'myra');
     for (const template of specialists) {
       const resources = template.grantRequirements.map((g) => g.resource);

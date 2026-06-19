@@ -1,3 +1,5 @@
+import type { ToolPackagePin } from '@intx/types/tool-packages';
+
 /**
  * Describes everything the UI needs to render a premade agent option
  * and provision it via the hub API.
@@ -24,4 +26,11 @@ export type AgentDeployDescriptor = {
   requiredTools: string[];
   /** Interchange modelConfig patched onto the agent definition at deploy time. */
   modelConfig?: { defaultModel: string };
+  /**
+   * Native tool packages this agent pins. Resolved by Interchange's
+   * closure resolver at launch and materialized by the sidecar loader.
+   * Distinct from `defaultTools` (hub-proxy tool names) — the two coexist
+   * until every tool is migrated and the proxy is removed.
+   */
+  toolPackages?: ToolPackagePin[];
 };
