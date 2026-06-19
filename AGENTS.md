@@ -115,7 +115,8 @@ Each image uses a targeted `COPY` list. When you add/remove/rename a package or 
 - Removed package → remove its lines from all Dockerfiles.
 - The manifest-copy section (`COPY packages/*/package.json` before `bun install`) must list every workspace member.
 - **Interchange pin SHA** — each image clones interchange at a hardcoded commit (the `git -C interchange checkout <sha>` line). When you bump the `interchange` submodule pin, bump that SHA in all four Dockerfiles too, or `bun install --frozen-lockfile` validates against the wrong `@intx/*` graph and the build fails.
-- **Bun version** — the `FROM oven/bun:<ver>` in all four images must match the bun that authored `bun.lock`. A mismatch can pass `--frozen-lockfile` but produce a node_modules layout where interchange's undeclared hoisted deps (e.g. `@intx/log` from `@intx/agent`) don't resolve at runtime. Relock and bump the image together.
+- **Bun version** — keep `FROM oven/bun:<ver>` in the four images aligned with the bun that authored `bun.lock` (general hygiene; relock and bump together).
+- **Interchange undeclared hoisted deps** — `@intx/agent` imports `@intx/log` without declaring it (upstream bug; unfixed on `main`), relying on the install hoisting it. M3's `@intx`-dependent packages shifted bun's layout so it stopped hoisting reachably and the hub crashed at startup (`Cannot find module @intx/log`). Fix: `@intx/log` is declared in the **root** `package.json` to force-hoist it to `node_modules/@intx/log`. Keep that root entry until interchange declares the dep upstream (see the upstream concept ticket); if another interchange package surfaces the same way, force-hoist it the same way.
 
 ## Credential Seeding Maintenance
 
