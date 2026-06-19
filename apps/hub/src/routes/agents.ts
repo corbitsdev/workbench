@@ -9,7 +9,14 @@ import type { GrantStore } from '@intx/types/authz';
 import { AGENT_TEMPLATES } from '@workbench/agents';
 import { memberAgentInstance } from '../db/schema';
 import type { HubDb } from '../db';
-import { isAgentAlreadyExistsError, launchAgentSession } from '../services/agent-provisioning';
+import {
+  isAgentAlreadyExistsError,
+  launchAgentSession,
+  persistInstanceToolGrants,
+  persistInstanceGrantRequirements,
+  type GrantRequirementRow,
+} from '../services/agent-provisioning';
+import { getToolNamesFromCapabilities } from '../lib/tool-registry';
 
 const log = getLogger(['api', 'agents']);
 
@@ -185,7 +192,39 @@ export function createAgentProvisioningRouter(
     // twice) right after deploy, so it must be idempotent for a healthy
     // instance. The 409-recovery path still works: a genuinely-down instance is
     // not routable, so it falls through to relaunch below.
+    //
+    // Even when already routable, refresh DB grants and push them to the sidecar.
+    // After a hub redeploy the sidecar reconnects and the orchestrator pushes
+    // whatever grants are currently in the DB — which may be stale if tool names
+    // changed (e.g. short→canonical on M4). Idempotent: delete+reinsert is safe
+    // on every call and sendGrantsUpdate does not restart the agent.
     if (sidecarRouter.getRoutableAddresses().includes(instance.address)) {
+      const agentRowForGrants = await db.query.agent.findFirst({
+        where: eq(agent.id, instance.agentId),
+      });
+      if (agentRowForGrants) {
+        const toolNamesForGrants = getToolNamesFromCapabilities(
+          agentRowForGrants.capabilities ?? null
+        );
+        const now = new Date();
+        await persistInstanceToolGrants(db, {
+          tenantId: instance.tenantId,
+          principalId: instance.principalId,
+          toolNames: toolNamesForGrants,
+          now,
+        });
+        await persistInstanceGrantRequirements(db, {
+          tenantId: instance.tenantId,
+          principalId: instance.principalId,
+          grantRequirements: (agentRowForGrants.grantRequirements ?? []) as GrantRequirementRow[],
+          now,
+        });
+        const updatedGrants = await grantStore.collectGrants(
+          instance.principalId,
+          instance.tenantId
+        );
+        await sidecarRouter.sendGrantsUpdate(instance.address, updatedGrants);
+      }
       return c.json({ launched: true });
     }
 

@@ -65,11 +65,16 @@ const mockSidecarRouter: SidecarRouter = {
   events: { on: () => () => {} },
 } as unknown as SidecarRouter;
 
-function makeSidecarRouter(routable: string[] = []): SidecarRouter {
+function makeSidecarRouter(
+  routable: string[] = [],
+  overrides: Partial<SidecarRouter> = {}
+): SidecarRouter {
   return {
     sendSourcesUpdate: mock(() => Promise.resolve()),
+    sendGrantsUpdate: mock(() => Promise.resolve()),
     getRoutableAddresses: mock(() => routable),
     events: { on: () => () => {} },
+    ...overrides,
   } as unknown as SidecarRouter;
 }
 
@@ -936,6 +941,31 @@ describe('POST /instances/:instanceId/sessions — branches', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).launched).toBe(true);
     expect(sessionService.launchSession).not.toHaveBeenCalled();
+  });
+
+  it('refreshes grants and pushes sendGrantsUpdate when the agent is already routable', async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        ...AGENT_ROW,
+        capabilities: { tools: ['@workbench/tools-granola/granola:granola_list_notes'] },
+      })
+    );
+
+    const sendGrantsUpdate = mock(() => Promise.resolve());
+    const router = makeSidecarRouter([INSTANCE.address], {
+      sendGrantsUpdate,
+    } as Partial<SidecarRouter>);
+
+    const app = buildApp(db, mockSessionService, 'user-1', router);
+    const res = await app.fetch(
+      makeRequest('http://localhost/instances/ins-1/sessions', { method: 'POST' })
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).launched).toBe(true);
+    expect(sendGrantsUpdate).toHaveBeenCalledWith(INSTANCE.address, expect.any(Array));
   });
 
   it('returns 409 when the instance was explicitly deleted (stopped with endedAt)', async () => {
