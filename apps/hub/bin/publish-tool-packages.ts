@@ -20,12 +20,15 @@ const TarballPutResponse = type({ commit: 'string', integrity: 'string' });
 
 export type PublishOptions = {
   hubURL: string;
-  adminEmail: string;
-  adminPassword: string;
   tenantSlug: string;
   tenantName: string;
   registryName: string;
   fromDir: string;
+  // Auth: either a pre-minted session cookie (preferred for CI/deploy — no admin
+  // password on the box) or admin email + password to sign in for a session.
+  sessionCookie?: string;
+  adminEmail?: string;
+  adminPassword?: string;
 };
 
 export type PublishSummary = { filename: string; commit: string; integrity: string };
@@ -192,8 +195,23 @@ async function listTarballs(fromDir: string): Promise<string[]> {
  * every tarball under `opts.fromDir`. Idempotent — re-running overwrites
  * same-name entries. Returns one record per uploaded file.
  */
+// Prefer a pre-minted session cookie; otherwise sign in with admin creds. The
+// cookie is sent verbatim as the Cookie header, so pass the full `name=value`
+// (e.g. `better-auth.session_token=...`).
+async function resolveAuthCookies(opts: PublishOptions): Promise<CookieJar> {
+  if (opts.sessionCookie !== undefined && opts.sessionCookie !== '') {
+    return [opts.sessionCookie];
+  }
+  if (opts.adminEmail === undefined || opts.adminPassword === undefined) {
+    throw new Error(
+      'publish-tool-packages: set HUB_SESSION_COOKIE, or HUB_ADMIN_EMAIL + HUB_ADMIN_PASSWORD'
+    );
+  }
+  return authenticate(opts.hubURL, opts.adminEmail, opts.adminPassword);
+}
+
 export async function publishToolPackages(opts: PublishOptions): Promise<PublishSummary[]> {
-  const cookies = await authenticate(opts.hubURL, opts.adminEmail, opts.adminPassword);
+  const cookies = await resolveAuthCookies(opts);
   const tenantId = await resolveTenant(opts.hubURL, cookies, opts.tenantSlug);
   const assetId = await ensureRegistryAsset(opts.hubURL, cookies, tenantId, opts.registryName);
   const tarballs = await listTarballs(opts.fromDir);
@@ -234,8 +252,11 @@ async function runCLI(): Promise<void> {
   });
 
   const hubURL = requireEnv('HUB_URL');
-  const adminEmail = requireEnv('HUB_ADMIN_EMAIL');
-  const adminPassword = requireEnv('HUB_ADMIN_PASSWORD');
+  // Prefer a session cookie; fall back to admin email + password.
+  const sessionCookie = process.env.HUB_SESSION_COOKIE;
+  const useSession = sessionCookie !== undefined && sessionCookie !== '';
+  const adminEmail = useSession ? undefined : requireEnv('HUB_ADMIN_EMAIL');
+  const adminPassword = useSession ? undefined : requireEnv('HUB_ADMIN_PASSWORD');
   const tenantSlug = values.tenant ?? requireEnv('HUB_TENANT_SLUG');
   const tenantName = values['tenant-name'] ?? tenantSlug;
   const fromRaw = values.from;
@@ -243,6 +264,7 @@ async function runCLI(): Promise<void> {
 
   const summaries = await publishToolPackages({
     hubURL,
+    sessionCookie,
     adminEmail,
     adminPassword,
     tenantSlug,

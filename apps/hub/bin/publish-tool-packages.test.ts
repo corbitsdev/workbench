@@ -145,4 +145,21 @@ describe('publishToolPackages', () => {
     expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(2);
     expect(calls.some((c) => c.url.includes('ast_existing/tarballs/'))).toBe(true);
   });
+
+  test('uses a session cookie and skips admin sign-in', async () => {
+    installFetchStub();
+    await publishToolPackages({
+      hubURL: 'https://hub.test',
+      sessionCookie: 'better-auth.session_token=tok123',
+      tenantSlug: 'corbits',
+      tenantName: 'Corbits',
+      registryName: 'workspace-builtins',
+      fromDir,
+    });
+    // No sign-up/sign-in calls were made.
+    expect(calls.some((c) => c.url.includes('/api/auth/'))).toBe(false);
+    // The session cookie is sent on the authenticated requests.
+    expect(calls.some((c) => c.url.includes('/api/me/principals'))).toBe(true);
+    expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(2);
+  });
 });
