@@ -6,7 +6,7 @@ import { getLogger } from '@intx/log';
 
 const log = getLogger(['api', 'members']);
 
-const { principal, user } = intxSchema;
+const { principal } = intxSchema;
 
 export function createMembersRouter(db: DB['db']): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();

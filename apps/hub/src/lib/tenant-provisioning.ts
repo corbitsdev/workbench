@@ -375,18 +375,21 @@ export async function seedAgentTemplates(db: ProductionDB): Promise<void> {
 
     const existing = await reselect();
     if (existing) {
-      await db
-        .update(agent)
-        .set({
-          description: template.description,
-          systemPrompt: template.systemPrompt,
-          credentialRequirements: template.credentialRequirements,
-          grantRequirements: template.grantRequirements,
-          capabilities: template.capabilities,
-          modelConfig: template.modelConfig ?? existing.modelConfig,
-          updatedAt: new Date(),
-        })
-        .where(eq(agent.id, existing.id));
+      await db.transaction(async (tx) => {
+        await tx
+          .update(agent)
+          .set({
+            description: template.description,
+            systemPrompt: template.systemPrompt,
+            credentialRequirements: template.credentialRequirements,
+            grantRequirements: template.grantRequirements,
+            capabilities: template.capabilities,
+            modelConfig: template.modelConfig ?? existing.modelConfig,
+            toolPackages: template.toolPackages ?? [],
+            updatedAt: new Date(),
+          })
+          .where(eq(agent.id, existing.id));
+      });
       log.info('Agent template updated', {
         tenantId: globalTenant.id,
         name: template.name,
@@ -413,6 +416,7 @@ export async function seedAgentTemplates(db: ProductionDB): Promise<void> {
             grantRequirements: template.grantRequirements,
             capabilities: template.capabilities,
             modelConfig: template.modelConfig ?? null,
+            toolPackages: template.toolPackages ?? [],
             status: 'deployed',
             currentVersion: '1',
             createdAt: now,

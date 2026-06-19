@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { AGENT_TEMPLATES, toolPackagePinsForAgentName } from './templates';
+import { AGENT_TEMPLATES } from './templates';
 import { LARRY_DEPLOY_DESCRIPTOR, LARRY_TOOL_PACKAGES } from './larry/definition';
 
 describe('tool-package pins', () => {
@@ -12,18 +12,16 @@ describe('tool-package pins', () => {
     expect(LARRY_DEPLOY_DESCRIPTOR.toolPackages).toBe(LARRY_TOOL_PACKAGES);
   });
 
-  test('Larry template carries the pins for launch-time resolution', () => {
+  test('Larry template carries the pins for DB persistence at seed time', () => {
     const larry = AGENT_TEMPLATES.find((t) => t.name === 'Larry');
     expect(larry?.toolPackages).toEqual(LARRY_TOOL_PACKAGES);
   });
 
-  test('toolPackagePinsForAgentName resolves pins by display name', () => {
-    expect(toolPackagePinsForAgentName('Larry')).toEqual(LARRY_TOOL_PACKAGES);
-  });
-
-  test('agents that pin nothing resolve to an empty array', () => {
-    expect(toolPackagePinsForAgentName('Loop')).toEqual([]);
-    expect(toolPackagePinsForAgentName('does-not-exist')).toEqual([]);
+  test('Loop and unknown agents have no tool packages', () => {
+    const loop = AGENT_TEMPLATES.find((t) => t.name === 'Loop');
+    expect(loop?.toolPackages ?? []).toEqual([]);
+    const unknown = AGENT_TEMPLATES.find((t) => t.name === 'does-not-exist');
+    expect(unknown).toBeUndefined();
   });
 
   test('the hackernews pin still appears in Larry capabilities for grant coverage (prefixed)', () => {

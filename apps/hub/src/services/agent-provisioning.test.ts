@@ -101,6 +101,12 @@ describe('relaunchInstanceIfNeeded', () => {
     id: 'agt-1',
     systemPrompt: 'You are Myra.',
     credentialRequirements: [{ providerName: 'openai-compatible', source: 'tenant' }],
+    grantRequirements: null,
+    contextConfig: null,
+    initialState: null,
+    modelConfig: null,
+    capabilities: null,
+    toolPackages: [],
   };
 
   function coldInstance(overrides: Record<string, unknown> = {}) {
@@ -196,13 +202,18 @@ describe('launchAgentSession retry behavior', () => {
     now: new Date('2026-01-01T00:00:00Z'),
   };
 
-  function launchDb() {
+  function launchDb(toolPackages: unknown[] | null = []) {
     const db = makeMockDb();
     db.query.agent.findFirst = mock(() =>
       Promise.resolve({
         id: 'agt-1',
+        contextConfig: null,
+        initialState: null,
+        modelConfig: null,
         capabilities: { tools: ['exa_search'] },
+        credentialRequirements: null,
         grantRequirements: [],
+        toolPackages,
       })
     );
     db.query.agentInstance.findFirst = mock(() =>
@@ -210,6 +221,29 @@ describe('launchAgentSession retry behavior', () => {
     );
     return db;
   }
+
+  it('forwards tool package pins from the agent DB row to launchSession', async () => {
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
+    const toolPackages = [{ name: '@workbench/tools-exa', version: '^0.1.0' }];
+
+    // biome-ignore lint/suspicious/noExplicitAny: capturing launch config
+    let capturedConfig: any;
+    const launchSession = mock((config: unknown) => {
+      capturedConfig = config;
+      return Promise.resolve();
+    });
+    const sessionService = { ...mockSessionService, launchSession };
+
+    await launchAgentSession(
+      launchDb(toolPackages) as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      BASE_OPTS
+    );
+
+    expect(capturedConfig.toolPackagePins).toEqual(toolPackages);
+  });
 
   it('retries after a transient launch failure and then succeeds', async () => {
     sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
@@ -232,6 +266,28 @@ describe('launchAgentSession retry behavior', () => {
     expect(result.sessionId).toBeTruthy();
     expect(launchSession).toHaveBeenCalledTimes(2);
   }, 10000);
+
+  it('passes empty toolPackagePins when agent row has null toolPackages', async () => {
+    sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
+
+    // biome-ignore lint/suspicious/noExplicitAny: capturing launch config
+    let capturedConfig: any;
+    const launchSession = mock((config: unknown) => {
+      capturedConfig = config;
+      return Promise.resolve();
+    });
+    const sessionService = { ...mockSessionService, launchSession };
+
+    await launchAgentSession(
+      launchDb(null) as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      BASE_OPTS
+    );
+
+    expect(capturedConfig.toolPackagePins).toEqual([]);
+  });
 
   it('does not retry a provision-phase failure and rethrows it', async () => {
     sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);

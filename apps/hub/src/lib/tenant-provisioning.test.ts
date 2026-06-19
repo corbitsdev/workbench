@@ -752,6 +752,50 @@ describe('seedAgentTemplates', () => {
       const row = agentInserts.find((r) => r['name'] === template.name);
       expect(row?.['description']).toBe(template.description);
     }
+
+    // toolPackages must be persisted on every insert so the native Interchange
+    // launch path (POST /instances) picks them up from parseAgentRow(row).toolPackages
+    // rather than relying on the in-memory toolPackagePinsForAgentName lookup.
+    for (const template of AGENT_TEMPLATES) {
+      const row = agentInserts.find((r) => r['name'] === template.name);
+      expect(row?.['toolPackages']).toEqual(template.toolPackages ?? []);
+    }
+  });
+
+  it('persists toolPackages on update for every agent template', async () => {
+    const updateCapture: Array<Record<string, unknown>> = [];
+    const db = makeMockDB({
+      query: {
+        tenant: { findFirst: mock(() => Promise.resolve(GLOBAL)) },
+        principal: { findFirst: mock(() => Promise.resolve({ id: 'prn_system' })) },
+        role: { findFirst: mock(() => Promise.resolve(undefined)) },
+        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
+        agent: {
+          findFirst: mock(() =>
+            Promise.resolve({ id: 'agt_myra', name: 'Myra', modelConfig: null })
+          ),
+          findMany: mock(() => Promise.resolve([])),
+        },
+        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
+        provider: { findFirst: mock(() => Promise.resolve(undefined)) },
+      },
+      update: mock(() => ({
+        set: mock((vals: Record<string, unknown>) => {
+          updateCapture.push(vals);
+          return { where: mock(() => Promise.resolve()) };
+        }),
+      })),
+    });
+
+    await seedAgentTemplates(db as never);
+
+    // All templates trigger the update path (mock returns existing for every findFirst).
+    // Updates fire in AGENT_TEMPLATES order, so index alignment is stable.
+    expect(updateCapture).toHaveLength(AGENT_TEMPLATES.length);
+    for (let i = 0; i < AGENT_TEMPLATES.length; i++) {
+      const template = AGENT_TEMPLATES[i]!;
+      expect(updateCapture[i]?.['toolPackages']).toEqual(template.toolPackages ?? []);
+    }
   });
 
   it('patches modelConfig from provider metadata when modelConfig is null', async () => {

@@ -96,8 +96,9 @@ export const myTools = defineCredentialedToolPackage({
 - Add the package to `TOOL_PACKAGES` in `apps/hub/bin/build-tool-packages.ts`
   and a `COPY` line in `apps/hub/Dockerfile`.
 - Pin it on each agent that uses it via `toolPackages: [{ name, version }]` on
-  the agent's deploy descriptor **and** its `AGENT_TEMPLATES` entry (launch
-  reads pins by agent name through `toolPackagePinsForAgentName`).
+  the agent's `AGENT_TEMPLATES` entry. `seedAgentTemplates` persists the pins to
+  the agent DB row on hub boot; `launchAgentSession` reads them back via
+  `parseAgentRow(row).toolPackages` at launch time.
 - Credentialed tools: seed the provider (`apps/hub/bin/seed-credentials.ts`)
   and add its `providerName` to the agent's `credentialProviderNames`. Keyless
   tools need no seed entry.
@@ -125,7 +126,7 @@ Two pieces are ours, both for concrete reasons:
   hardcodes its `BUILTINS` to `@intx/tools-*` and isn't exported; the upstream
   comment directs downstreams to bring their own.
 - **Publish client** (`publish-tool-packages.ts`) — interchange ships an
-  equivalent `bin/publish-tool-packages.ts`, but it lives *inside* the submodule,
+  equivalent `bin/publish-tool-packages.ts`, but it lives _inside_ the submodule,
   so invoking it resolves its own `@intx/*` imports from `interchange/`, which in
   a git-worktree layout can leak into a sibling worktree. Our client lives in
   `apps/hub/` and resolves cleanly. It still imports the **same** `@intx/types`

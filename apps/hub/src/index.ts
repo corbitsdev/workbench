@@ -36,7 +36,6 @@ import { createAgentProvisioningRouter } from './routes/agents';
 import {
   relaunchInstanceIfNeeded,
   registerDisconnectReconciler,
-  persistInstanceToolGrants,
 } from './services/agent-provisioning';
 import { createWorkbenchesRouter } from './routes/workbenches';
 import { createMembersRouter } from './routes/members';
@@ -44,7 +43,7 @@ import { createGammaTemplatesRouter } from './routes/gamma-templates';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createHubToolsRouter } from './routes/hub-tools';
 import { createToolCredentialsRouter } from './routes/tool-credentials';
-import { buildToolDefinitions, getToolNamesFromCapabilities } from './lib/tool-registry';
+import { buildToolDefinitions } from './lib/tool-registry';
 import { schema } from './db';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
@@ -261,7 +260,7 @@ createHubSessionOrchestrator({
 // signal instead of local router state.
 registerDisconnectReconciler({ db, router: sidecarRouter });
 
-const rawSessionService = createSessionService({
+const sessionService = createSessionService({
   sidecarRouter,
   agentRepoStore: repoStore,
   assetService,
@@ -276,45 +275,6 @@ const rawSessionService = createSessionService({
     defaultRegistry: WORKSPACE_BUILTINS_REGISTRY,
   },
 });
-
-// Wrap launchSession so that Interchange's native instance-creation path
-// (which always passes tools: []) picks up tool definitions from the agent's
-// capabilities column. Our own provisioning route already passes the correct
-// tools; the guard on tools.length === 0 avoids double-injection there.
-const sessionService: typeof rawSessionService = {
-  ...rawSessionService,
-  async launchSession(params) {
-    if (params.config.tools.length === 0) {
-      const agentRow = await db.query.agent.findFirst({
-        where: eq(intxSchema.agent.id, params.agentId),
-      });
-      if (agentRow?.capabilities) {
-        const toolNames = getToolNamesFromCapabilities(agentRow.capabilities);
-        if (toolNames.length > 0) {
-          const tools = buildToolDefinitions(toolNames);
-          await persistInstanceToolGrants(db, {
-            tenantId: params.config.tenantId,
-            principalId: params.config.principalId,
-            toolNames,
-            now: new Date(),
-          });
-          // Re-collect grants after persisting tool grants — the snapshot
-          // in params.config.grants was built before persistence and is stale.
-          const grants = await grantStore.collectGrants(
-            params.config.principalId,
-            params.config.tenantId
-          );
-          params = { ...params, config: { ...params.config, tools, grants } };
-          log.info('Injected tool definitions for agent {agentId}', {
-            agentId: params.agentId,
-            toolNames,
-          });
-        }
-      }
-    }
-    return rawSessionService.launchSession(params);
-  },
-};
 
 // ─── Hub app ────────────────────────────────────────────────────────
 //

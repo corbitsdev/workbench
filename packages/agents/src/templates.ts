@@ -66,6 +66,7 @@ import {
   FREDDIE_MODEL_CONFIG,
 } from './freddie/definition';
 import {
+  FANNIE_DEPLOY_PROMPT,
   FANNIE_CREDENTIAL_REQUIREMENTS,
   FANNIE_GRANT_REQUIREMENTS,
   FANNIE_CAPABILITIES,
@@ -109,9 +110,8 @@ export interface AgentTemplate {
   deployable?: boolean;
   kind?: 'personal';
   /**
-   * Native tool packages this agent pins. Not persisted on the Interchange
-   * agent row (its schema is upstream-owned); resolved by name at launch
-   * via `toolPackagePinsForAgentName` and passed as `toolPackagePins`.
+   * Native tool packages this agent pins. Persisted to the agent DB row at
+   * seed time and read back via `parseAgentRow(row).toolPackages` at launch.
    */
   toolPackages?: ToolPackagePin[];
 }
@@ -195,7 +195,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     name: 'Fannie',
     description:
       'Fable-style Sonnet agent with broad research and local artifact-writing tools, excluding outbound mail send.',
-    systemPrompt: FREDDIE_DEPLOY_PROMPT,
+    systemPrompt: FANNIE_DEPLOY_PROMPT,
     credentialRequirements: FANNIE_CREDENTIAL_REQUIREMENTS,
     grantRequirements: FANNIE_GRANT_REQUIREMENTS,
     capabilities: { tools: [...FANNIE_CAPABILITIES.tools] },
@@ -264,14 +264,3 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     toolPackages: LARRY_TOOL_PACKAGES,
   },
 ];
-
-/**
- * Resolve the tool-package pins for an agent by its display name (the
- * per-tenant idempotency key used at seed time). Returns `[]` for agents
- * that pin no packages. Used at launch to pass `toolPackagePins` to the
- * session service without persisting pins on the Interchange agent row.
- */
-export function toolPackagePinsForAgentName(name: string): ToolPackagePin[] {
-  const template = AGENT_TEMPLATES.find((t) => t.name === name);
-  return template?.toolPackages ?? [];
-}

@@ -8,7 +8,7 @@ import { SessionLaunchError } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
 import { composePersonalAgentPromptForInstance } from '../lib/operator-profile';
 import { buildToolDefinitions, getToolNamesFromCapabilities } from '../lib/tool-registry';
-import { toolPackagePinsForAgentName } from '@workbench/agents';
+import { parseAgentRow } from '@intx/db';
 import { buildToolGrantRows, TOOL_GRANT_RESOURCE_PREFIX } from '../lib/tool-grants';
 
 const log = getLogger(['api', 'agents']);
@@ -269,10 +269,12 @@ export async function launchAgentSession(
       defaultSource,
     },
     deployContent: { systemPrompt: effectiveSystemPrompt },
-    // Native tool packages the agent pins, resolved by display name. The
-    // closure resolver runs only when this is non-empty; the hub-proxy
-    // tool definitions above coexist until each tool is migrated.
-    toolPackagePins: toolPackagePinsForAgentName(agentRow.name),
+    // Hub-proxy tools (config.tools) and native tool packages (toolPackagePins)
+    // coexist during migration: each tool that moves to a package must be removed
+    // from buildToolDefinitions in the same change as adding the package pin.
+    // Guard against null: the column is NOT NULL DEFAULT [] but rows seeded before
+    // migration 0029 may carry null in legacy deployments.
+    toolPackagePins: agentRow.toolPackages != null ? parseAgentRow(agentRow).toolPackages : [],
   };
 
   let lastError: unknown;

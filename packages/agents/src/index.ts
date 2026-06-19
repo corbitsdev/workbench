@@ -80,7 +80,7 @@ export {
 } from './larry/definition';
 
 // Agent templates registry
-export { AGENT_TEMPLATES, type AgentTemplate, toolPackagePinsForAgentName } from './templates';
+export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
 
 // Shared adapter
 export { convertInstanceEvents } from './adapter';

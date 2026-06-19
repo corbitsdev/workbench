@@ -325,6 +325,13 @@ describe('POST /instances/:instanceId/sessions', () => {
     name: 'Loop',
     tenantId: 'tenant-1',
     systemPrompt: 'You are Loop.',
+    contextConfig: null,
+    initialState: null,
+    modelConfig: null,
+    capabilities: null,
+    credentialRequirements: null,
+    grantRequirements: null,
+    toolPackages: [],
   };
 
   it('returns 404 when instance not found', async () => {
@@ -453,7 +460,17 @@ describe('POST /instances/:instanceId/sessions', () => {
 
 describe('relaunchInstanceIfNeeded', () => {
   const TENANT_ROW = { id: 'tenant-1', domain: 'tenant-1.localhost' };
-  const AGENT_ROW = { id: 'agt-1', systemPrompt: 'You are Myra.' };
+  const AGENT_ROW = {
+    id: 'agt-1',
+    systemPrompt: 'You are Myra.',
+    contextConfig: null,
+    initialState: null,
+    modelConfig: null,
+    capabilities: null,
+    credentialRequirements: null,
+    grantRequirements: null,
+    toolPackages: [],
+  };
   const ACTIVE_CREDENTIAL = {
     id: 'crd-1',
     tenantId: 'tenant-1',
@@ -889,6 +906,13 @@ describe('POST /instances/:instanceId/sessions — branches', () => {
     name: 'Loop',
     tenantId: 'tenant-1',
     systemPrompt: 'You are Loop.',
+    contextConfig: null,
+    initialState: null,
+    modelConfig: null,
+    capabilities: null,
+    credentialRequirements: null,
+    grantRequirements: null,
+    toolPackages: [],
   };
 
   it('returns launched:true immediately when the agent is already routable on the sidecar', async () => {
@@ -1229,8 +1253,13 @@ describe('launchAgentSession', () => {
     db.query.agent.findFirst = mock(() =>
       Promise.resolve({
         id: 'agt-1',
+        contextConfig: null,
+        initialState: null,
+        modelConfig: null,
         capabilities: { tools: ['exa_search'] },
+        credentialRequirements: null,
         grantRequirements: [],
+        toolPackages: [],
       })
     );
     db.query.agentInstance.findFirst = mock(() =>
@@ -1615,9 +1644,13 @@ describe('relaunchInstanceIfNeeded — early returns', () => {
       Promise.resolve({
         id: 'agt-1',
         systemPrompt: 'You are an agent.',
+        contextConfig: null,
+        initialState: null,
+        modelConfig: null,
         capabilities: { tools: [] },
-        grantRequirements: [],
         credentialRequirements: [],
+        grantRequirements: [],
+        toolPackages: [],
       })
     );
     sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
@@ -1706,9 +1739,13 @@ describe('relaunchInstanceIfNeeded — early returns', () => {
       Promise.resolve({
         id: 'agt-1',
         systemPrompt: 'You are Loop.',
+        contextConfig: null,
+        initialState: null,
+        modelConfig: null,
         capabilities: { tools: [] },
-        grantRequirements: [],
         credentialRequirements: [],
+        grantRequirements: [],
+        toolPackages: [],
       })
     );
     sourcesImpl = () => Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
