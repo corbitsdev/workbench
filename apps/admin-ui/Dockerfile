@@ -1,10 +1,13 @@
 FROM oven/bun:1.3.13 AS builder
 WORKDIR /app
 
-# Install git and clone interchange before any COPY — this layer caches until the Dockerfile changes
+# Clone interchange at the PINNED commit (keep in sync with the submodule SHA in
+# the repo root) so the bun-install layer below matches our pin + lockfile rather
+# than floating `main`, which drifts and breaks --frozen-lockfile.
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
-    git clone --depth 1 --single-branch --branch main \
-      https://github.com/faremeter/interchange.git interchange
+    git clone --filter=blob:none --no-checkout \
+      https://github.com/faremeter/interchange.git interchange && \
+    git -C interchange checkout 8f67b7c85ed5d6fe68880879f7a31209bb5bd4e2
 
 # Copy only manifests so bun install caches until a package.json or lockfile changes
 COPY package.json bun.lock ./
