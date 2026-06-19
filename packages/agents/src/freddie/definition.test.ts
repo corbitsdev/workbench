@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { canonicalizeToolNames } from '../tool-names';
 import {
   FREDDIE_CAPABILITIES,
   FREDDIE_CREDENTIAL_PROVIDER_NAMES,
@@ -41,7 +42,7 @@ describe('Freddie definition', () => {
 
   it('exposes broad existing research and local artifact tools without mail_send', () => {
     const tools: readonly string[] = FREDDIE_CAPABILITIES.tools;
-    for (const tool of researchTools) {
+    for (const tool of canonicalizeToolNames(researchTools)) {
       expect(tools).toContain(tool);
     }
 

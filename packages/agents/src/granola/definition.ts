@@ -1,4 +1,5 @@
 import type { GrantRequirement, CredentialRequirement } from '@intx/types';
+import { canonicalizeToolNames } from '../tool-names';
 import { buildGranolaSystemPrompt } from './prompt';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
 import { LLM_CREDENTIAL_NAME } from '../constants';
@@ -44,13 +45,13 @@ export const GRANOLA_DEPLOY_PROMPT: string = buildGranolaSystemPrompt('Oat', {
  * to configure tools.
  */
 export const GRANOLA_CAPABILITIES = {
-  tools: [
+  tools: canonicalizeToolNames([
     'granola_list_notes',
     'granola_get_note',
     'granola_list_folders',
     'mail_search',
     'mail_reply',
-  ],
+  ]),
 } as const;
 
 export const GRANOLA_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;

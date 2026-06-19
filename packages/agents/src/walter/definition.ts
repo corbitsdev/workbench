@@ -1,4 +1,5 @@
 import type { CredentialRequirement, GrantRequirement } from '@intx/types';
+import { canonicalizeToolNames } from '../tool-names';
 import { buildWalterSystemPrompt } from './prompt';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
 import { LLM_CREDENTIAL_NAME } from '../constants';
@@ -24,7 +25,7 @@ export const WALTER_DEPLOY_PROMPT: string = buildWalterSystemPrompt('Walter', {
 });
 
 export const WALTER_CAPABILITIES = {
-  tools: [
+  tools: canonicalizeToolNames([
     'read_file',
     'write_file',
     'edit_file',
@@ -32,7 +33,7 @@ export const WALTER_CAPABILITIES = {
     'artifact_link_file',
     'mail_search',
     'mail_reply',
-  ],
+  ]),
 } as const;
 
 export const WALTER_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;

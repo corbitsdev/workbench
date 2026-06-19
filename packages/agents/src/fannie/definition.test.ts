@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { canonicalizeToolNames } from '../tool-names';
 import {
   FANNIE_CAPABILITIES,
   FANNIE_CREDENTIAL_PROVIDER_NAMES,
@@ -39,7 +40,7 @@ describe('Fannie definition', () => {
 
   it('exposes broad existing research and local artifact tools without mail_send', () => {
     const tools: readonly string[] = FANNIE_CAPABILITIES.tools;
-    for (const tool of researchTools) {
+    for (const tool of canonicalizeToolNames(researchTools)) {
       expect(tools).toContain(tool);
     }
 

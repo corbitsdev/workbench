@@ -1,4 +1,5 @@
 import type { GrantRequirement, CredentialRequirement } from '@intx/types';
+import { canonicalizeToolNames } from '../tool-names';
 import { buildFirecrawlSystemPrompt } from './prompt';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
 import { LLM_CREDENTIAL_NAME } from '../constants';
@@ -32,7 +33,7 @@ export const FIRECRAWL_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
 export const FIRECRAWL_DEPLOY_PROMPT: string = buildFirecrawlSystemPrompt('Freddy', { xml: true });
 
 export const FIRECRAWL_CAPABILITIES = {
-  tools: [
+  tools: canonicalizeToolNames([
     'firecrawl_scrape',
     'firecrawl_search',
     'firecrawl_map',
@@ -48,7 +49,7 @@ export const FIRECRAWL_CAPABILITIES = {
     'firecrawl_token_usage',
     'mail_search',
     'mail_reply',
-  ],
+  ]),
 } as const;
 
 export const FIRECRAWL_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;

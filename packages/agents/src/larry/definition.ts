@@ -1,5 +1,6 @@
 import type { CredentialRequirement, GrantRequirement } from '@intx/types';
 import type { ToolPackagePin } from '@intx/types/tool-packages';
+import { canonicalizeToolNames } from '../tool-names';
 import { buildLarrySystemPrompt } from './prompt';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
 import { LLM_CREDENTIAL_NAME } from '../constants';
@@ -43,7 +44,7 @@ export const LARRY_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
 export const LARRY_DEPLOY_PROMPT: string = buildLarrySystemPrompt('Larry');
 
 export const LARRY_CAPABILITIES = {
-  tools: [
+  tools: canonicalizeToolNames([
     'hackernews_search',
     'github_activity',
     'polymarket_odds',
@@ -64,7 +65,7 @@ export const LARRY_CAPABILITIES = {
     'scrapecreators_pinterest',
     'mail_search',
     'mail_reply',
-  ],
+  ]),
 } as const;
 
 export const LARRY_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;

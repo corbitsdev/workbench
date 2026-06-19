@@ -1,4 +1,5 @@
 import { GrantRequirement, CredentialRequirement } from '@intx/types';
+import { canonicalizeToolNames } from '../tool-names';
 import { buildPersonalAgentSystemPrompt } from './prompt';
 import { LLM_CREDENTIAL_NAME } from '../constants';
 
@@ -52,7 +53,7 @@ export const PERSONAL_AGENT_DEPLOY_PROMPT: string = buildPersonalAgentSystemProm
  * Mail tools are provided by the sidecar harness — `mail_send` is also covered
  * by the invoker delegation grant in `buildPersonalAgentGrantRequirements`.
  */
-export const PERSONAL_AGENT_BASE_TOOLS: string[] = [
+export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   'read_file',
   'write_file',
   'edit_file',
@@ -68,4 +69,4 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = [
   'mail_reply',
   'mail_search',
   'mail_read',
-];
+]);

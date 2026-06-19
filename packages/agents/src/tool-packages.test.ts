@@ -26,8 +26,10 @@ describe('tool-package pins', () => {
     expect(toolPackagePinsForAgentName('does-not-exist')).toEqual([]);
   });
 
-  test('the hackernews pin still appears in Larry capabilities for grant coverage', () => {
+  test('the hackernews pin still appears in Larry capabilities for grant coverage (prefixed)', () => {
     const larry = AGENT_TEMPLATES.find((t) => t.name === 'Larry');
-    expect(larry?.capabilities.tools).toContain('hackernews_search');
+    expect(larry?.capabilities.tools).toContain(
+      '@workbench/tools-hackernews/hackernews:hackernews_search'
+    );
   });
 });

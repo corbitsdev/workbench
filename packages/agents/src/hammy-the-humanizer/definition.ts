@@ -1,4 +1,5 @@
 import type { CredentialRequirement, GrantRequirement } from '@intx/types';
+import { canonicalizeToolNames } from '../tool-names';
 import { buildHammySystemPrompt } from './prompt';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
 import { LLM_CREDENTIAL_NAME } from '../constants';
@@ -24,14 +25,14 @@ export const HAMMY_DEPLOY_PROMPT: string = buildHammySystemPrompt('Hammy', {
 });
 
 export const HAMMY_CAPABILITIES = {
-  tools: [
+  tools: canonicalizeToolNames([
     'read_file',
     'write_file',
     'edit_file',
     'artifact_link_file',
     'mail_search',
     'mail_reply',
-  ],
+  ]),
 } as const;
 
 export const HAMMY_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;

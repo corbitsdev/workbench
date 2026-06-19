@@ -1,4 +1,5 @@
 import type { CredentialRequirement, GrantRequirement } from '@intx/types';
+import { canonicalizeToolNames } from '../tool-names';
 import { buildLincolnSystemPrompt } from './prompt';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
 import { LLM_CREDENTIAL_NAME } from '../constants';
@@ -22,7 +23,7 @@ export const LINCOLN_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
 export const LINCOLN_DEPLOY_PROMPT: string = buildLincolnSystemPrompt('Lincoln');
 
 export const LINCOLN_CAPABILITIES = {
-  tools: [
+  tools: canonicalizeToolNames([
     'read_file',
     'write_file',
     'edit_file',
@@ -31,7 +32,7 @@ export const LINCOLN_CAPABILITIES = {
     'firecrawl_search',
     'mail_search',
     'mail_reply',
-  ],
+  ]),
 } as const;
 
 export const LINCOLN_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;

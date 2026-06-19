@@ -1,4 +1,5 @@
 import { CredentialRequirement, GrantRequirement } from '@intx/types';
+import { canonicalizeToolNames } from '../tool-names';
 import { FREDDIE_DEPLOY_PROMPT as FABLE_BASE_PROMPT } from '../freddie/prompt';
 import { WORKBENCH_AGENT_GUIDANCE } from '../freddie/workbench-guidance';
 import type { AgentDeployDescriptor } from '../deploy-descriptor';
@@ -33,7 +34,7 @@ export const FANNIE_CREDENTIAL_PROVIDER_NAMES = [
 ] as const;
 
 export const FANNIE_CAPABILITIES = {
-  tools: [
+  tools: canonicalizeToolNames([
     'firecrawl_scrape',
     'firecrawl_search',
     'firecrawl_map',
@@ -65,7 +66,7 @@ export const FANNIE_CAPABILITIES = {
     'scrapecreators_instagram',
     'scrapecreators_threads',
     'scrapecreators_pinterest',
-  ],
+  ]),
 } as const;
 
 export const FANNIE_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
