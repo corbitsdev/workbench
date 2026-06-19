@@ -99,7 +99,6 @@
         "@workbench/prompts": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
-        "@workbench/tools-exa": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",

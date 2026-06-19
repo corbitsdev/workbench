@@ -29,8 +29,7 @@
     "@workbench/tool-credentials": "workspace:*",
     "@workbench/context-repair": "workspace:*",
     "@workbench/prompts": "workspace:*",
-    "@workbench/sentry": "workspace:*",
-    "@workbench/tools-exa": "workspace:*"
+    "@workbench/sentry": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",
