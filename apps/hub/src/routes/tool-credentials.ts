@@ -19,10 +19,20 @@ const log = getLogger(['api', 'tool-credentials']);
  * provider mapping today; once KNOWN_TOOLS is retired (workflow runtime
  * migration) this derives from the agent's pinned packages instead.
  */
+/**
+ * Capability tool names are canonicalized as `<factoryId>:<toolName>` (CL-2145),
+ * while KNOWN_TOOLS is keyed by the bare tool name. Strip the factory prefix
+ * before lookup; local (unprefixed) tool names pass through unchanged.
+ */
+function bareToolName(toolName: string): string {
+  const colon = toolName.lastIndexOf(':');
+  return colon === -1 ? toolName : toolName.slice(colon + 1);
+}
+
 function allowedProvidersForAgent(capabilities: unknown): Set<string> {
   const allowed = new Set<string>();
   for (const toolName of getToolNamesFromCapabilities(capabilities)) {
-    const entry = KNOWN_TOOLS[toolName];
+    const entry = KNOWN_TOOLS[bareToolName(toolName)];
     if (entry !== undefined && isCredentialToolEntry(entry)) {
       allowed.add(entry.providerName);
     }

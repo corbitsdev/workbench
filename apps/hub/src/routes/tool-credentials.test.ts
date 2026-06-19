@@ -59,3 +59,28 @@ describe('POST /tools/credentials', () => {
     expect((await post({ tenantId: 't1', agentId: 'a1' })).status).toBe(400);
   });
 });
+
+describe('POST /tools/credentials with canonicalized capability names (CL-2145)', () => {
+  const canonicalDb = {
+    query: {
+      agent: {
+        findFirst: async () => ({
+          id: 'a1',
+          capabilities: { tools: ['@workbench/tools-granola/granola:granola_list_notes'] },
+        }),
+      },
+      provider: { findFirst: async () => ({ metadata: { baseURL: 'https://api.example' } }) },
+    },
+  } as unknown as Parameters<typeof createToolCredentialsRouter>[0];
+
+  const canonicalRouter = createToolCredentialsRouter(canonicalDb, 'sidecar-token', fakeResolve);
+
+  test('resolves the provider despite the factory prefix', async () => {
+    const res = await canonicalRouter.request('/tools/credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer sidecar-token' },
+      body: JSON.stringify(req(['granola'])),
+    });
+    expect(res.status).toBe(200);
+  });
+});
