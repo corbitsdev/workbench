@@ -30,6 +30,7 @@
     "interchange:check": "bun run scripts/check-interchange-sync.ts"
   },
   "dependencies": {
+    "@intx/log": "workspace:*",
     "arktype": "catalog:",
     "better-auth": "^1.6.9",
     "drizzle-orm": "^0.45.2",
