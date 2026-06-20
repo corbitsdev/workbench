@@ -10,9 +10,9 @@ export type WorkflowUIModule = {
 // Vite code-splits each entry into its own chunk; only the opened workflow loads.
 const importers: Record<string, () => Promise<WorkflowUIModule>> = {
   'collateral-generation': () => import('@workbench/workflow-collateral-generation'),
-  'presentation-generation': () => import('@workbench/workflow-presentation-generation'),
+  'gamma-presentation-creator': () => import('@workbench/workflow-gamma-presentation-creator'),
   'seo-enrichment': () => import('@workbench/workflow-seo-enrichment'),
-  'blind-ab-comparison': () => import('@workbench/workflow-blind-ab-comparison'),
+  'ab-compare': () => import('@workbench/workflow-ab-compare'),
   'reddit-opportunity-scanner': () => import('@workbench/workflow-reddit-opportunity-scanner'),
 };
 
