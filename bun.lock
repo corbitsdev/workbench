@@ -1000,6 +1000,23 @@
         "react": "*",
       },
     },
+    "workflows/ab-compare": {
+      "name": "@workbench/workflow-ab-compare",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/ui": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
+      },
+    },
     "workflows/blind-ab-comparison": {
       "name": "@workbench/workflow-blind-ab-comparison",
       "dependencies": {
@@ -1024,6 +1041,41 @@
         "typescript": "catalog:",
       },
     },
+    "workflows/gamma-presentation-creator": {
+      "name": "@workbench/workflow-gamma-presentation-creator",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/ui": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
+      },
+    },
+    "workflows/pain-point-collateral": {
+      "name": "@workbench/workflow-pain-point-collateral",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@tanstack/react-query": "*",
+        "react": "*",
+      },
+    },
     "workflows/presentation-generation": {
       "name": "@workbench/workflow-presentation-generation",
       "dependencies": {
@@ -1042,10 +1094,14 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/ui": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
       },
     },
     "workflows/resource-enrichment": {
@@ -1070,6 +1126,22 @@
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "catalog:",
+      },
+    },
+    "workflows/seo-enrichment-from-image": {
+      "name": "@workbench/workflow-seo-enrichment-from-image",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/ui": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
       },
     },
   },
@@ -2020,9 +2092,15 @@
 
     "@workbench/workflow": ["@workbench/workflow@workspace:packages/workflow"],
 
+    "@workbench/workflow-ab-compare": ["@workbench/workflow-ab-compare@workspace:workflows/ab-compare"],
+
     "@workbench/workflow-blind-ab-comparison": ["@workbench/workflow-blind-ab-comparison@workspace:workflows/blind-ab-comparison"],
 
     "@workbench/workflow-collateral-generation": ["@workbench/workflow-collateral-generation@workspace:workflows/collateral-generation"],
+
+    "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
+
+    "@workbench/workflow-pain-point-collateral": ["@workbench/workflow-pain-point-collateral@workspace:workflows/pain-point-collateral"],
 
     "@workbench/workflow-presentation-generation": ["@workbench/workflow-presentation-generation@workspace:workflows/presentation-generation"],
 
@@ -2031,6 +2109,8 @@
     "@workbench/workflow-resource-enrichment": ["@workbench/workflow-resource-enrichment@workspace:workflows/resource-enrichment"],
 
     "@workbench/workflow-seo-enrichment": ["@workbench/workflow-seo-enrichment@workspace:workflows/seo-enrichment"],
+
+    "@workbench/workflow-seo-enrichment-from-image": ["@workbench/workflow-seo-enrichment-from-image@workspace:workflows/seo-enrichment-from-image"],
 
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
 

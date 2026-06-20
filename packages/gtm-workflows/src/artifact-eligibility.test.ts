@@ -13,10 +13,10 @@ describe('workflowAcceptsArtifactKind', () => {
     expect(workflowAcceptsArtifactKind('collateral-generation', 'email')).toBe(false);
   });
 
-  it('presentation-generation accepts any artifact kind (general source)', () => {
-    expect(workflowAcceptsArtifactKind('presentation-generation', 'email')).toBe(true);
-    expect(workflowAcceptsArtifactKind('presentation-generation', 'pain-points')).toBe(true);
-    expect(workflowAcceptsArtifactKind('presentation-generation', 'battlecard')).toBe(true);
+  it('gamma-presentation-creator accepts any artifact kind (general source)', () => {
+    expect(workflowAcceptsArtifactKind('gamma-presentation-creator', 'email')).toBe(true);
+    expect(workflowAcceptsArtifactKind('gamma-presentation-creator', 'pain-points')).toBe(true);
+    expect(workflowAcceptsArtifactKind('gamma-presentation-creator', 'battlecard')).toBe(true);
   });
 
   it('rejects unknown workflow kinds', () => {
@@ -28,12 +28,12 @@ describe('workflowsAcceptingArtifactKind', () => {
   it('returns both workflows for a kind collateral accepts', () => {
     const kinds = workflowsAcceptingArtifactKind('pain-points');
     expect(kinds).toContain('collateral-generation');
-    expect(kinds).toContain('presentation-generation');
+    expect(kinds).toContain('gamma-presentation-creator');
   });
 
   it('returns only the general workflow for a kind collateral rejects', () => {
     const kinds = workflowsAcceptingArtifactKind('email');
-    expect(kinds).toEqual(['presentation-generation']);
+    expect(kinds).toEqual(['gamma-presentation-creator']);
   });
 });
 
@@ -59,6 +59,6 @@ describe('sourceArtifactKindSkipsAnalysis', () => {
   });
 
   it('never skips analysis for other workflow kinds', () => {
-    expect(sourceArtifactKindSkipsAnalysis('presentation-generation', 'pain-points')).toBe(false);
+    expect(sourceArtifactKindSkipsAnalysis('gamma-presentation-creator', 'pain-points')).toBe(false);
   });
 });

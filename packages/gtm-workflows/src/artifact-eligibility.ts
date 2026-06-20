@@ -12,7 +12,7 @@ type AcceptedArtifactKinds = ReadonlySet<string> | 'general';
 
 export const WORKFLOW_ACCEPTED_ARTIFACT_KINDS: Readonly<Record<string, AcceptedArtifactKinds>> = {
   'collateral-generation': new Set(['call-transcript', 'pain-points']),
-  'presentation-generation': 'general',
+  'gamma-presentation-creator': 'general',
 };
 
 export function workflowAcceptsArtifactKind(workflowKind: string, artifactKind: string): boolean {
