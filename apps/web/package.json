@@ -19,7 +19,6 @@
     "@workbench/artifact": "workspace:*",
     "@workbench/chat": "workspace:*",
     "@workbench/client": "workspace:*",
-    "@workbench/gtm-workflows": "workspace:*",
     "@workbench/last30days-core": "workspace:*",
     "@workbench/settings": "workspace:*",
     "@workbench/shared": "workspace:*",

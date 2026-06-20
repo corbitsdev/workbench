@@ -4,7 +4,7 @@ import {
   sourceArtifactKindSkipsAnalysis,
   workflowsAcceptingArtifactKind,
   workflowAcceptsArtifactKind,
-} from './artifact-eligibility';
+} from './artifact-workflow-eligibility';
 
 describe('workflowAcceptsArtifactKind', () => {
   it('pain-point-collateral accepts only its specific source kinds', () => {
@@ -59,6 +59,8 @@ describe('sourceArtifactKindSkipsAnalysis', () => {
   });
 
   it('never skips analysis for other workflow kinds', () => {
-    expect(sourceArtifactKindSkipsAnalysis('gamma-presentation-creator', 'pain-points')).toBe(false);
+    expect(sourceArtifactKindSkipsAnalysis('gamma-presentation-creator', 'pain-points')).toBe(
+      false
+    );
   });
 });

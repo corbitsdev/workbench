@@ -10,7 +10,7 @@ import type { GalleryArtifact, ArtifactWithSession } from '@workbench/artifact';
 import { clientOptions } from '../../lib/client-options';
 import ArtifactBody from '../ArtifactBody';
 import { resolveKindLabel } from '../../lib/resolve-kind-label';
-import { canUseArtifactInWorkflow } from '@workbench/gtm-workflows';
+import { canUseArtifactInWorkflow } from '@workbench/artifact';
 import { useChatLauncher } from '../../lib/chat-launcher-context';
 
 const SEARCH_DEBOUNCE_MS = 300;

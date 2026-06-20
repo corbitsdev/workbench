@@ -170,15 +170,18 @@ credential rail — not an execution registry, and not in any workflow path
 
 ## Creating an Agent Package
 
-Use `packages/tool-agent` as a scaffold. It contains the minimal structure for an agent that uses tools.
+Copy an existing agent as a starting point. Agents live as subdirectories of the
+`@workbench/agents` package (`packages/agents/src/<name>`) — `packages/agents/src/larry`
+is a good minimal example of an agent that uses tools.
 
 ### 1. Scaffold
 
 ```bash
-cp -r packages/tool-agent packages/agents/<name>
+cp -r packages/agents/src/larry packages/agents/src/<name>
 ```
 
-Update `package.json` name to `@workbench/agent-<name>`.
+Rename the exported identifiers and strip the copied agent's prompt/tools down to
+your own; `seedAgentTemplates` picks the definition up on the next hub boot.
 
 ### 2. Write the system prompt (`src/prompt.ts`)
 
@@ -330,7 +333,7 @@ A director may still allow a system sender address (e.g. `scheduler@system`) for
 
 ## Checklist: Shipping a New Agent
 
-- [ ] `packages/agents/<name>/` created from `tool-agent`, builds cleanly
+- [ ] `packages/agents/src/<name>/` created from an existing agent (e.g. `larry`), builds cleanly
 - [ ] `credentialRequirements` declared for inference + any external services
 - [ ] `capabilities.tools` lists every tool the agent is allowed to call
 - [ ] System prompt written via `buildSystemPrompt` + `formatFromModel`

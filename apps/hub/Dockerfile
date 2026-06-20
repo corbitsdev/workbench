@@ -21,7 +21,6 @@ COPY packages/chat/package.json packages/chat/
 COPY packages/client/package.json packages/client/
 COPY packages/context-repair/package.json packages/context-repair/
 COPY packages/event-collector/package.json packages/event-collector/
-COPY packages/gtm-workflows/package.json packages/gtm-workflows/
 COPY packages/last30days-core/package.json packages/last30days-core/
 COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
@@ -60,7 +59,6 @@ COPY scripts/ scripts/
 COPY packages/agents/ packages/agents/
 COPY packages/event-collector/ packages/event-collector/
 COPY packages/chat/ packages/chat/
-COPY packages/gtm-workflows/ packages/gtm-workflows/
 COPY packages/last30days-core/ packages/last30days-core/
 COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/

@@ -41,7 +41,6 @@
         "@intx/workflow-host": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/event-collector": "workspace:*",
-        "@workbench/gtm-workflows": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
         "@workbench/openapi-arktype": "workspace:*",
         "@workbench/sentry": "workspace:*",
@@ -122,7 +121,6 @@
         "@workbench/artifact": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/client": "workspace:*",
-        "@workbench/gtm-workflows": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
         "@workbench/settings": "workspace:*",
         "@workbench/shared": "workspace:*",
@@ -653,13 +651,6 @@
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.0",
-      },
-    },
-    "packages/gtm-workflows": {
-      "name": "@workbench/gtm-workflows",
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "catalog:",
       },
     },
     "packages/last30days-core": {
@@ -2012,8 +2003,6 @@
     "@workbench/context-repair": ["@workbench/context-repair@workspace:packages/context-repair"],
 
     "@workbench/event-collector": ["@workbench/event-collector@workspace:packages/event-collector"],
-
-    "@workbench/gtm-workflows": ["@workbench/gtm-workflows@workspace:packages/gtm-workflows"],
 
     "@workbench/hub": ["@workbench/hub@workspace:apps/hub"],
 

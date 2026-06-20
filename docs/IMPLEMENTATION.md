@@ -114,28 +114,6 @@ The `last30days` research capability is split into per-source fetch tools, a det
 - **`packages/last30days-core`** (`@workbench/last30days-core`): pure pipeline — `entityExtract`, `dateFilter`, `dedupe`, `clusterMerge`, `rankScore` (engagement + freshness + source-breadth + a capped top-comment "fun" bonus, minus a degraded penalty), and `buildReport`, which returns a typed, ArkType-validated `ResearchBrief`: `{ topic, days, queryType?, stats: { sourceCount, itemCount, dateRange? }, leadInsight?, clusters[], bestTakes[], items[], citations[] }`. `parseReport(unknown)` is the canonical boundary parser consumers use instead of re-declaring the schema.
 - **`last30days_core_report`** returns the brief; the agent persists it via `write_artifact { kind: 'research', data: brief }`, which stores the structured brief at `artifact.source.brief` (and refreshes the parent row on a same-title/kind update so the gallery never shows a stale version). `apps/web` `ResearchBody` validates `source.brief` through `parseReport` and renders clusters, best-takes, stats, and citations; it falls back to markdown when no valid brief is present.
 
-#### `packages/tool-template` (scaffold)
-
-A minimal `@workbench/tools-*` package skeleton for quickly duplicating. Contains:
-
-- `src/index.ts` with stub definition, stub `createTools`, and stub `*_HUB_TOOLS`
-- `package.json` with correct deps (`@intx/agent` devDep, `@intx/types` devDep)
-- `tsconfig.json` extending the workspace base
-
-Copy the directory, rename, replace stubs. No other files needed to ship a new tool.
-
-#### `packages/tool-agent` (scaffold)
-
-A minimal agent package skeleton for agents that primarily expose tool-based capabilities. Contains:
-
-- `src/definition.ts` — `credentialRequirements` (openai-compatible only), `capabilities.tools: []`
-- `src/prompt.ts` — stub system prompt using `buildSystemPrompt`
-- `src/director.ts` — stub director wrapping `createDefaultDirector`
-- `src/index.ts` — public exports
-- `package.json` and `tsconfig.json`
-
-Copy, rename, fill in the tool list and prompt. After adding the definition, `seedAgentTemplates` will pick it up on next hub boot.
-
 ### `packages/chat` (`@workbench/chat`)
 
 Transport-agnostic chat UI components. No dependency on a specific agent transport or WebSocket implementation.

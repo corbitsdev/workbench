@@ -1,6 +1,6 @@
-// Which artifact kinds each workflow accepts as a starting source. This is a
-// workflow product rule, so it lives in the workflow package rather than in the
-// artifact UI components that render the "Use in Workflow" affordance.
+// Which artifact kinds each workflow accepts as a starting source. It backs the
+// artifact UI's "Use in Workflow" affordance, so it lives beside the artifact
+// kinds/visuals it gates rather than in a standalone package.
 //
 // A workflow either accepts a specific set of artifact kinds or is 'general'
 // (accepts any artifact). Pain Point Collateral seeds from a call transcript or
