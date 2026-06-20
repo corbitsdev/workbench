@@ -16,7 +16,8 @@
     "@intx/agent": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
-    "@workbench/ui": "workspace:*"
+    "@workbench/ui": "workspace:*",
+    "arktype": "catalog:"
   },
   "peerDependencies": {
     "react": "^19.0.0"

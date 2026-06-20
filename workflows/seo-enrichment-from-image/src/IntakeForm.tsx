@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { type } from 'arktype';
 import { Button } from '@workbench/ui';
 
 interface IntakeFormProps {
@@ -6,13 +7,10 @@ interface IntakeFormProps {
   onCancel: () => void;
 }
 
+const UrlField = type('string.url');
+
 function isValidUrl(value: string): boolean {
-  try {
-    new URL(value);
-    return true;
-  } catch {
-    return false;
-  }
+  return !(UrlField(value) instanceof type.errors);
 }
 
 export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
@@ -23,7 +21,7 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
   const [error, setError] = useState<string | null>(null);
 
   const imageUrlValid = imageUrl.trim().length > 0 && isValidUrl(imageUrl.trim());
-  const pageUrlValid = pageUrl.trim().length > 0;
+  const pageUrlValid = pageUrl.trim().length > 0 && isValidUrl(pageUrl.trim());
   const canSubmit = imageUrlValid && pageUrlValid && !submitting;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -44,7 +42,7 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5 p-5">
       <div className="flex flex-col gap-1.5">
         <label htmlFor="imageUrl" className="text-sm font-medium text-text">
           Image URL <span className="text-orange">*</span>
@@ -55,12 +53,12 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
           value={imageUrl}
           onChange={(e) => setImageUrl(e.target.value)}
           placeholder="https://example.com/product-image.jpg"
-          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-orange"
+          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
           disabled={submitting}
           required
         />
         {imageUrl.trim().length > 0 && !imageUrlValid && (
-          <p className="text-xs text-red-500">Enter a valid URL.</p>
+          <p className="text-xs text-orange">Enter a valid URL.</p>
         )}
       </div>
 
@@ -70,15 +68,18 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
         </label>
         <input
           id="pageUrl"
-          type="text"
+          type="url"
           value={pageUrl}
           onChange={(e) => setPageUrl(e.target.value)}
           placeholder="https://example.com/product-page"
-          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-orange"
+          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
           disabled={submitting}
           required
         />
-        <p className="text-xs text-text-muted">The page whose SEO metadata will be enriched.</p>
+        {pageUrl.trim().length > 0 && !pageUrlValid && (
+          <p className="text-xs text-orange">Enter a valid URL.</p>
+        )}
+        <p className="text-xs text-text-3">The page whose SEO metadata will be enriched.</p>
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -91,16 +92,16 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
           value={keywords}
           onChange={(e) => setKeywords(e.target.value)}
           placeholder="product photography, ecommerce, studio lighting"
-          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-orange"
+          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
           disabled={submitting}
         />
-        <p className="text-xs text-text-muted">Optional. Comma-separated terms to guide SEO generation.</p>
+        <p className="text-xs text-text-3">Optional. Comma-separated terms to guide SEO generation.</p>
       </div>
 
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-orange">{error}</p>}
 
       <div className="flex justify-end gap-3">
-        <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
           Cancel
         </Button>
         <Button type="submit" variant="primary" disabled={!canSubmit}>

@@ -69,7 +69,7 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 p-5">
       <div>
         <h2 className="text-sm font-semibold text-text">Select a meeting note</h2>
         <p className="text-xs text-text-2 mt-0.5">

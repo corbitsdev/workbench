@@ -1135,6 +1135,7 @@
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "latest",

@@ -39,7 +39,7 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-5">
       <div className="flex flex-col gap-1.5">
         <label htmlFor="subreddits" className="text-sm font-medium text-text">
           Subreddits <span className="text-orange">*</span>
@@ -50,11 +50,11 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
           value={subreddits}
           onChange={(e) => setSubreddits(e.target.value)}
           placeholder="r/startups, r/SaaS, r/Entrepreneur"
-          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-orange"
+          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
           disabled={submitting}
           required
         />
-        <p className="text-xs text-text-muted">Comma-separated list of subreddits to scan.</p>
+        <p className="text-xs text-text-3">Comma-separated. Include or omit the r/ prefix.</p>
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -67,16 +67,16 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
           value={keywords}
           onChange={(e) => setKeywords(e.target.value)}
           placeholder="pricing, alternatives, recommendations"
-          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-orange"
+          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
           disabled={submitting}
         />
-        <p className="text-xs text-text-muted">Optional. Comma-separated terms to surface relevant posts.</p>
+        <p className="text-xs text-text-3">Optional. Comma-separated terms to surface relevant posts.</p>
       </div>
 
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-orange">{error}</p>}
 
-      <div className="flex justify-end gap-3">
-        <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
           Cancel
         </Button>
         <Button type="submit" variant="primary" disabled={!canSubmit}>

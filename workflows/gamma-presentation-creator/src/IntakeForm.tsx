@@ -28,10 +28,10 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <label htmlFor="topic" className="text-sm font-medium">
-          Topic / title <span className="text-destructive">*</span>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-5">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="topic" className="text-sm font-medium text-text">
+          Topic / title <span className="text-orange">*</span>
         </label>
         <input
           id="topic"
@@ -40,12 +40,13 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
           onChange={(e) => setTopic(e.target.value)}
           placeholder="e.g. Q3 Product Roadmap"
           required
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          disabled={submitting}
+          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
         />
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="audience" className="text-sm font-medium">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="audience" className="text-sm font-medium text-text">
           Target audience
         </label>
         <input
@@ -54,12 +55,13 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
           value={audience}
           onChange={(e) => setAudience(e.target.value)}
           placeholder="e.g. Engineering leads, executive team"
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          disabled={submitting}
+          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
         />
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="keyPoints" className="text-sm font-medium">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="keyPoints" className="text-sm font-medium text-text">
           Key points to cover
         </label>
         <textarea
@@ -68,17 +70,18 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
           onChange={(e) => setKeyPoints(e.target.value)}
           placeholder="List the main points you want the presentation to address"
           rows={4}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+          disabled={submitting}
+          className="resize-none rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
         />
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-orange">{error}</p>}
 
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" disabled={submitting || !topic.trim()}>
+        <Button type="submit" variant="primary" disabled={submitting || !topic.trim()}>
           {submitting ? 'Starting…' : 'Start'}
         </Button>
       </div>

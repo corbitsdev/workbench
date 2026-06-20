@@ -18,8 +18,8 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   return { invoker, ran };
 }
 
-describe('collateral-generation native workflow', () => {
-  test('executes intake → analyze → generate in order then awaits approval signal', async () => {
+describe('pain-point-collateral native workflow', () => {
+  test('executes analyze → generate in order then awaits approval signal', async () => {
     const { invoker, ran } = makeRecordingInvoker();
     const run = runLocal(workflow, { invokeStep: invoker });
 
@@ -28,7 +28,7 @@ describe('collateral-generation native workflow', () => {
     const result = await run.complete;
 
     expect(result.terminalStatus).toBe('completed');
-    expect(ran).toEqual(['collateral-intake', 'collateral-analyze', 'collateral-generate']);
+    expect(ran).toEqual(['pain-point-collateral-analyze', 'pain-point-collateral-generate']);
 
     const signalReceived = result.events.find((e) => e.kind === 'SignalReceived');
     expect(signalReceived).toBeDefined();
@@ -40,7 +40,7 @@ describe('collateral-generation native workflow', () => {
 
     await new Promise<void>((resolve) => {
       const interval = setInterval(() => {
-        if (ran.length === 3) {
+        if (ran.length === 2) {
           clearInterval(interval);
           resolve();
         }
@@ -63,19 +63,19 @@ describe('collateral-generation native workflow', () => {
     const { invoker } = makeRecordingInvoker();
 
     const shortTimeoutDef = defineWorkflow({
-      id: 'collateral-generation-timeout-test',
+      id: 'pain-point-collateral-timeout-test',
       trigger: { type: 'manual' },
       steps: {
-        intake: step({
+        analyze: step({
           agent: defineAgent({
-            id: 'stub-intake',
+            id: 'stub-analyze',
             systemPrompt: 'stub',
             tools: [],
             capabilities: [],
             inference: { sources: [{ provider: 'fake', model: 'fake' }] },
           }),
         }),
-        approval: awaitSignal({ name: 'artifact-approval', timeout: 10, after: ['intake'] }),
+        approval: awaitSignal({ name: 'artifact-approval', timeout: 10, after: ['analyze'] }),
       },
     });
 

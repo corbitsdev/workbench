@@ -25,21 +25,21 @@ export function IntakeForm({ onSubmit, onCancel }: IntakeFormProps) {
     setError(null);
     setSubmitting(true);
     await onSubmit({ variantA, variantB }).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     });
     setSubmitting(false);
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-      <VariantFields label="Variant A" value={variantA} onChange={setVariantA} />
-      <VariantFields label="Variant B" value={variantB} onChange={setVariantB} />
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      <div className="flex justify-end gap-3">
-        <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5 p-5">
+      <VariantFields label="Variant A" value={variantA} onChange={setVariantA} disabled={submitting} />
+      <VariantFields label="Variant B" value={variantB} onChange={setVariantB} disabled={submitting} />
+      {error && <p className="text-sm text-orange">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" disabled={!canSubmit || submitting}>
+        <Button type="submit" variant="primary" disabled={!canSubmit || submitting}>
           {submitting ? 'Starting…' : 'Start comparison'}
         </Button>
       </div>
@@ -51,30 +51,34 @@ function VariantFields({
   label,
   value,
   onChange,
+  disabled,
 }: {
   label: string;
   value: Variant;
   onChange: (v: Variant) => void;
+  disabled: boolean;
 }) {
   return (
-    <fieldset className="flex flex-col gap-3 rounded-lg border border-border p-4">
+    <fieldset className="flex flex-col gap-3 rounded-[10px] border border-border p-4">
       <legend className="px-1 text-sm font-semibold text-text">{label}</legend>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-text-muted">Label</label>
+        <label className="text-xs font-medium text-text-2">Label</label>
         <input
-          className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-orange"
+          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
           placeholder="e.g. Homepage V1"
           value={value.label}
           onChange={(e) => onChange({ ...value, label: e.target.value })}
+          disabled={disabled}
         />
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-text-muted">URL or content</label>
+        <label className="text-xs font-medium text-text-2">URL or content</label>
         <input
-          className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-orange"
+          className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
           placeholder="https://example.com or paste text"
           value={value.url}
           onChange={(e) => onChange({ ...value, url: e.target.value })}
+          disabled={disabled}
         />
       </div>
     </fieldset>
