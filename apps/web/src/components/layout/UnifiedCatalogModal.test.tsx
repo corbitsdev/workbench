@@ -5,10 +5,6 @@ import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { UnifiedCatalogModal } from './UnifiedCatalogModal';
 
-mock.module('../../lib/workflow-ui', () => ({
-  loadWorkflowUI: async () => ({ label: undefined, IntakeForm: undefined }),
-}));
-
 mock.module('../../hooks/use-workflow', () => ({
   useWorkflowRuns: () => ({
     data: [
@@ -16,6 +12,7 @@ mock.module('../../hooks/use-workflow', () => ({
       { deploymentId: 'dep-2', kind: 'presentation-generation', status: 'active', createdAt: '' },
       { deploymentId: 'dep-3', kind: 'seo-enrichment', status: 'active', createdAt: '' },
     ],
+    isPending: false,
   }),
   useStartWorkflow: () => ({
     mutateAsync: async ({ kind }: { kind: string }) => ({ deploymentId: `started-${kind}` }),
@@ -201,7 +198,7 @@ describe('UnifiedCatalogModal', () => {
     await waitFor(() => expect(onWorkflowStarted).toHaveBeenCalledWith('started-collateral-generation'));
   });
 
-  it('opens on the Workflows tab when an artifact kind is provided', async () => {
+  it('opens on the Workflows tab when defaultTab is workflows', async () => {
     render(
       <UnifiedCatalogModal
         open={true}
@@ -209,7 +206,7 @@ describe('UnifiedCatalogModal', () => {
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
         onWorkflowStarted={onWorkflowStarted}
-        artifactKind="email"
+        defaultTab="workflows"
       />,
       { wrapper }
     );

@@ -5,7 +5,7 @@ import { useArtifacts } from '@workbench/client/react';
 import { clientOptions } from '../lib/client-options';
 import { AgentChat } from '../components/AgentChat';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { RunConsole } from '../components/RunConsole';
+import { WorkflowRunPane } from '../components/WorkflowRunPane';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { UnifiedCatalogModal } from '../components/layout/UnifiedCatalogModal';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
@@ -370,7 +370,7 @@ export default function WorkbenchHome() {
           {...paneFade}
           className="min-h-0 flex-1 overflow-hidden"
         >
-          <RunConsole deploymentId={rightPane.deploymentId} onClose={showGallery} />
+          <WorkflowRunPane deploymentId={rightPane.deploymentId} onClose={showGallery} />
         </motion.div>
       );
     }
@@ -414,7 +414,7 @@ export default function WorkbenchHome() {
               }}
             />
           ) : rightPane.view === 'workflow' ? (
-            <RunConsole deploymentId={rightPane.deploymentId} onClose={showGallery} />
+            <WorkflowRunPane deploymentId={rightPane.deploymentId} onClose={showGallery} />
           ) : (
             <ArtifactGallery
               tenantId={workbenchTenantId}
@@ -449,7 +449,7 @@ export default function WorkbenchHome() {
             setAgentRefreshTick((n) => n + 1);
           }}
           onWorkflowStarted={handleWorkflowStarted}
-          artifactKind={workflowArtifact?.kind ?? null}
+          defaultTab={workflowArtifact ? 'workflows' : 'agents'}
         />
       </div>
     );
@@ -507,7 +507,7 @@ export default function WorkbenchHome() {
           setAgentRefreshTick((n) => n + 1);
         }}
         onWorkflowStarted={handleWorkflowStarted}
-        artifactKind={workflowArtifact?.kind ?? null}
+        defaultTab={workflowArtifact ? 'workflows' : 'agents'}
       />
     </>
   );
