@@ -11,6 +11,7 @@ import type {
   SessionService,
   SidecarRouter,
 } from '@intx/hub-sessions';
+import { createWorkflowRunBlobSubstrate } from '@intx/workflow-host';
 import type { CryptoProvider } from '@intx/types/runtime';
 import { getLogger } from '@intx/log';
 import { deriveDeploymentAddress } from '@intx/workflow-deploy';
@@ -51,6 +52,17 @@ const WORKFLOW_EVENT_TYPES: readonly string[] = [
 // yielding. The state machine owns the full 17-variant narrow; here we only
 // assert the on-disk envelope shape (a string `type` discriminator + seq).
 const WorkflowEventBlob = type({ type: 'string', seq: 'number', '+': 'ignore' });
+
+// On-disk `StepCompleted` envelope. The repo-store adapter writes events as
+// `{ seq, type, ...rest }` (the state-machine `kind` becomes `type`); a
+// completed step carries its `stepId` and `output.ref`. We narrow only the
+// fields we read so an envelope-shape drift surfaces loudly at the boundary.
+const StepCompletedBlob = type({
+  type: "'StepCompleted'",
+  stepId: 'string',
+  output: { ref: 'string' },
+  '+': 'ignore',
+});
 
 const HUB_PRINCIPAL: Principal = { kind: 'hub' };
 const RUN_EVENT_REF = 'refs/heads/main';
@@ -150,6 +162,97 @@ export function createWorkflowRunsRouter(deps: {
         }
       }
     });
+  });
+
+  router.get('/workflow-runs/:deploymentId/steps/:stepId/output', async (c) => {
+    const userId = c.get('userId');
+    const context = await getUserContext(deps.db, userId);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
+
+    const deploymentId = c.req.param('deploymentId');
+    const stepId = c.req.param('stepId');
+    const owned = await deps.db.query.workflowRun.findFirst({
+      where: and(
+        eq(workflowRun.deploymentId, deploymentId),
+        eq(workflowRun.tenantId, context.tenantId)
+      ),
+    });
+    if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
+
+    const repoId: RepoId = { kind: 'workflow-run', id: deploymentId };
+
+    // Replay the run's append-only event log from seq 0 until we find the
+    // StepCompleted for the requested step (and learn the run's id from the
+    // RunStarted entry). subscribeKind tails live forever, so once we have the
+    // ref we abort the iterator to stop it. A bounded log that drains without
+    // yielding the step means the step has not completed → 404.
+    const abort = new AbortController();
+    const iter = subscribeKind(
+      repoStore,
+      HUB_PRINCIPAL,
+      repoId,
+      RUN_EVENT_REF,
+      WorkflowEventBlob,
+      { signal: abort.signal, from: { seq: 0 }, kinds: WORKFLOW_EVENT_TYPES }
+    );
+
+    let outputRef: string | null = null;
+    let runId: string | null = null;
+    try {
+      for await (const entry of iter) {
+        if (runId === null) runId = entry.runId;
+        if (entry.event.type !== 'StepCompleted') continue;
+        const completed = StepCompletedBlob(entry.event);
+        if (completed instanceof type.errors) {
+          throw new Error(`malformed StepCompleted event: ${completed.summary}`);
+        }
+        if (completed.stepId !== stepId) continue;
+        outputRef = completed.output.ref;
+        runId = entry.runId;
+        break;
+      }
+    } catch (err) {
+      log.error('workflow step output replay failed', {
+        deploymentId,
+        stepId,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+      return c.json({ error: 'failed to read workflow event log' }, 500);
+    } finally {
+      abort.abort();
+    }
+
+    if (outputRef === null || runId === null) {
+      return c.json({ error: 'no completed step output found' }, 404);
+    }
+
+    // Resolve the ref against the same blob substrate the workflow child wrote
+    // it with: a per-run BlobSubstrate over the hub's repoStore. `inline:` refs
+    // resolve from the ref body alone; `blob:` refs read bytes from the
+    // workflow-run repo dir keyed by runId. (See @intx/workflow-host
+    // createWorkflowRunBlobSubstrate({ substrate, repoId, principal, runId, ref }).)
+    const blobs = createWorkflowRunBlobSubstrate({
+      substrate: repoStore,
+      repoId,
+      principal: HUB_PRINCIPAL,
+      runId,
+      ref: RUN_EVENT_REF,
+    });
+    let output: unknown;
+    try {
+      output = await blobs.resolveRef(outputRef);
+    } catch (err) {
+      log.error('workflow step output resolution failed', {
+        deploymentId,
+        stepId,
+        runId,
+        outputRef,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+      return c.json({ error: 'failed to resolve workflow step output' }, 500);
+    }
+
+    return c.json({ stepId, output });
   });
 
   router.post('/workflow-runs/:deploymentId/signal', async (c) => {

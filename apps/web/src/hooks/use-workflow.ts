@@ -75,6 +75,39 @@ export function useWorkflowRunState(deploymentId: string | null): WorkflowRunSta
   return { state, events, connected };
 }
 
+const stepOutputSchema = type({ stepId: 'string', output: 'unknown' });
+
+// Read a completed workflow step's resolved output content. The native
+// substrate stores step output by reference (`inline:` / `blob:`); this hits
+// the hub endpoint that replays the run's event log to find the step's
+// StepCompleted ref and resolves it to the value.
+//
+// Gating: the CALLER decides when a step is done. Only enable this for a step
+// that has completed and carries an output ref — the endpoint 404s otherwise.
+// Output is immutable once a step completes, so it is cached indefinitely.
+export function useStepOutput(
+  deploymentId: string | null,
+  stepId: string | null,
+  opts?: { enabled?: boolean }
+) {
+  return useQuery<unknown>({
+    queryKey: ['workflow-step-output', deploymentId, stepId],
+    enabled: !!deploymentId && !!stepId && (opts?.enabled ?? true),
+    staleTime: Infinity,
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        'GET',
+        `/workflow-runs/${deploymentId}/steps/${stepId}/output`
+      );
+      const parsed = stepOutputSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected step-output response: ${parsed.summary}`);
+      }
+      return parsed.output;
+    },
+  });
+}
+
 export function useStartWorkflow() {
   return useMutation({
     mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
