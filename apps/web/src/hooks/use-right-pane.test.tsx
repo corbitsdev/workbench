@@ -46,7 +46,7 @@ describe('useRightPane', () => {
 
     act(() => api.showNewWorkflow('presentation-generation'));
     act(() => api.promoteCreatedWorkflow('wf-9'));
-    expect(api.rightPane).toEqual({ view: 'workflow', workflowId: 'wf-9' });
+    expect(api.rightPane).toEqual({ view: 'workflow', deploymentId: 'wf-9' });
   });
 
   it('closes the workflow pane only when the matching workflow is deleted', () => {
@@ -54,7 +54,7 @@ describe('useRightPane', () => {
     render(React.createElement(Harness, { onClose }));
     act(() => api.showWorkflow('wf-1'));
     act(() => api.closeWorkflow('wf-other'));
-    expect(api.rightPane).toEqual({ view: 'workflow', workflowId: 'wf-1' });
+    expect(api.rightPane).toEqual({ view: 'workflow', deploymentId: 'wf-1' });
     act(() => api.closeWorkflow('wf-1'));
     expect(api.rightPane.view).toBe('gallery');
     expect(onClose).toHaveBeenCalled();

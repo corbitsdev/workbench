@@ -1,10 +1,10 @@
 # @workbench/gtm-workflows
 
-GTM-specific workflow definitions (collateral generation, etc.) registered into the `workflow-core` registry. Each workflow describes its kind, steps, and agent interactions.
+Artifact-eligibility helpers shared between the hub and web app. Workflows themselves are native `@intx/workflow` packages under `workflows/<kind>/` and are deployed via `workflows:push` (see `docs/DEPLOYING_WORKFLOWS.md`) — this package no longer holds workflow definitions or a registry.
 
-- Workflow kinds are registered at hub startup — do not add a kind without registering it
-- Agent interactions must go through `@intx/agent`, never direct LLM fetch calls
-- New workflows: add a subdirectory under `src/`, export from `index.ts`, register in hub's startup
+- This package exports only `artifact-eligibility` helpers — keep it execution-free
+- To add or change a workflow, edit the relevant `workflows/<kind>/` package, not this one
+- New artifact-eligibility rules: edit `src/artifact-eligibility.ts` and its tests
 
 ## Testing
 

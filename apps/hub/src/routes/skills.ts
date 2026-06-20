@@ -4,7 +4,7 @@ import { schema as intxSchema } from '@intx/db';
 import type { HubDb } from '../db';
 import type { AssetService, RepoStore } from '@intx/hub-sessions';
 import { AssetServiceError } from '@intx/hub-sessions';
-import { getRequestedUserContext } from '../services/workflow-orchestration';
+import { getRequestedUserContext } from '../lib/user-context';
 import {
   SkillLibraryError,
   createSkill,

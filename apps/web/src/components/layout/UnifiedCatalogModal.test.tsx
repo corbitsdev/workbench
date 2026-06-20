@@ -49,33 +49,6 @@ mock.module('../../lib/hub-api', () => ({
   launchInstanceSession: () => Promise.resolve({ launched: true }),
 }));
 
-mock.module('../../hooks/use-workflow', () => ({
-  useWorkflowCatalog: () => ({
-    isLoading: false,
-    isError: false,
-    data: [
-      {
-        kind: 'collateral-generation',
-        name: 'Collateral Generation',
-        description: 'Turn transcripts into collateral',
-        credentialRequirements: [],
-        steps: [],
-      },
-      {
-        kind: 'presentation-generation',
-        name: 'Presentation Generation',
-        description: 'Build Gamma decks',
-        credentialRequirements: [],
-        steps: [],
-      },
-    ],
-  }),
-  useInstallWorkflow: () => ({
-    isPending: false,
-    mutateAsync: async ({ kind }: { kind: string }) => ({ kind }),
-  }),
-}));
-
 function wrapper({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -146,6 +119,7 @@ describe('UnifiedCatalogModal', () => {
 
     await waitFor(() => screen.getByText('Collateral Generation'));
     screen.getByText('Presentation Generation');
+    screen.getByText('SEO Enrichment');
   });
 
   it('filters agents by search query', async () => {
@@ -209,7 +183,7 @@ describe('UnifiedCatalogModal', () => {
     await waitFor(() => expect(onWorkflowSelected).toHaveBeenCalledWith('collateral-generation'));
   });
 
-  it('opens on the Workflows tab and hides workflows that reject the artifact kind', async () => {
+  it('opens on the Workflows tab when an artifact kind is provided', async () => {
     render(
       <UnifiedCatalogModal
         open={true}
@@ -222,27 +196,7 @@ describe('UnifiedCatalogModal', () => {
       { wrapper }
     );
 
-    // 'email' is accepted by the general presentation workflow but not by
-    // collateral generation, which only seeds from transcripts/pain points.
-    await waitFor(() => screen.getByText('Presentation Generation'));
-    expect(screen.queryByText('Collateral Generation')).toBeNull();
-  });
-
-  it('shows both workflows for an artifact kind collateral accepts', async () => {
-    render(
-      <UnifiedCatalogModal
-        open={true}
-        tenantId="tenant-1"
-        onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
-        artifactKind="pain-points"
-      />,
-      { wrapper }
-    );
-
     await waitFor(() => screen.getByText('Collateral Generation'));
-    screen.getByText('Presentation Generation');
   });
 
   it('does not render when open is false', () => {

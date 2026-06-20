@@ -6,7 +6,6 @@ import { ChatLauncherProvider } from './lib/chat-launcher-context';
 import { LoginPage } from './pages/LoginPage';
 import WorkbenchHome from './pages/WorkbenchHome';
 import Settings from './pages/Settings';
-import GammaTemplates from './pages/GammaTemplates';
 import { SkillsLibrary } from './pages/SkillsLibrary';
 import { SkillsNew } from './pages/SkillsNew';
 import { SkillDetail } from './pages/SkillDetail';
@@ -50,7 +49,6 @@ export const router = createBrowserRouter([
           { path: '/onboarding', element: <Navigate to="/" replace /> },
           { path: '/dashboard', element: <Navigate to="/" replace /> },
           { path: '/settings', element: <Settings /> },
-          { path: '/settings/templates', element: <GammaTemplates /> },
           { path: '/skills', element: <SkillsLibrary /> },
           { path: '/skills/new', element: <SkillsNew /> },
           { path: '/skills/:id', element: <SkillDetail /> },

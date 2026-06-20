@@ -413,7 +413,7 @@ To enable the new agent by default for all new users, add its definition key to 
 
 ### Run the global-tenant data migration (existing deployments only)
 
-If you are upgrading from the old per-user personal-tenant model (pre-CL-1451), run this once after deploying:
+If you are upgrading from the old per-user personal-tenant model, run this once after deploying:
 
 ```bash
 # Dry run first — logs counts, writes nothing

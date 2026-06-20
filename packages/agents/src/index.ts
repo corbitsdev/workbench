@@ -1,5 +1,10 @@
 // Shared constants
 export { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from './constants';
+export {
+  canonicalizeToolNames,
+  toolPackagesForCapabilities,
+  providersForToolPackages,
+} from './tool-names';
 
 // Personal agent
 export { buildPersonalAgentSystemPrompt } from './personal-agent/prompt';
@@ -39,6 +44,12 @@ export {
   FIRECRAWL_DEPLOY_PROMPT,
 } from './firecrawl/definition';
 export { createFirecrawlDirector } from './firecrawl/director';
+export {
+  createWorkbenchDirectorRegistry,
+  personalAgentDirector,
+  granolaDirector,
+  firecrawlDirector,
+} from './director-registry';
 
 // Walter agent
 export { buildWalterSystemPrompt } from './walter/prompt';

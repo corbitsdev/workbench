@@ -1,8 +1,6 @@
 import { usesSocialPostPreview } from '@workbench/artifact';
 import PresentationBody from './PresentationBody';
 import ResearchBody, { parseResearchBrief } from './ResearchBody';
-import SelectionBody from './SelectionBody';
-import RedditOpportunityBody, { parseRedditOpportunityScan } from './RedditOpportunityBody';
 import { buildApiUrl } from '../lib/api';
 
 interface ArtifactBodyArtifact {
@@ -238,17 +236,6 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
       }
       return <CsvExportBody body={body} artifactId={artifact.id} />;
     }
-    // per-row HITL selection
-    case 'selection': {
-      if (!artifact.id || !artifact.sessionId) {
-        return (
-          <p className="text-sm text-text-3 p-4">Selection is unavailable outside its workflow.</p>
-        );
-      }
-      return (
-        <SelectionBody content={body} workflowId={artifact.sessionId} artifactId={artifact.id} />
-      );
-    }
     // email
     case 'email':
     case 'follow-up-email':
@@ -293,17 +280,6 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
         return <ResearchBody brief={parsedBrief} />;
       }
       return <OnePagerBody body={body} />;
-    }
-    case 'reddit-opportunity-scan': {
-      for (const candidate of [brief, artifact.source, body]) {
-        const parsedScan = parseRedditOpportunityScan(candidate);
-        if (parsedScan !== null) {
-          return <RedditOpportunityBody scan={parsedScan} mode="results" />;
-        }
-      }
-      return (
-        <p className="text-sm text-red-500 p-4">Invalid reddit opportunity artifact payload.</p>
-      );
     }
     // fallback
     default:

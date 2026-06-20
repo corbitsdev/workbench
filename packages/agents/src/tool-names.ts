@@ -1,3 +1,5 @@
+import type { ToolPackagePin } from '@intx/types/tool-packages';
+
 // Canonical (namespace-prefixed) tool names for native tool packages.
 //
 // The sidecar tool-packaging loader prefixes every tool definition name with
@@ -80,6 +82,38 @@ const FACTORY_ID_BY_TOOL: Record<string, string> = Object.fromEntries(
   )
 );
 
+// The credential provider each tool package's factory declares
+// (`defineCredentialedToolPackage({ provider })`). Keyed by pin name (the
+// `@scope/package` an agent pins, i.e. the factory id without its tool
+// segment). Packages absent here are keyless or hub-backed (agents, artifact,
+// dispatch, hackernews, polymarket, last30days) and need no tenant credential.
+// Keep in sync with each package's `interchange-tools.ts` provider.
+const PACKAGE_PROVIDERS: Record<string, string> = {
+  '@workbench/tools-bluesky': 'bluesky',
+  '@workbench/tools-exa': 'exa',
+  '@workbench/tools-firecrawl': 'firecrawl',
+  '@workbench/tools-gamma': 'gamma',
+  '@workbench/tools-github': 'github',
+  '@workbench/tools-granola': 'granola',
+  '@workbench/tools-reddit': 'scrapecreators',
+  '@workbench/tools-scrapecreators': 'scrapecreators',
+  '@workbench/tools-x': 'xai',
+  '@workbench/tools-youtube': 'youtube',
+};
+
+// The distinct credential providers a set of pinned tool packages requires.
+// The hub credential gate authorizes a deployed agent (or workflow step) for
+// exactly these providers — derived from its persisted pins, not a tool-name
+// registry. Keyless/hub-backed packages contribute nothing.
+export function providersForToolPackages(pins: readonly ToolPackagePin[]): string[] {
+  const providers = new Set<string>();
+  for (const pin of pins) {
+    const provider = PACKAGE_PROVIDERS[pin.name];
+    if (provider !== undefined) providers.add(provider);
+  }
+  return [...providers];
+}
+
 /**
  * Map raw tool-definition names to the canonical runtime names the sidecar
  * loader emits (`<factoryId>:<name>`). Names belonging to a known tool package
@@ -90,4 +124,20 @@ export function canonicalizeToolNames(names: readonly string[]): string[] {
     const factoryId = FACTORY_ID_BY_TOOL[name];
     return factoryId === undefined ? name : `${factoryId}:${name}`;
   });
+}
+
+// Resolve the npm tool packages that back a set of capability names (bare or
+// canonical `<factoryId>:<name>`). A capability with no known package (a local
+// runner) contributes nothing. Used to derive a deploy's toolPackagePins from
+// the tools its workflow steps declare, so the sidecar loader materializes them.
+export function toolPackagesForCapabilities(capabilities: readonly string[]): ToolPackagePin[] {
+  const packages = new Set<string>();
+  for (const cap of capabilities) {
+    const factoryId = cap.includes(':')
+      ? cap.slice(0, cap.lastIndexOf(':'))
+      : FACTORY_ID_BY_TOOL[cap];
+    if (factoryId === undefined) continue;
+    packages.add(factoryId.split('/').slice(0, 2).join('/'));
+  }
+  return [...packages].sort().map((name) => ({ name, version: '^0.1.0' }));
 }

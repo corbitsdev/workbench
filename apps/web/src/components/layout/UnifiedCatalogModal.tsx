@@ -6,12 +6,23 @@ import {
   listAgentTemplates,
   type AgentCatalogEntry,
 } from '../../lib/hub-api';
-import {
-  useWorkflowCatalog,
-  useInstallWorkflow,
-  type WorkflowCatalogEntry,
-} from '../../hooks/use-workflow';
-import { workflowAcceptsArtifactKind } from '@workbench/gtm-workflows';
+import { toHumanLabel } from '@workbench/ui';
+
+// Workflow kinds the host can start. With the native run model the hub no
+// longer exposes an install/catalog endpoint — the UI starts a run by kind and
+// observes it through the native stream.
+const WORKFLOW_KINDS: readonly string[] = [
+  'collateral-generation',
+  'presentation-generation',
+  'seo-enrichment',
+  'blind-ab-comparison',
+  'reddit-opportunity-scanner',
+];
+
+interface WorkflowKindEntry {
+  kind: string;
+  name: string;
+}
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -69,7 +80,6 @@ export function UnifiedCatalogModal({
   const [tab, setTab] = useState<Tab>(effectiveDefaultTab);
   const [search, setSearch] = useState('');
   const [deploying, setDeploying] = useState<string | null>(null);
-  const [installingKind, setInstallingKind] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const { data: agentCatalog = [] } = useQuery<AgentCatalogEntry[]>({
@@ -77,9 +87,6 @@ export function UnifiedCatalogModal({
     queryFn: listAgentTemplates,
     enabled: open,
   });
-
-  const workflowCatalogQuery = useWorkflowCatalog();
-  const installWorkflow = useInstallWorkflow(tenantId);
 
   const handleClose = useCallback(() => {
     setError(null);
@@ -134,12 +141,11 @@ export function UnifiedCatalogModal({
     (a) => a.name.toLowerCase().includes(query) || a.description.toLowerCase().includes(query)
   );
 
-  const filteredWorkflows = (workflowCatalogQuery.data ?? [])
-    .filter((w) => artifactKind === null || workflowAcceptsArtifactKind(w.kind, artifactKind))
-    .filter(
-      (w) =>
-        w.name.toLowerCase().includes(query) || (w.description ?? '').toLowerCase().includes(query)
-    );
+  const workflowEntries: WorkflowKindEntry[] = WORKFLOW_KINDS.map((kind) => ({
+    kind,
+    name: toHumanLabel(kind),
+  }));
+  const filteredWorkflows = workflowEntries.filter((w) => w.name.toLowerCase().includes(query));
 
   const handleDeployAgent = async (entry: AgentCatalogEntry) => {
     if (!tenantId || deploying) return;
@@ -156,22 +162,13 @@ export function UnifiedCatalogModal({
     }
   };
 
-  const handleStartWorkflow = async (entry: WorkflowCatalogEntry) => {
-    if (installingKind) return;
-    setInstallingKind(entry.kind);
+  const handleStartWorkflow = (entry: WorkflowKindEntry) => {
     setError(null);
-    try {
-      await installWorkflow.mutateAsync({ kind: entry.kind, assignments: {} });
-      handleClose();
-      onWorkflowSelected(entry.kind);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start workflow');
-    } finally {
-      setInstallingKind(null);
-    }
+    handleClose();
+    onWorkflowSelected(entry.kind);
   };
 
-  const isLoading = deploying !== null || installingKind !== null;
+  const isLoading = deploying !== null;
 
   return (
     <AnimatePresence>
@@ -331,12 +328,6 @@ export function UnifiedCatalogModal({
 
               {tab === 'workflows' && (
                 <div className="grid grid-cols-2 gap-2">
-                  {workflowCatalogQuery.isLoading && (
-                    <p className="col-span-2 text-[13px] text-text-3">Loading…</p>
-                  )}
-                  {workflowCatalogQuery.isError && (
-                    <p className="col-span-2 text-[13px] text-orange">Failed to load workflows.</p>
-                  )}
                   {filteredWorkflows.map((entry) => (
                     <div
                       key={entry.kind}
@@ -344,23 +335,18 @@ export function UnifiedCatalogModal({
                     >
                       <div className="min-w-0">
                         <p className="text-[14px] font-semibold text-text">{entry.name}</p>
-                        {entry.description && (
-                          <p className="mt-1 text-[12px] leading-[1.4] text-text-3">
-                            {entry.description}
-                          </p>
-                        )}
                       </div>
                       <button
                         type="button"
                         disabled={isLoading}
-                        onClick={() => void handleStartWorkflow(entry)}
+                        onClick={() => handleStartWorkflow(entry)}
                         className="self-start rounded-[7px] border border-border px-3 py-1 text-[12px] font-semibold text-text-2 transition-colors active:scale-[0.97] disabled:opacity-50 hover:border-orange hover:text-orange"
                       >
-                        {installingKind === entry.kind ? 'Starting…' : 'Start'}
+                        Start
                       </button>
                     </div>
                   ))}
-                  {!workflowCatalogQuery.isLoading && filteredWorkflows.length === 0 && (
+                  {filteredWorkflows.length === 0 && (
                     <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
                       No workflows match your search.
                     </p>

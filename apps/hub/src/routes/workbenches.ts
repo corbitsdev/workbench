@@ -4,7 +4,6 @@ import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
 import { provisionWorkbenchTenant } from '../lib/tenant-provisioning';
-import { workflowRegistry } from '@workbench/workflow-core';
 
 const log = getLogger(['api', 'workbenches']);
 
@@ -63,7 +62,6 @@ export function createWorkbenchesRouter(db: ProductionDB): Hono<{ Variables: { u
         userId,
         name: rawName,
         slug,
-        workflowKinds: workflowRegistry.list().map((w) => w.kind),
       });
     } catch (err) {
       if (

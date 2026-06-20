@@ -5,39 +5,24 @@ import { schema as intxSchema, resolveCredentialRequirement } from '@intx/db';
 import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
 import { ToolCredentialsRequest, type ToolCredential } from '@workbench/tool-credentials';
-import {
-  KNOWN_TOOLS,
-  getToolNamesFromCapabilities,
-  isCredentialToolEntry,
-} from '../lib/tool-registry';
+import { providersForToolPackages } from '@workbench/agents';
+import { ToolPackagePin } from '@intx/types/tool-packages';
 
 const log = getLogger(['api', 'tool-credentials']);
 
-/**
- * The credential providers an agent may request: the providers of the
- * credentialed tools in its capabilities. Sourced from KNOWN_TOOLS' tool→
- * provider mapping today; once KNOWN_TOOLS is retired (workflow runtime
- * migration) this derives from the agent's pinned packages instead.
- */
-/**
- * Capability tool names are canonicalized as `<factoryId>:<toolName>` (CL-2145),
- * while KNOWN_TOOLS is keyed by the bare tool name. Strip the factory prefix
- * before lookup; local (unprefixed) tool names pass through unchanged.
- */
-function bareToolName(toolName: string): string {
-  const colon = toolName.lastIndexOf(':');
-  return colon === -1 ? toolName : toolName.slice(colon + 1);
-}
+const ToolPackagePins = ToolPackagePin.array();
 
-function allowedProvidersForAgent(capabilities: unknown): Set<string> {
-  const allowed = new Set<string>();
-  for (const toolName of getToolNamesFromCapabilities(capabilities)) {
-    const entry = KNOWN_TOOLS[bareToolName(toolName)];
-    if (entry !== undefined && isCredentialToolEntry(entry)) {
-      allowed.add(entry.providerName);
-    }
-  }
-  return allowed;
+/**
+ * The credential providers an agent may request: the providers of the tool
+ * packages it has pinned. Derived from the agent's persisted `toolPackages`
+ * (the native pins), so a workflow step — provisioned as a real agent row with
+ * its step pins — is gated identically to any other agent. A holder of the
+ * sidecar token cannot resolve arbitrary tenant credentials by name.
+ */
+function allowedProvidersForAgent(toolPackages: unknown): Set<string> {
+  const pins = ToolPackagePins(toolPackages);
+  if (pins instanceof type.errors) return new Set();
+  return new Set(providersForToolPackages(pins));
 }
 
 /**
@@ -79,11 +64,13 @@ export function createToolCredentialsRouter(
     if (!agentRow) {
       return c.json({ error: `Agent not found: ${parsed.agentId}` }, 404);
     }
-    const allowed = allowedProvidersForAgent(agentRow.capabilities);
+    const allowed = allowedProvidersForAgent(agentRow.toolPackages);
     const forbidden = parsed.providerNames.filter((p) => !allowed.has(p));
     if (forbidden.length > 0) {
       return c.json(
-        { error: `Agent ${parsed.agentId} may not request providers: ${forbidden.join(', ')}` },
+        {
+          error: `Agent ${parsed.agentId} may not request providers: ${forbidden.join(', ')}`,
+        },
         403
       );
     }
@@ -114,7 +101,10 @@ export function createToolCredentialsRouter(
         where: (p, { eq: eqp }) => eqp(p.id, resolved.providerId),
       });
       const metadata = (providerRow?.metadata ?? {}) as { baseURL?: string };
-      credentials[providerName] = { apiKey: resolved.secret, baseURL: metadata.baseURL ?? '' };
+      credentials[providerName] = {
+        apiKey: resolved.secret,
+        baseURL: metadata.baseURL ?? '',
+      };
     }
 
     return c.json({ credentials });

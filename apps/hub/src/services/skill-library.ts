@@ -11,7 +11,7 @@ import type { HubDb } from '../db';
 import { skillAccess } from '../db/schema';
 import type { AssetService, RepoStore } from '@intx/hub-sessions';
 import { AssetServiceError } from '@intx/hub-sessions';
-import type { UserContext } from '@workbench/workflow-core';
+import type { UserContext } from '../lib/user-context';
 
 const log = getLogger(['skill-library']);
 

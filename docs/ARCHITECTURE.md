@@ -16,6 +16,30 @@ Root monorepo
 
 The current workflow is transcript/call-document-to-artifact. The broader product model is source-to-artifact: users select Sources, launch outcome-oriented Jobs, pass through Review Gates, approve Artifacts, and optionally run delivery Hooks. See [SOURCE_TO_ARTIFACT.md](./SOURCE_TO_ARTIFACT.md) for the canonical domain terms.
 
+## Native Workflow Runtime
+
+Workflows run end-to-end on Interchange's **native workflow runtime**. The hub imports no workflow execution code — it deploys definitions and observes runs; Interchange owns the durable state machine, the event log, signals, timers, retries, and child workflows. This replaced the former custom hub-routed orchestration (registry, per-kind step handlers, status state machine) entirely.
+
+### Workflows are git-backed assets, not hub code
+
+Each workflow is its own package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` and a `workflow` built with `@intx/workflow`'s `defineWorkflow`. Steps are declared with per-step `defineAgent` and `awaitSignal` human-in-the-loop gates. The shipped kinds are `collateral-generation`, `presentation-generation`, `resource-enrichment`, `seo-enrichment`, `reddit-opportunity-scanner`, and `blind-ab-comparison`. Adding a workflow is a new `workflows/<kind>/` package plus a push — **no hub change**.
+
+### Deploy: operator-gated, git-backed
+
+Deploy is an operator action, not a user action. `bun run workflows:push -- --kind <kind>` (`apps/hub/bin/deploy-workflow.ts`) imports the package, serializes its `workflow`, and POSTs the definition to `POST /api/internal/workflows/deploy` with the hub service token. The hub's workflow-deploy service (`apps/hub/src/services/workflow-deploy.ts`) validates the definition, resolves the tenant deploy config, and runs the `@intx/workflow-deploy` orchestrator. The orchestrator walks declared capabilities, commits `workflow.json` + `capability-declarations.json` to a git-backed `workflow` repo, launches one session per step, and sends the multi-step deploy frame to the sidecar. The sidecar **workflow-host supervisor** then reads the definition and drives the steps. See [DEPLOYING_WORKFLOWS.md](./DEPLOYING_WORKFLOWS.md) for the full deploy guide.
+
+### Runs: an event log observed over SSE
+
+A run is a native `WorkflowEvent` log stored in a git-backed `workflow-run` repo. The hub exposes it for observation and control via three user routes (`apps/hub/src/routes/workflow-runs.ts`):
+
+- `GET /api/v1/workflow-runs` — tenant index of runs from the `workflow_run` table
+- `GET /api/v1/workflow-runs/:deploymentId/stream` — SSE stream of the run's `WorkflowEvent`s, read via `subscribeKind` over the `workflow-run` repo
+- `POST /api/v1/workflow-runs/:deploymentId/signal` — delivers a signal via `sendSignalDeliver` at the deployment's mail address
+
+The web app reduces the SSE stream into a `RunState` with `resumeFromLog` and renders a single generic `RunConsole`. **Human-in-the-loop approval is a signal**: an `awaitSignal` gate pauses the run, the console shows an Approve button, and the signal route resumes it.
+
+> **Open follow-up:** run-start via mail (`POST /api/v1/workflow-runs/:kind/start`) is a staging TODO — not yet wired. Interchange stays pinned to plain upstream (no fork).
+
 ## Interchange Integration
 
 The hub deploys Interchange's `createApp`, which registers all tenant, principal, grant, agent, and instance routes. The workbench is a multi-tenant system built on top of Interchange's identity and delivery primitives.
@@ -42,7 +66,7 @@ Every same-domain user **auto-joins the global tenant as a `member` principal** 
 | **Oat**    | Processes Granola calls into call document artifacts when prompted                                                               |
 | **Freddy** | Firecrawl-backed web research agent                                                                                              |
 | **Larry**  | last30days research agent — mines HN/GitHub/Reddit/X/YouTube/Bluesky/web for recent signal and emits a structured research brief |
-| **Walter** | Workflow orchestration agent                                                                                                     |
+| **Walter** | Content writer — turns briefs and research into polished GTM collateral                                                          |
 | **Loop**   | Iterative refinement agent                                                                                                       |
 
 The enabled-template set (which definitions members auto-get on join) defaults to `['myra']` in code. No runtime config.
@@ -58,7 +82,7 @@ Myra instances are keyed on `(definitionId, memberPrincipalId)` — **not** `(te
 
 Both Myra and Oat use custom directors wrapping `createDefaultDirector` to filter inbound senders before inference.
 
-**Uniform agent lifecycle (CL-1696).** There is no host-driven per-instance scheduler. Every agent is interactive and recover-on-open: it acts on inbound mail and is relaunched when needed, rather than on a timer. Myra is the only auto-relaunched agent (via `GET /v1/me`); other agents recover on the next open. Recurring work (e.g. periodic Granola ingestion) is moving to **workflows**, which will own native scheduling. See the Session Liveness and Relaunch section in IMPLEMENTATION.md for the disconnect reconciler that keeps a sidecar restart from wedging an instance.
+**Uniform agent lifecycle.** There is no host-driven per-instance scheduler. Every agent is interactive and recover-on-open: it acts on inbound mail and is relaunched when needed, rather than on a timer. Myra is the only auto-relaunched agent (via `GET /v1/me`); other agents recover on the next open. Recurring work (e.g. periodic Granola ingestion) is moving to **workflows**, which will own native scheduling. See the Session Liveness and Relaunch section in IMPLEMENTATION.md for the disconnect reconciler that keeps a sidecar restart from wedging an instance.
 
 ### Credential and Grant Model
 
@@ -78,11 +102,11 @@ Credentials and grants follow Interchange's model exactly. The workbench does no
 
 **Credential ownership in a shared tenant**: because every member is a principal in the same global tenant, `GET`/`PATCH /v1/tenants/:tenantId/credentials` are scoped to the caller's owned credentials. The decision is delegated entirely to Interchange's authorization evaluator (`authorize`/`evaluateGrants` from `@intx/authz`) against the resource `credential:<id>` — no hand-rolled grant interpretation. A member's `creator` grant authorizes their own credentials; an admin/owner wildcard grant authorizes all. "Shared org" credentials (e.g. a tenant-owned `Myra LLM` key seeded at the org level with no creator grant) are not enumerable/editable by ordinary members via this route but remain resolvable at launch (resolution is not grant-gated).
 
-**Per-step workflow assignments**: Unlike agents, whose credential requirements resolve implicitly by name, a workflow declares requirements **per step** and binds an explicit tenant credential to each step when it is added to a workbench. Workflow enablement + its assignments are scoped **per principal** — the `workbench_workflows` row is unique on `(tenant_id, principal_id, kind)` — so in the shared tenant one member's enablement and credential/tool bindings cannot overwrite another's, and a step never resolves another member's LLM key. At run time the hub resolves the bound credential by ID (`resolveCredentialById`, scoped to the tenant ancestor chain) rather than by name — so different steps can use different credentials — and falls back to name-based resolution for installs predating assignments. Credentials are still tenant-owned and encrypted as above; only the selection mechanism differs.
+**Workflow step credentials**: A native workflow declares its inference needs per step in its `defineWorkflow` definition. At deploy time the hub's workflow-deploy service resolves the tenant deploy config (the base inference source from the tenant LLM credential) and the orchestrator binds it; credentials remain tenant-owned and resolved down the ancestor chain, never passed as IDs through the deploy call.
 
 ### Credentials at Rest
 
-Credential secrets are stored as plaintext at the application layer in Interchange's `credential` table. Encryption at rest is handled by the storage layer, not by application code (see CL-1521). The hub reads secrets directly and passes them to agents without any encrypt or decrypt step. The application-layer encryption package (`@workbench/hub-crypto`) was removed in CL-1537.
+Credential secrets are stored as plaintext at the application layer in Interchange's `credential` table. Encryption at rest is handled by the storage layer, not by application code. The hub reads secrets directly and passes them to agents without any encrypt or decrypt step. The application-layer encryption package (`@workbench/hub-crypto`) was removed.
 
 ## Admin Surface
 
@@ -94,26 +118,20 @@ The workbench product app contains no management UI — no credential settings p
 
 ### Frontend (`apps/web/`)
 
-- **Dashboard**: Entry point. New workflow, resume session, artifact browser.
-- **Collateral Generation**: Select input artifacts and output types, trigger generation.
-- **Artifact Review**: Card-by-card review, approval, inline improvement.
-- **Final Export**: Assembled collateral with copy/export actions.
+- **Dashboard**: Entry point. Start a workflow run, resume session, artifact browser.
+- **Run Console**: A single generic console that renders any workflow run from its event stream — step timeline, step outputs, and approval buttons at human-in-the-loop gates.
 - **Chat**: Chat with Myra or workspace agents via `@workbench/chat` components.
 
-**State Management**: The frontend uses TanStack Query for all server state. Each stage page queries the workflow endpoint (`GET /workflows/:id`) and mutates via step endpoints (`POST /workflows/:id/steps`). No local session state is held in React context.
+**State Management**: The frontend uses TanStack Query for all server state. The run console subscribes to the native run event stream over SSE (`GET /api/v1/workflow-runs/:deploymentId/stream`) and reduces it into client state; signals (approvals) are sent via `POST /api/v1/workflow-runs/:deploymentId/signal`. No local session state is held in React context.
 
-**Generic host, workflow-owned steps**: A workflow is generic — a series of steps with a lifecycle `status` and granted capabilities. The host (hub + web) is domain-agnostic; each workflow's step shapes, step inputs/outputs, current-step mapping, and UI live in its own package. On the backend, `WorkflowType` (`@workbench/workflow-core`) carries `serializeStepState(ctx)` (builds the workflow's named steps from generic run state) and `deriveCurrentStep(status)` (maps the lifecycle status to a step name). The `GET /workflows/:id` handler delegates to these — it never branches on workflow kind or hardcodes a step list. `status` values (`running`/`generating`/`reviewing`/`done`) are lifecycle labels, not steps. On the web, a kind→UI registry (`apps/web/src/workflows/registry.tsx`) maps each workflow kind to its package-provided `{ NewPane, SelectedPanel }`; `WorkbenchHome` renders the resolved components with no `workflowKind` branching, and the registry throws on an unregistered kind rather than guessing. Each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` to derive the sidebar step list dynamically.
-
-Step _execution_ (the per-kind step handlers in `apps/hub/src/routes/workflow.ts`) is not yet extracted into the workflow packages — tracked in CL-1926.
-
-**Two-layer workflows (Resource Enrichment)**: A generic `resource-enrichment` base `WorkflowType` defines the step shape (intake → enrich → review → export) and a domain-agnostic artifact model; specific kinds compose it. The artifacts are: `parsed-resource` (intake snapshot of parsed rows), `selection` (one per row — JSON `{ label, fields: Record<field, string[]>, chosen: Record<field, index> | null }` rendered as a HITL radio picker, content-driven with no domain knowledge), and `csv-export` (the downloadable result). `seo-enrichment` is the first specific kind: xlsx intake, per-row image fetch + multimodal inference producing 5/5/5 SEO variants, CSV export. The enrich step resolves a dedicated tenant-owned inference credential (`google-ai` on `google-genai`), separate from agent chat credentials. The domain logic (parse, image fetch, prompt assembly, per-row `enrichSeoRow`, CSV assembly) lives in `packages/gtm-workflows`; the hub injects only the credential-backed inference call and persists results. The enrich step fans out per row with `Promise.allSettled` in bounded batches, isolating per-row failures as error-state selections so one bad row never aborts the batch. Because Interchange's `agent.send` carries text only, the multimodal turn (text + base64 image) goes through `@intx/inference` `runInference` directly (`runSingleTurnAgentWithImage`).
+**Generic, kind-agnostic run UI**: The web app does not encode any per-workflow step shapes, panels, or kind registry. `useWorkflowRunState(deploymentId)` (`apps/web/src/hooks/use-workflow.ts`) accumulates the SSE `WorkflowEvent[]` and reduces them into a `RunState` via `resumeFromLog` (from `@intx/workflow`). `RunConsole` (`apps/web/src/components/RunConsole.tsx`) renders that `RunState` generically: the step timeline with phase indicators, step outputs, and an Approve button on any step whose phase is `awaiting-signal`, wired to `useSignalWorkflow`. Adding a workflow kind requires no web change — the same console renders it.
 
 ### Backend (`apps/hub/`)
 
 - **Authentication**: Google OAuth with optional domain allowlisting. Session state stored in secure HTTP-only cookies. CORS origins configurable via trusted origins.
 - **Interchange App**: Hub calls `createApp` from Interchange, registering all tenant/principal/grant/agent/instance routes.
-- **Workflow Routes**: `POST /workflows`, `GET /workflows/:id`, `POST /workflows/:id/steps`
-- **Upload + Download Routes**: `POST /uploads` stores a pre-workflow binary file (xlsx) in an `upload` table (BYTEA, tenant-owned) before any run exists, returning an `uploadId`; `GET /artifacts/:id/download` streams a downloadable artifact (`csv-export` allowlist) as an attachment. `PATCH /workflows/:id/artifacts/:artifactId/selection` writes a reviewer's pick into a `selection` artifact as a new version (row-locked re-read to avoid lost updates).
+- **Workflow Deploy Route**: `POST /api/internal/workflows/deploy` (service-token auth) — validates a posted native definition and hands it to the `@intx/workflow-deploy` orchestrator. The hub imports no workflow execution code.
+- **Workflow Run Routes**: `GET /api/v1/workflow-runs` (tenant index), `GET /api/v1/workflow-runs/:deploymentId/stream` (SSE event log), `POST /api/v1/workflow-runs/:deploymentId/signal` (HITL approval) — see the Native Workflow Runtime section.
 - **Collateral Generation Route**: `POST /collateral-generation` — accepts `inputArtifactIds[]` and `outputTypes[]`; each output type generates independently in parallel via `@intx/agent`; results stored as artifact rows with `kind = output type`
 - **Agent Runtime**: Uses `@intx/agent` (from `interchange/`) with structured JSON outputs
 - **Persistence Layer**: PostgreSQL + Drizzle ORM
@@ -220,11 +238,11 @@ Only the asset's `creatorPrincipalId` may delete it; the route returns 403 other
 
 Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 
-| Table                            | Key Columns                                                                                                                                                     |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `artifact`                       | `id` (UUID PK), `kind` (CollateralType), `sessionId` (UUID FK, nullable), `workflowId` (UUID FK, nullable), `content`, `createdAt`                              |
-| `collateral_generation_workflow` | `id` (UUID PK), `userId`, `inputArtifactIds[]`, `outputTypes[]`, `status`, `createdAt`, `updatedAt`                                                             |
-| `workbench_user`                 | `id` (UUID PK), `userId`, `personalTenantId`, `workbenchPrincipalId` — provisional cache, pending removal in CL-1245 when scoping moves to tenantId/principalId |
+| Table              | Key Columns                                                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `artifact`         | `id` (UUID PK), `kind` (CollateralType), `sessionId` (UUID FK, nullable), `workflowId` (UUID FK, nullable), `content`, `createdAt`                                                                       |
+| `workflow_run`     | `id` (UUID PK), `deploymentId` (text, nullable — the `@intx/workflow-deploy` deploymentId for natively deployed runs; powers the `GET /api/v1/workflow-runs` index), `tenantId`, `principalId`, `kind`, `status`, `input`, `output`, `createdAt`, `deletedAt` |
+| `enabled_workflow` | `id`, `tenantId`, `principalId`, `kind` — which workflow kinds a principal has enabled                                                                                                                   |
 
 ### Artifact Model
 
@@ -260,8 +278,8 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 - **Interchange as the foundation**: The hub deploys `createApp` from Interchange rather than building its own tenant/identity/agent infrastructure.
 - **Shared global org tenant**: All users are member principals of one env-named global org tenant seeded at boot; agent definitions are seeded at the same time via `seedAgentTemplates`; workbenches are sub-tenants and per-user Myra instances live in the global tenant. Replaced the former per-user personal-tenant model (which was fragile — provisioned from three paths — and not the SaaS substrate). Data is kept private by per-principal scoping, not by per-user tenants.
 - **Artifact-centric model**: All outputs — from agents and workflows — are stored as `artifact` rows with provenance. Artifacts can be reused as inputs.
+- **Native workflow runtime**: Workflows are native `@intx/workflow` definitions deployed as git-backed assets and executed by Interchange's runtime; the hub does not implement workflow orchestration. Adding a workflow needs no hub change.
 - **Parallel generation**: Each collateral output type in a Collateral Generation workflow generates independently in parallel via separate agent calls.
-- **Two-mode step execution**: Each generative workflow step runs either in _agent mode_ (routed to a configured tenant agent, which supplies its own inference provider and credentials) or _inline mode_ (the step's own workflow LLM credential). Both modes resolve to a single inference source consumed identically by the step runner; only the source's origin differs.
 - **Paste-first intake**: Manual transcript paste remains supported as a secondary path; Oat-driven Granola processing is the primary intake.
 - **Human-in-the-loop**: Every major stage requires human approval. No fully automated pipeline.
 - **Persistent sessions**: Full workflow state is saved to PostgreSQL. Resumable.
@@ -269,9 +287,9 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 ## Known Debt & Forward Direction
 
 - **`pain_point` should be an Artifact, not its own table**: pain points are workflow outputs and belong in the unified `artifact` model (with provenance), not in a dedicated `pain_point` table. The tenancy migration deliberately does not entrench it (it carries no tenant/principal columns and rides `workflow_run`).
-- **Avoid per-workflow database structures**: workflow-specific tables do not scale across workflow kinds. `workbench_workflows` is intentionally generic (keyed by a `kind` string + a jsonb `assignments` blob); new workflow kinds must not add bespoke tables.
+- **Avoid per-workflow database structures**: workflow-specific tables do not scale across workflow kinds. The hub-side tables (`enabled_workflow`, `workflow_run`) are intentionally generic (keyed by a `kind` string); new workflow kinds must not add bespoke tables. Run state itself lives in Interchange's native `workflow-run` event log, not the hub.
 - **`/me` field rename**: the `/me` response still returns the working (global) tenant id under the legacy field name `personalTenantId`; rename to `tenantId` across hub + web is a pending follow-up.
-- **Tool changes require definition edit + relaunch**: there is no PATCH route for live tool updates. To change an agent's tool list, edit the agent definition in admin-ui and relaunch the instance. The `relaunchRunningAgentInstancesForToolUpdate` code path was removed in CL-1536.
+- **Tool changes require definition edit + relaunch**: there is no PATCH route for live tool updates. To change an agent's tool list, edit the agent definition in admin-ui and relaunch the instance. The `relaunchRunningAgentInstancesForToolUpdate` code path was removed.
 
 ---
 

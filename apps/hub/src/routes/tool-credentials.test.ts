@@ -3,19 +3,30 @@ import type { resolveCredentialRequirement } from '@intx/db';
 import { createToolCredentialsRouter } from './tool-credentials';
 
 // 'exa'/'firecrawl' resolve to a secret; 'github' resolves to null (no
-// credential configured). These providers map from the agent's capabilities
-// (exa_search→exa, firecrawl_scrape→firecrawl, github_activity→github).
+// credential configured). The allowed providers derive from the agent's pinned
+// tool packages (@workbench/tools-exa→exa, -firecrawl→firecrawl, -github→github).
 const fakeResolve = (async (_db: unknown, _tenantId: string, req: { providerName: string }) => {
   if (req.providerName === 'github') return null;
-  return { secret: `secret-${req.providerName}`, providerId: `prov-${req.providerName}` };
+  return {
+    secret: `secret-${req.providerName}`,
+    providerId: `prov-${req.providerName}`,
+  };
 }) as unknown as typeof resolveCredentialRequirement;
 
-const agentCapabilities = { tools: ['exa_search', 'firecrawl_scrape', 'github_activity'] };
+const agentToolPackages = [
+  { name: '@workbench/tools-exa', version: '^0.1.0' },
+  { name: '@workbench/tools-firecrawl', version: '^0.1.0' },
+  { name: '@workbench/tools-github', version: '^0.1.0' },
+];
 
 const fakeDb = {
   query: {
-    agent: { findFirst: async () => ({ id: 'a1', capabilities: agentCapabilities }) },
-    provider: { findFirst: async () => ({ metadata: { baseURL: 'https://api.example' } }) },
+    agent: {
+      findFirst: async () => ({ id: 'a1', toolPackages: agentToolPackages }),
+    },
+    provider: {
+      findFirst: async () => ({ metadata: { baseURL: 'https://api.example' } }),
+    },
   },
 } as unknown as Parameters<typeof createToolCredentialsRouter>[0];
 
@@ -24,12 +35,19 @@ const router = createToolCredentialsRouter(fakeDb, 'sidecar-token', fakeResolve)
 async function post(body: unknown, token = 'sidecar-token'): Promise<Response> {
   return await router.request('/tools/credentials', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify(body),
   });
 }
 
-const req = (providerNames: string[]) => ({ tenantId: 't1', agentId: 'a1', providerNames });
+const req = (providerNames: string[]) => ({
+  tenantId: 't1',
+  agentId: 'a1',
+  providerNames,
+});
 
 describe('POST /tools/credentials', () => {
   test('rejects an unauthorized caller', async () => {
@@ -60,27 +78,43 @@ describe('POST /tools/credentials', () => {
   });
 });
 
-describe('POST /tools/credentials with canonicalized capability names (CL-2145)', () => {
-  const canonicalDb = {
+describe('POST /tools/credentials provider gating from pinned packages', () => {
+  // A workflow step is provisioned as a real agent row carrying its step pins,
+  // so it is gated identically: reddit's package authorizes the scrapecreators
+  // provider it shares.
+  const pinnedDb = {
     query: {
       agent: {
         findFirst: async () => ({
           id: 'a1',
-          capabilities: { tools: ['@workbench/tools-granola/granola:granola_list_notes'] },
+          toolPackages: [{ name: '@workbench/tools-reddit', version: '^0.1.0' }],
         }),
       },
-      provider: { findFirst: async () => ({ metadata: { baseURL: 'https://api.example' } }) },
+      provider: {
+        findFirst: async () => ({
+          metadata: { baseURL: 'https://api.example' },
+        }),
+      },
     },
   } as unknown as Parameters<typeof createToolCredentialsRouter>[0];
 
-  const canonicalRouter = createToolCredentialsRouter(canonicalDb, 'sidecar-token', fakeResolve);
+  const pinnedRouter = createToolCredentialsRouter(pinnedDb, 'sidecar-token', fakeResolve);
 
-  test('resolves the provider despite the factory prefix', async () => {
-    const res = await canonicalRouter.request('/tools/credentials', {
+  const post = (providerNames: string[]) =>
+    pinnedRouter.request('/tools/credentials', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer sidecar-token' },
-      body: JSON.stringify(req(['granola'])),
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer sidecar-token',
+      },
+      body: JSON.stringify(req(providerNames)),
     });
-    expect(res.status).toBe(200);
+
+  test('authorizes the provider the pinned package declares', async () => {
+    expect((await post(['scrapecreators'])).status).toBe(200);
+  });
+
+  test('rejects a provider no pinned package declares (403)', async () => {
+    expect((await post(['exa'])).status).toBe(403);
   });
 });

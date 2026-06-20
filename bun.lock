@@ -5,7 +5,6 @@
     "": {
       "name": "gtm-workbench",
       "dependencies": {
-        "@intx/log": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "^1.6.9",
         "drizzle-orm": "^0.45.2",
@@ -36,6 +35,8 @@
         "@intx/tools-mail": "workspace:*",
         "@intx/tools-posix": "workspace:*",
         "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@intx/workflow-deploy": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/event-collector": "workspace:*",
         "@workbench/gtm-workflows": "workspace:*",
@@ -59,7 +60,6 @@
         "@workbench/tools-scrapecreators": "workspace:*",
         "@workbench/tools-x": "workspace:*",
         "@workbench/tools-youtube": "workspace:*",
-        "@workbench/workflow-core": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "^1.6.9",
         "drizzle-orm": "^0.45.1",
@@ -84,6 +84,7 @@
         "@intx/crypto-node": "workspace:*",
         "@intx/harness": "workspace:*",
         "@intx/hub-agent": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mail-memory": "workspace:*",
@@ -93,6 +94,8 @@
         "@intx/tools-mail": "workspace:*",
         "@intx/tools-posix": "workspace:*",
         "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@intx/workflow-host": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/approvals": "workspace:*",
         "@workbench/context-repair": "workspace:*",
@@ -109,6 +112,7 @@
       "name": "@workbench/web",
       "dependencies": {
         "@intx/hub-client": "workspace:*",
+        "@intx/workflow": "workspace:*",
         "@tanstack/react-query": "5.100.14",
         "@workbench/agents": "workspace:*",
         "@workbench/artifact": "workspace:*",
@@ -158,7 +162,8 @@
         "@intx/types": "workspace:*",
         "@tanstack/react-query": "^5.80.7",
         "@tanstack/react-router": "^1.121.3",
-        "better-auth": "^1.4.18",
+        "arktype": "catalog:",
+        "better-auth": "catalog:",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "lucide-react": "^0.574.0",
@@ -186,6 +191,7 @@
       "version": "0.1.2",
       "dependencies": {
         "@intx/inference": "workspace:*",
+        "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
@@ -215,8 +221,11 @@
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
-        "drizzle-orm": "^0.45.1",
+        "drizzle-orm": "catalog:",
         "postgres": "^3.4.8",
+      },
+      "devDependencies": {
+        "drizzle-kit": "^0.31.9",
       },
     },
     "interchange/packages/harness": {
@@ -245,12 +254,12 @@
         "@intx/storage-isogit": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
-        "isomorphic-git": "^1.27.2",
+        "isomorphic-git": "catalog:",
       },
       "devDependencies": {
         "@intx/crypto-node": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
-        "hono": "^4.11.9",
+        "hono": "catalog:",
       },
     },
     "interchange/packages/hub-api": {
@@ -268,10 +277,16 @@
         "@intx/storage-isogit": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
-        "better-auth": "^1.4.18",
-        "hono": "^4.11.9",
+        "better-auth": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "catalog:",
         "hono-openapi": "^1.2.0",
-        "ssri": "^12.0.0",
+        "isomorphic-git": "catalog:",
+        "ssri": "catalog:",
+      },
+      "devDependencies": {
+        "openapi-types": "^12.1.3",
+        "tar": "catalog:",
       },
     },
     "interchange/packages/hub-client": {
@@ -293,6 +308,7 @@
       "name": "@intx/hub-sessions",
       "version": "0.1.2",
       "dependencies": {
+        "@intx/agent": "workspace:*",
         "@intx/crypto-node": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-common": "workspace:*",
@@ -302,9 +318,12 @@
         "@intx/storage-isogit": "workspace:*",
         "@intx/tool-packaging": "workspace:*",
         "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@intx/workflow-deploy": "workspace:*",
         "arktype": "catalog:",
-        "isomorphic-git": "^1.27.2",
-        "tar": "^7.5.1",
+        "drizzle-orm": "catalog:",
+        "isomorphic-git": "catalog:",
+        "tar": "catalog:",
       },
     },
     "interchange/packages/inference": {
@@ -357,6 +376,7 @@
         "@intx/inference": "workspace:*",
         "@intx/inference-discovery": "workspace:*",
         "@intx/types": "workspace:*",
+        "arktype": "catalog:",
       },
     },
     "interchange/packages/log": {
@@ -381,6 +401,7 @@
         "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
+        "arktype": "catalog:",
       },
     },
     "interchange/packages/mime": {
@@ -406,7 +427,10 @@
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
-        "isomorphic-git": "^1.27.2",
+        "isomorphic-git": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/crypto-node": "workspace:*",
       },
     },
     "interchange/packages/tool-packaging": {
@@ -420,13 +444,13 @@
         "npm-package-arg": "^12.0.2",
         "npm-pick-manifest": "^10.0.0",
         "npm-registry-fetch": "^19.0.0",
-        "semver": "^7.7.2",
-        "ssri": "^12.0.0",
-        "tar": "^7.5.1",
+        "semver": "catalog:",
+        "ssri": "catalog:",
+        "tar": "catalog:",
       },
       "devDependencies": {
         "@types/npm-package-arg": "^6.1.4",
-        "@types/semver": "^7.7.1",
+        "@types/semver": "catalog:",
         "@types/ssri": "^7.1.5",
       },
     },
@@ -468,10 +492,10 @@
       "version": "0.1.2",
       "dependencies": {
         "arktype": "catalog:",
-        "semver": "^7.7.2",
+        "semver": "catalog:",
       },
       "devDependencies": {
-        "@types/semver": "^7.7.1",
+        "@types/semver": "catalog:",
       },
     },
     "interchange/packages/workflow": {
@@ -480,6 +504,31 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/inference": "workspace:*",
+        "arktype": "catalog:",
+      },
+    },
+    "interchange/packages/workflow-deploy": {
+      "name": "@intx/workflow-deploy",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/tool-packaging": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
+      },
+    },
+    "interchange/packages/workflow-host": {
+      "name": "@intx/workflow-host",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/crypto-node": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/inference": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/mail-memory": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
     },
@@ -598,15 +647,6 @@
     },
     "packages/gtm-workflows": {
       "name": "@workbench/gtm-workflows",
-      "dependencies": {
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
-        "@workbench/agents": "workspace:*",
-        "@workbench/prompts": "workspace:*",
-        "@workbench/workflow-core": "workspace:*",
-        "arktype": "catalog:",
-        "exceljs": "^4.4.0",
-      },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "catalog:",
@@ -959,24 +999,89 @@
         "react": "*",
       },
     },
-    "packages/workflow-core": {
-      "name": "@workbench/workflow-core",
+    "workflows/blind-ab-comparison": {
+      "name": "@workbench/workflow-blind-ab-comparison",
       "dependencies": {
-        "@intx/db": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
-        "drizzle-orm": "catalog:",
-        "hono": "catalog:",
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
       },
       "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/collateral-generation": {
+      "name": "@workbench/workflow-collateral-generation",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/presentation-generation": {
+      "name": "@workbench/workflow-presentation-generation",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/reddit-opportunity-scanner": {
+      "name": "@workbench/workflow-reddit-opportunity-scanner",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/resource-enrichment": {
+      "name": "@workbench/workflow-resource-enrichment",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/seo-enrichment": {
+      "name": "@workbench/workflow-seo-enrichment",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
         "typescript": "catalog:",
       },
     },
   },
   "catalog": {
+    "@types/semver": "^7.7.1",
     "arktype": "^2.1.29",
+    "better-auth": "^1.4.18",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.10.7",
+    "isomorphic-git": "^1.27.2",
+    "semver": "^7.7.2",
+    "ssri": "^12.0.0",
+    "tar": "^7.5.1",
     "typescript": "^5.9.0",
   },
   "packages": {
@@ -1229,6 +1334,10 @@
     "@intx/types": ["@intx/types@workspace:interchange/packages/types"],
 
     "@intx/workflow": ["@intx/workflow@workspace:interchange/packages/workflow"],
+
+    "@intx/workflow-deploy": ["@intx/workflow-deploy@workspace:interchange/packages/workflow-deploy"],
+
+    "@intx/workflow-host": ["@intx/workflow-host@workspace:interchange/packages/workflow-host"],
 
     "@isaacs/fs-minipass": ["@isaacs/fs-minipass@4.0.1", "", { "dependencies": { "minipass": "^7.0.4" } }, "sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w=="],
 
@@ -1910,7 +2019,17 @@
 
     "@workbench/workflow": ["@workbench/workflow@workspace:packages/workflow"],
 
-    "@workbench/workflow-core": ["@workbench/workflow-core@workspace:packages/workflow-core"],
+    "@workbench/workflow-blind-ab-comparison": ["@workbench/workflow-blind-ab-comparison@workspace:workflows/blind-ab-comparison"],
+
+    "@workbench/workflow-collateral-generation": ["@workbench/workflow-collateral-generation@workspace:workflows/collateral-generation"],
+
+    "@workbench/workflow-presentation-generation": ["@workbench/workflow-presentation-generation@workspace:workflows/presentation-generation"],
+
+    "@workbench/workflow-reddit-opportunity-scanner": ["@workbench/workflow-reddit-opportunity-scanner@workspace:workflows/reddit-opportunity-scanner"],
+
+    "@workbench/workflow-resource-enrichment": ["@workbench/workflow-resource-enrichment@workspace:workflows/resource-enrichment"],
+
+    "@workbench/workflow-seo-enrichment": ["@workbench/workflow-seo-enrichment@workspace:workflows/seo-enrichment"],
 
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
 

@@ -3,8 +3,8 @@ import { useState } from 'react';
 export type RightPane =
   | { view: 'gallery' }
   | { view: 'agent'; instanceId: string; tenantId: string; agentName: string }
-  | { view: 'workflow'; workflowId: string }
-  | { view: 'new-workflow'; workflowKind: string; seedArtifactId?: string };
+  | { view: 'workflow'; deploymentId: string }
+  | { view: 'new-workflow'; workflowKind: string };
 
 export interface AgentTarget {
   instanceId: string;
@@ -29,29 +29,25 @@ export function useRightPane(options: { onShow?: () => void; onClose?: () => voi
     onShow?.();
   };
 
-  const showWorkflow = (workflowId: string) => {
-    setRightPane({ view: 'workflow', workflowId });
+  const showWorkflow = (deploymentId: string) => {
+    setRightPane({ view: 'workflow', deploymentId });
     onShow?.();
   };
 
-  const showNewWorkflow = (workflowKind: string, seedArtifactId?: string) => {
-    setRightPane({
-      view: 'new-workflow',
-      workflowKind,
-      ...(seedArtifactId ? { seedArtifactId } : {}),
-    });
+  const showNewWorkflow = (workflowKind: string) => {
+    setRightPane({ view: 'new-workflow', workflowKind });
     onShow?.();
   };
 
-  // Promote a freshly created workflow from the new-workflow wizard into the
-  // live workflow panel; ignored if the wizard is no longer the active pane.
-  const promoteCreatedWorkflow = (workflowId: string) => {
+  // Promote a freshly started run from the new-workflow pane into the live run
+  // console; ignored if the new-workflow pane is no longer active.
+  const promoteCreatedWorkflow = (deploymentId: string) => {
     if (rightPane.view !== 'new-workflow') return;
-    setRightPane({ view: 'workflow', workflowId });
+    setRightPane({ view: 'workflow', deploymentId });
   };
 
-  const closeWorkflow = (workflowId: string) => {
-    if (rightPane.view === 'workflow' && rightPane.workflowId === workflowId) {
+  const closeWorkflow = (deploymentId: string) => {
+    if (rightPane.view === 'workflow' && rightPane.deploymentId === deploymentId) {
       showGallery();
     }
   };

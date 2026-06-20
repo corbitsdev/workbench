@@ -32,9 +32,12 @@ here rather than duplicated — duplicated detail drifts.
 
 - `packages/agents/README.md` — agent definitions, templates, and the
   hub-seeded template architecture
-- `packages/gtm-workflows/README.md` — workflow definitions (collateral,
-  presentation) and artifact-kind selection
-- `packages/workflow-core/README.md` — the generic workflow contract
-  (multi-input/output) shared types and registry
+- `packages/gtm-workflows/README.md` — artifact-eligibility helpers (which
+  artifact kinds each workflow kind accepts as a source)
+- `workflows/<kind>/` — native `@intx/workflow` definition packages
+  (`@workbench/workflow-<kind>`), one per workflow kind; deployed via
+  `workflows:push`
+- [`DEPLOYING_WORKFLOWS.md`](DEPLOYING_WORKFLOWS.md) — how a workflow is authored,
+  pushed, deployed, and run on the native runtime
 - `packages/tools-*/README.md` — individual hub tool packages (Gamma, Granola,
   Firecrawl, Exa, …) and their credential resolution

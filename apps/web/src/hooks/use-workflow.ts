@@ -1,498 +1,108 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
 import { type } from 'arktype';
-import { api, ApiError, uploadFile } from '../lib/api';
-import { logger } from '../lib/logger';
-import { listWorkbenches, listAgentInstances } from '../lib/hub-api';
-import type { AgentInstance } from '../lib/hub-api';
-import type { AbComparisonInput, AbComparisonProviderOption } from '@workbench/gtm-workflows';
-import type { WorkflowState } from '@workbench/shared';
+import { resumeFromLog, type RunState, type WorkflowEvent } from '@intx/workflow';
+import { api } from '../lib/api';
+import { subscribeSharedEventStream } from '../lib/shared-event-stream';
 
-export type { AgentInstance };
-
-export interface StepConfig {
-  agentId?: string;
-  toolIds?: string[];
-  maxOutputTokens?: number;
+// Same-origin EventSource resolver. A credentialed cross-origin EventSource is
+// blocked by Safari (ITP) and Brave (shields); in dev we route the stream
+// through the same-origin Vite proxy so the port-agnostic auth cookie still
+// authenticates. In prod there is no proxy, so fall back to apiBase like fetch.
+const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
+function streamUrl(path: string): string {
+  const base = import.meta.env.DEV ? window.location.origin : apiBase || window.location.origin;
+  return new URL(`/api/v1/${path.replace(/^\//, '')}`, base).toString();
 }
 
-export interface WorkflowStepConfig {
-  analyze?: StepConfig;
-  generate?: StepConfig;
-}
-
-export interface WorkflowTypeDefinition {
-  kind: string;
-  name: string;
-  description: string;
-}
-
-export type StepName =
-  | 'intake'
-  | 'analyze'
-  | 'generate'
-  | 'approve'
-  | 'review'
-  | 'scan'
-  | 'providers'
-  | 'configure'
-  | 'input'
-  | 'execute'
-  | 'compare'
-  | 'feedback'
-  | 'persist'
-  | 'enrich';
-
-export interface WorkflowStep {
-  completed: boolean;
-  [key: string]: unknown;
-}
-
-export interface FrontendWorkflowState extends WorkflowState {
-  currentStep: StepName;
-  steps: Record<StepName, WorkflowStep>;
-  stepConfig: WorkflowStepConfig;
-  errorMessage?: string | null;
-}
-
-export function useWorkflowTypes() {
-  return useQuery<WorkflowTypeDefinition[]>({
-    queryKey: ['workflow-types'],
-    queryFn: () => api<WorkflowTypeDefinition[]>('GET', '/workflows/types'),
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useWorkflow(workflowId: string) {
-  return useQuery<FrontendWorkflowState>({
-    queryKey: ['workflow', workflowId],
-    queryFn: async () => {
-      logger.info('Fetching workflow', { workflowId });
-      const res = await api<FrontendWorkflowState>('GET', `/workflows/${workflowId}`);
-      logger.info('Workflow fetched', { workflowId, currentStep: res.currentStep });
-      return res;
-    },
-    enabled: Boolean(workflowId),
-    retry: (_, error) => !(error instanceof ApiError && error.status === 404),
-    refetchOnWindowFocus: false,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (!data) return false;
-      // Terminal ('done'/'failed') and quiescent human-wait ('ready', awaiting
-      // the user's generate selection) states do not change server-side, so
-      // stop polling. 'reviewing' keeps polling so a completion driven by
-      // another client is observed.
-      const status = data.status;
-      const settled = status === 'done' || status === 'failed' || status === 'ready';
-      if (
-        data.kind === 'blind-ab-comparison' &&
-        (data.currentStep === 'execute' || status === 'reviewing')
-      ) {
-        return 1000;
-      }
-      return settled ? false : 5000;
-    },
-  });
-}
-
-export type RunStepResult = FrontendWorkflowState;
-
-export function useRunStep(workflowId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (step: {
-      step: StepName;
-      painPointIds?: string[];
-      collateralTypes?: string[];
-      feedback?: string;
-    }) => {
-      logger.info('Running step', { workflowId, step: step.step });
-      const res = await api<RunStepResult>('POST', `/workflows/${workflowId}/steps`, step);
-      logger.info('Step completed', { workflowId, step: step.step });
-      return res;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-    },
-    onError: (error) => {
-      logger.error('Step failed', {
-        workflowId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    },
-  });
-}
-
-export function useApproveArtifact(workflowId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      artifactId,
-      status,
-    }: {
-      artifactId: string;
-      status: 'approved' | 'rejected';
-    }) => {
-      return api<unknown>('PATCH', `/workflows/${workflowId}/artifacts/${artifactId}/status`, {
-        status,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-    },
-  });
-}
-
-export function useRegenerateArtifact(workflowId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ artifactId, feedback }: { artifactId: string; feedback?: string }) => {
-      return api<unknown>('POST', `/workflows/${workflowId}/artifacts/${artifactId}/regenerate`, {
-        feedback: feedback ?? '',
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-    },
-  });
-}
-
-export function useUpdateSelection(workflowId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      artifactId,
-      chosen,
-    }: {
-      artifactId: string;
-      chosen: Record<string, number>;
-    }) => {
-      return api<unknown>('PATCH', `/workflows/${workflowId}/artifacts/${artifactId}/selection`, {
-        chosen,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-    },
-  });
-}
-
-export function useUpdateRedditScanReview(workflowId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      artifactId,
-      recommendations,
-      scanConfig,
-    }: {
-      artifactId: string;
-      recommendations: unknown;
-      scanConfig: unknown;
-    }) => {
-      return api<unknown>('PATCH', `/workflows/${workflowId}/artifacts/${artifactId}/reddit-scan`, {
-        recommendations,
-        scanConfig,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-    },
-  });
-}
-
-export function useUpdateRedditOpportunityStatus(workflowId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      artifactId,
-      opportunityId,
-      status,
-    }: {
-      artifactId: string;
-      opportunityId: string;
-      status: string;
-    }) => {
-      return api<unknown>(
-        'PATCH',
-        `/workflows/${workflowId}/artifacts/${artifactId}/reddit-opportunity`,
-        { opportunityId, status }
-      );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-    },
-  });
-}
-
-export function useUpdateCompanyName(workflowId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (companyName: string | null) => {
-      return api<{ id: string; companyName: string | null }>(
-        'PATCH',
-        `/workflows/${workflowId}/company`,
-        { companyName }
-      );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-      queryClient.invalidateQueries({ queryKey: ['workflows'] });
-    },
-  });
-}
-
-export function useUpdateStepConfig(workflowId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (stepConfig: WorkflowStepConfig) => {
-      return api<{ id: string; stepConfig: WorkflowStepConfig }>(
-        'PATCH',
-        `/workflows/${workflowId}/step-config`,
-        { stepConfig }
-      );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-    },
-    onError: (error) => {
-      logger.error('Step config update failed', {
-        workflowId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    },
-  });
-}
-
-export interface WorkflowCredentialRequirement {
-  providerName: string;
-  source: string;
-  name?: string;
-  scopes?: string[];
-  defaultModel?: string;
-}
-
-export interface WorkflowStepDefinition {
-  name: string;
-  label: string;
-  description?: string;
-  credentialRequirements: WorkflowCredentialRequirement[];
-  tools?: string[];
-}
-
-export interface WorkflowCatalogEntry {
-  kind: string;
-  name: string;
-  description: string;
-  steps: WorkflowStepDefinition[];
-  credentialRequirements: WorkflowCredentialRequirement[];
-}
-
-export interface StepAssignment {
-  credentialIds: string[];
-  toolIds: string[];
-  model?: string;
-}
-
-export type WorkflowAssignments = Record<string, StepAssignment>;
-
-export interface WorkflowInferenceCredential {
-  id: string;
-  name: string;
-  providerName: string;
-  providerPlugin: string;
-  baseURL: string;
-  model?: string;
-}
-
-export interface EnabledWorkflowEntry {
-  id: string;
-  tenantId: string;
-  kind: string;
-  enabledAt: string;
-  name: string;
-  description: string;
-  assignments: WorkflowAssignments;
-}
-
-export interface WorkflowToolMeta {
-  name: string;
-  providerName: string;
-  description: string;
-}
-
-export function useWorkflowCredentials() {
-  return useQuery<WorkflowInferenceCredential[]>({
-    queryKey: ['workflow-credentials'],
-    queryFn: () => api<WorkflowInferenceCredential[]>('GET', '/workflows/credentials'),
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useWorkflowCatalog() {
-  return useQuery<WorkflowCatalogEntry[]>({
-    queryKey: ['workflow-catalog'],
-    queryFn: () => api<WorkflowCatalogEntry[]>('GET', '/workflows/catalog'),
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useWorkflowTools() {
-  return useQuery<WorkflowToolMeta[]>({
-    queryKey: ['workflow-tools'],
-    queryFn: () => api<WorkflowToolMeta[]>('GET', '/workflows/tools'),
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useEnabledWorkflows(tenantId?: string | null) {
-  return useQuery<EnabledWorkflowEntry[]>({
-    queryKey: ['enabled-workflows', tenantId ?? null],
-    queryFn: () =>
-      api<EnabledWorkflowEntry[]>(
-        'GET',
-        tenantId
-          ? `/workflows/enabled?tenantId=${encodeURIComponent(tenantId)}`
-          : '/workflows/enabled'
-      ),
-    staleTime: 60 * 1000,
-  });
-}
-
-export function useInstallWorkflow(tenantId?: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: { kind: string; assignments: WorkflowAssignments }) => {
-      return api<EnabledWorkflowEntry>('POST', '/workflows/enabled', {
-        kind: input.kind,
-        assignments: input.assignments,
-        ...(tenantId ? { tenantId } : {}),
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['enabled-workflows'] });
-    },
-    onError: (error) => {
-      logger.error('Workflow install failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    },
-  });
-}
-
-export function useWorkbenchAgents({ enabled = true }: { enabled?: boolean } = {}) {
-  return useQuery<AgentInstance[]>({
-    queryKey: ['workbench-agents'],
-    enabled,
-    queryFn: async () => {
-      const workbenches = await listWorkbenches();
-      const agentLists = await Promise.all(
-        workbenches.map((w) =>
-          listAgentInstances(w.tenantId).catch((err): AgentInstance[] => {
-            logger.warn('Failed to list agent instances for workbench', {
-              tenantId: w.tenantId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-            return [];
-          })
-        )
-      );
-      return agentLists.flat();
-    },
-    staleTime: 60 * 1000,
-  });
-}
-
-const uploadResultSchema = type({
-  uploadId: 'string',
-  filename: 'string',
-  mimeType: 'string',
-  size: 'number',
+const workflowRunSchema = type({
+  deploymentId: 'string',
+  kind: 'string',
+  status: 'string',
+  createdAt: 'string',
 });
-export type UploadResult = typeof uploadResultSchema.infer;
+export type WorkflowRun = typeof workflowRunSchema.infer;
+const workflowRunListSchema = workflowRunSchema.array();
 
-export function useRunResourceEnrichmentStep(workflowId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (step: 'enrich' | 'export') => {
-      logger.info('Running resource enrichment step', { workflowId, step });
-      const res = await api<{ status: string }>('POST', `/workflows/${workflowId}/steps`, {
-        step,
-      });
-      logger.info('Resource enrichment step completed', { workflowId, step, status: res.status });
-      return res;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-    },
-    onError: (error) => {
-      logger.error('Resource enrichment step failed', {
-        workflowId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    },
-  });
-}
-
-export function useUploadFile() {
-  return useMutation({
-    mutationFn: async ({
-      file,
-      tenantId,
-    }: {
-      file: File;
-      tenantId?: string | null;
-    }): Promise<UploadResult> => {
-      const raw = await uploadFile<unknown>('/uploads', file, { tenantId });
-      const parsed = uploadResultSchema(raw);
+export function useWorkflowRuns() {
+  return useQuery<WorkflowRun[]>({
+    queryKey: ['workflow-runs'],
+    queryFn: async () => {
+      const raw = await api<unknown>('GET', '/workflow-runs');
+      const parsed = workflowRunListSchema(raw);
       if (parsed instanceof type.errors) {
-        throw new Error(`Unexpected upload response: ${parsed.summary}`);
+        throw new Error(`Unexpected workflow-runs response: ${parsed.summary}`);
       }
       return parsed;
     },
   });
 }
 
-export {
-  useSkillLibrary,
-  useSkillDetail,
-  useCreateSkill,
-  useDeleteSkill,
-  type SkillLibraryItem,
-  type SkillDetail,
-} from './use-skills';
+export interface WorkflowRunStateResult {
+  state: RunState | null;
+  events: WorkflowEvent[];
+  connected: boolean;
+}
 
-export function useCreateWorkflow() {
-  const queryClient = useQueryClient();
+// Subscribe to a run's append-only event log over SSE and reduce it into the
+// native RunState via resumeFromLog. This is a live stream, not request/response
+// data — TanStack Query is for the run list; the stream is owned by the shared
+// EventSource registry, mirroring instance-transport.
+export function useWorkflowRunState(deploymentId: string | null): WorkflowRunStateResult {
+  const [events, setEvents] = useState<WorkflowEvent[]>([]);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    if (!deploymentId) return;
+    setEvents([]);
+    setConnected(true);
+    const url = streamUrl(`/workflow-runs/${deploymentId}/stream`);
+    const unsubscribe = subscribeSharedEventStream(url, 'message', (event) => {
+      setEvents((prev) => [...prev, event as WorkflowEvent]);
+    });
+    return () => {
+      setConnected(false);
+      unsubscribe();
+    };
+  }, [deploymentId]);
+
+  const state = useMemo<RunState | null>(() => {
+    if (!deploymentId || events.length === 0) return null;
+    const runId = events[0]?.kind === 'RunStarted' ? events[0].runId : deploymentId;
+    return resumeFromLog(runId, events);
+  }, [deploymentId, events]);
+
+  return { state, events, connected };
+}
+
+export function useStartWorkflow() {
   return useMutation({
-    mutationFn: async (body: {
-      transcript?: string;
-      granolaId?: string;
-      sourceArtifactId?: string;
-      uploadId?: string;
-      source?: string;
-      workflowKind: string;
-      tenantId?: string;
-      inputUrl?: string;
-      brandName?: string;
-      targetGeography?: string;
-      icpHints?: string;
-      providers?: AbComparisonProviderOption[];
-      systemPrompt?: string;
-      input?: AbComparisonInput;
-    }) => {
-      logger.info('Creating workflow', {
-        source: body.source,
-        workflowKind: body.workflowKind,
-      });
-      const res = await api<FrontendWorkflowState>('POST', '/workflows', body);
-      logger.info('Workflow created', { workflowId: res.id });
+    mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
+      const res = await api<{ deploymentId: string }>(
+        'POST',
+        `/workflow-runs/${encodeURIComponent(kind)}/start`,
+        { input }
+      );
       return res;
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', data.id] });
-    },
-    onError: (error) => {
-      logger.error('Workflow creation failed', {
-        error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+export function useSignalWorkflow(deploymentId: string) {
+  return useMutation({
+    mutationFn: async ({
+      runId,
+      signalName,
+      payload,
+    }: {
+      runId: string;
+      signalName: string;
+      payload?: unknown;
+    }) => {
+      return api<unknown>('POST', `/workflow-runs/${deploymentId}/signal`, {
+        runId,
+        signalName,
+        payload,
       });
     },
   });

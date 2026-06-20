@@ -1,0 +1,145 @@
+import { useMemo } from 'react';
+import { Button, toHumanLabel } from '@workbench/ui';
+import type { RunPhase, RunState, StepPhase, StepState } from '@intx/workflow';
+import { useWorkflowRunState, useSignalWorkflow } from '../hooks/use-workflow';
+
+const RUN_PHASE_LABELS: Record<RunPhase, string> = {
+  pending: 'Pending',
+  running: 'Running',
+  cancelling: 'Cancelling',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
+
+const STEP_PHASE_LABELS: Record<StepPhase, string> = {
+  'in-flight': 'In flight',
+  'awaiting-signal': 'Awaiting approval',
+  'awaiting-timer': 'Waiting',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
+
+const STEP_PHASE_DOT: Record<StepPhase, string> = {
+  'in-flight': 'bg-orange',
+  'awaiting-signal': 'bg-orange',
+  'awaiting-timer': 'bg-orange',
+  completed: 'bg-green-500',
+  failed: 'bg-red-500',
+  cancelled: 'bg-border-strong',
+};
+
+interface RunConsoleProps {
+  deploymentId: string;
+  onClose: () => void;
+}
+
+// Generic workflow-run console driven entirely by the native run stream. It
+// reduces the streamed WorkflowEvent log into RunState and renders run phase,
+// a step timeline, step outputs, and an Approve action for any step blocked on
+// a signal (the HITL gate). No workflow-kind-specific branching lives here.
+export function RunConsole({ deploymentId, onClose }: RunConsoleProps) {
+  const { state, connected } = useWorkflowRunState(deploymentId);
+  const signal = useSignalWorkflow(deploymentId);
+
+  const steps = useMemo<StepState[]>(() => (state ? [...state.steps.values()] : []), [state]);
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">
+      <header className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div className="min-w-0">
+          <p className="truncate text-[14px] font-medium text-text">Workflow run</p>
+          <p className="truncate text-[12px] text-text-3">{deploymentId}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {state && (
+            <span className="text-[12px] font-medium text-text-2">
+              {RUN_PHASE_LABELS[state.phase]}
+            </span>
+          )}
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        {!state && (
+          <p className="text-[13px] text-text-3">
+            {connected ? 'Waiting for run activity…' : 'Connecting…'}
+          </p>
+        )}
+        {state && steps.length === 0 && (
+          <p className="text-[13px] text-text-3">No steps have started yet.</p>
+        )}
+        {state && steps.length > 0 && (
+          <ol className="flex flex-col gap-3">
+            {steps.map((step) => (
+              <RunStepRow
+                key={step.stepId}
+                step={step}
+                runState={state}
+                onApprove={(signalName) =>
+                  signal
+                    .mutateAsync({ runId: state.runId, signalName, payload: { approved: true } })
+                    .catch(() => undefined)
+                }
+                approving={signal.isPending}
+              />
+            ))}
+          </ol>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RunStepRow({
+  step,
+  runState,
+  onApprove,
+  approving,
+}: {
+  step: StepState;
+  runState: RunState;
+  onApprove: (signalName: string) => void;
+  approving: boolean;
+}) {
+  const awaitingSignal = step.phase === 'awaiting-signal' ? step.awaitingSignal : undefined;
+  return (
+    <li className="rounded-[10px] border border-border bg-surface px-3 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={`h-2 w-2 shrink-0 rounded-full ${STEP_PHASE_DOT[step.phase]}`} />
+          <span className="truncate text-[13px] font-medium text-text">
+            {toHumanLabel(step.stepId)}
+          </span>
+        </div>
+        <span className="shrink-0 text-[12px] text-text-3">{STEP_PHASE_LABELS[step.phase]}</span>
+      </div>
+
+      {step.lastError && (
+        <p className="mt-2 text-[12px] text-red-500">{step.lastError.message}</p>
+      )}
+
+      {step.outputRef && (
+        <p className="mt-2 break-all text-[12px] text-text-2">Output: {step.outputRef}</p>
+      )}
+
+      {awaitingSignal && runState.phase === 'running' && (
+        <div className="mt-3 flex items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={approving}
+            onClick={() => onApprove(awaitingSignal.name)}
+          >
+            {approving ? 'Approving…' : 'Approve'}
+          </Button>
+          <span className="text-[12px] text-text-3">Signal: {awaitingSignal.name}</span>
+        </div>
+      )}
+    </li>
+  );
+}

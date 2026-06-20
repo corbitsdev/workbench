@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { type } from 'arktype';
 import { evaluateGrants } from '@intx/authz';
-import { createToolRunner, createDefaultDirectorRegistry, defineTool } from '@intx/agent';
+import { createToolRunner, defineTool } from '@intx/agent';
+import { createWorkbenchDirectorRegistry } from '@workbench/agents';
 import { createTarballCache, createToolLoader } from '@intx/tool-packaging';
 import { ToolPackageManifest } from '@intx/types/tool-packages';
 import {
@@ -392,7 +393,7 @@ export function createDefaultHarnessBuilder({
         workdir: workDir,
         audit: storage,
         authorize,
-        directors: createDefaultDirectorRegistry(),
+        directors: createWorkbenchDirectorRegistry(),
         transport: agentTransport,
         address: agentAddress,
         onConnectorStateChanged,

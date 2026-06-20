@@ -20,6 +20,7 @@ import {
 // dropped thinking/reply parts.
 import { createEventCollectorRegistry } from '@workbench/event-collector';
 import { hexEncode } from '@intx/types';
+import { createNodeCrypto } from '@intx/crypto-node';
 import { getLogger } from '@intx/log';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -28,10 +29,12 @@ import postgres from 'postgres';
 import { and, eq, isNull } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { createSidecarConnectionRegistry } from './sidecar-connections';
-import { createWorkflowRouter } from './routes/workflow';
+import { createWorkflowDeployRouter } from './routes/workflow-deploy';
+import { createWorkflowRunsRouter } from './routes/workflow-runs';
+import { createWorkflowDeployService } from './services/workflow-deploy';
+import { createWorkbenchDirectorRegistry } from '@workbench/agents';
 import { createUploadsRouter } from './routes/uploads';
 import { createSkillsRouter } from './routes/skills';
-import { workflowRegistry } from '@workbench/workflow-core';
 import { createAgentProvisioningRouter } from './routes/agents';
 import {
   relaunchInstanceIfNeeded,
@@ -49,7 +52,6 @@ import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
   seedGlobalTenant,
   seedAgentTemplates,
-  seedTenantWorkflows,
   ensureGlobalMember,
   provisionMemberInstances,
   getMyraInstanceId,
@@ -86,15 +88,6 @@ log.info('Global org tenant ready', { globalTenantId });
 // (CL-1530). Depends on the global tenant existing. Fail-loud.
 await seedAgentTemplates(db);
 log.info('Agent templates seeded');
-
-// Seed tenant-scoped workflow rows so every registered workflow is available to
-// all members of the global org tenant without any per-user action. Idempotent.
-await seedTenantWorkflows(
-  db,
-  globalTenantId,
-  workflowRegistry.list().map((w) => w.kind)
-);
-log.info('Tenant workflows seeded', { tenantId: globalTenantId });
 
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 
@@ -509,7 +502,6 @@ v1.get('/me', async (c) => {
   });
 });
 
-v1.route('/', createWorkflowRouter(db, repoStore.repoStore));
 v1.route(
   '/',
   createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors)
@@ -520,6 +512,17 @@ v1.route('/', createGammaTemplatesRouter(db));
 v1.route('/', createApprovalsRouter(db));
 v1.route('/', createUploadsRouter(db));
 v1.route('/', createSkillsRouter(db, assetService, repoStore.repoStore));
+v1.route(
+  '/',
+  createWorkflowRunsRouter({
+    db,
+    repoStore: repoStore.repoStore,
+    sidecarRouter,
+    sessionService,
+    cryptoProvider: createNodeCrypto(registry.active),
+    deploymentDomain: config.globalTenant.domain,
+  })
+);
 
 app.route('/api/v1', v1);
 
@@ -536,6 +539,23 @@ app.route(
   })
 );
 app.route('/api/internal', createToolCredentialsRouter(db, config.sidecarToken));
+app.route(
+  '/api/internal',
+  createWorkflowDeployRouter({
+    db,
+    workflowDeployService: createWorkflowDeployService({
+      db,
+      repoStore,
+      sidecarRouter,
+      sessionService,
+      directorRegistry: createWorkbenchDirectorRegistry(),
+    }),
+    hubPublicKey: hexEncode(registry.active.publicKey),
+    deploymentDomain: config.globalTenant.domain,
+    globalTenantId,
+    serviceToken: config.sidecarToken,
+  })
+);
 
 // The web SPA is deployed as its own static Railway service (apps/web),
 // not served from here. The hub is API-only.

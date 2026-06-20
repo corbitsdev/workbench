@@ -4,16 +4,16 @@ This guide explains how to build and wire new capabilities in GTM Workbench. It 
 
 ## Conceptual Model
 
-**Tools** are self-contained packages that perform a discrete external action (search, scrape, fetch, write). They live in `packages/tools-<name>/` and are registered with the hub. Any tool in the hub's registry can be assigned to any agent or workflow step.
+**Tools** are self-contained packages that perform a discrete external action (search, scrape, fetch, write). They live in `packages/tools-<name>/` and are pinned per agent (and, for native workflows, per workflow step) as tarballs the sidecar materializes in-process.
 
 **Agents** are definitions that run on Interchange's sidecar. An agent declares what credentials it needs, and which tools it can call. The tools an agent sees are controlled by its `capabilities.tools` list — nothing else. An agent with an empty list cannot call any tools, regardless of what the hub has registered.
 
-**Workflows** are step-by-step pipelines. Each step declares its own credentials and tools independently. At workflow install time, the user assigns a specific credential and tool set to each step. This is how the same workflow can use different credentials per step (e.g. Granola for intake, OpenAI for generation).
+**Workflows** are native `@intx/workflow` pipelines deployed to the hub. Each step declares its own inference and tools in the definition; credentials resolve from the tenant at deploy time. They run on Interchange's native runtime — the hub does not orchestrate steps. See [DEPLOYING_WORKFLOWS.md](./DEPLOYING_WORKFLOWS.md) and the "Creating a Workflow" section below.
 
 A tool is a native Interchange tool **package** (a tarball). An agent pins the
 packages it needs; the sidecar materializes them in-process at launch. There is
-no agent-side tool proxy. (Workflow steps still resolve tools through the hub's
-`KNOWN_TOOLS` registry server-side — a separate path that M4/M5 migrates.)
+no agent-side tool proxy. Workflows run on Interchange's native runtime and use
+their own tool packages too — the hub runs no workflow tools server-side.
 
 ```
 packages/tools-<name>/  →  workspace-builtins package-registry asset
@@ -33,11 +33,10 @@ loader**. There is no hub round-trip at call time.
 > **Status.** The agent-session tool proxy (`createHubToolRunner` →
 > `POST /api/internal/tools/run`) has been **removed** — agents get every tool
 > from pinned packages, with no hub round-trip at call time. `KNOWN_TOOLS` in
-> `apps/hub/src/lib/tool-registry.ts` still exists, but **only as the workflow
-> runtime's server-side tool registry** (`workflow-orchestration`,
-> `run-credential-tool`); it is no longer in any agent's path. Migrating the
-> workflow tool-execution path off `KNOWN_TOOLS` is workflow-runtime (M4/M5)
-> scope.
+> `apps/hub/src/lib/tool-registry.ts` still exists, but **only as the tool→provider
+> mapping for the credential rail** (`run-credential-tool`, `tool-credentials`); it
+> is no longer in any agent's or workflow's execution path. Workflows now run on
+> Interchange's native runtime, so the former hub workflow tool registry is gone.
 
 ### 1. Author the tool logic
 
@@ -102,8 +101,9 @@ export const myTools = defineCredentialedToolPackage({
 - Credentialed tools: seed the provider (`apps/hub/bin/seed-credentials.ts`)
   and add its `providerName` to the agent's `credentialProviderNames`. Keyless
   tools need no seed entry.
-- Agents need no `KNOWN_TOOLS` entry. Only register a tool in `KNOWN_TOOLS` if a
-  **workflow step** runs it server-side (that registry is workflow-only now).
+- Agents need no `KNOWN_TOOLS` entry. `KNOWN_TOOLS` now only carries the
+  tool→provider mapping for the credential rail (`run-credential-tool`); it is not
+  an execution registry.
 
 ### 4. Build and push
 
@@ -161,8 +161,9 @@ tarball, a per-agent pin, loaded in-process. There is no agent-side tool proxy.
   against the instance principal's grants. No tool secrets in the sidecar.
 
 The agent-session proxy (`createHubToolRunner` → `/api/internal/tools/run`) is
-**gone**. `KNOWN_TOOLS` remains only as the workflow runtime's server-side tool
-registry — migrating that off `KNOWN_TOOLS` is M4/M5 scope.
+**gone**. `KNOWN_TOOLS` remains only as the tool→provider mapping for the
+credential rail — not an execution registry, and not in any workflow path
+(workflows run on Interchange's native runtime).
 
 ---
 
@@ -253,53 +254,46 @@ Add the agent to `apps/hub/src/lib/tenant-provisioning.ts`. This is where agents
 
 ## Creating a Workflow
 
-Workflows live in `@workbench/workflow-core`. Each workflow is a `WorkflowType` with a `steps[]` array.
+Workflows are **native `@intx/workflow` definitions**, not hub code. Each kind is its own package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` and `workflow`. The hub imports no workflow code — adding a workflow needs no hub change. Full guide: [DEPLOYING_WORKFLOWS.md](./DEPLOYING_WORKFLOWS.md).
 
 ### 1. Define the workflow
 
 ```ts
-import type { WorkflowType } from '@workbench/workflow-core';
+// workflows/my-workflow/src/index.ts
+import { defineWorkflow, defineAgent, step, awaitSignal } from '@intx/workflow';
 
-export const myWorkflow: WorkflowType = {
-  kind: 'my-workflow',
-  name: 'My Workflow',
-  description: 'What this workflow does for the user.',
-  steps: [
-    {
-      name: 'intake',
-      label: 'Select sources',
-      credentialRequirements: [{ providerName: 'granola' }],
-      tools: ['granola_list_notes', 'granola_get_note'],
-    },
-    {
-      name: 'generate',
-      label: 'Generate output',
-      credentialRequirements: [{ providerName: 'openai-compatible' }],
-      tools: [], // inference only — no tool calls in this step
-    },
-  ],
-};
+export const kind = 'my-workflow';
+
+export const workflow = defineWorkflow({
+  id: 'my-workflow',
+  trigger: { type: 'manual' },
+  steps: {
+    intake: step({ agent: defineAgent({ id: 'intake', /* prompt, tools, inference */ }) }),
+    generate: step({ agent: defineAgent({ id: 'generate', /* … */ }), after: ['intake'] }),
+    approval: awaitSignal({ name: 'artifact-approval', after: ['generate'] }), // HITL gate
+  },
+});
 ```
 
-Per-step `credentialRequirements` and `tools` are what the install UI collects from the user. At run time, each step gets only its assigned credential and tools — not the full set.
+Per-step inference and tools are declared on each `defineAgent`. `awaitSignal` steps are the human-in-the-loop gates a user approves in the run console.
 
-### 2. Register in the catalog
+### 2. Push it
 
-Add the workflow to the catalog export in `@workbench/workflow-core`. It will appear at `GET /workflows/catalog` and become available for tenants to add to their workbench.
+```bash
+bun run workflows:push -- --kind my-workflow
+```
 
-### 3. Implement step handlers in the hub
-
-Each step name maps to a handler in the hub's workflow router. Step handlers receive the step's resolved credential and assigned tool IDs. Follow the pattern of existing step handlers in `apps/hub/src/routes/workflow.ts`.
+This serializes the definition and POSTs it to `POST /api/internal/workflows/deploy` (service-token auth). The hub commits it to a git-backed `workflow` repo and the sidecar workflow-host supervisor drives the run. No catalog registration, no hub step handlers.
 
 ---
 
 ## Making Tools Dynamically Available
 
-Once a tool is registered in `KNOWN_TOOLS`, it is available for assignment to any agent or workflow step. No per-tool changes are needed on the agent or workflow side.
+Tools are pinned as packages on each agent (and on each native workflow step). No per-tool changes are needed on the agent or workflow side beyond the pin.
 
 **To add a tool to an existing agent**: update `capabilities.tools` in the agent definition and re-provision the agent instance. The hub builds `HarnessConfig.tools` from this list at launch time.
 
-**To add a tool to a workflow step**: add the tool name to the step's `tools` list in the `WorkflowType` definition. Users will see it available for selection when they install or update the workflow.
+**To add a tool to a workflow step**: pin the tool package on the step's `defineAgent` in the workflow definition (`workflows/<kind>/`) and re-push the workflow.
 
 **To give an ad-hoc agent access to a tool**: set `capabilities.tools` to include the tool name when provisioning the agent via `POST /v1/agents`. No other code change is required.
 
@@ -311,7 +305,7 @@ This is the key property: the tool package and the agent's `toolPackages` pin ar
 
 ## Recurring / Scheduled Agent Work
 
-> **Removed in CL-1696.** The per-instance agent scheduler (`@workbench/agent-scheduler`, `startInstanceScheduler`, `getSchedulerIntervalMs`, and the `schedulerIntervalMs` capability) has been deleted. There is no longer a host loop that sends a periodic `"sync"` message to an agent session.
+> **Removed.** The per-instance agent scheduler (`@workbench/agent-scheduler`, `startInstanceScheduler`, `getSchedulerIntervalMs`, and the `schedulerIntervalMs` capability) has been deleted. There is no longer a host loop that sends a periodic `"sync"` message to an agent session.
 
 All agents are now uniform: interactive and recover-on-open. They respond to inbound mail and are brought back when needed (Myra auto-relaunches via `GET /v1/me`; other agents recover on the next open). No agent runs on a host-driven timer.
 
@@ -329,7 +323,7 @@ A director may still allow a system sender address (e.g. `scheduler@system`) for
 - [ ] Added to `TOOL_PACKAGES` in `bin/build-tool-packages.ts` and a `COPY` line in `apps/hub/Dockerfile`
 - [ ] Pinned via `toolPackages` on each using agent's descriptor **and** `AGENT_TEMPLATES` entry
 - [ ] Credentialed: provider seeded in `seed-credentials.ts` + added to the agent's `credentialProviderNames`
-- [ ] Only if a **workflow step** runs the tool: register it in `KNOWN_TOOLS` (workflow-only registry; agents need no entry)
+- [ ] Credentialed tools only: present in `KNOWN_TOOLS` for the credential rail's tool→provider mapping (not an execution registry)
 - [ ] `bun run tools:push` publishes to the registry; tool verified loading in the sidecar
 - [ ] Unit tests at ≥95% function coverage
 

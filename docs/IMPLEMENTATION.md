@@ -53,7 +53,7 @@ The merged `ToolRunner` is wrapped as an Interchange `toolFactory` via `defineTo
 
 ### `packages/agents` (`@workbench/agents`)
 
-Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter. This package is the source of truth for all template content. At hub boot, `seedAgentTemplates(db)` reads the templates from this package and idempotently upserts one Interchange agent definition per template (Myra, Oat, Freddy, Walter, Loop) into the global tenant — re-boot is a no-op.
+Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter. This package is the source of truth for all template content. At hub boot, `seedAgentTemplates(db)` reads the templates from this package and idempotently upserts one Interchange agent definition per template (Myra, Oat, Freddy, Walter, Loop, Larry, …) into the global tenant — re-boot is a no-op.
 
 ```
 src/
@@ -182,71 +182,45 @@ Creates an Interchange tenant + seeds owner role/principal/grants for the caller
 
 Each `outputType` generates independently in parallel via `@intx/agent`. Results are stored as `artifact` rows with `kind = outputType` and `workflowId` FK.
 
-### Workflow Routes
+### Workflow Deploy and Run Routes
+
+Workflows run on Interchange's native runtime; the hub deploys definitions and observes runs (no hub-routed step state machine). See ARCHITECTURE.md § Native Workflow Runtime and [DEPLOYING_WORKFLOWS.md](../DEPLOYING_WORKFLOWS.md).
 
 | Method | Route                  | Input                                            | Output                                                         |
 | ------ | ---------------------- | ------------------------------------------------ | -------------------------------------------------------------- |
-| `POST` | `/workflows`           | `{ transcript, source }`                         | `{ id, status, steps }`                                        |
-| `GET`  | `/workflows/:id`       | —                                                | `{ id, status, currentStep, steps }`                           |
-| `POST` | `/workflows/:id/steps` | `{ step, painPointIds, feedback, collateralId }` | `{ id, status, currentStep, steps }`                           |
-| `GET`  | `/workflows/catalog`   | —                                                | `[{ kind, name, description, steps, credentialRequirements }]` |
-| `GET`  | `/workflows/tools`     | —                                                | `[{ name, providerName, description }]`                        |
-| `GET`  | `/workflows/enabled`   | `?tenantId`                                      | `[{ kind, ..., assignments }]`                                 |
-| `POST` | `/workflows/enabled`   | `{ kind, tenantId?, assignments }`               | `{ kind, ..., assignments }`                                   |
-| `GET`  | `/recent-calls`        | `?tenantId&kind`                                 | `{ calls }`                                                    |
+| Method | Route                                        | Auth          | Input                                  | Output                                        |
+| ------ | -------------------------------------------- | ------------- | -------------------------------------- | --------------------------------------------- |
+| `POST` | `/api/internal/workflows/deploy`             | service token | serialized `@intx/workflow` definition | `{ kind, deploymentId, result }`              |
+| `GET`  | `/api/v1/workflow-runs`                      | user session  | —                                      | `[{ deploymentId, kind, status, createdAt }]` |
+| `GET`  | `/api/v1/workflow-runs/:deploymentId/stream` | user session  | — (SSE)                                | `data: { seq, runId, event: WorkflowEvent }`  |
+| `POST` | `/api/v1/workflow-runs/:deploymentId/signal` | user session  | `{ runId, signalName, payload }`       | `202 { accepted: true }`                      |
+| `GET`  | `/recent-calls`                              | user session  | `?tenantId&kind`                       | `{ calls }`                                   |
 
-### Resource Enrichment (seo-enrichment)
+**Deploy** (`apps/hub/src/routes/workflow-deploy.ts`) — service-token-gated. Validates the posted definition, resolves the tenant deploy config, and runs the `@intx/workflow-deploy` orchestrator via `apps/hub/src/services/workflow-deploy.ts` (`createWorkflowDeployService` → `deployWorkflow`). The service writes `workflow.json` + `capability-declarations.json` to a git-backed `workflow` repo (`createWorkflowRepoWriter`), launches one session per step (`toLaunchSession` over `SessionService`), and sends the multi-step deploy frame to the sidecar (`toSendMultiStepDeploy` over `SidecarRouter`; the `as AgentDeployWorkflow['definition']` cast reflects only exactOptional variance — see AGENTS.md § Vendored workflow-host wiring). Pushed by `bun run workflows:push -- --kind <kind>` (`apps/hub/bin/deploy-workflow.ts`), which imports `@workbench/workflow-<kind>`, serializes its `workflow`, and POSTs it with `HUB_SERVICE_TOKEN`.
 
-| Method  | Route                                            | Input                           | Output                                   |
-| ------- | ------------------------------------------------ | ------------------------------- | ---------------------------------------- |
-| `POST`  | `/uploads`                                       | multipart `file` (`.xlsx`)      | `{ uploadId, filename, mimeType, size }` |
-| `POST`  | `/workflows` (`workflowKind: 'seo-enrichment'`)  | `{ uploadId }`                  | `{ id, status: 'running', kind }`        |
-| `POST`  | `/workflows/:id/steps` (`step: 'enrich'`)        | —                               | `202 { status: 'generating' }`           |
-| `POST`  | `/workflows/:id/steps` (`step: 'export'`)        | —                               | `{ id, status: 'done' }`                 |
-| `PATCH` | `/workflows/:id/artifacts/:artifactId/selection` | `{ chosen: Record<field,int> }` | serialized artifact (new version)        |
-| `GET`   | `/artifacts/:id/download`                        | —                               | `text/csv` attachment                    |
+**Run routes** (`apps/hub/src/routes/workflow-runs.ts`):
 
-- **Upload**: stored in the `upload` table (BYTEA), 10MB cap (`413`), `.xlsx` MIME/extension allowlist (`415`), tenant-owned.
-- **Intake** parses the xlsx with `exceljs` (`packages/gtm-workflows/src/seo-enrichment/parse.ts`), validates rows with ArkType (`SeoResourceRow`), caps at 500 rows, and writes a `parsed-resource` artifact.
-- **Enrich** is claimed optimistically (`running → generating`, `409` on a duplicate) and runs in the background: bounded batches of 8 (`ENRICH_CONCURRENCY`) of `loadProductImage` → `runSingleTurnAgentWithImage` (multimodal via `@intx/inference`) → `parseSeoReply` (5/5/5 gate) → `selection` artifact. Per-row failures become error-state selections (`image unavailable` / `response invalid` / `enrichment failed`). The enrich step's `credentialRequirements` resolve tenant-owned **`google-ai`** on provider **`google-genai`** with `defaultModel` **`gemini-3.1-flash-lite`** (`packages/gtm-workflows/src/seo-enrichment/constants.ts`) — separate from the agent `openai-compatible` credential. Per-row failures log at `workflow.seo-enrichment` (full `Error` to Sentry when configured); the reviewer UI shows only the sanitized reason.
-- **Image fetch** enforces `https` + a private/loopback/metadata host block (SSRF guard) and a 10MB body cap.
-- **Export** assembles a `csv-export` artifact (columns `product_slug, image_link, chosen_title, chosen_description, chosen_summary, timestamp`) from selections with `chosen !== null`; formula-leading cells are neutralized against CSV injection.
+- `GET /api/v1/workflow-runs` — tenant index from the `workflow_run` table (`deploymentId IS NOT NULL`, non-deleted).
+- `GET /api/v1/workflow-runs/:deploymentId/stream` — SSE over the run's native `WorkflowEvent` log via `subscribeKind(repoStore, principal, { kind: 'workflow-run', id: deploymentId }, ...)`. Emits the 17 on-disk event types (`RunStarted`, `StepStarted`, `StepCompleted`, `StepFailed`, `SignalAwaited`, `SignalReceived`, `RunCompleted`, `RunFailed`, `RunCancelled`, …).
+- `POST /api/v1/workflow-runs/:deploymentId/signal` — HITL approval; delivers via `sidecarRouter.sendSignalDeliver` at `deriveDeploymentAddress(...)` (from `@intx/workflow-deploy`).
+- `POST /api/v1/workflow-runs/:kind/start` — **not yet wired** (throws; run-start via mail is not yet implemented).
 
-#### Per-step credential & tool assignments
+#### Workflow definition packages
 
-A `WorkflowType` (`@workbench/workflow-core`) declares `steps[]`, where each step lists its own
-`credentialRequirements` (by `providerName`) and allowed `tools`. The collateral workflow's intake
-step requires a `granola` credential plus the Granola tools; analyze/generate/improve require an
-`openai-compatible` inference credential.
+Each kind is a package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` + `workflow` (`defineWorkflow` with per-step `defineAgent` and `awaitSignal` HITL gates). Shipped kinds: `collateral-generation`, `presentation-generation`, `resource-enrichment`, `seo-enrichment`, `reddit-opportunity-scanner`, `blind-ab-comparison`. The hub imports none of them — its only workflow imports are `@intx/workflow-deploy` (the orchestrator) and the `WorkflowDefinition` *type* from `@intx/workflow`. Adding a kind is a new package + `workflows:push`.
 
-When a workflow is added to a workbench, the install UI collects one credential per requirement
-(select existing or add new inline) and a tool selection per step. `POST /workflows/enabled`
-validates these against the step definitions and stores them on the install record
-(`workbench_workflows.assignments`, shape `Record<stepName, { credentialIds, toolIds }>`). At run
-time, each step resolves its assigned credential via `resolveCredentialById` (falling back to the
-name-based resolver for installs predating assignments); Granola recent-calls/intake resolve the
-intake step's assigned credential. The web `CredentialField` component (select-or-add-new) backs
-both this flow and the agent `NewAgentModal`.
+#### Web run console
 
-#### Per-step execution mode (agent vs inline)
+`useWorkflowRunState(deploymentId)` and `useSignalWorkflow(deploymentId)` (`apps/web/src/hooks/use-workflow.ts`) subscribe to the SSE stream, accumulate `WorkflowEvent[]`, and reduce them into a `RunState` via `resumeFromLog` (`@intx/workflow`). `RunConsole` (`apps/web/src/components/RunConsole.tsx`) renders the `RunState` generically (step timeline, outputs, and an Approve button at any `awaiting-signal` step), kind-agnostic.
 
-Each generative step (`analyze`/`generate`/`improve`) runs in one of two modes, decided per run from
-`workflow_runs.input.stepConfig` (shape `Record<stepName, { agentId?, toolIds? }>`, persisted via
-`PATCH /workflows/:id/step-config`):
+#### Sidecar workflow-host
 
-- **Agent mode** — `stepConfig[step].agentId` is set (an agent _instance_ id). The step resolves its
-  inference source from the assigned agent's own credential requirements:
-  `resolveAgentStepInferenceSource` looks up the `agentInstance` to find its agent definition, calls
-  `resolveInstanceSources` (the same Interchange resolver used at agent launch), and decrypts the
-  secret. The agent already declares its inference provider, so an agent-mode step needs only tenant
-  access to the agent — **not** a per-step workflow LLM credential. A missing/unresolvable agent
-  source returns `400` pointing at the agent's credentials.
-- **Inline mode** — no agent assigned. The step uses its configured workflow LLM credential via
-  `resolveStepInferenceSource` (the name-based assignment flow above).
+The sidecar drives runs via the vendored workflow-host wiring (copied verbatim from interchange's reference sidecar — see AGENTS.md § Vendored workflow-host wiring):
 
-Both modes produce an `InferenceSource` consumed identically by the step runners, so the only
-difference is where the source originates. The run-step handler in `apps/hub/src/routes/workflow.ts`
-branches on `agentId` to pick the resolver.
+- `apps/sidecar/src/workflow-host-wiring.ts` — constructs the workflow supervisor with host bindings (mail bus, signing keypair, RepoStore, subprocess spawner).
+- `apps/sidecar/src/workflow-substrate-factory.ts` — builds the per-child substrate (read-only repo handle + IPC write-proxy back to the supervisor).
+- `apps/sidecar/src/workflow-run-pack-client.ts` — pushes the workflow-run event pack to the hub after each supervisor write.
+- `apps/sidecar/bin/workflow-child` — the child-process entrypoint.
 
 ### Skill Library
 
@@ -317,52 +291,38 @@ The `artifact` table is the single store for all workflow and agent outputs.
 - `id` (UUID, primary key)
 - `kind` (CollateralType enum: case-study, one-pager, email-draft, call-document, ...)
 - `sessionId` (UUID, foreign key, **nullable** — workflow-level artifacts have no session)
-- `workflowId` (UUID, foreign key, nullable — links to collateral_generation_workflow)
+- `workflowId` (UUID, foreign key, nullable — links to a `workflow_run` for run-scoped artifacts)
 - `content` (text)
 - `createdAt` (timestamp)
 
-### Collateral Generation Workflow
+### Workflow Run (`workflow_run`)
+
+The generic, kind-agnostic run row. For natively deployed workflows it is the hub-side index into Interchange's native run; run state itself lives in the native `workflow-run` event log, not here.
 
 - `id` (UUID, primary key)
-- `userId` (text)
-- `inputArtifactIds` (UUID array)
-- `outputTypes` (CollateralType array)
-- `status` (enum)
-- `createdAt` (timestamp)
-- `updatedAt` (timestamp)
+- `deploymentId` (text, nullable) — the `@intx/workflow-deploy` deploymentId (`ses_…`) for natively deployed runs; null for legacy pipeline-session rows. The `GET /api/v1/workflow-runs` index filters on it
+- `tenantId` (text), `principalId` (text)
+- `kind` (text) — workflow kind
+- `status` (text), `input` / `output` (jsonb, nullable)
+- `createdAt`, `updatedAt`, `deletedAt` (timestamps)
 
-### Enabled Workflows (`workbench_workflows`)
+### Enabled Workflows (`enabled_workflow`)
 
-Tracks which workflow kinds a principal has added, with per-step assignments.
+Tracks which workflow kinds a principal has enabled in a tenant.
 
 - `id` (text, primary key)
 - `tenantId` (text)
 - `principalId` (text, NOT NULL) — the enabling member's principal
 - `kind` (text) — workflow kind
-- `assignments` (jsonb, nullable) — `Record<stepName, { credentialIds: string[]; toolIds: string[] }>`
-- `enabledAt` (timestamp)
-- Unique `(tenant_id, principal_id, kind)` for idempotent upserts. Scoped per-principal so one member's enablement/assignments cannot overwrite another's in the shared global tenant (CL-1450).
-
-### Workbench User (provisional cache)
-
-- `id` (UUID, primary key)
-- `userId` (text)
-- `personalTenantId` (text) — cached personal Interchange tenant ID
-- `workbenchPrincipalId` (text) — cached principal ID in the shared workbench tenant
-
-> **Pending removal (CL-1245)**: This table is a provisional cache. It will be removed when session/route scoping moves to `tenantId`/`principalId` directly.
+- Unique `(tenant_id, principal_id, kind)` for idempotent upserts. Scoped per-principal so one member's enablement cannot overwrite another's in the shared global tenant.
 
 ### Migration Sequence
 
-| Migration                                | Description                                                                                                                                                                                                |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0004_collateral_generation_workflow`    | Adds `collateral_generation_workflow` table; makes `artifact.sessionId` nullable; adds `artifact.workflowId` FK                                                                                            |
-| `0005_workbench_user`                    | Adds provisional `workbench_user` cache table                                                                                                                                                              |
-| `0012_workbench_workflow_assignments`    | Adds `workbench_workflows.assignments` (jsonb) for per-step credential/tool assignments                                                                                                                    |
-| `0015_workbench_workflows_per_principal` | Adds `workbench_workflows.principal_id` (NOT NULL), backfills from each tenant's user principal, re-keys the unique constraint to `(tenant_id, principal_id, kind)` (CL-1450)                              |
-| `0020_upload`                            | Adds the `upload` table (`id`, `tenant_id`, `principal_id`, `filename`, `mime_type`, `content` BYTEA, `size`, `created_at`) for pre-workflow binary files (xlsx) that arrive before a run exists (CL-1961) |
+| Migration     | Description                                                                                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0020_upload` | Adds the `upload` table (`id`, `tenant_id`, `principal_id`, `filename`, `mime_type`, `content` BYTEA, `size`, `created_at`) for pre-workflow binary files (xlsx) that arrive before a run exists |
 
-**Data migration (not a schema migration):** `apps/hub/src/scripts/migrate-to-global-tenant.ts` moves existing users into the global tenant — re-parents workbenches, provisions a per-user Myra, and re-keys `workflow_run` / `artifact` / `artifact_version` / `workbench_workflows` from the old personal principal to the new global member principal. Dry-run by default (`--live` to write); per-user transaction; idempotent. An interrupted run MUST be re-run (Myra provisioning and the re-key transaction are intentionally not atomic, but re-running finishes the re-key). Run it once after deploying the cutover. `pain_point` is not re-keyed — it carries no tenant/principal columns and migrates implicitly with its `workflow_run` via `session_id`.
+> The native-runtime cutover added the `workflow_run.deployment_id` index column and removed the deleted custom-stack tables (`collateral_generation_workflow`, `workbench_user`) and the `workbench_workflows.assignments` column. See `apps/hub/migrations/` for the current sequence.
 
 ## Agent Architecture
 
@@ -379,7 +339,7 @@ Credentials are created by an org admin via **`@intx/admin-ui`** using Interchan
 
 **Credentials are always tenant-owned** (`principalId: null`). This is required for Interchange's `source: 'tenant'` resolution to find them at agent launch time.
 
-Secrets are stored as plaintext at the application layer; encryption is handled at rest by the storage layer (see CL-1521). The app reads secrets directly from the `credential` table and passes them to the sidecar without any decryption step.
+Secrets are stored as plaintext at the application layer; encryption is handled at rest by the storage layer. The app reads secrets directly from the `credential` table and passes them to the sidecar without any decryption step.
 
 For local dev, use `bun run seed:credentials` from `apps/hub/` to seed providers and credentials from env vars (see Local Development).
 
@@ -389,7 +349,7 @@ For local dev, use `bun run seed:credentials` from `apps/hub/` to seed providers
 - **Do not reorder listener registration.** Our listener must be registered after `createHubSessionOrchestrator`.
 - **If you add a new caller of `sidecarRouter.sendSourcesUpdate`**, verify it sends the credential secrets as read from the `credential` table (plaintext; no decrypt step required).
 
-The reconnect bug was introduced as CL-1396 and fixed in the same ticket.
+The reconnect bug has been fixed.
 
 #### Credential verification (ancestor-chain lookup)
 
@@ -441,7 +401,7 @@ The `CredentialPicker` component (`apps/web/src/components/CredentialPicker.tsx`
 
 ### Deploy Prompts
 
-Agent deploy prompts are currently **static** (no dynamic context injected at deploy time). Dynamic context (current date, operator name, etc.) will be injected at session start via the hub-client layer. See CL-1297 — not yet implemented.
+Agent deploy prompts are currently **static** (no dynamic context injected at deploy time). Dynamic context (current date, operator name, etc.) will be injected at session start via the hub-client layer — not yet implemented.
 
 ### Session Liveness and Relaunch
 
@@ -659,38 +619,18 @@ When configured with `GRANOLA_API_KEY`, Oat ingests recent sales calls from Gran
 
 ## UI Components
 
-### Sidebar Navigation (`StepSidebar`)
+### Run Console (`RunConsole`)
 
-Located in `apps/web/src/components/StepSidebar.tsx`.
+Located in `apps/web/src/components/RunConsole.tsx`. A single generic console that renders any workflow run from its native event stream — there is no per-kind page or step registry (the bespoke `StepSidebar` + `buildSteps` step model was removed in the native-runtime cutover).
 
 **Behavior:**
 
-- Displays workflow steps with numeric indicators (or checkmarks for completed steps)
-- Current step highlighted with white background and shadow
-- Completed steps show green checkmark instead of number
-- Pending steps dimmed (opacity 50%)
-
-**Collapse/Expand:**
-
-- Toggle button in header (chevron icon that rotates)
-- Collapsed width: 64px; expanded width: 224px
-- Spring transition: `stiffness: 300, damping: 30`
-- Labels and source info fade out via `AnimatePresence` when collapsed
-
-**Dynamic Step Derivation:**
-
-- Steps are not hardcoded per page. Each page calls `buildSteps(workflow.currentStep, STEP_LABELS)` from `apps/web/src/lib/steps.ts`
-- `buildSteps()` returns array of steps with status (`completed` | `current` | `pending`) based on current workflow step index
+- Subscribes to the run's SSE event stream via `useWorkflowRunState(deploymentId)` and reduces it into a `RunState` with `resumeFromLog`
+- Renders the step timeline with phase indicators (running / completed / failed / awaiting-signal) derived from the reduced `RunState`
+- Shows step outputs as they arrive
+- Renders an Approve button on any step whose phase is `awaiting-signal`, wired to `useSignalWorkflow` (HITL approval = a signal)
 
 ### Page Transitions
-
-**Cross-page animation** (when moving between workflow stages):
-
-- Uses `AnimatePresence mode="wait"` to ensure outgoing page exits before incoming page enters
-- Each page wrapped in `motion.div` with:
-  - Entry: `opacity: 0, y: 20` → `opacity: 1, y: 0`
-  - Exit: `opacity: 0, y: -20`
-  - Duration: 0.3s
 
 **Panel animations** (within a page):
 

@@ -6,7 +6,7 @@ Hono + TypeScript backend. Thin product layer on top of Interchange.
 
 - Agent provisioning: create instances, launch sessions, assign credentials and tools
 - Credential storage: encrypt at write, decrypt before pushing to sidecar
-- Workflow orchestration: call ingestion, extraction, artifact generation
+- Workflow deployment: deploy native `@intx/workflow` definitions via the operator-gated deploy route, and expose read/signal routes over the native workflow-run event stream; the hub runs no custom workflow orchestration
 - Tenant and workspace management
 
 ## Key rules

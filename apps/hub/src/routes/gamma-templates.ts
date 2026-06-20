@@ -4,7 +4,7 @@ import { getLogger } from '@intx/log';
 import type { DB } from '@intx/db';
 import type { HubDb } from '../db';
 import { workbenchTemplate, workbenchTemplateVersion } from '../db/schema';
-import { getUserContext } from '../services/workflow-orchestration';
+import { getUserContext } from '../lib/user-context';
 import { configToRow, listLatestGammaTemplates, GAMMA_KIND } from '../lib/gamma-templates';
 import type { GammaTemplateConfig } from '../lib/gamma-templates';
 

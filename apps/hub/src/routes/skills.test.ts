@@ -1,12 +1,19 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
 import { Hono } from 'hono';
+import * as realUserContext from '../lib/user-context';
+import * as realSkillLibrary from '../services/skill-library';
 
-mock.module('../services/workflow-orchestration', () => ({
+// Register module mocks only for this suite, then restore the real modules
+// afterwards: mock.module is process-global, so leaving them mocked pollutes
+// sibling suites (uploads.test, skill-library.test) that exercise real behavior
+const mockedUserContext = {
   getRequestedUserContext: mock(() =>
     Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'prn-1' }, forbidden: false })
   ),
   getUserContext: mock(() => Promise.resolve({ tenantId: 'tenant-1', principalId: 'prn-1' })),
-}));
+};
+const realUserContextModule = { ...realUserContext };
+const realSkillLibraryModule = { ...realSkillLibrary };
 
 const mockCreateSkill = mock((..._args: unknown[]) =>
   Promise.resolve({
@@ -72,7 +79,7 @@ const mockRestoreSkillVersion = mock(() =>
   })
 );
 
-mock.module('../services/skill-library', () => ({
+const mockedSkillLibrary = {
   listSkills: mockListSkills,
   getSkillAsset: mockGetSkillAsset,
   getSkillContent: mockGetSkillContent,
@@ -94,7 +101,17 @@ mock.module('../services/skill-library', () => ({
       this.status = status;
     }
   },
-}));
+};
+
+beforeAll(() => {
+  mock.module('../lib/user-context', () => mockedUserContext);
+  mock.module('../services/skill-library', () => mockedSkillLibrary);
+});
+
+afterAll(() => {
+  mock.module('../lib/user-context', () => realUserContextModule);
+  mock.module('../services/skill-library', () => realSkillLibraryModule);
+});
 
 import { createSkillsRouter } from './skills';
 

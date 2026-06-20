@@ -20,27 +20,19 @@ Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staf
 
 ## How It Works
 
+Workflows are deployed pipelines that run on Interchange's native workflow runtime. The user starts a run, watches its steps progress, and approves the human-in-the-loop gates — all in a single generic run console; there is no per-workflow bespoke UI.
+
 1. **Oat processes calls** — Oat ingests Granola call recordings and creates call document artifacts when prompted.
-2. **User triggers Collateral Generation** — The user selects N input artifacts (e.g. call documents) and N output types (e.g. case study, one-pager, email draft). Each combination generates independently.
-3. **Each output is an independent artifact** — Results are stored as artifact rows and can be reviewed, refined, re-used as inputs, or exported.
+2. **User starts a workflow run** — e.g. Collateral Generation against selected call documents.
+3. **The run console shows progress** — each step's status streams in live; at a review gate the user approves (or rejects) before the run continues.
+4. **Outputs are artifacts** — results are stored as artifact rows and can be reviewed, refined, re-used as inputs, or exported.
 
-## Output Types Currently Supported
+## Workflows Currently Shipped
 
-- Case study
-- One-pager
-- Email draft
+Each workflow is a deployed pipeline (`collateral-generation`, `presentation-generation`, `resource-enrichment`, `seo-enrichment`, `reddit-opportunity-scanner`, `blind-ab-comparison`). Examples:
 
-## Resource Enrichment
-
-A second workflow family for enriching tabular resources row by row. The user uploads a
-resource file (`.xlsx`), the workflow generates option variants for each row, the user picks
-one option per field in a review step, and the approved choices are downloaded as a CSV.
-
-The first concrete kind is **SEO Enrichment**: from a product-catalog spreadsheet it generates
-five SEO title, description, and summary variants per product (grounded in the product's image
-and metadata), the user selects the best of each, and exports a CSV of the chosen copy. The
-generic base (upload → enrich → review → export, the per-row "selection" picker, CSV download)
-is reusable; new enrichment domains are added as new kinds, not forks.
+- **Collateral Generation** — call documents into case studies, one-pagers, and email drafts.
+- **SEO / Resource Enrichment** — a product-catalog spreadsheet into row-by-row option variants; the user picks the best per field in a review gate and exports the chosen copy as a CSV.
 
 ## Skill Library
 
@@ -81,23 +73,13 @@ The current workflow is the first concrete version of a more general workbench m
 
 The product should surface named outcomes such as "Create sales collateral" or "Draft LinkedIn posts" rather than raw internal steps.
 
-### Adding a workflow to a workbench
+### Adding a workflow
 
-Adding a workflow to a workbench is a configuration step, like adding an agent. Each workflow
-exposes its steps; for every step the user assigns the credentials it needs (e.g. Granola for
-intake, an inference provider for analysis and generation) and the tools it may use. Credentials are
-provisioned by an org admin via admin-ui — users select from the credentials already available in
-their tenant. These assignments are saved to the workbench and reused on every run, so a workflow
-can only be added once its required credentials are in place. Assignments can be edited later from
-the same place.
-
-### Choosing who runs each step
-
-For each generative step (analyze, generate, improve), the user can either let the workflow run it
-with the default inference provider, or route it to one of their existing agents — for example,
-sending a step to Oat so it runs with Oat's own model, credentials, and Granola tools. Picking an
-agent needs nothing more than access to that agent in the workbench; the agent already carries its
-own inference provider, so no separate provider credential is required for that step.
+A workflow is a deployed pipeline, not a per-user configuration. An operator authors it as a native
+workflow package and deploys it to the hub (see [DEPLOYING_WORKFLOWS.md](../DEPLOYING_WORKFLOWS.md));
+its inference credentials are resolved from the tenant's LLM credential at deploy time. Once
+deployed, users start runs and approve gates — there is no per-step credential/tool install flow in
+the product app. Adding a new workflow needs no hub change, only a new package and a push.
 
 ## Intake Scope
 

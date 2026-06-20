@@ -48,6 +48,11 @@ export type UploadRow = typeof upload.$inferSelect;
 
 export const workflowRun = pgTable('workflow_run', {
   id: uuid('id').primaryKey().defaultRandom(),
+  // Native-deploy index column (M6.8): the @intx/workflow-deploy deploymentId
+  // (a `ses_…` string, not a uuid) for runs deployed through the native stack.
+  // Null for legacy pipeline-session rows. The uuid `id` stays the PK so the
+  // painPoint/transcript FKs are unaffected.
+  deploymentId: text('deployment_id'),
   tenantId: text('tenant_id').notNull(),
   principalId: text('principal_id').notNull(),
   kind: text('kind').notNull(),
