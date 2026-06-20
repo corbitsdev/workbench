@@ -191,14 +191,17 @@ export async function seedGlobalTenant(db: ProductionDB): Promise<{ tenantId: st
 }
 
 /**
- * Add a same-domain user to the shared global org tenant as a `member`
- * principal. Idempotent and race-safe (two tabs / signup+first-session can
- * race): relies on the unique `principal (tenantId, kind, refId)` constraint and
- * catches the unique violation to reselect on a fresh connection.
+ * Add a same-domain user to the shared global org tenant as a principal.
+ * Idempotent and race-safe (two tabs / signup+first-session can race): relies on
+ * the unique `principal (tenantId, kind, refId)` constraint and catches the
+ * unique violation to reselect on a fresh connection.
  *
- * Membership is purely the principal row existing plus the member role — no
- * `*:read` grant (see `seedGlobalTenant`). Throws if the global tenant has not
- * been seeded yet, since there is nothing to join.
+ * Membership is purely the principal row existing — NO role is assigned. The
+ * `member` role carried no grants anyway (product reads are principal-scoped and
+ * never consult the grant system; see `seedGlobalTenant`), so assigning it
+ * authorized nothing. Elevated access (owner/admin) is granted explicitly via
+ * the native Roles/Grants API, never implicitly on join. Throws if the global
+ * tenant has not been seeded yet, since there is nothing to join.
  */
 export async function ensureGlobalMember(
   db: ProductionDB,
@@ -228,42 +231,26 @@ export async function ensureGlobalMember(
     return { tenantId: globalTenant.id, principalId: existing.id };
   }
 
-  const memberRole = await db.query.role.findFirst({
-    where: and(eq(role.tenantId, globalTenant.id), eq(role.name, 'member')),
-  });
-  if (!memberRole) {
-    throw new Error(`Member role missing on global tenant ${globalTenant.id}`);
-  }
-
   try {
-    return await db.transaction(async (tx) => {
-      const now = new Date();
-      const principalId = generateId('principal');
+    const now = new Date();
+    const principalId = generateId('principal');
 
-      await tx.insert(principal).values({
-        id: principalId,
-        tenantId: globalTenant.id,
-        kind: 'user',
-        refId: opts.userId,
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      await tx.insert(principalRole).values({
-        principalId,
-        roleId: memberRole.id,
-        createdAt: now,
-      });
-
-      log.info('Global member provisioned', { userId: opts.userId, principalId });
-      return { tenantId: globalTenant.id, principalId };
+    await db.insert(principal).values({
+      id: principalId,
+      tenantId: globalTenant.id,
+      kind: 'user',
+      refId: opts.userId,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
     });
+
+    log.info('Global member provisioned', { userId: opts.userId, principalId });
+    return { tenantId: globalTenant.id, principalId };
   } catch (err) {
     // A concurrent join created the principal between our pre-check and insert.
-    // The unique (tenantId, kind, refId) constraint aborts our transaction; the
-    // reselect MUST run on a fresh connection (db, not the aborted tx), so it is
-    // outside the transaction. The concurrent writer also assigns the role.
+    // The unique (tenantId, kind, refId) constraint aborts the insert; the
+    // reselect runs on a fresh connection.
     const existingOnConflict = await reselect();
     if (existingOnConflict) {
       log.info('Global member created concurrently, reselected', {

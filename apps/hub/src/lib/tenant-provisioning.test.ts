@@ -490,7 +490,7 @@ describe('ensureGlobalMember', () => {
     expect(insertMock).not.toHaveBeenCalled();
   });
 
-  it('creates a member principal and assigns the member role for a new user', async () => {
+  it('creates a user principal for a new user and assigns NO role', async () => {
     const inserted: Array<Record<string, unknown>> = [];
     const insertMock = mock(() => ({
       // biome-ignore lint/suspicious/noExplicitAny: test mock
@@ -524,9 +524,9 @@ describe('ensureGlobalMember', () => {
     expect(principalRow?.refId).toBe('user-abc');
     expect(principalRow?.tenantId).toBe('tnt_global');
 
-    // The role assignment binds it to the member role (not owner/admin).
+    // No role is assigned on join — membership is the principal row alone.
     const roleAssignment = inserted.find((r) => r.roleId !== undefined);
-    expect(roleAssignment?.roleId).toBe('rol_member');
+    expect(roleAssignment).toBeUndefined();
   });
 
   it('is race-safe — reselects the principal when the insert hits a unique violation', async () => {
