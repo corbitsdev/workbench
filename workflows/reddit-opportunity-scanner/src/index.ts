@@ -35,6 +35,7 @@ const scanAgent = defineAgent({
   tags: { credentialName: LLM_CREDENTIAL_NAME },
 });
 
+export const label = 'Reddit Opportunity Scanner';
 export const kind = 'reddit-opportunity-scanner';
 
 export const workflow = defineWorkflow({

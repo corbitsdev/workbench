@@ -47,6 +47,7 @@ const renderAgent = defineAgent({
   tags: { credentialName: LLM_CREDENTIAL_NAME },
 });
 
+export const label = 'Presentation Generation';
 export const kind = 'presentation-generation';
 
 export const workflow = defineWorkflow({

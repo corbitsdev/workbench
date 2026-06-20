@@ -35,6 +35,7 @@ const exportAgent = defineAgent({
   tags: { credentialName: LLM_CREDENTIAL_NAME },
 });
 
+export const label = 'SEO Enrichment';
 export const kind = 'seo-enrichment';
 
 export const workflow = defineWorkflow({

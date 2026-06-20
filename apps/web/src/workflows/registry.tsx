@@ -1,19 +1,10 @@
-export interface AgentSelectionTarget {
-  instanceId: string;
-  tenantId: string;
-  agentName: string;
-}
+// Contract each workflow package must satisfy when exporting intake UI.
+// The hub supplies deployed kind strings at runtime; apps/web lazy-loads
+// the matching package via workflow-ui.ts and renders IntakeForm if present.
 
-// The workflow UI is now generic: every kind starts via NewRunPane and is
-// observed through the native RunConsole, so there is no per-kind registry.
-// These props are retained for the page wiring that mounts the generic panes.
-export interface WorkflowNewPaneProps {
-  workflowKind: string;
-  onStarted: (deploymentId: string) => void;
-  onClose: () => void;
-}
-
-export interface WorkflowSelectedPanelProps {
-  deploymentId: string;
-  onClose: () => void;
+export interface IntakeFormProps {
+  // Called with the trigger payload when the user submits the form.
+  // The promise resolves after the run has been started.
+  onSubmit: (input: Record<string, unknown>) => Promise<void>;
+  onCancel: () => void;
 }

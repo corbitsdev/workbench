@@ -35,6 +35,7 @@ const generateAgent = defineAgent({
   tags: { credentialName: LLM_CREDENTIAL_NAME },
 });
 
+export const label = 'Collateral Generation';
 export const kind = 'collateral-generation';
 
 export const workflow = defineWorkflow({

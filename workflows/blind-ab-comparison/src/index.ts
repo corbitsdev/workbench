@@ -45,6 +45,7 @@ const persistAgent = defineAgent({
   tags: { credentialName: LLM_CREDENTIAL_NAME },
 });
 
+export const label = 'Blind A/B Comparison';
 export const kind = 'blind-ab-comparison';
 
 export const workflow = defineWorkflow({

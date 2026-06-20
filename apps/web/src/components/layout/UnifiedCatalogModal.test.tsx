@@ -5,6 +5,10 @@ import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { UnifiedCatalogModal } from './UnifiedCatalogModal';
 
+mock.module('../../lib/workflow-ui', () => ({
+  loadWorkflowUI: async () => ({ label: undefined, IntakeForm: undefined }),
+}));
+
 mock.module('../../hooks/use-workflow', () => ({
   useWorkflowRuns: () => ({
     data: [
