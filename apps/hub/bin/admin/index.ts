@@ -13,10 +13,8 @@
 import { api, env, makeFail, makeLogger, signIn, type CookieJar } from '../_lib';
 import { createHubClient, type HubClient } from './client';
 import { groupByTag, operationInputs, type ResourceGroup } from './menu';
-import { LOCAL_ACTIONS, runLocalAction } from './local';
+import { localGroups, runLocalAction, type LocalAction } from './local';
 import { ask, confirm, selectOne } from './prompts';
-
-const LOCAL_GROUP = 'Local actions (build, seed, push)';
 
 const log = makeLogger('admin');
 const fail = makeFail('admin');
@@ -126,12 +124,24 @@ function coerceBodyValue(value: string): unknown {
   return value;
 }
 
-async function runLocalActions(tenant: TenantChoice): Promise<void> {
-  const action = selectOne(LOCAL_GROUP, LOCAL_ACTIONS, (a) => a.label);
+async function runLocalActions(groupLabel: string, actions: LocalAction[], tenant: TenantChoice): Promise<void> {
+  const action = selectOne(`${groupLabel}:`, actions, (a) => a.label);
   if (!action) return;
 
   let extraArgs: string[] = [];
-  if (action.prompt) {
+  if (action.choices) {
+    const values = action.choices.discover();
+    if (values.length === 0) {
+      log(`no ${action.choices.text.toLowerCase()} options found; aborting this action`);
+      return;
+    }
+    const chosen = selectOne(`${action.choices.text}:`, values, (v) => v);
+    if (!chosen) {
+      log('nothing selected; aborting this action');
+      return;
+    }
+    extraArgs = [action.choices.flag, chosen];
+  } else if (action.prompt) {
     const raw = ask(`${action.prompt.text}:`);
     const value = raw === null ? '' : raw.trim();
     if (value) extraArgs = [action.prompt.flag, value];
@@ -150,14 +160,25 @@ async function runLocalActions(tenant: TenantChoice): Promise<void> {
 
 async function runOnce(client: HubClient, tenant: TenantChoice): Promise<void> {
   const specGroups = groupByTag(client.operations());
-  const resources: { label: string; group: ResourceGroup | null }[] = [
-    { label: `${LOCAL_GROUP} (${LOCAL_ACTIONS.length})`, group: null },
+  const local = localGroups();
+  const resources: {
+    label: string;
+    group: ResourceGroup | null;
+    localGroup?: { group: string; actions: LocalAction[] };
+  }[] = [
+    ...local.map((g) => ({
+      label: `${g.group} (${g.actions.length})`,
+      group: null,
+      localGroup: g,
+    })),
     ...specGroups.map((g) => ({ label: `${g.tag} (${g.operations.length})`, group: g })),
   ];
   const chosen = selectOne('Resource:', resources, (r) => r.label);
   if (!chosen) return;
   if (chosen.group === null) {
-    await runLocalActions(tenant);
+    if (chosen.localGroup) {
+      await runLocalActions(chosen.localGroup.group, chosen.localGroup.actions, tenant);
+    }
     return;
   }
   const group = chosen.group;
