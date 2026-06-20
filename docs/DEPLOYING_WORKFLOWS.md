@@ -11,7 +11,7 @@ change.
 - **Author**: each workflow is a package under `workflows/<kind>/` named
   `@workbench/workflow-<kind>`, exporting `kind` and `workflow` (a
   `defineWorkflow(...)` definition).
-- **Push**: `workflows:push` imports `@workbench/workflow-<kind>`, serializes its
+- **Push**: the push script imports `@workbench/workflow-<kind>`, serializes its
   `workflow`, and `POST`s the definition to `POST /api/internal/workflows/deploy`.
 - **Deploy** (hub): validates the definition, resolves the tenant deploy config
   (the base inference source from the tenant LLM credential), and hands it to the
@@ -41,13 +41,14 @@ tenant LLM credential (provider `openai-compatible`, name = `LLM_CREDENTIAL_NAME
 from `@workbench/agents`) must be seeded — the deploy resolves the base inference
 source from it.
 
-```bash
-HUB_URL=https://hub.example.com HUB_SERVICE_TOKEN='<sidecar/service token>' \
-  bun run workflows:push -- --kind collateral-generation
-```
-
-`--hub-url` overrides `HUB_URL`. On success the script prints the deployed kind,
-deployment id, and deploy mode (`multi-step` or `trivial`).
+Run the admin CLI (`bun run admin` locally, or `bun run admin:staging` /
+`bun run admin:production` from `apps/hub`): sign in, select the target tenant,
+then choose **Local actions → Push a workflow**. At the "Workflow kind (e.g.
+pain-point-collateral)" prompt, type just the kind value (e.g.
+`pain-point-collateral`); the selected tenant is threaded automatically. On
+success the CLI prints the deployed kind, deployment id, and deploy mode
+(`multi-step` or `trivial`). See [ADMIN_CLI.md](./ADMIN_CLI.md) for the CLI
+details.
 
 ## Serialization constraint
 
@@ -62,7 +63,8 @@ contains a function, so this fails fast rather than at runtime.
 1. Create `workflows/<kind>/` as `@workbench/workflow-<kind>`, exporting `kind`
    and `workflow` (see `workflows/pain-point-collateral`).
 2. `bun install` (registers the new workspace member).
-3. `bun run workflows:push -- --kind <kind>`.
+3. Push it via the admin CLI's **Local actions → Push a workflow**; at the
+   "Workflow kind" prompt, type just the kind value.
 
 No hub or push-script edits are required — the push script resolves the package by
 naming convention (`@workbench/workflow-<kind>`) and the hub deploy route is
@@ -86,12 +88,14 @@ genuine-reasoning steps are agents.** Three patterns cover the rest:
 
 2. **Fetch + human select** — `deterministicToolStep` to fetch options →
    `awaitSignal` for the pick → `deterministicToolStep` to fetch the chosen item:
+
    ```ts
    intake: deterministicToolStep({ id, tool: 'granola_list_notes', input: { literal: {} } }),
    select: awaitSignal({ name: 'note-selection', after: ['intake'] }),
    fetch:  deterministicToolStep({ id, tool: 'granola_get_note',
                                    input: { from: 'steps.select.output' }, after: ['select'] }),
    ```
+
    The panel renders the list from `steps.intake.output` and fires
    `onSignal('note-selection', { noteId })`; the select step's output IS that payload.
 
@@ -125,7 +129,8 @@ selector or a `map`-aware deterministic dispatch would let both become determini
 
 ## API client generation
 
-These scripts are hand-written against a single endpoint. If we later emit a hub
-OpenAPI spec, [`openapi-arktype`](https://github.com/alexanderguy/openapi-arktype)
-can generate a typed arktype client from it instead of hand-writing REST calls —
-worth adopting once more than one hub endpoint is driven from scripts.
+The hub now serves a `GET /openapi.json` spec, and `openapi-arktype` is vendored
+as `@workbench/openapi-arktype` (`packages/openapi-arktype/`). It generates
+arktype validators from that spec; the admin CLI uses its `createClient({ url })`
+runtime to drive hub resources discovered from the live spec rather than
+hand-writing REST calls.

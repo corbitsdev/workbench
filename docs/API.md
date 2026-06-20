@@ -38,8 +38,8 @@ tenant LLM credential), and hands it to the `@intx/workflow-deploy` orchestrator
 which commits `workflow.json` + `capability-declarations.json` to a git-backed
 `workflow` repo and launches one session per step.
 
-Pushed in practice by `bun run workflows:push -- --kind <kind>`
-(`apps/hub/bin/deploy-workflow.ts`), which imports `@workbench/workflow-<kind>`,
+Pushed in practice via the admin CLI's **Local actions → Push a workflow** (see
+[ADMIN_CLI.md](./ADMIN_CLI.md)), which imports `@workbench/workflow-<kind>`,
 serializes its `workflow`, and POSTs it here.
 
 **Response** (200 OK):
@@ -72,7 +72,14 @@ Tenant-scoped index of deployed runs from the `workflow_run` table (non-deleted,
 **Response** (200 OK):
 
 ```json
-[{ "deploymentId": "...", "kind": "collateral-generation", "status": "running", "createdAt": "2026-06-19T10:00:00Z" }]
+[
+  {
+    "deploymentId": "...",
+    "kind": "collateral-generation",
+    "status": "running",
+    "createdAt": "2026-06-19T10:00:00Z"
+  }
+]
 ```
 
 ---

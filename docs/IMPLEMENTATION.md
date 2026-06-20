@@ -186,8 +186,8 @@ Each `outputType` generates independently in parallel via `@intx/agent`. Results
 
 Workflows run on Interchange's native runtime; the hub deploys definitions and observes runs (no hub-routed step state machine). See ARCHITECTURE.md § Native Workflow Runtime and [DEPLOYING_WORKFLOWS.md](../DEPLOYING_WORKFLOWS.md).
 
-| Method | Route                  | Input                                            | Output                                                         |
-| ------ | ---------------------- | ------------------------------------------------ | -------------------------------------------------------------- |
+| Method | Route                                        | Input         | Output                                 |
+| ------ | -------------------------------------------- | ------------- | -------------------------------------- | --------------------------------------------- |
 | Method | Route                                        | Auth          | Input                                  | Output                                        |
 | ------ | -------------------------------------------- | ------------- | -------------------------------------- | --------------------------------------------- |
 | `POST` | `/api/internal/workflows/deploy`             | service token | serialized `@intx/workflow` definition | `{ kind, deploymentId, result }`              |
@@ -196,7 +196,7 @@ Workflows run on Interchange's native runtime; the hub deploys definitions and o
 | `POST` | `/api/v1/workflow-runs/:deploymentId/signal` | user session  | `{ runId, signalName, payload }`       | `202 { accepted: true }`                      |
 | `GET`  | `/recent-calls`                              | user session  | `?tenantId&kind`                       | `{ calls }`                                   |
 
-**Deploy** (`apps/hub/src/routes/workflow-deploy.ts`) — service-token-gated. Validates the posted definition, resolves the tenant deploy config, and runs the `@intx/workflow-deploy` orchestrator via `apps/hub/src/services/workflow-deploy.ts` (`createWorkflowDeployService` → `deployWorkflow`). The service writes `workflow.json` + `capability-declarations.json` to a git-backed `workflow` repo (`createWorkflowRepoWriter`), launches one session per step (`toLaunchSession` over `SessionService`), and sends the multi-step deploy frame to the sidecar (`toSendMultiStepDeploy` over `SidecarRouter`; the `as AgentDeployWorkflow['definition']` cast reflects only exactOptional variance — see AGENTS.md § Vendored workflow-host wiring). Pushed by `bun run workflows:push -- --kind <kind>` (`apps/hub/bin/deploy-workflow.ts`), which imports `@workbench/workflow-<kind>`, serializes its `workflow`, and POSTs it with `HUB_SERVICE_TOKEN`.
+**Deploy** (`apps/hub/src/routes/workflow-deploy.ts`) — service-token-gated. Validates the posted definition, resolves the tenant deploy config, and runs the `@intx/workflow-deploy` orchestrator via `apps/hub/src/services/workflow-deploy.ts` (`createWorkflowDeployService` → `deployWorkflow`). The service writes `workflow.json` + `capability-declarations.json` to a git-backed `workflow` repo (`createWorkflowRepoWriter`), launches one session per step (`toLaunchSession` over `SessionService`), and sends the multi-step deploy frame to the sidecar (`toSendMultiStepDeploy` over `SidecarRouter`; the `as AgentDeployWorkflow['definition']` cast reflects only exactOptional variance — see AGENTS.md § Vendored workflow-host wiring). Pushed via the admin CLI's **Local actions → Push a workflow** (which spawns `apps/hub/bin/deploy-workflow.ts` internally; see [ADMIN_CLI.md](./ADMIN_CLI.md)), which imports `@workbench/workflow-<kind>`, serializes its `workflow`, and POSTs it with `HUB_SERVICE_TOKEN`.
 
 **Run routes** (`apps/hub/src/routes/workflow-runs.ts`):
 
@@ -207,7 +207,7 @@ Workflows run on Interchange's native runtime; the hub deploys definitions and o
 
 #### Workflow definition packages
 
-Each kind is a package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` + `workflow` (`defineWorkflow` with per-step `defineAgent` and `awaitSignal` HITL gates). Shipped kinds: `collateral-generation`, `presentation-generation`, `resource-enrichment`, `seo-enrichment`, `reddit-opportunity-scanner`, `blind-ab-comparison`. The hub imports none of them — its only workflow imports are `@intx/workflow-deploy` (the orchestrator) and the `WorkflowDefinition` *type* from `@intx/workflow`. Adding a kind is a new package + `workflows:push`.
+Each kind is a package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` + `workflow` (`defineWorkflow` with per-step `defineAgent` and `awaitSignal` HITL gates). Shipped kinds: `collateral-generation`, `presentation-generation`, `resource-enrichment`, `seo-enrichment`, `reddit-opportunity-scanner`, `blind-ab-comparison`. The hub imports none of them — its only workflow imports are `@intx/workflow-deploy` (the orchestrator) and the `WorkflowDefinition` _type_ from `@intx/workflow`. Adding a kind is a new package + a `deploy-workflow.ts` push.
 
 #### Web run console
 
@@ -320,8 +320,8 @@ Tracks which workflow kinds a principal has enabled in a tenant.
 
 ### Migration Sequence
 
-| Migration     | Description                                                                                                                                                                                                |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Migration     | Description                                                                                                                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `0020_upload` | Adds the `upload` table (`id`, `tenant_id`, `principal_id`, `filename`, `mime_type`, `content` BYTEA, `size`, `created_at`) for pre-workflow binary files (xlsx) that arrive before a run exists |
 
 > The native-runtime cutover added the `workflow_run.deployment_id` index column and removed the deleted custom-stack tables (`collateral_generation_workflow`, `workbench_user`) and the `workbench_workflows.assignments` column. See `apps/hub/migrations/` for the current sequence.
@@ -343,7 +343,7 @@ Credentials are created by an org admin via **`@intx/admin-ui`** using Interchan
 
 Secrets are stored as plaintext at the application layer; encryption is handled at rest by the storage layer. The app reads secrets directly from the `credential` table and passes them to the sidecar without any decryption step.
 
-For local dev, use `bun run seed:credentials` from `apps/hub/` to seed providers and credentials from env vars (see Local Development).
+For local dev, seed providers and credentials from env vars via the admin CLI's **Local actions → Seed tool credentials from env** (see Local Development).
 
 #### What must not change
 
@@ -473,11 +473,7 @@ Per-instance env files are also provided for running services independently:
 - `.env.sidecar.example` → `.env.sidecar` — sidecar-specific variables
 - `.env.migrate.example` → `.env.migrate` — migration-only variables
 
-To seed providers and credentials locally, copy your API keys into the appropriate env file and run:
-
-```bash
-cd apps/hub && bun run seed:credentials
-```
+To seed providers and credentials locally, copy your API keys into the appropriate env file, then run the admin CLI (`bun run admin`), select the tenant, and choose **Local actions → Seed tool credentials from env**.
 
 This reads `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GEMINI_API_KEY` (or `GEMINI_API_KEY`), `GRANOLA_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY` (+ `BROWSERBASE_PROJECT_ID`), `XAI_API_KEY`, `SCRAPECREATORS_API_KEY`, `GAMMA_API_KEY`, `GITHUB_API_KEY`, and `YOUTUBE_API_KEY` and upserts the corresponding providers and tenant credentials. For Google Gemini it creates provider `google-genai`, reconciles `metadata.baseURL` on existing tenant-owned provider rows, and upserts credential **`google-ai`** (overridable via `GOOGLE_AI_CREDENTIAL_NAME`) with `metadata.model` from `GOOGLE_AI_MODEL` (default `gemini-3.1-flash-lite`). That model env var is stored on the credential only; SEO enrich uses the workflow `defaultModel`, not the env var. The `buildEntries()` function is the single list of seeded providers; each entry is skipped silently when its key is unset.
 

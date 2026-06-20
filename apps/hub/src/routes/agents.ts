@@ -1,5 +1,7 @@
 import { eq, and, inArray, notInArray, isNull } from 'drizzle-orm';
+import { type } from 'arktype';
 import { Hono } from 'hono';
+import { describeRoute, resolver } from 'hono-openapi';
 import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
@@ -17,10 +19,42 @@ import {
   type GrantRequirementRow,
 } from '../services/agent-provisioning';
 import { getToolNamesFromCapabilities } from '../lib/tool-registry';
+import { requestBodySchema } from '../lib/openapi';
 
 const log = getLogger(['api', 'agents']);
 
 const { agent, agentInstance, principal, tenant, grant } = intxSchema;
+
+// Response shapes for the OpenAPI spec. The hub admin CLI consumes /openapi.json
+// to discover these operations; these schemas document (they do not replace) the
+// handlers' existing manual validation.
+const AgentInstance = type({
+  id: 'string',
+  agentId: 'string',
+  agentName: 'string',
+  tenantId: 'string',
+  address: 'string',
+  status: 'string',
+  credentialRequirements: 'unknown',
+  capabilities: 'unknown',
+  createdAt: 'string',
+});
+const AgentInstanceListResponse = type({ data: AgentInstance.array() });
+
+const AgentTemplate = type({
+  key: 'string',
+  name: 'string',
+  description: 'string',
+  tools: 'unknown',
+});
+const AgentTemplateListResponse = type({ data: AgentTemplate.array() });
+
+const LaunchSessionResponse = type({ launched: 'boolean' });
+
+const CreateInstanceRequest = type({ templateKey: 'string' });
+const CreateInstanceResponse = type({ instanceId: 'string', created: 'boolean' });
+
+const ErrorResponse = type({ error: 'string' });
 
 // ─── Route ────────────────────────────────────────────────────────
 
@@ -34,425 +68,598 @@ export function createAgentProvisioningRouter(
   const app = new Hono<{ Variables: { userId: string } }>();
 
   // List agent instances for a given tenant
-  app.get('/agents', async (c) => {
-    const userId = c.get('userId');
-    const tenantId = c.req.query('tenantId');
-    if (!tenantId) {
-      return c.json({ error: 'tenantId query parameter required' }, 400);
-    }
+  app.get(
+    '/agents',
+    describeRoute({
+      tags: ['Agents'],
+      summary: 'List agent instances',
+      description:
+        'Lists the deployable (non-personal) agent instances the caller has deployed in the given tenant. Requires a `tenantId` query parameter.',
+      parameters: [
+        {
+          name: 'tenantId',
+          in: 'query',
+          required: true,
+          description: 'Tenant whose agent instances to list.',
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        200: {
+          description: 'Agent instances for the caller',
+          content: {
+            'application/json': { schema: resolver(AgentInstanceListResponse) },
+          },
+        },
+        400: {
+          description: 'Missing tenantId query parameter',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        403: {
+          description: 'Caller is not a user principal of the tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get('userId');
+      const tenantId = c.req.query('tenantId');
+      if (!tenantId) {
+        return c.json({ error: 'tenantId query parameter required' }, 400);
+      }
 
-    const callerPrincipal = await db.query.principal.findFirst({
-      where: and(
-        eq(principal.tenantId, tenantId),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, userId)
-      ),
-    });
-
-    if (!callerPrincipal) {
-      return c.json({ error: 'Forbidden' }, 403);
-    }
-
-    const personalTemplateKeys = AGENT_TEMPLATES.filter((t) => t.kind === 'personal').map(
-      (t) => t.key
-    );
-    const hubDb = db as unknown as HubDb;
-
-    // Return only instances this user has deployed (via memberAgentInstance),
-    // excluding personal-template instances (those surface in PersonalAgentChat).
-    const callerMappings = await hubDb.query.memberAgentInstance.findMany({
-      where: and(
-        eq(memberAgentInstance.tenantId, tenantId),
-        eq(memberAgentInstance.memberPrincipalId, callerPrincipal.id),
-        personalTemplateKeys.length > 0
-          ? notInArray(memberAgentInstance.templateKey, personalTemplateKeys)
-          : undefined
-      ),
-    });
-
-    const callerInstanceIds = callerMappings.map((m) => m.instanceId);
-    if (callerInstanceIds.length === 0) {
-      return c.json({ data: [] });
-    }
-
-    const sharedInstances = await db.query.agentInstance.findMany({
-      where: and(
-        inArray(agentInstance.id, callerInstanceIds),
-        inArray(agentInstance.status, ['deployed', 'running', 'stopped']),
-        isNull(agentInstance.endedAt)
-      ),
-    });
-
-    const agentIds = [...new Set(sharedInstances.map((i) => i.agentId))];
-    const agentRows =
-      agentIds.length > 0
-        ? await db.query.agent.findMany({ where: inArray(agent.id, agentIds) })
-        : [];
-    const agentMap = new Map(agentRows.map((a) => [a.id, a]));
-
-    const result = sharedInstances.map((inst) => {
-      const agentRow = agentMap.get(inst.agentId);
-      return {
-        id: inst.id,
-        agentId: inst.agentId,
-        agentName: agentRow?.name ?? 'Unknown',
-        tenantId: inst.tenantId,
-        address: inst.address,
-        status: inst.status,
-        credentialRequirements: (agentRow?.credentialRequirements ?? []) as Array<{
-          providerName: string;
-          source: string;
-          name?: string;
-        }>,
-        capabilities: (agentRow?.capabilities ?? null) as Record<string, unknown> | null,
-        createdAt: inst.createdAt.toISOString(),
-      };
-    });
-
-    return c.json({ data: result });
-  });
-
-  app.delete('/tenants/:tenantId/agents/instances/:instanceId', async (c) => {
-    const userId = c.get('userId');
-    const tenantId = c.req.param('tenantId');
-    const instanceId = c.req.param('instanceId');
-
-    const callerPrincipal = await db.query.principal.findFirst({
-      where: and(
-        eq(principal.tenantId, tenantId),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, userId)
-      ),
-    });
-    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
-
-    const instance = await db.query.agentInstance.findFirst({
-      where: and(eq(agentInstance.id, instanceId), eq(agentInstance.tenantId, tenantId)),
-    });
-    if (!instance) return c.json({ error: 'Agent instance not found' }, 404);
-
-    const now = new Date();
-    await db.transaction(async (rawTx) => {
-      const tx = rawTx as unknown as DB['db'];
-      await tx
-        .update(agentInstance)
-        .set({ status: 'stopped', endedAt: now, updatedAt: now })
-        .where(eq(agentInstance.id, instanceId));
-      // Remove any personal-agent mapping so /me returns paInstanceId: null,
-      // which surfaces the onboarding screen (re-deploy) rather than a broken
-      // "provisioning" state.
-      const hubTx = tx as unknown as HubDb;
-      await hubTx.delete(memberAgentInstance).where(eq(memberAgentInstance.instanceId, instanceId));
-    });
-
-    // Notify the sidecar so it tears down the agent immediately. Without this,
-    // the sidecar holds the agent in memory and will try to re-register it on
-    // reconnect, failing challenge because endedAt is now set in the DB.
-    await sessionService.endSession(instance.address, 'user deleted instance').catch((err) => {
-      log.warn('Failed to end sidecar session on instance delete', {
-        instanceId,
-        error: err instanceof Error ? err.message : String(err),
+      const callerPrincipal = await db.query.principal.findFirst({
+        where: and(
+          eq(principal.tenantId, tenantId),
+          eq(principal.kind, 'user'),
+          eq(principal.refId, userId)
+        ),
       });
-    });
 
-    return c.body(null, 204);
-  });
+      if (!callerPrincipal) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+
+      const personalTemplateKeys = AGENT_TEMPLATES.filter((t) => t.kind === 'personal').map(
+        (t) => t.key
+      );
+      const hubDb = db as unknown as HubDb;
+
+      // Return only instances this user has deployed (via memberAgentInstance),
+      // excluding personal-template instances (those surface in PersonalAgentChat).
+      const callerMappings = await hubDb.query.memberAgentInstance.findMany({
+        where: and(
+          eq(memberAgentInstance.tenantId, tenantId),
+          eq(memberAgentInstance.memberPrincipalId, callerPrincipal.id),
+          personalTemplateKeys.length > 0
+            ? notInArray(memberAgentInstance.templateKey, personalTemplateKeys)
+            : undefined
+        ),
+      });
+
+      const callerInstanceIds = callerMappings.map((m) => m.instanceId);
+      if (callerInstanceIds.length === 0) {
+        return c.json({ data: [] });
+      }
+
+      const sharedInstances = await db.query.agentInstance.findMany({
+        where: and(
+          inArray(agentInstance.id, callerInstanceIds),
+          inArray(agentInstance.status, ['deployed', 'running', 'stopped']),
+          isNull(agentInstance.endedAt)
+        ),
+      });
+
+      const agentIds = [...new Set(sharedInstances.map((i) => i.agentId))];
+      const agentRows =
+        agentIds.length > 0
+          ? await db.query.agent.findMany({ where: inArray(agent.id, agentIds) })
+          : [];
+      const agentMap = new Map(agentRows.map((a) => [a.id, a]));
+
+      const result = sharedInstances.map((inst) => {
+        const agentRow = agentMap.get(inst.agentId);
+        return {
+          id: inst.id,
+          agentId: inst.agentId,
+          agentName: agentRow?.name ?? 'Unknown',
+          tenantId: inst.tenantId,
+          address: inst.address,
+          status: inst.status,
+          credentialRequirements: (agentRow?.credentialRequirements ?? []) as Array<{
+            providerName: string;
+            source: string;
+            name?: string;
+          }>,
+          capabilities: (agentRow?.capabilities ?? null) as Record<string, unknown> | null,
+          createdAt: inst.createdAt.toISOString(),
+        };
+      });
+
+      return c.json({ data: result });
+    }
+  );
+
+  app.delete(
+    '/tenants/:tenantId/agents/instances/:instanceId',
+    describeRoute({
+      tags: ['Agents'],
+      summary: 'Delete an agent instance',
+      description:
+        'Stops the agent instance, removes its member mapping, and tears down the sidecar session. Idempotent for the mapping cleanup.',
+      parameters: [
+        {
+          name: 'tenantId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+        {
+          name: 'instanceId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        204: { description: 'Instance stopped and torn down' },
+        403: {
+          description: 'Caller is not a user principal of the tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: 'Agent instance not found in the tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get('userId');
+      const tenantId = c.req.param('tenantId');
+      const instanceId = c.req.param('instanceId');
+
+      const callerPrincipal = await db.query.principal.findFirst({
+        where: and(
+          eq(principal.tenantId, tenantId),
+          eq(principal.kind, 'user'),
+          eq(principal.refId, userId)
+        ),
+      });
+      if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+
+      const instance = await db.query.agentInstance.findFirst({
+        where: and(eq(agentInstance.id, instanceId), eq(agentInstance.tenantId, tenantId)),
+      });
+      if (!instance) return c.json({ error: 'Agent instance not found' }, 404);
+
+      const now = new Date();
+      await db.transaction(async (rawTx) => {
+        const tx = rawTx as unknown as DB['db'];
+        await tx
+          .update(agentInstance)
+          .set({ status: 'stopped', endedAt: now, updatedAt: now })
+          .where(eq(agentInstance.id, instanceId));
+        // Remove any personal-agent mapping so /me returns paInstanceId: null,
+        // which surfaces the onboarding screen (re-deploy) rather than a broken
+        // "provisioning" state.
+        const hubTx = tx as unknown as HubDb;
+        await hubTx
+          .delete(memberAgentInstance)
+          .where(eq(memberAgentInstance.instanceId, instanceId));
+      });
+
+      // Notify the sidecar so it tears down the agent immediately. Without this,
+      // the sidecar holds the agent in memory and will try to re-register it on
+      // reconnect, failing challenge because endedAt is now set in the DB.
+      await sessionService.endSession(instance.address, 'user deleted instance').catch((err) => {
+        log.warn('Failed to end sidecar session on instance delete', {
+          instanceId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
+      return c.body(null, 204);
+    }
+  );
 
   // Launch (or relaunch) a session for an agent instance.
   // Credentials are resolved via Interchange's credential-requirement resolution — no IDs needed.
-  app.post('/instances/:instanceId/sessions', async (c) => {
-    const userId = c.get('userId');
-    const instanceId = c.req.param('instanceId');
+  app.post(
+    '/instances/:instanceId/sessions',
+    describeRoute({
+      tags: ['Agents'],
+      summary: 'Launch an agent session',
+      description:
+        'Launches (or relaunches) a session for an agent instance. Idempotent for an already-routable instance (refreshes grants without restarting). Credentials are resolved via Interchange credential-requirement resolution.',
+      parameters: [
+        {
+          name: 'instanceId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        200: {
+          description: 'Session launched or already live',
+          content: {
+            'application/json': { schema: resolver(LaunchSessionResponse) },
+          },
+        },
+        404: {
+          description: 'Instance not found, or caller is not a user principal of its tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        409: {
+          description: 'Instance was deleted and cannot be relaunched',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        500: {
+          description: 'Tenant or agent configuration missing',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        503: {
+          description: 'Failed to launch the agent session',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get('userId');
+      const instanceId = c.req.param('instanceId');
 
-    const instance = await db.query.agentInstance.findFirst({
-      where: eq(agentInstance.id, instanceId),
-    });
-    if (!instance) {
-      return c.json({ error: 'Instance not found' }, 404);
-    }
-
-    const callerPrincipal = await db.query.principal.findFirst({
-      where: and(
-        eq(principal.tenantId, instance.tenantId),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, userId)
-      ),
-    });
-    if (!callerPrincipal) {
-      // Return 404 (identical to the not-found case) so a caller cannot
-      // enumerate valid instance IDs that exist in another tenant.
-      return c.json({ error: 'Instance not found' }, 404);
-    }
-
-    // If the agent is already reachable on a connected sidecar, it is live — do
-    // not re-launch. Re-launching re-deploys the same address, which the sidecar
-    // rejects with "Agent already exists"; that rejected deploy evicts the live
-    // agent from the router address index, after which mail 502s with "agent is
-    // unreachable". The frontend fires this route proactively (and sometimes
-    // twice) right after deploy, so it must be idempotent for a healthy
-    // instance. The 409-recovery path still works: a genuinely-down instance is
-    // not routable, so it falls through to relaunch below.
-    //
-    // Even when already routable, refresh DB grants and push them to the sidecar.
-    // After a hub redeploy the sidecar reconnects and the orchestrator pushes
-    // whatever grants are currently in the DB — which may be stale if tool names
-    // changed (e.g. short→canonical on M4). Idempotent: delete+reinsert is safe
-    // on every call and sendGrantsUpdate does not restart the agent.
-    if (sidecarRouter.getRoutableAddresses().includes(instance.address)) {
-      const agentRowForGrants = await db.query.agent.findFirst({
-        where: eq(agent.id, instance.agentId),
+      const instance = await db.query.agentInstance.findFirst({
+        where: eq(agentInstance.id, instanceId),
       });
-      if (agentRowForGrants) {
-        const toolNamesForGrants = getToolNamesFromCapabilities(
-          agentRowForGrants.capabilities ?? null
-        );
-        const now = new Date();
-        await persistInstanceToolGrants(db, {
-          tenantId: instance.tenantId,
-          principalId: instance.principalId,
-          toolNames: toolNamesForGrants,
-          now,
-        });
-        await persistInstanceGrantRequirements(db, {
-          tenantId: instance.tenantId,
-          principalId: instance.principalId,
-          grantRequirements: (agentRowForGrants.grantRequirements ?? []) as GrantRequirementRow[],
-          now,
-        });
-        const updatedGrants = await grantStore.collectGrants(
-          instance.principalId,
-          instance.tenantId
-        );
-        await sidecarRouter.sendGrantsUpdate(instance.address, updatedGrants);
+      if (!instance) {
+        return c.json({ error: 'Instance not found' }, 404);
       }
-      return c.json({ launched: true });
-    }
 
-    // A stopped instance with endedAt set was explicitly deleted — it cannot be
-    // relaunched. The caller should provision a fresh instance instead.
-    if (instance.status === 'stopped' && instance.endedAt !== null) {
-      return c.json({ error: 'Instance was deleted. Provision a new instance.' }, 409);
-    }
-
-    // Reset a stopped instance so the sidecar treats it as a fresh launch.
-    if (instance.status === 'stopped') {
-      const resetNow = new Date();
-      await db
-        .update(agentInstance)
-        .set({ status: 'deployed', endedAt: null, updatedAt: resetNow })
-        .where(eq(agentInstance.id, instanceId));
-    }
-
-    const tenantRow = await db.query.tenant.findFirst({
-      where: eq(tenant.id, instance.tenantId),
-    });
-    if (!tenantRow?.domain) {
-      return c.json({ error: 'Tenant configuration missing' }, 500);
-    }
-
-    const agentRow = await db.query.agent.findFirst({
-      where: eq(agent.id, instance.agentId),
-    });
-    if (!agentRow?.systemPrompt) {
-      return c.json({ error: 'Agent configuration missing' }, 500);
-    }
-
-    const now = new Date();
-
-    let launched = false;
-    let launchError: string | undefined;
-
-    try {
-      await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
-        agentId: instance.agentId,
-        instanceId: instance.id,
-        instancePrincipalId: instance.principalId,
-        tenantId: instance.tenantId,
-        tenantDomain: tenantRow.domain,
-        systemPrompt: agentRow.systemPrompt,
-        now,
+      const callerPrincipal = await db.query.principal.findFirst({
+        where: and(
+          eq(principal.tenantId, instance.tenantId),
+          eq(principal.kind, 'user'),
+          eq(principal.refId, userId)
+        ),
       });
-      launched = true;
-    } catch (err) {
-      // If the sidecar already has the agent provisioned (e.g. a race between
-      // the orchestrator's reconnect path and this explicit launch), treat it
-      // as success. The agent is live; the frontend can proceed.
-      if (isAgentAlreadyExistsError(err)) {
+      if (!callerPrincipal) {
+        // Return 404 (identical to the not-found case) so a caller cannot
+        // enumerate valid instance IDs that exist in another tenant.
+        return c.json({ error: 'Instance not found' }, 404);
+      }
+
+      // If the agent is already reachable on a connected sidecar, it is live — do
+      // not re-launch. Re-launching re-deploys the same address, which the sidecar
+      // rejects with "Agent already exists"; that rejected deploy evicts the live
+      // agent from the router address index, after which mail 502s with "agent is
+      // unreachable". The frontend fires this route proactively (and sometimes
+      // twice) right after deploy, so it must be idempotent for a healthy
+      // instance. The 409-recovery path still works: a genuinely-down instance is
+      // not routable, so it falls through to relaunch below.
+      //
+      // Even when already routable, refresh DB grants and push them to the sidecar.
+      // After a hub redeploy the sidecar reconnects and the orchestrator pushes
+      // whatever grants are currently in the DB — which may be stale if tool names
+      // changed (e.g. short→canonical on M4). Idempotent: delete+reinsert is safe
+      // on every call and sendGrantsUpdate does not restart the agent.
+      if (sidecarRouter.getRoutableAddresses().includes(instance.address)) {
+        const agentRowForGrants = await db.query.agent.findFirst({
+          where: eq(agent.id, instance.agentId),
+        });
+        if (agentRowForGrants) {
+          const toolNamesForGrants = getToolNamesFromCapabilities(
+            agentRowForGrants.capabilities ?? null
+          );
+          const now = new Date();
+          await persistInstanceToolGrants(db, {
+            tenantId: instance.tenantId,
+            principalId: instance.principalId,
+            toolNames: toolNamesForGrants,
+            now,
+          });
+          await persistInstanceGrantRequirements(db, {
+            tenantId: instance.tenantId,
+            principalId: instance.principalId,
+            grantRequirements: (agentRowForGrants.grantRequirements ?? []) as GrantRequirementRow[],
+            now,
+          });
+          const updatedGrants = await grantStore.collectGrants(
+            instance.principalId,
+            instance.tenantId
+          );
+          await sidecarRouter.sendGrantsUpdate(instance.address, updatedGrants);
+        }
+        return c.json({ launched: true });
+      }
+
+      // A stopped instance with endedAt set was explicitly deleted — it cannot be
+      // relaunched. The caller should provision a fresh instance instead.
+      if (instance.status === 'stopped' && instance.endedAt !== null) {
+        return c.json({ error: 'Instance was deleted. Provision a new instance.' }, 409);
+      }
+
+      // Reset a stopped instance so the sidecar treats it as a fresh launch.
+      if (instance.status === 'stopped') {
+        const resetNow = new Date();
         await db
           .update(agentInstance)
-          .set({ status: 'running', updatedAt: new Date() })
+          .set({ status: 'deployed', endedAt: null, updatedAt: resetNow })
           .where(eq(agentInstance.id, instanceId));
-        launched = true;
-      } else {
-        launchError = err instanceof Error ? err.message : String(err);
-        log.error('Failed to launch agent session', {
-          instanceId,
-          error: launchError,
-        });
       }
-    }
 
-    if (!launched) {
-      return c.json({ error: launchError ?? 'Failed to launch agent session' }, 503);
-    }
+      const tenantRow = await db.query.tenant.findFirst({
+        where: eq(tenant.id, instance.tenantId),
+      });
+      if (!tenantRow?.domain) {
+        return c.json({ error: 'Tenant configuration missing' }, 500);
+      }
 
-    return c.json({ launched: true });
-  });
+      const agentRow = await db.query.agent.findFirst({
+        where: eq(agent.id, instance.agentId),
+      });
+      if (!agentRow?.systemPrompt) {
+        return c.json({ error: 'Agent configuration missing' }, 500);
+      }
+
+      const now = new Date();
+
+      let launched = false;
+      let launchError: string | undefined;
+
+      try {
+        await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
+          agentId: instance.agentId,
+          instanceId: instance.id,
+          instancePrincipalId: instance.principalId,
+          tenantId: instance.tenantId,
+          tenantDomain: tenantRow.domain,
+          systemPrompt: agentRow.systemPrompt,
+          now,
+        });
+        launched = true;
+      } catch (err) {
+        // If the sidecar already has the agent provisioned (e.g. a race between
+        // the orchestrator's reconnect path and this explicit launch), treat it
+        // as success. The agent is live; the frontend can proceed.
+        if (isAgentAlreadyExistsError(err)) {
+          await db
+            .update(agentInstance)
+            .set({ status: 'running', updatedAt: new Date() })
+            .where(eq(agentInstance.id, instanceId));
+          launched = true;
+        } else {
+          launchError = err instanceof Error ? err.message : String(err);
+          log.error('Failed to launch agent session', {
+            instanceId,
+            error: launchError,
+          });
+        }
+      }
+
+      if (!launched) {
+        return c.json({ error: launchError ?? 'Failed to launch agent session' }, 503);
+      }
+
+      return c.json({ launched: true });
+    }
+  );
 
   // List deployable agent templates for the catalog UI.
-  app.get('/agents/templates', (c) => {
-    const templates = AGENT_TEMPLATES.filter(
-      (t) => t.deployable !== false && t.kind !== 'personal'
-    ).map((t) => ({
-      key: t.key,
-      name: t.name,
-      description: t.description,
-      tools: t.capabilities.tools,
-    }));
-    return c.json({ data: templates });
-  });
+  app.get(
+    '/agents/templates',
+    describeRoute({
+      tags: ['Agents'],
+      summary: 'List agent templates',
+      description: 'Lists the deployable (non-personal) agent templates available for the catalog.',
+      responses: {
+        200: {
+          description: 'Deployable agent templates',
+          content: {
+            'application/json': { schema: resolver(AgentTemplateListResponse) },
+          },
+        },
+      },
+    }),
+    (c) => {
+      const templates = AGENT_TEMPLATES.filter(
+        (t) => t.deployable !== false && t.kind !== 'personal'
+      ).map((t) => ({
+        key: t.key,
+        name: t.name,
+        description: t.description,
+        tools: t.capabilities.tools,
+      }));
+      return c.json({ data: templates });
+    }
+  );
 
   // Deploy an agent instance from a pre-built template.
   // Creates a principal + agentInstance + memberAgentInstance row then launches
   // the session. The shared agent definition is the one seeded at boot time in
   // the global org tenant.
-  app.post('/tenants/:tenantId/agents/instances', async (c) => {
-    const userId = c.get('userId');
-    const tenantId = c.req.param('tenantId');
+  app.post(
+    '/tenants/:tenantId/agents/instances',
+    describeRoute({
+      tags: ['Agents'],
+      summary: 'Deploy an agent instance from a template',
+      description:
+        'Creates a principal, agent instance, member mapping, and owner grants from a deployable template, then launches the session. The agent definition is resolved by walking up the tenant hierarchy.',
+      parameters: [
+        {
+          name: 'tenantId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      requestBody: {
+        content: {
+          'application/json': { schema: requestBodySchema(CreateInstanceRequest) },
+        },
+      },
+      responses: {
+        201: {
+          description: 'Agent instance created',
+          content: {
+            'application/json': { schema: resolver(CreateInstanceResponse) },
+          },
+        },
+        400: {
+          description: 'Missing templateKey or unknown/non-deployable template',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        403: {
+          description: 'Caller is not a user principal of the tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: 'Agent definition for the template not found in the hierarchy',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        500: {
+          description: 'Tenant configuration missing',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get('userId');
+      const tenantId = c.req.param('tenantId');
 
-    const callerPrincipal = await db.query.principal.findFirst({
-      where: and(
-        eq(principal.tenantId, tenantId),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, userId)
-      ),
-    });
-    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+      const callerPrincipal = await db.query.principal.findFirst({
+        where: and(
+          eq(principal.tenantId, tenantId),
+          eq(principal.kind, 'user'),
+          eq(principal.refId, userId)
+        ),
+      });
+      if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
 
-    const body = (await c.req.json().catch(() => ({}))) as {
-      templateKey?: unknown;
-    };
-    const templateKey = typeof body.templateKey === 'string' ? body.templateKey : '';
-    if (!templateKey) return c.json({ error: 'templateKey is required' }, 400);
+      const body = (await c.req.json().catch(() => ({}))) as {
+        templateKey?: unknown;
+      };
+      const templateKey = typeof body.templateKey === 'string' ? body.templateKey : '';
+      if (!templateKey) return c.json({ error: 'templateKey is required' }, 400);
 
-    const template = AGENT_TEMPLATES.find((t) => t.key === templateKey);
-    if (!template || template.deployable === false) {
-      return c.json({ error: 'Unknown or non-deployable template' }, 400);
-    }
-
-    const tenantRow = await db.query.tenant.findFirst({
-      where: eq(tenant.id, tenantId),
-    });
-    if (!tenantRow?.domain) return c.json({ error: 'Tenant configuration missing' }, 500);
-
-    // Walk up the tenant hierarchy until we find the agent definition or exhaust the tree.
-    // Start from tenantRow.parentId — tenantRow is already fetched and checked above.
-    // Cycle guard prevents infinite loops on malformed tenant data.
-    const findDefInHierarchy = async (startTenantId: string) => {
-      const visited = new Set<string>();
-      let cursor: string | null = startTenantId;
-      while (cursor !== null) {
-        if (visited.has(cursor)) break;
-        visited.add(cursor);
-        const candidate = await db.query.agent.findFirst({
-          where: and(eq(agent.tenantId, cursor), eq(agent.name, template.name)),
-        });
-        if (candidate) return candidate;
-        const tenantResult: { parentId: string | null } | undefined =
-          await db.query.tenant.findFirst({ where: eq(tenant.id, cursor) });
-        cursor = tenantResult?.parentId ?? null;
+      const template = AGENT_TEMPLATES.find((t) => t.key === templateKey);
+      if (!template || template.deployable === false) {
+        return c.json({ error: 'Unknown or non-deployable template' }, 400);
       }
-      return undefined;
-    };
-    const def = await findDefInHierarchy(tenantRow.parentId ?? tenantId);
-    if (!def) {
-      return c.json({ error: `Agent definition for template "${templateKey}" not found` }, 404);
-    }
 
-    const hubDb = db as unknown as HubDb;
-
-    const now = new Date();
-    const instanceId = generateId('instance');
-    let instancePrincipalId = '';
-
-    await hubDb.transaction(async (rawTx) => {
-      const tx = rawTx as unknown as HubDb;
-
-      // Each instance gets its own principal scoped to the user's workbench tenant.
-      // refId = instanceId keeps principals isolated per user — two users deploying
-      // the same shared definition get separate principals.
-      const newPrincipalId = generateId('principal');
-      await tx.insert(principal).values({
-        id: newPrincipalId,
-        tenantId,
-        kind: 'agent',
-        refId: instanceId,
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
+      const tenantRow = await db.query.tenant.findFirst({
+        where: eq(tenant.id, tenantId),
       });
-      instancePrincipalId = newPrincipalId;
+      if (!tenantRow?.domain) return c.json({ error: 'Tenant configuration missing' }, 500);
 
-      await tx.insert(agentInstance).values({
-        id: instanceId,
-        agentId: def.id,
-        tenantId,
-        principalId: instancePrincipalId,
-        address: `${instanceId}@${tenantRow.domain}`,
-        status: 'deployed',
-        createdAt: now,
-        updatedAt: now,
-      });
+      // Walk up the tenant hierarchy until we find the agent definition or exhaust the tree.
+      // Start from tenantRow.parentId — tenantRow is already fetched and checked above.
+      // Cycle guard prevents infinite loops on malformed tenant data.
+      const findDefInHierarchy = async (startTenantId: string) => {
+        const visited = new Set<string>();
+        let cursor: string | null = startTenantId;
+        while (cursor !== null) {
+          if (visited.has(cursor)) break;
+          visited.add(cursor);
+          const candidate = await db.query.agent.findFirst({
+            where: and(eq(agent.tenantId, cursor), eq(agent.name, template.name)),
+          });
+          if (candidate) return candidate;
+          const tenantResult: { parentId: string | null } | undefined =
+            await db.query.tenant.findFirst({ where: eq(tenant.id, cursor) });
+          cursor = tenantResult?.parentId ?? null;
+        }
+        return undefined;
+      };
+      const def = await findDefInHierarchy(tenantRow.parentId ?? tenantId);
+      if (!def) {
+        return c.json({ error: `Agent definition for template "${templateKey}" not found` }, 404);
+      }
 
-      await tx.insert(memberAgentInstance).values({
-        id: generateId('instance'),
-        tenantId,
-        memberPrincipalId: callerPrincipal.id,
-        templateKey,
-        agentId: def.id,
-        instanceId,
-        createdAt: now,
-      });
+      const hubDb = db as unknown as HubDb;
 
-      // The owning member needs principal-scoped grants to operate their own
-      // instance: read powers the chat event stream (`GET /instances/:id/events`),
-      // write sends mail, manage aborts a turn. Without these the catalog-deploy
-      // path leaves the instance unreadable to its creator (403 "no_match"),
-      // matching the provisioning-on-join path in tenant-provisioning (CL-1635).
-      for (const action of ['read', 'write', 'manage'] as const) {
-        await tx.insert(grant).values({
-          id: generateId('grant'),
+      const now = new Date();
+      const instanceId = generateId('instance');
+      let instancePrincipalId = '';
+
+      await hubDb.transaction(async (rawTx) => {
+        const tx = rawTx as unknown as HubDb;
+
+        // Each instance gets its own principal scoped to the user's workbench tenant.
+        // refId = instanceId keeps principals isolated per user — two users deploying
+        // the same shared definition get separate principals.
+        const newPrincipalId = generateId('principal');
+        await tx.insert(principal).values({
+          id: newPrincipalId,
           tenantId,
-          principalId: callerPrincipal.id,
-          resource: `instance:${instanceId}`,
-          action,
-          effect: 'allow',
-          origin: 'system',
+          kind: 'agent',
+          refId: instanceId,
+          status: 'active',
           createdAt: now,
           updatedAt: now,
         });
+        instancePrincipalId = newPrincipalId;
+
+        await tx.insert(agentInstance).values({
+          id: instanceId,
+          agentId: def.id,
+          tenantId,
+          principalId: instancePrincipalId,
+          address: `${instanceId}@${tenantRow.domain}`,
+          status: 'deployed',
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        await tx.insert(memberAgentInstance).values({
+          id: generateId('instance'),
+          tenantId,
+          memberPrincipalId: callerPrincipal.id,
+          templateKey,
+          agentId: def.id,
+          instanceId,
+          createdAt: now,
+        });
+
+        // The owning member needs principal-scoped grants to operate their own
+        // instance: read powers the chat event stream (`GET /instances/:id/events`),
+        // write sends mail, manage aborts a turn. Without these the catalog-deploy
+        // path leaves the instance unreadable to its creator (403 "no_match"),
+        // matching the provisioning-on-join path in tenant-provisioning (CL-1635).
+        for (const action of ['read', 'write', 'manage'] as const) {
+          await tx.insert(grant).values({
+            id: generateId('grant'),
+            tenantId,
+            principalId: callerPrincipal.id,
+            resource: `instance:${instanceId}`,
+            action,
+            effect: 'allow',
+            origin: 'system',
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      });
+
+      try {
+        await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
+          agentId: def.id,
+          instanceId,
+          instancePrincipalId,
+          tenantId,
+          tenantDomain: tenantRow.domain,
+          systemPrompt: def.systemPrompt ?? '',
+          now,
+        });
+      } catch (err) {
+        log.warn('Agent instance created but session launch failed', {
+          instanceId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
-    });
 
-    try {
-      await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
-        agentId: def.id,
-        instanceId,
-        instancePrincipalId,
-        tenantId,
-        tenantDomain: tenantRow.domain,
-        systemPrompt: def.systemPrompt ?? '',
-        now,
-      });
-    } catch (err) {
-      log.warn('Agent instance created but session launch failed', {
-        instanceId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      return c.json({ instanceId, created: true }, 201);
     }
-
-    return c.json({ instanceId, created: true }, 201);
-  });
+  );
 
   return app;
 }

@@ -7,16 +7,17 @@ here rather than duplicated — duplicated detail drifts.
 
 ## Read first
 
-| If you are…                              | Read                                                                                                                  |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| New to the product                       | [`PRODUCT.md`](PRODUCT.md) — the product model and user-facing features                                               |
-| Designing a change                       | [`ARCHITECTURE.md`](ARCHITECTURE.md) — system design, the generic workflow-run + artifact model, Interchange boundary |
-| Implementing in the hub/sidecar          | [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — technical details and conventions                                          |
-| Calling or extending the HTTP API        | [`API.md`](API.md)                                                                                                    |
-| Adding an agent or tool                  | [`CREATING_AGENTS_AND_TOOLS.md`](CREATING_AGENTS_AND_TOOLS.md)                                                        |
-| Working on the call-to-artifact pipeline | [`SOURCE_TO_ARTIFACT.md`](SOURCE_TO_ARTIFACT.md)                                                                      |
-| Setting up / following engineering rules | [`../AGENTS.md`](../AGENTS.md)                                                                                        |
-| Deploying / running coverage             | [`../README.md`](../README.md)                                                                                        |
+| If you are…                                            | Read                                                                                                                  |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| New to the product                                     | [`PRODUCT.md`](PRODUCT.md) — the product model and user-facing features                                               |
+| Designing a change                                     | [`ARCHITECTURE.md`](ARCHITECTURE.md) — system design, the generic workflow-run + artifact model, Interchange boundary |
+| Implementing in the hub/sidecar                        | [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — technical details and conventions                                          |
+| Calling or extending the HTTP API                      | [`API.md`](API.md)                                                                                                    |
+| Adding an agent or tool                                | [`CREATING_AGENTS_AND_TOOLS.md`](CREATING_AGENTS_AND_TOOLS.md)                                                        |
+| Working on the call-to-artifact pipeline               | [`SOURCE_TO_ARTIFACT.md`](SOURCE_TO_ARTIFACT.md)                                                                      |
+| Operating the hub (seeding, tenancy, tools, workflows) | [`ADMIN_CLI.md`](ADMIN_CLI.md) — the single operator entrypoint                                                       |
+| Setting up / following engineering rules               | [`../AGENTS.md`](../AGENTS.md)                                                                                        |
+| Deploying / running coverage                           | [`../README.md`](../README.md)                                                                                        |
 
 ## Scope: root docs vs. package docs
 
@@ -35,8 +36,8 @@ here rather than duplicated — duplicated detail drifts.
 - `packages/gtm-workflows/README.md` — artifact-eligibility helpers (which
   artifact kinds each workflow kind accepts as a source)
 - `workflows/<kind>/` — native `@intx/workflow` definition packages
-  (`@workbench/workflow-<kind>`), one per workflow kind; deployed via
-  `workflows:push`
+  (`@workbench/workflow-<kind>`), one per workflow kind; deployed via the admin
+  CLI's **Local actions → Push a workflow** (see `ADMIN_CLI.md`)
 - [`DEPLOYING_WORKFLOWS.md`](DEPLOYING_WORKFLOWS.md) — how a workflow is authored,
   pushed, deployed, and run on the native runtime
 - `packages/tools-*/README.md` — individual hub tool packages (Gamma, Granola,

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
+import { openAPIRouteHandler } from "hono-openapi";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import {
   schema as intxSchema,
@@ -370,6 +371,27 @@ if (corsOrigins.length > 0) {
 app.use(
   "/api/auth/sign-in/*",
   createRateLimiter({ windowMs: 60_000, max: 10 }),
+);
+
+// ─── OpenAPI ─────────────────────────────────────────────────────────
+//
+// Shadows the Interchange-internal /openapi.json so the spec covers all
+// workbench routes (ours + Interchange's), not just Interchange's. Order
+// matters: app.route() flattens a sub-app's routes into the parent at call
+// time, and Hono runs the first-registered handler for a path. Registering
+// this before mounting hubApp ensures our handler shadows the sub-app's copy.
+// openAPIRouteHandler walks app.routes lazily at request time, so it still
+// captures every sub-app route mounted after this point. Auth routes are
+// excluded via RegExp — hono-openapi only treats RegExp instances as patterns.
+app.get(
+  "/openapi.json",
+  openAPIRouteHandler(app, {
+    documentation: {
+      info: { title: "GTM Workbench", version: "1.0.0" },
+      servers: [{ url: config.auth.baseUrl }],
+    },
+    exclude: ["/openapi.json", "/health", "/status", /^\/api\/auth\//],
+  }),
 );
 
 // Mount hub app

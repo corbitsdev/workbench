@@ -26,7 +26,7 @@ Each workflow is its own package under `workflows/<kind>/` named `@workbench/wor
 
 ### Deploy: operator-gated, git-backed
 
-Deploy is an operator action, not a user action. `bun run workflows:push -- --kind <kind>` (`apps/hub/bin/deploy-workflow.ts`) imports the package, serializes its `workflow`, and POSTs the definition to `POST /api/internal/workflows/deploy` with the hub service token. The hub's workflow-deploy service (`apps/hub/src/services/workflow-deploy.ts`) validates the definition, resolves the tenant deploy config, and runs the `@intx/workflow-deploy` orchestrator. The orchestrator walks declared capabilities, commits `workflow.json` + `capability-declarations.json` to a git-backed `workflow` repo, launches one session per step, and sends the multi-step deploy frame to the sidecar. The sidecar **workflow-host supervisor** then reads the definition and drives the steps. See [DEPLOYING_WORKFLOWS.md](./DEPLOYING_WORKFLOWS.md) for the full deploy guide.
+Deploy is an operator action, not a user action. The admin CLI's **Local actions → Push a workflow** (type the kind value at the "Workflow kind" prompt) imports the package, serializes its `workflow`, and POSTs the definition to `POST /api/internal/workflows/deploy` with the hub service token. The hub's workflow-deploy service (`apps/hub/src/services/workflow-deploy.ts`) validates the definition, resolves the tenant deploy config, and runs the `@intx/workflow-deploy` orchestrator. The orchestrator walks declared capabilities, commits `workflow.json` + `capability-declarations.json` to a git-backed `workflow` repo, launches one session per step, and sends the multi-step deploy frame to the sidecar. The sidecar **workflow-host supervisor** then reads the definition and drives the steps. See [DEPLOYING_WORKFLOWS.md](./DEPLOYING_WORKFLOWS.md) for the full deploy guide.
 
 ### Runs: an event log observed over SSE
 
@@ -238,11 +238,11 @@ Only the asset's `creatorPrincipalId` may delete it; the route returns 403 other
 
 Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 
-| Table              | Key Columns                                                                                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `artifact`         | `id` (UUID PK), `kind` (CollateralType), `sessionId` (UUID FK, nullable), `workflowId` (UUID FK, nullable), `content`, `createdAt`                                                                       |
+| Table              | Key Columns                                                                                                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `artifact`         | `id` (UUID PK), `kind` (CollateralType), `sessionId` (UUID FK, nullable), `workflowId` (UUID FK, nullable), `content`, `createdAt`                                                                                                                            |
 | `workflow_run`     | `id` (UUID PK), `deploymentId` (text, nullable — the `@intx/workflow-deploy` deploymentId for natively deployed runs; powers the `GET /api/v1/workflow-runs` index), `tenantId`, `principalId`, `kind`, `status`, `input`, `output`, `createdAt`, `deletedAt` |
-| `enabled_workflow` | `id`, `tenantId`, `principalId`, `kind` — which workflow kinds a principal has enabled                                                                                                                   |
+| `enabled_workflow` | `id`, `tenantId`, `principalId`, `kind` — which workflow kinds a principal has enabled                                                                                                                                                                        |
 
 ### Artifact Model
 

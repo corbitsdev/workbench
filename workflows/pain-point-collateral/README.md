@@ -24,11 +24,12 @@ definition is pushed as JSON.
 
 ## Deploy
 
-```bash
-bun run workflows:push -- --kind collateral-generation
-```
+Push via the admin CLI (`bun run admin` → select a tenant → "Local actions →
+Push a workflow"). At the "Workflow kind" prompt, type just the kind value:
+`pain-point-collateral`.
 
 The hub imports no workflow code; it commits this definition to a git-backed
 `workflow` repo and launches it on the sidecar. See
-[../../docs/DEPLOYING_WORKFLOWS.md](../../docs/DEPLOYING_WORKFLOWS.md) for the
+[../../docs/ADMIN_CLI.md](../../docs/ADMIN_CLI.md) for the operator entrypoint,
+and [../../docs/DEPLOYING_WORKFLOWS.md](../../docs/DEPLOYING_WORKFLOWS.md) for the
 full deploy flow, authorization, and required credentials.

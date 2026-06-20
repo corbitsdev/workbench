@@ -110,12 +110,13 @@ export const myTools = defineCredentialedToolPackage({
 Per environment, copy `.env.tools.example` to `.env.staging` / `.env.production`
 (both gitignored), fill in `HUB_URL` + admin creds + `HUB_TENANT_SLUG`, then:
 
-```bash
-bun run tools:push:staging      # build + publish using .env.staging
-bun run tools:push:production   # build + publish using .env.production
-```
+Run the admin CLI (`bun run admin` / `admin:staging` / `admin:production`), sign
+in, select the target tenant, then run **Local actions → Build tool packages**
+followed by **Publish tool packages**. The selected tenant is threaded
+automatically.
 
-`tools:build` packs the tarballs (`dist/tool-packages/`); `tools:publish` find-or-creates
+The build action packs the tarballs (`dist/tool-packages/`); the publish action
+find-or-creates
 the `workspace-builtins` `package-registry` asset and PUTs each one. Interchange's
 `SessionService` then resolves each agent's pinned closure at launch, ships the
 manifest, and the sidecar materializes it.
@@ -135,14 +136,14 @@ Two pieces are ours, both for concrete reasons:
   round-trip needed.
 
 > **Deploy auth:** the client signs in with `HUB_ADMIN_EMAIL`/`HUB_ADMIN_PASSWORD`
-> to get a session. Wiring `tools:push` into the deploy pipeline is intentionally
+> to get a session. Wiring publish into the deploy pipeline is intentionally
 > deferred — for now it's a deliberate manual step per environment.
 
-**Deploy ordering.** `tools:publish` MUST run for the target tenant before any
+**Deploy ordering.** Publish MUST run for the target tenant before any
 agent that pins a new package/version launches there — otherwise the closure
 resolver finds no tarball and the launch **fails loudly** (the sidecar loader is
 fail-hard now: a manifest it can't load fails the launch rather than silently
-dropping tools). Wire `tools:push` into the deploy step so a deploy cannot
+dropping tools). Wire publish into the deploy step so a deploy cannot
 complete without it.
 
 ### Every tool is a tarball — including the hub-backed ones
@@ -268,8 +269,8 @@ export const workflow = defineWorkflow({
   id: 'my-workflow',
   trigger: { type: 'manual' },
   steps: {
-    intake: step({ agent: defineAgent({ id: 'intake', /* prompt, tools, inference */ }) }),
-    generate: step({ agent: defineAgent({ id: 'generate', /* … */ }), after: ['intake'] }),
+    intake: step({ agent: defineAgent({ id: 'intake' /* prompt, tools, inference */ }) }),
+    generate: step({ agent: defineAgent({ id: 'generate' /* … */ }), after: ['intake'] }),
     approval: awaitSignal({ name: 'artifact-approval', after: ['generate'] }), // HITL gate
   },
 });
@@ -279,9 +280,9 @@ Per-step inference and tools are declared on each `defineAgent`. `awaitSignal` s
 
 ### 2. Push it
 
-```bash
-bun run workflows:push -- --kind my-workflow
-```
+Run the admin CLI (`bun run admin` / `admin:staging` / `admin:production`), sign
+in, select the tenant, then **Local actions → Push a workflow** and type the kind
+value at the "Workflow kind" prompt (e.g. `my-workflow`).
 
 This serializes the definition and POSTs it to `POST /api/internal/workflows/deploy` (service-token auth). The hub commits it to a git-backed `workflow` repo and the sidecar workflow-host supervisor drives the run. No catalog registration, no hub step handlers.
 
@@ -324,7 +325,7 @@ A director may still allow a system sender address (e.g. `scheduler@system`) for
 - [ ] Pinned via `toolPackages` on each using agent's descriptor **and** `AGENT_TEMPLATES` entry
 - [ ] Credentialed: provider seeded in `seed-credentials.ts` + added to the agent's `credentialProviderNames`
 - [ ] Credentialed tools only: present in `KNOWN_TOOLS` for the credential rail's tool→provider mapping (not an execution registry)
-- [ ] `bun run tools:push` publishes to the registry; tool verified loading in the sidecar
+- [ ] Built + published to the registry (admin CLI **Local actions → Build / Publish tool packages**); tool verified loading in the sidecar
 - [ ] Unit tests at ≥95% function coverage
 
 ## Checklist: Shipping a New Agent

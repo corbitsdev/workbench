@@ -12,6 +12,8 @@
 
 GTM Workbench is an AI-assisted GTM workspace built on top of Interchange. Users get a personal agent (Myra), shared workspace agents (Oat, others), and workflows for turning call data into publishable collateral. For current product and architecture details, read the scribe-managed docs.
 
+Operators run all tenancy, credential, tool, and workflow operations through the admin CLI — `bun run admin` / `admin:staging` / `admin:production` (`apps/hub/bin/admin/`); see `docs/ADMIN_CLI.md`.
+
 ### Monorepo layout
 
 - `interchange/` — Interchange dependency. Do not modify.
