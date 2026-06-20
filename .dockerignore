@@ -1,0 +1,26 @@
+# Build context hygiene: keep the snapshot small and free of host-only cruft.
+# Only excludes things no Dockerfile COPYs — never source, manifests, or bun.lock.
+
+**/node_modules
+**/.git
+**/coverage
+**/dist
+**/.turbo
+**/.vite
+**/*.tsbuildinfo
+**/*.log
+
+# Never bake secrets into the build context
+.env
+.env.*
+!.env.example
+
+# Editor / OS noise
+**/.DS_Store
+.vscode
+.idea
+
+# Repo-local tooling not needed by any image
+.claude
+temporary
+scratchpad
