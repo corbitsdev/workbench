@@ -367,23 +367,27 @@ export async function runDeterministicToolStep(args: {
         `step-tool-harness: deterministic step declared tool "${args.toolName}" but it is not in the step's loaded runner; the workflow declared a tool that is not pinned (loaded: ${[...available].join(", ") || "none"})`,
       );
     }
-    if (
-      typeof args.input !== "object" ||
-      args.input === null ||
-      Array.isArray(args.input)
-    ) {
+    // A step with no `input` selector resolves to null/undefined; for a
+    // no-arg tool call that legitimately means "empty arguments", so coerce
+    // it to {}. A non-null, non-object input (string, number, array) is a
+    // real authoring error — the tool's arguments must be an object — so fail
+    // loud.
+    let toolArguments: Record<string, unknown>;
+    if (args.input === null || args.input === undefined) {
+      toolArguments = {};
+    } else if (typeof args.input !== "object" || Array.isArray(args.input)) {
       throw new Error(
-        `step-tool-harness: deterministic step "${args.toolName}" requires an object input to use as tool arguments; got ${args.input === null ? "null" : typeof args.input}`,
+        `step-tool-harness: deterministic step "${args.toolName}" requires an object (or no) input to use as tool arguments; got ${typeof args.input}`,
       );
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed to a non-null, non-array object above; ToolCall.arguments is Record<string, unknown>
+      toolArguments = args.input as Record<string, unknown>;
     }
     const result = await runner.run(
       {
         id: `det-${ctx.stepAgentId}`,
         name: args.toolName,
-        // The input is the workflow-resolved step input; the object-shape
-        // guard above narrows it to the ToolCall.arguments contract.
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed to a non-null object above; ToolCall.arguments is Record<string, unknown>
-        arguments: args.input as Record<string, unknown>,
+        arguments: toolArguments,
       },
       args.signal,
     );

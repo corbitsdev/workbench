@@ -17,22 +17,22 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
 }
 
 describe('reddit-opportunity-scanner native workflow', () => {
-  test('runs intake → analyze, gates on recommendation-review, then scans', async () => {
+  test('gates on intake, runs analyze, gates on recommendation-review, then scans', async () => {
     const { invoker, ran } = makeRecordingInvoker();
     const run = runLocal(workflow, { invokeStep: invoker });
 
-    await run.signal('recommendation-review', {});
+    await run.signal('intake', { url: 'https://example.com' });
+    await run.signal('recommendation-review', { approved: true });
 
     const result = await run.complete;
 
     expect(result.terminalStatus).toBe('completed');
-    expect(ran).toEqual([
-      'reddit-opportunity-intake',
-      'reddit-opportunity-analyze',
-      'reddit-opportunity-scan',
-    ]);
+    expect(ran).toEqual(['reddit-opportunity-analyze', 'reddit-opportunity-scan']);
 
-    const signalReceived = result.events.find((e) => e.kind === 'SignalReceived');
-    expect(signalReceived).toBeDefined();
+    const signalNames = result.events
+      .filter((e) => e.kind === 'SignalReceived')
+      .map((e) => (e as { signalName: string }).signalName);
+    expect(signalNames).toContain('intake');
+    expect(signalNames).toContain('recommendation-review');
   });
 });

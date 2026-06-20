@@ -57,6 +57,54 @@ describe('ab-compare Panel', () => {
     }
   });
 
+  it('renders the input form while the input step awaits a signal', () => {
+    renderPanel({ state: makeState({ input: 'awaiting-signal' }) });
+    screen.getByText('Content');
+    screen.getByText('Shared prompt');
+    screen.getByText('Start comparison');
+  });
+
+  it('fires onSignal with the input payload when the form is submitted', () => {
+    const { onSignal } = renderPanel({ state: makeState({ input: 'awaiting-signal' }) });
+    fireEvent.change(screen.getByPlaceholderText('The text to compare across providers'), {
+      target: { value: 'Variant source text' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('The prompt to run against each provider'), {
+      target: { value: 'Rewrite for clarity' },
+    });
+    fireEvent.click(screen.getByText('Start comparison'));
+    expect(onSignal).toHaveBeenCalledTimes(1);
+    expect(onSignal.mock.calls[0]).toEqual([
+      'input',
+      { content: 'Variant source text', prompt: 'Rewrite for clarity' },
+    ]);
+  });
+
+  it('does not submit input when content or prompt is empty', () => {
+    const { onSignal } = renderPanel({ state: makeState({ input: 'awaiting-signal' }) });
+    const button = screen.getByText('Start comparison') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSignal).toHaveBeenCalledTimes(0);
+  });
+
+  it('disables input submission while disconnected', () => {
+    const { onSignal } = renderPanel({
+      state: makeState({ input: 'awaiting-signal' }),
+      connected: false,
+    });
+    fireEvent.change(screen.getByPlaceholderText('The text to compare across providers'), {
+      target: { value: 'text' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('The prompt to run against each provider'), {
+      target: { value: 'prompt' },
+    });
+    const button = screen.getByText('Start comparison') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSignal).toHaveBeenCalledTimes(0);
+  });
+
   it('renders provider branch outputs from stepOutputs.execute', () => {
     renderPanel({
       state: makeState({ execute: 'completed' }),

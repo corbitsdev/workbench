@@ -60,6 +60,47 @@ describe('reddit-opportunity-scanner Panel', () => {
     screen.getByText('3');
   });
 
+  it('renders the intake form while intake is awaiting a signal', () => {
+    renderPanel({ state: makeState({ intake: 'awaiting-signal' }) });
+    screen.getByLabelText('Website URL');
+    screen.getByLabelText('Brand hints (optional)');
+    screen.getByLabelText('ICP hints (optional)');
+  });
+
+  it('submits intake signal with url and optional hints matching analyze input', () => {
+    const { onSignal } = renderPanel({ state: makeState({ intake: 'awaiting-signal' }) });
+    fireEvent.change(screen.getByLabelText('Website URL'), {
+      target: { value: 'https://example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Brand hints (optional)'), {
+      target: { value: 'Acme' },
+    });
+    fireEvent.change(screen.getByLabelText('ICP hints (optional)'), {
+      target: { value: 'platform engineers' },
+    });
+    fireEvent.click(screen.getByText('Start scan'));
+    expect(onSignal).toHaveBeenCalledTimes(1);
+    expect(onSignal.mock.calls[0]).toEqual([
+      'intake',
+      { url: 'https://example.com', brandHints: 'Acme', icpHints: 'platform engineers' },
+    ]);
+  });
+
+  it('omits empty hint fields from the intake payload', () => {
+    const { onSignal } = renderPanel({ state: makeState({ intake: 'awaiting-signal' }) });
+    fireEvent.change(screen.getByLabelText('Website URL'), {
+      target: { value: 'https://example.com' },
+    });
+    fireEvent.click(screen.getByText('Start scan'));
+    expect(onSignal.mock.calls[0]).toEqual(['intake', { url: 'https://example.com' }]);
+  });
+
+  it('does not submit intake when the url is blank', () => {
+    const { onSignal } = renderPanel({ state: makeState({ intake: 'awaiting-signal' }) });
+    fireEvent.click(screen.getByText('Start scan'));
+    expect(onSignal).not.toHaveBeenCalled();
+  });
+
   it('renders inferred keywords, subreddits, and audience from analyze output', () => {
     renderPanel({
       stepOutputs: {

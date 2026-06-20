@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { type } from 'arktype';
 import { HorizontalStepper, type WorkflowPanelProps, type WorkflowStep } from '@workbench/ui';
 import type { StepPhase } from '@intx/workflow';
@@ -9,6 +10,7 @@ const STEP_DEFS = [
   { id: 'scan', label: 'Scan' },
 ] as const;
 
+const INTAKE_SIGNAL = 'intake';
 const REVIEW_SIGNAL = 'recommendation-review';
 
 const AnalyzeOutput = type({
@@ -89,6 +91,85 @@ function Chips({ label, items }: { label: string; items: string[] }) {
   );
 }
 
+function IntakeForm({
+  onSubmit,
+}: {
+  onSubmit: (payload: { url: string; brandHints?: string; icpHints?: string }) => void;
+}) {
+  const [url, setUrl] = useState('');
+  const [brandHints, setBrandHints] = useState('');
+  const [icpHints, setIcpHints] = useState('');
+
+  const trimmedUrl = url.trim();
+  const trimmedBrand = brandHints.trim();
+  const trimmedIcp = icpHints.trim();
+
+  const submit = () => {
+    if (trimmedUrl.length === 0) {
+      return;
+    }
+    onSubmit({
+      url: trimmedUrl,
+      ...(trimmedBrand.length > 0 ? { brandHints: trimmedBrand } : {}),
+      ...(trimmedIcp.length > 0 ? { icpHints: trimmedIcp } : {}),
+    });
+  };
+
+  return (
+    <form
+      className="shrink-0 space-y-3 border-t border-border bg-surface px-4 py-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <div className="space-y-1.5">
+        <label htmlFor="intake-url" className="text-[12px] font-medium text-text">
+          Website URL
+        </label>
+        <input
+          id="intake-url"
+          type="url"
+          required
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          placeholder="https://example.com"
+          className="w-full rounded-[8px] border border-border bg-bg px-3 py-2 text-[13px] text-text placeholder:text-text-3"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor="intake-brand" className="text-[12px] font-medium text-text-2">
+          Brand hints (optional)
+        </label>
+        <input
+          id="intake-brand"
+          type="text"
+          value={brandHints}
+          onChange={(event) => setBrandHints(event.target.value)}
+          placeholder="Brand name, positioning, competitors"
+          className="w-full rounded-[8px] border border-border bg-bg px-3 py-2 text-[13px] text-text placeholder:text-text-3"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor="intake-icp" className="text-[12px] font-medium text-text-2">
+          ICP hints (optional)
+        </label>
+        <input
+          id="intake-icp"
+          type="text"
+          value={icpHints}
+          onChange={(event) => setIcpHints(event.target.value)}
+          placeholder="Target audience, geography, segment"
+          className="w-full rounded-[8px] border border-border bg-bg px-3 py-2 text-[13px] text-text placeholder:text-text-3"
+        />
+      </div>
+      <button type="submit" disabled={trimmedUrl.length === 0} className="btn-primary w-full">
+        Start scan
+      </button>
+    </form>
+  );
+}
+
 export function Panel({ state, connected, stepOutputs, onSignal, onClose }: WorkflowPanelProps) {
   const phaseFor = (id: string): StepPhase | undefined => state?.steps.get(id)?.phase;
   const steps = buildSteps(phaseFor);
@@ -108,6 +189,7 @@ export function Panel({ state, connected, stepOutputs, onSignal, onClose }: Work
   const opportunities = scan instanceof type.errors ? [] : (scan.opportunities ?? []);
   const scanMalformed = scan instanceof type.errors && isStepPresent(phaseFor, 'scan');
 
+  const awaitingIntake = phaseFor('intake') === 'awaiting-signal';
   const reviewPhase = phaseFor('review');
   const awaitingReview = reviewPhase === 'awaiting-signal';
 
@@ -216,6 +298,10 @@ export function Panel({ state, connected, stepOutputs, onSignal, onClose }: Work
             </div>
           ) : null}
         </div>
+
+        {awaitingIntake ? (
+          <IntakeForm onSubmit={(payload) => onSignal(INTAKE_SIGNAL, payload)} />
+        ) : null}
 
         {awaitingReview ? (
           <div className="shrink-0 space-y-2 border-t border-border bg-surface px-4 py-3">

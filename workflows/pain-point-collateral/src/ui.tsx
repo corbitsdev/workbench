@@ -3,22 +3,73 @@ import { HorizontalStepper, type WorkflowPanelProps } from '@workbench/ui';
 import type { StepPhase, StepState } from '@intx/workflow';
 import type { WorkflowStep } from '@workbench/ui';
 
-const STEP_IDS = ['intake', 'analyze', 'generate', 'approval'] as const;
+const STEP_IDS = ['intake', 'select', 'fetch', 'analyze', 'generate', 'approval'] as const;
 type StepId = (typeof STEP_IDS)[number];
 
 const STEP_LABELS: Record<StepId, string> = {
   intake: 'Intake',
+  select: 'Select',
+  fetch: 'Fetch',
   analyze: 'Analyze',
   generate: 'Generate',
   approval: 'Approve',
 };
 
 const APPROVAL_SIGNAL = 'artifact-approval';
+const SELECTION_SIGNAL = 'note-selection';
 
-const IntakeOutput = type({
-  'title?': 'string',
+const ToolResultEnvelope = type({
+  content: 'string',
+});
+
+const GranolaNote = type({
+  id: 'string',
+  'title?': 'string | null',
+  'created_at?': 'string',
   'summary?': 'string',
 });
+type GranolaNoteShape = typeof GranolaNote.infer;
+
+const GranolaListContent = type({
+  notes: GranolaNote.array(),
+});
+
+const GranolaNoteContent = type({
+  id: 'string',
+  'title?': 'string | null',
+  'summary?': 'string',
+});
+
+type Decoded = { status: 'pending' } | { status: 'malformed' } | { status: 'ok'; value: unknown };
+
+/**
+ * Deterministic tool steps return the agent-runtime `ToolResult` whose
+ * `content` is the tool handler's JSON string. Peel the envelope and parse the
+ * embedded JSON. `pending` = not a tool result yet; `malformed` = a tool
+ * result whose content is not valid JSON.
+ */
+function decodeToolContent(output: unknown): Decoded {
+  const envelope = ToolResultEnvelope(output);
+  if (envelope instanceof type.errors) return { status: 'pending' };
+  try {
+    return { status: 'ok', value: JSON.parse(envelope.content) };
+  } catch {
+    return { status: 'malformed' };
+  }
+}
+
+type NoteListResult =
+  | { status: 'pending' }
+  | { status: 'malformed' }
+  | { status: 'ok'; notes: GranolaNoteShape[] };
+
+function parseNoteList(output: unknown): NoteListResult {
+  const decoded = decodeToolContent(output);
+  if (decoded.status !== 'ok') return decoded;
+  const parsed = GranolaListContent(decoded.value);
+  if (parsed instanceof type.errors) return { status: 'malformed' };
+  return { status: 'ok', notes: parsed.notes };
+}
 
 const AnalyzeOutput = type({
   'painPoints?': 'string[]',
@@ -74,21 +125,79 @@ function MalformedOutput({ label }: { label: string }) {
   return <p className="text-[13px] text-orange">{label}</p>;
 }
 
-function IntakeSection({ output, phase }: { output: unknown; phase: StepPhase | undefined }) {
-  const parsed = IntakeOutput(output);
-  if (parsed instanceof type.errors) {
-    if (phase === 'completed') {
-      return <MalformedOutput label="Couldn’t read the selected Granola note." />;
+function NoteListSection({
+  output,
+  intakePhase,
+  selectPhase,
+  onSelect,
+}: {
+  output: unknown;
+  intakePhase: StepPhase | undefined;
+  selectPhase: StepPhase | undefined;
+  onSelect: (noteId: string) => void;
+}) {
+  const result = parseNoteList(output);
+
+  if (result.status === 'pending') {
+    if (intakePhase === 'completed') {
+      return <MalformedOutput label="Couldn’t read the Granola note list." />;
     }
-    return <Pending label="Waiting for a Granola note selection…" />;
+    return <Pending label="Loading your Granola notes…" />;
   }
-  if (!parsed.title && !parsed.summary) {
-    return <Pending label="Waiting for a Granola note selection…" />;
+  if (result.status === 'malformed') {
+    return <MalformedOutput label="Couldn’t read the Granola note list." />;
+  }
+  if (result.notes.length === 0) {
+    return <Pending label="No Granola notes were found." />;
+  }
+
+  const selectable = selectPhase === 'awaiting-signal';
+  const chosen = selectPhase === 'completed';
+
+  if (chosen) {
+    return <p className="text-[13px] text-text-2">Note selected. Fetching the transcript…</p>;
+  }
+
+  return (
+    <ul className="space-y-2">
+      {result.notes.map((note) => (
+        <li key={note.id}>
+          <button
+            type="button"
+            disabled={!selectable}
+            onClick={() => onSelect(note.id)}
+            className="w-full rounded-panel border border-border bg-bg px-3 py-2 text-left text-[13px] text-text-2 enabled:hover:border-orange disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span className="block font-medium text-text">{note.title ?? 'Untitled note'}</span>
+            {note.summary ? <span className="mt-0.5 block text-text-3">{note.summary}</span> : null}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function FetchSection({ output, phase }: { output: unknown; phase: StepPhase | undefined }) {
+  const decoded = decodeToolContent(output);
+  if (decoded.status === 'pending') {
+    if (phase === 'completed') {
+      return <MalformedOutput label="Couldn’t read the fetched Granola note." />;
+    }
+    return <Pending label="The selected note’s transcript appears here once fetched." />;
+  }
+  if (decoded.status === 'malformed') {
+    return <MalformedOutput label="Couldn’t read the fetched Granola note." />;
+  }
+  const note = GranolaNoteContent(decoded.value);
+  if (note instanceof type.errors) {
+    return <MalformedOutput label="Couldn’t read the fetched Granola note." />;
   }
   return (
     <div className="space-y-1.5">
-      {parsed.title ? <p className="text-sm font-medium text-text">{parsed.title}</p> : null}
-      {parsed.summary ? <p className="text-[13px] leading-relaxed text-text-2">{parsed.summary}</p> : null}
+      <p className="text-sm font-medium text-text">{note.title ?? 'Untitled note'}</p>
+      {note.summary ? (
+        <p className="text-[13px] leading-relaxed text-text-2">{note.summary}</p>
+      ) : null}
     </div>
   );
 }
@@ -128,7 +237,9 @@ function GenerateSection({ output, phase }: { output: unknown; phase: StepPhase 
     return <Pending label="Generated collateral appears here once it is ready." />;
   }
   return (
-    <pre className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-2">{parsed.collateral}</pre>
+    <pre className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-2">
+      {parsed.collateral}
+    </pre>
   );
 }
 
@@ -147,7 +258,9 @@ function ApprovalSection({
   }
   return (
     <div className="space-y-3">
-      <p className="text-[13px] text-text-2">Review the generated collateral above, then approve to finish the run.</p>
+      <p className="text-[13px] text-text-2">
+        Review the generated collateral above, then approve to finish the run.
+      </p>
       <button
         type="button"
         onClick={onApprove}
@@ -163,10 +276,15 @@ export function Panel(props: WorkflowPanelProps) {
   const { state, connected, stepOutputs, onSignal, onClose } = props;
 
   const approvalPhase = phaseFor(state, 'approval');
-  const failed = STEP_IDS.some((id) => phaseFor(state, id) === 'failed') || state?.phase === 'failed';
+  const failed =
+    STEP_IDS.some((id) => phaseFor(state, id) === 'failed') || state?.phase === 'failed';
 
   const handleApprove = () => {
     onSignal(APPROVAL_SIGNAL, { approved: true });
+  };
+
+  const handleSelect = (noteId: string) => {
+    onSignal(SELECTION_SIGNAL, { noteId });
   };
 
   return (
@@ -174,9 +292,7 @@ export function Panel(props: WorkflowPanelProps) {
       <header className="flex items-center justify-between border-b border-border bg-surface px-6 py-4">
         <div>
           <h2 className="text-sm font-medium text-text">Pain Point Collateral</h2>
-          <p className="text-[12px] text-text-3">
-            {connected ? 'Live' : 'Reconnecting…'}
-          </p>
+          <p className="text-[12px] text-text-3">{connected ? 'Live' : 'Reconnecting…'}</p>
         </div>
         <button
           type="button"
@@ -197,8 +313,17 @@ export function Panel(props: WorkflowPanelProps) {
           </p>
         ) : null}
 
-        <SectionCard title="Intake — selected Granola note">
-          <IntakeSection output={stepOutputs.intake} phase={phaseFor(state, 'intake')} />
+        <SectionCard title="Intake — select a Granola note">
+          <NoteListSection
+            output={stepOutputs.intake}
+            intakePhase={phaseFor(state, 'intake')}
+            selectPhase={phaseFor(state, 'select')}
+            onSelect={handleSelect}
+          />
+        </SectionCard>
+
+        <SectionCard title="Fetch — selected note">
+          <FetchSection output={stepOutputs.fetch} phase={phaseFor(state, 'fetch')} />
         </SectionCard>
 
         <SectionCard title="Analyze — extracted pain points">

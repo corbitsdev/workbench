@@ -118,7 +118,7 @@ describe("runDeterministicToolStep", () => {
     expect(tr.isError).not.toBe(true);
   });
 
-  test("rejects a non-object input rather than guessing tool arguments", async () => {
+  test("rejects a non-object, non-null input rather than guessing tool arguments", async () => {
     stubHubFetch();
     const { env } = await makeEnv();
     await expect(
@@ -128,7 +128,23 @@ describe("runDeterministicToolStep", () => {
         input: "not-an-object",
         signal: new AbortController().signal,
       }),
-    ).rejects.toThrow(/requires an object input/);
+    ).rejects.toThrow(/requires an object \(or no\) input/);
+  });
+
+  test("coerces null input to empty tool arguments (no-arg tool call)", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    // A step with no `input` selector resolves to null; a no-arg tool call
+    // must run with {} rather than throwing. write_file will fail its own
+    // arg validation, but the point is the harness does NOT reject null at
+    // the argument-shape guard — it reaches the runner.
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: null,
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toBeDefined();
   });
 
   test("fails loud when the declared tool is not in the loaded runner", async () => {

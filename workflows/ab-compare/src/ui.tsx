@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { type } from 'arktype';
 import type { RunState, StepState } from '@intx/workflow';
 import { Button, HorizontalStepper, type WorkflowPanelProps, type WorkflowStep } from '@workbench/ui';
 
+const INPUT_SIGNAL = 'input';
 const REVIEW_SIGNAL = 'comparison-review';
 
 const STEP_ORDER = ['input', 'execute', 'compare', 'review', 'persist'] as const;
@@ -101,6 +102,74 @@ function PhaseBadge({ phase }: { phase: StepPhase | undefined }) {
     return <span className="text-xs font-medium text-orange">Awaiting review</span>;
   }
   return <span className="text-xs font-medium text-text-2">Running</span>;
+}
+
+function InputSection({
+  phase,
+  connected,
+  onSubmit,
+}: {
+  phase: StepPhase | undefined;
+  connected: boolean;
+  onSubmit: (payload: { content: string; prompt: string }) => void;
+}) {
+  const [content, setContent] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const canSubmit = connected && content.trim().length > 0 && prompt.trim().length > 0;
+
+  if (phase === 'completed') {
+    return (
+      <SectionCard title="Input — content and prompt" phase={phase}>
+        <p className="text-sm text-text-2">Input submitted.</p>
+      </SectionCard>
+    );
+  }
+  if (phase !== 'awaiting-signal') {
+    return (
+      <SectionCard title="Input — content and prompt" phase={phase}>
+        <p className="text-sm text-text-3">Waiting for the run to start.</p>
+      </SectionCard>
+    );
+  }
+  return (
+    <SectionCard title="Input — content and prompt" phase={phase}>
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!canSubmit) return;
+          onSubmit({ content: content.trim(), prompt: prompt.trim() });
+        }}
+      >
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-text">Content</span>
+          <textarea
+            className="w-full rounded-lg border border-border bg-surface-2 p-2 text-sm text-text"
+            rows={4}
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            placeholder="The text to compare across providers"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-text">Shared prompt</span>
+          <textarea
+            className="w-full rounded-lg border border-border bg-surface-2 p-2 text-sm text-text"
+            rows={3}
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            placeholder="The prompt to run against each provider"
+          />
+        </label>
+        <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
+          Start comparison
+        </Button>
+        {connected ? null : (
+          <p className="text-xs text-text-3">Reconnecting — input is unavailable.</p>
+        )}
+      </form>
+    </SectionCard>
+  );
 }
 
 function ExecuteSection({ phase, output }: { phase: StepPhase | undefined; output: unknown }) {
@@ -263,6 +332,10 @@ export function Panel(props: WorkflowPanelProps) {
     onSignal(REVIEW_SIGNAL, { approved: true });
   }
 
+  function handleInputSubmit(payload: { content: string; prompt: string }) {
+    onSignal(INPUT_SIGNAL, payload);
+  }
+
   return (
     <div className="flex h-full flex-col bg-surface">
       <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
@@ -286,6 +359,11 @@ export function Panel(props: WorkflowPanelProps) {
       ) : null}
 
       <div className="flex-1 space-y-4 overflow-y-auto p-6">
+        <InputSection
+          phase={stepPhase(state, 'input')}
+          connected={connected}
+          onSubmit={handleInputSubmit}
+        />
         <ExecuteSection phase={stepPhase(state, 'execute')} output={stepOutputs.execute} />
         <CompareSection phase={stepPhase(state, 'compare')} output={stepOutputs.compare} />
         <ReviewSection

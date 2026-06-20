@@ -17,18 +17,22 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
 }
 
 describe('seo-enrichment native workflow', () => {
-  test('runs intake → enrich, gates on row-selection, then exports', async () => {
+  test('gates on the intake signal, runs only the enrich agent, then gates on row-selection', async () => {
     const { invoker, ran } = makeRecordingInvoker();
     const run = runLocal(workflow, { invokeStep: invoker });
 
-    await run.signal('row-selection', {});
+    await run.signal('intake', { rows: [{ id: 'r1', name: 'Widget' }] });
+    await run.signal('row-selection', { selections: [] });
 
     const result = await run.complete;
 
     expect(result.terminalStatus).toBe('completed');
-    expect(ran).toEqual(['seo-intake', 'seo-enrich', 'seo-export']);
+    expect(ran).toEqual(['seo-enrich']);
 
-    const signalReceived = result.events.find((e) => e.kind === 'SignalReceived');
-    expect(signalReceived).toBeDefined();
+    const signalNames = result.events.flatMap((e) =>
+      e.kind === 'SignalReceived' ? [e.signalName] : [],
+    );
+    expect(signalNames).toContain('intake');
+    expect(signalNames).toContain('row-selection');
   });
 });

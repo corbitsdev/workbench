@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { RunState, StepPhase, StepState } from '@intx/workflow';
 import { Panel } from './ui';
 
@@ -57,7 +57,46 @@ describe('Panel', () => {
     screen.getByText('Enrich');
   });
 
-  it('renders parsed intake rows', () => {
+  it('renders the upload control while intake is awaiting its signal', () => {
+    render(
+      <Panel
+        deploymentId="d1"
+        state={makeState({ intake: 'awaiting-signal' })}
+        connected
+        stepOutputs={{}}
+        onSignal={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    screen.getByLabelText('Upload product workbook');
+  });
+
+  it('submits parsed rows via the intake signal when a workbook is uploaded', async () => {
+    const onSignal = mock((_name: string, _payload?: unknown) => {});
+    render(
+      <Panel
+        deploymentId="d1"
+        state={makeState({ intake: 'awaiting-signal' })}
+        connected
+        stepOutputs={{}}
+        onSignal={onSignal}
+        onClose={() => {}}
+      />,
+    );
+    const input = screen.getByLabelText('Upload product workbook') as HTMLInputElement;
+    const file = new File(
+      ['id,name,targetUrl\nr1,Widget,https://x.test\n'],
+      'workbook.csv',
+      { type: 'text/csv' },
+    );
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(onSignal).toHaveBeenCalledTimes(1));
+    expect(onSignal).toHaveBeenCalledWith('intake', {
+      rows: [{ id: 'r1', name: 'Widget', targetUrl: 'https://x.test' }],
+    });
+  });
+
+  it('renders the submitted intake rows once intake completes', () => {
     render(
       <Panel
         deploymentId="d1"
@@ -172,19 +211,26 @@ describe('Panel', () => {
     expect(onSignal).not.toHaveBeenCalled();
   });
 
-  it('renders the export CSV and download link', () => {
+  it('builds the export CSV and download link panel-side after selections are confirmed', () => {
     render(
       <Panel
         deploymentId="d1"
-        state={makeState({ export: 'completed' })}
+        state={makeState({ enrich: 'completed', review: 'awaiting-signal' })}
         connected
-        stepOutputs={{ export: { filename: 'seo.csv', csv: 'a,b\n1,2', downloadUrl: 'blob:x' } }}
+        stepOutputs={{ enrich: enrichOutput }}
         onSignal={() => {}}
         onClose={() => {}}
       />,
     );
-    screen.getByText(/Download/);
-    screen.getByText((content) => content.includes('a,b'));
+    screen.getByText('The CSV is ready once you confirm selections.');
+
+    fireEvent.click(screen.getByLabelText('Widget Title option 1'));
+    fireEvent.click(screen.getByLabelText('Widget Description option 2'));
+    fireEvent.click(screen.getByLabelText('Widget Summary option 1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm selections' }));
+
+    screen.getByText(/Download seo-enrichment\.csv/);
+    screen.getByText((content) => content.includes('Title A') && content.includes('Desc B'));
   });
 
   it('shows the empty-rows message when intake parses but has no product rows', () => {

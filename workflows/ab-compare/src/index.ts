@@ -2,17 +2,6 @@ import { defineAgent } from '@intx/agent';
 import { awaitSignal, defineWorkflow, step } from '@intx/workflow';
 import { canonicalizeToolNames, LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from '@workbench/agents';
 
-const inputAgent = defineAgent({
-  id: 'blind-ab-input',
-  description: 'Accepts the text or artifact and the shared prompt to run across providers.',
-  systemPrompt:
-    'You are an input intake agent. Accept the text or artifact and the shared system prompt that will be run across every provider branch.',
-  tools: [],
-  capabilities: [],
-  inference: { sources: [{ provider: 'openai-compatible', model: LLM_DEFAULT_MODEL }] },
-  tags: { credentialName: LLM_CREDENTIAL_NAME },
-});
-
 const executeAgent = defineAgent({
   id: 'blind-ab-execute',
   description: 'Runs the shared prompt across each selected provider branch.',
@@ -53,9 +42,9 @@ export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: 'manual' },
   steps: {
-    input: step({ agent: inputAgent }),
-    execute: step({ agent: executeAgent, after: ['input'] }),
-    compare: step({ agent: compareAgent, after: ['execute'] }),
+    input: awaitSignal({ name: 'input' }),
+    execute: step({ agent: executeAgent, input: { from: 'steps.input.output' }, after: ['input'] }),
+    compare: step({ agent: compareAgent, input: { from: 'steps.execute.output' }, after: ['execute'] }),
     review: awaitSignal({ name: 'comparison-review', after: ['compare'] }),
     persist: step({ agent: persistAgent, after: ['review'] }),
   },

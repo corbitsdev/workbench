@@ -2,17 +2,6 @@ import { defineAgent } from '@intx/agent';
 import { awaitSignal, defineWorkflow, step } from '@intx/workflow';
 import { canonicalizeToolNames, LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from '@workbench/agents';
 
-const intakeAgent = defineAgent({
-  id: 'reddit-opportunity-intake',
-  description: 'Collects the website URL and optional brand or ICP hints.',
-  systemPrompt:
-    'You are a scan intake agent. Collect the website URL and any optional brand name, target geography, or ICP hints.',
-  tools: [],
-  capabilities: [],
-  inference: { sources: [{ provider: 'openai-compatible', model: LLM_DEFAULT_MODEL }] },
-  tags: { credentialName: LLM_CREDENTIAL_NAME },
-});
-
 const analyzeAgent = defineAgent({
   id: 'reddit-opportunity-analyze',
   description: 'Scrapes the site and infers what the business sells, its keywords, and audience.',
@@ -43,9 +32,17 @@ export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: 'manual' },
   steps: {
-    intake: step({ agent: intakeAgent }),
-    analyze: step({ agent: analyzeAgent, after: ['intake'] }),
+    intake: awaitSignal({ name: 'intake' }),
+    analyze: step({
+      agent: analyzeAgent,
+      input: { from: 'steps.intake.output' },
+      after: ['intake'],
+    }),
     review: awaitSignal({ name: 'recommendation-review', after: ['analyze'] }),
-    scan: step({ agent: scanAgent, after: ['review'] }),
+    scan: step({
+      agent: scanAgent,
+      input: { from: 'steps.analyze.output' },
+      after: ['review'],
+    }),
   },
 });

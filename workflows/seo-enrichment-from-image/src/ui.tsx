@@ -4,14 +4,13 @@ import { type } from 'arktype';
 import type { RunState, StepPhase } from '@intx/workflow';
 import type { WorkflowPanelProps } from '@workbench/ui';
 
-const STEP_ORDER = ['intake', 'enrich', 'review', 'export'] as const;
+const STEP_ORDER = ['intake', 'enrich', 'review'] as const;
 type StepKey = (typeof STEP_ORDER)[number];
 
 const STEP_LABELS: Record<StepKey, string> = {
   intake: 'Intake',
   enrich: 'Enrich',
   review: 'Review',
-  export: 'Export',
 };
 
 const IntakeOutput = type({
@@ -37,13 +36,18 @@ const EnrichOutput = type({
   }).array(),
 });
 
-const ExportOutput = type({
-  filename: 'string',
-  csv: 'string',
-  'downloadUrl?': 'string',
+const ReviewSelections = type({
+  selections: type({
+    id: 'string',
+    name: 'string',
+    title: 'string',
+    description: 'string',
+    summary: 'string',
+  }).array(),
 });
 
 type IntakeRow = (typeof IntakeOutput.infer)['rows'][number];
+type ChosenRow = (typeof ReviewSelections.infer)['selections'][number];
 type EnrichRow = (typeof EnrichOutput.infer)['rows'][number];
 type FieldKey = 'titles' | 'descriptions' | 'summaries';
 
@@ -100,7 +104,80 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function IntakeView({ output, phase }: { output: unknown; phase: StepPhase | 'pending' }) {
+function splitCsvLine(line: string): string[] {
+  return line.split(',').map((cell) => cell.trim());
+}
+
+function parseWorkbook(text: string): IntakeRow[] {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const headerLine = lines[0];
+  if (headerLine === undefined || lines.length < 2) return [];
+  const header = splitCsvLine(headerLine).map((h) => h.toLowerCase());
+  const idIdx = header.indexOf('id');
+  const nameIdx = header.indexOf('name');
+  const imageIdx = header.indexOf('imageurl');
+  const targetIdx = header.indexOf('targeturl');
+  if (idIdx === -1 || nameIdx === -1) return [];
+  const rows: IntakeRow[] = [];
+  for (const line of lines.slice(1)) {
+    const cells = splitCsvLine(line);
+    const id = cells[idIdx];
+    const name = cells[nameIdx];
+    if (!id || !name) continue;
+    const row: IntakeRow = { id, name };
+    if (imageIdx !== -1 && cells[imageIdx]) row.imageUrl = cells[imageIdx];
+    if (targetIdx !== -1 && cells[targetIdx]) row.targetUrl = cells[targetIdx];
+    rows.push(row);
+  }
+  return rows;
+}
+
+function IntakeUpload({ onSignal }: { onSignal: WorkflowPanelProps['onSignal'] }) {
+  const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+
+  async function onFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    const text = await file.text();
+    const rows = parseWorkbook(text);
+    if (rows.length === 0) {
+      setError('No product rows found. Expected a CSV with id and name columns.');
+      return;
+    }
+    onSignal('intake', { rows });
+    setSubmitted(true);
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-text-2">
+        Upload a product workbook (CSV with id and name columns) to start enrichment.
+      </p>
+      <input
+        type="file"
+        accept=".csv,text/csv"
+        disabled={submitted}
+        onChange={(e) => {
+          onFile(e).catch(() => setError('Couldn’t read the uploaded file.'));
+        }}
+        aria-label="Upload product workbook"
+        className="text-sm text-text"
+      />
+      {error && <p className="text-sm text-orange">{error}</p>}
+      {submitted && <p className="text-sm text-text-3">Workbook submitted.</p>}
+    </div>
+  );
+}
+
+function IntakeSubmitted({
+  output,
+  phase,
+}: {
+  output: unknown;
+  phase: StepPhase | 'pending';
+}) {
   const parsed = IntakeOutput(output);
   if (parsed instanceof type.errors) {
     if (phase === 'completed') {
@@ -158,9 +235,11 @@ type SelectionState = Record<string, Selection>;
 function ReviewView({
   output,
   onSignal,
+  onConfirm,
 }: {
   output: unknown;
   onSignal: WorkflowPanelProps['onSignal'];
+  onConfirm: (chosen: ChosenRow[]) => void;
 }) {
   const parsed = EnrichOutput(output);
   const rows: EnrichRow[] = parsed instanceof type.errors ? [] : parsed.rows;
@@ -182,7 +261,7 @@ function ReviewView({
   );
 
   function confirm() {
-    const chosen = rows.map((row) => {
+    const chosen: ChosenRow[] = rows.map((row) => {
       const sel = selections[row.id] ?? {};
       return {
         id: row.id,
@@ -193,6 +272,7 @@ function ReviewView({
       };
     });
     onSignal('row-selection', { selections: chosen });
+    onConfirm(chosen);
     setSubmitted(true);
   }
 
@@ -245,29 +325,41 @@ function ReviewView({
   );
 }
 
-function ExportView({ output, phase }: { output: unknown; phase: StepPhase | 'pending' }) {
-  const parsed = ExportOutput(output);
-  if (parsed instanceof type.errors) {
-    if (phase === 'completed') {
-      return <p className="text-sm text-orange">Couldn’t read the CSV export output.</p>;
-    }
-    return <p className="text-sm text-text-3">The CSV is not ready yet.</p>;
+const EXPORT_FILENAME = 'seo-enrichment.csv';
+
+function csvCell(value: string): string {
+  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+function buildCsv(rows: ChosenRow[]): string {
+  const header = ['id', 'name', 'title', 'description', 'summary'];
+  const lines = [header.join(',')];
+  for (const row of rows) {
+    lines.push(
+      [row.id, row.name, row.title, row.description, row.summary].map(csvCell).join(','),
+    );
   }
+  return lines.join('\n');
+}
+
+function ExportView({ chosen }: { chosen: ChosenRow[] | null }) {
+  if (!chosen || chosen.length === 0) {
+    return <p className="text-sm text-text-3">The CSV is ready once you confirm selections.</p>;
+  }
+  const csv = buildCsv(chosen);
+  const downloadUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
   return (
     <div className="space-y-3">
-      {parsed.downloadUrl ? (
-        <a
-          href={parsed.downloadUrl}
-          download={parsed.filename}
-          className="inline-block rounded-panel bg-orange px-4 py-2 text-sm font-medium text-white"
-        >
-          Download {parsed.filename}
-        </a>
-      ) : (
-        <p className="text-sm font-medium text-text">{parsed.filename}</p>
-      )}
+      <a
+        href={downloadUrl}
+        download={EXPORT_FILENAME}
+        className="inline-block rounded-panel bg-orange px-4 py-2 text-sm font-medium text-white"
+      >
+        Download {EXPORT_FILENAME}
+      </a>
       <pre className="max-h-64 overflow-auto rounded-panel border border-border bg-surface-2 p-3 text-xs text-text-2">
-        {parsed.csv}
+        {csv}
       </pre>
     </div>
   );
@@ -275,7 +367,9 @@ function ExportView({ output, phase }: { output: unknown; phase: StepPhase | 'pe
 
 export function Panel(props: WorkflowPanelProps) {
   const { state, connected, stepOutputs, onSignal, onClose } = props;
+  const [chosen, setChosen] = useState<ChosenRow[] | null>(null);
   const steps = buildStepViews(state);
+  const intakePhase = state?.steps.get('intake')?.phase ?? 'pending';
   const failed =
     state?.phase === 'failed' ||
     steps.some((s) => s.phase === 'failed' || s.phase === 'cancelled');
@@ -312,10 +406,11 @@ export function Panel(props: WorkflowPanelProps) {
         )}
 
         <Section title="Intake">
-          <IntakeView
-            output={stepOutputs.intake}
-            phase={state?.steps.get('intake')?.phase ?? 'pending'}
-          />
+          {intakePhase === 'awaiting-signal' ? (
+            <IntakeUpload onSignal={onSignal} />
+          ) : (
+            <IntakeSubmitted output={stepOutputs.intake} phase={intakePhase} />
+          )}
         </Section>
 
         <Section title="Enrichment variants">
@@ -327,15 +422,12 @@ export function Panel(props: WorkflowPanelProps) {
 
         {state?.steps.get('review')?.phase === 'awaiting-signal' && (
           <Section title="Review &amp; select">
-            <ReviewView output={stepOutputs.enrich} onSignal={onSignal} />
+            <ReviewView output={stepOutputs.enrich} onSignal={onSignal} onConfirm={setChosen} />
           </Section>
         )}
 
         <Section title="Export">
-          <ExportView
-            output={stepOutputs.export}
-            phase={state?.steps.get('export')?.phase ?? 'pending'}
-          />
+          <ExportView chosen={chosen} />
         </Section>
       </div>
     </div>

@@ -35,20 +35,43 @@ function makeState(
 
 const noop = () => {};
 
+function toolResult(value: unknown): { callId: string; content: string } {
+  return { callId: 'c1', content: JSON.stringify(value) };
+}
+
+const NOTE_LIST = toolResult({
+  notes: [
+    {
+      id: 'note_1',
+      title: 'Acme discovery call',
+      created_at: '2026-01-01',
+      summary: 'Onboarding pain.',
+    },
+    { id: 'note_2', title: 'Beta renewal', created_at: '2026-01-02' },
+  ],
+});
+
 describe('pain-point-collateral Panel', () => {
-  it('renders the selected Granola note, pain points, and generated collateral', () => {
+  it('renders the Granola note list, fetched note, pain points, and collateral', () => {
     render(
       <Panel
         deploymentId="dep_1"
         state={makeState({
           intake: 'completed',
+          select: 'completed',
+          fetch: 'completed',
           analyze: 'completed',
           generate: 'completed',
           approval: 'awaiting-signal',
         })}
         connected
         stepOutputs={{
-          intake: { title: 'Acme discovery call', summary: 'Buyer frustrated with onboarding time.' },
+          intake: NOTE_LIST,
+          fetch: toolResult({
+            id: 'note_1',
+            title: 'Acme discovery call',
+            summary: 'Buyer frustrated with onboarding.',
+          }),
           analyze: { painPoints: ['Onboarding takes weeks', 'No clear ROI metric'] },
           generate: { collateral: 'One-pager: cut onboarding from weeks to days.' },
         }}
@@ -57,14 +80,66 @@ describe('pain-point-collateral Panel', () => {
       />
     );
 
-    screen.getByText('Acme discovery call');
-    screen.getByText('Buyer frustrated with onboarding time.');
+    screen.getByText('Buyer frustrated with onboarding.');
     screen.getByText('Onboarding takes weeks');
     screen.getByText('No clear ROI metric');
     screen.getByText('One-pager: cut onboarding from weeks to days.');
   });
 
-  it('shows placeholders when a step output has not resolved yet', () => {
+  it('renders selectable notes and fires note-selection on click', async () => {
+    const onSignal = mock((_name: string, _payload?: unknown) => {});
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: 'completed', select: 'awaiting-signal' })}
+        connected
+        stepOutputs={{ intake: NOTE_LIST }}
+        onSignal={onSignal}
+        onClose={noop}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /Acme discovery call/ }));
+
+    expect(onSignal).toHaveBeenCalledTimes(1);
+    expect(onSignal.mock.calls[0]).toEqual(['note-selection', { noteId: 'note_1' }]);
+  });
+
+  it('does not fire selection before the select step awaits a signal', async () => {
+    const onSignal = mock((_name: string, _payload?: unknown) => {});
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: 'completed' })}
+        connected
+        stepOutputs={{ intake: NOTE_LIST }}
+        onSignal={onSignal}
+        onClose={noop}
+      />
+    );
+
+    const button = screen.getByRole('button', { name: /Acme discovery call/ });
+    expect(button.hasAttribute('disabled')).toBe(true);
+    await userEvent.click(button);
+    expect(onSignal).not.toHaveBeenCalled();
+  });
+
+  it('shows malformed error when the note-list tool content is invalid JSON', () => {
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: 'completed' })}
+        connected
+        stepOutputs={{ intake: { callId: 'c1', content: 'not-json' } }}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+
+    screen.getByText('Couldn’t read the Granola note list.');
+  });
+
+  it('shows placeholders when step outputs have not resolved yet', () => {
     render(
       <Panel
         deploymentId="dep_1"
@@ -76,7 +151,7 @@ describe('pain-point-collateral Panel', () => {
       />
     );
 
-    screen.getByText('Waiting for a Granola note selection…');
+    screen.getByText('Loading your Granola notes…');
     screen.getByText('Pain points appear here once analysis completes.');
     screen.getByText('Generated collateral appears here once it is ready.');
   });
