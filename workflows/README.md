@@ -22,10 +22,9 @@ package plus a push — no hub or push-script change.
    and `workflow` (copy `collateral-generation` as a template).
 2. `bun install` to register the workspace member.
 3. Push it via the admin CLI: `bun run admin` (or `admin:staging` /
-   `admin:production`) → select a tenant → "Local actions (build, seed, push)" →
-   "Push a workflow". At the "Workflow kind (e.g. pain-point-collateral)" prompt,
-   type just the kind value (e.g. `<kind>`); the selected tenant is threaded
-   automatically.
+   `admin:production`) → select a tenant → "Workflows" → "Push (deploy) a
+   workflow". The CLI lists the discovered kinds (including the new one) — pick
+   it; the selected tenant is threaded automatically.
 
 ## Serialization constraint
 

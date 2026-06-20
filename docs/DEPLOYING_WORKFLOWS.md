@@ -24,15 +24,24 @@ change.
 
 ## Authorization
 
-Deploy is an **operator action**, not a user action: the route
-(`POST /api/internal/workflows/deploy`) is gated by the hub **service token**
-(`Authorization: Bearer <token>`), the same gate the other `/api/internal`
-routes use. This matters because the orchestrator auto-approves the grants the
-posted definition declares — only a trusted operator holding the deploy secret
-may push. A member session cannot reach the route.
+Deploy is an **operator action**. There are two authorized paths, both resolving
+to the same deploy logic:
 
-(Finer-grained, per-user admin gating would need a hub role mechanism, which does
-not exist today — tracked as a follow-up.)
+- **Session path (operators) — `POST /api/v1/workflows/deploy`.** Gated by a
+  valid better-auth session **plus** the native Interchange grant check: the
+  caller's principal must satisfy `authorize(... "workflow:*", "create")`. The
+  global **owner** role's `*:*` grant satisfies this, so an owner deploys a
+  workflow the same way it creates an agent or a credential (`agent:*`/`create`,
+  `credential:*`/`create`). This is the default the admin CLI uses, via the
+  operator's `SESSION_TOKEN`.
+- **Service path (machine/unattended) — `POST /api/internal/workflows/deploy`.**
+  Gated by the hub **service token** (`Authorization: Bearer <SIDECAR_TOKEN>`),
+  the same gate the other `/api/internal` routes use. For callers with no session.
+
+This matters because the orchestrator auto-approves the grants the posted
+definition declares — so deploy must be restricted to a trusted operator (an
+owner-grant holder) or a service-token holder. A plain member session is denied
+with 403.
 
 ## Pushing a workflow
 
@@ -43,12 +52,12 @@ source from it.
 
 Run the admin CLI (`bun run admin` locally, or `bun run admin:staging` /
 `bun run admin:production` from `apps/hub`): sign in, select the target tenant,
-then choose **Local actions → Push a workflow**. At the "Workflow kind (e.g.
-pain-point-collateral)" prompt, type just the kind value (e.g.
-`pain-point-collateral`); the selected tenant is threaded automatically. On
-success the CLI prints the deployed kind, deployment id, and deploy mode
-(`multi-step` or `trivial`). See [ADMIN_CLI.md](./ADMIN_CLI.md) for the CLI
-details.
+then choose the **Workflows** resource → **Push (deploy) a workflow**. The CLI
+discovers the available workflow kinds from `workflows/*` and lists them — pick
+one, no need to know the kind by heart. The selected tenant is threaded
+automatically. On success the CLI prints the deployed kind, deployment id, and
+deploy mode (`multi-step` or `trivial`). See [ADMIN_CLI.md](./ADMIN_CLI.md) for
+the CLI details.
 
 ## Serialization constraint
 
@@ -63,8 +72,8 @@ contains a function, so this fails fast rather than at runtime.
 1. Create `workflows/<kind>/` as `@workbench/workflow-<kind>`, exporting `kind`
    and `workflow` (see `workflows/pain-point-collateral`).
 2. `bun install` (registers the new workspace member).
-3. Push it via the admin CLI's **Local actions → Push a workflow**; at the
-   "Workflow kind" prompt, type just the kind value.
+3. Push it via the admin CLI's **Workflows → Push (deploy) a workflow**; the new
+   kind appears in the discovered list automatically.
 
 No hub or push-script edits are required — the push script resolves the package by
 naming convention (`@workbench/workflow-<kind>`) and the hub deploy route is

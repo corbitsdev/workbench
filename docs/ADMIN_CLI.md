@@ -35,17 +35,18 @@ the CLI uses its `createClient({ url })` runtime to drive discovered resources.
 
 ## Local actions
 
-A "Local actions" group covers non-HTTP operator tasks. The selected tenant is
-threaded into each internally, so it is never typed by hand:
+Non-HTTP operator tasks appear as their own top-level resources, alongside the
+spec-driven ones. The selected tenant is threaded into each internally, so it is
+never typed by hand:
 
-- **Seed superadmin** — bootstrap
-- **Seed tool credentials from env**
-- **Add LLM credential**
-- **Build tool packages**
-- **Publish tool packages**
-- **Push a workflow** — prompts for the workflow kind ("Workflow kind (e.g.
-  pain-point-collateral)"); type just the kind value (e.g.
-  `pain-point-collateral`) and the CLI handles the rest.
+- **Local actions (build, seed)** — Seed superadmin (bootstrap), Seed tool
+  credentials from env, Add LLM credential, Build tool packages, Publish tool
+  packages.
+- **Workflows** — **Push (deploy) a workflow**: the CLI discovers the available
+  workflow kinds from `workflows/*` and presents them as a list to pick from, so
+  operators never have to know a kind by heart. The push authenticates with the
+  operator's `SESSION_TOKEN` against the session-gated deploy route (authorized
+  by the native grant check); see [DEPLOYING_WORKFLOWS.md](./DEPLOYING_WORKFLOWS.md).
 
 Each action spawns the corresponding hub bin script internally; operators never
 invoke those scripts directly.
