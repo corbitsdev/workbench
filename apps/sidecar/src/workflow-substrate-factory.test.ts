@@ -197,4 +197,77 @@ describe("createSidecarStepInvoker", () => {
     await expect(invoke(req)).rejects.toThrow(/runId is required/);
     expect(factoryCalled).toBe(false);
   });
+
+  test("routes a deterministic-tool-tagged step away from the inference agent factory", async () => {
+    const dataDir = await makeDataDir();
+    let factoryCalled = false;
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      agentFactory: async () => {
+        factoryCalled = true;
+        throw new Error(
+          "inference factory must not run for a deterministic step",
+        );
+      },
+    });
+
+    const detAgent: AgentDefinition<BaseEnv> = {
+      ...makeAgentDefinition("deterministic-gamma_create_from_template"),
+      tags: {
+        "workbench.stepKind": "deterministic-tool",
+        "workbench.tool": "gamma_create_from_template",
+      },
+    };
+    const req: StepInvokeRequest = {
+      agent: detAgent,
+      input: { foo: "bar" },
+      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
+      signal: new AbortController().signal,
+    };
+
+    // The deterministic branch builds the step env and dispatches to the tool
+    // handler; with no resolveStepToolContext wired (pure-dispatch test), the
+    // handler fails loud on the missing tool context. The key assertion is
+    // that the INFERENCE factory was never consulted — the marker rerouted it.
+    await expect(invoke(req)).rejects.toThrow(/STEP_TOOL_CONTEXT/);
+    expect(factoryCalled).toBe(false);
+  });
+
+  test("an unmarked step still reaches the inference agent factory", async () => {
+    const dataDir = await makeDataDir();
+    let factoryCalled = false;
+    const stubAgent: Agent = {
+      send: async () => ({
+        reply: "ok",
+        turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
+      }),
+      stream: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ value: undefined, done: true }),
+        }),
+      }),
+      deliver: () => {},
+      close: async () => {},
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      agentFactory: async () => {
+        factoryCalled = true;
+        return stubAgent;
+      },
+    });
+
+    await invoke(makeRequest());
+    expect(factoryCalled).toBe(true);
+  });
 });

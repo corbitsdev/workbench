@@ -319,6 +319,103 @@ async function buildStepTools(args: {
   };
 }
 
+/**
+ * Run a workflow step as a deterministic tool call: load the step's pinned
+ * tool packages + credentials the SAME way the tool-capable agent path does,
+ * then invoke the named tool DIRECTLY against the runner — no `createAgent`,
+ * no `agent.send`, no reactor, no inference. The step's runtime-resolved
+ * `input` is passed verbatim as the tool-call arguments.
+ *
+ * Disposal mirrors the agent path: every tool runner disposer runs and the
+ * per-step `storeDir` is reclaimed on both success and failure.
+ */
+export async function runDeterministicToolStep(args: {
+  env: Omit<BaseEnv, "authorize">;
+  toolName: string;
+  input: unknown;
+  signal: AbortSignal;
+}): Promise<{ output: unknown }> {
+  const ctx = readStepToolContext(
+    args.env as unknown as Record<string, unknown>,
+  );
+  const storeDir = path.dirname(args.env.workdir);
+
+  // A deterministic tool call never runs the reactor, so no agent-level
+  // `authorize` is consulted; the hub gates which packages were resolvable at
+  // all via the step's pins. Supply a deny-all to complete the BaseEnv shape
+  // buildStepTools' factory env spread requires.
+  const stepEnv: BaseEnv = {
+    ...args.env,
+    authorize: async () => ({
+      effect: null,
+      matchingGrants: [],
+      resolvedBy: null,
+    }),
+  };
+
+  const { runner, disposers } = await buildStepTools({
+    ctx,
+    env: stepEnv,
+    storage: args.env.storage,
+    workdir: args.env.workdir,
+  });
+
+  try {
+    const available = new Set(runner.definitions.map((d) => d.name));
+    if (!available.has(args.toolName)) {
+      throw new Error(
+        `step-tool-harness: deterministic step declared tool "${args.toolName}" but it is not in the step's loaded runner; the workflow declared a tool that is not pinned (loaded: ${[...available].join(", ") || "none"})`,
+      );
+    }
+    if (
+      typeof args.input !== "object" ||
+      args.input === null ||
+      Array.isArray(args.input)
+    ) {
+      throw new Error(
+        `step-tool-harness: deterministic step "${args.toolName}" requires an object input to use as tool arguments; got ${args.input === null ? "null" : typeof args.input}`,
+      );
+    }
+    const result = await runner.run(
+      {
+        id: `det-${ctx.stepAgentId}`,
+        name: args.toolName,
+        // The input is the workflow-resolved step input; the object-shape
+        // guard above narrows it to the ToolCall.arguments contract.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed to a non-null object above; ToolCall.arguments is Record<string, unknown>
+        arguments: args.input as Record<string, unknown>,
+      },
+      args.signal,
+    );
+    return { output: result };
+  } finally {
+    for (const dispose of disposers) {
+      try {
+        await dispose();
+      } catch (err) {
+        logger.warn(
+          "Deterministic step tool disposer failed for {address}: {msg}",
+          {
+            address: ctx.stepAddress,
+            msg: err instanceof Error ? err.message : String(err),
+          },
+        );
+      }
+    }
+    try {
+      await fs.promises.rm(storeDir, { recursive: true, force: true });
+    } catch (err) {
+      logger.warn(
+        "Deterministic step store cleanup failed for {address}: {msg}",
+        {
+          address: ctx.stepAddress,
+          msg: err instanceof Error ? err.message : String(err),
+        },
+      );
+    }
+  }
+}
+
 export interface StepAgentFactoryOpts {
   agentFactory?: <EnvReq extends BaseEnv>(
     def: AgentDefinition<EnvReq>,

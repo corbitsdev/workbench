@@ -5,6 +5,13 @@ export {
   toolPackagesForCapabilities,
   providersForToolPackages,
 } from './tool-names';
+export {
+  deterministicToolStep,
+  STEP_KIND_TAG,
+  STEP_TOOL_TAG,
+  DETERMINISTIC_TOOL_KIND,
+  type DeterministicToolStepOpts,
+} from './deterministic-step';
 
 // Personal agent
 export { buildPersonalAgentSystemPrompt } from './personal-agent/prompt';

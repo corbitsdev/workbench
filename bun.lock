@@ -545,6 +545,7 @@
         "@intx/hub-client": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/prompts": "workspace:*",
       },

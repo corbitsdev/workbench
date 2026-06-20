@@ -33,9 +33,15 @@ import type { GrantRule } from "@intx/authz";
 import { getLogger } from "@intx/log";
 import {
   createStepAgentFactory,
+  runDeterministicToolStep,
   STEP_TOOL_CONTEXT_KEY,
   type StepToolContext,
 } from "./step-tool-harness";
+import {
+  STEP_KIND_TAG,
+  STEP_TOOL_TAG,
+  DETERMINISTIC_TOOL_KIND,
+} from "@workbench/agents";
 import { wsUrlToHttp } from "./agent-tools";
 import {
   DEFAULT_REGISTRY_MAX_TARBALL_BYTES,
@@ -567,17 +573,19 @@ export function createSidecarStepInvoker(args: {
     env: EnvReq,
   ) => Promise<Agent>;
 }): StepInvoker {
-  return createWorkflowStepInvoker({
+  const buildEnv = createSidecarStepBuildEnv({
+    table: args.table,
+    dataDir: args.dataDir,
+    signer: args.signer,
+    directors: args.directors,
+    ...(args.resolveStepToolContext !== undefined
+      ? { resolveStepToolContext: args.resolveStepToolContext }
+      : {}),
+  });
+
+  const inferenceInvoker = createWorkflowStepInvoker({
     workflowAuthorize: createSidecarStepWorkflowAuthorize(args.evaluateGrants),
-    buildEnv: createSidecarStepBuildEnv({
-      table: args.table,
-      dataDir: args.dataDir,
-      signer: args.signer,
-      directors: args.directors,
-      ...(args.resolveStepToolContext !== undefined
-        ? { resolveStepToolContext: args.resolveStepToolContext }
-        : {}),
-    }),
+    buildEnv,
     // The step's `req.agent.toolFactories` are walk-only stubs; the
     // tool-capable factory ignores them and builds the real runner from the
     // step's pins. A test-injected `agentFactory` (pure inference) is wired
@@ -588,6 +596,31 @@ export function createSidecarStepInvoker(args: {
         ? createStepAgentFactory()
         : createAgent),
   });
+
+  // Deterministic-tool dispatch (CL-2202). A step whose placeholder agent
+  // carries the deterministic marker tags is a pure tool/API call: build the
+  // step env (which materializes the per-step tool context) and invoke the
+  // named tool directly, skipping the reactor + inference entirely. Every
+  // other step delegates to the real inference invoker above. The existing
+  // test seam (a test-injected `agentFactory` for pure inference) is
+  // untouched — the deterministic branch only triggers on the tag.
+  return async (req) => {
+    const tags = req.agent.tags;
+    const toolName = tags?.[STEP_TOOL_TAG];
+    if (
+      tags?.[STEP_KIND_TAG] === DETERMINISTIC_TOOL_KIND &&
+      toolName !== undefined
+    ) {
+      const env = await buildEnv(req);
+      return runDeterministicToolStep({
+        env,
+        toolName,
+        input: req.input,
+        signal: req.signal,
+      });
+    }
+    return inferenceInvoker(req);
+  };
 }
 
 /**
