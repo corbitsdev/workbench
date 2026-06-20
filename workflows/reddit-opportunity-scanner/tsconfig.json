@@ -11,7 +11,8 @@
     "skipLibCheck": true,
     "declaration": true,
     "declarationMap": true,
-    "lib": ["ESNext"]
+    "jsx": "react-jsx",
+    "lib": ["ESNext", "DOM"]
   },
   "include": ["src/**/*"]
 }

@@ -7,11 +7,12 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
     "noEmit": true,
     "skipLibCheck": true,
     "declaration": true,
     "declarationMap": true,
-    "lib": ["ESNext"]
+    "lib": ["ESNext", "DOM"]
   },
   "include": ["src/**/*"]
 }

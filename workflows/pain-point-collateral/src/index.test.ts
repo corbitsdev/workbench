@@ -19,7 +19,7 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
 }
 
 describe('pain-point-collateral native workflow', () => {
-  test('executes analyze → generate in order then awaits approval signal', async () => {
+  test('executes intake → analyze → generate in order then awaits approval signal', async () => {
     const { invoker, ran } = makeRecordingInvoker();
     const run = runLocal(workflow, { invokeStep: invoker });
 
@@ -28,7 +28,11 @@ describe('pain-point-collateral native workflow', () => {
     const result = await run.complete;
 
     expect(result.terminalStatus).toBe('completed');
-    expect(ran).toEqual(['pain-point-collateral-analyze', 'pain-point-collateral-generate']);
+    expect(ran).toEqual([
+      'pain-point-collateral-intake',
+      'pain-point-collateral-analyze',
+      'pain-point-collateral-generate',
+    ]);
 
     const signalReceived = result.events.find((e) => e.kind === 'SignalReceived');
     expect(signalReceived).toBeDefined();
@@ -40,7 +44,7 @@ describe('pain-point-collateral native workflow', () => {
 
     await new Promise<void>((resolve) => {
       const interval = setInterval(() => {
-        if (ran.length === 2) {
+        if (ran.length === 3) {
           clearInterval(interval);
           resolve();
         }

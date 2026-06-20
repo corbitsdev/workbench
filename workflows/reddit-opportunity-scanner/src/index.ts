@@ -35,9 +35,8 @@ const scanAgent = defineAgent({
   tags: { credentialName: LLM_CREDENTIAL_NAME },
 });
 
-export { IntakeForm } from './IntakeForm';
-
 export const label = 'Reddit Opportunity Scanner';
+export const description = 'Scan subreddits for buying signals, pain points, and competitor mentions.';
 export const kind = 'reddit-opportunity-scanner';
 
 export const workflow = defineWorkflow({

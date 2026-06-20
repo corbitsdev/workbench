@@ -47,9 +47,8 @@ const renderAgent = defineAgent({
   tags: { credentialName: LLM_CREDENTIAL_NAME },
 });
 
-export { IntakeForm } from './IntakeForm';
-
 export const label = 'Gamma Presentation Creator';
+export const description = 'Generate a polished Gamma presentation from a topic, audience, and key points.';
 export const kind = 'gamma-presentation-creator';
 
 export const workflow = defineWorkflow({

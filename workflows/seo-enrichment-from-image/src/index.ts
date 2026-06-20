@@ -36,9 +36,8 @@ const exportAgent = defineAgent({
 });
 
 export const label = 'SEO Enrichment from Image';
+export const description = 'Extract SEO metadata from a product image and enrich a target page URL.';
 export const kind = 'seo-enrichment-from-image';
-
-export { IntakeForm } from './IntakeForm';
 
 export const workflow = defineWorkflow({
   id: kind,

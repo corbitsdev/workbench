@@ -6,23 +6,33 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./ui": {
+      "types": "./src/ui.tsx",
+      "default": "./src/ui.tsx"
     }
   },
   "scripts": {
-    "test": "bun test src",
-    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json",
+    "test": "bun test --preload ./src/test-setup.ts src",
+    "test:coverage": "bun test --preload ./src/test-setup.ts --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
-    "@workbench/ui": "workspace:*"
+    "@workbench/ui": "workspace:*",
+    "arktype": "catalog:",
+    "react": "^19.0.0"
   },
   "peerDependencies": {
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.9.0",
+    "@testing-library/react": "^16.3.2",
     "@types/bun": "latest",
+    "@types/react": "^19.0.0",
     "typescript": "catalog:"
   }
 }

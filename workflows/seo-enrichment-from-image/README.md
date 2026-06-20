@@ -20,7 +20,6 @@ This is a native `@intx/workflow` package. It exports:
 - `kind` — `'seo-enrichment-from-image'`
 - `label` — `'SEO Enrichment from Image'`
 - `workflow` — a `defineWorkflow(...)` definition
-- `IntakeForm` — React form component for collecting the image URL, target page URL, and optional focus keywords
 
 ## Deploy
 

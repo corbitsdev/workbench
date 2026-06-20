@@ -46,9 +46,8 @@ const persistAgent = defineAgent({
 });
 
 export const label = 'A/B Compare';
+export const description = 'Run two content variants through a blind comparison and surface ranked results.';
 export const kind = 'ab-compare';
-
-export { IntakeForm } from './IntakeForm';
 
 export const workflow = defineWorkflow({
   id: kind,
