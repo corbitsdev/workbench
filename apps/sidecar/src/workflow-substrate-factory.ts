@@ -22,14 +22,24 @@
 // as part of the supervisor's normal write path -- the child does
 // not open its own pack-push pipeline.
 
+import fs from "node:fs";
+import path from "node:path";
+
 import { type } from "arktype";
 
-import type { AuditStore, ContextStore } from "@intx/types/runtime";
 import { InferenceSource } from "@intx/types/runtime";
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
-import type { DirectorRegistry } from "@intx/agent";
-import { createDefaultDirectorRegistry } from "@intx/agent";
+import type {
+  Agent,
+  AgentDefinition,
+  BaseEnv,
+  DirectorRegistry,
+} from "@intx/agent";
+import { createAgent, createDefaultDirectorRegistry } from "@intx/agent";
+import { createSSHSignature } from "@intx/crypto-node";
+import { createIsogitStore, type CommitSigner } from "@intx/storage-isogit";
+import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import {
   createAgentRepoStore,
   type Principal,
@@ -45,6 +55,7 @@ import {
   createWorkflowRunRepoStore,
   createWorkflowHostSignalChannel,
   createWorkflowSpawnChild,
+  createWorkflowStepInvoker,
   type GrantEvaluator,
   type RunChildWorkflow,
   type RunWorkflowChildBindings,
@@ -214,70 +225,62 @@ interface SidecarSubstrateFactoryDeps {
     dataDir: string;
     signingKey: { publicKey: Uint8Array; privateKey: Uint8Array };
   }) => RepoStore;
+
+  /**
+   * Override the agent factory the real step invoker uses. Production
+   * callers omit this to get `@intx/agent`'s `createAgent`; tests inject
+   * a stub that returns a deterministic `Agent` without standing up a
+   * real inference source, so the invoker's real-reply path is
+   * exercisable without a live LLM.
+   */
+  agentFactory?: <EnvReq extends BaseEnv>(
+    def: AgentDefinition<EnvReq>,
+    env: EnvReq,
+  ) => Promise<Agent>;
 }
 
 /**
- * Object-shaped `StepEnvBase` slot whose every access throws. The
- * sidecar's substrate factory wires `source` from the pinned
- * `STEP_INFERENCE_SOURCES` table; the remaining `StepEnvBase` slots
- * (storage, audit, directors) are not yet populated by the factory.
- * Returning a throwing-getter Proxy keeps the static `StepEnvBase`
- * contract intact while surfacing a precise failure at the first
- * downstream access — a step invocation that actually consumes one
- * of these slots gets a structured "not wired" error naming the
- * slot and the originating `stepId`.
+ * Build a `CommitSigner` from the factory's Ed25519 keypair. Mirrors
+ * `apps/sidecar/src/default-harness.ts` (`const signer = (payload) =>
+ * crypto.signSSH(payload)` at the `createIsogitStore(storeDir, signer)`
+ * call): the live-agent path signs every context/audit commit with the
+ * sidecar's SSH-armored Ed25519 signature, and the per-step stores must
+ * carry the same provenance.
  */
-function throwingStepEnvSlot<T extends object>(
-  slot: string,
-  stepId: string,
-): T {
-  const trap = (prop: PropertyKey): never => {
-    throw new Error(
-      `sidecar workflow-child step invoker buildEnv: ${slot} slot is not wired (stepId=${JSON.stringify(stepId)}, access=${String(prop)}); the substrate factory does not yet supply per-step ${slot}`,
-    );
-  };
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- throwing Proxy stands in for a typed StepEnvBase slot until per-step storage/audit/directors land
-  return new Proxy({} as T, {
-    get(_target, prop) {
-      return trap(prop);
-    },
-    has(_target, prop) {
-      return trap(prop);
-    },
-    apply() {
-      return trap("apply");
-    },
-  });
+export function createSidecarCommitSigner(signingKey: {
+  publicKey: Uint8Array;
+  privateKey: Uint8Array;
+}): CommitSigner {
+  return async (payload: string) =>
+    createSSHSignature(payload, signingKey.privateKey, signingKey.publicKey);
 }
 
 /**
- * Sentinel `workdir` path the agent's lock boundary uses. The
- * substrate factory does not yet allocate a per-step workdir; a
- * step invocation that reaches `BaseEnv.workdir` surfaces a loud
- * `ENOENT` against this path rather than silently writing into an
- * unrelated directory. The path is intentionally unusable so a
- * silent default is impossible.
+ * Per-step agent-harness env slots the sidecar's substrate factory
+ * allocates. Pulled out of `createSidecarSubstrateFactory` so the
+ * env-construction is observable in isolation; the closure pins the
+ * parsed per-step source table, the per-run data root, the commit
+ * signer, and the director registry once, then derives every other
+ * `StepEnvBase` slot per step.
+ *
+ * INTENTIONAL DIVERGENCE FROM UPSTREAM: interchange's reference
+ * sidecar ships a throwing-Proxy stub for `storage`/`audit`/`workdir`/
+ * `directors` and a stub step invoker that never builds a real agent.
+ * GTM Workbench wires the real harness here so workflow steps run real
+ * inference. Each slot mirrors the live-agent path in `default-harness.ts`
+ * (cited per slot) so a workflow step's agent gets the same context
+ * store, audit sink, workspace, and director registry a chat agent does.
+ * Future pin-bump re-diffs: this block is ours, not upstream's stub.
  */
-function throwingStepEnvWorkdir(stepId: string): string {
-  return `/__sidecar_workflow_child_workdir_not_wired__/stepId=${stepId}`;
-}
-
-/**
- * Build the step-invoker `buildEnv` callback the workflow-host's
- * adapter consumes. Pulled out of `createSidecarSubstrateFactory` so
- * source-resolution is observable without standing up the full
- * substrate; the closure pins the parsed per-step source table once,
- * derives the `stepId` from the runtime's `AuthorizeContext`, and
- * populates `StepEnvBase.source` from the table. The other
- * `StepEnvBase` slots are not yet supplied by the substrate factory
- * and are filled with throwing-getter stubs so a step invocation
- * that exercises them surfaces a precise failure rather than a
- * silent default.
- */
-function createSidecarStepBuildEnv(
-  table: StepInferenceSourceTable,
-): (req: StepInvokeRequest) => Promise<StepEnvBase> {
-  const resolveStepInferenceSource = createStepInferenceSourceResolver(table);
+function createSidecarStepBuildEnv(args: {
+  table: StepInferenceSourceTable;
+  dataDir: string;
+  signer: CommitSigner;
+  directors: DirectorRegistry;
+}): (req: StepInvokeRequest) => Promise<StepEnvBase> {
+  const resolveStepInferenceSource = createStepInferenceSourceResolver(
+    args.table,
+  );
   return async (req: StepInvokeRequest): Promise<StepEnvBase> => {
     const stepId = req.authzContext.stepId;
     if (stepId === undefined) {
@@ -286,15 +289,122 @@ function createSidecarStepBuildEnv(
       );
     }
     const source = resolveStepInferenceSource(stepId);
+
+    // Per-run/per-step storage root under SIDECAR_DATA_DIR, keyed by
+    // runId + stepId so concurrent steps never share an isogit lock
+    // boundary. The runId comes from the workflow runtime's
+    // AuthorizeContext; a step-originated invocation always carries it.
+    const runId = req.authzContext.runId;
+    if (runId === undefined) {
+      throw new Error(
+        "sidecar workflow-child step invoker buildEnv: AuthorizeContext.runId is required to allocate a per-run step storage root; the workflow runtime must populate runId on every step-originated invocation",
+      );
+    }
+    const attempt = req.authzContext.attempt ?? 1;
+    const storeDir = path.join(
+      args.dataDir,
+      "workflow-steps",
+      sanitizePathSegment(runId),
+      `${sanitizePathSegment(stepId)}-attempt-${String(attempt)}`,
+    );
+    await fs.promises.mkdir(storeDir, { recursive: true });
+
+    // `storage`: per-step isogit context store. Mirrors default-harness
+    // `const storage = await createIsogitStore(storeDir, signer)`.
+    const storage = await createIsogitStore(storeDir, args.signer);
+    // `audit`: default-harness uses the isogit store as the agent's
+    // ContextStore AND a separate mail-audit store (`createMailAuditStore`).
+    // The agent harness's BaseEnv.audit is the AuditStore; default-harness
+    // passes `audit: storage` in its env literal, so we match that and
+    // route the agent's audit records into the same per-step isogit store.
+    const audit = storage;
+
+    // `workdir`: per-step workspace dir, mkdir'd recursively. Mirrors
+    // default-harness `const workDir = path.join(storeDir, 'workspace');
+    // await fs.promises.mkdir(workDir, { recursive: true })`.
+    const workdir = path.join(storeDir, "workspace");
+    await fs.promises.mkdir(workdir, { recursive: true });
+
     return {
       sources: [source],
       defaultSource: source.id,
-      storage: throwingStepEnvSlot<ContextStore>("storage", stepId),
-      workdir: throwingStepEnvWorkdir(stepId),
-      audit: throwingStepEnvSlot<AuditStore>("audit", stepId),
-      directors: throwingStepEnvSlot<DirectorRegistry>("directors", stepId),
+      storage,
+      workdir,
+      audit,
+      // `directors`: default-harness uses `createWorkbenchDirectorRegistry()`.
+      directors: args.directors,
     };
   };
+}
+
+/**
+ * Sanitize an id for use as a single on-disk path segment so a stepId
+ * or runId carrying a separator cannot escape the per-run subtree.
+ */
+function sanitizePathSegment(id: string): string {
+  return id.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+/**
+ * Adapt the factory's `GrantEvaluator` (the sidecar's grant-rule
+ * evaluator, which takes a per-step `grants` array) into the
+ * `WorkflowAuthorizeFn` the production step-invoker adapter requires.
+ *
+ * The step-invoker seam does not thread a per-step credentialsSnapshot
+ * (that machinery is the supervisor's `createCredentialsBackedAuthorize`
+ * path inside `@intx/workflow-host`'s run-child, which builds the
+ * runtime env's own `authorize` from `bindings.evaluateGrants` — a slot
+ * the step invoker does not receive). For a pure-inference step the
+ * agent never calls `authorize`, so this closure is only exercised when
+ * a step agent invokes a tool. It evaluates against an empty grant set,
+ * which fails closed (deny) for any tool authz — the correct, loud
+ * default until per-step grants are threaded into this seam. Real
+ * tool-credential resolution for tool-using step agents is NOT wired
+ * here; inference is.
+ */
+function createSidecarStepWorkflowAuthorize(
+  evaluate: GrantEvaluator,
+): WorkflowAuthorizeFn {
+  return async (resource, action, ctx) =>
+    evaluate({
+      resource,
+      action,
+      stepId: ctx?.stepId ?? "",
+      attempt: ctx?.attempt,
+      runId: ctx?.runId,
+      grants: [],
+    });
+}
+
+/**
+ * Compose the real `createWorkflowStepInvoker` adapter for the
+ * sidecar's parent-step path. Exported so the wiring is testable in
+ * isolation: a test injects a stub `agentFactory` and asserts the step
+ * output carries the agent's real reply rather than the upstream stub
+ * shape. Production wires the same composition inside
+ * `createSidecarSubstrateFactory`.
+ */
+export function createSidecarStepInvoker(args: {
+  table: StepInferenceSourceTable;
+  dataDir: string;
+  signer: CommitSigner;
+  directors: DirectorRegistry;
+  evaluateGrants: GrantEvaluator;
+  agentFactory?: <EnvReq extends BaseEnv>(
+    def: AgentDefinition<EnvReq>,
+    env: EnvReq,
+  ) => Promise<Agent>;
+}): StepInvoker {
+  return createWorkflowStepInvoker({
+    workflowAuthorize: createSidecarStepWorkflowAuthorize(args.evaluateGrants),
+    buildEnv: createSidecarStepBuildEnv({
+      table: args.table,
+      dataDir: args.dataDir,
+      signer: args.signer,
+      directors: args.directors,
+    }),
+    agentFactory: args.agentFactory ?? createAgent,
+  });
 }
 
 /**
@@ -567,7 +677,6 @@ export function createSidecarSubstrateFactory(
     const stepInferenceSources = parseStepInferenceSources(
       validated.STEP_INFERENCE_SOURCES,
     );
-    const buildStepEnv = createSidecarStepBuildEnv(stepInferenceSources);
 
     const signingKey = {
       publicKey: hexDecode(
@@ -619,59 +728,6 @@ export function createSidecarSubstrateFactory(
     await hostScheduler.start();
     const scheduler = adaptHostScheduler(hostScheduler);
 
-    // Per-step substrate slots (storage, audit, directors, workdir) the
-    // production `createWorkflowStepInvoker` adapter requires for a
-    // full agent harness are not yet wired by this factory; the
-    // throwing-Proxy stubs in `createSidecarStepBuildEnv` would surface
-    // immediately on every step invocation. Until those slots land, the
-    // factory installs a stub step invoker that mirrors the runlocal
-    // default body's spirit (`createDefaultStepInvoker` in
-    // `packages/workflow/src/runlocal/run-local.ts`): return a
-    // deterministic success output so the runtime body commits
-    // `StepCompleted` and schedules downstream primitives, without
-    // touching the agent harness's storage/audit/directors/workdir
-    // surface.
-    //
-    // `buildStepEnv` resolves the per-step `InferenceSource` from the
-    // pinned table; it is invoked here so a missing source-table entry
-    // (which is a deploy-router contract violation) surfaces at the
-    // step boundary rather than only on a downstream env-touch. The
-    // resolved source is intentionally unused by the stub; threading
-    // it into a real inference call is the next gap on the agent-
-    // harness wiring backlog.
-    const baseInvokeStep: StepInvoker = async (req) => {
-      const envBase = await buildStepEnv(req);
-      void envBase;
-      return { output: { reply: req.agent.id, turn: null } };
-    };
-
-    // Child-runtime step invoker. The in-process `runChild` (see
-    // `createSidecarRunChild` below) runs a separate WorkflowDefinition
-    // whose stepIds are disjoint from the parent's, so the parent's
-    // `STEP_INFERENCE_SOURCES`-driven `buildStepEnv` would throw on
-    // every child stepId ("no InferenceSource pinned"). The child
-    // invoker mirrors the parent stub's success output without
-    // consulting the parent's pinned source table; threading the
-    // child's WorkflowDefinition-derived sources into a real inference
-    // call is on the same backlog as the parent's stub.
-    const childInvokeStep: StepInvoker = (req) =>
-      Promise.resolve({ output: { reply: req.agent.id, turn: null } });
-
-    // Adapt the workflow-runtime `StepInvoker` shape onto the host's
-    // `ChildStepInvoker` shape. The wrapper today drops `onEvent` --
-    // the production step-invoker adapter does not yet thread an
-    // event firehose through the harness's send path; the event
-    // funnel inside the adapter lands when the harness's emit hook is
-    // wired. Holding the parameter at this boundary keeps the seam
-    // explicit so the wire-up is a single point of edit.
-    const invokeStep: RunWorkflowChildBindings["invokeStep"] = async (
-      req,
-      onEvent,
-    ) => {
-      void onEvent;
-      return baseInvokeStep(req);
-    };
-
     const evaluateGrantsAdapter: GrantEvaluator = async ({
       resource,
       action,
@@ -693,6 +749,58 @@ export function createSidecarSubstrateFactory(
         matchingGrants: [],
         resolvedBy: null,
       };
+    };
+
+    // INTENTIONAL DIVERGENCE FROM UPSTREAM REFERENCE SIDECAR.
+    // Interchange's reference `apps/sidecar` ships a stub step invoker
+    // here (`return { output: { reply: req.agent.id, turn: null } }`)
+    // that never builds an agent, so workflows produce canned output.
+    // GTM Workbench wires the real `createWorkflowStepInvoker` adapter
+    // from `@intx/workflow-host` so each step instantiates a real agent
+    // (`createAgent(req.agent, env)`) and runs real inference via
+    // `agent.send(input)`. The per-step `BaseEnv` slots are built by
+    // `createSidecarStepBuildEnv`, mirroring `default-harness.ts`
+    // (storage/audit/workdir/directors); the workflow-typed authorize
+    // is adapted from the factory's grant evaluator. Future pin-bump
+    // re-diffs: this invoker is ours, not upstream's stub.
+    const baseInvokeStep: StepInvoker = createSidecarStepInvoker({
+      table: stepInferenceSources,
+      dataDir: validated.SIDECAR_DATA_DIR,
+      signer: createSidecarCommitSigner(signingKey),
+      directors: createWorkbenchDirectorRegistry(),
+      evaluateGrants: evaluateGrantsAdapter,
+      agentFactory: deps.agentFactory,
+    });
+
+    // Child-runtime step invoker. The in-process `runChild` (see
+    // `createSidecarRunChild` below) runs a separate WorkflowDefinition
+    // whose stepIds are disjoint from the parent's, so the parent's
+    // `STEP_INFERENCE_SOURCES`-driven `buildStepEnv` would throw on
+    // every child stepId ("no InferenceSource pinned"). The
+    // `STEP_INFERENCE_SOURCES` table the supervisor threads in is the
+    // PARENT definition's per-step source map; child definitions carry
+    // their own per-step sources that are not pinned into this child
+    // process's env. Until child per-step sources are threaded through
+    // the spawn seam, the child invoker keeps the upstream stub's
+    // success output rather than crashing every nested-workflow step on
+    // a "no InferenceSource pinned" lookup miss. Real inference for the
+    // PARENT's steps (the must-have) is wired above.
+    const childInvokeStep: StepInvoker = (req) =>
+      Promise.resolve({ output: { reply: req.agent.id, turn: null } });
+
+    // Adapt the workflow-runtime `StepInvoker` shape onto the host's
+    // `ChildStepInvoker` shape. The wrapper today drops `onEvent` --
+    // the production step-invoker adapter does not yet thread an
+    // event firehose through the harness's send path; the event
+    // funnel inside the adapter lands when the harness's emit hook is
+    // wired. Holding the parameter at this boundary keeps the seam
+    // explicit so the wire-up is a single point of edit.
+    const invokeStep: RunWorkflowChildBindings["invokeStep"] = async (
+      req,
+      onEvent,
+    ) => {
+      void onEvent;
+      return baseInvokeStep(req);
     };
 
     const runChild = createSidecarRunChild({
