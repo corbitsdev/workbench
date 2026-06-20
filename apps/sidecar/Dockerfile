@@ -27,6 +27,7 @@ COPY packages/client/package.json packages/client/
 COPY packages/context-repair/package.json packages/context-repair/
 COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/last30days-core/package.json packages/last30days-core/
+COPY packages/openapi-arktype/package.json packages/openapi-arktype/
 COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
