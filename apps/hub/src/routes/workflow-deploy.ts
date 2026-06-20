@@ -1,16 +1,16 @@
-import { and, eq } from 'drizzle-orm';
-import { type } from 'arktype';
-import { Hono } from 'hono';
-import { schema as intxSchema } from '@intx/db';
-import type { WorkflowDefinition } from '@intx/workflow';
-import { workflowDefinitionEnvelopeSchema } from '@intx/hub-sessions';
-import { getLogger } from '@intx/log';
-import type { HubDb } from '../db';
-import { workflowRun } from '../db/schema';
-import type { WorkflowDeployService } from '../services/workflow-deploy';
-import { resolveWorkflowDeployConfig } from '../services/workflow-deploy-config';
+import { and, eq } from "drizzle-orm";
+import { type } from "arktype";
+import { Hono } from "hono";
+import { schema as intxSchema, getAncestorChain } from "@intx/db";
+import type { WorkflowDefinition } from "@intx/workflow";
+import { workflowDefinitionEnvelopeSchema } from "@intx/hub-sessions";
+import { getLogger } from "@intx/log";
+import type { HubDb } from "../db";
+import { workflowRun } from "../db/schema";
+import type { WorkflowDeployService } from "../services/workflow-deploy";
+import { resolveWorkflowDeployConfig } from "../services/workflow-deploy-config";
 
-const log = getLogger(['api', 'workflow-deploy']);
+const log = getLogger(["api", "workflow-deploy"]);
 
 // Generic workflow deploy. The caller (the workflows:push script, run by an
 // operator) sends a serialized @intx/workflow definition; the hub validates it,
@@ -32,45 +32,77 @@ export function createWorkflowDeployRouter(deps: {
 }): Hono {
   const router = new Hono();
 
-  router.use('/workflows/deploy', async (c, next) => {
-    if (c.req.header('Authorization') !== `Bearer ${deps.serviceToken}`) {
-      return c.json({ error: 'Unauthorized' }, 401);
+  router.use("/workflows/deploy", async (c, next) => {
+    if (c.req.header("Authorization") !== `Bearer ${deps.serviceToken}`) {
+      return c.json({ error: "Unauthorized" }, 401);
     }
     return next();
   });
 
-  router.post('/workflows/deploy', async (c) => {
+  router.post("/workflows/deploy", async (c) => {
     let rawBody: unknown;
     try {
       rawBody = await c.req.json();
     } catch {
-      return c.json({ error: 'Invalid JSON' }, 400);
+      return c.json({ error: "Invalid JSON" }, 400);
     }
     const definition = workflowDefinitionEnvelopeSchema(rawBody);
     if (definition instanceof type.errors) {
-      return c.json({ error: `invalid workflow definition: ${definition.summary}` }, 400);
+      return c.json(
+        { error: `invalid workflow definition: ${definition.summary}` },
+        400,
+      );
     }
 
-    // Deploying principal: the global org tenant's owner. Per-step execution
-    // principals are derived by the orchestrator; deployment-principal semantics
-    // are finalized during staging validation.
+    // Optional target tenant. Default (no `?tenant=`) → the global org tenant,
+    // unchanged. A non-global target must be the global tenant or a descendant
+    // of it — Interchange resolves catalog/credentials down the hierarchy, so a
+    // sub-tenant deploy lands collateral scoped to that workbench only.
+    const targetSlug = c.req.query("tenant");
+    let targetTenantId = deps.globalTenantId;
+    if (targetSlug !== undefined && targetSlug !== "") {
+      const targetTenant = await deps.db.query.tenant.findFirst({
+        where: eq(intxSchema.tenant.slug, targetSlug),
+        columns: { id: true },
+      });
+      if (!targetTenant) {
+        return c.json({ error: `unknown target tenant: ${targetSlug}` }, 404);
+      }
+      const ancestors = await getAncestorChain(deps.db, targetTenant.id);
+      if (!ancestors.includes(deps.globalTenantId)) {
+        return c.json(
+          {
+            error: `target tenant ${targetSlug} is not the global tenant or a descendant`,
+          },
+          403,
+        );
+      }
+      targetTenantId = targetTenant.id;
+    }
+
+    // Deploying principal: a user principal of the target tenant. Per-step
+    // execution principals are derived by the orchestrator.
     const owner = await deps.db.query.principal.findFirst({
       where: and(
-        eq(intxSchema.principal.tenantId, deps.globalTenantId),
-        eq(intxSchema.principal.kind, 'user')
+        eq(intxSchema.principal.tenantId, targetTenantId),
+        eq(intxSchema.principal.kind, "user"),
       ),
     });
     if (!owner) {
-      return c.json({ error: 'no deploying principal in the global tenant' }, 409);
+      return c.json(
+        { error: "no deploying principal in the target tenant" },
+        409,
+      );
     }
 
     try {
-      const { deploymentId, config, deployContent } = await resolveWorkflowDeployConfig({
-        db: deps.db,
-        tenantId: deps.globalTenantId,
-        principalId: owner.id,
-        deploymentDomain: deps.deploymentDomain,
-      });
+      const { deploymentId, config, deployContent } =
+        await resolveWorkflowDeployConfig({
+          db: deps.db,
+          tenantId: targetTenantId,
+          principalId: owner.id,
+          deploymentDomain: deps.deploymentDomain,
+        });
 
       const result = await deps.workflowDeployService.deployWorkflow({
         // Validated envelope; the orchestrator (deployWorkflow → validateWorkflowDefinition)
@@ -78,7 +110,7 @@ export function createWorkflowDeployRouter(deps: {
         workflow: definition as WorkflowDefinition,
         deploymentId,
         deploymentDomain: deps.deploymentDomain,
-        tenantId: deps.globalTenantId,
+        tenantId: targetTenantId,
         creatorPrincipalId: owner.id,
         config,
         deployContent,
@@ -89,20 +121,20 @@ export function createWorkflowDeployRouter(deps: {
       // by tenant without re-walking the workflow-run repos.
       await deps.db.insert(workflowRun).values({
         deploymentId,
-        tenantId: deps.globalTenantId,
+        tenantId: targetTenantId,
         principalId: owner.id,
         kind: definition.id,
-        status: 'running',
+        status: "running",
       });
 
       return c.json({ kind: definition.id, deploymentId, result });
     } catch (err) {
-      log.error('workflow deploy failed', {
+      log.error("workflow deploy failed", {
         kind: definition.id,
-        tenantId: deps.globalTenantId,
+        tenantId: targetTenantId,
         error: err instanceof Error ? err : new Error(String(err)),
       });
-      return c.json({ error: 'failed to deploy workflow' }, 500);
+      return c.json({ error: "failed to deploy workflow" }, 500);
     }
   });
 
