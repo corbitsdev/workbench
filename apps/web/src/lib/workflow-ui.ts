@@ -9,9 +9,9 @@ export type WorkflowUIModule = {
 // Maps kind → lazy importer. Add one entry when a new workflow package is added.
 // Vite code-splits each entry into its own chunk; only the opened workflow loads.
 const importers: Record<string, () => Promise<WorkflowUIModule>> = {
-  'collateral-generation': () => import('@workbench/workflow-collateral-generation'),
+  'pain-point-collateral': () => import('@workbench/workflow-pain-point-collateral'),
   'gamma-presentation-creator': () => import('@workbench/workflow-gamma-presentation-creator'),
-  'seo-enrichment': () => import('@workbench/workflow-seo-enrichment'),
+  'seo-enrichment-from-image': () => import('@workbench/workflow-seo-enrichment-from-image'),
   'ab-compare': () => import('@workbench/workflow-ab-compare'),
   'reddit-opportunity-scanner': () => import('@workbench/workflow-reddit-opportunity-scanner'),
 };
