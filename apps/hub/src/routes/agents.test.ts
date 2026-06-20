@@ -13,14 +13,19 @@ mock.module('../config', () => ({
   }),
 }));
 
-// Launch outcome is driven by resolveInstanceSources: tests set `sourcesImpl`
-// to return sources (launch proceeds) or throw (launch fails).
+// Launch outcome is driven by resolveInstanceModelSources: tests set
+// `sourcesImpl` to return sources (launch proceeds), an empty array (resolution
+// fails with no_requirements), or throw (resolution errors).
 // CL-1521: sources are now plaintext (stored plaintext in DB, not encrypted).
 let sourcesImpl: () => Promise<unknown[]> = () =>
   Promise.resolve([{ id: 'src-1', apiKey: TEST_API_KEY }]);
 mock.module('@intx/db', () => ({
   ...intxDbReal,
-  resolveInstanceSources: () => sourcesImpl(),
+  resolveInstanceModelSources: async () => {
+    const sources = await sourcesImpl();
+    if (sources.length === 0) return { ok: false, reason: 'no_requirements' };
+    return { ok: true, sources };
+  },
 }));
 
 import { Hono } from 'hono';
@@ -335,6 +340,7 @@ describe('POST /instances/:instanceId/sessions', () => {
     modelConfig: null,
     capabilities: null,
     credentialRequirements: null,
+    modelRequirements: null,
     grantRequirements: null,
     toolPackages: [],
   };
@@ -473,6 +479,7 @@ describe('relaunchInstanceIfNeeded', () => {
     modelConfig: null,
     capabilities: null,
     credentialRequirements: null,
+    modelRequirements: null,
     grantRequirements: null,
     toolPackages: [],
   };
@@ -916,6 +923,7 @@ describe('POST /instances/:instanceId/sessions — branches', () => {
     modelConfig: null,
     capabilities: null,
     credentialRequirements: null,
+    modelRequirements: null,
     grantRequirements: null,
     toolPackages: [],
   };
@@ -1288,6 +1296,7 @@ describe('launchAgentSession', () => {
         modelConfig: null,
         capabilities: { tools: ['exa_search'] },
         credentialRequirements: null,
+        modelRequirements: null,
         grantRequirements: [],
         toolPackages: [],
       })
@@ -1679,6 +1688,7 @@ describe('relaunchInstanceIfNeeded — early returns', () => {
         modelConfig: null,
         capabilities: { tools: [] },
         credentialRequirements: [],
+        modelRequirements: null,
         grantRequirements: [],
         toolPackages: [],
       })
@@ -1774,6 +1784,7 @@ describe('relaunchInstanceIfNeeded — early returns', () => {
         modelConfig: null,
         capabilities: { tools: [] },
         credentialRequirements: [],
+        modelRequirements: null,
         grantRequirements: [],
         toolPackages: [],
       })

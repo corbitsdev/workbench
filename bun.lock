@@ -1006,15 +1006,10 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
-        "@workbench/ui": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "@types/react": "^19.0.0",
         "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "react": "^19.0.0",
       },
     },
     "workflows/blind-ab-comparison": {
@@ -1047,14 +1042,10 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
-        "@workbench/ui": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "react": "^19.0.0",
       },
     },
     "workflows/pain-point-collateral": {
@@ -1063,17 +1054,10 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
-        "@workbench/ui": "workspace:*",
-        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "@types/react": "^19.0.0",
         "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@tanstack/react-query": "*",
-        "react": "*",
       },
     },
     "workflows/presentation-generation": {
@@ -1094,14 +1078,10 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
-        "@workbench/ui": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "react": "^19.0.0",
       },
     },
     "workflows/resource-enrichment": {
@@ -1134,15 +1114,10 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
-        "@workbench/ui": "workspace:*",
-        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "react": "^19.0.0",
       },
     },
   },

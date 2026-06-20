@@ -1,5 +1,5 @@
 import { eq, and, inArray, isNull, like } from 'drizzle-orm';
-import { schema as intxSchema, resolveInstanceSources } from '@intx/db';
+import { schema as intxSchema, resolveInstanceModelSources } from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
@@ -138,15 +138,17 @@ export async function launchAgentSession(
     opts;
   const address = `${instanceId}@${tenantDomain}`;
 
-  const rawSources = await resolveInstanceSources(db, tenantId, {
+  const resolution = await resolveInstanceModelSources(db, tenantId, {
     agentId,
-    sessionId: null,
+    modelPreferences: null,
   });
-  if (rawSources.length === 0) {
-    throw new Error('No resolvable inference sources for agent credential requirements');
+  if (!resolution.ok) {
+    throw new Error(
+      'No resolvable inference sources for agent credential requirements: ' + resolution.reason
+    );
   }
 
-  const sources = rawSources;
+  const sources = resolution.sources;
   const defaultSource = sources[0]!.id;
 
   const agentRow = await db.query.agent.findFirst({

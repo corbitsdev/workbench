@@ -43,9 +43,9 @@ mock.module('drizzle-orm', () => ({
   eq: (col: unknown, val: unknown) => ({ _eq: [col, val] }),
 }));
 
-// resolveInstanceSources and createGrantStore are configurable per-test via
-// these mutable hooks; the schema is a plain marker object since predicates
-// are opaque.
+// resolveInstanceModelSources and createGrantStore are configurable per-test
+// via these mutable hooks; the schema is a plain marker object since predicates
+// are opaque. An empty source array maps to a failed resolution.
 let resolveSourcesImpl: () => Promise<Array<{ id: string }>>;
 let collectGrantsImpl: () => Promise<unknown[]>;
 mock.module('@intx/db', () => ({
@@ -57,7 +57,11 @@ mock.module('@intx/db', () => ({
     agentSession: { id: 'as.id' },
     grant: { principalId: 'grant.principalId', origin: 'grant.origin' },
   },
-  resolveInstanceSources: () => resolveSourcesImpl(),
+  resolveInstanceModelSources: async () => {
+    const sources = await resolveSourcesImpl();
+    if (sources.length === 0) return { ok: false, reason: 'no_requirements' };
+    return { ok: true, sources };
+  },
   createGrantStore: () => ({ collectGrants: () => collectGrantsImpl() }),
 }));
 

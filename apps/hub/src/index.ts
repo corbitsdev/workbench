@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
 import { upgradeWebSocket, websocket } from 'hono/bun';
-import { schema as intxSchema, createGrantStore, resolveInstanceSources } from '@intx/db';
+import { schema as intxSchema, createGrantStore, resolveInstanceModelSources } from '@intx/db';
 import { createApp } from '@intx/hub-api';
 import {
   createAgentRepoStore,
@@ -450,11 +450,11 @@ v1.get('/me', async (c) => {
     });
     if (paInstance) {
       try {
-        const sources = await resolveInstanceSources(db, workingTenantId, {
+        const resolution = await resolveInstanceModelSources(db, workingTenantId, {
           agentId: paInstance.agentId,
-          sessionId: null,
+          modelPreferences: paInstance.modelPreferences,
         });
-        credentialResolved = sources.length > 0;
+        credentialResolved = resolution.ok && resolution.sources.length > 0;
       } catch (err) {
         log.warn('Instance source resolution failed on /me', {
           error: err,

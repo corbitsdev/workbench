@@ -260,7 +260,8 @@ export function createDefaultHarnessBuilder({
     async build({
       agentAddress,
       agentConfig,
-      source,
+      sources,
+      defaultSource,
       storeDir,
       agentTransport,
       crypto,
@@ -388,7 +389,8 @@ export function createDefaultHarnessBuilder({
       };
 
       const env = {
-        source,
+        sources,
+        defaultSource,
         storage,
         workdir: workDir,
         audit: storage,

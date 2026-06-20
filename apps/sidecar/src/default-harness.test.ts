@@ -167,7 +167,8 @@ describe('createDefaultHarnessBuilder', () => {
           tenantId: 'tenant-1',
           systemPrompt: 'You are a helpful assistant.',
         },
-        source: validSource,
+        sources: [validSource],
+        defaultSource: validSource.id,
         storeDir: '/tmp/test-store',
         agentTransport: {} as any,
         crypto: {
@@ -210,7 +211,8 @@ describe('createDefaultHarnessBuilder', () => {
           tenantId: TEST_TENANT_ID,
           systemPrompt: 'You are a helpful assistant.',
         },
-        source: plaintextSource,
+        sources: [plaintextSource],
+        defaultSource: plaintextSource.id,
         storeDir: '/tmp/test-store',
         agentTransport: {} as any,
         crypto: { signSSH: mock(() => 'sig') } as any,
@@ -223,9 +225,9 @@ describe('createDefaultHarnessBuilder', () => {
       // not the definition. Secrets are plaintext at the app layer now.
       const callArgs = createHarnessMock.mock.calls[0] as unknown as [
         unknown,
-        { source: InferenceSource },
+        { sources: InferenceSource[]; defaultSource: string },
       ];
-      expect(callArgs[1].source.apiKey).toBe('sk-plaintext-key');
+      expect(callArgs[1].sources[0]?.apiKey).toBe('sk-plaintext-key');
     });
 
     it('strips the memory-seed marker from the model prompt while seeding the workspace (CL-1952)', async () => {
@@ -257,7 +259,8 @@ describe('createDefaultHarnessBuilder', () => {
             tenantId: TEST_TENANT_ID,
             systemPrompt: 'unused fallback',
           },
-          source: validSource,
+          sources: [validSource],
+          defaultSource: validSource.id,
           storeDir,
           agentTransport: {} as any,
           crypto: { signSSH: mock(() => 'sig') } as any,
@@ -328,7 +331,8 @@ describe('createDefaultHarnessBuilder', () => {
           tenantId: TEST_TENANT_ID,
           systemPrompt: 'You are a helpful assistant.',
         },
-        source: validSource,
+        sources: [validSource],
+        defaultSource: validSource.id,
         storeDir: '/tmp/test-store',
         agentTransport: {} as any,
         crypto: { signSSH: mock(() => 'sig') } as any,
@@ -408,7 +412,8 @@ describe('createDefaultHarnessBuilder', () => {
           tenantId: 'tenant-1',
           systemPrompt: 'You are a helpful assistant.',
         },
-        source: validSource,
+        sources: [validSource],
+        defaultSource: validSource.id,
         storeDir: '/tmp/test-store',
         agentTransport: {} as any,
         crypto: {

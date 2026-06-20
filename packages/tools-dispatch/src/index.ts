@@ -1,6 +1,6 @@
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
-import { schema as intxSchema, resolveInstanceSources, createGrantStore } from '@intx/db';
+import { schema as intxSchema, resolveInstanceModelSources, createGrantStore } from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateKeyPair, createNodeCrypto } from '@intx/crypto-node';
 import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
@@ -120,15 +120,17 @@ async function launchAgentInstance(
 
   const grantStore = createGrantStore(db);
 
-  const rawSources = await resolveInstanceSources(db, tenantId, {
+  const resolution = await resolveInstanceModelSources(db, tenantId, {
     agentId: agentDefinitionId,
-    sessionId: null,
+    modelPreferences: null,
   });
-  if (rawSources.length === 0) {
-    throw new Error('No resolvable inference sources for agent credential requirements');
+  if (!resolution.ok) {
+    throw new Error(
+      'No resolvable inference sources for agent credential requirements: ' + resolution.reason
+    );
   }
 
-  const sources = rawSources;
+  const sources = resolution.sources;
   const defaultSource = sources[0]!.id;
 
   const toolNames = getToolNamesFromCapabilities(agentRow.capabilities ?? null);
