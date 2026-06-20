@@ -5,7 +5,7 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { createElement } from 'react';
-import { useStepOutput } from './use-workflow';
+import { useStepOutput, useWorkflowRuns } from './use-workflow';
 
 const originalFetch = globalThis.fetch;
 
@@ -71,5 +71,46 @@ describe('useStepOutput', () => {
 
     const { result } = renderHook(() => useStepOutput('dep-1', 'step-a'), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it('includes the active tenantId in the step-output request when provided', async () => {
+    let requested = '';
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested = String(url);
+      return Promise.resolve(jsonResponse(200, { stepId: 'step-a', output: 1 }));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a', { tenantId: 'tn-wb' }), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requested).toContain('tenantId=tn-wb');
+  });
+});
+
+describe('useWorkflowRuns', () => {
+  it('omits tenantId from the request when no workbench is active', async () => {
+    let requested = '';
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested = String(url);
+      return Promise.resolve(jsonResponse(200, []));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useWorkflowRuns(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requested).toContain('/workflow-runs');
+    expect(requested).not.toContain('tenantId=');
+  });
+
+  it('includes the active workbench tenantId when one is active', async () => {
+    let requested = '';
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested = String(url);
+      return Promise.resolve(jsonResponse(200, []));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useWorkflowRuns('tn-wb'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requested).toContain('tenantId=tn-wb');
   });
 });

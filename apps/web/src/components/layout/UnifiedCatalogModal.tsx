@@ -71,8 +71,8 @@ export function UnifiedCatalogModal({
     staleTime: 5 * 60_000,
   });
 
-  const { data: workflowRuns = [], isPending: workflowsPending } = useWorkflowRuns();
-  const startWorkflow = useStartWorkflow();
+  const { data: workflowRuns = [], isPending: workflowsPending } = useWorkflowRuns(tenantId);
+  const startWorkflow = useStartWorkflow(tenantId);
 
   const deployedKinds = useMemo(() => {
     const seen = new Set<string>();
@@ -208,7 +208,13 @@ export function UnifiedCatalogModal({
                 aria-label="Close"
                 className="grid h-8 w-8 flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="h-4 w-4"
+                >
                   <path d="M6 6l12 12M18 6L6 18" />
                 </svg>
               </button>
@@ -235,7 +241,13 @@ export function UnifiedCatalogModal({
                 ))}
               </div>
               <div className="relative flex-1">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-3">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-3"
+                >
                   <circle cx="11" cy="11" r="8" />
                   <path d="M21 21l-4.35-4.35" />
                 </svg>
@@ -262,15 +274,27 @@ export function UnifiedCatalogModal({
                   {filteredAgents.map((entry) => {
                     const labels = deriveProviderLabels(entry.tools);
                     return (
-                      <div key={entry.key} className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]">
+                      <div
+                        key={entry.key}
+                        className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]"
+                      >
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-[14px] font-semibold text-text">{entry.name}</span>
+                            <span className="text-[14px] font-semibold text-text">
+                              {entry.name}
+                            </span>
                             {labels.map((label) => (
-                              <span key={label} className="rounded-[5px] bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-text-2">{label}</span>
+                              <span
+                                key={label}
+                                className="rounded-[5px] bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-text-2"
+                              >
+                                {label}
+                              </span>
                             ))}
                           </div>
-                          <p className="mt-1 text-[12px] leading-[1.4] text-text-3">{entry.description}</p>
+                          <p className="mt-1 text-[12px] leading-[1.4] text-text-3">
+                            {entry.description}
+                          </p>
                         </div>
                         <button
                           type="button"
@@ -284,7 +308,9 @@ export function UnifiedCatalogModal({
                     );
                   })}
                   {filteredAgents.length === 0 && (
-                    <p className="col-span-2 py-6 text-center text-[13px] text-text-3">No agents match your search.</p>
+                    <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                      No agents match your search.
+                    </p>
                   )}
                 </div>
               )}
@@ -292,13 +318,20 @@ export function UnifiedCatalogModal({
               {tab === 'workflows' && (
                 <div className="grid grid-cols-2 gap-2">
                   {workflowsPending && (
-                    <p className="col-span-2 py-6 text-center text-[13px] text-text-3">Loading workflows…</p>
+                    <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                      Loading workflows…
+                    </p>
                   )}
                   {!workflowsPending &&
                     filteredWorkflowKinds.map((kind) => (
-                      <div key={kind} className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]">
+                      <div
+                        key={kind}
+                        className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]"
+                      >
                         <div className="min-w-0">
-                          <p className="text-[14px] font-semibold text-text">{toHumanLabel(kind)}</p>
+                          <p className="text-[14px] font-semibold text-text">
+                            {toHumanLabel(kind)}
+                          </p>
                         </div>
                         <button
                           type="button"
@@ -310,12 +343,20 @@ export function UnifiedCatalogModal({
                         </button>
                       </div>
                     ))}
-                  {!workflowsPending && filteredWorkflowKinds.length === 0 && deployedKinds.length === 0 && (
-                    <p className="col-span-2 py-6 text-center text-[13px] text-text-3">No workflows deployed yet.</p>
-                  )}
-                  {!workflowsPending && filteredWorkflowKinds.length === 0 && deployedKinds.length > 0 && (
-                    <p className="col-span-2 py-6 text-center text-[13px] text-text-3">No workflows match your search.</p>
-                  )}
+                  {!workflowsPending &&
+                    filteredWorkflowKinds.length === 0 &&
+                    deployedKinds.length === 0 && (
+                      <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                        No workflows deployed yet.
+                      </p>
+                    )}
+                  {!workflowsPending &&
+                    filteredWorkflowKinds.length === 0 &&
+                    deployedKinds.length > 0 && (
+                      <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                        No workflows match your search.
+                      </p>
+                    )}
                 </div>
               )}
             </div>

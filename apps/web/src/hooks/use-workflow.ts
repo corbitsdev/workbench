@@ -1,40 +1,45 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
-import { type } from "arktype";
-import {
-  resumeFromLog,
-  type RunState,
-  type WorkflowEvent,
-} from "@intx/workflow";
-import { api } from "../lib/api";
-import { subscribeSharedEventStream } from "../lib/shared-event-stream";
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { type } from 'arktype';
+import { resumeFromLog, type RunState, type WorkflowEvent } from '@intx/workflow';
+import { api } from '../lib/api';
+import { subscribeSharedEventStream } from '../lib/shared-event-stream';
 
 // Same-origin EventSource resolver. A credentialed cross-origin EventSource is
 // blocked by Safari (ITP) and Brave (shields); in dev we route the stream
 // through the same-origin Vite proxy so the port-agnostic auth cookie still
 // authenticates. In prod there is no proxy, so fall back to apiBase like fetch.
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
-function streamUrl(path: string): string {
-  const base = import.meta.env.DEV
-    ? window.location.origin
-    : apiBase || window.location.origin;
-  return new URL(`/api/v1/${path.replace(/^\//, "")}`, base).toString();
+const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
+function streamUrl(path: string, tenantId?: string | null): string {
+  const base = import.meta.env.DEV ? window.location.origin : apiBase || window.location.origin;
+  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, base);
+  if (tenantId) url.searchParams.set('tenantId', tenantId);
+  return url.toString();
+}
+
+// Appends the active workbench tenantId so the hub resolves visibility against
+// that workbench (walking ancestors to the global tenant). Omitted when no
+// workbench is active, leaving the request scoped to the global tenant.
+function withTenant(path: string, tenantId?: string | null): string {
+  if (!tenantId) return path;
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}tenantId=${encodeURIComponent(tenantId)}`;
 }
 
 const workflowRunSchema = type({
-  deploymentId: "string",
-  kind: "string",
-  status: "string",
-  createdAt: "string",
+  deploymentId: 'string',
+  kind: 'string',
+  status: 'string',
+  createdAt: 'string',
 });
 export type WorkflowRun = typeof workflowRunSchema.infer;
 const workflowRunListSchema = workflowRunSchema.array();
 
-export function useWorkflowRuns() {
+export function useWorkflowRuns(tenantId?: string | null) {
   return useQuery<WorkflowRun[]>({
-    queryKey: ["workflow-runs"],
+    queryKey: ['workflow-runs', tenantId ?? null],
     queryFn: async () => {
-      const raw = await api<unknown>("GET", "/workflow-runs");
+      const raw = await api<unknown>('GET', withTenant('/workflow-runs', tenantId));
       const parsed = workflowRunListSchema(raw);
       if (parsed instanceof type.errors) {
         throw new Error(`Unexpected workflow-runs response: ${parsed.summary}`);
@@ -56,6 +61,7 @@ export interface WorkflowRunStateResult {
 // EventSource registry, mirroring instance-transport.
 export function useWorkflowRunState(
   deploymentId: string | null,
+  tenantId?: string | null
 ): WorkflowRunStateResult {
   const [events, setEvents] = useState<WorkflowEvent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -64,27 +70,26 @@ export function useWorkflowRunState(
     if (!deploymentId) return;
     setEvents([]);
     setConnected(true);
-    const url = streamUrl(`/workflow-runs/${deploymentId}/stream`);
-    const unsubscribe = subscribeSharedEventStream(url, "message", (event) => {
+    const url = streamUrl(`/workflow-runs/${deploymentId}/stream`, tenantId);
+    const unsubscribe = subscribeSharedEventStream(url, 'message', (event) => {
       setEvents((prev) => [...prev, event as WorkflowEvent]);
     });
     return () => {
       setConnected(false);
       unsubscribe();
     };
-  }, [deploymentId]);
+  }, [deploymentId, tenantId]);
 
   const state = useMemo<RunState | null>(() => {
     if (!deploymentId || events.length === 0) return null;
-    const runId =
-      events[0]?.kind === "RunStarted" ? events[0].runId : deploymentId;
+    const runId = events[0]?.kind === 'RunStarted' ? events[0].runId : deploymentId;
     return resumeFromLog(runId, events);
   }, [deploymentId, events]);
 
   return { state, events, connected };
 }
 
-const stepOutputSchema = type({ stepId: "string", output: "unknown" });
+const stepOutputSchema = type({ stepId: 'string', output: 'unknown' });
 
 // Fetch and parse a single completed step's resolved output. Single source of
 // truth for the step-output endpoint contract — shared by the per-step hook and
@@ -92,10 +97,11 @@ const stepOutputSchema = type({ stepId: "string", output: "unknown" });
 export async function fetchStepOutput(
   deploymentId: string,
   stepId: string,
+  tenantId?: string | null
 ): Promise<unknown> {
   const raw = await api<unknown>(
-    "GET",
-    `/workflow-runs/${deploymentId}/steps/${stepId}/output`,
+    'GET',
+    withTenant(`/workflow-runs/${deploymentId}/steps/${stepId}/output`, tenantId)
   );
   const parsed = stepOutputSchema(raw);
   if (parsed instanceof type.errors) {
@@ -115,30 +121,30 @@ export async function fetchStepOutput(
 export function useStepOutput(
   deploymentId: string | null,
   stepId: string | null,
-  opts?: { enabled?: boolean },
+  opts?: { enabled?: boolean; tenantId?: string | null }
 ) {
   return useQuery<unknown>({
-    queryKey: ["workflow-step-output", deploymentId, stepId],
+    queryKey: ['workflow-step-output', deploymentId, stepId, opts?.tenantId ?? null],
     enabled: !!deploymentId && !!stepId && (opts?.enabled ?? true),
     staleTime: Infinity,
-    queryFn: () => fetchStepOutput(deploymentId as string, stepId as string),
+    queryFn: () => fetchStepOutput(deploymentId as string, stepId as string, opts?.tenantId),
   });
 }
 
-export function useStartWorkflow() {
+export function useStartWorkflow(tenantId?: string | null) {
   return useMutation({
     mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
       const res = await api<{ deploymentId: string }>(
-        "POST",
-        `/workflow-runs/${encodeURIComponent(kind)}/start`,
-        { input },
+        'POST',
+        withTenant(`/workflow-runs/${encodeURIComponent(kind)}/start`, tenantId),
+        { input }
       );
       return res;
     },
   });
 }
 
-export function useSignalWorkflow(deploymentId: string) {
+export function useSignalWorkflow(deploymentId: string, tenantId?: string | null) {
   return useMutation({
     mutationFn: async ({
       runId,
@@ -149,7 +155,7 @@ export function useSignalWorkflow(deploymentId: string) {
       signalName: string;
       payload?: unknown;
     }) => {
-      return api<unknown>("POST", `/workflow-runs/${deploymentId}/signal`, {
+      return api<unknown>('POST', withTenant(`/workflow-runs/${deploymentId}/signal`, tenantId), {
         runId,
         signalName,
         payload,

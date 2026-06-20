@@ -1,5 +1,6 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { DB } from '@intx/db';
+import { getAncestorChain } from '@intx/db';
 import { workbenchTemplate, workbenchTemplateVersion } from '../db/schema';
 
 export const GAMMA_KIND = 'gamma';
@@ -75,6 +76,39 @@ export async function listLatestGammaTemplates(
       )
     )
     .where(and(eq(workbenchTemplate.tenantId, tenantId), eq(workbenchTemplate.kind, GAMMA_KIND)))
+    .orderBy(desc(workbenchTemplate.createdAt));
+
+  return rows.map((r) => configToRow(r.id, r.version, r.name, r.config, r.createdAt));
+}
+
+// Reads templates visible to a tenant: its own plus those inherited from any
+// ancestor (active workbench -> ... -> global). Writes still land in a single
+// tenant; only reads walk the chain.
+export async function listInheritedGammaTemplates(
+  db: DB['db'],
+  tenantId: string
+): Promise<GammaTemplateRow[]> {
+  const chain = await getAncestorChain(db, tenantId);
+  const rows = await db
+    .select({
+      id: workbenchTemplate.id,
+      version: workbenchTemplateVersion.version,
+      name: workbenchTemplateVersion.name,
+      config: workbenchTemplateVersion.config,
+      createdAt: workbenchTemplateVersion.createdAt,
+    })
+    .from(workbenchTemplate)
+    .innerJoin(
+      workbenchTemplateVersion,
+      and(
+        eq(workbenchTemplateVersion.templateId, workbenchTemplate.id),
+        eq(
+          workbenchTemplateVersion.version,
+          sql<number>`(SELECT MAX(v2.version) FROM template_version v2 WHERE v2.template_id = ${workbenchTemplate.id})`
+        )
+      )
+    )
+    .where(and(inArray(workbenchTemplate.tenantId, chain), eq(workbenchTemplate.kind, GAMMA_KIND)))
     .orderBy(desc(workbenchTemplate.createdAt));
 
   return rows.map((r) => configToRow(r.id, r.version, r.name, r.config, r.createdAt));

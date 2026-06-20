@@ -1,18 +1,30 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { CryptoProvider } from '@intx/types/runtime';
-import type {
-  RepoStore,
-  SessionService,
-  SidecarRouter,
-} from '@intx/hub-sessions';
+import type { RepoStore, SessionService, SidecarRouter } from '@intx/hub-sessions';
 
-// Mock the user-context resolver: the routes call getUserContext(db, userId)
-// and gate on its tenantId. A non-null context lets ownership checks run; the
-// db query mock then decides ownership.
-let userContextImpl: () => Promise<{ tenantId: string; principalId: string } | null> = () =>
-  Promise.resolve({ tenantId: 'tenant-1', principalId: 'principal-1' });
+// Mock the user-context resolver: the routes call getRequestedUserContext(db,
+// userId, tenantId) and gate on its result. forbidden=true → 403; a non-null
+// context lets the ancestor-walk ownership checks run.
+type RequestedResult = {
+  context: { tenantId: string; principalId: string } | null;
+  forbidden: boolean;
+};
+let userContextImpl: () => Promise<RequestedResult> = () =>
+  Promise.resolve({
+    context: { tenantId: 'tenant-1', principalId: 'principal-1' },
+    forbidden: false,
+  });
 mock.module('../lib/user-context', () => ({
-  getUserContext: () => userContextImpl(),
+  getRequestedUserContext: () => userContextImpl(),
+}));
+
+// The routes walk the active tenant -> ancestors chain via getAncestorChain
+// (most-specific first). Default: workbench shadows the global root.
+let ancestorChain: string[] = ['tenant-1', 'tenant-global'];
+const intxDbReal = await import('@intx/db');
+mock.module('@intx/db', () => ({
+  ...intxDbReal,
+  getAncestorChain: () => Promise.resolve(ancestorChain),
 }));
 
 // subscribeKind yields the run's on-disk event entries. The endpoint replays
@@ -27,8 +39,7 @@ let subscribeKindThrows: Error | null = null;
 let resolveRefImpl: (ref: string) => Promise<unknown> = (ref) =>
   Promise.reject(new Error(`unexpected ref ${ref}`));
 
-const intxHubSessionsReal =
-  await import('@intx/hub-sessions');
+const intxHubSessionsReal = await import('@intx/hub-sessions');
 mock.module('@intx/hub-sessions', () => ({
   ...intxHubSessionsReal,
   subscribeKind: async function* () {
@@ -51,6 +62,14 @@ import { Hono } from 'hono';
 import { createWorkflowRunsRouter } from './workflow-runs';
 import type { HubDb } from '../db';
 
+type WorkflowRunRow = {
+  deploymentId: string;
+  kind: string;
+  status: string;
+  createdAt: string;
+  tenantId: string;
+};
+
 function makeDb(owned: boolean) {
   return {
     query: {
@@ -58,6 +77,27 @@ function makeDb(owned: boolean) {
         findFirst: mock(() =>
           Promise.resolve(owned ? { deploymentId: 'dep-1', tenantId: 'tenant-1' } : undefined)
         ),
+      },
+    },
+  } as unknown as HubDb;
+}
+
+// A db whose LIST select() returns the given rows verbatim and whose findMany
+// (start route) returns the given candidates. The route applies its own
+// ancestor-chain filtering on top of `findMany` (shadowing); the LIST route
+// trusts the rows the query returns.
+function makeListDb(rows: WorkflowRunRow[], findManyRows: WorkflowRunRow[] = rows) {
+  return {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          orderBy: () => Promise.resolve(rows),
+        }),
+      }),
+    }),
+    query: {
+      workflowRun: {
+        findMany: mock(() => Promise.resolve(findManyRows)),
       },
     },
   } as unknown as HubDb;
@@ -96,14 +136,20 @@ function getOutput(app: Hono<{ Variables: { userId: string } }>, dep: string, st
 
 describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
   it('resolves an inline ref to the step output content', async () => {
-    userContextImpl = () => Promise.resolve({ tenantId: 'tenant-1', principalId: 'p-1' });
+    userContextImpl = () =>
+      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
     subscribeKindThrows = null;
     subscribeKindEntries = [
       { seq: 0, runId: 'run-1', event: { type: 'RunStarted', seq: 0 } },
       {
         seq: 1,
         runId: 'run-1',
-        event: { type: 'StepCompleted', seq: 1, stepId: 'step-a', output: { ref: 'inline:{"x":1}' } },
+        event: {
+          type: 'StepCompleted',
+          seq: 1,
+          stepId: 'step-a',
+          output: { ref: 'inline:{"x":1}' },
+        },
       },
     ];
     resolveRefImpl = (ref) => {
@@ -117,7 +163,8 @@ describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
   });
 
   it('resolves a blob ref to the step output content', async () => {
-    userContextImpl = () => Promise.resolve({ tenantId: 'tenant-1', principalId: 'p-1' });
+    userContextImpl = () =>
+      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
     subscribeKindThrows = null;
     subscribeKindEntries = [
       { seq: 0, runId: 'run-9', event: { type: 'RunStarted', seq: 0 } },
@@ -139,13 +186,15 @@ describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
   });
 
   it('404s for a deployment the caller does not own', async () => {
-    userContextImpl = () => Promise.resolve({ tenantId: 'tenant-1', principalId: 'p-1' });
+    userContextImpl = () =>
+      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
     const res = await getOutput(buildApp(makeDb(false)), 'dep-x', 'step-a');
     expect(res.status).toBe(404);
   });
 
   it('404s when the requested step has not completed', async () => {
-    userContextImpl = () => Promise.resolve({ tenantId: 'tenant-1', principalId: 'p-1' });
+    userContextImpl = () =>
+      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
     subscribeKindThrows = null;
     subscribeKindEntries = [
       { seq: 0, runId: 'run-1', event: { type: 'RunStarted', seq: 0 } },
@@ -160,13 +209,14 @@ describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
   });
 
   it('403s when there is no user context', async () => {
-    userContextImpl = () => Promise.resolve(null);
+    userContextImpl = () => Promise.resolve({ context: null, forbidden: false });
     const res = await getOutput(buildApp(makeDb(true)), 'dep-1', 'step-a');
     expect(res.status).toBe(403);
   });
 
   it('500s when ref resolution fails', async () => {
-    userContextImpl = () => Promise.resolve({ tenantId: 'tenant-1', principalId: 'p-1' });
+    userContextImpl = () =>
+      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
     subscribeKindThrows = null;
     subscribeKindEntries = [
       {
@@ -178,5 +228,163 @@ describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
     resolveRefImpl = () => Promise.reject(new Error('boom'));
     const res = await getOutput(buildApp(makeDb(true)), 'dep-1', 'step-a');
     expect(res.status).toBe(500);
+  });
+});
+
+describe('GET /workflow-runs (workbench-aware visibility)', () => {
+  function listApp(db: HubDb) {
+    const parent = new Hono<{ Variables: { userId: string } }>();
+    parent.use('*', async (c, next) => {
+      c.set('userId', 'user-1');
+      await next();
+    });
+    parent.route(
+      '/',
+      createWorkflowRunsRouter({
+        db,
+        repoStore: noopRepoStore,
+        sidecarRouter: noopSidecarRouter,
+        sessionService: noopSessionService,
+        cryptoProvider: noopCrypto,
+        deploymentDomain: 'deploy.example.com',
+      })
+    );
+    return parent;
+  }
+
+  it('lists the active workbench deployments plus global-inherited ones', async () => {
+    userContextImpl = () =>
+      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+    ancestorChain = ['tenant-1', 'tenant-global'];
+    const rows: WorkflowRunRow[] = [
+      {
+        deploymentId: 'dep-wb',
+        kind: 'deck',
+        status: 'idle',
+        createdAt: '2026-06-01T00:00:00.000Z',
+        tenantId: 'tenant-1',
+      },
+      {
+        deploymentId: 'dep-global',
+        kind: 'report',
+        status: 'idle',
+        createdAt: '2026-05-01T00:00:00.000Z',
+        tenantId: 'tenant-global',
+      },
+    ];
+    const res = await listApp(makeListDb(rows)).request(
+      new Request('http://local/workflow-runs?tenantId=tenant-1', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Array<{ deploymentId: string }>;
+    expect(body.map((r) => r.deploymentId).sort()).toEqual(['dep-global', 'dep-wb']);
+  });
+
+  it('403s when the caller is not a principal of the requested tenant', async () => {
+    userContextImpl = () => Promise.resolve({ context: null, forbidden: true });
+    const res = await listApp(makeListDb([])).request(
+      new Request('http://local/workflow-runs?tenantId=tenant-other', { method: 'GET' })
+    );
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('POST /workflow-runs/:kind/start (shadowing + visibility)', () => {
+  function startApp(db: HubDb, capture: { msg?: { tenantId: string } }) {
+    const sessionService = {
+      sendUserMessage: (args: { tenantId: string }) => {
+        capture.msg = args;
+        return Promise.resolve();
+      },
+    } as unknown as SessionService;
+    const parent = new Hono<{ Variables: { userId: string } }>();
+    parent.use('*', async (c, next) => {
+      c.set('userId', 'user-1');
+      await next();
+    });
+    parent.route(
+      '/',
+      createWorkflowRunsRouter({
+        db,
+        repoStore: noopRepoStore,
+        sidecarRouter: noopSidecarRouter,
+        sessionService,
+        cryptoProvider: noopCrypto,
+        deploymentDomain: 'deploy.example.com',
+      })
+    );
+    return parent;
+  }
+
+  it('the most-specific tenant deployment shadows an inherited global one', async () => {
+    userContextImpl = () =>
+      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+    ancestorChain = ['tenant-1', 'tenant-global'];
+    const candidates: WorkflowRunRow[] = [
+      {
+        deploymentId: 'dep-global',
+        kind: 'deck',
+        status: 'idle',
+        createdAt: '2026-06-10T00:00:00.000Z',
+        tenantId: 'tenant-global',
+      },
+      {
+        deploymentId: 'dep-wb',
+        kind: 'deck',
+        status: 'idle',
+        createdAt: '2026-06-01T00:00:00.000Z',
+        tenantId: 'tenant-1',
+      },
+    ];
+    const capture: { msg?: { tenantId: string } } = {};
+    const res = await startApp(makeListDb([], candidates), capture).request(
+      new Request('http://local/workflow-runs/deck/start?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ foo: 'bar' }),
+      })
+    );
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { deploymentId: string };
+    expect(body.deploymentId).toBe('dep-wb');
+    expect(capture.msg?.tenantId).toBe('tenant-1');
+  });
+
+  it('starts the inherited global deployment when the workbench has none', async () => {
+    userContextImpl = () =>
+      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+    ancestorChain = ['tenant-1', 'tenant-global'];
+    const candidates: WorkflowRunRow[] = [
+      {
+        deploymentId: 'dep-global',
+        kind: 'deck',
+        status: 'idle',
+        createdAt: '2026-06-10T00:00:00.000Z',
+        tenantId: 'tenant-global',
+      },
+    ];
+    const capture: { msg?: { tenantId: string } } = {};
+    const res = await startApp(makeListDb([], candidates), capture).request(
+      new Request('http://local/workflow-runs/deck/start?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+    );
+    expect(res.status).toBe(202);
+    expect(capture.msg?.tenantId).toBe('tenant-global');
+  });
+
+  it('403s for a tenant the caller is not a principal of', async () => {
+    userContextImpl = () => Promise.resolve({ context: null, forbidden: true });
+    const capture: { msg?: { tenantId: string } } = {};
+    const res = await startApp(makeListDb([], []), capture).request(
+      new Request('http://local/workflow-runs/deck/start?tenantId=tenant-other', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+    );
+    expect(res.status).toBe(403);
   });
 });

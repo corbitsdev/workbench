@@ -91,6 +91,73 @@ describe('createGammaTemplatesRouter', () => {
     });
   });
 
+  describe('GET /gamma-templates (workbench-aware)', () => {
+    it('walks the ancestor chain so global templates show under a workbench', async () => {
+      // Requested tenant differs from global → getRequestedUserContext resolves
+      // the requested principal; getAncestorChain then walks workbench → parent.
+      const selectResult = [
+        {
+          id: 'tpl-global',
+          version: 1,
+          name: 'Inherited Deck',
+          config: { gammaId: 'g1', systemPrompt: 'Build a deck.' },
+          createdAt: new Date(),
+        },
+      ];
+      const queryBuilder = {
+        from: mock(() => queryBuilder),
+        innerJoin: mock(() => queryBuilder),
+        where: mock(() => queryBuilder),
+        // biome-ignore lint/suspicious/noThenProperty: thenable mock for Drizzle
+        then: (resolve: (v: unknown[]) => void) => resolve(selectResult),
+        orderBy: mock(() => Promise.resolve(selectResult)),
+      };
+      const wb = { id: 'tn-wb', slug: 'workbench', parentId: 'tn-global' };
+      const db = makeMockDb({
+        query: {
+          // First findFirst (by slug): getUserContext resolves global.
+          // Subsequent findFirst (by id, columns): getAncestorChain walks parentId.
+          tenant: {
+            findFirst: mock((args: { columns?: unknown }) =>
+              Promise.resolve(args?.columns ? wb : MOCK_TENANT)
+            ),
+          },
+          principal: {
+            findFirst: mock(() => Promise.resolve({ ...MOCK_PRINCIPAL, tenantId: 'tn-wb' })),
+          },
+        },
+        select: mock(() => queryBuilder),
+      });
+      const app = wrapWithAuth(createGammaTemplatesRouter(db as unknown as HubDb));
+      const res = await app.fetch(new Request('http://localhost/gamma-templates?tenantId=tn-wb'));
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as Array<{ id: string }>;
+      expect(json.map((r) => r.id)).toContain('tpl-global');
+    });
+
+    it('403s when the caller is not a principal of the requested tenant', async () => {
+      // getUserContext finds the global principal (first call); the
+      // requested-tenant principal lookup (second call) returns null → forbidden.
+      let principalCalls = 0;
+      const db = makeMockDb({
+        query: {
+          tenant: { findFirst: mock(() => Promise.resolve(MOCK_TENANT)) },
+          principal: {
+            findFirst: mock(() => {
+              principalCalls += 1;
+              return Promise.resolve(principalCalls === 1 ? MOCK_PRINCIPAL : null);
+            }),
+          },
+        },
+      });
+      const app = wrapWithAuth(createGammaTemplatesRouter(db as unknown as HubDb));
+      const res = await app.fetch(
+        new Request('http://localhost/gamma-templates?tenantId=tn-other')
+      );
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe('POST /gamma-templates', () => {
     it('returns 400 when required fields are missing', async () => {
       const db = makeMockDb();

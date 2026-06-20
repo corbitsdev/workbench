@@ -1,17 +1,18 @@
-import { Suspense, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { RunConsole } from "./RunConsole";
-import { ErrorBoundary } from "./ErrorBoundary";
-import { loadWorkflowUI } from "../lib/workflow-ui";
+import { Suspense, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { RunConsole } from './RunConsole';
+import { ErrorBoundary } from './ErrorBoundary';
+import { loadWorkflowUI } from '../lib/workflow-ui';
 import {
   useWorkflowRuns,
   useWorkflowRunState,
   useSignalWorkflow,
   fetchStepOutput,
-} from "../hooks/use-workflow";
+} from '../hooks/use-workflow';
 
 interface WorkflowRunPaneProps {
   deploymentId: string;
+  tenantId?: string | null;
   onClose: () => void;
 }
 
@@ -20,25 +21,22 @@ interface WorkflowRunPaneProps {
 // loaded run list keyed by deploymentId — never from navigation props. Completed
 // steps' outputs are resolved here (host-side) and handed to the Panel as the
 // `stepOutputs` map so panels stay pure presentational components.
-export function WorkflowRunPane({
-  deploymentId,
-  onClose,
-}: WorkflowRunPaneProps) {
-  const { data: runs = [] } = useWorkflowRuns();
+export function WorkflowRunPane({ deploymentId, tenantId, onClose }: WorkflowRunPaneProps) {
+  const { data: runs = [] } = useWorkflowRuns(tenantId);
   const kind = useMemo(
     () => runs.find((run) => run.deploymentId === deploymentId)?.kind ?? null,
-    [runs, deploymentId],
+    [runs, deploymentId]
   );
 
   const { data: uiModule } = useQuery({
-    queryKey: ["workflow-ui-module", kind],
+    queryKey: ['workflow-ui-module', kind],
     queryFn: () => loadWorkflowUI(kind as string),
     enabled: kind !== null,
     staleTime: 5 * 60_000,
   });
 
-  const { state, connected } = useWorkflowRunState(deploymentId);
-  const signal = useSignalWorkflow(deploymentId);
+  const { state, connected } = useWorkflowRunState(deploymentId, tenantId);
+  const signal = useSignalWorkflow(deploymentId, tenantId);
 
   const Panel = uiModule?.Panel;
 
@@ -47,7 +45,7 @@ export function WorkflowRunPane({
   const completedStepIds = useMemo(() => {
     if (!state) return [];
     return [...state.steps.values()]
-      .filter((s) => s.phase === "completed" && s.outputRef !== undefined)
+      .filter((s) => s.phase === 'completed' && s.outputRef !== undefined)
       .map((s) => s.stepId)
       .sort();
   }, [state]);
@@ -58,14 +56,14 @@ export function WorkflowRunPane({
   // contract treats a missing key as "no output"), so a sibling step's data
   // still renders.
   const { data: stepOutputs = {} } = useQuery({
-    queryKey: ["workflow-step-outputs", deploymentId, completedStepIds],
+    queryKey: ['workflow-step-outputs', deploymentId, tenantId ?? null, completedStepIds],
     queryFn: async () => {
       const settled = await Promise.allSettled(
-        completedStepIds.map((stepId) => fetchStepOutput(deploymentId, stepId)),
+        completedStepIds.map((stepId) => fetchStepOutput(deploymentId, stepId, tenantId))
       );
       const map: Record<string, unknown> = {};
       settled.forEach((result, index) => {
-        if (result.status === "fulfilled") {
+        if (result.status === 'fulfilled') {
           map[completedStepIds[index] as string] = result.value;
         }
       });
@@ -81,9 +79,7 @@ export function WorkflowRunPane({
 
   const handleSignal = (signalName: string, payload?: unknown) => {
     if (!state) return;
-    signal
-      .mutateAsync({ runId: state.runId, signalName, payload })
-      .catch(() => undefined);
+    signal.mutateAsync({ runId: state.runId, signalName, payload }).catch(() => undefined);
   };
 
   return (
@@ -91,8 +87,8 @@ export function WorkflowRunPane({
       fallback={
         <div className="flex h-full items-center justify-center rounded-panel border border-border bg-bg">
           <p className="text-[13px] text-text-3">
-            This workflow view ran into a problem rendering. The run is still
-            active — close and reopen it to retry.
+            This workflow view ran into a problem rendering. The run is still active — close and
+            reopen it to retry.
           </p>
         </div>
       }

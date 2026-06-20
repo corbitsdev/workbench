@@ -4,8 +4,8 @@ import { getLogger } from '@intx/log';
 import type { DB } from '@intx/db';
 import type { HubDb } from '../db';
 import { workbenchTemplate, workbenchTemplateVersion } from '../db/schema';
-import { getUserContext } from '../lib/user-context';
-import { configToRow, listLatestGammaTemplates, GAMMA_KIND } from '../lib/gamma-templates';
+import { getRequestedUserContext } from '../lib/user-context';
+import { configToRow, listInheritedGammaTemplates, GAMMA_KIND } from '../lib/gamma-templates';
 import type { GammaTemplateConfig } from '../lib/gamma-templates';
 
 const log = getLogger('hub:gamma-templates');
@@ -26,18 +26,32 @@ export function createGammaTemplatesRouter(db: HubDb): Hono<{ Variables: { userI
 
   router.get('/gamma-templates', async (c) => {
     const userId = c.get('userId');
-    const userContext = await getUserContext(db, userId);
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
     if (!userContext) {
       return c.json({ error: 'Tenant not found' }, 404);
     }
 
-    const templates = await listLatestGammaTemplates(db, userContext.tenantId);
+    // Reads walk the ancestor chain so a workbench sees its own templates plus
+    // those inherited from the global tenant.
+    const templates = await listInheritedGammaTemplates(db, userContext.tenantId);
     return c.json(templates);
   });
 
+  // Writes land in the active workbench (`userContext.tenantId`); reads above
+  // walk ancestors.
   router.post('/gamma-templates', async (c) => {
     const userId = c.get('userId');
-    const userContext = await getUserContext(db, userId);
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
     if (!userContext) {
       return c.json({ error: 'Tenant not found' }, 404);
     }
@@ -94,7 +108,12 @@ export function createGammaTemplatesRouter(db: HubDb): Hono<{ Variables: { userI
 
   router.put('/gamma-templates/:id', async (c) => {
     const userId = c.get('userId');
-    const userContext = await getUserContext(db, userId);
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
     if (!userContext) {
       return c.json({ error: 'Tenant not found' }, 404);
     }
@@ -157,7 +176,12 @@ export function createGammaTemplatesRouter(db: HubDb): Hono<{ Variables: { userI
 
   router.delete('/gamma-templates/:id', async (c) => {
     const userId = c.get('userId');
-    const userContext = await getUserContext(db, userId);
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
     if (!userContext) {
       return c.json({ error: 'Tenant not found' }, 404);
     }

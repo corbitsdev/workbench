@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { type } from 'arktype';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
@@ -15,9 +15,10 @@ import { createWorkflowRunBlobSubstrate } from '@intx/workflow-host';
 import type { CryptoProvider } from '@intx/types/runtime';
 import { getLogger } from '@intx/log';
 import { deriveDeploymentAddress } from '@intx/workflow-deploy';
+import { getAncestorChain } from '@intx/db';
 import type { HubDb } from '../db';
 import { workflowRun } from '../db/schema';
-import { getUserContext } from '../lib/user-context';
+import { getRequestedUserContext } from '../lib/user-context';
 
 // User-facing read/control surface over natively-deployed workflows.
 // The hub indexes each deployment in `workflow_run` at deploy time; these
@@ -91,8 +92,17 @@ export function createWorkflowRunsRouter(deps: {
 
   router.get('/workflow-runs', async (c) => {
     const userId = c.get('userId');
-    const context = await getUserContext(deps.db, userId);
+    const { context, forbidden } = await getRequestedUserContext(
+      deps.db,
+      userId,
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
+
+    // Walk active workbench -> ... -> global so a workbench sees its own
+    // deployments plus those inherited from any ancestor tenant.
+    const chain = await getAncestorChain(deps.db, context.tenantId);
 
     const rows = await deps.db
       .select({
@@ -104,7 +114,7 @@ export function createWorkflowRunsRouter(deps: {
       .from(workflowRun)
       .where(
         and(
-          eq(workflowRun.tenantId, context.tenantId),
+          inArray(workflowRun.tenantId, chain),
           isNotNull(workflowRun.deploymentId),
           isNull(workflowRun.deletedAt)
         )
@@ -116,15 +126,18 @@ export function createWorkflowRunsRouter(deps: {
 
   router.get('/workflow-runs/:deploymentId/stream', async (c) => {
     const userId = c.get('userId');
-    const context = await getUserContext(deps.db, userId);
+    const { context, forbidden } = await getRequestedUserContext(
+      deps.db,
+      userId,
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
 
     const deploymentId = c.req.param('deploymentId');
+    const chain = await getAncestorChain(deps.db, context.tenantId);
     const owned = await deps.db.query.workflowRun.findFirst({
-      where: and(
-        eq(workflowRun.deploymentId, deploymentId),
-        eq(workflowRun.tenantId, context.tenantId)
-      ),
+      where: and(eq(workflowRun.deploymentId, deploymentId), inArray(workflowRun.tenantId, chain)),
     });
     if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
 
@@ -166,16 +179,19 @@ export function createWorkflowRunsRouter(deps: {
 
   router.get('/workflow-runs/:deploymentId/steps/:stepId/output', async (c) => {
     const userId = c.get('userId');
-    const context = await getUserContext(deps.db, userId);
+    const { context, forbidden } = await getRequestedUserContext(
+      deps.db,
+      userId,
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
 
     const deploymentId = c.req.param('deploymentId');
     const stepId = c.req.param('stepId');
+    const chain = await getAncestorChain(deps.db, context.tenantId);
     const owned = await deps.db.query.workflowRun.findFirst({
-      where: and(
-        eq(workflowRun.deploymentId, deploymentId),
-        eq(workflowRun.tenantId, context.tenantId)
-      ),
+      where: and(eq(workflowRun.deploymentId, deploymentId), inArray(workflowRun.tenantId, chain)),
     });
     if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
 
@@ -187,14 +203,11 @@ export function createWorkflowRunsRouter(deps: {
     // ref we abort the iterator to stop it. A bounded log that drains without
     // yielding the step means the step has not completed → 404.
     const abort = new AbortController();
-    const iter = subscribeKind(
-      repoStore,
-      HUB_PRINCIPAL,
-      repoId,
-      RUN_EVENT_REF,
-      WorkflowEventBlob,
-      { signal: abort.signal, from: { seq: 0 }, kinds: WORKFLOW_EVENT_TYPES }
-    );
+    const iter = subscribeKind(repoStore, HUB_PRINCIPAL, repoId, RUN_EVENT_REF, WorkflowEventBlob, {
+      signal: abort.signal,
+      from: { seq: 0 },
+      kinds: WORKFLOW_EVENT_TYPES,
+    });
 
     let outputRef: string | null = null;
     let runId: string | null = null;
@@ -257,15 +270,18 @@ export function createWorkflowRunsRouter(deps: {
 
   router.post('/workflow-runs/:deploymentId/signal', async (c) => {
     const userId = c.get('userId');
-    const context = await getUserContext(deps.db, userId);
+    const { context, forbidden } = await getRequestedUserContext(
+      deps.db,
+      userId,
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
 
     const deploymentId = c.req.param('deploymentId');
+    const chain = await getAncestorChain(deps.db, context.tenantId);
     const owned = await deps.db.query.workflowRun.findFirst({
-      where: and(
-        eq(workflowRun.deploymentId, deploymentId),
-        eq(workflowRun.tenantId, context.tenantId)
-      ),
+      where: and(eq(workflowRun.deploymentId, deploymentId), inArray(workflowRun.tenantId, chain)),
     });
     if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
 
@@ -306,19 +322,41 @@ export function createWorkflowRunsRouter(deps: {
 
   router.post('/workflow-runs/:kind/start', async (c) => {
     const userId = c.get('userId');
-    const context = await getUserContext(deps.db, userId);
+    const { context, forbidden } = await getRequestedUserContext(
+      deps.db,
+      userId,
+      c.req.query('tenantId')
+    );
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
     if (!context) return c.json({ error: 'User context not found' }, 403);
 
     const kind = c.req.param('kind');
-    const deployment = await deps.db.query.workflowRun.findFirst({
+    const chain = await getAncestorChain(deps.db, context.tenantId);
+    const candidates = await deps.db.query.workflowRun.findMany({
       where: and(
         eq(workflowRun.kind, kind),
-        eq(workflowRun.tenantId, context.tenantId),
+        inArray(workflowRun.tenantId, chain),
         isNotNull(workflowRun.deploymentId),
         isNull(workflowRun.deletedAt)
       ),
       orderBy: desc(workflowRun.createdAt),
     });
+
+    // Shadowing rule: when the same kind is deployed in several tenants along
+    // the chain, the most-specific tenant wins (active workbench shadows an
+    // inherited global deployment). `chain` is ordered most-specific-first, so
+    // the lowest chain index is most specific; ties break on recency (the
+    // findMany is already ordered createdAt desc, so the first match wins).
+    const chainRank = new Map(chain.map((tenantId, index) => [tenantId, index]));
+    let deployment: (typeof candidates)[number] | undefined;
+    let bestRank = Number.POSITIVE_INFINITY;
+    for (const candidate of candidates) {
+      const rank = chainRank.get(candidate.tenantId) ?? Number.POSITIVE_INFINITY;
+      if (rank < bestRank) {
+        bestRank = rank;
+        deployment = candidate;
+      }
+    }
     if (!deployment?.deploymentId) {
       return c.json({ error: `no deployed workflow of kind "${kind}"` }, 404);
     }
@@ -349,7 +387,7 @@ export function createWorkflowRunsRouter(deps: {
         date: new Date(),
         content: JSON.stringify(input),
         sessionId: randomUUID(),
-        tenantId: context.tenantId,
+        tenantId: deployment.tenantId,
         cryptoProvider: deps.cryptoProvider,
       });
     } catch (err) {

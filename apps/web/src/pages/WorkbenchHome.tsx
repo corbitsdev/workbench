@@ -180,12 +180,7 @@ export default function WorkbenchHome() {
   const { slug } = useParams<{ slug?: string }>();
   const navigate = useNavigate();
   const { setHidden: setLauncherHidden, notifyProvisioned } = useChatLauncher();
-  const {
-    rightPane,
-    showGallery,
-    showAgent,
-    showWorkflow,
-  } = useRightPane({
+  const { rightPane, showGallery, showAgent, showWorkflow } = useRightPane({
     onShow: () => setLauncherHidden(true),
     onClose: () => setLauncherHidden(false),
   });
@@ -370,7 +365,11 @@ export default function WorkbenchHome() {
           {...paneFade}
           className="min-h-0 flex-1 overflow-hidden"
         >
-          <WorkflowRunPane deploymentId={rightPane.deploymentId} onClose={showGallery} />
+          <WorkflowRunPane
+            deploymentId={rightPane.deploymentId}
+            tenantId={workbenchTenantId}
+            onClose={showGallery}
+          />
         </motion.div>
       );
     }
@@ -414,7 +413,11 @@ export default function WorkbenchHome() {
               }}
             />
           ) : rightPane.view === 'workflow' ? (
-            <WorkflowRunPane deploymentId={rightPane.deploymentId} onClose={showGallery} />
+            <WorkflowRunPane
+              deploymentId={rightPane.deploymentId}
+              tenantId={workbenchTenantId}
+              onClose={showGallery}
+            />
           ) : (
             <ArtifactGallery
               tenantId={workbenchTenantId}
