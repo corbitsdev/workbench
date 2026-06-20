@@ -16,3 +16,13 @@ export {
 export { cn, toHumanLabel } from './utils';
 export { useTheme, isTheme, THEMES, THEME_LABELS, type Theme } from './use-theme';
 export { useResizableRail, type ResizableRail } from './use-resizable-rail';
+export { default as HorizontalStepper } from './HorizontalStepper';
+export { default as ProgressChecklist, type ProgressChecklistProps } from './ProgressChecklist';
+export { default as StepSidebar } from './StepSidebar';
+export { buildSteps } from './workflow-steps';
+export {
+  type WorkflowStep,
+  type WorkflowStepName,
+  type WorkflowStepStatus,
+  type WorkflowProgressStatus,
+} from './workflow-step-types';

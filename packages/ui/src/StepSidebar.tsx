@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { type Step } from './types';
+import { type WorkflowStep } from './workflow-step-types';
 
 interface StepSidebarProps {
-  steps: Step[];
+  steps: WorkflowStep[];
   sourceLabel?: string;
   selectionCount?: number;
   /**

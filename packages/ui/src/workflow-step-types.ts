@@ -8,17 +8,17 @@
  */
 
 /** Display status of a single step in the stepper / sidebar. */
-export type StepStatus = 'completed' | 'current' | 'pending';
+export type WorkflowStepStatus = 'completed' | 'current' | 'pending';
 
 /** A single step descriptor for the stepper and sidebar views. */
-export interface Step {
+export interface WorkflowStep {
   number: number;
   label: string;
-  status: StepStatus;
+  status: WorkflowStepStatus;
 }
 
 /** Canonical workflow step identifiers used to build the step list. */
-export type StepName = 'intake' | 'analyze' | 'generate' | 'approve';
+export type WorkflowStepName = 'intake' | 'analyze' | 'generate' | 'approve';
 
 /** Status of the progress checklist (e.g. live analysis tasks). */
-export type ProgressStatus = 'idle' | 'running' | 'completed' | 'error';
+export type WorkflowProgressStatus = 'idle' | 'running' | 'completed' | 'error';

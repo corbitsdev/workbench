@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { type ProgressStatus } from './types';
+import { type WorkflowProgressStatus } from './workflow-step-types';
 
 const DEFAULT_ANALYSIS_TASKS = [
   'Reading transcript turns and speaker roles',
@@ -10,7 +10,7 @@ const DEFAULT_ANALYSIS_TASKS = [
 
 export interface ProgressChecklistProps {
   tasks?: string[];
-  status?: ProgressStatus;
+  status?: WorkflowProgressStatus;
 }
 
 export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressChecklistProps) {

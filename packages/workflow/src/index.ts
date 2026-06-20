@@ -1,4 +1,30 @@
-export { default as HorizontalStepper } from './HorizontalStepper';
+export {
+  HorizontalStepper,
+  ProgressChecklist,
+  StepSidebar,
+  buildSteps,
+  type ProgressChecklistProps,
+  type WorkflowStep,
+  type WorkflowStepName,
+  type WorkflowStepStatus,
+  type WorkflowProgressStatus,
+} from '@workbench/ui';
+import type {
+  WorkflowStep,
+  WorkflowStepName,
+  WorkflowStepStatus,
+  WorkflowProgressStatus,
+} from '@workbench/ui';
+
+/** @deprecated Import `WorkflowStep` from `@workbench/ui`. */
+export type Step = WorkflowStep;
+/** @deprecated Import `WorkflowStepName` from `@workbench/ui`. */
+export type StepName = WorkflowStepName;
+/** @deprecated Import `WorkflowStepStatus` from `@workbench/ui`. */
+export type StepStatus = WorkflowStepStatus;
+/** @deprecated Import `WorkflowProgressStatus` from `@workbench/ui`. */
+export type ProgressStatus = WorkflowProgressStatus;
+
 export {
   PresentationGenerationWizard,
   type PresentationGenerationWizardProps,
@@ -21,7 +47,3 @@ export type {
   PresentationTemplateStepArgs,
   PresentationSourceStepArgs,
 } from './presentation-wizard-types';
-export { default as ProgressChecklist, type ProgressChecklistProps } from './ProgressChecklist';
-export { default as StepSidebar } from './StepSidebar';
-export { buildSteps } from './steps';
-export { type Step, type StepName, type StepStatus, type ProgressStatus } from './types';

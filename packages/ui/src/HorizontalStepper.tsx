@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
-import { type Step } from './types';
+import { type WorkflowStep } from './workflow-step-types';
 
 interface HorizontalStepperProps {
-  steps: Step[];
+  steps: WorkflowStep[];
 }
 
 export default function HorizontalStepper({ steps }: HorizontalStepperProps) {

@@ -1,10 +1,10 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import { buildSteps } from './steps';
-import { type StepName } from './types';
+import { buildSteps } from './workflow-steps';
+import { type WorkflowStepName } from './workflow-step-types';
 
 describe('buildSteps', () => {
-  const allLabels: Record<StepName, string> = {
+  const allLabels: Record<WorkflowStepName, string> = {
     intake: 'Call source',
     analyze: 'Agent review',
     generate: 'Generate collateral',

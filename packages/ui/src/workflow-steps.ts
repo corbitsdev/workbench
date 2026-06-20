@@ -1,16 +1,16 @@
-import { type Step, type StepName } from './types';
+import { type WorkflowStep, type WorkflowStepName } from './workflow-step-types';
 
-const STEP_ORDER: StepName[] = ['intake', 'analyze', 'generate', 'approve'];
+const STEP_ORDER: WorkflowStepName[] = ['intake', 'analyze', 'generate', 'approve'];
 
 export function buildSteps(
-  currentStep: StepName,
-  labels: Record<StepName, string>,
+  currentStep: WorkflowStepName,
+  labels: Record<WorkflowStepName, string>,
   isDone?: boolean
-): Step[] {
+): WorkflowStep[] {
   const currentIndex = STEP_ORDER.indexOf(currentStep);
 
   return STEP_ORDER.map((name, index) => {
-    let status: Step['status'];
+    let status: WorkflowStep['status'];
     if (isDone || index < currentIndex) {
       status = 'completed';
     } else if (index === currentIndex) {

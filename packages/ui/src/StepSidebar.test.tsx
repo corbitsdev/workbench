@@ -30,10 +30,10 @@ mock.module('framer-motion', () => ({
 }));
 
 import StepSidebar from './StepSidebar';
-import { buildSteps } from './steps';
-import { type StepName } from './types';
+import { buildSteps } from './workflow-steps';
+import { type WorkflowStepName } from './workflow-step-types';
 
-const LABELS: Record<StepName, string> = {
+const LABELS: Record<WorkflowStepName, string> = {
   intake: 'Call source',
   analyze: 'Agent review',
   generate: 'Generate collateral',

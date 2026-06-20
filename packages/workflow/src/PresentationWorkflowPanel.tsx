@@ -1,5 +1,4 @@
-import HorizontalStepper from './HorizontalStepper';
-import type { Step } from './types';
+import { HorizontalStepper, type WorkflowStep } from '@workbench/ui';
 
 // Invariant: this component ALWAYS renders a body. There is no status for
 // which it shows an empty pane.
@@ -39,10 +38,10 @@ function readString(value: unknown): string | undefined {
 
 // Stepper state is data-driven from each step's `completed` flag — not the
 // workflow status. The current step is the first one not yet completed.
-function buildPresentationSteps(steps: Record<string, PresentationStepView>): Step[] {
+function buildPresentationSteps(steps: Record<string, PresentationStepView>): WorkflowStep[] {
   const firstIncomplete = PRESENTATION_STEPS.findIndex((s) => !steps[s.name]?.completed);
   return PRESENTATION_STEPS.map((step, index) => {
-    let status: Step['status'];
+    let status: WorkflowStep['status'];
     if (steps[step.name]?.completed) {
       status = 'completed';
     } else if (index === firstIncomplete) {

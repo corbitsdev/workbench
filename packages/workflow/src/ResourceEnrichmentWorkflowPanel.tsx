@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import HorizontalStepper from './HorizontalStepper';
-import type { Step } from './types';
+import { HorizontalStepper, type WorkflowStep } from '@workbench/ui';
 
 // Invariant: this component ALWAYS renders a body. There is no status for
 // which it shows an empty pane.
@@ -51,10 +50,10 @@ const RESOURCE_STEPS = [
   { name: 'export', label: 'Export' },
 ] as const;
 
-function buildResourceSteps(steps: Record<string, ResourceEnrichmentStepView>): Step[] {
+function buildResourceSteps(steps: Record<string, ResourceEnrichmentStepView>): WorkflowStep[] {
   const firstIncomplete = RESOURCE_STEPS.findIndex((s) => !steps[s.name]?.completed);
   return RESOURCE_STEPS.map((step, index) => {
-    let status: Step['status'];
+    let status: WorkflowStep['status'];
     if (steps[step.name]?.completed) {
       status = 'completed';
     } else if (index === firstIncomplete) {

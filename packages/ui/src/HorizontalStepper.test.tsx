@@ -5,8 +5,8 @@ import React from 'react';
 import HorizontalStepper from './HorizontalStepper';
 
 afterEach(cleanup);
-import { buildSteps } from './steps';
-import { type StepName } from './types';
+import { buildSteps } from './workflow-steps';
+import { type WorkflowStepName } from './workflow-step-types';
 
 // framer-motion is not compatible with Happy DOM; replace motion.div with a plain div
 mock.module('framer-motion', () => ({
@@ -16,7 +16,7 @@ mock.module('framer-motion', () => ({
   },
 }));
 
-const LABELS: Record<StepName, string> = {
+const LABELS: Record<WorkflowStepName, string> = {
   intake: 'Call source',
   analyze: 'Agent review',
   generate: 'Generate collateral',
