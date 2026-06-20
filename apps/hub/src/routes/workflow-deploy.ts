@@ -176,11 +176,11 @@ export function deployWorkflowHandler(
 
       return c.json({ kind: definition.id, deploymentId, result });
     } catch (err) {
-      log.error("workflow deploy failed", {
-        kind: definition.id,
-        tenantId: targetTenantId,
-        error: err instanceof Error ? err : new Error(String(err)),
-      });
+      const error = err instanceof Error ? err : new Error(String(err));
+      log.error(
+        `workflow deploy failed for kind ${definition.id} in tenant ${targetTenantId}: ${error.message}`,
+        { kind: definition.id, tenantId: targetTenantId, error },
+      );
       return c.json({ error: "failed to deploy workflow" }, 500);
     }
   };
