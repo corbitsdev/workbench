@@ -40,6 +40,7 @@ import {
 import {
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
+  STEP_ARGMAP_TAG,
   DETERMINISTIC_TOOL_KIND,
 } from "@workbench/agents";
 import { wsUrlToHttp } from "./agent-tools";
@@ -612,10 +613,12 @@ export function createSidecarStepInvoker(args: {
       toolName !== undefined
     ) {
       const env = await buildEnv(req);
+      const argMapJson = tags?.[STEP_ARGMAP_TAG];
       return runDeterministicToolStep({
         env,
         toolName,
         input: req.input,
+        ...(argMapJson !== undefined ? { argMapJson } : {}),
         signal: req.signal,
       });
     }

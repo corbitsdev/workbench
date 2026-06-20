@@ -20,27 +20,6 @@ const generateAgent = defineAgent({
   tags: { credentialName: LLM_CREDENTIAL_NAME },
 });
 
-// Render stays an agent, not a deterministicToolStep: gamma_create_from_template
-// requires { gammaId, prompt }, where `prompt` must be derived from the generate
-// agent's free-text output. The selector DSL has no rename/templating selector
-// (ProjectSelector selects existing field names; it cannot map
-// steps.generate.output.reply -> a field named `prompt`), so the tool's args
-// cannot be assembled from upstream output deterministically. The agent bridges
-// that reshape. See CL-2202 notes: a templating/reshaping selector would let
-// this become deterministic.
-const renderAgent = defineAgent({
-  id: "presentation-render",
-  description: "Renders the approved deck into a branded Gamma presentation.",
-  systemPrompt:
-    "You are a Gamma rendering agent. Call gamma_create_from_template with the gammaId from the brief and a prompt built from the approved deck content.",
-  tools: [],
-  capabilities: canonicalizeToolNames(["gamma_create_from_template"]),
-  inference: {
-    sources: [{ provider: "openai-compatible", model: LLM_DEFAULT_MODEL }],
-  },
-  tags: { credentialName: LLM_CREDENTIAL_NAME },
-});
-
 export const label = "Gamma Presentation Creator";
 export const description =
   "Generate a polished Gamma presentation from a topic, audience, and key points.";
@@ -81,15 +60,24 @@ export const workflow = defineWorkflow({
       },
     }),
     review: awaitSignal({ name: "review-approval", after: ["generate"] }),
-    render: step({
-      agent: renderAgent,
-      after: ["review"],
+    // Deterministic tool call. `gamma_create_from_template` requires
+    // { gammaId, prompt }; the argMap renames the merged upstream fields to
+    // the tool's arg names — `gammaId` from the template form payload,
+    // `prompt` from the generate agent's `reply`. No inference needed.
+    render: deterministicToolStep({
+      id: "presentation-render",
+      tool: "gamma_create_from_template",
       input: {
         merge: [
           { from: "steps.template.output" },
           { from: "steps.generate.output" },
         ],
       },
+      argMap: {
+        gammaId: { from: "gammaId" },
+        prompt: { from: "reply" },
+      },
+      after: ["review"],
     }),
   },
 });

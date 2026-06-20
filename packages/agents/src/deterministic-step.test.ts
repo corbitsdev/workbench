@@ -1,10 +1,13 @@
 import { describe, test, expect } from "bun:test";
+import { type } from "arktype";
 import { canonicalizeToolNames } from "./tool-names";
 import {
   deterministicToolStep,
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
+  STEP_ARGMAP_TAG,
   DETERMINISTIC_TOOL_KIND,
+  ArgMap,
 } from "./deterministic-step";
 
 describe("deterministicToolStep", () => {
@@ -41,6 +44,34 @@ describe("deterministicToolStep", () => {
     expect(primitive.agent.capabilities[0]).toBe(
       primitive.agent.tags?.[STEP_TOOL_TAG],
     );
+  });
+
+  test("omits the argMap tag when no argMap is supplied", () => {
+    const primitive = deterministicToolStep({
+      id: "render",
+      tool: "gamma_create_from_template",
+    });
+    expect(primitive.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
+  });
+
+  test("serializes the argMap onto the tag and it round-trips through arktype", () => {
+    const argMap = {
+      gammaId: { from: "gammaId" },
+      prompt: { from: "reply" },
+      title: { literal: "A/B Comparison Results" },
+    };
+    const primitive = deterministicToolStep({
+      id: "render",
+      tool: "gamma_create_from_template",
+      argMap,
+    });
+    const raw = primitive.agent.tags?.[STEP_ARGMAP_TAG];
+    if (raw === undefined) throw new Error("expected an argMap tag");
+    const parsed = ArgMap(JSON.parse(raw));
+    if (parsed instanceof type.errors) {
+      throw new Error(`argMap failed to round-trip: ${parsed.summary}`);
+    }
+    expect(parsed).toEqual(argMap);
   });
 
   test("uses the supplied id and dependency edges", () => {

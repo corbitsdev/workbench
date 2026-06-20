@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import { defineAgent } from "@intx/agent";
 import { step } from "@intx/workflow";
 import type { StepPrimitive, Selector } from "@intx/workflow";
@@ -11,6 +12,27 @@ export const STEP_KIND_TAG = "workbench.stepKind";
 export const STEP_TOOL_TAG = "workbench.tool";
 export const DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 
+/**
+ * Tag carrying the JSON-serialized `argMap` (a controlled producer/consumer
+ * pair: `deterministicToolStep` writes it, the sidecar's
+ * `runDeterministicToolStep` reads + re-validates it). Tags are
+ * `Record<string,string>`, so the map is stringified.
+ */
+export const STEP_ARGMAP_TAG = "workbench.argMap";
+
+/**
+ * Per-tool-argument reshape spec. Maps a TOOL argument name to either a
+ * top-level field on the evaluated step input (`{ from: 'fieldName' }`) or a
+ * JSON-serializable constant (`{ literal: value }`). Must be
+ * JSON-serializable: the workflow definition is JSON-deployed, so no
+ * functions.
+ */
+export const ArgMapSpec = type({ from: "string" }).or({ literal: "unknown" });
+export type ArgMapSpec = typeof ArgMapSpec.infer;
+
+export const ArgMap = type({ "[string]": ArgMapSpec });
+export type ArgMap = typeof ArgMap.infer;
+
 export interface DeterministicToolStepOpts {
   /**
    * Unique step-agent id. Must be distinct per step — the persisted step
@@ -22,6 +44,13 @@ export interface DeterministicToolStepOpts {
   tool: string;
   /** Optional input selector resolved by the runtime and passed as the tool args. */
   input?: Selector;
+  /**
+   * Optional reshape from the evaluated step input to the tool's arguments.
+   * Each key is a TOOL argument name; the value pulls a top-level field off
+   * the evaluated input (`{ from }`) or supplies a constant (`{ literal }`).
+   * When absent, the evaluated input is passed verbatim as the tool args.
+   */
+  argMap?: ArgMap;
   /** Step ids this step depends on. */
   after?: readonly string[];
 }
@@ -53,6 +82,9 @@ export function deterministicToolStep(
     tags: {
       [STEP_KIND_TAG]: DETERMINISTIC_TOOL_KIND,
       [STEP_TOOL_TAG]: canonicalTool,
+      ...(opts.argMap !== undefined
+        ? { [STEP_ARGMAP_TAG]: JSON.stringify(opts.argMap) }
+        : {}),
     },
   });
   return step({

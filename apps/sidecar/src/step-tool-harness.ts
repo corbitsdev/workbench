@@ -30,6 +30,7 @@ import {
   ToolManifestResponse,
   providerFromEnvKey,
 } from "@workbench/tool-credentials";
+import { ArgMap } from "@workbench/agents";
 import {
   fetchToolCredentials,
   loadToolPackages,
@@ -323,16 +324,89 @@ async function buildStepTools(args: {
  * Run a workflow step as a deterministic tool call: load the step's pinned
  * tool packages + credentials the SAME way the tool-capable agent path does,
  * then invoke the named tool DIRECTLY against the runner — no `createAgent`,
- * no `agent.send`, no reactor, no inference. The step's runtime-resolved
- * `input` is passed verbatim as the tool-call arguments.
+ * no `agent.send`, no reactor, no inference. With no `argMap`, the step's
+ * runtime-resolved `input` is passed verbatim as the tool-call arguments;
+ * with an `argMap`, the tool arguments are reshaped from the evaluated input
+ * (`runDeterministicToolStep` parses the argMap JSON at this boundary).
  *
  * Disposal mirrors the agent path: every tool runner disposer runs and the
  * per-step `storeDir` is reclaimed on both success and failure.
  */
+/**
+ * Pass the evaluated step input verbatim as tool arguments. A step with no
+ * `input` selector resolves to null/undefined; for a no-arg tool call that
+ * legitimately means "empty arguments", so coerce to {}. A non-null,
+ * non-object input (string, number, array) is a real authoring error — the
+ * tool's arguments must be an object — so fail loud.
+ */
+function verbatimToolArguments(
+  toolName: string,
+  input: unknown,
+): Record<string, unknown> {
+  if (input === null || input === undefined) return {};
+  if (typeof input !== "object" || Array.isArray(input)) {
+    throw new Error(
+      `step-tool-harness: deterministic step "${toolName}" requires an object (or no) input to use as tool arguments; got ${typeof input}`,
+    );
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed to a non-null, non-array object above; ToolCall.arguments is Record<string, unknown>
+  return input as Record<string, unknown>;
+}
+
+/**
+ * Reshape the evaluated step input into tool arguments per the step's
+ * `argMap`. The argMap JSON is parsed + validated through arktype at this
+ * trust boundary. For each `[argName, spec]`: `{ from }` pulls a top-level
+ * field off the evaluated input (a missing field fails loud, naming it);
+ * `{ literal }` supplies the constant.
+ */
+function reshapeWithArgMap(
+  toolName: string,
+  input: unknown,
+  argMapJson: string,
+): Record<string, unknown> {
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(argMapJson);
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `step-tool-harness: deterministic step "${toolName}" has a non-JSON argMap tag: ${reason}`,
+    );
+  }
+  const argMap = ArgMap(parsedJson);
+  if (argMap instanceof type.errors) {
+    throw new Error(
+      `step-tool-harness: deterministic step "${toolName}" argMap failed validation: ${argMap.summary}`,
+    );
+  }
+  const inputRecord =
+    input !== null && typeof input === "object" && !Array.isArray(input)
+      ? // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed to a non-null, non-array object; field lookups below
+        (input as Record<string, unknown>)
+      : undefined;
+  const toolArguments: Record<string, unknown> = {};
+  for (const [argName, spec] of Object.entries(argMap)) {
+    if ("literal" in spec) {
+      toolArguments[argName] = spec.literal;
+      continue;
+    }
+    if (inputRecord === undefined || !(spec.from in inputRecord)) {
+      throw new Error(
+        `step-tool-harness: deterministic step "${toolName}" argMap maps tool arg "${argName}" from input field "${spec.from}", but that field is absent on the evaluated step input`,
+      );
+    }
+    toolArguments[argName] = inputRecord[spec.from];
+  }
+  return toolArguments;
+}
+
 export async function runDeterministicToolStep(args: {
   env: Omit<BaseEnv, "authorize">;
   toolName: string;
   input: unknown;
+  /** Raw JSON of the step's `workbench.argMap` tag, if present. */
+  argMapJson?: string;
   signal: AbortSignal;
 }): Promise<{ output: unknown }> {
   const ctx = readStepToolContext(
@@ -367,22 +441,10 @@ export async function runDeterministicToolStep(args: {
         `step-tool-harness: deterministic step declared tool "${args.toolName}" but it is not in the step's loaded runner; the workflow declared a tool that is not pinned (loaded: ${[...available].join(", ") || "none"})`,
       );
     }
-    // A step with no `input` selector resolves to null/undefined; for a
-    // no-arg tool call that legitimately means "empty arguments", so coerce
-    // it to {}. A non-null, non-object input (string, number, array) is a
-    // real authoring error — the tool's arguments must be an object — so fail
-    // loud.
-    let toolArguments: Record<string, unknown>;
-    if (args.input === null || args.input === undefined) {
-      toolArguments = {};
-    } else if (typeof args.input !== "object" || Array.isArray(args.input)) {
-      throw new Error(
-        `step-tool-harness: deterministic step "${args.toolName}" requires an object (or no) input to use as tool arguments; got ${typeof args.input}`,
-      );
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed to a non-null, non-array object above; ToolCall.arguments is Record<string, unknown>
-      toolArguments = args.input as Record<string, unknown>;
-    }
+    const toolArguments =
+      args.argMapJson !== undefined
+        ? reshapeWithArgMap(args.toolName, args.input, args.argMapJson)
+        : verbatimToolArguments(args.toolName, args.input);
     const result = await runner.run(
       {
         id: `det-${ctx.stepAgentId}`,

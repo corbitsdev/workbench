@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
+import {
+  STEP_KIND_TAG,
+  STEP_TOOL_TAG,
+  STEP_ARGMAP_TAG,
+  DETERMINISTIC_TOOL_KIND,
+} from "@workbench/agents";
 
 import { workflow } from "./index";
 
@@ -115,6 +121,24 @@ describe("gamma-presentation-creator native workflow", () => {
     expect(renderStep?.input).toMatchObject({
       gammaId: "tmpl_99",
       prompt: "Build a deck about Acme",
+    });
+  });
+
+  test("render is a deterministic tool step with an argMap, not an inference step", () => {
+    const render = workflow.steps.render;
+    if (render === undefined || render.kind !== "step") {
+      throw new Error("expected a step primitive for render");
+    }
+    expect(render.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
+    expect(render.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "gamma_create_from_template",
+    );
+    expect(render.agent.inference.sources).toEqual([]);
+    const argMapTag = render.agent.tags?.[STEP_ARGMAP_TAG];
+    if (argMapTag === undefined) throw new Error("expected an argMap tag");
+    expect(JSON.parse(argMapTag)).toEqual({
+      gammaId: { from: "gammaId" },
+      prompt: { from: "reply" },
     });
   });
 });

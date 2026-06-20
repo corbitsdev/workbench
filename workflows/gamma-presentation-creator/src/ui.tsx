@@ -54,6 +54,10 @@ const RenderOutput = type({
   "url?": "string",
 });
 
+// `render` is a deterministic tool step: its output is the agent-runtime
+// `ToolResult` envelope whose `content` is the gamma handler's JSON string.
+const ToolResultEnvelope = type({ content: "string" });
+
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
@@ -162,7 +166,19 @@ function readGenerate(stepOutputs: Record<string, unknown>): {
 function readGammaUrl(
   stepOutputs: Record<string, unknown>,
 ): string | undefined {
-  const parsed = RenderOutput(stepOutputs.render);
+  // Peel the deterministic-tool envelope: parse `content` (a JSON string)
+  // into the gamma result, then read its url. Fall back to a bare shape so a
+  // hand-fed (non-envelope) output still resolves in tests/dev.
+  const envelope = ToolResultEnvelope(stepOutputs.render);
+  let candidate: unknown = stepOutputs.render;
+  if (!(envelope instanceof type.errors)) {
+    try {
+      candidate = JSON.parse(envelope.content);
+    } catch {
+      return undefined;
+    }
+  }
+  const parsed = RenderOutput(candidate);
   if (parsed instanceof type.errors) return undefined;
   return readString(parsed.gammaUrl) ?? readString(parsed.url);
 }

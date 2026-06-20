@@ -21,14 +21,40 @@ import type { GrantEvaluator } from "@intx/workflow-host";
 import type { StepInvokeRequest } from "@intx/workflow";
 
 import { createSidecarStepInvoker } from "./workflow-substrate-factory";
+import type { StepToolContext } from "./step-tool-harness";
 
 const tmpDirs: string[] = [];
+const realFetch = globalThis.fetch;
 
 afterAll(async () => {
+  globalThis.fetch = realFetch;
   await Promise.all(
     tmpDirs.map((d) => fs.rm(d, { recursive: true, force: true })),
   );
 });
+
+// Empty hub manifest + no credentials: the step loads only its local posix
+// tools, enough to dispatch `write_file` through the deterministic branch.
+function stubHubFetch(): void {
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/api/internal/tools/manifest")) {
+      return new Response(
+        JSON.stringify({
+          manifest: { schemaVersion: "1", topLevel: [], entries: [] },
+          tarballs: [],
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
+    if (url.includes("/api/internal/tools/credentials")) {
+      return new Response(JSON.stringify({ credentials: {} }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected fetch to ${url}`);
+  }) as unknown as typeof fetch;
+}
 
 async function makeDataDir(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "wf-step-invoker-"));
@@ -269,5 +295,85 @@ describe("createSidecarStepInvoker", () => {
 
     await invoke(makeRequest());
     expect(factoryCalled).toBe(true);
+  });
+
+  // Regression (greybeard/critique): a `map({ over, step: deterministicToolStep })`
+  // dispatches each per-element invocation through the deterministic branch, not
+  // inference. The runtime calls the step invoker once per element with the same
+  // deterministic-tagged step request shape, so we drive `invoke` per element and
+  // assert: the real tool runner ran once per element (a file written per item)
+  // and the inference agent factory was never constructed.
+  test("dispatches a per-element map invocation through the deterministic tool branch, never inference", async () => {
+    stubHubFetch();
+    const dataDir = await makeDataDir();
+    let factoryCalled = false;
+    const resolveStepToolContext = async (
+      req: StepInvokeRequest,
+    ): Promise<StepToolContext> => {
+      const stepId = req.authzContext.stepId ?? "step";
+      return {
+        hubHttpUrl: "http://hub.invalid",
+        sidecarToken: "tok",
+        tenantId: "ten_1",
+        stepAgentId: `ins_dep-${stepId}`,
+        stepAddress: `ins_dep-${stepId}`,
+        principalId: `ins_dep-${stepId}`,
+        grants: [],
+        cacheRoot: path.join(dataDir, "cache"),
+        cacheMaxBytes: 1024 * 1024,
+        registryMaxTarballBytes: 1024 * 1024,
+      };
+    };
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      resolveStepToolContext,
+      agentFactory: async () => {
+        factoryCalled = true;
+        throw new Error(
+          "inference factory must not run for a map of det steps",
+        );
+      },
+    });
+
+    const detAgent: AgentDefinition<BaseEnv> = {
+      ...makeAgentDefinition("deterministic-write_file"),
+      tags: {
+        "workbench.stepKind": "deterministic-tool",
+        "workbench.tool": "write_file",
+      },
+    };
+
+    // `map` invokes the step invoker once per element; each element gets a
+    // distinct per-attempt store. Drive them sequentially with a per-element
+    // attempt so the per-step store teardown does not race (a test-harness
+    // concern, not a product one) and assert every element dispatched through
+    // the deterministic tool branch.
+    const elements = ["a.txt", "b.txt", "c.txt"];
+    const outputs: { output: unknown }[] = [];
+    for (let i = 0; i < elements.length; i += 1) {
+      const name = elements[i] as string;
+      outputs.push(
+        await invoke({
+          agent: detAgent,
+          input: { path: name, content: `content-${name}` },
+          authzContext: { stepId: STEP_ID, attempt: i + 1, runId: RUN_ID },
+          signal: new AbortController().signal,
+        }),
+      );
+    }
+
+    // No agent was constructed for any element.
+    expect(factoryCalled).toBe(false);
+    // The tool runner produced a ToolResult envelope per element.
+    expect(outputs).toHaveLength(elements.length);
+    for (const { output } of outputs) {
+      const tr = output as Record<string, unknown>;
+      expect(tr).toHaveProperty("callId");
+      expect(tr.isError).not.toBe(true);
+    }
   });
 });

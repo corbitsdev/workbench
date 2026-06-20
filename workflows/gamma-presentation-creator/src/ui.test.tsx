@@ -255,7 +255,12 @@ describe("gamma-presentation-creator Panel", () => {
         )}
         connected
         stepOutputs={{
-          render: { gammaUrl: "https://gamma.app/docs/deck-123" },
+          render: {
+            callId: "det-render",
+            content: JSON.stringify({
+              gammaUrl: "https://gamma.app/docs/deck-123",
+            }),
+          },
         }}
         onSignal={noop}
         onClose={noop}
@@ -284,7 +289,14 @@ describe("gamma-presentation-creator Panel", () => {
           "completed",
         )}
         connected
-        stepOutputs={{ render: { gammaUrl: "http://insecure.example/deck" } }}
+        stepOutputs={{
+          render: {
+            callId: "det-render",
+            content: JSON.stringify({
+              gammaUrl: "http://insecure.example/deck",
+            }),
+          },
+        }}
         onSignal={noop}
         onClose={noop}
       />,

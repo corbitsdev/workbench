@@ -159,4 +159,43 @@ describe("runDeterministicToolStep", () => {
       }),
     ).rejects.toThrow(/not in the step's loaded runner/);
   });
+
+  test("reshapes the evaluated input into tool args via the argMap (rename + literal)", async () => {
+    stubHubFetch();
+    // The evaluated input names its fields `body`/`name`, NOT the tool's
+    // `content`/`path`. The argMap renames `body` -> `content` and supplies
+    // `path` as a literal; a non-error ToolResult proves the runner received
+    // the reshaped args (write_file requires both `content` and `path`).
+    const { env } = await makeEnv();
+    const reshaped = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: { body: "deck rendered", name: "out.txt", ignored: "drop me" },
+      argMapJson: JSON.stringify({
+        content: { from: "body" },
+        path: { literal: "out.txt" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = reshaped.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("fails loud when an argMap `from` field is absent on the evaluated input", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "write_file",
+        input: { path: "out.txt" },
+        argMapJson: JSON.stringify({
+          content: { from: "reply" },
+          path: { from: "path" },
+        }),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/input field "reply"/);
+  });
 });
