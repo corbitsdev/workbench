@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -7,22 +7,7 @@ import {
   type AgentCatalogEntry,
 } from '../../lib/hub-api';
 import { toHumanLabel } from '@workbench/ui';
-
-// Workflow kinds the host can start. With the native run model the hub no
-// longer exposes an install/catalog endpoint — the UI starts a run by kind and
-// observes it through the native stream.
-const WORKFLOW_KINDS: readonly string[] = [
-  'collateral-generation',
-  'presentation-generation',
-  'seo-enrichment',
-  'blind-ab-comparison',
-  'reddit-opportunity-scanner',
-];
-
-interface WorkflowKindEntry {
-  kind: string;
-  name: string;
-}
+import { useWorkflowRuns, useStartWorkflow } from '../../hooks/use-workflow';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -56,7 +41,7 @@ export interface UnifiedCatalogModalProps {
   tenantId: string | null;
   onClose: () => void;
   onAgentDeployed: () => void;
-  onWorkflowSelected: (kind: string) => void;
+  onWorkflowStarted: (deploymentId: string) => void;
   defaultTab?: Tab;
   // When the catalog is opened from an artifact, only workflows that accept the
   // artifact's kind are shown and the workflows tab is selected. Null means the
@@ -69,7 +54,7 @@ export function UnifiedCatalogModal({
   tenantId,
   onClose,
   onAgentDeployed,
-  onWorkflowSelected,
+  onWorkflowStarted,
   defaultTab = 'agents',
   artifactKind = null,
 }: UnifiedCatalogModalProps) {
@@ -80,6 +65,7 @@ export function UnifiedCatalogModal({
   const [tab, setTab] = useState<Tab>(effectiveDefaultTab);
   const [search, setSearch] = useState('');
   const [deploying, setDeploying] = useState<string | null>(null);
+  const [startingKind, setStartingKind] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const { data: agentCatalog = [] } = useQuery<AgentCatalogEntry[]>({
@@ -87,6 +73,21 @@ export function UnifiedCatalogModal({
     queryFn: listAgentTemplates,
     enabled: open,
   });
+
+  const { data: workflowRuns = [] } = useWorkflowRuns();
+  const startWorkflow = useStartWorkflow();
+
+  const deployedKinds = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const run of workflowRuns) {
+      if (!seen.has(run.kind)) {
+        seen.add(run.kind);
+        result.push(run.kind);
+      }
+    }
+    return result;
+  }, [workflowRuns]);
 
   const handleClose = useCallback(() => {
     setError(null);
@@ -141,11 +142,9 @@ export function UnifiedCatalogModal({
     (a) => a.name.toLowerCase().includes(query) || a.description.toLowerCase().includes(query)
   );
 
-  const workflowEntries: WorkflowKindEntry[] = WORKFLOW_KINDS.map((kind) => ({
-    kind,
-    name: toHumanLabel(kind),
-  }));
-  const filteredWorkflows = workflowEntries.filter((w) => w.name.toLowerCase().includes(query));
+  const filteredWorkflowKinds = deployedKinds.filter((kind) =>
+    toHumanLabel(kind).toLowerCase().includes(query)
+  );
 
   const handleDeployAgent = async (entry: AgentCatalogEntry) => {
     if (!tenantId || deploying) return;
@@ -162,13 +161,22 @@ export function UnifiedCatalogModal({
     }
   };
 
-  const handleStartWorkflow = (entry: WorkflowKindEntry) => {
+  const handleStartWorkflow = async (kind: string) => {
+    if (startingKind) return;
+    setStartingKind(kind);
     setError(null);
-    handleClose();
-    onWorkflowSelected(entry.kind);
+    try {
+      const res = await startWorkflow.mutateAsync({ kind, input: {} });
+      handleClose();
+      onWorkflowStarted(res.deploymentId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start the workflow.');
+    } finally {
+      setStartingKind(null);
+    }
   };
 
-  const isLoading = deploying !== null;
+  const isLoading = deploying !== null || startingKind !== null;
 
   return (
     <AnimatePresence>
@@ -328,25 +336,30 @@ export function UnifiedCatalogModal({
 
               {tab === 'workflows' && (
                 <div className="grid grid-cols-2 gap-2">
-                  {filteredWorkflows.map((entry) => (
+                  {filteredWorkflowKinds.map((kind) => (
                     <div
-                      key={entry.kind}
+                      key={kind}
                       className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]"
                     >
                       <div className="min-w-0">
-                        <p className="text-[14px] font-semibold text-text">{entry.name}</p>
+                        <p className="text-[14px] font-semibold text-text">{toHumanLabel(kind)}</p>
                       </div>
                       <button
                         type="button"
                         disabled={isLoading}
-                        onClick={() => handleStartWorkflow(entry)}
+                        onClick={() => void handleStartWorkflow(kind)}
                         className="self-start rounded-[7px] border border-border px-3 py-1 text-[12px] font-semibold text-text-2 transition-colors active:scale-[0.97] disabled:opacity-50 hover:border-orange hover:text-orange"
                       >
-                        Start
+                        {startingKind === kind ? 'Starting…' : 'Start'}
                       </button>
                     </div>
                   ))}
-                  {filteredWorkflows.length === 0 && (
+                  {filteredWorkflowKinds.length === 0 && deployedKinds.length === 0 && (
+                    <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                      No workflows deployed yet.
+                    </p>
+                  )}
+                  {filteredWorkflowKinds.length === 0 && deployedKinds.length > 0 && (
                     <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
                       No workflows match your search.
                     </p>

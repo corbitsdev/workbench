@@ -5,6 +5,20 @@ import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { UnifiedCatalogModal } from './UnifiedCatalogModal';
 
+mock.module('../../hooks/use-workflow', () => ({
+  useWorkflowRuns: () => ({
+    data: [
+      { deploymentId: 'dep-1', kind: 'collateral-generation', status: 'active', createdAt: '' },
+      { deploymentId: 'dep-2', kind: 'presentation-generation', status: 'active', createdAt: '' },
+      { deploymentId: 'dep-3', kind: 'seo-enrichment', status: 'active', createdAt: '' },
+    ],
+  }),
+  useStartWorkflow: () => ({
+    mutateAsync: async ({ kind }: { kind: string }) => ({ deploymentId: `started-${kind}` }),
+    isPending: false,
+  }),
+}));
+
 // This mock must be a superset that also satisfies sibling files mocking the
 // same hub-api module: bun applies mock.module globally for the whole run and
 // the last registration wins, so two files mocking ../lib/hub-api with disjoint
@@ -59,12 +73,12 @@ function wrapper({ children }: { children: React.ReactNode }) {
 describe('UnifiedCatalogModal', () => {
   let onClose: ReturnType<typeof mock>;
   let onAgentDeployed: ReturnType<typeof mock>;
-  let onWorkflowSelected: ReturnType<typeof mock>;
+  let onWorkflowStarted: ReturnType<typeof mock>;
 
   beforeEach(() => {
     onClose = mock(() => undefined);
     onAgentDeployed = mock(() => undefined);
-    onWorkflowSelected = mock(() => undefined);
+    onWorkflowStarted = mock(() => undefined);
   });
 
   afterEach(cleanup);
@@ -76,7 +90,7 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
@@ -93,7 +107,7 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
@@ -110,7 +124,7 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
@@ -129,7 +143,7 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
@@ -150,7 +164,7 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
@@ -163,14 +177,14 @@ describe('UnifiedCatalogModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onWorkflowSelected with kind after clicking a workflow card', async () => {
+  it('calls onWorkflowStarted with deploymentId after clicking a workflow card', async () => {
     render(
       <UnifiedCatalogModal
         open={true}
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
@@ -180,7 +194,7 @@ describe('UnifiedCatalogModal', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Start' })[0]!);
 
-    await waitFor(() => expect(onWorkflowSelected).toHaveBeenCalledWith('collateral-generation'));
+    await waitFor(() => expect(onWorkflowStarted).toHaveBeenCalledWith('started-collateral-generation'));
   });
 
   it('opens on the Workflows tab when an artifact kind is provided', async () => {
@@ -190,7 +204,7 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
         artifactKind="email"
       />,
       { wrapper }
@@ -206,7 +220,7 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
@@ -221,7 +235,7 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );

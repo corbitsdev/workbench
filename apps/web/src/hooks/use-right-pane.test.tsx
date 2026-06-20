@@ -39,14 +39,12 @@ describe('useRightPane', () => {
     expect(onShow).toHaveBeenCalledTimes(1);
   });
 
-  it('promotes a created workflow only while the wizard is the active pane', () => {
-    render(React.createElement(Harness, {}));
-    act(() => api.promoteCreatedWorkflow('wf-9'));
-    expect(api.rightPane.view).toBe('gallery');
-
-    act(() => api.showNewWorkflow('presentation-generation'));
-    act(() => api.promoteCreatedWorkflow('wf-9'));
-    expect(api.rightPane).toEqual({ view: 'workflow', deploymentId: 'wf-9' });
+  it('routes to the workflow pane and calls onShow', () => {
+    const onShow = mock(() => {});
+    render(React.createElement(Harness, { onShow }));
+    act(() => api.showWorkflow('wf-42'));
+    expect(api.rightPane).toEqual({ view: 'workflow', deploymentId: 'wf-42' });
+    expect(onShow).toHaveBeenCalledTimes(1);
   });
 
   it('closes the workflow pane only when the matching workflow is deleted', () => {

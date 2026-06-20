@@ -3,8 +3,7 @@ import { useState } from 'react';
 export type RightPane =
   | { view: 'gallery' }
   | { view: 'agent'; instanceId: string; tenantId: string; agentName: string }
-  | { view: 'workflow'; deploymentId: string }
-  | { view: 'new-workflow'; workflowKind: string };
+  | { view: 'workflow'; deploymentId: string };
 
 export interface AgentTarget {
   instanceId: string;
@@ -34,18 +33,6 @@ export function useRightPane(options: { onShow?: () => void; onClose?: () => voi
     onShow?.();
   };
 
-  const showNewWorkflow = (workflowKind: string) => {
-    setRightPane({ view: 'new-workflow', workflowKind });
-    onShow?.();
-  };
-
-  // Promote a freshly started run from the new-workflow pane into the live run
-  // console; ignored if the new-workflow pane is no longer active.
-  const promoteCreatedWorkflow = (deploymentId: string) => {
-    if (rightPane.view !== 'new-workflow') return;
-    setRightPane({ view: 'workflow', deploymentId });
-  };
-
   const closeWorkflow = (deploymentId: string) => {
     if (rightPane.view === 'workflow' && rightPane.deploymentId === deploymentId) {
       showGallery();
@@ -57,8 +44,6 @@ export function useRightPane(options: { onShow?: () => void; onClose?: () => voi
     showGallery,
     showAgent,
     showWorkflow,
-    showNewWorkflow,
-    promoteCreatedWorkflow,
     closeWorkflow,
   };
 }

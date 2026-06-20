@@ -6,7 +6,6 @@ import { clientOptions } from '../lib/client-options';
 import { AgentChat } from '../components/AgentChat';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { RunConsole } from '../components/RunConsole';
-import { NewRunPane } from '../components/NewRunPane';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { UnifiedCatalogModal } from '../components/layout/UnifiedCatalogModal';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
@@ -186,8 +185,6 @@ export default function WorkbenchHome() {
     showGallery,
     showAgent,
     showWorkflow,
-    showNewWorkflow,
-    promoteCreatedWorkflow,
   } = useRightPane({
     onShow: () => setLauncherHidden(true),
     onClose: () => setLauncherHidden(false),
@@ -325,14 +322,10 @@ export default function WorkbenchHome() {
     setWorkflowArtifact(null);
   };
 
-  const handleWorkflowKindSelected = (kind: string) => {
+  const handleWorkflowStarted = (deploymentId: string) => {
     setActiveModal('none');
-    showNewWorkflow(kind);
     setWorkflowArtifact(null);
-  };
-
-  const handleWorkflowCreated = (deploymentId: string) => {
-    promoteCreatedWorkflow(deploymentId);
+    showWorkflow(deploymentId);
   };
 
   const handleAgentDeleted = () => {
@@ -381,17 +374,6 @@ export default function WorkbenchHome() {
         </motion.div>
       );
     }
-    if (rightPane.view === 'new-workflow') {
-      return (
-        <motion.div key="new-workflow" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
-          <NewRunPane
-            workflowKind={rightPane.workflowKind}
-            onStarted={handleWorkflowCreated}
-            onClose={showGallery}
-          />
-        </motion.div>
-      );
-    }
     return (
       <motion.div
         // key change forces remount when workbench resolves, refreshing the query
@@ -433,12 +415,6 @@ export default function WorkbenchHome() {
             />
           ) : rightPane.view === 'workflow' ? (
             <RunConsole deploymentId={rightPane.deploymentId} onClose={showGallery} />
-          ) : rightPane.view === 'new-workflow' ? (
-            <NewRunPane
-              workflowKind={rightPane.workflowKind}
-              onStarted={handleWorkflowCreated}
-              onClose={showGallery}
-            />
           ) : (
             <ArtifactGallery
               tenantId={workbenchTenantId}
@@ -472,7 +448,7 @@ export default function WorkbenchHome() {
             setActiveModal('none');
             setAgentRefreshTick((n) => n + 1);
           }}
-          onWorkflowSelected={handleWorkflowKindSelected}
+          onWorkflowStarted={handleWorkflowStarted}
           artifactKind={workflowArtifact?.kind ?? null}
         />
       </div>
@@ -530,7 +506,7 @@ export default function WorkbenchHome() {
           setActiveModal('none');
           setAgentRefreshTick((n) => n + 1);
         }}
-        onWorkflowSelected={handleWorkflowKindSelected}
+        onWorkflowStarted={handleWorkflowStarted}
         artifactKind={workflowArtifact?.kind ?? null}
       />
     </>
