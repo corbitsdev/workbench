@@ -1,10 +1,9 @@
 import { useLibraryResources } from '@workbench/client/react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
-import { api } from '../../lib/api';
+import { useQuery } from '@tanstack/react-query';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { resolveKindLabel } from '../../lib/resolve-kind-label';
 import { toHumanLabel } from '@workbench/ui';
-import type { SessionStatus, WorkflowSummary } from '@workbench/shared';
+import type { WorkflowSummary } from '@workbench/shared';
 import { clientOptions } from '../../lib/client-options';
 import {
   listAgentInstances,
@@ -125,8 +124,9 @@ function useWorkbenchesAndAgents(externalTick = 0): {
   };
 }
 
-const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
+const SESSION_STATUS_TO_RAIL: Record<string, ResourceStatus> = {
   pending: 'idle',
+  running: 'run',
   analyzing: 'run',
   ready: 'run',
   reviewing: 'run',
@@ -137,6 +137,7 @@ const SESSION_STATUS_TO_RAIL: Record<SessionStatus, ResourceStatus> = {
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Pending',
+  running: 'Running',
   analyzing: 'Analyzing',
   ready: 'Ready',
   generating: 'Generating',
@@ -150,10 +151,16 @@ function workflowKindLabel(kind: string): string {
 }
 
 function workflowToRailItem(w: WorkflowSummary): WorkflowRailItem {
-  const runNameRaw = w.companyName ?? w.firstPainPoint ?? w.transcriptPreview ?? 'Untitled';
-  const runName = runNameRaw.length > 25 ? `${runNameRaw.slice(0, 24)}…` : runNameRaw;
   const statusLabel = STATUS_LABELS[w.status] ?? toHumanLabel(w.status);
-  const sub = `${runName} · ${statusLabel}`;
+  // Until workflows surface their own run identity, createdAt is the only thing
+  // distinguishing concurrent runs of the same kind.
+  const started = new Date(w.createdAt).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const sub = `${statusLabel} · ${started}`;
   return {
     id: w.id,
     group: 'Workflows',
@@ -247,15 +254,11 @@ function RailItemLead({ item, isRestarting }: { item: RailItem; isRestarting: bo
 export function CompletedWorkflowRow({
   item,
   isActive,
-  isDeleting,
   onOpen,
-  onDelete,
 }: {
   item: WorkflowRailItem;
   isActive: boolean;
-  isDeleting: boolean;
   onOpen?: () => void;
-  onDelete: () => void;
 }) {
   return (
     <div
@@ -277,20 +280,6 @@ export function CompletedWorkflowRow({
         </div>
       </div>
       <div className="relative z-[1] flex flex-none items-center gap-[11px]">
-        <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <button
-            type="button"
-            aria-label="Archive workflow"
-            disabled={isDeleting}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (window.confirm(`Archive ${item.name}?`)) onDelete();
-            }}
-            className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
-          >
-            <Trash2 className="h-[13px] w-[13px]" />
-          </button>
-        </div>
         <span className="flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] bg-[rgba(233,132,40,0.16)] text-orange">
           <span className="h-1.5 w-1.5 rounded-full bg-orange" />
           Workflow
@@ -319,7 +308,6 @@ export interface LibraryRailProps {
   onWorkflowSelect?: (workflowId: string, workflowKind: string) => void;
   onWorkbenchSelect?: (slug: string) => void;
   onAgentDeleted?: () => void;
-  onWorkflowDeleted?: (workflowId: string) => void;
   activeAgentInstanceId?: string;
   activeWorkflowId?: string;
   activeWorkbenchSlug?: string;
@@ -339,7 +327,6 @@ export function LibraryRail({
   onWorkflowSelect,
   onWorkbenchSelect,
   onAgentDeleted,
-  onWorkflowDeleted,
   activeAgentInstanceId,
   activeWorkflowId,
   activeWorkbenchSlug,
@@ -357,9 +344,7 @@ export function LibraryRail({
   const [searchQuery, setSearchQuery] = useState('');
   const [stoppingInstanceId, setStoppingInstanceId] = useState<string | null>(null);
   const [restartingInstanceId, setRestartingInstanceId] = useState<string | null>(null);
-  const [deletingWorkflowId, setDeletingWorkflowId] = useState<string | null>(null);
   const [completedWorkflowsOpen, setCompletedWorkflowsOpen] = useState(false);
-  const queryClient = useQueryClient();
 
   // Resolve the tenantId for the active workbench so agents can be scoped.
   const activeWorkbench = workbenches.find((w) => w.tenantSlug === activeWorkbenchSlug);
@@ -613,19 +598,6 @@ export function LibraryRail({
                   }
                 };
 
-                const deleteWorkflow = async () => {
-                  setDeletingWorkflowId(item.id);
-                  try {
-                    await api('DELETE', `/workflows/${item.id}`);
-                    await queryClient.invalidateQueries({
-                      queryKey: ['workflows'],
-                    });
-                    onWorkflowDeleted?.(item.id);
-                  } finally {
-                    setDeletingWorkflowId(null);
-                  }
-                };
-
                 const rowLabel =
                   item.type === 'workflow'
                     ? `Open workflow ${item.name}`
@@ -720,22 +692,6 @@ export function LibraryRail({
                           )}
                         </div>
                       )}
-                      {item.type === 'workflow' && (
-                        <div className="flex flex-none gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                          <button
-                            type="button"
-                            aria-label="Archive workflow"
-                            disabled={deletingWorkflowId === item.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (window.confirm(`Archive ${item.name}?`)) void deleteWorkflow();
-                            }}
-                            className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-border text-text-3 hover:text-orange-deep disabled:opacity-50"
-                          >
-                            <Trash2 className="h-[13px] w-[13px]" />
-                          </button>
-                        </div>
-                      )}
                       <span
                         className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
                       >
@@ -783,33 +739,17 @@ export function LibraryRail({
               {completedWorkflowsOpen &&
                 completedJobItems.map((item) => {
                   const isActive = item.id === activeWorkflowId;
-                  const isDeleting = deletingWorkflowId === item.id;
-
-                  const deleteWorkflow = async () => {
-                    setDeletingWorkflowId(item.id);
-                    try {
-                      await api('DELETE', `/workflows/${item.id}`);
-                      await queryClient.invalidateQueries({
-                        queryKey: ['workflows'],
-                      });
-                      onWorkflowDeleted?.(item.id);
-                    } finally {
-                      setDeletingWorkflowId(null);
-                    }
-                  };
 
                   return (
                     <CompletedWorkflowRow
                       key={item.id}
                       item={item}
                       isActive={isActive}
-                      isDeleting={isDeleting}
                       onOpen={
                         onWorkflowSelect
                           ? () => onWorkflowSelect(item.id, item.workflowKind)
                           : undefined
                       }
-                      onDelete={() => void deleteWorkflow()}
                     />
                   );
                 })}

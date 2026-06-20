@@ -188,7 +188,6 @@ export default function WorkbenchHome() {
     showWorkflow,
     showNewWorkflow,
     promoteCreatedWorkflow,
-    closeWorkflow,
   } = useRightPane({
     onShow: () => setLauncherHidden(true),
     onClose: () => setLauncherHidden(false),
@@ -341,10 +340,6 @@ export default function WorkbenchHome() {
     showGallery();
   };
 
-  const handleWorkflowDeleted = (workflowId: string) => {
-    closeWorkflow(workflowId);
-  };
-
   const paneTransition: Transition = {
     duration: 0.15,
     ease: [0.23, 1, 0.32, 1],
@@ -462,7 +457,6 @@ export default function WorkbenchHome() {
               onWorkflowSelect={handleWorkflowSelect}
               onWorkbenchSelect={handleWorkbenchSelect}
               onAgentDeleted={handleAgentDeleted}
-              onWorkflowDeleted={handleWorkflowDeleted}
               activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
               activeWorkflowId={rightPane.view === 'workflow' ? rightPane.deploymentId : undefined}
               activeWorkbenchSlug={slug}
@@ -499,7 +493,6 @@ export default function WorkbenchHome() {
             onWorkflowSelect={handleWorkflowSelect}
             onWorkbenchSelect={handleWorkbenchSelect}
             onAgentDeleted={handleAgentDeleted}
-            onWorkflowDeleted={handleWorkflowDeleted}
             activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
             activeWorkflowId={rightPane.view === 'workflow' ? rightPane.deploymentId : undefined}
             activeWorkbenchSlug={slug}

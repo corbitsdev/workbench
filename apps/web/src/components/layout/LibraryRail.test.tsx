@@ -11,13 +11,8 @@ import type { WorkflowSummary } from '@workbench/shared';
 const fakeWorkflow: WorkflowSummary = {
   id: 'wf-1',
   kind: 'collateral-generation',
-  status: 'reviewing',
+  status: 'running',
   createdAt: new Date().toISOString(),
-  transcriptId: 'tx-1',
-  companyName: 'Acme Corp',
-  transcriptPreview: 'We struggle with manual data entry',
-  painPointCount: 3,
-  firstPainPoint: 'Manual data entry',
 };
 
 mock.module('@workbench/client/react', () => ({
@@ -88,7 +83,7 @@ describe('LibraryRail', () => {
     const view = renderWithClient(React.createElement(LibraryRail));
 
     await waitFor(() => {
-      // Title shows the workflow type label; company name appears in the subtitle
+      // Title shows the workflow type label resolved from the run kind.
       expect(view.getAllByText('Collateral Generation').length).toBeGreaterThan(0);
     });
     expect(view.getAllByText('Workflows').length).toBeGreaterThan(0);
@@ -334,9 +329,7 @@ describe('CompletedWorkflowRow (pure view)', () => {
       React.createElement(CompletedWorkflowRow, {
         item,
         isActive: false,
-        isDeleting: false,
         onOpen,
-        onDelete: () => {},
       })
     );
     fireEvent.click(view.getByRole('button', { name: 'Open workflow Collateral Generation' }));
@@ -349,8 +342,6 @@ describe('CompletedWorkflowRow (pure view)', () => {
       React.createElement(CompletedWorkflowRow, {
         item,
         isActive: false,
-        isDeleting: false,
-        onDelete: () => {},
       })
     );
     expect(

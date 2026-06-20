@@ -91,13 +91,34 @@ export interface ArtifactsPage {
   nextCursor: string | null;
 }
 
-/** Fetch the current user's jobs (`GET /workflows`). */
-export function listWorkflows(
+const WorkflowRunRowSchema = type({
+  deploymentId: 'string',
+  kind: 'string',
+  status: 'string',
+  createdAt: 'string',
+});
+const WorkflowRunsResponseSchema = WorkflowRunRowSchema.array();
+
+/**
+ * Fetch the tenant's natively-deployed workflows (`GET /workflow-runs`).
+ * The route scopes by the caller's tenant via the session, so `tenantId` is
+ * not forwarded; it stays on the params only to gate the React Query hook.
+ */
+export async function listWorkflows(
   options: ClientOptions = {},
-  params: ListWorkflowsParams = {}
+  _params: ListWorkflowsParams = {}
 ): Promise<WorkflowSummary[]> {
-  const search = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
-  return request<WorkflowSummary[]>(`workflows${search}`, options);
+  const raw = await request<unknown>('workflow-runs', options);
+  const parsed = WorkflowRunsResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /workflow-runs response: ${parsed.summary}`);
+  }
+  return parsed.map((row) => ({
+    id: row.deploymentId,
+    kind: row.kind,
+    status: row.status,
+    createdAt: row.createdAt,
+  }));
 }
 
 export type SkillItem = {

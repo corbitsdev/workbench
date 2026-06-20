@@ -40,13 +40,8 @@ function newClient(): QueryClient {
 const fakeWorkflow: WorkflowSummary = {
   id: 'wf-1',
   kind: 'collateral-generation',
-  status: 'reviewing',
+  status: 'running',
   createdAt: new Date().toISOString(),
-  transcriptId: 'tx-1',
-  companyName: 'Acme Corp',
-  transcriptPreview: 'preview',
-  painPointCount: 1,
-  firstPainPoint: 'Manual entry',
 };
 
 const fakeArtifact: ArtifactWithSession = {
@@ -102,8 +97,14 @@ describe('useLibraryResources', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('fetches workflows for the tenant and surfaces the data on success', async () => {
-    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([fakeWorkflow])));
+  it('fetches workflows for the tenant and surfaces the mapped data on success', async () => {
+    const runRow = {
+      deploymentId: fakeWorkflow.id,
+      kind: fakeWorkflow.kind,
+      status: fakeWorkflow.status,
+      createdAt: fakeWorkflow.createdAt,
+    };
+    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([runRow])));
 
     const { result } = renderHook(
       () =>
@@ -116,7 +117,7 @@ describe('useLibraryResources', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([fakeWorkflow]);
-    expect(spy.mock.calls[0]?.[0]).toBe('http://localhost:4000/api/v1/workflows?tenantId=tn-1');
+    expect(spy.mock.calls[0]?.[0]).toBe('http://localhost:4000/api/v1/workflow-runs');
   });
 
   it('surfaces a propagated server error to the consumer', async () => {
