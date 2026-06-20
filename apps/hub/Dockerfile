@@ -47,7 +47,7 @@ COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 COPY packages/workflow/package.json packages/workflow/
-COPY workflows/blind-ab-comparison/package.json workflows/blind-ab-comparison/
+COPY workflows/ab-compare/package.json workflows/ab-compare/
 COPY workflows/collateral-generation/package.json workflows/collateral-generation/
 COPY workflows/presentation-generation/package.json workflows/presentation-generation/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
