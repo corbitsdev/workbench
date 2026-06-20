@@ -32,6 +32,7 @@
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/storage-isogit": "workspace:*",
+        "@intx/tool-packaging": "workspace:*",
         "@intx/tools-mail": "workspace:*",
         "@intx/tools-posix": "workspace:*",
         "@intx/types": "workspace:*",

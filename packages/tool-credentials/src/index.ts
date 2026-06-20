@@ -4,10 +4,10 @@
 // Kept off `credentialRequirements` (which is inference-only).
 // See docs/CREATING_AGENTS_AND_TOOLS.md.
 
-import { type } from 'arktype';
+import { type } from "arktype";
 
 /** Env-key prefix for an injected tool credential, namespaced by provider. */
-export const TOOL_CREDENTIAL_ENV_PREFIX = 'workbench.cred.';
+export const TOOL_CREDENTIAL_ENV_PREFIX = "workbench.cred.";
 
 /** Build the env key / `requires` entry for a provider's credential. */
 export function toolCredentialEnvKey(providerName: string): string {
@@ -23,24 +23,66 @@ export function providerFromEnvKey(key: string): string | undefined {
 
 /** A resolved provider credential delivered to an in-sidecar tool. */
 export const ToolCredential = type({
-  apiKey: 'string',
-  baseURL: 'string',
+  apiKey: "string",
+  baseURL: "string",
 });
 export type ToolCredential = typeof ToolCredential.infer;
 
 /** Request body for the hub's tool-credential resolution endpoint. */
 export const ToolCredentialsRequest = type({
-  tenantId: 'string',
-  agentId: 'string',
-  providerNames: 'string[]',
+  tenantId: "string",
+  agentId: "string",
+  providerNames: "string[]",
 });
 export type ToolCredentialsRequest = typeof ToolCredentialsRequest.infer;
 
 /** Response body: resolved credentials keyed by provider name. */
 export const ToolCredentialsResponse = type({
-  credentials: type.Record('string', ToolCredential),
+  credentials: type.Record("string", ToolCredential),
 });
 export type ToolCredentialsResponse = typeof ToolCredentialsResponse.infer;
+
+// ─── Tool-package manifest rail (workflow steps) ───────────────────────
+//
+// A live agent receives its tool-package tarballs via the per-agent deploy
+// pack fan-out at `SessionService.launchSession`. A workflow STEP agent
+// runs in the shared `bin/workflow-child` and bypasses launchSession, so
+// it has no deploy pack on disk. This rail lets the step's in-process
+// harness fetch the same tenant-scoped, resolved manifest plus the raw
+// tarball bytes the live path materializes — over the hub's authenticated
+// channel, gated identically (by the step's persisted `agent` row pins).
+
+/** Request body for the hub's tool-package manifest+tarball resolution. */
+export const ToolManifestRequest = type({
+  tenantId: "string",
+  agentId: "string",
+});
+export type ToolManifestRequest = typeof ToolManifestRequest.infer;
+
+/** One materialized tarball: the asset mount + asset-relative path + bytes. */
+export const ToolManifestTarball = type({
+  assetId: "string",
+  /** assetRoot-relative mount dir, e.g. `package-registries/<name>/`. */
+  mount: "string",
+  /** mount-relative tarball path, e.g. `tarballs/<file>.tgz`. */
+  path: "string",
+  /** Base64-encoded tarball bytes. */
+  bytesBase64: "string",
+});
+export type ToolManifestTarball = typeof ToolManifestTarball.infer;
+
+/**
+ * Response body: the resolved `ToolPackageManifest` (as opaque JSON the
+ * sidecar re-validates against `@intx/types/tool-packages`) plus every
+ * asset-sourced tarball the manifest references, with the mount each
+ * `assetId` should be written under so the sidecar loader's `assetMounts`
+ * map can be reconstructed.
+ */
+export const ToolManifestResponse = type({
+  manifest: "unknown",
+  tarballs: ToolManifestTarball.array(),
+});
+export type ToolManifestResponse = typeof ToolManifestResponse.infer;
 
 /**
  * Read a resolved tool credential from the agent env. Throws if the host
@@ -50,13 +92,13 @@ export type ToolCredentialsResponse = typeof ToolCredentialsResponse.infer;
  */
 export function getToolCredential(
   env: Record<string, unknown>,
-  providerName: string
+  providerName: string,
 ): ToolCredential {
   const value = env[toolCredentialEnvKey(providerName)];
   const parsed = ToolCredential(value);
   if (parsed instanceof type.errors) {
     throw new Error(
-      `tool credential for provider "${providerName}" was not injected into env: ${parsed.summary}`
+      `tool credential for provider "${providerName}" was not injected into env: ${parsed.summary}`,
     );
   }
   return parsed;
@@ -72,15 +114,15 @@ export function getToolCredential(
 // under `HUB_RPC_ENV_KEY`; a hub-backed package declares it via `requires`.
 
 /** Env key carrying the hub-RPC context for hub-backed tool packages. */
-export const HUB_RPC_ENV_KEY = 'workbench.hubRpc';
+export const HUB_RPC_ENV_KEY = "workbench.hubRpc";
 
 export const HubRpcContext = type({
-  baseURL: 'string',
-  token: 'string',
-  tenantId: 'string',
-  agentId: 'string',
-  principalId: 'string',
-  sessionId: 'string',
+  baseURL: "string",
+  token: "string",
+  tenantId: "string",
+  agentId: "string",
+  principalId: "string",
+  sessionId: "string",
 });
 export type HubRpcContext = typeof HubRpcContext.infer;
 
@@ -88,7 +130,9 @@ export type HubRpcContext = typeof HubRpcContext.infer;
 export function getHubRpc(env: Record<string, unknown>): HubRpcContext {
   const parsed = HubRpcContext(env[HUB_RPC_ENV_KEY]);
   if (parsed instanceof type.errors) {
-    throw new Error(`hub-RPC context was not injected into env: ${parsed.summary}`);
+    throw new Error(
+      `hub-RPC context was not injected into env: ${parsed.summary}`,
+    );
   }
   return parsed;
 }

@@ -30,6 +30,17 @@ import { type } from "arktype";
 import { InferenceSource } from "@intx/types/runtime";
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
+import { getLogger } from "@intx/log";
+import {
+  createStepAgentFactory,
+  STEP_TOOL_CONTEXT_KEY,
+  type StepToolContext,
+} from "./step-tool-harness";
+import { wsUrlToHttp } from "./agent-tools";
+import {
+  DEFAULT_REGISTRY_MAX_TARBALL_BYTES,
+  DEFAULT_TOOL_CACHE_MAX_BYTES,
+} from "./config";
 import type {
   Agent,
   AgentDefinition,
@@ -108,6 +119,7 @@ export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   "SIDECAR_ID",
   "SIDECAR_TOKEN",
   "STEP_INFERENCE_SOURCES",
+  "TENANT_ID",
 ] as const;
 
 const SubstrateConfig = type({
@@ -122,6 +134,7 @@ const SubstrateConfig = type({
   SIDECAR_ID: "string > 0",
   SIDECAR_TOKEN: "string > 0",
   STEP_INFERENCE_SOURCES: "string > 0",
+  TENANT_ID: "string > 0",
 }).onUndeclaredKey("ignore");
 
 /**
@@ -277,6 +290,12 @@ function createSidecarStepBuildEnv(args: {
   dataDir: string;
   signer: CommitSigner;
   directors: DirectorRegistry;
+  /**
+   * Per-step tool context resolver. Omitted by tests that exercise pure
+   * inference; production supplies it so the step env carries the hub
+   * connection + grants the tool-capable agentFactory reads back.
+   */
+  resolveStepToolContext?: (req: StepInvokeRequest) => Promise<StepToolContext>;
 }): (req: StepInvokeRequest) => Promise<StepEnvBase> {
   const resolveStepInferenceSource = createStepInferenceSourceResolver(
     args.table,
@@ -325,7 +344,7 @@ function createSidecarStepBuildEnv(args: {
     const workdir = path.join(storeDir, "workspace");
     await fs.promises.mkdir(workdir, { recursive: true });
 
-    return {
+    const env: StepEnvBase & Record<string, unknown> = {
       sources: [source],
       defaultSource: source.id,
       storage,
@@ -334,6 +353,16 @@ function createSidecarStepBuildEnv(args: {
       // `directors`: default-harness uses `createWorkbenchDirectorRegistry()`.
       directors: args.directors,
     };
+
+    // Stash the per-step tool context so the tool-capable agentFactory can
+    // materialize the step's pinned tool packages + credentials + grants.
+    // Pure-inference tests omit the resolver; the agentFactory they pair
+    // never reads the key.
+    if (args.resolveStepToolContext !== undefined) {
+      env[STEP_TOOL_CONTEXT_KEY] = await args.resolveStepToolContext(req);
+    }
+
+    return env;
   };
 }
 
@@ -343,6 +372,130 @@ function createSidecarStepBuildEnv(args: {
  */
 function sanitizePathSegment(id: string): string {
   return id.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+const logger = getLogger(["sidecar", "workflow-substrate-factory"]);
+
+/** Grants-file path inside a step's agent-state repo working tree. */
+const STEP_GRANTS_PATH = "state/grants.json";
+
+const StepGrantsFile = type({ grants: "unknown[]" });
+
+/**
+ * Read one step's grants from its agent-state repo working tree, mirroring
+ * interchange's supervisor credentials reader
+ * (`interchange/packages/workflow-host/src/supervisor/credentials.ts`'s
+ * `readStepGrants`): `getRepoDir` is a pure path computation, so the grants
+ * file is read straight off disk. A missing file is "no grants" (deny-all,
+ * fail-closed); a present-but-malformed file throws, because its presence
+ * implies the deploy orchestrator intended a snapshot.
+ */
+async function readStepGrants(args: {
+  bareStore: RepoStore;
+  deploymentId: string;
+  stepId: string;
+}): Promise<GrantRule[]> {
+  const repoId: RepoId = {
+    kind: "agent-state",
+    id: `${args.deploymentId}-${args.stepId}`,
+  };
+  const dir = args.bareStore.getRepoDir(repoId);
+  const filePath = path.join(dir, STEP_GRANTS_PATH);
+  let raw: string;
+  try {
+    raw = await fs.promises.readFile(filePath, "utf8");
+  } catch (cause) {
+    if (
+      cause instanceof Error &&
+      "code" in cause &&
+      (cause as { code: unknown }).code === "ENOENT"
+    ) {
+      return [];
+    }
+    throw cause;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(
+      `sidecar step grants: ${repoId.kind}/${repoId.id}:${STEP_GRANTS_PATH} is not valid JSON`,
+      { cause },
+    );
+  }
+  const validated = StepGrantsFile(parsed);
+  if (validated instanceof type.errors) {
+    throw new Error(
+      `sidecar step grants: ${repoId.kind}/${repoId.id}:${STEP_GRANTS_PATH} failed validation: ${validated.summary}`,
+    );
+  }
+  // The grants file holds the sidecar's GrantRule grammar; the on-disk
+  // shape is validated as `unknown[]` and narrowed here at the boundary
+  // where the typed grammar is known, matching the parent factory's
+  // credentialsSnapshot cast.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- grants.json holds the sidecar's GrantRule grammar, validated as unknown[] at the boundary
+  return validated.grants as GrantRule[];
+}
+
+/**
+ * Inputs the production step tool-context resolver closes over. The
+ * deploymentId comes from the spawn env; the hub-connection anchors come
+ * from the validated substrate config.
+ */
+export interface StepToolContextResolverArgs {
+  bareStore: RepoStore;
+  deploymentId: string;
+  tenantId: string;
+  hubHttpUrl: string;
+  sidecarToken: string;
+  cacheRoot: string;
+  cacheMaxBytes: number;
+  registryMaxTarballBytes: number;
+}
+
+/**
+ * Build the per-step tool-context resolver the step env builder calls. It
+ * derives the step's persisted `agent` row id (`ins_<deploymentId>-<stepId>`,
+ * matching `deriveStepAgentId` / the hub's `writeStepAgentRows`), reads the
+ * step's grants from its agent-state repo, and packages the hub-connection
+ * anchors the tool-capable agentFactory needs.
+ */
+export function createStepToolContextResolver(
+  args: StepToolContextResolverArgs,
+): (req: StepInvokeRequest) => Promise<StepToolContext> {
+  return async (req: StepInvokeRequest): Promise<StepToolContext> => {
+    const stepId = req.authzContext.stepId;
+    if (stepId === undefined) {
+      throw new Error(
+        "sidecar step tool-context: AuthorizeContext.stepId is required to resolve a step's pinned tool packages",
+      );
+    }
+    const stepAgentId = `ins_${args.deploymentId}-${stepId}`;
+    let grants: GrantRule[];
+    try {
+      grants = await readStepGrants({
+        bareStore: args.bareStore,
+        deploymentId: args.deploymentId,
+        stepId,
+      });
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      logger.warn`step tool-context: failed to read grants for ${stepAgentId}, falling back to deny-all: ${reason}`;
+      grants = [];
+    }
+    return {
+      hubHttpUrl: args.hubHttpUrl,
+      sidecarToken: args.sidecarToken,
+      tenantId: args.tenantId,
+      stepAgentId,
+      stepAddress: stepAgentId,
+      principalId: stepAgentId,
+      grants,
+      cacheRoot: args.cacheRoot,
+      cacheMaxBytes: args.cacheMaxBytes,
+      registryMaxTarballBytes: args.registryMaxTarballBytes,
+    };
+  };
 }
 
 /**
@@ -390,6 +543,13 @@ export function createSidecarStepInvoker(args: {
   signer: CommitSigner;
   directors: DirectorRegistry;
   evaluateGrants: GrantEvaluator;
+  /**
+   * Per-step tool-context resolver. Production supplies it so each step
+   * agent is built tool-capable (its pinned packages + credentials +
+   * grants); tests exercising pure inference omit it and the env builder
+   * stashes nothing.
+   */
+  resolveStepToolContext?: (req: StepInvokeRequest) => Promise<StepToolContext>;
   agentFactory?: <EnvReq extends BaseEnv>(
     def: AgentDefinition<EnvReq>,
     env: EnvReq,
@@ -402,8 +562,19 @@ export function createSidecarStepInvoker(args: {
       dataDir: args.dataDir,
       signer: args.signer,
       directors: args.directors,
+      ...(args.resolveStepToolContext !== undefined
+        ? { resolveStepToolContext: args.resolveStepToolContext }
+        : {}),
     }),
-    agentFactory: args.agentFactory ?? createAgent,
+    // The step's `req.agent.toolFactories` are walk-only stubs; the
+    // tool-capable factory ignores them and builds the real runner from the
+    // step's pins. A test-injected `agentFactory` (pure inference) is wired
+    // verbatim instead.
+    agentFactory:
+      args.agentFactory ??
+      (args.resolveStepToolContext !== undefined
+        ? createStepAgentFactory()
+        : createAgent),
   });
 }
 
@@ -763,13 +934,40 @@ export function createSidecarSubstrateFactory(
     // (storage/audit/workdir/directors); the workflow-typed authorize
     // is adapted from the factory's grant evaluator. Future pin-bump
     // re-diffs: this invoker is ours, not upstream's stub.
+    // Per-step tool context: derive the step's persisted `agent` row id,
+    // read its grants from the agent-state repo, and package the hub
+    // connection anchors so the tool-capable step agentFactory can
+    // materialize the step's pinned tool packages + tenant credentials.
+    // The cache root mirrors the live harness default
+    // (`<dataDir>/cache/tool-packages`); the byte limits use the same
+    // defaults the live config applies when the env override is absent.
+    const resolveStepToolContext = createStepToolContextResolver({
+      bareStore,
+      deploymentId: env.spawn.deploymentId,
+      tenantId: validated.TENANT_ID,
+      hubHttpUrl: wsUrlToHttp(validated.HUB_WS_URL),
+      sidecarToken: validated.SIDECAR_TOKEN,
+      cacheRoot: path.join(
+        validated.SIDECAR_DATA_DIR,
+        "cache",
+        "tool-packages",
+      ),
+      cacheMaxBytes: DEFAULT_TOOL_CACHE_MAX_BYTES,
+      registryMaxTarballBytes: DEFAULT_REGISTRY_MAX_TARBALL_BYTES,
+    });
+
     const baseInvokeStep: StepInvoker = createSidecarStepInvoker({
       table: stepInferenceSources,
       dataDir: validated.SIDECAR_DATA_DIR,
       signer: createSidecarCommitSigner(signingKey),
       directors: createWorkbenchDirectorRegistry(),
       evaluateGrants: evaluateGrantsAdapter,
-      agentFactory: deps.agentFactory,
+      // A test-injected agentFactory takes precedence (pure-inference path);
+      // otherwise the production tool-capable factory is wired from the
+      // tool-context resolver inside createSidecarStepInvoker.
+      ...(deps.agentFactory !== undefined
+        ? { agentFactory: deps.agentFactory }
+        : { resolveStepToolContext }),
     });
 
     // Child-runtime step invoker. The in-process `runChild` (see

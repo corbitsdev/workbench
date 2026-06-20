@@ -10,12 +10,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type {
-  Agent,
-  AgentDefinition,
-  BaseEnv,
-  ConversationTurn,
-} from "@intx/agent";
+import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
+
+// The assistant turn shape, derived from Agent.send rather than imported by
+// name — @intx/agent does not re-export ConversationTurn from its barrel.
+type SendTurn = Awaited<ReturnType<Agent["send"]>>["turn"];
 import { createDefaultDirectorRegistry } from "@intx/agent";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { GrantEvaluator } from "@intx/workflow-host";
@@ -76,15 +75,15 @@ describe("createSidecarStepInvoker", () => {
   test("returns the real agent's reply, not the upstream stub shape", async () => {
     const dataDir = await makeDataDir();
     const REPLY = "Here is the drafted announcement.";
-    const turn: ConversationTurn = {
+    const turn = {
       role: "assistant",
       content: REPLY,
-    } as unknown as ConversationTurn;
+    } as unknown as SendTurn;
 
     let sentContent: string | undefined;
     let closed = false;
     const stubAgent: Agent = {
-      send: async (content) => {
+      send: async (content: Parameters<Agent["send"]>[0]) => {
         sentContent = typeof content === "string" ? content : content.content;
         return { reply: REPLY, turn };
       },
@@ -131,7 +130,7 @@ describe("createSidecarStepInvoker", () => {
     const stubAgent: Agent = {
       send: async () => ({
         reply: "ok",
-        turn: { role: "assistant", content: "ok" } as unknown as ConversationTurn,
+        turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
       }),
       stream: () => ({
         [Symbol.asyncIterator]: () => ({

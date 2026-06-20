@@ -1,9 +1,13 @@
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { logger as honoLogger } from 'hono/logger';
-import { upgradeWebSocket, websocket } from 'hono/bun';
-import { schema as intxSchema, createGrantStore, resolveInstanceModelSources } from '@intx/db';
-import { createApp } from '@intx/hub-api';
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger as honoLogger } from "hono/logger";
+import { upgradeWebSocket, websocket } from "hono/bun";
+import {
+  schema as intxSchema,
+  createGrantStore,
+  resolveInstanceModelSources,
+} from "@intx/db";
+import { createApp } from "@intx/hub-api";
 import {
   createAgentRepoStore,
   createAssetService,
@@ -13,56 +17,60 @@ import {
   createSidecarRouter,
   WORKSPACE_BUILTINS_REGISTRY,
   type WsHandle,
-} from '@intx/hub-sessions';
+} from "@intx/hub-sessions";
 // Per-agent serialized event-collector registry (CL-1656). Drop-in for
 // @intx/hub-sessions' createEventCollectorRegistry; serializes onEvent per
 // agent so a turn row commits before its parts, fixing the FK race that
 // dropped thinking/reply parts.
-import { createEventCollectorRegistry } from '@workbench/event-collector';
-import { hexEncode } from '@intx/types';
-import { createNodeCrypto } from '@intx/crypto-node';
-import { getLogger } from '@intx/log';
-import { betterAuth } from 'better-auth';
-import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
-import { and, eq, isNull } from 'drizzle-orm';
-import { loadConfig } from './config';
-import { createSidecarConnectionRegistry } from './sidecar-connections';
-import { createWorkflowDeployRouter } from './routes/workflow-deploy';
-import { createWorkflowRunsRouter } from './routes/workflow-runs';
-import { createWorkflowDeployService } from './services/workflow-deploy';
-import { createWorkbenchDirectorRegistry } from '@workbench/agents';
-import { createUploadsRouter } from './routes/uploads';
-import { createSkillsRouter } from './routes/skills';
-import { createAgentProvisioningRouter } from './routes/agents';
+import { createEventCollectorRegistry } from "@workbench/event-collector";
+import { hexEncode } from "@intx/types";
+import { createNodeCrypto } from "@intx/crypto-node";
+import { getLogger } from "@intx/log";
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { and, eq, isNull } from "drizzle-orm";
+import { loadConfig } from "./config";
+import { createSidecarConnectionRegistry } from "./sidecar-connections";
+import { createWorkflowDeployRouter } from "./routes/workflow-deploy";
+import { createWorkflowRunsRouter } from "./routes/workflow-runs";
+import { createWorkflowDeployService } from "./services/workflow-deploy";
+import { createWorkbenchDirectorRegistry } from "@workbench/agents";
+import { createUploadsRouter } from "./routes/uploads";
+import { createSkillsRouter } from "./routes/skills";
+import { createAgentProvisioningRouter } from "./routes/agents";
 import {
   relaunchInstanceIfNeeded,
   registerDisconnectReconciler,
-} from './services/agent-provisioning';
-import { createWorkbenchesRouter } from './routes/workbenches';
-import { createMembersRouter } from './routes/members';
-import { createGammaTemplatesRouter } from './routes/gamma-templates';
-import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
-import { createHubToolsRouter } from './routes/hub-tools';
-import { createToolCredentialsRouter } from './routes/tool-credentials';
-import { buildToolDefinitions } from './lib/tool-registry';
-import { schema } from './db';
-import { loadSigningKeyRegistry } from './lib/signing-keys';
+} from "./services/agent-provisioning";
+import { createWorkbenchesRouter } from "./routes/workbenches";
+import { createMembersRouter } from "./routes/members";
+import { createGammaTemplatesRouter } from "./routes/gamma-templates";
+import {
+  createApprovalsRouter,
+  createInternalApprovalsRouter,
+} from "./routes/approvals";
+import { createHubToolsRouter } from "./routes/hub-tools";
+import { createToolCredentialsRouter } from "./routes/tool-credentials";
+import { createToolManifestRouter } from "./routes/tool-manifest";
+import { buildToolDefinitions } from "./lib/tool-registry";
+import { schema } from "./db";
+import { loadSigningKeyRegistry } from "./lib/signing-keys";
 import {
   seedGlobalTenant,
   seedAgentTemplates,
   ensureGlobalMember,
   provisionMemberInstances,
   getMyraInstanceId,
-} from './lib/tenant-provisioning';
-import { setupObservability, flushSentry } from '@workbench/sentry';
-import { createFatalErrorRecovery } from './lib/fatal-error-recovery';
-import { resolveCorsAllowOrigin } from './lib/cors-origin';
-import { createRateLimiter } from './lib/rate-limit';
+} from "./lib/tenant-provisioning";
+import { setupObservability, flushSentry } from "@workbench/sentry";
+import { createFatalErrorRecovery } from "./lib/fatal-error-recovery";
+import { resolveCorsAllowOrigin } from "./lib/cors-origin";
+import { createRateLimiter } from "./lib/rate-limit";
 
-await setupObservability({ dev: process.env.NODE_ENV !== 'production' });
-const log = getLogger(['api']);
+await setupObservability({ dev: process.env.NODE_ENV !== "production" });
+const log = getLogger(["api"]);
 
 const config = loadConfig();
 
@@ -72,7 +80,7 @@ const sql = postgres(config.databaseUrl);
 const db = drizzle(sql, { schema });
 
 await sql`SELECT 1`;
-log.info('Database connection established');
+log.info("Database connection established");
 
 // ─── Global org tenant bootstrap ───────────────────────────────────
 //
@@ -81,20 +89,20 @@ log.info('Database connection established');
 // thereafter. Fail-loud: if the org tenant cannot be seeded the hub must not
 // start, because every same-domain user joins it as a principal.
 const { tenantId: globalTenantId } = await seedGlobalTenant(db);
-log.info('Global org tenant ready', { globalTenantId });
+log.info("Global org tenant ready", { globalTenantId });
 
 // Seed each agent template as a first-class agent definition in the global org
 // tenant so admins can manage them and members get per-user instances later
 // (CL-1530). Depends on the global tenant existing. Fail-loud.
 await seedAgentTemplates(db);
-log.info('Agent templates seeded');
+log.info("Agent templates seeded");
 
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 
 // ─── Auth ──────────────────────────────────────────────────────────
 const { origins: corsOrigins, isCrossOrigin } = corsConfig;
 
-log.info('CORS config loaded', { corsOrigins, corsCount: corsOrigins.length });
+log.info("CORS config loaded", { corsOrigins, corsCount: corsOrigins.length });
 
 const auth = betterAuth({
   baseURL: authConfig.baseUrl,
@@ -102,7 +110,7 @@ const auth = betterAuth({
   trustedOrigins: isDev
     ? Array.from({ length: 10 }, (_, i) => `http://localhost:${5173 + i}`)
     : corsOrigins,
-  database: drizzleAdapter(db, { provider: 'pg' }),
+  database: drizzleAdapter(db, { provider: "pg" }),
   emailAndPassword: {
     enabled: true,
     // Hash with Bun.password (argon2id) instead of better-auth's default scrypt
@@ -116,7 +124,7 @@ const auth = betterAuth({
   },
   advanced:
     !isDev && isCrossOrigin
-      ? { defaultCookieAttributes: { sameSite: 'none', secure: true } }
+      ? { defaultCookieAttributes: { sameSite: "none", secure: true } }
       : undefined,
   socialProviders:
     google.clientId && google.clientSecret
@@ -134,23 +142,26 @@ const auth = betterAuth({
           // Domain restriction only applies to OAuth (Google) sign-ups.
           // Email/password is allowed for local dev.
           if (google.allowedDomains.length === 0) return;
-          const domain = user.email.split('@')[1];
+          const domain = user.email.split("@")[1];
           if (!domain || !google.allowedDomains.includes(domain)) {
             throw new Error(`Email domain not allowed`);
           }
         },
         after: async (user) => {
           try {
-            const { principalId: globalPrincipalId } = await ensureGlobalMember(db, {
-              userId: user.id,
-            });
-            log.info('User joined global tenant', {
+            const { principalId: globalPrincipalId } = await ensureGlobalMember(
+              db,
+              {
+                userId: user.id,
+              },
+            );
+            log.info("User joined global tenant", {
               userId: user.id,
               globalTenantId,
               globalPrincipalId,
             });
           } catch (err) {
-            log.error('Global-tenant membership failed for new user', {
+            log.error("Global-tenant membership failed for new user", {
               userId: user.id,
               error: err instanceof Error ? err : new Error(String(err)),
             });
@@ -165,7 +176,7 @@ const auth = betterAuth({
           try {
             await ensureGlobalMember(db, { userId: session.userId });
           } catch (err) {
-            log.error('Session repair failed — continuing', {
+            log.error("Session repair failed — continuing", {
               userId: session.userId,
               error: err instanceof Error ? err : new Error(String(err)),
             });
@@ -179,7 +190,7 @@ const auth = betterAuth({
 // ─── Signing key registry ──────────────────────────────────────────
 
 const registry = loadSigningKeyRegistry(hub.signingKeys);
-log.info('Loaded signing key registry: active version {version}', {
+log.info("Loaded signing key registry: active version {version}", {
   version: registry.active.version,
 });
 
@@ -212,7 +223,7 @@ const eventCollectors = createEventCollectorRegistry({
   db,
   onTurnFinalized(agentAddress, turn) {
     sidecarRouter.dispatchAgentEvent(agentAddress, {
-      type: 'turn.committed',
+      type: "turn.committed",
       data: {
         turnId: turn.turnId,
         status: turn.status,
@@ -288,9 +299,13 @@ const hubApp = createApp({
     for (const [key, value] of response.headers) {
       headers.append(key, value);
     }
-    const allowedOrigin = resolveCorsAllowOrigin(c.req.header('Origin'), corsOrigins);
-    if (allowedOrigin) headers.set('Access-Control-Allow-Origin', allowedOrigin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
+    const allowedOrigin = resolveCorsAllowOrigin(
+      c.req.header("Origin"),
+      corsOrigins,
+    );
+    if (allowedOrigin)
+      headers.set("Access-Control-Allow-Origin", allowedOrigin);
+    headers.set("Access-Control-Allow-Credentials", "true");
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
@@ -321,7 +336,7 @@ const hubApp = createApp({
         sidecarConnections.track(handle);
       },
       onMessage(evt, _ws) {
-        if (typeof evt.data === 'string') {
+        if (typeof evt.data === "string") {
           sidecarRouter.handleMessage(handle, evt.data);
         }
       },
@@ -337,44 +352,47 @@ const hubApp = createApp({
 
 const app = new Hono();
 
-app.use('*', honoLogger());
+app.use("*", honoLogger());
 
 if (corsOrigins.length > 0) {
   app.use(
     cors({
       origin: corsOrigins,
       credentials: true,
-      allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization'],
-    })
+      allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      allowHeaders: ["Content-Type", "Authorization"],
+    }),
   );
 }
 
 // Brute-force defense on credential sign-in. Single-process in-memory limiter;
 // infra-level limiting across replicas is still expected in production.
-app.use('/api/auth/sign-in/*', createRateLimiter({ windowMs: 60_000, max: 10 }));
+app.use(
+  "/api/auth/sign-in/*",
+  createRateLimiter({ windowMs: 60_000, max: 10 }),
+);
 
 // Mount hub app
-app.route('/', hubApp);
+app.route("/", hubApp);
 
 // ─── Workbench routes ──────────────────────────────────────────────
 
 const v1 = new Hono<{ Variables: { userId: string; userName: string } }>();
 
-v1.use('*', async (c, next) => {
+v1.use("*", async (c, next) => {
   const result = await auth.api.getSession({ headers: c.req.raw.headers });
 
   if (!result) {
-    return c.json({ error: 'Unauthorized' }, 401);
+    return c.json({ error: "Unauthorized" }, 401);
   }
 
-  c.set('userId', result.user.id);
-  c.set('userName', result.user.name ?? result.user.email ?? 'Unknown');
+  c.set("userId", result.user.id);
+  c.set("userName", result.user.name ?? result.user.email ?? "Unknown");
   await next();
 });
 
-v1.get('/me', async (c) => {
-  const userId = c.get('userId');
+v1.get("/me", async (c) => {
+  const userId = c.get("userId");
 
   // The user's working tenant is the shared global org tenant (CL-1452). Repair
   // path: if signup/session provisioning failed, ensure the member principal and
@@ -386,7 +404,7 @@ v1.get('/me', async (c) => {
     workingTenantId = tenantId;
     memberPrincipalId = principalId;
   } catch (err) {
-    log.error('Failed to ensure global member on /me', {
+    log.error("Failed to ensure global member on /me", {
       userId,
       error: err instanceof Error ? err : new Error(String(err)),
     });
@@ -399,7 +417,7 @@ v1.get('/me', async (c) => {
       where: and(
         eq(memberAgentInstance.tenantId, workingTenantId),
         eq(memberAgentInstance.memberPrincipalId, memberPrincipalId),
-        eq(memberAgentInstance.templateKey, 'myra')
+        eq(memberAgentInstance.templateKey, "myra"),
       ),
     });
     paInstanceId = mapping?.instanceId ?? null;
@@ -413,7 +431,7 @@ v1.get('/me', async (c) => {
         });
         paInstanceId = getMyraInstanceId(instances);
       } catch (err) {
-        log.warn('Failed to re-provision Myra on /me', {
+        log.warn("Failed to re-provision Myra on /me", {
           userId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
@@ -429,10 +447,10 @@ v1.get('/me', async (c) => {
           grantStore,
           eventCollectors,
           paInstanceId,
-          sidecarRouter
+          sidecarRouter,
         );
       } catch (err) {
-        log.warn('Auto-relaunch of Myra session failed', {
+        log.warn("Auto-relaunch of Myra session failed", {
           userId,
           instanceId: paInstanceId,
           error: err instanceof Error ? err : new Error(String(err)),
@@ -441,7 +459,7 @@ v1.get('/me', async (c) => {
     }
   }
 
-  const userName = c.get('userName');
+  const userName = c.get("userName");
 
   let credentialResolved = false;
   if (paInstanceId && workingTenantId) {
@@ -450,13 +468,17 @@ v1.get('/me', async (c) => {
     });
     if (paInstance) {
       try {
-        const resolution = await resolveInstanceModelSources(db, workingTenantId, {
-          agentId: paInstance.agentId,
-          modelPreferences: paInstance.modelPreferences,
-        });
+        const resolution = await resolveInstanceModelSources(
+          db,
+          workingTenantId,
+          {
+            agentId: paInstance.agentId,
+            modelPreferences: paInstance.modelPreferences,
+          },
+        );
         credentialResolved = resolution.ok && resolution.sources.length > 0;
       } catch (err) {
-        log.warn('Instance source resolution failed on /me', {
+        log.warn("Instance source resolution failed on /me", {
           error: err,
           tenantId: workingTenantId,
         });
@@ -473,20 +495,23 @@ v1.get('/me', async (c) => {
     const rootPrincipals = await db
       .select({ tenantId: intxSchema.principal.tenantId })
       .from(intxSchema.principal)
-      .innerJoin(intxSchema.tenant, eq(intxSchema.tenant.id, intxSchema.principal.tenantId))
+      .innerJoin(
+        intxSchema.tenant,
+        eq(intxSchema.tenant.id, intxSchema.principal.tenantId),
+      )
       .where(
         and(
           eq(intxSchema.principal.refId, userId),
-          eq(intxSchema.principal.kind, 'user'),
-          isNull(intxSchema.tenant.parentId)
-        )
+          eq(intxSchema.principal.kind, "user"),
+          isNull(intxSchema.tenant.parentId),
+        ),
       );
     for (const row of rootPrincipals) {
       rootTenantIds.push(row.tenantId);
     }
   } catch (err) {
     // non-fatal — frontend falls back to filtering only personalTenantId
-    log.warn('Root tenant lookup failed on /me', { error: err, userId });
+    log.warn("Root tenant lookup failed on /me", { error: err, userId });
   }
 
   return c.json({
@@ -503,17 +528,23 @@ v1.get('/me', async (c) => {
 });
 
 v1.route(
-  '/',
-  createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors)
+  "/",
+  createAgentProvisioningRouter(
+    db,
+    sessionService,
+    grantStore,
+    sidecarRouter,
+    eventCollectors,
+  ),
 );
-v1.route('/', createWorkbenchesRouter(db));
-v1.route('/', createMembersRouter(db));
-v1.route('/', createGammaTemplatesRouter(db));
-v1.route('/', createApprovalsRouter(db));
-v1.route('/', createUploadsRouter(db));
-v1.route('/', createSkillsRouter(db, assetService, repoStore.repoStore));
+v1.route("/", createWorkbenchesRouter(db));
+v1.route("/", createMembersRouter(db));
+v1.route("/", createGammaTemplatesRouter(db));
+v1.route("/", createApprovalsRouter(db));
+v1.route("/", createUploadsRouter(db));
+v1.route("/", createSkillsRouter(db, assetService, repoStore.repoStore));
 v1.route(
-  '/',
+  "/",
   createWorkflowRunsRouter({
     db,
     repoStore: repoStore.repoStore,
@@ -521,26 +552,36 @@ v1.route(
     sessionService,
     cryptoProvider: createNodeCrypto(registry.active),
     deploymentDomain: config.globalTenant.domain,
-  })
+  }),
 );
 
-app.route('/api/v1', v1);
+app.route("/api/v1", v1);
 
 // ─── Internal routes (sidecar token auth) ──────────────────────────
 
-app.route('/api/internal', createInternalApprovalsRouter(db, config.sidecarToken));
 app.route(
-  '/api/internal',
+  "/api/internal",
+  createInternalApprovalsRouter(db, config.sidecarToken),
+);
+app.route(
+  "/api/internal",
   createHubToolsRouter(db, config.sidecarToken, {
     sessionService,
     eventCollectors,
     sidecarRouter,
     buildToolDefinitions,
-  })
+  }),
 );
-app.route('/api/internal', createToolCredentialsRouter(db, config.sidecarToken));
 app.route(
-  '/api/internal',
+  "/api/internal",
+  createToolCredentialsRouter(db, config.sidecarToken),
+);
+app.route(
+  "/api/internal",
+  createToolManifestRouter(db, config.sidecarToken, assetService),
+);
+app.route(
+  "/api/internal",
   createWorkflowDeployRouter({
     db,
     workflowDeployService: createWorkflowDeployService({
@@ -554,7 +595,7 @@ app.route(
     deploymentDomain: config.globalTenant.domain,
     globalTenantId,
     serviceToken: config.sidecarToken,
-  })
+  }),
 );
 
 // The web SPA is deployed as its own static Railway service (apps/web),
@@ -562,14 +603,14 @@ app.route(
 
 // ─── Health ─────────────────────────────────────────────────────────
 
-app.get('/health', (c) => {
+app.get("/health", (c) => {
   return c.json({});
 });
 
 const port = Number(config.port);
 
 if (import.meta.main) {
-  log.info('API starting', { port });
+  log.info("API starting", { port });
 }
 
 // ─── Graceful shutdown ──────────────────────────────────────────────
@@ -580,39 +621,39 @@ if (import.meta.main) {
 
 let server: ReturnType<typeof Bun.serve> | undefined;
 
-for (const signal of ['SIGTERM', 'SIGINT']) {
+for (const signal of ["SIGTERM", "SIGINT"]) {
   process.on(signal, async () => {
     try {
-      log.info('Received {signal}, draining', { signal });
+      log.info("Received {signal}, draining", { signal });
       // Stop accepting new connections first so no WebSocket upgrade can slip in
       // after closeAll (CL-1654).
       await server?.stop();
       // Close sidecar sockets deliberately so each sidecar sees a clean close
       // and reconnects on its short reconnect delay, rather than waiting for its
       // heartbeat to time out the zombie socket left by an abrupt exit (CL-1654).
-      log.info('Closing sidecar connections', {
+      log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });
       sidecarConnections.closeAll();
-      log.info('Server stopped, exiting');
+      log.info("Server stopped, exiting");
       process.exit(0);
     } catch (err) {
-      log.fatal('Shutdown error', { error: err });
+      log.fatal("Shutdown error", { error: err });
       process.exit(1);
     }
   });
 }
 
-process.on('uncaughtException', (err) => {
+process.on("uncaughtException", (err) => {
   // log.fatal routes to the Sentry sink; flush before exiting so the event is
   // not dropped on process death.
-  log.fatal('Uncaught exception', { error: err });
+  log.fatal("Uncaught exception", { error: err });
   void flushSentry().finally(() => process.exit(1));
 });
 
-process.on('unhandledRejection', (reason) => {
+process.on("unhandledRejection", (reason) => {
   const err = reason instanceof Error ? reason : new Error(String(reason));
-  log.fatal('Unhandled rejection', { error: err });
+  log.fatal("Unhandled rejection", { error: err });
   // The process keeps running here, but flush so the captured event is not
   // left buffered indefinitely if the process later dies.
   void flushSentry();
@@ -621,12 +662,12 @@ process.on('unhandledRejection', (reason) => {
 // Centralized handler for errors thrown out of any route. Logging at error
 // level routes to the Sentry sink, so no request error fails silent.
 app.onError((err, c) => {
-  log.error('Unhandled request error', {
+  log.error("Unhandled request error", {
     error: err,
     method: c.req.method,
     path: c.req.path,
   });
-  return c.json({ error: 'Internal Server Error' }, 500);
+  return c.json({ error: "Internal Server Error" }, 500);
 });
 
 export { app };

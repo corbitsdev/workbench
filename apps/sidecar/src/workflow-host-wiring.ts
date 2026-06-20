@@ -738,6 +738,13 @@ export function createSidecarDeployRouter(deps: {
         WORKFLOW_DEFINITION_REF: "refs/heads/main",
         WORKFLOW_RUN_REPO_ID: deploymentId,
         WORKFLOW_RUN_REF: "refs/heads/main",
+        // Per-deploy tenant scope the step harness needs to resolve
+        // tenant-owned tool credentials + tool-package tarballs from the
+        // hub. Not present in the boot-edge `multistepSubstrateEnv` (which
+        // carries only sidecar-process constants); threaded per-deploy from
+        // the validated `HarnessConfig` the frame carried, the same
+        // mechanism `STEP_INFERENCE_SOURCES` uses.
+        TENANT_ID: frame.config.tenantId,
         [STEP_INFERENCE_SOURCES_ENV_KEY]: JSON.stringify(projection.sources),
       };
 
