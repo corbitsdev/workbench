@@ -13,7 +13,7 @@
     "db:setup": "bun --env-file=.env run scripts/db-setup.ts",
     "db:seed": "bun --env-file=.env run scripts/db-seed.ts",
     "db:reset": "bun --env-file=.env run scripts/db-reset.ts",
-    "dev": "bun --env-file=.env run --parallel --filter @workbench/web --filter @workbench/hub --filter @workbench/sidecar --filter @intx/admin-ui dev",
+    "dev": "bun --env-file=.env run --parallel --filter @workbench/web --filter @workbench/hub --filter @workbench/sidecar dev",
     "build": "bun run --parallel --filter @workbench/web --filter @workbench/hub build",
     "tools:build": "bun run --filter @workbench/hub build:tool-packages",
     "tools:publish": "bun run apps/hub/bin/publish-tool-packages.ts --from dist/tool-packages",
