@@ -222,6 +222,8 @@ The sidecar drives runs via the vendored workflow-host wiring (copied verbatim f
 - `apps/sidecar/src/workflow-run-pack-client.ts` — pushes the workflow-run event pack to the hub after each supervisor write.
 - `apps/sidecar/bin/workflow-child` — the child-process entrypoint.
 
+Step execution (`createSidecarStepInvoker`) dispatches by the step agent's tags: a step tagged `workbench.stepKind: 'deterministic-tool'` (built by `deterministicToolStep` in `@workbench/agents`) routes to `runDeterministicToolStep`, which builds the step's tool runner via `buildStepTools` and calls the tool directly — no `createAgent`/reactor/inference; all other steps run the real agent harness via `createWorkflowStepInvoker`. See `docs/DEPLOYING_WORKFLOWS.md` § Deterministic (non-inference) steps for the authoring patterns, step-output shapes, and current selector-DSL limitations (no rename/templating selector, no `map`+deterministic dispatch) that keep gamma `render` and ab-compare `persist` as agents.
+
 ### Skill Library
 
 | Method   | Route                              | Input                                                                          | Output                                      |
