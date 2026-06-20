@@ -250,14 +250,10 @@ function coerceBodyValue(value: string): unknown {
   return value;
 }
 
-async function runLocalActions(
-  groupLabel: string,
-  actions: LocalAction[],
+async function runSingleLocalAction(
+  action: LocalAction,
   tenant: TenantChoice,
 ): Promise<void> {
-  const action = selectOne(`${groupLabel}:`, actions, (a) => a.label);
-  if (!action) return;
-
   let extraArgs: string[] = [];
   if (action.choices) {
     const values = action.choices.discover();
@@ -290,46 +286,12 @@ async function runLocalActions(
   log(`"${action.label}" exited with code ${code}`);
 }
 
-async function runOnce(client: HubClient, tenant: TenantChoice): Promise<void> {
-  const specGroups = groupByTag(client.operations());
-  const local = localGroups();
-  const resources: {
-    label: string;
-    group: ResourceGroup | null;
-    localGroup?: { group: string; actions: LocalAction[] };
-  }[] = [
-    ...local.map((g) => ({
-      label: `${g.group} (${g.actions.length})`,
-      group: null,
-      localGroup: g,
-    })),
-    ...specGroups.map((g) => ({
-      label: `${g.tag} (${g.operations.length})`,
-      group: g,
-    })),
-  ];
-  const chosen = selectOne("Resource:", resources, (r) => r.label);
-  if (!chosen) return;
-  if (chosen.group === null) {
-    if (chosen.localGroup) {
-      await runLocalActions(
-        chosen.localGroup.group,
-        chosen.localGroup.actions,
-        tenant,
-      );
-    }
-    return;
-  }
-  const group = chosen.group;
-
-  const op = selectOne(
-    `${group.tag} — action:`,
-    group.operations,
-    (o) =>
-      `${o.method.toUpperCase()} ${o.path}${o.summary ? ` — ${o.summary}` : ""}`,
-  );
-  if (!op) return;
-
+async function runSpecOperation(
+  client: HubClient,
+  group: ResourceGroup,
+  op: ResourceGroup["operations"][number],
+  tenant: TenantChoice,
+): Promise<void> {
   const opIndex = group.operations.indexOf(op);
   const collected = await collectInputs(client, group, opIndex, tenant);
   if (!collected) return;
@@ -364,6 +326,81 @@ async function runOnce(client: HubClient, tenant: TenantChoice): Promise<void> {
     const { nextCursor } = extractItems(result.data);
     if (nextCursor === undefined || !confirm("Load next page?")) return;
     cursor = nextCursor;
+  }
+}
+
+// A resource in the operator menu: local actions and spec operations merged
+// under one display name. The local "Workflows" push action and the spec
+// "Workflows" run routes collapse into a single resource so there is one
+// obvious place per domain — no two same-named groups doing different things.
+interface MergedResource {
+  name: string;
+  localActions: LocalAction[];
+  specGroup: ResourceGroup | null;
+}
+
+function mergeResources(
+  local: { group: string; actions: LocalAction[] }[],
+  specGroups: ResourceGroup[],
+): MergedResource[] {
+  const order: string[] = [];
+  const byName = new Map<string, MergedResource>();
+  const ensure = (name: string): MergedResource => {
+    const existing = byName.get(name);
+    if (existing) return existing;
+    const created: MergedResource = { name, localActions: [], specGroup: null };
+    byName.set(name, created);
+    order.push(name);
+    return created;
+  };
+  for (const g of local) ensure(g.group).localActions.push(...g.actions);
+  for (const g of specGroups) ensure(g.tag).specGroup = g;
+  return order.map((name) => byName.get(name) as MergedResource);
+}
+
+async function runOnce(client: HubClient, tenant: TenantChoice): Promise<void> {
+  const specGroups = groupByTag(client.operations());
+  const resources = mergeResources(localGroups(), specGroups);
+
+  const chosen = selectOne(
+    "Resource:",
+    resources,
+    (r) =>
+      `${r.name} (${r.localActions.length + (r.specGroup?.operations.length ?? 0)})`,
+  );
+  if (!chosen) return;
+
+  // One combined action list: friendly local actions first, then the spec's
+  // HTTP operations for the same resource.
+  type Action =
+    | { kind: "local"; action: LocalAction; label: string }
+    | {
+        kind: "spec";
+        op: ResourceGroup["operations"][number];
+        label: string;
+      };
+  const actions: Action[] = [
+    ...chosen.localActions.map((action) => ({
+      kind: "local" as const,
+      action,
+      label: action.label,
+    })),
+    ...(chosen.specGroup?.operations ?? []).map((op) => ({
+      kind: "spec" as const,
+      op,
+      label: `${op.method.toUpperCase()} ${op.path}${op.summary ? ` — ${op.summary}` : ""}`,
+    })),
+  ];
+
+  const action = selectOne(`${chosen.name} — action:`, actions, (a) => a.label);
+  if (!action) return;
+
+  if (action.kind === "local") {
+    await runSingleLocalAction(action.action, tenant);
+    return;
+  }
+  if (chosen.specGroup) {
+    await runSpecOperation(client, chosen.specGroup, action.op, tenant);
   }
 }
 

@@ -4,6 +4,9 @@
 // gated hub deploy route. The hub imports no workflow code. See
 // docs/DEPLOYING_WORKFLOWS.md.
 
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { type, type Type } from "arktype";
 
@@ -100,11 +103,47 @@ function assertSerializable(
   }
 }
 
+// Repo root, derived from this script's location (apps/hub/bin/deploy-workflow.ts).
+function repoRoot(): string {
+  const binDir = dirname(fileURLToPath(import.meta.url));
+  return dirname(dirname(dirname(binDir)));
+}
+
+// Resolve a workflow kind to its package entry file on disk. The workflow
+// packages (`@workbench/workflow-<kind>`) are orphan workspace members — nothing
+// in the hub's dependency graph imports them, so bun never links them into
+// `apps/hub/node_modules` and a bare-specifier import fails. Resolving by path
+// from `workflows/<kind>` keeps the "no hub edits for a new workflow" promise.
+export function resolveWorkflowEntry(kind: string): string {
+  const pkgDir = join(repoRoot(), "workflows", kind);
+  const manifestPath = join(pkgDir, "package.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error(
+      `deploy-workflow: no workflow package at workflows/${kind} (expected workflows/${kind}/package.json)`,
+    );
+  }
+  const pkg = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+    exports?: Record<string, { default?: string } | string>;
+    module?: string;
+    main?: string;
+  };
+  const dot = pkg.exports?.["."];
+  const entry =
+    typeof dot === "string" ? dot : (dot?.default ?? pkg.module ?? pkg.main);
+  if (entry === undefined) {
+    throw new Error(
+      `deploy-workflow: workflows/${kind} declares no "." export, module, or main entry`,
+    );
+  }
+  return resolve(pkgDir, entry);
+}
+
 async function loadWorkflowDefinition(kind: string): Promise<unknown> {
-  const mod: unknown = await import(`@workbench/workflow-${kind}`);
+  const entry = resolveWorkflowEntry(kind);
+  const mod: unknown = await import(entry);
   if (typeof mod !== "object" || mod === null || !("workflow" in mod)) {
     throw new Error(
-      `deploy-workflow: @workbench/workflow-${kind} does not export "workflow"`,
+      `deploy-workflow: workflows/${kind} does not export "workflow"`,
     );
   }
   const definition = (mod as { workflow: unknown }).workflow;

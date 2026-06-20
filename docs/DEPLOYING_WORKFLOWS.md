@@ -11,8 +11,12 @@ change.
 - **Author**: each workflow is a package under `workflows/<kind>/` named
   `@workbench/workflow-<kind>`, exporting `kind` and `workflow` (a
   `defineWorkflow(...)` definition).
-- **Push**: the push script imports `@workbench/workflow-<kind>`, serializes its
-  `workflow`, and `POST`s the definition to `POST /api/internal/workflows/deploy`.
+- **Push**: the push script loads the workflow package by path from
+  `workflows/<kind>` (the packages are orphan workspace members, so a bare
+  `@workbench/workflow-<kind>` import would not resolve from `apps/hub`),
+  serializes its `workflow`, and `POST`s the definition to the operator path
+  `POST /api/v1/workflows/deploy` (or `POST /api/internal/workflows/deploy` for
+  the service-token machine path).
 - **Deploy** (hub): validates the definition, resolves the tenant deploy config
   (the base inference source from the tenant LLM credential), and hands it to the
   exported `@intx/workflow-deploy` orchestrator. The orchestrator runs the

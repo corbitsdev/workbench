@@ -1,5 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { buildDeployRequest, resolveDeployAuth } from "./deploy-workflow";
+import {
+  buildDeployRequest,
+  resolveDeployAuth,
+  resolveWorkflowEntry,
+} from "./deploy-workflow";
 
 describe("resolveDeployAuth", () => {
   it("prefers SESSION_TOKEN (operator session path)", () => {
@@ -27,6 +31,19 @@ describe("resolveDeployAuth", () => {
   it("throws when no credential is available", () => {
     expect(() => resolveDeployAuth({} as NodeJS.ProcessEnv)).toThrow(
       /no credential found/,
+    );
+  });
+});
+
+describe("resolveWorkflowEntry", () => {
+  it("resolves a real workflow kind to its on-disk entry file", () => {
+    const entry = resolveWorkflowEntry("pain-point-collateral");
+    expect(entry).toMatch(/workflows\/pain-point-collateral\/src\/index\.ts$/);
+  });
+
+  it("throws for a kind with no workflow package", () => {
+    expect(() => resolveWorkflowEntry("does-not-exist")).toThrow(
+      /no workflow package at workflows\/does-not-exist/,
     );
   });
 });

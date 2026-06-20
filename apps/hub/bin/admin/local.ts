@@ -98,8 +98,8 @@ export function workflowKindFromPackageName(name: unknown): string | null {
 }
 
 // Discover every workflow kind that can be pushed by reading the repo's
-// `workflows/<kind>/package.json` members. The push script imports
-// `@workbench/workflow-<kind>`, so this list is exactly what the operator can
+// `workflows/<kind>/package.json` members. The push script loads
+// `workflows/<kind>` by path, so this list is exactly what the operator can
 // deploy — no hard-coded kinds to drift out of date.
 export function discoverWorkflowKinds(): string[] {
   const repoRoot = dirname(dirname(dirname(BIN_DIR)));
