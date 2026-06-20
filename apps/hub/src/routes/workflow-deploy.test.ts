@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import * as intxDb from "@intx/db";
+import type { GrantRule } from "@intx/authz";
 
 // Control the global-or-descendant validation deterministically.
 let ancestorChain: string[] = [];
@@ -15,7 +16,15 @@ mock.module("../services/workflow-deploy-config", () => ({
   resolveWorkflowDeployConfig,
 }));
 
-const { createWorkflowDeployRouter } = await import("./workflow-deploy");
+const ensureGlobalMember = mock(async () => ({
+  tenantId: "tenant_global",
+  principalId: "caller_principal",
+}));
+mock.module("../lib/tenant-provisioning", () => ({ ensureGlobalMember }));
+
+const { createWorkflowDeployRouter, createWorkflowDeployGrantGuard } =
+  await import("./workflow-deploy");
+const { Hono } = await import("hono");
 
 afterAll(() => {
   mock.restore();
@@ -177,5 +186,67 @@ describe("createWorkflowDeployRouter target tenant", () => {
     );
     const res = await post(router, "", validDefinition, "wrong");
     expect(res.status).toBe(401);
+  });
+});
+
+describe("createWorkflowDeployGrantGuard", () => {
+  function grantRule(resource: string, action: string): GrantRule {
+    return {
+      id: "g1",
+      resource,
+      action,
+      effect: "allow",
+      origin: "role",
+      conditions: null,
+      expiresAt: null,
+      roleId: "role_owner",
+      principalId: null,
+    };
+  }
+
+  function appWithGrants(grants: GrantRule[]) {
+    const grantStore = { collectGrants: async () => grants };
+    const guard = createWorkflowDeployGrantGuard({
+      db: {} as Parameters<typeof createWorkflowDeployGrantGuard>[0]["db"],
+      grantStore,
+      globalTenantId: GLOBAL,
+    });
+    const app = new Hono<{ Variables: { userId: string } }>();
+    app.use("*", async (c, next) => {
+      c.set("userId", "user1");
+      await next();
+    });
+    app.post("/workflows/deploy", guard, (c) => c.json({ ok: true }));
+    return app;
+  }
+
+  function post(app: ReturnType<typeof appWithGrants>): Promise<Response> {
+    return Promise.resolve(
+      app.request("/workflows/deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      }),
+    );
+  }
+
+  test("allows a caller whose owner role grants *:*", async () => {
+    const res = await post(appWithGrants([grantRule("*", "*")]));
+    expect(res.status).toBe(200);
+  });
+
+  test("allows a caller granted workflow:* / create", async () => {
+    const res = await post(appWithGrants([grantRule("workflow:*", "create")]));
+    expect(res.status).toBe(200);
+  });
+
+  test("denies (403) a caller with no matching grant", async () => {
+    const res = await post(appWithGrants([grantRule("agent:*", "read")]));
+    expect(res.status).toBe(403);
+  });
+
+  test("denies (403) a caller with no grants at all", async () => {
+    const res = await post(appWithGrants([]));
+    expect(res.status).toBe(403);
   });
 });

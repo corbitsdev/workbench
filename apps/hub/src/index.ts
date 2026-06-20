@@ -34,7 +34,12 @@ import postgres from "postgres";
 import { and, eq, isNull } from "drizzle-orm";
 import { loadConfig } from "./config";
 import { createSidecarConnectionRegistry } from "./sidecar-connections";
-import { createWorkflowDeployRouter } from "./routes/workflow-deploy";
+import {
+  createWorkflowDeployGrantGuard,
+  createWorkflowDeployRouter,
+  deployWorkflowHandler,
+  type WorkflowDeployCoreDeps,
+} from "./routes/workflow-deploy";
 import { createWorkflowRunsRouter } from "./routes/workflow-runs";
 import { createWorkflowDeployService } from "./services/workflow-deploy";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
@@ -577,6 +582,29 @@ v1.route(
   }),
 );
 
+// Workflow deploy, shared by the session-authorized operator path
+// (/api/v1/workflows/deploy, gated by the native grant check) and the
+// service-token machine path (/api/internal/workflows/deploy).
+const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
+  db,
+  workflowDeployService: createWorkflowDeployService({
+    db,
+    repoStore,
+    sidecarRouter,
+    sessionService,
+    directorRegistry: createWorkbenchDirectorRegistry(),
+  }),
+  hubPublicKey: hexEncode(registry.active.publicKey),
+  deploymentDomain: config.globalTenant.domain,
+  globalTenantId,
+};
+
+v1.post(
+  "/workflows/deploy",
+  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  deployWorkflowHandler(workflowDeployCoreDeps),
+);
+
 app.route("/api/v1", v1);
 
 // ─── Internal routes (sidecar token auth) ──────────────────────────
@@ -605,17 +633,7 @@ app.route(
 app.route(
   "/api/internal",
   createWorkflowDeployRouter({
-    db,
-    workflowDeployService: createWorkflowDeployService({
-      db,
-      repoStore,
-      sidecarRouter,
-      sessionService,
-      directorRegistry: createWorkbenchDirectorRegistry(),
-    }),
-    hubPublicKey: hexEncode(registry.active.publicKey),
-    deploymentDomain: config.globalTenant.domain,
-    globalTenantId,
+    ...workflowDeployCoreDeps,
     serviceToken: config.sidecarToken,
   }),
 );
