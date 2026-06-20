@@ -53,8 +53,8 @@ describe('Panel', () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText('SEO Enrichment from Image')).toBeTruthy();
-    expect(screen.getByText('Enrich')).toBeTruthy();
+    screen.getByText('SEO Enrichment from Image');
+    screen.getByText('Enrich');
   });
 
   it('renders parsed intake rows', () => {
@@ -68,8 +68,8 @@ describe('Panel', () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText('Widget')).toBeTruthy();
-    expect(screen.getByText('https://x.test')).toBeTruthy();
+    screen.getByText('Widget');
+    screen.getByText('https://x.test');
   });
 
   it('renders the five-variant style enrichment options', () => {
@@ -83,8 +83,8 @@ describe('Panel', () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText('Title A')).toBeTruthy();
-    expect(screen.getByText('Desc B')).toBeTruthy();
+    screen.getByText('Title A');
+    screen.getByText('Desc B');
   });
 
   it('shows a failed state with the error message', () => {
@@ -101,8 +101,8 @@ describe('Panel', () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText('This workflow run failed.')).toBeTruthy();
-    expect(screen.getByText('enrichment exploded')).toBeTruthy();
+    screen.getByText('This workflow run failed.');
+    screen.getByText('enrichment exploded');
   });
 
   it('fires onClose when the close button is clicked', () => {
@@ -183,7 +183,35 @@ describe('Panel', () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText(/Download/)).toBeTruthy();
-    expect(screen.getByText((content) => content.includes('a,b'))).toBeTruthy();
+    screen.getByText(/Download/);
+    screen.getByText((content) => content.includes('a,b'));
+  });
+
+  it('shows the empty-rows message when intake parses but has no product rows', () => {
+    render(
+      <Panel
+        deploymentId="d1"
+        state={makeState({ intake: 'completed' })}
+        connected
+        stepOutputs={{ intake: { rows: [] } }}
+        onSignal={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    screen.getByText('No product rows were parsed.');
+  });
+
+  it('shows a malformed-output error when a completed step output fails validation', () => {
+    render(
+      <Panel
+        deploymentId="d1"
+        state={makeState({ intake: 'completed' })}
+        connected
+        stepOutputs={{ intake: { rows: 'not-an-array' } }}
+        onSignal={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    screen.getByText('Couldn’t read the intake output.');
   });
 });

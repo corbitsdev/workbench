@@ -51,9 +51,9 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
 describe('ab-compare Panel', () => {
   it('renders the header and every step label', () => {
     renderPanel();
-    expect(screen.getByText('A/B Compare')).toBeDefined();
+    screen.getByText('A/B Compare');
     for (const label of ['Input', 'Execute', 'Compare', 'Review', 'Persist']) {
-      expect(screen.getByText(label)).toBeDefined();
+      screen.getByText(label);
     }
   });
 
@@ -69,10 +69,10 @@ describe('ab-compare Panel', () => {
         },
       },
     });
-    expect(screen.getByText('OpenAI')).toBeDefined();
-    expect(screen.getByText('Variant A copy')).toBeDefined();
-    expect(screen.getByText('Anthropic')).toBeDefined();
-    expect(screen.getByText('Variant B copy')).toBeDefined();
+    screen.getByText('OpenAI');
+    screen.getByText('Variant A copy');
+    screen.getByText('Anthropic');
+    screen.getByText('Variant B copy');
   });
 
   it('renders the blind ranking from stepOutputs.compare', () => {
@@ -88,10 +88,10 @@ describe('ab-compare Panel', () => {
         },
       },
     });
-    expect(screen.getByText('B reads cleaner.')).toBeDefined();
-    expect(screen.getByText('Variant B')).toBeDefined();
-    expect(screen.getByText('tighter hook')).toBeDefined();
-    expect(screen.getByText('Variant A')).toBeDefined();
+    screen.getByText('B reads cleaner.');
+    screen.getByText('Variant B');
+    screen.getByText('tighter hook');
+    screen.getByText('Variant A');
   });
 
   it('fires onSignal with approval payload when Approve is clicked', () => {
@@ -126,13 +126,21 @@ describe('ab-compare Panel', () => {
         persist: { artifacts: [{ id: 'art_1', title: 'Comparison report', kind: 'doc' }] },
       },
     });
-    expect(screen.getByText('Comparison report')).toBeDefined();
-    expect(screen.getByText('doc')).toBeDefined();
+    screen.getByText('Comparison report');
+    screen.getByText('doc');
   });
 
   it('shows a failure message when the run failed', () => {
     renderPanel({ state: { phase: 'failed', steps: new Map() } as unknown as RunState });
-    expect(screen.getByText(/This run failed/)).toBeDefined();
+    screen.getByText(/This run failed/);
+  });
+
+  it('shows a malformed-output error when a completed step output fails validation', () => {
+    renderPanel({
+      state: makeState({ execute: 'completed' }),
+      stepOutputs: { execute: { branches: 'not-an-array' } },
+    });
+    screen.getByText('Couldn’t read the provider outputs for this step.');
   });
 
   it('fires onClose when Close is clicked', () => {

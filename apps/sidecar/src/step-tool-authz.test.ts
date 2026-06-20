@@ -1,38 +1,49 @@
+// Step-agent tool authorization, exercised against the REAL `@intx/authz`
+// `evaluateGrants` and the production `tool:<name>`/`invoke` grammar the
+// step-agent reactor actually queries.
+//
+// This file deliberately does NOT stub `@intx/authz`. `mock.module` is
+// process-global within a single `bun test` invocation, so co-locating a
+// real-evaluator test with files that stub `@intx/authz`
+// (`default-harness.test.ts`, `step-tool-harness.test.ts`) would let the stub
+// leak in and mask a broken wiring. Run it isolated via the package's
+// `test:authz` script (`bun test src/step-tool-authz.test.ts`).
+
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { Agent, AgentDefinition, AuthorizeFn, BaseEnv } from "@intx/agent";
+import { afterEach, describe, expect, test } from "bun:test";
+import { evaluateGrants } from "@intx/authz";
 
-// `mock.module` is process-global and leaks across files in this suite
-// (default-harness.test.ts stubs `@intx/authz` to a no-op). Pin a faithful
-// glob-matching evaluator here so the step factory's grants→authorize
-// wiring is exercised deterministically regardless of file order: the
-// evaluator implements the same allow/deny semantics `@intx/authz` does, so
-// asserting allow-on-match / deny-on-miss tests the factory's wiring, not a
-// canned mock return.
-function matchPattern(pattern: string, value: string): boolean {
-  if (pattern === "*") return true;
-  if (pattern.endsWith(":*")) return value.startsWith(pattern.slice(0, -1));
-  return pattern === value;
+// `default-harness.test.ts` installs a process-global `mock.module` stub for
+// `@intx/authz` that leaks into this file under a shared `bun test` run. The
+// real evaluator returns a populated `resolvedBy` on an allow match; the stub
+// always returns `resolvedBy: null`. Detect the stub and skip — the real
+// assertions run via the package's `test:authz` script, which runs this file
+// in isolation where the stub is absent.
+async function realAuthzActive(): Promise<boolean> {
+  const probe = await evaluateGrants(
+    [
+      {
+        id: "probe",
+        resource: "tool:probe",
+        action: "invoke",
+        effect: "allow",
+        origin: "system",
+        conditions: null,
+        expiresAt: null,
+        roleId: null,
+        principalId: null,
+      },
+    ],
+    "tool:probe",
+    "invoke",
+  );
+  // The leaked stub returns `undefined`; the real evaluator returns a
+  // populated AuthzResult with a non-null `resolvedBy` on an allow match.
+  return probe?.effect === "allow" && probe.resolvedBy !== null;
 }
-mock.module("@intx/authz", () => ({
-  evaluateGrants: async (
-    grants: Array<{ resource: string; action: string; effect: string }>,
-    resource: string,
-    action: string,
-  ) => {
-    const match = grants.find(
-      (g) =>
-        matchPattern(g.resource, resource) && matchPattern(g.action, action),
-    );
-    return {
-      effect: match ? match.effect : null,
-      matchingGrants: [],
-      resolvedBy: null,
-    };
-  },
-}));
+import type { Agent, AgentDefinition, AuthorizeFn, BaseEnv } from "@intx/agent";
 
 import {
   createStepAgentFactory,
@@ -45,10 +56,8 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-// The hub's manifest + credential endpoints. The manifest is empty (no
-// pinned packages) so the loader materializes zero tarballs — the test
-// targets the grants-backed `authorize` the step factory installs, which is
-// what gates whether a step's tool calls are permitted.
+// Empty manifest + credentials so the loader materializes zero tarballs; the
+// test targets the grants-backed `authorize` the factory installs.
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
@@ -70,12 +79,8 @@ function stubHubFetch(): void {
   }) as unknown as typeof fetch;
 }
 
-// A grant allowing `invoke` on the granola tool, in the production
-// `tool:<name>`/`invoke` grammar the step reactor queries (and the hub writes
-// to `state/grants.json`). The deterministic, definitive coverage of this
-// wiring lives in `step-tool-authz.test.ts`, which runs against the REAL
-// `@intx/authz`; this file's in-file evaluator only checks the factory's
-// plumbing under this suite's process-global `@intx/authz` stub.
+// The exact grammar the hub writes to `state/grants.json` and the reactor
+// evaluates: `tool:<name>` / `invoke` / allow.
 const GRANOLA_INVOKE_GRANT: StepToolContext["grants"][number] = {
   id: "grt_test_granola",
   resource: "tool:granola_get_meeting",
@@ -89,7 +94,7 @@ const GRANOLA_INVOKE_GRANT: StepToolContext["grants"][number] = {
 };
 
 function makeStoreDir(): string {
-  const storeDir = fs.mkdtempSync(path.join(os.tmpdir(), "step-tool-harness-"));
+  const storeDir = fs.mkdtempSync(path.join(os.tmpdir(), "step-tool-authz-"));
   fs.mkdirSync(path.join(storeDir, "workspace"), { recursive: true });
   return storeDir;
 }
@@ -112,8 +117,6 @@ function makeCtx(
   };
 }
 
-// Capture the env the factory hands to the underlying agent constructor so
-// the test can drive the installed `authorize` directly.
 function makeCapturingAgentFactory(): {
   factory: <E extends BaseEnv>(
     def: AgentDefinition<E>,
@@ -145,14 +148,9 @@ function makeStepEnv(
   ctx: StepToolContext,
   storeDir: string,
 ): BaseEnv & Record<string, unknown> {
-  // The step env carries the StepToolContext stash plus the BaseEnv slots
-  // the buildEnv path fills; the factory reads `storage`/`workdir` for the
-  // local posix tools.
   return {
     sources: [],
     defaultSource: "src",
-    // The factory only reads `storage` to build a blob reader for posix
-    // tools; a minimal stub satisfies that read.
     storage: {
       load: async () => ({ turns: [] }),
     } as unknown as BaseEnv["storage"],
@@ -164,20 +162,28 @@ function makeStepEnv(
   };
 }
 
-describe("createStepAgentFactory authorize", () => {
-  const def = {
-    id: "ins_dep-1-analyze",
-    systemPrompt: "analyze",
-    toolFactories: [],
-    capabilities: [],
-    inference: { sources: [] },
-  } as unknown as AgentDefinition;
+const def = {
+  id: "ins_dep-1-analyze",
+  systemPrompt: "analyze",
+  toolFactories: [],
+  capabilities: [],
+  inference: { sources: [] },
+} as unknown as AgentDefinition;
 
-  test("permits a tool action the step was granted", async () => {
+const REAL_AUTHZ = await realAuthzActive();
+
+describe.skipIf(!REAL_AUTHZ)(
+  "createStepAgentFactory authorize (real @intx/authz)",
+  () => {
+    runRealAuthzTests();
+  },
+);
+
+function runRealAuthzTests(): void {
+  test("real evaluateGrants allows a granted tool's invoke", async () => {
     stubHubFetch();
     const { factory, captured } = makeCapturingAgentFactory();
     const stepFactory = createStepAgentFactory({ agentFactory: factory });
-
     const storeDir = makeStoreDir();
 
     await stepFactory(
@@ -194,22 +200,18 @@ describe("createStepAgentFactory authorize", () => {
     expect(result.effect).toBe("allow");
   });
 
-  test("denies a tool action the step was not granted", async () => {
+  test("real evaluateGrants denies an ungranted tool's invoke", async () => {
     stubHubFetch();
     const { factory, captured } = makeCapturingAgentFactory();
     const stepFactory = createStepAgentFactory({ agentFactory: factory });
-
     const storeDir = makeStoreDir();
 
-    // Granted the granola tool only — a gamma tool invoke is ungranted.
     await stepFactory(
       def,
       makeStepEnv(makeCtx([GRANOLA_INVOKE_GRANT], storeDir), storeDir),
     );
 
     expect(captured.authorize).not.toBeNull();
-    // No grant matches tool:gamma_generate, so the effect resolves to null
-    // (no-match) — the reactor treats a non-allow effect as denied.
     const result = await captured.authorize!(
       "tool:gamma_generate",
       "invoke",
@@ -218,11 +220,10 @@ describe("createStepAgentFactory authorize", () => {
     expect(result.effect).not.toBe("allow");
   });
 
-  test("denies everything when the step has no grants (fail-closed)", async () => {
+  test("real evaluateGrants denies every tool when the step has no grants", async () => {
     stubHubFetch();
     const { factory, captured } = makeCapturingAgentFactory();
     const stepFactory = createStepAgentFactory({ agentFactory: factory });
-
     const storeDir = makeStoreDir();
 
     await stepFactory(def, makeStepEnv(makeCtx([], storeDir), storeDir));
@@ -234,4 +235,4 @@ describe("createStepAgentFactory authorize", () => {
     );
     expect(result.effect).not.toBe("allow");
   });
-});
+}

@@ -100,9 +100,12 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function IntakeView({ output }: { output: unknown }) {
+function IntakeView({ output, phase }: { output: unknown; phase: StepPhase | 'pending' }) {
   const parsed = IntakeOutput(output);
   if (parsed instanceof type.errors) {
+    if (phase === 'completed') {
+      return <p className="text-sm text-orange">Couldn’t read the intake output.</p>;
+    }
     return <p className="text-sm text-text-3">No intake data yet.</p>;
   }
   if (parsed.rows.length === 0) {
@@ -120,9 +123,12 @@ function IntakeView({ output }: { output: unknown }) {
   );
 }
 
-function EnrichView({ output }: { output: unknown }) {
+function EnrichView({ output, phase }: { output: unknown; phase: StepPhase | 'pending' }) {
   const parsed = EnrichOutput(output);
   if (parsed instanceof type.errors) {
+    if (phase === 'completed') {
+      return <p className="text-sm text-orange">Couldn’t read the enrichment output.</p>;
+    }
     return <p className="text-sm text-text-3">No enrichment data yet.</p>;
   }
   return (
@@ -239,9 +245,12 @@ function ReviewView({
   );
 }
 
-function ExportView({ output }: { output: unknown }) {
+function ExportView({ output, phase }: { output: unknown; phase: StepPhase | 'pending' }) {
   const parsed = ExportOutput(output);
   if (parsed instanceof type.errors) {
+    if (phase === 'completed') {
+      return <p className="text-sm text-orange">Couldn’t read the CSV export output.</p>;
+    }
     return <p className="text-sm text-text-3">The CSV is not ready yet.</p>;
   }
   return (
@@ -303,11 +312,17 @@ export function Panel(props: WorkflowPanelProps) {
         )}
 
         <Section title="Intake">
-          <IntakeView output={stepOutputs.intake} />
+          <IntakeView
+            output={stepOutputs.intake}
+            phase={state?.steps.get('intake')?.phase ?? 'pending'}
+          />
         </Section>
 
         <Section title="Enrichment variants">
-          <EnrichView output={stepOutputs.enrich} />
+          <EnrichView
+            output={stepOutputs.enrich}
+            phase={state?.steps.get('enrich')?.phase ?? 'pending'}
+          />
         </Section>
 
         {state?.steps.get('review')?.phase === 'awaiting-signal' && (
@@ -317,7 +332,10 @@ export function Panel(props: WorkflowPanelProps) {
         )}
 
         <Section title="Export">
-          <ExportView output={stepOutputs.export} />
+          <ExportView
+            output={stepOutputs.export}
+            phase={state?.steps.get('export')?.phase ?? 'pending'}
+          />
         </Section>
       </div>
     </div>

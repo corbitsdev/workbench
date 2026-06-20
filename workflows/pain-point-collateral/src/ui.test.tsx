@@ -57,11 +57,11 @@ describe('pain-point-collateral Panel', () => {
       />
     );
 
-    expect(screen.getByText('Acme discovery call')).toBeTruthy();
-    expect(screen.getByText('Buyer frustrated with onboarding time.')).toBeTruthy();
-    expect(screen.getByText('Onboarding takes weeks')).toBeTruthy();
-    expect(screen.getByText('No clear ROI metric')).toBeTruthy();
-    expect(screen.getByText('One-pager: cut onboarding from weeks to days.')).toBeTruthy();
+    screen.getByText('Acme discovery call');
+    screen.getByText('Buyer frustrated with onboarding time.');
+    screen.getByText('Onboarding takes weeks');
+    screen.getByText('No clear ROI metric');
+    screen.getByText('One-pager: cut onboarding from weeks to days.');
   });
 
   it('shows placeholders when a step output has not resolved yet', () => {
@@ -76,9 +76,9 @@ describe('pain-point-collateral Panel', () => {
       />
     );
 
-    expect(screen.getByText('Waiting for a Granola note selection…')).toBeTruthy();
-    expect(screen.getByText('Pain points appear here once analysis completes.')).toBeTruthy();
-    expect(screen.getByText('Generated collateral appears here once it is ready.')).toBeTruthy();
+    screen.getByText('Waiting for a Granola note selection…');
+    screen.getByText('Pain points appear here once analysis completes.');
+    screen.getByText('Generated collateral appears here once it is ready.');
   });
 
   it('fires the artifact-approval signal when Approve is clicked', async () => {
@@ -118,7 +118,7 @@ describe('pain-point-collateral Panel', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
-    expect(screen.getByText('Approval becomes available after collateral is generated.')).toBeTruthy();
+    screen.getByText('Approval becomes available after collateral is generated.');
   });
 
   it('renders an error state when a step failed', () => {
@@ -133,7 +133,22 @@ describe('pain-point-collateral Panel', () => {
       />
     );
 
-    expect(screen.getByText('This run failed. Review the step details and start a new run.')).toBeTruthy();
+    screen.getByText('This run failed. Review the step details and start a new run.');
+  });
+
+  it('shows a malformed-output error when a completed step output fails validation', () => {
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: 'completed', analyze: 'completed' })}
+        connected
+        stepOutputs={{ analyze: { painPoints: 'not-an-array' } }}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+
+    screen.getByText('Couldn’t read the extracted pain points.');
   });
 
   it('invokes onClose from the header close button', async () => {

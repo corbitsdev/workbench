@@ -1,79 +1,87 @@
-import { describe, expect, mock, test } from 'bun:test';
-import type { CapabilityWalkResult } from '@intx/workflow-deploy';
-import type { WorkflowDefinition } from '@intx/workflow';
-import type { HarnessConfig } from '@intx/types/runtime';
-import type { AgentRepoStore, SessionService, SidecarRouter } from '@intx/hub-sessions';
-import type { HubDb } from '../db';
+import { describe, expect, mock, test } from "bun:test";
+import type { CapabilityWalkResult } from "@intx/workflow-deploy";
+import type { WorkflowDefinition } from "@intx/workflow";
+import type { HarnessConfig } from "@intx/types/runtime";
+import type {
+  AgentRepoStore,
+  SessionService,
+  SidecarRouter,
+} from "@intx/hub-sessions";
+import type { HubDb } from "../db";
+import { evaluateGrants } from "@intx/authz";
+import type { GrantRule } from "@intx/authz";
 import {
+  buildStepGrantRules,
   collectGrants,
   createWorkflowRepoWriter,
   toLaunchSession,
   toSendMultiStepDeploy,
   writeStepAgentRows,
-} from './workflow-deploy';
+  writeStepGrantFiles,
+} from "./workflow-deploy";
 
-describe('createWorkflowRepoWriter', () => {
-  test('writes the definition tree on refs/heads/main as the hub principal', async () => {
+describe("createWorkflowRepoWriter", () => {
+  test("writes the definition tree on refs/heads/main as the hub principal", async () => {
     const writeTree = mock(
       async (
         _principal: { kind: string },
         _repoId: { kind: string; id: string },
         _ref: string,
-        _content: { files: Record<string, string> }
-      ) => ({ commitSha: 'sha' })
+        _content: { files: Record<string, string> },
+      ) => ({ commitSha: "sha" }),
     );
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
 
     await createWorkflowRepoWriter(repoStore).writeWorkflowRepo({
-      workflowRepoId: 'wf',
+      workflowRepoId: "wf",
       files: new Map([
-        ['workflow.json', '{}'],
-        ['.gitignore', ''],
+        ["workflow.json", "{}"],
+        [".gitignore", ""],
       ]),
     });
 
     const call = writeTree.mock.calls.at(0);
-    if (!call) throw new Error('writeTree was not called');
+    if (!call) throw new Error("writeTree was not called");
     const [principal, repoId, ref, content] = call;
-    expect(principal).toEqual({ kind: 'hub' });
-    expect(repoId).toEqual({ kind: 'workflow', id: 'wf' });
-    expect(ref).toBe('refs/heads/main');
-    expect(content.files).toEqual({ 'workflow.json': '{}', '.gitignore': '' });
+    expect(principal).toEqual({ kind: "hub" });
+    expect(repoId).toEqual({ kind: "workflow", id: "wf" });
+    expect(ref).toBe("refs/heads/main");
+    expect(content.files).toEqual({ "workflow.json": "{}", ".gitignore": "" });
   });
 });
 
-describe('toLaunchSession', () => {
-  test('drops toolPackageManifest but carries systemPrompt, assetMounts, and pins', async () => {
+describe("toLaunchSession", () => {
+  test("drops toolPackageManifest but carries systemPrompt, assetMounts, and pins", async () => {
     const launchSession = mock(async (_params: unknown) => undefined);
     const sessionService = { launchSession } as unknown as SessionService;
-    const assetMounts = new Map([['skill', 'mounts/skill']]);
+    const assetMounts = new Map([["skill", "mounts/skill"]]);
 
     await toLaunchSession(sessionService)({
-      agentAddress: 'a@local',
-      agentId: 'a',
-      instanceId: 'i',
+      agentAddress: "a@local",
+      agentId: "a",
+      instanceId: "i",
       config: {} as HarnessConfig,
       deployContent: {
-        systemPrompt: 'p',
+        systemPrompt: "p",
         assetMounts,
         toolPackageManifest: { dropped: true },
       },
-      toolPackagePins: [{ name: 'pkg', version: '1.0.0' }],
+      toolPackagePins: [{ name: "pkg", version: "1.0.0" }],
     });
 
     expect(launchSession).toHaveBeenCalledWith({
-      agentAddress: 'a@local',
-      agentId: 'a',
-      instanceId: 'i',
+      agentAddress: "a@local",
+      agentId: "a",
+      instanceId: "i",
       config: {},
-      deployContent: { systemPrompt: 'p', assetMounts },
-      toolPackagePins: [{ name: 'pkg', version: '1.0.0' }],
+      deployContent: { systemPrompt: "p", assetMounts },
+      toolPackagePins: [{ name: "pkg", version: "1.0.0" }],
     });
   });
 });
 
-describe('toSendMultiStepDeploy', () => {
-  test('forwards the definition and per-step sources to the sidecar', async () => {
+describe("toSendMultiStepDeploy", () => {
+  test("forwards the definition and per-step sources to the sidecar", async () => {
     const sendAgentDeploy = mock(
       async (
         _agentAddress: string,
@@ -81,71 +89,76 @@ describe('toSendMultiStepDeploy', () => {
         _workflow: {
           definition: { id: string };
           sources: Record<string, unknown>;
-        }
-      ) => ({ publicKey: 'pk' })
+        },
+      ) => ({ publicKey: "pk" }),
     );
     const sidecarRouter = { sendAgentDeploy } as unknown as SidecarRouter;
-    const definition = { id: 'wf' } as unknown as WorkflowDefinition;
-    const sources = { first: { id: 's1' } };
+    const definition = { id: "wf" } as unknown as WorkflowDefinition;
+    const sources = { first: { id: "s1" } };
 
     const result = await toSendMultiStepDeploy(sidecarRouter)({
-      agentAddress: 'dep@local',
-      agentId: 'dep',
+      agentAddress: "dep@local",
+      agentId: "dep",
       config: {} as HarnessConfig,
       definition,
       sources: sources as never,
-      hubPublicKey: 'hubkey',
+      hubPublicKey: "hubkey",
     });
 
     const call = sendAgentDeploy.mock.calls.at(0);
-    if (!call) throw new Error('sendAgentDeploy was not called');
+    if (!call) throw new Error("sendAgentDeploy was not called");
     const [address, , workflow] = call;
-    expect(address).toBe('dep@local');
-    expect(workflow.definition.id).toBe('wf');
+    expect(address).toBe("dep@local");
+    expect(workflow.definition.id).toBe("wf");
     expect(workflow.sources).toBe(sources);
-    expect(result).toEqual({ publicKey: 'pk' });
+    expect(result).toEqual({ publicKey: "pk" });
   });
 });
 
-describe('writeStepAgentRows', () => {
-  test('inserts one agent row per step keyed by the derived step agent id', async () => {
+describe("writeStepAgentRows", () => {
+  test("inserts one agent row per step keyed by the derived step agent id", async () => {
     const values = mock(async (_rows: unknown) => undefined);
     const insert = mock(() => ({ values }));
     const db = { insert } as unknown as HubDb;
 
     await writeStepAgentRows({
       db,
-      deploymentId: 'dep1',
-      tenantId: 't1',
-      creatorPrincipalId: 'p1',
-      stepIds: ['intake', 'generate'],
-      toolPackagePins: [{ name: '@workbench/tools-granola', version: '^0.1.0' }],
-      capabilityNames: ['granola_list_notes'],
+      deploymentId: "dep1",
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
+      stepIds: ["intake", "generate"],
+      toolPackagePins: [
+        { name: "@workbench/tools-granola", version: "^0.1.0" },
+      ],
+      capabilityNames: ["granola_list_notes"],
     });
 
     const call = values.mock.calls.at(0);
-    if (!call) throw new Error('insert().values was not called');
+    if (!call) throw new Error("insert().values was not called");
     const rows = call[0] as Array<{
       id: string;
       toolPackages: unknown;
       capabilities: unknown;
     }>;
     expect(rows).toHaveLength(2);
-    expect(rows.map((r) => r.id)).toEqual(['ins_dep1-intake', 'ins_dep1-generate']);
-    expect(rows[0]?.toolPackages).toEqual([
-      { name: '@workbench/tools-granola', version: '^0.1.0' },
+    expect(rows.map((r) => r.id)).toEqual([
+      "ins_dep1-intake",
+      "ins_dep1-generate",
     ]);
-    expect(rows[0]?.capabilities).toEqual({ tools: ['granola_list_notes'] });
+    expect(rows[0]?.toolPackages).toEqual([
+      { name: "@workbench/tools-granola", version: "^0.1.0" },
+    ]);
+    expect(rows[0]?.capabilities).toEqual({ tools: ["granola_list_notes"] });
   });
 
-  test('writes nothing when the workflow has no steps', async () => {
+  test("writes nothing when the workflow has no steps", async () => {
     const insert = mock(() => ({ values: mock(async () => undefined) }));
     const db = { insert } as unknown as HubDb;
     await writeStepAgentRows({
       db,
-      deploymentId: 'dep1',
-      tenantId: 't1',
-      creatorPrincipalId: 'p1',
+      deploymentId: "dep1",
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
       stepIds: [],
       toolPackagePins: [],
       capabilityNames: [],
@@ -154,19 +167,101 @@ describe('writeStepAgentRows', () => {
   });
 });
 
-describe('collectGrants', () => {
-  test('unions and dedups every grant across steps', () => {
+describe("buildStepGrantRules", () => {
+  test("emits one tool:<name>/invoke allow rule per de-duplicated capability", () => {
+    const rules = buildStepGrantRules([
+      "granola_list_notes",
+      "gamma_generate",
+      "granola_list_notes",
+    ]);
+    expect(rules).toHaveLength(2);
+    expect(rules.map((r) => r.resource)).toEqual([
+      "tool:granola_list_notes",
+      "tool:gamma_generate",
+    ]);
+    expect(
+      rules.every((r) => r.action === "invoke" && r.effect === "allow"),
+    ).toBe(true);
+  });
+
+  test("the rules are matched by the runtime evaluator the step reactor uses", async () => {
+    const rules = buildStepGrantRules(["granola_list_notes"]);
+    const granted = await evaluateGrants(
+      rules,
+      "tool:granola_list_notes",
+      "invoke",
+    );
+    expect(granted.effect).toBe("allow");
+    const ungranted = await evaluateGrants(
+      rules,
+      "tool:gamma_generate",
+      "invoke",
+    );
+    expect(ungranted.effect).not.toBe("allow");
+  });
+});
+
+describe("writeStepGrantFiles", () => {
+  test("writes state/grants.json into each step agent-state repo on the main ref", async () => {
+    const writeTree = mock(
+      async (
+        _principal: { kind: string },
+        _repoId: { kind: string; id: string },
+        _ref: string,
+        _content: { files: Record<string, string> },
+      ) => ({ commitSha: "sha" }),
+    );
+    const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
+
+    await writeStepGrantFiles({
+      repoStore,
+      deploymentId: "dep1",
+      stepIds: ["intake", "generate"],
+      capabilityNames: ["granola_list_notes"],
+    });
+
+    expect(writeTree).toHaveBeenCalledTimes(2);
+    const [principal, repoId, ref, content] = writeTree.mock.calls[0]!;
+    expect(principal).toEqual({ kind: "hub" });
+    expect(repoId).toEqual({ kind: "agent-state", id: "dep1-intake" });
+    expect(ref).toBe("refs/heads/main");
+    const parsed = JSON.parse(content.files["state/grants.json"]!) as {
+      grants: GrantRule[];
+    };
+    const allowed = await evaluateGrants(
+      parsed.grants,
+      "tool:granola_list_notes",
+      "invoke",
+    );
+    expect(allowed.effect).toBe("allow");
+  });
+
+  test("writes nothing when there are no steps", async () => {
+    const writeTree = mock(async () => ({ commitSha: "sha" }));
+    const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
+    await writeStepGrantFiles({
+      repoStore,
+      deploymentId: "dep1",
+      stepIds: [],
+      capabilityNames: ["granola_list_notes"],
+    });
+    expect(writeTree).not.toHaveBeenCalled();
+  });
+});
+
+describe("collectGrants", () => {
+  test("unions and dedups every grant across steps", () => {
     const walk: CapabilityWalkResult = {
       perStep: new Map([
-        ['a', { grants: ['tool:x', 'director:default'] }],
-        ['b', { grants: ['tool:x', 'inference.source:p:m'] }],
+        ["a", { grants: ["tool:x", "director:default"] }],
+        ["b", { grants: ["tool:x", "inference.source:p:m"] }],
       ]),
       unresolvedDirectors: [],
     };
     expect([...collectGrants(walk)].sort()).toEqual([
-      'director:default',
-      'inference.source:p:m',
-      'tool:x',
+      "director:default",
+      "inference.source:p:m",
+      "tool:x",
     ]);
   });
 });

@@ -57,7 +57,7 @@ describe('reddit-opportunity-scanner Panel', () => {
     // intake + analyze completed
     expect(screen.getAllByText('✓').length).toBe(2);
     // review is current (step 3)
-    expect(screen.getByText('3')).toBeDefined();
+    screen.getByText('3');
   });
 
   it('renders inferred keywords, subreddits, and audience from analyze output', () => {
@@ -71,10 +71,10 @@ describe('reddit-opportunity-scanner Panel', () => {
         },
       },
     });
-    expect(screen.getByText('Developer tooling')).toBeDefined();
-    expect(screen.getByText('observability')).toBeDefined();
-    expect(screen.getByText('devops')).toBeDefined();
-    expect(screen.getByText('platform engineers')).toBeDefined();
+    screen.getByText('Developer tooling');
+    screen.getByText('observability');
+    screen.getByText('devops');
+    screen.getByText('platform engineers');
   });
 
   it('fires onSignal with approval when Approve is clicked on the review step', () => {
@@ -113,9 +113,31 @@ describe('reddit-opportunity-scanner Panel', () => {
         },
       },
     });
-    expect(screen.getByText('Anyone using X for tracing?')).toBeDefined();
-    expect(screen.getByText('r/devops')).toBeDefined();
-    expect(screen.getByText('92')).toBeDefined();
-    expect(screen.getByText('Active buying-intent thread')).toBeDefined();
+    screen.getByText('Anyone using X for tracing?');
+    screen.getByText('r/devops');
+    screen.getByText('92');
+    screen.getByText('Active buying-intent thread');
+  });
+
+  it('shows a failure banner with the step error message when a step failed', () => {
+    const steps = new Map<string, StepState>();
+    steps.set('intake', stepState('intake', 'completed'));
+    steps.set('analyze', {
+      stepId: 'analyze',
+      phase: 'failed',
+      currentAttempt: 1,
+      lastError: { message: 'site fetch timed out' },
+    } as StepState);
+    renderPanel({ state: { steps } as unknown as RunState });
+    screen.getByText('This run failed.');
+    screen.getByText('site fetch timed out');
+  });
+
+  it('shows a malformed-output error when a completed step output fails validation', () => {
+    renderPanel({
+      state: makeState({ intake: 'completed', analyze: 'completed' }),
+      stepOutputs: { analyze: { keywords: 'not-an-array' } },
+    });
+    screen.getByText('Couldn’t read the business analysis output.');
   });
 });

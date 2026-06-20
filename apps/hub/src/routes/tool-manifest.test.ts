@@ -31,7 +31,11 @@ const fakeResolver = (() => ({
   }),
 })) as unknown as typeof createClosureResolver;
 
-function makeRouter(opts: { toolPackages: unknown; agentFound?: boolean }) {
+function makeRouter(opts: {
+  toolPackages: unknown;
+  agentFound?: boolean;
+  blobBytes?: number;
+}) {
   const db = {
     query: {
       agent: {
@@ -43,7 +47,10 @@ function makeRouter(opts: { toolPackages: unknown; agentFound?: boolean }) {
     },
   } as unknown as Parameters<typeof createToolManifestRouter>[0];
   const assetService = {
-    readAssetBlob: async () => new TextEncoder().encode("TARBALL-BYTES"),
+    readAssetBlob: async () =>
+      opts.blobBytes === undefined
+        ? new TextEncoder().encode("TARBALL-BYTES")
+        : new Uint8Array(opts.blobBytes),
     listAssetBlobs: async () => [],
   } as unknown as Parameters<typeof createToolManifestRouter>[2];
   return createToolManifestRouter(
@@ -131,5 +138,18 @@ describe("POST /tools/manifest", () => {
     expect(Buffer.from(tarball.bytesBase64, "base64").toString()).toBe(
       "TARBALL-BYTES",
     );
+  });
+
+  test("returns 413 when a tarball exceeds the per-tarball byte cap", async () => {
+    const res = await post(
+      makeRouter({
+        toolPackages: [{ name: "@workbench/tools-granola", version: "^0.1.0" }],
+        blobBytes: 64 * 1024 * 1024 + 1,
+      }),
+      req,
+    );
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("per-tarball");
   });
 });

@@ -94,10 +94,13 @@ function briefRows(stepOutputs: Record<string, unknown>): { label: string; value
 function readGenerate(stepOutputs: Record<string, unknown>): {
   title: string | undefined;
   outline: string | undefined;
+  malformed: boolean;
 } {
   const parsed = GenerateOutput(stepOutputs.generate);
-  if (parsed instanceof type.errors) return { title: undefined, outline: undefined };
-  return { title: readString(parsed.title), outline: readString(parsed.outline) };
+  if (parsed instanceof type.errors) {
+    return { title: undefined, outline: undefined, malformed: true };
+  }
+  return { title: readString(parsed.title), outline: readString(parsed.outline), malformed: false };
 }
 
 function readGammaUrl(stepOutputs: Record<string, unknown>): string | undefined {
@@ -162,6 +165,8 @@ export function Panel({ state, connected, stepOutputs, onSignal, onClose }: Work
   const gammaUrl = readGammaUrl(stepOutputs);
   const reviewPhase = stepPhase(state, 'review');
   const renderPhase = stepPhase(state, 'render');
+  const generatePhase = stepPhase(state, 'generate');
+  const generateMalformed = generate.malformed && generatePhase === 'completed';
   const runPhase = state?.phase ?? 'pending';
   const statusLabel = RUN_PHASE_LABEL[runPhase] ?? runPhase;
   const awaitingReview = reviewPhase === 'awaiting-signal';
@@ -196,6 +201,15 @@ export function Panel({ state, connected, stepOutputs, onSignal, onClose }: Work
                 </div>
               ))}
             </dl>
+          </div>
+        )}
+
+        {generateMalformed && (
+          <div className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3">
+            <p className="text-[13px] font-medium text-orange">Couldn’t read the draft outline.</p>
+            <p className="mt-1 text-[12px] text-text-3">
+              The generate step finished but its result was malformed.
+            </p>
           </div>
         )}
 

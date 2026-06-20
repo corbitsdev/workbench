@@ -70,9 +70,16 @@ function Pending({ label }: { label: string }) {
   return <p className="text-[13px] text-text-3">{label}</p>;
 }
 
-function IntakeSection({ output }: { output: unknown }) {
+function MalformedOutput({ label }: { label: string }) {
+  return <p className="text-[13px] text-orange">{label}</p>;
+}
+
+function IntakeSection({ output, phase }: { output: unknown; phase: StepPhase | undefined }) {
   const parsed = IntakeOutput(output);
   if (parsed instanceof type.errors) {
+    if (phase === 'completed') {
+      return <MalformedOutput label="Couldn’t read the selected Granola note." />;
+    }
     return <Pending label="Waiting for a Granola note selection…" />;
   }
   if (!parsed.title && !parsed.summary) {
@@ -86,9 +93,15 @@ function IntakeSection({ output }: { output: unknown }) {
   );
 }
 
-function AnalyzeSection({ output }: { output: unknown }) {
+function AnalyzeSection({ output, phase }: { output: unknown; phase: StepPhase | undefined }) {
   const parsed = AnalyzeOutput(output);
-  if (parsed instanceof type.errors || !parsed.painPoints || parsed.painPoints.length === 0) {
+  if (parsed instanceof type.errors) {
+    if (phase === 'completed') {
+      return <MalformedOutput label="Couldn’t read the extracted pain points." />;
+    }
+    return <Pending label="Pain points appear here once analysis completes." />;
+  }
+  if (!parsed.painPoints || parsed.painPoints.length === 0) {
     return <Pending label="Pain points appear here once analysis completes." />;
   }
   return (
@@ -103,9 +116,15 @@ function AnalyzeSection({ output }: { output: unknown }) {
   );
 }
 
-function GenerateSection({ output }: { output: unknown }) {
+function GenerateSection({ output, phase }: { output: unknown; phase: StepPhase | undefined }) {
   const parsed = GenerateOutput(output);
-  if (parsed instanceof type.errors || !parsed.collateral) {
+  if (parsed instanceof type.errors) {
+    if (phase === 'completed') {
+      return <MalformedOutput label="Couldn’t read the generated collateral." />;
+    }
+    return <Pending label="Generated collateral appears here once it is ready." />;
+  }
+  if (!parsed.collateral) {
     return <Pending label="Generated collateral appears here once it is ready." />;
   }
   return (
@@ -179,15 +198,15 @@ export function Panel(props: WorkflowPanelProps) {
         ) : null}
 
         <SectionCard title="Intake — selected Granola note">
-          <IntakeSection output={stepOutputs.intake} />
+          <IntakeSection output={stepOutputs.intake} phase={phaseFor(state, 'intake')} />
         </SectionCard>
 
         <SectionCard title="Analyze — extracted pain points">
-          <AnalyzeSection output={stepOutputs.analyze} />
+          <AnalyzeSection output={stepOutputs.analyze} phase={phaseFor(state, 'analyze')} />
         </SectionCard>
 
         <SectionCard title="Generate — collateral">
-          <GenerateSection output={stepOutputs.generate} />
+          <GenerateSection output={stepOutputs.generate} phase={phaseFor(state, 'generate')} />
         </SectionCard>
 
         <SectionCard title="Approval">

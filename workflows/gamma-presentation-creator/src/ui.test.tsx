@@ -51,11 +51,11 @@ describe('gamma-presentation-creator Panel', () => {
       />
     );
 
-    expect(screen.getByText('deck-pro')).toBeTruthy();
-    expect(screen.getByText('Investors')).toBeTruthy();
-    expect(screen.getByText('Confident')).toBeTruthy();
-    expect(screen.getByText('Close round')).toBeTruthy();
-    expect(screen.getByText('Acme discovery call')).toBeTruthy();
+    screen.getByText('deck-pro');
+    screen.getByText('Investors');
+    screen.getByText('Confident');
+    screen.getByText('Close round');
+    screen.getByText('Acme discovery call');
   });
 
   it('marks completed steps done and the awaiting-signal review step current', () => {
@@ -80,7 +80,7 @@ describe('gamma-presentation-creator Panel', () => {
     // template, source, generate completed -> checkmarks; review (4th) current -> number 4
     expect(labels.slice(0, 3)).toEqual(['✓', '✓', '✓']);
     expect(labels[3]).toBe('4');
-    expect(screen.getByText('Review the draft')).toBeTruthy();
+    screen.getByText('Review the draft');
   });
 
   it('fires onSignal review-approval when Approve is clicked during awaiting-signal review', async () => {
@@ -171,6 +171,37 @@ describe('gamma-presentation-creator Panel', () => {
     );
 
     expect(screen.queryByTitle('Generated Gamma presentation')).toBeNull();
-    expect(screen.getByText('Presentation URL is invalid or unavailable.')).toBeTruthy();
+    screen.getByText('Presentation URL is invalid or unavailable.');
+  });
+
+  it('shows the generation-failed banner when the run phase is failed', () => {
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ template: 'completed', source: 'completed', generate: 'failed' }, 'failed')}
+        connected
+        stepOutputs={{}}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+
+    screen.getByText('Generation failed');
+    screen.getByText('The deck could not be generated. Start a new run to try again.');
+  });
+
+  it('shows a malformed-output error when generate completes with an unreadable result', () => {
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ template: 'completed', source: 'completed', generate: 'completed' })}
+        connected
+        stepOutputs={{ generate: { outline: 42 } }}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+
+    screen.getByText('Couldn’t read the draft outline.');
   });
 });

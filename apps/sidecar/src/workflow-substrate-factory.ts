@@ -119,6 +119,10 @@ export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   "SIDECAR_ID",
   "SIDECAR_TOKEN",
   "STEP_INFERENCE_SOURCES",
+  // INTENTIONAL DIVERGENCE FROM UPSTREAM: the reference sidecar's substrate
+  // config carries no TENANT_ID. GTM Workbench threads it so the per-step
+  // tool-context resolver can scope hub manifest/credential lookups to the
+  // deploying tenant. Pin-bump re-diffs: this key is ours; keep it.
   "TENANT_ID",
 ] as const;
 
@@ -387,8 +391,11 @@ const StepGrantsFile = type({ grants: "unknown[]" });
  * (`interchange/packages/workflow-host/src/supervisor/credentials.ts`'s
  * `readStepGrants`): `getRepoDir` is a pure path computation, so the grants
  * file is read straight off disk. A missing file is "no grants" (deny-all,
- * fail-closed); a present-but-malformed file throws, because its presence
- * implies the deploy orchestrator intended a snapshot.
+ * fail-closed); a present-but-malformed file throws so the caller can decide
+ * how to handle a corrupt snapshot. `createStepToolContextResolver`
+ * deliberately catches that throw and downgrades to deny-all (logging the
+ * reason): a corrupt grants file must never silently widen access, and a step
+ * with an empty grant set fails closed on every tool call.
  */
 async function readStepGrants(args: {
   bareStore: RepoStore;
@@ -470,6 +477,11 @@ export function createStepToolContextResolver(
         "sidecar step tool-context: AuthorizeContext.stepId is required to resolve a step's pinned tool packages",
       );
     }
+    // Must stay identical to `@intx/workflow-deploy`'s exported
+    // `deriveStepAgentId` (`ins_<deploymentId>-<stepId>`), which the hub's
+    // `writeStepAgentRows` uses to persist the row this id resolves. The
+    // template is hand-rolled here (not imported) because `@intx/workflow-deploy`
+    // is not a sidecar dependency; on any change to that helper, update this.
     const stepAgentId = `ins_${args.deploymentId}-${stepId}`;
     let grants: GrantRule[];
     try {

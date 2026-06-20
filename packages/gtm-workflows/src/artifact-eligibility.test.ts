@@ -7,10 +7,10 @@ import {
 } from './artifact-eligibility';
 
 describe('workflowAcceptsArtifactKind', () => {
-  it('collateral-generation accepts only its specific source kinds', () => {
-    expect(workflowAcceptsArtifactKind('collateral-generation', 'call-transcript')).toBe(true);
-    expect(workflowAcceptsArtifactKind('collateral-generation', 'pain-points')).toBe(true);
-    expect(workflowAcceptsArtifactKind('collateral-generation', 'email')).toBe(false);
+  it('pain-point-collateral accepts only its specific source kinds', () => {
+    expect(workflowAcceptsArtifactKind('pain-point-collateral', 'call-transcript')).toBe(true);
+    expect(workflowAcceptsArtifactKind('pain-point-collateral', 'pain-points')).toBe(true);
+    expect(workflowAcceptsArtifactKind('pain-point-collateral', 'email')).toBe(false);
   });
 
   it('gamma-presentation-creator accepts any artifact kind (general source)', () => {
@@ -27,7 +27,7 @@ describe('workflowAcceptsArtifactKind', () => {
 describe('workflowsAcceptingArtifactKind', () => {
   it('returns both workflows for a kind collateral accepts', () => {
     const kinds = workflowsAcceptingArtifactKind('pain-points');
-    expect(kinds).toContain('collateral-generation');
+    expect(kinds).toContain('pain-point-collateral');
     expect(kinds).toContain('gamma-presentation-creator');
   });
 
@@ -51,11 +51,11 @@ describe('canUseArtifactInWorkflow', () => {
 
 describe('sourceArtifactKindSkipsAnalysis', () => {
   it('skips analysis when collateral generation seeds from an already-analyzed pain-points artifact', () => {
-    expect(sourceArtifactKindSkipsAnalysis('collateral-generation', 'pain-points')).toBe(true);
+    expect(sourceArtifactKindSkipsAnalysis('pain-point-collateral', 'pain-points')).toBe(true);
   });
 
   it('does not skip analysis when collateral generation seeds from a raw call transcript', () => {
-    expect(sourceArtifactKindSkipsAnalysis('collateral-generation', 'call-transcript')).toBe(false);
+    expect(sourceArtifactKindSkipsAnalysis('pain-point-collateral', 'call-transcript')).toBe(false);
   });
 
   it('never skips analysis for other workflow kinds', () => {

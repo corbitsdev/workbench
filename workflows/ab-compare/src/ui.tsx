@@ -108,7 +108,11 @@ function ExecuteSection({ phase, output }: { phase: StepPhase | undefined; outpu
   if (parsed instanceof type.errors) {
     return (
       <SectionCard title="Execute — provider branches" phase={phase}>
-        <p className="text-sm text-text-3">No provider outputs yet.</p>
+        {phase === 'completed' ? (
+          <p className="text-sm text-orange">Couldn’t read the provider outputs for this step.</p>
+        ) : (
+          <p className="text-sm text-text-3">No provider outputs yet.</p>
+        )}
       </SectionCard>
     );
   }
@@ -145,7 +149,11 @@ function CompareSection({ phase, output }: { phase: StepPhase | undefined; outpu
   if (parsed instanceof type.errors) {
     return (
       <SectionCard title="Compare — blind ranking" phase={phase}>
-        <p className="text-sm text-text-3">No ranking yet.</p>
+        {phase === 'completed' ? (
+          <p className="text-sm text-orange">Couldn’t read the ranking for this step.</p>
+        ) : (
+          <p className="text-sm text-text-3">No ranking yet.</p>
+        )}
       </SectionCard>
     );
   }
@@ -215,7 +223,11 @@ function PersistSection({ phase, output }: { phase: StepPhase | undefined; outpu
   if (parsed instanceof type.errors) {
     return (
       <SectionCard title="Persist — saved artifacts" phase={phase}>
-        <p className="text-sm text-text-3">No artifacts saved yet.</p>
+        {phase === 'completed' ? (
+          <p className="text-sm text-orange">Couldn’t read the saved artifacts for this step.</p>
+        ) : (
+          <p className="text-sm text-text-3">No artifacts saved yet.</p>
+        )}
       </SectionCard>
     );
   }

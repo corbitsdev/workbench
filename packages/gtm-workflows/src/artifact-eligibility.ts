@@ -3,15 +3,15 @@
 // artifact UI components that render the "Use in Workflow" affordance.
 //
 // A workflow either accepts a specific set of artifact kinds or is 'general'
-// (accepts any artifact). Collateral generation seeds from a call transcript or
-// its extracted pain points; presentation generation accepts any artifact as
-// source content (its `source` step already supports `transcriptSource:
+// (accepts any artifact). Pain Point Collateral seeds from a call transcript or
+// its extracted pain points; the Gamma presentation creator accepts any artifact
+// as source content (its `source` step already supports `transcriptSource:
 // 'artifact'`).
 
 type AcceptedArtifactKinds = ReadonlySet<string> | 'general';
 
 export const WORKFLOW_ACCEPTED_ARTIFACT_KINDS: Readonly<Record<string, AcceptedArtifactKinds>> = {
-  'collateral-generation': new Set(['call-transcript', 'pain-points']),
+  'pain-point-collateral': new Set(['call-transcript', 'pain-points']),
   'gamma-presentation-creator': 'general',
 };
 
@@ -37,10 +37,10 @@ export function canUseArtifactInWorkflow(artifactKind: string): boolean {
 
 // Source artifact kinds whose content already represents a completed phase of a
 // workflow, so seeding from them must skip that phase rather than redo it.
-// Collateral generation's analyze phase produces a 'pain-points' artifact;
-// seeding a new collateral run from one means the pain points are already
-// chosen, so the run jumps straight to generation instead of re-extracting.
-const COLLATERAL_GENERATION_ANALYSIS_SKIP_SOURCE_KINDS: ReadonlySet<string> = new Set([
+// Pain Point Collateral's analyze phase produces a 'pain-points' artifact;
+// seeding a new run from one means the pain points are already chosen, so the
+// run jumps straight to generation instead of re-extracting.
+const PAIN_POINT_COLLATERAL_ANALYSIS_SKIP_SOURCE_KINDS: ReadonlySet<string> = new Set([
   'pain-points',
 ]);
 
@@ -52,6 +52,6 @@ export function sourceArtifactKindSkipsAnalysis(
   workflowKind: string,
   artifactKind: string
 ): boolean {
-  if (workflowKind !== 'collateral-generation') return false;
-  return COLLATERAL_GENERATION_ANALYSIS_SKIP_SOURCE_KINDS.has(artifactKind);
+  if (workflowKind !== 'pain-point-collateral') return false;
+  return PAIN_POINT_COLLATERAL_ANALYSIS_SKIP_SOURCE_KINDS.has(artifactKind);
 }

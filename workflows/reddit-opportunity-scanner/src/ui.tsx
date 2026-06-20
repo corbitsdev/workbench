@@ -30,6 +30,10 @@ const ScanOutput = type({
   'opportunities?': Opportunity.array(),
 });
 
+function isStepPresent(phaseFor: (id: string) => StepPhase | undefined, id: string): boolean {
+  return phaseFor(id) === 'completed';
+}
+
 function stepStatus(phase: StepPhase | undefined, isCurrent: boolean): WorkflowStep['status'] {
   if (phase === 'completed') {
     return 'completed';
@@ -89,11 +93,20 @@ export function Panel({ state, connected, stepOutputs, onSignal, onClose }: Work
   const phaseFor = (id: string): StepPhase | undefined => state?.steps.get(id)?.phase;
   const steps = buildSteps(phaseFor);
 
+  const failedStep = STEP_DEFS.find((s) => {
+    const phase = phaseFor(s.id);
+    return phase === 'failed' || phase === 'cancelled';
+  });
+  const failed = Boolean(failedStep) || state?.phase === 'failed' || state?.phase === 'cancelled';
+  const failError = failedStep ? state?.steps.get(failedStep.id)?.lastError?.message : undefined;
+
   const analyze = AnalyzeOutput(stepOutputs.analyze);
   const analyzeView = analyze instanceof type.errors ? null : analyze;
+  const analyzeMalformed = analyze instanceof type.errors && isStepPresent(phaseFor, 'analyze');
 
   const scan = ScanOutput(stepOutputs.scan);
   const opportunities = scan instanceof type.errors ? [] : (scan.opportunities ?? []);
+  const scanMalformed = scan instanceof type.errors && isStepPresent(phaseFor, 'scan');
 
   const reviewPhase = phaseFor('review');
   const awaitingReview = reviewPhase === 'awaiting-signal';
@@ -114,7 +127,25 @@ export function Panel({ state, connected, stepOutputs, onSignal, onClose }: Work
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex-1 space-y-5 overflow-y-auto p-5">
-          {analyzeView ? (
+          {failed ? (
+            <div className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3">
+              <p className="text-[13px] font-medium text-orange">This run failed.</p>
+              <p className="mt-1 text-[12px] text-text-3">
+                {failError ?? 'Review the step details and start a new run.'}
+              </p>
+            </div>
+          ) : null}
+
+          {analyzeMalformed ? (
+            <div className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3">
+              <p className="text-[13px] font-medium text-orange">
+                Couldn’t read the business analysis output.
+              </p>
+              <p className="mt-1 text-[12px] text-text-3">
+                The analyze step finished but its result was malformed.
+              </p>
+            </div>
+          ) : analyzeView ? (
             <div className="space-y-3 rounded-[10px] border border-border bg-surface px-4 py-3">
               <div className="space-y-1">
                 <p className="text-[13px] font-medium text-text">Business analysis</p>
@@ -173,6 +204,15 @@ export function Panel({ state, connected, stepOutputs, onSignal, onClose }: Work
                   ) : null}
                 </div>
               ))}
+            </div>
+          ) : scanMalformed ? (
+            <div className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3">
+              <p className="text-[13px] font-medium text-orange">
+                Couldn’t read the scan results.
+              </p>
+              <p className="mt-1 text-[12px] text-text-3">
+                The scan step finished but its result was malformed.
+              </p>
             </div>
           ) : null}
         </div>

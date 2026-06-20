@@ -32,7 +32,6 @@ import {
 } from "@workbench/tool-credentials";
 import {
   fetchToolCredentials,
-  filterToolRunner,
   loadToolPackages,
   mergeToolRunners,
   type DefinedRunner,
@@ -304,15 +303,17 @@ async function buildStepTools(args: {
     });
   }
 
+  // Steps expose every materialized native tool plus local posix tools; the
+  // grants-backed `authorize` the factory installs is the real per-call gate,
+  // and the hub gates which packages were resolvable at all via the step's
+  // pins. No name-filter is applied here — it would be a no-op (every loaded
+  // tool name is already in the merged set).
   const merged = mergeToolRunners([
     posixTools,
     ...loadedRunners,
   ]) as DefinedRunner;
-  // Steps expose every materialized native tool plus local posix tools; the
-  // hub gates which packages were resolvable at all via the step's pins.
-  const allowed = new Set([...merged.definitions.map((d) => d.name)]);
   return {
-    runner: filterToolRunner(merged, allowed),
+    runner: merged,
     loadedToolNames,
     disposers,
   };
@@ -340,6 +341,13 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
     env: EnvReq,
   ): Promise<Agent> => {
     const ctx = readStepToolContext(env as unknown as Record<string, unknown>);
+
+    // The env builder lays the per-step store out as
+    // `<storeDir>/workspace` (workdir), so the store root is the workdir's
+    // parent. It holds the per-step isogit store + workspace + any
+    // re-materialized tool tarballs and is single-use per attempt; tear it
+    // down when the step agent closes so disk does not grow unbounded.
+    const storeDir = path.dirname(env.workdir);
 
     const { runner, disposers } = await buildStepTools({
       ctx,
@@ -390,6 +398,17 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
                 msg: err instanceof Error ? err.message : String(err),
               });
             }
+          }
+          // Reclaim the per-step store after tool disposal, on both the
+          // success and failure paths. A failure to remove it is logged, not
+          // thrown — close() must not surface cleanup errors.
+          try {
+            await fs.promises.rm(storeDir, { recursive: true, force: true });
+          } catch (err) {
+            logger.warn("Step store cleanup failed for {address}: {msg}", {
+              address: ctx.stepAddress,
+              msg: err instanceof Error ? err.message : String(err),
+            });
           }
         }
       },

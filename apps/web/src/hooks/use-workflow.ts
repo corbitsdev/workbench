@@ -1,34 +1,40 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
-import { type } from 'arktype';
-import { resumeFromLog, type RunState, type WorkflowEvent } from '@intx/workflow';
-import { api } from '../lib/api';
-import { subscribeSharedEventStream } from '../lib/shared-event-stream';
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { type } from "arktype";
+import {
+  resumeFromLog,
+  type RunState,
+  type WorkflowEvent,
+} from "@intx/workflow";
+import { api } from "../lib/api";
+import { subscribeSharedEventStream } from "../lib/shared-event-stream";
 
 // Same-origin EventSource resolver. A credentialed cross-origin EventSource is
 // blocked by Safari (ITP) and Brave (shields); in dev we route the stream
 // through the same-origin Vite proxy so the port-agnostic auth cookie still
 // authenticates. In prod there is no proxy, so fall back to apiBase like fetch.
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
+const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
 function streamUrl(path: string): string {
-  const base = import.meta.env.DEV ? window.location.origin : apiBase || window.location.origin;
-  return new URL(`/api/v1/${path.replace(/^\//, '')}`, base).toString();
+  const base = import.meta.env.DEV
+    ? window.location.origin
+    : apiBase || window.location.origin;
+  return new URL(`/api/v1/${path.replace(/^\//, "")}`, base).toString();
 }
 
 const workflowRunSchema = type({
-  deploymentId: 'string',
-  kind: 'string',
-  status: 'string',
-  createdAt: 'string',
+  deploymentId: "string",
+  kind: "string",
+  status: "string",
+  createdAt: "string",
 });
 export type WorkflowRun = typeof workflowRunSchema.infer;
 const workflowRunListSchema = workflowRunSchema.array();
 
 export function useWorkflowRuns() {
   return useQuery<WorkflowRun[]>({
-    queryKey: ['workflow-runs'],
+    queryKey: ["workflow-runs"],
     queryFn: async () => {
-      const raw = await api<unknown>('GET', '/workflow-runs');
+      const raw = await api<unknown>("GET", "/workflow-runs");
       const parsed = workflowRunListSchema(raw);
       if (parsed instanceof type.errors) {
         throw new Error(`Unexpected workflow-runs response: ${parsed.summary}`);
@@ -48,7 +54,9 @@ export interface WorkflowRunStateResult {
 // native RunState via resumeFromLog. This is a live stream, not request/response
 // data — TanStack Query is for the run list; the stream is owned by the shared
 // EventSource registry, mirroring instance-transport.
-export function useWorkflowRunState(deploymentId: string | null): WorkflowRunStateResult {
+export function useWorkflowRunState(
+  deploymentId: string | null,
+): WorkflowRunStateResult {
   const [events, setEvents] = useState<WorkflowEvent[]>([]);
   const [connected, setConnected] = useState(false);
 
@@ -57,7 +65,7 @@ export function useWorkflowRunState(deploymentId: string | null): WorkflowRunSta
     setEvents([]);
     setConnected(true);
     const url = streamUrl(`/workflow-runs/${deploymentId}/stream`);
-    const unsubscribe = subscribeSharedEventStream(url, 'message', (event) => {
+    const unsubscribe = subscribeSharedEventStream(url, "message", (event) => {
       setEvents((prev) => [...prev, event as WorkflowEvent]);
     });
     return () => {
@@ -68,14 +76,33 @@ export function useWorkflowRunState(deploymentId: string | null): WorkflowRunSta
 
   const state = useMemo<RunState | null>(() => {
     if (!deploymentId || events.length === 0) return null;
-    const runId = events[0]?.kind === 'RunStarted' ? events[0].runId : deploymentId;
+    const runId =
+      events[0]?.kind === "RunStarted" ? events[0].runId : deploymentId;
     return resumeFromLog(runId, events);
   }, [deploymentId, events]);
 
   return { state, events, connected };
 }
 
-const stepOutputSchema = type({ stepId: 'string', output: 'unknown' });
+const stepOutputSchema = type({ stepId: "string", output: "unknown" });
+
+// Fetch and parse a single completed step's resolved output. Single source of
+// truth for the step-output endpoint contract — shared by the per-step hook and
+// the batched resolver in WorkflowRunPane so the schema is defined once.
+export async function fetchStepOutput(
+  deploymentId: string,
+  stepId: string,
+): Promise<unknown> {
+  const raw = await api<unknown>(
+    "GET",
+    `/workflow-runs/${deploymentId}/steps/${stepId}/output`,
+  );
+  const parsed = stepOutputSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected step-output response: ${parsed.summary}`);
+  }
+  return parsed.output;
+}
 
 // Read a completed workflow step's resolved output content. The native
 // substrate stores step output by reference (`inline:` / `blob:`); this hits
@@ -88,23 +115,13 @@ const stepOutputSchema = type({ stepId: 'string', output: 'unknown' });
 export function useStepOutput(
   deploymentId: string | null,
   stepId: string | null,
-  opts?: { enabled?: boolean }
+  opts?: { enabled?: boolean },
 ) {
   return useQuery<unknown>({
-    queryKey: ['workflow-step-output', deploymentId, stepId],
+    queryKey: ["workflow-step-output", deploymentId, stepId],
     enabled: !!deploymentId && !!stepId && (opts?.enabled ?? true),
     staleTime: Infinity,
-    queryFn: async () => {
-      const raw = await api<unknown>(
-        'GET',
-        `/workflow-runs/${deploymentId}/steps/${stepId}/output`
-      );
-      const parsed = stepOutputSchema(raw);
-      if (parsed instanceof type.errors) {
-        throw new Error(`Unexpected step-output response: ${parsed.summary}`);
-      }
-      return parsed.output;
-    },
+    queryFn: () => fetchStepOutput(deploymentId as string, stepId as string),
   });
 }
 
@@ -112,9 +129,9 @@ export function useStartWorkflow() {
   return useMutation({
     mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
       const res = await api<{ deploymentId: string }>(
-        'POST',
+        "POST",
         `/workflow-runs/${encodeURIComponent(kind)}/start`,
-        { input }
+        { input },
       );
       return res;
     },
@@ -132,7 +149,7 @@ export function useSignalWorkflow(deploymentId: string) {
       signalName: string;
       payload?: unknown;
     }) => {
-      return api<unknown>('POST', `/workflow-runs/${deploymentId}/signal`, {
+      return api<unknown>("POST", `/workflow-runs/${deploymentId}/signal`, {
         runId,
         signalName,
         payload,

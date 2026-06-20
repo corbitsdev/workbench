@@ -23,6 +23,14 @@ const log = getLogger(["api", "tool-manifest"]);
 
 const ToolPackagePins = ToolPackagePin.array();
 
+// Per-tarball and aggregate byte caps for the manifest response. Every
+// referenced tarball is base64-encoded into a single JSON body, so without a
+// cap a tenant with large package assets could OOM the hub. 64 MiB per tarball
+// matches the sidecar loader's `DEFAULT_REGISTRY_MAX_TARBALL_BYTES`; the total
+// cap bounds the assembled response.
+const MAX_TARBALL_BYTES = 64 * 1024 * 1024;
+const MAX_TOTAL_TARBALL_BYTES = 256 * 1024 * 1024;
+
 /**
  * Tool-package manifest + tarball rail for workflow STEP agents.
  *
@@ -151,6 +159,7 @@ export function createToolManifestRouter(
     // the sidecar reconstructs the same `assetMounts` map the live path
     // builds.
     const tarballs: ToolManifestTarball[] = [];
+    let totalTarballBytes = 0;
     for (const entry of manifest.entries) {
       if (entry.source.kind !== "asset") continue;
       const assetName = assetNameById.get(entry.source.assetId);
@@ -177,6 +186,35 @@ export function createToolManifestRouter(
         return c.json(
           { error: `Tarball read failed for ${entry.name}@${entry.version}` },
           500,
+        );
+      }
+      if (bytes.byteLength > MAX_TARBALL_BYTES) {
+        log.error("Tarball exceeds per-tarball byte cap", {
+          assetId: entry.source.assetId,
+          path: entry.source.path,
+          bytes: bytes.byteLength,
+          cap: MAX_TARBALL_BYTES,
+        });
+        return c.json(
+          {
+            error: `Tarball ${entry.name}@${entry.version} exceeds the ${String(MAX_TARBALL_BYTES)}-byte per-tarball limit`,
+          },
+          413,
+        );
+      }
+      totalTarballBytes += bytes.byteLength;
+      if (totalTarballBytes > MAX_TOTAL_TARBALL_BYTES) {
+        log.error("Manifest tarballs exceed total byte cap", {
+          tenantId: parsed.tenantId,
+          agentId: parsed.agentId,
+          total: totalTarballBytes,
+          cap: MAX_TOTAL_TARBALL_BYTES,
+        });
+        return c.json(
+          {
+            error: `Resolved tarballs exceed the ${String(MAX_TOTAL_TARBALL_BYTES)}-byte total limit`,
+          },
+          413,
         );
       }
       tarballs.push({
