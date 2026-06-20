@@ -129,7 +129,6 @@
         "@workbench/tools-granola": "workspace:*",
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
-        "@workbench/workflow": "workspace:*",
         "@workbench/workflow-ab-compare": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
         "@workbench/workflow-pain-point-collateral": "workspace:*",
@@ -990,26 +989,6 @@
         "typescript": "^5.9.0",
       },
     },
-    "packages/workflow": {
-      "name": "@workbench/workflow",
-      "dependencies": {
-        "@workbench/shared": "workspace:*",
-        "@workbench/ui": "workspace:*",
-      },
-      "devDependencies": {
-        "@happy-dom/global-registrator": "^20.9.0",
-        "@testing-library/react": "^16.3.2",
-        "@types/bun": "latest",
-        "@types/react": "^19.0.0",
-        "framer-motion": "^12.0.0",
-        "react": "^19.0.0",
-        "typescript": "^5.9.0",
-      },
-      "peerDependencies": {
-        "framer-motion": "*",
-        "react": "*",
-      },
-    },
     "workflows/ab-compare": {
       "name": "@workbench/workflow-ab-compare",
       "dependencies": {
@@ -1029,30 +1008,6 @@
       },
       "peerDependencies": {
         "react": "*",
-      },
-    },
-    "workflows/blind-ab-comparison": {
-      "name": "@workbench/workflow-blind-ab-comparison",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "catalog:",
-      },
-    },
-    "workflows/collateral-generation": {
-      "name": "@workbench/workflow-collateral-generation",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "catalog:",
       },
     },
     "workflows/gamma-presentation-creator": {
@@ -1099,18 +1054,6 @@
         "react": "*",
       },
     },
-    "workflows/presentation-generation": {
-      "name": "@workbench/workflow-presentation-generation",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "catalog:",
-      },
-    },
     "workflows/reddit-opportunity-scanner": {
       "name": "@workbench/workflow-reddit-opportunity-scanner",
       "dependencies": {
@@ -1130,30 +1073,6 @@
       },
       "peerDependencies": {
         "react": "^19.0.0",
-      },
-    },
-    "workflows/resource-enrichment": {
-      "name": "@workbench/workflow-resource-enrichment",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "catalog:",
-      },
-    },
-    "workflows/seo-enrichment": {
-      "name": "@workbench/workflow-seo-enrichment",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "catalog:",
       },
     },
     "workflows/seo-enrichment-from-image": {
@@ -2123,25 +2042,13 @@
 
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
 
-    "@workbench/workflow": ["@workbench/workflow@workspace:packages/workflow"],
-
     "@workbench/workflow-ab-compare": ["@workbench/workflow-ab-compare@workspace:workflows/ab-compare"],
-
-    "@workbench/workflow-blind-ab-comparison": ["@workbench/workflow-blind-ab-comparison@workspace:workflows/blind-ab-comparison"],
-
-    "@workbench/workflow-collateral-generation": ["@workbench/workflow-collateral-generation@workspace:workflows/collateral-generation"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
 
     "@workbench/workflow-pain-point-collateral": ["@workbench/workflow-pain-point-collateral@workspace:workflows/pain-point-collateral"],
 
-    "@workbench/workflow-presentation-generation": ["@workbench/workflow-presentation-generation@workspace:workflows/presentation-generation"],
-
     "@workbench/workflow-reddit-opportunity-scanner": ["@workbench/workflow-reddit-opportunity-scanner@workspace:workflows/reddit-opportunity-scanner"],
-
-    "@workbench/workflow-resource-enrichment": ["@workbench/workflow-resource-enrichment@workspace:workflows/resource-enrichment"],
-
-    "@workbench/workflow-seo-enrichment": ["@workbench/workflow-seo-enrichment@workspace:workflows/seo-enrichment"],
 
     "@workbench/workflow-seo-enrichment-from-image": ["@workbench/workflow-seo-enrichment-from-image@workspace:workflows/seo-enrichment-from-image"],
 

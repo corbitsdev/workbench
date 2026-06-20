@@ -43,13 +43,11 @@ COPY packages/tools-youtube/package.json packages/tools-youtube/
 COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
-COPY packages/workflow/package.json packages/workflow/
 COPY workflows/ab-compare/package.json workflows/ab-compare/
-COPY workflows/collateral-generation/package.json workflows/collateral-generation/
-COPY workflows/presentation-generation/package.json workflows/presentation-generation/
+COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
+COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
-COPY workflows/resource-enrichment/package.json workflows/resource-enrichment/
-COPY workflows/seo-enrichment/package.json workflows/seo-enrichment/
+COPY workflows/seo-enrichment-from-image/package.json workflows/seo-enrichment-from-image/
 COPY packages/tool-credentials/package.json packages/tool-credentials/
 COPY packages/tools-artifact/package.json packages/tools-artifact/
 COPY packages/tools-last30days/package.json packages/tools-last30days/
