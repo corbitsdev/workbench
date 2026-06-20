@@ -143,6 +143,7 @@ Keyless tools need no seed entry — say so in the package README.
 ## Code Style
 
 - No comments unless the WHY is non-obvious. Never narrate what the code does.
+- No stubs ANYWHERE when implementing — never leave placeholder or canned-output code paths in production; implement fully or fail loudly, and surface the gap rather than stubbing it.
 - TypeScript strict mode. Load `gaas:typescript` before writing or reviewing TypeScript.
 - No `console.log` — use `@intx/log` in hub/sidecar, nothing in web.
 - No IIFEs or dynamic imports in production — use named async functions and static imports.
