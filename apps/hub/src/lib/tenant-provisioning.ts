@@ -14,7 +14,6 @@ const {
   tenant,
   principal,
   role,
-  principalRole,
   grant,
   agent,
   agentInstance,
@@ -60,6 +59,77 @@ export type ProvisioningDB = {
 };
 
 const SYSTEM_ROLES = ['owner', 'admin', 'member'] as const;
+
+// The transaction handle passed to a `db.transaction(...)` callback.
+type Tx = Parameters<Parameters<ProductionDB['transaction']>[0]>[0];
+
+/**
+ * Seed the three system roles (owner / admin / member) and their grants for a
+ * tenant, mirroring Interchange's native tenant-creation grant shape:
+ *
+ *   owner  → `*:*`
+ *   admin  → `*:{read,create,manage}`
+ *   member → no grants
+ *
+ * `member` deliberately gets NO grants. Product reads are principal-scoped and
+ * never consult the Interchange grant system, so membership is the principal row
+ * existing — not a role grant. Access to credentials/agents comes from being
+ * added as a principal on the tenant, with owner/admin granted explicitly via
+ * the native Roles/Grants API. Returns the created role ids by name.
+ *
+ * Must run inside a transaction so a partial seed never leaves a tenant with
+ * roles but no grants. Shared by `seedGlobalTenant` and operator/migration
+ * scripts that stand up bench tenants.
+ */
+export async function seedSystemRolesAndGrants(
+  tx: Tx,
+  tenantId: string,
+  now: Date
+): Promise<Record<(typeof SYSTEM_ROLES)[number], string>> {
+  const roleIds = {} as Record<(typeof SYSTEM_ROLES)[number], string>;
+  for (const roleName of SYSTEM_ROLES) {
+    const roleId = generateId('role');
+    roleIds[roleName] = roleId;
+    await tx.insert(role).values({
+      id: roleId,
+      tenantId,
+      name: roleName,
+      description: `System ${roleName} role`,
+      isSystem: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  await tx.insert(grant).values({
+    id: generateId('grant'),
+    tenantId,
+    roleId: roleIds.owner,
+    resource: '*',
+    action: '*',
+    effect: 'allow',
+    origin: 'system',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  for (const action of ['read', 'create', 'manage'] as const) {
+    await tx.insert(grant).values({
+      id: generateId('grant'),
+      tenantId,
+      roleId: roleIds.admin,
+      resource: '*',
+      action,
+      effect: 'allow',
+      origin: 'system',
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  // No member grant — membership is the principal row, not a role grant.
+  return roleIds;
+}
 
 /**
  * Seed the single shared global org tenant at hub boot. Idempotent and race-safe
@@ -123,52 +193,7 @@ export async function seedGlobalTenant(db: ProductionDB): Promise<{ tenantId: st
       if (!tenantRow) throw new Error('Failed to insert global tenant');
       const resolvedTenantId = (tenantRow as { id: string }).id;
 
-      const roleIds: Record<string, string> = {};
-      for (const roleName of SYSTEM_ROLES) {
-        const roleId = generateId('role');
-        roleIds[roleName] = roleId;
-        await tx.insert(role).values({
-          id: roleId,
-          tenantId: resolvedTenantId,
-          name: roleName,
-          description: `System ${roleName} role`,
-          isSystem: true,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-
-      const ownerRoleId = roleIds['owner'];
-      const adminRoleId = roleIds['admin'];
-      if (!ownerRoleId || !adminRoleId) throw new Error('System roles were not created');
-
-      await tx.insert(grant).values({
-        id: generateId('grant'),
-        tenantId: resolvedTenantId,
-        roleId: ownerRoleId,
-        resource: '*',
-        action: '*',
-        effect: 'allow',
-        origin: 'system',
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      for (const action of ['read', 'create', 'manage'] as const) {
-        await tx.insert(grant).values({
-          id: generateId('grant'),
-          tenantId: resolvedTenantId,
-          roleId: adminRoleId,
-          resource: '*',
-          action,
-          effect: 'allow',
-          origin: 'system',
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-
-      // Intentionally no member grant — see the doc comment above.
+      await seedSystemRolesAndGrants(tx, resolvedTenantId, now);
 
       log.info('Global tenant seeded', { tenantId: resolvedTenantId, slug });
       return { tenantId: resolvedTenantId };
@@ -563,9 +588,9 @@ export async function getEnabledTemplateKeys(db: ProductionDB): Promise<AgentTem
  * Idempotent: uses ON CONFLICT DO NOTHING against the partial unique index on
  * (tenant_id, kind) WHERE principal_id IS NULL (migration 0017).
  *
- * Call this after seedGlobalTenant (for the org tenant) and inside
- * provisionWorkbenchTenant (for per-workbench tenants). Pass the registered
- * workflow kinds from the route layer where the registry is populated.
+ * Call this after seedGlobalTenant (for the org tenant) or when an operator
+ * stands up a bench tenant. Pass the registered workflow kinds from the route
+ * layer where the registry is populated.
  */
 export async function seedTenantWorkflows(
   db: ProductionDB,
@@ -582,165 +607,6 @@ export async function seedTenantWorkflows(
       .onConflictDoNothing();
     log.info('Tenant workflow ensured', { tenantId, kind });
   }
-}
-
-type WorkbenchTenantResult = { tenantId: string; principalId: string };
-
-/**
- * Provision a named workbench tenant for a user and assign them as the owner.
- * Idempotent by slug — if the tenant exists and the user is already a principal,
- * returns it with `alreadyExists: true`. If the tenant exists but the user is not
- * a principal, throws a conflict error so the caller can return 409.
- *
- * Role and grant seeding mirrors the system-role seeding used elsewhere — the
- * same three system roles (owner / admin / member) with the same default grants.
- *
- * The workbench is created as a SUB-TENANT of the global org tenant
- * (`parentId = globalTenantId`) so the org-level LLM credential resolves down
- * the hierarchy via getAncestorChain → resolveCredentialRequirement (CL-1445).
- */
-export async function provisionWorkbenchTenant(
-  db: ProductionDB,
-  opts: { userId: string; name: string; slug: string; workflowKinds?: string[] }
-): Promise<WorkbenchTenantResult & { alreadyExists: boolean }> {
-  const existing = await db.query.tenant.findFirst({
-    where: eq(tenant.slug, opts.slug),
-  });
-
-  if (existing) {
-    const existingPrincipal = await db.query.principal.findFirst({
-      where: and(
-        eq(principal.tenantId, existing.id),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, opts.userId)
-      ),
-    });
-    if (existingPrincipal) {
-      return { tenantId: existing.id, principalId: existingPrincipal.id, alreadyExists: true };
-    }
-    throw Object.assign(new Error('Workbench slug conflict'), { code: 'SLUG_CONFLICT' });
-  }
-
-  const { slug: globalSlug } = getConfig().globalTenant;
-  const globalTenant = await db.query.tenant.findFirst({
-    where: eq(tenant.slug, globalSlug),
-  });
-  if (!globalTenant) {
-    throw new Error(`Global tenant (slug=${globalSlug}) not seeded — cannot create workbench`);
-  }
-
-  const result = await db.transaction(async (tx) => {
-    const tenantId = generateId('tenant');
-    const domain = `${opts.slug}.localhost`;
-    const now = new Date();
-
-    const tenantRows = await tx
-      .insert(tenant)
-      .values({
-        id: tenantId,
-        name: opts.name,
-        slug: opts.slug,
-        domain,
-        parentId: globalTenant.id,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
-
-    const tenantRow = tenantRows[0];
-    if (!tenantRow) throw new Error('Failed to insert workbench tenant');
-    const resolvedTenantId = (tenantRow as { id: string }).id;
-
-    const roleIds: Record<string, string> = {};
-    for (const roleName of SYSTEM_ROLES) {
-      const roleId = generateId('role');
-      roleIds[roleName] = roleId;
-      await tx.insert(role).values({
-        id: roleId,
-        tenantId: resolvedTenantId,
-        name: roleName,
-        description: `System ${roleName} role`,
-        isSystem: true,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    const ownerRoleId = roleIds['owner'];
-    const adminRoleId = roleIds['admin'];
-    const memberRoleId = roleIds['member'];
-    if (!ownerRoleId || !adminRoleId || !memberRoleId) {
-      throw new Error('System roles were not created');
-    }
-
-    await tx.insert(grant).values({
-      id: generateId('grant'),
-      tenantId: resolvedTenantId,
-      roleId: ownerRoleId,
-      resource: '*',
-      action: '*',
-      effect: 'allow',
-      origin: 'system',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    for (const action of ['read', 'create', 'manage'] as const) {
-      await tx.insert(grant).values({
-        id: generateId('grant'),
-        tenantId: resolvedTenantId,
-        roleId: adminRoleId,
-        resource: '*',
-        action,
-        effect: 'allow',
-        origin: 'system',
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    await tx.insert(grant).values({
-      id: generateId('grant'),
-      tenantId: resolvedTenantId,
-      roleId: memberRoleId,
-      resource: '*',
-      action: 'read',
-      effect: 'allow',
-      origin: 'system',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const principalId = generateId('principal');
-    await tx.insert(principal).values({
-      id: principalId,
-      tenantId: resolvedTenantId,
-      kind: 'user',
-      refId: opts.userId,
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await tx.insert(principalRole).values({
-      principalId,
-      roleId: ownerRoleId,
-      createdAt: now,
-    });
-
-    log.info('Workbench tenant provisioned', {
-      userId: opts.userId,
-      tenantId: resolvedTenantId,
-      slug: opts.slug,
-    });
-    return { tenantId: resolvedTenantId, principalId };
-  });
-
-  if (opts.workflowKinds && opts.workflowKinds.length > 0) {
-    await seedTenantWorkflows(db, result.tenantId, opts.workflowKinds);
-  }
-
-  return { ...result, alreadyExists: false };
 }
 
 /** The Myra template key — the always-enabled personal agent. */

@@ -16,7 +16,6 @@ mock.module('../config', () => ({
 import {
   provisionMemberInstances,
   getMyraInstanceId,
-  provisionWorkbenchTenant,
   seedGlobalTenant,
   seedAgentTemplates,
   ensureSystemPrincipal,
@@ -269,65 +268,6 @@ describe('getMyraInstanceId', () => {
 
   it('returns null when Myra is not present', () => {
     expect(getMyraInstanceId([{ templateKey: 'oat', instanceId: 'ins_oat' }])).toBeNull();
-  });
-});
-
-describe('provisionWorkbenchTenant', () => {
-  it('parents the new workbench under the global tenant (CL-1445)', async () => {
-    const inserted: Array<Record<string, unknown>> = [];
-    // First tenant lookup is the workbench slug (none); second is the global slug.
-    let tenantCall = 0;
-    const tenantFind = mock(() => {
-      tenantCall += 1;
-      return Promise.resolve(tenantCall >= 2 ? { id: 'tnt_global', slug: 'acme' } : undefined);
-    });
-    const insertMock = mock(() => ({
-      // biome-ignore lint/suspicious/noExplicitAny: test mock
-      values: mock((row: any) => {
-        inserted.push(row);
-        return {
-          returning: mock(() => Promise.resolve([{ id: row.id ?? 'tnt_wb' }])),
-          onConflictDoNothing: mock(() => Promise.resolve([])),
-        };
-      }),
-    }));
-    const db = makeMockDB({
-      query: {
-        tenant: { findFirst: tenantFind },
-        principal: { findFirst: mock(() => Promise.resolve(undefined)) },
-        role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-      },
-      insert: insertMock,
-    });
-
-    const res = await provisionWorkbenchTenant(db as never, {
-      userId: 'u1',
-      name: 'My Workbench',
-      slug: 'my-wb',
-    });
-
-    expect(res.alreadyExists).toBe(false);
-    const tenantRow = inserted.find((r) => r.slug === 'my-wb');
-    expect(tenantRow?.parentId).toBe('tnt_global');
-  });
-
-  it('throws if the global tenant is not seeded', async () => {
-    const db = makeMockDB({
-      query: {
-        tenant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        principal: { findFirst: mock(() => Promise.resolve(undefined)) },
-        role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-      },
-    });
-    await expect(
-      provisionWorkbenchTenant(db as never, { userId: 'u1', name: 'WB', slug: 'wb' })
-    ).rejects.toThrow(/not seeded/);
   });
 });
 

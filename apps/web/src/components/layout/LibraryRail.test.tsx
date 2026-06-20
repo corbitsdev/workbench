@@ -37,7 +37,6 @@ mock.module('../../lib/hub-api', () => ({
     })
   ),
   getMyPrincipals: mock(() => Promise.resolve([])),
-  createWorkbench: mock(() => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' })),
   listWorkbenches: mock(() => Promise.resolve([])),
   listAgentInstances: mock(() => Promise.resolve([])),
   launchInstanceSession: mock(() => Promise.resolve({ launched: true })),

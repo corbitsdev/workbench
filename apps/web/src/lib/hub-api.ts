@@ -72,17 +72,6 @@ export async function getMyPrincipals(): Promise<Principal[]> {
   return res.data;
 }
 
-export type WorkbenchResponse = {
-  id: string;
-  name: string;
-  slug: string;
-  tenantId: string;
-};
-
-export async function createWorkbench(name: string): Promise<WorkbenchResponse> {
-  return hubFetch<WorkbenchResponse>('POST', 'v1/workbenches', { name });
-}
-
 export function principalsToWorkbenches(
   principals: Principal[],
   excludeTenantIds: (string | null)[]

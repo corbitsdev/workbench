@@ -50,7 +50,6 @@ import {
   relaunchInstanceIfNeeded,
   registerDisconnectReconciler,
 } from "./services/agent-provisioning";
-import { createWorkbenchesRouter } from "./routes/workbenches";
 import { createMembersRouter } from "./routes/members";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
@@ -564,7 +563,6 @@ v1.route(
     eventCollectors,
   ),
 );
-v1.route("/", createWorkbenchesRouter(db));
 v1.route("/", createMembersRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db));
