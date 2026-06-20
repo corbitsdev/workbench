@@ -50,6 +50,9 @@ COPY workflows/presentation-generation/package.json workflows/presentation-gener
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
 COPY workflows/resource-enrichment/package.json workflows/resource-enrichment/
 COPY workflows/seo-enrichment/package.json workflows/seo-enrichment/
+COPY packages/tool-credentials/package.json packages/tool-credentials/
+COPY packages/tools-artifact/package.json packages/tools-artifact/
+COPY packages/tools-last30days/package.json packages/tools-last30days/
 RUN bun install --frozen-lockfile
 
 COPY . .
