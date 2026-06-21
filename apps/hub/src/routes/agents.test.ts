@@ -34,6 +34,7 @@ mock.module("@intx/db", () => ({
 
 import { Hono } from "hono";
 import { createAgentProvisioningRouter } from "./agents";
+import { memberAgentInstance } from "../db/schema";
 import {
   persistInstanceToolGrants,
   persistInstanceGrantRequirements,
@@ -42,6 +43,8 @@ import {
   reconcileDisconnectedSession,
   registerDisconnectReconciler,
 } from "../services/agent-provisioning";
+
+const { agentInstance: agentInstanceTable } = intxDbReal.schema;
 
 function makeRequest(
   url: string,
@@ -933,6 +936,86 @@ describe("DELETE /tenants/:tenantId/agents/instances/:instanceId", () => {
       }),
     );
     expect(res.status).toBe(204);
+  });
+
+  it("soft-deletes by default: stops the instance but never deletes the agent_instance row", async () => {
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+
+    const setMock = mock(() => ({ where: mock(() => Promise.resolve()) }));
+    db.update = mock(() => ({ set: setMock }));
+    const deletedTables: unknown[] = [];
+    db.delete = mock((table: unknown) => {
+      deletedTables.push(table);
+      return { where: mock(() => Promise.resolve()) };
+    });
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest("http://localhost/tenants/tenant-1/agents/instances/ins-1", {
+        method: "DELETE",
+      }),
+    );
+    expect(res.status).toBe(204);
+    expect(setMock).toHaveBeenCalled();
+    expect(deletedTables).toContain(memberAgentInstance);
+    expect(deletedTables).not.toContain(agentInstanceTable);
+  });
+
+  it("hard-deletes an ephemeral workflow instance (ins_ses_ prefix) when hard=true", async () => {
+    const ephemeral = { ...INSTANCE, id: "ins_ses_abc-tenant-1" };
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(ephemeral));
+
+    const deletedTables: unknown[] = [];
+    db.delete = mock((table: unknown) => {
+      deletedTables.push(table);
+      return { where: mock(() => Promise.resolve()) };
+    });
+
+    const endSession = mock(() => Promise.resolve());
+    const app = buildApp(db, {
+      ...mockSessionService,
+      endSession,
+    } as unknown as SessionService);
+    const res = await app.fetch(
+      makeRequest(
+        "http://localhost/tenants/tenant-1/agents/instances/ins_ses_abc-tenant-1?hard=true",
+        { method: "DELETE" },
+      ),
+    );
+    expect(res.status).toBe(204);
+    expect(deletedTables).toContain(memberAgentInstance);
+    expect(deletedTables).toContain(agentInstanceTable);
+    expect(endSession).toHaveBeenCalledWith(
+      ephemeral.address,
+      "user deleted instance",
+    );
+  });
+
+  it("refuses hard delete for a non-ephemeral instance (protects chat history)", async () => {
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+
+    const deletedTables: unknown[] = [];
+    db.delete = mock((table: unknown) => {
+      deletedTables.push(table);
+      return { where: mock(() => Promise.resolve()) };
+    });
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest(
+        "http://localhost/tenants/tenant-1/agents/instances/ins-1?hard=true",
+        { method: "DELETE" },
+      ),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("ephemeral");
+    expect(deletedTables).not.toContain(agentInstanceTable);
   });
 });
 

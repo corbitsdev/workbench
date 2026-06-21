@@ -25,6 +25,15 @@ const log = getLogger(['api', 'agents']);
 
 const { agent, agentInstance, principal, tenant, grant } = intxSchema;
 
+// Ephemeral workflow step/supervisor instances are launched by the sidecar
+// workflow-host and carry a session-derived id (`ins_ses_…`). They hold no
+// durable conversation history, so they are the only instances safe to
+// hard-delete (which CASCADE-removes inference_turn rows).
+const EPHEMERAL_WORKFLOW_INSTANCE_PREFIX = 'ins_ses_';
+function isEphemeralWorkflowInstance(instanceId: string): boolean {
+  return instanceId.startsWith(EPHEMERAL_WORKFLOW_INSTANCE_PREFIX);
+}
+
 // Response shapes for the OpenAPI spec. The hub admin CLI consumes /openapi.json
 // to discover these operations; these schemas document (they do not replace) the
 // handlers' existing manual validation.
@@ -186,7 +195,7 @@ export function createAgentProvisioningRouter(
       tags: ['Agents'],
       summary: 'Delete an agent instance',
       description:
-        'Stops the agent instance, removes its member mapping, and tears down the sidecar session. Idempotent for the mapping cleanup.',
+        'Stops the agent instance, removes its member mapping, and tears down the sidecar session. With `?hard=true` the agent_instance row itself is removed (cascading inference turns and session assets); the hard path is restricted to ephemeral workflow instances (ids prefixed `ins_ses_`) so user chat history is never destroyed.',
       parameters: [
         {
           name: 'tenantId',
@@ -200,9 +209,21 @@ export function createAgentProvisioningRouter(
           required: true,
           schema: { type: 'string' },
         },
+        {
+          name: 'hard',
+          in: 'query',
+          required: false,
+          description:
+            'When `true`, hard-delete the row instead of marking it stopped. Only permitted for ephemeral workflow instances (`ins_ses_` ids).',
+          schema: { type: 'string', enum: ['true', 'false'] },
+        },
       ],
       responses: {
         204: { description: 'Instance stopped and torn down' },
+        400: {
+          description: 'Hard delete requested for a non-ephemeral instance',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
         403: {
           description: 'Caller is not a user principal of the tenant',
           content: { 'application/json': { schema: resolver(ErrorResponse) } },
@@ -217,6 +238,20 @@ export function createAgentProvisioningRouter(
       const userId = c.get('userId');
       const tenantId = c.req.param('tenantId');
       const instanceId = c.req.param('instanceId');
+      const hard = c.req.query('hard') === 'true';
+
+      // Hard delete CASCADE-removes inference_turn (chat history). Only the
+      // ephemeral workflow step/supervisor instances are throwaway; user chat
+      // agents (Myra/Oat) must keep their history, so refuse the hard path for
+      // anything that is not an `ins_ses_` instance.
+      if (hard && !isEphemeralWorkflowInstance(instanceId)) {
+        return c.json(
+          {
+            error: 'Hard delete is only permitted for ephemeral workflow instances (ins_ses_ ids)',
+          },
+          400
+        );
+      }
 
       const callerPrincipal = await db.query.principal.findFirst({
         where: and(
@@ -235,17 +270,27 @@ export function createAgentProvisioningRouter(
       const now = new Date();
       await db.transaction(async (rawTx) => {
         const tx = rawTx as unknown as DB['db'];
-        await tx
-          .update(agentInstance)
-          .set({ status: 'stopped', endedAt: now, updatedAt: now })
-          .where(eq(agentInstance.id, instanceId));
+        const hubTx = tx as unknown as HubDb;
         // Remove any personal-agent mapping so /me returns paInstanceId: null,
         // which surfaces the onboarding screen (re-deploy) rather than a broken
-        // "provisioning" state.
-        const hubTx = tx as unknown as HubDb;
+        // "provisioning" state. The mapping is hub-owned (no FK to
+        // agent_instance), so it is deleted explicitly in both paths.
         await hubTx
           .delete(memberAgentInstance)
           .where(eq(memberAgentInstance.instanceId, instanceId));
+        if (hard) {
+          // Drop the row outright. Postgres FK cascades clean up the dependent
+          // rows: inference_turn (CASCADE), session_asset (CASCADE), and
+          // session_mail.instanceId (SET NULL). This is what lets the cleanup
+          // script converge — a soft stop leaves the row for the admin list to
+          // re-surface forever.
+          await tx.delete(agentInstance).where(eq(agentInstance.id, instanceId));
+        } else {
+          await tx
+            .update(agentInstance)
+            .set({ status: 'stopped', endedAt: now, updatedAt: now })
+            .where(eq(agentInstance.id, instanceId));
+        }
       });
 
       // Notify the sidecar so it tears down the agent immediately. Without this,
