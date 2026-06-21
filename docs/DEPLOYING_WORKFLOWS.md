@@ -26,6 +26,60 @@ change.
 - **Run** (sidecar): the workflow-host supervisor reads `workflow.json` from the
   `workflow` repo and drives the steps, including `awaitSignal` human gates.
 
+## Lifecycle: a deployed workflow has zero live instances
+
+Deploying (or adding to a tenant) a workflow **registers a definition** — it does
+**not** stand up a persistently-running service. A deployed workflow has **zero
+live instances** at rest: the supervisor is brought up to drive a run and is not
+expected to idle indefinitely. Workflows are generally **one-offs** (deploy, run
+once, done) or **automations** (triggered on demand). Do not design a workflow
+as an always-on daemon; if you need standing behaviour, that is an agent, not a
+workflow.
+
+### Restart resilience (CL-2221/2224/2225)
+
+The supervisor's mail address lives only in the hub's in-memory `addressIndex`
+(set at deploy time) and is **not** re-advertised by the sidecar on
+register/reconnect — supervisors never run `startSession`. So a hub restart or
+sidecar bounce drops it, and a later run-start/signal would otherwise hit
+`agent is unreachable` with zero step execution.
+
+The **hub is the control plane** and re-establishes the supervisor from its own
+durable state (the `workflow` repo + the `agent_instance`/`workflow_run` rows),
+never relying on the sidecar to self-restore:
+
+- `ensureDeploymentRoutable` (`apps/hub/src/services/workflow-deploy.ts`) — an
+  idempotent, per-`deploymentId`-coalesced primitive. If the supervisor address
+  is already routable it is a no-op; otherwise it reads `workflow.json` back,
+  rebuilds the deploy config for the **existing** `deploymentId`, and re-sends
+  **only the supervisor frame**. Step sessions are deliberately not re-launched —
+  they self-restore on a sidecar restart and stay alive on a hub restart, and
+  re-launching them would throw `Agent already exists`.
+- The run-start and signal handlers (`apps/hub/src/routes/workflow-runs.ts`) call
+  it before delivering, so a trigger/signal never dead-ends on an unreachable
+  supervisor.
+- The reconciler (`apps/hub/src/services/workflow-reconciler.ts`) calls it for
+  every active deployment on hub startup and on each sidecar `agent.reconnected`,
+  single-flight-guarded.
+- The sidecar deploy router (`apps/sidecar/src/workflow-host-wiring.ts`
+  `deployMultiStep`) is idempotent: a re-deploy of the same address + same
+  definition short-circuits (returns the existing pubkey, no second child); a
+  different definition for a live address fails closed (our model mints a fresh
+  `deploymentId`→address per redeploy, so that case is a contract violation).
+
+### Known limitation: paused runs do not resume across a restart
+
+Within a **single supervisor lifetime**, a run paused at an `awaitSignal` gate
+resumes normally when the signal arrives. But a run **parked at `awaitSignal`
+when the supervisor process restarts cannot be resumed** — interchange's
+`@intx/workflow` runtime throws `RuntimeResumeUnsupportedError` on resume of an
+`awaiting-signal` / `awaiting-timer` / `in-flight` step (`run.ts:244-257`), and
+the failure is swallowed without a terminal event (the run wedges). The hub-side
+machinery above re-establishes the supervisor so **new** runs work and resume
+will work end-to-end once the upstream runtime re-arms awaiting-signal steps on
+resume — tracked in **CL-2226**. Until then, keep human-gate waits short or
+expect an interrupted gate to require a fresh run.
+
 ## Authorization
 
 Deploy is an **operator action**. There are two authorized paths, both resolving
