@@ -1,5 +1,5 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { type } from 'arktype';
 import { resumeFromLog, type RunState, type WorkflowEvent } from '@intx/workflow';
 import { api } from '../lib/api';
@@ -95,28 +95,43 @@ export function useWorkflowRunState(
   const [frames, setFrames] = useState<Map<string, RunFrame>>(new Map());
   const [connected, setConnected] = useState(false);
 
+  // Frames accumulate in a ref and flush to state on a TRAILING debounce. On
+  // open the stream replays the whole log from seq 0 in a tight burst; flushing
+  // per event would re-render through every intermediate step ("walking" the UI
+  // through past steps). Trailing debounce collapses the replay burst into ONE
+  // render at the final state — so the panel jumps straight to the active step —
+  // while sparse live events (a step completing, then a wait) each flush after
+  // the quiet window.
+  const framesRef = useRef<Map<string, RunFrame>>(new Map());
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!deploymentId) return;
+    framesRef.current = new Map();
     setFrames(new Map());
     setConnected(true);
     const url = streamUrl(`/workflow-runs/${deploymentId}/stream`, tenantId);
+    const flush = () => {
+      flushTimer.current = null;
+      setFrames(new Map(framesRef.current));
+    };
     const unsubscribe = subscribeSharedEventStream(url, 'message', (raw) => {
       const parsed = runStreamFrameSchema(raw);
       if (parsed instanceof type.errors) return;
       const key = `${parsed.runId}/${String(parsed.seq)}`;
-      setFrames((prev) => {
-        if (prev.has(key)) return prev;
-        const next = new Map(prev);
-        next.set(key, {
-          runId: parsed.runId,
-          seq: parsed.seq,
-          event: frameToWorkflowEvent(parsed),
-        });
-        return next;
+      if (framesRef.current.has(key)) return;
+      framesRef.current.set(key, {
+        runId: parsed.runId,
+        seq: parsed.seq,
+        event: frameToWorkflowEvent(parsed),
       });
+      if (flushTimer.current !== null) clearTimeout(flushTimer.current);
+      flushTimer.current = setTimeout(flush, 250);
     });
     return () => {
       setConnected(false);
+      if (flushTimer.current !== null) clearTimeout(flushTimer.current);
+      flushTimer.current = null;
       unsubscribe();
     };
   }, [deploymentId, tenantId]);
@@ -209,6 +224,24 @@ export function useStartWorkflow(tenantId?: string | null) {
         { input }
       );
       return res;
+    },
+  });
+}
+
+// Delete (undeploy) a workflow deployment: operator-gated soft-delete that
+// drops it from the list/stream/start, undeploys the sidecar supervisor, and
+// stops its step instances. Used to finish/remove a completed or stuck run.
+export function useDeleteWorkflow(tenantId?: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (deploymentId: string) =>
+      api<unknown>(
+        'DELETE',
+        withTenant(`/workflows/${encodeURIComponent(deploymentId)}`, tenantId)
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workflow-runs'] });
+      void queryClient.invalidateQueries({ queryKey: ['workflows'] });
     },
   });
 }

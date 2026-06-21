@@ -255,10 +255,14 @@ export function CompletedWorkflowRow({
   item,
   isActive,
   onOpen,
+  onRemove,
+  removing,
 }: {
   item: WorkflowRailItem;
   isActive: boolean;
   onOpen?: () => void;
+  onRemove?: () => void;
+  removing?: boolean;
 }) {
   return (
     <div
@@ -290,6 +294,20 @@ export function CompletedWorkflowRow({
         >
           GA
         </div>
+        {onRemove ? (
+          <button
+            type="button"
+            aria-label={`Remove workflow ${item.name}`}
+            disabled={removing}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            className="flex-none rounded-[7px] border border-border px-2 py-[3px] text-[11px] text-text-3 opacity-0 transition-opacity hover:border-orange hover:text-orange disabled:opacity-50 group-hover:opacity-100"
+          >
+            {removing ? '…' : 'Remove'}
+          </button>
+        ) : null}
       </div>
     </div>
   );
