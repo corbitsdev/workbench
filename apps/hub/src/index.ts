@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
-import { openAPIRouteHandler } from "hono-openapi";
+import { describeRoute, openAPIRouteHandler } from "hono-openapi";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import {
   schema as intxSchema,
@@ -612,6 +612,37 @@ v1.post(
 // deleting another tenant's deployment.
 v1.delete(
   "/workflows/:deploymentId",
+  describeRoute({
+    tags: ["Workflows"],
+    summary: "Delete (undeploy) a workflow deployment",
+    description:
+      "Operator-gated. Soft-deletes the deployment (drops it from list/stream/start), undeploys the sidecar supervisor, and stops its step instances. Optional `?tenantId=` selects a workbench the user belongs to.",
+    parameters: [
+      {
+        name: "deploymentId",
+        in: "path",
+        required: true,
+        description: "Deployment id (ses_…) of the workflow to delete.",
+        schema: { type: "string" },
+      },
+      {
+        name: "tenantId",
+        in: "query",
+        required: false,
+        description:
+          "Target workbench tenant id. Omit for the active workbench.",
+        schema: { type: "string" },
+      },
+    ],
+    responses: {
+      204: { description: "Deployment deleted and undeployed" },
+      403: {
+        description:
+          "User context not found or forbidden for the requested tenant",
+      },
+      404: { description: "Workflow deployment not found" },
+    },
+  }),
   createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
   deleteWorkflowHandler(workflowDeployCoreDeps),
 );
