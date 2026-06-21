@@ -96,6 +96,18 @@ const SignalAcceptedResponse = type({ accepted: 'boolean' });
 const StartRunResponse = type({ deploymentId: 'string', accepted: 'boolean' });
 const ErrorResponse = type({ error: 'string' });
 
+// Re-establish a deployment's supervisor if the hub has lost its routable
+// address (hub/sidecar restart). Pre-bound in index.ts over deploymentDomain +
+// hubPublicKey; idempotent (a no-op when already routable) and coalesced per
+// deploymentId in the deploy service. The start/signal handlers await it before
+// delivering so a run never dead-ends on `agent is unreachable` (CL-2225).
+export type EnsureDeploymentRoutableFn = (args: {
+  deploymentId: string;
+  kind: string;
+  tenantId: string;
+  creatorPrincipalId: string;
+}) => Promise<{ reestablished: boolean }>;
+
 export function createWorkflowRunsRouter(deps: {
   db: HubDb;
   repoStore: RepoStore;
@@ -103,6 +115,7 @@ export function createWorkflowRunsRouter(deps: {
   sessionService: SessionService;
   cryptoProvider: CryptoProvider;
   deploymentDomain: string;
+  ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
 }): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
   const { repoStore } = deps;
@@ -500,6 +513,15 @@ export function createWorkflowRunsRouter(deps: {
       }
 
       try {
+        // A paused run's supervisor may have been dropped from the hub's
+        // addressIndex by a restart; re-establish it before delivering so the
+        // signal does not throw `agent is unreachable` (CL-2225).
+        await deps.ensureDeploymentRoutable({
+          deploymentId,
+          kind: owned.kind,
+          tenantId: owned.tenantId,
+          creatorPrincipalId: owned.principalId,
+        });
         deps.sidecarRouter.sendSignalDeliver({
           agentAddress: deriveDeploymentAddress({
             deploymentId,
@@ -634,6 +656,16 @@ export function createWorkflowRunsRouter(deps: {
       }
 
       try {
+        // The supervisor may have been dropped from the hub's addressIndex by a
+        // restart since deploy; re-establish it before delivering the trigger so
+        // the run does not dead-end on `agent is unreachable` with zero events
+        // (CL-2223/CL-2225).
+        await deps.ensureDeploymentRoutable({
+          deploymentId: deployment.deploymentId,
+          kind: deployment.kind,
+          tenantId: deployment.tenantId,
+          creatorPrincipalId: deployment.principalId,
+        });
         await deps.sessionService.sendUserMessage({
           agentAddress: deriveDeploymentAddress({
             deploymentId: deployment.deploymentId,

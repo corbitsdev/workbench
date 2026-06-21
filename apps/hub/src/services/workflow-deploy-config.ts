@@ -17,17 +17,15 @@ export type WorkflowDeployConfig = {
   deployContent: DeployContent;
 };
 
-// Builds the base HarnessConfig a workflow deploy shares across its steps. The
-// orchestrator overrides each step's address and prompt from the step agent;
-// the base only carries the tenant inference source the steps pin against.
-// Today every native workflow runs on the shared tenant LLM source; per-source
-// workflows extend this resolver when they land.
-export async function resolveWorkflowDeployConfig(args: {
+// Resolve the tenant's shared LLM inference source. Today every native workflow
+// runs on the shared tenant LLM source; per-source workflows extend this when
+// they land. Split out from config assembly so a re-drive (the deployment
+// reconciler / run-start resilience, CL-2224/CL-2225) can rebuild config for an
+// EXISTING deploymentId without minting a new one.
+export async function resolveWorkflowDeploySource(args: {
   db: HubDb;
   tenantId: string;
-  principalId: string;
-  deploymentDomain: string;
-}): Promise<WorkflowDeployConfig> {
+}): Promise<InferenceSource> {
   const credentialRow = await resolveCredentialRequirement(
     args.db,
     args.tenantId,
@@ -57,29 +55,61 @@ export async function resolveWorkflowDeployConfig(args: {
     );
   }
 
-  const source: InferenceSource = {
+  return {
     id: `${providerRow.plugin}:${LLM_DEFAULT_MODEL}`,
     provider: providerRow.plugin,
     baseURL: metadata.baseURL,
     apiKey: credentialRow.secret,
     model: LLM_DEFAULT_MODEL,
   };
+}
 
-  const deploymentId = generateId('session');
+// Assemble the base HarnessConfig from a resolved source and a caller-supplied
+// deploymentId. The orchestrator overrides each step's address and prompt; the
+// base only carries the tenant inference source the steps pin against. A
+// re-drive passes the persisted deploymentId so derived step/supervisor
+// addresses match the rows the original deploy wrote.
+export function assembleWorkflowDeployConfig(args: {
+  deploymentId: string;
+  tenantId: string;
+  principalId: string;
+  deploymentDomain: string;
+  source: InferenceSource;
+}): WorkflowDeployConfig {
   return {
-    deploymentId,
+    deploymentId: args.deploymentId,
     config: {
       sessionId: generateId('session'),
-      agentId: deploymentId,
+      agentId: args.deploymentId,
       tenantId: args.tenantId,
       principalId: args.principalId,
-      agentAddress: `${deploymentId}@${args.deploymentDomain}`,
+      agentAddress: `${args.deploymentId}@${args.deploymentDomain}`,
       systemPrompt: '',
       tools: [],
       grants: [],
-      sources: [source],
-      defaultSource: source.id,
+      sources: [args.source],
+      defaultSource: args.source.id,
     },
     deployContent: { systemPrompt: '' },
   };
+}
+
+// Builds the base HarnessConfig for a FRESH deploy, minting a new deploymentId.
+export async function resolveWorkflowDeployConfig(args: {
+  db: HubDb;
+  tenantId: string;
+  principalId: string;
+  deploymentDomain: string;
+}): Promise<WorkflowDeployConfig> {
+  const source = await resolveWorkflowDeploySource({
+    db: args.db,
+    tenantId: args.tenantId,
+  });
+  return assembleWorkflowDeployConfig({
+    deploymentId: generateId('session'),
+    tenantId: args.tenantId,
+    principalId: args.principalId,
+    deploymentDomain: args.deploymentDomain,
+    source,
+  });
 }

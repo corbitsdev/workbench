@@ -1290,6 +1290,180 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     void supervisorIpcKeyPair;
   });
 
+  test("re-deploy of the same address with the same definition is idempotent: no second spawn, same pubkey (CL-2221)", async () => {
+    const childIpcKeyPair = await generateKeyPair();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const supervisorToChild = createMemoryNdjsonStream();
+    const eventChildToSupervisor = createMemoryFrameStream();
+    let resolveExit: ((code: number) => void) | undefined;
+    const exited = new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    });
+    let spawnCount = 0;
+    let observedEnv: Record<string, string> | undefined;
+    const spawner: SubprocessSpawner = ({ env }) => {
+      spawnCount += 1;
+      observedEnv = env;
+      return {
+        pid: 4242,
+        controlWriter: supervisorToChild.writer,
+        controlReader: childToSupervisor.reader,
+        eventReader: eventChildToSupervisor.reader,
+        kill: () => {
+          childToSupervisor.close();
+          eventChildToSupervisor.close();
+          resolveExit?.(0);
+        },
+        exited,
+      };
+    };
+
+    const mailRouter = createMultistepMailRouter();
+    const { router } = await buildMultistepFixture({
+      spawner,
+      multistepBinaryPath: "/fake/bin/multistep-workflow-child",
+      multistepMailRouter: mailRouter,
+    });
+
+    const sources = defaultMultistepSources();
+    const definition = {
+      id: "wf-idempotent",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["step-1"],
+      steps: { "step-1": { kind: "step" } },
+    };
+    const frame = makeMultistepFrame({ definition, sources });
+
+    const firstDeploy = router.deploy(frame);
+    while (observedEnv === undefined) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const channelId = observedEnv.IPC_CHANNEL_ID;
+    if (channelId === undefined) throw new Error("IPC_CHANNEL_ID not set");
+    const childSender = createControlChannelSender({
+      privateKeySeed: childIpcKeyPair.privateKey,
+      channelId,
+      writer: {
+        write(line: string) {
+          childToSupervisor.inject(line);
+          return Promise.resolve();
+        },
+      },
+    });
+    await childSender.send({
+      type: "ready",
+      data: {
+        childPid: 4242,
+        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+      },
+    });
+    const firstResult = await firstDeploy;
+
+    // Re-deploy the SAME address + definition (the hub re-driving after it lost
+    // the addressIndex entry). The router must short-circuit: no second child
+    // spawn, and the same supervisor public key acked back so the hub
+    // re-registers the address; the address stays routable.
+    const secondResult = await router.deploy(frame);
+
+    expect(spawnCount).toBe(1);
+    expect(secondResult.publicKey).toBe(firstResult.publicKey);
+    expect(mailRouter.tryRoute(frame.agentAddress, new Uint8Array([1]))).toBe(true);
+
+    void supervisorToChild;
+  });
+
+  test("re-deploy of the same address with a DIFFERENT definition fails closed without tearing down the live supervisor (CL-2221)", async () => {
+    const childIpcKeyPair = await generateKeyPair();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const supervisorToChild = createMemoryNdjsonStream();
+    const eventChildToSupervisor = createMemoryFrameStream();
+    let resolveExit: ((code: number) => void) | undefined;
+    const exited = new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    });
+    let spawnCount = 0;
+    let observedEnv: Record<string, string> | undefined;
+    const spawner: SubprocessSpawner = ({ env }) => {
+      spawnCount += 1;
+      observedEnv = env;
+      return {
+        pid: 5252,
+        controlWriter: supervisorToChild.writer,
+        controlReader: childToSupervisor.reader,
+        eventReader: eventChildToSupervisor.reader,
+        kill: () => {
+          childToSupervisor.close();
+          eventChildToSupervisor.close();
+          resolveExit?.(0);
+        },
+        exited,
+      };
+    };
+
+    const mailRouter = createMultistepMailRouter();
+    const { router } = await buildMultistepFixture({
+      spawner,
+      multistepBinaryPath: "/fake/bin/multistep-workflow-child",
+      multistepMailRouter: mailRouter,
+    });
+
+    const sources = defaultMultistepSources();
+    const frame = makeMultistepFrame({
+      definition: {
+        id: "wf-first",
+        triggers: [{ type: "manual" }],
+        stepOrder: ["step-1"],
+        steps: { "step-1": { kind: "step" } },
+      },
+      sources,
+    });
+
+    const firstDeploy = router.deploy(frame);
+    while (observedEnv === undefined) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const channelId = observedEnv.IPC_CHANNEL_ID;
+    if (channelId === undefined) throw new Error("IPC_CHANNEL_ID not set");
+    const childSender = createControlChannelSender({
+      privateKeySeed: childIpcKeyPair.privateKey,
+      channelId,
+      writer: {
+        write(line: string) {
+          childToSupervisor.inject(line);
+          return Promise.resolve();
+        },
+      },
+    });
+    await childSender.send({
+      type: "ready",
+      data: {
+        childPid: 5252,
+        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+      },
+    });
+    await firstDeploy;
+
+    // A re-deploy on the same address carrying a different definition is a
+    // contract violation (our deploy model mints a fresh deploymentId -> address
+    // per redeploy). The router must reject it WITHOUT spawning again and
+    // WITHOUT tearing down the still-live first supervisor.
+    const conflicting = makeMultistepFrame({
+      definition: {
+        id: "wf-second",
+        triggers: [{ type: "manual" }],
+        stepOrder: ["step-1", "step-2"],
+        steps: { "step-1": { kind: "step" }, "step-2": { kind: "step" } },
+      },
+      sources,
+    });
+
+    await expect(router.deploy(conflicting)).rejects.toThrow(/different definition/);
+    expect(spawnCount).toBe(1);
+    expect(mailRouter.tryRoute(frame.agentAddress, new Uint8Array([1]))).toBe(true);
+
+    void supervisorToChild;
+  });
+
   test("registers a multistepMailRouter handler against the deployment address once spawn succeeds", async () => {
     // Drives the spawn handshake the same way the first multi-step
     // test does, but injects a `multistepMailRouter` and asserts the

@@ -305,6 +305,14 @@ export type SidecarWorkflowSupervisor = {
   getCredentialsSnapshot(): CredentialsSnapshot | null;
 };
 
+// An entry in the deploy router's `activeSupervisors` map: the live supervisor
+// plus the wire-definition hash it was deployed with, so an idempotent
+// re-deploy of the same address can be recognized and short-circuited.
+type ActiveMultiStepSupervisor = {
+  wired: SidecarWorkflowSupervisor;
+  definitionHash: string;
+};
+
 /**
  * Construct the sidecar's `DeployRouter`. The router holds the
  * `sessions` + `keyStore` closures the workflow-host supervisor's
@@ -691,7 +699,16 @@ export function createSidecarDeployRouter(deps: {
   // its supervisor is constructed and immediately dropped after the
   // deploy callback runs -- so no entry is recorded for trivial
   // deploys and the undeploy hook's lookup is a no-op for them.
-  const activeSupervisors = new Map<string, SidecarWorkflowSupervisor>();
+  //
+  // The value holds the deployed definition hash so an idempotent re-deploy of
+  // the SAME address (the hub re-driving to re-register an address it dropped
+  // from its in-memory addressIndex on a hub restart, while this sidecar's
+  // child is still alive) can be detected and short-circuited rather than
+  // spawning a second child. See the guard at the top of `deployMultiStep`.
+  // This router assumes the hub never issues concurrent deploys for one address
+  // (the hub serializes via `pendingDeploys`); the single-flight invariant is
+  // owned there.
+  const activeSupervisors = new Map<string, ActiveMultiStepSupervisor>();
 
   // Slug-collision tracking. `deriveTrivialDeploymentId` substitutes
   // disallowed characters with `-`, which is deterministic but lossy:
@@ -729,6 +746,33 @@ export function createSidecarDeployRouter(deps: {
     validateWorkflowProjection(projection);
 
     const deploymentId = deriveTrivialDeploymentId(frame.agentAddress);
+
+    // Idempotent re-deploy short-circuit. The hub re-drives a multi-step deploy
+    // for an address it dropped from its in-memory addressIndex (hub restart /
+    // run-start resilience / reconnect reconciler -- CL-2221/2224/2225) while
+    // this sidecar's supervisor child is still alive. A live entry here owns and
+    // self-recycles its child, so the address is genuinely reachable; the hub
+    // re-registers it from the deploy-frame send plus this ack (sidecar-handler
+    // sets addressIndex on send). Re-spawning instead would orphan the running
+    // child and re-run self-discovery, which throws RuntimeResumeUnsupportedError
+    // on any run parked at awaitSignal and permanently wedges it -- so we return
+    // the existing principal pubkey (the same value a fresh spawn acks) without
+    // respawning. A different definition for the same address cannot occur in
+    // our deploy model (every redeploy mints a fresh deploymentId -> address), so
+    // it is a contract violation; fail loudly WITHOUT tearing down the live
+    // supervisor rather than risk a destroy-then-failed-respawn wedge.
+    const active = activeSupervisors.get(frame.agentAddress);
+    if (active !== undefined) {
+      const incomingHash = computeWireDefinitionHash(projection.definition);
+      if (active.definitionHash !== incomingHash) {
+        throw new Error(
+          `multi-step deploy: address ${frame.agentAddress} already has a live supervisor with a different definition; refusing to replace it (deploymentId is expected to be 1:1 with definition)`,
+        );
+      }
+      logger.info`multi-step deploy: supervisor already active for ${frame.agentAddress}; re-confirming without respawn`;
+      return { publicKey: principalPublicKeyHex };
+    }
+
     claimSlug(deploymentId, frame.agentAddress);
     // Release every piece of partial state if any step between here
     // and `registerDeployment` throws. The undeploy hook -- the only
@@ -932,7 +976,7 @@ export function createSidecarDeployRouter(deps: {
       // Child process is live after `spawn` resolves; the failure
       // unwind needs the supervisor handle from here on.
       wiredForUnwind = wired;
-      activeSupervisors.set(frame.agentAddress, wired);
+      activeSupervisors.set(frame.agentAddress, { wired, definitionHash });
       supervisorRegistered = true;
 
       // Bind the deployment's mail address to this supervisor's
@@ -1149,10 +1193,10 @@ export function createSidecarDeployRouter(deps: {
       // cannot observe a stale handle even if `shutdown()` rejects.
       // Trivial deploys never enter the map, so this lookup is a no-op
       // for the trivial branch.
-      const wired = activeSupervisors.get(frame.agentAddress);
-      if (wired !== undefined) {
+      const active = activeSupervisors.get(frame.agentAddress);
+      if (active !== undefined) {
         activeSupervisors.delete(frame.agentAddress);
-        await wired.supervisor.shutdown();
+        await active.wired.supervisor.shutdown();
       }
       releaseSlug(deploymentId, frame.agentAddress);
       deps.unregisterDeployment({

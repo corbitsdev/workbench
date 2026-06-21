@@ -59,7 +59,7 @@ mock.module('@intx/workflow-host', () => ({
 }));
 
 import { Hono } from 'hono';
-import { createWorkflowRunsRouter } from './workflow-runs';
+import { createWorkflowRunsRouter, type EnsureDeploymentRoutableFn } from './workflow-runs';
 import type { HubDb } from '../db';
 
 type WorkflowRunRow = {
@@ -123,6 +123,7 @@ function buildApp(db: HubDb, userId = 'user-1') {
       sessionService: noopSessionService,
       cryptoProvider: noopCrypto,
       deploymentDomain: 'deploy.example.com',
+      ensureDeploymentRoutable: () => Promise.resolve({ reestablished: false }),
     })
   );
   return parent;
@@ -247,6 +248,7 @@ describe('GET /workflow-runs (workbench-aware visibility)', () => {
         sessionService: noopSessionService,
         cryptoProvider: noopCrypto,
         deploymentDomain: 'deploy.example.com',
+        ensureDeploymentRoutable: () => Promise.resolve({ reestablished: false }),
       })
     );
     return parent;
@@ -290,7 +292,11 @@ describe('GET /workflow-runs (workbench-aware visibility)', () => {
 });
 
 describe('POST /workflow-runs/:kind/start (shadowing + visibility)', () => {
-  function startApp(db: HubDb, capture: { msg?: { tenantId: string } }) {
+  function startApp(
+    db: HubDb,
+    capture: { msg?: { tenantId: string } },
+    ensure?: EnsureDeploymentRoutableFn
+  ) {
     const sessionService = {
       sendUserMessage: (args: { tenantId: string }) => {
         capture.msg = args;
@@ -311,10 +317,44 @@ describe('POST /workflow-runs/:kind/start (shadowing + visibility)', () => {
         sessionService,
         cryptoProvider: noopCrypto,
         deploymentDomain: 'deploy.example.com',
+        ensureDeploymentRoutable: ensure ?? (() => Promise.resolve({ reestablished: false })),
       })
     );
     return parent;
   }
+
+  it('re-establishes the supervisor before delivering, and does not deliver if that fails (CL-2225)', async () => {
+    userContextImpl = () =>
+      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+    ancestorChain = ['tenant-1'];
+    const candidates: WorkflowRunRow[] = [
+      {
+        deploymentId: 'dep-wb',
+        kind: 'deck',
+        status: 'idle',
+        createdAt: '2026-06-01T00:00:00.000Z',
+        tenantId: 'tenant-1',
+      },
+    ];
+    const ensureArgs: Array<{ deploymentId: string; kind: string }> = [];
+    const ensure: EnsureDeploymentRoutableFn = (args) => {
+      ensureArgs.push({ deploymentId: args.deploymentId, kind: args.kind });
+      return Promise.reject(new Error('sidecar down'));
+    };
+    const capture: { msg?: { tenantId: string } } = {};
+    const res = await startApp(makeListDb([], candidates), capture, ensure).request(
+      new Request('http://local/workflow-runs/deck/start?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ foo: 'bar' }),
+      })
+    );
+    expect(res.status).toBe(500);
+    // ensure was invoked with the resolved deployment's identity...
+    expect(ensureArgs).toEqual([{ deploymentId: 'dep-wb', kind: 'deck' }]);
+    // ...and the trigger was NOT delivered because re-establishment failed.
+    expect(capture.msg).toBeUndefined();
+  });
 
   it('the most-specific tenant deployment shadows an inherited global one', async () => {
     userContextImpl = () =>
