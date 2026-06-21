@@ -71,12 +71,10 @@ function parseNoteList(output: unknown): NoteListResult {
   return { status: 'ok', notes: parsed.notes };
 }
 
-const AnalyzeOutput = type({
-  'painPoints?': 'string[]',
-});
-
-const GenerateOutput = type({
-  'collateral?': 'string',
+// Agent steps return the agent-runtime turn: { reply: string, turn: {...} }.
+// The reply is the human-readable markdown the step produced.
+const AgentReplyOutput = type({
+  reply: 'string',
 });
 
 function phaseFor(steps: WorkflowPanelProps['state'], id: StepId): StepPhase | undefined {
@@ -219,42 +217,31 @@ function FetchSection({ output, phase }: { output: unknown; phase: StepPhase | u
 }
 
 function AnalyzeSection({ output, phase }: { output: unknown; phase: StepPhase | undefined }) {
-  const parsed = AnalyzeOutput(output);
-  if (parsed instanceof type.errors) {
+  const parsed = AgentReplyOutput(output);
+  if (parsed instanceof type.errors || parsed.reply.trim() === '') {
     if (phase === 'completed') {
       return <MalformedOutput label="Couldn’t read the extracted pain points." />;
     }
     return <Pending label="Pain points appear here once analysis completes." />;
   }
-  if (!parsed.painPoints || parsed.painPoints.length === 0) {
-    return <Pending label="Pain points appear here once analysis completes." />;
-  }
   return (
-    <ul className="space-y-2">
-      {parsed.painPoints.map((point, index) => (
-        <li key={index} className="flex gap-2 text-[13px] leading-relaxed text-text-2">
-          <span className="select-none text-text-3">{index + 1}.</span>
-          <span>{point}</span>
-        </li>
-      ))}
-    </ul>
+    <pre className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-2">
+      {parsed.reply}
+    </pre>
   );
 }
 
 function GenerateSection({ output, phase }: { output: unknown; phase: StepPhase | undefined }) {
-  const parsed = GenerateOutput(output);
-  if (parsed instanceof type.errors) {
+  const parsed = AgentReplyOutput(output);
+  if (parsed instanceof type.errors || parsed.reply.trim() === '') {
     if (phase === 'completed') {
       return <MalformedOutput label="Couldn’t read the generated collateral." />;
     }
     return <Pending label="Generated collateral appears here once it is ready." />;
   }
-  if (!parsed.collateral) {
-    return <Pending label="Generated collateral appears here once it is ready." />;
-  }
   return (
     <pre className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-2">
-      {parsed.collateral}
+      {parsed.reply}
     </pre>
   );
 }
