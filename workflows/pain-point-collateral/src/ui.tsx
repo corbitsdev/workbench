@@ -108,6 +108,19 @@ function buildStepperSteps(state: WorkflowPanelProps['state']): WorkflowStep[] {
   });
 }
 
+// The single step the run is currently waiting on (or, when idle, the first
+// step that has not completed). Drives the body so the panel shows ONE
+// actionable step at a time — the stepper is the map; the body is the work.
+function activeStepId(state: WorkflowPanelProps['state']): StepId {
+  const active = STEP_IDS.find((id) => {
+    const phase = phaseFor(state, id);
+    return phase === 'in-flight' || phase === 'awaiting-signal' || phase === 'awaiting-timer';
+  });
+  if (active) return active;
+  const firstIncomplete = STEP_IDS.find((id) => phaseFor(state, id) !== 'completed');
+  return firstIncomplete ?? 'approval';
+}
+
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-panel border border-border bg-surface p-5">
@@ -151,7 +164,10 @@ function NoteListSection({
     return <Pending label="No Granola notes were found." />;
   }
 
-  const selectable = selectPhase === 'awaiting-signal';
+  // Enable selection as soon as the select step is active. A signal delivered
+  // while the step is still `in-flight` (before its SignalAwaited) is queued and
+  // consumed by the runtime, so we do not gate strictly on `awaiting-signal`.
+  const selectable = selectPhase === 'awaiting-signal' || selectPhase === 'in-flight';
   const chosen = selectPhase === 'completed';
 
   if (chosen) {
@@ -276,6 +292,7 @@ export function Panel(props: WorkflowPanelProps) {
   const { state, connected, stepOutputs, onSignal, onClose } = props;
 
   const approvalPhase = phaseFor(state, 'approval');
+  const activeId = activeStepId(state);
   const failed =
     STEP_IDS.some((id) => phaseFor(state, id) === 'failed') || state?.phase === 'failed';
 
@@ -313,30 +330,45 @@ export function Panel(props: WorkflowPanelProps) {
           </p>
         ) : null}
 
-        <SectionCard title="Intake — select a Granola note">
-          <NoteListSection
-            output={stepOutputs.intake}
-            intakePhase={phaseFor(state, 'intake')}
-            selectPhase={phaseFor(state, 'select')}
-            onSelect={handleSelect}
-          />
-        </SectionCard>
+        {(activeId === 'intake' || activeId === 'select') && (
+          <SectionCard title="Select a Granola note">
+            <NoteListSection
+              output={stepOutputs.intake}
+              intakePhase={phaseFor(state, 'intake')}
+              selectPhase={phaseFor(state, 'select')}
+              onSelect={handleSelect}
+            />
+          </SectionCard>
+        )}
 
-        <SectionCard title="Fetch — selected note">
-          <FetchSection output={stepOutputs.fetch} phase={phaseFor(state, 'fetch')} />
-        </SectionCard>
+        {activeId === 'fetch' && (
+          <SectionCard title="Fetching the transcript">
+            <FetchSection output={stepOutputs.fetch} phase={phaseFor(state, 'fetch')} />
+          </SectionCard>
+        )}
 
-        <SectionCard title="Analyze — extracted pain points">
-          <AnalyzeSection output={stepOutputs.analyze} phase={phaseFor(state, 'analyze')} />
-        </SectionCard>
+        {activeId === 'analyze' && (
+          <SectionCard title="Extracting pain points">
+            <AnalyzeSection output={stepOutputs.analyze} phase={phaseFor(state, 'analyze')} />
+          </SectionCard>
+        )}
 
-        <SectionCard title="Generate — collateral">
-          <GenerateSection output={stepOutputs.generate} phase={phaseFor(state, 'generate')} />
-        </SectionCard>
+        {activeId === 'generate' && (
+          <SectionCard title="Generating collateral">
+            <GenerateSection output={stepOutputs.generate} phase={phaseFor(state, 'generate')} />
+          </SectionCard>
+        )}
 
-        <SectionCard title="Approval">
-          <ApprovalSection phase={approvalPhase} onApprove={handleApprove} />
-        </SectionCard>
+        {activeId === 'approval' && (
+          <>
+            <SectionCard title="Generated collateral">
+              <GenerateSection output={stepOutputs.generate} phase={phaseFor(state, 'generate')} />
+            </SectionCard>
+            <SectionCard title="Approve">
+              <ApprovalSection phase={approvalPhase} onApprove={handleApprove} />
+            </SectionCard>
+          </>
+        )}
       </div>
     </div>
   );
