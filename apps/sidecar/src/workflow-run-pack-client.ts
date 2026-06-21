@@ -13,12 +13,53 @@
 // shape the supervisor uses for `writeTreePreservingPrefix`; the
 // transferId is minted inside `HubLink.pushWorkflowRunPack`.
 
+import fs from 'node:fs';
+import git from 'isomorphic-git';
 import { getLogger } from '@intx/log';
 import type { RepoId, RepoStore } from '@intx/hub-sessions';
-import { createDeployPack } from '@intx/storage-isogit';
+import { collectReachableObjects } from '@intx/storage-isogit';
 import type { HubLink } from '@intx/hub-agent';
 
 const logger = getLogger(['interchange', 'sidecar', 'workflow-run-pack-client']);
+
+// Build a packfile carrying EVERY object reachable from the ref tip back to
+// the root commit, walking the full first-parent chain. Workflow-run repos are
+// linear, append-one-commit-per-event histories, so the hub's receiver must
+// see every commit transition; a pack that omits any ancestor commit makes the
+// receiver throw `pack_walk_dangling_parent`.
+//
+// We must NOT use the substrate's `createPack` (its workflow-run branch
+// advances an in-memory `lastPackedTip` cursor on pack *construction*, before
+// and regardless of push success — so a first push the hub never receives
+// poisons every later push into shipping a delta whose base the hub lacks, for
+// the life of the sidecar process). Nor can we use `createDeployPack`: its
+// `collectReachableObjects` walks only a SINGLE commit's tree, not ancestor
+// commits, so on a multi-commit run it ships only the tip and dangles. We
+// therefore walk the chain ourselves (the cursor-free equivalent of
+// interchange's internal `collectChainReachableObjects(tip, null)`), which is
+// idempotent: the hub receiver breaks its walk on commits it already has and
+// dedupes, so a warm hub only applies genuinely-new commits (CL-2230).
+async function buildFullChainPack(
+  dir: string,
+  ref: string
+): Promise<{ pack: Uint8Array; commitSha: string }> {
+  const commitSha = await git.resolveRef({ fs, dir, ref });
+  const seen = new Set<string>();
+  let current: string | null = commitSha;
+  while (current !== null) {
+    for (const oid of await collectReachableObjects(dir, current)) {
+      seen.add(oid);
+    }
+    const { commit } = await git.readCommit({ fs, dir, oid: current });
+    const parent = commit.parent[0];
+    current = parent ?? null;
+  }
+  const result = await git.packObjects({ fs, dir, oids: [...seen], write: false });
+  if (result.packfile === undefined) {
+    throw new Error(`packObjects returned no packfile for ref "${ref}" (${commitSha})`);
+  }
+  return { pack: result.packfile, commitSha };
+}
 
 export type WorkflowRunPackClient = {
   /**
@@ -48,21 +89,7 @@ export function createWorkflowRunPackClient(
           `workflow-run pack client: repoId.kind must be "workflow-run", got ${JSON.stringify(repoId.kind)}`
         );
       }
-      // Build a FULL reachable-object pack (root → tip) rather than the
-      // substrate's cursor-based incremental `createPack`. Interchange's
-      // workflow-run branch of `createPack` advances an in-memory
-      // `lastPackedTip` cursor on pack *construction* — before, and
-      // regardless of, push success. So the very first push (which the hub
-      // rejects while its repo is still empty) leaves the cursor ahead of
-      // what the hub actually holds; every later push then ships a delta
-      // whose base commit the hub never received → `pack_walk_dangling_parent`
-      // → all events rejected for the life of the sidecar process. A
-      // full-chain pack sidesteps the cursor entirely and is idempotent: the
-      // hub's receiver breaks its walk on commits it already has and
-      // `indexPack` dedupes, so a warm hub only applies genuinely-new commits.
-      // (Interchange already uses `createDeployPack` for every other repo
-      // kind; only workflow-run took the buggy incremental path — CL-2229.)
-      const { pack, commitSha } = await createDeployPack(substrate.getRepoDir(repoId), ref);
+      const { pack, commitSha } = await buildFullChainPack(substrate.getRepoDir(repoId), ref);
       await hubLink.pushWorkflowRunPack({
         agentAddress,
         repoId,

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import git from 'isomorphic-git';
 
 import type { RepoId, RepoStore } from '@intx/hub-sessions';
+import { receivePackObjects } from '@intx/storage-isogit';
 
 import {
   createDeploymentAddressRegistry,
@@ -67,30 +68,38 @@ function createRecordingUnderlyingRepoStore(repoDir = '/tmp/unused'): {
 }
 
 describe('createWorkflowRunPackClient', () => {
-  test('push builds a FULL-chain pack from the repo tip and forwards it to the hub link', async () => {
-    // Real on-disk workflow-run repo: genesis root + one run commit. The
-    // client must build the pack via the cursor-free full-chain
-    // `createDeployPack` (not the substrate's poisoned incremental
-    // `createPack`), so the forwarded commitSha is the real tip and the
-    // pack carries the whole chain from root — which is what keeps a
-    // first push to an empty hub from dangling (CL-2229).
-    const dir = await mkdtemp(join(tmpdir(), 'wf-pack-'));
+  test('push ships the FULL commit chain so a fresh hub can receive it without a dangling parent', async () => {
+    // Workflow-run repos are linear, append-one-commit-per-event histories.
+    // The client must pack the WHOLE chain (root → tip), not just the tip
+    // commit's tree — otherwise the hub's receiver throws
+    // `pack_walk_dangling_parent` on the missing ancestor and the run's
+    // events never sync (the "Loading…" forever bug — CL-2230). This drives a
+    // multi-commit source repo, builds the pack via the real client, and
+    // feeds it to the hub's actual receiver (`receivePackObjects`) against an
+    // EMPTY target repo (the first-push-to-empty-hub case). A single-commit
+    // pack fails here; the full-chain pack succeeds.
+    const sourceDir = await mkdtemp(join(tmpdir(), 'wf-pack-src-'));
+    const targetDir = await mkdtemp(join(tmpdir(), 'wf-pack-dst-'));
     try {
-      await git.init({ fs, dir, defaultBranch: 'main' });
-      await mkdir(join(dir, 'runs', 'r-1', 'events'), { recursive: true });
-      await writeFile(join(dir, 'runs', 'r-1', 'events', '0.json'), '{}');
-      await git.add({ fs, dir, filepath: 'runs/r-1/events/0.json' });
-      const tipSha = await git.commit({
-        fs,
-        dir,
-        message: 'RunStarted',
-        author: { name: 'test', email: 'test@example.com' },
-      });
+      await git.init({ fs, dir: sourceDir, defaultBranch: 'main' });
+      await mkdir(join(sourceDir, 'runs', 'r-1', 'events'), { recursive: true });
+      let tipSha = '';
+      for (let i = 0; i < 3; i += 1) {
+        await writeFile(
+          join(sourceDir, 'runs', 'r-1', 'events', `${String(i)}.json`),
+          JSON.stringify({ seq: i })
+        );
+        await git.add({ fs, dir: sourceDir, filepath: `runs/r-1/events/${String(i)}.json` });
+        tipSha = await git.commit({
+          fs,
+          dir: sourceDir,
+          message: `event-${String(i)}`,
+          author: { name: 'test', email: 'test@example.com' },
+        });
+      }
 
-      const { store } = createRecordingUnderlyingRepoStore(dir);
+      const { store } = createRecordingUnderlyingRepoStore(sourceDir);
       const sent: {
-        agentAddress: string;
-        repoId: RepoId;
         pack: Uint8Array;
         ref: string;
         commitSha: string;
@@ -99,7 +108,7 @@ describe('createWorkflowRunPackClient', () => {
         substrate: store,
         hubLink: {
           async pushWorkflowRunPack(opts) {
-            sent.push(opts);
+            sent.push({ pack: opts.pack, ref: opts.ref, commitSha: opts.commitSha });
           },
         },
       });
@@ -111,15 +120,32 @@ describe('createWorkflowRunPackClient', () => {
       });
 
       expect(sent).toHaveLength(1);
-      expect(sent[0]?.agentAddress).toBe('agent@example.com');
-      expect(sent[0]?.ref).toBe('refs/heads/main');
-      // The forwarded commitSha is the real repo tip, and the pack is a
-      // non-empty packfile built from it.
       expect(sent[0]?.commitSha).toBe(tipSha);
-      expect(sent[0]?.pack).toBeInstanceOf(Uint8Array);
-      expect((sent[0]?.pack.length ?? 0) > 0).toBe(true);
+
+      // The hub's real receiver applies the pack into an empty repo. This is
+      // the exact path that throws `pack_walk_dangling_parent` if any ancestor
+      // commit is missing from the pack.
+      await git.init({ fs, dir: targetDir, defaultBranch: 'main' });
+      // Returns the PREVIOUS sha (null for an empty target); the key is that
+      // it does NOT throw `pack_walk_dangling_parent` and writes the ref to
+      // the tip. A single-commit pack would throw here.
+      const prevSha = await receivePackObjects(
+        targetDir,
+        sent[0]!.pack,
+        'refs/heads/main',
+        tipSha,
+        'test-transfer-1',
+        null
+      );
+      expect(prevSha).toBeNull();
+      // The target now resolves the tip and can walk the whole chain (3
+      // commits) without a NotFound — i.e. no dangling parent.
+      expect(await git.resolveRef({ fs, dir: targetDir, ref: 'refs/heads/main' })).toBe(tipSha);
+      const log = await git.log({ fs, dir: targetDir, ref: 'refs/heads/main' });
+      expect(log.length).toBe(3);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(targetDir, { recursive: true, force: true });
     }
   });
 
