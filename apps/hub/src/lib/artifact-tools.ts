@@ -166,7 +166,11 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
         agentId: context.agentId,
         sessionId: context.sessionId,
       };
-      assertSessionContext(context);
+      // No assertSessionContext: artifact_create stores sessionId: null anyway,
+      // so the session is not a data dependency — only a vestigial gate. A
+      // deterministic workflow tool step has no chat session, so requiring one
+      // blocked every workflow-generated artifact. Standalone artifacts are
+      // valid (tenant-scoped, visible in the gallery).
       const now = new Date();
       const ownerMemberId = await resolveOwnerMemberPrincipalId(context.db, context);
 
