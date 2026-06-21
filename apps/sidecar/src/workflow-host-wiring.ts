@@ -345,6 +345,54 @@ const TRIVIAL_STEP_ID = "trivial";
 export const STEP_INFERENCE_SOURCES_ENV_KEY = "STEP_INFERENCE_SOURCES";
 
 /**
+ * Env key carrying the RAW hub deploymentId (`ses_<id>`) down to the
+ * workflow-process child's substrate factory.
+ *
+ * The supervisor's `deploymentId` binding and `env.spawn.deploymentId`
+ * both hold the SLUGIFIED workflow-run repo id
+ * (`deriveTrivialDeploymentId(frame.agentAddress)`, e.g.
+ * `ins_ses_<id>-abklabs-com`), which the workflow-run repo path
+ * contract requires. But the per-step tool-context resolver must derive
+ * the step's persisted `agent` row id and agent-state repo id from the
+ * RAW deploymentId the hub used when it wrote those rows:
+ * `deriveStepAgentId({ deploymentId: ses_<id> })` -> `ins_ses_<id>-<step>`
+ * and the agent-state repo id `ses_<id>-<step>`. Deriving from the slug
+ * yields `ins_ins_ses_<id>-abklabs-com-<step>`, which the hub never
+ * registered, so the step's tool-manifest fetch 404s.
+ *
+ * The raw deploymentId is recovered once at the router (the single layer
+ * that owns the raw <-> slug mapping) via `deriveRawDeploymentId` and
+ * threaded verbatim, so the child trusts a value instead of re-inverting
+ * the upstream id formulas.
+ */
+export const RAW_DEPLOYMENT_ID_ENV_KEY = "WORKFLOW_RAW_DEPLOYMENT_ID";
+
+/**
+ * Recover the RAW hub deploymentId (`ses_<id>`) from the multi-step
+ * deploy frame's `agentId`. The orchestrator sets the deploy frame's
+ * `agentId` to `deriveDeploymentAgentId({ deploymentId })` =
+ * `ins_<deploymentId>` (see `@intx/workflow-deploy`), so the raw id is
+ * the local-part with the single `ins_` prefix stripped. Unlike the
+ * deployment mail address (`ins_<raw>@<domain>`), `agentId` carries no
+ * domain suffix, so the recovery is a single prefix strip with nothing
+ * to slugify or split on `@`/`.`.
+ *
+ * Fails loudly if the prefix is absent: a frame whose `agentId` does not
+ * match the orchestrator's contract is a programming error upstream, and
+ * a silent fallback would reintroduce the very id-mismatch class this
+ * key exists to close.
+ */
+export function deriveRawDeploymentId(agentId: string): string {
+  const prefix = "ins_";
+  if (!agentId.startsWith(prefix) || agentId.length === prefix.length) {
+    throw new Error(
+      `sidecar deploy router: cannot recover raw deploymentId from agentId ${JSON.stringify(agentId)}; expected the orchestrator's deriveDeploymentAgentId shape "ins_<deploymentId>"`,
+    );
+  }
+  return agentId.slice(prefix.length);
+}
+
+/**
  * Validate the wire-projected workflow definition at the deploy-router
  * boundary. The arktype `AgentDeployFrame` validator enforces the
  * wire shape (`id` is non-empty, `stepOrder` is `string[]`, `steps`
@@ -746,6 +794,12 @@ export function createSidecarDeployRouter(deps: {
         // the validated `HarnessConfig` the frame carried, the same
         // mechanism `STEP_INFERENCE_SOURCES` uses.
         TENANT_ID: frame.config.tenantId,
+        // Raw hub deploymentId (`ses_<id>`) recovered from the deploy
+        // frame's `agentId`. The step tool-context resolver derives the
+        // step agent row id + agent-state repo id from this, NOT from the
+        // slugified `deploymentId` (the workflow-run repo id). See
+        // `RAW_DEPLOYMENT_ID_ENV_KEY`.
+        [RAW_DEPLOYMENT_ID_ENV_KEY]: deriveRawDeploymentId(frame.agentId),
         [STEP_INFERENCE_SOURCES_ENV_KEY]: JSON.stringify(projection.sources),
       };
 

@@ -183,12 +183,14 @@ describe("deploy-failure registry leak", () => {
     const frame: AgentDeployFrame = {
       type: "agent.deploy",
       agentAddress: "mstep@x.example",
-      agentId: "mstep",
+      // `ins_<rawDeploymentId>` so the raw-id recovery succeeds and the
+      // test reaches the spawn-time failure it is asserting on.
+      agentId: "ins_ses_mstep",
       hubPublicKey: "00".repeat(32),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- multi-step branch does not consult config before failing
       config: {
         agentAddress: "mstep@x.example",
-        agentId: "mstep",
+        agentId: "ins_ses_mstep",
         sessionId: "s",
         sources: [],
         defaultSource: "primary",

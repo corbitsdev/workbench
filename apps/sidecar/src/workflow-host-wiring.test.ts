@@ -24,7 +24,9 @@ import {
   computeWireDefinitionHash,
   createSidecarDeployRouter,
   createSidecarWorkflowSupervisor,
+  deriveRawDeploymentId,
   driveTrivialRunChain,
+  RAW_DEPLOYMENT_ID_ENV_KEY,
   STEP_INFERENCE_SOURCES_ENV_KEY,
   validateWorkflowProjection,
   type TrivialRunCell,
@@ -566,7 +568,10 @@ function makeMultistepFrame(args: MultistepDeployArgs): AgentDeployFrame {
   return {
     type: "agent.deploy",
     agentAddress: "multi@example.com",
-    agentId: "multi-agent",
+    // Mirrors the orchestrator's `deriveDeploymentAgentId` shape
+    // (`ins_<rawDeploymentId>`); the router recovers the raw deploymentId
+    // (`ses_multitest`) from this for the step tool-context resolver.
+    agentId: "ins_ses_multitest",
     hubPublicKey: "hub-pk",
     // The wire-side HarnessConfig has many required fields. The router
     // never inspects `config` on the multi-step branch (only the
@@ -649,6 +654,52 @@ describe("computeWireDefinitionHash", () => {
     const a = { id: "w-1", stepOrder: ["s1"], steps: { s1: {} } };
     const b = { id: "w-2", stepOrder: ["s1"], steps: { s1: {} } };
     expect(computeWireDefinitionHash(a)).not.toBe(computeWireDefinitionHash(b));
+  });
+});
+
+describe("deriveRawDeploymentId", () => {
+  test("strips the single ins_ prefix the orchestrator's deriveDeploymentAgentId adds", () => {
+    expect(
+      deriveRawDeploymentId("ins_ses_218f6ab782774a3e70b5d86f01e602d8"),
+    ).toBe("ses_218f6ab782774a3e70b5d86f01e602d8");
+  });
+
+  test("yields the exact step agent id the hub registered (no double ins_, no slug)", () => {
+    // The fourth deploymentId-normalization bug lived here: deriving from
+    // the slugified deployment address (`ins_ses_<id>-abklabs-com`)
+    // produced `ins_ins_ses_<id>-abklabs-com-intake`, which the hub never
+    // registered, 404ing the step tool-manifest fetch. The raw id is
+    // recovered from the frame's `agentId` (`ins_ses_<id>`), so the step
+    // agent id matches `deriveStepAgentId` byte-for-byte.
+    const raw = deriveRawDeploymentId("ins_ses_abc");
+    const stepId = "intake";
+    expect(raw).toBe("ses_abc");
+    expect(`ins_${raw}-${stepId}`).toBe("ins_ses_abc-intake");
+    expect(`ins_${raw}-${stepId}`).not.toBe(
+      "ins_ins_ses_abc-abklabs-com-intake",
+    );
+  });
+
+  test("agentId carries no domain, so dots and @ in the deployment address never reach the raw id", () => {
+    // The deployment mail address is `ins_<raw>@<domain>`; parsing THAT
+    // would have to strip the domain and risks a slug regression on the
+    // `@`/`.` characters. `agentId` is `ins_<raw>` with no domain, so the
+    // recovery is a single prefix strip.
+    expect(deriveRawDeploymentId("ins_ses_abc")).toBe("ses_abc");
+    expect(deriveRawDeploymentId("ins_ses_abc")).not.toContain("@");
+    expect(deriveRawDeploymentId("ins_ses_abc")).not.toContain(".");
+  });
+
+  test("fails loudly when the agentId does not carry the ins_ prefix", () => {
+    expect(() => deriveRawDeploymentId("ses_abc")).toThrow(
+      /cannot recover raw deploymentId/,
+    );
+  });
+
+  test("fails loudly when the agentId is exactly the bare prefix", () => {
+    expect(() => deriveRawDeploymentId("ins_")).toThrow(
+      /cannot recover raw deploymentId/,
+    );
   });
 });
 
@@ -1189,6 +1240,13 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     });
     expect(env.DEFINITION_HASH).toBe(computeWireDefinitionHash(definition));
     expect(env[STEP_INFERENCE_SOURCES_ENV_KEY]).toBe(JSON.stringify(sources));
+    // The raw deploymentId is recovered from the frame's `agentId`
+    // (`ins_ses_multitest`), NOT the slugified DEPLOYMENT_ID
+    // (`multi-example-com`). The step tool-context resolver keys the step
+    // agent row + agent-state repo on this raw id; the slug would 404 the
+    // step tool-manifest fetch.
+    expect(env[RAW_DEPLOYMENT_ID_ENV_KEY]).toBe("ses_multitest");
+    expect(env[RAW_DEPLOYMENT_ID_ENV_KEY]).not.toBe(env.DEPLOYMENT_ID);
     expect(env.IPC_CHANNEL_ID).toMatch(/^[0-9a-f]{32}$/);
 
     // Drive the `ready` handshake.

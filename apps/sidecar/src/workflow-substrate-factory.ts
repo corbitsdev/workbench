@@ -131,6 +131,14 @@ export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   // tool-context resolver can scope hub manifest/credential lookups to the
   // deploying tenant. Pin-bump re-diffs: this key is ours; keep it.
   "TENANT_ID",
+  // INTENTIONAL DIVERGENCE FROM UPSTREAM: the raw hub deploymentId
+  // (`ses_<id>`). The step tool-context resolver derives the step agent
+  // row id (`ins_<raw>-<step>`) and agent-state repo id (`<raw>-<step>`)
+  // from this, not from the slugified workflow-run repo id in
+  // `env.spawn.deploymentId`. The deploy router recovers it from the
+  // frame's `agentId` and threads it here. Pin-bump re-diffs: this key is
+  // ours; keep it.
+  "WORKFLOW_RAW_DEPLOYMENT_ID",
 ] as const;
 
 const SubstrateConfig = type({
@@ -146,6 +154,7 @@ const SubstrateConfig = type({
   SIDECAR_TOKEN: "string > 0",
   STEP_INFERENCE_SOURCES: "string > 0",
   TENANT_ID: "string > 0",
+  WORKFLOW_RAW_DEPLOYMENT_ID: "string > 0",
 }).onUndeclaredKey("ignore");
 
 /**
@@ -453,11 +462,16 @@ async function readStepGrants(args: {
 
 /**
  * Inputs the production step tool-context resolver closes over. The
- * deploymentId comes from the spawn env; the hub-connection anchors come
- * from the validated substrate config.
+ * hub-connection anchors come from the validated substrate config.
  */
 export interface StepToolContextResolverArgs {
   bareStore: RepoStore;
+  /**
+   * RAW hub deploymentId (`ses_<id>`), threaded via
+   * `WORKFLOW_RAW_DEPLOYMENT_ID`. NOT the slugified workflow-run repo id
+   * in `env.spawn.deploymentId`. The hub keyed the step's `agent` row
+   * (`ins_<raw>-<step>`) and agent-state repo (`<raw>-<step>`) on this.
+   */
   deploymentId: string;
   tenantId: string;
   hubHttpUrl: string;
@@ -486,7 +500,9 @@ export function createStepToolContextResolver(
     }
     // Must stay identical to `@intx/workflow-deploy`'s exported
     // `deriveStepAgentId` (`ins_<deploymentId>-<stepId>`), which the hub's
-    // `writeStepAgentRows` uses to persist the row this id resolves. The
+    // `writeStepAgentRows` uses to persist the row this id resolves.
+    // `args.deploymentId` is the RAW hub deploymentId (`ses_<id>`), so this
+    // yields `ins_ses_<id>-<step>` — the row the hub registered. The
     // template is hand-rolled here (not imported) because `@intx/workflow-deploy`
     // is not a sidecar dependency; on any change to that helper, update this.
     const stepAgentId = `ins_${args.deploymentId}-${stepId}`;
@@ -991,7 +1007,12 @@ export function createSidecarSubstrateFactory(
     // defaults the live config applies when the env override is absent.
     const resolveStepToolContext = createStepToolContextResolver({
       bareStore,
-      deploymentId: env.spawn.deploymentId,
+      // RAW hub deploymentId (`ses_<id>`), NOT `env.spawn.deploymentId`
+      // (the slugified workflow-run repo id). The step agent row id and
+      // agent-state repo id the hub persisted are keyed on the raw id;
+      // the slug would make the step's tool-manifest fetch 404 and its
+      // grants read miss (deny-all). See `RAW_DEPLOYMENT_ID_ENV_KEY`.
+      deploymentId: validated.WORKFLOW_RAW_DEPLOYMENT_ID,
       tenantId: validated.TENANT_ID,
       hubHttpUrl: wsUrlToHttp(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,

@@ -20,7 +20,11 @@ import type { InferenceSource } from "@intx/types/runtime";
 import type { GrantEvaluator } from "@intx/workflow-host";
 import type { StepInvokeRequest } from "@intx/workflow";
 
-import { createSidecarStepInvoker } from "./workflow-substrate-factory";
+import {
+  createSidecarStepInvoker,
+  createStepToolContextResolver,
+} from "./workflow-substrate-factory";
+import type { RepoStore } from "@intx/hub-sessions";
 import type { StepToolContext } from "./step-tool-harness";
 
 const tmpDirs: string[] = [];
@@ -375,5 +379,76 @@ describe("createSidecarStepInvoker", () => {
       expect(tr).toHaveProperty("callId");
       expect(tr.isError).not.toBe(true);
     }
+  });
+});
+
+describe("createStepToolContextResolver", () => {
+  // Stub RepoStore whose `getRepoDir` points the grants read at an empty
+  // temp dir; the resolver's `readStepGrants` ENOENTs and falls back to
+  // deny-all, isolating the assertion to the derived step agent id.
+  function makeStubBareStore(dir: string): RepoStore {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the resolver only calls getRepoDir; the rest of the RepoStore surface is unused here
+    return {
+      getRepoDir: () => dir,
+    } as unknown as RepoStore;
+  }
+
+  function makeReq(stepId: string): StepInvokeRequest {
+    return {
+      agent: makeAgentDefinition("step-agent"),
+      input: {},
+      authzContext: { stepId, attempt: 1, runId: RUN_ID },
+      signal: new AbortController().signal,
+    };
+  }
+
+  test("derives stepAgentId as ins_<rawDeploymentId>-<stepId>, byte-for-byte", async () => {
+    const dataDir = await makeDataDir();
+    const resolve = createStepToolContextResolver({
+      bareStore: makeStubBareStore(dataDir),
+      // RAW hub deploymentId (`ses_<id>`), the value the deploy router
+      // threads via WORKFLOW_RAW_DEPLOYMENT_ID.
+      deploymentId: "ses_218f6ab782774a3e70b5d86f01e602d8",
+      tenantId: "ten_1",
+      hubHttpUrl: "http://hub.invalid",
+      sidecarToken: "tok",
+      cacheRoot: path.join(dataDir, "cache"),
+      cacheMaxBytes: 1024 * 1024,
+      registryMaxTarballBytes: 1024 * 1024,
+    });
+
+    const ctx = await resolve(makeReq("intake"));
+
+    const expected = "ins_ses_218f6ab782774a3e70b5d86f01e602d8-intake";
+    expect(ctx.stepAgentId).toBe(expected);
+    expect(ctx.stepAddress).toBe(expected);
+    expect(ctx.principalId).toBe(expected);
+    // The bug shapes this fix closes: no double ins_, no slugified
+    // deployment address.
+    expect(ctx.stepAgentId).not.toContain("ins_ins_");
+    expect(ctx.stepAgentId).not.toContain("abklabs-com");
+    // Missing grants file -> fail-closed deny-all.
+    expect(ctx.grants).toEqual([]);
+  });
+
+  test("a slug-shaped deploymentId would NOT have produced the registered id (documents the regression)", async () => {
+    const dataDir = await makeDataDir();
+    // Feeding the slugified deployment address (the pre-fix bug) yields
+    // the double-prefixed, dot-slugged id the hub never registered.
+    const resolve = createStepToolContextResolver({
+      bareStore: makeStubBareStore(dataDir),
+      deploymentId: "ins_ses_abc-abklabs-com",
+      tenantId: "ten_1",
+      hubHttpUrl: "http://hub.invalid",
+      sidecarToken: "tok",
+      cacheRoot: path.join(dataDir, "cache"),
+      cacheMaxBytes: 1024 * 1024,
+      registryMaxTarballBytes: 1024 * 1024,
+    });
+
+    const ctx = await resolve(makeReq("intake"));
+
+    expect(ctx.stepAgentId).toBe("ins_ins_ses_abc-abklabs-com-intake");
+    expect(ctx.stepAgentId).not.toBe("ins_ses_abc-intake");
   });
 });

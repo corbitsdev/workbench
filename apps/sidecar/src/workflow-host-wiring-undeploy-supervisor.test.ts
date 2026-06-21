@@ -262,7 +262,9 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
     const frame: AgentDeployFrame = {
       type: "agent.deploy",
       agentAddress: "undeploy-supervisor@example.com",
-      agentId: "undeploy-supervisor-agent",
+      // Mirrors the orchestrator's `deriveDeploymentAgentId` shape
+      // (`ins_<rawDeploymentId>`) the router recovers the raw id from.
+      agentId: "ins_ses_undeploysupervisor",
       hubPublicKey: "hub-pk",
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the multi-step branch does not read config
       config: {} as AgentDeployFrame["config"],
