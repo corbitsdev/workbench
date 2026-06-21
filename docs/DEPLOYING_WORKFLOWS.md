@@ -63,6 +63,34 @@ automatically. On success the CLI prints the deployed kind, deployment id, and
 deploy mode (`multi-step` or `trivial`). See [ADMIN_CLI.md](./ADMIN_CLI.md) for
 the CLI details.
 
+## Deleting and superseding a deployment
+
+Definitions stay package-sourced; deleting manages the **deployment lifecycle**,
+not the workflow code.
+
+- **Delete / undeploy** — `DELETE /api/v1/workflows/:deploymentId`, gated by the
+  same operator grant as the deploy route and scoped to the caller's tenant
+  ancestor chain. It soft-deletes the `workflow_run` index row (`deletedAt` set,
+  which list/start/stream already filter out) and tears down the runtime: the
+  hub sends `agent.undeploy` for the deployment's supervisor address
+  (`ins_<deploymentId>@<domain>`), which the sidecar's deploy router routes to
+  `supervisor.shutdown()` — killing the workflow-child process and unregistering
+  its mail/signal/drain routes. The backing `agent_instance` rows (supervisor +
+  steps) are soft-stopped (`status = stopped`, `endedAt` set). Teardown is
+  best-effort: the row is already out of the UI, so a sidecar failure logs and
+  still returns `204`.
+
+- **Redeploy supersedes** — deploying a kind into a tenant marks every prior
+  active deployment of the same `(kind, tenant)` `deletedAt` and runs the same
+  teardown, so the newest deploy is the only active one. This is best-effort and
+  transactional-safe: a supersede-teardown failure on an old deployment never
+  fails the new deploy.
+
+Neither path deletes run history. The workflow-run event log (the git-backed
+`workflow-run` repo), step outputs, artifacts, and the DB rows themselves are
+all retained — the soft-delete only removes the deployment from the active set
+and stops its runtime.
+
 ## Serialization constraint
 
 A workflow is pushed as JSON, so every step agent must express its tools as

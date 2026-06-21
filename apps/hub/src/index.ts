@@ -38,6 +38,7 @@ import {
   createWorkflowDeployGrantGuard,
   createWorkflowDeployRouter,
   deployWorkflowHandler,
+  deleteWorkflowHandler,
   type WorkflowDeployCoreDeps,
 } from "./routes/workflow-deploy";
 import { createWorkflowRunsRouter } from "./routes/workflow-runs";
@@ -594,6 +595,7 @@ const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
     sessionService,
     directorRegistry: createWorkbenchDirectorRegistry(),
   }),
+  sessionService,
   hubPublicKey: hexEncode(registry.active.publicKey),
   deploymentDomain: config.globalTenant.domain,
   globalTenantId,
@@ -603,6 +605,15 @@ v1.post(
   "/workflows/deploy",
   createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
   deployWorkflowHandler(workflowDeployCoreDeps),
+);
+
+// DELETE/undeploy a workflow deployment. Same operator grant guard as the
+// session-authorized deploy route; tenant-scoped lookup keeps a caller from
+// deleting another tenant's deployment.
+v1.delete(
+  "/workflows/:deploymentId",
+  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  deleteWorkflowHandler(workflowDeployCoreDeps),
 );
 
 app.route("/api/v1", v1);
