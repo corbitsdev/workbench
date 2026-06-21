@@ -82,7 +82,7 @@ describe('@workbench/client request construction', () => {
     expect(init?.credentials).toBe('omit');
   });
 
-  it('does not forward tenantId on the query string (route scopes by session)', async () => {
+  it('forwards tenantId on the query string, url-encoded, so the active workbench is visible', async () => {
     const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([])));
 
     await listWorkflows(
@@ -90,7 +90,9 @@ describe('@workbench/client request construction', () => {
       { tenantId: 'tenant/with space' }
     );
 
-    expect(spy.mock.calls[0]?.[0]).toBe('http://localhost:4000/api/v1/workflow-runs');
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      'http://localhost:4000/api/v1/workflow-runs?tenantId=tenant%2Fwith%20space'
+    );
   });
 
   it('appends a url-encoded tenantId query param for artifacts', async () => {

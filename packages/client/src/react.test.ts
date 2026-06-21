@@ -117,7 +117,7 @@ describe('useLibraryResources', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([fakeWorkflow]);
-    expect(spy.mock.calls[0]?.[0]).toBe('http://localhost:4000/api/v1/workflow-runs');
+    expect(spy.mock.calls[0]?.[0]).toBe('http://localhost:4000/api/v1/workflow-runs?tenantId=tn-1');
   });
 
   it('surfaces a propagated server error to the consumer', async () => {

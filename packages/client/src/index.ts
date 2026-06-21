@@ -101,14 +101,18 @@ const WorkflowRunsResponseSchema = WorkflowRunRowSchema.array();
 
 /**
  * Fetch the tenant's natively-deployed workflows (`GET /workflow-runs`).
- * The route scopes by the caller's tenant via the session, so `tenantId` is
- * not forwarded; it stays on the params only to gate the React Query hook.
+ * `tenantId` MUST be forwarded: the route resolves visibility against the
+ * requested workbench (walking its ancestor chain to the global tenant). With
+ * it omitted the hub falls back to the caller's default context, whose chain
+ * does not include a child workbench, so an active-workbench deployment is
+ * invisible and the library rail shows nothing.
  */
 export async function listWorkflows(
   options: ClientOptions = {},
-  _params: ListWorkflowsParams = {}
+  params: ListWorkflowsParams = {}
 ): Promise<WorkflowSummary[]> {
-  const raw = await request<unknown>('workflow-runs', options);
+  const search = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  const raw = await request<unknown>(`workflow-runs${search}`, options);
   const parsed = WorkflowRunsResponseSchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid /workflow-runs response: ${parsed.summary}`);
