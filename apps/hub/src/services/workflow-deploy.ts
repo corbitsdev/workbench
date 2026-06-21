@@ -1,5 +1,6 @@
 import {
   createWorkflowDeployOrchestrator,
+  deriveDeploymentAddress,
   deriveStepAddress,
   deriveStepAgentId,
   walkCapabilities,
@@ -132,6 +133,30 @@ export function createWorkflowDeployService(deps: {
         stepIds: [...walk.perStep.keys()],
       });
 
+      // The orchestrator's multi-step branch also registers a
+      // DEPLOYMENT-level supervisor address (`ins_<deploymentId>@<domain>`,
+      // no step suffix) and fires the `agent.deploy` frame against it. The
+      // sidecar's `agent.deploy.ack` for that frame resolves the supervisor
+      // instance via `requireInstance` (by address, endedAt IS NULL) to store
+      // its public key, and the supervisor's repo pack pushes route by the
+      // same row. The per-step writers never create this row, so without it
+      // the deploy fails with "No active instance found for address
+      // ins_<deploymentId>@<domain>". Mirror the step writers: an `agent` row
+      // (the instance's notNull FK target) plus the active instance row.
+      await writeDeploymentAgentRow({
+        db,
+        deploymentId: params.deploymentId,
+        tenantId: params.tenantId,
+        creatorPrincipalId: params.creatorPrincipalId,
+      });
+      await writeDeploymentInstanceRow({
+        db,
+        deploymentId: params.deploymentId,
+        deploymentDomain: params.deploymentDomain,
+        tenantId: params.tenantId,
+        creatorPrincipalId: params.creatorPrincipalId,
+      });
+
       return orchestrator.deployWorkflow({
         ...params,
         operatorApprovals: collectGrants(walk),
@@ -207,6 +232,80 @@ export async function writeStepInstanceRows(args: {
     updatedAt: now,
   }));
   await args.db.insert(intxSchema.agentInstance).values(rows);
+}
+
+// The deployment-level agent id the orchestrator derives for the supervisor.
+// `@intx/workflow-deploy` exports `deriveDeploymentAddress` but not the agent
+// id helper (`deriveDeploymentAgentId`), whose formula is the address's
+// local-part: `ins_<deploymentId>` — the same shape `deriveStepAgentId`
+// produces minus the step suffix. Replicated here so the backing `agent` row
+// and the instance row's `agentId` match what the orchestrator puts on the
+// `agent.deploy` frame's `agentId` field.
+function deriveDeploymentAgentId(deploymentId: string): string {
+  return `ins_${deploymentId}`;
+}
+
+// Persist the deployment-level (supervisor) `agent` row. The instance row's
+// `agentId` has a notNull FK to `agent.id`, so this must exist before the
+// supervisor instance row is written. Mirrors `writeStepAgentRows`' field set
+// at the deployment agent id.
+export async function writeDeploymentAgentRow(args: {
+  db: HubDb;
+  deploymentId: string;
+  tenantId: string;
+  creatorPrincipalId: string;
+}): Promise<void> {
+  const now = new Date();
+  // The supervisor runs the workflow-host child, not a tool-capable harness —
+  // it never loads tool packages (the per-step agents do). This row exists
+  // only to satisfy the instance row's notNull `agentId` FK and to let
+  // `requireInstance` resolve the supervisor address, so it declares no
+  // capabilities and no tool packages.
+  await args.db.insert(intxSchema.agent).values({
+    id: deriveDeploymentAgentId(args.deploymentId),
+    tenantId: args.tenantId,
+    creatorPrincipalId: args.creatorPrincipalId,
+    name: `supervisor-${args.deploymentId}`,
+    capabilities: null,
+    toolPackages: [],
+    status: "deployed" as const,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+// Persist the deployment-level (supervisor) `agent_instance` row keyed by the
+// deployment address `ins_<deploymentId>@<deploymentDomain>` (no step suffix).
+// The orchestrator's multi-step branch fires the `agent.deploy` frame against
+// this address; the sidecar's `agent.deploy.ack` resolves the row via
+// `requireInstance` (matching on `address` with `endedAt IS NULL`) to store
+// the supervisor's public key, and pack pushes for the supervisor route by the
+// same row. `endedAt` is left NULL — the row is active. Mirrors
+// `writeStepInstanceRows`, and shares its non-idempotency: `id`/`address` are
+// deterministic on the deploymentId, so a re-deploy of the SAME deploymentId
+// throws on the unique `address`. Safe in practice — a fresh deploymentId is
+// minted per deploy (resolveWorkflowDeployConfig).
+export async function writeDeploymentInstanceRow(args: {
+  db: HubDb;
+  deploymentId: string;
+  deploymentDomain: string;
+  tenantId: string;
+  creatorPrincipalId: string;
+}): Promise<void> {
+  const now = new Date();
+  await args.db.insert(intxSchema.agentInstance).values({
+    id: deriveDeploymentAgentId(args.deploymentId),
+    agentId: deriveDeploymentAgentId(args.deploymentId),
+    tenantId: args.tenantId,
+    principalId: args.creatorPrincipalId,
+    address: deriveDeploymentAddress({
+      deploymentId: args.deploymentId,
+      deploymentDomain: args.deploymentDomain,
+    }),
+    status: "deployed" as const,
+    createdAt: now,
+    updatedAt: now,
+  });
 }
 
 // Build the on-disk `GrantRule` set that authorizes a step agent to invoke

@@ -16,6 +16,8 @@ import {
   createWorkflowRepoWriter,
   toLaunchSession,
   toSendMultiStepDeploy,
+  writeDeploymentAgentRow,
+  writeDeploymentInstanceRow,
   writeStepAgentRows,
   writeStepGrantFiles,
   writeStepInstanceRows,
@@ -220,6 +222,74 @@ describe("writeStepInstanceRows", () => {
       stepIds: [],
     });
     expect(insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("writeDeploymentAgentRow", () => {
+  test("inserts the supervisor agent row keyed by ins_<deploymentId>", async () => {
+    const values = mock(async (_rows: unknown) => undefined);
+    const insert = mock(() => ({ values }));
+    const db = { insert } as unknown as HubDb;
+
+    await writeDeploymentAgentRow({
+      db,
+      deploymentId: "dep1",
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
+    });
+
+    const call = values.mock.calls.at(0);
+    if (!call) throw new Error("insert().values was not called");
+    const row = call[0] as {
+      id: string;
+      tenantId: string;
+      creatorPrincipalId: string;
+      toolPackages: unknown;
+      capabilities: unknown;
+      status: string;
+    };
+    expect(row.id).toBe("ins_dep1");
+    expect(row.tenantId).toBe("t1");
+    expect(row.creatorPrincipalId).toBe("p1");
+    expect(row.status).toBe("deployed");
+    // The supervisor is not tool-capable: no capabilities, no tool packages.
+    expect(row.toolPackages).toEqual([]);
+    expect(row.capabilities).toBeNull();
+  });
+});
+
+describe("writeDeploymentInstanceRow", () => {
+  test("inserts an active supervisor instance row at ins_<deploymentId>@<domain>", async () => {
+    const values = mock(async (_rows: unknown) => undefined);
+    const insert = mock(() => ({ values }));
+    const db = { insert } as unknown as HubDb;
+
+    await writeDeploymentInstanceRow({
+      db,
+      deploymentId: "dep1",
+      deploymentDomain: "gtm.localhost",
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
+    });
+
+    const call = values.mock.calls.at(0);
+    if (!call) throw new Error("insert().values was not called");
+    const row = call[0] as {
+      id: string;
+      agentId: string;
+      tenantId: string;
+      principalId: string;
+      address: string;
+      status: string;
+      endedAt?: unknown;
+    };
+    expect(row.id).toBe("ins_dep1");
+    expect(row.agentId).toBe("ins_dep1");
+    expect(row.address).toBe("ins_dep1@gtm.localhost");
+    expect(row.tenantId).toBe("t1");
+    expect(row.principalId).toBe("p1");
+    expect(row.status).toBe("deployed");
+    expect(row.endedAt).toBeUndefined();
   });
 });
 
