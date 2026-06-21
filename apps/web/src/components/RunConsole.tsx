@@ -32,6 +32,7 @@ const STEP_PHASE_DOT: Record<StepPhase, string> = {
 
 interface RunConsoleProps {
   deploymentId: string;
+  tenantId?: string | null;
   onClose: () => void;
 }
 
@@ -39,9 +40,9 @@ interface RunConsoleProps {
 // reduces the streamed WorkflowEvent log into RunState and renders run phase,
 // a step timeline, step outputs, and an Approve action for any step blocked on
 // a signal (the HITL gate). No workflow-kind-specific branching lives here.
-export function RunConsole({ deploymentId, onClose }: RunConsoleProps) {
-  const { state, connected } = useWorkflowRunState(deploymentId);
-  const signal = useSignalWorkflow(deploymentId);
+export function RunConsole({ deploymentId, tenantId, onClose }: RunConsoleProps) {
+  const { state, connected } = useWorkflowRunState(deploymentId, tenantId);
+  const signal = useSignalWorkflow(deploymentId, tenantId);
 
   const steps = useMemo<StepState[]>(() => (state ? [...state.steps.values()] : []), [state]);
 
@@ -119,9 +120,7 @@ function RunStepRow({
         <span className="shrink-0 text-[12px] text-text-3">{STEP_PHASE_LABELS[step.phase]}</span>
       </div>
 
-      {step.lastError && (
-        <p className="mt-2 text-[12px] text-red-500">{step.lastError.message}</p>
-      )}
+      {step.lastError && <p className="mt-2 text-[12px] text-red-500">{step.lastError.message}</p>}
 
       {step.outputRef && (
         <p className="mt-2 break-all text-[12px] text-text-2">Output: {step.outputRef}</p>

@@ -55,24 +55,65 @@ export interface WorkflowRunStateResult {
   connected: boolean;
 }
 
-// Subscribe to a run's append-only event log over SSE and reduce it into the
-// native RunState via resumeFromLog. This is a live stream, not request/response
-// data — TanStack Query is for the run list; the stream is owned by the shared
-// EventSource registry, mirroring instance-transport.
+// The hub streams each run event as `{ seq, runId, event }` where `event` is the
+// ON-DISK blob: the state-machine discriminant `kind` is serialized under the
+// field name `type` (see @intx/workflow-host repo-store adapter). Parse the SSE
+// frame at this trust boundary and convert the on-disk shape back to the
+// in-memory WorkflowEvent (`type` -> `kind`) the state machine consumes.
+const runStreamFrameSchema = type({
+  seq: 'number',
+  runId: 'string',
+  event: type({ type: 'string', seq: 'number', '+': 'ignore' }),
+});
+
+function frameToWorkflowEvent(frame: typeof runStreamFrameSchema.infer): WorkflowEvent {
+  const { type: kind, ...rest } = frame.event;
+  return { ...rest, kind } as unknown as WorkflowEvent;
+}
+
+interface RunFrame {
+  runId: string;
+  seq: number;
+  event: WorkflowEvent;
+}
+
+// Subscribe to a deployment's append-only event log over SSE and reduce it into
+// the native RunState via resumeFromLog. This is a live stream, not
+// request/response data — TanStack Query is for the run list; the stream is
+// owned by the shared EventSource registry, mirroring instance-transport.
+//
+// A deployment's stream carries EVERY run it has produced — each Start is a new
+// independent run with its OWN per-run seq sequence (1..N). We therefore key
+// frames by `${runId}/${seq}` (so a stream reconnect, which re-tails from seq 0,
+// dedupes instead of double-applying), group by runId, and reduce only the most
+// recently started run. Concatenating multiple runs' logs into one reduce is an
+// invalid event sequence and throws inside the state machine.
 export function useWorkflowRunState(
   deploymentId: string | null,
   tenantId?: string | null
 ): WorkflowRunStateResult {
-  const [events, setEvents] = useState<WorkflowEvent[]>([]);
+  const [frames, setFrames] = useState<Map<string, RunFrame>>(new Map());
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     if (!deploymentId) return;
-    setEvents([]);
+    setFrames(new Map());
     setConnected(true);
     const url = streamUrl(`/workflow-runs/${deploymentId}/stream`, tenantId);
-    const unsubscribe = subscribeSharedEventStream(url, 'message', (event) => {
-      setEvents((prev) => [...prev, event as WorkflowEvent]);
+    const unsubscribe = subscribeSharedEventStream(url, 'message', (raw) => {
+      const parsed = runStreamFrameSchema(raw);
+      if (parsed instanceof type.errors) return;
+      const key = `${parsed.runId}/${String(parsed.seq)}`;
+      setFrames((prev) => {
+        if (prev.has(key)) return prev;
+        const next = new Map(prev);
+        next.set(key, {
+          runId: parsed.runId,
+          seq: parsed.seq,
+          event: frameToWorkflowEvent(parsed),
+        });
+        return next;
+      });
     });
     return () => {
       setConnected(false);
@@ -80,13 +121,41 @@ export function useWorkflowRunState(
     };
   }, [deploymentId, tenantId]);
 
-  const state = useMemo<RunState | null>(() => {
-    if (!deploymentId || events.length === 0) return null;
-    const runId = events[0]?.kind === 'RunStarted' ? events[0].runId : deploymentId;
-    return resumeFromLog(runId, events);
-  }, [deploymentId, events]);
+  // The latest run's events, sorted by its per-run seq. Map insertion order is
+  // the stream's chronological delivery order, so the last distinct runId seen
+  // is the most recently started run.
+  const latestRunEvents = useMemo<WorkflowEvent[]>(() => {
+    if (frames.size === 0) return [];
+    const byRun = new Map<string, RunFrame[]>();
+    for (const frame of frames.values()) {
+      const bucket = byRun.get(frame.runId);
+      if (bucket === undefined) byRun.set(frame.runId, [frame]);
+      else bucket.push(frame);
+    }
+    const runIds = [...byRun.keys()];
+    const latestRunId = runIds[runIds.length - 1];
+    if (latestRunId === undefined) return [];
+    return (byRun.get(latestRunId) ?? [])
+      .slice()
+      .sort((a, b) => a.seq - b.seq)
+      .map((frame) => frame.event);
+  }, [frames]);
 
-  return { state, events, connected };
+  const state = useMemo<RunState | null>(() => {
+    if (latestRunEvents.length === 0) return null;
+    const first = latestRunEvents[0];
+    const runId = first?.kind === 'RunStarted' ? first.runId : (deploymentId ?? '');
+    try {
+      return resumeFromLog(runId, latestRunEvents);
+    } catch {
+      // A partially-delivered log (e.g. a step event observed before its
+      // RunStarted) is a transient ordering artifact, not a render error. Show
+      // the loading state until the gap fills rather than tripping the boundary.
+      return null;
+    }
+  }, [deploymentId, latestRunEvents]);
+
+  return { state, events: latestRunEvents, connected };
 }
 
 const stepOutputSchema = type({ stepId: 'string', output: 'unknown' });

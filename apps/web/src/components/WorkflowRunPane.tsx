@@ -74,7 +74,7 @@ export function WorkflowRunPane({ deploymentId, tenantId, onClose }: WorkflowRun
   });
 
   if (!Panel) {
-    return <RunConsole deploymentId={deploymentId} onClose={onClose} />;
+    return <RunConsole deploymentId={deploymentId} tenantId={tenantId} onClose={onClose} />;
   }
 
   const handleSignal = (signalName: string, payload?: unknown) => {
