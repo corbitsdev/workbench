@@ -51,6 +51,7 @@ import {
   registerDisconnectReconciler,
 } from "./services/agent-provisioning";
 import { createMembersRouter } from "./routes/members";
+import { createArtifactsRouter } from "./routes/artifacts";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
   createApprovalsRouter,
@@ -564,6 +565,7 @@ v1.route(
   ),
 );
 v1.route("/", createMembersRouter(db));
+v1.route("/", createArtifactsRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db));
 v1.route("/", createUploadsRouter(db));
