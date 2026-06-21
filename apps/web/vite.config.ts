@@ -8,6 +8,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // @intx/agent is a server-only package (uses node:path, process, etc).
+      // Something in the dep graph pulls it into the browser bundle in dev mode
+      // (production tree-shakes it out). Stub it so dev mode doesn't crash.
+      '@intx/agent': path.resolve(__dirname, './src/stubs/intx-agent.ts'),
     },
   },
   server: {
