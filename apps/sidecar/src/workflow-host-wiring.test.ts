@@ -1638,17 +1638,15 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     await deployPromise;
   });
 
-  test("a registerDeployment failure after spawn unwinds the supervisor, routers, and slug", async () => {
-    // The H1 multi-step partial-state unwind: when an earlier
-    // commit's slug-only release is extended to the full deploy
-    // pipeline, a `registerDeployment` failure must kill the
-    // freshly-spawned workflow-process child, drop the
-    // `activeSupervisors` entry, unregister the three multistep
-    // routers, and release the slug. The observable evidence here
-    // is that (a) the spawner's `kill` is invoked on the first
-    // child after deploy rejects and (b) a subsequent deploy on the
-    // SAME address succeeds, which is only possible if the slug
-    // and the activeSupervisors entry were released.
+  test("a registerDeployment failure (before spawn) never spawns a child and releases the slug", async () => {
+    // `registerDeployment` now fires BEFORE `supervisor.spawn` so the
+    // deployment-address mapping exists before the supervisor commits
+    // its first run event (see CL-2216). A `registerDeployment` failure
+    // must therefore short-circuit the deploy before any
+    // workflow-process child is spawned, and still release the slug so
+    // the address is claimable again. The observable evidence is that
+    // (a) the spawner is never invoked on the failed deploy and (b) a
+    // subsequent deploy on the SAME address succeeds.
     const childIpcKeyPair = await generateKeyPair();
     const spawnedHandles: {
       pid: number;
@@ -1751,12 +1749,9 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     };
     const frame = makeMultistepFrame({ definition, sources });
 
-    const firstDeploy = router.deploy(frame);
-    await driveReadyFor(0, 9000);
-
     let firstCaught: unknown;
     try {
-      await firstDeploy;
+      await router.deploy(frame);
     } catch (err) {
       firstCaught = err;
     }
@@ -1765,26 +1760,119 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       /registerDeployment failure \(synthetic\)/,
     );
 
-    // The first child must have been killed by the unwind's
-    // `supervisor.shutdown()` call. Without the unwind, the
-    // freshly-spawned workflow-process child would remain alive
-    // under no owner.
-    const firstHandle = spawnedHandles[0];
-    if (firstHandle === undefined) {
-      throw new Error("spawnedHandles[0] missing");
-    }
-    expect(firstHandle.killed).toBe(true);
+    // Because `registerDeployment` now precedes `spawn`, the failed
+    // deploy must never have reached the spawner: no workflow-process
+    // child was created, so there is nothing to kill.
+    expect(spawnedHandles.length).toBe(0);
 
-    // Re-deploy on the SAME address must succeed. If the unwind
-    // missed the slug release OR the activeSupervisors entry, the
-    // second deploy would surface a phantom collision (slug) or
-    // overwrite a stale entry (activeSupervisors). The router's
-    // public contract is that a failed deploy leaves the address
-    // claimable again.
+    // Re-deploy on the SAME address must succeed. If the unwind missed
+    // the slug release, the second deploy would surface a phantom
+    // collision. The router's public contract is that a failed deploy
+    // leaves the address claimable again.
     const secondDeploy = router.deploy(frame);
-    await driveReadyFor(1, 9001);
+    await driveReadyFor(0, 9000);
     const secondResult = await secondDeploy;
     expect(secondResult.publicKey).toMatch(/^[0-9a-f]{64}$/);
     expect(registerCallCount).toBe(2);
+  });
+
+  test("registers the deployment-address mapping before spawning the workflow-process child", async () => {
+    // CL-2216 regression guard: the deploy router must record the
+    // `(deploymentId -> agentAddress)` mapping BEFORE `supervisor.spawn`,
+    // because spawn's `replayProcessingToInbox` can commit a run event
+    // whose pack-push hook resolves the address from that registry.
+    const childIpcKeyPair = await generateKeyPair();
+    const order: string[] = [];
+    const spawnedHandles: {
+      childToSupervisor: ReturnType<typeof createMemoryNdjsonStream>;
+      eventChildToSupervisor: ReturnType<typeof createMemoryFrameStream>;
+    }[] = [];
+    const observedEnvs: Record<string, string>[] = [];
+    const spawner: SubprocessSpawner = ({ env }) => {
+      order.push("spawn");
+      observedEnvs.push(env);
+      const supervisorToChild = createMemoryNdjsonStream();
+      const childToSupervisor = createMemoryNdjsonStream();
+      const eventChildToSupervisor = createMemoryFrameStream();
+      let resolveExit: ((code: number) => void) | undefined;
+      const exited = new Promise<number>((resolve) => {
+        resolveExit = resolve;
+      });
+      spawnedHandles.push({ childToSupervisor, eventChildToSupervisor });
+      const handle: SubprocessHandle = {
+        pid: 9100,
+        controlWriter: supervisorToChild.writer,
+        controlReader: childToSupervisor.reader,
+        eventReader: eventChildToSupervisor.reader,
+        kill: () => {
+          childToSupervisor.close();
+          eventChildToSupervisor.close();
+          resolveExit?.(0);
+        },
+        exited,
+      };
+      return handle;
+    };
+
+    const multiDataDir = await createTempBaseDir("sidecar-multi-order-");
+    const { router } = await buildMultistepFixture({
+      spawner,
+      multistepBinaryPath: "/fake/bin/multistep-workflow-child",
+      multistepSubstrateEnv: { SIDECAR_DATA_DIR: multiDataDir },
+      registerDeployment: () => {
+        order.push("registerDeployment");
+      },
+    });
+
+    const sources = defaultMultistepSources();
+    const definition = {
+      id: "wf-order-test",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["step-1", "step-2"],
+      steps: { "step-1": { kind: "step" }, "step-2": { kind: "step" } },
+    };
+    const frame = makeMultistepFrame({ definition, sources });
+
+    const deployPromise = router.deploy(frame);
+
+    while (spawnedHandles.length === 0) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const env = observedEnvs[0];
+    const channelId = env?.IPC_CHANNEL_ID;
+    if (channelId === undefined) {
+      throw new Error("IPC_CHANNEL_ID missing in observed env");
+    }
+    const record = spawnedHandles[0];
+    if (record === undefined) {
+      throw new Error("spawnedHandles[0] missing");
+    }
+    const childSender = createControlChannelSender({
+      privateKeySeed: childIpcKeyPair.privateKey,
+      channelId,
+      writer: {
+        write(line: string) {
+          record.childToSupervisor.inject(line);
+          return Promise.resolve();
+        },
+      },
+    });
+    await childSender.send({
+      type: "ready",
+      data: {
+        childPid: 9100,
+        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+      },
+    });
+
+    const result = await deployPromise;
+    expect(result.publicKey).toMatch(/^[0-9a-f]{64}$/);
+
+    // The mapping must be recorded before the spawner is invoked.
+    expect(order.indexOf("registerDeployment")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("spawn")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("registerDeployment")).toBeLessThan(
+      order.indexOf("spawn"),
+    );
   });
 });

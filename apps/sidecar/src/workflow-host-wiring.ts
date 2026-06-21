@@ -695,6 +695,7 @@ export function createSidecarDeployRouter(deps: {
     let wiredForUnwind: SidecarWorkflowSupervisor | undefined;
     let supervisorRegistered = false;
     let routersRegistered = false;
+    let deploymentRegistered = false;
     try {
       const definitionHash = computeWireDefinitionHash(projection.definition);
 
@@ -851,16 +852,28 @@ export function createSidecarDeployRouter(deps: {
         },
       };
 
+      // Record the deployment-address mapping BEFORE spawn. The
+      // supervisor's `spawn` runs `replayProcessingToInbox`, which can
+      // commit a workflow-run event; that commit fires the pack-push
+      // hook (`writeTreePreservingPrefix` -> `registry.resolve`), which
+      // throws `no agent address registered` unless the mapping is
+      // already present. The earlier "register last" ordering lost that
+      // first push on every multi-step deploy. The failure unwind below
+      // drops the mapping (guarded by `deploymentRegistered`) so a
+      // spawn-time rejection -- or any later failure -- still leaves the
+      // boot-edge `DeploymentAddressRegistry` clean.
+      deps.registerDeployment({
+        deploymentId,
+        agentAddress: frame.agentAddress,
+      });
+      deploymentRegistered = true;
+
       // Surface spawn-time errors structurally: if the subprocess
       // spawner crashes immediately (binary missing, env malformed,
       // EXEC error) the supervisor's `wireChild` races the child's
       // `exited` against `readyPromise` and the rejection propagates
       // here. The router lets it surface; the link's deploy handler
-      // converts the rejection into a structured failure frame. The
-      // supervisor is registered against the deployment address only
-      // after spawn succeeds; a spawn-time rejection leaves the
-      // registry untouched so the undeploy hook does not chase a
-      // supervisor that never owned a child.
+      // converts the rejection into a structured failure frame.
       await wired.supervisor.spawn(spawnOpts);
       // Child process is live after `spawn` resolves; the failure
       // unwind needs the supervisor handle from here on.
@@ -909,18 +922,6 @@ export function createSidecarDeployRouter(deps: {
       });
       routersRegistered = true;
 
-      // Register the deployment-address mapping last so a failure in any
-      // earlier step (asset materialization, supervisor.spawn) leaves the
-      // boot-edge `DeploymentAddressRegistry` untouched. The link's
-      // `handleAgentDeploy` catches a rejection here and surfaces
-      // `agent.error` without invoking the undeploy hook; a partial
-      // registration would persist a `(deploymentId -> agentAddress)`
-      // entry for a deployment that never finished standing up.
-      deps.registerDeployment({
-        deploymentId,
-        agentAddress: frame.agentAddress,
-      });
-
       claimedSlugSucceeded = true;
       return { publicKey: principalPublicKeyHex };
     } finally {
@@ -941,6 +942,12 @@ export function createSidecarDeployRouter(deps: {
             const message =
               cause instanceof Error ? cause.message : String(cause);
             logger.warn`multi-step deploy unwind: supervisor.shutdown failed: ${message}`;
+          });
+        }
+        if (deploymentRegistered) {
+          deps.unregisterDeployment({
+            deploymentId,
+            agentAddress: frame.agentAddress,
           });
         }
         releaseSlug(deploymentId, frame.agentAddress);
