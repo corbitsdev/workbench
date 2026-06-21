@@ -115,9 +115,12 @@ const WorkflowRunSummary = type({
 });
 const WorkflowRunList = WorkflowRunSummary.array();
 const StepOutputResponse = type({ stepId: 'string', output: 'unknown' });
+const AllStepOutputsResponse = type({ outputs: 'unknown' });
 const SignalAcceptedResponse = type({ accepted: 'boolean' });
 const StartRunResponse = type({ deploymentId: 'string', accepted: 'boolean' });
 const ErrorResponse = type({ error: 'string' });
+const PatchStatusBody = type({ status: "'completed' | 'failed' | 'cancelled'" });
+const PatchStatusResponse = type({ deploymentId: 'string', status: 'string' });
 
 // Re-establish a deployment's supervisor if the hub has lost its routable
 // address (hub/sidecar restart). Pre-bound in index.ts over deploymentDomain +
@@ -130,6 +133,42 @@ export type EnsureDeploymentRoutableFn = (args: {
   tenantId: string;
   creatorPrincipalId: string;
 }) => Promise<{ reestablished: boolean }>;
+
+// Shared helper: replay the run-event log once and collect every StepCompleted
+// entry as `{ stepId, outputRef, runId }`. Callers can filter or resolve refs
+// as needed. Returns the discovered runId (from the first event) alongside the
+// collected steps. Aborts the subscription on return.
+async function collectCompletedSteps(
+  repoStore: RepoStore,
+  repoId: RepoId
+): Promise<{
+  runId: string | null;
+  steps: Array<{ stepId: string; outputRef: string; runId: string }>;
+}> {
+  const abort = new AbortController();
+  const iter = subscribeKind(repoStore, HUB_PRINCIPAL, repoId, RUN_EVENT_REF, WorkflowEventBlob, {
+    signal: abort.signal,
+    from: { seq: 0 },
+    kinds: WORKFLOW_EVENT_TYPES,
+  });
+
+  let firstRunId: string | null = null;
+  const steps: Array<{ stepId: string; outputRef: string; runId: string }> = [];
+  try {
+    for await (const entry of iter) {
+      if (firstRunId === null) firstRunId = entry.runId;
+      if (entry.event.type !== 'StepCompleted') continue;
+      const completed = StepCompletedBlob(entry.event);
+      if (completed instanceof type.errors) {
+        throw new Error(`malformed StepCompleted event: ${completed.summary}`);
+      }
+      steps.push({ stepId: completed.stepId, outputRef: completed.output.ref, runId: entry.runId });
+    }
+  } finally {
+    abort.abort();
+  }
+  return { runId: firstRunId, steps };
+}
 
 export function createWorkflowRunsRouter(deps: {
   db: HubDb;
@@ -392,40 +431,13 @@ export function createWorkflowRunsRouter(deps: {
         }),
       };
 
-      // Replay the run's append-only event log from seq 0 until we find the
-      // StepCompleted for the requested step (and learn the run's id from the
-      // RunStarted entry). subscribeKind tails live forever, so once we have the
-      // ref we abort the iterator to stop it. A bounded log that drains without
-      // yielding the step means the step has not completed → 404.
-      const abort = new AbortController();
-      const iter = subscribeKind(
-        repoStore,
-        HUB_PRINCIPAL,
-        repoId,
-        RUN_EVENT_REF,
-        WorkflowEventBlob,
-        {
-          signal: abort.signal,
-          from: { seq: 0 },
-          kinds: WORKFLOW_EVENT_TYPES,
-        }
-      );
-
-      let outputRef: string | null = null;
-      let runId: string | null = null;
+      // Replay the run's append-only event log to find the StepCompleted for the
+      // requested step. A bounded log that drains without yielding the step means
+      // the step has not completed → 404.
+      let steps: Array<{ stepId: string; outputRef: string; runId: string }>;
+      let runId: string | null;
       try {
-        for await (const entry of iter) {
-          if (runId === null) runId = entry.runId;
-          if (entry.event.type !== 'StepCompleted') continue;
-          const completed = StepCompletedBlob(entry.event);
-          if (completed instanceof type.errors) {
-            throw new Error(`malformed StepCompleted event: ${completed.summary}`);
-          }
-          if (completed.stepId !== stepId) continue;
-          outputRef = completed.output.ref;
-          runId = entry.runId;
-          break;
-        }
+        ({ steps, runId } = await collectCompletedSteps(repoStore, repoId));
       } catch (err) {
         log.error('workflow step output replay failed', {
           deploymentId,
@@ -433,9 +445,11 @@ export function createWorkflowRunsRouter(deps: {
           error: err instanceof Error ? err : new Error(String(err)),
         });
         return c.json({ error: 'failed to read workflow event log' }, 500);
-      } finally {
-        abort.abort();
       }
+
+      const match = steps.find((s) => s.stepId === stepId);
+      const outputRef = match?.outputRef ?? null;
+      if (match) runId = match.runId;
 
       if (outputRef === null || runId === null) {
         return c.json({ error: 'no completed step output found' }, 404);
@@ -468,6 +482,230 @@ export function createWorkflowRunsRouter(deps: {
       }
 
       return c.json({ stepId, output });
+    }
+  );
+
+  router.get(
+    '/workflow-runs/:deploymentId/steps',
+    describeRoute({
+      tags: ['Workflows'],
+      summary: 'Get all completed step outputs in one replay',
+      description:
+        "Replays the deployment's workflow-run event log ONCE and returns every completed step's resolved output as a map. Avoids the N-parallel per-step replays the individual step-output endpoint requires. Optional `?tenantId=` selects a workbench the user belongs to.",
+      parameters: [
+        {
+          name: 'deploymentId',
+          in: 'path',
+          required: true,
+          description: 'Deployment id of the workflow run.',
+          schema: { type: 'string' },
+        },
+        {
+          name: 'tenantId',
+          in: 'query',
+          required: false,
+          description: 'Target workbench tenant id. Omit for the active workbench.',
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        200: {
+          description: 'Map of stepId → resolved output for every completed step',
+          content: {
+            'application/json': { schema: resolver(AllStepOutputsResponse) },
+          },
+        },
+        403: {
+          description: 'User context not found or forbidden for the requested tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: 'Workflow deployment not found',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        500: {
+          description: 'Failed to read the event log or resolve step outputs',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get('userId');
+      const { context, forbidden } = await getRequestedUserContext(
+        deps.db,
+        userId,
+        c.req.query('tenantId')
+      );
+      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
+      if (!context) return c.json({ error: 'User context not found' }, 403);
+
+      const deploymentId = c.req.param('deploymentId');
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const owned = await deps.db.query.workflowRun.findFirst({
+        where: and(
+          eq(workflowRun.deploymentId, deploymentId),
+          inArray(workflowRun.tenantId, chain)
+        ),
+      });
+      if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
+
+      const repoId: RepoId = {
+        kind: 'workflow-run',
+        id: deriveWorkflowRunRepoId({
+          deploymentId,
+          deploymentDomain: deps.deploymentDomain,
+        }),
+      };
+
+      let steps: Array<{ stepId: string; outputRef: string; runId: string }>;
+      let runId: string | null;
+      try {
+        ({ steps, runId } = await collectCompletedSteps(repoStore, repoId));
+      } catch (err) {
+        log.error('workflow all-steps replay failed', {
+          deploymentId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+        return c.json({ error: 'failed to read workflow event log' }, 500);
+      }
+
+      if (steps.length === 0 || runId === null) {
+        return c.json({ outputs: {} });
+      }
+
+      // All completed steps share the same runId (the latest run). Build a
+      // BlobSubstrate once and resolve all refs in parallel.
+      const blobs = createWorkflowRunBlobSubstrate({
+        substrate: repoStore,
+        repoId,
+        principal: HUB_PRINCIPAL,
+        runId,
+        ref: RUN_EVENT_REF,
+      });
+
+      let outputs: Record<string, unknown>;
+      try {
+        const resolved = await Promise.all(
+          steps.map(async (s) => {
+            const output = await blobs.resolveRef(s.outputRef);
+            return [s.stepId, output] as const;
+          })
+        );
+        outputs = Object.fromEntries(resolved);
+      } catch (err) {
+        log.error('workflow all-steps output resolution failed', {
+          deploymentId,
+          runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+        return c.json({ error: 'failed to resolve workflow step outputs' }, 500);
+      }
+
+      return c.json({ outputs });
+    }
+  );
+
+  router.patch(
+    '/workflow-runs/:deploymentId/status',
+    describeRoute({
+      tags: ['Workflows'],
+      summary: 'Update a workflow run status',
+      description:
+        'Updates the status of a workflow deployment to a terminal value. Called by the FE when it observes a terminal run event on the SSE stream. Same ownership gate as the other workflow routes. Optional `?tenantId=` selects a workbench the user belongs to.',
+      parameters: [
+        {
+          name: 'deploymentId',
+          in: 'path',
+          required: true,
+          description: 'Deployment id of the workflow run.',
+          schema: { type: 'string' },
+        },
+        {
+          name: 'tenantId',
+          in: 'query',
+          required: false,
+          description: 'Target workbench tenant id. Omit for the active workbench.',
+          schema: { type: 'string' },
+        },
+      ],
+      requestBody: {
+        required: true,
+        description: 'Terminal status value to set.',
+        content: {
+          'application/json': { schema: requestBodySchema(PatchStatusBody) },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Status updated',
+          content: {
+            'application/json': { schema: resolver(PatchStatusResponse) },
+          },
+        },
+        400: {
+          description: 'Invalid JSON or status value',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        403: {
+          description: 'User context not found or forbidden for the requested tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: 'Workflow deployment not found',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        500: {
+          description: 'Failed to update the workflow run status',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get('userId');
+      const { context, forbidden } = await getRequestedUserContext(
+        deps.db,
+        userId,
+        c.req.query('tenantId')
+      );
+      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
+      if (!context) return c.json({ error: 'User context not found' }, 403);
+
+      const deploymentId = c.req.param('deploymentId');
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const owned = await deps.db.query.workflowRun.findFirst({
+        where: and(
+          eq(workflowRun.deploymentId, deploymentId),
+          inArray(workflowRun.tenantId, chain)
+        ),
+      });
+      if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
+
+      let rawBody: unknown;
+      try {
+        rawBody = await c.req.json();
+      } catch {
+        return c.json({ error: 'Invalid JSON' }, 400);
+      }
+      const body = PatchStatusBody(rawBody);
+      if (body instanceof type.errors) {
+        return c.json({ error: `invalid status: ${body.summary}` }, 400);
+      }
+
+      try {
+        await deps.db
+          .update(workflowRun)
+          .set({ status: body.status })
+          .where(eq(workflowRun.deploymentId, deploymentId));
+      } catch (err) {
+        log.error('workflow run status update failed', {
+          deploymentId,
+          status: body.status,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+        return c.json({ error: 'failed to update workflow run status' }, 500);
+      }
+
+      return c.json({ deploymentId, status: body.status });
     }
   );
 

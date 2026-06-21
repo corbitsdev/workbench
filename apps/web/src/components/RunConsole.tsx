@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Button, toHumanLabel } from '@workbench/ui';
 import type { RunPhase, RunState, StepPhase, StepState } from '@intx/workflow';
-import { useWorkflowRunState, useSignalWorkflow } from '../hooks/use-workflow';
+import { useWorkflowRunState, useSignalWorkflow, isTerminalPhase } from '../hooks/use-workflow';
 
 const RUN_PHASE_LABELS: Record<RunPhase, string> = {
   pending: 'Pending',
@@ -36,22 +36,52 @@ interface RunConsoleProps {
   onClose: () => void;
 }
 
+// Derives the active step for the panel header. The active step is the first
+// step that is in-flight or awaiting a signal/timer; if there is none (all
+// done), it is the first non-completed step; else the last step overall.
+function deriveActiveStep(state: RunState): StepState | null {
+  const steps = [...state.steps.values()];
+  const inFlight = steps.find(
+    (s) => s.phase === 'in-flight' || s.phase === 'awaiting-signal' || s.phase === 'awaiting-timer'
+  );
+  if (inFlight) return inFlight;
+  const nonCompleted = steps.find((s) => s.phase !== 'completed' && s.phase !== 'cancelled');
+  if (nonCompleted) return nonCompleted;
+  return steps[steps.length - 1] ?? null;
+}
+
 // Generic workflow-run console driven entirely by the native run stream. It
 // reduces the streamed WorkflowEvent log into RunState and renders run phase,
 // a step timeline, step outputs, and an Approve action for any step blocked on
 // a signal (the HITL gate). No workflow-kind-specific branching lives here.
 export function RunConsole({ deploymentId, tenantId, onClose }: RunConsoleProps) {
-  const { state, connected } = useWorkflowRunState(deploymentId, tenantId);
+  // Bug fix (3): guard falsy deploymentId so no hooks fire against an empty URL.
+  const safeId = deploymentId || null;
+  const { state, connected, settled } = useWorkflowRunState(safeId, tenantId);
   const signal = useSignalWorkflow(deploymentId, tenantId);
 
+  const terminal = state !== null && isTerminalPhase(state.phase);
   const steps = useMemo<StepState[]>(() => (state ? [...state.steps.values()] : []), [state]);
+  const activeStep = useMemo(() => (state ? deriveActiveStep(state) : null), [state]);
+  const stepCount = steps.length;
+  const activeIndex = activeStep
+    ? steps.findIndex((s) => s.stepId === activeStep.stepId) + 1
+    : null;
+
+  // Bug fix (1): show a stable "Loading run…" until the initial backlog flush
+  // has settled, to avoid animating through historical steps in the header.
+  const headerSubtitle = !settled
+    ? 'Loading run…'
+    : activeStep && activeIndex !== null
+      ? `Step ${String(activeIndex)} of ${String(stepCount)} · ${toHumanLabel(activeStep.stepId)}`
+      : (deploymentId ?? '');
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-[14px] font-medium text-text">Workflow run</p>
-          <p className="truncate text-[12px] text-text-3">{deploymentId}</p>
+          <p className="truncate text-[12px] text-text-3">{headerSubtitle}</p>
         </div>
         <div className="flex items-center gap-3">
           {state && (
@@ -66,27 +96,39 @@ export function RunConsole({ deploymentId, tenantId, onClose }: RunConsoleProps)
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {!state && (
+        {!settled && <p className="text-[13px] text-text-3">Loading run…</p>}
+        {settled && !state && (
           <p className="text-[13px] text-text-3">
             {connected ? 'Waiting for run activity…' : 'Connecting…'}
           </p>
         )}
-        {state && steps.length === 0 && (
+        {settled && state && terminal && state.phase === 'failed' && (
+          <p className="text-[13px] text-text-3">This run failed. Start a new run to try again.</p>
+        )}
+        {settled && state && steps.length === 0 && !terminal && (
           <p className="text-[13px] text-text-3">No steps have started yet.</p>
         )}
-        {state && steps.length > 0 && (
+        {settled && state && steps.length > 0 && (
           <ol className="flex flex-col gap-3">
             {steps.map((step) => (
               <RunStepRow
                 key={step.stepId}
                 step={step}
                 runState={state}
-                onApprove={(signalName) =>
-                  signal
-                    .mutateAsync({ runId: state.runId, signalName, payload: { approved: true } })
-                    .catch(() => undefined)
+                // Bug fix (2): never fire a signal when the run is terminal.
+                onApprove={
+                  terminal
+                    ? () => undefined
+                    : (signalName) =>
+                        signal
+                          .mutateAsync({
+                            runId: state.runId,
+                            signalName,
+                            payload: { approved: true },
+                          })
+                          .catch(() => undefined)
                 }
-                approving={signal.isPending}
+                approving={signal.isPending && !terminal}
               />
             ))}
           </ol>

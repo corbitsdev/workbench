@@ -91,15 +91,27 @@ type WorkflowRunRow = {
   tenantId: string;
 };
 
+// Captured update calls from the PATCH /status route.
+const updateCapture: Array<{ deploymentId: string; status: string }> = [];
+
 function makeDb(owned: boolean) {
+  const findFirst = mock(() =>
+    Promise.resolve(owned ? { deploymentId: 'dep-1', tenantId: 'tenant-1' } : undefined)
+  );
+  const setMock = mock((values: { status: string }) => ({
+    where: (cond: unknown) => {
+      updateCapture.push({ deploymentId: 'dep-1', status: values.status });
+      void cond;
+      return Promise.resolve();
+    },
+  }));
   return {
     query: {
       workflowRun: {
-        findFirst: mock(() =>
-          Promise.resolve(owned ? { deploymentId: 'dep-1', tenantId: 'tenant-1' } : undefined)
-        ),
+        findFirst,
       },
     },
+    update: () => ({ set: setMock }),
   } as unknown as HubDb;
 }
 
@@ -540,6 +552,166 @@ describe('POST /workflow-runs/:kind/start (shadowing + visibility)', () => {
         body: JSON.stringify({}),
       })
     );
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('GET /workflow-runs/:deploymentId/steps (batched step outputs)', () => {
+  function allSteps(app: ReturnType<typeof buildApp>, dep: string) {
+    return app.request(new Request(`http://local/workflow-runs/${dep}/steps`, { method: 'GET' }));
+  }
+
+  it('replays the log once and returns all completed step outputs as a map', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
+    subscribeKindThrows = null;
+    subscribeKindEntries = [
+      { seq: 0, runId: 'run-1', event: { type: 'RunStarted', seq: 0 } },
+      {
+        seq: 1,
+        runId: 'run-1',
+        event: {
+          type: 'StepCompleted',
+          seq: 1,
+          stepId: 'step-a',
+          output: { ref: 'inline:{"a":1}' },
+        },
+      },
+      {
+        seq: 2,
+        runId: 'run-1',
+        event: {
+          type: 'StepCompleted',
+          seq: 2,
+          stepId: 'step-b',
+          output: { ref: 'inline:{"b":2}' },
+        },
+      },
+    ];
+    resolveRefImpl = (ref) => {
+      if (ref === 'inline:{"a":1}') return Promise.resolve({ a: 1 });
+      if (ref === 'inline:{"b":2}') return Promise.resolve({ b: 2 });
+      return Promise.reject(new Error(`unexpected ref: ${ref}`));
+    };
+
+    const res = await allSteps(buildApp(makeDb(true)), 'dep-1');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { outputs: Record<string, unknown> };
+    expect(body.outputs).toEqual({ 'step-a': { a: 1 }, 'step-b': { b: 2 } });
+  });
+
+  it('returns an empty outputs map when no steps have completed', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
+    subscribeKindThrows = null;
+    subscribeKindEntries = [{ seq: 0, runId: 'run-2', event: { type: 'RunStarted', seq: 0 } }];
+
+    const res = await allSteps(buildApp(makeDb(true)), 'dep-1');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { outputs: Record<string, unknown> };
+    expect(body.outputs).toEqual({});
+  });
+
+  it('404s for a deployment the caller does not own', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
+    const res = await allSteps(buildApp(makeDb(false)), 'dep-x');
+    expect(res.status).toBe(404);
+  });
+
+  it('403s when there is no user context', async () => {
+    userContextImpl = () => Promise.resolve({ context: null, forbidden: false });
+    const res = await allSteps(buildApp(makeDb(true)), 'dep-1');
+    expect(res.status).toBe(403);
+  });
+
+  it('500s when the event log replay throws', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
+    subscribeKindThrows = new Error('log unavailable');
+    subscribeKindEntries = [];
+
+    const res = await allSteps(buildApp(makeDb(true)), 'dep-1');
+    expect(res.status).toBe(500);
+  });
+});
+
+describe('PATCH /workflow-runs/:deploymentId/status', () => {
+  function patchStatus(app: ReturnType<typeof buildApp>, dep: string, body: unknown) {
+    return app.request(
+      new Request(`http://local/workflow-runs/${dep}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    );
+  }
+
+  it('updates the status to completed and returns the deployment + status', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
+    updateCapture.length = 0;
+
+    const res = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'completed' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { deploymentId: string; status: string };
+    expect(body.deploymentId).toBe('dep-1');
+    expect(body.status).toBe('completed');
+    expect(updateCapture).toEqual([{ deploymentId: 'dep-1', status: 'completed' }]);
+  });
+
+  it('accepts failed and cancelled as valid terminal statuses', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
+    updateCapture.length = 0;
+
+    const res1 = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'failed' });
+    expect(res1.status).toBe(200);
+    const res2 = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'cancelled' });
+    expect(res2.status).toBe(200);
+  });
+
+  it('400s for an invalid status value', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
+    const res = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'running' });
+    expect(res.status).toBe(400);
+  });
+
+  it('404s for a deployment the caller does not own', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
+    const res = await patchStatus(buildApp(makeDb(false)), 'dep-x', { status: 'completed' });
+    expect(res.status).toBe(404);
+  });
+
+  it('403s when there is no user context', async () => {
+    userContextImpl = () => Promise.resolve({ context: null, forbidden: false });
+    const res = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'completed' });
     expect(res.status).toBe(403);
   });
 });

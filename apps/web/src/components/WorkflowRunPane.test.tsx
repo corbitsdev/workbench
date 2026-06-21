@@ -1,17 +1,13 @@
 /// <reference types="bun" />
-import "../test-setup";
-import { afterEach, describe, it, expect, mock } from "bun:test";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { WorkflowPanelProps } from "@workbench/ui";
-import type { RunState, StepState } from "@intx/workflow";
-import * as workflowHooks from "../hooks/use-workflow";
+import '../test-setup';
+import { afterEach, describe, it, expect, mock } from 'bun:test';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { WorkflowPanelProps } from '@workbench/ui';
+import type { RunState, StepState } from '@intx/workflow';
+import * as workflowHooks from '../hooks/use-workflow';
 
-// Captured before mock.module rebinds the module so the fallback below calls the
-// genuine fetchStepOutput, not itself.
-const realFetchStepOutput = workflowHooks.fetchStepOutput;
-
-function CustomPanel({ deploymentId, stepOutputs }: WorkflowPanelProps) {
+function CustomPanel({ deploymentId, stepOutputs, onSignal }: WorkflowPanelProps) {
   return (
     <div>
       <span>custom-panel-for-{deploymentId}</span>
@@ -20,55 +16,40 @@ function CustomPanel({ deploymentId, stepOutputs }: WorkflowPanelProps) {
           out-{stepId}:{JSON.stringify(output)}
         </span>
       ))}
+      <button onClick={() => onSignal('approve')}>fire-signal</button>
     </div>
   );
 }
 
-mock.module("../lib/workflow-ui", () => ({
+mock.module('../lib/workflow-ui', () => ({
   loadWorkflowUI: async (kind: string) => {
-    if (kind === "with-panel") return { Panel: CustomPanel };
+    if (kind === 'with-panel') return { Panel: CustomPanel };
     return {};
   },
 }));
 
-// Mock the per-step fetch at the hook module boundary so the pane's
-// allSettled resolver is exercised without touching the global fetch (which
-// other test files rely on). dep-mixed has three completed steps: one good,
-// one whose payload parse fails, and one that rejects outright.
-// bun's mock.module registry is global, so this override leaks into any suite
-// that imports the real module after us. Delegate unrecognized calls to the
-// real fetchStepOutput so sibling suites (e.g. use-workflow.test) are unaffected.
-const stepOutputMock = mock((deploymentId: string, stepId: string) => {
-  if (stepId === "step-ok") return Promise.resolve({ headline: "hi" });
-  if (stepId === "step-bad")
-    return Promise.reject(new Error("Unexpected step-output response"));
-  if (stepId === "step-fail") return Promise.reject(new Error("boom"));
-  return realFetchStepOutput(deploymentId, stepId);
-});
-
-function step(stepId: string): StepState {
+function step(stepId: string, phase: StepState['phase'] = 'completed'): StepState {
   return {
     stepId,
-    phase: "completed",
-    outputRef: `inline:${stepId}`,
+    phase,
+    outputRef: phase === 'completed' ? `inline:${stepId}` : undefined,
     currentAttempt: 1,
   } as unknown as StepState;
 }
 
-function mixedRunState(): RunState {
+function mixedRunState(phase: RunState['phase'] = 'running'): RunState {
   return {
-    runId: "run-mixed",
-    phase: "running",
+    runId: 'run-mixed',
+    phase,
+    lastSeq: 5,
     steps: new Map([
-      ["step-ok", step("step-ok")],
-      ["step-bad", step("step-bad")],
-      ["step-fail", step("step-fail")],
-      // A still-running step carries no output ref and must not be queried.
+      ['step-ok', step('step-ok')],
+      ['step-bad', step('step-bad')],
       [
-        "step-pending",
+        'step-pending',
         {
-          stepId: "step-pending",
-          phase: "running",
+          stepId: 'step-pending',
+          phase: 'in-flight',
           currentAttempt: 1,
         } as unknown as StepState,
       ],
@@ -77,106 +58,105 @@ function mixedRunState(): RunState {
 }
 
 let runState: RunState | null = null;
+let settled = true;
 
-// Spread the real module so untouched exports (e.g. useStepOutput) keep their
-// real implementations — bun's mock.module registry is global, so replacing the
-// whole module would leak undefined exports into other suites.
-mock.module("../hooks/use-workflow", () => ({
+// All-step-outputs mock: returns a map for dep-mixed, empty for others.
+const allStepOutputsMock = mock((deploymentId: string | null) => {
+  if (deploymentId === 'dep-mixed') {
+    return {
+      data: { 'step-ok': { headline: 'hi' } },
+      isSuccess: true,
+    };
+  }
+  return { data: {}, isSuccess: true };
+});
+
+// Track signal calls to assert terminal gating.
+const signalMutateAsync = mock(async () => undefined);
+
+// Spread the real module so untouched exports keep their real implementations.
+mock.module('../hooks/use-workflow', () => ({
   ...workflowHooks,
   useWorkflowRuns: () => ({
     data: [
-      {
-        deploymentId: "dep-panel",
-        kind: "with-panel",
-        status: "active",
-        createdAt: "",
-      },
-      {
-        deploymentId: "dep-plain",
-        kind: "no-panel",
-        status: "active",
-        createdAt: "",
-      },
-      {
-        deploymentId: "dep-mixed",
-        kind: "with-panel",
-        status: "active",
-        createdAt: "",
-      },
+      { deploymentId: 'dep-panel', kind: 'with-panel', status: 'active', createdAt: '' },
+      { deploymentId: 'dep-plain', kind: 'no-panel', status: 'active', createdAt: '' },
+      { deploymentId: 'dep-mixed', kind: 'with-panel', status: 'active', createdAt: '' },
     ],
     isPending: false,
   }),
-  useWorkflowRunState: () => ({ state: runState, events: [], connected: true }),
+  useWorkflowRunState: () => ({ state: runState, events: [], connected: true, settled }),
   useSignalWorkflow: () => ({
-    mutateAsync: async () => undefined,
+    mutateAsync: signalMutateAsync,
     isPending: false,
   }),
-  fetchStepOutput: stepOutputMock,
+  useAllStepOutputs: (deploymentId: string | null) => allStepOutputsMock(deploymentId),
+  useSetWorkflowStatus: () => ({ mutate: () => undefined }),
+  isTerminalPhase: workflowHooks.isTerminalPhase,
 }));
 
-import { WorkflowRunPane } from "./WorkflowRunPane";
+import { WorkflowRunPane } from './WorkflowRunPane';
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
-describe("WorkflowRunPane", () => {
+describe('WorkflowRunPane', () => {
   afterEach(() => {
     cleanup();
     runState = null;
-    stepOutputMock.mockClear();
+    settled = true;
+    signalMutateAsync.mockClear();
+    allStepOutputsMock.mockClear();
   });
 
-  it("renders the workflow kind own Panel when its module exports one", async () => {
-    render(
-      <WorkflowRunPane deploymentId="dep-panel" onClose={() => undefined} />,
-      { wrapper },
-    );
-    await waitFor(() => screen.getByText("custom-panel-for-dep-panel"));
+  it('renders the workflow kind own Panel when its module exports one', async () => {
+    render(<WorkflowRunPane deploymentId="dep-panel" onClose={() => undefined} />, { wrapper });
+    await waitFor(() => screen.getByText('custom-panel-for-dep-panel'));
   });
 
-  it("falls back to RunConsole when the module has no Panel", async () => {
-    render(
-      <WorkflowRunPane deploymentId="dep-plain" onClose={() => undefined} />,
-      { wrapper },
-    );
-    await waitFor(() => screen.getByText("Workflow run"));
-    expect(screen.queryByText("custom-panel-for-dep-plain")).toBeNull();
+  it('falls back to RunConsole when the module has no Panel', async () => {
+    render(<WorkflowRunPane deploymentId="dep-plain" onClose={() => undefined} />, { wrapper });
+    await waitFor(() => screen.getByText('Workflow run'));
+    expect(screen.queryByText('custom-panel-for-dep-plain')).toBeNull();
   });
 
-  it("does not query step outputs when there are no completed steps with an output ref", async () => {
+  it('shows loading placeholder before settled, not the panel content', async () => {
+    settled = false;
     runState = null;
-    render(
-      <WorkflowRunPane deploymentId="dep-mixed" onClose={() => undefined} />,
-      { wrapper },
-    );
-    await waitFor(() => screen.getByText("custom-panel-for-dep-mixed"));
-    expect(stepOutputMock).not.toHaveBeenCalled();
+    render(<WorkflowRunPane deploymentId="dep-panel" onClose={() => undefined} />, { wrapper });
+    await waitFor(() => screen.getByText('Loading run…'));
+    expect(screen.queryByText('custom-panel-for-dep-panel')).toBeNull();
   });
 
-  it("passes a successful step output to the Panel and one bad step does not blank the others", async () => {
+  it('renders empty deploymentId as a loading placeholder without firing hooks', () => {
+    render(<WorkflowRunPane deploymentId="" onClose={() => undefined} />, { wrapper });
+    screen.getByText('Loading…');
+    expect(signalMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('passes step outputs from useAllStepOutputs to the Panel', async () => {
     runState = mixedRunState();
-    render(
-      <WorkflowRunPane deploymentId="dep-mixed" onClose={() => undefined} />,
-      { wrapper },
-    );
-
-    // The good step's output is delivered to the panel...
+    render(<WorkflowRunPane deploymentId="dep-mixed" onClose={() => undefined} />, { wrapper });
     await waitFor(() => screen.getByText('out-step-ok:{"headline":"hi"}'));
+  });
 
-    // ...while the malformed and failing steps are absent from the map, not
-    // blanking the surviving section.
-    expect(screen.queryByText(/out-step-bad/)).toBeNull();
-    expect(screen.queryByText(/out-step-fail/)).toBeNull();
+  it('onSignal fires when the run is active', async () => {
+    runState = mixedRunState('running');
+    render(<WorkflowRunPane deploymentId="dep-mixed" onClose={() => undefined} />, { wrapper });
+    await waitFor(() => screen.getByText('fire-signal'));
+    screen.getByText('fire-signal').click();
+    await waitFor(() => expect(signalMutateAsync).toHaveBeenCalledTimes(1));
+  });
 
-    // The still-running step (no output ref) is never fetched.
-    const queriedStepIds = stepOutputMock.mock.calls.map((c) => c[1]);
-    expect(queriedStepIds).not.toContain("step-pending");
-    expect(queriedStepIds).toContain("step-ok");
+  it('onSignal is a no-op when the run is in a terminal phase', async () => {
+    runState = mixedRunState('completed');
+    render(<WorkflowRunPane deploymentId="dep-mixed" onClose={() => undefined} />, { wrapper });
+    await waitFor(() => screen.getByText('fire-signal'));
+    screen.getByText('fire-signal').click();
+    expect(signalMutateAsync).not.toHaveBeenCalled();
   });
 });

@@ -15,9 +15,21 @@ const fakeWorkflow: WorkflowSummary = {
   createdAt: new Date().toISOString(),
 };
 
+const mockDeleteMutateAsync = mock((_id: string) => Promise.resolve());
+
+mock.module('../../hooks/use-workflow', () => ({
+  useDeleteWorkflow: () => ({
+    mutateAsync: mockDeleteMutateAsync,
+  }),
+}));
+
+// libraryResourcesOverride lets individual tests substitute a different
+// workflow list without re-mocking the entire module.
+let libraryResourcesOverride: WorkflowSummary[] | null = null;
+
 mock.module('@workbench/client/react', () => ({
   useLibraryResources: () => ({
-    data: [fakeWorkflow],
+    data: libraryResourcesOverride ?? [fakeWorkflow],
     isLoading: false,
     isError: false,
   }),
@@ -74,7 +86,10 @@ function renderWithClient(ui: React.ReactElement) {
   return render(React.createElement(QueryClientProvider, { client }, ui));
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  libraryResourcesOverride = null;
+});
 
 describe('LibraryRail', () => {
   it('renders real jobs from the client', async () => {
@@ -303,6 +318,66 @@ describe('LibraryRail', () => {
     });
     await waitFor(() => {
       expect(view.getByText('Agent · Reasoning')).not.toBeNull();
+    });
+  });
+
+  it('places a completed-status workflow in the Done section with a Completed badge', async () => {
+    libraryResourcesOverride = [
+      {
+        id: 'wf-done',
+        kind: 'collateral-generation',
+        status: 'completed',
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    const { LibraryRail } = await import('./LibraryRail');
+    const view = renderWithClient(React.createElement(LibraryRail));
+
+    // The Done section toggle should be visible and labelled "Completed".
+    const doneToggle = await waitFor(() => view.getByText('Completed'));
+    fireEvent.click(doneToggle);
+
+    // After expansion, a Completed badge appears inside the row.
+    await waitFor(() => {
+      const badges = view.getAllByText('Completed');
+      expect(badges.length).toBeGreaterThan(1);
+    });
+  });
+
+  it('calls deleteWorkflow.mutateAsync with the workflow id when Remove is confirmed', async () => {
+    libraryResourcesOverride = [
+      {
+        id: 'wf-remove-me',
+        kind: 'collateral-generation',
+        status: 'completed',
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    mockDeleteMutateAsync.mockReset();
+    mockDeleteMutateAsync.mockImplementation(() => Promise.resolve());
+
+    const { LibraryRail } = await import('./LibraryRail');
+    const view = renderWithClient(React.createElement(LibraryRail));
+
+    // Open the Done section.
+    const doneToggle = await waitFor(() => view.getByText('Completed'));
+    fireEvent.click(doneToggle);
+
+    // Click Remove to enter the confirm state.
+    const removeBtn = await waitFor(() =>
+      view.getByRole('button', { name: 'Remove workflow Collateral Generation' })
+    );
+    fireEvent.click(removeBtn);
+
+    // Click Confirm.
+    const confirmBtn = await waitFor(() =>
+      view.getByRole('button', { name: 'Confirm remove workflow Collateral Generation' })
+    );
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockDeleteMutateAsync).toHaveBeenCalledWith('wf-remove-me');
     });
   });
 });

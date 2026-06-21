@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type } from 'arktype';
-import { resumeFromLog, type RunState, type WorkflowEvent } from '@intx/workflow';
+import { resumeFromLog, type RunPhase, type RunState, type WorkflowEvent } from '@intx/workflow';
 import { api } from '../lib/api';
 import { subscribeSharedEventStream } from '../lib/shared-event-stream';
 
@@ -53,6 +53,11 @@ export interface WorkflowRunStateResult {
   state: RunState | null;
   events: WorkflowEvent[];
   connected: boolean;
+  // True once the initial stream backlog has been received and reduced.
+  // False while the first debounce flush is still pending (i.e. the replay
+  // burst is in flight). Callers should show a loading placeholder until this
+  // is true so the UI never animates through historical steps.
+  settled: boolean;
 }
 
 // The hub streams each run event as `{ seq, runId, event }` where `event` is the
@@ -88,12 +93,19 @@ interface RunFrame {
 // dedupes instead of double-applying), group by runId, and reduce only the most
 // recently started run. Concatenating multiple runs' logs into one reduce is an
 // invalid event sequence and throws inside the state machine.
+const TERMINAL_PHASES: ReadonlySet<RunPhase> = new Set(['completed', 'failed', 'cancelled']);
+
+export function isTerminalPhase(phase: RunPhase): boolean {
+  return TERMINAL_PHASES.has(phase);
+}
+
 export function useWorkflowRunState(
   deploymentId: string | null,
   tenantId?: string | null
 ): WorkflowRunStateResult {
   const [frames, setFrames] = useState<Map<string, RunFrame>>(new Map());
   const [connected, setConnected] = useState(false);
+  const [settled, setSettled] = useState(false);
 
   // Frames accumulate in a ref and flush to state on a TRAILING debounce. On
   // open the stream replays the whole log from seq 0 in a tight burst; flushing
@@ -102,6 +114,10 @@ export function useWorkflowRunState(
   // render at the final state — so the panel jumps straight to the active step —
   // while sparse live events (a step completing, then a wait) each flush after
   // the quiet window.
+  //
+  // `settled` starts false and becomes true on the first flush. Callers render a
+  // "Loading run…" placeholder until settled, which eliminates the walk-through
+  // even on slow machines where the debounce fires multiple times.
   const framesRef = useRef<Map<string, RunFrame>>(new Map());
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -110,10 +126,12 @@ export function useWorkflowRunState(
     framesRef.current = new Map();
     setFrames(new Map());
     setConnected(true);
+    setSettled(false);
     const url = streamUrl(`/workflow-runs/${deploymentId}/stream`, tenantId);
     const flush = () => {
       flushTimer.current = null;
       setFrames(new Map(framesRef.current));
+      setSettled(true);
     };
     const unsubscribe = subscribeSharedEventStream(url, 'message', (raw) => {
       const parsed = runStreamFrameSchema(raw);
@@ -130,6 +148,7 @@ export function useWorkflowRunState(
     });
     return () => {
       setConnected(false);
+      setSettled(false);
       if (flushTimer.current !== null) clearTimeout(flushTimer.current);
       flushTimer.current = null;
       unsubscribe();
@@ -170,7 +189,7 @@ export function useWorkflowRunState(
     }
   }, [deploymentId, latestRunEvents]);
 
-  return { state, events: latestRunEvents, connected };
+  return { state, events: latestRunEvents, connected, settled };
 }
 
 const stepOutputSchema = type({ stepId: 'string', output: 'unknown' });
@@ -212,6 +231,48 @@ export function useStepOutput(
     enabled: !!deploymentId && !!stepId && (opts?.enabled ?? true),
     staleTime: Infinity,
     queryFn: () => fetchStepOutput(deploymentId as string, stepId as string, opts?.tenantId),
+  });
+}
+
+// Fetch all completed step outputs in a single call. The hub endpoint returns
+// { outputs: Record<stepId, unknown> } covering every step that has produced
+// an output so far. Re-keyed on `lastSeq` so TanStack Query refetches as the
+// run advances (new steps complete). Gated on both ids being present.
+const allStepOutputsSchema = type({ outputs: type({ '[string]': 'unknown' }) });
+
+export function useAllStepOutputs(
+  deploymentId: string | null,
+  tenantId: string | null | undefined,
+  opts?: { lastSeq?: number }
+) {
+  return useQuery<Record<string, unknown>>({
+    queryKey: ['workflow-all-step-outputs', deploymentId, tenantId ?? null, opts?.lastSeq ?? 0],
+    enabled: !!deploymentId,
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        'GET',
+        withTenant(`/workflow-runs/${deploymentId as string}/steps`, tenantId)
+      );
+      const parsed = allStepOutputsSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected all-step-outputs response: ${parsed.summary}`);
+      }
+      return parsed.outputs;
+    },
+  });
+}
+
+// Persist the run's terminal status to the hub so the library rail can show
+// the final Completed / Failed badge without relying on the live stream.
+export function useSetWorkflowStatus(tenantId?: string | null) {
+  return useMutation({
+    mutationFn: async ({ deploymentId, status }: { deploymentId: string; status: string }) => {
+      return api<unknown>(
+        'PATCH',
+        withTenant(`/workflow-runs/${encodeURIComponent(deploymentId)}/status`, tenantId),
+        { status }
+      );
+    },
   });
 }
 

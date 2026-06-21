@@ -14,6 +14,7 @@ import {
 import type { AgentInstance, WorkbenchEntry, CredentialRequirement } from '../../lib/hub-api';
 import { useAgentPhase } from '../../lib/use-agent-phase';
 import type { AgentPhase } from '@workbench/agents/browser';
+import { useDeleteWorkflow } from '../../hooks/use-workflow';
 import { useState } from 'react';
 
 type ResourceType = 'workflow' | 'agent';
@@ -124,6 +125,9 @@ function useWorkbenchesAndAgents(externalTick = 0): {
   };
 }
 
+// Statuses the hub sets as terminal — these move a run into the Done section.
+const TERMINAL_STATUSES = new Set(['done', 'completed', 'failed', 'cancelled']);
+
 const SESSION_STATUS_TO_RAIL: Record<string, ResourceStatus> = {
   pending: 'idle',
   running: 'run',
@@ -132,7 +136,9 @@ const SESSION_STATUS_TO_RAIL: Record<string, ResourceStatus> = {
   reviewing: 'run',
   generating: 'run',
   done: 'done',
-  failed: 'idle',
+  completed: 'done',
+  failed: 'done',
+  cancelled: 'done',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -143,7 +149,9 @@ const STATUS_LABELS: Record<string, string> = {
   generating: 'Generating',
   reviewing: 'Reviewing',
   done: 'Done',
+  completed: 'Completed',
   failed: 'Failed',
+  cancelled: 'Cancelled',
 };
 
 function workflowKindLabel(kind: string): string {
@@ -249,26 +257,54 @@ function RailItemLead({ item, isRestarting }: { item: RailItem; isRestarting: bo
   );
 }
 
-// Pure presentational row for a completed workflow. Owns no data loading or
-// state — the container passes the item, the active flag, and the callbacks.
+function workflowStatusBadgeClass(workflowStatus: string): string {
+  if (workflowStatus === 'completed' || workflowStatus === 'done') {
+    return 'bg-[rgba(123,153,116,0.18)] text-green';
+  }
+  if (workflowStatus === 'failed' || workflowStatus === 'cancelled') {
+    return 'bg-[rgba(125,116,104,0.18)] text-text-3';
+  }
+  // Active statuses
+  return 'bg-[rgba(233,132,40,0.16)] text-orange';
+}
+
+function workflowStatusDotClass(workflowStatus: string): string {
+  if (workflowStatus === 'completed' || workflowStatus === 'done') {
+    return 'bg-green';
+  }
+  if (workflowStatus === 'failed' || workflowStatus === 'cancelled') {
+    return 'bg-text-3';
+  }
+  return 'bg-orange';
+}
+
+// Pure presentational row for a terminal-status workflow. Owns no data loading
+// or state — the container passes the item, the active flag, and the callbacks.
 export function CompletedWorkflowRow({
   item,
   isActive,
   onOpen,
   onRemove,
   removing,
+  confirmingRemove,
+  onConfirmRemove,
+  onCancelRemove,
 }: {
   item: WorkflowRailItem;
   isActive: boolean;
   onOpen?: () => void;
   onRemove?: () => void;
   removing?: boolean;
+  confirmingRemove?: boolean;
+  onConfirmRemove?: () => void;
+  onCancelRemove?: () => void;
 }) {
+  const statusLabel = STATUS_LABELS[item.workflowStatus] ?? toHumanLabel(item.workflowStatus);
   return (
     <div
       className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${onOpen ? 'hover:bg-[var(--row-hover)]' : ''} ${isActive ? 'bg-surface ring-1 ring-orange/60' : ''}`}
     >
-      {onOpen ? (
+      {onOpen && !confirmingRemove ? (
         <button
           type="button"
           aria-label={`Open workflow ${item.name}`}
@@ -277,16 +313,20 @@ export function CompletedWorkflowRow({
         />
       ) : null}
       <div className="pointer-events-none relative z-[1] flex min-w-0 flex-1 items-center gap-[11px]">
-        <StatusDot status="done" />
+        <StatusDot status={item.status} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[14px] font-medium text-text">{item.name}</div>
           <div className="mt-px font-mono text-[11.5px] text-text-3">{item.sub}</div>
         </div>
       </div>
       <div className="relative z-[1] flex flex-none items-center gap-[11px]">
-        <span className="flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] bg-[rgba(233,132,40,0.16)] text-orange">
-          <span className="h-1.5 w-1.5 rounded-full bg-orange" />
-          Workflow
+        <span
+          className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${workflowStatusBadgeClass(item.workflowStatus)}`}
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${workflowStatusDotClass(item.workflowStatus)}`}
+          />
+          {statusLabel}
         </span>
         <div
           className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
@@ -295,18 +335,47 @@ export function CompletedWorkflowRow({
           GA
         </div>
         {onRemove ? (
-          <button
-            type="button"
-            aria-label={`Remove workflow ${item.name}`}
-            disabled={removing}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            className="flex-none rounded-[7px] border border-border px-2 py-[3px] text-[11px] text-text-3 opacity-0 transition-opacity hover:border-orange hover:text-orange disabled:opacity-50 group-hover:opacity-100"
-          >
-            {removing ? '…' : 'Remove'}
-          </button>
+          confirmingRemove ? (
+            <div className="flex flex-none items-center gap-[5px]">
+              <button
+                type="button"
+                aria-label={`Confirm remove workflow ${item.name}`}
+                disabled={removing}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onConfirmRemove?.();
+                }}
+                className="flex-none rounded-[7px] border border-orange px-2 py-[3px] text-[11px] text-orange hover:bg-[rgba(233,132,40,0.12)] disabled:opacity-50"
+              >
+                {removing ? '…' : 'Confirm'}
+              </button>
+              <button
+                type="button"
+                aria-label="Cancel remove"
+                disabled={removing}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCancelRemove?.();
+                }}
+                className="flex-none rounded-[7px] border border-border px-2 py-[3px] text-[11px] text-text-3 hover:border-orange hover:text-orange disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              aria-label={`Remove workflow ${item.name}`}
+              disabled={removing}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
+              className="flex-none rounded-[7px] border border-border px-2 py-[3px] text-[11px] text-text-3 opacity-0 transition-opacity hover:border-orange hover:text-orange disabled:opacity-50 group-hover:opacity-100"
+            >
+              Remove
+            </button>
+          )
         ) : null}
       </div>
     </div>
@@ -363,10 +432,14 @@ export function LibraryRail({
   const [stoppingInstanceId, setStoppingInstanceId] = useState<string | null>(null);
   const [restartingInstanceId, setRestartingInstanceId] = useState<string | null>(null);
   const [completedWorkflowsOpen, setCompletedWorkflowsOpen] = useState(false);
+  const [removingWorkflowId, setRemovingWorkflowId] = useState<string | null>(null);
+  const [confirmWorkflowRemoveId, setConfirmWorkflowRemoveId] = useState<string | null>(null);
 
   // Resolve the tenantId for the active workbench so agents can be scoped.
   const activeWorkbench = workbenches.find((w) => w.tenantSlug === activeWorkbenchSlug);
   const activeWorkbenchTenantId = activeWorkbench?.tenantId;
+
+  const deleteWorkflow = useDeleteWorkflow(activeWorkbenchTenantId);
 
   const {
     data: workflows,
@@ -382,8 +455,8 @@ export function LibraryRail({
     : allAgentItems;
 
   const allJobItems = (workflows ?? []).map(workflowToRailItem);
-  const jobItems = allJobItems.filter((w) => w.workflowStatus !== 'done');
-  const completedJobItems = allJobItems.filter((w) => w.workflowStatus === 'done');
+  const jobItems = allJobItems.filter((w) => !TERMINAL_STATUSES.has(w.workflowStatus));
+  const completedJobItems = allJobItems.filter((w) => TERMINAL_STATUSES.has(w.workflowStatus));
   const items: RailItem[] = [...agentItems, ...jobItems];
   const isLoading = jobsLoading;
 
@@ -616,17 +689,54 @@ export function LibraryRail({
                   }
                 };
 
+                const isConfirmingWorkflowRemove =
+                  item.type === 'workflow' && confirmWorkflowRemoveId === item.id;
+                const isRemovingWorkflow =
+                  item.type === 'workflow' && removingWorkflowId === item.id;
+
+                const handleWorkflowRemoveRequest = () => {
+                  if (item.type !== 'workflow') return;
+                  setConfirmWorkflowRemoveId(item.id);
+                };
+
+                const handleWorkflowRemoveConfirm = async () => {
+                  if (item.type !== 'workflow') return;
+                  setConfirmWorkflowRemoveId(null);
+                  setRemovingWorkflowId(item.id);
+                  await deleteWorkflow
+                    .mutateAsync(item.id)
+                    .catch(() => undefined)
+                    .finally(() => setRemovingWorkflowId(null));
+                };
+
+                const handleWorkflowRemoveCancel = () => {
+                  setConfirmWorkflowRemoveId(null);
+                };
+
                 const rowLabel =
                   item.type === 'workflow'
                     ? `Open workflow ${item.name}`
                     : `Open agent ${item.name}`;
 
+                const workflowBadgeClass =
+                  item.type === 'workflow'
+                    ? workflowStatusBadgeClass(item.workflowStatus)
+                    : TAG_STYLES[item.type];
+                const workflowDotClass =
+                  item.type === 'workflow'
+                    ? workflowStatusDotClass(item.workflowStatus)
+                    : DOT_STYLES[item.type];
+                const badgeLabel =
+                  item.type === 'workflow'
+                    ? (STATUS_LABELS[item.workflowStatus] ?? toHumanLabel(item.workflowStatus))
+                    : item.type;
+
                 return (
                   <div
                     key={item.id}
-                    className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${isClickable ? 'hover:bg-[var(--row-hover)]' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
+                    className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${isClickable && !isConfirmingWorkflowRemove ? 'hover:bg-[var(--row-hover)]' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
                   >
-                    {isClickable ? (
+                    {isClickable && !isConfirmingWorkflowRemove ? (
                       <button
                         type="button"
                         aria-label={rowLabel}
@@ -710,14 +820,56 @@ export function LibraryRail({
                           )}
                         </div>
                       )}
+                      {item.type === 'workflow' && (
+                        <div className="flex flex-none items-center gap-[5px]">
+                          {isConfirmingWorkflowRemove ? (
+                            <>
+                              <button
+                                type="button"
+                                aria-label={`Confirm remove workflow ${item.name}`}
+                                disabled={isRemovingWorkflow}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleWorkflowRemoveConfirm();
+                                }}
+                                className="flex-none rounded-[7px] border border-orange px-2 py-[3px] text-[11px] text-orange hover:bg-[rgba(233,132,40,0.12)] disabled:opacity-50"
+                              >
+                                {isRemovingWorkflow ? '…' : 'Confirm'}
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Cancel remove"
+                                disabled={isRemovingWorkflow}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleWorkflowRemoveCancel();
+                                }}
+                                className="flex-none rounded-[7px] border border-border px-2 py-[3px] text-[11px] text-text-3 hover:border-orange hover:text-orange disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              aria-label={`Remove workflow ${item.name}`}
+                              disabled={isRemovingWorkflow}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleWorkflowRemoveRequest();
+                              }}
+                              className="flex-none rounded-[7px] border border-border px-2 py-[3px] text-[11px] text-text-3 opacity-0 transition-opacity hover:border-orange hover:text-orange disabled:opacity-50 group-hover:opacity-100"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <span
-                        className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${TAG_STYLES[item.type]}`}
+                        className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${workflowBadgeClass}`}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[item.type]}`} />
-                        {item.type === 'workflow'
-                          ? (STATUS_LABELS[item.workflowStatus] ??
-                            toHumanLabel(item.workflowStatus))
-                          : item.type}
+                        <span className={`h-1.5 w-1.5 rounded-full ${workflowDotClass}`} />
+                        {badgeLabel}
                       </span>
                       <div
                         className="grid h-[22px] w-[22px] flex-none place-items-center rounded-full text-[10px] font-bold text-white"
@@ -757,6 +909,8 @@ export function LibraryRail({
               {completedWorkflowsOpen &&
                 completedJobItems.map((item) => {
                   const isActive = item.id === activeWorkflowId;
+                  const isConfirming = confirmWorkflowRemoveId === item.id;
+                  const isRemoving = removingWorkflowId === item.id;
 
                   return (
                     <CompletedWorkflowRow
@@ -768,6 +922,18 @@ export function LibraryRail({
                           ? () => onWorkflowSelect(item.id, item.workflowKind)
                           : undefined
                       }
+                      onRemove={() => setConfirmWorkflowRemoveId(item.id)}
+                      removing={isRemoving}
+                      confirmingRemove={isConfirming}
+                      onConfirmRemove={() => {
+                        setConfirmWorkflowRemoveId(null);
+                        setRemovingWorkflowId(item.id);
+                        void deleteWorkflow
+                          .mutateAsync(item.id)
+                          .catch(() => undefined)
+                          .finally(() => setRemovingWorkflowId(null));
+                      }}
+                      onCancelRemove={() => setConfirmWorkflowRemoveId(null)}
                     />
                   );
                 })}

@@ -5,7 +5,7 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { createElement } from 'react';
-import { useStepOutput, useWorkflowRuns } from './use-workflow';
+import { useStepOutput, useWorkflowRuns, useAllStepOutputs, isTerminalPhase } from './use-workflow';
 
 const originalFetch = globalThis.fetch;
 
@@ -85,6 +85,61 @@ describe('useStepOutput', () => {
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(requested).toContain('tenantId=tn-wb');
+  });
+});
+
+describe('isTerminalPhase', () => {
+  it('returns true for completed, failed, cancelled', () => {
+    expect(isTerminalPhase('completed')).toBe(true);
+    expect(isTerminalPhase('failed')).toBe(true);
+    expect(isTerminalPhase('cancelled')).toBe(true);
+  });
+
+  it('returns false for running and pending', () => {
+    expect(isTerminalPhase('running')).toBe(false);
+    expect(isTerminalPhase('pending')).toBe(false);
+  });
+});
+
+describe('useAllStepOutputs', () => {
+  it('is disabled when deploymentId is null', () => {
+    let called = false;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      called = true;
+      return Promise.resolve(jsonResponse(200, { outputs: {} }));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useAllStepOutputs(null, null), { wrapper: wrapper() });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(called).toBe(false);
+  });
+
+  it('hits the /steps endpoint and returns the outputs map when enabled', async () => {
+    let requested = '';
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested = String(url);
+      return Promise.resolve(
+        jsonResponse(200, { outputs: { 'step-a': { x: 1 }, 'step-b': 'done' } })
+      );
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useAllStepOutputs('dep-1', 'tn-x'), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requested).toContain('/workflow-runs/dep-1/steps');
+    expect(requested).toContain('tenantId=tn-x');
+    expect(result.current.data).toEqual({ 'step-a': { x: 1 }, 'step-b': 'done' });
+  });
+
+  it('throws on a malformed response', async () => {
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(jsonResponse(200, { wrong: true }))) as typeof fetch;
+
+    const { result } = renderHook(() => useAllStepOutputs('dep-1', null), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
 
