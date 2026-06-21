@@ -457,6 +457,26 @@ describe('createStepToolContextResolver', () => {
     expect(ctx.grants).toEqual([]);
   });
 
+  test('normalizes a map-expanded stepId to its base for the step agent id', async () => {
+    const dataDir = await makeDataDir();
+    const resolve = createStepToolContextResolver({
+      bareStore: makeStubBareStore(dataDir),
+      deploymentId: 'ses_218f6ab782774a3e70b5d86f01e602d8',
+      tenantId: 'ten_1',
+      hubHttpUrl: 'http://hub.invalid',
+      sidecarToken: 'tok',
+      cacheRoot: path.join(dataDir, 'cache'),
+      cacheMaxBytes: 1024 * 1024,
+      registryMaxTarballBytes: 1024 * 1024,
+    });
+
+    // `map` fans `persist` into `persist[0]`; the hub only registered the step
+    // agent row + grants + tool manifest under `persist`, so the resolver must
+    // strip the `[i]` suffix or the mapped step's tools never load.
+    const ctx = await resolve(makeReq('persist[0]'));
+    expect(ctx.stepAgentId).toBe('ins_ses_218f6ab782774a3e70b5d86f01e602d8-persist');
+  });
+
   test('a slug-shaped deploymentId would NOT have produced the registered id (documents the regression)', async () => {
     const dataDir = await makeDataDir();
     // Feeding the slugified deployment address (the pre-fix bug) yields

@@ -497,6 +497,12 @@ export function createStepToolContextResolver(
         "sidecar step tool-context: AuthorizeContext.stepId is required to resolve a step's pinned tool packages"
       );
     }
+    // `map` fan-out expands a static stepOrder entry `<base>` into per-item
+    // stepIds `<base>[<index>]` at run time. The hub provisions the step agent
+    // row, grants, and tool manifest under the STATIC `<base>` id only, so a
+    // mapped step must resolve its tool-context against `<base>` — otherwise its
+    // declared tools are never loaded ("not in the step's loaded runner").
+    const baseStepId = /^(.+)\[\d+\]$/.exec(stepId)?.[1] ?? stepId;
     // Must stay identical to `@intx/workflow-deploy`'s exported
     // `deriveStepAgentId` (`ins_<deploymentId>-<stepId>`), which the hub's
     // `writeStepAgentRows` uses to persist the row this id resolves.
@@ -504,13 +510,13 @@ export function createStepToolContextResolver(
     // yields `ins_ses_<id>-<step>` — the row the hub registered. The
     // template is hand-rolled here (not imported) because `@intx/workflow-deploy`
     // is not a sidecar dependency; on any change to that helper, update this.
-    const stepAgentId = `ins_${args.deploymentId}-${stepId}`;
+    const stepAgentId = `ins_${args.deploymentId}-${baseStepId}`;
     let grants: GrantRule[];
     try {
       grants = await readStepGrants({
         bareStore: args.bareStore,
         deploymentId: args.deploymentId,
-        stepId,
+        stepId: baseStepId,
       });
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
