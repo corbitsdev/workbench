@@ -13,7 +13,7 @@
     "db:setup": "bun --env-file=.env run scripts/db-setup.ts",
     "db:seed": "bun --env-file=.env run scripts/db-seed.ts",
     "db:reset": "bun --env-file=.env run scripts/db-reset.ts",
-    "dev": "bun --env-file=.env run --parallel --filter @workbench/web --filter @workbench/hub --filter @workbench/sidecar dev",
+    "dev": "bun --env-file=.env.local run --parallel --filter @workbench/web --filter @workbench/hub --filter @workbench/sidecar dev",
     "build": "bun run --parallel --filter @workbench/web --filter @workbench/hub build",
     "typecheck": "bun run --filter '@workbench/*' typecheck",
     "format": "oxfmt --write . '!interchange' '!temporary' '!packages/openapi-arktype/src' '!packages/openapi-arktype/test'",
