@@ -40,8 +40,8 @@ spec-driven ones. The selected tenant is threaded into each internally, so it is
 never typed by hand:
 
 - **Local actions (build, seed)** — Seed superadmin (bootstrap), Seed tool
-  credentials from env, Add LLM credential, Build tool packages, Publish tool
-  packages.
+  credentials from env, **Seed model catalog (providers, models, offerings)**,
+  Add LLM credential, Build tool packages, Publish tool packages.
 - **Workflows** — **Push (deploy) a workflow**: the CLI discovers the available
   workflow kinds from `workflows/*` and presents them as a list to pick from, so
   operators never have to know a kind by heart. The push authenticates with the
@@ -50,3 +50,35 @@ never typed by hand:
 
 Each action spawns the corresponding hub bin script internally; operators never
 invoke those scripts directly.
+
+## Inference setup and migration (model catalog)
+
+Agent launch resolves inference sources from each agent's `modelRequirements`
+against the tenant **model catalog** (`model` / `model_provider` /
+`model_offering`), not from `credentialRequirements`. New environments must seed
+the catalog or every agent launch fails with `no_requirements` (no Myra/Oat;
+artifacts appear broken).
+
+Order on a fresh environment (run against the **global** tenant so descendant
+workbenches inherit via the catalog ancestor walk):
+
+1. **Seed tool credentials from env** — creates the LLM credentials
+   (`opencode-zen`, `anthropic-api`, …) the catalog providers authenticate with.
+2. **Seed model catalog** — derived from the agent definitions themselves
+   (`AGENT_CATALOG` in `@workbench/agents`): one `model_provider` per inference
+   credential (baseURL read from the credential's metadata), one `model` per
+   canonical name an agent declares, and an offering linking them. Idempotent —
+   re-runs skip existing rows. To change a provider's baseURL or credential
+   binding, delete the catalog provider and re-seed; the seeder does not
+   reconcile an existing row in place.
+3. **Redeploy the hub** — `seedAgentTemplates` writes each agent's
+   `modelRequirements` onto its row on boot (insert and update), so existing
+   agents migrate in place; no backfill script.
+
+**Migrating a running agent to a changed model:** edit its definition's
+`modelConfig.defaultModel` in `@workbench/agents`, ensure the catalog carries
+that model (re-run **Seed model catalog**), redeploy the hub (updates the agent
+row's `modelRequirements`), then spin the instance down and up — the relaunch
+re-resolves sources from the catalog. The launch guard short-circuits cleanly if
+the catalog cannot resolve an agent's model, so a missing offering surfaces as a
+non-launch rather than a crash.

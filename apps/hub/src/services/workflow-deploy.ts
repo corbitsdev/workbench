@@ -1,5 +1,6 @@
 import {
   createWorkflowDeployOrchestrator,
+  deriveStepAddress,
   deriveStepAgentId,
   walkCapabilities,
   type CapabilityWalkResult,
@@ -114,6 +115,23 @@ export function createWorkflowDeployService(deps: {
         capabilityNames: stepCapabilityNames,
       });
 
+      // Persist a per-step `agent_instance` row before the orchestrator
+      // launches each step. Interchange's launch callbacks deliberately do no
+      // DB writes — the native single-agent route creates the instance row
+      // itself before `launchSession` (hub-api instances.ts), and the
+      // `agent.deploy.ack` handler then resolves it via `requireInstance` to
+      // store the step's public key. The orchestrator runs the same launch
+      // path, so without this row every step deploy fails with "No active
+      // instance found for address".
+      await writeStepInstanceRows({
+        db,
+        deploymentId: params.deploymentId,
+        deploymentDomain: params.deploymentDomain,
+        tenantId: params.tenantId,
+        creatorPrincipalId: params.creatorPrincipalId,
+        stepIds: [...walk.perStep.keys()],
+      });
+
       return orchestrator.deployWorkflow({
         ...params,
         operatorApprovals: collectGrants(walk),
@@ -148,6 +166,47 @@ export async function writeStepAgentRows(args: {
     updatedAt: now,
   }));
   await args.db.insert(intxSchema.agent).values(rows);
+}
+
+// Persist a per-step `agent_instance` row keyed by the orchestrator's derived
+// step ids. Mirrors the row interchange's native deploy route writes before
+// launch (hub-api instances.ts): the deploying user's principal owns the
+// instance (the orchestrator keeps `config.principalId` per step), and the
+// public key lands here once the sidecar acks the deploy. Interchange derives a
+// step's instance id and agent id from `(deploymentId, stepId)` to the same
+// value (`deriveStepInstanceId` === `deriveStepAgentId`) and only exports the
+// latter, so we use it for both; the deploy-ack handler resolves the row by
+// `address`, not by id.
+//
+// Not idempotent on a re-deploy of the SAME deploymentId: `id` (PK) and
+// `address` (unique) are deterministic, so a colliding deploymentId throws.
+// Safe in practice — resolveWorkflowDeployConfig mints a fresh deploymentId per
+// deploy — matching interchange's equally non-idempotent native deploy route.
+export async function writeStepInstanceRows(args: {
+  db: HubDb;
+  deploymentId: string;
+  deploymentDomain: string;
+  tenantId: string;
+  creatorPrincipalId: string;
+  stepIds: readonly string[];
+}): Promise<void> {
+  if (args.stepIds.length === 0) return;
+  const now = new Date();
+  const rows = args.stepIds.map((stepId) => ({
+    id: deriveStepAgentId({ deploymentId: args.deploymentId, stepId }),
+    agentId: deriveStepAgentId({ deploymentId: args.deploymentId, stepId }),
+    tenantId: args.tenantId,
+    principalId: args.creatorPrincipalId,
+    address: deriveStepAddress({
+      deploymentId: args.deploymentId,
+      stepId,
+      deploymentDomain: args.deploymentDomain,
+    }),
+    status: "deployed" as const,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  await args.db.insert(intxSchema.agentInstance).values(rows);
 }
 
 // Build the on-disk `GrantRule` set that authorizes a step agent to invoke

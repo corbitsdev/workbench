@@ -106,6 +106,19 @@ export {
 // Agent templates registry
 export { AGENT_TEMPLATES, type AgentTemplate } from "./templates";
 
+// Model catalog derived from the agent templates (single source of truth)
+export {
+  AGENT_CATALOG,
+  buildAgentCatalog,
+  templateModelName,
+  templateModelRequirements,
+  type AgentCatalogSpec,
+  type CatalogProviderSpec,
+  type CatalogModelSpec,
+  type CatalogOfferingSpec,
+  type ModelPlugin,
+} from "./catalog";
+
 // Shared adapter
 export { convertInstanceEvents } from "./adapter";
 export {

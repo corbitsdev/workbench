@@ -18,6 +18,7 @@ import {
   toSendMultiStepDeploy,
   writeStepAgentRows,
   writeStepGrantFiles,
+  writeStepInstanceRows,
 } from "./workflow-deploy";
 
 describe("createWorkflowRepoWriter", () => {
@@ -162,6 +163,61 @@ describe("writeStepAgentRows", () => {
       stepIds: [],
       toolPackagePins: [],
       capabilityNames: [],
+    });
+    expect(insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("writeStepInstanceRows", () => {
+  test("inserts one agent_instance row per step with derived id, address, and deploying principal", async () => {
+    const values = mock(async (_rows: unknown) => undefined);
+    const insert = mock(() => ({ values }));
+    const db = { insert } as unknown as HubDb;
+
+    await writeStepInstanceRows({
+      db,
+      deploymentId: "dep1",
+      deploymentDomain: "gtm.localhost",
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
+      stepIds: ["intake", "generate"],
+    });
+
+    const call = values.mock.calls.at(0);
+    if (!call) throw new Error("insert().values was not called");
+    const rows = call[0] as Array<{
+      id: string;
+      agentId: string;
+      tenantId: string;
+      principalId: string;
+      address: string;
+      status: string;
+    }>;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.id)).toEqual([
+      "ins_dep1-intake",
+      "ins_dep1-generate",
+    ]);
+    expect(rows.map((r) => r.address)).toEqual([
+      "ins_dep1-intake@gtm.localhost",
+      "ins_dep1-generate@gtm.localhost",
+    ]);
+    expect(rows[0]?.agentId).toBe("ins_dep1-intake");
+    expect(rows[0]?.tenantId).toBe("t1");
+    expect(rows[0]?.principalId).toBe("p1");
+    expect(rows[0]?.status).toBe("deployed");
+  });
+
+  test("writes nothing when the workflow has no steps", async () => {
+    const insert = mock(() => ({ values: mock(async () => undefined) }));
+    const db = { insert } as unknown as HubDb;
+    await writeStepInstanceRows({
+      db,
+      deploymentId: "dep1",
+      deploymentDomain: "gtm.localhost",
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
+      stepIds: [],
     });
     expect(insert).not.toHaveBeenCalled();
   });
