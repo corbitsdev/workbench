@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { schema as intxSchema } from '@intx/db';
 import { deriveDeploymentAddress, type CapabilityWalkResult } from '@intx/workflow-deploy';
 import type { WorkflowDefinition } from '@intx/workflow';
 import type { HarnessConfig, InferenceSource } from '@intx/types/runtime';
@@ -19,6 +20,7 @@ import {
   readWorkflowDefinition,
   toLaunchSession,
   toSendMultiStepDeploy,
+  ensureDeploymentInstanceActive,
   writeDeploymentAgentRow,
   writeDeploymentInstanceRow,
   writeStepAgentRows,
@@ -285,6 +287,54 @@ describe('writeDeploymentInstanceRow', () => {
     expect(row.principalId).toBe('p1');
     expect(row.status).toBe('deployed');
     expect(row.endedAt).toBeUndefined();
+  });
+});
+
+describe('ensureDeploymentInstanceActive', () => {
+  test('upserts the supervisor agent (do-nothing) and revives the instance row (endedAt cleared)', async () => {
+    const agentOnConflictDoNothing = mock(async () => undefined);
+    const instanceOnConflictDoUpdate = mock(async (_arg: unknown) => undefined);
+    const agentValues = mock((_row: unknown) => ({
+      onConflictDoNothing: agentOnConflictDoNothing,
+    }));
+    const instanceValues = mock((_row: unknown) => ({
+      onConflictDoUpdate: instanceOnConflictDoUpdate,
+    }));
+    const insert = mock((table: unknown) =>
+      table === intxSchema.agent ? { values: agentValues } : { values: instanceValues }
+    );
+    const db = { insert } as unknown as HubDb;
+
+    await ensureDeploymentInstanceActive({
+      db,
+      deploymentId: 'dep1',
+      deploymentDomain: 'gtm.localhost',
+      tenantId: 't1',
+      creatorPrincipalId: 'p1',
+    });
+
+    const agentRow = agentValues.mock.calls.at(0)?.[0] as { id: string };
+    expect(agentRow.id).toBe('ins_dep1');
+    expect(agentOnConflictDoNothing).toHaveBeenCalledTimes(1);
+
+    const instanceRow = instanceValues.mock.calls.at(0)?.[0] as {
+      id: string;
+      agentId: string;
+      address: string;
+      status: string;
+    };
+    expect(instanceRow.id).toBe('ins_dep1');
+    expect(instanceRow.agentId).toBe('ins_dep1');
+    expect(instanceRow.address).toBe('ins_dep1@gtm.localhost');
+    expect(instanceRow.status).toBe('deployed');
+
+    const update = instanceOnConflictDoUpdate.mock.calls.at(0)?.[0] as {
+      target: unknown;
+      set: { endedAt: unknown; status: string };
+    };
+    expect(update.target).toBe(intxSchema.agentInstance.id);
+    expect(update.set.endedAt).toBeNull();
+    expect(update.set.status).toBe('deployed');
   });
 });
 

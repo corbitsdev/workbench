@@ -95,8 +95,10 @@ export interface WorkflowDeployService {
   // Idempotently ensure a deployment's supervisor is routable, re-establishing
   // it from persisted state (workflow repo + DB rows) when the hub's
   // addressIndex has lost it (hub restart) or the sidecar dropped it (sidecar
-  // restart). Reuses the orchestrator's deploy path but writes no DB rows — the
-  // rows already exist from the original deploy. Concurrent calls for the same
+  // restart / idle-harness eviction). Revives the supervisor's agent + instance
+  // rows if they were reaped (CL-2219) or ended by DELETE/undeploy convergence
+  // (CL-2217/2222), then re-sends the supervisor deploy frame. Concurrent calls
+  // for the same
   // deploymentId coalesce onto one re-establishment. The shared engine behind
   // the deployment reconciler (CL-2224) and run-start/signal resilience
   // (CL-2225).
@@ -268,6 +270,24 @@ async function reestablishSupervisor(deps: {
     db: deps.db,
     tenantId: args.tenantId,
   });
+
+  // Revive the supervisor's agent + instance rows before re-sending the deploy
+  // frame. The original deploy wrote these rows, but a re-establish runs against
+  // the SAME deploymentId after the supervisor instance was reaped by
+  // idle-harness eviction (CL-2219) or ended by DELETE/undeploy convergence
+  // (CL-2217/2222) while the `workflow_run` row stayed active. Without an active
+  // instance row, the `agent.deploy.ack` handler's `requireInstance` throws "No
+  // active instance found for address", which rejects `sendAgentDeploy` and
+  // 500s the run-start (CL-2227). This ensure is idempotent: a no-op when the
+  // row is already active, a revive when it was ended/reaped.
+  await ensureDeploymentInstanceActive({
+    db: deps.db,
+    deploymentId: args.deploymentId,
+    deploymentDomain: args.deploymentDomain,
+    tenantId: args.tenantId,
+    creatorPrincipalId: args.creatorPrincipalId,
+  });
+
   const { address, config, workflow } = buildSupervisorDeployFrame({
     deploymentId: args.deploymentId,
     deploymentDomain: args.deploymentDomain,
@@ -514,6 +534,62 @@ export async function writeDeploymentInstanceRow(args: {
     createdAt: now,
     updatedAt: now,
   });
+}
+
+// Idempotently ensure the deployment-level supervisor `agent` + `agent_instance`
+// rows exist and are ACTIVE (`endedAt` cleared) before a re-establish sends the
+// supervisor deploy frame. Unlike `writeDeploymentAgentRow`/
+// `writeDeploymentInstanceRow` (which throw on a duplicate as a fresh-
+// deploymentId safety check on the first deploy), this runs on the re-establish
+// path with the SAME deploymentId: the supervisor instance row may have been
+// reaped by idle-harness eviction (CL-2219) or ended by DELETE/undeploy
+// convergence (CL-2217/2222) while the `workflow_run` row stayed active. The
+// agent.deploy.ack handler resolves the supervisor via `requireInstance`
+// (address + `endedAt IS NULL`); a missing or ended row throws "No active
+// instance found for address" and 500s the run-start (CL-2227). Reviving the row
+// here makes re-establish — and therefore every NEW run — succeed.
+export async function ensureDeploymentInstanceActive(args: {
+  db: HubDb;
+  deploymentId: string;
+  deploymentDomain: string;
+  tenantId: string;
+  creatorPrincipalId: string;
+}): Promise<void> {
+  const now = new Date();
+  const agentId = deriveDeploymentAgentId(args.deploymentId);
+  await args.db
+    .insert(intxSchema.agent)
+    .values({
+      id: agentId,
+      tenantId: args.tenantId,
+      creatorPrincipalId: args.creatorPrincipalId,
+      name: `supervisor-${args.deploymentId}`,
+      capabilities: null,
+      toolPackages: [],
+      status: 'deployed' as const,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: intxSchema.agent.id });
+  await args.db
+    .insert(intxSchema.agentInstance)
+    .values({
+      id: agentId,
+      agentId,
+      tenantId: args.tenantId,
+      principalId: args.creatorPrincipalId,
+      address: deriveDeploymentAddress({
+        deploymentId: args.deploymentId,
+        deploymentDomain: args.deploymentDomain,
+      }),
+      status: 'deployed' as const,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: intxSchema.agentInstance.id,
+      set: { status: 'deployed' as const, endedAt: null, updatedAt: now },
+    });
 }
 
 // Build the on-disk `GrantRule` set that authorizes a step agent to invoke
