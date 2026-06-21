@@ -1104,6 +1104,19 @@
         "react": "*",
       },
     },
+    "workflows/smoke-test": {
+      "name": "@workbench/workflow-smoke-test",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
   },
   "catalog": {
     "@types/semver": "^7.7.1",
@@ -2069,6 +2082,8 @@
     "@workbench/workflow-reddit-opportunity-scanner": ["@workbench/workflow-reddit-opportunity-scanner@workspace:workflows/reddit-opportunity-scanner"],
 
     "@workbench/workflow-seo-enrichment-from-image": ["@workbench/workflow-seo-enrichment-from-image@workspace:workflows/seo-enrichment-from-image"],
+
+    "@workbench/workflow-smoke-test": ["@workbench/workflow-smoke-test@workspace:workflows/smoke-test"],
 
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
 

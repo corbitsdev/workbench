@@ -39,10 +39,27 @@ let subscribeKindThrows: Error | null = null;
 let resolveRefImpl: (ref: string) => Promise<unknown> = (ref) =>
   Promise.reject(new Error(`unexpected ref ${ref}`));
 
+// Captures the repoId the endpoint subscribes the run-event log under, so a
+// test can assert the hub reads under the SLUGGED workflow-run repo id the
+// sidecar writes (not the raw `ses_<id>` deploymentId) — the id-mismatch that
+// left every run's event log appearing empty.
+//
+// A container (not a bare `let`) so the test's read after `await getOutput(...)`
+// is not narrowed by control-flow analysis to the `null` it was reset to — TS
+// cannot see the async-generator mutation, but it does invalidate property
+// narrowing across the intervening call.
+const subscribeCapture: { repoId: { kind: string; id: string } | null } = {
+  repoId: null,
+};
 const intxHubSessionsReal = await import('@intx/hub-sessions');
 mock.module('@intx/hub-sessions', () => ({
   ...intxHubSessionsReal,
-  subscribeKind: async function* () {
+  subscribeKind: async function* (
+    _store: unknown,
+    _principal: unknown,
+    repoId: { kind: string; id: string }
+  ) {
+    subscribeCapture.repoId = repoId;
     if (subscribeKindThrows) throw subscribeKindThrows;
     for (const entry of subscribeKindEntries) {
       yield entry;
@@ -59,7 +76,11 @@ mock.module('@intx/workflow-host', () => ({
 }));
 
 import { Hono } from 'hono';
-import { createWorkflowRunsRouter, type EnsureDeploymentRoutableFn } from './workflow-runs';
+import {
+  createWorkflowRunsRouter,
+  deriveWorkflowRunRepoId,
+  type EnsureDeploymentRoutableFn,
+} from './workflow-runs';
 import type { HubDb } from '../db';
 
 type WorkflowRunRow = {
@@ -131,14 +152,65 @@ function buildApp(db: HubDb, userId = 'user-1') {
 
 function getOutput(app: Hono<{ Variables: { userId: string } }>, dep: string, step: string) {
   return app.request(
-    new Request(`http://local/workflow-runs/${dep}/steps/${step}/output`, { method: 'GET' })
+    new Request(`http://local/workflow-runs/${dep}/steps/${step}/output`, {
+      method: 'GET',
+    })
   );
 }
 
+describe('deriveWorkflowRunRepoId', () => {
+  it('slugifies the deployment mail address the way the sidecar keys the run repo', () => {
+    // Must match apps/sidecar/src/workflow-host-wiring.ts deriveTrivialDeploymentId
+    // applied to deriveDeploymentAddress(`ins_<deploymentId>@<domain>`): every
+    // character outside /[a-zA-Z0-9_-]/ becomes `-`.
+    expect(
+      deriveWorkflowRunRepoId({
+        deploymentId: 'ses_e47abe56e772d99a71e794b8f8e73a2f',
+        deploymentDomain: 'abklabs.com',
+      })
+    ).toBe('ins_ses_e47abe56e772d99a71e794b8f8e73a2f-abklabs-com');
+  });
+
+  it('produces a substrate-safe id (no @ or . survive)', () => {
+    const id = deriveWorkflowRunRepoId({
+      deploymentId: 'ses_abc',
+      deploymentDomain: 'deploy.example.com',
+    });
+    expect(id).toBe('ins_ses_abc-deploy-example-com');
+    expect(id).toMatch(/^[a-zA-Z0-9_-]+$/);
+  });
+});
+
 describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
+  it('subscribes the run-event log under the slugged repo id, not the raw deploymentId', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
+    subscribeKindThrows = null;
+    subscribeKindEntries = [];
+    subscribeCapture.repoId = null;
+
+    // 404 (step never completes) is fine; we only assert WHICH repo id the
+    // endpoint read from. The raw param is `dep-1`; the sidecar writes under
+    // the slug of `ins_dep-1@deploy.example.com`.
+    await getOutput(buildApp(makeDb(true)), 'dep-1', 'step-a');
+    // Read through a typed getter so control-flow analysis does not narrow the
+    // capture back to the `null` it was reset to before the call.
+    const captured = (): { kind: string; id: string } | null => subscribeCapture.repoId;
+    expect(captured()).toEqual({
+      kind: 'workflow-run',
+      id: 'ins_dep-1-deploy-example-com',
+    });
+  });
+
   it('resolves an inline ref to the step output content', async () => {
     userContextImpl = () =>
-      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
     subscribeKindThrows = null;
     subscribeKindEntries = [
       { seq: 0, runId: 'run-1', event: { type: 'RunStarted', seq: 0 } },
@@ -165,14 +237,22 @@ describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
 
   it('resolves a blob ref to the step output content', async () => {
     userContextImpl = () =>
-      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
     subscribeKindThrows = null;
     subscribeKindEntries = [
       { seq: 0, runId: 'run-9', event: { type: 'RunStarted', seq: 0 } },
       {
         seq: 2,
         runId: 'run-9',
-        event: { type: 'StepCompleted', seq: 2, stepId: 'step-b', output: { ref: 'blob:abc123' } },
+        event: {
+          type: 'StepCompleted',
+          seq: 2,
+          stepId: 'step-b',
+          output: { ref: 'blob:abc123' },
+        },
       },
     ];
     const big = { payload: 'large' };
@@ -188,21 +268,32 @@ describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
 
   it('404s for a deployment the caller does not own', async () => {
     userContextImpl = () =>
-      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
     const res = await getOutput(buildApp(makeDb(false)), 'dep-x', 'step-a');
     expect(res.status).toBe(404);
   });
 
   it('404s when the requested step has not completed', async () => {
     userContextImpl = () =>
-      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
     subscribeKindThrows = null;
     subscribeKindEntries = [
       { seq: 0, runId: 'run-1', event: { type: 'RunStarted', seq: 0 } },
       {
         seq: 1,
         runId: 'run-1',
-        event: { type: 'StepCompleted', seq: 1, stepId: 'other-step', output: { ref: 'inline:1' } },
+        event: {
+          type: 'StepCompleted',
+          seq: 1,
+          stepId: 'other-step',
+          output: { ref: 'inline:1' },
+        },
       },
     ];
     const res = await getOutput(buildApp(makeDb(true)), 'dep-1', 'step-a');
@@ -217,13 +308,21 @@ describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
 
   it('500s when ref resolution fails', async () => {
     userContextImpl = () =>
-      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
     subscribeKindThrows = null;
     subscribeKindEntries = [
       {
         seq: 1,
         runId: 'run-1',
-        event: { type: 'StepCompleted', seq: 1, stepId: 'step-a', output: { ref: 'inline:bad' } },
+        event: {
+          type: 'StepCompleted',
+          seq: 1,
+          stepId: 'step-a',
+          output: { ref: 'inline:bad' },
+        },
       },
     ];
     resolveRefImpl = () => Promise.reject(new Error('boom'));
@@ -256,7 +355,10 @@ describe('GET /workflow-runs (workbench-aware visibility)', () => {
 
   it('lists the active workbench deployments plus global-inherited ones', async () => {
     userContextImpl = () =>
-      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
     ancestorChain = ['tenant-1', 'tenant-global'];
     const rows: WorkflowRunRow[] = [
       {
@@ -275,7 +377,9 @@ describe('GET /workflow-runs (workbench-aware visibility)', () => {
       },
     ];
     const res = await listApp(makeListDb(rows)).request(
-      new Request('http://local/workflow-runs?tenantId=tenant-1', { method: 'GET' })
+      new Request('http://local/workflow-runs?tenantId=tenant-1', {
+        method: 'GET',
+      })
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as Array<{ deploymentId: string }>;
@@ -285,7 +389,9 @@ describe('GET /workflow-runs (workbench-aware visibility)', () => {
   it('403s when the caller is not a principal of the requested tenant', async () => {
     userContextImpl = () => Promise.resolve({ context: null, forbidden: true });
     const res = await listApp(makeListDb([])).request(
-      new Request('http://local/workflow-runs?tenantId=tenant-other', { method: 'GET' })
+      new Request('http://local/workflow-runs?tenantId=tenant-other', {
+        method: 'GET',
+      })
     );
     expect(res.status).toBe(403);
   });
@@ -325,7 +431,10 @@ describe('POST /workflow-runs/:kind/start (shadowing + visibility)', () => {
 
   it('re-establishes the supervisor before delivering, and does not deliver if that fails (CL-2225)', async () => {
     userContextImpl = () =>
-      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
     ancestorChain = ['tenant-1'];
     const candidates: WorkflowRunRow[] = [
       {
@@ -358,7 +467,10 @@ describe('POST /workflow-runs/:kind/start (shadowing + visibility)', () => {
 
   it('the most-specific tenant deployment shadows an inherited global one', async () => {
     userContextImpl = () =>
-      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
     ancestorChain = ['tenant-1', 'tenant-global'];
     const candidates: WorkflowRunRow[] = [
       {
@@ -392,7 +504,10 @@ describe('POST /workflow-runs/:kind/start (shadowing + visibility)', () => {
 
   it('starts the inherited global deployment when the workbench has none', async () => {
     userContextImpl = () =>
-      Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'p-1' }, forbidden: false });
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        forbidden: false,
+      });
     ancestorChain = ['tenant-1', 'tenant-global'];
     const candidates: WorkflowRunRow[] = [
       {

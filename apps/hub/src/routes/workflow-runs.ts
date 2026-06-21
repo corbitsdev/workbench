@@ -54,7 +54,11 @@ const WORKFLOW_EVENT_TYPES: readonly string[] = [
 // Passthrough validator: subscribeKind narrows each blob through this before
 // yielding. The state machine owns the full 17-variant narrow; here we only
 // assert the on-disk envelope shape (a string `type` discriminator + seq).
-const WorkflowEventBlob = type({ type: 'string', seq: 'number', '+': 'ignore' });
+const WorkflowEventBlob = type({
+  type: 'string',
+  seq: 'number',
+  '+': 'ignore',
+});
 
 // On-disk `StepCompleted` envelope. The repo-store adapter writes events as
 // `{ seq, type, ...rest }` (the state-machine `kind` becomes `type`); a
@@ -69,6 +73,25 @@ const StepCompletedBlob = type({
 
 const HUB_PRINCIPAL: Principal = { kind: 'hub' };
 const RUN_EVENT_REF = 'refs/heads/main';
+
+// Derive the workflow-run repo id the sidecar's multi-step supervisor writes
+// (and packs) run events under. The sidecar does NOT key the workflow-run repo
+// by the raw `ses_<id>` deploymentId — its deploy router uses the
+// SUBSTRATE-SAFE SLUG of the deployment's mail address
+// (`deriveTrivialDeploymentId(agentAddress)` in
+// apps/sidecar/src/workflow-host-wiring.ts), which replaces every character
+// outside /[a-zA-Z0-9_-]/ with `-` so the id satisfies the substrate's
+// SAFE_REPO_ID contract. e.g. `ins_ses_<id>@abklabs.com` -> `ins_ses_<id>-abklabs-com`.
+// The hub indexes deployments by the raw `ses_<id>` (the DB column, the FE id,
+// the route param), so every read against the run-event log MUST translate to
+// the slug or the log appears permanently empty. This MUST stay in lockstep
+// with the sidecar's `deriveTrivialDeploymentId`.
+export function deriveWorkflowRunRepoId(args: {
+  deploymentId: string;
+  deploymentDomain: string;
+}): string {
+  return deriveDeploymentAddress(args).replaceAll(/[^a-zA-Z0-9_-]/g, '-');
+}
 
 const log = getLogger(['api', 'workflow-runs']);
 
@@ -139,7 +162,9 @@ export function createWorkflowRunsRouter(deps: {
       responses: {
         200: {
           description: 'Workflow deployments visible to the user',
-          content: { 'application/json': { schema: resolver(WorkflowRunList) } },
+          content: {
+            'application/json': { schema: resolver(WorkflowRunList) },
+          },
         },
         403: {
           description: 'User context not found or forbidden for the requested tenant',
@@ -240,7 +265,13 @@ export function createWorkflowRunsRouter(deps: {
       });
       if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
 
-      const repoId: RepoId = { kind: 'workflow-run', id: deploymentId };
+      const repoId: RepoId = {
+        kind: 'workflow-run',
+        id: deriveWorkflowRunRepoId({
+          deploymentId,
+          deploymentDomain: deps.deploymentDomain,
+        }),
+      };
 
       return streamSSE(c, async (stream) => {
         const abort = new AbortController();
@@ -262,7 +293,11 @@ export function createWorkflowRunsRouter(deps: {
         try {
           for await (const entry of iter) {
             await stream.writeSSE({
-              data: JSON.stringify({ seq: entry.seq, runId: entry.runId, event: entry.event }),
+              data: JSON.stringify({
+                seq: entry.seq,
+                runId: entry.runId,
+                event: entry.event,
+              }),
             });
           }
         } catch (err) {
@@ -310,7 +345,9 @@ export function createWorkflowRunsRouter(deps: {
       responses: {
         200: {
           description: 'Resolved step output',
-          content: { 'application/json': { schema: resolver(StepOutputResponse) } },
+          content: {
+            'application/json': { schema: resolver(StepOutputResponse) },
+          },
         },
         403: {
           description: 'User context not found or forbidden for the requested tenant',
@@ -347,7 +384,13 @@ export function createWorkflowRunsRouter(deps: {
       });
       if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
 
-      const repoId: RepoId = { kind: 'workflow-run', id: deploymentId };
+      const repoId: RepoId = {
+        kind: 'workflow-run',
+        id: deriveWorkflowRunRepoId({
+          deploymentId,
+          deploymentDomain: deps.deploymentDomain,
+        }),
+      };
 
       // Replay the run's append-only event log from seq 0 until we find the
       // StepCompleted for the requested step (and learn the run's id from the
@@ -461,7 +504,9 @@ export function createWorkflowRunsRouter(deps: {
       responses: {
         202: {
           description: 'Signal accepted for delivery',
-          content: { 'application/json': { schema: resolver(SignalAcceptedResponse) } },
+          content: {
+            'application/json': { schema: resolver(SignalAcceptedResponse) },
+          },
         },
         400: {
           description: 'Invalid JSON or signal body',
@@ -579,7 +624,9 @@ export function createWorkflowRunsRouter(deps: {
       responses: {
         202: {
           description: 'Run start accepted',
-          content: { 'application/json': { schema: resolver(StartRunResponse) } },
+          content: {
+            'application/json': { schema: resolver(StartRunResponse) },
+          },
         },
         400: {
           description: 'Invalid JSON or trigger input',
