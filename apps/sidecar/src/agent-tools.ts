@@ -22,6 +22,61 @@ const logger = getLogger(["sidecar", "agent-tools"]);
 
 export type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
 
+/**
+ * Build an `importModule` for `createToolLoader` that memoizes dynamic
+ * imports across agents within a single sidecar process, keyed on the
+ * `integrity` query param of the import URL.
+ *
+ * The M3 tool-package substrate materializes each agent's pinned packages
+ * into a PER-AGENT scratch dir and imports `file://<per-agent path>?integrity=
+ * <sri>`. Because the path differs per agent, Node/Bun's ESM module cache
+ * cannot dedup: the full JS module graph of every tool package is loaded into
+ * the V8 heap once PER AGENT. At 100 agents that is 100 private copies of the
+ * same tool code — the 4GB OOM.
+ *
+ * Keying on `integrity` is sound: same integrity means identical bytes, so the
+ * imported module is interchangeable across agents regardless of the path it
+ * was materialized at. The loader appends `integrity` precisely so distinct
+ * bytes (a republished tarball under the same name@version) get a distinct
+ * cache entry — keying on it preserves that cache-bust intent.
+ *
+ * Per-agent isolation is unaffected: the shared module holds only pure tool
+ * DEFINITIONS; each agent's per-agent state is created when the harness calls
+ * `factory(env)` with that agent's own env (see `default-harness.ts` and
+ * `step-tool-harness.ts`). Sharing the module never shares agent state.
+ *
+ * The Promise (not the awaited value) is cached so concurrent first-callers
+ * with the same integrity dedup onto a single underlying import.
+ */
+export function createMemoizingImportModule(
+  // Substrate-required runtime import: mirrors the default in
+  // @intx/tool-packaging createToolLoader (loader.ts `importModule`); we only
+  // memoize the same call. The repo's no-dynamic-import rule does not apply to
+  // this substrate-mandated import.
+  innerImport: (url: string) => Promise<unknown> = (u) =>
+    import(u) as Promise<unknown>,
+): (url: string) => Promise<unknown> {
+  const cache = new Map<string, Promise<unknown>>();
+  return (url: string) => {
+    let integrity: string | null;
+    try {
+      integrity = new URL(url).searchParams.get("integrity");
+    } catch {
+      integrity = null;
+    }
+    if (integrity === null) return innerImport(url);
+    const existing = cache.get(integrity);
+    if (existing !== undefined) return existing;
+    const pending = innerImport(url);
+    cache.set(integrity, pending);
+    return pending;
+  };
+}
+
+// One memo per sidecar process: shared across every agent's `loadToolPackages`
+// call so identical-integrity tool modules are imported into the heap once.
+const sharedImportModule = createMemoizingImportModule();
+
 export function mergeToolRunners(
   runners: ToolRunner[],
 ): ToolRunner & { definitions: ToolDefinition[] } {
@@ -133,6 +188,7 @@ export async function loadToolPackages(args: {
     registries: new Map(),
     host: { os: process.platform, cpu: process.arch },
     maxRegistryTarballBytes: args.registryMaxTarballBytes,
+    importModule: sharedImportModule,
   });
   const scratchDir = path.join(args.storeDir, "tool-packages");
   await fs.promises.mkdir(scratchDir, { recursive: true });
