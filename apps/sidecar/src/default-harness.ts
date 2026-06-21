@@ -22,7 +22,6 @@ import { getLogger } from "@intx/log";
 import { createIsogitStore, createMailAuditStore } from "@intx/storage-isogit";
 import { createMailTools } from "@intx/tools-mail";
 import { createPosixTools } from "@intx/tools-posix";
-import { createLSPPlugin } from "@intx/tools-lsp";
 import { createBlobReader } from "@intx/types/runtime";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { HarnessBuilder, HarnessBundle } from "@intx/hub-agent";
@@ -192,7 +191,6 @@ export function createDefaultHarnessBuilder({
       const blobReader = createBlobReader(storage);
       const posixTools = createPosixTools({
         cwd: workDir,
-        plugins: [createLSPPlugin({ cwd: workDir })],
         blobReader,
       });
 

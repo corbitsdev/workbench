@@ -24,7 +24,6 @@ import { getLogger } from "@intx/log";
 import { createBlobReader } from "@intx/types/runtime";
 import type { ContextStore } from "@intx/types/runtime";
 import { createPosixTools } from "@intx/tools-posix";
-import { createLSPPlugin } from "@intx/tools-lsp";
 import {
   HUB_RPC_ENV_KEY,
   ToolManifestResponse,
@@ -252,7 +251,6 @@ async function buildStepTools(args: {
   const blobReader = createBlobReader(args.storage);
   const posixTools = createPosixTools({
     cwd: args.workdir,
-    plugins: [createLSPPlugin({ cwd: args.workdir })],
     blobReader,
   });
 
