@@ -152,13 +152,26 @@ export function createHubToolsRouter(
       if (agentRow.tenantId !== tenantId) {
         return c.json({ error: 'Agent does not belong to the claimed tenant' }, 403);
       }
-      const instance = await db.query.agentInstance.findFirst({
+      let instance = await db.query.agentInstance.findFirst({
         where: and(
           eq(intxSchema.agentInstance.principalId, principalId),
           eq(intxSchema.agentInstance.agentId, agentId),
           eq(intxSchema.agentInstance.tenantId, tenantId)
         ),
       });
+      // Workflow step agents call hub tools presenting their OWN agent id as the
+      // principal (the deterministic step's tool-context uses the step agent id
+      // for agentId + principalId), but the provisioned instance row carries the
+      // deployment's synthetic principal. Accept that self-identity by resolving
+      // the instance by agent and using its real principal for ownership.
+      if (!instance && principalId === agentId) {
+        instance = await db.query.agentInstance.findFirst({
+          where: and(
+            eq(intxSchema.agentInstance.agentId, agentId),
+            eq(intxSchema.agentInstance.tenantId, tenantId)
+          ),
+        });
+      }
       if (!instance) {
         return c.json({ error: 'principalId is not an instance of this agent' }, 403);
       }
@@ -172,7 +185,7 @@ export function createHubToolsRouter(
           db,
           tenantId,
           agentId,
-          principalId,
+          principalId: instance.principalId,
           sessionId,
           ...hubServices,
         })
