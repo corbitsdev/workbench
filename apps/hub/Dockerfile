@@ -51,6 +51,7 @@ COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentat
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
 COPY workflows/seo-enrichment-from-image/package.json workflows/seo-enrichment-from-image/
+COPY workflows/smoke-test/package.json workflows/smoke-test/
 RUN bun install --frozen-lockfile
 
 COPY interchange/ interchange/
