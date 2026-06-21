@@ -1,434 +1,424 @@
-import { useMemo, useState } from 'react';
-import type { ChangeEvent, ReactNode } from 'react';
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { type } from 'arktype';
-import type { RunState, StepPhase } from '@intx/workflow';
-import type { WorkflowPanelProps } from '@workbench/ui';
+import type { RunState, StepState } from '@intx/workflow';
+import {
+  Button,
+  HorizontalStepper,
+  type WorkflowPanelProps,
+  type WorkflowStep,
+} from '@workbench/ui';
 
-const STEP_ORDER = ['intake', 'enrich', 'review'] as const;
+const STEP_ORDER = ['intake', 'enrich', 'review', 'persist'] as const;
 type StepKey = (typeof STEP_ORDER)[number];
 
 const STEP_LABELS: Record<StepKey, string> = {
   intake: 'Intake',
   enrich: 'Enrich',
   review: 'Review',
+  persist: 'Persist',
 };
 
-const IntakeOutput = type({
-  rows: type({
-    id: 'string',
-    name: 'string',
-    'imageUrl?': 'string',
-    'targetUrl?': 'string',
-  }).array(),
+type StepPhase = StepState['phase'];
+
+// Enrich agent emits STRICT JSON in its reply field.
+const AgentStepOutput = type({ reply: 'string', 'turn?': 'unknown' });
+
+const EnrichRow = type({
+  id: 'string',
+  field: 'string',
+  value: 'string',
+  'note?': 'string',
 });
 
-const FieldVariants = type({
-  titles: 'string[]',
-  descriptions: 'string[]',
-  summaries: 'string[]',
+const EnrichOutput = type({ rows: EnrichRow.array() });
+type EnrichOutputT = typeof EnrichOutput.infer;
+type EnrichRowT = typeof EnrichRow.infer;
+
+// deterministicToolStep output: { callId, content: "<JSON>" }
+const ToolResultEnvelope = type({ content: 'string', 'callId?': 'string' });
+
+const PersistContent = type({
+  'artifactId?': 'string',
+  'title?': 'string',
+  'kind?': 'string',
+  'version?': 'number',
 });
 
-const EnrichOutput = type({
-  rows: type({
-    id: 'string',
-    name: 'string',
-    variants: FieldVariants,
-  }).array(),
-});
-
-const ReviewSelections = type({
-  selections: type({
-    id: 'string',
-    name: 'string',
-    title: 'string',
-    description: 'string',
-    summary: 'string',
-  }).array(),
-});
-
-type IntakeRow = (typeof IntakeOutput.infer)['rows'][number];
-type ChosenRow = (typeof ReviewSelections.infer)['selections'][number];
-type EnrichRow = (typeof EnrichOutput.infer)['rows'][number];
-type FieldKey = 'titles' | 'descriptions' | 'summaries';
-
-const FIELD_KEYS: { key: FieldKey; label: string }[] = [
-  { key: 'titles', label: 'Title' },
-  { key: 'descriptions', label: 'Description' },
-  { key: 'summaries', label: 'Summary' },
-];
-
-type StepView = { key: StepKey; label: string; phase: StepPhase | 'pending'; number: number };
-
-function buildStepViews(state: RunState | null): StepView[] {
-  return STEP_ORDER.map((key, idx) => {
-    const phase = state?.steps.get(key)?.phase ?? 'pending';
-    return { key, label: STEP_LABELS[key], phase, number: idx + 1 };
-  });
+function stepPhase(state: RunState | null, stepId: StepKey): StepPhase | undefined {
+  return state?.steps.get(stepId)?.phase;
 }
 
-function indicatorClass(phase: StepPhase | 'pending'): string {
-  if (phase === 'completed') return 'bg-green text-white';
-  if (phase === 'failed' || phase === 'cancelled') return 'bg-surface-2 text-orange';
-  if (phase === 'pending') return 'bg-surface-2 text-text-3';
-  return 'bg-orange text-white';
+function toStepperStatus(phase: StepPhase | undefined): WorkflowStep['status'] {
+  if (phase === 'completed') return 'completed';
+  if (phase === 'in-flight' || phase === 'awaiting-signal' || phase === 'awaiting-timer') {
+    return 'current';
+  }
+  return 'pending';
 }
 
-function Stepper({ steps }: { steps: StepView[] }) {
+function buildStepperSteps(state: RunState | null): WorkflowStep[] {
+  return STEP_ORDER.map((stepId, index) => ({
+    number: index + 1,
+    label: STEP_LABELS[stepId],
+    status: toStepperStatus(stepPhase(state, stepId)),
+  }));
+}
+
+function deriveActiveStep(state: RunState | null): StepKey {
+  for (const key of STEP_ORDER) {
+    const phase = stepPhase(state, key);
+    if (phase === 'awaiting-signal' || phase === 'in-flight' || phase === 'awaiting-timer') {
+      return key;
+    }
+  }
+  // Fall back to the furthest completed step, or persist once everything is done.
+  for (let i = STEP_ORDER.length - 1; i >= 0; i--) {
+    const key = STEP_ORDER[i];
+    if (key !== undefined && stepPhase(state, key) === 'completed') return key;
+  }
+  return 'intake';
+}
+
+function parseEnrichOutput(raw: unknown): EnrichOutputT | null {
+  const envelope = AgentStepOutput(raw);
+  if (envelope instanceof type.errors) return null;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(envelope.reply);
+  } catch {
+    return null;
+  }
+  const parsed = EnrichOutput(decoded);
+  if (parsed instanceof type.errors) return null;
+  return parsed;
+}
+
+function readPersistedArtifact(
+  output: unknown
+): { artifactId?: string; title?: string; kind?: string } | null {
+  const envelope = ToolResultEnvelope(output);
+  if (envelope instanceof type.errors) return null;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(envelope.content);
+  } catch {
+    return null;
+  }
+  const parsed = PersistContent(decoded);
+  if (parsed instanceof type.errors) return null;
+  return {
+    ...(parsed.artifactId !== undefined ? { artifactId: parsed.artifactId } : {}),
+    ...(parsed.title !== undefined ? { title: parsed.title } : {}),
+    ...(parsed.kind !== undefined ? { kind: parsed.kind } : {}),
+  };
+}
+
+function SectionCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-2 border-b border-border bg-surface px-6 py-4">
-      {steps.map((s, idx) => (
-        <div key={s.key} className="flex items-center gap-2">
-          <div
-            className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium ${indicatorClass(s.phase)}`}
-          >
-            {s.phase === 'completed' ? '✓' : s.number}
-          </div>
-          <span
-            className={`whitespace-nowrap text-sm ${s.phase === 'pending' ? 'text-text-3' : 'text-text'}`}
-          >
-            {s.label}
-          </span>
-          {idx < steps.length - 1 && <div className="mx-1 h-px w-4 bg-border-strong" />}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="rounded-panel border border-border bg-surface p-4">
-      <h3 className="mb-3 text-sm font-semibold text-text">{title}</h3>
+    <section className="rounded-panel border border-border bg-surface p-5">
+      <h3 className="mb-3 text-sm font-medium text-text">{title}</h3>
       {children}
     </section>
   );
 }
 
-function splitCsvLine(line: string): string[] {
-  return line.split(',').map((cell) => cell.trim());
-}
-
-function parseWorkbook(text: string): IntakeRow[] {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  const headerLine = lines[0];
-  if (headerLine === undefined || lines.length < 2) return [];
-  const header = splitCsvLine(headerLine).map((h) => h.toLowerCase());
-  const idIdx = header.indexOf('id');
-  const nameIdx = header.indexOf('name');
-  const imageIdx = header.indexOf('imageurl');
-  const targetIdx = header.indexOf('targeturl');
-  if (idIdx === -1 || nameIdx === -1) return [];
-  const rows: IntakeRow[] = [];
-  for (const line of lines.slice(1)) {
-    const cells = splitCsvLine(line);
-    const id = cells[idIdx];
-    const name = cells[nameIdx];
-    if (!id || !name) continue;
-    const row: IntakeRow = { id, name };
-    if (imageIdx !== -1 && cells[imageIdx]) row.imageUrl = cells[imageIdx];
-    if (targetIdx !== -1 && cells[targetIdx]) row.targetUrl = cells[targetIdx];
-    rows.push(row);
-  }
-  return rows;
-}
-
-function IntakeUpload({ onSignal }: { onSignal: WorkflowPanelProps['onSignal'] }) {
-  const [error, setError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
-
-  async function onFile(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError(null);
-    const text = await file.text();
-    const rows = parseWorkbook(text);
-    if (rows.length === 0) {
-      setError('No product rows found. Expected a CSV with id and name columns.');
-      return;
-    }
-    onSignal('intake', { rows });
-    setSubmitted(true);
-  }
-
-  return (
-    <div className="space-y-3">
-      <p className="text-sm text-text-2">
-        Upload a product workbook (CSV with id and name columns) to start enrichment.
-      </p>
-      <input
-        type="file"
-        accept=".csv,text/csv"
-        disabled={submitted}
-        onChange={(e) => {
-          onFile(e).catch(() => setError('Couldn’t read the uploaded file.'));
-        }}
-        aria-label="Upload product workbook"
-        className="text-sm text-text"
-      />
-      {error && <p className="text-sm text-orange">{error}</p>}
-      {submitted && <p className="text-sm text-text-3">Workbook submitted.</p>}
-    </div>
-  );
-}
-
-function IntakeSubmitted({
-  output,
+function IntakeSection({
   phase,
+  connected,
+  onSubmit,
 }: {
-  output: unknown;
-  phase: StepPhase | 'pending';
+  phase: StepPhase | undefined;
+  connected: boolean;
+  onSubmit: (payload: { imageUrl: string; pageUrl: string }) => void;
 }) {
-  const parsed = IntakeOutput(output);
-  if (parsed instanceof type.errors) {
-    if (phase === 'completed') {
-      return <p className="text-sm text-orange">Couldn’t read the intake output.</p>;
-    }
-    return <p className="text-sm text-text-3">No intake data yet.</p>;
+  const [imageUrl, setImageUrl] = useState('');
+  const [pageUrl, setPageUrl] = useState('');
+  const canSubmit = connected && imageUrl.trim().length > 0 && pageUrl.trim().length > 0;
+
+  if (phase === 'completed') {
+    return (
+      <SectionCard title="Intake — product URLs">
+        <p className="text-sm text-text-2">URLs submitted.</p>
+      </SectionCard>
+    );
   }
-  if (parsed.rows.length === 0) {
-    return <p className="text-sm text-text-3">No product rows were parsed.</p>;
+
+  if (phase !== 'awaiting-signal') {
+    return (
+      <SectionCard title="Intake — product URLs">
+        <p className="text-sm text-text-3">Waiting for the run to start.</p>
+      </SectionCard>
+    );
   }
+
   return (
-    <ul className="space-y-2">
-      {parsed.rows.map((row: IntakeRow) => (
-        <li key={row.id} className="rounded-panel border border-border bg-surface-2 p-3">
-          <p className="text-sm font-medium text-text">{row.name}</p>
-          {row.targetUrl && <p className="text-xs text-text-3">{row.targetUrl}</p>}
-        </li>
-      ))}
-    </ul>
+    <SectionCard title="Intake — product URLs">
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!canSubmit) return;
+          onSubmit({ imageUrl: imageUrl.trim(), pageUrl: pageUrl.trim() });
+        }}
+      >
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-text">Product image URL</span>
+          <input
+            type="url"
+            className="w-full rounded-lg border border-border bg-surface-2 p-2 text-sm text-text"
+            value={imageUrl}
+            onChange={(event) => setImageUrl(event.target.value)}
+            placeholder="https://example.com/product.jpg"
+            aria-label="Product image URL"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-text">Target page URL</span>
+          <input
+            type="url"
+            className="w-full rounded-lg border border-border bg-surface-2 p-2 text-sm text-text"
+            value={pageUrl}
+            onChange={(event) => setPageUrl(event.target.value)}
+            placeholder="https://example.com/product-page"
+            aria-label="Target page URL"
+          />
+        </label>
+        <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
+          Start enrichment
+        </Button>
+        {!connected && <p className="text-xs text-text-3">Reconnecting — input is unavailable.</p>}
+      </form>
+    </SectionCard>
   );
 }
 
-function EnrichView({ output, phase }: { output: unknown; phase: StepPhase | 'pending' }) {
-  const parsed = EnrichOutput(output);
-  if (parsed instanceof type.errors) {
-    if (phase === 'completed') {
-      return <p className="text-sm text-orange">Couldn’t read the enrichment output.</p>;
-    }
-    return <p className="text-sm text-text-3">No enrichment data yet.</p>;
+function EnrichSection({ phase, output }: { phase: StepPhase | undefined; output: unknown }) {
+  const parsed = parseEnrichOutput(output);
+  if (parsed === null) {
+    return (
+      <SectionCard title="Enrich — SEO metadata">
+        {phase === 'completed' ? (
+          <p className="text-sm text-orange">Couldn't read the enrichment output.</p>
+        ) : (
+          <p className="text-sm text-text-3">
+            {phase === 'in-flight' ? 'Extracting SEO metadata…' : 'Waiting for enrichment.'}
+          </p>
+        )}
+      </SectionCard>
+    );
   }
+
   return (
-    <div className="space-y-4">
-      {parsed.rows.map((row: EnrichRow) => (
-        <div key={row.id} className="rounded-panel border border-border bg-surface-2 p-3">
-          <p className="mb-2 text-sm font-medium text-text">{row.name}</p>
-          {FIELD_KEYS.map(({ key, label }) => (
-            <div key={key} className="mb-2">
-              <p className="text-xs font-medium text-text-2">{label}</p>
-              <ul className="ml-3 list-disc text-xs text-text-3">
-                {row.variants[key].map((v, i) => (
-                  <li key={i}>{v}</li>
-                ))}
-              </ul>
+    <SectionCard title="Enrich — SEO metadata">
+      <ul className="space-y-2">
+        {parsed.rows.map((row: EnrichRowT) => (
+          <li key={row.id} className="rounded-lg border border-border bg-surface-2 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-xs font-medium text-text-2">{row.field}</span>
             </div>
-          ))}
-        </div>
-      ))}
-    </div>
+            <p className="mt-1 text-sm text-text">{row.value}</p>
+            {row.note !== undefined && <p className="mt-1 text-xs text-text-3">{row.note}</p>}
+          </li>
+        ))}
+      </ul>
+    </SectionCard>
   );
 }
 
-type Selection = { titles?: string; descriptions?: string; summaries?: string };
-type SelectionState = Record<string, Selection>;
-
-function ReviewView({
-  output,
-  onSignal,
-  onConfirm,
+function ReviewSection({
+  phase,
+  enrichOutput,
+  connected,
+  onSubmit,
 }: {
-  output: unknown;
-  onSignal: WorkflowPanelProps['onSignal'];
-  onConfirm: (chosen: ChosenRow[]) => void;
+  phase: StepPhase | undefined;
+  enrichOutput: unknown;
+  connected: boolean;
+  onSubmit: (payload: { selectedIds: string[] }) => void;
 }) {
-  const parsed = EnrichOutput(output);
-  const rows: EnrichRow[] = parsed instanceof type.errors ? [] : parsed.rows;
-  const [selections, setSelections] = useState<SelectionState>({});
+  const parsed = parseEnrichOutput(enrichOutput);
+  const rows = parsed?.rows ?? [];
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(rows.map((r: EnrichRowT) => r.id))
+  );
   const [submitted, setSubmitted] = useState(false);
 
-  function choose(rowId: string, field: FieldKey, value: string) {
-    setSelections((prev) => ({ ...prev, [rowId]: { ...prev[rowId], [field]: value } }));
+  function toggleId(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   }
 
-  const allChosen = useMemo(
-    () =>
-      rows.length > 0 &&
-      rows.every((row) => {
-        const sel = selections[row.id];
-        return Boolean(sel?.titles && sel?.descriptions && sel?.summaries);
-      }),
-    [rows, selections],
-  );
+  if (phase === 'completed') {
+    return (
+      <SectionCard title="Review — select rows">
+        <p className="text-sm text-text-2">Selection confirmed.</p>
+      </SectionCard>
+    );
+  }
 
-  function confirm() {
-    const chosen: ChosenRow[] = rows.map((row) => {
-      const sel = selections[row.id] ?? {};
-      return {
-        id: row.id,
-        name: row.name,
-        title: sel.titles ?? '',
-        description: sel.descriptions ?? '',
-        summary: sel.summaries ?? '',
-      };
-    });
-    onSignal('row-selection', { selections: chosen });
-    onConfirm(chosen);
-    setSubmitted(true);
+  if (phase !== 'awaiting-signal') {
+    return (
+      <SectionCard title="Review — select rows">
+        <p className="text-sm text-text-3">Waiting for enrichment to finish.</p>
+      </SectionCard>
+    );
+  }
+
+  if (parsed === null) {
+    return (
+      <SectionCard title="Review — select rows">
+        <p className="text-sm text-orange">Couldn't read the enrichment output.</p>
+      </SectionCard>
+    );
   }
 
   if (rows.length === 0) {
-    return <p className="text-sm text-text-3">Waiting for enrichment results to review.</p>;
+    return (
+      <SectionCard title="Review — select rows">
+        <p className="text-sm text-text-3">No metadata rows to review.</p>
+      </SectionCard>
+    );
   }
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-text-2">Pick one option per field for each product row.</p>
-      {rows.map((row) => (
-        <div key={row.id} className="rounded-panel border border-border bg-surface-2 p-3">
-          <p className="mb-2 text-sm font-medium text-text">{row.name}</p>
-          {FIELD_KEYS.map(({ key, label }) => {
-            const fieldName = `${row.id}-${key}`;
-            return (
-              <fieldset key={key} className="mb-3">
-                <legend className="mb-1 text-xs font-medium text-text-2">{label}</legend>
-                <div className="space-y-1">
-                  {row.variants[key].map((v, i) => (
-                    <label key={i} className="flex items-start gap-2 text-xs text-text">
-                      <input
-                        type="radio"
-                        name={fieldName}
-                        value={v}
-                        checked={selections[row.id]?.[key] === v}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                          choose(row.id, key, e.target.value)
-                        }
-                        aria-label={`${row.name} ${label} option ${i + 1}`}
-                      />
-                      <span>{v}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-            );
-          })}
-        </div>
-      ))}
-      <button
-        type="button"
-        disabled={!allChosen || submitted}
-        onClick={confirm}
-        className="rounded-panel bg-orange px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+    <SectionCard title="Review — select rows">
+      <p className="mb-3 text-sm text-text-2">Select the metadata rows to save as an artifact.</p>
+      <ul className="mb-4 space-y-2">
+        {rows.map((row: EnrichRowT) => (
+          <li key={row.id}>
+            <label className="flex items-start gap-3 rounded-lg border border-border bg-surface-2 p-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(row.id)}
+                onChange={() => toggleId(row.id)}
+                disabled={submitted}
+                aria-label={`Select ${row.field}`}
+                className="mt-0.5 flex-shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-text-2">{row.field}</p>
+                <p className="text-sm text-text">{row.value}</p>
+                {row.note !== undefined && <p className="text-xs text-text-3">{row.note}</p>}
+              </div>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <Button
+        variant="primary"
+        size="sm"
+        disabled={selectedIds.size === 0 || submitted || !connected}
+        onClick={() => {
+          if (selectedIds.size === 0 || submitted) return;
+          onSubmit({ selectedIds: [...selectedIds] });
+          setSubmitted(true);
+        }}
       >
-        {submitted ? 'Selection submitted' : 'Confirm selections'}
-      </button>
-    </div>
+        {submitted ? 'Selection submitted' : 'Save selected rows'}
+      </Button>
+      {!connected && (
+        <p className="mt-2 text-xs text-text-3">Reconnecting — saving is unavailable.</p>
+      )}
+    </SectionCard>
   );
 }
 
-const EXPORT_FILENAME = 'seo-enrichment.csv';
+function PersistSection({ phase, output }: { phase: StepPhase | undefined; output: unknown }) {
+  const artifact = readPersistedArtifact(output);
 
-function csvCell(value: string): string {
-  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
-
-function buildCsv(rows: ChosenRow[]): string {
-  const header = ['id', 'name', 'title', 'description', 'summary'];
-  const lines = [header.join(',')];
-  for (const row of rows) {
-    lines.push(
-      [row.id, row.name, row.title, row.description, row.summary].map(csvCell).join(','),
+  if (artifact === null) {
+    return (
+      <SectionCard title="Persist — saved artifact">
+        {phase === 'completed' ? (
+          <p className="text-sm text-orange">Couldn't read the saved artifact.</p>
+        ) : (
+          <p className="text-sm text-text-3">
+            {phase === 'in-flight' ? 'Saving artifact…' : 'Waiting to save.'}
+          </p>
+        )}
+      </SectionCard>
     );
   }
-  return lines.join('\n');
-}
 
-function ExportView({ chosen }: { chosen: ChosenRow[] | null }) {
-  if (!chosen || chosen.length === 0) {
-    return <p className="text-sm text-text-3">The CSV is ready once you confirm selections.</p>;
-  }
-  const csv = buildCsv(chosen);
-  const downloadUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
   return (
-    <div className="space-y-3">
-      <a
-        href={downloadUrl}
-        download={EXPORT_FILENAME}
-        className="inline-block rounded-panel bg-orange px-4 py-2 text-sm font-medium text-white"
-      >
-        Download {EXPORT_FILENAME}
-      </a>
-      <pre className="max-h-64 overflow-auto rounded-panel border border-border bg-surface-2 p-3 text-xs text-text-2">
-        {csv}
-      </pre>
-    </div>
+    <SectionCard title="Persist — saved artifact">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
+        <span className="min-w-0 truncate text-sm text-text">
+          {artifact.title ?? artifact.artifactId ?? 'Saved artifact'}
+        </span>
+        {artifact.kind !== undefined && (
+          <span className="text-xs text-text-3">{artifact.kind}</span>
+        )}
+      </div>
+    </SectionCard>
   );
 }
 
 export function Panel(props: WorkflowPanelProps) {
   const { state, connected, stepOutputs, onSignal, onClose } = props;
-  const [chosen, setChosen] = useState<ChosenRow[] | null>(null);
-  const steps = buildStepViews(state);
-  const intakePhase = state?.steps.get('intake')?.phase ?? 'pending';
-  const failed =
-    state?.phase === 'failed' ||
-    steps.some((s) => s.phase === 'failed' || s.phase === 'cancelled');
-  const failedStep = steps.find((s) => s.phase === 'failed' || s.phase === 'cancelled');
-  const failError = failedStep ? state?.steps.get(failedStep.key)?.lastError?.message : undefined;
+  const failed = state?.phase === 'failed';
+  const activeStep = deriveActiveStep(state);
+
+  function handleIntakeSubmit(payload: { imageUrl: string; pageUrl: string }) {
+    onSignal('intake', payload);
+  }
+
+  function handleReviewSubmit(payload: { selectedIds: string[] }) {
+    onSignal('row-selection', payload);
+  }
 
   return (
-    <div className="flex h-full flex-col rounded-panel border border-border bg-surface text-text">
-      <header className="flex items-center justify-between border-b border-border px-6 py-4">
+    <div className="flex h-full flex-col bg-surface">
+      <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div>
-          <h2 className="text-base font-semibold text-text">SEO Enrichment from Image</h2>
-          <p className="text-xs text-text-3">
-            {connected ? 'Connected' : 'Reconnecting…'}
-          </p>
+          <h2 className="text-base font-medium text-text">SEO Enrichment from Image</h2>
+          <p className="text-xs text-text-3">{connected ? 'Connected' : 'Reconnecting…'}</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close panel"
-          className="rounded-panel px-2 py-1 text-text-3 hover:bg-surface-2 hover:text-text"
-        >
-          {'✕'}
-        </button>
+        <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close panel">
+          Close
+        </Button>
       </header>
 
-      <Stepper steps={steps} />
+      <HorizontalStepper steps={buildStepperSteps(state)} />
 
-      <div className="flex-1 space-y-4 overflow-auto p-6">
-        {failed && (
-          <div className="rounded-panel border border-orange bg-surface-2 p-4">
-            <p className="text-sm font-medium text-orange">This workflow run failed.</p>
-            {failError && <p className="mt-1 text-xs text-text-2">{failError}</p>}
-          </div>
-        )}
+      {failed && (
+        <div className="mx-6 mt-4 rounded-panel border border-orange bg-orange-soft p-4">
+          <p className="text-sm text-orange-deep">
+            This run failed. Review the run log and try again.
+          </p>
+        </div>
+      )}
 
-        <Section title="Intake">
-          {intakePhase === 'awaiting-signal' ? (
-            <IntakeUpload onSignal={onSignal} />
-          ) : (
-            <IntakeSubmitted output={stepOutputs.intake} phase={intakePhase} />
-          )}
-        </Section>
-
-        <Section title="Enrichment variants">
-          <EnrichView
-            output={stepOutputs.enrich}
-            phase={state?.steps.get('enrich')?.phase ?? 'pending'}
+      <div className="flex-1 overflow-y-auto p-6">
+        {activeStep === 'intake' && (
+          <IntakeSection
+            phase={stepPhase(state, 'intake')}
+            connected={connected}
+            onSubmit={handleIntakeSubmit}
           />
-        </Section>
-
-        {state?.steps.get('review')?.phase === 'awaiting-signal' && (
-          <Section title="Review &amp; select">
-            <ReviewView output={stepOutputs.enrich} onSignal={onSignal} onConfirm={setChosen} />
-          </Section>
         )}
-
-        <Section title="Export">
-          <ExportView chosen={chosen} />
-        </Section>
+        {activeStep === 'enrich' && (
+          <EnrichSection phase={stepPhase(state, 'enrich')} output={stepOutputs.enrich} />
+        )}
+        {activeStep === 'review' && (
+          <ReviewSection
+            phase={stepPhase(state, 'review')}
+            enrichOutput={stepOutputs.enrich}
+            connected={connected}
+            onSubmit={handleReviewSubmit}
+          />
+        )}
+        {activeStep === 'persist' && (
+          <PersistSection phase={stepPhase(state, 'persist')} output={stepOutputs.persist} />
+        )}
       </div>
     </div>
   );

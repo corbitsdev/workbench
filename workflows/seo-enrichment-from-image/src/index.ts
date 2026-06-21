@@ -1,20 +1,31 @@
 import { defineAgent } from '@intx/agent';
 import { awaitSignal, defineWorkflow, step } from '@intx/workflow';
-import { canonicalizeToolNames, LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from '@workbench/agents';
+import {
+  canonicalizeToolNames,
+  deterministicToolStep,
+  LLM_CREDENTIAL_NAME,
+  LLM_DEFAULT_MODEL,
+} from '@workbench/agents';
 
 const enrichAgent = defineAgent({
   id: 'seo-enrich',
-  description: 'Generates SEO title, description, and summary variants for each product row.',
-  systemPrompt:
-    'You are an SEO enrichment agent. For each product row, generate five title, description, and summary variants.',
+  description: 'Extracts SEO metadata fields from a product image and target page URL.',
+  systemPrompt: `You are an SEO enrichment agent. Given a product image URL and a target page URL, extract SEO metadata for the page.
+
+Respond with STRICT JSON only — no prose, no markdown fences. The response must be exactly:
+{"rows":[{"id":"<slug>","field":"<field name>","value":"<recommended value>","note":"<optional rationale>"}]}
+
+Extract at minimum: title, meta_description, image_alt, og_title, og_description, primary_keyword.
+Each row must have a unique id (use the field name as the slug, e.g. "title", "meta_description").`,
   tools: [],
-  capabilities: canonicalizeToolNames(['artifact_create', 'write_artifact']),
+  capabilities: canonicalizeToolNames(['artifact_read']),
   inference: { sources: [{ provider: 'openai-compatible', model: LLM_DEFAULT_MODEL }] },
   tags: { credentialName: LLM_CREDENTIAL_NAME },
 });
 
 export const label = 'SEO Enrichment from Image';
-export const description = 'Extract SEO metadata from a product image and enrich a target page URL.';
+export const description =
+  'Extract SEO metadata from a product image and enrich a target page URL.';
 export const kind = 'seo-enrichment-from-image';
 
 export const workflow = defineWorkflow({
@@ -24,5 +35,16 @@ export const workflow = defineWorkflow({
     intake: awaitSignal({ name: 'intake' }),
     enrich: step({ agent: enrichAgent, input: { from: 'steps.intake.output' }, after: ['intake'] }),
     review: awaitSignal({ name: 'row-selection', after: ['enrich'] }),
+    persist: deterministicToolStep({
+      id: 'seo-enrich-persist',
+      tool: 'artifact_create',
+      input: { from: 'steps.review.output' },
+      argMap: {
+        content: { from: 'selectedIds' },
+        title: { literal: 'SEO Enrichment Results' },
+        kind: { literal: 'document' },
+      },
+      after: ['review'],
+    }),
   },
 });
