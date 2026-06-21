@@ -175,8 +175,14 @@ export function createHubToolsRouter(
       if (!instance) {
         return c.json({ error: 'principalId is not an instance of this agent' }, 403);
       }
-      const allowed = getToolNamesFromCapabilities(agentRow.capabilities ?? null);
-      if (!allowed.includes(toolName)) {
+      // Capabilities are stored as PREFIXED runtime tool names
+      // (`<factoryId>:<name>`, e.g. `@workbench/tools-artifact/artifact:artifact_create`),
+      // but hub-backed tools are invoked by their BARE name (`artifact_create`,
+      // the HUB_BACKED_TOOLS key). Compare on the bare suffix so a prefixed
+      // capability authorizes its bare hub tool.
+      const bareName = (name: string): string => name.slice(name.lastIndexOf(':') + 1);
+      const allowed = getToolNamesFromCapabilities(agentRow.capabilities ?? null).map(bareName);
+      if (!allowed.includes(bareName(toolName))) {
         return c.json({ error: `Tool ${toolName} is not enabled for this agent` }, 403);
       }
 
