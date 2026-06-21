@@ -5,36 +5,68 @@
 // require a live inference source; the assertion is on the invoker's
 // observable output (the agent's reply + turn), not on the mock.
 
-import { describe, test, expect, afterAll } from "bun:test";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { describe, test, expect, afterAll } from 'bun:test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
-import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
+import type { Agent, AgentDefinition, BaseEnv } from '@intx/agent';
 
 // The assistant turn shape, derived from Agent.send rather than imported by
 // name — @intx/agent does not re-export ConversationTurn from its barrel.
-type SendTurn = Awaited<ReturnType<Agent["send"]>>["turn"];
-import { createDefaultDirectorRegistry } from "@intx/agent";
-import type { InferenceSource } from "@intx/types/runtime";
-import type { GrantEvaluator } from "@intx/workflow-host";
-import type { StepInvokeRequest } from "@intx/workflow";
+type SendTurn = Awaited<ReturnType<Agent['send']>>['turn'];
+import { createDefaultDirectorRegistry } from '@intx/agent';
+import type { InferenceSource } from '@intx/types/runtime';
+import type { GrantEvaluator } from '@intx/workflow-host';
+import type { StepInvokeRequest } from '@intx/workflow';
 
 import {
   createSidecarStepInvoker,
+  createStepInferenceSourceResolver,
   createStepToolContextResolver,
-} from "./workflow-substrate-factory";
-import type { RepoStore } from "@intx/hub-sessions";
-import type { StepToolContext } from "./step-tool-harness";
+} from './workflow-substrate-factory';
+import type { RepoStore } from '@intx/hub-sessions';
+import type { StepToolContext } from './step-tool-harness';
 
 const tmpDirs: string[] = [];
 const realFetch = globalThis.fetch;
 
+describe('createStepInferenceSourceResolver', () => {
+  const src = { provider: 'openai-compatible', model: 'm' } as InferenceSource;
+  const other = { provider: 'openai-compatible', model: 'n' } as InferenceSource;
+
+  test('resolves a directly-pinned stepId', () => {
+    const resolve = createStepInferenceSourceResolver({ analyze: src });
+    expect(resolve('analyze')).toEqual(src);
+  });
+
+  test('falls back a map-expanded stepId to its base step source', () => {
+    // `map` fans out `generate` into `generate[0]`, `generate[1]`, … at run
+    // time; those dynamic ids are not in the statically-pinned table, so they
+    // must resolve to the base step's pinned source.
+    const resolve = createStepInferenceSourceResolver({ generate: src });
+    expect(resolve('generate[0]')).toEqual(src);
+    expect(resolve('generate[12]')).toEqual(src);
+  });
+
+  test('prefers a direct pin over the base fallback', () => {
+    const resolve = createStepInferenceSourceResolver({
+      generate: other,
+      'generate[0]': src,
+    });
+    expect(resolve('generate[0]')).toEqual(src);
+  });
+
+  test('throws when neither the stepId nor its base is pinned', () => {
+    const resolve = createStepInferenceSourceResolver({ analyze: src });
+    expect(() => resolve('generate[0]')).toThrow(/no InferenceSource pinned/);
+    expect(() => resolve('missing')).toThrow(/no InferenceSource pinned/);
+  });
+});
+
 afterAll(async () => {
   globalThis.fetch = realFetch;
-  await Promise.all(
-    tmpDirs.map((d) => fs.rm(d, { recursive: true, force: true })),
-  );
+  await Promise.all(tmpDirs.map((d) => fs.rm(d, { recursive: true, force: true })));
 });
 
 // Empty hub manifest + no credentials: the step loads only its local posix
@@ -42,18 +74,18 @@ afterAll(async () => {
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.includes("/api/internal/tools/manifest")) {
+    if (url.includes('/api/internal/tools/manifest')) {
       return new Response(
         JSON.stringify({
-          manifest: { schemaVersion: "1", topLevel: [], entries: [] },
+          manifest: { schemaVersion: '1', topLevel: [], entries: [] },
           tarballs: [],
         }),
-        { headers: { "content-type": "application/json" } },
+        { headers: { 'content-type': 'application/json' } }
       );
     }
-    if (url.includes("/api/internal/tools/credentials")) {
+    if (url.includes('/api/internal/tools/credentials')) {
       return new Response(JSON.stringify({ credentials: {} }), {
-        headers: { "content-type": "application/json" },
+        headers: { 'content-type': 'application/json' },
       });
     }
     throw new Error(`unexpected fetch to ${url}`);
@@ -61,25 +93,25 @@ function stubHubFetch(): void {
 }
 
 async function makeDataDir(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "wf-step-invoker-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wf-step-invoker-'));
   tmpDirs.push(dir);
   return dir;
 }
 
-const STEP_ID = "draft";
-const RUN_ID = "run-abc";
+const STEP_ID = 'draft';
+const RUN_ID = 'run-abc';
 const SOURCE: InferenceSource = {
-  id: "src-1",
-  provider: "openai-compatible",
-  baseURL: "https://example.invalid",
-  apiKey: "sk-test",
-  model: "test-model",
+  id: 'src-1',
+  provider: 'openai-compatible',
+  baseURL: 'https://example.invalid',
+  apiKey: 'sk-test',
+  model: 'test-model',
 };
 
 function makeAgentDefinition(id: string): AgentDefinition<BaseEnv> {
   return {
     id,
-    systemPrompt: "you are a test agent",
+    systemPrompt: 'you are a test agent',
     toolFactories: [],
     capabilities: [],
     inference: { sources: [] },
@@ -88,33 +120,33 @@ function makeAgentDefinition(id: string): AgentDefinition<BaseEnv> {
 
 function makeRequest(): StepInvokeRequest {
   return {
-    agent: makeAgentDefinition("agent-under-test"),
-    input: { topic: "launch announcement" },
+    agent: makeAgentDefinition('agent-under-test'),
+    input: { topic: 'launch announcement' },
     authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
     signal: new AbortController().signal,
   };
 }
 
 const allowAll: GrantEvaluator = async () => ({
-  effect: "allow",
+  effect: 'allow',
   matchingGrants: [],
   resolvedBy: null,
 });
 
-describe("createSidecarStepInvoker", () => {
+describe('createSidecarStepInvoker', () => {
   test("returns the real agent's reply, not the upstream stub shape", async () => {
     const dataDir = await makeDataDir();
-    const REPLY = "Here is the drafted announcement.";
+    const REPLY = 'Here is the drafted announcement.';
     const turn = {
-      role: "assistant",
+      role: 'assistant',
       content: REPLY,
     } as unknown as SendTurn;
 
     let sentContent: string | undefined;
     let closed = false;
     const stubAgent: Agent = {
-      send: async (content: Parameters<Agent["send"]>[0]) => {
-        sentContent = typeof content === "string" ? content : content.content;
+      send: async (content: Parameters<Agent['send']>[0]) => {
+        sentContent = typeof content === 'string' ? content : content.content;
         return { reply: REPLY, turn };
       },
       stream: () => ({
@@ -133,7 +165,7 @@ describe("createSidecarStepInvoker", () => {
     const invoke = createSidecarStepInvoker({
       table: { [STEP_ID]: SOURCE },
       dataDir,
-      signer: async () => "test-signature",
+      signer: async () => 'test-signature',
       directors: createDefaultDirectorRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => stubAgent,
@@ -145,22 +177,22 @@ describe("createSidecarStepInvoker", () => {
     // Guard against regressing to the upstream stub, which echoed the
     // agent id with a null turn.
     expect(result.output).not.toEqual({
-      reply: "agent-under-test",
+      reply: 'agent-under-test',
       turn: null,
     });
     // The step's resolved input reached the agent's send path.
-    expect(sentContent).toBe(JSON.stringify({ topic: "launch announcement" }));
+    expect(sentContent).toBe(JSON.stringify({ topic: 'launch announcement' }));
     // The invoker tore the agent down on the success path.
     expect(closed).toBe(true);
   });
 
-  test("builds a real per-step BaseEnv (storage/workdir/audit/directors) for the agent factory", async () => {
+  test('builds a real per-step BaseEnv (storage/workdir/audit/directors) for the agent factory', async () => {
     const dataDir = await makeDataDir();
     let capturedEnv: BaseEnv | undefined;
     const stubAgent: Agent = {
       send: async () => ({
-        reply: "ok",
-        turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
+        reply: 'ok',
+        turn: { role: 'assistant', content: 'ok' } as unknown as SendTurn,
       }),
       stream: () => ({
         [Symbol.asyncIterator]: () => ({
@@ -177,7 +209,7 @@ describe("createSidecarStepInvoker", () => {
     const invoke = createSidecarStepInvoker({
       table: { [STEP_ID]: SOURCE },
       dataDir,
-      signer: async () => "sig",
+      signer: async () => 'sig',
       directors,
       evaluateGrants: allowAll,
       agentFactory: async (_def, env) => {
@@ -202,23 +234,23 @@ describe("createSidecarStepInvoker", () => {
     expect(env.audit).toBe(env.storage as unknown as typeof env.audit);
   });
 
-  test("rejects a step request missing runId before building an agent", async () => {
+  test('rejects a step request missing runId before building an agent', async () => {
     const dataDir = await makeDataDir();
     let factoryCalled = false;
     const invoke = createSidecarStepInvoker({
       table: { [STEP_ID]: SOURCE },
       dataDir,
-      signer: async () => "sig",
+      signer: async () => 'sig',
       directors: createDefaultDirectorRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
         factoryCalled = true;
-        throw new Error("should not reach the agent factory");
+        throw new Error('should not reach the agent factory');
       },
     });
 
     const req: StepInvokeRequest = {
-      agent: makeAgentDefinition("a"),
+      agent: makeAgentDefinition('a'),
       input: {},
       authzContext: { stepId: STEP_ID, attempt: 1 },
       signal: new AbortController().signal,
@@ -228,33 +260,31 @@ describe("createSidecarStepInvoker", () => {
     expect(factoryCalled).toBe(false);
   });
 
-  test("routes a deterministic-tool-tagged step away from the inference agent factory", async () => {
+  test('routes a deterministic-tool-tagged step away from the inference agent factory', async () => {
     const dataDir = await makeDataDir();
     let factoryCalled = false;
     const invoke = createSidecarStepInvoker({
       table: { [STEP_ID]: SOURCE },
       dataDir,
-      signer: async () => "sig",
+      signer: async () => 'sig',
       directors: createDefaultDirectorRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
         factoryCalled = true;
-        throw new Error(
-          "inference factory must not run for a deterministic step",
-        );
+        throw new Error('inference factory must not run for a deterministic step');
       },
     });
 
     const detAgent: AgentDefinition<BaseEnv> = {
-      ...makeAgentDefinition("deterministic-gamma_create_from_template"),
+      ...makeAgentDefinition('deterministic-gamma_create_from_template'),
       tags: {
-        "workbench.stepKind": "deterministic-tool",
-        "workbench.tool": "gamma_create_from_template",
+        'workbench.stepKind': 'deterministic-tool',
+        'workbench.tool': 'gamma_create_from_template',
       },
     };
     const req: StepInvokeRequest = {
       agent: detAgent,
-      input: { foo: "bar" },
+      input: { foo: 'bar' },
       authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
       signal: new AbortController().signal,
     };
@@ -267,13 +297,13 @@ describe("createSidecarStepInvoker", () => {
     expect(factoryCalled).toBe(false);
   });
 
-  test("an unmarked step still reaches the inference agent factory", async () => {
+  test('an unmarked step still reaches the inference agent factory', async () => {
     const dataDir = await makeDataDir();
     let factoryCalled = false;
     const stubAgent: Agent = {
       send: async () => ({
-        reply: "ok",
-        turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
+        reply: 'ok',
+        turn: { role: 'assistant', content: 'ok' } as unknown as SendTurn,
       }),
       stream: () => ({
         [Symbol.asyncIterator]: () => ({
@@ -288,7 +318,7 @@ describe("createSidecarStepInvoker", () => {
     const invoke = createSidecarStepInvoker({
       table: { [STEP_ID]: SOURCE },
       dataDir,
-      signer: async () => "sig",
+      signer: async () => 'sig',
       directors: createDefaultDirectorRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
@@ -307,23 +337,21 @@ describe("createSidecarStepInvoker", () => {
   // deterministic-tagged step request shape, so we drive `invoke` per element and
   // assert: the real tool runner ran once per element (a file written per item)
   // and the inference agent factory was never constructed.
-  test("dispatches a per-element map invocation through the deterministic tool branch, never inference", async () => {
+  test('dispatches a per-element map invocation through the deterministic tool branch, never inference', async () => {
     stubHubFetch();
     const dataDir = await makeDataDir();
     let factoryCalled = false;
-    const resolveStepToolContext = async (
-      req: StepInvokeRequest,
-    ): Promise<StepToolContext> => {
-      const stepId = req.authzContext.stepId ?? "step";
+    const resolveStepToolContext = async (req: StepInvokeRequest): Promise<StepToolContext> => {
+      const stepId = req.authzContext.stepId ?? 'step';
       return {
-        hubHttpUrl: "http://hub.invalid",
-        sidecarToken: "tok",
-        tenantId: "ten_1",
+        hubHttpUrl: 'http://hub.invalid',
+        sidecarToken: 'tok',
+        tenantId: 'ten_1',
         stepAgentId: `ins_dep-${stepId}`,
         stepAddress: `ins_dep-${stepId}`,
         principalId: `ins_dep-${stepId}`,
         grants: [],
-        cacheRoot: path.join(dataDir, "cache"),
+        cacheRoot: path.join(dataDir, 'cache'),
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
       };
@@ -331,23 +359,21 @@ describe("createSidecarStepInvoker", () => {
     const invoke = createSidecarStepInvoker({
       table: { [STEP_ID]: SOURCE },
       dataDir,
-      signer: async () => "sig",
+      signer: async () => 'sig',
       directors: createDefaultDirectorRegistry(),
       evaluateGrants: allowAll,
       resolveStepToolContext,
       agentFactory: async () => {
         factoryCalled = true;
-        throw new Error(
-          "inference factory must not run for a map of det steps",
-        );
+        throw new Error('inference factory must not run for a map of det steps');
       },
     });
 
     const detAgent: AgentDefinition<BaseEnv> = {
-      ...makeAgentDefinition("deterministic-write_file"),
+      ...makeAgentDefinition('deterministic-write_file'),
       tags: {
-        "workbench.stepKind": "deterministic-tool",
-        "workbench.tool": "write_file",
+        'workbench.stepKind': 'deterministic-tool',
+        'workbench.tool': 'write_file',
       },
     };
 
@@ -356,7 +382,7 @@ describe("createSidecarStepInvoker", () => {
     // attempt so the per-step store teardown does not race (a test-harness
     // concern, not a product one) and assert every element dispatched through
     // the deterministic tool branch.
-    const elements = ["a.txt", "b.txt", "c.txt"];
+    const elements = ['a.txt', 'b.txt', 'c.txt'];
     const outputs: { output: unknown }[] = [];
     for (let i = 0; i < elements.length; i += 1) {
       const name = elements[i] as string;
@@ -366,7 +392,7 @@ describe("createSidecarStepInvoker", () => {
           input: { path: name, content: `content-${name}` },
           authzContext: { stepId: STEP_ID, attempt: i + 1, runId: RUN_ID },
           signal: new AbortController().signal,
-        }),
+        })
       );
     }
 
@@ -376,13 +402,13 @@ describe("createSidecarStepInvoker", () => {
     expect(outputs).toHaveLength(elements.length);
     for (const { output } of outputs) {
       const tr = output as Record<string, unknown>;
-      expect(tr).toHaveProperty("callId");
+      expect(tr).toHaveProperty('callId');
       expect(tr.isError).not.toBe(true);
     }
   });
 });
 
-describe("createStepToolContextResolver", () => {
+describe('createStepToolContextResolver', () => {
   // Stub RepoStore whose `getRepoDir` points the grants read at an empty
   // temp dir; the resolver's `readStepGrants` ENOENTs and falls back to
   // deny-all, isolating the assertion to the derived step agent id.
@@ -395,60 +421,60 @@ describe("createStepToolContextResolver", () => {
 
   function makeReq(stepId: string): StepInvokeRequest {
     return {
-      agent: makeAgentDefinition("step-agent"),
+      agent: makeAgentDefinition('step-agent'),
       input: {},
       authzContext: { stepId, attempt: 1, runId: RUN_ID },
       signal: new AbortController().signal,
     };
   }
 
-  test("derives stepAgentId as ins_<rawDeploymentId>-<stepId>, byte-for-byte", async () => {
+  test('derives stepAgentId as ins_<rawDeploymentId>-<stepId>, byte-for-byte', async () => {
     const dataDir = await makeDataDir();
     const resolve = createStepToolContextResolver({
       bareStore: makeStubBareStore(dataDir),
       // RAW hub deploymentId (`ses_<id>`), the value the deploy router
       // threads via WORKFLOW_RAW_DEPLOYMENT_ID.
-      deploymentId: "ses_218f6ab782774a3e70b5d86f01e602d8",
-      tenantId: "ten_1",
-      hubHttpUrl: "http://hub.invalid",
-      sidecarToken: "tok",
-      cacheRoot: path.join(dataDir, "cache"),
+      deploymentId: 'ses_218f6ab782774a3e70b5d86f01e602d8',
+      tenantId: 'ten_1',
+      hubHttpUrl: 'http://hub.invalid',
+      sidecarToken: 'tok',
+      cacheRoot: path.join(dataDir, 'cache'),
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 1024 * 1024,
     });
 
-    const ctx = await resolve(makeReq("intake"));
+    const ctx = await resolve(makeReq('intake'));
 
-    const expected = "ins_ses_218f6ab782774a3e70b5d86f01e602d8-intake";
+    const expected = 'ins_ses_218f6ab782774a3e70b5d86f01e602d8-intake';
     expect(ctx.stepAgentId).toBe(expected);
     expect(ctx.stepAddress).toBe(expected);
     expect(ctx.principalId).toBe(expected);
     // The bug shapes this fix closes: no double ins_, no slugified
     // deployment address.
-    expect(ctx.stepAgentId).not.toContain("ins_ins_");
-    expect(ctx.stepAgentId).not.toContain("abklabs-com");
+    expect(ctx.stepAgentId).not.toContain('ins_ins_');
+    expect(ctx.stepAgentId).not.toContain('abklabs-com');
     // Missing grants file -> fail-closed deny-all.
     expect(ctx.grants).toEqual([]);
   });
 
-  test("a slug-shaped deploymentId would NOT have produced the registered id (documents the regression)", async () => {
+  test('a slug-shaped deploymentId would NOT have produced the registered id (documents the regression)', async () => {
     const dataDir = await makeDataDir();
     // Feeding the slugified deployment address (the pre-fix bug) yields
     // the double-prefixed, dot-slugged id the hub never registered.
     const resolve = createStepToolContextResolver({
       bareStore: makeStubBareStore(dataDir),
-      deploymentId: "ins_ses_abc-abklabs-com",
-      tenantId: "ten_1",
-      hubHttpUrl: "http://hub.invalid",
-      sidecarToken: "tok",
-      cacheRoot: path.join(dataDir, "cache"),
+      deploymentId: 'ins_ses_abc-abklabs-com',
+      tenantId: 'ten_1',
+      hubHttpUrl: 'http://hub.invalid',
+      sidecarToken: 'tok',
+      cacheRoot: path.join(dataDir, 'cache'),
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 1024 * 1024,
     });
 
-    const ctx = await resolve(makeReq("intake"));
+    const ctx = await resolve(makeReq('intake'));
 
-    expect(ctx.stepAgentId).toBe("ins_ins_ses_abc-abklabs-com-intake");
-    expect(ctx.stepAgentId).not.toBe("ins_ses_abc-intake");
+    expect(ctx.stepAgentId).toBe('ins_ins_ses_abc-abklabs-com-intake');
+    expect(ctx.stepAgentId).not.toBe('ins_ses_abc-intake');
   });
 });
