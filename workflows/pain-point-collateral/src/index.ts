@@ -101,7 +101,9 @@ const generateStep = step({
 const persistStep = deterministicToolStep({
   id: 'pain-point-collateral-persist',
   tool: 'artifact_create',
-  // trigger.payload = {format, title, content} (one approved item)
+  // map passes each approved item as `trigger.payload` ({format, title,
+  // content}); point the step input at it so the argMap fields resolve.
+  input: { from: 'trigger.payload' },
   argMap: {
     title: { from: 'title' },
     kind: { literal: 'document' },
