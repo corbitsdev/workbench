@@ -1,11 +1,11 @@
-import type { AgentTool } from '@intx/agent';
-import type { HubDb } from '../db';
-import { isCredentialToolEntry, KNOWN_TOOLS } from '../lib/tool-registry';
-import { runCredentialTool } from '../lib/run-credential-tool';
-import { resolveWorkflowDeploySource } from '../services/workflow-deploy-config';
-import type { ReasoningRunner, RunState, ToolRunner } from './executor';
-import { runReasoningStep } from './inference';
-import { createWorkflowAuthorizer, type WorkflowAuthorizer } from './authz';
+import type { AgentTool } from "@intx/agent";
+import type { HubDb } from "../db";
+import { isCredentialToolEntry, KNOWN_TOOLS } from "../lib/tool-registry";
+import { runCredentialTool } from "../lib/run-credential-tool";
+import { resolveWorkflowDeploySource } from "../services/workflow-deploy-config";
+import type { ReasoningRunner, RunState, ToolRunner } from "./executor";
+import { runReasoningStep } from "./inference";
+import { createWorkflowAuthorizer, type WorkflowAuthorizer } from "./authz";
 
 // The deterministic-step result envelope. The pre-substrate FE (and the panels)
 // decode a tool result as `{ content: string }` where content is the
@@ -13,12 +13,12 @@ import { createWorkflowAuthorizer, type WorkflowAuthorizer } from './authz';
 // wrap it so the panel's `parse*` decoders see the same shape they did under the
 // sidecar harness.
 function toToolEnvelope(raw: unknown): { content: string } {
-  if (typeof raw === 'string') return { content: raw };
+  if (typeof raw === "string") return { content: raw };
   return { content: JSON.stringify(raw) };
 }
 
 function localToolName(tool: string): string {
-  const separator = tool.lastIndexOf(':');
+  const separator = tool.lastIndexOf(":");
   return separator === -1 ? tool : tool.slice(separator + 1);
 }
 
@@ -31,7 +31,8 @@ export function createHubToolRunner(deps: {
   db: HubDb;
   authorizer?: WorkflowAuthorizer;
 }): ToolRunner {
-  const authorizer = deps.authorizer ?? createWorkflowAuthorizer({ db: deps.db });
+  const authorizer =
+    deps.authorizer ?? createWorkflowAuthorizer({ db: deps.db });
   return {
     async run({ tool, input, state }) {
       const dispatchTool = localToolName(tool);
@@ -43,13 +44,17 @@ export function createHubToolRunner(deps: {
       // run's persisted principal (state.principalId).
       await authorizer.assertToolGranted(state, tool);
 
-      const args = (typeof input === 'object' && input !== null ? input : {}) as Record<
-        string,
-        unknown
-      >;
+      const args = (
+        typeof input === "object" && input !== null ? input : {}
+      ) as Record<string, unknown>;
 
       if (isCredentialToolEntry(entry)) {
-        const raw = await runCredentialTool(deps.db, state.tenantId, dispatchTool, args);
+        const raw = await runCredentialTool(
+          deps.db,
+          state.tenantId,
+          dispatchTool,
+          args,
+        );
         return toToolEnvelope(raw);
       }
 
@@ -64,10 +69,13 @@ export function createHubToolRunner(deps: {
         sessionId: state.runId,
       });
       const handler = tools.find((t) => t.definition.name === dispatchTool);
-      if (!handler) throw new Error(`workflow executor: tool "${tool}" not found in package`);
-      if (handler.kind !== 'string') {
+      if (!handler)
         throw new Error(
-          `workflow executor: tool "${tool}" handler kind "${handler.kind}" unsupported`
+          `workflow executor: tool "${tool}" not found in package`,
+        );
+      if (handler.kind !== "string") {
+        throw new Error(
+          `workflow executor: tool "${tool}" handler kind "${handler.kind}" unsupported`,
         );
       }
       const raw = await handler.handler(args, new AbortController().signal);
@@ -84,11 +92,22 @@ export function createHubReasoningRunner(deps: {
   db: HubDb;
   authorizer?: WorkflowAuthorizer;
 }): ReasoningRunner {
-  const authorizer = deps.authorizer ?? createWorkflowAuthorizer({ db: deps.db });
+  const authorizer =
+    deps.authorizer ?? createWorkflowAuthorizer({ db: deps.db });
   return {
     async run({ systemPrompt, input, state }) {
-      const source = await resolveWorkflowDeploySource({ db: deps.db, tenantId: state.tenantId });
-      const userMessage = typeof input === 'string' ? input : JSON.stringify(input ?? {});
+      const sources = await resolveWorkflowDeploySource({
+        db: deps.db,
+        tenantId: state.tenantId,
+      });
+      const [source] = sources;
+      if (source === undefined) {
+        throw new Error(
+          `workflow reasoning: no inference source resolved for tenant ${state.tenantId}`,
+        );
+      }
+      const userMessage =
+        typeof input === "string" ? input : JSON.stringify(input ?? {});
       const reply = await runReasoningStep({
         source,
         systemPrompt,

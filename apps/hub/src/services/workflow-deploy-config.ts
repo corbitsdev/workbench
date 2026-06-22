@@ -1,15 +1,10 @@
-import { generateId } from '@intx/hub-common';
-import { resolveCredentialRequirement, schema as intxSchema } from '@intx/db';
-import { type } from 'arktype';
-import { eq } from 'drizzle-orm';
-import type { HarnessConfig, InferenceSource } from '@intx/types/runtime';
-import type { DeployContent } from '@intx/hub-sessions';
-import { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from '@workbench/agents';
-import type { HubDb } from '../db';
-
-const LLM_PROVIDER = 'openai-compatible';
-
-const ProviderMetadata = type({ baseURL: 'string' });
+import { generateId } from "@intx/hub-common";
+import { resolveModelSources } from "@intx/db";
+import type { ModelRequirement } from "@intx/types";
+import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
+import type { DeployContent } from "@intx/hub-sessions";
+import { LLM_DEFAULT_MODEL } from "@workbench/agents";
+import type { HubDb } from "../db";
 
 export type WorkflowDeployConfig = {
   deploymentId: string;
@@ -17,80 +12,77 @@ export type WorkflowDeployConfig = {
   deployContent: DeployContent;
 };
 
-// Resolve the tenant's shared LLM inference source. Today every native workflow
-// runs on the shared tenant LLM source; per-source workflows extend this when
-// they land. Split out from config assembly so a re-drive (the deployment
-// reconciler / run-start resilience, CL-2224/CL-2225) can rebuild config for an
-// EXISTING deploymentId without minting a new one.
+// Resolve the tenant's inference sources for native workflows from the tenant
+// catalog. `resolveModelSources` returns the offerings for the required model
+// ordered as a routing chain — head = default, tail = failover — so the deploy
+// approves the whole chain and pins the head as `defaultSource`. Split out from
+// config assembly so a re-drive (the deployment reconciler / run-start
+// resilience, CL-2224/CL-2225) can rebuild config for an EXISTING deploymentId
+// without minting a new one.
+//
+// The catalog is the operator-approved set: every source it returns is an
+// offering the operator made tenant-visible, which is what
+// `pickStepInferenceSource` cross-checks the deploy's defaultSource against.
 export async function resolveWorkflowDeploySource(args: {
   db: HubDb;
   tenantId: string;
-}): Promise<InferenceSource> {
-  const credentialRow = await resolveCredentialRequirement(
-    args.db,
-    args.tenantId,
-    { providerName: LLM_PROVIDER, source: 'tenant', name: LLM_CREDENTIAL_NAME },
-    null,
-    null
-  );
-  if (credentialRow === null) {
+}): Promise<InferenceSource[]> {
+  const requirement: ModelRequirement = { model: LLM_DEFAULT_MODEL };
+  const resolution = await resolveModelSources(args.db, args.tenantId, [
+    requirement,
+  ]);
+  if (!resolution.ok) {
+    if (resolution.reason === "no_requirements") {
+      throw new Error(
+        `workflow deploy: no model requirement to resolve for tenant ${args.tenantId}`,
+      );
+    }
+    const skips = resolution.skips
+      .map((s) => `${s.provider} (${s.reason})`)
+      .join(", ");
+    const detail =
+      skips.length > 0 ? `; skipped: ${skips}` : " (empty tenant catalog)";
     throw new Error(
-      `workflow deploy: cannot resolve LLM credential "${LLM_CREDENTIAL_NAME}" for tenant ${args.tenantId}`
+      `workflow deploy: model "${resolution.model}" is unavailable in tenant ${args.tenantId}${detail}`,
     );
   }
-
-  const providerRow = await args.db.query.provider.findFirst({
-    where: eq(intxSchema.provider.id, credentialRow.providerId),
-  });
-  if (!providerRow) {
-    throw new Error(
-      `workflow deploy: provider ${credentialRow.providerId} for LLM credential "${LLM_CREDENTIAL_NAME}" not found in tenant ${args.tenantId}`
-    );
-  }
-
-  const metadata = ProviderMetadata(providerRow.metadata ?? {});
-  if (metadata instanceof type.errors) {
-    throw new Error(
-      `workflow deploy: provider "${providerRow.name}" is misconfigured: ${metadata.summary}`
-    );
-  }
-
-  return {
-    id: `${providerRow.plugin}:${LLM_DEFAULT_MODEL}`,
-    provider: providerRow.plugin,
-    baseURL: metadata.baseURL,
-    apiKey: credentialRow.secret,
-    model: LLM_DEFAULT_MODEL,
-  };
+  return resolution.sources;
 }
 
-// Assemble the base HarnessConfig from a resolved source and a caller-supplied
-// deploymentId. The orchestrator overrides each step's address and prompt; the
-// base only carries the tenant inference source the steps pin against. A
-// re-drive passes the persisted deploymentId so derived step/supervisor
-// addresses match the rows the original deploy wrote.
+// Assemble the base HarnessConfig from a resolved source chain and a
+// caller-supplied deploymentId. The orchestrator overrides each step's address
+// and prompt; the base only carries the tenant inference sources the steps pin
+// against, with the chain head as the default. A re-drive passes the persisted
+// deploymentId so derived step/supervisor addresses match the rows the original
+// deploy wrote.
 export function assembleWorkflowDeployConfig(args: {
   deploymentId: string;
   tenantId: string;
   principalId: string;
   deploymentDomain: string;
-  source: InferenceSource;
+  sources: InferenceSource[];
 }): WorkflowDeployConfig {
+  const [head] = args.sources;
+  if (head === undefined) {
+    throw new Error(
+      "workflow deploy: cannot assemble config with no inference sources",
+    );
+  }
   return {
     deploymentId: args.deploymentId,
     config: {
-      sessionId: generateId('session'),
+      sessionId: generateId("session"),
       agentId: args.deploymentId,
       tenantId: args.tenantId,
       principalId: args.principalId,
       agentAddress: `${args.deploymentId}@${args.deploymentDomain}`,
-      systemPrompt: '',
+      systemPrompt: "",
       tools: [],
       grants: [],
-      sources: [args.source],
-      defaultSource: args.source.id,
+      sources: args.sources,
+      defaultSource: head.id,
     },
-    deployContent: { systemPrompt: '' },
+    deployContent: { systemPrompt: "" },
   };
 }
 
@@ -101,15 +93,15 @@ export async function resolveWorkflowDeployConfig(args: {
   principalId: string;
   deploymentDomain: string;
 }): Promise<WorkflowDeployConfig> {
-  const source = await resolveWorkflowDeploySource({
+  const sources = await resolveWorkflowDeploySource({
     db: args.db,
     tenantId: args.tenantId,
   });
   return assembleWorkflowDeployConfig({
-    deploymentId: generateId('session'),
+    deploymentId: generateId("session"),
     tenantId: args.tenantId,
     principalId: args.principalId,
     deploymentDomain: args.deploymentDomain,
-    source,
+    sources,
   });
 }

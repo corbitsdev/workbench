@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   createWorkflowDeployOrchestrator,
   deriveDeploymentAddress,
@@ -11,50 +11,50 @@ import {
   type LaunchSessionFn,
   type SendMultiStepDeployFn,
   type WorkflowRepoWriter,
-} from '@intx/workflow-deploy';
-import type { DirectorRegistry } from '@intx/agent';
-import { schema as intxSchema } from '@intx/db';
-import { generateId } from '@intx/hub-common';
-import { getLogger } from '@intx/log';
-import { type } from 'arktype';
-import type { GrantRule } from '@intx/authz';
+} from "@intx/workflow-deploy";
+import type { DirectorRegistry } from "@intx/agent";
+import { schema as intxSchema } from "@intx/db";
+import { generateId } from "@intx/hub-common";
+import { getLogger } from "@intx/log";
+import { type } from "arktype";
+import type { GrantRule } from "@intx/authz";
 import {
   toolPackagesForCapabilities,
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
   STEP_KIND_TAG,
-} from '@workbench/agents';
-import type { HubDb } from '../db';
-import type { WorkflowDefinition } from '@intx/workflow';
-import type { AgentDefinition, BaseEnv } from '@intx/agent';
+} from "@workbench/agents";
+import type { HubDb } from "../db";
+import type { WorkflowDefinition } from "@intx/workflow";
+import type { AgentDefinition, BaseEnv } from "@intx/agent";
 
-type WorkflowPrimitive = WorkflowDefinition['steps'][string];
-import type { HarnessConfig, InferenceSource } from '@intx/types/runtime';
-import type { AgentDeployWorkflow } from '@intx/types/sidecar';
-import type { ToolPackagePin } from '@intx/types/tool-packages';
+type WorkflowPrimitive = WorkflowDefinition["steps"][string];
+import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
+import type { AgentDeployWorkflow } from "@intx/types/sidecar";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 import {
   workflowDefinitionEnvelopeSchema,
   type AgentRepoStore,
   type DeployContent,
   type SessionService,
   type SidecarRouter,
-} from '@intx/hub-sessions';
+} from "@intx/hub-sessions";
 import {
   assembleWorkflowDeployConfig,
   resolveWorkflowDeploySource,
-} from './workflow-deploy-config';
+} from "./workflow-deploy-config";
 
-const log = getLogger(['services', 'workflow-deploy']);
+const log = getLogger(["services", "workflow-deploy"]);
 
 // The `workflow`-kind repo stores the deployed definition as `workflow.json` at
 // `refs/heads/main`, keyed by `workflow.id` (== the deployment's `kind`). The
 // orchestrator's WorkflowRepoWriter writes it; the sidecar's spawn-child reads
 // the same file. A re-drive reads it back to reconstruct the deploy frame.
-const WORKFLOW_JSON_PATH = 'workflow.json';
+const WORKFLOW_JSON_PATH = "workflow.json";
 
 // The workflow-kind handler enforces the definition tree on this ref; the
 // sidecar's spawn-child reads workflow.json from it.
-const WORKFLOW_DEPLOY_REF = 'refs/heads/main';
+const WORKFLOW_DEPLOY_REF = "refs/heads/main";
 
 // Per-step grants ride at `state/grants.json` on the agent-state repo's
 // state-bearing ref. Both sides read this exact (ref, path): interchange's
@@ -62,13 +62,13 @@ const WORKFLOW_DEPLOY_REF = 'refs/heads/main';
 // `workflow-host/src/supervisor/credentials.ts`) and our sidecar's
 // `readStepGrants` (`workflow-substrate-factory.ts`). The agent-state kind
 // handler allows the `state/` top-level on any non-deploy ref.
-const STEP_GRANTS_REF = 'refs/heads/main';
-const STEP_GRANTS_PATH = 'state/grants.json';
+const STEP_GRANTS_REF = "refs/heads/main";
+const STEP_GRANTS_PATH = "state/grants.json";
 
 // The resource-string prefix + action the step-agent reactor evaluates each
 // tool call against (`evaluateGrants("tool:<name>", "invoke", ...)`), mirroring
 // the DB-row grammar in `apps/hub/src/lib/tool-grants.ts`.
-const TOOL_GRANT_RESOURCE_PREFIX = 'tool:';
+const TOOL_GRANT_RESOURCE_PREFIX = "tool:";
 
 export type DeployWorkflowParams = {
   workflow: WorkflowDefinition;
@@ -111,7 +111,7 @@ export interface WorkflowDeployService {
   // the deployment reconciler (CL-2224) and run-start/signal resilience
   // (CL-2225).
   ensureDeploymentRoutable(
-    args: EnsureDeploymentRoutableArgs
+    args: EnsureDeploymentRoutableArgs,
   ): Promise<EnsureDeploymentRoutableResult>;
 }
 
@@ -132,7 +132,10 @@ export function createWorkflowDeployService(deps: {
   // deploymentId at once; without this they would each see "not routable" and
   // race overlapping deploy frames at the sidecar. One in-flight promise per
   // deploymentId; callers await the shared result.
-  const ensureInFlight = new Map<string, Promise<EnsureDeploymentRoutableResult>>();
+  const ensureInFlight = new Map<
+    string,
+    Promise<EnsureDeploymentRoutableResult>
+  >();
 
   return {
     deployWorkflow: async (params) => {
@@ -141,7 +144,8 @@ export function createWorkflowDeployService(deps: {
       // loader materializes them; the orchestrator forwards this same set to
       // every step launch.
       const toolPackagePins =
-        params.toolPackagePins ?? toolPackagesForCapabilities(capabilityNames(walk));
+        params.toolPackagePins ??
+        toolPackagesForCapabilities(capabilityNames(walk));
 
       // Partition every step into one of three classes by its CL-2251
       // `STEP_KIND_TAG`:
@@ -163,18 +167,23 @@ export function createWorkflowDeployService(deps: {
       // sets — that, plus skipping their agent-state repos, is the
       // session-per-step RAM win.
       const inlineStepIds = collectInlineStepIds(params.workflow);
-      const deterministicStepIds = collectDeterministicToolStepIds(params.workflow);
+      const deterministicStepIds = collectDeterministicToolStepIds(
+        params.workflow,
+      );
       const allStepIds = [...walk.perStep.keys()];
       const deployedStepIds = allStepIds.filter(
-        (stepId) => !inlineStepIds.has(stepId) && !deterministicStepIds.has(stepId)
+        (stepId) =>
+          !inlineStepIds.has(stepId) && !deterministicStepIds.has(stepId),
       );
       // Steps that keep an `agent` row: fully-deployed steps plus deterministic
       // tool steps (CL-2252 — the tool endpoints 404 without it).
-      const agentRowStepIds = allStepIds.filter((stepId) => !inlineStepIds.has(stepId));
+      const agentRowStepIds = allStepIds.filter(
+        (stepId) => !inlineStepIds.has(stepId),
+      );
       const noLaunchAgentIds = new Set(
         [...inlineStepIds, ...deterministicStepIds].map((stepId) =>
-          deriveStepAgentId({ deploymentId: params.deploymentId, stepId })
-        )
+          deriveStepAgentId({ deploymentId: params.deploymentId, stepId }),
+        ),
       );
 
       // Persist an `agent` row per step that needs one (deployed + deterministic
@@ -265,9 +274,23 @@ export function createWorkflowDeployService(deps: {
         sendMultiStepDeploy: toSendMultiStepDeploy(deps.sidecarRouter),
       });
 
+      // Approve the workflow's own declared grants AND every inference source
+      // the deploy resolved from the tenant catalog. Inline/deterministic steps
+      // declare `sources:[]`, so the capability walk emits NO
+      // `inference.source:*` grant for them; the orchestrator's
+      // `pickStepInferenceSource` then refuses the catalog-resolved
+      // `defaultSource` as unapproved. The catalog offerings ARE the
+      // operator-approved set, so approving the chain is the correct gate.
+      const operatorApprovals = new Set<string>([
+        ...collectGrants(walk),
+        ...params.config.sources.map(
+          (source) => `inference.source:${source.provider}:${source.model}`,
+        ),
+      ]);
+
       return orchestrator.deployWorkflow({
         ...params,
-        operatorApprovals: collectGrants(walk),
+        operatorApprovals,
         toolPackagePins,
       });
     },
@@ -322,7 +345,7 @@ async function reestablishSupervisor(deps: {
 }): Promise<EnsureDeploymentRoutableResult> {
   const { args } = deps;
   const definition = await readWorkflowDefinition(deps.repoStore, args.kind);
-  const source = await resolveWorkflowDeploySource({
+  const sources = await resolveWorkflowDeploySource({
     db: deps.db,
     tenantId: args.tenantId,
   });
@@ -350,11 +373,11 @@ async function reestablishSupervisor(deps: {
     tenantId: args.tenantId,
     creatorPrincipalId: args.creatorPrincipalId,
     definition,
-    source,
+    sources,
   });
   await deps.sidecarRouter.sendAgentDeploy(address, config, workflow);
 
-  log.info('re-established workflow supervisor', {
+  log.info("re-established workflow supervisor", {
     deploymentId: args.deploymentId,
     kind: args.kind,
     tenantId: args.tenantId,
@@ -369,23 +392,25 @@ async function reestablishSupervisor(deps: {
 // (definition + per-step inference sources). Pure function of its inputs so the
 // address/config/sources derivation is unit-testable without a sidecar.
 //
-// Every native workflow step pins the shared tenant LLM source today (see
-// resolveWorkflowDeploySource), so the per-step `sources` map assigns that one
-// source to every step id — matching what the orchestrator's pickStepInference
-// would resolve for our deploy model. When per-source workflows land, this
-// gains the same per-step resolution the orchestrator uses.
+// Every native workflow step pins the tenant catalog chain head today (see
+// resolveWorkflowDeploySource — the orchestrator's pickStepInferenceSource
+// resolves the same defaultSource for steps that declare no preference). The
+// per-step `sources` map therefore assigns the chain head to every step id.
+// Runtime cross-source failover is not wired in the workflow path (the
+// orchestrator pins one source per step into STEP_INFERENCE_SOURCES); when that
+// lands upstream this gains the full per-step resolution.
 export function buildSupervisorDeployFrame(args: {
   deploymentId: string;
   deploymentDomain: string;
   tenantId: string;
   creatorPrincipalId: string;
   definition: WorkflowDefinition;
-  source: InferenceSource;
+  sources: InferenceSource[];
 }): {
   address: string;
   config: HarnessConfig;
   workflow: {
-    definition: AgentDeployWorkflow['definition'];
+    definition: AgentDeployWorkflow["definition"];
     sources: Record<string, InferenceSource>;
   };
 } {
@@ -398,22 +423,28 @@ export function buildSupervisorDeployFrame(args: {
     tenantId: args.tenantId,
     principalId: args.creatorPrincipalId,
     deploymentDomain: args.deploymentDomain,
-    source: args.source,
+    sources: args.sources,
   });
   const deploymentConfig: HarnessConfig = {
     ...config,
     agentAddress: address,
     agentId: deriveDeploymentAgentId(args.deploymentId),
   };
+  const [head] = args.sources;
+  if (head === undefined) {
+    throw new Error(
+      "workflow deploy: cannot build supervisor frame with no inference sources",
+    );
+  }
   const sources: Record<string, InferenceSource> = {};
   for (const stepId of args.definition.stepOrder) {
-    sources[stepId] = args.source;
+    sources[stepId] = head;
   }
   return {
     address,
     config: deploymentConfig,
     workflow: {
-      definition: args.definition as AgentDeployWorkflow['definition'],
+      definition: args.definition as AgentDeployWorkflow["definition"],
       sources,
     },
   };
@@ -429,22 +460,22 @@ export function buildSupervisorDeployFrame(args: {
 // sidecar as an unchecked cast.
 export async function readWorkflowDefinition(
   repoStore: AgentRepoStore,
-  kind: string
+  kind: string,
 ): Promise<WorkflowDefinition> {
-  const dir = repoStore.repoStore.getRepoDir({ kind: 'workflow', id: kind });
+  const dir = repoStore.repoStore.getRepoDir({ kind: "workflow", id: kind });
   let parsedJson: unknown;
   try {
-    const raw = await readFile(join(dir, WORKFLOW_JSON_PATH), 'utf8');
+    const raw = await readFile(join(dir, WORKFLOW_JSON_PATH), "utf8");
     parsedJson = JSON.parse(raw);
   } catch (cause) {
     throw new Error(
-      `cannot re-establish workflow "${kind}": ${WORKFLOW_JSON_PATH} is missing or unreadable in its workflow repo (${cause instanceof Error ? cause.message : String(cause)})`
+      `cannot re-establish workflow "${kind}": ${WORKFLOW_JSON_PATH} is missing or unreadable in its workflow repo (${cause instanceof Error ? cause.message : String(cause)})`,
     );
   }
   const parsed = workflowDefinitionEnvelopeSchema(parsedJson);
   if (parsed instanceof type.errors) {
     throw new Error(
-      `cannot re-establish workflow "${kind}": persisted definition is invalid: ${parsed.summary}`
+      `cannot re-establish workflow "${kind}": persisted definition is invalid: ${parsed.summary}`,
     );
   }
   return parsed as WorkflowDefinition;
@@ -470,7 +501,7 @@ export async function writeStepAgentRows(args: {
     name: stepId,
     capabilities: { tools: [...args.capabilityNames] },
     toolPackages: [...args.toolPackagePins],
-    status: 'deployed' as const,
+    status: "deployed" as const,
     createdAt: now,
     updatedAt: now,
   }));
@@ -511,7 +542,7 @@ export async function writeStepInstanceRows(args: {
       stepId,
       deploymentDomain: args.deploymentDomain,
     }),
-    status: 'deployed' as const,
+    status: "deployed" as const,
     createdAt: now,
     updatedAt: now,
   }));
@@ -552,7 +583,7 @@ export async function writeDeploymentAgentRow(args: {
     name: `supervisor-${args.deploymentId}`,
     capabilities: null,
     toolPackages: [],
-    status: 'deployed' as const,
+    status: "deployed" as const,
     createdAt: now,
     updatedAt: now,
   });
@@ -586,7 +617,7 @@ export async function writeDeploymentInstanceRow(args: {
       deploymentId: args.deploymentId,
       deploymentDomain: args.deploymentDomain,
     }),
-    status: 'deployed' as const,
+    status: "deployed" as const,
     createdAt: now,
     updatedAt: now,
   });
@@ -622,7 +653,7 @@ export async function ensureDeploymentInstanceActive(args: {
       name: `supervisor-${args.deploymentId}`,
       capabilities: null,
       toolPackages: [],
-      status: 'deployed' as const,
+      status: "deployed" as const,
       createdAt: now,
       updatedAt: now,
     })
@@ -638,13 +669,13 @@ export async function ensureDeploymentInstanceActive(args: {
         deploymentId: args.deploymentId,
         deploymentDomain: args.deploymentDomain,
       }),
-      status: 'deployed' as const,
+      status: "deployed" as const,
       createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: intxSchema.agentInstance.id,
-      set: { status: 'deployed' as const, endedAt: null, updatedAt: now },
+      set: { status: "deployed" as const, endedAt: null, updatedAt: now },
     });
 }
 
@@ -653,14 +684,16 @@ export async function ensureDeploymentInstanceActive(args: {
 // `evaluateGrants` matches (NOT a DB `grant` row) — it mirrors
 // `buildToolGrantRows` but emits the `GrantRule` shape the sidecar evaluates
 // off `state/grants.json`. One allow rule per de-duplicated tool name.
-export function buildStepGrantRules(capabilityNames: readonly string[]): GrantRule[] {
+export function buildStepGrantRules(
+  capabilityNames: readonly string[],
+): GrantRule[] {
   const unique = [...new Set(capabilityNames)];
   return unique.map((name) => ({
-    id: generateId('grant'),
+    id: generateId("grant"),
     resource: `${TOOL_GRANT_RESOURCE_PREFIX}${name}`,
-    action: 'invoke',
-    effect: 'allow' as const,
-    origin: 'system' as const,
+    action: "invoke",
+    effect: "allow" as const,
+    origin: "system" as const,
     conditions: null,
     expiresAt: null,
     roleId: null,
@@ -683,30 +716,32 @@ export async function writeStepGrantFiles(args: {
   for (const stepId of args.stepIds) {
     const repoId = `${args.deploymentId}-${stepId}`;
     await args.repoStore.repoStore.writeTree(
-      { kind: 'hub' },
-      { kind: 'agent-state', id: repoId },
+      { kind: "hub" },
+      { kind: "agent-state", id: repoId },
       STEP_GRANTS_REF,
       {
         files: { [STEP_GRANTS_PATH]: contents },
         message: `Write step grants for ${repoId}`,
-      }
+      },
     );
   }
 }
 
-export function createWorkflowRepoWriter(repoStore: AgentRepoStore): WorkflowRepoWriter {
+export function createWorkflowRepoWriter(
+  repoStore: AgentRepoStore,
+): WorkflowRepoWriter {
   return {
     // writeTree auto-inits the repo; the orchestrator supplies the only
     // entries the workflow-kind handler allows.
     async writeWorkflowRepo({ workflowRepoId, files }) {
       await repoStore.repoStore.writeTree(
-        { kind: 'hub' },
-        { kind: 'workflow', id: workflowRepoId },
+        { kind: "hub" },
+        { kind: "workflow", id: workflowRepoId },
         WORKFLOW_DEPLOY_REF,
         {
           files: Object.fromEntries(files),
           message: `Deploy workflow ${workflowRepoId}`,
-        }
+        },
       );
     },
   };
@@ -716,18 +751,20 @@ export function createWorkflowRepoWriter(repoStore: AgentRepoStore): WorkflowRep
 // Mirrors interchange's `extractAgent` (capability-walk.ts): `step` and `map`
 // are the agent-carrying shapes; every other primitive has no agent.
 function extractStepAgent(
-  primitive: WorkflowPrimitive | undefined
+  primitive: WorkflowPrimitive | undefined,
 ): AgentDefinition<BaseEnv> | null {
   if (primitive === undefined) return null;
-  if (primitive.kind === 'step') return primitive.agent;
-  if (primitive.kind === 'map') return primitive.step.agent;
+  if (primitive.kind === "step") return primitive.agent;
+  if (primitive.kind === "map") return primitive.step.agent;
   return null;
 }
 
 // The step ids whose agent carries the inline-inference marker tag (CL-2251).
 // These steps are NOT deployed as per-step sessions: the hub skips their
 // agent/instance/grants writers and no-ops their `launchSession`.
-export function collectInlineStepIds(workflow: WorkflowDefinition): Set<string> {
+export function collectInlineStepIds(
+  workflow: WorkflowDefinition,
+): Set<string> {
   const inline = new Set<string>();
   for (const stepId of workflow.stepOrder) {
     const primitive = workflow.steps[stepId];
@@ -744,7 +781,9 @@ export function collectInlineStepIds(workflow: WorkflowDefinition): Set<string> 
 // no reactor and no session: the hub keeps their `agent` row (the tool
 // manifest/credentials endpoints gate on it) but skips their instance row and
 // grants file and no-ops their `launchSession`.
-export function collectDeterministicToolStepIds(workflow: WorkflowDefinition): Set<string> {
+export function collectDeterministicToolStepIds(
+  workflow: WorkflowDefinition,
+): Set<string> {
   const deterministic = new Set<string>();
   for (const stepId of workflow.stepOrder) {
     const primitive = workflow.steps[stepId];
@@ -764,7 +803,7 @@ export function collectDeterministicToolStepIds(workflow: WorkflowDefinition): S
 // RAM win. Fully-deployed reasoning steps launch unchanged.
 export function toLaunchSession(
   sessionService: SessionService,
-  noLaunchAgentIds: ReadonlySet<string> = new Set()
+  noLaunchAgentIds: ReadonlySet<string> = new Set(),
 ): LaunchSessionFn {
   return (params) => {
     if (noLaunchAgentIds.has(params.agentId)) {
@@ -783,7 +822,7 @@ function launchDeployedSession(
     config,
     deployContent,
     toolPackagePins,
-  }: Parameters<LaunchSessionFn>[0]
+  }: Parameters<LaunchSessionFn>[0],
 ): ReturnType<LaunchSessionFn> {
   return sessionService.launchSession({
     agentAddress,
@@ -795,13 +834,17 @@ function launchDeployedSession(
     // orchestrator's manifest field (typed `unknown`) is never our source.
     deployContent: {
       systemPrompt: deployContent.systemPrompt,
-      ...(deployContent.assetMounts ? { assetMounts: deployContent.assetMounts } : {}),
+      ...(deployContent.assetMounts
+        ? { assetMounts: deployContent.assetMounts }
+        : {}),
     },
     ...(toolPackagePins ? { toolPackagePins } : {}),
   });
 }
 
-export function toSendMultiStepDeploy(sidecarRouter: SidecarRouter): SendMultiStepDeployFn {
+export function toSendMultiStepDeploy(
+  sidecarRouter: SidecarRouter,
+): SendMultiStepDeployFn {
   return ({ agentAddress, config, definition, sources }) =>
     sidecarRouter.sendAgentDeploy(agentAddress, config, {
       // XXX: cast bridges @intx/workflow's WorkflowDefinition and the deploy
@@ -809,7 +852,7 @@ export function toSendMultiStepDeploy(sidecarRouter: SidecarRouter): SendMultiSt
       // `state`. If a pin bump changes AgentDeployWorkflow's shape, this cast
       // hides it: re-verify on every interchange bump (see the pin-bump
       // policy in AGENTS.md).
-      definition: definition as AgentDeployWorkflow['definition'],
+      definition: definition as AgentDeployWorkflow["definition"],
       sources,
     });
 }
@@ -832,8 +875,8 @@ export function capabilityNames(walk: CapabilityWalkResult): string[] {
   const names = new Set<string>();
   for (const { grants } of walk.perStep.values()) {
     for (const grant of grants) {
-      if (grant.startsWith('capability:')) {
-        names.add(grant.slice('capability:'.length));
+      if (grant.startsWith("capability:")) {
+        names.add(grant.slice("capability:".length));
       }
     }
   }
