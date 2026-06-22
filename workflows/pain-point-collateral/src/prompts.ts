@@ -25,6 +25,13 @@ Extraction rules:
 - Use exact customer wording when possible in the detail.
 - Apply user-provided context as refinement direction, not as a replacement for transcript evidence.
 
+Severity calibration:
+- critical: an explicit blocker, churn risk, security/compliance blocker, procurement blocker, failed implementation, or problem that could stop the deal or renewal.
+- high: major adoption, revenue, workflow, executive, technical, integration, migration, accuracy, trust, or time-cost friction that changes buying urgency.
+- medium: meaningful but bounded friction, missing context, unclear ownership, training burden, reporting gap, or workflow annoyance that matters but is not deal-threatening.
+- low: minor inconvenience, preference, nice-to-have, or cosmetic issue with little business impact.
+- Do not default to low. If the transcript contains business impact, urgency, risk, blocked work, repeated frustration, or an explicit ask for help, use medium, high, or critical as appropriate.
+
 Output your findings as valid JSON only. No prose, no markdown, no explanation. Return a JSON object with this exact structure:
 {
   "painPoints": [
