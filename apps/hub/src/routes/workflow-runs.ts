@@ -86,6 +86,54 @@ const RunStartedBlob = type({
 const HUB_PRINCIPAL: Principal = { kind: 'hub' };
 const RUN_EVENT_REF = 'refs/heads/main';
 
+// One-shot backlog-read idle window (CL-2233). `subscribeKind` is a LIVE TAIL:
+// it replays the existing backlog from {seq:0} and then blocks forever waiting
+// for the next commit. A ONE-SHOT consumer (the step-output reads, the lazy
+// reconcile replay) only wants the current backlog, but the tail never ends —
+// so while a HITL run is PARKED at an awaitSignal gate, no further events
+// arrive and the `for await` deadlocks: the read waits for the run to finish,
+// the run waits for the user, the user needs the read. We break the deadlock
+// with an idle-timeout: backlog events replay from local disk in sub-ms, so a
+// gap this long means we've caught up (the run is parked or done) and it is
+// safe to stop. Overridable for tests so they need not wait the full window.
+const DEFAULT_BACKLOG_IDLE_MS = 1000;
+let backlogIdleMs = DEFAULT_BACKLOG_IDLE_MS;
+
+// Test-only seam: shrink the idle window so the bounded-drain tests run fast.
+export function setBacklogIdleMsForTest(ms: number): void {
+  backlogIdleMs = ms;
+}
+
+// Drain the current backlog of a `subscribeKind` tail and return — instead of
+// tailing forever. Calls `onEntry` for each yielded entry, resetting an idle
+// timer on every yield; if no entry arrives within `backlogIdleMs`, aborts the
+// subscription so the iterator ends and the loop exits. Swallows the abort
+// error (it is the expected stop signal). The caller supplies the `abort`
+// already wired into `subscribeKind`'s `signal`.
+async function drainBacklog<T>(
+  abort: AbortController,
+  iter: AsyncIterable<T>,
+  onEntry: (entry: T) => void
+): Promise<void> {
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const resetIdle = () => {
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => abort.abort(), backlogIdleMs);
+  };
+  resetIdle();
+  try {
+    for await (const entry of iter) {
+      onEntry(entry);
+      resetIdle();
+    }
+  } catch (err) {
+    if (!abort.signal.aborted) throw err;
+  } finally {
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    abort.abort();
+  }
+}
+
 // How long after a run is started the hub keeps trying to reconcile its
 // nullable runId from the event log on a /mine read. A run normally reconciles
 // within seconds (one RunStarted commit); past this window a still-null run is
@@ -189,19 +237,15 @@ async function collectCompletedSteps(
   });
 
   const steps: Array<{ stepId: string; outputRef: string }> = [];
-  try {
-    for await (const entry of iter) {
-      if (entry.runId !== runId) continue;
-      if (entry.event.type !== 'StepCompleted') continue;
-      const completed = StepCompletedBlob(entry.event);
-      if (completed instanceof type.errors) {
-        throw new Error(`malformed StepCompleted event: ${completed.summary}`);
-      }
-      steps.push({ stepId: completed.stepId, outputRef: completed.output.ref });
+  await drainBacklog(abort, iter, (entry) => {
+    if (entry.runId !== runId) return;
+    if (entry.event.type !== 'StepCompleted') return;
+    const completed = StepCompletedBlob(entry.event);
+    if (completed instanceof type.errors) {
+      throw new Error(`malformed StepCompleted event: ${completed.summary}`);
     }
-  } finally {
-    abort.abort();
-  }
+    steps.push({ stepId: completed.stepId, outputRef: completed.output.ref });
+  });
   return steps;
 }
 
@@ -263,19 +307,17 @@ async function reconcileRunInstances(
     }
   );
   try {
-    for await (const entry of iter) {
+    await drainBacklog(abort, iter, (entry) => {
       const started = RunStartedBlob(entry.event);
-      if (started instanceof type.errors) continue;
+      if (started instanceof type.errors) return;
       messageIdToRunId.set(started.consumedMessageId, entry.runId);
-    }
+    });
   } catch (err) {
     log.error('workflow run-instance reconcile replay failed', {
       deploymentId,
       error: err instanceof Error ? err : new Error(String(err)),
     });
     return messageIdToRunId;
-  } finally {
-    abort.abort();
   }
 
   for (const [correlationMessageId, runId] of messageIdToRunId) {

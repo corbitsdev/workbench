@@ -33,6 +33,10 @@ mock.module('@intx/db', () => ({
 type FakeEntry = { seq: number; runId: string; event: Record<string, unknown> };
 let subscribeKindEntries: FakeEntry[] = [];
 let subscribeKindThrows: Error | null = null;
+// When true, the mock simulates a PARKED HITL run's live tail: it yields the
+// backlog entries and then blocks forever (until the consumer's AbortSignal
+// fires). This is the deadlock the bounded backlog read must break (CL-2233).
+let subscribeKindHangsAfterBacklog = false;
 
 // createWorkflowRunBlobSubstrate yields a BlobSubstrate; we stub resolveRef to
 // map crafted refs to values, asserting the endpoint resolves the right ref.
@@ -57,12 +61,24 @@ mock.module('@intx/hub-sessions', () => ({
   subscribeKind: async function* (
     _store: unknown,
     _principal: unknown,
-    repoId: { kind: string; id: string }
+    repoId: { kind: string; id: string },
+    _ref: unknown,
+    _validator: unknown,
+    opts: { signal: AbortSignal }
   ) {
     subscribeCapture.repoId = repoId;
     if (subscribeKindThrows) throw subscribeKindThrows;
     for (const entry of subscribeKindEntries) {
       yield entry;
+    }
+    if (subscribeKindHangsAfterBacklog) {
+      // Block until the consumer aborts — a live tail of a parked run never
+      // commits another event. A real subscribe would reject on abort.
+      await new Promise<void>((_, reject) => {
+        opts.signal.addEventListener('abort', () => reject(new Error('aborted')), {
+          once: true,
+        });
+      });
     }
   },
 }));
@@ -79,6 +95,7 @@ import { Hono } from 'hono';
 import {
   createWorkflowRunsRouter,
   deriveWorkflowRunRepoId,
+  setBacklogIdleMsForTest,
   type EnsureDeploymentRoutableFn,
 } from './workflow-runs';
 import type { HubDb } from '../db';
@@ -790,6 +807,58 @@ describe('GET /workflow-runs/:deploymentId/steps (batched step outputs)', () => 
     expect(res.status).toBe(200);
     const body = (await res.json()) as { outputs: Record<string, unknown> };
     expect(body.outputs).toEqual({ 'step-a': { owner: 'A' } });
+  });
+});
+
+// === CL-2233: bounded backlog read (parked HITL run must not hang) ===========
+
+describe('GET /workflow-runs/:deploymentId/steps — bounded backlog read', () => {
+  function allStepsReq(app: ReturnType<typeof buildApp>, dep: string, runId: string) {
+    return app.request(
+      new Request(`http://local/workflow-runs/${dep}/steps?runId=${runId}`, { method: 'GET' })
+    );
+  }
+
+  it('terminates and returns the backlog steps even when the event tail never ends (parked run)', async () => {
+    // Idle window short so the test is fast; the real default is 1000ms.
+    setBacklogIdleMsForTest(50);
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    subscribeKindThrows = null;
+    // A parked HITL run: step 1 completed, then the run blocks at an awaitSignal
+    // gate so subscribeKind's live tail yields nothing more and never ends.
+    subscribeKindHangsAfterBacklog = true;
+    subscribeKindEntries = [
+      { seq: 0, runId: 'run-A', event: { type: 'RunStarted', seq: 0 } },
+      {
+        seq: 1,
+        runId: 'run-A',
+        event: { type: 'StepCompleted', seq: 1, stepId: 'step-1', output: { ref: 'inline:one' } },
+      },
+    ];
+    resolveRefImpl = (ref) =>
+      ref === 'inline:one'
+        ? Promise.resolve({ notes: ['n1'] })
+        : Promise.reject(new Error(`unexpected ref ${ref}`));
+
+    // Fail-before (tail-forever code): this never resolves and the test times
+    // out. Pass-after: the idle-timeout aborts the drain and we get the backlog.
+    const res = await Promise.race([
+      allStepsReq(buildApp(makeDb(true)), 'dep-1', 'run-A'),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('read hung: backlog drain did not terminate')), 5000)
+      ),
+    ]);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { outputs: Record<string, unknown> };
+    expect(body.outputs).toEqual({ 'step-1': { notes: ['n1'] } });
+
+    subscribeKindHangsAfterBacklog = false;
+    setBacklogIdleMsForTest(1000);
   });
 });
 
