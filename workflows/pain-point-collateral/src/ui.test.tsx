@@ -649,6 +649,80 @@ describe('Panel — review generated pieces (step 5)', () => {
     screen.getByText('Dear prospect, cut onboarding from weeks to days.');
   });
 
+  function renderReviewWithReply(reply: string) {
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({
+          intake: 'completed',
+          select: 'completed',
+          fetch: 'completed',
+          context: 'completed',
+          analyze: 'completed',
+          ppSelection: 'completed',
+          fmtSelection: 'completed',
+          generate: 'completed',
+          review: 'awaiting-signal',
+        })}
+        connected
+        stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS, generate: [{ reply }] }}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+  }
+
+  const PIECE_JSON =
+    '{"format":"Email","title":"Cut onboarding time","content":"Dear prospect, cut onboarding from weeks to days."}';
+
+  it('reads a plain strict JSON reply with no fence', () => {
+    renderReviewWithReply(PIECE_JSON);
+    screen.getByText('Cut onboarding time');
+    screen.getByText('Dear prospect, cut onboarding from weeks to days.');
+  });
+
+  it('reads a reply fenced with ``` and no language tag', () => {
+    renderReviewWithReply(`\`\`\`\n${PIECE_JSON}\n\`\`\``);
+    screen.getByText('Cut onboarding time');
+    screen.getByText('Dear prospect, cut onboarding from weeks to days.');
+  });
+
+  it('reads a fenced JSON reply with prose preamble and postamble', () => {
+    renderReviewWithReply(
+      `Here's your collateral:\n\n\`\`\`json\n${PIECE_JSON}\n\`\`\`\n\nLet me know if you want changes!`
+    );
+    screen.getByText('Cut onboarding time');
+    screen.getByText('Dear prospect, cut onboarding from weeks to days.');
+  });
+
+  it('reads a reply fenced with ~~~ tildes', () => {
+    renderReviewWithReply(`~~~json\n${PIECE_JSON}\n~~~`);
+    screen.getByText('Cut onboarding time');
+    screen.getByText('Dear prospect, cut onboarding from weeks to days.');
+  });
+
+  it('reads a reply with leading and trailing whitespace around the fence', () => {
+    renderReviewWithReply(`\n\n   \`\`\`json\n${PIECE_JSON}\n\`\`\`   \n\n`);
+    screen.getByText('Cut onboarding time');
+    screen.getByText('Dear prospect, cut onboarding from weeks to days.');
+  });
+
+  it('reads a raw JSON object embedded in prose with no fence', () => {
+    renderReviewWithReply(`Sure thing — here it is: ${PIECE_JSON} Hope that helps.`);
+    screen.getByText('Cut onboarding time');
+    screen.getByText('Dear prospect, cut onboarding from weeks to days.');
+  });
+
+  it('shows a placeholder (pending) when the generated reply is empty', () => {
+    renderReviewWithReply('   ');
+    screen.getByText("Couldn't read the generated collateral.");
+  });
+
+  it('shows a malformed error when the reply contains no JSON at all', () => {
+    renderReviewWithReply('Sorry, I could not produce any collateral this time.');
+    screen.getByText("Couldn't read the generated collateral.");
+  });
+
   it('shows a malformed error when generated pieces are not valid', () => {
     render(
       <Panel

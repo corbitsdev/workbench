@@ -117,14 +117,45 @@ function parseFetchedNote(raw: unknown): Decoded<typeof GranolaNoteDetail.infer>
   return { status: 'ok', value: parsed };
 }
 
+function stripCodeFence(text: string): string {
+  const fenced = text.match(/^(```|~~~)[^\n]*\n([\s\S]*?)\n?\1\s*$/);
+  return fenced?.[2]?.trim() ?? text;
+}
+
+function extractFirstJsonValue(text: string): string | null {
+  const start = text.search(/[{[]/);
+  if (start === -1) return null;
+  const open = text[start]!;
+  const close = open === '{' ? '}' : ']';
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i]!;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === open) depth += 1;
+    else if (ch === close) {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 function parseAgentJson(
   reply: string
 ): { status: 'pending' } | { status: 'malformed' } | { status: 'ok'; value: unknown } {
   const trimmed = reply.trim();
   if (trimmed === '') return { status: 'pending' };
 
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  const jsonText = fenced?.[1] ?? trimmed;
+  const unfenced = stripCodeFence(trimmed);
+  const jsonText = extractFirstJsonValue(unfenced) ?? unfenced;
 
   try {
     return { status: 'ok', value: JSON.parse(jsonText) };
