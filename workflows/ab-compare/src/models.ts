@@ -87,3 +87,26 @@ export function isAbComparisonModelAllowed(
 ): boolean {
   return listAbComparisonModels(providerName, providerPlugin).includes(model);
 }
+
+export function validateAbComparisonProviders(
+  providers: Array<{ providerName?: string; providerPlugin?: string; model?: string }>
+): { valid: true } | { valid: false; error: string } {
+  if (providers.length < 2) {
+    return { valid: false, error: 'At least two providers are required' };
+  }
+
+  for (let i = 0; i < providers.length; i++) {
+    const entry = providers[i];
+    const name = entry?.providerName ?? '';
+    const plugin = entry?.providerPlugin;
+    const model = entry?.model;
+    if (!plugin || !model) {
+      return { valid: false, error: `Comparison ${i + 1} requires a provider and model` };
+    }
+    if (!isAbComparisonModelAllowed(name, plugin, model)) {
+      return { valid: false, error: `Model ${model} is not allowed for ${name || plugin}` };
+    }
+  }
+
+  return { valid: true };
+}
