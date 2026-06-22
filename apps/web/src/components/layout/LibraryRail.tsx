@@ -1,10 +1,8 @@
-import { useLibraryResources } from '@workbench/client/react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { resolveKindLabel } from '../../lib/resolve-kind-label';
 import { toHumanLabel } from '@workbench/ui';
-import type { WorkflowSummary } from '@workbench/shared';
-import { clientOptions } from '../../lib/client-options';
+import type { WorkflowRun } from '../../hooks/use-workflow';
 import {
   listAgentInstances,
   listWorkbenches,
@@ -14,7 +12,7 @@ import {
 import type { AgentInstance, WorkbenchEntry, CredentialRequirement } from '../../lib/hub-api';
 import { useAgentPhase } from '../../lib/use-agent-phase';
 import type { AgentPhase } from '@workbench/agents/browser';
-import { useDeleteWorkflow } from '../../hooks/use-workflow';
+import { useWorkflowRuns } from '../../hooks/use-workflow';
 import { useState } from 'react';
 
 type ResourceType = 'workflow' | 'agent';
@@ -158,10 +156,8 @@ function workflowKindLabel(kind: string): string {
   return resolveKindLabel(kind) ?? kind;
 }
 
-function workflowToRailItem(w: WorkflowSummary): WorkflowRailItem {
+function workflowToRailItem(w: WorkflowRun): WorkflowRailItem {
   const statusLabel = STATUS_LABELS[w.status] ?? toHumanLabel(w.status);
-  // Until workflows surface their own run identity, createdAt is the only thing
-  // distinguishing concurrent runs of the same kind.
   const started = new Date(w.createdAt).toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -170,7 +166,7 @@ function workflowToRailItem(w: WorkflowSummary): WorkflowRailItem {
   });
   const sub = `${statusLabel} · ${started}`;
   return {
-    id: w.id,
+    id: w.runId,
     group: 'Workflows',
     name: workflowKindLabel(w.kind),
     type: 'workflow',
@@ -432,22 +428,16 @@ export function LibraryRail({
   const [stoppingInstanceId, setStoppingInstanceId] = useState<string | null>(null);
   const [restartingInstanceId, setRestartingInstanceId] = useState<string | null>(null);
   const [completedWorkflowsOpen, setCompletedWorkflowsOpen] = useState(false);
-  const [removingWorkflowId, setRemovingWorkflowId] = useState<string | null>(null);
-  const [confirmWorkflowRemoveId, setConfirmWorkflowRemoveId] = useState<string | null>(null);
 
   // Resolve the tenantId for the active workbench so agents can be scoped.
   const activeWorkbench = workbenches.find((w) => w.tenantSlug === activeWorkbenchSlug);
   const activeWorkbenchTenantId = activeWorkbench?.tenantId;
 
-  const deleteWorkflow = useDeleteWorkflow(activeWorkbenchTenantId);
-
   const {
     data: workflows,
     isLoading: jobsLoading,
     isError,
-  } = useLibraryResources(clientOptions, {
-    tenantId: activeWorkbenchSlug ? (activeWorkbenchTenantId ?? null) : undefined,
-  });
+  } = useWorkflowRuns(activeWorkbenchSlug ? (activeWorkbenchTenantId ?? null) : undefined);
 
   // Scope agents to the active workbench; fall back to all agents when no slug is set.
   const agentItems = activeWorkbenchTenantId
@@ -689,30 +679,6 @@ export function LibraryRail({
                   }
                 };
 
-                const isConfirmingWorkflowRemove =
-                  item.type === 'workflow' && confirmWorkflowRemoveId === item.id;
-                const isRemovingWorkflow =
-                  item.type === 'workflow' && removingWorkflowId === item.id;
-
-                const handleWorkflowRemoveRequest = () => {
-                  if (item.type !== 'workflow') return;
-                  setConfirmWorkflowRemoveId(item.id);
-                };
-
-                const handleWorkflowRemoveConfirm = async () => {
-                  if (item.type !== 'workflow') return;
-                  setConfirmWorkflowRemoveId(null);
-                  setRemovingWorkflowId(item.id);
-                  await deleteWorkflow
-                    .mutateAsync(item.id)
-                    .catch(() => undefined)
-                    .finally(() => setRemovingWorkflowId(null));
-                };
-
-                const handleWorkflowRemoveCancel = () => {
-                  setConfirmWorkflowRemoveId(null);
-                };
-
                 const rowLabel =
                   item.type === 'workflow'
                     ? `Open workflow ${item.name}`
@@ -734,9 +700,9 @@ export function LibraryRail({
                 return (
                   <div
                     key={item.id}
-                    className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${isClickable && !isConfirmingWorkflowRemove ? 'hover:bg-[var(--row-hover)]' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
+                    className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${isClickable ? 'hover:bg-[var(--row-hover)]' : ''} ${isActiveAgent || isActiveWorkflow ? 'bg-surface ring-1 ring-orange/60' : ''}`}
                   >
-                    {isClickable && !isConfirmingWorkflowRemove ? (
+                    {isClickable ? (
                       <button
                         type="button"
                         aria-label={rowLabel}
@@ -820,51 +786,6 @@ export function LibraryRail({
                           )}
                         </div>
                       )}
-                      {item.type === 'workflow' && (
-                        <div className="flex flex-none items-center gap-[5px]">
-                          {isConfirmingWorkflowRemove ? (
-                            <>
-                              <button
-                                type="button"
-                                aria-label={`Confirm remove workflow ${item.name}`}
-                                disabled={isRemovingWorkflow}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleWorkflowRemoveConfirm();
-                                }}
-                                className="flex-none rounded-[7px] border border-orange px-2 py-[3px] text-[11px] text-orange hover:bg-[rgba(233,132,40,0.12)] disabled:opacity-50"
-                              >
-                                {isRemovingWorkflow ? '…' : 'Confirm'}
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Cancel remove"
-                                disabled={isRemovingWorkflow}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleWorkflowRemoveCancel();
-                                }}
-                                className="flex-none rounded-[7px] border border-border px-2 py-[3px] text-[11px] text-text-3 hover:border-orange hover:text-orange disabled:opacity-50"
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              aria-label={`Remove workflow ${item.name}`}
-                              disabled={isRemovingWorkflow}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleWorkflowRemoveRequest();
-                              }}
-                              className="flex-none rounded-[7px] border border-border px-2 py-[3px] text-[11px] text-text-3 opacity-0 transition-opacity hover:border-orange hover:text-orange disabled:opacity-50 group-hover:opacity-100"
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                      )}
                       <span
                         className={`flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.03em] ${workflowBadgeClass}`}
                       >
@@ -909,8 +830,6 @@ export function LibraryRail({
               {completedWorkflowsOpen &&
                 completedJobItems.map((item) => {
                   const isActive = item.id === activeWorkflowId;
-                  const isConfirming = confirmWorkflowRemoveId === item.id;
-                  const isRemoving = removingWorkflowId === item.id;
 
                   return (
                     <CompletedWorkflowRow
@@ -922,18 +841,6 @@ export function LibraryRail({
                           ? () => onWorkflowSelect(item.id, item.workflowKind)
                           : undefined
                       }
-                      onRemove={() => setConfirmWorkflowRemoveId(item.id)}
-                      removing={isRemoving}
-                      confirmingRemove={isConfirming}
-                      onConfirmRemove={() => {
-                        setConfirmWorkflowRemoveId(null);
-                        setRemovingWorkflowId(item.id);
-                        void deleteWorkflow
-                          .mutateAsync(item.id)
-                          .catch(() => undefined)
-                          .finally(() => setRemovingWorkflowId(null));
-                      }}
-                      onCancelRemove={() => setConfirmWorkflowRemoveId(null)}
                     />
                   );
                 })}

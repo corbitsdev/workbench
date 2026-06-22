@@ -40,14 +40,39 @@ const workflowRunSchema = type({
 export type WorkflowRun = typeof workflowRunSchema.infer;
 const workflowRunListSchema = workflowRunSchema.array();
 
+const workflowDeploymentSchema = type({
+  deploymentId: 'string',
+  kind: 'string',
+  status: 'string',
+  createdAt: 'string',
+});
+export type WorkflowDeployment = typeof workflowDeploymentSchema.infer;
+const workflowDeploymentListSchema = workflowDeploymentSchema.array();
+
 export function useWorkflowRuns(tenantId?: string | null) {
   return useQuery<WorkflowRun[]>({
     queryKey: ['workflow-runs', tenantId ?? null],
+    refetchInterval: 5000,
     queryFn: async () => {
       const raw = await api<unknown>('GET', withTenant('/workflow-exec/records', tenantId));
       const parsed = workflowRunListSchema(raw);
       if (parsed instanceof type.errors) {
         throw new Error(`Unexpected workflow-records response: ${parsed.summary}`);
+      }
+      return parsed;
+    },
+  });
+}
+
+export function useWorkflowDeployments(tenantId?: string | null) {
+  return useQuery<WorkflowDeployment[]>({
+    queryKey: ['workflow-deployments', tenantId ?? null],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const raw = await api<unknown>('GET', withTenant('/workflow-runs', tenantId));
+      const parsed = workflowDeploymentListSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected workflow-runs response: ${parsed.summary}`);
       }
       return parsed;
     },
@@ -79,6 +104,7 @@ export function useWorkflowRecord(runId: string | null, tenantId?: string | null
 }
 
 export function useStartWorkflow(tenantId?: string | null) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
       const raw = await api<unknown>(
@@ -87,6 +113,9 @@ export function useStartWorkflow(tenantId?: string | null) {
         { input }
       );
       return parseRunRecord(raw);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workflow-runs'] });
     },
   });
 }

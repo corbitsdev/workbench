@@ -1,16 +1,17 @@
 /// <reference types="bun" />
 import '../../test-setup';
 import { afterEach, describe, it, expect, mock, beforeEach } from 'bun:test';
-import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, within, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { UnifiedCatalogModal } from './UnifiedCatalogModal';
 
 mock.module('../../hooks/use-workflow', () => ({
-  useWorkflowRuns: () => ({
+  useWorkflowDeployments: () => ({
     data: [
-      { runId: 'wfr-1', kind: 'collateral-generation', status: 'running', createdAt: '' },
-      { runId: 'wfr-2', kind: 'presentation-generation', status: 'running', createdAt: '' },
-      { runId: 'wfr-3', kind: 'seo-enrichment', status: 'running', createdAt: '' },
+      { deploymentId: 'dep-1', kind: 'collateral-generation', status: 'running', createdAt: '' },
+      { deploymentId: 'dep-2', kind: 'presentation-generation', status: 'running', createdAt: '' },
+      { deploymentId: 'dep-3', kind: 'seo-enrichment', status: 'running', createdAt: '' },
     ],
     isPending: false,
   }),
@@ -63,6 +64,10 @@ mock.module('../../lib/hub-api', () => ({
   launchInstanceSession: () => Promise.resolve({ launched: true }),
 }));
 
+function screen() {
+  return within(document.body);
+}
+
 function wrapper({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -95,9 +100,9 @@ describe('UnifiedCatalogModal', () => {
       { wrapper }
     );
 
-    await waitFor(() => screen.getByText('Oat'));
-    screen.getByText('Freddy');
-    screen.getByText('Granola notes agent');
+    await waitFor(() => screen().getByText('Oat'));
+    screen().getByText('Freddy');
+    screen().getByText('Granola notes agent');
   });
 
   it('shows tool provider labels on agent cards', async () => {
@@ -112,9 +117,9 @@ describe('UnifiedCatalogModal', () => {
       { wrapper }
     );
 
-    await waitFor(() => screen.getByText('Oat'));
-    screen.getByText('Granola');
-    screen.getByText('Firecrawl');
+    await waitFor(() => screen().getByText('Oat'));
+    screen().getByText('Granola');
+    screen().getByText('Firecrawl');
   });
 
   it('switches to Workflows tab and shows workflow cards', async () => {
@@ -129,11 +134,11 @@ describe('UnifiedCatalogModal', () => {
       { wrapper }
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Workflows' }));
+    fireEvent.click(screen().getByRole('button', { name: 'Workflows' }));
 
-    await waitFor(() => screen.getByText('Collateral Generation'));
-    screen.getByText('Presentation Generation');
-    screen.getByText('SEO Enrichment');
+    await waitFor(() => screen().getByText('Collateral Generation'));
+    screen().getByText('Presentation Generation');
+    screen().getByText('SEO Enrichment');
   });
 
   it('filters agents by search query', async () => {
@@ -148,13 +153,14 @@ describe('UnifiedCatalogModal', () => {
       { wrapper }
     );
 
-    await waitFor(() => screen.getByText('Oat'));
+    await waitFor(() => screen().getByText('Oat'));
 
-    const searchInput = screen.getByPlaceholderText(/search/i);
-    fireEvent.change(searchInput, { target: { value: 'granola' } });
+    const user = userEvent.setup();
+    const searchInput = screen().getByPlaceholderText(/search/i);
+    await user.type(searchInput, 'granola');
 
-    screen.getByText('Oat');
-    expect(screen.queryByText('Freddy')).toBeNull();
+    screen().getByText('Oat');
+    await waitFor(() => expect(screen().queryByText('Freddy')).toBeNull());
   });
 
   it('calls onAgentDeployed and onClose after successful deploy', async () => {
@@ -169,15 +175,15 @@ describe('UnifiedCatalogModal', () => {
       { wrapper }
     );
 
-    await waitFor(() => screen.getByText('Oat'));
-    const addButtons = screen.getAllByRole('button', { name: 'Add' });
+    await waitFor(() => screen().getByText('Oat'));
+    const addButtons = screen().getAllByRole('button', { name: 'Add' });
     fireEvent.click(addButtons[0]!);
 
     await waitFor(() => expect(onAgentDeployed).toHaveBeenCalledTimes(1));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onWorkflowStarted with deploymentId after clicking a workflow card', async () => {
+  it('calls onWorkflowStarted with the new run id after clicking a workflow card', async () => {
     render(
       <UnifiedCatalogModal
         open={true}
@@ -189,10 +195,10 @@ describe('UnifiedCatalogModal', () => {
       { wrapper }
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Workflows' }));
-    await waitFor(() => screen.getByText('Collateral Generation'));
+    fireEvent.click(screen().getByRole('button', { name: 'Workflows' }));
+    await waitFor(() => screen().getByText('Collateral Generation'));
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Start' })[0]!);
+    fireEvent.click(screen().getAllByRole('button', { name: 'Start' })[0]!);
 
     await waitFor(() =>
       expect(onWorkflowStarted).toHaveBeenCalledWith('started-collateral-generation')
@@ -212,7 +218,7 @@ describe('UnifiedCatalogModal', () => {
       { wrapper }
     );
 
-    await waitFor(() => screen.getByText('Collateral Generation'));
+    await waitFor(() => screen().getByText('Collateral Generation'));
   });
 
   it('does not render when open is false', () => {
@@ -227,7 +233,7 @@ describe('UnifiedCatalogModal', () => {
       { wrapper }
     );
 
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen().queryByRole('dialog')).toBeNull();
   });
 
   it('closes on Escape key', async () => {
@@ -242,8 +248,8 @@ describe('UnifiedCatalogModal', () => {
       { wrapper }
     );
 
-    await waitFor(() => screen.getByRole('dialog'));
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => screen().getByRole('dialog'));
+    fireEvent.keyDown(screen().getByRole('dialog'), { key: 'Escape' });
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });

@@ -6,33 +6,28 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { LibraryRailProps } from './LibraryRail';
-import type { WorkflowSummary } from '@workbench/shared';
+import type { WorkflowRun } from '../../hooks/use-workflow';
 
-const fakeWorkflow: WorkflowSummary = {
-  id: 'wf-1',
+const fakeWorkflow: WorkflowRun = {
+  runId: 'wfr-1',
   kind: 'collateral-generation',
   status: 'running',
   createdAt: new Date().toISOString(),
 };
 
-const mockDeleteMutateAsync = mock((_id: string) => Promise.resolve());
+// workflowRunsOverride lets individual tests substitute a different run list
+// without re-mocking the entire module.
+let workflowRunsOverride: WorkflowRun[] | null = null;
 
 mock.module('../../hooks/use-workflow', () => ({
-  useDeleteWorkflow: () => ({
-    mutateAsync: mockDeleteMutateAsync,
-  }),
-}));
-
-// libraryResourcesOverride lets individual tests substitute a different
-// workflow list without re-mocking the entire module.
-let libraryResourcesOverride: WorkflowSummary[] | null = null;
-
-mock.module('@workbench/client/react', () => ({
-  useLibraryResources: () => ({
-    data: libraryResourcesOverride ?? [fakeWorkflow],
+  useWorkflowRuns: () => ({
+    data: workflowRunsOverride ?? [fakeWorkflow],
     isLoading: false,
     isError: false,
   }),
+}));
+
+mock.module('@workbench/client/react', () => ({
   useArtifacts: () => ({ data: [], isLoading: false, isError: false }),
 }));
 
@@ -88,7 +83,7 @@ function renderWithClient(ui: React.ReactElement) {
 
 afterEach(() => {
   cleanup();
-  libraryResourcesOverride = null;
+  workflowRunsOverride = null;
 });
 
 describe('LibraryRail', () => {
@@ -204,7 +199,7 @@ describe('LibraryRail', () => {
     );
     fireEvent.click(row);
 
-    expect(onWorkflowSelect).toHaveBeenCalledWith('wf-1', 'collateral-generation');
+    expect(onWorkflowSelect).toHaveBeenCalledWith('wfr-1', 'collateral-generation');
   });
 
   it('activates a workflow row via the keyboard as a native button', async () => {
@@ -226,7 +221,7 @@ describe('LibraryRail', () => {
     row.focus();
     await user.keyboard('{Enter}');
 
-    expect(onWorkflowSelect).toHaveBeenCalledWith('wf-1', 'collateral-generation');
+    expect(onWorkflowSelect).toHaveBeenCalledWith('wfr-1', 'collateral-generation');
   });
 
   it('keeps loaded agents visible and warns when one workbench fails to load agents', async () => {
@@ -322,9 +317,9 @@ describe('LibraryRail', () => {
   });
 
   it('places a completed-status workflow in the Done section with a Completed badge', async () => {
-    libraryResourcesOverride = [
+    workflowRunsOverride = [
       {
-        id: 'wf-done',
+        runId: 'wfr-done',
         kind: 'collateral-generation',
         status: 'completed',
         createdAt: new Date().toISOString(),
@@ -345,40 +340,28 @@ describe('LibraryRail', () => {
     });
   });
 
-  it('calls deleteWorkflow.mutateAsync with the workflow id when Remove is confirmed', async () => {
-    libraryResourcesOverride = [
+  it('does not expose deployment removal controls for user run rows', async () => {
+    workflowRunsOverride = [
       {
-        id: 'wf-remove-me',
+        runId: 'wfr-done',
         kind: 'collateral-generation',
         status: 'completed',
         createdAt: new Date().toISOString(),
       },
     ];
-    mockDeleteMutateAsync.mockReset();
-    mockDeleteMutateAsync.mockImplementation(() => Promise.resolve());
 
     const { LibraryRail } = await import('./LibraryRail');
-    const view = renderWithClient(React.createElement(LibraryRail));
+    const view = renderWithClient(
+      React.createElement(LibraryRail as React.FC<LibraryRailProps>, {
+        onWorkflowSelect: () => undefined,
+      })
+    );
 
-    // Open the Done section.
     const doneToggle = await waitFor(() => view.getByText('Completed'));
     fireEvent.click(doneToggle);
 
-    // Click Remove to enter the confirm state.
-    const removeBtn = await waitFor(() =>
-      view.getByRole('button', { name: 'Remove workflow Collateral Generation' })
-    );
-    fireEvent.click(removeBtn);
-
-    // Click Confirm.
-    const confirmBtn = await waitFor(() =>
-      view.getByRole('button', { name: 'Confirm remove workflow Collateral Generation' })
-    );
-    fireEvent.click(confirmBtn);
-
-    await waitFor(() => {
-      expect(mockDeleteMutateAsync).toHaveBeenCalledWith('wf-remove-me');
-    });
+    await waitFor(() => view.getByRole('button', { name: 'Open workflow Collateral Generation' }));
+    expect(view.queryByRole('button', { name: 'Remove workflow Collateral Generation' })).toBeNull();
   });
 });
 

@@ -7,7 +7,7 @@ import {
   type AgentCatalogEntry,
 } from '../../lib/hub-api';
 import { toHumanLabel } from '@workbench/ui';
-import { useWorkflowRuns, useStartWorkflow } from '../../hooks/use-workflow';
+import { useStartWorkflow, useWorkflowDeployments } from '../../hooks/use-workflow';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -71,20 +71,21 @@ export function UnifiedCatalogModal({
     staleTime: 5 * 60_000,
   });
 
-  const { data: workflowRuns = [], isPending: workflowsPending } = useWorkflowRuns(tenantId);
+  const { data: workflowDeployments = [], isPending: workflowsPending } =
+    useWorkflowDeployments(tenantId);
   const startWorkflow = useStartWorkflow(tenantId);
 
   const deployedKinds = useMemo(() => {
     const seen = new Set<string>();
     const result: string[] = [];
-    for (const run of workflowRuns) {
-      if (!seen.has(run.kind)) {
-        seen.add(run.kind);
-        result.push(run.kind);
+    for (const deployment of workflowDeployments) {
+      if (!seen.has(deployment.kind)) {
+        seen.add(deployment.kind);
+        result.push(deployment.kind);
       }
     }
     return result;
-  }, [workflowRuns]);
+  }, [workflowDeployments]);
 
   const handleClose = useCallback(() => {
     setError(null);
