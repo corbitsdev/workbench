@@ -11,10 +11,14 @@ import type { AgentRepoStore, SessionService, SidecarRouter } from '@intx/hub-se
 import type { HubDb } from '../db';
 import { evaluateGrants } from '@intx/authz';
 import type { GrantRule } from '@intx/authz';
+import { defineWorkflow, map, step } from '@intx/workflow';
+import { defineAgent } from '@intx/agent';
+import { createWorkbenchDirectorRegistry, inlineInferenceStep } from '@workbench/agents';
 import {
   buildStepGrantRules,
   buildSupervisorDeployFrame,
   collectGrants,
+  collectInlineStepIds,
   createWorkflowDeployService,
   createWorkflowRepoWriter,
   readWorkflowDefinition,
@@ -85,6 +89,39 @@ describe('toLaunchSession', () => {
       deployContent: { systemPrompt: 'p', assetMounts },
       toolPackagePins: [{ name: 'pkg', version: '1.0.0' }],
     });
+  });
+
+  test('no-ops launchSession for an inline step agentId (CL-2251 RAM win)', async () => {
+    const launchSession = mock(async (_params: unknown) => undefined);
+    const sessionService = { launchSession } as unknown as SessionService;
+    const inlineAgentIds = new Set(['ins_dep1-analyze']);
+
+    // An inline step resolves to a no-op without touching the SessionService.
+    await toLaunchSession(
+      sessionService,
+      inlineAgentIds
+    )({
+      agentAddress: 'ins_dep1-analyze@local',
+      agentId: 'ins_dep1-analyze',
+      instanceId: 'ins_dep1-analyze',
+      config: {} as HarnessConfig,
+      deployContent: { systemPrompt: 'p' },
+    });
+    expect(launchSession).not.toHaveBeenCalled();
+
+    // A deployed step still launches.
+    await toLaunchSession(
+      sessionService,
+      inlineAgentIds
+    )({
+      agentAddress: 'ins_dep1-fetch@local',
+      agentId: 'ins_dep1-fetch',
+      instanceId: 'ins_dep1-fetch',
+      config: {} as HarnessConfig,
+      deployContent: { systemPrompt: 'p' },
+    });
+    expect(launchSession).toHaveBeenCalledTimes(1);
+    expect(launchSession.mock.calls[0]?.[0]).toMatchObject({ agentId: 'ins_dep1-fetch' });
   });
 });
 
@@ -522,6 +559,210 @@ describe('readWorkflowDefinition', () => {
         /persisted definition is invalid/
       );
     });
+  });
+});
+
+describe('collectInlineStepIds', () => {
+  test('collects only steps whose agent carries the inline-inference marker tag', () => {
+    const inlineAgent = defineAgent({
+      id: 'analyze',
+      description: 'inline',
+      systemPrompt: 'reason',
+      tools: [],
+      capabilities: [],
+      inference: { sources: [] },
+      tags: { 'workbench.stepKind': 'inline-inference' },
+    });
+    const deployedAgent = defineAgent({
+      id: 'draft',
+      description: 'deployed reasoning',
+      systemPrompt: 'reason',
+      tools: [],
+      capabilities: [],
+      inference: { sources: [{ provider: 'openai-compatible', model: 'm' }] },
+    });
+    const wf = defineWorkflow({
+      id: 'wf',
+      trigger: { type: 'manual' },
+      steps: {
+        analyze: inlineInferenceStep({ id: 'analyze', systemPrompt: 'reason' }),
+        draft: step({ agent: deployedAgent, after: ['analyze'] }),
+      },
+    });
+
+    const inline = collectInlineStepIds(wf);
+    expect([...inline]).toEqual(['analyze']);
+    expect(inline.has('draft')).toBe(false);
+
+    // Sanity: the marker comes from the tag, not the id.
+    expect(inlineAgent.tags?.['workbench.stepKind']).toBe('inline-inference');
+  });
+
+  test('finds an inline step nested inside a map primitive', () => {
+    const wf = defineWorkflow({
+      id: 'wf',
+      trigger: { type: 'manual' },
+      steps: {
+        fan: map({
+          over: { literal: [] },
+          step: inlineInferenceStep({ id: 'fan-inner', systemPrompt: 'reason' }),
+        }),
+      },
+    });
+    expect([...collectInlineStepIds(wf)]).toEqual(['fan']);
+  });
+});
+
+// Integration-style proof of CONDITION 2: a workflow with an inline step
+// deploys creating ZERO agent-state repos and ZERO launchSession calls for
+// the inline step, while the deployed step gets the full per-step
+// provisioning unchanged. Exercises the real `createWorkflowDeployService`
+// (real director registry + real orchestrator) across its seams; only the
+// db / repoStore / sessionService / sidecarRouter boundaries are mocked.
+describe('deployWorkflow inline-step partition (CL-2251)', () => {
+  const SOURCE: InferenceSource = {
+    id: 'openai-compatible:m',
+    provider: 'openai-compatible',
+    baseURL: 'https://llm.example.com',
+    apiKey: 'secret',
+    model: 'm',
+  };
+
+  function makeConfig(deploymentId: string, deploymentDomain: string): HarnessConfig {
+    return {
+      sessionId: 'sess_1',
+      agentId: deploymentId,
+      tenantId: 't1',
+      principalId: 'p1',
+      agentAddress: `${deploymentId}@${deploymentDomain}`,
+      systemPrompt: '',
+      tools: [],
+      grants: [],
+      sources: [SOURCE],
+      defaultSource: SOURCE.id,
+    } as unknown as HarnessConfig;
+  }
+
+  test('skips per-step agent-state repo writes + launchSession for the inline step only', async () => {
+    const deploymentId = 'ses_inline';
+    const deploymentDomain = 'deploy.example.com';
+
+    // The deployed reasoning step declares the tenant source so the walk
+    // surfaces its inference grant (which becomes an operator approval); the
+    // inline step's source falls back to the same approved default.
+    const draftAgent = defineAgent({
+      id: 'draft',
+      description: 'deployed reasoning step',
+      systemPrompt: 'draft something',
+      tools: [],
+      capabilities: [],
+      inference: { sources: [{ provider: 'openai-compatible', model: 'm' }] },
+    });
+    const workflow = defineWorkflow({
+      id: 'pain-point-collateral',
+      trigger: { type: 'manual' },
+      steps: {
+        analyze: inlineInferenceStep({ id: 'analyze', systemPrompt: 'extract pain points' }),
+        draft: step({ agent: draftAgent, after: ['analyze'] }),
+      },
+    });
+
+    // Record every writeTree (workflow repo + per-step grants repos) and every
+    // DB insert (step agent/instance rows) so we can prove the inline step
+    // produced none of its own.
+    const writeTreeRepoIds: { kind: string; id: string }[] = [];
+    const writeTree = mock(
+      async (
+        _principal: { kind: string },
+        repoId: { kind: string; id: string },
+        _ref: string,
+        _content: unknown
+      ) => {
+        writeTreeRepoIds.push(repoId);
+        return { commitSha: 'sha' };
+      }
+    );
+    const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
+
+    const insertedRows: { table: 'agent' | 'agentInstance'; rows: { id: string }[] }[] = [];
+    const insert = mock((table: unknown) => ({
+      values: async (rows: unknown) => {
+        const table2 = table === intxSchema.agent ? 'agent' : 'agentInstance';
+        const arr = Array.isArray(rows) ? rows : [rows];
+        insertedRows.push({ table: table2, rows: arr as { id: string }[] });
+        return undefined;
+      },
+    }));
+    const db = { insert } as unknown as HubDb;
+
+    const launched: { agentId: string }[] = [];
+    const launchSession = mock(async (params: { agentId: string }) => {
+      launched.push(params);
+      return undefined;
+    });
+    const sessionService = { launchSession } as unknown as SessionService;
+
+    const sendAgentDeploy = mock(
+      async (
+        _agentAddress: string,
+        _config: HarnessConfig,
+        _workflow: { sources: Record<string, InferenceSource> }
+      ) => ({ publicKey: 'pk' })
+    );
+    const sidecarRouter = {
+      getRoutableAddresses: () => [],
+      sendAgentDeploy,
+    } as unknown as SidecarRouter;
+
+    const service = createWorkflowDeployService({
+      db,
+      repoStore,
+      sidecarRouter,
+      sessionService,
+      directorRegistry: createWorkbenchDirectorRegistry(),
+    });
+
+    const result = await service.deployWorkflow({
+      workflow,
+      deploymentId,
+      deploymentDomain,
+      tenantId: 't1',
+      creatorPrincipalId: 'p1',
+      config: makeConfig(deploymentId, deploymentDomain),
+      deployContent: { systemPrompt: '' },
+      hubPublicKey: 'hubkey',
+    });
+
+    expect(result.kind).toBe('multi-step');
+
+    // CONDITION 2 — the inline step never launched a session; the deployed
+    // step did. (The supervisor uses sendAgentDeploy, not launchSession.)
+    const launchedIds = launched.map((l) => l.agentId);
+    expect(launchedIds).toContain('ins_ses_inline-draft');
+    expect(launchedIds).not.toContain('ins_ses_inline-analyze');
+    expect(launchedIds).toHaveLength(1);
+
+    // No agent-state grants repo was written for the inline step; the deployed
+    // step's grants repo was. (The workflow-kind repo write is separate.)
+    const agentStateIds = writeTreeRepoIds.filter((r) => r.kind === 'agent-state').map((r) => r.id);
+    expect(agentStateIds).toContain('ses_inline-draft');
+    expect(agentStateIds).not.toContain('ses_inline-analyze');
+
+    // No per-step agent/instance row was written for the inline step.
+    const allRowIds = insertedRows.flatMap((b) => b.rows.map((r) => r.id));
+    expect(allRowIds).toContain('ins_ses_inline-draft');
+    expect(allRowIds).not.toContain('ins_ses_inline-analyze');
+    // The supervisor rows are still written (deployment-level, not step-level).
+    expect(allRowIds).toContain('ins_ses_inline');
+
+    // The supervisor frame still pins an inference source for the inline step
+    // (the sidecar's STEP_INFERENCE_SOURCES table reads it for the bare-agent
+    // inference) — proving the inline step is reachable, just not deployed.
+    const deployCall = sendAgentDeploy.mock.calls.at(0);
+    if (!deployCall) throw new Error('sendAgentDeploy was not called');
+    const frameWorkflow = deployCall[2];
+    expect(frameWorkflow.sources.analyze).toEqual(SOURCE);
+    expect(frameWorkflow.sources.draft).toEqual(SOURCE);
   });
 });
 

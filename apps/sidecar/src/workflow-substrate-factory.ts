@@ -42,10 +42,11 @@ import {
   STEP_TOOL_TAG,
   STEP_ARGMAP_TAG,
   DETERMINISTIC_TOOL_KIND,
+  INLINE_INFERENCE_KIND,
 } from '@workbench/agents';
 import { wsUrlToHttp } from './agent-tools';
 import { DEFAULT_REGISTRY_MAX_TARBALL_BYTES, DEFAULT_TOOL_CACHE_MAX_BYTES } from './config';
-import type { Agent, AgentDefinition, BaseEnv, DirectorRegistry } from '@intx/agent';
+import type { Agent, AgentDefinition, AuthorizeFn, BaseEnv, DirectorRegistry } from '@intx/agent';
 import { createAgent, createDefaultDirectorRegistry } from '@intx/agent';
 import { createSSHSignature } from '@intx/crypto-node';
 import { createIsogitStore, type CommitSigner } from '@intx/storage-isogit';
@@ -622,6 +623,19 @@ export function createSidecarStepInvoker(args: {
   // other step delegates to the real inference invoker above. The existing
   // test seam (a test-injected `agentFactory` for pure inference) is
   // untouched — the deterministic branch only triggers on the tag.
+  // Inline single-turn inference dispatch (CL-2251). A step whose
+  // placeholder agent carries the inline marker tag is a pure reasoning turn
+  // the hub deliberately did NOT deploy as a per-step session (no agent-state
+  // repo / DB rows / grants file). We must therefore run it with a BARE
+  // `createAgent` and NEVER route it through `createStepAgentFactory`, which
+  // reads a `STEP_TOOL_CONTEXT_KEY` the inline step's env never carries (the
+  // hub wrote no per-step tool context for it) and throws when it is absent.
+  // The step env's `sources`/`defaultSource` come from the same
+  // `STEP_INFERENCE_SOURCES` table the deployed step path uses — credentials
+  // are pinned at deploy time, never resolved on demand in the sidecar.
+  // A deny-all `authorize` fails closed: an inline step declares no tools, so
+  // a tool call (which would only arise from a misdeclared step) is denied.
+  const inlineAgentFactory = args.agentFactory ?? createAgent;
   return async (req) => {
     const tags = req.agent.tags;
     const toolName = tags?.[STEP_TOOL_TAG];
@@ -636,8 +650,66 @@ export function createSidecarStepInvoker(args: {
         signal: req.signal,
       });
     }
+    if (tags?.[STEP_KIND_TAG] === INLINE_INFERENCE_KIND) {
+      return runInlineInferenceStep({ req, buildEnv, agentFactory: inlineAgentFactory });
+    }
     return inferenceInvoker(req);
   };
+}
+
+/** Deny-all authorize for inline steps: they declare no tools, so any tool
+ * authz must fail closed. */
+const inlineDenyAllAuthorize: AuthorizeFn = async () => ({
+  effect: 'deny',
+  matchingGrants: [],
+  resolvedBy: null,
+});
+
+/**
+ * Encode the step's resolved `input` as the agent's synthetic inbound
+ * message content. Mirrors `@intx/workflow-host`'s step-invoker
+ * `synthesizeInputContent` (not exported): a string passes through; any
+ * other value is JSON-stringified, and a non-serializable input fails loud
+ * rather than sending the literal string "undefined".
+ */
+function synthesizeStepInput(input: unknown): string {
+  if (typeof input === 'string') return input;
+  const encoded = JSON.stringify(input);
+  if (encoded === undefined) {
+    throw new Error(
+      `inline inference step: input of typeof ${typeof input} is not JSON-serializable; the step's input selector must resolve to a serializable value`
+    );
+  }
+  return encoded;
+}
+
+/**
+ * Run an inline single-turn inference step (CL-2251). Builds the per-step
+ * env (pinning `sources`/`defaultSource` from the `STEP_INFERENCE_SOURCES`
+ * table), instantiates a bare agent with a deny-all `authorize`, sends the
+ * step's resolved input, and returns the `{ reply, turn }` output shape the
+ * deployed inference invoker returns. The agent is always torn down.
+ */
+async function runInlineInferenceStep(args: {
+  req: StepInvokeRequest;
+  buildEnv: (req: StepInvokeRequest) => Promise<StepEnvBase>;
+  agentFactory: <EnvReq extends BaseEnv>(
+    def: AgentDefinition<EnvReq>,
+    env: EnvReq
+  ) => Promise<Agent>;
+}): Promise<{ output: { reply: string; turn: unknown } }> {
+  if (args.req.signal.aborted) {
+    throw new DOMException('aborted', 'AbortError');
+  }
+  const envBase = await args.buildEnv(args.req);
+  const env: BaseEnv = { ...envBase, authorize: inlineDenyAllAuthorize };
+  const agent = await args.agentFactory(args.req.agent, env);
+  try {
+    const sendResult = await agent.send(synthesizeStepInput(args.req.input));
+    return { output: { reply: sendResult.reply, turn: sendResult.turn } };
+  } finally {
+    await agent.close();
+  }
 }
 
 /**

@@ -1,37 +1,17 @@
-import { defineAgent } from '@intx/agent';
-import { awaitSignal, defineWorkflow, map, step } from '@intx/workflow';
-import {
-  canonicalizeToolNames,
-  deterministicToolStep,
-  LLM_CREDENTIAL_NAME,
-  LLM_DEFAULT_MODEL,
-} from '@workbench/agents';
+import { awaitSignal, defineWorkflow, map } from '@intx/workflow';
+import { deterministicToolStep, inlineInferenceStep } from '@workbench/agents';
 import { buildCollateralGenerationSystemPrompt, buildExtractionSystemPrompt } from './prompts';
 
 // -------------------------------------------------------------------------
 // Agent definitions
 // -------------------------------------------------------------------------
 
-const analyzeAgent = defineAgent({
-  id: 'pain-point-collateral-analyze',
-  description: 'Extracts pain points from a call transcript plus caller-supplied context.',
-  systemPrompt: buildExtractionSystemPrompt(),
-  tools: [],
-  capabilities: [],
-  inference: { sources: [{ provider: 'openai-compatible', model: LLM_DEFAULT_MODEL }] },
-  tags: { credentialName: LLM_CREDENTIAL_NAME },
-});
-
-const generateAgent = defineAgent({
-  id: 'pain-point-collateral-generate',
-  description:
-    'Generates one piece of sales collateral for a given format and selected pain points.',
-  systemPrompt: buildCollateralGenerationSystemPrompt(),
-  tools: [],
-  capabilities: canonicalizeToolNames(['artifact_create']),
-  inference: { sources: [{ provider: 'openai-compatible', model: LLM_DEFAULT_MODEL }] },
-  tags: { credentialName: LLM_CREDENTIAL_NAME },
-});
+// `analyze` and `generate` are pure single-turn reasoning steps: each returns
+// strict JSON and never calls a tool (the deterministic `persist` step does the
+// artifact creation). Both run as inline-inference steps (CL-2251): the sidecar
+// runs them in-process with a bare `createAgent` and the hub deploys no per-step
+// session for them. See the `analyze` and `generate` steps below — there are no
+// longer analyze/generate defineAgents.
 
 // -------------------------------------------------------------------------
 // Workflow metadata
@@ -50,11 +30,11 @@ export const kind = 'pain-point-collateral';
 //   select       awaitSignal            note-selection      → {noteId}
 //   fetch        deterministicToolStep  granola_get_note    input from steps.select.output
 //   context      awaitSignal            context             → {context: string}
-//   analyze      step(analyzeAgent)     input merge fetch+context outputs
+//   analyze      inlineInferenceStep    input merge fetch+context outputs
 //   ppSelection  awaitSignal            pain-point-selection → {selectedIds: string[]}
 //   fmtSelection awaitSignal            format-selection    → {formats: Array<{format: string}>}
 //   generate     map over fmtSelection.output.formats
-//     └ step(generateAgent) input merge trigger.payload + analyze + ppSelection outputs
+//     └ inlineInferenceStep input merge trigger.payload + analyze + ppSelection outputs
 //   review       awaitSignal            review              → {decisions: Array<{format,title,content}>}
 //                                       (panel sends ONLY approved pieces)
 //   persist      map over review.output.decisions
@@ -73,8 +53,9 @@ export const kind = 'pain-point-collateral';
 //   per entry unconditionally.
 // -------------------------------------------------------------------------
 
-const generateStep = step({
-  agent: generateAgent,
+const generateStep = inlineInferenceStep({
+  id: 'pain-point-collateral-generate',
+  systemPrompt: buildCollateralGenerationSystemPrompt(),
   // trigger.payload = {format: string} (one item from fmtSelection array)
   // merge brings format + pain-point extraction + selected ids together
   input: {
@@ -124,9 +105,11 @@ export const workflow = defineWorkflow({
     // 4. Human adds context
     context: awaitSignal({ name: 'context', after: ['fetch'] }),
 
-    // 5. LLM extracts pain points (input = fetched transcript + user context merged)
-    analyze: step({
-      agent: analyzeAgent,
+    // 5. LLM extracts pain points (input = fetched transcript + user context merged).
+    //    Inline single-turn inference (CL-2251): no tools, so no per-step session.
+    analyze: inlineInferenceStep({
+      id: 'pain-point-collateral-analyze',
+      systemPrompt: buildExtractionSystemPrompt(),
       input: {
         merge: [{ from: 'steps.fetch.output' }, { from: 'steps.context.output' }],
       },

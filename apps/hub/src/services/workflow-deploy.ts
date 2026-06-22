@@ -18,9 +18,16 @@ import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
 import { type } from 'arktype';
 import type { GrantRule } from '@intx/authz';
-import { toolPackagesForCapabilities } from '@workbench/agents';
+import {
+  toolPackagesForCapabilities,
+  INLINE_INFERENCE_KIND,
+  STEP_KIND_TAG,
+} from '@workbench/agents';
 import type { HubDb } from '../db';
 import type { WorkflowDefinition } from '@intx/workflow';
+import type { AgentDefinition, BaseEnv } from '@intx/agent';
+
+type WorkflowPrimitive = WorkflowDefinition['steps'][string];
 import type { HarnessConfig, InferenceSource } from '@intx/types/runtime';
 import type { AgentDeployWorkflow } from '@intx/types/sidecar';
 import type { ToolPackagePin } from '@intx/types/tool-packages';
@@ -118,12 +125,6 @@ export function createWorkflowDeployService(deps: {
   directorRegistry: DirectorRegistry;
 }): WorkflowDeployService {
   const { db, directorRegistry } = deps;
-  const orchestrator = createWorkflowDeployOrchestrator({
-    directorRegistry,
-    workflowRepo: createWorkflowRepoWriter(deps.repoStore),
-    launchSession: toLaunchSession(deps.sessionService),
-    sendMultiStepDeploy: toSendMultiStepDeploy(deps.sidecarRouter),
-  });
 
   // Coalesce concurrent re-establishments of the same deployment. Reconnect,
   // run-start, signal, and the startup backstop can all fire for one
@@ -141,48 +142,69 @@ export function createWorkflowDeployService(deps: {
       const toolPackagePins =
         params.toolPackagePins ?? toolPackagesForCapabilities(capabilityNames(walk));
 
-      // Each step launches as its own agent (`deriveStepAgentId`), but
+      // Partition steps into inline-inference (CL-2251) vs deployed. An inline
+      // step is a no-tool single-turn reasoning turn the sidecar runs
+      // in-process with a bare `createAgent`; it needs NO per-step agent-state
+      // repo, DB rows, or grants file, and the orchestrator's `launchSession`
+      // for it is no-op'd below. This is the actual session-per-step RAM win.
+      // Every OTHER step (deployed reasoning + deterministic tool) keeps the
+      // full per-step provisioning unchanged.
+      const inlineStepIds = collectInlineStepIds(params.workflow);
+      const deployedStepIds = [...walk.perStep.keys()].filter(
+        (stepId) => !inlineStepIds.has(stepId)
+      );
+      const inlineAgentIds = new Set(
+        [...inlineStepIds].map((stepId) =>
+          deriveStepAgentId({ deploymentId: params.deploymentId, stepId })
+        )
+      );
+
+      // Each deployed step launches as its own agent (`deriveStepAgentId`), but
       // interchange's launchSession never writes an `agent` row. The hub's
       // tool-credential gate authorizes a step's harness by that row's pins, so
       // we persist one per step before launch — every step carries the same
-      // union pins the orchestrator hands it.
+      // union pins the orchestrator hands it. Inline steps are skipped: no
+      // launch, no harness, no row.
       const stepCapabilityNames = capabilityNames(walk);
       await writeStepAgentRows({
         db,
         deploymentId: params.deploymentId,
         tenantId: params.tenantId,
         creatorPrincipalId: params.creatorPrincipalId,
-        stepIds: [...walk.perStep.keys()],
+        stepIds: deployedStepIds,
         toolPackagePins,
         capabilityNames: stepCapabilityNames,
       });
 
-      // Write each step's `state/grants.json` into its agent-state repo so
-      // both interchange's supervisor (credentialsSnapshot assembly) and our
-      // sidecar's `readStepGrants` see real grants. Without this the step
-      // agent's grant set is empty and every `tool:<name>`/`invoke` is denied.
+      // Write each deployed step's `state/grants.json` into its agent-state
+      // repo so both interchange's supervisor (credentialsSnapshot assembly)
+      // and our sidecar's `readStepGrants` see real grants. Without this the
+      // step agent's grant set is empty and every `tool:<name>`/`invoke` is
+      // denied. Inline steps declare no tools, so they get no grants file (and
+      // no agent-state repo to hold one).
       await writeStepGrantFiles({
         repoStore: deps.repoStore,
         deploymentId: params.deploymentId,
-        stepIds: [...walk.perStep.keys()],
+        stepIds: deployedStepIds,
         capabilityNames: stepCapabilityNames,
       });
 
       // Persist a per-step `agent_instance` row before the orchestrator
-      // launches each step. Interchange's launch callbacks deliberately do no
-      // DB writes — the native single-agent route creates the instance row
-      // itself before `launchSession` (hub-api instances.ts), and the
-      // `agent.deploy.ack` handler then resolves it via `requireInstance` to
-      // store the step's public key. The orchestrator runs the same launch
-      // path, so without this row every step deploy fails with "No active
-      // instance found for address".
+      // launches each deployed step. Interchange's launch callbacks
+      // deliberately do no DB writes — the native single-agent route creates
+      // the instance row itself before `launchSession` (hub-api instances.ts),
+      // and the `agent.deploy.ack` handler then resolves it via
+      // `requireInstance` to store the step's public key. The orchestrator runs
+      // the same launch path, so without this row every step deploy fails with
+      // "No active instance found for address". Inline steps never launch, so
+      // they get no instance row.
       await writeStepInstanceRows({
         db,
         deploymentId: params.deploymentId,
         deploymentDomain: params.deploymentDomain,
         tenantId: params.tenantId,
         creatorPrincipalId: params.creatorPrincipalId,
-        stepIds: [...walk.perStep.keys()],
+        stepIds: deployedStepIds,
       });
 
       // The orchestrator's multi-step branch also registers a
@@ -207,6 +229,21 @@ export function createWorkflowDeployService(deps: {
         deploymentDomain: params.deploymentDomain,
         tenantId: params.tenantId,
         creatorPrincipalId: params.creatorPrincipalId,
+      });
+
+      // The orchestrator still walks every step (it pins each step's
+      // InferenceSource into the supervisor frame's `sources` map, which the
+      // sidecar's STEP_INFERENCE_SOURCES table reads — inline steps need that
+      // entry too). It calls `launchSession` once per step; we wrap that hook so
+      // an inline step's agentId resolves to a no-op promise WITHOUT touching
+      // the SessionService — zero agent-state repos, zero session launches for
+      // inline steps. Built per-deploy because the inline agentId set depends on
+      // this workflow.
+      const orchestrator = createWorkflowDeployOrchestrator({
+        directorRegistry,
+        workflowRepo: createWorkflowRepoWriter(deps.repoStore),
+        launchSession: toLaunchSession(deps.sessionService, inlineAgentIds),
+        sendMultiStepDeploy: toSendMultiStepDeploy(deps.sidecarRouter),
       });
 
       return orchestrator.deployWorkflow({
@@ -656,22 +693,75 @@ export function createWorkflowRepoWriter(repoStore: AgentRepoStore): WorkflowRep
   };
 }
 
-export function toLaunchSession(sessionService: SessionService): LaunchSessionFn {
-  return ({ agentAddress, agentId, instanceId, config, deployContent, toolPackagePins }) =>
-    sessionService.launchSession({
-      agentAddress,
-      agentId,
-      instanceId,
-      config,
-      // toolPackageManifest is intentionally not forwarded: tools resolve from
-      // toolPackagePins through launchSession's own closure resolution, so the
-      // orchestrator's manifest field (typed `unknown`) is never our source.
-      deployContent: {
-        systemPrompt: deployContent.systemPrompt,
-        ...(deployContent.assetMounts ? { assetMounts: deployContent.assetMounts } : {}),
-      },
-      ...(toolPackagePins ? { toolPackagePins } : {}),
-    });
+// Project a workflow primitive to its agent definition when it carries one.
+// Mirrors interchange's `extractAgent` (capability-walk.ts): `step` and `map`
+// are the agent-carrying shapes; every other primitive has no agent.
+function extractStepAgent(
+  primitive: WorkflowPrimitive | undefined
+): AgentDefinition<BaseEnv> | null {
+  if (primitive === undefined) return null;
+  if (primitive.kind === 'step') return primitive.agent;
+  if (primitive.kind === 'map') return primitive.step.agent;
+  return null;
+}
+
+// The step ids whose agent carries the inline-inference marker tag (CL-2251).
+// These steps are NOT deployed as per-step sessions: the hub skips their
+// agent/instance/grants writers and no-ops their `launchSession`.
+export function collectInlineStepIds(workflow: WorkflowDefinition): Set<string> {
+  const inline = new Set<string>();
+  for (const stepId of workflow.stepOrder) {
+    const primitive = workflow.steps[stepId];
+    const agent = extractStepAgent(primitive);
+    if (agent?.tags?.[STEP_KIND_TAG] === INLINE_INFERENCE_KIND) {
+      inline.add(stepId);
+    }
+  }
+  return inline;
+}
+
+// Wrap the SessionService launch hook so an inline step's agentId resolves to
+// a no-op resolved promise WITHOUT calling `launchSession`. The orchestrator
+// only awaits the promise; never launching means zero per-step agent-state
+// repos / sessions for inline steps — the CL-2251 RAM win. Deployed steps
+// (tool + deployed reasoning) launch unchanged.
+export function toLaunchSession(
+  sessionService: SessionService,
+  inlineAgentIds: ReadonlySet<string> = new Set()
+): LaunchSessionFn {
+  return (params) => {
+    if (inlineAgentIds.has(params.agentId)) {
+      return Promise.resolve();
+    }
+    return launchDeployedSession(sessionService, params);
+  };
+}
+
+function launchDeployedSession(
+  sessionService: SessionService,
+  {
+    agentAddress,
+    agentId,
+    instanceId,
+    config,
+    deployContent,
+    toolPackagePins,
+  }: Parameters<LaunchSessionFn>[0]
+): ReturnType<LaunchSessionFn> {
+  return sessionService.launchSession({
+    agentAddress,
+    agentId,
+    instanceId,
+    config,
+    // toolPackageManifest is intentionally not forwarded: tools resolve from
+    // toolPackagePins through launchSession's own closure resolution, so the
+    // orchestrator's manifest field (typed `unknown`) is never our source.
+    deployContent: {
+      systemPrompt: deployContent.systemPrompt,
+      ...(deployContent.assetMounts ? { assetMounts: deployContent.assetMounts } : {}),
+    },
+    ...(toolPackagePins ? { toolPackagePins } : {}),
+  });
 }
 
 export function toSendMultiStepDeploy(sidecarRouter: SidecarRouter): SendMultiStepDeployFn {

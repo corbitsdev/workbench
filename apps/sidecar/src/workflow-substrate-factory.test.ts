@@ -26,7 +26,7 @@ import {
   createStepToolContextResolver,
 } from './workflow-substrate-factory';
 import type { RepoStore } from '@intx/hub-sessions';
-import type { StepToolContext } from './step-tool-harness';
+import { STEP_TOOL_CONTEXT_KEY, type StepToolContext } from './step-tool-harness';
 
 const tmpDirs: string[] = [];
 const realFetch = globalThis.fetch;
@@ -405,6 +405,84 @@ describe('createSidecarStepInvoker', () => {
       expect(tr).toHaveProperty('callId');
       expect(tr.isError).not.toBe(true);
     }
+  });
+
+  // Inline-inference dispatch (CL-2251). An inline-tagged step is a no-tool
+  // single-turn reasoning turn the hub did NOT deploy as a per-step session,
+  // so the sidecar runs it with a bare createAgent against the step's pinned
+  // STEP_INFERENCE_SOURCES entry — never the tool-capable factory, and the
+  // step env carries NO tool context (the hub wrote none for it).
+  test('runs an inline-inference-tagged step with the pinned source and no tool context', async () => {
+    const dataDir = await makeDataDir();
+    const INLINE_REPLY = '{"painPoints":[]}';
+    const turn = { role: 'assistant', content: INLINE_REPLY } as unknown as SendTurn;
+
+    let capturedEnv: BaseEnv | undefined;
+    let capturedDef: AgentDefinition<BaseEnv> | undefined;
+    let sentContent: string | undefined;
+    let closed = false;
+    const stubAgent: Agent = {
+      send: async (content: Parameters<Agent['send']>[0]) => {
+        sentContent = typeof content === 'string' ? content : content.content;
+        return { reply: INLINE_REPLY, turn };
+      },
+      stream: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ value: undefined, done: true }),
+        }),
+      }),
+      deliver: () => {},
+      close: async () => {
+        closed = true;
+      },
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
+
+    // No resolveStepToolContext wired — exactly the production inline path.
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => 'sig',
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      agentFactory: async (def, env) => {
+        capturedDef = def as AgentDefinition<BaseEnv>;
+        capturedEnv = env;
+        return stubAgent;
+      },
+    });
+
+    const inlineAgent: AgentDefinition<BaseEnv> = {
+      ...makeAgentDefinition('inline-analyze'),
+      systemPrompt: 'extract pain points and return JSON',
+      tags: { 'workbench.stepKind': 'inline-inference' },
+    };
+    const req: StepInvokeRequest = {
+      agent: inlineAgent,
+      input: { transcript: 'they hate slow onboarding' },
+      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
+      signal: new AbortController().signal,
+    };
+
+    const result = await invoke(req);
+
+    // The inline branch returned the real agent reply in the {reply,turn} shape.
+    expect(result.output).toEqual({ reply: INLINE_REPLY, turn });
+    // CONDITION 1: the env's inference source is the pinned STEP_INFERENCE_SOURCES
+    // entry for this step — credentials come from the env table, not on-demand.
+    const env = capturedEnv as BaseEnv;
+    expect(env.sources).toEqual([SOURCE]);
+    expect(env.defaultSource).toBe(SOURCE.id);
+    // No tool context was stashed on the env: the inline path never builds a
+    // tool-capable harness, so createStepAgentFactory's key is absent.
+    expect((env as unknown as Record<string, unknown>)[STEP_TOOL_CONTEXT_KEY]).toBeUndefined();
+    // The step's real system prompt reached the bare agent factory.
+    expect(capturedDef?.systemPrompt).toBe('extract pain points and return JSON');
+    // The resolved input reached the agent's send path, JSON-encoded.
+    expect(sentContent).toBe(JSON.stringify({ transcript: 'they hate slow onboarding' }));
+    // The inline branch tore the agent down.
+    expect(closed).toBe(true);
   });
 });
 
