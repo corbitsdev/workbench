@@ -613,6 +613,42 @@ describe('Panel — review generated pieces (step 5)', () => {
     screen.getByText('Generating collateral…');
   });
 
+  it('reads generated pieces wrapped in a JSON markdown fence', () => {
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({
+          intake: 'completed',
+          select: 'completed',
+          fetch: 'completed',
+          context: 'completed',
+          analyze: 'completed',
+          ppSelection: 'completed',
+          fmtSelection: 'completed',
+          generate: 'completed',
+          review: 'awaiting-signal',
+        })}
+        connected
+        stepOutputs={{
+          intake: NOTE_LIST,
+          analyze: PAIN_POINTS,
+          generate: [
+            {
+              reply: `\`\`\`json
+{"format":"Email","title":"Cut onboarding time","content":"Dear prospect, cut onboarding from weeks to days."}
+\`\`\``,
+            },
+          ],
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+
+    screen.getByText('Cut onboarding time');
+    screen.getByText('Dear prospect, cut onboarding from weeks to days.');
+  });
+
   it('shows a malformed error when generated pieces are not valid', () => {
     render(
       <Panel

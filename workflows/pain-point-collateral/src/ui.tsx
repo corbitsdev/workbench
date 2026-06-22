@@ -117,19 +117,31 @@ function parseFetchedNote(raw: unknown): Decoded<typeof GranolaNoteDetail.infer>
   return { status: 'ok', value: parsed };
 }
 
+function parseAgentJson(
+  reply: string
+): { status: 'pending' } | { status: 'malformed' } | { status: 'ok'; value: unknown } {
+  const trimmed = reply.trim();
+  if (trimmed === '') return { status: 'pending' };
+
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const jsonText = fenced?.[1] ?? trimmed;
+
+  try {
+    return { status: 'ok', value: JSON.parse(jsonText) };
+  } catch {
+    return { status: 'malformed' };
+  }
+}
+
 function parseAnalyze(raw: unknown): Decoded<PainPoint[]> {
   // Agent step: output is { reply: string } — parse JSON from reply
   const envelope = AgentReplyEnvelope(raw);
   if (envelope instanceof type.errors) return { status: 'pending' };
-  if (envelope.reply.trim() === '') return { status: 'pending' };
-  try {
-    const inner = JSON.parse(envelope.reply);
-    const parsed = AnalyzeOutput(inner);
-    if (parsed instanceof type.errors) return { status: 'malformed' };
-    return { status: 'ok', value: parsed.painPoints };
-  } catch {
-    return { status: 'malformed' };
-  }
+  const decoded = parseAgentJson(envelope.reply);
+  if (decoded.status !== 'ok') return decoded;
+  const parsed = AnalyzeOutput(decoded.value);
+  if (parsed instanceof type.errors) return { status: 'malformed' };
+  return { status: 'ok', value: parsed.painPoints };
 }
 
 function parseGeneratedPieces(raw: unknown): Decoded<GeneratedPiece[]> {
@@ -139,14 +151,11 @@ function parseGeneratedPieces(raw: unknown): Decoded<GeneratedPiece[]> {
   for (const item of raw) {
     const envelope = AgentReplyEnvelope(item);
     if (envelope instanceof type.errors) return { status: 'malformed' };
-    try {
-      const inner = JSON.parse(envelope.reply);
-      const parsed = GeneratedPiece(inner);
-      if (parsed instanceof type.errors) return { status: 'malformed' };
-      pieces.push(parsed);
-    } catch {
-      return { status: 'malformed' };
-    }
+    const decoded = parseAgentJson(envelope.reply);
+    if (decoded.status !== 'ok') return { status: 'malformed' };
+    const parsed = GeneratedPiece(decoded.value);
+    if (parsed instanceof type.errors) return { status: 'malformed' };
+    pieces.push(parsed);
   }
   return { status: 'ok', value: pieces };
 }
