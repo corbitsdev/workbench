@@ -32,7 +32,9 @@ const RUN_EVENT_REF = 'refs/heads/main';
 // kept in lockstep deliberately; if one moves, move both. A too-short window
 // risks aborting mid-backlog under IO load and projecting a truncated log (e.g.
 // missing a trailing RunCompleted), and re-projection only fires on a new pack.
-const BACKLOG_IDLE_MS = 1000;
+// 200ms is well above the sub-ms disk replay while removing ~800ms of dead wait
+// per step versus the original 1s (CL-2244).
+const BACKLOG_IDLE_MS = 200;
 
 // All @intx/workflow on-disk event `type` values the fold reacts to. (On disk
 // the state-machine `kind` is written under the field name `type`.)

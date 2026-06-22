@@ -158,9 +158,11 @@ async function collectCompletedSteps(
   // HITL run (awaiting a human signal, so no further events arrive) hangs this
   // endpoint indefinitely, which deadlocks the UI that needs step-1 output to
   // collect that very signal. Backlog events replay from local disk in sub-ms,
-  // so a >1s idle gap means we've caught up (run parked or done) and it is safe
-  // to stop. (CL-2233: the step-output read must never hang on a live run.)
-  const BACKLOG_IDLE_MS = 1000;
+  // so a >200ms idle gap means we've caught up (run parked or done) and it is
+  // safe to stop. (CL-2233: the step-output read must never hang on a live run.)
+  // Lockstep with projection-bridge.ts BACKLOG_IDLE_MS; if one moves, move both
+  // (lowered 1000 → 200 in CL-2244 to cut per-step latency).
+  const BACKLOG_IDLE_MS = 200;
   let idle: ReturnType<typeof setTimeout> | undefined;
   const armIdle = (): void => {
     if (idle !== undefined) clearTimeout(idle);

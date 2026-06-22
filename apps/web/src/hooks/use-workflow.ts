@@ -92,7 +92,7 @@ export function useWorkflowRecord(runId: string | null, tenantId?: string | null
     queryKey: ['workflow-record', runId, tenantId ?? null],
     enabled: !!runId,
     staleTime: 0,
-    refetchInterval: (query) => (query.state.data?.status === 'running' ? 1000 : false),
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 500 : false),
     queryFn: async () => {
       const raw = await api<unknown>(
         'GET',

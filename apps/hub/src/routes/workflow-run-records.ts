@@ -82,12 +82,11 @@ async function resolveDeployment(
 // Returns a gate result to deny, or null to allow. A cross-user request is
 // denied 403; a record in a tenant outside the caller's chain is 404 (it does
 // not exist for them).
-async function assertRunOwnership(
-  db: HubDb,
-  context: { tenantId: string; principalId: string },
+function assertRunOwnership(
+  chain: readonly string[],
+  context: { principalId: string },
   state: { tenantId: string; principalId: string }
-): Promise<{ status: 403 | 404; error: string } | null> {
-  const chain = await getAncestorChain(db, context.tenantId);
+): { status: 403 | 404; error: string } | null {
   if (!chain.includes(state.tenantId)) {
     return { status: 404, error: 'run not found' };
   }
@@ -346,7 +345,8 @@ export function createWorkflowRunRecordsRouter(deps: {
       const state = await loadRunRecord(deps.db, c.req.param('runId'));
       if (!state) return c.json({ error: 'run not found' }, 404);
 
-      const gate = await assertRunOwnership(deps.db, context, state);
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const gate = assertRunOwnership(chain, context, state);
       if (gate) return c.json({ error: gate.error }, gate.status);
 
       return c.json(stateResponse(state));
@@ -403,7 +403,8 @@ export function createWorkflowRunRecordsRouter(deps: {
       const state = await loadRunRecord(deps.db, runId);
       if (!state) return c.json({ error: 'run not found' }, 404);
 
-      const gate = await assertRunOwnership(deps.db, context, state);
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const gate = assertRunOwnership(chain, context, state);
       if (gate) return c.json({ error: gate.error }, gate.status);
 
       let body: unknown;
@@ -422,7 +423,6 @@ export function createWorkflowRunRecordsRouter(deps: {
       }
 
       // Re-establish + address the run's supervisor, then deliver the gate signal.
-      const chain = await getAncestorChain(deps.db, context.tenantId);
       const deployment = await deps.db.query.workflowRun.findFirst({
         where: and(
           eq(workflowRun.deploymentId, state.deploymentId),
