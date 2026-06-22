@@ -14,7 +14,12 @@ function chainableSelect(rows: unknown[]): unknown {
   return chain;
 }
 
-type DbOpts = { toolNames: string[]; agentTenantId?: string; instanceMatches?: boolean };
+type DbOpts = {
+  toolNames: string[];
+  agentTenantId?: string;
+  instanceMatches?: boolean;
+  creatorPrincipalId?: string;
+};
 
 function fakeDb(opts: DbOpts): Parameters<typeof createHubToolsRouter>[0] {
   return {
@@ -23,11 +28,13 @@ function fakeDb(opts: DbOpts): Parameters<typeof createHubToolsRouter>[0] {
       agent: {
         findFirst: async () => ({
           tenantId: opts.agentTenantId ?? 't1',
+          creatorPrincipalId: opts.creatorPrincipalId ?? 'owner1',
           capabilities: { tools: opts.toolNames },
         }),
       },
       agentInstance: {
-        findFirst: async () => ((opts.instanceMatches ?? true) ? { id: 'i1' } : undefined),
+        findFirst: async () =>
+          (opts.instanceMatches ?? true) ? { id: 'i1', principalId: 'instance-owner' } : undefined,
       },
     },
   } as unknown as Parameters<typeof createHubToolsRouter>[0];
@@ -108,5 +115,15 @@ describe('POST /hub-tools/run', () => {
       toolName: 'artifact_list',
     });
     expect(res.status).toBe(403);
+  });
+
+  test('allows deterministic workflow step agents without an instance row', async () => {
+    const res = await post(makeRouter(['artifact_list'], { instanceMatches: false }), {
+      ...baseCall,
+      agentId: 'ins_ses_123-persist',
+      principalId: 'ins_ses_123-persist',
+      toolName: 'artifact_list',
+    });
+    expect(res.status).toBe(200);
   });
 });

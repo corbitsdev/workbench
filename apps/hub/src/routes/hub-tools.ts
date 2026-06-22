@@ -172,7 +172,14 @@ export function createHubToolsRouter(
           ),
         });
       }
-      if (!instance) {
+      // Deterministic workflow steps keep an agent row for tool/package authz but
+      // do not launch an instance; attribute their hub-side writes to the deployer.
+      const effectivePrincipalId =
+        instance?.principalId ??
+        (principalId === agentId && typeof agentRow.creatorPrincipalId === 'string'
+          ? agentRow.creatorPrincipalId
+          : undefined);
+      if (effectivePrincipalId === undefined) {
         return c.json({ error: 'principalId is not an instance of this agent' }, 403);
       }
       // Capabilities are stored as PREFIXED runtime tool names
@@ -191,7 +198,7 @@ export function createHubToolsRouter(
           db,
           tenantId,
           agentId,
-          principalId: instance.principalId,
+          principalId: effectivePrincipalId,
           sessionId,
           ...hubServices,
         })
