@@ -332,7 +332,7 @@ type ActiveMultiStepSupervisor = {
  * other non-`[a-zA-Z0-9_-]` char -> `_`. Verified against
  * `interchange/packages/hub-agent/src/agent-paths.ts`.
  */
-function sanitizeAgentAddress(address: string): string {
+export function sanitizeAgentAddress(address: string): string {
   return address.replace(/@/g, "_at_").replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 

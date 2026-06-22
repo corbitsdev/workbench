@@ -55,6 +55,7 @@ import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/a
 import { createHubToolsRouter } from './routes/hub-tools';
 import { createToolCredentialsRouter } from './routes/tool-credentials';
 import { createToolManifestRouter } from './routes/tool-manifest';
+import { createInternalDeploymentsRouter } from './routes/internal-deployments';
 import { buildToolDefinitions } from './lib/tool-registry';
 import { schema } from './db';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
@@ -665,6 +666,15 @@ app.route(
 );
 app.route('/api/internal', createToolCredentialsRouter(db, config.sidecarToken));
 app.route('/api/internal', createToolManifestRouter(db, config.sidecarToken, assetService));
+app.route(
+  '/api/internal',
+  createInternalDeploymentsRouter(
+    db,
+    config.sidecarToken,
+    repoStore,
+    config.globalTenant.domain
+  )
+);
 app.route(
   '/api/internal',
   createWorkflowDeployRouter({

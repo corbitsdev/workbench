@@ -104,6 +104,46 @@ export function getToolCredential(
   return parsed;
 }
 
+// ─── Live-deployments rail (boot reconciler) ──────────────────────────
+//
+// On a sidecar restart, orphaned on-disk dirs from deployments the hub has
+// since soft-deleted/superseded are otherwise re-established by
+// interchange's `restoreSessions()`. The boot reconciler prunes them
+// BEFORE the orchestrator connects. To do so fail-safely it must know the
+// positively-confirmed LIVE deployment set; the hub serves it over the
+// same sidecar-token channel the tool rails use. The hub is the source of
+// truth and is never mutated by the reconciler — this is a read-only set.
+
+/**
+ * One live deployment's on-disk footprint, as the hub derives it from a
+ * `workflow_run` row with `deletedAt IS NULL`. The reconciler maps each
+ * field to the exact sidecar dir name it must KEEP:
+ *
+ * - `supervisorAddress` / `stepAddresses` -> top-level agent dirs
+ *   (`<dataDir>/<sanitizeAddress(address)>/`).
+ * - `workflowRunSlug` -> `<dataDir>/workflow-runs/<slug>/`.
+ * - `agentStateRepoIds` -> `<dataDir>/agents/<id>/`.
+ *
+ * `supervisorAgentId` and `stepAgentIds` are carried for completeness /
+ * diagnostics (they are the `agent` row ids, not dir names).
+ */
+export const LiveDeployment = type({
+  deploymentId: "string",
+  supervisorAddress: "string",
+  supervisorAgentId: "string",
+  workflowRunSlug: "string",
+  stepAgentIds: "string[]",
+  stepAddresses: "string[]",
+  agentStateRepoIds: "string[]",
+});
+export type LiveDeployment = typeof LiveDeployment.infer;
+
+/** Response body: the positively-confirmed live deployment set. */
+export const LiveDeploymentsResponse = type({
+  deployments: LiveDeployment.array(),
+});
+export type LiveDeploymentsResponse = typeof LiveDeploymentsResponse.infer;
+
 // ─── Hub-RPC rail ──────────────────────────────────────────────────────
 //
 // Hub-backed tools (artifact/dispatch/list_agents) run in the sidecar but

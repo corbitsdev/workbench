@@ -20,6 +20,8 @@ import { resolveSidecarHeartbeat, resolveToolPackageCache } from './config';
 // workflow-host supervisor whose trivial branch calls back into the
 // sidecar's existing single-agent provisioning surface.
 import { createSidecarDeployRouter } from './workflow-host-wiring';
+import { reconcileOrphanedDeploymentDirs } from './boot-reconciler';
+import { getLogger } from '@intx/log';
 import {
   createDeploymentAddressRegistry,
   createMultistepDrainRouter,
@@ -230,5 +232,25 @@ const orchestrator = createSidecarOrchestrator({
 });
 
 resolvedHubLink = orchestrator.hubLink;
+
+// Prune orphaned on-disk deployment dirs BEFORE the orchestrator's hub-link
+// connects, so interchange's `restoreSessions()` never re-establishes
+// deployments the hub has soft-deleted/superseded (CL-2231 part 2). The
+// reconciler is fail-safe (deletes nothing unless it positively confirms the
+// hub's live set), and a throw here must NEVER prevent the sidecar from
+// starting — wrap and continue.
+try {
+  await reconcileOrphanedDeploymentDirs({
+    dataDir,
+    hubHttpUrl: wsUrlToHttp(hubWsUrl),
+    sidecarToken,
+  });
+} catch (err) {
+  // Defensive: the reconciler swallows its own failures, but a thrown error
+  // (e.g. an unexpected logger fault) must not gate boot.
+  getLogger(['sidecar', 'boot']).error('boot reconciler threw; continuing sidecar start: {msg}', {
+    msg: err instanceof Error ? err.message : String(err),
+  });
+}
 
 orchestrator.start();
