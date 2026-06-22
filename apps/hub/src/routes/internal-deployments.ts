@@ -98,6 +98,14 @@ export function createInternalDeploymentsRouter(
         .where(and(isNotNull(workflowRun.deploymentId), isNull(workflowRun.deletedAt)));
 
       const deployments: LiveDeploymentsResponse['deployments'] = [];
+      // Memoize per workflow kind: the definition is keyed by `kind`, so N live
+      // deployments of the same workflow would otherwise re-read the identical
+      // file N times. One read per distinct kind also shrinks the blast radius
+      // of the fail-loud-on-unreadable-definition contract below.
+      const definitionByKind = new Map<
+        string,
+        Awaited<ReturnType<typeof readWorkflowDefinition>>
+      >();
       for (const row of rows) {
         // The `isNotNull` filter guarantees a non-null deploymentId; narrow
         // for the type system without trusting the DB beyond the predicate.
@@ -106,7 +114,9 @@ export function createInternalDeploymentsRouter(
 
         let definition: Awaited<ReturnType<typeof readWorkflowDefinition>>;
         try {
-          definition = await readDefinition(repoStore, row.kind);
+          const cached = definitionByKind.get(row.kind);
+          definition = cached ?? (await readDefinition(repoStore, row.kind));
+          if (cached === undefined) definitionByKind.set(row.kind, definition);
         } catch (err) {
           // A live row whose definition cannot be read is an integrity
           // fault: the reconciler MUST positively confirm the entire live

@@ -23,6 +23,12 @@ provider there breaks sidecar launch with `Source provider "X" is not registered
 - `@workbench/tool-credentials` — env-key helpers, `ToolCredential`, and the wire
   schemas (`ToolCredentialsRequest` / `ToolCredentialsResponse`). No `@intx/agent`
   dependency, so the hub and sidecar import it without loading the agent runtime.
+  It also exports the live-deployments schemas (`LiveDeployment` /
+  `LiveDeploymentsResponse`) shared by the hub's `GET /api/internal/deployments/live`
+  route (producer) and the sidecar boot reconciler (consumer) — see CL-2231 and
+  `docs/IMPLEMENTATION.md` § Sidecar deployment reclamation. These live here, with
+  the other hub↔sidecar internal-rail schemas, so neither side pulls the agent
+  runtime to parse them.
 - `@workbench/tool-credentials/factory` — `defineCredentialedToolPackage`, which
   imports `@intx/agent`. Used only by tool packages.
 

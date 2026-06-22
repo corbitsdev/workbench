@@ -312,6 +312,10 @@ type ActiveMultiStepSupervisor = {
   wired: SidecarWorkflowSupervisor;
   definitionHash: string;
   /**
+   * WORKBENCH-LOCAL (CL-2231): not in upstream interchange — preserve across
+   * the pin-bump re-sync of this vendored file (see AGENTS.md § Dockerfile
+   * Maintenance → vendored workflow-host wiring).
+   *
    * Absolute on-disk dirs this deployment owns, captured at deploy time so
    * the undeploy hook can reclaim the deployment's footprint regardless of
    * whether the step agents are still connected. Holds the per-deployment
@@ -999,6 +1003,7 @@ export function createSidecarDeployRouter(deps: {
       // Child process is live after `spawn` resolves; the failure
       // unwind needs the supervisor handle from here on.
       wiredForUnwind = wired;
+      // WORKBENCH-LOCAL (CL-2231): not in upstream — preserve on pin-bump re-sync.
       // Capture the deployment's on-disk footprint so the undeploy hook can
       // reclaim it (CL-2231). The workflow-run repo dir comes straight from
       // the substrate's pure `getRepoDir` path computation; the per-step
@@ -1266,6 +1271,7 @@ export function createSidecarDeployRouter(deps: {
         agentAddress: frame.agentAddress,
       });
 
+      // WORKBENCH-LOCAL (CL-2231): not in upstream — preserve on pin-bump re-sync.
       // Reclaim the deployment's on-disk footprint (CL-2231). Deployment
       // churn (supersede/redeploy + DELETE) otherwise leaks two things the
       // rest of teardown never touches and exhausts the sidecar volume's
