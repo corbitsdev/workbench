@@ -107,6 +107,7 @@ Each step is a separate commit.
 - `screen.getByText('X')` throws if absent — do not append `.toBeDefined()`.
 - Never assert the mock. A test that checks a value it fed to a mock proves nothing.
 - Mock only at the `@intx/*` or a true module boundary via `mock.module(...)`.
+- Run the suite with `bun test --isolate` (a fresh global per test file). `mock.module(...)` is process-global in bun, so without isolation a mock from one file leaks into another — the usual cause of a test that passes alone but fails in the full run. If a test passes in isolation but fails in the suite, suspect mock leakage, not a product bug.
 
 ## Build Requirements
 
