@@ -39,6 +39,12 @@ import {
 } from './routes/workflow-deploy';
 import { createWorkflowRunsRouter, type EnsureDeploymentRoutableFn } from './routes/workflow-runs';
 import { createWorkflowRunRecordsRouter } from './routes/workflow-run-records';
+import {
+  abortRunHandler,
+  abortActiveRunsHandler,
+  abortRunRouteDescription,
+  abortActiveRunsRouteDescription,
+} from './routes/workflow-run-abort';
 import { wrapRepoStoreWithProjection } from './workflow-executor/projection-bridge';
 import { createWorkflowDeployService } from './services/workflow-deploy';
 import { createWorkflowReconciler } from './services/workflow-reconciler';
@@ -690,6 +696,25 @@ v1.delete(
   }),
   createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
   deleteWorkflowHandler(workflowDeployCoreDeps)
+);
+
+// Abort workflow RUNS (CL-2262), operator-gated by the same session grant guard
+// as the deploy/delete-deployment routes — an operator can abort ANY run, so
+// there is no per-user ownership check (unlike the user-facing /workflow-exec
+// read/resume routes). Marks the run record terminal; CL-2248's boot-reconciler
+// reaps the sidecar dir on next restart. `abort-active` is registered before the
+// `:runId` route so the literal segment is not captured as a runId.
+v1.post(
+  '/workflow-exec/records/abort-active',
+  abortActiveRunsRouteDescription,
+  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  abortActiveRunsHandler({ db })
+);
+v1.delete(
+  '/workflow-exec/records/:runId',
+  abortRunRouteDescription,
+  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  abortRunHandler({ db })
 );
 
 app.route('/api/v1', v1);
