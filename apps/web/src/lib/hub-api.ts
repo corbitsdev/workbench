@@ -1,4 +1,9 @@
-import type { FeedbackSubjectKind } from '@workbench/chat';
+import { type } from 'arktype';
+import {
+  FeedbackListResponse,
+  type FeedbackSubjectKind,
+  type SavedRating,
+} from '@workbench/shared';
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
 // These are interchange endpoints — principals, agent instances, sessions.
@@ -150,20 +155,28 @@ export async function listAgentTemplates(): Promise<AgentCatalogEntry[]> {
   return res.data;
 }
 
-export type { FeedbackSubjectKind };
+export type { FeedbackSubjectKind, SavedRating };
 
-export type SavedRating = {
-  subjectId: string;
-  subjectKind: FeedbackSubjectKind;
-  rating: 1 | -1;
-};
+/**
+ * Returns a new ratings list with `next` upserted by (subjectId, subjectKind).
+ * Used to keep the feedback query cache consistent with a just-saved rating
+ * while the invalidate-driven refetch is in flight, so the displayed pressed
+ * state never regresses to a stale value between save and refetch.
+ */
+export function upsertRating(prev: SavedRating[] | undefined, next: SavedRating): SavedRating[] {
+  const without = (prev ?? []).filter(
+    (r) => !(r.subjectId === next.subjectId && r.subjectKind === next.subjectKind)
+  );
+  return [...without, next];
+}
 
 export async function getOutputFeedback(instanceId: string): Promise<SavedRating[]> {
-  const res = await hubFetch<{ ratings: SavedRating[] }>(
-    'GET',
-    `v1/instances/${instanceId}/feedback`
-  );
-  return res.ratings;
+  const res = await hubFetch<unknown>('GET', `v1/instances/${instanceId}/feedback`);
+  const parsed = FeedbackListResponse(res);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed feedback response: ${parsed.summary}`);
+  }
+  return parsed.ratings;
 }
 
 export async function saveOutputFeedback(

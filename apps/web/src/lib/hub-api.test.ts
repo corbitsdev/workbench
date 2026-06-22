@@ -5,6 +5,7 @@ import {
   deployAgentFromTemplate,
   getMe,
   getMyPrincipals,
+  getOutputFeedback,
   launchInstanceSession,
   listAgentInstances,
   listAgentTemplates,
@@ -12,7 +13,9 @@ import {
   principalsToWorkbenches,
   principalToWorkbenchEntry,
   stopAgentInstance,
+  upsertRating,
   type Principal,
+  type SavedRating,
 } from './hub-api';
 
 describe('principalsToWorkbenches', () => {
@@ -240,6 +243,32 @@ describe('hub-api network helpers', () => {
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ templateKey: 'oat' });
   });
 
+  it('getOutputFeedback parses the ratings envelope and returns the array', async () => {
+    const ratings = [
+      { subjectId: 'tp-1', subjectKind: 'turn_part', rating: 1 },
+      { subjectId: 'step-2', subjectKind: 'workflow_step', rating: -1 },
+    ];
+    const calls = installFetch(() => ({ body: { ratings } }));
+
+    expect(await getOutputFeedback('inst-1')).toEqual(ratings as SavedRating[]);
+    expect(calls[0]!.url).toContain('/api/v1/instances/inst-1/feedback');
+    expect(calls[0]!.init?.method).toBe('GET');
+  });
+
+  it('getOutputFeedback rejects when the response fails schema validation', async () => {
+    installFetch(() => ({
+      body: { ratings: [{ subjectId: 'tp-1', subjectKind: 'turn_part', rating: 7 }] },
+    }));
+
+    await expect(getOutputFeedback('inst-1')).rejects.toThrow(/Malformed feedback response/);
+  });
+
+  it('getOutputFeedback rejects when the envelope shape is wrong', async () => {
+    installFetch(() => ({ body: { notRatings: [] } }));
+
+    await expect(getOutputFeedback('inst-1')).rejects.toThrow(/Malformed feedback response/);
+  });
+
   it('throws with the server error message and status on a non-ok response', async () => {
     installFetch(() => ({ ok: false, status: 403, body: { error: 'forbidden' } }));
 
@@ -250,5 +279,42 @@ describe('hub-api network helpers', () => {
     installFetch(() => ({ ok: false, status: 500, bodyThrows: true }));
 
     await expect(getMe()).rejects.toMatchObject({ message: 'HTTP 500', status: 500 });
+  });
+});
+
+describe('upsertRating', () => {
+  it('appends a rating when none exists for the subject', () => {
+    const next: SavedRating = { subjectId: 'tp-1', subjectKind: 'turn_part', rating: 1 };
+    expect(upsertRating([], next)).toEqual([next]);
+    expect(upsertRating(undefined, next)).toEqual([next]);
+  });
+
+  it('replaces the existing rating for the same subject without duplicating', () => {
+    const prev: SavedRating[] = [{ subjectId: 'tp-1', subjectKind: 'turn_part', rating: 1 }];
+    const next: SavedRating = { subjectId: 'tp-1', subjectKind: 'turn_part', rating: -1 };
+
+    const result = upsertRating(prev, next);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.rating).toBe(-1);
+  });
+
+  it('treats a different subjectKind for the same id as a distinct subject', () => {
+    const prev: SavedRating[] = [{ subjectId: 's-1', subjectKind: 'turn_part', rating: 1 }];
+    const next: SavedRating = { subjectId: 's-1', subjectKind: 'workflow_step', rating: 1 };
+
+    const result = upsertRating(prev, next);
+    expect(result).toHaveLength(2);
+  });
+
+  it('leaves other subjects untouched', () => {
+    const prev: SavedRating[] = [
+      { subjectId: 'tp-1', subjectKind: 'turn_part', rating: 1 },
+      { subjectId: 'tp-2', subjectKind: 'turn_part', rating: 1 },
+    ];
+    const next: SavedRating = { subjectId: 'tp-1', subjectKind: 'turn_part', rating: -1 };
+
+    const result = upsertRating(prev, next);
+    expect(result).toHaveLength(2);
+    expect(result.find((r) => r.subjectId === 'tp-2')!.rating).toBe(1);
   });
 });
