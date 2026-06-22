@@ -5,6 +5,8 @@ import { type ChatMessage, type ChatImage } from './types';
 import { ReasoningDisclosure } from './ReasoningDisclosure';
 import { extractUIBlockFromText, type UIBlock, type UIResponse } from './ui-block';
 import { UIBlockView } from './UIBlockView';
+import { MessageFeedback } from './MessageFeedback';
+import type { FeedbackSubjectKind } from './feedback-types';
 
 export interface MessageBubbleProps {
   message: ChatMessage;
@@ -12,6 +14,11 @@ export interface MessageBubbleProps {
   onRespond?: (response: UIResponse) => void;
   /** Forwarded to document UI blocks for copy / download / save-artifact. */
   onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
+  /**
+   * When provided, a thumbs up/down row is shown below settled agent messages.
+   * The host supplies the save function so the chat package stays transport-free.
+   */
+  onRate?: (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) => Promise<void>;
 }
 
 /**
@@ -47,7 +54,7 @@ function InlineImage({ image }: { image: ChatImage }) {
   );
 }
 
-export function MessageBubble({ message, onRespond, onAction }: MessageBubbleProps) {
+export function MessageBubble({ message, onRespond, onAction, onRate }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isStreaming = message.status === 'sending';
@@ -111,6 +118,9 @@ export function MessageBubble({ message, onRespond, onAction }: MessageBubblePro
         >
           {renderBody()}
         </div>
+      )}
+      {message.role === 'agent' && message.status !== 'sending' && onRate !== undefined && (
+        <MessageFeedback subjectId={message.id} subjectKind="turn_part" onRate={onRate} />
       )}
       {hasImages &&
         message.images!.map((image, index) => <InlineImage key={index} image={image} />)}

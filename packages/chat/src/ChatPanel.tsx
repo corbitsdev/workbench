@@ -11,6 +11,7 @@ import { ChatThread } from './ChatThread';
 import { QuickReplyChips } from './QuickReplyChips';
 import { ChatInput } from './ChatInput';
 import type { UIBlock, UIResponse } from './ui-block';
+import type { FeedbackSubjectKind } from './feedback-types';
 
 export interface ChatPanelProps {
   agent: ChatAgentIdentity;
@@ -33,6 +34,8 @@ export interface ChatPanelProps {
   onRespond?: (response: UIResponse) => void;
   /** Wired to document UI block actions (copy / download / save-artifact). */
   onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
+  /** When provided, thumbs up/down buttons appear below settled agent messages. */
+  onRate?: (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) => Promise<void>;
   className?: string;
   notice?: React.ReactNode;
 }
@@ -56,6 +59,7 @@ export function ChatPanel({
   inputDisabled,
   onRespond,
   onAction,
+  onRate,
   className,
   notice,
 }: ChatPanelProps) {
@@ -112,6 +116,7 @@ export function ChatPanel({
         typingLabel={`${agent.name} is typing`}
         {...(onRespond !== undefined ? { onRespond } : {})}
         {...(onAction !== undefined ? { onAction } : {})}
+        {...(onRate !== undefined ? { onRate } : {})}
       />
 
       {quickReplies !== undefined && quickReplies.length > 0 && onQuickReply !== undefined && (

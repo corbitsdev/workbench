@@ -19,7 +19,7 @@ import {
   type ChatActivity,
 } from '@workbench/chat';
 import { type AgentActivity } from '@intx/hub-client';
-import { launchInstanceSession } from '../lib/hub-api';
+import { launchInstanceSession, saveOutputFeedback } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 import { classifyLaunchState, isLaunchableStatus } from './agent-launch-helpers';
 
@@ -311,6 +311,9 @@ export function AgentChat({
       }}
       activity={activity}
       onClose={onClose}
+      onRate={(subjectId, subjectKind, rating) =>
+        saveOutputFeedback(instanceId, subjectId, subjectKind, rating)
+      }
     />
   );
 }

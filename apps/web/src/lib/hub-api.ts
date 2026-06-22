@@ -148,6 +148,21 @@ export async function listAgentTemplates(): Promise<AgentCatalogEntry[]> {
   return res.data;
 }
 
+export type FeedbackSubjectKind = 'turn_part' | 'workflow_step';
+
+export async function saveOutputFeedback(
+  instanceId: string,
+  subjectId: string,
+  subjectKind: FeedbackSubjectKind,
+  rating: 1 | -1
+): Promise<void> {
+  await hubFetch<void>('POST', `v1/instances/${instanceId}/feedback`, {
+    subjectId,
+    subjectKind,
+    rating,
+  });
+}
+
 export async function deployAgentFromTemplate(
   tenantId: string,
   templateKey: string

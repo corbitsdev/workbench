@@ -24,7 +24,7 @@ import {
   type UIResponse,
 } from '@workbench/chat';
 import { type AgentActivity } from '@intx/hub-client';
-import { getMe, launchInstanceSession } from '../lib/hub-api';
+import { getMe, launchInstanceSession, saveOutputFeedback } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 import { useChatLauncher } from '../lib/chat-launcher-context';
 
@@ -363,6 +363,8 @@ export function PersonalAgentChat() {
       handleSend(response.value);
     };
 
+    const instanceId = instanceIdRef.current;
+
     return (
       <ChatPanel
         agent={MYRA}
@@ -373,6 +375,12 @@ export function PersonalAgentChat() {
         dockState={dockState}
         onToggleDock={toggleDock}
         onClose={() => setOpen(false)}
+        {...(instanceId !== null
+          ? {
+              onRate: (subjectId, subjectKind, rating) =>
+                saveOutputFeedback(instanceId, subjectId, subjectKind, rating),
+            }
+          : {})}
       />
     );
   }
