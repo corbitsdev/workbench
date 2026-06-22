@@ -199,6 +199,14 @@ describe("findListOperation", () => {
       findListOperation([{ tag: "X", method: "post", path: "/x" }], "X"),
     ).toBeUndefined();
   });
+
+  it("prefers the shorter path when two GETs tie on path-param count", () => {
+    const tieOps: OperationSummary[] = [
+      { tag: "Workflows", method: "get", path: "/workflow-exec/credentials" },
+      { tag: "Workflows", method: "get", path: "/workflow-runs" },
+    ];
+    expect(findListOperation(tieOps, "Workflows")?.path).toBe("/workflow-runs");
+  });
 });
 
 describe("extractItems", () => {

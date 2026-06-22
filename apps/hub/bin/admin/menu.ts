@@ -88,9 +88,11 @@ export function findListOperation(
   const gets = operations.filter((op) => op.tag === tag && op.method === "get");
   if (gets.length === 0) return undefined;
   const pathParamCount = (path: string) => (path.match(/[:{]/g) ?? []).length;
-  return [...gets].sort(
-    (a, b) => pathParamCount(a.path) - pathParamCount(b.path),
-  )[0];
+  return [...gets].sort((a, b) => {
+    const paramDiff = pathParamCount(a.path) - pathParamCount(b.path);
+    if (paramDiff !== 0) return paramDiff;
+    return a.path.length - b.path.length;
+  })[0];
 }
 
 // Normalize a list response to its items + optional next-page cursor. Handles
