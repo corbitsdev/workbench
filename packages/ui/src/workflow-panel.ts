@@ -1,5 +1,13 @@
 import type { RunState } from '@intx/workflow';
 
+export interface WorkflowCredential {
+  id: string;
+  name: string;
+  providerName: string;
+  providerPlugin: string;
+  model?: string;
+}
+
 export interface WorkflowPanelProps {
   deploymentId: string;
   state: RunState | null;
@@ -21,4 +29,6 @@ export interface WorkflowPanelProps {
   signalPending: boolean;
   onSignal: (signalName: string, payload?: unknown) => void;
   onClose: () => void;
+  /** Inference credentials passed from the host for config-step pickers. */
+  credentials?: WorkflowCredential[];
 }

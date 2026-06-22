@@ -1,4 +1,4 @@
-import { getAncestorChain } from '@intx/db';
+import { getAncestorChain, schema as intxSchema } from '@intx/db';
 import { getLogger } from '@intx/log';
 import { type } from 'arktype';
 import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
@@ -463,6 +463,79 @@ export function createWorkflowRunRecordsRouter(deps: {
       const advanced: RunState = { ...state, status: 'running' };
       await runStore.save(advanced);
       return c.json(stateResponse(advanced));
+    }
+  );
+
+  // Inference credentials visible to the caller's tenant chain — used by the
+  // A/B compare config step to populate the provider/model dropdowns. Returns
+  // only tenant-owned (principalId IS NULL) credentials whose provider plugin
+  // is in the inference whitelist; secrets are never included.
+  const INFERENCE_PLUGINS = new Set(['anthropic', 'openai', 'openai-compatible', 'google-genai']);
+
+  router.get(
+    '/workflow-exec/credentials',
+    describeRoute({
+      tags: ['Workflows'],
+      summary: 'List inference credentials for workflow configuration',
+      description:
+        'Returns tenant-owned inference credentials (no secrets) whose provider plugin is in the inference whitelist. Used to populate provider/model pickers in workflow config UIs.',
+      parameters: [
+        {
+          name: 'tenantId',
+          in: 'query',
+          required: false,
+          description: 'Target workbench tenant id.',
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        200: { description: 'List of inference credentials' },
+        403: { description: 'Forbidden' },
+      },
+    }),
+    async (c) => {
+      const userId = c.get('userId');
+      const { context, forbidden } = await resolveContext(deps.db, userId, c.req.query('tenantId'));
+      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
+      if (!context) return c.json({ error: 'User context not found' }, 403);
+
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+
+      const rows = await deps.db
+        .select({
+          id: intxSchema.credential.id,
+          name: intxSchema.credential.name,
+          metadata: intxSchema.credential.metadata,
+          providerName: intxSchema.provider.name,
+          providerPlugin: intxSchema.provider.plugin,
+        })
+        .from(intxSchema.credential)
+        .innerJoin(
+          intxSchema.provider,
+          eq(intxSchema.credential.providerId, intxSchema.provider.id)
+        )
+        .where(
+          and(
+            inArray(intxSchema.credential.tenantId, [...chain]),
+            isNull(intxSchema.credential.principalId)
+          )
+        );
+
+      const CredentialMeta = type({ 'model?': 'string' });
+      const result = rows
+        .filter((r) => INFERENCE_PLUGINS.has(r.providerPlugin))
+        .map((r) => {
+          const meta = CredentialMeta(r.metadata);
+          return {
+            id: r.id,
+            name: r.name,
+            providerName: r.providerName,
+            providerPlugin: r.providerPlugin,
+            model: meta instanceof type.errors ? undefined : meta.model,
+          };
+        });
+
+      return c.json(result);
     }
   );
 

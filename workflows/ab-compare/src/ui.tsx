@@ -1,37 +1,35 @@
-import { type ReactNode, useState } from "react";
-import { type } from "arktype";
-import type { RunState, StepState } from "@intx/workflow";
+import { type ReactNode, useState, useCallback, useMemo } from 'react';
+import { type } from 'arktype';
+import type { RunState, StepState } from '@intx/workflow';
 import {
   Button,
   HorizontalStepper,
   Markdown,
+  type WorkflowCredential,
   type WorkflowPanelProps,
   type WorkflowStep,
-} from "@workbench/ui";
+} from '@workbench/ui';
+import {
+  defaultAbComparisonModel,
+  isAbComparisonModelAllowed,
+  listAbComparisonModels,
+} from './models';
 
-const CONFIG_SIGNAL = "ab-config";
-const REVIEW_SIGNAL = "comparison-review";
+const CONFIG_SIGNAL = 'ab-config';
+const REVIEW_SIGNAL = 'comparison-review';
 
-const STEP_ORDER = [
-  "config",
-  "execute",
-  "compare",
-  "review",
-  "persist",
-] as const;
+const STEP_ORDER = ['config', 'execute', 'compare', 'review', 'persist'] as const;
 type StepKey = (typeof STEP_ORDER)[number];
 
 const STEP_LABELS: Record<StepKey, string> = {
-  config: "Configure",
-  execute: "Execute",
-  compare: "Compare",
-  review: "Review",
-  persist: "Persist",
+  config: 'Configure',
+  execute: 'Execute',
+  compare: 'Compare',
+  review: 'Review',
+  persist: 'Persist',
 };
 
-// One arm of the comparison as the panel sends it. The shared `input` is
-// injected onto each variant so the map'd execute step gets a self-contained
-// payload (the runtime cannot splice sibling fields into a map item).
+// The payload sent on the ab-config signal.
 interface VariantConfig {
   label: string;
   providerName: string;
@@ -42,50 +40,56 @@ interface VariantConfig {
 }
 
 // Inline-inference step output shape: { reply: string, turn?: unknown }.
-const AgentStepOutput = type({ reply: "string", "turn?": "unknown" });
+const AgentStepOutput = type({ reply: 'string', 'turn?': 'unknown' });
 // The execute map emits an array of per-variant agent outputs.
 const ExecuteMapOutput = AgentStepOutput.array();
 
 // The compare agent emits STRICT JSON in its reply.
 const CompareJSON = type({
-  "summary?": "string",
-  "ranking?": type({
-    rank: "number",
-    label: "string",
-    "rationale?": "string",
+  'summary?': 'string',
+  'ranking?': type({
+    rank: 'number',
+    label: 'string',
+    'rationale?': 'string',
   }).array(),
-  "recommendation?": "string",
+  'recommendation?': 'string',
+});
+
+// The config signal payload we read back for the reveal.
+const ConfigPayload = type({
+  variants: type({
+    label: 'string',
+    providerName: 'string',
+    model: 'string',
+    'systemPrompt?': 'string',
+    'skill?': 'string',
+    input: 'string',
+  }).array(),
+  input: 'string',
 });
 
 // `deterministicToolStep` output: { callId: string, content: "<JSON string>" }.
-const ToolResultEnvelope = type({ callId: "string", content: "string" });
+const ToolResultEnvelope = type({ callId: 'string', content: 'string' });
 
 const PersistContent = type({
-  "artifactId?": "string",
-  "title?": "string",
-  "kind?": "string",
-  "version?": "number",
+  'artifactId?': 'string',
+  'title?': 'string',
+  'kind?': 'string',
+  'version?': 'number',
 });
 
-type StepPhase = StepState["phase"];
+type StepPhase = StepState['phase'];
 
-function phaseFor(
-  state: RunState | null,
-  stepId: StepKey,
-): StepPhase | undefined {
+function phaseFor(state: RunState | null, stepId: StepKey): StepPhase | undefined {
   return state?.steps.get(stepId)?.phase;
 }
 
-function toStepperStatus(phase: StepPhase | undefined): WorkflowStep["status"] {
-  if (phase === "completed") return "completed";
-  if (
-    phase === "in-flight" ||
-    phase === "awaiting-signal" ||
-    phase === "awaiting-timer"
-  ) {
-    return "current";
+function toStepperStatus(phase: StepPhase | undefined): WorkflowStep['status'] {
+  if (phase === 'completed') return 'completed';
+  if (phase === 'in-flight' || phase === 'awaiting-signal' || phase === 'awaiting-timer') {
+    return 'current';
   }
-  return "pending";
+  return 'pending';
 }
 
 function buildStepperSteps(state: RunState | null): WorkflowStep[] {
@@ -96,25 +100,18 @@ function buildStepperSteps(state: RunState | null): WorkflowStep[] {
   }));
 }
 
-/**
- * Returns the first step that is not yet `completed`, or `"persist"` when all
- * steps are done (final state). This drives the guided "render only the active
- * step" rule.
- */
 function activeStep(state: RunState | null): StepKey {
   for (const id of STEP_ORDER) {
-    if (phaseFor(state, id) !== "completed") return id;
+    if (phaseFor(state, id) !== 'completed') return id;
   }
-  return "persist";
+  return 'persist';
 }
 
 // ── Shared layout ────────────────────────────────────────────────────────────
 
 function Card({ children }: { children: ReactNode }) {
   return (
-    <section className="rounded-panel border border-border bg-surface p-6">
-      {children}
-    </section>
+    <section className="rounded-panel border border-border bg-surface p-6">{children}</section>
   );
 }
 
@@ -130,177 +127,355 @@ function LoadingState({ label }: { label: string }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+// ── Config wizard step bar ────────────────────────────────────────────────────
+
+type ConfigStep = 'comparisons' | 'configure' | 'input';
+
+const CONFIG_STEP_LABELS: Record<ConfigStep, string> = {
+  comparisons: 'Comparisons',
+  configure: 'Configure',
+  input: 'Input',
+};
+
+function ConfigStepBar({ currentStep }: { currentStep: ConfigStep }) {
+  const steps: ConfigStep[] = ['comparisons', 'configure', 'input'];
+  const index = steps.indexOf(currentStep);
   return (
-    <label className="block space-y-1">
-      <span className="text-xs font-medium text-text-2">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-const inputClass =
-  "w-full rounded-lg border border-border bg-surface-2 p-2 text-sm text-text";
-
-// ── Variant editor ───────────────────────────────────────────────────────────
-
-function VariantEditor({
-  title,
-  value,
-  onChange,
-}: {
-  title: string;
-  value: VariantConfig;
-  onChange: (next: VariantConfig) => void;
-}) {
-  return (
-    <div className="space-y-3 rounded-lg border border-border bg-surface-2 p-4">
-      <p className="text-sm font-medium text-text">{title}</p>
-      <Field label="Provider">
-        <input
-          className={inputClass}
-          value={value.providerName}
-          onChange={(e) => onChange({ ...value, providerName: e.target.value })}
-          placeholder="anthropic"
-        />
-      </Field>
-      <Field label="Model">
-        <input
-          className={inputClass}
-          value={value.model}
-          onChange={(e) => onChange({ ...value, model: e.target.value })}
-          placeholder="claude-sonnet-4"
-        />
-      </Field>
-      <Field label="Skill (optional guidance)">
-        <input
-          className={inputClass}
-          value={value.skill ?? ""}
-          onChange={(e) => onChange({ ...value, skill: e.target.value })}
-          placeholder="e.g. Hammy humanizer"
-        />
-      </Field>
-      <Field label="Variant instruction (optional)">
-        <textarea
-          className={inputClass}
-          rows={2}
-          value={value.systemPrompt ?? ""}
-          onChange={(e) => onChange({ ...value, systemPrompt: e.target.value })}
-          placeholder="A variant-specific system prompt"
-        />
-      </Field>
+    <div className="flex items-center gap-2 pb-4 shrink-0">
+      {steps.map((step, i) => (
+        <div key={step} className="flex items-center gap-2">
+          <div
+            className={`grid h-6 w-6 place-items-center rounded-full text-[11px] font-semibold ${
+              i < index
+                ? 'bg-green text-white'
+                : i === index
+                  ? 'bg-orange text-white'
+                  : 'bg-surface-2 text-text-3'
+            }`}
+          >
+            {i < index ? '✓' : i + 1}
+          </div>
+          <span className={`text-[12px] font-medium ${i === index ? 'text-text' : 'text-text-3'}`}>
+            {CONFIG_STEP_LABELS[step]}
+          </span>
+          {i < steps.length - 1 && <span className="mx-1 text-text-3">›</span>}
+        </div>
+      ))}
     </div>
   );
 }
 
-// ── Step screens ─────────────────────────────────────────────────────────────
+// ── Config wizard state ───────────────────────────────────────────────────────
 
-function emptyVariant(label: string): VariantConfig {
-  return { label, providerName: "", model: "", input: "" };
+const PROVIDER_WHITELIST = new Set(['openai-compatible', 'openai', 'anthropic', 'google-genai']);
+
+interface SlotState {
+  credentialId: string;
+  providerName: string;
+  providerPlugin: string;
+  model: string;
+  skill: string;
 }
+
+function emptySlot(): SlotState {
+  return {
+    credentialId: '',
+    providerName: '',
+    providerPlugin: '',
+    model: '',
+    skill: '',
+  };
+}
+
+// ── Config screen ─────────────────────────────────────────────────────────────
 
 function ConfigScreen({
   phase,
   connected,
   signalPending,
+  credentials,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
   signalPending: boolean;
+  credentials: WorkflowCredential[] | undefined;
   onSubmit: (payload: { variants: VariantConfig[]; input: string }) => void;
 }) {
-  const [variantA, setVariantA] = useState<VariantConfig>(
-    emptyVariant("Variant 1"),
-  );
-  const [variantB, setVariantB] = useState<VariantConfig>(
-    emptyVariant("Variant 2"),
-  );
-  const [input, setInput] = useState("");
+  const [configStep, setConfigStep] = useState<ConfigStep>('comparisons');
+  const [slots, setSlots] = useState<SlotState[]>([emptySlot(), emptySlot()]);
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [textInput, setTextInput] = useState('');
+  const [error, setError] = useState('');
 
-  const variantsReady =
-    variantA.providerName.trim().length > 0 &&
-    variantA.model.trim().length > 0 &&
-    variantB.providerName.trim().length > 0 &&
-    variantB.model.trim().length > 0;
-  const canSubmit =
-    connected && !signalPending && variantsReady && input.trim().length > 0;
+  const whitelisted = useMemo(
+    () => (credentials ?? []).filter((c) => PROVIDER_WHITELIST.has(c.providerPlugin)),
+    [credentials]
+  );
 
-  if (phase !== "awaiting-signal") {
+  const updateSlotCredential = useCallback(
+    (index: number, credentialId: string) => {
+      setSlots((prev) => {
+        const next = [...prev];
+        const cred = whitelisted.find((c) => c.id === credentialId);
+        const providerName = cred?.providerName ?? '';
+        const providerPlugin = cred?.providerPlugin ?? '';
+        next[index] = {
+          credentialId: cred?.id ?? '',
+          providerName,
+          providerPlugin,
+          model: defaultAbComparisonModel(providerName, providerPlugin) ?? '',
+          skill: next[index]!.skill,
+        };
+        return next;
+      });
+    },
+    [whitelisted]
+  );
+
+  const updateSlotModel = useCallback((index: number, model: string) => {
+    setSlots((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index]!, model };
+      return next;
+    });
+  }, []);
+
+  const updateSlotSkill = useCallback((index: number, skill: string) => {
+    setSlots((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index]!, skill };
+      return next;
+    });
+  }, []);
+
+  const addSlot = () => {
+    setSlots((prev) => [...prev, emptySlot()]);
+  };
+
+  const removeSlot = (index: number) => {
+    setSlots((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleNext = () => {
+    setError('');
+    if (configStep === 'comparisons') {
+      const filled = slots.filter((s) => s.credentialId);
+      if (filled.length < 2) {
+        setError('Select at least two providers to compare.');
+        return;
+      }
+      for (const s of filled) {
+        if (!s.model) {
+          setError('Select a model for each comparison.');
+          return;
+        }
+        if (!isAbComparisonModelAllowed(s.providerName, s.providerPlugin, s.model)) {
+          setError(`Model ${s.model} is not available for ${s.providerName}.`);
+          return;
+        }
+      }
+      setConfigStep('configure');
+    } else if (configStep === 'configure') {
+      setConfigStep('input');
+    } else if (configStep === 'input') {
+      if (!textInput.trim()) {
+        setError('Enter some text to run.');
+        return;
+      }
+      const sharedInput = textInput.trim();
+      const variants: VariantConfig[] = slots
+        .filter((s) => s.credentialId)
+        .map((s, i) => ({
+          label: `Variant ${i + 1}`,
+          providerName: s.providerName,
+          model: s.model,
+          input: sharedInput,
+          ...(systemPrompt.trim() ? { systemPrompt: systemPrompt.trim() } : {}),
+          ...(s.skill.trim() ? { skill: s.skill.trim() } : {}),
+        }));
+      onSubmit({ variants, input: sharedInput });
+    }
+  };
+
+  const handleBack = () => {
+    setError('');
+    if (configStep === 'configure') setConfigStep('comparisons');
+    else if (configStep === 'input') setConfigStep('configure');
+  };
+
+  if (phase !== 'awaiting-signal') {
     return <LoadingState label="Waiting for the run to start…" />;
   }
 
-  function handleSubmit() {
-    const shared = input.trim();
-    const variants: VariantConfig[] = [variantA, variantB].map((v) => ({
-      label: v.label,
-      providerName: v.providerName.trim(),
-      model: v.model.trim(),
-      input: shared,
-      ...(v.systemPrompt && v.systemPrompt.trim().length > 0
-        ? { systemPrompt: v.systemPrompt.trim() }
-        : {}),
-      ...(v.skill && v.skill.trim().length > 0
-        ? { skill: v.skill.trim() }
-        : {}),
-    }));
-    onSubmit({ variants, input: shared });
-  }
-
   return (
-    <Card>
-      <CardTitle>Configure the blind comparison</CardTitle>
-      <p className="mb-4 text-xs text-text-3">
-        Define two variants — a provider, a model, and optional skill or
-        instruction each. The shared input runs blind across both; you'll review
-        the ranked outputs before anything is saved.
-      </p>
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!canSubmit) return;
-          handleSubmit();
-        }}
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <VariantEditor
-            title="Variant A"
-            value={variantA}
-            onChange={setVariantA}
-          />
-          <VariantEditor
-            title="Variant B"
-            value={variantB}
-            onChange={setVariantB}
-          />
-        </div>
-        <Field label="Shared input">
-          <textarea
-            className="w-full rounded-lg border border-border bg-surface-2 p-3 text-sm text-text"
-            rows={5}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="The task to run against each variant"
-          />
-        </Field>
-        <div className="flex items-center gap-3">
-          <Button
-            type="submit"
-            variant="primary"
-            size="sm"
-            disabled={!canSubmit}
-          >
-            Run comparison
-          </Button>
-          {!connected && (
-            <p className="text-xs text-text-3">
-              Reconnecting — input unavailable.
+    <div className="flex flex-col h-full">
+      <Card>
+        <ConfigStepBar currentStep={configStep} />
+
+        {configStep === 'comparisons' && (
+          <div className="space-y-4">
+            <p className="text-[13px] text-text-2">
+              Choose how many comparisons you want and pick a provider for each slot.
             </p>
-          )}
+            {credentials === undefined && (
+              <p className="text-[13px] text-text-3">Loading credentials…</p>
+            )}
+            <div className="space-y-3">
+              {slots.map((slot, index) => (
+                <div key={index} className="rounded-[10px] border border-border p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[13px] font-medium text-text">
+                      Comparison {index + 1}
+                    </span>
+                    {slots.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => removeSlot(index)}
+                        className="text-[11px] text-text-3 hover:text-orange transition-colors"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    value={slot.credentialId}
+                    onChange={(e) => updateSlotCredential(index, e.target.value)}
+                    className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text focus:outline-none focus:ring-1 focus:ring-orange/40"
+                  >
+                    <option value="">Select a provider…</option>
+                    {whitelisted.map((cred) => (
+                      <option key={cred.id} value={cred.id}>
+                        {cred.name} ({cred.providerName} · {cred.providerPlugin})
+                      </option>
+                    ))}
+                  </select>
+                  {slot.credentialId && (
+                    <div className="space-y-1">
+                      <label className="block text-[12px] font-medium text-text">Model</label>
+                      <select
+                        value={slot.model}
+                        onChange={(e) => updateSlotModel(index, e.target.value)}
+                        className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text focus:outline-none focus:ring-1 focus:ring-orange/40"
+                      >
+                        {listAbComparisonModels(slot.providerName, slot.providerPlugin).map(
+                          (model) => (
+                            <option key={model} value={model}>
+                              {model}
+                            </option>
+                          )
+                        )}
+                      </select>
+                      <p className="text-[11px] text-text-3">
+                        {slot.providerName} · {slot.providerPlugin}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addSlot}
+                className="w-full rounded-[9px] border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
+              >
+                Add comparison
+              </button>
+            </div>
+            {whitelisted.length === 0 && credentials !== undefined && (
+              <p className="text-[13px] text-text-3">
+                No inference credentials available. Add an OpenAI-compatible, OpenAI, Anthropic, or
+                Google credential first.
+              </p>
+            )}
+          </div>
+        )}
+
+        {configStep === 'configure' && (
+          <div className="space-y-5">
+            <div>
+              <label className="block text-[13px] font-medium text-text mb-2">
+                Shared system prompt (optional)
+              </label>
+              <textarea
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                placeholder="Optional instructions applied to every provider…"
+                rows={4}
+                className="w-full resize-none rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+              />
+            </div>
+            <div>
+              <label className="block text-[13px] font-medium text-text mb-2">
+                Skill per comparison (optional)
+              </label>
+              <div className="space-y-3">
+                {slots.map((slot, realIndex) => {
+                  if (!slot.credentialId) return null;
+                  const displayIndex = slots
+                    .slice(0, realIndex)
+                    .filter((s) => s.credentialId).length;
+                  return (
+                    <div key={realIndex} className="rounded-[10px] border border-border p-3">
+                      <p className="text-[13px] font-medium text-text mb-2">
+                        {slot.providerName
+                          ? `Comparison ${displayIndex + 1}: ${slot.providerName}`
+                          : `Comparison ${displayIndex + 1}`}
+                      </p>
+                      <input
+                        type="text"
+                        value={slot.skill}
+                        onChange={(e) => updateSlotSkill(realIndex, e.target.value)}
+                        placeholder="e.g. Hammy humanizer"
+                        className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {configStep === 'input' && (
+          <div className="space-y-3">
+            <p className="text-[13px] text-text-2">
+              Enter the shared prompt to run across all providers.
+            </p>
+            <textarea
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              placeholder="Paste the prompt you want to run across all providers…"
+              rows={10}
+              className="w-full resize-none rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+            />
+          </div>
+        )}
+
+        {error && <p className="mt-3 text-[12px] text-orange">{error}</p>}
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            disabled={configStep === 'comparisons' || signalPending}
+            onClick={handleBack}
+            className="rounded-[9px] border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-2 transition-colors hover:bg-surface-2 hover:text-text disabled:opacity-50"
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            disabled={!connected || signalPending}
+            onClick={handleNext}
+            className="rounded-[9px] bg-orange px-4 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {signalPending ? 'Starting…' : configStep === 'input' ? 'Run comparison' : 'Next'}
+          </button>
         </div>
-      </form>
-    </Card>
+        {!connected && (
+          <p className="mt-2 text-xs text-text-3">Reconnecting — input unavailable.</p>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -311,18 +486,12 @@ function VariantOutputs({ output }: { output: unknown }) {
     <Card>
       <CardTitle>Variant outputs</CardTitle>
       <p className="mb-4 text-xs text-text-3">
-        Outputs are shown anonymously. Provider and model stay hidden through
-        ranking.
+        Outputs are shown anonymously. Provider and model stay hidden through ranking.
       </p>
       <div className="space-y-4">
         {parsed.map((variant, index) => (
-          <div
-            key={index}
-            className="rounded-lg border border-border bg-surface-2 p-3"
-          >
-            <p className="mb-2 text-xs font-medium text-text-2">
-              Variant {index + 1}
-            </p>
+          <div key={index} className="rounded-lg border border-border bg-surface-2 p-3">
+            <p className="mb-2 text-xs font-medium text-text-2">Variant {index + 1}</p>
             <Markdown>{variant.reply}</Markdown>
           </div>
         ))}
@@ -332,40 +501,29 @@ function VariantOutputs({ output }: { output: unknown }) {
 }
 
 function ExecuteScreen({ phase }: { phase: StepPhase | undefined }) {
-  if (phase !== "completed") {
+  if (phase !== 'completed') {
     return <LoadingState label="Running the prompt across variants…" />;
   }
-  return (
-    <LoadingState label="Variants finished — preparing the blind ranking…" />
-  );
+  return <LoadingState label="Variants finished — preparing the blind ranking…" />;
 }
 
-function CompareScreen({
-  phase,
-  output,
-}: {
-  phase: StepPhase | undefined;
-  output: unknown;
-}) {
-  if (phase === "in-flight" || phase === undefined) {
+function CompareScreen({ phase, output }: { phase: StepPhase | undefined; output: unknown }) {
+  if (phase === 'in-flight' || phase === undefined) {
     return <LoadingState label="Generating blind ranking…" />;
   }
 
   const parsed = AgentStepOutput(output);
   if (parsed instanceof type.errors) {
-    if (phase === "completed") {
+    if (phase === 'completed') {
       return (
         <Card>
-          <p className="text-sm text-orange">
-            Couldn't read the comparison output.
-          </p>
+          <p className="text-sm text-orange">Couldn't read the comparison output.</p>
         </Card>
       );
     }
     return <LoadingState label="Generating blind ranking…" />;
   }
 
-  // The compare agent emits strict JSON in `reply`. Try to parse for rich UI.
   let decoded: unknown;
   try {
     decoded = JSON.parse(parsed.reply);
@@ -375,17 +533,13 @@ function CompareScreen({
 
   const structured = decoded !== undefined ? CompareJSON(decoded) : undefined;
   const rich =
-    structured !== undefined && !(structured instanceof type.errors)
-      ? structured
-      : undefined;
+    structured !== undefined && !(structured instanceof type.errors) ? structured : undefined;
 
   if (rich !== undefined) {
     return (
       <Card>
         <CardTitle>Blind ranking</CardTitle>
-        {rich.summary !== undefined && (
-          <p className="mb-4 text-sm text-text-2">{rich.summary}</p>
-        )}
+        {rich.summary !== undefined && <p className="mb-4 text-sm text-text-2">{rich.summary}</p>}
         {rich.ranking !== undefined && rich.ranking.length > 0 ? (
           <ol className="space-y-2">
             {rich.ranking.map((entry, index) => (
@@ -413,7 +567,6 @@ function CompareScreen({
     );
   }
 
-  // Fallback: render reply as markdown (agent didn't emit strict JSON).
   return (
     <Card>
       <CardTitle>Blind ranking</CardTitle>
@@ -429,6 +582,7 @@ function ReviewScreen({
   connected,
   signalPending,
   onApprove,
+  onSkip,
 }: {
   phase: StepPhase | undefined;
   compareOutput: unknown;
@@ -436,38 +590,42 @@ function ReviewScreen({
   connected: boolean;
   signalPending: boolean;
   onApprove: () => void;
+  onSkip: () => void;
 }) {
-  if (phase !== "awaiting-signal" && phase !== "in-flight") {
+  if (phase !== 'awaiting-signal' && phase !== 'in-flight') {
     return <LoadingState label="Waiting for comparison to finish…" />;
   }
 
   return (
     <div className="space-y-4">
-      {/* Show the anonymous variant outputs, then the ranking, above the gate. */}
       <VariantOutputs output={executeOutput} />
       <CompareScreen phase="completed" output={compareOutput} />
 
       <Card>
         <CardTitle>Review and approve</CardTitle>
         <p className="mb-4 text-sm text-text-2">
-          Review the blind ranking above. Approve to save the results as an
-          artifact.
+          Review the blind ranking above. Approve to save the results as an artifact, or skip to
+          discard.
         </p>
         <div className="flex items-center gap-3">
           <Button
             variant="primary"
             size="sm"
-            disabled={
-              !connected || signalPending || phase !== "awaiting-signal"
-            }
+            disabled={!connected || signalPending || phase !== 'awaiting-signal'}
             onClick={onApprove}
           >
             Approve comparison
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!connected || signalPending || phase !== 'awaiting-signal'}
+            onClick={onSkip}
+          >
+            Skip
+          </Button>
           {!connected && (
-            <p className="text-xs text-text-3">
-              Reconnecting — approval unavailable.
-            </p>
+            <p className="text-xs text-text-3">Reconnecting — approval unavailable.</p>
           )}
         </div>
       </Card>
@@ -475,27 +633,93 @@ function ReviewScreen({
   );
 }
 
+// ── Reveal section ────────────────────────────────────────────────────────────
+
+function RevealSection({
+  configOutput,
+  compareOutput,
+}: {
+  configOutput: unknown;
+  compareOutput: unknown;
+}) {
+  const configParsed = ConfigPayload(configOutput);
+  if (configParsed instanceof type.errors) return null;
+
+  const compareParsed = AgentStepOutput(compareOutput);
+  if (compareParsed instanceof type.errors) return null;
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(compareParsed.reply);
+  } catch {
+    decoded = undefined;
+  }
+
+  const structured = decoded !== undefined ? CompareJSON(decoded) : undefined;
+  const ranking =
+    structured !== undefined && !(structured instanceof type.errors)
+      ? (structured.ranking ?? [])
+      : [];
+
+  const { variants } = configParsed;
+
+  return (
+    <Card>
+      <CardTitle>Reveal</CardTitle>
+      <p className="mb-4 text-sm text-text-2">Here is what was behind each variant.</p>
+      <div className="space-y-2">
+        {variants.map((variant, i) => {
+          const rank = ranking.find((r) => r.label === `Variant ${i + 1}`);
+          return (
+            <div
+              key={i}
+              className="flex items-start gap-3 rounded-lg border border-border bg-surface-2 p-3"
+            >
+              {rank !== undefined && (
+                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-orange text-xs font-medium text-white">
+                  #{rank.rank}
+                </span>
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-text">{variant.label}</p>
+                <p className="text-xs text-text-2">
+                  {variant.providerName} · {variant.model}
+                </p>
+                {variant.skill !== undefined && (
+                  <p className="text-xs text-text-3">Skill: {variant.skill}</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function PersistScreen({
   phase,
   output,
+  configOutput,
+  compareOutput,
   onClose,
 }: {
   phase: StepPhase | undefined;
   output: unknown;
+  configOutput: unknown;
+  compareOutput: unknown;
   onClose: () => void;
 }) {
-  if (phase === "in-flight" || phase === undefined) {
+  if (phase === 'in-flight' || phase === undefined) {
     return <LoadingState label="Saving artifact…" />;
   }
 
   const envelope = ToolResultEnvelope(output);
   if (envelope instanceof type.errors) {
-    if (phase === "completed") {
+    if (phase === 'completed') {
       return (
         <Card>
-          <p className="text-sm text-orange">
-            Couldn't read the saved artifact.
-          </p>
+          <p className="text-sm text-orange">Couldn't read the saved artifact.</p>
         </Card>
       );
     }
@@ -510,45 +734,39 @@ function PersistScreen({
   }
 
   const artifact = decoded !== undefined ? PersistContent(decoded) : undefined;
-  const saved =
-    artifact !== undefined && !(artifact instanceof type.errors)
-      ? artifact
-      : undefined;
+  const saved = artifact !== undefined && !(artifact instanceof type.errors) ? artifact : undefined;
 
   return (
-    <Card>
-      <CardTitle>Comparison saved</CardTitle>
-      {saved !== undefined ? (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
-          <span className="min-w-0 truncate text-sm text-text">
-            {saved.title ?? saved.artifactId ?? "Saved artifact"}
-          </span>
-          {saved.kind !== undefined && (
-            <span className="text-xs text-text-3">{saved.kind}</span>
-          )}
-        </div>
-      ) : (
-        <p className="mb-4 text-sm text-text-3">Artifact saved.</p>
-      )}
-      <Button variant="ghost" size="sm" onClick={onClose}>
-        Close
-      </Button>
-    </Card>
+    <div className="space-y-4">
+      <RevealSection configOutput={configOutput} compareOutput={compareOutput} />
+      <Card>
+        <CardTitle>Comparison saved</CardTitle>
+        {saved !== undefined ? (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
+            <span className="min-w-0 truncate text-sm text-text">
+              {saved.title ?? saved.artifactId ?? 'Saved artifact'}
+            </span>
+            {saved.kind !== undefined && <span className="text-xs text-text-3">{saved.kind}</span>}
+          </div>
+        ) : (
+          <p className="mb-4 text-sm text-text-3">Artifact saved.</p>
+        )}
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+      </Card>
+    </div>
   );
 }
 
 // ── Root panel ────────────────────────────────────────────────────────────────
 
 export function Panel(props: WorkflowPanelProps) {
-  const { state, connected, signalPending, stepOutputs, onSignal, onClose } =
-    props;
-  const failed = state?.phase === "failed";
+  const { state, connected, signalPending, stepOutputs, onSignal, onClose, credentials } = props;
+  const failed = state?.phase === 'failed';
   const current = activeStep(state);
 
-  function handleConfigSubmit(payload: {
-    variants: VariantConfig[];
-    input: string;
-  }) {
+  function handleConfigSubmit(payload: { variants: VariantConfig[]; input: string }) {
     onSignal(CONFIG_SIGNAL, payload);
   }
 
@@ -556,21 +774,18 @@ export function Panel(props: WorkflowPanelProps) {
     onSignal(REVIEW_SIGNAL, { approved: true });
   }
 
+  function handleSkip() {
+    onSignal(REVIEW_SIGNAL, { approved: false });
+  }
+
   return (
     <div className="flex h-full flex-col bg-surface">
       <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div>
           <h2 className="text-base font-medium text-text">A/B Compare</h2>
-          <p className="text-xs text-text-3">
-            Blind ranking across provider/model variants
-          </p>
+          <p className="text-xs text-text-3">Blind ranking across provider/model variants</p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          aria-label="Close panel"
-        >
+        <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close panel">
           Close
         </Button>
       </header>
@@ -584,33 +799,34 @@ export function Panel(props: WorkflowPanelProps) {
               This run failed. Review the run log and try again.
             </p>
           </div>
-        ) : current === "config" ? (
+        ) : current === 'config' ? (
           <ConfigScreen
-            phase={phaseFor(state, "config")}
+            phase={phaseFor(state, 'config')}
             connected={connected}
             signalPending={signalPending}
+            credentials={credentials}
             onSubmit={handleConfigSubmit}
           />
-        ) : current === "execute" ? (
-          <ExecuteScreen phase={phaseFor(state, "execute")} />
-        ) : current === "compare" ? (
-          <CompareScreen
-            phase={phaseFor(state, "compare")}
-            output={stepOutputs["compare"]}
-          />
-        ) : current === "review" ? (
+        ) : current === 'execute' ? (
+          <ExecuteScreen phase={phaseFor(state, 'execute')} />
+        ) : current === 'compare' ? (
+          <CompareScreen phase={phaseFor(state, 'compare')} output={stepOutputs['compare']} />
+        ) : current === 'review' ? (
           <ReviewScreen
-            phase={phaseFor(state, "review")}
-            compareOutput={stepOutputs["compare"]}
-            executeOutput={stepOutputs["execute"]}
+            phase={phaseFor(state, 'review')}
+            compareOutput={stepOutputs['compare']}
+            executeOutput={stepOutputs['execute']}
             connected={connected}
             signalPending={signalPending}
             onApprove={handleApprove}
+            onSkip={handleSkip}
           />
         ) : (
           <PersistScreen
-            phase={phaseFor(state, "persist")}
-            output={stepOutputs["persist"]}
+            phase={phaseFor(state, 'persist')}
+            output={stepOutputs['persist']}
+            configOutput={stepOutputs['config']}
+            compareOutput={stepOutputs['compare']}
             onClose={onClose}
           />
         )}

@@ -7,6 +7,7 @@ import {
   isRecordTerminal,
   runStateFromRecord,
   useResumeWorkflow,
+  useWorkflowCredentials,
   useWorkflowRecord,
 } from '../hooks/use-workflow';
 
@@ -41,6 +42,7 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
   const runId = deploymentId;
   const { data: record, isLoading, isError } = useWorkflowRecord(runId, tenantId);
   const resume = useResumeWorkflow(runId, tenantId);
+  const { data: credentials } = useWorkflowCredentials(tenantId);
   const signalInFlightRef = useRef(false);
   const [signalPending, setSignalPending] = useState(false);
 
@@ -126,6 +128,7 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
           signalPending={signalPending}
           onSignal={handleSignal}
           onClose={onClose}
+          credentials={credentials}
         />
       </Suspense>
     </ErrorBoundary>

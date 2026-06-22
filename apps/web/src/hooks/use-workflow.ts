@@ -180,3 +180,27 @@ export function useDeleteWorkflow(tenantId?: string | null) {
 }
 
 export { runStateFromRecord };
+
+const workflowCredentialSchema = type({
+  id: 'string',
+  name: 'string',
+  providerName: 'string',
+  providerPlugin: 'string',
+  'model?': 'string',
+});
+export type WorkflowCredential = typeof workflowCredentialSchema.infer;
+
+export function useWorkflowCredentials(tenantId?: string | null) {
+  return useQuery<WorkflowCredential[]>({
+    queryKey: ['workflow-credentials', tenantId ?? null],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const raw = await api<unknown>('GET', withTenant('/workflow-exec/credentials', tenantId));
+      const parsed = workflowCredentialSchema.array()(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected workflow-credentials response: ${parsed.summary}`);
+      }
+      return parsed;
+    },
+  });
+}
