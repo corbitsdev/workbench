@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useRef } from 'react';
+import { Suspense, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RunConsole } from './RunConsole';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -42,6 +42,7 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
   const { data: record, isLoading, isError } = useWorkflowRecord(runId, tenantId);
   const resume = useResumeWorkflow(runId, tenantId);
   const signalInFlightRef = useRef(false);
+  const [signalPending, setSignalPending] = useState(false);
 
   const kind = record?.kind ?? null;
 
@@ -89,11 +90,13 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
   const handleSignal = (signalName: string, payload?: unknown) => {
     if (terminal || signalInFlightRef.current) return;
     signalInFlightRef.current = true;
+    setSignalPending(true);
     resume
       .mutateAsync({ signalName, payload })
       .catch(() => undefined)
       .finally(() => {
         signalInFlightRef.current = false;
+        setSignalPending(false);
       });
   };
 
@@ -120,6 +123,7 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
           state={state}
           connected={record.status === 'running' || record.status === 'awaiting'}
           stepOutputs={stepOutputs}
+          signalPending={signalPending}
           onSignal={handleSignal}
           onClose={onClose}
         />

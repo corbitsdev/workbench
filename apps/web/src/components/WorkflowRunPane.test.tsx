@@ -7,10 +7,11 @@ import type { WorkflowPanelProps } from '@workbench/ui';
 import * as workflowHooks from '../hooks/use-workflow';
 import type { RunRecord } from '../lib/run-state-adapter';
 
-function CustomPanel({ deploymentId, stepOutputs, onSignal }: WorkflowPanelProps) {
+function CustomPanel({ deploymentId, stepOutputs, signalPending, onSignal }: WorkflowPanelProps) {
   return (
     <div>
       <span>custom-panel-for-{deploymentId}</span>
+      <span>signal-pending:{String(signalPending)}</span>
       {Object.entries(stepOutputs).map(([stepId, output]) => (
         <span key={stepId}>
           out-{stepId}:{JSON.stringify(output)}
@@ -65,7 +66,8 @@ describe('WorkflowRunPane', () => {
     record = null;
     isLoading = false;
     isError = false;
-    resumeMutateAsync.mockClear();
+    resumeMutateAsync.mockReset();
+    resumeMutateAsync.mockImplementation(async () => undefined);
   });
 
   it('renders the workflow kind own Panel when its module exports one', async () => {
@@ -118,6 +120,25 @@ describe('WorkflowRunPane', () => {
       signalName: 'approve',
       payload: { ok: true },
     });
+  });
+
+  it('passes signalPending to the Panel and raises it while the resume is in flight', async () => {
+    record = makeRecord({ status: 'awaiting' });
+    let resolveResume: (() => void) | undefined;
+    resumeMutateAsync.mockImplementation(
+      () =>
+        new Promise<undefined>((resolve) => {
+          resolveResume = () => resolve(undefined);
+        })
+    );
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, { wrapper });
+    await waitFor(() => screen.getByText('signal-pending:false'));
+
+    screen.getByText('fire-signal').click();
+    await waitFor(() => screen.getByText('signal-pending:true'));
+
+    resolveResume?.();
+    await waitFor(() => screen.getByText('signal-pending:false'));
   });
 
   it('onSignal is a no-op once the run is terminal', async () => {

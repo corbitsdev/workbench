@@ -48,6 +48,7 @@ describe('gamma-presentation-creator Panel', () => {
         deploymentId="dep_1"
         state={makeState({ template: 'awaiting-signal' })}
         connected
+        signalPending={false}
         stepOutputs={{
           'list-templates': toolEnvelope('call_1', [
             { gammaId: 'tmpl_pro', name: 'Investor Deck', systemPrompt: 'x' },
@@ -80,6 +81,7 @@ describe('gamma-presentation-creator Panel', () => {
         deploymentId="dep_1"
         state={makeState({ template: 'awaiting-signal' })}
         connected
+        signalPending={false}
         stepOutputs={{
           'list-templates': toolEnvelope('call_1', [
             { gammaId: 'tmpl_pro', name: 'Deck', systemPrompt: 'x' },
@@ -104,6 +106,7 @@ describe('gamma-presentation-creator Panel', () => {
           'source-selection': 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{
           'list-notes': toolEnvelope('call_2', {
             notes: [
@@ -133,6 +136,7 @@ describe('gamma-presentation-creator Panel', () => {
           'source-selection': 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{
           'list-notes': toolEnvelope('call_2', {
             notes: [],
@@ -158,6 +162,7 @@ describe('gamma-presentation-creator Panel', () => {
           review: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{
           template: {
             gammaId: 'tmpl_pro',
@@ -195,6 +200,7 @@ describe('gamma-presentation-creator Panel', () => {
           review: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{}}
         onSignal={noop}
         onClose={noop}
@@ -220,6 +226,7 @@ describe('gamma-presentation-creator Panel', () => {
           review: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{}}
         onSignal={onSignal}
         onClose={noop}
@@ -233,12 +240,80 @@ describe('gamma-presentation-creator Panel', () => {
     });
   });
 
+  it('renders the draft content reply as parsed markdown', () => {
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({
+          template: 'completed',
+          source: 'completed',
+          generate: 'completed',
+          review: 'awaiting-signal',
+        })}
+        connected
+        signalPending={false}
+        stepOutputs={{ generate: { reply: 'A **bold** outline', turn: {} } }}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+
+    const strong = screen.getByText('bold');
+    expect(strong.tagName).toBe('STRONG');
+    expect(screen.queryByText('A **bold** outline')).toBeNull();
+  });
+
+  it('disables Approve while a signal is pending', () => {
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({
+          template: 'completed',
+          source: 'completed',
+          generate: 'completed',
+          review: 'awaiting-signal',
+        })}
+        connected
+        signalPending={true}
+        stepOutputs={{}}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+
+    const button = screen.getByRole('button', { name: 'Approve' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+
+  it('disables the template Continue button while a signal is pending even with a valid goal', async () => {
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ template: 'awaiting-signal' })}
+        connected
+        signalPending={true}
+        stepOutputs={{
+          'list-templates': toolEnvelope('call_1', [
+            { gammaId: 'tmpl_pro', name: 'Deck', systemPrompt: 'x' },
+          ]),
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+
+    await userEvent.type(screen.getByLabelText('Goal'), 'Close round');
+    const button = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+
   it('does not show Approve when review is not awaiting a signal', () => {
     render(
       <Panel
         deploymentId="dep_1"
         state={makeState({ template: 'completed', source: 'in-flight' })}
         connected
+        signalPending={false}
         stepOutputs={{}}
         onSignal={noop}
         onClose={noop}
@@ -263,6 +338,7 @@ describe('gamma-presentation-creator Panel', () => {
           'completed'
         )}
         connected
+        signalPending={false}
         stepOutputs={{
           render: toolEnvelope('call_4', {
             gammaUrl: 'https://gamma.app/docs/deck-123',
@@ -295,6 +371,7 @@ describe('gamma-presentation-creator Panel', () => {
           'completed'
         )}
         connected
+        signalPending={false}
         stepOutputs={{
           render: toolEnvelope('call_4', {
             gammaUrl: 'http://insecure.example/deck',
@@ -318,6 +395,7 @@ describe('gamma-presentation-creator Panel', () => {
           'failed'
         )}
         connected
+        signalPending={false}
         stepOutputs={{}}
         onSignal={noop}
         onClose={noop}
@@ -338,6 +416,7 @@ describe('gamma-presentation-creator Panel', () => {
           generate: 'completed',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ generate: { unexpectedField: 42 } }}
         onSignal={noop}
         onClose={noop}

@@ -12,6 +12,13 @@ export interface WorkflowPanelProps {
    * its output resolves.
    */
   stepOutputs: Record<string, unknown>;
+  /**
+   * True while a signal posted via `onSignal` is in flight. The host gates
+   * concurrent signals and exposes this so panels disable their
+   * continue/inference buttons immediately on click, preventing a double-fire
+   * before the server advances the run `phase`.
+   */
+  signalPending: boolean;
   onSignal: (signalName: string, payload?: unknown) => void;
   onClose: () => void;
 }

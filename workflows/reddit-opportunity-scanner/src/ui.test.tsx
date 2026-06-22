@@ -46,6 +46,7 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
     state: null,
     connected: true,
     stepOutputs: {},
+    signalPending: false,
     onSignal,
     onClose,
     ...overrides,
@@ -154,6 +155,26 @@ describe('reddit-opportunity-scanner Panel', () => {
     fireEvent.keyDown(subredditInput, { key: 'Enter' });
 
     fireEvent.click(screen.getByText('Start scan'));
+    expect(onSignal).not.toHaveBeenCalled();
+  });
+
+  it('does not submit intake while a signal is pending', () => {
+    const { onSignal } = renderPanel({
+      state: makeState({ intake: 'awaiting-signal' }),
+      signalPending: true,
+    });
+
+    const subredditInput = screen.getByLabelText('Subreddits (without r/)');
+    fireEvent.change(subredditInput, { target: { value: 'devops' } });
+    fireEvent.keyDown(subredditInput, { key: 'Enter' });
+
+    const keywordInput = screen.getByLabelText('Keywords');
+    fireEvent.change(keywordInput, { target: { value: 'observability' } });
+    fireEvent.keyDown(keywordInput, { key: 'Enter' });
+
+    const button = screen.getByText('Start scan') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
     expect(onSignal).not.toHaveBeenCalled();
   });
 

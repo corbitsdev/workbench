@@ -126,15 +126,18 @@ function SectionCard({ title, children }: { title: string; children: ReactNode }
 function IntakeSection({
   phase,
   connected,
+  signalPending,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
+  signalPending: boolean;
   onSubmit: (payload: { imageUrl: string; pageUrl: string }) => void;
 }) {
   const [imageUrl, setImageUrl] = useState('');
   const [pageUrl, setPageUrl] = useState('');
-  const canSubmit = connected && imageUrl.trim().length > 0 && pageUrl.trim().length > 0;
+  const canSubmit =
+    connected && !signalPending && imageUrl.trim().length > 0 && pageUrl.trim().length > 0;
 
   if (phase === 'completed') {
     return (
@@ -230,11 +233,13 @@ function ReviewSection({
   phase,
   enrichOutput,
   connected,
+  signalPending,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
   enrichOutput: unknown;
   connected: boolean;
+  signalPending: boolean;
   onSubmit: (payload: { selectedIds: string[] }) => void;
 }) {
   const parsed = parseEnrichOutput(enrichOutput);
@@ -315,7 +320,7 @@ function ReviewSection({
       <Button
         variant="primary"
         size="sm"
-        disabled={selectedIds.size === 0 || submitted || !connected}
+        disabled={selectedIds.size === 0 || submitted || signalPending || !connected}
         onClick={() => {
           if (selectedIds.size === 0 || submitted) return;
           onSubmit({ selectedIds: [...selectedIds] });
@@ -363,7 +368,7 @@ function PersistSection({ phase, output }: { phase: StepPhase | undefined; outpu
 }
 
 export function Panel(props: WorkflowPanelProps) {
-  const { state, connected, stepOutputs, onSignal, onClose } = props;
+  const { state, connected, signalPending, stepOutputs, onSignal, onClose } = props;
   const failed = state?.phase === 'failed';
   const activeStep = deriveActiveStep(state);
 
@@ -402,6 +407,7 @@ export function Panel(props: WorkflowPanelProps) {
           <IntakeSection
             phase={stepPhase(state, 'intake')}
             connected={connected}
+            signalPending={signalPending}
             onSubmit={handleIntakeSubmit}
           />
         )}
@@ -413,6 +419,7 @@ export function Panel(props: WorkflowPanelProps) {
             phase={stepPhase(state, 'review')}
             enrichOutput={stepOutputs.enrich}
             connected={connected}
+            signalPending={signalPending}
             onSubmit={handleReviewSubmit}
           />
         )}

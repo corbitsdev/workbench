@@ -62,7 +62,12 @@ const NOTE_LIST = toolResult({
 const PAIN_POINTS = agentReply({
   painPoints: [
     { id: 'pp1', title: 'Slow onboarding', detail: 'Takes weeks to go live.', severity: 'high' },
-    { id: 'pp2', title: 'No ROI visibility', detail: 'No clear metric to track.', severity: 'critical' },
+    {
+      id: 'pp2',
+      title: 'No ROI visibility',
+      detail: 'No clear metric to track.',
+      severity: 'critical',
+    },
   ],
 });
 
@@ -86,6 +91,7 @@ describe('Panel — transcript selection (step 1)', () => {
         deploymentId="dep_1"
         state={makeState({ intake: 'completed', select: 'awaiting-signal' })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST }}
         onSignal={noop}
         onClose={noop}
@@ -104,6 +110,7 @@ describe('Panel — transcript selection (step 1)', () => {
         deploymentId="dep_1"
         state={makeState({ intake: 'completed', select: 'awaiting-signal' })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST }}
         onSignal={onSignal}
         onClose={noop}
@@ -123,6 +130,7 @@ describe('Panel — transcript selection (step 1)', () => {
         deploymentId="dep_1"
         state={makeState({ intake: 'completed' })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST }}
         onSignal={onSignal}
         onClose={noop}
@@ -141,6 +149,7 @@ describe('Panel — transcript selection (step 1)', () => {
         deploymentId="dep_1"
         state={makeState({ intake: 'in-flight' })}
         connected
+        signalPending={false}
         stepOutputs={{}}
         onSignal={noop}
         onClose={noop}
@@ -156,6 +165,7 @@ describe('Panel — transcript selection (step 1)', () => {
         deploymentId="dep_1"
         state={makeState({ intake: 'completed', select: 'awaiting-signal' })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: { callId: 'c1', content: 'not-json' } }}
         onSignal={noop}
         onClose={noop}
@@ -182,6 +192,7 @@ describe('Panel — context input (step 2)', () => {
           context: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{
           intake: NOTE_LIST,
           fetch: toolResult({ id: 'note_1', title: 'Acme discovery call', summary: 'Discovery' }),
@@ -207,6 +218,7 @@ describe('Panel — context input (step 2)', () => {
           context: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, fetch: toolResult({ id: 'note_1', title: 'Acme' }) }}
         onSignal={onSignal}
         onClose={noop}
@@ -235,6 +247,7 @@ describe('Panel — context input (step 2)', () => {
           context: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, fetch: toolResult({ id: 'note_1', title: 'Acme' }) }}
         onSignal={onSignal}
         onClose={noop}
@@ -265,6 +278,7 @@ describe('Panel — pain point selection (step 3)', () => {
           ppSelection: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS }}
         onSignal={noop}
         onClose={noop}
@@ -292,6 +306,7 @@ describe('Panel — pain point selection (step 3)', () => {
           ppSelection: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS }}
         onSignal={onSignal}
         onClose={noop}
@@ -324,6 +339,7 @@ describe('Panel — pain point selection (step 3)', () => {
           ppSelection: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS }}
         onSignal={noop}
         onClose={noop}
@@ -346,6 +362,7 @@ describe('Panel — pain point selection (step 3)', () => {
           analyze: 'in-flight',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST }}
         onSignal={noop}
         onClose={noop}
@@ -368,6 +385,7 @@ describe('Panel — pain point selection (step 3)', () => {
           ppSelection: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: { reply: '{not valid json' } }}
         onSignal={noop}
         onClose={noop}
@@ -397,6 +415,7 @@ describe('Panel — format selection (step 4)', () => {
           fmtSelection: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS }}
         onSignal={noop}
         onClose={noop}
@@ -423,6 +442,7 @@ describe('Panel — format selection (step 4)', () => {
           fmtSelection: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS }}
         onSignal={onSignal}
         onClose={noop}
@@ -461,6 +481,7 @@ describe('Panel — format selection (step 4)', () => {
           fmtSelection: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS }}
         onSignal={noop}
         onClose={noop}
@@ -493,6 +514,7 @@ describe('Panel — review generated pieces (step 5)', () => {
           review: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS, generate: GENERATED_PIECES }}
         onSignal={noop}
         onClose={noop}
@@ -524,6 +546,7 @@ describe('Panel — review generated pieces (step 5)', () => {
           review: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS, generate: GENERATED_PIECES }}
         onSignal={onSignal}
         onClose={noop}
@@ -532,7 +555,7 @@ describe('Panel — review generated pieces (step 5)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
     await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Continue to create approved artifacts' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Collateral to Artifacts' }));
 
     expect(onSignal).toHaveBeenCalledTimes(1);
     const [name, payload] = onSignal.mock.calls[0] as [
@@ -567,6 +590,7 @@ describe('Panel — review generated pieces (step 5)', () => {
           review: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS, generate: GENERATED_PIECES }}
         onSignal={onSignal}
         onClose={noop}
@@ -575,7 +599,7 @@ describe('Panel — review generated pieces (step 5)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
     await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Continue to create approved artifacts' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Collateral to Artifacts' }));
 
     expect(onSignal).toHaveBeenCalledTimes(1);
     const [, payload] = onSignal.mock.calls[0] as [
@@ -587,6 +611,128 @@ describe('Panel — review generated pieces (step 5)', () => {
     expect(payload.approvedPieces.map((d) => d.format)).toEqual(
       expect.arrayContaining(['Email', 'One-pager'])
     );
+  });
+
+  const reviewState = makeState({
+    intake: 'completed',
+    select: 'completed',
+    fetch: 'completed',
+    context: 'completed',
+    analyze: 'completed',
+    ppSelection: 'completed',
+    fmtSelection: 'completed',
+    generate: 'completed',
+    review: 'awaiting-signal',
+  });
+
+  const reviewOutputs = { intake: NOTE_LIST, analyze: PAIN_POINTS, generate: GENERATED_PIECES };
+
+  it('renders a generated piece content as parsed markdown', () => {
+    const markdownPieces = [
+      agentReply({
+        format: 'One-pager',
+        title: 'Cut onboarding time',
+        content: 'A **bold** outcome',
+      }),
+    ];
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={reviewState}
+        connected
+        signalPending={false}
+        stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS, generate: markdownPieces }}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+
+    const strong = screen.getByText('bold');
+    expect(strong.tagName).toBe('STRONG');
+    expect(screen.queryByText('A **bold** outcome')).toBeNull();
+  });
+
+  it('does not render a second summary list once every piece is decided', async () => {
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={reviewState}
+        connected
+        signalPending={false}
+        stepOutputs={reviewOutputs}
+        onSignal={noop}
+        onClose={noop}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    screen.getByText('Review complete');
+    // The single source of truth is the queue; the piece title appears once there.
+    expect(screen.getAllByText(/Cut onboarding time/)).toHaveLength(1);
+    // Approve/Deny cards are gone in the completion view.
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Deny' })).toBeNull();
+  });
+
+  it('Back re-opens the previous decision so it can be flipped before submit', async () => {
+    const onSignal = mock((_name: string, _payload?: unknown) => {});
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={reviewState}
+        connected
+        signalPending={false}
+        stepOutputs={reviewOutputs}
+        onSignal={onSignal}
+        onClose={noop}
+      />
+    );
+
+    // Approve the first piece, then step back and deny it instead.
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    // First piece is active again — its content is shown.
+    screen.getByText('Dear prospect, cut onboarding from weeks to days.');
+    await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Collateral to Artifacts' }));
+
+    const [, payload] = onSignal.mock.calls[0] as [
+      string,
+      { decisions: { format: string; approved: boolean }[] },
+    ];
+    expect(payload.decisions[0]).toMatchObject({ format: 'Email', approved: false });
+    expect(payload.decisions[1]).toMatchObject({ format: 'One-pager', approved: true });
+  });
+
+  it('keeps Approve/Deny enabled but disables the final submit while a signal is pending', async () => {
+    const onSignal = mock((_name: string, _payload?: unknown) => {});
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={reviewState}
+        connected
+        signalPending={true}
+        stepOutputs={reviewOutputs}
+        onSignal={onSignal}
+        onClose={noop}
+      />
+    );
+
+    const approve = screen.getByRole('button', { name: 'Approve' }) as HTMLButtonElement;
+    const deny = screen.getByRole('button', { name: 'Deny' }) as HTMLButtonElement;
+    expect(approve.disabled).toBe(false);
+    expect(deny.disabled).toBe(false);
+
+    await userEvent.click(approve);
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    const submit = screen.getByRole('button', { name: 'Saving…' }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    await userEvent.click(submit);
+    expect(onSignal).not.toHaveBeenCalled();
   });
 
   it('shows a placeholder while generate is running', () => {
@@ -604,6 +750,7 @@ describe('Panel — review generated pieces (step 5)', () => {
           generate: 'in-flight',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS }}
         onSignal={noop}
         onClose={noop}
@@ -629,6 +776,7 @@ describe('Panel — review generated pieces (step 5)', () => {
           review: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{
           intake: NOTE_LIST,
           analyze: PAIN_POINTS,
@@ -665,6 +813,7 @@ describe('Panel — review generated pieces (step 5)', () => {
           review: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS, generate: [{ reply }] }}
         onSignal={noop}
         onClose={noop}
@@ -739,6 +888,7 @@ describe('Panel — review generated pieces (step 5)', () => {
           review: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{
           intake: NOTE_LIST,
           analyze: PAIN_POINTS,
@@ -775,6 +925,7 @@ describe('Panel — done (step 6)', () => {
           persist: 'completed',
         })}
         connected
+        signalPending={false}
         stepOutputs={{
           intake: NOTE_LIST,
           analyze: PAIN_POINTS,
@@ -782,7 +933,12 @@ describe('Panel — done (step 6)', () => {
           review: {
             decisions: [
               { format: 'Email', title: 'Cut onboarding time', content: 'Hi...', approved: true },
-              { format: 'One-pager', title: 'ROI at a glance', content: 'Track...', approved: false },
+              {
+                format: 'One-pager',
+                title: 'ROI at a glance',
+                content: 'Track...',
+                approved: false,
+              },
             ],
           },
         }}
@@ -810,6 +966,7 @@ describe('Panel — error and close', () => {
         deploymentId="dep_1"
         state={makeState({ intake: 'completed', analyze: 'failed' }, 'failed')}
         connected
+        signalPending={false}
         stepOutputs={{}}
         onSignal={noop}
         onClose={noop}
@@ -826,6 +983,7 @@ describe('Panel — error and close', () => {
         deploymentId="dep_1"
         state={makeState({ intake: 'in-flight' })}
         connected
+        signalPending={false}
         stepOutputs={{}}
         onSignal={noop}
         onClose={onClose}
@@ -842,6 +1000,7 @@ describe('Panel — error and close', () => {
         deploymentId="dep_1"
         state={makeState({ intake: 'in-flight' })}
         connected={false}
+        signalPending={false}
         stepOutputs={{}}
         onSignal={noop}
         onClose={noop}
@@ -868,6 +1027,7 @@ describe('Panel — stepper reflects run progress', () => {
           context: 'awaiting-signal',
         })}
         connected
+        signalPending={false}
         stepOutputs={{
           intake: NOTE_LIST,
           fetch: toolResult({ id: 'note_1', title: 'Acme call' }),

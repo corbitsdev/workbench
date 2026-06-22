@@ -4,6 +4,7 @@ import type { RunState, StepState } from '@intx/workflow';
 import {
   Button,
   HorizontalStepper,
+  Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
 } from '@workbench/ui';
@@ -105,14 +106,16 @@ function LoadingState({ label }: { label: string }) {
 function InputScreen({
   phase,
   connected,
+  signalPending,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
+  signalPending: boolean;
   onSubmit: (payload: { prompt: string }) => void;
 }) {
   const [prompt, setPrompt] = useState('');
-  const canSubmit = connected && prompt.trim().length > 0;
+  const canSubmit = connected && !signalPending && prompt.trim().length > 0;
 
   if (phase !== 'awaiting-signal') {
     return <LoadingState label="Waiting for the run to start…" />;
@@ -174,7 +177,7 @@ function ExecuteScreen({ phase, output }: { phase: StepPhase | undefined; output
   return (
     <Card>
       <CardTitle>Execution output</CardTitle>
-      <p className="whitespace-pre-wrap text-sm text-text-2">{parsed.reply}</p>
+      <Markdown>{parsed.reply}</Markdown>
     </Card>
   );
 }
@@ -237,11 +240,11 @@ function CompareScreen({ phase, output }: { phase: StepPhase | undefined; output
     );
   }
 
-  // Fallback: render reply as plain text (agent didn't emit strict JSON).
+  // Fallback: render reply as markdown (agent didn't emit strict JSON).
   return (
     <Card>
       <CardTitle>Blind ranking</CardTitle>
-      <p className="whitespace-pre-wrap text-sm text-text-2">{parsed.reply}</p>
+      <Markdown>{parsed.reply}</Markdown>
     </Card>
   );
 }
@@ -250,11 +253,13 @@ function ReviewScreen({
   phase,
   compareOutput,
   connected,
+  signalPending,
   onApprove,
 }: {
   phase: StepPhase | undefined;
   compareOutput: unknown;
   connected: boolean;
+  signalPending: boolean;
   onApprove: () => void;
 }) {
   if (phase !== 'awaiting-signal' && phase !== 'in-flight') {
@@ -275,7 +280,7 @@ function ReviewScreen({
           <Button
             variant="primary"
             size="sm"
-            disabled={!connected || phase !== 'awaiting-signal'}
+            disabled={!connected || signalPending || phase !== 'awaiting-signal'}
             onClick={onApprove}
           >
             Approve comparison
@@ -347,7 +352,7 @@ function PersistScreen({
 // ── Root panel ────────────────────────────────────────────────────────────────
 
 export function Panel(props: WorkflowPanelProps) {
-  const { state, connected, stepOutputs, onSignal, onClose } = props;
+  const { state, connected, signalPending, stepOutputs, onSignal, onClose } = props;
   const failed = state?.phase === 'failed';
   const current = activeStep(state);
 
@@ -384,6 +389,7 @@ export function Panel(props: WorkflowPanelProps) {
           <InputScreen
             phase={phaseFor(state, 'input')}
             connected={connected}
+            signalPending={signalPending}
             onSubmit={handleInputSubmit}
           />
         ) : current === 'execute' ? (
@@ -395,6 +401,7 @@ export function Panel(props: WorkflowPanelProps) {
             phase={phaseFor(state, 'review')}
             compareOutput={stepOutputs['compare']}
             connected={connected}
+            signalPending={signalPending}
             onApprove={handleApprove}
           />
         ) : (

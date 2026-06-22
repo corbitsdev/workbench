@@ -1,5 +1,6 @@
 export { Button, buttonVariants } from './Button';
 export { FileInput } from './FileInput';
+export { Markdown } from './Markdown';
 export { Steps, Step, StepIndicator, StepLabel, StepTitle, StepDescription } from './steps';
 export {
   Sidebar,

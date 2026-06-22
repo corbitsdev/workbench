@@ -199,16 +199,18 @@ function ChipInput({
 function IntakeScreen({
   phase,
   connected,
+  signalPending,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
+  signalPending: boolean;
   onSubmit: (payload: { subreddits: string[]; keywords: string[] }) => void;
 }) {
   const [subreddits, setSubreddits] = useState<string[]>([]);
   const [keywords, setKeywords] = useState<string[]>([]);
 
-  const canSubmit = connected && subreddits.length > 0 && keywords.length > 0;
+  const canSubmit = connected && !signalPending && subreddits.length > 0 && keywords.length > 0;
 
   if (phase !== 'awaiting-signal') {
     return (
@@ -415,11 +417,13 @@ function OpportunityCard({
 function ReviewScreen({
   phase,
   connected,
+  signalPending,
   scanOutput,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
+  signalPending: boolean;
   scanOutput: unknown;
   onSubmit: (payload: { selected: Opportunity[] }) => void;
 }) {
@@ -428,7 +432,7 @@ function ReviewScreen({
   const result = parseScanOutput(scanOutput);
   const opportunities = Array.isArray(result) ? result : [];
 
-  const canSubmit = connected && selectedIds.size > 0;
+  const canSubmit = connected && !signalPending && selectedIds.size > 0;
 
   const toggleId = (id: string) => {
     setSelectedIds((prev) => {
@@ -583,7 +587,7 @@ function PersistScreen({
 // ── Root Panel ────────────────────────────────────────────────────────────────
 
 export function Panel(props: WorkflowPanelProps) {
-  const { state, connected, stepOutputs, onSignal, onClose } = props;
+  const { state, connected, signalPending, stepOutputs, onSignal, onClose } = props;
 
   const active = activeStep(state);
   const runPhase = state?.phase;
@@ -637,6 +641,7 @@ export function Panel(props: WorkflowPanelProps) {
           <IntakeScreen
             phase={phaseFor(state, 'intake')}
             connected={connected}
+            signalPending={signalPending}
             onSubmit={(payload) => onSignal(INTAKE_SIGNAL, payload)}
           />
         ) : active === 'scan' ? (
@@ -645,6 +650,7 @@ export function Panel(props: WorkflowPanelProps) {
           <ReviewScreen
             phase={phaseFor(state, 'review')}
             connected={connected}
+            signalPending={signalPending}
             scanOutput={stepOutputs['scan']}
             onSubmit={(payload) => onSignal(REVIEW_SIGNAL, payload)}
           />

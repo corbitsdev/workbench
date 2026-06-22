@@ -64,6 +64,7 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
     state: makeState({}),
     connected: true,
     stepOutputs: {},
+    signalPending: false,
     onSignal,
     onClose,
     ...overrides,
@@ -230,6 +231,18 @@ describe('Panel', () => {
       state: makeState({ intake: 'completed', enrich: 'completed', review: 'awaiting-signal' }),
       stepOutputs: { enrich: sampleEnrichOutput },
       connected: false,
+    });
+    const button = screen.getByText('Save selected rows') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSignal).toHaveBeenCalledTimes(0);
+  });
+
+  it('disables Save selected rows while a signal is pending', () => {
+    const { onSignal } = renderPanel({
+      state: makeState({ intake: 'completed', enrich: 'completed', review: 'awaiting-signal' }),
+      stepOutputs: { enrich: sampleEnrichOutput },
+      signalPending: true,
     });
     const button = screen.getByText('Save selected rows') as HTMLButtonElement;
     expect(button.disabled).toBe(true);

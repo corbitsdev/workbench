@@ -3,6 +3,7 @@ import { type } from 'arktype';
 import {
   Button,
   HorizontalStepper,
+  Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
 } from '@workbench/ui';
@@ -212,11 +213,13 @@ function LoadingState({ label }: { label: string }) {
 function TemplateScreen({
   phase,
   connected,
+  signalPending,
   stepOutputs,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
+  signalPending: boolean;
   stepOutputs: Record<string, unknown>;
   onSubmit: (payload: {
     gammaId: string;
@@ -231,7 +234,8 @@ function TemplateScreen({
   const [audience, setAudience] = useState('');
   const [tone, setTone] = useState('');
   const [goal, setGoal] = useState('');
-  const canSubmit = connected && gammaId.trim().length > 0 && goal.trim().length > 0;
+  const canSubmit =
+    connected && !signalPending && gammaId.trim().length > 0 && goal.trim().length > 0;
 
   if (phase !== 'awaiting-signal') {
     return <LoadingState label="Loading templates…" />;
@@ -320,10 +324,12 @@ function TemplateScreen({
 
 function SourceScreen({
   phase,
+  signalPending,
   stepOutputs,
   onSelect,
 }: {
   phase: StepPhase | undefined;
+  signalPending: boolean;
   stepOutputs: Record<string, unknown>;
   onSelect: (noteId: string) => void;
 }) {
@@ -344,8 +350,9 @@ function SourceScreen({
             <li key={n.id}>
               <button
                 type="button"
+                disabled={signalPending}
                 onClick={() => onSelect(n.id)}
-                className="block w-full px-3 py-2 text-left text-[13px] text-text transition-colors hover:bg-surface-2"
+                className="block w-full px-3 py-2 text-left text-[13px] text-text transition-colors enabled:hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {n.title}
               </button>
@@ -369,12 +376,14 @@ function ReviewScreen({
   stepOutputs,
   draftPhase,
   connected,
+  signalPending,
   onApprove,
 }: {
   phase: StepPhase | undefined;
   stepOutputs: Record<string, unknown>;
   draftPhase: StepPhase | undefined;
   connected: boolean;
+  signalPending: boolean;
   onApprove: () => void;
 }) {
   const generate = readGenerate(stepOutputs['brand-review'] ?? stepOutputs['generate'], draftPhase);
@@ -399,7 +408,7 @@ function ReviewScreen({
       {generate.kind === 'ready' && (
         <Card>
           <CardTitle>Draft content</CardTitle>
-          <p className="whitespace-pre-wrap text-sm text-text-2">{generate.reply}</p>
+          <Markdown>{generate.reply}</Markdown>
         </Card>
       )}
 
@@ -421,7 +430,7 @@ function ReviewScreen({
           <Button
             variant="primary"
             size="sm"
-            disabled={!connected || phase !== 'awaiting-signal'}
+            disabled={!connected || signalPending || phase !== 'awaiting-signal'}
             onClick={onApprove}
           >
             Approve
@@ -494,7 +503,7 @@ function RenderScreen({
 // ── Root panel ────────────────────────────────────────────────────────────────
 
 export function Panel(props: WorkflowPanelProps) {
-  const { state, connected, stepOutputs, onSignal, onClose } = props;
+  const { state, connected, signalPending, stepOutputs, onSignal, onClose } = props;
   const failed = state?.phase === 'failed';
   const current = activeStep(state);
 
@@ -524,12 +533,14 @@ export function Panel(props: WorkflowPanelProps) {
           <TemplateScreen
             phase={phaseFor(state, 'template')}
             connected={connected}
+            signalPending={signalPending}
             stepOutputs={stepOutputs}
             onSubmit={(payload) => onSignal('template', payload)}
           />
         ) : current === 'source' ? (
           <SourceScreen
             phase={phaseFor(state, 'source-selection')}
+            signalPending={signalPending}
             stepOutputs={stepOutputs}
             onSelect={(noteId) => onSignal('source-selection', { noteId })}
           />
@@ -541,6 +552,7 @@ export function Panel(props: WorkflowPanelProps) {
             stepOutputs={stepOutputs}
             draftPhase={phaseFor(state, 'brand-review') ?? phaseFor(state, 'generate')}
             connected={connected}
+            signalPending={signalPending}
             onApprove={() => onSignal('review-approval', { approved: true })}
           />
         ) : (

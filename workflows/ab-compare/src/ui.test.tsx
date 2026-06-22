@@ -47,6 +47,7 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
     state: makeState({}),
     connected: true,
     stepOutputs: {},
+    signalPending: false,
     onSignal,
     onClose,
     ...overrides,
@@ -210,6 +211,20 @@ describe('ab-compare Panel — input screen', () => {
     fireEvent.click(button);
     expect(onSignal).toHaveBeenCalledTimes(0);
   });
+
+  it('disables submission while a signal is pending', () => {
+    const { onSignal } = renderPanel({
+      state: makeState({ input: 'awaiting-signal' }),
+      signalPending: true,
+    });
+    fireEvent.change(screen.getByPlaceholderText('The prompt to run against each variant'), {
+      target: { value: 'some prompt' },
+    });
+    const button = screen.getByText('Start comparison') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSignal).toHaveBeenCalledTimes(0);
+  });
 });
 
 // ── Execute screen ────────────────────────────────────────────────────────────
@@ -308,6 +323,21 @@ describe('ab-compare Panel — compare output (via review screen)', () => {
     screen.getByText(reply);
   });
 
+  it('renders the plain-text fallback reply as parsed markdown', () => {
+    renderPanel({
+      state: makeState({
+        input: 'completed',
+        execute: 'completed',
+        compare: 'completed',
+        review: 'awaiting-signal',
+      }),
+      stepOutputs: { compare: { reply: 'Variant **B** wins', turn: null } },
+    });
+    const strong = screen.getByText('B');
+    expect(strong.tagName).toBe('STRONG');
+    expect(screen.queryByText('Variant **B** wins')).toBeNull();
+  });
+
   it('shows an error when compare output fails validation', () => {
     renderPanel({
       state: makeState({
@@ -349,6 +379,23 @@ describe('ab-compare Panel — review screen', () => {
         review: 'awaiting-signal',
       }),
       connected: false,
+      stepOutputs: { compare: { reply: 'ranked', turn: null } },
+    });
+    const button = screen.getByText('Approve comparison') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onSignal).toHaveBeenCalledTimes(0);
+  });
+
+  it('disables Approve while a signal is pending', () => {
+    const { onSignal } = renderPanel({
+      state: makeState({
+        input: 'completed',
+        execute: 'completed',
+        compare: 'completed',
+        review: 'awaiting-signal',
+      }),
+      signalPending: true,
       stepOutputs: { compare: { reply: 'ranked', turn: null } },
     });
     const button = screen.getByText('Approve comparison') as HTMLButtonElement;
