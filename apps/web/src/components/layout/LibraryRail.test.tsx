@@ -6,30 +6,32 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { LibraryRailProps } from './LibraryRail';
-import type { WorkflowSummary } from '@workbench/shared';
+import type { RunInstanceSummary } from '@workbench/client/react';
 
-const fakeWorkflow: WorkflowSummary = {
-  id: 'wf-1',
+const fakeRun: RunInstanceSummary = {
+  runId: 'run-1',
+  correlationMessageId: 'msg-1',
+  deploymentId: 'dep-1',
   kind: 'collateral-generation',
   status: 'running',
-  createdAt: new Date().toISOString(),
+  startedAt: new Date().toISOString(),
 };
 
-const mockDeleteMutateAsync = mock((_id: string) => Promise.resolve());
+const mockDeleteRunMutateAsync = mock((_runId: string) => Promise.resolve());
 
 mock.module('../../hooks/use-workflow', () => ({
-  useDeleteWorkflow: () => ({
-    mutateAsync: mockDeleteMutateAsync,
+  useDeleteRun: () => ({
+    mutateAsync: mockDeleteRunMutateAsync,
   }),
 }));
 
-// libraryResourcesOverride lets individual tests substitute a different
-// workflow list without re-mocking the entire module.
-let libraryResourcesOverride: WorkflowSummary[] | null = null;
+// myRunsOverride lets individual tests substitute a different run list without
+// re-mocking the entire module.
+let myRunsOverride: RunInstanceSummary[] | null = null;
 
 mock.module('@workbench/client/react', () => ({
-  useLibraryResources: () => ({
-    data: libraryResourcesOverride ?? [fakeWorkflow],
+  useMyRuns: () => ({
+    data: myRunsOverride ?? [fakeRun],
     isLoading: false,
     isError: false,
   }),
@@ -88,11 +90,23 @@ function renderWithClient(ui: React.ReactElement) {
 
 afterEach(() => {
   cleanup();
-  libraryResourcesOverride = null;
+  myRunsOverride = null;
 });
 
 describe('LibraryRail', () => {
-  it('renders real jobs from the client', async () => {
+  it('renders one row per run from useMyRuns, labelled by kind', async () => {
+    myRunsOverride = [
+      fakeRun,
+      {
+        runId: 'run-2',
+        correlationMessageId: 'msg-2',
+        deploymentId: 'dep-2',
+        kind: 'presentation-generation',
+        status: 'running',
+        startedAt: new Date().toISOString(),
+      },
+    ];
+
     const { LibraryRail } = await import('./LibraryRail');
     const view = renderWithClient(React.createElement(LibraryRail));
 
@@ -100,6 +114,7 @@ describe('LibraryRail', () => {
       // Title shows the workflow type label resolved from the run kind.
       expect(view.getAllByText('Collateral Generation').length).toBeGreaterThan(0);
     });
+    expect(view.getAllByText('Presentation Generation').length).toBeGreaterThan(0);
     expect(view.getAllByText('Workflows').length).toBeGreaterThan(0);
   });
 
@@ -187,10 +202,12 @@ describe('LibraryRail', () => {
     });
   });
 
-  it('calls onWorkflowSelect with both id and kind when a workflow row is clicked', async () => {
+  it('calls onWorkflowSelect with runId, deploymentId, and kind when a workflow row is clicked', async () => {
     const { listWorkbenches } = await import('../../lib/hub-api');
     (listWorkbenches as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve([]));
-    const onWorkflowSelect = mock((_id: string, _kind: string) => undefined);
+    const onWorkflowSelect = mock(
+      (_runId: string | null, _deploymentId: string, _kind: string) => undefined
+    );
 
     const { LibraryRail } = await import('./LibraryRail');
     const view = renderWithClient(
@@ -204,13 +221,15 @@ describe('LibraryRail', () => {
     );
     fireEvent.click(row);
 
-    expect(onWorkflowSelect).toHaveBeenCalledWith('wf-1', 'collateral-generation');
+    expect(onWorkflowSelect).toHaveBeenCalledWith('run-1', 'dep-1', 'collateral-generation');
   });
 
   it('activates a workflow row via the keyboard as a native button', async () => {
     const { listWorkbenches } = await import('../../lib/hub-api');
     (listWorkbenches as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve([]));
-    const onWorkflowSelect = mock((_id: string, _kind: string) => undefined);
+    const onWorkflowSelect = mock(
+      (_runId: string | null, _deploymentId: string, _kind: string) => undefined
+    );
     const user = userEvent.setup();
 
     const { LibraryRail } = await import('./LibraryRail');
@@ -226,7 +245,7 @@ describe('LibraryRail', () => {
     row.focus();
     await user.keyboard('{Enter}');
 
-    expect(onWorkflowSelect).toHaveBeenCalledWith('wf-1', 'collateral-generation');
+    expect(onWorkflowSelect).toHaveBeenCalledWith('run-1', 'dep-1', 'collateral-generation');
   });
 
   it('keeps loaded agents visible and warns when one workbench fails to load agents', async () => {
@@ -322,12 +341,14 @@ describe('LibraryRail', () => {
   });
 
   it('places a completed-status workflow in the Done section with a Completed badge', async () => {
-    libraryResourcesOverride = [
+    myRunsOverride = [
       {
-        id: 'wf-done',
+        runId: 'run-done',
+        correlationMessageId: 'msg-done',
+        deploymentId: 'dep-done',
         kind: 'collateral-generation',
         status: 'completed',
-        createdAt: new Date().toISOString(),
+        startedAt: new Date().toISOString(),
       },
     ];
 
@@ -345,17 +366,19 @@ describe('LibraryRail', () => {
     });
   });
 
-  it('calls deleteWorkflow.mutateAsync with the workflow id when Remove is confirmed', async () => {
-    libraryResourcesOverride = [
+  it('deletes the RUN (not the deployment) by runId when Remove is confirmed', async () => {
+    myRunsOverride = [
       {
-        id: 'wf-remove-me',
+        runId: 'run-remove-me',
+        correlationMessageId: 'msg-remove-me',
+        deploymentId: 'dep-keep-me',
         kind: 'collateral-generation',
         status: 'completed',
-        createdAt: new Date().toISOString(),
+        startedAt: new Date().toISOString(),
       },
     ];
-    mockDeleteMutateAsync.mockReset();
-    mockDeleteMutateAsync.mockImplementation(() => Promise.resolve());
+    mockDeleteRunMutateAsync.mockReset();
+    mockDeleteRunMutateAsync.mockImplementation(() => Promise.resolve());
 
     const { LibraryRail } = await import('./LibraryRail');
     const view = renderWithClient(React.createElement(LibraryRail));
@@ -377,8 +400,31 @@ describe('LibraryRail', () => {
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
-      expect(mockDeleteMutateAsync).toHaveBeenCalledWith('wf-remove-me');
+      // The run-scoped delete receives the runId, NOT the deploymentId.
+      expect(mockDeleteRunMutateAsync).toHaveBeenCalledWith('run-remove-me');
     });
+    expect(mockDeleteRunMutateAsync).not.toHaveBeenCalledWith('dep-keep-me');
+  });
+
+  it('hides the Remove affordance for a run whose runId is not yet reconciled', async () => {
+    myRunsOverride = [
+      {
+        runId: null,
+        correlationMessageId: 'msg-pending',
+        deploymentId: 'dep-pending',
+        kind: 'collateral-generation',
+        status: 'running',
+        startedAt: new Date().toISOString(),
+      },
+    ];
+
+    const { LibraryRail } = await import('./LibraryRail');
+    const view = renderWithClient(React.createElement(LibraryRail));
+
+    await waitFor(() => view.getByText('Collateral Generation'));
+    expect(
+      view.queryByRole('button', { name: 'Remove workflow Collateral Generation' })
+    ).toBeNull();
   });
 });
 
@@ -394,6 +440,9 @@ describe('CompletedWorkflowRow (pure view)', () => {
     color: 'var(--accent)',
     workflowStatus: 'done',
     workflowKind: 'collateral-generation',
+    runId: 'run-done',
+    deploymentId: 'dep-done',
+    correlationMessageId: 'msg-done',
   };
 
   it('invokes onOpen with no further data dependencies when the row is activated', async () => {

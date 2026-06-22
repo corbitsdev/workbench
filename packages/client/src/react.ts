@@ -7,12 +7,14 @@ import type { ArtifactStatus, ArtifactWithSession, WorkflowSummary } from '@work
 import {
   listArtifacts,
   listWorkflows,
+  listMyRuns,
   listMembers,
   type ClientOptions,
+  type RunInstanceSummary,
   type TenantMember,
 } from './index';
 
-export type { TenantMember };
+export type { TenantMember, RunInstanceSummary };
 
 export interface UseTenantMembersParams {
   tenantId?: string | null;
@@ -43,6 +45,27 @@ export function useLibraryResources(
   return useQuery({
     queryKey: ['workflows', params.tenantId ?? null],
     queryFn: () => listWorkflows(options, params),
+    enabled: params.tenantId != null,
+    refetchInterval: 5000,
+  });
+}
+
+export interface UseMyRunsParams {
+  tenantId?: string | null;
+}
+
+/**
+ * Query the current user's own workflow run instances for the library rail.
+ * Caller-scoped (per-user privacy) — distinct from {@link useLibraryResources},
+ * which lists the tenant's deployment catalog.
+ */
+export function useMyRuns(
+  options: ClientOptions = {},
+  params: UseMyRunsParams = {}
+): UseQueryResult<RunInstanceSummary[]> {
+  return useQuery({
+    queryKey: ['my-runs', params.tenantId ?? null],
+    queryFn: () => listMyRuns(options, params),
     enabled: params.tenantId != null,
     refetchInterval: 5000,
   });

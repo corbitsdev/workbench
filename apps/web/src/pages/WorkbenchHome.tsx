@@ -298,8 +298,8 @@ export default function WorkbenchHome() {
     showAgent(selection);
   };
 
-  const handleWorkflowSelect = (deploymentId: string) => {
-    showWorkflow(deploymentId);
+  const handleWorkflowSelect = (runId: string | null, deploymentId: string) => {
+    showWorkflow(deploymentId, runId);
   };
 
   const handleNewWorkflow = () => {
@@ -317,10 +317,11 @@ export default function WorkbenchHome() {
     setWorkflowArtifact(null);
   };
 
-  const handleWorkflowStarted = (deploymentId: string) => {
+  const handleWorkflowStarted = (deploymentId: string, runId: string | null) => {
     setActiveModal('none');
     setWorkflowArtifact(null);
-    showWorkflow(deploymentId);
+    // runId is null at start time; the run pane reconciles it via useMyRuns.
+    showWorkflow(deploymentId, runId);
   };
 
   const handleAgentDeleted = () => {
@@ -361,13 +362,14 @@ export default function WorkbenchHome() {
     if (rightPane.view === 'workflow') {
       return (
         <motion.div
-          key={`workflow-${rightPane.deploymentId}`}
+          key={`workflow-${rightPane.deploymentId}-${rightPane.runId ?? 'pending'}`}
           {...paneFade}
           className="min-h-0 flex-1 overflow-hidden"
         >
           <WorkflowRunPane
             deploymentId={rightPane.deploymentId}
             tenantId={workbenchTenantId}
+            runId={rightPane.runId}
             onClose={showGallery}
           />
         </motion.div>
@@ -394,7 +396,8 @@ export default function WorkbenchHome() {
   // error fallback, instead of the new pane staying hidden behind it.
   function getPaneKey(): string {
     if (rightPane.view === 'agent') return `agent-${rightPane.instanceId}`;
-    if (rightPane.view === 'workflow') return `workflow-${rightPane.deploymentId}`;
+    if (rightPane.view === 'workflow')
+      return `workflow-${rightPane.deploymentId}-${rightPane.runId ?? 'pending'}`;
     return rightPane.view;
   }
   const paneKey = getPaneKey();
@@ -416,6 +419,7 @@ export default function WorkbenchHome() {
             <WorkflowRunPane
               deploymentId={rightPane.deploymentId}
               tenantId={workbenchTenantId}
+              runId={rightPane.runId}
               onClose={showGallery}
             />
           ) : (

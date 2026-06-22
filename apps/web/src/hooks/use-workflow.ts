@@ -49,6 +49,51 @@ export function useWorkflowRuns(tenantId?: string | null) {
   });
 }
 
+// One row from `GET /workflow-runs/mine` — the caller's own run instances.
+// `runId` is null until the sidecar reconciles the started run back to the hub.
+const myRunSchema = type({
+  runId: 'string | null',
+  correlationMessageId: 'string',
+  deploymentId: 'string',
+  kind: 'string',
+  status: 'string',
+  startedAt: 'string',
+});
+export type MyRun = typeof myRunSchema.infer;
+const myRunListSchema = myRunSchema.array();
+
+export function useMyRuns(tenantId?: string | null) {
+  return useQuery<MyRun[]>({
+    queryKey: ['my-runs', tenantId ?? null],
+    queryFn: async () => {
+      const raw = await api<unknown>('GET', withTenant('/workflow-runs/mine', tenantId));
+      const parsed = myRunListSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected workflow-runs/mine response: ${parsed.summary}`);
+      }
+      return [...parsed];
+    },
+  });
+}
+
+// Delete a single run instance: run-scoped hard-delete that drops only this run
+// from the user's list/stream, NOT the underlying deployment. Distinct from
+// useDeleteWorkflow, which undeploys the whole deployment.
+export function useDeleteRun(tenantId?: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (runId: string) =>
+      api<unknown>(
+        'DELETE',
+        withTenant(`/workflow-runs/instances/${encodeURIComponent(runId)}`, tenantId)
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['my-runs'] });
+      void queryClient.invalidateQueries({ queryKey: ['workflow-runs'] });
+    },
+  });
+}
+
 export interface WorkflowRunStateResult {
   state: RunState | null;
   events: WorkflowEvent[];
@@ -101,7 +146,8 @@ export function isTerminalPhase(phase: RunPhase): boolean {
 
 export function useWorkflowRunState(
   deploymentId: string | null,
-  tenantId?: string | null
+  tenantId?: string | null,
+  runId?: string | null
 ): WorkflowRunStateResult {
   const [frames, setFrames] = useState<Map<string, RunFrame>>(new Map());
   const [connected, setConnected] = useState(false);
@@ -122,12 +168,18 @@ export function useWorkflowRunState(
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!deploymentId) return;
+    // The stream is run-scoped and access-controlled (CL-2233): the backend
+    // REQUIRES a runId the caller owns and 403s otherwise. A just-started run
+    // has no runId until the hub reconciles it (surfaced via useMyRuns), so we
+    // do not open the stream until both the deployment and the runId are known —
+    // callers render the loading placeholder (settled=false) until then.
+    if (!deploymentId || !runId) return;
     framesRef.current = new Map();
     setFrames(new Map());
     setConnected(true);
     setSettled(false);
-    const url = streamUrl(`/workflow-runs/${deploymentId}/stream`, tenantId);
+    const baseUrl = streamUrl(`/workflow-runs/${deploymentId}/stream`, tenantId);
+    const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}runId=${encodeURIComponent(runId)}`;
     const flush = () => {
       flushTimer.current = null;
       setFrames(new Map(framesRef.current));
@@ -153,27 +205,18 @@ export function useWorkflowRunState(
       flushTimer.current = null;
       unsubscribe();
     };
-  }, [deploymentId, tenantId]);
+  }, [deploymentId, tenantId, runId]);
 
-  // The latest run's events, sorted by its per-run seq. Map insertion order is
-  // the stream's chronological delivery order, so the last distinct runId seen
-  // is the most recently started run.
+  // Events for the scoped run, sorted by its per-run seq. The stream is always
+  // run-scoped now (CL-2233), so every frame belongs to `runId`; reduce just
+  // that run's frames and ignore any stray frame that does not match.
   const latestRunEvents = useMemo<WorkflowEvent[]>(() => {
-    if (frames.size === 0) return [];
-    const byRun = new Map<string, RunFrame[]>();
-    for (const frame of frames.values()) {
-      const bucket = byRun.get(frame.runId);
-      if (bucket === undefined) byRun.set(frame.runId, [frame]);
-      else bucket.push(frame);
-    }
-    const runIds = [...byRun.keys()];
-    const latestRunId = runIds[runIds.length - 1];
-    if (latestRunId === undefined) return [];
-    return (byRun.get(latestRunId) ?? [])
-      .slice()
+    if (frames.size === 0 || !runId) return [];
+    return [...frames.values()]
+      .filter((frame) => frame.runId === runId)
       .sort((a, b) => a.seq - b.seq)
       .map((frame) => frame.event);
-  }, [frames]);
+  }, [frames, runId]);
 
   const state = useMemo<RunState | null>(() => {
     if (latestRunEvents.length === 0) return null;
@@ -279,11 +322,14 @@ export function useSetWorkflowStatus(tenantId?: string | null) {
 export function useStartWorkflow(tenantId?: string | null) {
   return useMutation({
     mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
-      const res = await api<{ deploymentId: string }>(
-        'POST',
-        withTenant(`/workflow-runs/${encodeURIComponent(kind)}/start`, tenantId),
-        { input }
-      );
+      const res = await api<{
+        deploymentId: string;
+        runId: string | null;
+        correlationMessageId: string;
+        accepted: boolean;
+      }>('POST', withTenant(`/workflow-runs/${encodeURIComponent(kind)}/start`, tenantId), {
+        input,
+      });
       return res;
     },
   });

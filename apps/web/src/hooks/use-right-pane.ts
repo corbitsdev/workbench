@@ -3,7 +3,7 @@ import { useState } from 'react';
 export type RightPane =
   | { view: 'gallery' }
   | { view: 'agent'; instanceId: string; tenantId: string; agentName: string }
-  | { view: 'workflow'; deploymentId: string };
+  | { view: 'workflow'; deploymentId: string; runId: string | null };
 
 export interface AgentTarget {
   instanceId: string;
@@ -28,8 +28,8 @@ export function useRightPane(options: { onShow?: () => void; onClose?: () => voi
     onShow?.();
   };
 
-  const showWorkflow = (deploymentId: string) => {
-    setRightPane({ view: 'workflow', deploymentId });
+  const showWorkflow = (deploymentId: string, runId: string | null = null) => {
+    setRightPane({ view: 'workflow', deploymentId, runId });
     onShow?.();
   };
 

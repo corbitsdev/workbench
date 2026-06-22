@@ -41,7 +41,7 @@ export interface UnifiedCatalogModalProps {
   tenantId: string | null;
   onClose: () => void;
   onAgentDeployed: () => void;
-  onWorkflowStarted: (deploymentId: string) => void;
+  onWorkflowStarted: (deploymentId: string, runId: string | null) => void;
   // Controls which tab opens by default when the modal opens.
   defaultTab?: Tab;
 }
@@ -162,7 +162,8 @@ export function UnifiedCatalogModal({
       .mutateAsync({ kind, input: {} })
       .then((res) => {
         handleClose();
-        onWorkflowStarted(res.deploymentId);
+        // runId is null at start time; the run pane reconciles it via useMyRuns.
+        onWorkflowStarted(res.deploymentId, res.runId);
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'Could not start the workflow.');

@@ -125,6 +125,44 @@ export async function listWorkflows(
   }));
 }
 
+export interface ListMyRunsParams {
+  tenantId?: string | null;
+}
+
+// One row from `GET /workflow-runs/mine` — a caller-scoped run instance. `runId`
+// is null until the sidecar has reconciled the started run back to the hub, so
+// the schema admits null and consumers must handle the not-yet-reconciled state.
+const RunInstanceSummarySchema = type({
+  runId: 'string | null',
+  correlationMessageId: 'string',
+  deploymentId: 'string',
+  kind: 'string',
+  status: 'string',
+  startedAt: 'string',
+});
+const MyRunsResponseSchema = RunInstanceSummarySchema.array();
+
+export type RunInstanceSummary = typeof RunInstanceSummarySchema.infer;
+
+/**
+ * Fetch the current user's own workflow run instances (`GET /workflow-runs/mine`),
+ * newest first. Caller-scoped — unlike `listWorkflows`, which lists the tenant's
+ * deployment catalog. `tenantId` is forwarded so the hub resolves visibility
+ * against the active workbench.
+ */
+export async function listMyRuns(
+  options: ClientOptions = {},
+  params: ListMyRunsParams = {}
+): Promise<RunInstanceSummary[]> {
+  const search = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  const raw = await request<unknown>(`workflow-runs/mine${search}`, options);
+  const parsed = MyRunsResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /workflow-runs/mine response: ${parsed.summary}`);
+  }
+  return [...parsed];
+}
+
 export type SkillItem = {
   id: string;
   name: string;

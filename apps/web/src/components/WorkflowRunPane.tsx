@@ -4,6 +4,7 @@ import { RunConsole } from './RunConsole';
 import { ErrorBoundary } from './ErrorBoundary';
 import { loadWorkflowUI } from '../lib/workflow-ui';
 import {
+  useMyRuns,
   useWorkflowRuns,
   useWorkflowRunState,
   useSignalWorkflow,
@@ -15,6 +16,7 @@ import {
 interface WorkflowRunPaneProps {
   deploymentId: string;
   tenantId?: string | null;
+  runId?: string | null;
   onClose: () => void;
 }
 
@@ -23,7 +25,7 @@ interface WorkflowRunPaneProps {
 // loaded run list keyed by deploymentId — never from navigation props. Completed
 // steps' outputs are resolved here (host-side) and handed to the Panel as the
 // `stepOutputs` map so panels stay pure presentational components.
-export function WorkflowRunPane({ deploymentId, tenantId, onClose }: WorkflowRunPaneProps) {
+export function WorkflowRunPane({ deploymentId, tenantId, runId, onClose }: WorkflowRunPaneProps) {
   // Bug fix (3): guard against an empty deploymentId propagating into hooks and
   // triggering a `/workflow-runs//stream` 404. Render nothing until we have one.
   if (!deploymentId) {
@@ -34,18 +36,32 @@ export function WorkflowRunPane({ deploymentId, tenantId, onClose }: WorkflowRun
     );
   }
 
-  return <WorkflowRunPaneInner deploymentId={deploymentId} tenantId={tenantId} onClose={onClose} />;
+  return (
+    <WorkflowRunPaneInner
+      deploymentId={deploymentId}
+      tenantId={tenantId}
+      runId={runId}
+      onClose={onClose}
+    />
+  );
 }
 
 // Separated so that all hooks below are called only after deploymentId is known
 // to be non-empty. React requires consistent hook call order per render, so we
 // can't conditionally invoke hooks inside WorkflowRunPane.
-function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPaneProps) {
+function WorkflowRunPaneInner({ deploymentId, tenantId, runId, onClose }: WorkflowRunPaneProps) {
+  const { data: myRuns = [] } = useMyRuns(tenantId);
   const { data: runs = [] } = useWorkflowRuns(tenantId);
-  const kind = useMemo(
-    () => runs.find((run) => run.deploymentId === deploymentId)?.kind ?? null,
-    [runs, deploymentId]
-  );
+  // Prefer resolving the kind from the selected run (keyed by runId), so the
+  // right view is chosen for THIS run. Fall back to the deployment catalog when
+  // the run has not yet reconciled a runId.
+  const kind = useMemo(() => {
+    if (runId) {
+      const mine = myRuns.find((run) => run.runId === runId);
+      if (mine) return mine.kind;
+    }
+    return runs.find((run) => run.deploymentId === deploymentId)?.kind ?? null;
+  }, [myRuns, runs, deploymentId, runId]);
 
   const { data: uiModule } = useQuery({
     queryKey: ['workflow-ui-module', kind],
@@ -57,7 +73,7 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
   // Bug fix (1): `settled` is false while the initial SSE backlog is being
   // replayed — the debounce hasn't fired yet. Show "Loading run…" until it
   // becomes true so the UI never animates through past steps.
-  const { state, connected, settled } = useWorkflowRunState(deploymentId, tenantId);
+  const { state, connected, settled } = useWorkflowRunState(deploymentId, tenantId, runId);
 
   const terminal = state !== null && isTerminalPhase(state.phase);
 

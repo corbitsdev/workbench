@@ -5,7 +5,14 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { createElement } from 'react';
-import { useStepOutput, useWorkflowRuns, useAllStepOutputs, isTerminalPhase } from './use-workflow';
+import {
+  useStepOutput,
+  useWorkflowRuns,
+  useMyRuns,
+  useDeleteRun,
+  useAllStepOutputs,
+  isTerminalPhase,
+} from './use-workflow';
 
 const originalFetch = globalThis.fetch;
 
@@ -140,6 +147,81 @@ describe('useAllStepOutputs', () => {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+
+describe('useMyRuns', () => {
+  it('hits /workflow-runs/mine and parses one row per run, admitting a null runId', async () => {
+    let requested = '';
+    const rows = [
+      {
+        runId: null,
+        correlationMessageId: 'msg-1',
+        deploymentId: 'dep-1',
+        kind: 'collateral-generation',
+        status: 'running',
+        startedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        runId: 'run-2',
+        correlationMessageId: 'msg-2',
+        deploymentId: 'dep-2',
+        kind: 'presentation-generation',
+        status: 'completed',
+        startedAt: '2026-01-02T00:00:00.000Z',
+      },
+    ];
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested = String(url);
+      return Promise.resolve(jsonResponse(200, rows));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useMyRuns('tn-wb'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requested).toContain('/workflow-runs/mine');
+    expect(requested).toContain('tenantId=tn-wb');
+    expect(result.current.data).toEqual(rows);
+  });
+
+  it('throws on a malformed /workflow-runs/mine row', async () => {
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(jsonResponse(200, [{ correlationMessageId: 'msg-1' }]))) as typeof fetch;
+
+    const { result } = renderHook(() => useMyRuns('tn-wb'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+
+describe('useDeleteRun', () => {
+  it('issues a DELETE to /workflow-runs/instances/:runId — NOT the deployment endpoint', async () => {
+    let requested = '';
+    let method = '';
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      requested = String(url);
+      method = init?.method ?? 'GET';
+      return Promise.resolve(jsonResponse(204, {}));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useDeleteRun('tn-wb'), { wrapper: wrapper() });
+    await result.current.mutateAsync('run-abc');
+
+    expect(method).toBe('DELETE');
+    expect(requested).toContain('/workflow-runs/instances/run-abc');
+    expect(requested).not.toContain('/workflows/');
+    expect(requested).toContain('tenantId=tn-wb');
+  });
+
+  it('url-encodes the runId in the delete path', async () => {
+    let requested = '';
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested = String(url);
+      return Promise.resolve(jsonResponse(204, {}));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useDeleteRun(), { wrapper: wrapper() });
+    await result.current.mutateAsync('run/with space');
+
+    expect(requested).toContain('/workflow-runs/instances/run%2Fwith%20space');
   });
 });
 

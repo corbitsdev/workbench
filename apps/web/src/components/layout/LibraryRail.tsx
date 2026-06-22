@@ -1,9 +1,8 @@
-import { useLibraryResources } from '@workbench/client/react';
+import { useMyRuns, type RunInstanceSummary } from '@workbench/client/react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { resolveKindLabel } from '../../lib/resolve-kind-label';
 import { toHumanLabel } from '@workbench/ui';
-import type { WorkflowSummary } from '@workbench/shared';
 import { clientOptions } from '../../lib/client-options';
 import {
   listAgentInstances,
@@ -14,7 +13,7 @@ import {
 import type { AgentInstance, WorkbenchEntry, CredentialRequirement } from '../../lib/hub-api';
 import { useAgentPhase } from '../../lib/use-agent-phase';
 import type { AgentPhase } from '@workbench/agents/browser';
-import { useDeleteWorkflow } from '../../hooks/use-workflow';
+import { useDeleteRun } from '../../hooks/use-workflow';
 import { useState } from 'react';
 
 type ResourceType = 'workflow' | 'agent';
@@ -45,6 +44,12 @@ interface WorkflowRailItem extends RailItemBase {
   type: 'workflow';
   workflowStatus: string;
   workflowKind: string;
+  // The run instance this row represents. `runId` is null until the sidecar
+  // reconciles the started run; `deploymentId` is always present and is threaded
+  // up so the run pane can open the stream.
+  runId: string | null;
+  deploymentId: string;
+  correlationMessageId: string;
 }
 
 type RailItem = AgentRailItem | WorkflowRailItem;
@@ -158,28 +163,31 @@ function workflowKindLabel(kind: string): string {
   return resolveKindLabel(kind) ?? kind;
 }
 
-function workflowToRailItem(w: WorkflowSummary): WorkflowRailItem {
-  const statusLabel = STATUS_LABELS[w.status] ?? toHumanLabel(w.status);
-  // Until workflows surface their own run identity, createdAt is the only thing
-  // distinguishing concurrent runs of the same kind.
-  const started = new Date(w.createdAt).toLocaleString(undefined, {
+function runToRailItem(r: RunInstanceSummary): WorkflowRailItem {
+  const statusLabel = STATUS_LABELS[r.status] ?? toHumanLabel(r.status);
+  const started = new Date(r.startedAt).toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   });
   const sub = `${statusLabel} · ${started}`;
+  // Key rows by runId when reconciled, else by correlationMessageId so an
+  // unreconciled run still has a stable React key.
   return {
-    id: w.id,
+    id: r.runId ?? r.correlationMessageId,
     group: 'Workflows',
-    name: workflowKindLabel(w.kind),
+    name: workflowKindLabel(r.kind),
     type: 'workflow',
     sub,
-    status: SESSION_STATUS_TO_RAIL[w.status] ?? 'idle',
+    status: SESSION_STATUS_TO_RAIL[r.status] ?? 'idle',
     who: 'GA',
     color: 'var(--accent)',
-    workflowStatus: w.status,
-    workflowKind: w.kind,
+    workflowStatus: r.status,
+    workflowKind: r.kind,
+    runId: r.runId,
+    deploymentId: r.deploymentId,
+    correlationMessageId: r.correlationMessageId,
   };
 }
 
@@ -392,7 +400,7 @@ export interface LibraryRailProps {
   onClose?: () => void;
   onNew?: () => void;
   onAgentSelect?: (selection: AgentSelection) => void;
-  onWorkflowSelect?: (workflowId: string, workflowKind: string) => void;
+  onWorkflowSelect?: (runId: string | null, deploymentId: string, workflowKind: string) => void;
   onWorkbenchSelect?: (slug: string) => void;
   onAgentDeleted?: () => void;
   activeAgentInstanceId?: string;
@@ -439,13 +447,13 @@ export function LibraryRail({
   const activeWorkbench = workbenches.find((w) => w.tenantSlug === activeWorkbenchSlug);
   const activeWorkbenchTenantId = activeWorkbench?.tenantId;
 
-  const deleteWorkflow = useDeleteWorkflow(activeWorkbenchTenantId);
+  const deleteRun = useDeleteRun(activeWorkbenchTenantId);
 
   const {
-    data: workflows,
+    data: runs,
     isLoading: jobsLoading,
     isError,
-  } = useLibraryResources(clientOptions, {
+  } = useMyRuns(clientOptions, {
     tenantId: activeWorkbenchSlug ? (activeWorkbenchTenantId ?? null) : undefined,
   });
 
@@ -454,7 +462,7 @@ export function LibraryRail({
     ? allAgentItems.filter((a) => a.tenantId === activeWorkbenchTenantId)
     : allAgentItems;
 
-  const allJobItems = (workflows ?? []).map(workflowToRailItem);
+  const allJobItems = (runs ?? []).map(runToRailItem);
   const jobItems = allJobItems.filter((w) => !TERMINAL_STATUSES.has(w.workflowStatus));
   const completedJobItems = allJobItems.filter((w) => TERMINAL_STATUSES.has(w.workflowStatus));
   const items: RailItem[] = [...agentItems, ...jobItems];
@@ -644,7 +652,12 @@ export function LibraryRail({
                 const isClickable = isClickableAgent || isClickableWorkflow;
                 const isActiveAgent =
                   item.type === 'agent' && item.instanceId === activeAgentInstanceId;
-                const isActiveWorkflow = item.type === 'workflow' && item.id === activeWorkflowId;
+                const isActiveWorkflow =
+                  item.type === 'workflow' &&
+                  activeWorkflowId !== undefined &&
+                  (item.runId === activeWorkflowId ||
+                    item.deploymentId === activeWorkflowId ||
+                    item.id === activeWorkflowId);
                 const isRestarting =
                   item.type === 'agent' && restartingInstanceId === item.instanceId;
 
@@ -662,7 +675,7 @@ export function LibraryRail({
                       agentName: item.name,
                     });
                   } else if (item.type === 'workflow' && onWorkflowSelect) {
-                    onWorkflowSelect(item.id, item.workflowKind);
+                    onWorkflowSelect(item.runId, item.deploymentId, item.workflowKind);
                   }
                 };
 
@@ -699,12 +712,18 @@ export function LibraryRail({
                   setConfirmWorkflowRemoveId(item.id);
                 };
 
+                // Run-scoped delete needs a reconciled runId. A row with a null
+                // runId (run not yet reconciled by the sidecar) cannot be
+                // deleted yet, so the Remove affordance is hidden for it.
+                const canRemoveWorkflow = item.type === 'workflow' && item.runId !== null;
+
                 const handleWorkflowRemoveConfirm = async () => {
-                  if (item.type !== 'workflow') return;
+                  if (item.type !== 'workflow' || item.runId === null) return;
+                  const runId = item.runId;
                   setConfirmWorkflowRemoveId(null);
                   setRemovingWorkflowId(item.id);
-                  await deleteWorkflow
-                    .mutateAsync(item.id)
+                  await deleteRun
+                    .mutateAsync(runId)
                     .catch(() => undefined)
                     .finally(() => setRemovingWorkflowId(null));
                 };
@@ -820,7 +839,7 @@ export function LibraryRail({
                           )}
                         </div>
                       )}
-                      {item.type === 'workflow' && (
+                      {item.type === 'workflow' && canRemoveWorkflow && (
                         <div className="flex flex-none items-center gap-[5px]">
                           {isConfirmingWorkflowRemove ? (
                             <>
@@ -908,9 +927,13 @@ export function LibraryRail({
               </button>
               {completedWorkflowsOpen &&
                 completedJobItems.map((item) => {
-                  const isActive = item.id === activeWorkflowId;
+                  const isActive =
+                    item.runId === activeWorkflowId ||
+                    item.deploymentId === activeWorkflowId ||
+                    item.id === activeWorkflowId;
                   const isConfirming = confirmWorkflowRemoveId === item.id;
                   const isRemoving = removingWorkflowId === item.id;
+                  const runId = item.runId;
 
                   return (
                     <CompletedWorkflowRow
@@ -919,20 +942,28 @@ export function LibraryRail({
                       isActive={isActive}
                       onOpen={
                         onWorkflowSelect
-                          ? () => onWorkflowSelect(item.id, item.workflowKind)
+                          ? () => onWorkflowSelect(item.runId, item.deploymentId, item.workflowKind)
                           : undefined
                       }
-                      onRemove={() => setConfirmWorkflowRemoveId(item.id)}
+                      // Run-scoped delete needs a reconciled runId; a completed
+                      // run always has one, but guard defensively.
+                      onRemove={
+                        runId !== null ? () => setConfirmWorkflowRemoveId(item.id) : undefined
+                      }
                       removing={isRemoving}
                       confirmingRemove={isConfirming}
-                      onConfirmRemove={() => {
-                        setConfirmWorkflowRemoveId(null);
-                        setRemovingWorkflowId(item.id);
-                        void deleteWorkflow
-                          .mutateAsync(item.id)
-                          .catch(() => undefined)
-                          .finally(() => setRemovingWorkflowId(null));
-                      }}
+                      onConfirmRemove={
+                        runId !== null
+                          ? () => {
+                              setConfirmWorkflowRemoveId(null);
+                              setRemovingWorkflowId(item.id);
+                              void deleteRun
+                                .mutateAsync(runId)
+                                .catch(() => undefined)
+                                .finally(() => setRemovingWorkflowId(null));
+                            }
+                          : undefined
+                      }
                       onCancelRemove={() => setConfirmWorkflowRemoveId(null)}
                     />
                   );
