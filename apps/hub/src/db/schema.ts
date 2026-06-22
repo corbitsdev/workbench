@@ -67,6 +67,44 @@ export const workflowRun = pgTable('workflow_run', {
   deletedAt: timestamp('deleted_at'),
 });
 
+// The USER-OWNED workflow run (CL-2233). Despite its name, `workflow_run`
+// (above) is the shared, operator-managed DEPLOYMENT — one row per kind/tenant,
+// addressed by `deploymentId`. Many `workflow_run_instance` rows point at one
+// such deployment: every time a user presses Start, they create one instance
+// row scoped to their own per-tenant principal. The sidebar lists these
+// instances (not deployments), delete is instance-scoped (cancel-if-active +
+// soft-delete) and NEVER tears the deployment down, and the per-run privacy
+// filter on the SSE stream keys off `runId`.
+//
+// `runId` is the canonical workflow runId minted by the @intx/inference reactor
+// at message dequeue (we do not — and cannot — supply it). It is therefore
+// nullable until reconciled: at Start we know only the `correlationMessageId`
+// (the messageId the hub stamps onto the trigger and that the reactor echoes
+// back as `consumedMessageId` on the RunStarted event). The hub reconciles
+// `runId` lazily on read by matching `consumedMessageId` in the deployment's
+// run-event log. See routes/workflow-runs.ts (reconcileRunInstances).
+export const workflowRunInstanceStatus = ['running', 'completed', 'failed', 'cancelled'] as const;
+
+export const workflowRunInstance = pgTable('workflow_run_instance', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  runId: text('run_id').unique(),
+  correlationMessageId: text('correlation_message_id').notNull().unique(),
+  deploymentId: text('deployment_id').notNull(),
+  kind: text('kind').notNull(),
+  tenantId: text('tenant_id').notNull(),
+  memberPrincipalId: text('member_principal_id').notNull(),
+  status: text('status', { enum: workflowRunInstanceStatus }).notNull(),
+  input: jsonb('input').$type<Record<string, unknown>>(),
+  startedAt: timestamp('started_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at')
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  deletedAt: timestamp('deleted_at'),
+});
+
+export type WorkflowRunInstanceRow = typeof workflowRunInstance.$inferSelect;
+
 export const painPoint = pgTable('pain_point', {
   id: uuid('id').primaryKey().defaultRandom(),
   sessionId: uuid('session_id')
