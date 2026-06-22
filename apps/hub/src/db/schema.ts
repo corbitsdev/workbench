@@ -67,6 +67,35 @@ export const workflowRun = pgTable('workflow_run', {
   deletedAt: timestamp('deleted_at'),
 });
 
+// CL-2240: thin-executor run state. Execution of a deployed workflow definition
+// is held entirely in this one row — `outputs` is a stepId->output map, gates
+// park the run at `status: 'awaiting'` on `currentStepId`. Reads are a single
+// indexed lookup (no event-log replay), and resume reads this record and
+// continues. Distinct from the `workflow_run` deployment-index table, which the
+// native-deploy path still owns.
+export const workflowRunStateStatus = ['running', 'awaiting', 'completed', 'failed'] as const;
+
+export const workflowRunRecord = pgTable('workflow_run_record', {
+  id: text('id').primaryKey(),
+  deploymentId: text('deployment_id'),
+  kind: text('kind').notNull(),
+  tenantId: text('tenant_id').notNull(),
+  principalId: text('principal_id').notNull(),
+  status: text('status', { enum: workflowRunStateStatus }).notNull().default('running'),
+  currentStepId: text('current_step_id'),
+  input: jsonb('input').$type<unknown>(),
+  outputs: jsonb('outputs').$type<Record<string, unknown>>().notNull().default({}),
+  error: text('error'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at')
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  deletedAt: timestamp('deleted_at'),
+});
+
+export type WorkflowRunRecordRow = typeof workflowRunRecord.$inferSelect;
+
 export const painPoint = pgTable('pain_point', {
   id: uuid('id').primaryKey().defaultRandom(),
   sessionId: uuid('session_id')

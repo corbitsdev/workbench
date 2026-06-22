@@ -1,21 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { type } from 'arktype';
-import { resumeFromLog, type RunPhase, type RunState, type WorkflowEvent } from '@intx/workflow';
 import { api } from '../lib/api';
-import { subscribeSharedEventStream } from '../lib/shared-event-stream';
-
-// Same-origin EventSource resolver. A credentialed cross-origin EventSource is
-// blocked by Safari (ITP) and Brave (shields); in dev we route the stream
-// through the same-origin Vite proxy so the port-agnostic auth cookie still
-// authenticates. In prod there is no proxy, so fall back to apiBase like fetch.
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
-function streamUrl(path: string, tenantId?: string | null): string {
-  const base = import.meta.env.DEV ? window.location.origin : apiBase || window.location.origin;
-  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, base);
-  if (tenantId) url.searchParams.set('tenantId', tenantId);
-  return url.toString();
-}
+import { isRecordTerminal, runStateFromRecord, type RunRecord } from '../lib/run-state-adapter';
 
 // Appends the active workbench tenantId so the hub resolves visibility against
 // that workbench (walking ancestors to the global tenant). Omitted when no
@@ -26,8 +12,27 @@ function withTenant(path: string, tenantId?: string | null): string {
   return `${path}${sep}tenantId=${encodeURIComponent(tenantId)}`;
 }
 
+// Thin-executor run record (CL-2240). State lives in a single row read from the
+// hub; there is no SSE event log to reduce. Parse every response at the boundary.
+const runRecordSchema = type({
+  runId: 'string',
+  kind: 'string',
+  status: "'running'|'awaiting'|'completed'|'failed'",
+  currentStepId: 'string|null',
+  outputs: type({ '[string]': 'unknown' }),
+  'error?': 'string',
+});
+
+function parseRunRecord(raw: unknown): RunRecord {
+  const parsed = runRecordSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected workflow run-record response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 const workflowRunSchema = type({
-  deploymentId: 'string',
+  runId: 'string',
   kind: 'string',
   status: 'string',
   createdAt: 'string',
@@ -39,239 +44,36 @@ export function useWorkflowRuns(tenantId?: string | null) {
   return useQuery<WorkflowRun[]>({
     queryKey: ['workflow-runs', tenantId ?? null],
     queryFn: async () => {
-      const raw = await api<unknown>('GET', withTenant('/workflow-runs', tenantId));
+      const raw = await api<unknown>('GET', withTenant('/workflow-exec/records', tenantId));
       const parsed = workflowRunListSchema(raw);
       if (parsed instanceof type.errors) {
-        throw new Error(`Unexpected workflow-runs response: ${parsed.summary}`);
+        throw new Error(`Unexpected workflow-records response: ${parsed.summary}`);
       }
       return parsed;
     },
   });
 }
 
-export interface WorkflowRunStateResult {
-  state: RunState | null;
-  events: WorkflowEvent[];
-  connected: boolean;
-  // True once the initial stream backlog has been received and reduced.
-  // False while the first debounce flush is still pending (i.e. the replay
-  // burst is in flight). Callers should show a loading placeholder until this
-  // is true so the UI never animates through historical steps.
-  settled: boolean;
-}
+export { isRecordTerminal };
 
-// The hub streams each run event as `{ seq, runId, event }` where `event` is the
-// ON-DISK blob: the state-machine discriminant `kind` is serialized under the
-// field name `type` (see @intx/workflow-host repo-store adapter). Parse the SSE
-// frame at this trust boundary and convert the on-disk shape back to the
-// in-memory WorkflowEvent (`type` -> `kind`) the state machine consumes.
-const runStreamFrameSchema = type({
-  seq: 'number',
-  runId: 'string',
-  event: type({ type: 'string', seq: 'number', '+': 'ignore' }),
-});
-
-function frameToWorkflowEvent(frame: typeof runStreamFrameSchema.infer): WorkflowEvent {
-  const { type: kind, ...rest } = frame.event;
-  return { ...rest, kind } as unknown as WorkflowEvent;
-}
-
-interface RunFrame {
-  runId: string;
-  seq: number;
-  event: WorkflowEvent;
-}
-
-// Subscribe to a deployment's append-only event log over SSE and reduce it into
-// the native RunState via resumeFromLog. This is a live stream, not
-// request/response data — TanStack Query is for the run list; the stream is
-// owned by the shared EventSource registry, mirroring instance-transport.
-//
-// A deployment's stream carries EVERY run it has produced — each Start is a new
-// independent run with its OWN per-run seq sequence (1..N). We therefore key
-// frames by `${runId}/${seq}` (so a stream reconnect, which re-tails from seq 0,
-// dedupes instead of double-applying), group by runId, and reduce only the most
-// recently started run. Concatenating multiple runs' logs into one reduce is an
-// invalid event sequence and throws inside the state machine.
-const TERMINAL_PHASES: ReadonlySet<RunPhase> = new Set(['completed', 'failed', 'cancelled']);
-
-export function isTerminalPhase(phase: RunPhase): boolean {
-  return TERMINAL_PHASES.has(phase);
-}
-
-export function useWorkflowRunState(
-  deploymentId: string | null,
-  tenantId?: string | null
-): WorkflowRunStateResult {
-  const [frames, setFrames] = useState<Map<string, RunFrame>>(new Map());
-  const [connected, setConnected] = useState(false);
-  const [settled, setSettled] = useState(false);
-
-  // Frames accumulate in a ref and flush to state on a TRAILING debounce. On
-  // open the stream replays the whole log from seq 0 in a tight burst; flushing
-  // per event would re-render through every intermediate step ("walking" the UI
-  // through past steps). Trailing debounce collapses the replay burst into ONE
-  // render at the final state — so the panel jumps straight to the active step —
-  // while sparse live events (a step completing, then a wait) each flush after
-  // the quiet window.
-  //
-  // `settled` starts false and becomes true on the first flush. Callers render a
-  // "Loading run…" placeholder until settled, which eliminates the walk-through
-  // even on slow machines where the debounce fires multiple times.
-  const framesRef = useRef<Map<string, RunFrame>>(new Map());
-  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!deploymentId) return;
-    framesRef.current = new Map();
-    setFrames(new Map());
-    setConnected(true);
-    setSettled(false);
-    const url = streamUrl(`/workflow-runs/${deploymentId}/stream`, tenantId);
-    const flush = () => {
-      flushTimer.current = null;
-      setFrames(new Map(framesRef.current));
-      setSettled(true);
-    };
-    const unsubscribe = subscribeSharedEventStream(url, 'message', (raw) => {
-      const parsed = runStreamFrameSchema(raw);
-      if (parsed instanceof type.errors) return;
-      const key = `${parsed.runId}/${String(parsed.seq)}`;
-      if (framesRef.current.has(key)) return;
-      framesRef.current.set(key, {
-        runId: parsed.runId,
-        seq: parsed.seq,
-        event: frameToWorkflowEvent(parsed),
-      });
-      if (flushTimer.current !== null) clearTimeout(flushTimer.current);
-      flushTimer.current = setTimeout(flush, 250);
-    });
-    return () => {
-      setConnected(false);
-      setSettled(false);
-      if (flushTimer.current !== null) clearTimeout(flushTimer.current);
-      flushTimer.current = null;
-      unsubscribe();
-    };
-  }, [deploymentId, tenantId]);
-
-  // The latest run's events, sorted by its per-run seq. Map insertion order is
-  // the stream's chronological delivery order, so the last distinct runId seen
-  // is the most recently started run.
-  const latestRunEvents = useMemo<WorkflowEvent[]>(() => {
-    if (frames.size === 0) return [];
-    const byRun = new Map<string, RunFrame[]>();
-    for (const frame of frames.values()) {
-      const bucket = byRun.get(frame.runId);
-      if (bucket === undefined) byRun.set(frame.runId, [frame]);
-      else bucket.push(frame);
-    }
-    const runIds = [...byRun.keys()];
-    const latestRunId = runIds[runIds.length - 1];
-    if (latestRunId === undefined) return [];
-    return (byRun.get(latestRunId) ?? [])
-      .slice()
-      .sort((a, b) => a.seq - b.seq)
-      .map((frame) => frame.event);
-  }, [frames]);
-
-  const state = useMemo<RunState | null>(() => {
-    if (latestRunEvents.length === 0) return null;
-    const first = latestRunEvents[0];
-    const runId = first?.kind === 'RunStarted' ? first.runId : (deploymentId ?? '');
-    try {
-      return resumeFromLog(runId, latestRunEvents);
-    } catch {
-      // A partially-delivered log (e.g. a step event observed before its
-      // RunStarted) is a transient ordering artifact, not a render error. Show
-      // the loading state until the gap fills rather than tripping the boundary.
-      return null;
-    }
-  }, [deploymentId, latestRunEvents]);
-
-  return { state, events: latestRunEvents, connected, settled };
-}
-
-const stepOutputSchema = type({ stepId: 'string', output: 'unknown' });
-
-// Fetch and parse a single completed step's resolved output. Single source of
-// truth for the step-output endpoint contract — shared by the per-step hook and
-// the batched resolver in WorkflowRunPane so the schema is defined once.
-export async function fetchStepOutput(
-  deploymentId: string,
-  stepId: string,
-  tenantId?: string | null
-): Promise<unknown> {
-  const raw = await api<unknown>(
-    'GET',
-    withTenant(`/workflow-runs/${deploymentId}/steps/${stepId}/output`, tenantId)
-  );
-  const parsed = stepOutputSchema(raw);
-  if (parsed instanceof type.errors) {
-    throw new Error(`Unexpected step-output response: ${parsed.summary}`);
-  }
-  return parsed.output;
-}
-
-// Read a completed workflow step's resolved output content. The native
-// substrate stores step output by reference (`inline:` / `blob:`); this hits
-// the hub endpoint that replays the run's event log to find the step's
-// StepCompleted ref and resolves it to the value.
-//
-// Gating: the CALLER decides when a step is done. Only enable this for a step
-// that has completed and carries an output ref — the endpoint 404s otherwise.
-// Output is immutable once a step completes, so it is cached indefinitely.
-export function useStepOutput(
-  deploymentId: string | null,
-  stepId: string | null,
-  opts?: { enabled?: boolean; tenantId?: string | null }
-) {
-  return useQuery<unknown>({
-    queryKey: ['workflow-step-output', deploymentId, stepId, opts?.tenantId ?? null],
-    enabled: !!deploymentId && !!stepId && (opts?.enabled ?? true),
-    staleTime: Infinity,
-    queryFn: () => fetchStepOutput(deploymentId as string, stepId as string, opts?.tenantId),
-  });
-}
-
-// Fetch all completed step outputs in a single call. The hub endpoint returns
-// { outputs: Record<stepId, unknown> } covering every step that has produced
-// an output so far. Re-keyed on `lastSeq` so TanStack Query refetches as the
-// run advances (new steps complete). Gated on both ids being present.
-const allStepOutputsSchema = type({ outputs: type({ '[string]': 'unknown' }) });
-
-export function useAllStepOutputs(
-  deploymentId: string | null,
-  tenantId: string | null | undefined,
-  opts?: { lastSeq?: number }
-) {
-  return useQuery<Record<string, unknown>>({
-    queryKey: ['workflow-all-step-outputs', deploymentId, tenantId ?? null, opts?.lastSeq ?? 0],
-    enabled: !!deploymentId,
+// Read a thin-executor run record and poll while it is advancing. The hub runs
+// each non-gate step synchronously, so the record only changes between reads
+// while `status === 'running'` (a step is executing): we poll then, and stop
+// the moment the run goes quiescent — parked on a gate (`awaiting`) or terminal
+// (`completed`/`failed`) — mirroring the old auto-stop-at-quiescent behavior.
+// staleTime 0 so a resume's fresh state is never served stale.
+export function useWorkflowRecord(runId: string | null, tenantId?: string | null) {
+  return useQuery<RunRecord>({
+    queryKey: ['workflow-record', runId, tenantId ?? null],
+    enabled: !!runId,
+    staleTime: 0,
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 1000 : false),
     queryFn: async () => {
       const raw = await api<unknown>(
         'GET',
-        withTenant(`/workflow-runs/${deploymentId as string}/steps`, tenantId)
+        withTenant(`/workflow-exec/records/${runId as string}`, tenantId)
       );
-      const parsed = allStepOutputsSchema(raw);
-      if (parsed instanceof type.errors) {
-        throw new Error(`Unexpected all-step-outputs response: ${parsed.summary}`);
-      }
-      return parsed.outputs;
-    },
-  });
-}
-
-// Persist the run's terminal status to the hub so the library rail can show
-// the final Completed / Failed badge without relying on the live stream.
-export function useSetWorkflowStatus(tenantId?: string | null) {
-  return useMutation({
-    mutationFn: async ({ deploymentId, status }: { deploymentId: string; status: string }) => {
-      return api<unknown>(
-        'PATCH',
-        withTenant(`/workflow-runs/${encodeURIComponent(deploymentId)}/status`, tenantId),
-        { status }
-      );
+      return parseRunRecord(raw);
     },
   });
 }
@@ -279,19 +81,38 @@ export function useSetWorkflowStatus(tenantId?: string | null) {
 export function useStartWorkflow(tenantId?: string | null) {
   return useMutation({
     mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
-      const res = await api<{ deploymentId: string }>(
+      const raw = await api<unknown>(
         'POST',
-        withTenant(`/workflow-runs/${encodeURIComponent(kind)}/start`, tenantId),
+        withTenant(`/workflow-exec/${encodeURIComponent(kind)}/start`, tenantId),
         { input }
       );
-      return res;
+      return parseRunRecord(raw);
+    },
+  });
+}
+
+// Resume a gated run: posts the gate signal and writes the returned fresh record
+// straight into the record query cache so the panel advances without waiting for
+// the next poll. The active gate is parked, so polling is off until this fires.
+export function useResumeWorkflow(runId: string, tenantId?: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ signalName, payload }: { signalName: string; payload?: unknown }) => {
+      const raw = await api<unknown>(
+        'POST',
+        withTenant(`/workflow-exec/records/${encodeURIComponent(runId)}/resume`, tenantId),
+        { signalName, payload }
+      );
+      return parseRunRecord(raw);
+    },
+    onSuccess: (record) => {
+      queryClient.setQueryData(['workflow-record', runId, tenantId ?? null], record);
     },
   });
 }
 
 // Delete (undeploy) a workflow deployment: operator-gated soft-delete that
-// drops it from the list/stream/start, undeploys the sidecar supervisor, and
-// stops its step instances. Used to finish/remove a completed or stuck run.
+// drops it from the list/start. Used to finish/remove a completed or stuck run.
 export function useDeleteWorkflow(tenantId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -307,22 +128,4 @@ export function useDeleteWorkflow(tenantId?: string | null) {
   });
 }
 
-export function useSignalWorkflow(deploymentId: string, tenantId?: string | null) {
-  return useMutation({
-    mutationFn: async ({
-      runId,
-      signalName,
-      payload,
-    }: {
-      runId: string;
-      signalName: string;
-      payload?: unknown;
-    }) => {
-      return api<unknown>('POST', withTenant(`/workflow-runs/${deploymentId}/signal`, tenantId), {
-        runId,
-        signalName,
-        payload,
-      });
-    },
-  });
-}
+export { runStateFromRecord };

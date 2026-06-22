@@ -4,8 +4,8 @@ import { afterEach, describe, it, expect, mock } from 'bun:test';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { WorkflowPanelProps } from '@workbench/ui';
-import type { RunState, StepState } from '@intx/workflow';
 import * as workflowHooks from '../hooks/use-workflow';
+import type { RunRecord } from '../lib/run-state-adapter';
 
 function CustomPanel({ deploymentId, stepOutputs, onSignal }: WorkflowPanelProps) {
   return (
@@ -16,7 +16,7 @@ function CustomPanel({ deploymentId, stepOutputs, onSignal }: WorkflowPanelProps
           out-{stepId}:{JSON.stringify(output)}
         </span>
       ))}
-      <button onClick={() => onSignal('approve')}>fire-signal</button>
+      <button onClick={() => onSignal('approve', { ok: true })}>fire-signal</button>
     </div>
   );
 }
@@ -28,135 +28,103 @@ mock.module('../lib/workflow-ui', () => ({
   },
 }));
 
-function step(stepId: string, phase: StepState['phase'] = 'completed'): StepState {
-  return {
-    stepId,
-    phase,
-    outputRef: phase === 'completed' ? `inline:${stepId}` : undefined,
-    currentAttempt: 1,
-  } as unknown as StepState;
-}
+// Record served by the mocked record hook, swapped per test.
+let record: RunRecord | null = null;
+let isLoading = false;
+let isError = false;
 
-function mixedRunState(phase: RunState['phase'] = 'running'): RunState {
-  return {
-    runId: 'run-mixed',
-    phase,
-    lastSeq: 5,
-    steps: new Map([
-      ['step-ok', step('step-ok')],
-      ['step-bad', step('step-bad')],
-      [
-        'step-pending',
-        {
-          stepId: 'step-pending',
-          phase: 'in-flight',
-          currentAttempt: 1,
-        } as unknown as StepState,
-      ],
-    ]),
-  } as RunState;
-}
+const resumeMutateAsync = mock(async () => undefined);
 
-let runState: RunState | null = null;
-let settled = true;
-
-// All-step-outputs mock: returns a map for dep-mixed, empty for others.
-const allStepOutputsMock = mock((deploymentId: string | null) => {
-  if (deploymentId === 'dep-mixed') {
-    return {
-      data: { 'step-ok': { headline: 'hi' } },
-      isSuccess: true,
-    };
-  }
-  return { data: {}, isSuccess: true };
-});
-
-// Track signal calls to assert terminal gating.
-const signalMutateAsync = mock(async () => undefined);
-
-// Spread the real module so untouched exports keep their real implementations.
 mock.module('../hooks/use-workflow', () => ({
   ...workflowHooks,
-  useWorkflowRuns: () => ({
-    data: [
-      { deploymentId: 'dep-panel', kind: 'with-panel', status: 'active', createdAt: '' },
-      { deploymentId: 'dep-plain', kind: 'no-panel', status: 'active', createdAt: '' },
-      { deploymentId: 'dep-mixed', kind: 'with-panel', status: 'active', createdAt: '' },
-    ],
-    isPending: false,
-  }),
-  useWorkflowRunState: () => ({ state: runState, events: [], connected: true, settled }),
-  useSignalWorkflow: () => ({
-    mutateAsync: signalMutateAsync,
-    isPending: false,
-  }),
-  useAllStepOutputs: (deploymentId: string | null) => allStepOutputsMock(deploymentId),
-  useSetWorkflowStatus: () => ({ mutate: () => undefined }),
-  isTerminalPhase: workflowHooks.isTerminalPhase,
+  useWorkflowRecord: () => ({ data: record ?? undefined, isLoading, isError }),
+  useResumeWorkflow: () => ({ mutateAsync: resumeMutateAsync, isPending: false }),
 }));
 
 import { WorkflowRunPane } from './WorkflowRunPane';
 
 function wrapper({ children }: { children: React.ReactNode }) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+
+function makeRecord(over: Partial<RunRecord>): RunRecord {
+  return {
+    runId: 'wfr_1',
+    kind: 'with-panel',
+    status: 'awaiting',
+    currentStepId: 'gate',
+    outputs: {},
+    ...over,
+  };
 }
 
 describe('WorkflowRunPane', () => {
   afterEach(() => {
     cleanup();
-    runState = null;
-    settled = true;
-    signalMutateAsync.mockClear();
-    allStepOutputsMock.mockClear();
+    record = null;
+    isLoading = false;
+    isError = false;
+    resumeMutateAsync.mockClear();
   });
 
   it('renders the workflow kind own Panel when its module exports one', async () => {
-    render(<WorkflowRunPane deploymentId="dep-panel" onClose={() => undefined} />, { wrapper });
-    await waitFor(() => screen.getByText('custom-panel-for-dep-panel'));
+    record = makeRecord({});
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, { wrapper });
+    await waitFor(() => screen.getByText('custom-panel-for-wfr_1'));
   });
 
   it('falls back to RunConsole when the module has no Panel', async () => {
-    render(<WorkflowRunPane deploymentId="dep-plain" onClose={() => undefined} />, { wrapper });
+    record = makeRecord({ kind: 'no-panel' });
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, { wrapper });
     await waitFor(() => screen.getByText('Workflow run'));
-    expect(screen.queryByText('custom-panel-for-dep-plain')).toBeNull();
+    expect(screen.queryByText('custom-panel-for-wfr_1')).toBeNull();
   });
 
-  it('shows loading placeholder before settled, not the panel content', async () => {
-    settled = false;
-    runState = null;
-    render(<WorkflowRunPane deploymentId="dep-panel" onClose={() => undefined} />, { wrapper });
-    await waitFor(() => screen.getByText('Loading run…'));
-    expect(screen.queryByText('custom-panel-for-dep-panel')).toBeNull();
+  it('shows the loading placeholder while the record query is loading', () => {
+    isLoading = true;
+    record = null;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, { wrapper });
+    screen.getByText('Loading run…');
+    expect(screen.queryByText('custom-panel-for-wfr_1')).toBeNull();
   });
 
-  it('renders empty deploymentId as a loading placeholder without firing hooks', () => {
+  it('shows an error message when the record query errors', () => {
+    isError = true;
+    record = null;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, { wrapper });
+    screen.getByText(/couldn't load this workflow run/i);
+  });
+
+  it('renders empty deploymentId as a loading placeholder without firing resume', () => {
     render(<WorkflowRunPane deploymentId="" onClose={() => undefined} />, { wrapper });
     screen.getByText('Loading…');
-    expect(signalMutateAsync).not.toHaveBeenCalled();
+    expect(resumeMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('passes step outputs from useAllStepOutputs to the Panel', async () => {
-    runState = mixedRunState();
-    render(<WorkflowRunPane deploymentId="dep-mixed" onClose={() => undefined} />, { wrapper });
+  it('hands the record outputs map straight to the Panel as stepOutputs', async () => {
+    record = makeRecord({ outputs: { 'step-ok': { headline: 'hi' } } });
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, { wrapper });
     await waitFor(() => screen.getByText('out-step-ok:{"headline":"hi"}'));
   });
 
-  it('onSignal fires when the run is active', async () => {
-    runState = mixedRunState('running');
-    render(<WorkflowRunPane deploymentId="dep-mixed" onClose={() => undefined} />, { wrapper });
+  it('onSignal resumes when the run is awaiting', async () => {
+    record = makeRecord({ status: 'awaiting' });
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, { wrapper });
     await waitFor(() => screen.getByText('fire-signal'));
     screen.getByText('fire-signal').click();
-    await waitFor(() => expect(signalMutateAsync).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(resumeMutateAsync).toHaveBeenCalledTimes(1));
+    expect(resumeMutateAsync).toHaveBeenCalledWith({
+      signalName: 'approve',
+      payload: { ok: true },
+    });
   });
 
-  it('onSignal is a no-op when the run is in a terminal phase', async () => {
-    runState = mixedRunState('completed');
-    render(<WorkflowRunPane deploymentId="dep-mixed" onClose={() => undefined} />, { wrapper });
+  it('onSignal is a no-op once the run is terminal', async () => {
+    record = makeRecord({ status: 'completed', currentStepId: null, outputs: { persist: {} } });
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, { wrapper });
     await waitFor(() => screen.getByText('fire-signal'));
     screen.getByText('fire-signal').click();
-    expect(signalMutateAsync).not.toHaveBeenCalled();
+    expect(resumeMutateAsync).not.toHaveBeenCalled();
   });
 });

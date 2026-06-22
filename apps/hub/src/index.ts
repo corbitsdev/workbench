@@ -38,6 +38,7 @@ import {
   type WorkflowDeployCoreDeps,
 } from './routes/workflow-deploy';
 import { createWorkflowRunsRouter, type EnsureDeploymentRoutableFn } from './routes/workflow-runs';
+import { createWorkflowRunRecordsRouter } from './routes/workflow-run-records';
 import { createWorkflowDeployService } from './services/workflow-deploy';
 import { createWorkflowReconciler } from './services/workflow-reconciler';
 import { createWorkbenchDirectorRegistry } from '@workbench/agents';
@@ -586,6 +587,11 @@ v1.route(
   })
 );
 
+// Thin-executor workflow runs (CL-2240): hub-side execution of deployed
+// definitions held in a plain run record. Distinct route prefix
+// (/workflow-exec) from the native supervisor path above.
+v1.route('/', createWorkflowRunRecordsRouter({ db, repoStore }));
+
 // Hub-as-control-plane reconciler (CL-2224): re-establish workflow supervisors
 // from DB + workflow-repo state on startup and on every sidecar reconnect, so
 // runs survive hub/sidecar restarts. Idempotent — a no-op when supervisors are
@@ -676,12 +682,7 @@ app.route('/api/internal', createToolCredentialsRouter(db, config.sidecarToken))
 app.route('/api/internal', createToolManifestRouter(db, config.sidecarToken, assetService));
 app.route(
   '/api/internal',
-  createInternalDeploymentsRouter(
-    db,
-    config.sidecarToken,
-    repoStore,
-    config.globalTenant.domain
-  )
+  createInternalDeploymentsRouter(db, config.sidecarToken, repoStore, config.globalTenant.domain)
 );
 app.route(
   '/api/internal',

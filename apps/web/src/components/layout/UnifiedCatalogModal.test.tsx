@@ -8,14 +8,14 @@ import { UnifiedCatalogModal } from './UnifiedCatalogModal';
 mock.module('../../hooks/use-workflow', () => ({
   useWorkflowRuns: () => ({
     data: [
-      { deploymentId: 'dep-1', kind: 'collateral-generation', status: 'active', createdAt: '' },
-      { deploymentId: 'dep-2', kind: 'presentation-generation', status: 'active', createdAt: '' },
-      { deploymentId: 'dep-3', kind: 'seo-enrichment', status: 'active', createdAt: '' },
+      { runId: 'wfr-1', kind: 'collateral-generation', status: 'running', createdAt: '' },
+      { runId: 'wfr-2', kind: 'presentation-generation', status: 'running', createdAt: '' },
+      { runId: 'wfr-3', kind: 'seo-enrichment', status: 'running', createdAt: '' },
     ],
     isPending: false,
   }),
   useStartWorkflow: () => ({
-    mutateAsync: async ({ kind }: { kind: string }) => ({ deploymentId: `started-${kind}` }),
+    mutateAsync: async ({ kind }: { kind: string }) => ({ runId: `started-${kind}` }),
     isPending: false,
   }),
 }));
@@ -194,7 +194,9 @@ describe('UnifiedCatalogModal', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Start' })[0]!);
 
-    await waitFor(() => expect(onWorkflowStarted).toHaveBeenCalledWith('started-collateral-generation'));
+    await waitFor(() =>
+      expect(onWorkflowStarted).toHaveBeenCalledWith('started-collateral-generation')
+    );
   });
 
   it('opens on the Workflows tab when defaultTab is workflows', async () => {

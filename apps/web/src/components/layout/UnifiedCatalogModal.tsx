@@ -162,7 +162,7 @@ export function UnifiedCatalogModal({
       .mutateAsync({ kind, input: {} })
       .then((res) => {
         handleClose();
-        onWorkflowStarted(res.deploymentId);
+        onWorkflowStarted(res.runId);
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'Could not start the workflow.');

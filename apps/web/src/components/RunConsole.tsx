@@ -1,7 +1,12 @@
 import { useMemo } from 'react';
 import { Button, toHumanLabel } from '@workbench/ui';
 import type { RunPhase, RunState, StepPhase, StepState } from '@intx/workflow';
-import { useWorkflowRunState, useSignalWorkflow, isTerminalPhase } from '../hooks/use-workflow';
+import {
+  isRecordTerminal,
+  runStateFromRecord,
+  useResumeWorkflow,
+  useWorkflowRecord,
+} from '../hooks/use-workflow';
 
 const RUN_PHASE_LABELS: Record<RunPhase, string> = {
   pending: 'Pending',
@@ -55,12 +60,19 @@ function deriveActiveStep(state: RunState): StepState | null {
 // a step timeline, step outputs, and an Approve action for any step blocked on
 // a signal (the HITL gate). No workflow-kind-specific branching lives here.
 export function RunConsole({ deploymentId, tenantId, onClose }: RunConsoleProps) {
-  // Bug fix (3): guard falsy deploymentId so no hooks fire against an empty URL.
+  // Guard falsy id so no record query fires against an empty runId.
   const safeId = deploymentId || null;
-  const { state, connected, settled } = useWorkflowRunState(safeId, tenantId);
-  const signal = useSignalWorkflow(deploymentId, tenantId);
+  const { data: record, isLoading } = useWorkflowRecord(safeId, tenantId);
+  const resume = useResumeWorkflow(deploymentId, tenantId);
 
-  const terminal = state !== null && isTerminalPhase(state.phase);
+  const state = useMemo<RunState | null>(
+    () => (record ? runStateFromRecord(record) : null),
+    [record]
+  );
+  const settled = !isLoading;
+  const connected = record?.status === 'running' || record?.status === 'awaiting';
+
+  const terminal = record !== undefined && isRecordTerminal(record.status);
   const steps = useMemo<StepState[]>(() => (state ? [...state.steps.values()] : []), [state]);
   const activeStep = useMemo(() => (state ? deriveActiveStep(state) : null), [state]);
   const stepCount = steps.length;
@@ -120,15 +132,11 @@ export function RunConsole({ deploymentId, tenantId, onClose }: RunConsoleProps)
                   terminal
                     ? () => undefined
                     : (signalName) =>
-                        signal
-                          .mutateAsync({
-                            runId: state.runId,
-                            signalName,
-                            payload: { approved: true },
-                          })
+                        resume
+                          .mutateAsync({ signalName, payload: { approved: true } })
                           .catch(() => undefined)
                 }
-                approving={signal.isPending && !terminal}
+                approving={resume.isPending && !terminal}
               />
             ))}
           </ol>

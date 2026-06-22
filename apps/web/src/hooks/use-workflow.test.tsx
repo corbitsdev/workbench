@@ -5,7 +5,13 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { createElement } from 'react';
-import { useStepOutput, useWorkflowRuns, useAllStepOutputs, isTerminalPhase } from './use-workflow';
+import {
+  isRecordTerminal,
+  useResumeWorkflow,
+  useStartWorkflow,
+  useWorkflowRecord,
+  useWorkflowRuns,
+} from './use-workflow';
 
 const originalFetch = globalThis.fetch;
 
@@ -22,129 +28,137 @@ function wrapper() {
     createElement(QueryClientProvider, { client }, children);
 }
 
+const runningRecord = {
+  runId: 'wfr_1',
+  kind: 'pain-point-collateral',
+  status: 'running',
+  currentStepId: 'analyze',
+  outputs: { intake: { content: '{}' } },
+};
+
 afterEach(() => {
   cleanup();
   globalThis.fetch = originalFetch;
 });
 
-describe('useStepOutput', () => {
-  it('is disabled when deploymentId or stepId is null', () => {
+describe('isRecordTerminal', () => {
+  it('is true only for completed and failed', () => {
+    expect(isRecordTerminal('completed')).toBe(true);
+    expect(isRecordTerminal('failed')).toBe(true);
+    expect(isRecordTerminal('running')).toBe(false);
+    expect(isRecordTerminal('awaiting')).toBe(false);
+  });
+});
+
+describe('useWorkflowRecord', () => {
+  it('is disabled when runId is null', () => {
     let called = false;
     globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
       called = true;
-      return Promise.resolve(jsonResponse(200, { stepId: 's', output: 1 }));
+      return Promise.resolve(jsonResponse(200, runningRecord));
     }) as typeof fetch;
 
-    const { result } = renderHook(() => useStepOutput(null, 'step-a'), { wrapper: wrapper() });
+    const { result } = renderHook(() => useWorkflowRecord(null), { wrapper: wrapper() });
     expect(result.current.fetchStatus).toBe('idle');
     expect(called).toBe(false);
   });
 
-  it('is disabled when opts.enabled is false even with ids present', () => {
-    let called = false;
-    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
-      called = true;
-      return Promise.resolve(jsonResponse(200, { stepId: 's', output: 1 }));
-    }) as typeof fetch;
-
-    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a', { enabled: false }), {
-      wrapper: wrapper(),
-    });
-    expect(result.current.fetchStatus).toBe('idle');
-    expect(called).toBe(false);
-  });
-
-  it('returns the parsed output when enabled and the step is completed', async () => {
+  it('reads and parses the record from the records endpoint', async () => {
+    let requested = '';
     globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
-      expect(String(url)).toContain('/workflow-runs/dep-1/steps/step-a/output');
-      return Promise.resolve(jsonResponse(200, { stepId: 'step-a', output: { headline: 'hi' } }));
+      requested = String(url);
+      return Promise.resolve(jsonResponse(200, runningRecord));
     }) as typeof fetch;
 
-    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a'), { wrapper: wrapper() });
+    const { result } = renderHook(() => useWorkflowRecord('wfr_1', 'tn-x'), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual({ headline: 'hi' });
+    expect(requested).toContain('/workflow-exec/records/wfr_1');
+    expect(requested).toContain('tenantId=tn-x');
+    expect(result.current.data?.currentStepId).toBe('analyze');
+    expect(result.current.data?.outputs).toEqual({ intake: { content: '{}' } });
   });
 
-  it('surfaces an error for a malformed response shape', async () => {
+  it('surfaces an error for a malformed record shape', async () => {
     globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
-      Promise.resolve(jsonResponse(200, { wrong: true }))) as typeof fetch;
+      Promise.resolve(jsonResponse(200, { runId: 'x', status: 'bogus' }))) as typeof fetch;
 
-    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a'), { wrapper: wrapper() });
+    const { result } = renderHook(() => useWorkflowRecord('wfr_1'), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
+});
 
-  it('includes the active tenantId in the step-output request when provided', async () => {
+describe('useStartWorkflow', () => {
+  it('POSTs to the start endpoint and returns the parsed run record', async () => {
     let requested = '';
-    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+    let method = '';
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0], init?: RequestInit) => {
       requested = String(url);
-      return Promise.resolve(jsonResponse(200, { stepId: 'step-a', output: 1 }));
+      method = init?.method ?? 'GET';
+      return Promise.resolve(jsonResponse(200, { ...runningRecord, currentStepId: null }));
     }) as typeof fetch;
 
-    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a', { tenantId: 'tn-wb' }), {
-      wrapper: wrapper(),
-    });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(requested).toContain('tenantId=tn-wb');
+    const { result } = renderHook(() => useStartWorkflow('tn-x'), { wrapper: wrapper() });
+    const record = await result.current.mutateAsync({ kind: 'pain-point-collateral', input: {} });
+    expect(method).toBe('POST');
+    expect(requested).toContain('/workflow-exec/pain-point-collateral/start');
+    expect(requested).toContain('tenantId=tn-x');
+    expect(record.runId).toBe('wfr_1');
+  });
+
+  it('rejects when the start response is malformed', async () => {
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(jsonResponse(200, { nope: true }))) as typeof fetch;
+
+    const { result } = renderHook(() => useStartWorkflow(), { wrapper: wrapper() });
+    await expect(
+      result.current.mutateAsync({ kind: 'pain-point-collateral', input: {} })
+    ).rejects.toThrow(/run-record response/);
   });
 });
 
-describe('isTerminalPhase', () => {
-  it('returns true for completed, failed, cancelled', () => {
-    expect(isTerminalPhase('completed')).toBe(true);
-    expect(isTerminalPhase('failed')).toBe(true);
-    expect(isTerminalPhase('cancelled')).toBe(true);
-  });
-
-  it('returns false for running and pending', () => {
-    expect(isTerminalPhase('running')).toBe(false);
-    expect(isTerminalPhase('pending')).toBe(false);
-  });
-});
-
-describe('useAllStepOutputs', () => {
-  it('is disabled when deploymentId is null', () => {
-    let called = false;
-    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
-      called = true;
-      return Promise.resolve(jsonResponse(200, { outputs: {} }));
-    }) as typeof fetch;
-
-    const { result } = renderHook(() => useAllStepOutputs(null, null), { wrapper: wrapper() });
-    expect(result.current.fetchStatus).toBe('idle');
-    expect(called).toBe(false);
-  });
-
-  it('hits the /steps endpoint and returns the outputs map when enabled', async () => {
+describe('useResumeWorkflow', () => {
+  it('POSTs the signal to the resume endpoint and returns the next record', async () => {
     let requested = '';
-    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+    let sentBody: unknown = null;
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0], init?: RequestInit) => {
       requested = String(url);
+      sentBody = init?.body ? JSON.parse(String(init.body)) : null;
       return Promise.resolve(
-        jsonResponse(200, { outputs: { 'step-a': { x: 1 }, 'step-b': 'done' } })
+        jsonResponse(200, { ...runningRecord, status: 'awaiting', currentStepId: 'review' })
       );
     }) as typeof fetch;
 
-    const { result } = renderHook(() => useAllStepOutputs('dep-1', 'tn-x'), {
-      wrapper: wrapper(),
+    const { result } = renderHook(() => useResumeWorkflow('wfr_1', 'tn-x'), { wrapper: wrapper() });
+    const next = await result.current.mutateAsync({
+      signalName: 'context',
+      payload: { context: 'hi' },
     });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(requested).toContain('/workflow-runs/dep-1/steps');
-    expect(requested).toContain('tenantId=tn-x');
-    expect(result.current.data).toEqual({ 'step-a': { x: 1 }, 'step-b': 'done' });
-  });
-
-  it('throws on a malformed response', async () => {
-    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
-      Promise.resolve(jsonResponse(200, { wrong: true }))) as typeof fetch;
-
-    const { result } = renderHook(() => useAllStepOutputs('dep-1', null), {
-      wrapper: wrapper(),
-    });
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(requested).toContain('/workflow-exec/records/wfr_1/resume');
+    expect(sentBody).toEqual({ signalName: 'context', payload: { context: 'hi' } });
+    expect(next.currentStepId).toBe('review');
   });
 });
 
 describe('useWorkflowRuns', () => {
-  it('omits tenantId from the request when no workbench is active', async () => {
+  it('lists records and parses the row shape', async () => {
+    let requested = '';
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested = String(url);
+      return Promise.resolve(
+        jsonResponse(200, [
+          { runId: 'wfr_1', kind: 'pain-point-collateral', status: 'running', createdAt: 'now' },
+        ])
+      );
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useWorkflowRuns('tn-wb'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requested).toContain('/workflow-exec/records');
+    expect(requested).toContain('tenantId=tn-wb');
+    expect(result.current.data?.[0]?.runId).toBe('wfr_1');
+  });
+
+  it('omits tenantId when no workbench is active', async () => {
     let requested = '';
     globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
       requested = String(url);
@@ -153,19 +167,6 @@ describe('useWorkflowRuns', () => {
 
     const { result } = renderHook(() => useWorkflowRuns(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(requested).toContain('/workflow-runs');
     expect(requested).not.toContain('tenantId=');
-  });
-
-  it('includes the active workbench tenantId when one is active', async () => {
-    let requested = '';
-    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
-      requested = String(url);
-      return Promise.resolve(jsonResponse(200, []));
-    }) as typeof fetch;
-
-    const { result } = renderHook(() => useWorkflowRuns('tn-wb'), { wrapper: wrapper() });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(requested).toContain('tenantId=tn-wb');
   });
 });
