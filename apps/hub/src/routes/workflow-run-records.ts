@@ -73,6 +73,27 @@ async function resolveDeployment(
   return { deploymentId: best.deploymentId, tenantId: best.tenantId };
 }
 
+// Ownership/tenancy gate for reading or resuming a specific run. The record's
+// tenant must be visible along the caller's tenant chain, AND the caller must
+// own the run (the run's principal is the caller's principal in that tenant).
+// Returns a gate result to deny, or null to allow. A cross-user request is
+// denied 403; a record in a tenant outside the caller's chain is 404 (it does
+// not exist for them).
+async function assertRunOwnership(
+  db: HubDb,
+  context: { tenantId: string; principalId: string },
+  state: { tenantId: string; principalId: string }
+): Promise<{ status: 403 | 404; error: string } | null> {
+  const chain = await getAncestorChain(db, context.tenantId);
+  if (!chain.includes(state.tenantId)) {
+    return { status: 404, error: 'run not found' };
+  }
+  if (state.principalId !== context.principalId) {
+    return { status: 403, error: 'Forbidden' };
+  }
+  return null;
+}
+
 function stateResponse(state: {
   runId: string;
   kind: string;
@@ -277,6 +298,10 @@ export function createWorkflowRunRecordsRouter(deps: {
           description: 'Run state',
           content: { 'application/json': { schema: resolver(RunStateResponse) } },
         },
+        403: {
+          description: 'Forbidden',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
         404: {
           description: 'Run not found',
           content: { 'application/json': { schema: resolver(ErrorResponse) } },
@@ -284,8 +309,17 @@ export function createWorkflowRunRecordsRouter(deps: {
       },
     }),
     async (c) => {
+      const userId = c.get('userId');
+      const { context, forbidden } = await resolveContext(deps.db, userId, c.req.query('tenantId'));
+      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
+      if (!context) return c.json({ error: 'User context not found' }, 403);
+
       const state = await loadRunRecord(deps.db, c.req.param('runId'));
       if (!state) return c.json({ error: 'run not found' }, 404);
+
+      const gate = await assertRunOwnership(deps.db, context, state);
+      if (gate) return c.json({ error: gate.error }, gate.status);
+
       return c.json(stateResponse(state));
     }
   );
@@ -320,6 +354,10 @@ export function createWorkflowRunRecordsRouter(deps: {
           description: 'Invalid resume',
           content: { 'application/json': { schema: resolver(ErrorResponse) } },
         },
+        403: {
+          description: 'Forbidden',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
         404: {
           description: 'Run not found',
           content: { 'application/json': { schema: resolver(ErrorResponse) } },
@@ -327,9 +365,17 @@ export function createWorkflowRunRecordsRouter(deps: {
       },
     }),
     async (c) => {
+      const userId = c.get('userId');
+      const { context, forbidden } = await resolveContext(deps.db, userId, c.req.query('tenantId'));
+      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
+      if (!context) return c.json({ error: 'User context not found' }, 403);
+
       const runId = c.req.param('runId');
       const state = await loadRunRecord(deps.db, runId);
       if (!state) return c.json({ error: 'run not found' }, 404);
+
+      const gate = await assertRunOwnership(deps.db, context, state);
+      if (gate) return c.json({ error: gate.error }, gate.status);
 
       let body: unknown;
       try {

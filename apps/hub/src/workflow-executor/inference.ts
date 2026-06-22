@@ -1,4 +1,5 @@
 import { createAgent, createDefaultDirectorRegistry, defineAgent } from '@intx/agent';
+import type { AuthorizeFn } from '@intx/agent';
 import { createIsogitStore } from '@intx/storage-isogit';
 import type { InferenceSource } from '@intx/types/runtime';
 import { randomUUID } from 'node:crypto';
@@ -15,6 +16,10 @@ export async function runReasoningStep(args: {
   systemPrompt: string;
   userMessage: string;
   maxOutputTokens?: number;
+  // Grant-backed authorizer for the reasoning agent's env, scoped to the run
+  // principal. Required: the native sidecar step path always gates inference
+  // through `evaluateGrants`; an allow-all here would drop that gate.
+  authorize: AuthorizeFn;
 }): Promise<string> {
   const contextDir = join(tmpdir(), `wf-step-${randomUUID()}`);
   const effectiveSource: InferenceSource =
@@ -40,7 +45,7 @@ export async function runReasoningStep(args: {
     storage: store,
     workdir: contextDir,
     audit: store,
-    authorize: async () => ({ effect: 'allow' as const, matchingGrants: [], resolvedBy: null }),
+    authorize: args.authorize,
     directors: createDefaultDirectorRegistry(),
     closeTimeoutMs: 1000,
   };

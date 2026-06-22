@@ -5,6 +5,7 @@ import { runCredentialTool } from '../lib/run-credential-tool';
 import { resolveWorkflowDeploySource } from '../services/workflow-deploy-config';
 import type { ReasoningRunner, RunState, ToolRunner } from './executor';
 import { runReasoningStep } from './inference';
+import { createWorkflowAuthorizer, type WorkflowAuthorizer } from './authz';
 
 // The deterministic-step result envelope. The pre-substrate FE (and the panels)
 // decode a tool result as `{ content: string }` where content is the
@@ -21,11 +22,21 @@ function toToolEnvelope(raw: unknown): { content: string } {
 // tools (artifact_create) need hub db + principal/session context, so they are
 // instantiated against the run's tenant/principal and invoked in-process. No
 // sidecar, no event log.
-export function createHubToolRunner(deps: { db: HubDb }): ToolRunner {
+export function createHubToolRunner(deps: {
+  db: HubDb;
+  authorizer?: WorkflowAuthorizer;
+}): ToolRunner {
+  const authorizer = deps.authorizer ?? createWorkflowAuthorizer({ db: deps.db });
   return {
     async run({ tool, input, state }) {
       const entry = KNOWN_TOOLS[tool];
       if (!entry) throw new Error(`workflow executor: unknown tool "${tool}"`);
+
+      // Gate the invoke exactly as the native sidecar step path does: the run
+      // principal must hold a `tool:<name>`/`invoke` allow grant. Runs as the
+      // run's persisted principal (state.principalId).
+      await authorizer.assertToolGranted(state, tool);
+
       const args = (typeof input === 'object' && input !== null ? input : {}) as Record<
         string,
         unknown
@@ -63,12 +74,21 @@ export function createHubToolRunner(deps: { db: HubDb }): ToolRunner {
 // source the deploy path pins) and runs one single-turn `@intx/agent` send with
 // no tools. The reply is wrapped as `{ reply }` so the panel decoders match the
 // pre-substrate agent-step shape.
-export function createHubReasoningRunner(deps: { db: HubDb }): ReasoningRunner {
+export function createHubReasoningRunner(deps: {
+  db: HubDb;
+  authorizer?: WorkflowAuthorizer;
+}): ReasoningRunner {
+  const authorizer = deps.authorizer ?? createWorkflowAuthorizer({ db: deps.db });
   return {
     async run({ systemPrompt, input, state }) {
       const source = await resolveWorkflowDeploySource({ db: deps.db, tenantId: state.tenantId });
       const userMessage = typeof input === 'string' ? input : JSON.stringify(input ?? {});
-      const reply = await runReasoningStep({ source, systemPrompt, userMessage });
+      const reply = await runReasoningStep({
+        source,
+        systemPrompt,
+        userMessage,
+        authorize: authorizer.authorizeFn(state),
+      });
       return { reply };
     },
   };

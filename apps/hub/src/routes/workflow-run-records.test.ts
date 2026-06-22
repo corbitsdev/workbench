@@ -14,9 +14,10 @@ import type { RunState } from '../workflow-executor/executor';
 // Override only getAncestorChain (the route walks the tenant chain); preserve
 // every other @intx/db export so sibling suites in the same process keep theirs.
 const realDb = await import('@intx/db');
+let ancestorChain: readonly string[] = ['tn-1'];
 mock.module('@intx/db', () => ({
   ...realDb,
-  getAncestorChain: async () => ['tn-1'],
+  getAncestorChain: async () => [...ancestorChain],
 }));
 
 // Injected (not module-mocked) so this suite never leaks a fixed user context
@@ -246,6 +247,28 @@ function app(): Hono<{ Variables: { userId: string } }> {
   return a;
 }
 
+// Build an app whose resolveContext returns a specific (tenant, principal),
+// to exercise the ownership/tenancy gate as a different caller.
+function appAs(ctx: { tenantId: string; principalId: string }): Hono<{
+  Variables: { userId: string };
+}> {
+  const a = new Hono<{ Variables: { userId: string } }>();
+  a.use('*', async (c, next) => {
+    c.set('userId', 'user-x');
+    await next();
+  });
+  a.route(
+    '/',
+    createWorkflowRunRecordsRouter({
+      db: makeDb(),
+      repoStore: {} as AgentRepoStore,
+      readDefinition: async () => painPointDefinition(),
+      resolveContext: async () => ({ context: ctx, forbidden: false }),
+    })
+  );
+  return a;
+}
+
 type AppHono = Hono<{ Variables: { userId: string } }>;
 
 async function post(
@@ -384,6 +407,54 @@ describe('pain-point-collateral via the thin executor (end-to-end seam)', () => 
     });
     expect(r.status).toBe(400);
     expect(r.json.error).toMatch(/awaits signal/);
+  });
+
+  test('cross-user GET /records/:runId is forbidden 403', async () => {
+    runs.clear();
+    const owner = app();
+    const start = await post(owner, '/workflow-exec/pain-point-collateral/start', { input: {} });
+    const runId = start.json.runId;
+
+    // A different user (same tenant chain, different principal) reads the run.
+    const intruder = appAs({ tenantId: 'tn-1', principalId: 'prn-other' });
+    const read = await get(intruder, `/workflow-exec/records/${runId}`);
+    expect(read.status).toBe(403);
+    expect(read.json.error).toBe('Forbidden');
+  });
+
+  test('cross-user resume is forbidden 403', async () => {
+    runs.clear();
+    const owner = app();
+    const start = await post(owner, '/workflow-exec/pain-point-collateral/start', { input: {} });
+    const runId = start.json.runId;
+
+    const intruder = appAs({ tenantId: 'tn-1', principalId: 'prn-other' });
+    const r = await post(intruder, `/workflow-exec/records/${runId}/resume`, {
+      signalName: 'note-selection',
+      payload: { noteId: 'n1' },
+    });
+    expect(r.status).toBe(403);
+    expect(r.json.error).toBe('Forbidden');
+  });
+
+  test('a run in a tenant outside the callers chain reads as 404', async () => {
+    runs.clear();
+    const owner = app();
+    const start = await post(owner, '/workflow-exec/pain-point-collateral/start', { input: {} });
+    const runId = start.json.runId;
+
+    // The run lives in tn-1; this caller's chain excludes tn-1, so the record
+    // does not exist for them.
+    ancestorChain = ['tn-9'];
+    try {
+      const read = await get(
+        appAs({ tenantId: 'tn-9', principalId: 'prn-9' }),
+        `/workflow-exec/records/${runId}`
+      );
+      expect(read.status).toBe(404);
+    } finally {
+      ancestorChain = ['tn-1'];
+    }
   });
 
   test('start with no deployed kind returns 404', async () => {
