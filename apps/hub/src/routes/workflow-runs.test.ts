@@ -82,6 +82,17 @@ import {
   type EnsureDeploymentRoutableFn,
 } from './workflow-runs';
 import type { HubDb } from '../db';
+import { workflowRun, workflowRunInstance } from '../db/schema';
+
+// Map a Drizzle table object to a stable string by identity so a captured
+// insert/update can be asserted against the right table — this is how the
+// CL-2233 tests prove the instance routes touch `workflow_run_instance` and
+// NOT the shared `workflow_run` deployment table.
+function tableName(table: unknown): string {
+  if (table === workflowRunInstance) return 'workflow_run_instance';
+  if (table === workflowRun) return 'workflow_run';
+  return 'unknown';
+}
 
 type WorkflowRunRow = {
   deploymentId: string;
@@ -94,9 +105,14 @@ type WorkflowRunRow = {
 // Captured update calls from the PATCH /status route.
 const updateCapture: Array<{ deploymentId: string; status: string }> = [];
 
-function makeDb(owned: boolean) {
+function makeDb(owned: boolean, ownsRun = true) {
   const findFirst = mock(() =>
     Promise.resolve(owned ? { deploymentId: 'dep-1', tenantId: 'tenant-1' } : undefined)
+  );
+  // The /stream route gates on run ownership (CL-2233): a non-deleted
+  // workflow_run_instance for the runId scoped to the caller's principal.
+  const instanceFindFirst = mock(() =>
+    Promise.resolve(ownsRun ? { runId: 'run-A', memberPrincipalId: 'caller-p' } : undefined)
   );
   const setMock = mock((values: { status: string }) => ({
     where: (cond: unknown) => {
@@ -109,6 +125,9 @@ function makeDb(owned: boolean) {
     query: {
       workflowRun: {
         findFirst,
+      },
+      workflowRunInstance: {
+        findFirst: instanceFindFirst,
       },
     },
     update: () => ({ set: setMock }),
@@ -133,6 +152,13 @@ function makeListDb(rows: WorkflowRunRow[], findManyRows: WorkflowRunRow[] = row
         findMany: mock(() => Promise.resolve(findManyRows)),
       },
     },
+    // The start route records a user-owned instance row before delivering the
+    // trigger (CL-2233). These shadowing/visibility tests do not assert on it,
+    // but the route must be able to insert/update without throwing.
+    insert: () => ({ values: () => Promise.resolve() }),
+    update: () => ({
+      set: () => ({ where: () => ({ catch: () => Promise.resolve() }) }),
+    }),
   } as unknown as HubDb;
 }
 
@@ -713,5 +739,575 @@ describe('PATCH /workflow-runs/:deploymentId/status', () => {
     userContextImpl = () => Promise.resolve({ context: null, forbidden: false });
     const res = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'completed' });
     expect(res.status).toBe(403);
+  });
+});
+
+// === CL-2233: user-owned run instances ======================================
+
+// Capture buffers shared by the instance-route tests. Each entry records WHICH
+// table (by identity) a write targeted, so a test can assert the instance
+// routes never mutate the shared `workflow_run` deployment table.
+type InsertCapture = { table: string; values: Record<string, unknown> };
+type UpdateCapture = { table: string; set: Record<string, unknown> };
+
+// A db that backs the CL-2233 routes: instance findMany/findFirst (caller-scoped
+// reads), deployment findMany (start-route candidates), and table-tagged
+// insert/update capture. `instanceFindMany` receives the resolved arktype/Drizzle
+// `where` args so a test can echo them back, but most tests just return crafted
+// rows. `instanceFindFirst` gates ownership (owned row or undefined).
+function makeInstanceDb(opts: {
+  instanceRows?: Array<Record<string, unknown>>;
+  instanceRowsByPrincipal?: (principalId: string | undefined) => Array<Record<string, unknown>>;
+  owned?: Record<string, unknown> | undefined;
+  deploymentCandidates?: WorkflowRunRow[];
+  inserts: InsertCapture[];
+  updates: UpdateCapture[];
+  findManyArgs?: Array<{ where: unknown }>;
+}): HubDb {
+  let findManyCalls = 0;
+  const instanceFindMany = mock((args: { where: unknown }) => {
+    opts.findManyArgs?.push({ where: args.where });
+    findManyCalls += 1;
+    if (opts.instanceRowsByPrincipal) {
+      // The route re-reads after reconcile; echo the same set both times.
+      return Promise.resolve(opts.instanceRowsByPrincipal(undefined));
+    }
+    return Promise.resolve(opts.instanceRows ?? []);
+  });
+  void findManyCalls;
+  return {
+    query: {
+      workflowRun: {
+        findMany: mock(() => Promise.resolve(opts.deploymentCandidates ?? [])),
+        findFirst: mock(() =>
+          Promise.resolve({
+            deploymentId: 'dep-1',
+            tenantId: 'tenant-1',
+            principalId: 'creator-p',
+            kind: 'deck',
+          })
+        ),
+      },
+      workflowRunInstance: {
+        findMany: instanceFindMany,
+        findFirst: mock(() => Promise.resolve(opts.owned)),
+      },
+    },
+    insert: (table: unknown) => ({
+      values: (values: Record<string, unknown>) => {
+        opts.inserts.push({ table: tableName(table), values });
+        return Promise.resolve();
+      },
+    }),
+    update: (table: unknown) => ({
+      set: (set: Record<string, unknown>) => {
+        const chain = {
+          where: (_cond: unknown) => {
+            opts.updates.push({ table: tableName(table), set });
+            return {
+              catch: () => Promise.resolve(),
+              then: (resolve: () => unknown) => Promise.resolve().then(resolve),
+            };
+          },
+        };
+        return chain as unknown as ReturnType<typeof chain.where>;
+      },
+    }),
+  } as unknown as HubDb;
+}
+
+function instanceApp(
+  db: HubDb,
+  sessionService: SessionService = noopSessionService,
+  ensure?: EnsureDeploymentRoutableFn
+) {
+  const parent = new Hono<{ Variables: { userId: string } }>();
+  parent.use('*', async (c, next) => {
+    c.set('userId', 'user-1');
+    await next();
+  });
+  parent.route(
+    '/',
+    createWorkflowRunsRouter({
+      db,
+      repoStore: noopRepoStore,
+      sidecarRouter: noopSidecarRouter,
+      sessionService,
+      cryptoProvider: noopCrypto,
+      deploymentDomain: 'deploy.example.com',
+      ensureDeploymentRoutable: ensure ?? (() => Promise.resolve({ reestablished: false })),
+    })
+  );
+  return parent;
+}
+
+describe('POST /workflow-runs/:kind/start (CL-2233 instance row + correlation)', () => {
+  it('inserts a caller-owned instance row and delivers a trigger whose messageId equals the returned correlationMessageId', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    ancestorChain = ['tenant-1'];
+    const inserts: InsertCapture[] = [];
+    const updates: UpdateCapture[] = [];
+    const candidates: WorkflowRunRow[] = [
+      {
+        deploymentId: 'dep-wb',
+        kind: 'deck',
+        status: 'idle',
+        createdAt: '2026-06-01T00:00:00.000Z',
+        tenantId: 'tenant-1',
+      },
+    ];
+    const db = makeInstanceDb({ deploymentCandidates: candidates, inserts, updates });
+    const sent: Array<{ messageId: string; tenantId: string }> = [];
+    const sessionService = {
+      sendUserMessage: (args: { messageId: string; tenantId: string }) => {
+        sent.push({ messageId: args.messageId, tenantId: args.tenantId });
+        return Promise.resolve();
+      },
+    } as unknown as SessionService;
+
+    const res = await instanceApp(db, sessionService).request(
+      new Request('http://local/workflow-runs/deck/start?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: 'launch' }),
+      })
+    );
+
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as {
+      deploymentId: string;
+      runId: string | null;
+      correlationMessageId: string;
+      accepted: boolean;
+    };
+    expect(body.deploymentId).toBe('dep-wb');
+    expect(body.runId).toBeNull();
+    expect(body.accepted).toBe(true);
+
+    // The inserted row carries the CALLER principal + the resolved deployment.
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.table).toBe('workflow_run_instance');
+    expect(inserts[0]?.values).toMatchObject({
+      correlationMessageId: body.correlationMessageId,
+      deploymentId: 'dep-wb',
+      kind: 'deck',
+      tenantId: 'tenant-1',
+      memberPrincipalId: 'caller-p',
+      status: 'running',
+      input: { topic: 'launch' },
+    });
+
+    // The delivered trigger's messageId IS the correlation handle returned.
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.messageId).toBe(body.correlationMessageId);
+
+    // The happy path issues no failure-path update.
+    expect(updates).toHaveLength(0);
+  });
+
+  it('marks the instance row failed (not the deployment) when delivery throws', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    ancestorChain = ['tenant-1'];
+    const inserts: InsertCapture[] = [];
+    const updates: UpdateCapture[] = [];
+    const candidates: WorkflowRunRow[] = [
+      {
+        deploymentId: 'dep-wb',
+        kind: 'deck',
+        status: 'idle',
+        createdAt: '2026-06-01T00:00:00.000Z',
+        tenantId: 'tenant-1',
+      },
+    ];
+    const db = makeInstanceDb({ deploymentCandidates: candidates, inserts, updates });
+    const sessionService = {
+      sendUserMessage: () => Promise.reject(new Error('sidecar down')),
+    } as unknown as SessionService;
+
+    const res = await instanceApp(db, sessionService).request(
+      new Request('http://local/workflow-runs/deck/start?tenantId=tenant-1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+    );
+
+    expect(res.status).toBe(500);
+    expect(inserts[0]?.table).toBe('workflow_run_instance');
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toEqual({
+      table: 'workflow_run_instance',
+      set: { status: 'failed' },
+    });
+  });
+});
+
+describe('GET /workflow-runs/mine (CL-2233 caller isolation + reconcile)', () => {
+  it("returns only the caller's runs, mapped to the instance summary shape", async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    ancestorChain = ['tenant-1'];
+    const inserts: InsertCapture[] = [];
+    const updates: UpdateCapture[] = [];
+    const db = makeInstanceDb({
+      inserts,
+      updates,
+      instanceRows: [
+        {
+          runId: 'run-1',
+          correlationMessageId: 'corr-1',
+          deploymentId: 'dep-1',
+          kind: 'deck',
+          status: 'running',
+          startedAt: '2026-06-01T00:00:00.000Z',
+          memberPrincipalId: 'caller-p',
+        },
+      ],
+    });
+    const res = await instanceApp(db).request(
+      new Request('http://local/workflow-runs/mine?tenantId=tenant-1', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Array<Record<string, unknown>>;
+    expect(body).toEqual([
+      {
+        runId: 'run-1',
+        correlationMessageId: 'corr-1',
+        deploymentId: 'dep-1',
+        kind: 'deck',
+        status: 'running',
+        startedAt: '2026-06-01T00:00:00.000Z',
+      },
+    ]);
+    // A read with no pending (runId-null) rows reconciles nothing and mutates
+    // nothing — in particular the shared deployment table is untouched.
+    expect(updates).toHaveLength(0);
+  });
+
+  it('scopes the findMany to the caller principal and returns disjoint sets for two users', async () => {
+    ancestorChain = ['tenant-1'];
+    const inserts: InsertCapture[] = [];
+    const updates: UpdateCapture[] = [];
+    const findManyArgs: Array<{ where: unknown }> = [];
+    const rowsFor = (principalId: string) => [
+      {
+        runId: `run-${principalId}`,
+        correlationMessageId: `corr-${principalId}`,
+        deploymentId: 'dep-1',
+        kind: 'deck',
+        status: 'running',
+        startedAt: '2026-06-01T00:00:00.000Z',
+        memberPrincipalId: principalId,
+      },
+    ];
+
+    // User A.
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'A' },
+        forbidden: false,
+      });
+    const dbA = makeInstanceDb({
+      inserts,
+      updates,
+      findManyArgs,
+      instanceRows: rowsFor('A'),
+    });
+    const resA = await instanceApp(dbA).request(
+      new Request('http://local/workflow-runs/mine?tenantId=tenant-1', { method: 'GET' })
+    );
+    const bodyA = (await resA.json()) as Array<{ runId: string }>;
+
+    // User B — same deployment, different principal, different rows.
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'B' },
+        forbidden: false,
+      });
+    const dbB = makeInstanceDb({
+      inserts,
+      updates,
+      findManyArgs,
+      instanceRows: rowsFor('B'),
+    });
+    const resB = await instanceApp(dbB).request(
+      new Request('http://local/workflow-runs/mine?tenantId=tenant-1', { method: 'GET' })
+    );
+    const bodyB = (await resB.json()) as Array<{ runId: string }>;
+
+    expect(bodyA.map((r) => r.runId)).toEqual(['run-A']);
+    expect(bodyB.map((r) => r.runId)).toEqual(['run-B']);
+    // Each /mine read issued a principal-scoped findMany (the where filter is a
+    // real, non-empty Drizzle condition, proving the route filtered rather than
+    // returning everything).
+    expect(findManyArgs).toHaveLength(2);
+    expect(findManyArgs[0]?.where).toBeDefined();
+    // No /mine read mutates the shared deployment table (or any table).
+    expect(updates).toHaveLength(0);
+  });
+
+  it('reconciles a pending (runId-null) row by binding the RunStarted runId via consumedMessageId', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    ancestorChain = ['tenant-1'];
+    subscribeKindThrows = null;
+    subscribeKindEntries = [
+      {
+        seq: 0,
+        runId: 'run-x',
+        event: { type: 'RunStarted', seq: 0, consumedMessageId: 'corr-pending' },
+      },
+    ];
+    const inserts: InsertCapture[] = [];
+    const updates: UpdateCapture[] = [];
+    const db = makeInstanceDb({
+      inserts,
+      updates,
+      instanceRows: [
+        {
+          runId: null,
+          correlationMessageId: 'corr-pending',
+          deploymentId: 'dep-1',
+          kind: 'deck',
+          status: 'running',
+          // Within RECONCILE_WINDOW_MS, and a Date (matching Drizzle's return
+          // type) so the age-bound check can read getTime() (CL-2233).
+          startedAt: new Date(),
+          memberPrincipalId: 'caller-p',
+        },
+      ],
+    });
+    const res = await instanceApp(db).request(
+      new Request('http://local/workflow-runs/mine?tenantId=tenant-1', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    // The pending row drove a reconcile replay that issued an instance update
+    // binding runId — on the instance table, never the deployment table.
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toEqual({
+      table: 'workflow_run_instance',
+      set: { runId: 'run-x' },
+    });
+  });
+
+  it('does not replay-reconcile an orphaned pending row past the reconcile window', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    ancestorChain = ['tenant-1'];
+    subscribeKindThrows = null;
+    subscribeKindEntries = [
+      {
+        seq: 0,
+        runId: 'run-x',
+        event: { type: 'RunStarted', seq: 0, consumedMessageId: 'corr-old' },
+      },
+    ];
+    const inserts: InsertCapture[] = [];
+    const updates: UpdateCapture[] = [];
+    const db = makeInstanceDb({
+      inserts,
+      updates,
+      instanceRows: [
+        {
+          runId: null,
+          correlationMessageId: 'corr-old',
+          deploymentId: 'dep-1',
+          kind: 'deck',
+          status: 'running',
+          // Older than RECONCILE_WINDOW_MS: an orphan (trigger never delivered).
+          // It must NOT force a replay/update on every /mine read.
+          startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+          memberPrincipalId: 'caller-p',
+        },
+      ],
+    });
+    const res = await instanceApp(db).request(
+      new Request('http://local/workflow-runs/mine?tenantId=tenant-1', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    expect(updates).toHaveLength(0);
+  });
+});
+
+describe('DELETE /workflow-runs/instances/:runId (CL-2233 run-scoped soft delete)', () => {
+  it('soft-deletes the caller-owned instance (cancelled + deletedAt) and never ends a session or touches the deployment', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    const inserts: InsertCapture[] = [];
+    const updates: UpdateCapture[] = [];
+    const endSession = mock(() => Promise.resolve());
+    const sessionService = { endSession } as unknown as SessionService;
+    const db = makeInstanceDb({
+      inserts,
+      updates,
+      owned: { runId: 'run-1', deploymentId: 'dep-1', memberPrincipalId: 'caller-p' },
+    });
+    const res = await instanceApp(db, sessionService).request(
+      new Request('http://local/workflow-runs/instances/run-1', { method: 'DELETE' })
+    );
+    expect(res.status).toBe(204);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.table).toBe('workflow_run_instance');
+    expect(updates[0]?.set.status).toBe('cancelled');
+    expect(updates[0]?.set.deletedAt).toBeTruthy();
+    // No deployment teardown / undeploy: the deployment table is never written.
+    expect(updates.some((u) => u.table === 'workflow_run')).toBe(false);
+    // The shared session is never ended by a run-scoped delete.
+    expect(endSession).not.toHaveBeenCalled();
+  });
+
+  it("404s and issues no update when deleting another user's run (ownership gate)", async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'user-B' },
+        forbidden: false,
+      });
+    const inserts: InsertCapture[] = [];
+    const updates: UpdateCapture[] = [];
+    const db = makeInstanceDb({ inserts, updates, owned: undefined });
+    const res = await instanceApp(db).request(
+      new Request('http://local/workflow-runs/instances/run-owned-by-A', { method: 'DELETE' })
+    );
+    expect(res.status).toBe(404);
+    expect(updates).toHaveLength(0);
+  });
+});
+
+describe('PATCH /workflow-runs/instances/:runId/status (CL-2233 instance-scoped)', () => {
+  it('updates the instance row (not the deployment) and returns the deployment id + status', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    const inserts: InsertCapture[] = [];
+    const updates: UpdateCapture[] = [];
+    const db = makeInstanceDb({
+      inserts,
+      updates,
+      owned: { runId: 'run-1', deploymentId: 'dep-1', memberPrincipalId: 'caller-p' },
+    });
+    const res = await instanceApp(db).request(
+      new Request('http://local/workflow-runs/instances/run-1/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' }),
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { deploymentId: string; status: string };
+    expect(body).toEqual({ deploymentId: 'dep-1', status: 'completed' });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toEqual({
+      table: 'workflow_run_instance',
+      set: { status: 'completed' },
+    });
+  });
+
+  it('404s for a run not owned by the caller', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'user-B' },
+        forbidden: false,
+      });
+    const inserts: InsertCapture[] = [];
+    const updates: UpdateCapture[] = [];
+    const db = makeInstanceDb({ inserts, updates, owned: undefined });
+    const res = await instanceApp(db).request(
+      new Request('http://local/workflow-runs/instances/run-A/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' }),
+      })
+    );
+    expect(res.status).toBe(404);
+    expect(updates).toHaveLength(0);
+  });
+});
+
+describe('GET /workflow-runs/:deploymentId/stream (CL-2233 per-run privacy filter)', () => {
+  it('with ?runId=run-A streams only run-A frames, dropping run-B', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    ancestorChain = ['tenant-1'];
+    subscribeKindThrows = null;
+    subscribeKindEntries = [
+      { seq: 0, runId: 'run-A', event: { type: 'RunStarted', seq: 0 } },
+      { seq: 1, runId: 'run-B', event: { type: 'RunStarted', seq: 1 } },
+      { seq: 2, runId: 'run-A', event: { type: 'StepCompleted', seq: 2, stepId: 's' } },
+      { seq: 3, runId: 'run-B', event: { type: 'StepCompleted', seq: 3, stepId: 's' } },
+    ];
+    const res = await buildApp(makeDb(true)).request(
+      new Request('http://local/workflow-runs/dep-1/stream?runId=run-A', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain('run-A');
+    expect(text).not.toContain('run-B');
+  });
+
+  it('rejects with 403 when runId is omitted (no firehose over the shared log)', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    ancestorChain = ['tenant-1'];
+    subscribeKindThrows = null;
+    subscribeKindEntries = [
+      { seq: 0, runId: 'run-A', event: { type: 'RunStarted', seq: 0 } },
+      { seq: 1, runId: 'run-B', event: { type: 'RunStarted', seq: 1 } },
+    ];
+    const res = await buildApp(makeDb(true)).request(
+      new Request('http://local/workflow-runs/dep-1/stream', { method: 'GET' })
+    );
+    expect(res.status).toBe(403);
+    const text = await res.text();
+    expect(text).not.toContain('run-A');
+    expect(text).not.toContain('run-B');
+  });
+
+  it('rejects with 403 when the caller does not own the requested runId', async () => {
+    // User B is a member of the deployment's tenant (deployment ownership
+    // passes) but does NOT own run-A — the instance ownership gate must block it
+    // even though B can reach the shared deployment log.
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'user-b' },
+        forbidden: false,
+      });
+    ancestorChain = ['tenant-1'];
+    subscribeKindThrows = null;
+    subscribeKindEntries = [{ seq: 0, runId: 'run-A', event: { type: 'RunStarted', seq: 0 } }];
+    // makeDb(true, false): deployment owned, but no instance row for this caller.
+    const res = await buildApp(makeDb(true, false)).request(
+      new Request('http://local/workflow-runs/dep-1/stream?runId=run-A', { method: 'GET' })
+    );
+    expect(res.status).toBe(403);
+    const text = await res.text();
+    expect(text).not.toContain('run-A');
   });
 });
