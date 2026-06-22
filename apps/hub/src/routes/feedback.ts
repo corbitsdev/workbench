@@ -4,18 +4,13 @@ import { Hono } from 'hono';
 import { describeRoute, resolver } from 'hono-openapi';
 import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
-import { outputFeedback, type FeedbackSubjectKind } from '../db/schema';
+import { FeedbackRequest, FeedbackListResponse } from '@workbench/shared';
+import { outputFeedback } from '../db/schema';
 import { requestBodySchema } from '../lib/openapi';
 
 const { agentInstance, principal } = intxSchema;
 
 const ErrorResponse = type({ error: 'string' });
-
-const FeedbackRequest = type({
-  subjectId: 'string',
-  subjectKind: "'turn_part' | 'workflow_step'",
-  rating: '1 | -1',
-});
 
 export function createFeedbackRouter(db: DB['db']): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
@@ -121,20 +116,16 @@ export function createFeedbackRouter(db: DB['db']): Hono<{ Variables: { userId: 
           description: 'Ratings for this caller on this instance',
           content: {
             'application/json': {
-              schema: resolver(
-                type({
-                  ratings: type({
-                    subjectId: 'string',
-                    subjectKind: "'turn_part' | 'workflow_step'",
-                    rating: '1 | -1',
-                  }).array(),
-                })
-              ),
+              schema: resolver(FeedbackListResponse),
             },
           },
         },
         404: {
           description: 'Instance not found, or caller is not a principal of its tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        500: {
+          description: 'Stored ratings failed schema validation',
           content: { 'application/json': { schema: resolver(ErrorResponse) } },
         },
       },
@@ -175,13 +166,11 @@ export function createFeedbackRouter(db: DB['db']): Hono<{ Variables: { userId: 
           )
         );
 
-      return c.json({
-        ratings: rows.map((r) => ({
-          subjectId: r.subjectId,
-          subjectKind: r.subjectKind as FeedbackSubjectKind,
-          rating: r.rating as 1 | -1,
-        })),
-      });
+      const response = FeedbackListResponse({ ratings: rows });
+      if (response instanceof type.errors) {
+        return c.json({ error: response.summary }, 500);
+      }
+      return c.json(response);
     }
   );
 

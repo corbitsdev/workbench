@@ -10,6 +10,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { feedbackSubjectKinds } from '@workbench/shared';
 
 // Postgres bytea has no first-class Drizzle column helper; map it to Buffer.
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -302,8 +303,8 @@ export const approval = pgTable('approval', {
   resolvedAt: timestamp('resolved_at'),
 });
 
-export const feedbackSubjectKind = ['turn_part', 'workflow_step'] as const;
-export type FeedbackSubjectKind = (typeof feedbackSubjectKind)[number];
+export { feedbackSubjectKinds as feedbackSubjectKind } from '@workbench/shared';
+export type { FeedbackSubjectKind } from '@workbench/shared';
 
 export const outputFeedback = pgTable(
   'output_feedback',
@@ -312,7 +313,7 @@ export const outputFeedback = pgTable(
     tenantId: text('tenant_id').notNull(),
     principalId: text('principal_id').notNull(),
     instanceId: text('instance_id'),
-    subjectKind: text('subject_kind', { enum: feedbackSubjectKind }).notNull(),
+    subjectKind: text('subject_kind', { enum: feedbackSubjectKinds }).notNull(),
     subjectId: text('subject_id').notNull(),
     rating: integer('rating').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
