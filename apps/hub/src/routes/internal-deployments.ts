@@ -9,6 +9,7 @@ import {
   deriveStepAgentId,
 } from '@intx/workflow-deploy';
 import type { AgentRepoStore } from '@intx/hub-sessions';
+import { schema as intxSchema } from '@intx/db';
 import { LiveDeploymentsResponse } from '@workbench/tool-credentials';
 import type { HubDb } from '../db';
 import { workflowRun, workflowRunRecord } from '../db/schema';
@@ -182,7 +183,16 @@ export function createInternalDeploymentsRouter(
         ),
       ];
 
-      return c.json({ deployments, activeRunDeploymentIds });
+      // CL-2264: every live agent instance address. The boot reconciler uses
+      // this to reap on-disk agent dirs whose hub row is gone (endedAt IS NOT
+      // NULL or row deleted), rather than letting them restore + crash-loop.
+      const agentInstanceRows = await db
+        .select({ address: intxSchema.agentInstance.address })
+        .from(intxSchema.agentInstance)
+        .where(isNull(intxSchema.agentInstance.endedAt));
+      const liveAgentAddresses = agentInstanceRows.map((r) => r.address);
+
+      return c.json({ deployments, activeRunDeploymentIds, liveAgentAddresses });
     }
   );
 

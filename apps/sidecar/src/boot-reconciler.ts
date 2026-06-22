@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { type } from 'arktype';
 import { getLogger } from '@intx/log';
 import { LiveDeploymentsResponse } from '@workbench/tool-credentials';
+import { sanitizeAgentAddress } from './workflow-host-wiring';
 
 const defaultLogger = getLogger(['sidecar', 'boot-reconciler']);
 
@@ -199,23 +200,6 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
     return;
   }
 
-  const candidateCount =
-    candidates.topLevelAgents.length +
-    candidates.workflowRuns.length +
-    candidates.agentStates.length;
-
-  // 3) Fail-safe on an empty/untrusted live set: an empty set while orphan-
-  //    looking dirs exist on disk is treated as untrusted (a hub that lost its
-  //    rows, a wrong endpoint, a fresh DB against a populated data dir would
-  //    otherwise nuke every live deployment). Delete nothing.
-  if (parsed.deployments.length === 0 && candidateCount > 0) {
-    logger.warn(
-      'boot reconciler: live set is empty but {count} orphan-looking dir(s) exist; treating as untrusted and deleting nothing',
-      { count: candidateCount }
-    );
-    return;
-  }
-
   // 4) The single source of truth for "alive": the set of live deployment
   //    ids. Every kept-or-deleted decision below hinges on whether a
   //    candidate dir's embedded deployment-id token is in this set. The
@@ -231,6 +215,14 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
   // step session dirs are pruned so restoreSessions() can't re-provision the
   // dead session and re-enter the `Unknown agent address` reconnect loop.
   const activeRunDeploymentIds = new Set<string>(parsed.activeRunDeploymentIds);
+
+  // CL-2264: the set of on-disk dir names that correspond to live agent
+  // instances. Built by sanitizing each live address the same way interchange
+  // does, so the dir-name comparison is deterministic and unambiguous (we
+  // go address→dirName, never the lossy dirName→address direction).
+  const liveAgentDirNames = new Set<string>(
+    parsed.liveAgentAddresses.map((addr) => sanitizeAgentAddress(addr))
+  );
 
   // 5) Delete orphans, best-effort per-dir (one failure never aborts the rest).
   let removed = 0;
@@ -250,17 +242,32 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
     }
   }
 
-  // A candidate is deleted when its name yields a deployment-id token AND
-  // either (first pass) that token is not live, OR (CL-2248 second pass) the
-  // token is live but has no in-flight run — its dirs belong to a terminal
-  // run and must not be restored. No token -> keep (not provably a deployment
-  // dir). Token live AND active-run -> keep.
-  async function reconcileCandidate(absPath: string): Promise<void> {
+  // Fail-safe for workflow deployment dirs: an empty deployment live set while
+  // deployment-token dirs exist on disk is treated as untrusted (hub lost its
+  // rows, wrong endpoint, fresh DB against a populated volume). Only dirs that
+  // POSITIVELY embed a `ses_` deployment-id token count — pure agent dirs (no
+  // token) are handled separately by `liveAgentAddresses` below and must not
+  // trigger this guard.
+  const tokenizedCandidateCount = [
+    ...candidates.topLevelAgents,
+    ...candidates.workflowRuns,
+    ...candidates.agentStates,
+  ].filter((abs) => extractDeploymentIdToken(basename(abs)) !== null).length;
+
+  const skipWorkflowReaping = parsed.deployments.length === 0 && tokenizedCandidateCount > 0;
+  if (skipWorkflowReaping) {
+    logger.warn(
+      'boot reconciler: live deployment set is empty but {count} deployment-dir(s) exist; treating as untrusted and skipping workflow-dir reaping',
+      { count: tokenizedCandidateCount }
+    );
+  }
+
+  // Reconcile workflow deployment dirs (token-keyed). Skipped when the
+  // deployment live set looks untrusted (see fail-safe above).
+  async function reconcileDeploymentCandidate(absPath: string): Promise<void> {
+    if (skipWorkflowReaping) return;
     const token = extractDeploymentIdToken(basename(absPath));
-    if (token === null) {
-      keptNoToken += 1;
-      return;
-    }
+    if (token === null) return; // Not a deployment dir; handled elsewhere.
     if (!liveDeploymentIds.has(token)) {
       await pruneOrphan(absPath);
       return;
@@ -271,9 +278,31 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
     }
   }
 
-  for (const abs of candidates.topLevelAgents) await reconcileCandidate(abs);
-  for (const abs of candidates.workflowRuns) await reconcileCandidate(abs);
-  for (const abs of candidates.agentStates) await reconcileCandidate(abs);
+  // CL-2264: reconcile a top-level ins_ agent dir that has no deployment-id
+  // token. The dir name is compared against the sanitized form of every live
+  // agent address. If it matches → live agent, keep. If NOT → orphaned agent
+  // dir (hub row gone), reap. Fail-safe: only reaches here when the hub
+  // returned a valid `liveAgentAddresses` field (schema requires it; a
+  // missing/malformed field causes parse failure → early return above).
+  async function reconcileAgentDir(absPath: string): Promise<void> {
+    const dirName = basename(absPath);
+    if (extractDeploymentIdToken(dirName) !== null) {
+      // Has a deployment-id token → handled as a deployment dir above, not here.
+      return;
+    }
+    if (liveAgentDirNames.has(dirName)) {
+      keptNoToken += 1;
+      return;
+    }
+    await pruneOrphan(absPath);
+  }
+
+  for (const abs of candidates.topLevelAgents) {
+    await reconcileDeploymentCandidate(abs);
+    await reconcileAgentDir(abs);
+  }
+  for (const abs of candidates.workflowRuns) await reconcileDeploymentCandidate(abs);
+  for (const abs of candidates.agentStates) await reconcileDeploymentCandidate(abs);
 
   logger.info(
     'boot reconciler: pruned {removed} orphan dir(s) ({removedTerminal} of them live-but-terminal-run, {failed} failures, {keptNoToken} kept with no deployment-id token) across {live} live deployment(s)',

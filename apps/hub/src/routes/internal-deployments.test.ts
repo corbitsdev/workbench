@@ -24,26 +24,41 @@ type RunRecord = {
   status: 'running' | 'awaiting' | 'completed' | 'failed';
 };
 
-// The route issues TWO select chains: first against workflow_run (live
-// deployments), then against workflow_run_record (in-flight runs). The fake
-// serves them in call order — the route reads them sequentially.
-function fakeDb(rows: Row[], runRecords: RunRecord[] = []) {
+// An agentInstance row. The route's third query selects addresses where
+// endedAt IS NULL.
+type AgentInstanceRow = {
+  address: string;
+  endedAt: Date | null;
+};
+
+// The route issues THREE select chains: (1) workflow_run live deployments,
+// (2) workflow_run_record in-flight runs, (3) agent_instance live addresses.
+// The fake serves them in call order — the route reads them sequentially.
+function fakeDb(
+  rows: Row[],
+  runRecords: RunRecord[] = [],
+  agentInstances: AgentInstanceRow[] = []
+) {
   const live = rows.filter((r) => r.deploymentId !== null && r.deletedAt === null);
   const activeRuns = runRecords
     .filter((r) => r.status === 'running' || r.status === 'awaiting')
     .map((r) => ({ deploymentId: r.deploymentId }));
+  const liveAddresses = agentInstances
+    .filter((a) => a.endedAt === null)
+    .map((a) => ({ address: a.address }));
   let call = 0;
   return {
     select: () => ({
       from: () => ({
         where: () => {
-          const result =
-            call === 0
-              ? live.map((r) => ({
-                  deploymentId: r.deploymentId,
-                  kind: r.kind,
-                }))
-              : activeRuns;
+          let result: unknown[];
+          if (call === 0) {
+            result = live.map((r) => ({ deploymentId: r.deploymentId, kind: r.kind }));
+          } else if (call === 1) {
+            result = activeRuns;
+          } else {
+            result = liveAddresses;
+          }
           call += 1;
           return result;
         },
@@ -59,6 +74,7 @@ function defWithSteps(stepOrder: string[]): WorkflowDefinition {
 function makeRouter(opts: {
   rows: Row[];
   runRecords?: RunRecord[];
+  agentInstances?: AgentInstanceRow[];
   definitions?: Record<string, WorkflowDefinition>;
   readThrows?: boolean;
 }) {
@@ -67,7 +83,7 @@ function makeRouter(opts: {
     return opts.definitions?.[kind] ?? defWithSteps(['plan', 'execute']);
   }) as unknown as typeof readWorkflowDefinition;
   return createInternalDeploymentsRouter(
-    fakeDb(opts.rows, opts.runRecords),
+    fakeDb(opts.rows, opts.runRecords, opts.agentInstances),
     'sidecar-token',
     {} as unknown as AgentRepoStore,
     DOMAIN,
@@ -180,5 +196,48 @@ describe('GET /deployments/live', () => {
     const body = LiveDeploymentsResponse(await res.json());
     if (body instanceof type.errors) throw new Error(body.summary);
     expect(body.deployments).toEqual([]);
+  });
+});
+
+describe('GET /deployments/live — liveAgentAddresses', () => {
+  test('returns only non-ended agent instance addresses', async () => {
+    const res = await get(
+      makeRouter({
+        rows: [],
+        agentInstances: [
+          { address: 'ins_abc@gtm.localhost', endedAt: null },
+          { address: 'ins_def@gtm.localhost', endedAt: new Date() },
+          { address: 'ins_ghi@gtm.localhost', endedAt: null },
+        ],
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = LiveDeploymentsResponse(await res.json());
+    if (body instanceof type.errors) throw new Error(body.summary);
+    expect([...body.liveAgentAddresses].sort()).toEqual([
+      'ins_abc@gtm.localhost',
+      'ins_ghi@gtm.localhost',
+    ]);
+  });
+
+  test('returns an empty liveAgentAddresses when all instances have ended', async () => {
+    const res = await get(
+      makeRouter({
+        rows: [],
+        agentInstances: [{ address: 'ins_abc@gtm.localhost', endedAt: new Date() }],
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = LiveDeploymentsResponse(await res.json());
+    if (body instanceof type.errors) throw new Error(body.summary);
+    expect(body.liveAgentAddresses).toEqual([]);
+  });
+
+  test('returns an empty liveAgentAddresses when there are no agent instances', async () => {
+    const res = await get(makeRouter({ rows: [], agentInstances: [] }));
+    expect(res.status).toBe(200);
+    const body = LiveDeploymentsResponse(await res.json());
+    if (body instanceof type.errors) throw new Error(body.summary);
+    expect(body.liveAgentAddresses).toEqual([]);
   });
 });

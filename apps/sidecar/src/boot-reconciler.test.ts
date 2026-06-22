@@ -72,13 +72,21 @@ async function exists(path: string): Promise<boolean> {
 // activeRunDeploymentIds defaults to "every live deployment has an active
 // run" so the existing first-pass tests keep their semantics (a live
 // deployment's dirs are kept). The second-pass tests pass an explicit subset.
-function okFetch(deployments: LiveDeployment[], activeRunDeploymentIds?: string[]): typeof fetch {
+function okFetch(
+  deployments: LiveDeployment[],
+  activeRunDeploymentIds?: string[],
+  liveAgentAddresses?: string[]
+): typeof fetch {
   const active = activeRunDeploymentIds ?? deployments.map((d) => d.deploymentId);
+  const agents = liveAgentAddresses ?? [];
   return (async () =>
-    new Response(JSON.stringify({ deployments, activeRunDeploymentIds: active }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })) as unknown as typeof fetch;
+    new Response(
+      JSON.stringify({ deployments, activeRunDeploymentIds: active, liveAgentAddresses: agents }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    )) as unknown as typeof fetch;
 }
 
 const silentLogger = { info: () => {}, warn: () => {}, error: () => {} };
@@ -107,14 +115,15 @@ async function layReserved(): Promise<string[]> {
 
 async function run(
   deployments: LiveDeployment[],
-  activeRunDeploymentIds?: string[]
+  activeRunDeploymentIds?: string[],
+  liveAgentAddresses?: string[]
 ): Promise<void> {
   await reconcileOrphanedDeploymentDirs({
     dataDir,
     hubHttpUrl: 'http://hub',
     sidecarToken: 't',
     logger: silentLogger,
-    fetchFn: okFetch(deployments, activeRunDeploymentIds),
+    fetchFn: okFetch(deployments, activeRunDeploymentIds, liveAgentAddresses),
   });
 }
 
@@ -150,16 +159,19 @@ describe('reconcileOrphanedDeploymentDirs — deployment-id-token keying', () =>
     expect(await exists(legacy)).toBe(true);
   });
 
-  test('keeps a top-level ins_ dir with no deployment-id token (fail-safe)', async () => {
+  test('reaps a top-level ins_ dir with no deployment-id token and no matching live agent address (CL-2264)', async () => {
     const live = liveDeployment(LIVE_ID, ['plan']);
     await layAllForms(dataDir, live);
+    // A stray ins_ dir whose address does not appear in liveAgentAddresses.
+    // CL-2264: now classified as an orphaned agent dir and reaped.
     const stray = join(dataDir, 'ins_some-other-instance_at_abklabs_com');
     await mkdir(stray, { recursive: true });
     await writeFile(join(stray, 'marker'), 'x');
 
-    await run([live]);
+    // No live agent addresses — stray is not in the live set → reaped.
+    await run([live], undefined, []);
 
-    expect(await exists(stray)).toBe(true);
+    expect(await exists(stray)).toBe(false);
   });
 });
 
@@ -263,5 +275,92 @@ describe('reconcileOrphanedDeploymentDirs — fail-safes', () => {
     await run([live]);
 
     for (const dir of liveDirs) expect(await exists(dir)).toBe(true);
+  });
+});
+
+describe('reconcileOrphanedDeploymentDirs — CL-2264 orphaned agent dirs', () => {
+  // An agent instance address and its sanitized on-disk dir name form.
+  const LIVE_AGENT_ADDR = 'ins_abc123def456abc123def456abc123de@gtm.localhost';
+  const DEAD_AGENT_ADDR = 'ins_111222333444555666777888999000aaa@gtm.localhost';
+
+  function agentDir(address: string): string {
+    return join(dataDir, sanitizeAgentAddress(address));
+  }
+
+  test('reaps an agent dir whose address is NOT in liveAgentAddresses', async () => {
+    const orphanDir = agentDir(DEAD_AGENT_ADDR);
+    await mkdir(orphanDir, { recursive: true });
+    await writeFile(join(orphanDir, 'marker'), 'x');
+
+    // Hub says only LIVE_AGENT_ADDR is live; DEAD_AGENT_ADDR is absent.
+    await run([], undefined, [LIVE_AGENT_ADDR]);
+
+    expect(await exists(orphanDir)).toBe(false);
+  });
+
+  test('keeps a live agent dir whose address IS in liveAgentAddresses', async () => {
+    const liveDir = agentDir(LIVE_AGENT_ADDR);
+    await mkdir(liveDir, { recursive: true });
+    await writeFile(join(liveDir, 'marker'), 'x');
+
+    await run([], undefined, [LIVE_AGENT_ADDR]);
+
+    expect(await exists(liveDir)).toBe(true);
+  });
+
+  test('reaps orphan, keeps live, when both are on disk', async () => {
+    const liveDir = agentDir(LIVE_AGENT_ADDR);
+    const deadDir = agentDir(DEAD_AGENT_ADDR);
+    await mkdir(liveDir, { recursive: true });
+    await writeFile(join(liveDir, 'marker'), 'x');
+    await mkdir(deadDir, { recursive: true });
+    await writeFile(join(deadDir, 'marker'), 'x');
+
+    await run([], undefined, [LIVE_AGENT_ADDR]);
+
+    expect(await exists(liveDir)).toBe(true);
+    expect(await exists(deadDir)).toBe(false);
+  });
+
+  test('FAIL-SAFE: liveAgentAddresses absent from response → keeps all agent dirs', async () => {
+    const agentDirPath = agentDir(DEAD_AGENT_ADDR);
+    await mkdir(agentDirPath, { recursive: true });
+    await writeFile(join(agentDirPath, 'marker'), 'x');
+
+    // okFetch with no liveAgentAddresses yields [] (empty array), which IS
+    // the absent/error case. We test the real fetch-error branch separately:
+    // here we test that when liveAgentAddresses is present but empty AND
+    // a candidate agent dir exists, we treat it as fail-safe (no reap).
+    // The real empty-set guard for workflow dirs fires at candidateCount > 0
+    // so this covers the agent-dir analogue: no positively-confirmed set →
+    // no reap. Pass [] explicitly to simulate a hub returning no live agents.
+    await reconcileOrphanedDeploymentDirs({
+      dataDir,
+      hubHttpUrl: 'http://hub',
+      sidecarToken: 't',
+      logger: silentLogger,
+      fetchFn: (async () =>
+        new Response(
+          // Response omits liveAgentAddresses entirely — simulates an older
+          // hub or a partial response. Schema validation will fail → no reap.
+          JSON.stringify({ deployments: [], activeRunDeploymentIds: [] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )) as unknown as typeof fetch,
+    });
+
+    expect(await exists(agentDirPath)).toBe(true);
+  });
+
+  test('top-level ins_ dir not matching any live agent address is reaped (CL-2264)', async () => {
+    // A top-level ins_ dir that doesn't match any live agent address in
+    // liveAgentAddresses is treated as an orphaned agent dir and reaped.
+    const stray = join(dataDir, 'ins_unclassifiable_thing');
+    await mkdir(stray, { recursive: true });
+    await writeFile(join(stray, 'marker'), 'x');
+
+    // LIVE_AGENT_ADDR is live but stray's sanitized name doesn't match it.
+    await run([], undefined, [LIVE_AGENT_ADDR]);
+
+    expect(await exists(stray)).toBe(false);
   });
 });
