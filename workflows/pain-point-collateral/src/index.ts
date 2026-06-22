@@ -18,8 +18,10 @@ const analyzeAgent = defineAgent({
     'You are a pain-point extraction agent.',
     'You will receive the full transcript of a customer call and any additional context the user has provided.',
     'Extract every distinct customer pain point you identify.',
+    'Assign each pain point a severity: low, medium, high, or critical.',
+    'Use critical only for blockers that threaten deal success, high for major adoption/revenue friction, medium for meaningful but bounded friction, and low for minor inconvenience.',
     'Output STRICT JSON ONLY — no prose, no markdown fences — matching this shape exactly:',
-    '{"painPoints":[{"id":"pp1","title":"<short label>","detail":"<one sentence explanation>"}]}',
+    '{"painPoints":[{"id":"pp1","title":"<short label>","detail":"<one sentence explanation>","severity":"low|medium|high|critical"}]}',
     'Use short sequential ids: pp1, pp2, etc.',
   ].join('\n'),
   tools: [],
@@ -34,8 +36,9 @@ const generateAgent = defineAgent({
     'Generates one piece of sales collateral for a given format and selected pain points.',
   systemPrompt: [
     'You are a sales collateral generation agent.',
-    'You will receive a collateral format (e.g. "Email", "One-pager", "LinkedIn post") and a list of selected pain points.',
-    'Write ONE piece of collateral in the requested format that addresses those pain points.',
+    'You will receive a collateral format (e.g. "Email", "One-pager", "LinkedIn post"), extracted pain points with severity, and the ids the user selected.',
+    'Write ONE polished, publication-ready piece of collateral in the requested format that addresses only the selected pain points.',
+    'Prioritize high and critical pain points, preserve the customer language when useful, and include a concrete CTA or next step when the format supports it.',
     'Output STRICT JSON ONLY — no prose, no markdown fences — matching this shape exactly:',
     '{"format":"<format name>","title":"<collateral title>","content":"<full collateral body>"}',
   ].join('\n'),
@@ -158,13 +161,13 @@ export const workflow = defineWorkflow({
       after: ['fmtSelection'],
     }),
 
-    // 9. Human approves/denies each piece; panel sends ONLY approved in payload
-    //    payload: {decisions: Array<{format: string, title: string, content: string}>}
+    // 9. Human approves/denies each piece; panel sends all decisions plus
+    //    approvedPieces for persistence.
     review: awaitSignal({ name: 'review', after: ['generate'] }),
 
     // 10. Create one artifact per approved piece (sequential map)
     persist: map({
-      over: { from: 'steps.review.output.decisions' },
+      over: { from: 'steps.review.output.approvedPieces' },
       step: persistStep,
       after: ['review'],
     }),

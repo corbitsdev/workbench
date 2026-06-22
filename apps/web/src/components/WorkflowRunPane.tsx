@@ -1,4 +1,4 @@
-import { Suspense, useMemo } from 'react';
+import { Suspense, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RunConsole } from './RunConsole';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -41,6 +41,7 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
   const runId = deploymentId;
   const { data: record, isLoading, isError } = useWorkflowRecord(runId, tenantId);
   const resume = useResumeWorkflow(runId, tenantId);
+  const signalInFlightRef = useRef(false);
 
   const kind = record?.kind ?? null;
 
@@ -84,10 +85,16 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
   // The record's outputs map IS the stepId -> output envelope the panels decode.
   const stepOutputs = record.outputs;
 
-  // onSignal maps directly to the resume endpoint; no-op once terminal.
+  // onSignal maps directly to the resume endpoint; no-op once terminal or already posting.
   const handleSignal = (signalName: string, payload?: unknown) => {
-    if (terminal) return;
-    resume.mutateAsync({ signalName, payload }).catch(() => undefined);
+    if (terminal || signalInFlightRef.current) return;
+    signalInFlightRef.current = true;
+    resume
+      .mutateAsync({ signalName, payload })
+      .catch(() => undefined)
+      .finally(() => {
+        signalInFlightRef.current = false;
+      });
   };
 
   return (

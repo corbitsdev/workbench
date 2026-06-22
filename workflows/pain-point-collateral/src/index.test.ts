@@ -76,7 +76,8 @@ describe('pain-point-collateral native workflow', () => {
     await run.signal('pain-point-selection', { selectedIds: ['pp1'] });
     await run.signal('format-selection', { formats: [{ format: 'Email' }] });
     await run.signal('review', {
-      decisions: [{ format: 'Email', title: 'Email', content: 'Hi...' }],
+      decisions: [{ format: 'Email', title: 'Email', content: 'Hi...', approved: true }],
+      approvedPieces: [{ format: 'Email', title: 'Email', content: 'Hi...' }],
     });
 
     const result = await run.complete;
@@ -144,9 +145,9 @@ describe('pain-point-collateral native workflow', () => {
     });
   });
 
-  test('persist map iterates over review.output.decisions', () => {
+  test('persist map iterates over review.output.approvedPieces', () => {
     const persist = mapPrimitive('persist');
-    expect(persist.over).toEqual({ from: 'steps.review.output.decisions' });
+    expect(persist.over).toEqual({ from: 'steps.review.output.approvedPieces' });
   });
 
   // -------------------------------------------------------------------------
@@ -196,7 +197,7 @@ describe('pain-point-collateral native workflow', () => {
     await run.signal('context', { context: '' });
     await run.signal('pain-point-selection', { selectedIds: [] });
     await run.signal('format-selection', { formats: [] });
-    await run.signal('review', { decisions: [] });
+    await run.signal('review', { decisions: [], approvedPieces: [] });
     const result = await run.complete;
     expect(result.terminalStatus).toBe('completed');
   });
@@ -229,7 +230,7 @@ describe('pain-point-collateral native workflow', () => {
 
     await run.signal('pain-point-selection', { selectedIds: ['pp1'] });
     await run.signal('format-selection', { formats: [] });
-    await run.signal('review', { decisions: [] });
+    await run.signal('review', { decisions: [], approvedPieces: [] });
     await run.complete;
   });
 

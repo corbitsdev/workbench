@@ -61,8 +61,8 @@ const NOTE_LIST = toolResult({
 
 const PAIN_POINTS = agentReply({
   painPoints: [
-    { id: 'pp1', title: 'Slow onboarding', detail: 'Takes weeks to go live.' },
-    { id: 'pp2', title: 'No ROI visibility', detail: 'No clear metric to track.' },
+    { id: 'pp1', title: 'Slow onboarding', detail: 'Takes weeks to go live.', severity: 'high' },
+    { id: 'pp2', title: 'No ROI visibility', detail: 'No clear metric to track.', severity: 'critical' },
   ],
 });
 
@@ -274,6 +274,8 @@ describe('Panel — pain point selection (step 3)', () => {
     screen.getByText('Slow onboarding');
     screen.getByText('No ROI visibility');
     screen.getByText('Takes weeks to go live.');
+    screen.getByText('High');
+    screen.getByText('Critical');
   });
 
   it('fires pain-point-selection signal with correct ids on submit', async () => {
@@ -498,13 +500,14 @@ describe('Panel — review generated pieces (step 5)', () => {
     );
 
     screen.getByText('Cut onboarding time');
-    screen.getByText('ROI at a glance');
+    screen.getByText(/ROI at a glance/);
     screen.getByText('Dear prospect, cut onboarding from weeks to days.');
-    // Both Approve buttons present
-    expect(screen.getAllByRole('button', { name: /^Approve / }).length).toBe(2);
+    screen.getByText('Review queue');
+    screen.getByRole('button', { name: 'Approve' });
+    screen.getByRole('button', { name: 'Deny' });
   });
 
-  it('fires review signal with only approved pieces when Deny is clicked for one', async () => {
+  it('fires review signal with approved and denied decisions after queue review', async () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
@@ -527,19 +530,24 @@ describe('Panel — review generated pieces (step 5)', () => {
       />
     );
 
-    // Deny the second piece (One-pager)
-    await userEvent.click(screen.getByRole('button', { name: 'Deny One-pager' }));
-    // Save the remaining approved (only Email)
-    await userEvent.click(screen.getByRole('button', { name: 'Save 1 artifact' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Continue to create approved artifacts' }));
 
     expect(onSignal).toHaveBeenCalledTimes(1);
     const [name, payload] = onSignal.mock.calls[0] as [
       string,
-      { decisions: { format: string; title: string; content: string }[] },
+      {
+        decisions: { format: string; title: string; content: string; approved: boolean }[];
+        approvedPieces: { format: string; title: string; content: string }[];
+      },
     ];
     expect(name).toBe('review');
-    expect(payload.decisions).toHaveLength(1);
-    expect(payload.decisions[0]!.format).toBe('Email');
+    expect(payload.decisions).toHaveLength(2);
+    expect(payload.decisions[0]).toMatchObject({ format: 'Email', approved: true });
+    expect(payload.decisions[1]).toMatchObject({ format: 'One-pager', approved: false });
+    expect(payload.approvedPieces).toHaveLength(1);
+    expect(payload.approvedPieces[0]!.format).toBe('Email');
   });
 
   it('fires review signal with all pieces when all are approved', async () => {
@@ -565,12 +573,18 @@ describe('Panel — review generated pieces (step 5)', () => {
       />
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Save 2 artifacts' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Continue to create approved artifacts' }));
 
     expect(onSignal).toHaveBeenCalledTimes(1);
-    const [, payload] = onSignal.mock.calls[0] as [string, { decisions: { format: string }[] }];
+    const [, payload] = onSignal.mock.calls[0] as [
+      string,
+      { decisions: { format: string; approved: boolean }[]; approvedPieces: { format: string }[] },
+    ];
     expect(payload.decisions).toHaveLength(2);
-    expect(payload.decisions.map((d) => d.format)).toEqual(
+    expect(payload.decisions.every((decision) => decision.approved)).toBe(true);
+    expect(payload.approvedPieces.map((d) => d.format)).toEqual(
       expect.arrayContaining(['Email', 'One-pager'])
     );
   });
@@ -657,8 +671,8 @@ describe('Panel — done (step 6)', () => {
           generate: GENERATED_PIECES,
           review: {
             decisions: [
-              { format: 'Email', title: 'Cut onboarding time', content: 'Hi...' },
-              { format: 'One-pager', title: 'ROI at a glance', content: 'Track...' },
+              { format: 'Email', title: 'Cut onboarding time', content: 'Hi...', approved: true },
+              { format: 'One-pager', title: 'ROI at a glance', content: 'Track...', approved: false },
             ],
           },
         }}
@@ -668,8 +682,10 @@ describe('Panel — done (step 6)', () => {
     );
 
     screen.getByText('Cut onboarding time');
-    screen.getByText('ROI at a glance');
-    screen.getByText('Artifacts created successfully.');
+    screen.getByText(/ROI at a glance/);
+    screen.getByText('Approved artifacts created successfully.');
+    screen.getByText('Approved');
+    screen.getByText('Denied');
   });
 });
 

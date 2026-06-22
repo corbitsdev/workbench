@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type } from 'arktype';
 import {
   Button,
@@ -50,6 +50,7 @@ const PainPoint = type({
   id: 'string',
   title: 'string',
   detail: 'string',
+  'severity?': "'low' | 'medium' | 'high' | 'critical'",
 });
 type PainPoint = typeof PainPoint.infer;
 
@@ -68,9 +69,19 @@ const ReviewDecision = type({
   format: 'string',
   title: 'string',
   content: 'string',
+  approved: 'boolean',
 });
 
-const PersistOutput = type({ decisions: ReviewDecision.array() });
+const ApprovedPiece = type({
+  format: 'string',
+  title: 'string',
+  content: 'string',
+});
+
+const PersistOutput = type({
+  decisions: ReviewDecision.array(),
+  'approvedPieces?': ApprovedPiece.array(),
+});
 
 // -------------------------------------------------------------------------
 // Output parsing helpers
@@ -267,7 +278,7 @@ const fieldClass =
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-[10px] border border-border bg-surface p-4">
+    <section className="rounded-[14px] border border-border bg-surface p-4 shadow-sm">
       <h3 className="mb-3 text-[13px] font-semibold text-text">{title}</h3>
       {children}
     </section>
@@ -280,6 +291,32 @@ function Placeholder({ label }: { label: string }) {
 
 function ErrorLine({ label }: { label: string }) {
   return <p className="text-[13px] text-orange">{label}</p>;
+}
+
+function severityLabel(severity: PainPoint['severity']): string {
+  if (severity === 'critical') return 'Critical';
+  if (severity === 'high') return 'High';
+  if (severity === 'medium') return 'Medium';
+  return 'Low';
+}
+
+function severityClass(severity: PainPoint['severity']): string {
+  if (severity === 'critical') return 'border-red-500/50 bg-red-500/10 text-red-300';
+  if (severity === 'high') return 'border-orange/50 bg-orange/10 text-orange';
+  if (severity === 'medium') return 'border-yellow-500/50 bg-yellow-500/10 text-yellow-300';
+  return 'border-green/40 bg-green/10 text-green';
+}
+
+function decisionStatus(decision: Decision): string {
+  if (decision.approved === true) return 'Approved';
+  if (decision.approved === false) return 'Denied';
+  return 'Pending';
+}
+
+function decisionBadgeClass(approved: boolean | null): string {
+  if (approved === true) return 'bg-green/10 text-green';
+  if (approved === false) return 'bg-orange/10 text-orange';
+  return 'bg-surface-2 text-text-3';
 }
 
 // -------------------------------------------------------------------------
@@ -297,6 +334,7 @@ function TranscriptStep({
   selectPhase: StepPhase | undefined;
   onSelect: (noteId: string) => void;
 }) {
+  const [pendingNoteId, setPendingNoteId] = useState<string | null>(null);
   const result = parseNoteList(stepOutputs.intake);
 
   if (result.status === 'pending') {
@@ -314,21 +352,49 @@ function TranscriptStep({
   }
 
   return (
-    <ul className="space-y-2">
-      {result.value.map((note) => (
-        <li key={note.id}>
-          <button
-            type="button"
-            disabled={!selectable}
-            onClick={() => onSelect(note.id)}
-            className="w-full rounded-[8px] border border-border bg-bg px-3 py-2.5 text-left text-[13px] text-text-2 enabled:hover:border-orange disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
-          >
-            <span className="block font-medium text-text">{note.title ?? 'Untitled note'}</span>
-            {note.summary ? <span className="mt-0.5 block text-text-3">{note.summary}</span> : null}
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-3">
+      <div className="rounded-[10px] border border-orange/20 bg-orange/5 px-3 py-2">
+        <p className="text-[12px] font-medium text-text-2">Pick the customer call to mine</p>
+        <p className="mt-0.5 text-[12px] text-text-3">
+          Myra will extract pain points, customer language, and proof points from the selected transcript.
+        </p>
+      </div>
+      <ul className="grid gap-2">
+        {result.value.map((note) => {
+          const pending = pendingNoteId === note.id;
+          return (
+            <li key={note.id}>
+              <button
+                type="button"
+                disabled={!selectable || pendingNoteId !== null}
+                onClick={() => {
+                  if (!selectable || pendingNoteId !== null) return;
+                  setPendingNoteId(note.id);
+                  onSelect(note.id);
+                }}
+                className="group w-full rounded-[12px] border border-border bg-bg px-4 py-3 text-left shadow-sm transition-colors enabled:hover:border-orange enabled:hover:bg-orange/5 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="flex items-start justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px] font-semibold text-text">
+                      {note.title ?? 'Untitled note'}
+                    </span>
+                    {note.summary ? (
+                      <span className="mt-1 line-clamp-2 block text-[12px] leading-relaxed text-text-3">
+                        {note.summary}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="shrink-0 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-text-3 group-enabled:group-hover:border-orange/50 group-enabled:group-hover:text-orange">
+                    {pending ? 'Opening…' : 'Select'}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -348,6 +414,7 @@ function ContextStep({
   onSubmit: (context: string) => void;
 }) {
   const [value, setValue] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   if (contextPhase === 'completed') {
     return <Placeholder label="Context saved. Analyzing pain points…" />;
@@ -365,9 +432,8 @@ function ContextStep({
         <p className="text-[12px] text-text-3">
           Transcript: <span className="font-medium text-text-2">{noteTitle}</span>
         </p>
-      ) : fetchPhase === 'in-flight' ? (
-        <Placeholder label="Fetching transcript…" />
       ) : null}
+      {!noteTitle && fetchPhase === 'in-flight' ? <Placeholder label="Fetching transcript…" /> : null}
 
       <label className="block space-y-1.5">
         <span className="text-[12px] font-medium text-text-2">
@@ -375,7 +441,7 @@ function ContextStep({
         </span>
         <textarea
           rows={4}
-          disabled={!awaiting}
+          disabled={!awaiting || submitting}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="e.g. focus on integration issues, prospect is a Series B startup…"
@@ -386,13 +452,14 @@ function ContextStep({
       <Button
         variant="primary"
         size="sm"
-        disabled={!awaiting}
+        disabled={!awaiting || submitting}
         onClick={() => {
-          if (!awaiting) return;
+          if (!awaiting || submitting) return;
+          setSubmitting(true);
           onSubmit(value.trim());
         }}
       >
-        Continue
+        {submitting ? 'Continuing…' : 'Continue'}
       </Button>
     </div>
   );
@@ -414,6 +481,7 @@ function PainPointStep({
   onSubmit: (selectedIds: string[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
 
   if (ppSelectionPhase === 'completed') {
     return <Placeholder label="Pain points selected. Choose output formats…" />;
@@ -430,6 +498,7 @@ function PainPointStep({
     return <ErrorLine label="Couldn't read the extracted pain points." />;
 
   const awaiting = ppSelectionPhase === 'awaiting-signal' || ppSelectionPhase === 'in-flight';
+  const disabled = !awaiting || submitting;
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -456,14 +525,23 @@ function PainPointStep({
               <label className="flex cursor-pointer items-start gap-3 rounded-[8px] border border-border bg-bg px-3 py-2.5 transition-colors hover:border-orange has-[:checked]:border-orange has-[:checked]:bg-orange/5">
                 <input
                   type="checkbox"
-                  disabled={!awaiting}
+                  disabled={disabled}
                   checked={checked}
                   onChange={() => toggle(pp.id)}
                   className="mt-0.5 h-4 w-4 accent-orange disabled:cursor-not-allowed"
                 />
-                <div>
-                  <p className="text-[13px] font-medium text-text">{pp.title}</p>
-                  <p className="mt-0.5 text-[12px] text-text-3">{pp.detail}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[13px] font-medium text-text">{pp.title}</p>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${severityClass(
+                        pp.severity
+                      )}`}
+                    >
+                      {severityLabel(pp.severity)}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-text-3">{pp.detail}</p>
                 </div>
               </label>
             </li>
@@ -474,13 +552,14 @@ function PainPointStep({
       <Button
         variant="primary"
         size="sm"
-        disabled={!awaiting || selected.size === 0}
+        disabled={disabled || selected.size === 0}
         onClick={() => {
-          if (!awaiting) return;
+          if (disabled) return;
+          setSubmitting(true);
           onSubmit([...selected]);
         }}
       >
-        Select{' '}
+        {submitting ? 'Selecting…' : 'Select'}{' '}
         {selected.size > 0
           ? `${selected.size} pain point${selected.size === 1 ? '' : 's'}`
           : 'pain points'}
@@ -510,12 +589,14 @@ function FormatStep({
   onSubmit: (formats: Array<{ format: string }>) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
 
   if (fmtSelectionPhase === 'completed') {
     return <Placeholder label="Formats selected. Generating collateral…" />;
   }
 
   const awaiting = fmtSelectionPhase === 'awaiting-signal' || fmtSelectionPhase === 'in-flight';
+  const disabled = !awaiting || submitting;
 
   function toggle(fmt: string) {
     setSelected((prev) => {
@@ -540,7 +621,7 @@ function FormatStep({
               <label className="flex cursor-pointer items-center gap-3 rounded-[8px] border border-border bg-bg px-3 py-2.5 transition-colors hover:border-orange has-[:checked]:border-orange has-[:checked]:bg-orange/5">
                 <input
                   type="checkbox"
-                  disabled={!awaiting}
+                  disabled={disabled}
                   checked={checked}
                   onChange={() => toggle(fmt)}
                   className="h-4 w-4 accent-orange disabled:cursor-not-allowed"
@@ -555,13 +636,14 @@ function FormatStep({
       <Button
         variant="primary"
         size="sm"
-        disabled={!awaiting || selected.size === 0}
+        disabled={disabled || selected.size === 0}
         onClick={() => {
-          if (!awaiting) return;
+          if (disabled) return;
+          setSubmitting(true);
           onSubmit([...selected].map((format) => ({ format })));
         }}
       >
-        Generate{' '}
+        {submitting ? 'Generating…' : 'Generate'}{' '}
         {selected.size > 0
           ? `${selected.size} format${selected.size === 1 ? '' : 's'}`
           : 'collateral'}
@@ -574,7 +656,7 @@ function FormatStep({
 // Step 5 — Review generated pieces (Tinder-style approve / deny)
 // -------------------------------------------------------------------------
 
-type Decision = { piece: GeneratedPiece; approved: boolean };
+type Decision = { piece: GeneratedPiece; approved: boolean | null };
 
 function ReviewStep({
   stepOutputs,
@@ -585,12 +667,24 @@ function ReviewStep({
   stepOutputs: Record<string, unknown>;
   generatePhase: StepPhase | undefined;
   reviewPhase: StepPhase | undefined;
-  onSubmit: (approved: GeneratedPiece[]) => void;
+  onSubmit: (decisions: Decision[]) => void;
 }) {
-  const result = parseGeneratedPieces(stepOutputs.generate);
+  const result = useMemo(() => parseGeneratedPieces(stepOutputs.generate), [stepOutputs.generate]);
   const [decisions, setDecisions] = useState<Decision[]>(() =>
-    result.status === 'ok' ? result.value.map((piece) => ({ piece, approved: true })) : []
+    result.status === 'ok' ? result.value.map((piece) => ({ piece, approved: null })) : []
   );
+  const [submitting, setSubmitting] = useState(false);
+
+  const pieces = result.status === 'ok' ? result.value : [];
+  const synced =
+    decisions.length === pieces.length &&
+    decisions.every((d, i) => d.piece.format === pieces[i]?.format);
+
+  useEffect(() => {
+    if (result.status === 'ok' && !synced) {
+      setDecisions(pieces.map((piece) => ({ piece, approved: null })));
+    }
+  }, [pieces, result.status, synced]);
 
   if (reviewPhase === 'completed') {
     return <Placeholder label="Review complete. Creating artifacts…" />;
@@ -604,92 +698,139 @@ function ReviewStep({
   if (result.status === 'malformed')
     return <ErrorLine label="Couldn't read the generated collateral." />;
 
-  // Sync decisions when generate output arrives
-  const pieces = result.value;
-  const synced =
-    decisions.length === pieces.length &&
-    decisions.every((d, i) => d.piece.format === pieces[i]?.format);
-  const activeDec = synced ? decisions : pieces.map((piece) => ({ piece, approved: true }));
+  const activeDec: Decision[] = synced
+    ? decisions
+    : pieces.map((piece) => ({ piece, approved: null }));
 
   const awaiting = reviewPhase === 'awaiting-signal' || reviewPhase === 'in-flight';
+  const disabled = !awaiting || submitting;
+  const activeIndex = activeDec.findIndex((d) => d.approved === null);
+  const activeDecision = activeIndex >= 0 ? activeDec[activeIndex] : null;
+  const approvedCount = activeDec.filter((d) => d.approved === true).length;
+  const deniedCount = activeDec.filter((d) => d.approved === false).length;
 
-  function setApproved(index: number, approved: boolean) {
+  function decide(index: number, approved: boolean) {
+    if (disabled || index < 0) return;
     setDecisions((prev) => {
-      const next = synced
+      const base = synced
         ? [...prev]
-        : pieces.map((p, i) => ({ piece: p, approved: prev[i]?.approved ?? true }));
-      return next.map((d, i) => (i === index ? { ...d, approved } : d));
+        : pieces.map((p, i) => ({ piece: p, approved: prev[i]?.approved ?? null }));
+      return base.map((d, i) => (i === index ? { ...d, approved } : d));
     });
   }
 
-  const approvedPieces = activeDec.filter((d) => d.approved).map((d) => d.piece);
+  function submitReview() {
+    if (disabled || activeDec.some((d) => d.approved === null)) return;
+    setSubmitting(true);
+    onSubmit(activeDec);
+  }
 
   return (
     <div className="space-y-4">
-      <p className="text-[12px] text-text-3">
-        Approve the pieces you want to save as artifacts. Denied pieces are discarded.
-      </p>
-
-      {activeDec.map((dec, index) => (
-        <div
-          key={dec.piece.format}
-          className={`rounded-[10px] border bg-surface p-4 transition-colors ${
-            dec.approved ? 'border-green/60' : 'border-border opacity-60'
-          }`}
-        >
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div>
-              <span className="rounded-[5px] bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-text-3">
-                {dec.piece.format}
-              </span>
-              <p className="mt-1 text-[13px] font-semibold text-text">{dec.piece.title}</p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={!awaiting}
-                aria-label={`Approve ${dec.piece.format}`}
-                onClick={() => setApproved(index, true)}
-                className={`rounded-[7px] border px-3 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed ${
-                  dec.approved
-                    ? 'border-green/60 bg-green/10 text-green'
-                    : 'border-border bg-bg text-text-3 hover:border-green/60 hover:text-green'
-                }`}
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                disabled={!awaiting}
-                aria-label={`Deny ${dec.piece.format}`}
-                onClick={() => setApproved(index, false)}
-                className={`rounded-[7px] border px-3 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed ${
-                  !dec.approved
-                    ? 'border-orange/60 bg-orange/10 text-orange'
-                    : 'border-border bg-bg text-text-3 hover:border-orange/60 hover:text-orange'
-                }`}
-              >
-                Deny
-              </button>
-            </div>
-          </div>
-          <pre className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-text-2">
-            {dec.piece.content}
-          </pre>
+      <div className="rounded-[10px] border border-border bg-bg p-3">
+        <div className="mb-2 flex items-center justify-between text-[12px] text-text-3">
+          <span>Review queue</span>
+          <span>
+            {approvedCount} approved · {deniedCount} denied
+          </span>
         </div>
-      ))}
+        <ol className="grid gap-1.5">
+          {activeDec.map((dec, index) => {
+            const current = index === activeIndex;
+            const status = decisionStatus(dec);
+            return (
+              <li
+                key={dec.piece.format}
+                className={`flex items-center justify-between gap-3 rounded-[7px] border px-3 py-2 text-[12px] ${
+                  current ? 'border-orange bg-orange/5 text-text' : 'border-border bg-surface text-text-2'
+                }`}
+              >
+                <span className="truncate">
+                  {index + 1}. {dec.piece.format} — {dec.piece.title}
+                </span>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${decisionBadgeClass(
+                    dec.approved
+                  )}`}
+                >
+                  {status}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
 
-      <Button
-        variant="primary"
-        size="sm"
-        disabled={!awaiting || approvedPieces.length === 0}
-        onClick={() => {
-          if (!awaiting) return;
-          onSubmit(approvedPieces);
-        }}
-      >
-        Save {approvedPieces.length} artifact{approvedPieces.length === 1 ? '' : 's'}
-      </Button>
+      {activeDecision ? (
+        <div className="flex min-h-[420px] flex-col rounded-[14px] border border-border bg-surface shadow-sm">
+          <div className="border-b border-border px-5 py-4">
+            <span className="rounded-full bg-surface-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-3">
+              {activeDecision.piece.format}
+            </span>
+            <h3 className="mt-3 text-[16px] font-semibold text-text">{activeDecision.piece.title}</h3>
+          </div>
+          <pre className="flex-1 whitespace-pre-wrap break-words px-5 py-4 text-[13px] leading-relaxed text-text-2">
+            {activeDecision.piece.content}
+          </pre>
+          <div className="grid grid-cols-2 gap-3 border-t border-border bg-bg p-4">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => decide(activeIndex, false)}
+              className="rounded-[12px] border border-orange/40 bg-orange/10 px-4 py-3 text-[14px] font-semibold text-orange transition-colors enabled:hover:bg-orange/15 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Deny
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => decide(activeIndex, true)}
+              className="rounded-[12px] border border-green/40 bg-green/10 px-4 py-3 text-[14px] font-semibold text-green transition-colors enabled:hover:bg-green/15 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Approve
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4 rounded-[14px] border border-border bg-surface p-5">
+          <div>
+            <h3 className="text-[15px] font-semibold text-text">Review complete</h3>
+            <p className="mt-1 text-[12px] text-text-3">
+              Check the final approval list before creating artifacts.
+            </p>
+          </div>
+          <div className="grid gap-2">
+            {activeDec.map((dec, index) => (
+              <div
+                key={dec.piece.format}
+                className="flex items-center justify-between gap-3 rounded-[8px] border border-border bg-bg px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-medium text-text">
+                    {index + 1}. {dec.piece.title}
+                  </p>
+                  <p className="text-[11px] text-text-3">{dec.piece.format}</p>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${decisionBadgeClass(
+                  dec.approved
+                )}`}
+                >
+                  {decisionStatus(dec)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={disabled || activeDec.some((d) => d.approved === null)}
+            onClick={submitReview}
+          >
+            {submitting ? 'Creating artifacts…' : 'Continue to create approved artifacts'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -713,23 +854,33 @@ function DoneStep({
 
   const result = parsePersistOutput(stepOutputs.review);
   const decisions = result.status === 'ok' ? result.value.decisions : [];
+  const approved = decisions.filter((decision) => decision.approved);
 
   return (
     <div className="space-y-4">
       <p className="text-[13px] font-medium text-text">
-        {decisions.length > 0 ? 'Artifacts created successfully.' : 'Run complete.'}
+        {approved.length > 0 ? 'Approved artifacts created successfully.' : 'Run complete.'}
       </p>
       {decisions.length > 0 && (
         <ul className="space-y-1.5">
           {decisions.map((d) => (
             <li
               key={d.format}
-              className="flex items-center gap-2 rounded-[7px] border border-border bg-surface px-3 py-2 text-[13px] text-text"
+              className="flex items-center justify-between gap-3 rounded-[7px] border border-border bg-surface px-3 py-2 text-[13px] text-text"
             >
-              <span className="rounded-[5px] bg-surface-2 px-2 py-0.5 text-[11px] text-text-3">
-                {d.format}
+              <span className="min-w-0">
+                <span className="mr-2 rounded-[5px] bg-surface-2 px-2 py-0.5 text-[11px] text-text-3">
+                  {d.format}
+                </span>
+                <span className="truncate">{d.title}</span>
               </span>
-              <span className="truncate">{d.title}</span>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${decisionBadgeClass(
+                  d.approved
+                )}`}
+              >
+                {decisionStatus({ piece: d, approved: d.approved })}
+              </span>
             </li>
           ))}
         </ul>
@@ -844,15 +995,20 @@ export function Panel(props: WorkflowPanelProps) {
               stepOutputs={stepOutputs}
               generatePhase={phaseFor(state, 'generate')}
               reviewPhase={phaseFor(state, 'review')}
-              onSubmit={(approved) =>
+              onSubmit={(decisions) => {
+                const payloadDecisions = decisions.map(({ piece, approved }) => ({
+                  format: piece.format,
+                  title: piece.title,
+                  content: piece.content,
+                  approved: approved === true,
+                }));
                 onSignal('review', {
-                  decisions: approved.map(({ format, title, content }) => ({
-                    format,
-                    title,
-                    content,
-                  })),
-                })
-              }
+                  decisions: payloadDecisions,
+                  approvedPieces: payloadDecisions
+                    .filter((decision) => decision.approved)
+                    .map(({ format, title, content }) => ({ format, title, content })),
+                });
+              }}
             />
           </SectionCard>
         )}
