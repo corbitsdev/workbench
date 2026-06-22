@@ -63,6 +63,35 @@ const authorizer = {
 const db = {} as Parameters<typeof createHubToolRunner>[0]['db'];
 
 describe('createHubToolRunner tool-grant gate', () => {
+  test('dispatches canonical package tool names through the local hub registry name', async () => {
+    invoked.length = 0;
+    const canonical = '@workbench/tools-granola/granola:granola_list_notes';
+    const runner = createHubToolRunner({
+      db,
+      authorizer: {
+        assertToolGranted: async (_s: RunState, tool: string) => {
+          if (tool !== canonical) {
+            throw new Error(`workflow executor: principal not granted tool:${tool}/invoke`);
+          }
+        },
+        authorizeFn: () => async () => ({
+          effect: 'allow' as const,
+          matchingGrants: [],
+          resolvedBy: null,
+        }),
+      },
+    });
+
+    const result = await runner.run({
+      tool: canonical,
+      input: {},
+      state: state('prn-1'),
+    });
+
+    expect(invoked).toEqual(['granola_list_notes']);
+    expect(result).toEqual({ content: JSON.stringify({ ok: 'granola_list_notes' }) });
+  });
+
   test('rejects an ungranted tool without invoking it', async () => {
     invoked.length = 0;
     const runner = createHubToolRunner({ db, authorizer });

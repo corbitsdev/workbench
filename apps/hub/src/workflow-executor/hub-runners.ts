@@ -17,6 +17,11 @@ function toToolEnvelope(raw: unknown): { content: string } {
   return { content: JSON.stringify(raw) };
 }
 
+function localToolName(tool: string): string {
+  const separator = tool.lastIndexOf(':');
+  return separator === -1 ? tool : tool.slice(separator + 1);
+}
+
 // Hub-side tool runner. Credential tools (granola_*) resolve the tenant
 // credential and call the provider directly via runCredentialTool. Context
 // tools (artifact_create) need hub db + principal/session context, so they are
@@ -29,7 +34,8 @@ export function createHubToolRunner(deps: {
   const authorizer = deps.authorizer ?? createWorkflowAuthorizer({ db: deps.db });
   return {
     async run({ tool, input, state }) {
-      const entry = KNOWN_TOOLS[tool];
+      const dispatchTool = localToolName(tool);
+      const entry = KNOWN_TOOLS[dispatchTool];
       if (!entry) throw new Error(`workflow executor: unknown tool "${tool}"`);
 
       // Gate the invoke exactly as the native sidecar step path does: the run
@@ -43,7 +49,7 @@ export function createHubToolRunner(deps: {
       >;
 
       if (isCredentialToolEntry(entry)) {
-        const raw = await runCredentialTool(deps.db, state.tenantId, tool, args);
+        const raw = await runCredentialTool(deps.db, state.tenantId, dispatchTool, args);
         return toToolEnvelope(raw);
       }
 
@@ -57,7 +63,7 @@ export function createHubToolRunner(deps: {
         agentId: state.runId,
         sessionId: state.runId,
       });
-      const handler = tools.find((t) => t.definition.name === tool);
+      const handler = tools.find((t) => t.definition.name === dispatchTool);
       if (!handler) throw new Error(`workflow executor: tool "${tool}" not found in package`);
       if (handler.kind !== 'string') {
         throw new Error(
