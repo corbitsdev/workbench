@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   ANTHROPIC_AB_COMPARISON_MODELS,
   GOOGLE_GENAI_AB_COMPARISON_MODELS,
+  NEAR_AI_MODELS,
   OPENAI_AB_COMPARISON_MODELS,
   OPENCODE_ZEN_CHAT_COMPLETIONS_MODELS,
   defaultAbComparisonModel,
@@ -51,33 +52,51 @@ describe('blind A/B comparison model catalog', () => {
     expect(GOOGLE_GENAI_AB_COMPARISON_MODELS).not.toContain('gemini-2.5-flash');
   });
 
+  it('lists Near AI models', () => {
+    expect(NEAR_AI_MODELS).toEqual(['deepseek-ai/DeepSeek-V4-Flash']);
+  });
+
   it('defaults to the first catalog model per plugin', () => {
-    expect(defaultAbComparisonModel('anthropic')).toBe('claude-opus-4-8');
-    expect(defaultAbComparisonModel('openai-compatible')).toBe('kimi-k2.6');
-    expect(defaultAbComparisonModel('openai')).toBe('gpt-5.5');
-    expect(defaultAbComparisonModel('google-genai')).toBe('gemini-3.5-flash');
+    expect(defaultAbComparisonModel('anthropic', 'anthropic')).toBe('claude-opus-4-8');
+    expect(defaultAbComparisonModel('opencode-zen', 'openai-compatible')).toBe('kimi-k2.6');
+    expect(defaultAbComparisonModel('openai', 'openai')).toBe('gpt-5.5');
+    expect(defaultAbComparisonModel('google-genai', 'google-genai')).toBe('gemini-3.5-flash');
+  });
+
+  it('defaults to the near-ai model list when providerName is near-ai', () => {
+    expect(defaultAbComparisonModel('near-ai', 'openai-compatible')).toBe('deepseek-ai/DeepSeek-V4-Flash');
+    expect(listAbComparisonModels('near-ai', 'openai-compatible')).toEqual(['deepseek-ai/DeepSeek-V4-Flash']);
   });
 
   it('rejects provider metadata models that are not in the catalog', () => {
-    expect(isAbComparisonModelAllowed('openai-compatible', 'gpt-4o')).toBe(false);
-    expect(isAbComparisonModelAllowed('openai-compatible', 'deepseek-v4-flash')).toBe(true);
-    expect(isAbComparisonModelAllowed('anthropic', 'claude-sonnet-4-6')).toBe(true);
-    expect(isAbComparisonModelAllowed('anthropic', 'claude-haiku-4-6')).toBe(false);
+    expect(isAbComparisonModelAllowed('opencode-zen', 'openai-compatible', 'gpt-4o')).toBe(false);
+    expect(isAbComparisonModelAllowed('opencode-zen', 'openai-compatible', 'deepseek-v4-flash')).toBe(true);
+    expect(isAbComparisonModelAllowed('anthropic', 'anthropic', 'claude-sonnet-4-6')).toBe(true);
+    expect(isAbComparisonModelAllowed('anthropic', 'anthropic', 'claude-haiku-4-6')).toBe(false);
+    expect(isAbComparisonModelAllowed('near-ai', 'openai-compatible', 'kimi-k2.6')).toBe(false);
+    expect(isAbComparisonModelAllowed('near-ai', 'openai-compatible', 'deepseek-ai/DeepSeek-V4-Flash')).toBe(true);
   });
 
   it('validateAbComparisonProviders requires two entries with allowed models', () => {
     expect(
       validateAbComparisonProviders([
-        { providerPlugin: 'anthropic', model: 'claude-sonnet-4-6' },
-        { providerPlugin: 'openai-compatible', model: 'deepseek-v4-flash' },
+        { providerName: 'anthropic', providerPlugin: 'anthropic', model: 'claude-sonnet-4-6' },
+        { providerName: 'opencode-zen', providerPlugin: 'openai-compatible', model: 'deepseek-v4-flash' },
       ])
     ).toEqual({ valid: true });
 
     expect(
       validateAbComparisonProviders([
-        { providerPlugin: 'openai-compatible', model: 'gpt-4o' },
-        { providerPlugin: 'anthropic', model: 'claude-haiku-4-5' },
+        { providerName: 'opencode-zen', providerPlugin: 'openai-compatible', model: 'gpt-4o' },
+        { providerName: 'anthropic', providerPlugin: 'anthropic', model: 'claude-haiku-4-5' },
       ])
-    ).toEqual({ valid: false, error: 'Model gpt-4o is not allowed for openai-compatible' });
+    ).toEqual({ valid: false, error: 'Model gpt-4o is not allowed for opencode-zen' });
+
+    expect(
+      validateAbComparisonProviders([
+        { providerName: 'near-ai', providerPlugin: 'openai-compatible', model: 'deepseek-ai/DeepSeek-V4-Flash' },
+        { providerName: 'anthropic', providerPlugin: 'anthropic', model: 'claude-sonnet-4-6' },
+      ])
+    ).toEqual({ valid: true });
   });
 });

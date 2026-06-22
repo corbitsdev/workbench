@@ -49,21 +49,36 @@ export const AB_COMPARISON_MODELS_BY_PLUGIN: Record<AbComparisonProviderPlugin, 
   'google-genai': GOOGLE_GENAI_AB_COMPARISON_MODELS,
 };
 
-export function listAbComparisonModels(providerPlugin: string): readonly string[] {
+/** Near AI cloud-api models — https://cloud-api.near.ai/v1 */
+export const NEAR_AI_MODELS = ['deepseek-ai/DeepSeek-V4-Flash'] as const;
+
+/**
+ * Per-credential-name overrides. Takes precedence over plugin-level lookup so
+ * providers that share a plugin (e.g. near-ai and opencode-zen are both
+ * openai-compatible) each expose their own model list.
+ */
+export const AB_COMPARISON_MODELS_BY_PROVIDER_NAME: Record<string, readonly string[]> = {
+  'near-ai': NEAR_AI_MODELS,
+};
+
+export function listAbComparisonModels(providerName: string, providerPlugin: string): readonly string[] {
+  if (providerName in AB_COMPARISON_MODELS_BY_PROVIDER_NAME) {
+    return AB_COMPARISON_MODELS_BY_PROVIDER_NAME[providerName]!;
+  }
   if (!(providerPlugin in AB_COMPARISON_MODELS_BY_PLUGIN)) return [];
   return AB_COMPARISON_MODELS_BY_PLUGIN[providerPlugin as AbComparisonProviderPlugin];
 }
 
-export function defaultAbComparisonModel(providerPlugin: string): string | undefined {
-  return listAbComparisonModels(providerPlugin)[0];
+export function defaultAbComparisonModel(providerName: string, providerPlugin: string): string | undefined {
+  return listAbComparisonModels(providerName, providerPlugin)[0];
 }
 
-export function isAbComparisonModelAllowed(providerPlugin: string, model: string): boolean {
-  return listAbComparisonModels(providerPlugin).includes(model);
+export function isAbComparisonModelAllowed(providerName: string, providerPlugin: string, model: string): boolean {
+  return listAbComparisonModels(providerName, providerPlugin).includes(model);
 }
 
 export function validateAbComparisonProviders(
-  providers: Array<{ providerPlugin?: string; model?: string }>
+  providers: Array<{ providerName?: string; providerPlugin?: string; model?: string }>
 ): { valid: true } | { valid: false; error: string } {
   if (providers.length < 2) {
     return { valid: false, error: 'At least two providers are required' };
@@ -71,13 +86,14 @@ export function validateAbComparisonProviders(
 
   for (let i = 0; i < providers.length; i++) {
     const entry = providers[i];
+    const name = entry?.providerName ?? '';
     const plugin = entry?.providerPlugin;
     const model = entry?.model;
     if (!plugin || !model) {
       return { valid: false, error: `Comparison ${i + 1} requires a provider and model` };
     }
-    if (!isAbComparisonModelAllowed(plugin, model)) {
-      return { valid: false, error: `Model ${model} is not allowed for ${plugin}` };
+    if (!isAbComparisonModelAllowed(name, plugin, model)) {
+      return { valid: false, error: `Model ${model} is not allowed for ${name || plugin}` };
     }
   }
 
