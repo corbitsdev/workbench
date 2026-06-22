@@ -34,7 +34,8 @@ describe('gamma-presentation-creator native workflow', () => {
         title: 'Acme call',
         summary: 'Discovery',
       },
-      'presentation-generate': { prompt: 'Build a deck', title: 'Acme' },
+      'presentation-generate': { reply: 'Draft deck' },
+      'presentation-brand-review': { reply: 'Build a deck', title: 'Acme' },
     });
     const run = runLocal(workflow, { invokeStep: invoker });
 
@@ -50,6 +51,7 @@ describe('gamma-presentation-creator native workflow', () => {
       'presentation-list-notes',
       'presentation-source',
       'presentation-generate',
+      'presentation-brand-review',
       'presentation-render',
     ]);
   });
@@ -57,7 +59,8 @@ describe('gamma-presentation-creator native workflow', () => {
   test('passes the source-selection signal payload as granola_get_note args', async () => {
     const { invoker, ran } = makeRecordingInvoker({
       'presentation-source': { id: 'note_42', summary: 'x' },
-      'presentation-generate': { prompt: 'p' },
+      'presentation-generate': { reply: 'draft' },
+      'presentation-brand-review': { reply: 'p' },
     });
     const run = runLocal(workflow, { invokeStep: invoker });
 
@@ -78,7 +81,8 @@ describe('gamma-presentation-creator native workflow', () => {
         title: 'Acme call',
         summary: 'Discovery',
       },
-      'presentation-generate': { prompt: 'p' },
+      'presentation-generate': { reply: 'draft' },
+      'presentation-brand-review': { reply: 'p' },
     });
     const run = runLocal(workflow, { invokeStep: invoker });
 
@@ -101,11 +105,12 @@ describe('gamma-presentation-creator native workflow', () => {
     });
   });
 
-  test('feeds the template gammaId and generate prompt into the render tool', async () => {
+  test('feeds the template gammaId and reviewed draft into the render tool', async () => {
     const { invoker, ran } = makeRecordingInvoker({
       'presentation-source': { id: 'note_1', summary: 'x' },
-      'presentation-generate': {
-        prompt: 'Build a deck about Acme',
+      'presentation-generate': { reply: 'Draft deck about Acme' },
+      'presentation-brand-review': {
+        reply: 'Build a deck about Acme',
         title: 'Acme',
       },
     });
@@ -120,7 +125,7 @@ describe('gamma-presentation-creator native workflow', () => {
     const renderStep = ran.find((r) => r.id === 'presentation-render');
     expect(renderStep?.input).toMatchObject({
       gammaId: 'tmpl_99',
-      prompt: 'Build a deck about Acme',
+      reply: 'Build a deck about Acme',
     });
   });
 

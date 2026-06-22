@@ -6,20 +6,13 @@ import {
   LLM_CREDENTIAL_NAME,
   LLM_DEFAULT_MODEL,
 } from '@workbench/agents';
+import { REDDIT_SCAN_SYSTEM_PROMPT } from './prompts';
 
 const scanAgent = defineAgent({
   id: 'reddit-opportunity-scan',
   description:
     'Searches the given subreddits and keywords for buying signals, pain points, and competitor mentions, then ranks the top opportunities.',
-  systemPrompt: [
-    'You are a Reddit opportunity-scanning agent.',
-    'The user will supply a list of subreddits and keywords.',
-    'Search those subreddits for threads that exhibit buying signals, expressed pain points, or competitor mentions.',
-    'Return ONLY valid JSON — no markdown fences, no prose — in this exact shape:',
-    '{"opportunities":[{"id":"<slug>","title":"<thread title>","subreddit":"<name without r/>","signal":"buying-signal|pain-point|competitor-mention","detail":"<one sentence explaining why this is relevant>","url":"<full reddit url>"}]}',
-    'id must be a short, URL-safe slug unique within the response.',
-    'Omit url if unavailable. Return at most 20 opportunities, ranked by relevance descending.',
-  ].join('\n'),
+  systemPrompt: REDDIT_SCAN_SYSTEM_PROMPT,
   tools: [],
   capabilities: canonicalizeToolNames(['reddit_search', 'reddit_subreddit_search']),
   inference: { sources: [{ provider: 'openai-compatible', model: LLM_DEFAULT_MODEL }] },

@@ -6,14 +6,29 @@ import {
   LLM_CREDENTIAL_NAME,
   LLM_DEFAULT_MODEL,
 } from '@workbench/agents';
+import {
+  PRESENTATION_GENERATE_SYSTEM_PROMPT,
+  PRESENTATION_REVIEW_SYSTEM_PROMPT,
+} from './prompts';
 
 const generateAgent = defineAgent({
   id: 'presentation-generate',
   description: 'Drafts presentation content from the resolved source.',
-  systemPrompt:
-    'You are a presentation drafting agent. Generate the deck content from the provided source, audience, tone, and goal.',
+  systemPrompt: PRESENTATION_GENERATE_SYSTEM_PROMPT,
   tools: [],
   capabilities: canonicalizeToolNames(['artifact_create', 'write_artifact']),
+  inference: {
+    sources: [{ provider: 'openai-compatible', model: LLM_DEFAULT_MODEL }],
+  },
+  tags: { credentialName: LLM_CREDENTIAL_NAME },
+});
+
+const reviewAgent = defineAgent({
+  id: 'presentation-brand-review',
+  description: 'Tightens generated slide content before human review and Gamma rendering.',
+  systemPrompt: PRESENTATION_REVIEW_SYSTEM_PROMPT,
+  tools: [],
+  capabilities: [],
   inference: {
     sources: [{ provider: 'openai-compatible', model: LLM_DEFAULT_MODEL }],
   },
@@ -56,16 +71,21 @@ export const workflow = defineWorkflow({
         merge: [{ from: 'steps.template.output' }, { from: 'steps.source.output' }],
       },
     }),
-    review: awaitSignal({ name: 'review-approval', after: ['generate'] }),
+    'brand-review': step({
+      agent: reviewAgent,
+      after: ['generate'],
+      input: { from: 'steps.generate.output' },
+    }),
+    review: awaitSignal({ name: 'review-approval', after: ['brand-review'] }),
     // Deterministic tool call. `gamma_create_from_template` requires
     // { gammaId, prompt }; the argMap renames the merged upstream fields to
-    // the tool's arg names — `gammaId` from the template form payload,
-    // `prompt` from the generate agent's `reply`. No inference needed.
+    // the tool's arg names: `gammaId` from the template form payload and
+    // `prompt` from the brand-review agent's `reply`. No inference needed.
     render: deterministicToolStep({
       id: 'presentation-render',
       tool: 'gamma_create_from_template',
       input: {
-        merge: [{ from: 'steps.template.output' }, { from: 'steps.generate.output' }],
+        merge: [{ from: 'steps.template.output' }, { from: 'steps.brand-review.output' }],
       },
       argMap: {
         gammaId: { from: 'gammaId' },

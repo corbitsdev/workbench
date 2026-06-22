@@ -363,7 +363,7 @@ export default function WorkbenchHome() {
         <motion.div
           key={`workflow-${rightPane.deploymentId}`}
           {...paneFade}
-          className="min-h-0 flex-1 overflow-hidden"
+          className="min-h-0 flex-1 overflow-hidden rounded-panel border border-border bg-surface"
         >
           <WorkflowRunPane
             deploymentId={rightPane.deploymentId}

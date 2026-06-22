@@ -1,14 +1,12 @@
 import { defineAgent } from '@intx/agent';
 import { awaitSignal, defineWorkflow, step } from '@intx/workflow';
 import { deterministicToolStep, LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from '@workbench/agents';
+import { AB_COMPARE_SYSTEM_PROMPT, AB_EXECUTE_SYSTEM_PROMPT } from './prompts';
 
 const executeAgent = defineAgent({
   id: 'blind-ab-execute',
   description: 'Runs the shared prompt across each selected provider branch.',
-  systemPrompt:
-    'You are an execution agent. You receive a JSON payload with a `prompt` field. ' +
-    'Run the prompt and return the result verbatim. ' +
-    'Do not editorialize or summarize — output exactly what the prompt produces.',
+  systemPrompt: AB_EXECUTE_SYSTEM_PROMPT,
   tools: [],
   capabilities: [],
   inference: {
@@ -20,12 +18,7 @@ const executeAgent = defineAgent({
 const compareAgent = defineAgent({
   id: 'blind-ab-compare',
   description: 'Blind-ranks the provider outputs and prepares them for human review.',
-  systemPrompt:
-    'You are a comparison agent. You receive the output of the execution step. ' +
-    'Produce a blind ranking of the content variants from best to worst. ' +
-    'You MUST respond with ONLY a JSON object — no prose, no markdown fences — ' +
-    'in this exact shape: ' +
-    '{ "summary": "<one sentence>", "ranking": [{ "rank": 1, "label": "Variant N", "rationale": "<reason>" }] }',
+  systemPrompt: AB_COMPARE_SYSTEM_PROMPT,
   tools: [],
   capabilities: [],
   inference: {

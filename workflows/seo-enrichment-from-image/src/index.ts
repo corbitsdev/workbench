@@ -6,17 +6,12 @@ import {
   LLM_CREDENTIAL_NAME,
   LLM_DEFAULT_MODEL,
 } from '@workbench/agents';
+import { SEO_ENRICH_SYSTEM_PROMPT } from './prompts';
 
 const enrichAgent = defineAgent({
   id: 'seo-enrich',
   description: 'Extracts SEO metadata fields from a product image and target page URL.',
-  systemPrompt: `You are an SEO enrichment agent. Given a product image URL and a target page URL, extract SEO metadata for the page.
-
-Respond with STRICT JSON only — no prose, no markdown fences. The response must be exactly:
-{"rows":[{"id":"<slug>","field":"<field name>","value":"<recommended value>","note":"<optional rationale>"}]}
-
-Extract at minimum: title, meta_description, image_alt, og_title, og_description, primary_keyword.
-Each row must have a unique id (use the field name as the slug, e.g. "title", "meta_description").`,
+  systemPrompt: SEO_ENRICH_SYSTEM_PROMPT,
   tools: [],
   capabilities: canonicalizeToolNames(['artifact_read']),
   inference: { sources: [{ provider: 'openai-compatible', model: LLM_DEFAULT_MODEL }] },

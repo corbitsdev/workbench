@@ -367,17 +367,17 @@ function GenerateScreen({ phase }: { phase: StepPhase | undefined }) {
 function ReviewScreen({
   phase,
   stepOutputs,
-  generatePhase,
+  draftPhase,
   connected,
   onApprove,
 }: {
   phase: StepPhase | undefined;
   stepOutputs: Record<string, unknown>;
-  generatePhase: StepPhase | undefined;
+  draftPhase: StepPhase | undefined;
   connected: boolean;
   onApprove: () => void;
 }) {
-  const generate = readGenerate(stepOutputs['generate'], generatePhase);
+  const generate = readGenerate(stepOutputs['brand-review'] ?? stepOutputs['generate'], draftPhase);
   const rows = briefRows(stepOutputs);
 
   return (
@@ -539,7 +539,7 @@ export function Panel(props: WorkflowPanelProps) {
           <ReviewScreen
             phase={phaseFor(state, 'review')}
             stepOutputs={stepOutputs}
-            generatePhase={phaseFor(state, 'generate')}
+            draftPhase={phaseFor(state, 'brand-review') ?? phaseFor(state, 'generate')}
             connected={connected}
             onApprove={() => onSignal('review-approval', { approved: true })}
           />
