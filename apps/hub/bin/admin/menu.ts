@@ -123,7 +123,8 @@ export function itemLabel(item: unknown): {
   if (!item || typeof item !== "object")
     return { label: String(item), id: undefined };
   const obj = item as Record<string, unknown>;
-  const id = typeof obj["id"] === "string" ? obj["id"] : undefined;
+  const rawId = obj["id"] ?? obj["deploymentId"] ?? obj["runId"];
+  const id = typeof rawId === "string" ? rawId : undefined;
   const named =
     obj["name"] ??
     obj["agentName"] ??

@@ -240,4 +240,21 @@ describe("itemLabel", () => {
       id: "only-id",
     });
   });
+
+  it("uses deploymentId as id when id is absent (workflow deployments list)", () => {
+    const result = itemLabel({
+      deploymentId: "ses_abc123",
+      kind: "ab-compare",
+      status: "completed",
+      createdAt: "2026-06-22T10:00:00Z",
+    });
+    expect(result.id).toBe("ses_abc123");
+    expect(result.label).toContain("ab-compare");
+    expect(result.label).toContain("ses_abc123");
+  });
+
+  it("uses runId as id when id and deploymentId are absent", () => {
+    const result = itemLabel({ runId: "wfr_xyz", kind: "smoke-test" });
+    expect(result.id).toBe("wfr_xyz");
+  });
 });
