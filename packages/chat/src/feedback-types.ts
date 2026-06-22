@@ -1,1 +1,2 @@
-export type FeedbackSubjectKind = 'turn_part' | 'workflow_step';
+export { FeedbackSubjectKindSchema } from '@workbench/shared';
+export type { FeedbackSubjectKind } from '@workbench/shared';
