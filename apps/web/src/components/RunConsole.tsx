@@ -73,6 +73,12 @@ export function RunConsole({ deploymentId, tenantId, onClose }: RunConsoleProps)
   const connected = record?.status === 'running' || record?.status === 'awaiting';
 
   const terminal = record !== undefined && isRecordTerminal(record.status);
+  // CL-2248: a hub/sidecar restart marks an in-flight run `failed` with this
+  // exact sentinel. Surface a plain-language interrupted state + restart CTA
+  // instead of the generic failure copy, so the user is not left staring at a
+  // frozen run wondering what broke.
+  const interruptedByRestart =
+    record?.status === 'failed' && record.error === 'interrupted by restart';
   const steps = useMemo<StepState[]>(() => (state ? [...state.steps.values()] : []), [state]);
   const activeStep = useMemo(() => (state ? deriveActiveStep(state) : null), [state]);
   const stepCount = steps.length;
@@ -114,7 +120,18 @@ export function RunConsole({ deploymentId, tenantId, onClose }: RunConsoleProps)
             {connected ? 'Waiting for run activity…' : 'Connecting…'}
           </p>
         )}
-        {settled && state && terminal && state.phase === 'failed' && (
+        {settled && state && terminal && state.phase === 'failed' && interruptedByRestart && (
+          <div className="flex flex-col items-start gap-3">
+            <p className="text-[13px] text-text-3">
+              This run was interrupted by a restart and can't continue. Start a new run to pick up
+              where you left off.
+            </p>
+            <Button variant="primary" size="sm" onClick={onClose}>
+              Start a new run
+            </Button>
+          </div>
+        )}
+        {settled && state && terminal && state.phase === 'failed' && !interruptedByRestart && (
           <p className="text-[13px] text-text-3">This run failed. Start a new run to try again.</p>
         )}
         {settled && state && steps.length === 0 && !terminal && (
@@ -133,7 +150,10 @@ export function RunConsole({ deploymentId, tenantId, onClose }: RunConsoleProps)
                     ? () => undefined
                     : (signalName) =>
                         resume
-                          .mutateAsync({ signalName, payload: { approved: true } })
+                          .mutateAsync({
+                            signalName,
+                            payload: { approved: true },
+                          })
                           .catch(() => undefined)
                 }
                 approving={resume.isPending && !terminal}

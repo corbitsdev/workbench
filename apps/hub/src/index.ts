@@ -615,13 +615,26 @@ const workflowReconciler = createWorkflowReconciler({
   db,
   events: sidecarRouter.events,
   ensureDeploymentRoutable,
+  getRoutableAddresses: sidecarRouter.getRoutableAddresses,
+  deploymentDomain: config.globalTenant.domain,
 });
 workflowReconciler.start();
-void workflowReconciler.reconcileAll().catch((err) => {
-  log.warn('initial workflow reconcile failed', {
-    error: err instanceof Error ? err : new Error(String(err)),
+// CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
+// snapshot — before reconcileAll re-registers supervisors and makes every run
+// look routable. Then re-establish supervisors so NEW runs work.
+void workflowReconciler
+  .failOrphanedRuns()
+  .catch((err) => {
+    log.warn('initial failOrphanedRuns failed', {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  })
+  .then(() => workflowReconciler.reconcileAll())
+  .catch((err) => {
+    log.warn('initial workflow reconcile failed', {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
   });
-});
 
 // Workflow deploy, shared by the session-authorized operator path
 // (/api/v1/workflows/deploy, gated by the native grant check) and the

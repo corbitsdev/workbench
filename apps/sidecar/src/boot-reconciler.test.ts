@@ -69,9 +69,13 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-function okFetch(deployments: LiveDeployment[]): typeof fetch {
+// activeRunDeploymentIds defaults to "every live deployment has an active
+// run" so the existing first-pass tests keep their semantics (a live
+// deployment's dirs are kept). The second-pass tests pass an explicit subset.
+function okFetch(deployments: LiveDeployment[], activeRunDeploymentIds?: string[]): typeof fetch {
+  const active = activeRunDeploymentIds ?? deployments.map((d) => d.deploymentId);
   return (async () =>
-    new Response(JSON.stringify({ deployments }), {
+    new Response(JSON.stringify({ deployments, activeRunDeploymentIds: active }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })) as unknown as typeof fetch;
@@ -101,13 +105,16 @@ async function layReserved(): Promise<string[]> {
   return reserved;
 }
 
-async function run(deployments: LiveDeployment[]): Promise<void> {
+async function run(
+  deployments: LiveDeployment[],
+  activeRunDeploymentIds?: string[]
+): Promise<void> {
   await reconcileOrphanedDeploymentDirs({
     dataDir,
     hubHttpUrl: 'http://hub',
     sidecarToken: 't',
     logger: silentLogger,
-    fetchFn: okFetch(deployments),
+    fetchFn: okFetch(deployments, activeRunDeploymentIds),
   });
 }
 
@@ -153,6 +160,45 @@ describe('reconcileOrphanedDeploymentDirs — deployment-id-token keying', () =>
     await run([live]);
 
     expect(await exists(stray)).toBe(true);
+  });
+});
+
+describe('reconcileOrphanedDeploymentDirs — CL-2248 terminal-run second pass', () => {
+  test('deletes ALL dir forms of a LIVE deployment that has NO active run', async () => {
+    const terminal = liveDeployment(LIVE_ID, ['plan', 'execute']);
+    const terminalDirs = await layAllForms(dataDir, terminal);
+
+    // Deployment is live (in `deployments`) but absent from the active-run
+    // set: Piece 1 marked its run failed. Its step dirs must be pruned.
+    await run([terminal], []);
+
+    for (const dir of terminalDirs) expect(await exists(dir)).toBe(false);
+  });
+
+  test('KEEPS all dir forms of a live deployment that DOES have an active run', async () => {
+    const active = liveDeployment(LIVE_ID, ['plan', 'execute']);
+    const activeDirs = await layAllForms(dataDir, active);
+
+    await run([active], [LIVE_ID]);
+
+    for (const dir of activeDirs) expect(await exists(dir)).toBe(true);
+  });
+
+  test('mixed: prunes the terminal live deployment, keeps the active one, deletes the dead one', async () => {
+    const activeDep = liveDeployment(LIVE_ID, ['plan']);
+    const terminalDep = liveDeployment('ses_1111222233334444aaaabbbbccccdddd', ['plan']);
+    const deadDep = liveDeployment(DEAD_ID, ['plan']);
+    const activeDirs = await layAllForms(dataDir, activeDep);
+    const terminalDirs = await layAllForms(dataDir, terminalDep);
+    const deadDirs = await layAllForms(dataDir, deadDep);
+
+    // Both live deployments are reported live; only LIVE_ID has an active run.
+    // DEAD_ID is not live at all (first-pass orphan).
+    await run([activeDep, terminalDep], [LIVE_ID]);
+
+    for (const dir of activeDirs) expect(await exists(dir)).toBe(true);
+    for (const dir of terminalDirs) expect(await exists(dir)).toBe(false);
+    for (const dir of deadDirs) expect(await exists(dir)).toBe(false);
   });
 });
 

@@ -1,8 +1,10 @@
-import { and, isNotNull, isNull } from 'drizzle-orm';
+import { and, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { deriveDeploymentAddress } from '@intx/workflow-deploy';
 import { getLogger } from '@intx/log';
 import type { SidecarRouter } from '@intx/hub-sessions';
 import type { HubDb } from '../db';
-import { workflowRun } from '../db/schema';
+import { workflowRun, workflowRunRecord } from '../db/schema';
+import { createRunStore, loadRunRecord } from '../workflow-executor/run-store';
 import type { EnsureDeploymentRoutableFn } from '../routes/workflow-runs';
 
 const log = getLogger(['services', 'workflow-reconciler']);
@@ -30,6 +32,16 @@ const log = getLogger(['services', 'workflow-reconciler']);
 // reconciler re-establishes the supervisor so NEW runs work and so resume works
 // end-to-end once that upstream fix lands.
 export interface WorkflowReconciler {
+  // CL-2248: fail in-flight `workflow_run_record` rows whose supervisor is NOT
+  // routable. MUST be called on hub startup BEFORE `reconcileAll()`, while the
+  // routable snapshot still reflects only sessions the sidecar restored on its
+  // own — once `reconcileAll()` re-registers supervisors, every run would look
+  // routable and nothing would be failed. A run parked at a gate/in-flight
+  // cannot be resumed today (CL-2221 RuntimeResumeUnsupportedError), so a
+  // supervisor that is gone after a restart means the run is unrecoverable;
+  // failing it deterministically stops the frozen UI and the reconnect storm.
+  // Idempotent: already-terminal rows are not selected.
+  failOrphanedRuns(): Promise<void>;
   // Re-establish supervisors for every active (non-deleted) deployment. Run on
   // hub startup and on sidecar reconnect. Best-effort: a single deployment's
   // failure is logged and never aborts the pass.
@@ -43,6 +55,8 @@ export function createWorkflowReconciler(deps: {
   db: HubDb;
   events: SidecarRouter['events'];
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
+  getRoutableAddresses: SidecarRouter['getRoutableAddresses'];
+  deploymentDomain: string;
 }): WorkflowReconciler {
   // Single-flight guard. A sidecar restart fires one agent.reconnected per
   // restored address, and the hub-startup pass can overlap any of them. The
@@ -53,6 +67,63 @@ export function createWorkflowReconciler(deps: {
   // arriving just after the flag clears starts a fresh pass, which is the
   // intended backstop behavior.
   let reconciling = false;
+
+  async function failOrphanedRuns(): Promise<void> {
+    // Snapshot the routable set BEFORE any re-registration. The safety
+    // invariant: a run whose supervisor IS in this snapshot is never failed.
+    const routable = new Set(deps.getRoutableAddresses());
+
+    const stuckRuns = await deps.db
+      .select({
+        id: workflowRunRecord.id,
+        deploymentId: workflowRunRecord.deploymentId,
+      })
+      .from(workflowRunRecord)
+      .where(
+        and(
+          inArray(workflowRunRecord.status, ['running', 'awaiting']),
+          isNull(workflowRunRecord.deletedAt)
+        )
+      );
+
+    if (stuckRuns.length === 0) return;
+
+    const runStore = createRunStore(deps.db);
+    let failed = 0;
+    for (const run of stuckRuns) {
+      // A run with no deployment can never have a routable supervisor, so it
+      // is unconditionally orphaned by a restart.
+      const supervisorAddress =
+        run.deploymentId === null
+          ? null
+          : deriveDeploymentAddress({
+              deploymentId: run.deploymentId,
+              deploymentDomain: deps.deploymentDomain,
+            });
+      if (supervisorAddress !== null && routable.has(supervisorAddress)) continue;
+
+      try {
+        const state = await loadRunRecord(deps.db, run.id);
+        if (state === null) continue;
+        state.status = 'failed';
+        state.error = 'interrupted by restart';
+        await runStore.save(state);
+        failed += 1;
+      } catch (err) {
+        log.warn('failOrphanedRuns: failed to mark run failed', {
+          runId: run.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    if (failed > 0) {
+      log.info('failOrphanedRuns: marked interrupted runs failed', {
+        candidates: stuckRuns.length,
+        failed,
+      });
+    }
+  }
 
   async function reconcileAll(): Promise<void> {
     if (reconciling) return;
@@ -99,6 +170,7 @@ export function createWorkflowReconciler(deps: {
   }
 
   return {
+    failOrphanedRuns,
     reconcileAll,
     start() {
       // The handler is awaited by the sidecar-handler's reconnect flow; it must

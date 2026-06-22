@@ -141,6 +141,12 @@ export type LiveDeployment = typeof LiveDeployment.infer;
 /** Response body: the positively-confirmed live deployment set. */
 export const LiveDeploymentsResponse = type({
   deployments: LiveDeployment.array(),
+  // CL-2248: deployment ids that still have at least one in-flight
+  // (`running`/`awaiting`) workflow_run_record. A subset of `deployments`.
+  // The boot reconciler prunes dirs for any live deployment NOT in this set
+  // (its runs are all terminal), so step session dirs of restart-failed runs
+  // are removed and restoreSessions() can't re-provision the dead session.
+  activeRunDeploymentIds: "string[]",
 });
 export type LiveDeploymentsResponse = typeof LiveDeploymentsResponse.infer;
 

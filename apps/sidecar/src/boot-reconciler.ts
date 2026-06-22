@@ -225,10 +225,18 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
   //    differences between subsystems.
   const liveDeploymentIds = new Set<string>(parsed.deployments.map((d) => d.deploymentId));
 
+  // CL-2248: deployment ids that still have an in-flight run. A SUBSET of
+  // `liveDeploymentIds`. A deployment that is live but absent here has only
+  // terminal runs (e.g. Piece 1 marked a restart-orphaned run `failed`); its
+  // step session dirs are pruned so restoreSessions() can't re-provision the
+  // dead session and re-enter the `Unknown agent address` reconnect loop.
+  const activeRunDeploymentIds = new Set<string>(parsed.activeRunDeploymentIds);
+
   // 5) Delete orphans, best-effort per-dir (one failure never aborts the rest).
   let removed = 0;
   let failed = 0;
   let keptNoToken = 0;
+  let removedTerminal = 0;
   async function pruneOrphan(absPath: string): Promise<void> {
     try {
       await rm(absPath, { recursive: true, force: true });
@@ -242,17 +250,25 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
     }
   }
 
-  // A candidate is deleted ONLY when its name yields a deployment-id token
-  // AND that token is not live. No token -> keep (not provably a deployment
-  // dir). Token in `liveDeploymentIds` -> keep (live deployment).
+  // A candidate is deleted when its name yields a deployment-id token AND
+  // either (first pass) that token is not live, OR (CL-2248 second pass) the
+  // token is live but has no in-flight run — its dirs belong to a terminal
+  // run and must not be restored. No token -> keep (not provably a deployment
+  // dir). Token live AND active-run -> keep.
   async function reconcileCandidate(absPath: string): Promise<void> {
     const token = extractDeploymentIdToken(basename(absPath));
     if (token === null) {
       keptNoToken += 1;
       return;
     }
-    if (liveDeploymentIds.has(token)) return;
-    await pruneOrphan(absPath);
+    if (!liveDeploymentIds.has(token)) {
+      await pruneOrphan(absPath);
+      return;
+    }
+    if (!activeRunDeploymentIds.has(token)) {
+      removedTerminal += 1;
+      await pruneOrphan(absPath);
+    }
   }
 
   for (const abs of candidates.topLevelAgents) await reconcileCandidate(abs);
@@ -260,8 +276,14 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
   for (const abs of candidates.agentStates) await reconcileCandidate(abs);
 
   logger.info(
-    'boot reconciler: pruned {removed} orphan dir(s) ({failed} failures, {keptNoToken} kept with no deployment-id token) across {live} live deployment(s)',
-    { removed, failed, keptNoToken, live: parsed.deployments.length }
+    'boot reconciler: pruned {removed} orphan dir(s) ({removedTerminal} of them live-but-terminal-run, {failed} failures, {keptNoToken} kept with no deployment-id token) across {live} live deployment(s)',
+    {
+      removed,
+      removedTerminal,
+      failed,
+      keptNoToken,
+      live: parsed.deployments.length,
+    }
   );
 }
 

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { describeRoute, resolver } from 'hono-openapi';
-import { and, isNotNull, isNull } from 'drizzle-orm';
+import { and, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import { type } from 'arktype';
 import {
@@ -11,7 +11,7 @@ import {
 import type { AgentRepoStore } from '@intx/hub-sessions';
 import { LiveDeploymentsResponse } from '@workbench/tool-credentials';
 import type { HubDb } from '../db';
-import { workflowRun } from '../db/schema';
+import { workflowRun, workflowRunRecord } from '../db/schema';
 import { readWorkflowDefinition } from '../services/workflow-deploy';
 import { deriveWorkflowRunRepoId } from './workflow-runs';
 
@@ -162,7 +162,27 @@ export function createInternalDeploymentsRouter(
         });
       }
 
-      return c.json({ deployments });
+      // CL-2248: deployment ids with at least one in-flight run. Piece 1 marks
+      // restart-orphaned runs `failed` BEFORE the sidecar boots and reads this,
+      // so a deployment whose runs are all terminal drops out of this set and
+      // the boot reconciler prunes its step dirs — breaking the reconnect loop.
+      const activeRunRows = await db
+        .select({ deploymentId: workflowRunRecord.deploymentId })
+        .from(workflowRunRecord)
+        .where(
+          and(
+            isNotNull(workflowRunRecord.deploymentId),
+            isNull(workflowRunRecord.deletedAt),
+            inArray(workflowRunRecord.status, ['running', 'awaiting'])
+          )
+        );
+      const activeRunDeploymentIds = [
+        ...new Set(
+          activeRunRows.map((r) => r.deploymentId).filter((id): id is string => id !== null)
+        ),
+      ];
+
+      return c.json({ deployments, activeRunDeploymentIds });
     }
   );
 
