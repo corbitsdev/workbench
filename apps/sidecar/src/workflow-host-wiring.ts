@@ -8,7 +8,7 @@
 // implementation lives inside `@intx/workflow-host`, not here.
 
 import { createHash, createPublicKey, sign as nodeSign } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join as pathJoin } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -311,7 +311,30 @@ export type SidecarWorkflowSupervisor = {
 type ActiveMultiStepSupervisor = {
   wired: SidecarWorkflowSupervisor;
   definitionHash: string;
+  /**
+   * Absolute on-disk dirs this deployment owns, captured at deploy time so
+   * the undeploy hook can reclaim the deployment's footprint regardless of
+   * whether the step agents are still connected. Holds the per-deployment
+   * workflow-run repo dir plus every per-step on-disk dir (each step's
+   * agent-state repo dir and its agent dir). Nothing else deletes these:
+   * the workflow-run repo is not an agent dir, so no undeploy path touches
+   * it, and interchange's undeploy only deletes a step agent's dir while it
+   * is still connected, orphaning idle-evicted steps. See CL-2231.
+   */
+  ownedDirs: readonly string[];
 };
+
+/**
+ * Replicate interchange's `sanitizeAddress` (hub-agent `agent-paths.ts`) so
+ * a step agent's mail address maps to the same on-disk dir name the
+ * sidecar's `AgentRepoStore` created. The helper is not exported by
+ * interchange, so the rule is mirrored here verbatim: `@` -> `_at_`, every
+ * other non-`[a-zA-Z0-9_-]` char -> `_`. Verified against
+ * `interchange/packages/hub-agent/src/agent-paths.ts`.
+ */
+function sanitizeAgentAddress(address: string): string {
+  return address.replace(/@/g, "_at_").replace(/[^a-zA-Z0-9_-]/g, "_");
+}
 
 /**
  * Construct the sidecar's `DeployRouter`. The router holds the
@@ -976,7 +999,46 @@ export function createSidecarDeployRouter(deps: {
       // Child process is live after `spawn` resolves; the failure
       // unwind needs the supervisor handle from here on.
       wiredForUnwind = wired;
-      activeSupervisors.set(frame.agentAddress, { wired, definitionHash });
+      // Capture the deployment's on-disk footprint so the undeploy hook can
+      // reclaim it (CL-2231). The workflow-run repo dir comes straight from
+      // the substrate's pure `getRepoDir` path computation; the per-step
+      // dirs are derived from `stepOrder` the same way the deploy/launch
+      // path keys them. `stepOrder` was validated to be a non-empty
+      // `string[]` by `validateWorkflowProjection`.
+      const rawDeploymentId = deriveRawDeploymentId(frame.agentId);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- validateWorkflowProjection narrowed stepOrder to string[]
+      const stepIds = projection.definition.stepOrder as string[];
+      const ownedDirs: string[] = [
+        deps.repoStore.getRepoDir({ kind: "workflow-run", id: deploymentId }),
+      ];
+      for (const stepId of stepIds) {
+        // The step's agent-state repo dir, keyed on the RAW hub
+        // deploymentId (`ins_<raw>-<step>` agent row -> `<raw>-<step>`
+        // agent-state repo id), matching `deriveStepAgentId` /
+        // `writeStepAgentRows` on the hub and `readStepGrants` on the
+        // sidecar's substrate factory.
+        ownedDirs.push(
+          deps.repoStore.getRepoDir({
+            kind: "agent-state",
+            id: `${rawDeploymentId}-${stepId}`,
+          }),
+        );
+        // The step agent's on-disk dir (keys + agent.json), keyed by the
+        // sanitized step mail address the supervisor launches with
+        // (`multistepDeriveStepAddress({ deploymentId: <slug>, stepId })`).
+        const stepAddress = multistepDeriveStepAddress({
+          deploymentId,
+          stepId,
+        });
+        ownedDirs.push(
+          pathJoin(sidecarDataDir, sanitizeAgentAddress(stepAddress)),
+        );
+      }
+      activeSupervisors.set(frame.agentAddress, {
+        wired,
+        definitionHash,
+        ownedDirs,
+      });
       supervisorRegistered = true;
 
       // Bind the deployment's mail address to this supervisor's
@@ -1203,6 +1265,34 @@ export function createSidecarDeployRouter(deps: {
         deploymentId,
         agentAddress: frame.agentAddress,
       });
+
+      // Reclaim the deployment's on-disk footprint (CL-2231). Deployment
+      // churn (supersede/redeploy + DELETE) otherwise leaks two things the
+      // rest of teardown never touches and exhausts the sidecar volume's
+      // inodes: the per-deployment workflow-run repo (a `workflow-run` repo,
+      // not an agent dir, so no undeploy path reclaims it) and every step's
+      // on-disk dirs (interchange's undeploy only deletes a step agent's dir
+      // while it is CONNECTED, orphaning idle-evicted steps forever). This
+      // hook runs on the sidecar, so it deletes the local dirs directly
+      // regardless of connection state.
+      //
+      // Multi-step only: the trivial branch records no `activeSupervisors`
+      // entry, so `ownedDirs` is undefined and the sweep is skipped — the
+      // trivial deploy has neither a step-agent fan-out nor a workflow-run
+      // repo of this shape. Each deletion is best-effort and idempotent
+      // (`force: true` swallows ENOENT) and never throws out of the hook:
+      // teardown must converge even if a single dir cannot be removed.
+      if (active !== undefined) {
+        for (const dir of active.ownedDirs) {
+          try {
+            await rm(dir, { recursive: true, force: true });
+          } catch (cause) {
+            const reason =
+              cause instanceof Error ? cause.message : String(cause);
+            logger.warn`undeploy: failed to reclaim deployment dir ${dir} for ${frame.agentAddress}: ${reason}`;
+          }
+        }
+      }
     },
   };
 }
