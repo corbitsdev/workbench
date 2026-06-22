@@ -20,6 +20,7 @@ import { type } from 'arktype';
 import type { GrantRule } from '@intx/authz';
 import {
   toolPackagesForCapabilities,
+  DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
   STEP_KIND_TAG,
 } from '@workbench/agents';
@@ -142,36 +143,52 @@ export function createWorkflowDeployService(deps: {
       const toolPackagePins =
         params.toolPackagePins ?? toolPackagesForCapabilities(capabilityNames(walk));
 
-      // Partition steps into inline-inference (CL-2251) vs deployed. An inline
-      // step is a no-tool single-turn reasoning turn the sidecar runs
-      // in-process with a bare `createAgent`; it needs NO per-step agent-state
-      // repo, DB rows, or grants file, and the orchestrator's `launchSession`
-      // for it is no-op'd below. This is the actual session-per-step RAM win.
-      // Every OTHER step (deployed reasoning + deterministic tool) keeps the
-      // full per-step provisioning unchanged.
+      // Partition every step into one of three classes by its CL-2251
+      // `STEP_KIND_TAG`:
+      //
+      //   inline-inference (CL-2251) — a no-tool single-turn reasoning turn the
+      //     sidecar runs in-process with a bare `createAgent`. NO `agent` row,
+      //     NO `agent_instance` row, NO grants file, NO launchSession.
+      //   deterministic-tool (CL-2252) — a tool/API call the sidecar runs
+      //     against a deny-all `authorize` directly (no reactor, no session).
+      //     The tool manifest/credentials endpoints gate on its `agent` row, so
+      //     we KEEP `writeStepAgentRows` for it — but it needs NO instance row,
+      //     NO grants file (the deny-all path never reads `grants.json`), and NO
+      //     launchSession.
+      //   deployed (reasoning with tools) — the full per-step provisioning: an
+      //     `agent` row, an `agent_instance` row, a `state/grants.json`, and a
+      //     launched session.
+      //
+      // `launchSession` is no-op'd below for both the inline and deterministic
+      // sets — that, plus skipping their agent-state repos, is the
+      // session-per-step RAM win.
       const inlineStepIds = collectInlineStepIds(params.workflow);
-      const deployedStepIds = [...walk.perStep.keys()].filter(
-        (stepId) => !inlineStepIds.has(stepId)
+      const deterministicStepIds = collectDeterministicToolStepIds(params.workflow);
+      const allStepIds = [...walk.perStep.keys()];
+      const deployedStepIds = allStepIds.filter(
+        (stepId) => !inlineStepIds.has(stepId) && !deterministicStepIds.has(stepId)
       );
-      const inlineAgentIds = new Set(
-        [...inlineStepIds].map((stepId) =>
+      // Steps that keep an `agent` row: fully-deployed steps plus deterministic
+      // tool steps (CL-2252 — the tool endpoints 404 without it).
+      const agentRowStepIds = allStepIds.filter((stepId) => !inlineStepIds.has(stepId));
+      const noLaunchAgentIds = new Set(
+        [...inlineStepIds, ...deterministicStepIds].map((stepId) =>
           deriveStepAgentId({ deploymentId: params.deploymentId, stepId })
         )
       );
 
-      // Each deployed step launches as its own agent (`deriveStepAgentId`), but
-      // interchange's launchSession never writes an `agent` row. The hub's
-      // tool-credential gate authorizes a step's harness by that row's pins, so
-      // we persist one per step before launch — every step carries the same
-      // union pins the orchestrator hands it. Inline steps are skipped: no
-      // launch, no harness, no row.
+      // Persist an `agent` row per step that needs one (deployed + deterministic
+      // tool). Interchange's launchSession never writes one, and the hub's
+      // tool-credential + manifest gate authorizes a step by that row's pins —
+      // every such step carries the same union pins the orchestrator hands it.
+      // Inline steps are skipped: no harness, no row.
       const stepCapabilityNames = capabilityNames(walk);
       await writeStepAgentRows({
         db,
         deploymentId: params.deploymentId,
         tenantId: params.tenantId,
         creatorPrincipalId: params.creatorPrincipalId,
-        stepIds: deployedStepIds,
+        stepIds: agentRowStepIds,
         toolPackagePins,
         capabilityNames: stepCapabilityNames,
       });
@@ -180,8 +197,10 @@ export function createWorkflowDeployService(deps: {
       // repo so both interchange's supervisor (credentialsSnapshot assembly)
       // and our sidecar's `readStepGrants` see real grants. Without this the
       // step agent's grant set is empty and every `tool:<name>`/`invoke` is
-      // denied. Inline steps declare no tools, so they get no grants file (and
-      // no agent-state repo to hold one).
+      // denied. Inline steps declare no tools, and deterministic tool steps run
+      // against a hardcoded deny-all `authorize` that never consults
+      // `grants.json` (CL-2252), so neither gets a grants file (nor an
+      // agent-state repo to hold one).
       await writeStepGrantFiles({
         repoStore: deps.repoStore,
         deploymentId: params.deploymentId,
@@ -196,8 +215,8 @@ export function createWorkflowDeployService(deps: {
       // and the `agent.deploy.ack` handler then resolves it via
       // `requireInstance` to store the step's public key. The orchestrator runs
       // the same launch path, so without this row every step deploy fails with
-      // "No active instance found for address". Inline steps never launch, so
-      // they get no instance row.
+      // "No active instance found for address". Inline and deterministic-tool
+      // steps never launch a session, so they get no instance row.
       await writeStepInstanceRows({
         db,
         deploymentId: params.deploymentId,
@@ -235,14 +254,14 @@ export function createWorkflowDeployService(deps: {
       // InferenceSource into the supervisor frame's `sources` map, which the
       // sidecar's STEP_INFERENCE_SOURCES table reads — inline steps need that
       // entry too). It calls `launchSession` once per step; we wrap that hook so
-      // an inline step's agentId resolves to a no-op promise WITHOUT touching
-      // the SessionService — zero agent-state repos, zero session launches for
-      // inline steps. Built per-deploy because the inline agentId set depends on
-      // this workflow.
+      // an inline OR deterministic-tool step's agentId resolves to a no-op
+      // promise WITHOUT touching the SessionService — zero agent-state repos,
+      // zero session launches for either. Built per-deploy because the
+      // no-launch agentId set depends on this workflow.
       const orchestrator = createWorkflowDeployOrchestrator({
         directorRegistry,
         workflowRepo: createWorkflowRepoWriter(deps.repoStore),
-        launchSession: toLaunchSession(deps.sessionService, inlineAgentIds),
+        launchSession: toLaunchSession(deps.sessionService, noLaunchAgentIds),
         sendMultiStepDeploy: toSendMultiStepDeploy(deps.sidecarRouter),
       });
 
@@ -720,17 +739,35 @@ export function collectInlineStepIds(workflow: WorkflowDefinition): Set<string> 
   return inline;
 }
 
-// Wrap the SessionService launch hook so an inline step's agentId resolves to
-// a no-op resolved promise WITHOUT calling `launchSession`. The orchestrator
-// only awaits the promise; never launching means zero per-step agent-state
-// repos / sessions for inline steps — the CL-2251 RAM win. Deployed steps
-// (tool + deployed reasoning) launch unchanged.
+// The step ids whose agent carries the deterministic-tool marker tag (CL-2252).
+// These steps run a tool/API call against a hardcoded deny-all `authorize` with
+// no reactor and no session: the hub keeps their `agent` row (the tool
+// manifest/credentials endpoints gate on it) but skips their instance row and
+// grants file and no-ops their `launchSession`.
+export function collectDeterministicToolStepIds(workflow: WorkflowDefinition): Set<string> {
+  const deterministic = new Set<string>();
+  for (const stepId of workflow.stepOrder) {
+    const primitive = workflow.steps[stepId];
+    const agent = extractStepAgent(primitive);
+    if (agent?.tags?.[STEP_KIND_TAG] === DETERMINISTIC_TOOL_KIND) {
+      deterministic.add(stepId);
+    }
+  }
+  return deterministic;
+}
+
+// Wrap the SessionService launch hook so a no-launch step's agentId resolves
+// to a no-op resolved promise WITHOUT calling `launchSession`. The no-launch
+// set is the inline-inference steps (CL-2251) plus the deterministic-tool steps
+// (CL-2252): the orchestrator only awaits the promise, so never launching means
+// zero per-step agent-state repos / sessions for either — the session-per-step
+// RAM win. Fully-deployed reasoning steps launch unchanged.
 export function toLaunchSession(
   sessionService: SessionService,
-  inlineAgentIds: ReadonlySet<string> = new Set()
+  noLaunchAgentIds: ReadonlySet<string> = new Set()
 ): LaunchSessionFn {
   return (params) => {
-    if (inlineAgentIds.has(params.agentId)) {
+    if (noLaunchAgentIds.has(params.agentId)) {
       return Promise.resolve();
     }
     return launchDeployedSession(sessionService, params);

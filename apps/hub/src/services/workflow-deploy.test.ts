@@ -13,10 +13,15 @@ import { evaluateGrants } from '@intx/authz';
 import type { GrantRule } from '@intx/authz';
 import { defineWorkflow, map, step } from '@intx/workflow';
 import { defineAgent } from '@intx/agent';
-import { createWorkbenchDirectorRegistry, inlineInferenceStep } from '@workbench/agents';
+import {
+  createWorkbenchDirectorRegistry,
+  deterministicToolStep,
+  inlineInferenceStep,
+} from '@workbench/agents';
 import {
   buildStepGrantRules,
   buildSupervisorDeployFrame,
+  collectDeterministicToolStepIds,
   collectGrants,
   collectInlineStepIds,
   createWorkflowDeployService,
@@ -613,6 +618,47 @@ describe('collectInlineStepIds', () => {
   });
 });
 
+describe('collectDeterministicToolStepIds', () => {
+  test('collects only steps whose agent carries the deterministic-tool marker tag', () => {
+    const deployedAgent = defineAgent({
+      id: 'draft',
+      description: 'deployed reasoning',
+      systemPrompt: 'reason',
+      tools: [],
+      capabilities: [],
+      inference: { sources: [{ provider: 'openai-compatible', model: 'm' }] },
+    });
+    const wf = defineWorkflow({
+      id: 'wf',
+      trigger: { type: 'manual' },
+      steps: {
+        fetch: deterministicToolStep({ id: 'fetch', tool: 'granola_list_notes' }),
+        analyze: inlineInferenceStep({ id: 'analyze', systemPrompt: 'reason', after: ['fetch'] }),
+        draft: step({ agent: deployedAgent, after: ['analyze'] }),
+      },
+    });
+
+    const deterministic = collectDeterministicToolStepIds(wf);
+    expect([...deterministic]).toEqual(['fetch']);
+    expect(deterministic.has('analyze')).toBe(false);
+    expect(deterministic.has('draft')).toBe(false);
+  });
+
+  test('finds a deterministic-tool step nested inside a map primitive', () => {
+    const wf = defineWorkflow({
+      id: 'wf',
+      trigger: { type: 'manual' },
+      steps: {
+        fan: map({
+          over: { literal: [] },
+          step: deterministicToolStep({ id: 'fan-inner', tool: 'granola_list_notes' }),
+        }),
+      },
+    });
+    expect([...collectDeterministicToolStepIds(wf)]).toEqual(['fan']);
+  });
+});
+
 // Integration-style proof of CONDITION 2: a workflow with an inline step
 // deploys creating ZERO agent-state repos and ZERO launchSession calls for
 // the inline step, while the deployed step gets the full per-step
@@ -761,6 +807,172 @@ describe('deployWorkflow inline-step partition (CL-2251)', () => {
     const deployCall = sendAgentDeploy.mock.calls.at(0);
     if (!deployCall) throw new Error('sendAgentDeploy was not called');
     const frameWorkflow = deployCall[2];
+    expect(frameWorkflow.sources.analyze).toEqual(SOURCE);
+    expect(frameWorkflow.sources.draft).toEqual(SOURCE);
+  });
+});
+
+// Integration-style proof of CL-2252: a deterministic tool step deploys
+// keeping ONLY its `agent` row — no `agent_instance` row, no `state/grants.json`
+// agent-state repo, and no launchSession — while inline + fully-deployed steps
+// are unaffected. Exercises the real `createWorkflowDeployService` across its
+// seams; only the db / repoStore / sessionService / sidecarRouter boundaries
+// are mocked.
+describe('deployWorkflow deterministic-tool partition (CL-2252)', () => {
+  const SOURCE: InferenceSource = {
+    id: 'openai-compatible:m',
+    provider: 'openai-compatible',
+    baseURL: 'https://llm.example.com',
+    apiKey: 'secret',
+    model: 'm',
+  };
+
+  function makeConfig(deploymentId: string, deploymentDomain: string): HarnessConfig {
+    return {
+      sessionId: 'sess_1',
+      agentId: deploymentId,
+      tenantId: 't1',
+      principalId: 'p1',
+      agentAddress: `${deploymentId}@${deploymentDomain}`,
+      systemPrompt: '',
+      tools: [],
+      grants: [],
+      sources: [SOURCE],
+      defaultSource: SOURCE.id,
+    } as unknown as HarnessConfig;
+  }
+
+  test('keeps the agent row but skips instance row, grants repo, and launchSession for the deterministic tool step', async () => {
+    const deploymentId = 'ses_det';
+    const deploymentDomain = 'deploy.example.com';
+
+    const draftAgent = defineAgent({
+      id: 'draft',
+      description: 'deployed reasoning step',
+      systemPrompt: 'draft something',
+      tools: [],
+      capabilities: [],
+      inference: { sources: [{ provider: 'openai-compatible', model: 'm' }] },
+    });
+    const workflow = defineWorkflow({
+      id: 'pain-point-collateral',
+      trigger: { type: 'manual' },
+      steps: {
+        fetch: deterministicToolStep({ id: 'fetch', tool: 'granola_list_notes' }),
+        analyze: inlineInferenceStep({
+          id: 'analyze',
+          systemPrompt: 'extract pain points',
+          after: ['fetch'],
+        }),
+        draft: step({ agent: draftAgent, after: ['analyze'] }),
+      },
+    });
+
+    const writeTreeRepoIds: { kind: string; id: string }[] = [];
+    const writeTree = mock(
+      async (
+        _principal: { kind: string },
+        repoId: { kind: string; id: string },
+        _ref: string,
+        _content: unknown
+      ) => {
+        writeTreeRepoIds.push(repoId);
+        return { commitSha: 'sha' };
+      }
+    );
+    const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
+
+    const insertedRows: { table: 'agent' | 'agentInstance'; rows: { id: string }[] }[] = [];
+    const insert = mock((table: unknown) => ({
+      values: async (rows: unknown) => {
+        const table2 = table === intxSchema.agent ? 'agent' : 'agentInstance';
+        const arr = Array.isArray(rows) ? rows : [rows];
+        insertedRows.push({ table: table2, rows: arr as { id: string }[] });
+        return undefined;
+      },
+    }));
+    const db = { insert } as unknown as HubDb;
+
+    const launched: { agentId: string }[] = [];
+    const launchSession = mock(async (params: { agentId: string }) => {
+      launched.push(params);
+      return undefined;
+    });
+    const sessionService = { launchSession } as unknown as SessionService;
+
+    const sendAgentDeploy = mock(
+      async (
+        _agentAddress: string,
+        _config: HarnessConfig,
+        _workflow: { sources: Record<string, InferenceSource> }
+      ) => ({ publicKey: 'pk' })
+    );
+    const sidecarRouter = {
+      getRoutableAddresses: () => [],
+      sendAgentDeploy,
+    } as unknown as SidecarRouter;
+
+    const service = createWorkflowDeployService({
+      db,
+      repoStore,
+      sidecarRouter,
+      sessionService,
+      directorRegistry: createWorkbenchDirectorRegistry(),
+    });
+
+    const result = await service.deployWorkflow({
+      workflow,
+      deploymentId,
+      deploymentDomain,
+      tenantId: 't1',
+      creatorPrincipalId: 'p1',
+      config: makeConfig(deploymentId, deploymentDomain),
+      deployContent: { systemPrompt: '' },
+      hubPublicKey: 'hubkey',
+    });
+
+    expect(result.kind).toBe('multi-step');
+
+    // No launchSession for the deterministic tool step (nor the inline step);
+    // only the fully-deployed reasoning step launches.
+    const launchedIds = launched.map((l) => l.agentId);
+    expect(launchedIds).toEqual(['ins_ses_det-draft']);
+    expect(launchedIds).not.toContain('ins_ses_det-fetch');
+
+    // 0 agent-state repos for the deterministic tool step (no grants.json);
+    // the deployed reasoning step still gets one.
+    const agentStateIds = writeTreeRepoIds.filter((r) => r.kind === 'agent-state').map((r) => r.id);
+    expect(agentStateIds).toContain('ses_det-draft');
+    expect(agentStateIds).not.toContain('ses_det-fetch');
+    expect(agentStateIds).not.toContain('ses_det-analyze');
+
+    // The `agent` row IS written for the deterministic tool step (load-bearing:
+    // the tool manifest/credentials endpoints gate on it) — but NO instance row.
+    const agentRowIds = insertedRows
+      .filter((b) => b.table === 'agent')
+      .flatMap((b) => b.rows.map((r) => r.id));
+    const instanceRowIds = insertedRows
+      .filter((b) => b.table === 'agentInstance')
+      .flatMap((b) => b.rows.map((r) => r.id));
+    expect(agentRowIds).toContain('ins_ses_det-fetch');
+    expect(instanceRowIds).not.toContain('ins_ses_det-fetch');
+
+    // Deployed reasoning step keeps both rows; inline step gets neither.
+    expect(agentRowIds).toContain('ins_ses_det-draft');
+    expect(instanceRowIds).toContain('ins_ses_det-draft');
+    expect(agentRowIds).not.toContain('ins_ses_det-analyze');
+    expect(instanceRowIds).not.toContain('ins_ses_det-analyze');
+
+    // Supervisor rows are still written (deployment-level).
+    expect(agentRowIds).toContain('ins_ses_det');
+    expect(instanceRowIds).toContain('ins_ses_det');
+
+    // The supervisor frame still pins an inference source for every step id
+    // (the sidecar's STEP_INFERENCE_SOURCES table reads it).
+    const deployCall = sendAgentDeploy.mock.calls.at(0);
+    if (!deployCall) throw new Error('sendAgentDeploy was not called');
+    const frameWorkflow = deployCall[2];
+    expect(frameWorkflow.sources.fetch).toEqual(SOURCE);
     expect(frameWorkflow.sources.analyze).toEqual(SOURCE);
     expect(frameWorkflow.sources.draft).toEqual(SOURCE);
   });
