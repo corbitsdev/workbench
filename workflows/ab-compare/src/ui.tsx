@@ -1,64 +1,91 @@
-import { type ReactNode, useState } from 'react';
-import { type } from 'arktype';
-import type { RunState, StepState } from '@intx/workflow';
+import { type ReactNode, useState } from "react";
+import { type } from "arktype";
+import type { RunState, StepState } from "@intx/workflow";
 import {
   Button,
   HorizontalStepper,
   Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
-} from '@workbench/ui';
+} from "@workbench/ui";
 
-const INPUT_SIGNAL = 'input';
-const REVIEW_SIGNAL = 'comparison-review';
+const CONFIG_SIGNAL = "ab-config";
+const REVIEW_SIGNAL = "comparison-review";
 
-const STEP_ORDER = ['input', 'execute', 'compare', 'review', 'persist'] as const;
+const STEP_ORDER = [
+  "config",
+  "execute",
+  "compare",
+  "review",
+  "persist",
+] as const;
 type StepKey = (typeof STEP_ORDER)[number];
 
 const STEP_LABELS: Record<StepKey, string> = {
-  input: 'Input',
-  execute: 'Execute',
-  compare: 'Compare',
-  review: 'Review',
-  persist: 'Persist',
+  config: "Configure",
+  execute: "Execute",
+  compare: "Compare",
+  review: "Review",
+  persist: "Persist",
 };
 
-// Agent `step` output shape: { reply: string, turn: unknown }
-const AgentStepOutput = type({ reply: 'string', 'turn?': 'unknown' });
+// One arm of the comparison as the panel sends it. The shared `input` is
+// injected onto each variant so the map'd execute step gets a self-contained
+// payload (the runtime cannot splice sibling fields into a map item).
+interface VariantConfig {
+  label: string;
+  providerName: string;
+  model: string;
+  systemPrompt?: string;
+  skill?: string;
+  input: string;
+}
 
-// The compareAgent is instructed to emit STRICT JSON in its reply.
-// We try to parse it for richer rendering; fall back to raw reply text.
+// Inline-inference step output shape: { reply: string, turn?: unknown }.
+const AgentStepOutput = type({ reply: "string", "turn?": "unknown" });
+// The execute map emits an array of per-variant agent outputs.
+const ExecuteMapOutput = AgentStepOutput.array();
+
+// The compare agent emits STRICT JSON in its reply.
 const CompareJSON = type({
-  'summary?': 'string',
-  'ranking?': type({
-    rank: 'number',
-    label: 'string',
-    'rationale?': 'string',
+  "summary?": "string",
+  "ranking?": type({
+    rank: "number",
+    label: "string",
+    "rationale?": "string",
   }).array(),
+  "recommendation?": "string",
 });
 
-// `deterministicToolStep` output: { callId: string, content: "<JSON string>" }
-const ToolResultEnvelope = type({ callId: 'string', content: 'string' });
+// `deterministicToolStep` output: { callId: string, content: "<JSON string>" }.
+const ToolResultEnvelope = type({ callId: "string", content: "string" });
 
 const PersistContent = type({
-  'artifactId?': 'string',
-  'title?': 'string',
-  'kind?': 'string',
-  'version?': 'number',
+  "artifactId?": "string",
+  "title?": "string",
+  "kind?": "string",
+  "version?": "number",
 });
 
-type StepPhase = StepState['phase'];
+type StepPhase = StepState["phase"];
 
-function phaseFor(state: RunState | null, stepId: StepKey): StepPhase | undefined {
+function phaseFor(
+  state: RunState | null,
+  stepId: StepKey,
+): StepPhase | undefined {
   return state?.steps.get(stepId)?.phase;
 }
 
-function toStepperStatus(phase: StepPhase | undefined): WorkflowStep['status'] {
-  if (phase === 'completed') return 'completed';
-  if (phase === 'in-flight' || phase === 'awaiting-signal' || phase === 'awaiting-timer') {
-    return 'current';
+function toStepperStatus(phase: StepPhase | undefined): WorkflowStep["status"] {
+  if (phase === "completed") return "completed";
+  if (
+    phase === "in-flight" ||
+    phase === "awaiting-signal" ||
+    phase === "awaiting-timer"
+  ) {
+    return "current";
   }
-  return 'pending';
+  return "pending";
 }
 
 function buildStepperSteps(state: RunState | null): WorkflowStep[] {
@@ -76,16 +103,18 @@ function buildStepperSteps(state: RunState | null): WorkflowStep[] {
  */
 function activeStep(state: RunState | null): StepKey {
   for (const id of STEP_ORDER) {
-    if (phaseFor(state, id) !== 'completed') return id;
+    if (phaseFor(state, id) !== "completed") return id;
   }
-  return 'persist';
+  return "persist";
 }
 
 // ── Shared layout ────────────────────────────────────────────────────────────
 
 function Card({ children }: { children: ReactNode }) {
   return (
-    <section className="rounded-panel border border-border bg-surface p-6">{children}</section>
+    <section className="rounded-panel border border-border bg-surface p-6">
+      {children}
+    </section>
   );
 }
 
@@ -101,9 +130,76 @@ function LoadingState({ label }: { label: string }) {
   );
 }
 
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block space-y-1">
+      <span className="text-xs font-medium text-text-2">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const inputClass =
+  "w-full rounded-lg border border-border bg-surface-2 p-2 text-sm text-text";
+
+// ── Variant editor ───────────────────────────────────────────────────────────
+
+function VariantEditor({
+  title,
+  value,
+  onChange,
+}: {
+  title: string;
+  value: VariantConfig;
+  onChange: (next: VariantConfig) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border border-border bg-surface-2 p-4">
+      <p className="text-sm font-medium text-text">{title}</p>
+      <Field label="Provider">
+        <input
+          className={inputClass}
+          value={value.providerName}
+          onChange={(e) => onChange({ ...value, providerName: e.target.value })}
+          placeholder="anthropic"
+        />
+      </Field>
+      <Field label="Model">
+        <input
+          className={inputClass}
+          value={value.model}
+          onChange={(e) => onChange({ ...value, model: e.target.value })}
+          placeholder="claude-sonnet-4"
+        />
+      </Field>
+      <Field label="Skill (optional guidance)">
+        <input
+          className={inputClass}
+          value={value.skill ?? ""}
+          onChange={(e) => onChange({ ...value, skill: e.target.value })}
+          placeholder="e.g. Hammy humanizer"
+        />
+      </Field>
+      <Field label="Variant instruction (optional)">
+        <textarea
+          className={inputClass}
+          rows={2}
+          value={value.systemPrompt ?? ""}
+          onChange={(e) => onChange({ ...value, systemPrompt: e.target.value })}
+          placeholder="A variant-specific system prompt"
+        />
+      </Field>
+    </div>
+  );
+}
+
 // ── Step screens ─────────────────────────────────────────────────────────────
 
-function InputScreen({
+function emptyVariant(label: string): VariantConfig {
+  return { label, providerName: "", model: "", input: "" };
+}
+
+function ConfigScreen({
   phase,
   connected,
   signalPending,
@@ -112,94 +208,164 @@ function InputScreen({
   phase: StepPhase | undefined;
   connected: boolean;
   signalPending: boolean;
-  onSubmit: (payload: { prompt: string }) => void;
+  onSubmit: (payload: { variants: VariantConfig[]; input: string }) => void;
 }) {
-  const [prompt, setPrompt] = useState('');
-  const canSubmit = connected && !signalPending && prompt.trim().length > 0;
+  const [variantA, setVariantA] = useState<VariantConfig>(
+    emptyVariant("Variant 1"),
+  );
+  const [variantB, setVariantB] = useState<VariantConfig>(
+    emptyVariant("Variant 2"),
+  );
+  const [input, setInput] = useState("");
 
-  if (phase !== 'awaiting-signal') {
+  const variantsReady =
+    variantA.providerName.trim().length > 0 &&
+    variantA.model.trim().length > 0 &&
+    variantB.providerName.trim().length > 0 &&
+    variantB.model.trim().length > 0;
+  const canSubmit =
+    connected && !signalPending && variantsReady && input.trim().length > 0;
+
+  if (phase !== "awaiting-signal") {
     return <LoadingState label="Waiting for the run to start…" />;
+  }
+
+  function handleSubmit() {
+    const shared = input.trim();
+    const variants: VariantConfig[] = [variantA, variantB].map((v) => ({
+      label: v.label,
+      providerName: v.providerName.trim(),
+      model: v.model.trim(),
+      input: shared,
+      ...(v.systemPrompt && v.systemPrompt.trim().length > 0
+        ? { systemPrompt: v.systemPrompt.trim() }
+        : {}),
+      ...(v.skill && v.skill.trim().length > 0
+        ? { skill: v.skill.trim() }
+        : {}),
+    }));
+    onSubmit({ variants, input: shared });
   }
 
   return (
     <Card>
-      <CardTitle>Enter a prompt to compare across variants</CardTitle>
+      <CardTitle>Configure the blind comparison</CardTitle>
       <p className="mb-4 text-xs text-text-3">
-        The prompt runs blind across the available variants. You'll review the ranked outputs before
-        anything is saved.
+        Define two variants — a provider, a model, and optional skill or
+        instruction each. The shared input runs blind across both; you'll review
+        the ranked outputs before anything is saved.
       </p>
       <form
         className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
           if (!canSubmit) return;
-          onSubmit({ prompt: prompt.trim() });
+          handleSubmit();
         }}
       >
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-text">Shared prompt</span>
+        <div className="grid gap-4 md:grid-cols-2">
+          <VariantEditor
+            title="Variant A"
+            value={variantA}
+            onChange={setVariantA}
+          />
+          <VariantEditor
+            title="Variant B"
+            value={variantB}
+            onChange={setVariantB}
+          />
+        </div>
+        <Field label="Shared input">
           <textarea
             className="w-full rounded-lg border border-border bg-surface-2 p-3 text-sm text-text"
             rows={5}
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="The prompt to run against each variant"
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder="The task to run against each variant"
           />
-        </label>
+        </Field>
         <div className="flex items-center gap-3">
-          <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
-            Start comparison
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            disabled={!canSubmit}
+          >
+            Run comparison
           </Button>
-          {!connected && <p className="text-xs text-text-3">Reconnecting — input unavailable.</p>}
+          {!connected && (
+            <p className="text-xs text-text-3">
+              Reconnecting — input unavailable.
+            </p>
+          )}
         </div>
       </form>
     </Card>
   );
 }
 
-function ExecuteScreen({ phase, output }: { phase: StepPhase | undefined; output: unknown }) {
-  if (phase === 'in-flight' || phase === undefined) {
-    return <LoadingState label="Running the prompt across variants…" />;
-  }
-
-  const parsed = AgentStepOutput(output);
-  if (parsed instanceof type.errors) {
-    if (phase === 'completed') {
-      return (
-        <Card>
-          <p className="text-sm text-orange">Couldn't read the execution output.</p>
-        </Card>
-      );
-    }
-    return <LoadingState label="Running the prompt across variants…" />;
-  }
-
+function VariantOutputs({ output }: { output: unknown }) {
+  const parsed = ExecuteMapOutput(output);
+  if (parsed instanceof type.errors || parsed.length === 0) return null;
   return (
     <Card>
-      <CardTitle>Execution output</CardTitle>
-      <Markdown>{parsed.reply}</Markdown>
+      <CardTitle>Variant outputs</CardTitle>
+      <p className="mb-4 text-xs text-text-3">
+        Outputs are shown anonymously. Provider and model stay hidden through
+        ranking.
+      </p>
+      <div className="space-y-4">
+        {parsed.map((variant, index) => (
+          <div
+            key={index}
+            className="rounded-lg border border-border bg-surface-2 p-3"
+          >
+            <p className="mb-2 text-xs font-medium text-text-2">
+              Variant {index + 1}
+            </p>
+            <Markdown>{variant.reply}</Markdown>
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }
 
-function CompareScreen({ phase, output }: { phase: StepPhase | undefined; output: unknown }) {
-  if (phase === 'in-flight' || phase === undefined) {
+function ExecuteScreen({ phase }: { phase: StepPhase | undefined }) {
+  if (phase !== "completed") {
+    return <LoadingState label="Running the prompt across variants…" />;
+  }
+  return (
+    <LoadingState label="Variants finished — preparing the blind ranking…" />
+  );
+}
+
+function CompareScreen({
+  phase,
+  output,
+}: {
+  phase: StepPhase | undefined;
+  output: unknown;
+}) {
+  if (phase === "in-flight" || phase === undefined) {
     return <LoadingState label="Generating blind ranking…" />;
   }
 
   const parsed = AgentStepOutput(output);
   if (parsed instanceof type.errors) {
-    if (phase === 'completed') {
+    if (phase === "completed") {
       return (
         <Card>
-          <p className="text-sm text-orange">Couldn't read the comparison output.</p>
+          <p className="text-sm text-orange">
+            Couldn't read the comparison output.
+          </p>
         </Card>
       );
     }
     return <LoadingState label="Generating blind ranking…" />;
   }
 
-  // The compareAgent emits strict JSON in `reply`. Try to parse it for rich UI.
+  // The compare agent emits strict JSON in `reply`. Try to parse for rich UI.
   let decoded: unknown;
   try {
     decoded = JSON.parse(parsed.reply);
@@ -209,13 +375,17 @@ function CompareScreen({ phase, output }: { phase: StepPhase | undefined; output
 
   const structured = decoded !== undefined ? CompareJSON(decoded) : undefined;
   const rich =
-    structured !== undefined && !(structured instanceof type.errors) ? structured : undefined;
+    structured !== undefined && !(structured instanceof type.errors)
+      ? structured
+      : undefined;
 
   if (rich !== undefined) {
     return (
       <Card>
         <CardTitle>Blind ranking</CardTitle>
-        {rich.summary !== undefined && <p className="mb-4 text-sm text-text-2">{rich.summary}</p>}
+        {rich.summary !== undefined && (
+          <p className="mb-4 text-sm text-text-2">{rich.summary}</p>
+        )}
         {rich.ranking !== undefined && rich.ranking.length > 0 ? (
           <ol className="space-y-2">
             {rich.ranking.map((entry, index) => (
@@ -236,6 +406,9 @@ function CompareScreen({ phase, output }: { phase: StepPhase | undefined; output
             ))}
           </ol>
         ) : null}
+        {rich.recommendation !== undefined && (
+          <p className="mt-4 text-sm text-text-2">{rich.recommendation}</p>
+        )}
       </Card>
     );
   }
@@ -252,41 +425,49 @@ function CompareScreen({ phase, output }: { phase: StepPhase | undefined; output
 function ReviewScreen({
   phase,
   compareOutput,
+  executeOutput,
   connected,
   signalPending,
   onApprove,
 }: {
   phase: StepPhase | undefined;
   compareOutput: unknown;
+  executeOutput: unknown;
   connected: boolean;
   signalPending: boolean;
   onApprove: () => void;
 }) {
-  if (phase !== 'awaiting-signal' && phase !== 'in-flight') {
+  if (phase !== "awaiting-signal" && phase !== "in-flight") {
     return <LoadingState label="Waiting for comparison to finish…" />;
   }
 
   return (
     <div className="space-y-4">
-      {/* Show the comparison result above the approval gate. */}
+      {/* Show the anonymous variant outputs, then the ranking, above the gate. */}
+      <VariantOutputs output={executeOutput} />
       <CompareScreen phase="completed" output={compareOutput} />
 
       <Card>
         <CardTitle>Review and approve</CardTitle>
         <p className="mb-4 text-sm text-text-2">
-          Review the blind ranking above. Approve to save the results as an artifact.
+          Review the blind ranking above. Approve to save the results as an
+          artifact.
         </p>
         <div className="flex items-center gap-3">
           <Button
             variant="primary"
             size="sm"
-            disabled={!connected || signalPending || phase !== 'awaiting-signal'}
+            disabled={
+              !connected || signalPending || phase !== "awaiting-signal"
+            }
             onClick={onApprove}
           >
             Approve comparison
           </Button>
           {!connected && (
-            <p className="text-xs text-text-3">Reconnecting — approval unavailable.</p>
+            <p className="text-xs text-text-3">
+              Reconnecting — approval unavailable.
+            </p>
           )}
         </div>
       </Card>
@@ -303,16 +484,18 @@ function PersistScreen({
   output: unknown;
   onClose: () => void;
 }) {
-  if (phase === 'in-flight' || phase === undefined) {
+  if (phase === "in-flight" || phase === undefined) {
     return <LoadingState label="Saving artifact…" />;
   }
 
   const envelope = ToolResultEnvelope(output);
   if (envelope instanceof type.errors) {
-    if (phase === 'completed') {
+    if (phase === "completed") {
       return (
         <Card>
-          <p className="text-sm text-orange">Couldn't read the saved artifact.</p>
+          <p className="text-sm text-orange">
+            Couldn't read the saved artifact.
+          </p>
         </Card>
       );
     }
@@ -327,7 +510,10 @@ function PersistScreen({
   }
 
   const artifact = decoded !== undefined ? PersistContent(decoded) : undefined;
-  const saved = artifact !== undefined && !(artifact instanceof type.errors) ? artifact : undefined;
+  const saved =
+    artifact !== undefined && !(artifact instanceof type.errors)
+      ? artifact
+      : undefined;
 
   return (
     <Card>
@@ -335,9 +521,11 @@ function PersistScreen({
       {saved !== undefined ? (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
           <span className="min-w-0 truncate text-sm text-text">
-            {saved.title ?? saved.artifactId ?? 'Saved artifact'}
+            {saved.title ?? saved.artifactId ?? "Saved artifact"}
           </span>
-          {saved.kind !== undefined && <span className="text-xs text-text-3">{saved.kind}</span>}
+          {saved.kind !== undefined && (
+            <span className="text-xs text-text-3">{saved.kind}</span>
+          )}
         </div>
       ) : (
         <p className="mb-4 text-sm text-text-3">Artifact saved.</p>
@@ -352,12 +540,16 @@ function PersistScreen({
 // ── Root panel ────────────────────────────────────────────────────────────────
 
 export function Panel(props: WorkflowPanelProps) {
-  const { state, connected, signalPending, stepOutputs, onSignal, onClose } = props;
-  const failed = state?.phase === 'failed';
+  const { state, connected, signalPending, stepOutputs, onSignal, onClose } =
+    props;
+  const failed = state?.phase === "failed";
   const current = activeStep(state);
 
-  function handleInputSubmit(payload: { prompt: string }) {
-    onSignal(INPUT_SIGNAL, payload);
+  function handleConfigSubmit(payload: {
+    variants: VariantConfig[];
+    input: string;
+  }) {
+    onSignal(CONFIG_SIGNAL, payload);
   }
 
   function handleApprove() {
@@ -369,9 +561,16 @@ export function Panel(props: WorkflowPanelProps) {
       <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div>
           <h2 className="text-base font-medium text-text">A/B Compare</h2>
-          <p className="text-xs text-text-3">Blind ranking across content variants</p>
+          <p className="text-xs text-text-3">
+            Blind ranking across provider/model variants
+          </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close panel">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+          aria-label="Close panel"
+        >
           Close
         </Button>
       </header>
@@ -385,29 +584,33 @@ export function Panel(props: WorkflowPanelProps) {
               This run failed. Review the run log and try again.
             </p>
           </div>
-        ) : current === 'input' ? (
-          <InputScreen
-            phase={phaseFor(state, 'input')}
+        ) : current === "config" ? (
+          <ConfigScreen
+            phase={phaseFor(state, "config")}
             connected={connected}
             signalPending={signalPending}
-            onSubmit={handleInputSubmit}
+            onSubmit={handleConfigSubmit}
           />
-        ) : current === 'execute' ? (
-          <ExecuteScreen phase={phaseFor(state, 'execute')} output={stepOutputs['execute']} />
-        ) : current === 'compare' ? (
-          <CompareScreen phase={phaseFor(state, 'compare')} output={stepOutputs['compare']} />
-        ) : current === 'review' ? (
+        ) : current === "execute" ? (
+          <ExecuteScreen phase={phaseFor(state, "execute")} />
+        ) : current === "compare" ? (
+          <CompareScreen
+            phase={phaseFor(state, "compare")}
+            output={stepOutputs["compare"]}
+          />
+        ) : current === "review" ? (
           <ReviewScreen
-            phase={phaseFor(state, 'review')}
-            compareOutput={stepOutputs['compare']}
+            phase={phaseFor(state, "review")}
+            compareOutput={stepOutputs["compare"]}
+            executeOutput={stepOutputs["execute"]}
             connected={connected}
             signalPending={signalPending}
             onApprove={handleApprove}
           />
         ) : (
           <PersistScreen
-            phase={phaseFor(state, 'persist')}
-            output={stepOutputs['persist']}
+            phase={phaseFor(state, "persist")}
+            output={stepOutputs["persist"]}
             onClose={onClose}
           />
         )}
