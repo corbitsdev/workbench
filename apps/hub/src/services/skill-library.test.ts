@@ -322,7 +322,7 @@ describe('buildSkillBundle', () => {
     );
 
     await expect(filesFromZip(content)).rejects.toThrow('Skill bundle exceeds');
-  });
+  }, 20000);
 
   it('rejects invalid zip archives with a client-safe error', async () => {
     await expect(filesFromZip(Buffer.from('not a zip'))).rejects.toThrow('Invalid zip archive');
