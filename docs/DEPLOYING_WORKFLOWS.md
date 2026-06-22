@@ -129,21 +129,50 @@ not the workflow code.
   hub sends `agent.undeploy` for the deployment's supervisor address
   (`ins_<deploymentId>@<domain>`), which the sidecar's deploy router routes to
   `supervisor.shutdown()` — killing the workflow-child process and unregistering
-  its mail/signal/drain routes. The backing `agent_instance` rows (supervisor +
-  steps) are soft-stopped (`status = stopped`, `endedAt` set). Teardown is
-  best-effort: the row is already out of the UI, so a sidecar failure logs and
-  still returns `204`.
+  its mail/signal/drain routes. The same undeploy hook then **reclaims the
+  deployment's on-disk footprint on the sidecar volume** (CL-2231): the
+  supervisor's working-copy `workflow-run` repo plus every per-step agent-state
+  repo and agent dir it owns are `fs.rm`'d — best-effort, idempotent, and
+  derived from the sidecar's own `getRepoDir`/`SIDECAR_DATA_DIR`, never touching
+  hub state. The backing `agent_instance` rows (supervisor + steps) are
+  soft-stopped (`status = stopped`, `endedAt` set). Teardown is best-effort: the
+  row is already out of the UI, so a sidecar failure logs and still returns
+  `204`.
 
 - **Redeploy supersedes** — deploying a kind into a tenant marks every prior
   active deployment of the same `(kind, tenant)` `deletedAt` and runs the same
-  teardown, so the newest deploy is the only active one. This is best-effort and
-  transactional-safe: a supersede-teardown failure on an old deployment never
-  fails the new deploy.
+  teardown (including the sidecar reclamation), so the newest deploy is the only
+  active one. This is best-effort and transactional-safe: a supersede-teardown
+  failure on an old deployment never fails the new deploy.
 
-Neither path deletes run history. The workflow-run event log (the git-backed
-`workflow-run` repo), step outputs, artifacts, and the DB rows themselves are
-all retained — the soft-delete only removes the deployment from the active set
-and stops its runtime.
+Neither path deletes run **history**: the hub's durable `workflow-run` repo,
+step outputs, artifacts, and the DB rows are all retained — the soft-delete only
+removes the deployment from the active set and stops its runtime. What the
+sidecar reclaims above is its **working copy** of that state on the agent
+volume, not the hub's source-of-truth record.
+
+### Why the sidecar reclaims, and the boot reconciler (CL-2231)
+
+Without reclamation the sidecar volume accumulated orphaned per-deployment git
+repos and eventually hit `ENOSPC` — **inode exhaustion**, not bytes (repos are
+file-count-heavy). The driver was deployment **churn** (repeated redeploys
+without teardown), not runs: all runs of a kind share one deployment's supervisor
++ step agents, so per-run cost is tiny. (Tool packages are not a factor — they
+are content-addressed and hardlinked, one copy per `package@version` shared
+across tenants.)
+
+The undeploy hook above reclaims a deployment whose supervisor is still live in
+the sidecar's in-memory map. The **boot reconciler**
+(`apps/sidecar/src/boot-reconciler.ts`) closes the restart gap: before the
+hub-link connects, it fetches the live deployment set from the hub
+(`GET /api/internal/deployments/live`, read-only) and prunes only on-disk dirs
+whose embedded `ses_<deploymentId>` token is confirmed **absent** from that set.
+It is fail-safe — any fetch/parse failure, or an empty live set while orphans
+exist, deletes **nothing** — and sidecar-local only. The residual boot
+`Reconnection rejected by governance` noise is *live* step-agents re-establishing
+(bounded, benign); eliminating step agents entirely is the **CL-2232** spike
+(inline `@intx/agent` inference). See IMPLEMENTATION.md § Sidecar deployment
+reclamation.
 
 ## Serialization constraint
 

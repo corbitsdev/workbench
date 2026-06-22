@@ -142,7 +142,7 @@ The workbench product app contains no management UI — no credential settings p
 
 - **Agent Orchestration**: Connects to the Interchange hub via WebSocket (`HUB_WS_URL`) and manages the lifecycle of running agents on behalf of the workbench
 - **Identity**: Each sidecar has a stable `SIDECAR_ID` (opaque string slug, e.g. `gtm-staging`) and a `SIDECAR_TOKEN` for hub authentication
-- **On-disk state**: Maintains per-agent git repositories and key pairs in `SIDECAR_DATA_DIR`. This directory must be backed by a persistent volume in production — loss of this data prevents the sidecar from reconnecting its agents to the hub
+- **On-disk state**: Maintains per-agent git repositories and key pairs in `SIDECAR_DATA_DIR`. This directory must be backed by a persistent volume in production — loss of this data prevents the sidecar from reconnecting its agents to the hub. A deployment's footprint here is reclaimed when it is undeployed/superseded, and a fail-safe boot reconciler prunes orphans left by a restart, so deployment churn cannot exhaust the volume (CL-2231); reclamation is sidecar-local and never mutates the hub's durable state. See IMPLEMENTATION.md § Sidecar deployment reclamation.
 - **Hub relationship**: The hub also maintains on-disk state (`HUB_DATA_DIR`) and requires a persistent volume for the same reason. If either side loses state, the sidecar–hub trust relationship must be re-established
 
 ### Shared Packages (`packages/`)
