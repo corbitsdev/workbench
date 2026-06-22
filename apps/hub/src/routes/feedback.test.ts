@@ -146,6 +146,15 @@ describe('POST /v1/feedback', () => {
     expect(res.status).toBe(400);
   });
 
+  // SEAM UNCOVERED: the user-visible contract — "my thumb sticks after reload",
+  // i.e. the (principal, subjectId, subjectKind) unique key de-dupes so a second
+  // POST updates the existing row rather than inserting a duplicate, and a GET
+  // reads back exactly that one row — has no integration coverage. This test only
+  // asserts the route reaches `onConflictDoUpdate` with the new rating against a
+  // fully mocked db; it cannot prove the Postgres upsert key actually de-dupes.
+  // The hub has no real/testcontainer Postgres harness today (all route tests mock
+  // `db`), so this is left as a wiring check. Closing the gap needs a real-DB
+  // integration harness that runs migrations and exercises the route↔Postgres seam.
   it('calls onConflictDoUpdate so a second rating replaces the first', async () => {
     const onConflictDoUpdate = mock(() => Promise.resolve());
     const { app } = setup({
