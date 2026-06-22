@@ -19,8 +19,13 @@ import {
   type ChatActivity,
 } from '@workbench/chat';
 import { type AgentActivity } from '@intx/hub-client';
-import { getOutputFeedback, launchInstanceSession, saveOutputFeedback } from '../lib/hub-api';
-import type { FeedbackSubjectKind } from '../lib/hub-api';
+import {
+  getOutputFeedback,
+  launchInstanceSession,
+  saveOutputFeedback,
+  upsertRating,
+} from '../lib/hub-api';
+import type { FeedbackSubjectKind, SavedRating } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 import { classifyLaunchState, isLaunchableStatus } from './agent-launch-helpers';
 
@@ -97,7 +102,10 @@ export function AgentChat({
       subjectKind: Parameters<typeof saveOutputFeedback>[2];
       rating: 1 | -1;
     }) => saveOutputFeedback(instanceId, subjectId, subjectKind, rating),
-    onSuccess: () => {
+    onSuccess: (_, { subjectId, subjectKind, rating }) => {
+      queryClient.setQueryData<SavedRating[]>(['feedback', instanceId], (prev) =>
+        upsertRating(prev, { subjectId, subjectKind, rating })
+      );
       void queryClient.invalidateQueries({ queryKey: ['feedback', instanceId] });
     },
   });

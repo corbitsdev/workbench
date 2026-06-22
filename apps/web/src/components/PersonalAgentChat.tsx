@@ -30,8 +30,9 @@ import {
   getOutputFeedback,
   launchInstanceSession,
   saveOutputFeedback,
+  upsertRating,
 } from '../lib/hub-api';
-import type { FeedbackSubjectKind } from '../lib/hub-api';
+import type { FeedbackSubjectKind, SavedRating } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 import { useChatLauncher } from '../lib/chat-launcher-context';
 
@@ -266,7 +267,10 @@ export function PersonalAgentChat() {
       subjectKind: Parameters<typeof saveOutputFeedback>[2];
       rating: 1 | -1;
     }) => saveOutputFeedback(iid, subjectId, subjectKind, rating),
-    onSuccess: (_, { instanceId: iid }) => {
+    onSuccess: (_, { instanceId: iid, subjectId, subjectKind, rating }) => {
+      queryClient.setQueryData<SavedRating[]>(['feedback', iid], (prev) =>
+        upsertRating(prev, { subjectId, subjectKind, rating })
+      );
       void queryClient.invalidateQueries({ queryKey: ['feedback', iid] });
     },
   });
