@@ -152,9 +152,9 @@ describe('0023 makes artifact.session_id nullable (CL-1679)', () => {
   });
 });
 
-describe('0028 creates output_feedback (CL-1993)', () => {
+describe('0029 creates output_feedback (CL-1993)', () => {
   const sql = readFileSync(
-    join(import.meta.dir, '../../migrations/0028_output_feedback.sql'),
+    join(import.meta.dir, '../../migrations/0029_output_feedback.sql'),
     'utf-8'
   );
 
