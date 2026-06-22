@@ -7,6 +7,7 @@ import {
   Markdown,
   type WorkflowCredential,
   type WorkflowPanelProps,
+  type WorkflowSkill,
   type WorkflowStep,
 } from '@workbench/ui';
 import {
@@ -35,7 +36,7 @@ interface VariantConfig {
   providerName: string;
   model: string;
   systemPrompt?: string;
-  skill?: string;
+  skillIds?: string[];
   input: string;
 }
 
@@ -62,7 +63,7 @@ const ConfigPayload = type({
     providerName: 'string',
     model: 'string',
     'systemPrompt?': 'string',
-    'skill?': 'string',
+    'skillIds?': 'string[]',
     input: 'string',
   }).array(),
   input: 'string',
@@ -174,7 +175,7 @@ interface SlotState {
   providerName: string;
   providerPlugin: string;
   model: string;
-  skill: string;
+  skillIds: string[];
 }
 
 function emptySlot(): SlotState {
@@ -183,7 +184,7 @@ function emptySlot(): SlotState {
     providerName: '',
     providerPlugin: '',
     model: '',
-    skill: '',
+    skillIds: [],
   };
 }
 
@@ -194,12 +195,14 @@ function ConfigScreen({
   connected,
   signalPending,
   credentials,
+  skills,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
   signalPending: boolean;
   credentials: WorkflowCredential[] | undefined;
+  skills: WorkflowSkill[] | undefined;
   onSubmit: (payload: { variants: VariantConfig[]; input: string }) => void;
 }) {
   const [configStep, setConfigStep] = useState<ConfigStep>('comparisons');
@@ -225,7 +228,7 @@ function ConfigScreen({
           providerName,
           providerPlugin,
           model: defaultAbComparisonModel(providerName, providerPlugin) ?? '',
-          skill: next[index]!.skill,
+          skillIds: next[index]!.skillIds,
         };
         return next;
       });
@@ -241,10 +244,16 @@ function ConfigScreen({
     });
   }, []);
 
-  const updateSlotSkill = useCallback((index: number, skill: string) => {
+  const toggleSlotSkill = useCallback((index: number, skillId: string) => {
     setSlots((prev) => {
       const next = [...prev];
-      next[index] = { ...next[index]!, skill };
+      const current = next[index]!.skillIds;
+      next[index] = {
+        ...next[index]!,
+        skillIds: current.includes(skillId)
+          ? current.filter((id) => id !== skillId)
+          : [...current, skillId],
+      };
       return next;
     });
   }, []);
@@ -292,7 +301,7 @@ function ConfigScreen({
           model: s.model,
           input: sharedInput,
           ...(systemPrompt.trim() ? { systemPrompt: systemPrompt.trim() } : {}),
-          ...(s.skill.trim() ? { skill: s.skill.trim() } : {}),
+          ...(s.skillIds.length > 0 ? { skillIds: s.skillIds } : {}),
         }));
       onSubmit({ variants, input: sharedInput });
     }
@@ -421,13 +430,31 @@ function ConfigScreen({
                           ? `Comparison ${displayIndex + 1}: ${slot.providerName}`
                           : `Comparison ${displayIndex + 1}`}
                       </p>
-                      <input
-                        type="text"
-                        value={slot.skill}
-                        onChange={(e) => updateSlotSkill(realIndex, e.target.value)}
-                        placeholder="e.g. Hammy humanizer"
-                        className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
-                      />
+                      <div className="flex flex-wrap gap-2">
+                        {(skills ?? []).map((skill) => {
+                          const active = slot.skillIds.includes(skill.id);
+                          return (
+                            <button
+                              key={skill.id}
+                              type="button"
+                              onClick={() => toggleSlotSkill(realIndex, skill.id)}
+                              className={`rounded-[7px] border px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                                active
+                                  ? 'border-orange bg-orange/8 text-text'
+                                  : 'border-border text-text-2 hover:text-text'
+                              }`}
+                            >
+                              {skill.displayName ?? skill.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {skills === undefined && (
+                        <p className="text-[12px] text-text-3">Loading skills…</p>
+                      )}
+                      {skills !== undefined && skills.length === 0 && (
+                        <p className="text-[12px] text-text-3">No skills in the library yet.</p>
+                      )}
                     </div>
                   );
                 })}
@@ -685,8 +712,8 @@ function RevealSection({
                 <p className="text-xs text-text-2">
                   {variant.providerName} · {variant.model}
                 </p>
-                {variant.skill !== undefined && (
-                  <p className="text-xs text-text-3">Skill: {variant.skill}</p>
+                {variant.skillIds !== undefined && variant.skillIds.length > 0 && (
+                  <p className="text-xs text-text-3">Skills: {variant.skillIds.join(', ')}</p>
                 )}
               </div>
             </div>
@@ -762,7 +789,7 @@ function PersistScreen({
 // ── Root panel ────────────────────────────────────────────────────────────────
 
 export function Panel(props: WorkflowPanelProps) {
-  const { state, connected, signalPending, stepOutputs, onSignal, onClose, credentials } = props;
+  const { state, connected, signalPending, stepOutputs, onSignal, onClose, credentials, skills } = props;
   const failed = state?.phase === 'failed';
   const current = activeStep(state);
 
@@ -805,6 +832,7 @@ export function Panel(props: WorkflowPanelProps) {
             connected={connected}
             signalPending={signalPending}
             credentials={credentials}
+            skills={skills}
             onSubmit={handleConfigSubmit}
           />
         ) : current === 'execute' ? (

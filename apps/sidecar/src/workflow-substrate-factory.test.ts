@@ -485,6 +485,103 @@ describe('createSidecarStepInvoker', () => {
     expect(closed).toBe(true);
   });
 
+  test('resolves selected skill IDs before inline inference sends input', async () => {
+    const dataDir = await makeDataDir();
+    const INLINE_REPLY = 'done';
+    const turn = { role: 'assistant', content: INLINE_REPLY } as unknown as SendTurn;
+    const calls: Array<{ url: string; body: unknown; authorization: string | null }> = [];
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({
+        url,
+        body: typeof init?.body === 'string' ? JSON.parse(init.body) : null,
+        authorization: init?.headers instanceof Headers ? init.headers.get('authorization') : 'Bearer tok',
+      });
+      return new Response(
+        JSON.stringify({
+          skills: [
+            {
+              id: 'skill_hammy',
+              name: 'hammy-humanizer',
+              displayName: 'Hammy Humanizer',
+              content: 'Make the copy sound human.',
+            },
+          ],
+        }),
+        { headers: { 'content-type': 'application/json' } }
+      );
+    }) as unknown as typeof fetch;
+
+    let sentContent: string | undefined;
+    const stubAgent: Agent = {
+      send: async (content: Parameters<Agent['send']>[0]) => {
+        sentContent = typeof content === 'string' ? content : content.content;
+        return { reply: INLINE_REPLY, turn };
+      },
+      stream: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ value: undefined, done: true }),
+        }),
+      }),
+      deliver: () => {},
+      close: async () => {},
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
+
+    const resolveStepToolContext = async (req: StepInvokeRequest): Promise<StepToolContext> => ({
+      hubHttpUrl: 'http://hub.test',
+      sidecarToken: 'tok',
+      tenantId: 'ten_1',
+      stepAgentId: `ins_dep-${req.authzContext.stepId ?? 'step'}`,
+      stepAddress: `ins_dep-${req.authzContext.stepId ?? 'step'}`,
+      principalId: `ins_dep-${req.authzContext.stepId ?? 'step'}`,
+      grants: [],
+      cacheRoot: path.join(dataDir, 'cache'),
+      cacheMaxBytes: 1024 * 1024,
+      registryMaxTarballBytes: 1024 * 1024,
+    });
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => 'sig',
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      resolveStepToolContext,
+      agentFactory: async () => stubAgent,
+    });
+
+    await invoke({
+      agent: {
+        ...makeAgentDefinition('inline-with-skill'),
+        tags: { 'workbench.stepKind': 'inline-inference' },
+      },
+      input: { input: 'Rewrite this', skillIds: ['skill_hammy'] },
+      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
+      signal: new AbortController().signal,
+    });
+
+    expect(calls).toEqual([
+      {
+        url: 'http://hub.test/api/internal/workflow-skills/resolve',
+        body: { tenantId: 'ten_1', runId: RUN_ID, skillIds: ['skill_hammy'] },
+        authorization: 'Bearer tok',
+      },
+    ]);
+    expect(JSON.parse(sentContent ?? '{}')).toEqual({
+      input: 'Rewrite this',
+      skillIds: ['skill_hammy'],
+      skills: [
+        {
+          id: 'skill_hammy',
+          name: 'hammy-humanizer',
+          displayName: 'Hammy Humanizer',
+          content: 'Make the copy sound human.',
+        },
+      ],
+    });
+  });
+
   // CL-2253: the inline branch must attach a draining stream() consumer so the
   // agent's pre-start event buffer drains instead of overflowing (the WARN
   // "no stream() consumer ever attached to drain it" on staging) and the step's

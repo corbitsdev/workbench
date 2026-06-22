@@ -7,11 +7,12 @@ import type { WorkflowPanelProps } from '@workbench/ui';
 import * as workflowHooks from '../hooks/use-workflow';
 import type { RunRecord } from '../lib/run-state-adapter';
 
-function CustomPanel({ deploymentId, stepOutputs, signalPending, onSignal }: WorkflowPanelProps) {
+function CustomPanel({ deploymentId, stepOutputs, signalPending, skills, onSignal }: WorkflowPanelProps) {
   return (
     <div>
       <span>custom-panel-for-{deploymentId}</span>
       <span>signal-pending:{String(signalPending)}</span>
+      <span>skills:{(skills ?? []).map((skill) => skill.displayName ?? skill.name).join(',')}</span>
       {Object.entries(stepOutputs).map(([stepId, output]) => (
         <span key={stepId}>
           out-{stepId}:{JSON.stringify(output)}
@@ -40,6 +41,13 @@ mock.module('../hooks/use-workflow', () => ({
   ...workflowHooks,
   useWorkflowRecord: () => ({ data: record ?? undefined, isLoading, isError }),
   useResumeWorkflow: () => ({ mutateAsync: resumeMutateAsync, isPending: false }),
+  useWorkflowCredentials: () => ({ data: [] }),
+}));
+
+mock.module('../hooks/use-skills', () => ({
+  useSkillLibrary: () => ({
+    data: [{ id: 'skill_1', name: 'hammy-humanizer', displayName: 'Hammy Humanizer' }],
+  }),
 }));
 
 import { WorkflowRunPane } from './WorkflowRunPane';
@@ -104,10 +112,11 @@ describe('WorkflowRunPane', () => {
     expect(resumeMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('hands the record outputs map straight to the Panel as stepOutputs', async () => {
+  it('hands the record outputs map and skill library straight to the Panel', async () => {
     record = makeRecord({ outputs: { 'step-ok': { headline: 'hi' } } });
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, { wrapper });
     await waitFor(() => screen.getByText('out-step-ok:{"headline":"hi"}'));
+    screen.getByText('skills:Hammy Humanizer');
   });
 
   it('onSignal resumes when the run is awaiting', async () => {

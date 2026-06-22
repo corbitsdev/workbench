@@ -8,6 +8,12 @@ export interface WorkflowCredential {
   model?: string;
 }
 
+export interface WorkflowSkill {
+  id: string;
+  name: string;
+  displayName: string | null;
+}
+
 export interface WorkflowPanelProps {
   deploymentId: string;
   state: RunState | null;
@@ -31,4 +37,6 @@ export interface WorkflowPanelProps {
   onClose: () => void;
   /** Inference credentials passed from the host for config-step pickers. */
   credentials?: WorkflowCredential[];
+  /** Visible skills from the workspace library for workflow-specific selectors. */
+  skills?: WorkflowSkill[];
 }

@@ -10,6 +10,7 @@ import {
   useWorkflowCredentials,
   useWorkflowRecord,
 } from '../hooks/use-workflow';
+import { useSkillLibrary } from '../hooks/use-skills';
 
 interface WorkflowRunPaneProps {
   // Opaque run identifier (a thin-executor `runId`, CL-2240). Named
@@ -43,6 +44,7 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
   const { data: record, isLoading, isError } = useWorkflowRecord(runId, tenantId);
   const resume = useResumeWorkflow(runId, tenantId);
   const { data: credentials } = useWorkflowCredentials(tenantId);
+  const { data: skills } = useSkillLibrary(tenantId);
   const signalInFlightRef = useRef(false);
   const [signalPending, setSignalPending] = useState(false);
 
@@ -129,6 +131,7 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
           onSignal={handleSignal}
           onClose={onClose}
           credentials={credentials}
+          skills={skills}
         />
       </Suspense>
     </ErrorBoundary>

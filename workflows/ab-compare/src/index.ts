@@ -38,7 +38,7 @@ export const description =
 export const kind = "ab-compare";
 
 // One blind execution turn per variant. `map` passes each variant as
-// `trigger.payload` ({ label, providerName, model, systemPrompt?, skill?,
+// `trigger.payload` ({ label, providerName, model, systemPrompt?, skillIds?,
 // input }); the inline agent answers without ever being told it is one arm of
 // a comparison.
 const executeStep = inlineInferenceStep({
@@ -52,9 +52,9 @@ export const workflow = defineWorkflow({
   trigger: { type: "manual" },
   steps: {
     // 1. Collect the full setup in one signal: the variants (provider + model
-    //    + optional skill + optional per-variant instruction) and the shared
+    //    + optional skill IDs + optional per-variant instruction) and the shared
     //    input. Payload: { variants: Array<{ label, providerName, model,
-    //    systemPrompt?, skill?, input }>, input: string }. The panel injects
+    //    systemPrompt?, skillIds?, input }>, input: string }. The panel injects
     //    the shared `input` onto each variant so the map'd execute step gets a
     //    self-contained payload.
     config: awaitSignal({ name: "ab-config" }),

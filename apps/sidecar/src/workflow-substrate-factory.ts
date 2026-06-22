@@ -683,6 +683,48 @@ function synthesizeStepInput(input: unknown): string {
   return encoded;
 }
 
+function selectedSkillIds(input: unknown): string[] {
+  if (typeof input !== 'object' || input === null || !('skillIds' in input)) return [];
+  const value = (input as { skillIds?: unknown }).skillIds;
+  if (!Array.isArray(value)) return [];
+  return value.filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
+function stepToolContext(env: StepEnvBase): StepToolContext {
+  const context = (env as Record<string, unknown>)[STEP_TOOL_CONTEXT_KEY];
+  if (typeof context !== 'object' || context === null) {
+    throw new Error('inline inference step: selected skills require step tool context');
+  }
+  return context as StepToolContext;
+}
+
+async function resolveInputSkills(input: unknown, env: StepEnvBase, runId: string): Promise<unknown> {
+  const skillIds = selectedSkillIds(input);
+  if (skillIds.length === 0) return input;
+
+  const context = stepToolContext(env);
+  const response = await fetch(`${context.hubHttpUrl}/api/internal/workflow-skills/resolve`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${context.sidecarToken}`,
+    },
+    body: JSON.stringify({
+      tenantId: context.tenantId,
+      runId,
+      skillIds,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`inline inference step: failed to resolve selected skills (${response.status})`);
+  }
+  const body = (await response.json()) as { skills?: unknown };
+  if (!Array.isArray(body.skills)) {
+    throw new Error('inline inference step: skill resolver returned an invalid payload');
+  }
+  return { ...(input as Record<string, unknown>), skills: body.skills };
+}
+
 /**
  * Run an inline single-turn inference step (CL-2251). Builds the per-step
  * env (pinning `sources`/`defaultSource` from the `STEP_INFERENCE_SOURCES`
@@ -702,6 +744,11 @@ async function runInlineInferenceStep(args: {
     throw new DOMException('aborted', 'AbortError');
   }
   const envBase = await args.buildEnv(args.req);
+  const runId = args.req.authzContext.runId;
+  if (runId === undefined) {
+    throw new Error('inline inference step: AuthorizeContext.runId is required to resolve selected skills');
+  }
+  const resolvedInput = await resolveInputSkills(args.req.input, envBase, runId);
   const env: BaseEnv = { ...envBase, authorize: inlineDenyAllAuthorize };
   const agent = await args.agentFactory(args.req.agent, env);
   // Attach a draining stream() consumer BEFORE send() so the agent's
@@ -728,7 +775,7 @@ async function runInlineInferenceStep(args: {
   };
   const draining = drainStream();
   try {
-    const sendResult = await agent.send(synthesizeStepInput(args.req.input));
+    const sendResult = await agent.send(synthesizeStepInput(resolvedInput));
     return { output: { reply: sendResult.reply, turn: sendResult.turn } };
   } finally {
     await agent.close();

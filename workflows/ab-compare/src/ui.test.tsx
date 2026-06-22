@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import type { RunState, StepState } from '@intx/workflow';
-import type { WorkflowCredential, WorkflowPanelProps } from '@workbench/ui';
+import type { WorkflowCredential, WorkflowPanelProps, WorkflowSkill } from '@workbench/ui';
 
 afterEach(cleanup);
 
@@ -39,6 +39,11 @@ function makeState(
   } as unknown as RunState;
 }
 
+const MOCK_SKILLS: WorkflowSkill[] = [
+  { id: 'skill_hammy', name: 'hammy-humanizer', displayName: 'Hammy Humanizer' },
+  { id: 'skill_larry', name: 'larry-research', displayName: 'Larry Research' },
+];
+
 const MOCK_CREDENTIALS: WorkflowCredential[] = [
   {
     id: 'cred_anthropic',
@@ -72,6 +77,7 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
     onSignal,
     onClose,
     credentials: MOCK_CREDENTIALS,
+    skills: MOCK_SKILLS,
     ...overrides,
   };
   render(<Panel {...props} />);
@@ -80,17 +86,16 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
 
 // Navigate the 3-step config wizard and fire the run signal.
 // Step 1: select credentials in dropdowns; Step 2: skip; Step 3: fill input.
-async function runConfigWizard(opts: { input?: string; skill?: string } = {}) {
+async function runConfigWizard(opts: { input?: string; skillName?: string } = {}) {
   // Step 1 — Comparisons: select providers for both slots
   const selects = screen.getAllByRole('combobox');
   fireEvent.change(selects[0]!, { target: { value: 'cred_anthropic' } });
   fireEvent.change(selects[1]!, { target: { value: 'cred_openai' } });
   fireEvent.click(screen.getByText('Next'));
 
-  // Step 2 — Configure: optionally set skill
-  if (opts.skill !== undefined) {
-    const skillInputs = screen.getAllByPlaceholderText('e.g. Hammy humanizer');
-    fireEvent.change(skillInputs[0]!, { target: { value: opts.skill } });
+  // Step 2 — Configure: optionally select a skill for the first variant.
+  if (opts.skillName !== undefined) {
+    fireEvent.click(screen.getAllByText(opts.skillName)[0]!);
   }
   fireEvent.click(screen.getByText('Next'));
 
@@ -249,16 +254,16 @@ describe('ab-compare Panel — config screen', () => {
     }
   });
 
-  it('includes optional skill on a variant when provided on step 2', async () => {
+  it('includes selected skill IDs on a variant when selected on step 2', async () => {
     const { onSignal } = renderPanel({
       state: makeState({ config: 'awaiting-signal' }),
     });
-    await runConfigWizard({ skill: 'Hammy' });
+    await runConfigWizard({ skillName: 'Hammy Humanizer' });
     const payload = onSignal.mock.calls[0]![1] as {
-      variants: { skill?: string }[];
+      variants: { skillIds?: string[] }[];
     };
-    expect(payload.variants[0]!.skill).toBe('Hammy');
-    expect(payload.variants[1]!.skill).toBeUndefined();
+    expect(payload.variants[0]!.skillIds).toEqual(['skill_hammy']);
+    expect(payload.variants[1]!.skillIds).toBeUndefined();
   });
 
   it('trims whitespace from the shared input before submitting', async () => {

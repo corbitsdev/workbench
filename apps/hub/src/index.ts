@@ -47,6 +47,7 @@ import {
 } from './routes/workflow-run-abort';
 import { wrapRepoStoreWithProjection } from './workflow-executor/projection-bridge';
 import { createWorkflowDeployService } from './services/workflow-deploy';
+import { createInternalWorkflowSkillsRouter } from './routes/workflow-skills';
 import { createWorkflowReconciler } from './services/workflow-reconciler';
 import { createWorkbenchDirectorRegistry } from '@workbench/agents';
 import { createUploadsRouter } from './routes/uploads';
@@ -732,6 +733,7 @@ app.route(
   })
 );
 app.route('/api/internal', createToolCredentialsRouter(db, config.sidecarToken));
+app.route('/api/internal', createInternalWorkflowSkillsRouter(db, repoStore.repoStore, config.sidecarToken));
 app.route('/api/internal', createToolManifestRouter(db, config.sidecarToken, assetService));
 app.route(
   '/api/internal',
