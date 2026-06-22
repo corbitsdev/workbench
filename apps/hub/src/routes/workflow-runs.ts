@@ -171,17 +171,16 @@ export type EnsureDeploymentRoutableFn = (args: {
   creatorPrincipalId: string;
 }) => Promise<{ reestablished: boolean }>;
 
-// Shared helper: replay the run-event log once and collect every StepCompleted
-// entry as `{ stepId, outputRef, runId }`. Callers can filter or resolve refs
-// as needed. Returns the discovered runId (from the first event) alongside the
-// collected steps. Aborts the subscription on return.
+// Shared helper: replay the deployment-keyed run-event log once and collect
+// every StepCompleted entry for the requested run as `{ stepId, outputRef }`.
+// The log is shared across every run on the deployment, so we MUST filter to
+// `runId` — a StepCompleted from another user's run on the same deployment is
+// not this run's output (CL-2233). Aborts the subscription on return.
 async function collectCompletedSteps(
   repoStore: RepoStore,
-  repoId: RepoId
-): Promise<{
-  runId: string | null;
-  steps: Array<{ stepId: string; outputRef: string; runId: string }>;
-}> {
+  repoId: RepoId,
+  runId: string
+): Promise<Array<{ stepId: string; outputRef: string }>> {
   const abort = new AbortController();
   const iter = subscribeKind(repoStore, HUB_PRINCIPAL, repoId, RUN_EVENT_REF, WorkflowEventBlob, {
     signal: abort.signal,
@@ -189,22 +188,48 @@ async function collectCompletedSteps(
     kinds: WORKFLOW_EVENT_TYPES,
   });
 
-  let firstRunId: string | null = null;
-  const steps: Array<{ stepId: string; outputRef: string; runId: string }> = [];
+  const steps: Array<{ stepId: string; outputRef: string }> = [];
   try {
     for await (const entry of iter) {
-      if (firstRunId === null) firstRunId = entry.runId;
+      if (entry.runId !== runId) continue;
       if (entry.event.type !== 'StepCompleted') continue;
       const completed = StepCompletedBlob(entry.event);
       if (completed instanceof type.errors) {
         throw new Error(`malformed StepCompleted event: ${completed.summary}`);
       }
-      steps.push({ stepId: completed.stepId, outputRef: completed.output.ref, runId: entry.runId });
+      steps.push({ stepId: completed.stepId, outputRef: completed.output.ref });
     }
   } finally {
     abort.abort();
   }
-  return { runId: firstRunId, steps };
+  return steps;
+}
+
+// Shared run-ownership gate (CL-2233). The run-event log is deployment-keyed and
+// shared across every user on the deployment, so deployment ownership alone is
+// NOT sufficient — it would let any co-tenant read every other user's runs. The
+// runId is therefore REQUIRED and access-controlled: it must name a run the
+// caller owns (a non-deleted workflow_run_instance scoped to the caller's
+// principal). Returns the 403 response when missing/unowned, else null. Used by
+// /stream and the step-output read endpoints so all three share one gate.
+async function gateRunOwnership(
+  db: HubDb,
+  runId: string | null,
+  principalId: string,
+  json: (body: { error: string }, status: 403) => Response
+): Promise<Response | null> {
+  if (runId === null) {
+    return json({ error: 'runId is required' }, 403);
+  }
+  const ownsRun = await db.query.workflowRunInstance.findFirst({
+    where: and(
+      eq(workflowRunInstance.runId, runId),
+      eq(workflowRunInstance.memberPrincipalId, principalId),
+      isNull(workflowRunInstance.deletedAt)
+    ),
+  });
+  if (!ownsRun) return json({ error: 'Run not found' }, 403);
+  return null;
 }
 
 // Lazily reconcile a deployment's unreconciled run instances (CL-2233). We do
@@ -594,24 +619,13 @@ export function createWorkflowRunsRouter(deps: {
       });
       if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
 
-      // Per-user privacy boundary (CL-2233): the run-event log is
-      // deployment-keyed and shared across every user on the deployment, so
-      // deployment ownership alone is NOT sufficient — it would let any
-      // co-tenant user read every other user's runs. The runId is therefore
-      // REQUIRED and access-controlled: it must name a run the caller owns (a
-      // non-deleted workflow_run_instance scoped to the caller's principal).
-      // Without this gate the runId filter below would be honor-system only.
-      if (runIdFilter === null) {
-        return c.json({ error: 'runId is required' }, 403);
-      }
-      const ownsRun = await deps.db.query.workflowRunInstance.findFirst({
-        where: and(
-          eq(workflowRunInstance.runId, runIdFilter),
-          eq(workflowRunInstance.memberPrincipalId, context.principalId),
-          isNull(workflowRunInstance.deletedAt)
-        ),
-      });
-      if (!ownsRun) return c.json({ error: 'Run not found' }, 403);
+      const denied = await gateRunOwnership(
+        deps.db,
+        runIdFilter,
+        context.principalId,
+        (body, status) => c.json(body, status)
+      );
+      if (denied) return denied;
 
       const repoId: RepoId = {
         kind: 'workflow-run',
@@ -669,7 +683,7 @@ export function createWorkflowRunsRouter(deps: {
       tags: ['Workflows'],
       summary: 'Get a completed step output',
       description:
-        "Replays the deployment's workflow-run event log to find the requested step's StepCompleted output and resolves it from the run's blob substrate. Returns 404 if the step has not completed. Optional `?tenantId=` selects a workbench the user belongs to.",
+        "Replays the deployment's workflow-run event log to find the requested step's StepCompleted output for the caller's run and resolves it from the run's blob substrate. REQUIRES `?runId=` naming a run the caller owns — the log is shared across every user on the deployment, so deployment ownership alone would leak other users' step outputs (CL-2233). Returns 404 if the step has not completed. Optional `?tenantId=` selects a workbench the user belongs to.",
       parameters: [
         {
           name: 'deploymentId',
@@ -683,6 +697,14 @@ export function createWorkflowRunsRouter(deps: {
           in: 'path',
           required: true,
           description: 'Id of the step whose output to read.',
+          schema: { type: 'string' },
+        },
+        {
+          name: 'runId',
+          in: 'query',
+          required: true,
+          description:
+            "The run whose step output to read. REQUIRED and access-controlled: must name a run the caller owns (a non-deleted workflow_run_instance scoped to the caller's principal). Omitting it, or passing a run the caller does not own, is a 403 (CL-2233).",
           schema: { type: 'string' },
         },
         {
@@ -701,7 +723,8 @@ export function createWorkflowRunsRouter(deps: {
           },
         },
         403: {
-          description: 'User context not found or forbidden for the requested tenant',
+          description:
+            'User context not found, forbidden for the requested tenant, or the runId is missing or not owned by the caller',
           content: { 'application/json': { schema: resolver(ErrorResponse) } },
         },
         404: {
@@ -726,6 +749,7 @@ export function createWorkflowRunsRouter(deps: {
 
       const deploymentId = c.req.param('deploymentId');
       const stepId = c.req.param('stepId');
+      const runId = c.req.query('runId') ?? null;
       const chain = await getAncestorChain(deps.db, context.tenantId);
       const owned = await deps.db.query.workflowRun.findFirst({
         where: and(
@@ -734,6 +758,12 @@ export function createWorkflowRunsRouter(deps: {
         ),
       });
       if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
+
+      const denied = await gateRunOwnership(deps.db, runId, context.principalId, (body, status) =>
+        c.json(body, status)
+      );
+      if (denied) return denied;
+      const ownedRunId = runId as string;
 
       const repoId: RepoId = {
         kind: 'workflow-run',
@@ -744,12 +774,11 @@ export function createWorkflowRunsRouter(deps: {
       };
 
       // Replay the run's append-only event log to find the StepCompleted for the
-      // requested step. A bounded log that drains without yielding the step means
-      // the step has not completed → 404.
-      let steps: Array<{ stepId: string; outputRef: string; runId: string }>;
-      let runId: string | null;
+      // requested step within the caller's run. A bounded log that drains without
+      // yielding the step means the step has not completed → 404.
+      let steps: Array<{ stepId: string; outputRef: string }>;
       try {
-        ({ steps, runId } = await collectCompletedSteps(repoStore, repoId));
+        steps = await collectCompletedSteps(repoStore, repoId, ownedRunId);
       } catch (err) {
         log.error('workflow step output replay failed', {
           deploymentId,
@@ -761,9 +790,8 @@ export function createWorkflowRunsRouter(deps: {
 
       const match = steps.find((s) => s.stepId === stepId);
       const outputRef = match?.outputRef ?? null;
-      if (match) runId = match.runId;
 
-      if (outputRef === null || runId === null) {
+      if (outputRef === null) {
         return c.json({ error: 'no completed step output found' }, 404);
       }
 
@@ -776,7 +804,7 @@ export function createWorkflowRunsRouter(deps: {
         substrate: repoStore,
         repoId,
         principal: HUB_PRINCIPAL,
-        runId,
+        runId: ownedRunId,
         ref: RUN_EVENT_REF,
       });
       let output: unknown;
@@ -786,7 +814,7 @@ export function createWorkflowRunsRouter(deps: {
         log.error('workflow step output resolution failed', {
           deploymentId,
           stepId,
-          runId,
+          runId: ownedRunId,
           outputRef,
           error: err instanceof Error ? err : new Error(String(err)),
         });
@@ -803,13 +831,21 @@ export function createWorkflowRunsRouter(deps: {
       tags: ['Workflows'],
       summary: 'Get all completed step outputs in one replay',
       description:
-        "Replays the deployment's workflow-run event log ONCE and returns every completed step's resolved output as a map. Avoids the N-parallel per-step replays the individual step-output endpoint requires. Optional `?tenantId=` selects a workbench the user belongs to.",
+        "Replays the deployment's workflow-run event log ONCE and returns every completed step's resolved output for the caller's run as a map. Avoids the N-parallel per-step replays the individual step-output endpoint requires. REQUIRES `?runId=` naming a run the caller owns — the log is shared across every user on the deployment, so deployment ownership alone would leak other users' step outputs (CL-2233). Optional `?tenantId=` selects a workbench the user belongs to.",
       parameters: [
         {
           name: 'deploymentId',
           in: 'path',
           required: true,
           description: 'Deployment id of the workflow run.',
+          schema: { type: 'string' },
+        },
+        {
+          name: 'runId',
+          in: 'query',
+          required: true,
+          description:
+            "The run whose step outputs to read. REQUIRED and access-controlled: must name a run the caller owns (a non-deleted workflow_run_instance scoped to the caller's principal). Omitting it, or passing a run the caller does not own, is a 403 (CL-2233).",
           schema: { type: 'string' },
         },
         {
@@ -828,7 +864,8 @@ export function createWorkflowRunsRouter(deps: {
           },
         },
         403: {
-          description: 'User context not found or forbidden for the requested tenant',
+          description:
+            'User context not found, forbidden for the requested tenant, or the runId is missing or not owned by the caller',
           content: { 'application/json': { schema: resolver(ErrorResponse) } },
         },
         404: {
@@ -852,6 +889,7 @@ export function createWorkflowRunsRouter(deps: {
       if (!context) return c.json({ error: 'User context not found' }, 403);
 
       const deploymentId = c.req.param('deploymentId');
+      const runId = c.req.query('runId') ?? null;
       const chain = await getAncestorChain(deps.db, context.tenantId);
       const owned = await deps.db.query.workflowRun.findFirst({
         where: and(
@@ -861,6 +899,12 @@ export function createWorkflowRunsRouter(deps: {
       });
       if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
 
+      const denied = await gateRunOwnership(deps.db, runId, context.principalId, (body, status) =>
+        c.json(body, status)
+      );
+      if (denied) return denied;
+      const ownedRunId = runId as string;
+
       const repoId: RepoId = {
         kind: 'workflow-run',
         id: deriveWorkflowRunRepoId({
@@ -869,10 +913,9 @@ export function createWorkflowRunsRouter(deps: {
         }),
       };
 
-      let steps: Array<{ stepId: string; outputRef: string; runId: string }>;
-      let runId: string | null;
+      let steps: Array<{ stepId: string; outputRef: string }>;
       try {
-        ({ steps, runId } = await collectCompletedSteps(repoStore, repoId));
+        steps = await collectCompletedSteps(repoStore, repoId, ownedRunId);
       } catch (err) {
         log.error('workflow all-steps replay failed', {
           deploymentId,
@@ -881,17 +924,16 @@ export function createWorkflowRunsRouter(deps: {
         return c.json({ error: 'failed to read workflow event log' }, 500);
       }
 
-      if (steps.length === 0 || runId === null) {
+      if (steps.length === 0) {
         return c.json({ outputs: {} });
       }
 
-      // All completed steps share the same runId (the latest run). Build a
-      // BlobSubstrate once and resolve all refs in parallel.
+      // Resolve every collected ref against the caller's run's blob substrate.
       const blobs = createWorkflowRunBlobSubstrate({
         substrate: repoStore,
         repoId,
         principal: HUB_PRINCIPAL,
-        runId,
+        runId: ownedRunId,
         ref: RUN_EVENT_REF,
       });
 
@@ -907,117 +949,13 @@ export function createWorkflowRunsRouter(deps: {
       } catch (err) {
         log.error('workflow all-steps output resolution failed', {
           deploymentId,
-          runId,
+          runId: ownedRunId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
         return c.json({ error: 'failed to resolve workflow step outputs' }, 500);
       }
 
       return c.json({ outputs });
-    }
-  );
-
-  router.patch(
-    '/workflow-runs/:deploymentId/status',
-    describeRoute({
-      tags: ['Workflows'],
-      summary: 'Update a workflow run status',
-      description:
-        'Updates the status of a workflow deployment to a terminal value. Called by the FE when it observes a terminal run event on the SSE stream. Same ownership gate as the other workflow routes. Optional `?tenantId=` selects a workbench the user belongs to.',
-      parameters: [
-        {
-          name: 'deploymentId',
-          in: 'path',
-          required: true,
-          description: 'Deployment id of the workflow run.',
-          schema: { type: 'string' },
-        },
-        {
-          name: 'tenantId',
-          in: 'query',
-          required: false,
-          description: 'Target workbench tenant id. Omit for the active workbench.',
-          schema: { type: 'string' },
-        },
-      ],
-      requestBody: {
-        required: true,
-        description: 'Terminal status value to set.',
-        content: {
-          'application/json': { schema: requestBodySchema(PatchStatusBody) },
-        },
-      },
-      responses: {
-        200: {
-          description: 'Status updated',
-          content: {
-            'application/json': { schema: resolver(PatchStatusResponse) },
-          },
-        },
-        400: {
-          description: 'Invalid JSON or status value',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
-        },
-        403: {
-          description: 'User context not found or forbidden for the requested tenant',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
-        },
-        404: {
-          description: 'Workflow deployment not found',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
-        },
-        500: {
-          description: 'Failed to update the workflow run status',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
-        },
-      },
-    }),
-    async (c) => {
-      const userId = c.get('userId');
-      const { context, forbidden } = await getRequestedUserContext(
-        deps.db,
-        userId,
-        c.req.query('tenantId')
-      );
-      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
-      if (!context) return c.json({ error: 'User context not found' }, 403);
-
-      const deploymentId = c.req.param('deploymentId');
-      const chain = await getAncestorChain(deps.db, context.tenantId);
-      const owned = await deps.db.query.workflowRun.findFirst({
-        where: and(
-          eq(workflowRun.deploymentId, deploymentId),
-          inArray(workflowRun.tenantId, chain)
-        ),
-      });
-      if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
-
-      let rawBody: unknown;
-      try {
-        rawBody = await c.req.json();
-      } catch {
-        return c.json({ error: 'Invalid JSON' }, 400);
-      }
-      const body = PatchStatusBody(rawBody);
-      if (body instanceof type.errors) {
-        return c.json({ error: `invalid status: ${body.summary}` }, 400);
-      }
-
-      try {
-        await deps.db
-          .update(workflowRun)
-          .set({ status: body.status })
-          .where(eq(workflowRun.deploymentId, deploymentId));
-      } catch (err) {
-        log.error('workflow run status update failed', {
-          deploymentId,
-          status: body.status,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-        return c.json({ error: 'failed to update workflow run status' }, 500);
-      }
-
-      return c.json({ deploymentId, status: body.status });
     }
   );
 

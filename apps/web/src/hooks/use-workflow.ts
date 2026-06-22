@@ -77,8 +77,9 @@ export function useMyRuns(tenantId?: string | null) {
 }
 
 // Delete a single run instance: run-scoped hard-delete that drops only this run
-// from the user's list/stream, NOT the underlying deployment. Distinct from
-// useDeleteWorkflow, which undeploys the whole deployment.
+// from the user's list/stream, NOT the underlying deployment. This is the only
+// Remove path (CL-2233) — there is deliberately no deployment-level undeploy
+// hook, so a co-tenant cannot tear down a shared deployment.
 export function useDeleteRun(tenantId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -243,11 +244,15 @@ const stepOutputSchema = type({ stepId: 'string', output: 'unknown' });
 export async function fetchStepOutput(
   deploymentId: string,
   stepId: string,
+  runId: string,
   tenantId?: string | null
 ): Promise<unknown> {
   const raw = await api<unknown>(
     'GET',
-    withTenant(`/workflow-runs/${deploymentId}/steps/${stepId}/output`, tenantId)
+    withTenant(
+      `/workflow-runs/${deploymentId}/steps/${stepId}/output?runId=${encodeURIComponent(runId)}`,
+      tenantId
+    )
   );
   const parsed = stepOutputSchema(raw);
   if (parsed instanceof type.errors) {
@@ -267,13 +272,15 @@ export async function fetchStepOutput(
 export function useStepOutput(
   deploymentId: string | null,
   stepId: string | null,
+  runId: string | null,
   opts?: { enabled?: boolean; tenantId?: string | null }
 ) {
   return useQuery<unknown>({
-    queryKey: ['workflow-step-output', deploymentId, stepId, opts?.tenantId ?? null],
-    enabled: !!deploymentId && !!stepId && (opts?.enabled ?? true),
+    queryKey: ['workflow-step-output', deploymentId, stepId, runId, opts?.tenantId ?? null],
+    enabled: !!deploymentId && !!stepId && !!runId && (opts?.enabled ?? true),
     staleTime: Infinity,
-    queryFn: () => fetchStepOutput(deploymentId as string, stepId as string, opts?.tenantId),
+    queryFn: () =>
+      fetchStepOutput(deploymentId as string, stepId as string, runId as string, opts?.tenantId),
   });
 }
 
@@ -286,15 +293,25 @@ const allStepOutputsSchema = type({ outputs: type({ '[string]': 'unknown' }) });
 export function useAllStepOutputs(
   deploymentId: string | null,
   tenantId: string | null | undefined,
+  runId: string | null,
   opts?: { lastSeq?: number }
 ) {
   return useQuery<Record<string, unknown>>({
-    queryKey: ['workflow-all-step-outputs', deploymentId, tenantId ?? null, opts?.lastSeq ?? 0],
-    enabled: !!deploymentId,
+    queryKey: [
+      'workflow-all-step-outputs',
+      deploymentId,
+      tenantId ?? null,
+      runId,
+      opts?.lastSeq ?? 0,
+    ],
+    enabled: !!deploymentId && !!runId,
     queryFn: async () => {
       const raw = await api<unknown>(
         'GET',
-        withTenant(`/workflow-runs/${deploymentId as string}/steps`, tenantId)
+        withTenant(
+          `/workflow-runs/${deploymentId as string}/steps?runId=${encodeURIComponent(runId as string)}`,
+          tenantId
+        )
       );
       const parsed = allStepOutputsSchema(raw);
       if (parsed instanceof type.errors) {
@@ -307,12 +324,15 @@ export function useAllStepOutputs(
 
 // Persist the run's terminal status to the hub so the library rail can show
 // the final Completed / Failed badge without relying on the live stream.
-export function useSetWorkflowStatus(tenantId?: string | null) {
+// Run-scoped (CL-2233): updates only the caller's own run instance via the
+// instance route, never the shared deployment status (which any co-tenant could
+// otherwise flip).
+export function useSetRunStatus(tenantId?: string | null) {
   return useMutation({
-    mutationFn: async ({ deploymentId, status }: { deploymentId: string; status: string }) => {
+    mutationFn: async ({ runId, status }: { runId: string; status: string }) => {
       return api<unknown>(
         'PATCH',
-        withTenant(`/workflow-runs/${encodeURIComponent(deploymentId)}/status`, tenantId),
+        withTenant(`/workflow-runs/instances/${encodeURIComponent(runId)}/status`, tenantId),
         { status }
       );
     },
@@ -331,24 +351,6 @@ export function useStartWorkflow(tenantId?: string | null) {
         input,
       });
       return res;
-    },
-  });
-}
-
-// Delete (undeploy) a workflow deployment: operator-gated soft-delete that
-// drops it from the list/stream/start, undeploys the sidecar supervisor, and
-// stops its step instances. Used to finish/remove a completed or stuck run.
-export function useDeleteWorkflow(tenantId?: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (deploymentId: string) =>
-      api<unknown>(
-        'DELETE',
-        withTenant(`/workflows/${encodeURIComponent(deploymentId)}`, tenantId)
-      ),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['workflow-runs'] });
-      void queryClient.invalidateQueries({ queryKey: ['workflows'] });
     },
   });
 }

@@ -9,7 +9,7 @@ import {
   useWorkflowRunState,
   useSignalWorkflow,
   useAllStepOutputs,
-  useSetWorkflowStatus,
+  useSetRunStatus,
   isTerminalPhase,
 } from '../hooks/use-workflow';
 
@@ -79,14 +79,14 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, runId, onClose }: Workfl
 
   // Bug fix (5): persist terminal status to the hub once (idempotent via the
   // ref so a re-render doesn't fire a second PATCH).
-  const setStatus = useSetWorkflowStatus(tenantId);
+  const setStatus = useSetRunStatus(tenantId);
   const statusPersisted = useRef<string | null>(null);
   useEffect(() => {
-    if (!terminal || !state) return;
+    if (!terminal || !state?.runId) return;
     if (statusPersisted.current === state.phase) return;
     statusPersisted.current = state.phase;
-    setStatus.mutate({ deploymentId, status: state.phase }, { onError: () => undefined });
-  }, [terminal, state, deploymentId, setStatus]);
+    setStatus.mutate({ runId: state.runId, status: state.phase }, { onError: () => undefined });
+  }, [terminal, state, setStatus]);
 
   // Bug fix (2): gate signal mutations when the run is in a terminal phase.
   const signal = useSignalWorkflow(deploymentId, tenantId);
@@ -96,9 +96,12 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, runId, onClose }: Workfl
   // Bug fix (4): replace per-step allSettled batch with a single bulk call.
   // Re-keyed on `state.lastSeq` so TanStack Query refetches as new steps
   // complete without re-fetching already-resolved outputs unnecessarily.
-  const { data: allOutputs } = useAllStepOutputs(Panel ? deploymentId : null, tenantId, {
-    lastSeq: state?.lastSeq,
-  });
+  const { data: allOutputs } = useAllStepOutputs(
+    Panel ? deploymentId : null,
+    tenantId,
+    runId ?? state?.runId ?? null,
+    { lastSeq: state?.lastSeq }
+  );
 
   // Only expose outputs for completed steps that carry an outputRef; any key
   // missing from the bulk response is simply absent from the map.

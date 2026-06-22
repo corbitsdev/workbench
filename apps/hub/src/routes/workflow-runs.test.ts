@@ -102,9 +102,6 @@ type WorkflowRunRow = {
   tenantId: string;
 };
 
-// Captured update calls from the PATCH /status route.
-const updateCapture: Array<{ deploymentId: string; status: string }> = [];
-
 function makeDb(owned: boolean, ownsRun = true) {
   const findFirst = mock(() =>
     Promise.resolve(owned ? { deploymentId: 'dep-1', tenantId: 'tenant-1' } : undefined)
@@ -114,9 +111,8 @@ function makeDb(owned: boolean, ownsRun = true) {
   const instanceFindFirst = mock(() =>
     Promise.resolve(ownsRun ? { runId: 'run-A', memberPrincipalId: 'caller-p' } : undefined)
   );
-  const setMock = mock((values: { status: string }) => ({
+  const setMock = mock((_values: { status: string }) => ({
     where: (cond: unknown) => {
-      updateCapture.push({ deploymentId: 'dep-1', status: values.status });
       void cond;
       return Promise.resolve();
     },
@@ -188,9 +184,15 @@ function buildApp(db: HubDb, userId = 'user-1') {
   return parent;
 }
 
-function getOutput(app: Hono<{ Variables: { userId: string } }>, dep: string, step: string) {
+function getOutput(
+  app: Hono<{ Variables: { userId: string } }>,
+  dep: string,
+  step: string,
+  runId: string | null = 'run-1'
+) {
+  const q = runId === null ? '' : `?runId=${runId}`;
   return app.request(
-    new Request(`http://local/workflow-runs/${dep}/steps/${step}/output`, {
+    new Request(`http://local/workflow-runs/${dep}/steps/${step}/output${q}`, {
       method: 'GET',
     })
   );
@@ -299,7 +301,7 @@ describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
       return Promise.resolve(big);
     };
 
-    const res = await getOutput(buildApp(makeDb(true)), 'dep-1', 'step-b');
+    const res = await getOutput(buildApp(makeDb(true)), 'dep-1', 'step-b', 'run-9');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ stepId: 'step-b', output: big });
   });
@@ -366,6 +368,63 @@ describe('GET /workflow-runs/:deploymentId/steps/:stepId/output', () => {
     resolveRefImpl = () => Promise.reject(new Error('boom'));
     const res = await getOutput(buildApp(makeDb(true)), 'dep-1', 'step-a');
     expect(res.status).toBe(500);
+  });
+
+  it('403s when runId is omitted (CL-2233 run-scoped read)', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    const res = await getOutput(buildApp(makeDb(true)), 'dep-1', 'step-a', null);
+    expect(res.status).toBe(403);
+  });
+
+  it('403s when the caller does not own the requested runId (CL-2233)', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'user-b' },
+        forbidden: false,
+      });
+    // makeDb(true, false): deployment owned, but no instance row for this caller.
+    const res = await getOutput(buildApp(makeDb(true, false)), 'dep-1', 'step-a', 'run-A');
+    expect(res.status).toBe(403);
+  });
+
+  it('returns ONLY the owned run’s step output, not a co-tenant run on the same deployment (CL-2233)', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    subscribeKindThrows = null;
+    // Same deployment log carries two runs' StepCompleted for the SAME stepId.
+    // The caller owns run-A; run-B is another user's run and must be invisible.
+    subscribeKindEntries = [
+      { seq: 0, runId: 'run-A', event: { type: 'RunStarted', seq: 0 } },
+      {
+        seq: 1,
+        runId: 'run-A',
+        event: { type: 'StepCompleted', seq: 1, stepId: 'step-a', output: { ref: 'inline:mine' } },
+      },
+      {
+        seq: 2,
+        runId: 'run-B',
+        event: {
+          type: 'StepCompleted',
+          seq: 2,
+          stepId: 'step-a',
+          output: { ref: 'inline:theirs' },
+        },
+      },
+    ];
+    resolveRefImpl = (ref) => {
+      if (ref === 'inline:mine') return Promise.resolve({ owner: 'A' });
+      return Promise.reject(new Error(`must not resolve another run's ref: ${ref}`));
+    };
+    const res = await getOutput(buildApp(makeDb(true)), 'dep-1', 'step-a', 'run-A');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ stepId: 'step-a', output: { owner: 'A' } });
   });
 });
 
@@ -583,8 +642,11 @@ describe('POST /workflow-runs/:kind/start (shadowing + visibility)', () => {
 });
 
 describe('GET /workflow-runs/:deploymentId/steps (batched step outputs)', () => {
-  function allSteps(app: ReturnType<typeof buildApp>, dep: string) {
-    return app.request(new Request(`http://local/workflow-runs/${dep}/steps`, { method: 'GET' }));
+  function allSteps(app: ReturnType<typeof buildApp>, dep: string, runId: string | null = 'run-1') {
+    const q = runId === null ? '' : `?runId=${runId}`;
+    return app.request(
+      new Request(`http://local/workflow-runs/${dep}/steps${q}`, { method: 'GET' })
+    );
   }
 
   it('replays the log once and returns all completed step outputs as a map', async () => {
@@ -638,7 +700,7 @@ describe('GET /workflow-runs/:deploymentId/steps (batched step outputs)', () => 
     subscribeKindThrows = null;
     subscribeKindEntries = [{ seq: 0, runId: 'run-2', event: { type: 'RunStarted', seq: 0 } }];
 
-    const res = await allSteps(buildApp(makeDb(true)), 'dep-1');
+    const res = await allSteps(buildApp(makeDb(true)), 'dep-1', 'run-2');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { outputs: Record<string, unknown> };
     expect(body.outputs).toEqual({});
@@ -672,73 +734,62 @@ describe('GET /workflow-runs/:deploymentId/steps (batched step outputs)', () => 
     const res = await allSteps(buildApp(makeDb(true)), 'dep-1');
     expect(res.status).toBe(500);
   });
-});
 
-describe('PATCH /workflow-runs/:deploymentId/status', () => {
-  function patchStatus(app: ReturnType<typeof buildApp>, dep: string, body: unknown) {
-    return app.request(
-      new Request(`http://local/workflow-runs/${dep}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-    );
-  }
-
-  it('updates the status to completed and returns the deployment + status', async () => {
+  it('403s when runId is omitted (CL-2233 run-scoped read)', async () => {
     userContextImpl = () =>
       Promise.resolve({
-        context: { tenantId: 'tenant-1', principalId: 'p-1' },
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
         forbidden: false,
       });
-    updateCapture.length = 0;
-
-    const res = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'completed' });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { deploymentId: string; status: string };
-    expect(body.deploymentId).toBe('dep-1');
-    expect(body.status).toBe('completed');
-    expect(updateCapture).toEqual([{ deploymentId: 'dep-1', status: 'completed' }]);
-  });
-
-  it('accepts failed and cancelled as valid terminal statuses', async () => {
-    userContextImpl = () =>
-      Promise.resolve({
-        context: { tenantId: 'tenant-1', principalId: 'p-1' },
-        forbidden: false,
-      });
-    updateCapture.length = 0;
-
-    const res1 = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'failed' });
-    expect(res1.status).toBe(200);
-    const res2 = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'cancelled' });
-    expect(res2.status).toBe(200);
-  });
-
-  it('400s for an invalid status value', async () => {
-    userContextImpl = () =>
-      Promise.resolve({
-        context: { tenantId: 'tenant-1', principalId: 'p-1' },
-        forbidden: false,
-      });
-    const res = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'running' });
-    expect(res.status).toBe(400);
-  });
-
-  it('404s for a deployment the caller does not own', async () => {
-    userContextImpl = () =>
-      Promise.resolve({
-        context: { tenantId: 'tenant-1', principalId: 'p-1' },
-        forbidden: false,
-      });
-    const res = await patchStatus(buildApp(makeDb(false)), 'dep-x', { status: 'completed' });
-    expect(res.status).toBe(404);
-  });
-
-  it('403s when there is no user context', async () => {
-    userContextImpl = () => Promise.resolve({ context: null, forbidden: false });
-    const res = await patchStatus(buildApp(makeDb(true)), 'dep-1', { status: 'completed' });
+    const res = await allSteps(buildApp(makeDb(true)), 'dep-1', null);
     expect(res.status).toBe(403);
+  });
+
+  it('403s when the caller does not own the requested runId (CL-2233)', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'user-b' },
+        forbidden: false,
+      });
+    const res = await allSteps(buildApp(makeDb(true, false)), 'dep-1', 'run-A');
+    expect(res.status).toBe(403);
+  });
+
+  it('returns ONLY the owned run’s outputs, not a co-tenant run on the same deployment (CL-2233)', async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: 'tenant-1', principalId: 'caller-p' },
+        forbidden: false,
+      });
+    subscribeKindThrows = null;
+    // The shared deployment log carries run-A (caller's) and run-B (someone
+    // else's). The batched read must only resolve run-A's refs.
+    subscribeKindEntries = [
+      { seq: 0, runId: 'run-A', event: { type: 'RunStarted', seq: 0 } },
+      {
+        seq: 1,
+        runId: 'run-A',
+        event: { type: 'StepCompleted', seq: 1, stepId: 'step-a', output: { ref: 'inline:mine' } },
+      },
+      {
+        seq: 2,
+        runId: 'run-B',
+        event: {
+          type: 'StepCompleted',
+          seq: 2,
+          stepId: 'step-x',
+          output: { ref: 'inline:theirs' },
+        },
+      },
+    ];
+    resolveRefImpl = (ref) => {
+      if (ref === 'inline:mine') return Promise.resolve({ owner: 'A' });
+      return Promise.reject(new Error(`must not resolve another run's ref: ${ref}`));
+    };
+    const res = await allSteps(buildApp(makeDb(true)), 'dep-1', 'run-A');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { outputs: Record<string, unknown> };
+    expect(body.outputs).toEqual({ 'step-a': { owner: 'A' } });
   });
 });
 

@@ -42,7 +42,23 @@ describe('useStepOutput', () => {
       return Promise.resolve(jsonResponse(200, { stepId: 's', output: 1 }));
     }) as typeof fetch;
 
-    const { result } = renderHook(() => useStepOutput(null, 'step-a'), { wrapper: wrapper() });
+    const { result } = renderHook(() => useStepOutput(null, 'step-a', 'run-1'), {
+      wrapper: wrapper(),
+    });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(called).toBe(false);
+  });
+
+  it('is disabled when runId is null (CL-2233 run-scoped read)', () => {
+    let called = false;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      called = true;
+      return Promise.resolve(jsonResponse(200, { stepId: 's', output: 1 }));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a', null), {
+      wrapper: wrapper(),
+    });
     expect(result.current.fetchStatus).toBe('idle');
     expect(called).toBe(false);
   });
@@ -54,21 +70,29 @@ describe('useStepOutput', () => {
       return Promise.resolve(jsonResponse(200, { stepId: 's', output: 1 }));
     }) as typeof fetch;
 
-    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a', { enabled: false }), {
-      wrapper: wrapper(),
-    });
+    const { result } = renderHook(
+      () => useStepOutput('dep-1', 'step-a', 'run-1', { enabled: false }),
+      {
+        wrapper: wrapper(),
+      }
+    );
     expect(result.current.fetchStatus).toBe('idle');
     expect(called).toBe(false);
   });
 
   it('returns the parsed output when enabled and the step is completed', async () => {
+    let requested = '';
     globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
-      expect(String(url)).toContain('/workflow-runs/dep-1/steps/step-a/output');
+      requested = String(url);
       return Promise.resolve(jsonResponse(200, { stepId: 'step-a', output: { headline: 'hi' } }));
     }) as typeof fetch;
 
-    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a'), { wrapper: wrapper() });
+    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a', 'run-1'), {
+      wrapper: wrapper(),
+    });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requested).toContain('/workflow-runs/dep-1/steps/step-a/output');
+    expect(requested).toContain('runId=run-1');
     expect(result.current.data).toEqual({ headline: 'hi' });
   });
 
@@ -76,7 +100,9 @@ describe('useStepOutput', () => {
     globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
       Promise.resolve(jsonResponse(200, { wrong: true }))) as typeof fetch;
 
-    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a'), { wrapper: wrapper() });
+    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a', 'run-1'), {
+      wrapper: wrapper(),
+    });
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 
@@ -87,9 +113,12 @@ describe('useStepOutput', () => {
       return Promise.resolve(jsonResponse(200, { stepId: 'step-a', output: 1 }));
     }) as typeof fetch;
 
-    const { result } = renderHook(() => useStepOutput('dep-1', 'step-a', { tenantId: 'tn-wb' }), {
-      wrapper: wrapper(),
-    });
+    const { result } = renderHook(
+      () => useStepOutput('dep-1', 'step-a', 'run-1', { tenantId: 'tn-wb' }),
+      {
+        wrapper: wrapper(),
+      }
+    );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(requested).toContain('tenantId=tn-wb');
   });
@@ -116,12 +145,28 @@ describe('useAllStepOutputs', () => {
       return Promise.resolve(jsonResponse(200, { outputs: {} }));
     }) as typeof fetch;
 
-    const { result } = renderHook(() => useAllStepOutputs(null, null), { wrapper: wrapper() });
+    const { result } = renderHook(() => useAllStepOutputs(null, null, 'run-1'), {
+      wrapper: wrapper(),
+    });
     expect(result.current.fetchStatus).toBe('idle');
     expect(called).toBe(false);
   });
 
-  it('hits the /steps endpoint and returns the outputs map when enabled', async () => {
+  it('is disabled when runId is null (CL-2233 run-scoped read)', () => {
+    let called = false;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      called = true;
+      return Promise.resolve(jsonResponse(200, { outputs: {} }));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useAllStepOutputs('dep-1', null, null), {
+      wrapper: wrapper(),
+    });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(called).toBe(false);
+  });
+
+  it('hits the /steps endpoint with the runId and returns the outputs map when enabled', async () => {
     let requested = '';
     globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
       requested = String(url);
@@ -130,11 +175,12 @@ describe('useAllStepOutputs', () => {
       );
     }) as typeof fetch;
 
-    const { result } = renderHook(() => useAllStepOutputs('dep-1', 'tn-x'), {
+    const { result } = renderHook(() => useAllStepOutputs('dep-1', 'tn-x', 'run-1'), {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(requested).toContain('/workflow-runs/dep-1/steps');
+    expect(requested).toContain('runId=run-1');
     expect(requested).toContain('tenantId=tn-x');
     expect(result.current.data).toEqual({ 'step-a': { x: 1 }, 'step-b': 'done' });
   });
@@ -143,7 +189,7 @@ describe('useAllStepOutputs', () => {
     globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
       Promise.resolve(jsonResponse(200, { wrong: true }))) as typeof fetch;
 
-    const { result } = renderHook(() => useAllStepOutputs('dep-1', null), {
+    const { result } = renderHook(() => useAllStepOutputs('dep-1', null, 'run-1'), {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isError).toBe(true));

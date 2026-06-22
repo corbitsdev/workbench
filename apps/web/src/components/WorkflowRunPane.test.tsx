@@ -92,7 +92,7 @@ mock.module('../hooks/use-workflow', () => ({
     isPending: false,
   }),
   useAllStepOutputs: (deploymentId: string | null) => allStepOutputsMock(deploymentId),
-  useSetWorkflowStatus: () => ({ mutate: () => undefined }),
+  useSetRunStatus: () => ({ mutate: () => undefined }),
   isTerminalPhase: workflowHooks.isTerminalPhase,
 }));
 
