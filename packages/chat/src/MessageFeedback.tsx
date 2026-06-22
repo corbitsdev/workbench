@@ -5,20 +5,36 @@ import type { FeedbackSubjectKind } from './feedback-types';
 export interface MessageFeedbackProps {
   subjectId: string;
   subjectKind: FeedbackSubjectKind;
+  /** Server-fetched rating for this subject; drives the displayed pressed state. */
+  savedRating?: 1 | -1 | null;
   /** Called when the user selects a rating. Returns a promise; buttons are disabled while pending. */
   onRate: (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) => Promise<void>;
 }
 
-export function MessageFeedback({ subjectId, subjectKind, onRate }: MessageFeedbackProps) {
-  const [rating, setRating] = useState<1 | -1 | null>(null);
+export function MessageFeedback({
+  subjectId,
+  subjectKind,
+  savedRating,
+  onRate,
+}: MessageFeedbackProps) {
+  // Only the in-flight state is local. The displayed rating comes from `savedRating`
+  // (server truth), switching to `optimisticRating` while the request is in flight
+  // so the button feels immediately responsive.
   const [pending, setPending] = useState(false);
+  const [optimisticRating, setOptimisticRating] = useState<1 | -1 | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  const displayRating = pending ? optimisticRating : (savedRating ?? null);
 
   async function handleClick(next: 1 | -1) {
     if (pending) return;
     setPending(true);
+    setOptimisticRating(next);
+    setFailed(false);
     try {
       await onRate(subjectId, subjectKind, next);
-      setRating(next);
+    } catch {
+      setFailed(true);
     } finally {
       setPending(false);
     }
@@ -26,14 +42,15 @@ export function MessageFeedback({ subjectId, subjectKind, onRate }: MessageFeedb
 
   return (
     <div className="flex items-center gap-1 mt-1" aria-label="Rate this response">
+      {failed && <span className="text-xs text-orange-soft">Failed to save</span>}
       <button
         onClick={() => handleClick(1)}
         disabled={pending}
         aria-label="Thumbs up"
-        aria-pressed={rating === 1}
+        aria-pressed={displayRating === 1}
         className={cn(
           'rounded p-1 text-text-3 transition-colors hover:text-text disabled:cursor-not-allowed',
-          rating === 1 && 'text-orange'
+          displayRating === 1 && 'text-orange'
         )}
       >
         <ThumbUpIcon />
@@ -42,10 +59,10 @@ export function MessageFeedback({ subjectId, subjectKind, onRate }: MessageFeedb
         onClick={() => handleClick(-1)}
         disabled={pending}
         aria-label="Thumbs down"
-        aria-pressed={rating === -1}
+        aria-pressed={displayRating === -1}
         className={cn(
           'rounded p-1 text-text-3 transition-colors hover:text-text disabled:cursor-not-allowed',
-          rating === -1 && 'text-orange'
+          displayRating === -1 && 'text-orange'
         )}
       >
         <ThumbDownIcon />

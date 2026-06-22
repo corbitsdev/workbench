@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
   composeChatMessages,
@@ -19,7 +19,8 @@ import {
   type ChatActivity,
 } from '@workbench/chat';
 import { type AgentActivity } from '@intx/hub-client';
-import { launchInstanceSession, saveOutputFeedback } from '../lib/hub-api';
+import { getOutputFeedback, launchInstanceSession, saveOutputFeedback } from '../lib/hub-api';
+import type { FeedbackSubjectKind } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 import { classifyLaunchState, isLaunchableStatus } from './agent-launch-helpers';
 
@@ -73,6 +74,33 @@ export function AgentChat({
   const imageTrackerRef = useRef<ImageTracker | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
+
+  const queryClient = useQueryClient();
+
+  const { data: ratingsData } = useQuery({
+    queryKey: ['feedback', instanceId],
+    queryFn: () => getOutputFeedback(instanceId),
+    staleTime: 5 * 60_000,
+  });
+
+  const ratingsMap = new Map(
+    (ratingsData ?? []).map((r) => [`${r.subjectId}:${r.subjectKind}`, r.rating])
+  );
+
+  const { mutateAsync: rateMutateAsync } = useMutation({
+    mutationFn: ({
+      subjectId,
+      subjectKind,
+      rating,
+    }: {
+      subjectId: string;
+      subjectKind: Parameters<typeof saveOutputFeedback>[2];
+      rating: 1 | -1;
+    }) => saveOutputFeedback(instanceId, subjectId, subjectKind, rating),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['feedback', instanceId] });
+    },
+  });
 
   const { mutate: launch, status: launchStatus } = useMutation({
     mutationFn: async () => {
@@ -312,7 +340,10 @@ export function AgentChat({
       activity={activity}
       onClose={onClose}
       onRate={(subjectId, subjectKind, rating) =>
-        saveOutputFeedback(instanceId, subjectId, subjectKind, rating)
+        rateMutateAsync({ subjectId, subjectKind, rating }).catch(() => {})
+      }
+      getRating={(subjectId: string, subjectKind: FeedbackSubjectKind) =>
+        ratingsMap.get(`${subjectId}:${subjectKind}`) ?? null
       }
     />
   );

@@ -1,3 +1,5 @@
+import type { FeedbackSubjectKind } from '@workbench/chat';
+
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
 // These are interchange endpoints — principals, agent instances, sessions.
 // Credential and tenant management moved to Interchange admin-ui (CL-1535).
@@ -148,7 +150,21 @@ export async function listAgentTemplates(): Promise<AgentCatalogEntry[]> {
   return res.data;
 }
 
-export type FeedbackSubjectKind = 'turn_part' | 'workflow_step';
+export type { FeedbackSubjectKind };
+
+export type SavedRating = {
+  subjectId: string;
+  subjectKind: FeedbackSubjectKind;
+  rating: 1 | -1;
+};
+
+export async function getOutputFeedback(instanceId: string): Promise<SavedRating[]> {
+  const res = await hubFetch<{ ratings: SavedRating[] }>(
+    'GET',
+    `v1/instances/${instanceId}/feedback`
+  );
+  return res.ratings;
+}
 
 export async function saveOutputFeedback(
   instanceId: string,

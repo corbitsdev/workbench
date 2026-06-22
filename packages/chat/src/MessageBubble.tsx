@@ -19,6 +19,8 @@ export interface MessageBubbleProps {
    * The host supplies the save function so the chat package stays transport-free.
    */
   onRate?: (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) => Promise<void>;
+  /** Returns the server-fetched rating for a subject, if one is available. */
+  getRating?: (subjectId: string, subjectKind: FeedbackSubjectKind) => 1 | -1 | null | undefined;
 }
 
 /**
@@ -54,7 +56,13 @@ function InlineImage({ image }: { image: ChatImage }) {
   );
 }
 
-export function MessageBubble({ message, onRespond, onAction, onRate }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  onRespond,
+  onAction,
+  onRate,
+  getRating,
+}: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isStreaming = message.status === 'sending';
@@ -119,11 +127,18 @@ export function MessageBubble({ message, onRespond, onAction, onRate }: MessageB
           {renderBody()}
         </div>
       )}
-      {message.role === 'agent' && message.status !== 'sending' && onRate !== undefined && (
-        <MessageFeedback subjectId={message.id} subjectKind="turn_part" onRate={onRate} />
-      )}
       {hasImages &&
         message.images!.map((image, index) => <InlineImage key={index} image={image} />)}
+      {message.role === 'agent' && message.status !== 'sending' && onRate !== undefined && (
+        <MessageFeedback
+          subjectId={message.id}
+          subjectKind="turn_part"
+          savedRating={
+            getRating !== undefined ? (getRating(message.id, 'turn_part') ?? null) : null
+          }
+          onRate={onRate}
+        />
+      )}
       {message.status === 'failed' && (
         <span className="text-xs text-orange-soft">Failed to send</span>
       )}

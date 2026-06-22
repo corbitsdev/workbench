@@ -23,6 +23,11 @@ function makeRequest(
   });
 }
 
+const fakeRatings = [
+  { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: 1 },
+  { subjectId: 'step-xyz', subjectKind: 'workflow_step', rating: -1 },
+];
+
 function makeDb(overrides: Partial<DB['db']> = {}): DB['db'] {
   const fakePrincipal = {
     id: 'pri-1',
@@ -43,6 +48,11 @@ function makeDb(overrides: Partial<DB['db']> = {}): DB['db'] {
     insert: mock(() => ({
       values: mock(() => ({
         onConflictDoUpdate: mock(() => Promise.resolve()),
+      })),
+    })),
+    select: mock(() => ({
+      from: mock(() => ({
+        where: mock(async () => fakeRatings),
       })),
     })),
     ...overrides,
@@ -134,5 +144,101 @@ describe('POST /v1/feedback', () => {
       })
     );
     expect(res.status).toBe(400);
+  });
+
+  it('calls onConflictDoUpdate so a second rating replaces the first', async () => {
+    const onConflictDoUpdate = mock(() => Promise.resolve());
+    const { app } = setup({
+      insert: mock(() => ({
+        values: mock(() => ({ onConflictDoUpdate })),
+      })) as unknown as DB['db']['insert'],
+    });
+
+    await app.request(
+      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+        body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: 1 },
+      })
+    );
+    await app.request(
+      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+        body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: -1 },
+      })
+    );
+
+    expect(onConflictDoUpdate).toHaveBeenCalledTimes(2);
+    const secondCall = (onConflictDoUpdate.mock.calls[1] as unknown[])[0] as {
+      set: { rating: number };
+    };
+    expect(secondCall.set.rating).toBe(-1);
+  });
+});
+
+describe('GET /v1/instances/:instanceId/feedback', () => {
+  function setup(dbOverrides?: Partial<DB['db']>) {
+    const db = makeDb(dbOverrides);
+    const app = new Hono<{ Variables: { userId: string } }>();
+    app.use((c, next) => {
+      c.set('userId', c.req.header('x-test-user-id') ?? '');
+      return next();
+    });
+    app.route('/', createFeedbackRouter(db));
+    return { app, db };
+  }
+
+  it('returns all ratings for the caller on this instance', async () => {
+    const { app } = setup();
+    const res = await app.request(
+      makeRequest('http://localhost/v1/instances/ins-1/feedback', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ratings: unknown[] };
+    expect(body.ratings).toHaveLength(2);
+  });
+
+  it('returns 404 when the instance is not found', async () => {
+    const { app } = setup({
+      query: {
+        agentInstance: { findFirst: mock(async () => null) },
+        principal: { findFirst: mock(async () => null) },
+      } as unknown as DB['db']['query'],
+    });
+    const res = await app.request(
+      makeRequest('http://localhost/v1/instances/missing/feedback', { method: 'GET' })
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when the caller is not a principal of the instance tenant', async () => {
+    const { app } = setup({
+      query: {
+        agentInstance: {
+          findFirst: mock(async () => ({ id: 'ins-1', tenantId: 'ten-1' })),
+        },
+        principal: { findFirst: mock(async () => null) },
+      } as unknown as DB['db']['query'],
+    });
+    const res = await app.request(
+      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+        method: 'GET',
+        userId: 'intruder',
+      })
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('returns an empty ratings array when the caller has no saved ratings', async () => {
+    const { app } = setup({
+      select: mock(() => ({
+        from: mock(() => ({
+          where: mock(async () => []),
+        })),
+      })) as unknown as DB['db']['select'],
+    });
+    const res = await app.request(
+      makeRequest('http://localhost/v1/instances/ins-1/feedback', { method: 'GET' })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ratings: unknown[] };
+    expect(body.ratings).toHaveLength(0);
   });
 });

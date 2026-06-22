@@ -36,6 +36,8 @@ export interface ChatPanelProps {
   onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
   /** When provided, thumbs up/down buttons appear below settled agent messages. */
   onRate?: (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) => Promise<void>;
+  /** Returns the server-fetched rating for a subject. Passed down to MessageFeedback. */
+  getRating?: (subjectId: string, subjectKind: FeedbackSubjectKind) => 1 | -1 | null | undefined;
   className?: string;
   notice?: React.ReactNode;
 }
@@ -60,6 +62,7 @@ export function ChatPanel({
   onRespond,
   onAction,
   onRate,
+  getRating,
   className,
   notice,
 }: ChatPanelProps) {
@@ -117,6 +120,7 @@ export function ChatPanel({
         {...(onRespond !== undefined ? { onRespond } : {})}
         {...(onAction !== undefined ? { onAction } : {})}
         {...(onRate !== undefined ? { onRate } : {})}
+        {...(getRating !== undefined ? { getRating } : {})}
       />
 
       {quickReplies !== undefined && quickReplies.length > 0 && onQuickReply !== undefined && (

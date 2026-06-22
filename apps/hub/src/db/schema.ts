@@ -302,13 +302,6 @@ export const approval = pgTable('approval', {
   resolvedAt: timestamp('resolved_at'),
 });
 
-// ─── Output feedback ───────────────────────────────────────────────
-//
-// Thumbs up/down ratings for agent and workflow outputs. Generic across
-// subject kinds so a single table covers both chat turn parts and
-// workflow step outputs. Unique on (principalId, subjectId, subjectKind)
-// so a user can change their rating via an upsert.
-
 export const feedbackSubjectKind = ['turn_part', 'workflow_step'] as const;
 export type FeedbackSubjectKind = (typeof feedbackSubjectKind)[number];
 
@@ -323,6 +316,10 @@ export const outputFeedback = pgTable(
     subjectId: text('subject_id').notNull(),
     rating: integer('rating').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
   },
   (t) => ({
     outputFeedbackUniq: unique('output_feedback_principal_subject_uniq').on(

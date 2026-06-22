@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { describeRoute, resolver } from 'hono-openapi';
 import { schema as intxSchema } from '@intx/db';
 import type { DB } from '@intx/db';
-import { outputFeedback } from '../db/schema';
+import { outputFeedback, type FeedbackSubjectKind } from '../db/schema';
 import { requestBodySchema } from '../lib/openapi';
 
 const { agentInstance, principal } = intxSchema;
@@ -96,10 +96,92 @@ export function createFeedbackRouter(db: DB['db']): Hono<{ Variables: { userId: 
             outputFeedback.subjectId,
             outputFeedback.subjectKind,
           ],
-          set: { rating: body.rating },
+          set: { rating: body.rating, updatedAt: new Date() },
         });
 
-      return c.body(null, 201);
+      return c.json({}, 201);
+    }
+  );
+
+  app.get(
+    '/v1/instances/:instanceId/feedback',
+    describeRoute({
+      tags: ['Feedback'],
+      summary: 'Get all feedback ratings submitted by the caller for this instance',
+      parameters: [
+        {
+          name: 'instanceId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        200: {
+          description: 'Ratings for this caller on this instance',
+          content: {
+            'application/json': {
+              schema: resolver(
+                type({
+                  ratings: type({
+                    subjectId: 'string',
+                    subjectKind: "'turn_part' | 'workflow_step'",
+                    rating: '1 | -1',
+                  }).array(),
+                })
+              ),
+            },
+          },
+        },
+        404: {
+          description: 'Instance not found, or caller is not a principal of its tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get('userId');
+      const instanceId = c.req.param('instanceId');
+
+      const instance = await db.query.agentInstance.findFirst({
+        where: eq(agentInstance.id, instanceId),
+      });
+      if (!instance) {
+        return c.json({ error: 'Instance not found' }, 404);
+      }
+
+      const callerPrincipal = await db.query.principal.findFirst({
+        where: and(
+          eq(principal.tenantId, instance.tenantId),
+          eq(principal.kind, 'user'),
+          eq(principal.refId, userId)
+        ),
+      });
+      if (!callerPrincipal) {
+        return c.json({ error: 'Instance not found' }, 404);
+      }
+
+      const rows = await db
+        .select({
+          subjectId: outputFeedback.subjectId,
+          subjectKind: outputFeedback.subjectKind,
+          rating: outputFeedback.rating,
+        })
+        .from(outputFeedback)
+        .where(
+          and(
+            eq(outputFeedback.principalId, callerPrincipal.id),
+            eq(outputFeedback.instanceId, instanceId)
+          )
+        );
+
+      return c.json({
+        ratings: rows.map((r) => ({
+          subjectId: r.subjectId,
+          subjectKind: r.subjectKind as FeedbackSubjectKind,
+          rating: r.rating as 1 | -1,
+        })),
+      });
     }
   );
 

@@ -37,4 +37,63 @@ describe('MessageFeedback', () => {
       )
     );
   });
+
+  it('does not set rating when onRate rejects', async () => {
+    const onRate = mock(async () => {
+      throw new Error('network error');
+    });
+    render(<MessageFeedback subjectId="tp-1" subjectKind="turn_part" onRate={onRate} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Thumbs up' }));
+    await waitFor(() => expect(screen.getByText('Failed to save')).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Thumbs up' }).getAttribute('aria-pressed')).toBe(
+      'false'
+    );
+  });
+
+  it('shows a saved thumbs-up rating from the server on mount', () => {
+    const onRate = mock(async () => {});
+    render(
+      <MessageFeedback subjectId="tp-1" subjectKind="turn_part" savedRating={1} onRate={onRate} />
+    );
+    expect(screen.getByRole('button', { name: 'Thumbs up' }).getAttribute('aria-pressed')).toBe(
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'Thumbs down' }).getAttribute('aria-pressed')).toBe(
+      'false'
+    );
+  });
+
+  it('reverts to savedRating when onRate rejects', async () => {
+    const onRate = mock(async () => {
+      throw new Error('network error');
+    });
+    render(
+      <MessageFeedback subjectId="tp-1" subjectKind="turn_part" savedRating={1} onRate={onRate} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Thumbs down' }));
+    await waitFor(() => expect(screen.getByText('Failed to save')).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Thumbs up' }).getAttribute('aria-pressed')).toBe(
+      'true'
+    );
+  });
+
+  it('switches from thumbs up to thumbs down when toggled', async () => {
+    const onRate = mock(async () => {});
+    render(<MessageFeedback subjectId="tp-1" subjectKind="turn_part" onRate={onRate} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Thumbs up' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Thumbs up' }).getAttribute('aria-pressed')).toBe(
+        'true'
+      )
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Thumbs down' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Thumbs down' }).getAttribute('aria-pressed')).toBe(
+        'true'
+      )
+    );
+    expect(screen.getByRole('button', { name: 'Thumbs up' }).getAttribute('aria-pressed')).toBe(
+      'false'
+    );
+  });
 });

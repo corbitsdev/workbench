@@ -169,14 +169,24 @@ describe('0028 creates output_feedback (CL-1993)', () => {
       'subject_id',
       'rating',
       'created_at',
+      'updated_at',
     ]) {
       expect(sql).toMatch(new RegExp(`"${col}"`));
     }
+  });
+
+  it('enforces rating values at the DB level', () => {
+    expect(sql).toMatch(/CHECK \(rating IN \(1, -1\)\)/i);
   });
 
   it('adds the (principal, subject_id, subject_kind) unique constraint', () => {
     expect(sql).toMatch(
       /CONSTRAINT "output_feedback_principal_subject_uniq" UNIQUE \("principal_id", "subject_id", "subject_kind"\)/i
     );
+  });
+
+  it('creates an index on (subject_kind, subject_id)', () => {
+    expect(sql).toMatch(/CREATE INDEX (IF NOT EXISTS )?"?output_feedback_subject_idx"?/i);
+    expect(sql).toMatch(/"subject_kind", "subject_id"/i);
   });
 });
