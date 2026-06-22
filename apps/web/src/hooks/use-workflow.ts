@@ -123,8 +123,17 @@ export function useStartWorkflow(tenantId?: string | null) {
 // Resume a gated run: posts the gate signal and writes the returned fresh record
 // straight into the record query cache so the panel advances without waiting for
 // the next poll. The active gate is parked, so polling is off until this fires.
+//
+// `onMutate` optimistically flips the parked record from `awaiting` to `running`
+// (keeping `currentStepId` so the panel stays on the same gate screen) the instant
+// the user submits. The gate's step phase then reads as `in-flight`, which keeps
+// the control disabled — server-guided, no client submit flag — and re-arms
+// polling (refetchInterval gates on `running`). `onError` rolls the snapshot back
+// so a failed submit re-enables the control for retry. `onSuccess` still writes
+// the fresh record so the panel advances without waiting for the next poll.
 export function useResumeWorkflow(runId: string, tenantId?: string | null) {
   const queryClient = useQueryClient();
+  const queryKey = ['workflow-record', runId, tenantId ?? null] as const;
   return useMutation({
     mutationFn: async ({ signalName, payload }: { signalName: string; payload?: unknown }) => {
       const raw = await api<unknown>(
@@ -134,8 +143,21 @@ export function useResumeWorkflow(runId: string, tenantId?: string | null) {
       );
       return parseRunRecord(raw);
     },
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<RunRecord>(queryKey);
+      if (previous?.status === 'awaiting') {
+        queryClient.setQueryData<RunRecord>(queryKey, { ...previous, status: 'running' });
+      }
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKey, context.previous);
+      }
+    },
     onSuccess: (record) => {
-      queryClient.setQueryData(['workflow-record', runId, tenantId ?? null], record);
+      queryClient.setQueryData(queryKey, record);
     },
   });
 }

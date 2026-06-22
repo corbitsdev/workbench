@@ -368,16 +368,13 @@ function TranscriptStep({
   stepOutputs,
   intakePhase,
   selectPhase,
-  signalPending,
   onSelect,
 }: {
   stepOutputs: Record<string, unknown>;
   intakePhase: StepPhase | undefined;
   selectPhase: StepPhase | undefined;
-  signalPending: boolean;
   onSelect: (noteId: string) => void;
 }) {
-  const [pendingNoteId, setPendingNoteId] = useState<string | null>(null);
   const result = parseNoteList(stepOutputs.intake);
 
   if (result.status === 'pending') {
@@ -389,8 +386,11 @@ function TranscriptStep({
     return <ErrorLine label="Couldn't read the Granola note list." />;
   if (result.value.length === 0) return <Placeholder label="No Granola notes were found." />;
 
-  const selectable =
-    (selectPhase === 'awaiting-signal' || selectPhase === 'in-flight') && !signalPending;
+  // Server-guided gate: selectable only while the select step awaits its signal.
+  // Once the optimistic cache flip reports the step `in-flight`, the buttons stay
+  // disabled until the server advances to the next gate — no client submit flag.
+  const selectable = selectPhase === 'awaiting-signal';
+  const selecting = selectPhase === 'in-flight';
   if (selectPhase === 'completed') {
     return <Placeholder label="Note selected. Fetching the transcript…" />;
   }
@@ -406,15 +406,13 @@ function TranscriptStep({
       </div>
       <ul className="grid gap-2">
         {result.value.map((note) => {
-          const pending = pendingNoteId === note.id;
           return (
             <li key={note.id}>
               <button
                 type="button"
-                disabled={!selectable || pendingNoteId !== null}
+                disabled={!selectable}
                 onClick={() => {
-                  if (!selectable || pendingNoteId !== null) return;
-                  setPendingNoteId(note.id);
+                  if (!selectable) return;
                   onSelect(note.id);
                 }}
                 className="group w-full rounded-[12px] border border-border bg-bg px-4 py-3 text-left shadow-sm transition-colors enabled:hover:border-orange enabled:hover:bg-orange/5 disabled:cursor-not-allowed disabled:opacity-60"
@@ -431,7 +429,7 @@ function TranscriptStep({
                     ) : null}
                   </span>
                   <span className="shrink-0 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-text-3 group-enabled:group-hover:border-orange/50 group-enabled:group-hover:text-orange">
-                    {pending ? 'Opening…' : 'Select'}
+                    {selecting ? 'Opening…' : 'Select'}
                   </span>
                 </span>
               </button>
@@ -451,13 +449,11 @@ function ContextStep({
   stepOutputs,
   contextPhase,
   fetchPhase,
-  signalPending,
   onSubmit,
 }: {
   stepOutputs: Record<string, unknown>;
   contextPhase: StepPhase | undefined;
   fetchPhase: StepPhase | undefined;
-  signalPending: boolean;
   onSubmit: (context: string) => void;
 }) {
   const [value, setValue] = useState('');
@@ -466,8 +462,9 @@ function ContextStep({
     return <Placeholder label="Context saved. Analyzing pain points…" />;
   }
 
-  const awaiting = contextPhase === 'awaiting-signal' || contextPhase === 'in-flight';
-  const buttonDisabled = !awaiting || signalPending;
+  const awaiting = contextPhase === 'awaiting-signal';
+  const submitting = contextPhase === 'in-flight';
+  const buttonDisabled = !awaiting;
 
   const fetchResult = parseFetchedNote(stepOutputs.fetch);
   const noteTitle =
@@ -507,7 +504,7 @@ function ContextStep({
           onSubmit(value.trim());
         }}
       >
-        {signalPending ? 'Continuing…' : 'Continue'}
+        {submitting ? 'Continuing…' : 'Continue'}
       </Button>
     </div>
   );
@@ -521,13 +518,11 @@ function PainPointStep({
   stepOutputs,
   analyzePhase,
   ppSelectionPhase,
-  signalPending,
   onSubmit,
 }: {
   stepOutputs: Record<string, unknown>;
   analyzePhase: StepPhase | undefined;
   ppSelectionPhase: StepPhase | undefined;
-  signalPending: boolean;
   onSubmit: (selectedIds: string[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -546,8 +541,9 @@ function PainPointStep({
   if (result.status === 'malformed')
     return <ErrorLine label="Couldn't read the extracted pain points." />;
 
-  const awaiting = ppSelectionPhase === 'awaiting-signal' || ppSelectionPhase === 'in-flight';
-  const disabled = !awaiting || signalPending;
+  const awaiting = ppSelectionPhase === 'awaiting-signal';
+  const submitting = ppSelectionPhase === 'in-flight';
+  const disabled = !awaiting;
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -607,7 +603,7 @@ function PainPointStep({
           onSubmit([...selected]);
         }}
       >
-        {signalPending ? 'Selecting…' : 'Select'}{' '}
+        {submitting ? 'Selecting…' : 'Select'}{' '}
         {selected.size > 0
           ? `${selected.size} pain point${selected.size === 1 ? '' : 's'}`
           : 'pain points'}
@@ -631,11 +627,9 @@ const COLLATERAL_FORMATS = [
 
 function FormatStep({
   fmtSelectionPhase,
-  signalPending,
   onSubmit,
 }: {
   fmtSelectionPhase: StepPhase | undefined;
-  signalPending: boolean;
   onSubmit: (formats: Array<{ format: string }>) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -644,8 +638,9 @@ function FormatStep({
     return <Placeholder label="Formats selected. Generating collateral…" />;
   }
 
-  const awaiting = fmtSelectionPhase === 'awaiting-signal' || fmtSelectionPhase === 'in-flight';
-  const disabled = !awaiting || signalPending;
+  const awaiting = fmtSelectionPhase === 'awaiting-signal';
+  const submitting = fmtSelectionPhase === 'in-flight';
+  const disabled = !awaiting;
 
   function toggle(fmt: string) {
     setSelected((prev) => {
@@ -691,7 +686,7 @@ function FormatStep({
           onSubmit([...selected].map((format) => ({ format })));
         }}
       >
-        {signalPending ? 'Generating…' : 'Generate'}{' '}
+        {submitting ? 'Generating…' : 'Generate'}{' '}
         {selected.size > 0
           ? `${selected.size} format${selected.size === 1 ? '' : 's'}`
           : 'collateral'}
@@ -710,13 +705,11 @@ function ReviewStep({
   stepOutputs,
   generatePhase,
   reviewPhase,
-  signalPending,
   onSubmit,
 }: {
   stepOutputs: Record<string, unknown>;
   generatePhase: StepPhase | undefined;
   reviewPhase: StepPhase | undefined;
-  signalPending: boolean;
   onSubmit: (decisions: Decision[]) => void;
 }) {
   const result = useMemo(() => parseGeneratedPieces(stepOutputs.generate), [stepOutputs.generate]);
@@ -751,12 +744,14 @@ function ReviewStep({
     ? decisions
     : pieces.map((piece) => ({ piece, approved: null }));
 
-  const awaiting = reviewPhase === 'awaiting-signal' || reviewPhase === 'in-flight';
   // Approve / Deny / Back are pure-local card navigation — they fire no signal,
-  // so they stay enabled regardless of signalPending. Only the final submit
-  // posts the review signal and obeys signalPending.
-  const decideDisabled = !awaiting;
-  const submitDisabled = !awaiting || signalPending;
+  // so they stay usable through the whole review (awaiting-signal). Only the final
+  // submit posts the review signal; it is server-guided — enabled iff the gate is
+  // awaiting-signal, disabled the instant the optimistic cache flip reports
+  // `in-flight`, and stays disabled until the server advances.
+  const submitting = reviewPhase === 'in-flight';
+  const decideDisabled = reviewPhase !== 'awaiting-signal';
+  const submitDisabled = reviewPhase !== 'awaiting-signal';
   const activeIndex = activeDec.findIndex((d) => d.approved === null);
   const activeDecision = activeIndex >= 0 ? activeDec[activeIndex] : null;
   const approvedCount = activeDec.filter((d) => d.approved === true).length;
@@ -888,7 +883,7 @@ function ReviewStep({
               disabled={submitDisabled || activeDec.some((d) => d.approved === null)}
               onClick={submitReview}
             >
-              {signalPending ? 'Saving…' : 'Save Collateral to Artifacts'}
+              {submitting ? 'Saving…' : 'Save Collateral to Artifacts'}
             </Button>
             {canGoBack ? (
               <button
@@ -969,7 +964,11 @@ function DoneStep({
 // -------------------------------------------------------------------------
 
 export function Panel(props: WorkflowPanelProps) {
-  const { state, connected, signalPending, stepOutputs, onSignal, onClose } = props;
+  // `signalPending` is intentionally ignored: this panel is server-guided — every
+  // gate control derives its disabled state from the polled run record's step
+  // phase (awaiting-signal vs in-flight), not a client submit flag. The prop stays
+  // on WorkflowPanelProps for the other panels until they migrate (CL-2258 f/u).
+  const { state, connected, stepOutputs, onSignal, onClose } = props;
 
   const group = activeDisplayGroup(state);
   const failed = hasFailed(state);
@@ -1021,7 +1020,6 @@ export function Panel(props: WorkflowPanelProps) {
               stepOutputs={stepOutputs}
               intakePhase={phaseFor(state, 'intake')}
               selectPhase={phaseFor(state, 'select')}
-              signalPending={signalPending}
               onSelect={(noteId) => onSignal('note-selection', { noteId })}
             />
           </SectionCard>
@@ -1034,7 +1032,6 @@ export function Panel(props: WorkflowPanelProps) {
               stepOutputs={stepOutputs}
               contextPhase={phaseFor(state, 'context')}
               fetchPhase={phaseFor(state, 'fetch')}
-              signalPending={signalPending}
               onSubmit={(context) => onSignal('context', { context })}
             />
           </SectionCard>
@@ -1047,7 +1044,6 @@ export function Panel(props: WorkflowPanelProps) {
               stepOutputs={stepOutputs}
               analyzePhase={phaseFor(state, 'analyze')}
               ppSelectionPhase={phaseFor(state, 'ppSelection')}
-              signalPending={signalPending}
               onSubmit={(selectedIds) => onSignal('pain-point-selection', { selectedIds })}
             />
           </SectionCard>
@@ -1058,7 +1054,6 @@ export function Panel(props: WorkflowPanelProps) {
           <SectionCard title="Choose formats">
             <FormatStep
               fmtSelectionPhase={phaseFor(state, 'fmtSelection')}
-              signalPending={signalPending}
               onSubmit={(formats) => onSignal('format-selection', { formats })}
             />
           </SectionCard>
@@ -1071,7 +1066,6 @@ export function Panel(props: WorkflowPanelProps) {
               stepOutputs={stepOutputs}
               generatePhase={phaseFor(state, 'generate')}
               reviewPhase={phaseFor(state, 'review')}
-              signalPending={signalPending}
               onSubmit={(decisions) => {
                 const payloadDecisions = decisions.map(({ piece, approved }) => ({
                   format: piece.format,

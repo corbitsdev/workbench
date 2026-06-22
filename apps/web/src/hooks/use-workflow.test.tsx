@@ -116,6 +116,11 @@ describe('useStartWorkflow', () => {
   });
 });
 
+function recordWrapper(client: QueryClient) {
+  return ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children);
+}
+
 describe('useResumeWorkflow', () => {
   it('POSTs the signal to the resume endpoint and returns the next record', async () => {
     let requested = '';
@@ -136,6 +141,73 @@ describe('useResumeWorkflow', () => {
     expect(requested).toContain('/workflow-exec/records/wfr_1/resume');
     expect(sentBody).toEqual({ signalName: 'context', payload: { context: 'hi' } });
     expect(next.currentStepId).toBe('review');
+  });
+
+  it('optimistically flips the cached record from awaiting to running on mutate (keeping currentStepId)', async () => {
+    const awaitingRecord = {
+      runId: 'wfr_1',
+      kind: 'pain-point-collateral',
+      status: 'awaiting' as const,
+      currentStepId: 'context',
+      outputs: { intake: { content: '{}' } },
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(['workflow-record', 'wfr_1', 'tn-x'], awaitingRecord);
+
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    globalThis.fetch = (async (..._args: Parameters<typeof fetch>) => {
+      await gate;
+      return jsonResponse(200, { ...awaitingRecord, status: 'running', currentStepId: 'analyze' });
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useResumeWorkflow('wfr_1', 'tn-x'), {
+      wrapper: recordWrapper(client),
+    });
+
+    const pending = result.current.mutateAsync({ signalName: 'context', payload: {} });
+
+    // Before the POST resolves, onMutate must have flipped status to running in the
+    // cache while keeping the gate's currentStepId so the panel stays on the screen.
+    await waitFor(() => {
+      const cached = client.getQueryData(['workflow-record', 'wfr_1', 'tn-x']) as {
+        status: string;
+        currentStepId: string;
+      };
+      expect(cached.status).toBe('running');
+      expect(cached.currentStepId).toBe('context');
+    });
+
+    release();
+    await pending;
+  });
+
+  it('rolls the cached record back to the awaiting snapshot when the resume fails', async () => {
+    const awaitingRecord = {
+      runId: 'wfr_1',
+      kind: 'pain-point-collateral',
+      status: 'awaiting' as const,
+      currentStepId: 'context',
+      outputs: { intake: { content: '{}' } },
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(['workflow-record', 'wfr_1', 'tn-x'], awaitingRecord);
+
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(jsonResponse(500, { error: 'boom' }))) as typeof fetch;
+
+    const { result } = renderHook(() => useResumeWorkflow('wfr_1', 'tn-x'), {
+      wrapper: recordWrapper(client),
+    });
+
+    await expect(
+      result.current.mutateAsync({ signalName: 'context', payload: {} })
+    ).rejects.toThrow();
+
+    const cached = client.getQueryData(['workflow-record', 'wfr_1', 'tn-x']) as { status: string };
+    expect(cached.status).toBe('awaiting');
   });
 });
 

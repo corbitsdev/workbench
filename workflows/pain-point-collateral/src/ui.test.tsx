@@ -707,14 +707,14 @@ describe('Panel — review generated pieces (step 5)', () => {
     expect(payload.decisions[1]).toMatchObject({ format: 'One-pager', approved: true });
   });
 
-  it('keeps Approve/Deny enabled but disables the final submit while a signal is pending', async () => {
+  it('keeps Approve/Deny enabled during review while the step is awaiting-signal', () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
         deploymentId="dep_1"
         state={reviewState}
         connected
-        signalPending={true}
+        signalPending={false}
         stepOutputs={reviewOutputs}
         onSignal={onSignal}
         onClose={noop}
@@ -725,13 +725,103 @@ describe('Panel — review generated pieces (step 5)', () => {
     const deny = screen.getByRole('button', { name: 'Deny' }) as HTMLButtonElement;
     expect(approve.disabled).toBe(false);
     expect(deny.disabled).toBe(false);
+  });
 
-    await userEvent.click(approve);
+  it('disables the final submit once review goes in-flight and does not re-enable (anti-flicker)', async () => {
+    const onSignal = mock((_name: string, _payload?: unknown) => {});
+    const inFlightReview = makeState({
+      intake: 'completed',
+      select: 'completed',
+      fetch: 'completed',
+      context: 'completed',
+      analyze: 'completed',
+      ppSelection: 'completed',
+      fmtSelection: 'completed',
+      generate: 'completed',
+      review: 'in-flight',
+    });
+    const { rerender } = render(
+      <Panel
+        deploymentId="dep_1"
+        state={reviewState}
+        connected
+        signalPending={false}
+        stepOutputs={reviewOutputs}
+        onSignal={onSignal}
+        onClose={noop}
+      />
+    );
+
+    // Decide both pieces while awaiting-signal so the submit becomes reachable.
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
     await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
 
-    const submit = screen.getByRole('button', { name: 'Saving…' }) as HTMLButtonElement;
-    expect(submit.disabled).toBe(true);
-    await userEvent.click(submit);
+    const submit = screen.getByRole('button', { name: 'Save Collateral to Artifacts' });
+    expect(submit.hasAttribute('disabled')).toBe(false);
+
+    // The server (optimistic cache flip) reports the gate as in-flight. The submit
+    // must disable and STAY disabled while in-flight — never snap back to enabled.
+    // signalPending stays false throughout, proving the disable is phase-derived.
+    rerender(
+      <Panel
+        deploymentId="dep_1"
+        state={inFlightReview}
+        connected
+        signalPending={false}
+        stepOutputs={reviewOutputs}
+        onSignal={onSignal}
+        onClose={noop}
+      />
+    );
+
+    const savingBtn = screen.getByRole('button', { name: 'Saving…' });
+    expect(savingBtn.hasAttribute('disabled')).toBe(true);
+    await userEvent.click(savingBtn);
+    expect(onSignal).not.toHaveBeenCalled();
+  });
+
+  it('keeps the pain-point submit disabled while ppSelection is in-flight (no signalPending dependence)', async () => {
+    const onSignal = mock((_name: string, _payload?: unknown) => {});
+    const base = {
+      intake: 'completed' as const,
+      select: 'completed' as const,
+      fetch: 'completed' as const,
+      context: 'completed' as const,
+      analyze: 'completed' as const,
+    };
+    const { rerender } = render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ ...base, ppSelection: 'awaiting-signal' })}
+        connected
+        signalPending={false}
+        stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS }}
+        onSignal={onSignal}
+        onClose={noop}
+      />
+    );
+
+    await userEvent.click(screen.getAllByRole('checkbox')[0]!);
+    expect(
+      screen.getByRole('button', { name: /Select 1 pain point$/ }).hasAttribute('disabled')
+    ).toBe(false);
+
+    // Cache flips to in-flight; signalPending stays false. The submit must disable.
+    rerender(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ ...base, ppSelection: 'in-flight' })}
+        connected
+        signalPending={false}
+        stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS }}
+        onSignal={onSignal}
+        onClose={noop}
+      />
+    );
+
+    const selecting = screen.getByRole('button', { name: /Selecting…/ });
+    expect(selecting.hasAttribute('disabled')).toBe(true);
+    await userEvent.click(selecting);
     expect(onSignal).not.toHaveBeenCalled();
   });
 
