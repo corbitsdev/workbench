@@ -5,13 +5,24 @@ subreddit recommendations, then rank Reddit opportunities for follow-up.
 
 Steps:
 
-1. **intake** — collect the website URL and optional brand or ICP hints.
-2. **analyze** — scrape the site and infer what the business sells, its
-   keywords, competitors, and audience signals.
-3. **review** — `awaitSignal('recommendation-review')`, a human gate where the
-   operator accepts, rejects, or edits recommended keywords and subreddits.
-4. **scan** — search Reddit for the approved keywords and subreddits, then
-   score the best opportunities.
+1. **intake** — `awaitSignal('intake')`, collect the website URL and optional
+   brand, geography, or ICP hints.
+2. **scrape** — `deterministicToolStep` calling `firecrawl_scrape` on the URL.
+3. **analyze** — `inlineInferenceStep` that reasons over the scraped content to
+   infer what the business sells, its keywords, competitors, and subreddits.
+4. **review** — `awaitSignal('recommendation-review')`, a human gate where the
+   operator accepts, edits, or removes recommended keywords and subreddits.
+5. **scan** — a deployed tool-using `step` agent that searches Reddit
+   (`reddit_search` / `reddit_subreddit_search`) for the approved keywords and
+   subreddits, then ranks the best opportunities as strict JSON.
+6. **selection** — `awaitSignal('opportunity-selection')`, a human gate where
+   the operator picks which ranked opportunities to keep.
+7. **persist** — `map` over the selected opportunities, one
+   `deterministicToolStep` `artifact_create` per item.
+
+`scrape` and `persist` are deterministic tool calls; `analyze` is a pure
+single-turn reasoning step (no tools); `scan` genuinely calls the Reddit tools
+so it stays a deployed tool-capable agent step.
 
 ## Shape
 

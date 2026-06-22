@@ -1,9 +1,9 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import React from 'react';
-import type { RunState, StepPhase, StepState } from '@intx/workflow';
-import type { WorkflowPanelProps } from '@workbench/ui';
+import { afterEach, describe, expect, it, mock } from "bun:test";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import React from "react";
+import type { RunState, StepPhase, StepState } from "@intx/workflow";
+import type { WorkflowPanelProps } from "@workbench/ui";
 
 afterEach(cleanup);
 
@@ -14,15 +14,15 @@ const passthroughMotion = ({
 }: {
   children?: React.ReactNode;
   className?: string;
-}) => React.createElement('div', { className }, children);
+}) => React.createElement("div", { className }, children);
 
-mock.module('framer-motion', () => ({
+mock.module("framer-motion", () => ({
   motion: new Proxy({}, { get: () => passthroughMotion }),
   AnimatePresence: ({ children }: { children?: React.ReactNode }) =>
     React.createElement(React.Fragment, null, children),
 }));
 
-const { Panel } = await import('./ui');
+const { Panel } = await import("./ui");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
   const onSignal = mock((_name: string, _payload?: unknown) => {});
   const onClose = mock(() => {});
   const props: WorkflowPanelProps = {
-    deploymentId: 'dep-1',
+    deploymentId: "dep-1",
     state: null,
     connected: true,
     stepOutputs: {},
@@ -55,303 +55,411 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
   return { onSignal, onClose };
 }
 
+const ANALYZE_REPLY = JSON.stringify({
+  whatTheySell: "Observability tooling for platform teams",
+  mainKeywords: ["observability"],
+  competitors: ["Datadog"],
+  audienceNotes: "Platform and SRE teams",
+  evidence: ["from the homepage"],
+  keywords: [
+    { label: "observability", reason: "category", confidence: 0.9 },
+    { label: "distributed tracing", reason: "feature", confidence: 0.8 },
+  ],
+  subreddits: [
+    { label: "devops", reason: "audience", confidence: 0.9 },
+    { label: "sre", reason: "audience", confidence: 0.8 },
+  ],
+});
+const ANALYZE_STEP_OUTPUT = { reply: ANALYZE_REPLY };
+
 const SCAN_OUTPUT_REPLY = JSON.stringify({
   opportunities: [
     {
-      id: 'opp-1',
-      title: 'Anyone using X for tracing?',
-      subreddit: 'devops',
-      signal: 'buying-signal',
-      detail: 'Active buying-intent thread.',
-      url: 'https://reddit.com/r/devops/x',
+      id: "opp-1",
+      title: "Anyone using X for tracing?",
+      subreddit: "devops",
+      signal: "buying-signal",
+      detail: "Active buying-intent thread.",
+      url: "https://reddit.com/r/devops/x",
     },
     {
-      id: 'opp-2',
-      title: 'Frustrated with current APM tools',
-      subreddit: 'sre',
-      signal: 'pain-point',
-      detail: 'Users complaining about cost.',
+      id: "opp-2",
+      title: "Frustrated with current APM tools",
+      subreddit: "sre",
+      signal: "pain-point",
+      detail: "Users complaining about cost.",
     },
   ],
 });
-
-// scan agent step produces { reply: string, turn: unknown }
 const SCAN_STEP_OUTPUT = { reply: SCAN_OUTPUT_REPLY };
 
-describe('reddit-opportunity-scanner Panel', () => {
+const REVIEW_DONE = {
+  intake: "completed",
+  scrape: "completed",
+  analyze: "completed",
+  review: "completed",
+} as const;
+
+describe("reddit-opportunity-scanner Panel", () => {
   // ── Stepper ──────────────────────────────────────────────────────────────
 
-  it('shows all four step labels in the stepper', () => {
-    renderPanel({ state: makeState({ intake: 'awaiting-signal' }) });
-    screen.getByText('Intake');
-    screen.getByText('Scan');
-    screen.getByText('Review');
-    screen.getByText('Persist');
+  it("shows every restored step label in the stepper", () => {
+    renderPanel({ state: makeState({ intake: "awaiting-signal" }) });
+    screen.getByText("Intake");
+    screen.getByText("Scrape");
+    screen.getByText("Analyze");
+    screen.getByText("Review");
+    screen.getByText("Scan");
+    screen.getByText("Select");
+    screen.getByText("Persist");
   });
 
-  it('marks completed steps with a checkmark and the active step as current', () => {
+  it("marks completed steps with a checkmark and the active step as current", () => {
     renderPanel({
-      state: makeState({ intake: 'completed', scan: 'in-flight' }),
+      state: makeState({ intake: "completed", scrape: "in-flight" }),
     });
-    // intake is completed → shows checkmark
-    expect(screen.getAllByText('✓').length).toBeGreaterThanOrEqual(1);
-    // scan is current → shows step number 2
-    screen.getByText('2');
+    expect(screen.getAllByText("✓").length).toBeGreaterThanOrEqual(1);
+    // scrape is step number 2 and current
+    screen.getByText("2");
   });
 
-  // ── Intake screen ────────────────────────────────────────────────────────
+  // ── Intake screen (URL + hints) ────────────────────────────────────────────
 
-  it('renders the intake chip form while intake is awaiting-signal', () => {
-    renderPanel({ state: makeState({ intake: 'awaiting-signal' }) });
-    screen.getByLabelText('Subreddits (without r/)');
-    screen.getByLabelText('Keywords');
-    screen.getByText('Start scan');
+  it("renders the URL intake form while intake is awaiting-signal", () => {
+    renderPanel({ state: makeState({ intake: "awaiting-signal" }) });
+    screen.getByLabelText(/Website URL/);
+    screen.getByText("Analyze site");
   });
 
-  it('allows adding subreddits and keywords via Enter', () => {
-    renderPanel({ state: makeState({ intake: 'awaiting-signal' }) });
-    const subredditInput = screen.getByLabelText('Subreddits (without r/)');
-    fireEvent.change(subredditInput, { target: { value: 'devops' } });
-    fireEvent.keyDown(subredditInput, { key: 'Enter' });
-    screen.getByText('devops');
-  });
+  it("fires intake signal with the URL and trimmed optional hints", () => {
+    const { onSignal } = renderPanel({
+      state: makeState({ intake: "awaiting-signal" }),
+    });
 
-  it('fires intake signal with subreddits and keywords when submitted', () => {
-    const { onSignal } = renderPanel({ state: makeState({ intake: 'awaiting-signal' }) });
-
-    const subredditInput = screen.getByLabelText('Subreddits (without r/)');
-    fireEvent.change(subredditInput, { target: { value: 'devops' } });
-    fireEvent.keyDown(subredditInput, { key: 'Enter' });
-
-    const keywordInput = screen.getByLabelText('Keywords');
-    fireEvent.change(keywordInput, { target: { value: 'observability' } });
-    fireEvent.keyDown(keywordInput, { key: 'Enter' });
-
-    fireEvent.click(screen.getByText('Start scan'));
+    fireEvent.change(screen.getByLabelText(/Website URL/), {
+      target: { value: "https://example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/Brand name/), {
+      target: { value: "Acme" },
+    });
+    fireEvent.click(screen.getByText("Analyze site"));
 
     expect(onSignal).toHaveBeenCalledTimes(1);
     expect(onSignal.mock.calls[0]).toEqual([
-      'intake',
-      { subreddits: ['devops'], keywords: ['observability'] },
+      "intake",
+      { inputUrl: "https://example.com", brandName: "Acme" },
     ]);
   });
 
-  it('does not submit intake when no subreddits are added', () => {
-    const { onSignal } = renderPanel({ state: makeState({ intake: 'awaiting-signal' }) });
-
-    const keywordInput = screen.getByLabelText('Keywords');
-    fireEvent.change(keywordInput, { target: { value: 'observability' } });
-    fireEvent.keyDown(keywordInput, { key: 'Enter' });
-
-    fireEvent.click(screen.getByText('Start scan'));
-    expect(onSignal).not.toHaveBeenCalled();
-  });
-
-  it('does not submit intake when no keywords are added', () => {
-    const { onSignal } = renderPanel({ state: makeState({ intake: 'awaiting-signal' }) });
-
-    const subredditInput = screen.getByLabelText('Subreddits (without r/)');
-    fireEvent.change(subredditInput, { target: { value: 'devops' } });
-    fireEvent.keyDown(subredditInput, { key: 'Enter' });
-
-    fireEvent.click(screen.getByText('Start scan'));
-    expect(onSignal).not.toHaveBeenCalled();
-  });
-
-  it('does not submit intake while a signal is pending', () => {
+  it("disables the intake submit until a valid http(s) URL is entered", () => {
     const { onSignal } = renderPanel({
-      state: makeState({ intake: 'awaiting-signal' }),
+      state: makeState({ intake: "awaiting-signal" }),
+    });
+    const button = screen.getByText("Analyze site") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/Website URL/), {
+      target: { value: "not-a-url" },
+    });
+    expect(
+      (screen.getByText("Analyze site") as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByText("Analyze site"));
+    expect(onSignal).not.toHaveBeenCalled();
+  });
+
+  it("does not submit intake while a signal is pending", () => {
+    const { onSignal } = renderPanel({
+      state: makeState({ intake: "awaiting-signal" }),
       signalPending: true,
     });
-
-    const subredditInput = screen.getByLabelText('Subreddits (without r/)');
-    fireEvent.change(subredditInput, { target: { value: 'devops' } });
-    fireEvent.keyDown(subredditInput, { key: 'Enter' });
-
-    const keywordInput = screen.getByLabelText('Keywords');
-    fireEvent.change(keywordInput, { target: { value: 'observability' } });
-    fireEvent.keyDown(keywordInput, { key: 'Enter' });
-
-    const button = screen.getByText('Start scan') as HTMLButtonElement;
+    fireEvent.change(screen.getByLabelText(/Website URL/), {
+      target: { value: "https://example.com" },
+    });
+    const button = screen.getByText("Analyze site") as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     fireEvent.click(button);
     expect(onSignal).not.toHaveBeenCalled();
   });
 
-  // ── Scan screen ──────────────────────────────────────────────────────────
+  // ── Scrape screen ──────────────────────────────────────────────────────────
 
-  it('shows a loading state while scan is in-flight', () => {
+  it("shows a crawling state while scrape is in-flight", () => {
     renderPanel({
-      state: makeState({ intake: 'completed', scan: 'in-flight' }),
-      stepOutputs: {},
+      state: makeState({ intake: "completed", scrape: "in-flight" }),
     });
-    screen.getByText('Scanning Reddit');
+    screen.getByText("Crawling the site");
   });
 
-  it('renders opportunities from scan output when scan completes', () => {
+  it("shows a scrape failure message when scrape fails", () => {
     renderPanel({
-      state: makeState({ intake: 'completed', scan: 'completed', review: 'awaiting-signal' }),
-      stepOutputs: { scan: SCAN_STEP_OUTPUT },
+      state: makeState({ intake: "completed", scrape: "failed" }),
     });
-    // scan screen is no longer active (review is next), but review screen reads scan output
-    // — confirm opportunities appear in the review screen
-    screen.getByText('Anyone using X for tracing?');
-    screen.getByText('Frustrated with current APM tools');
+    screen.getByText("Couldn't scrape the site.");
   });
 
-  it('shows a malformed-output error when scan output fails validation', () => {
-    renderPanel({
-      state: makeState({ intake: 'completed', scan: 'completed', review: 'awaiting-signal' }),
-      stepOutputs: {
-        scan: { reply: 'not valid json{{' },
-      },
-    });
-    screen.getByText('No opportunities to review.');
-  });
+  // ── Analyze + Review screen ──────────────────────────────────────────────────
 
-  // ── Review screen ─────────────────────────────────────────────────────────
-
-  it('renders opportunity cards with checkboxes in review screen', () => {
-    renderPanel({
-      state: makeState({ intake: 'completed', scan: 'completed', review: 'awaiting-signal' }),
-      stepOutputs: { scan: SCAN_STEP_OUTPUT },
-    });
-    screen.getByText('Anyone using X for tracing?');
-    screen.getByText('r/devops');
-    screen.getByText('Active buying-intent thread.');
-  });
-
-  it('fires recommendation-review signal with selected opportunity objects', () => {
-    const { onSignal } = renderPanel({
-      state: makeState({ intake: 'completed', scan: 'completed', review: 'awaiting-signal' }),
-      stepOutputs: { scan: SCAN_STEP_OUTPUT },
-    });
-
-    // click first opportunity card to select it
-    fireEvent.click(screen.getByText('Anyone using X for tracing?'));
-
-    // click the save button
-    fireEvent.click(screen.getByText('Save 1 opportunity'));
-
-    expect(onSignal).toHaveBeenCalledTimes(1);
-    expect(onSignal.mock.calls[0]?.[0]).toBe('recommendation-review');
-    const payload = onSignal.mock.calls[0]?.[1] as { selected: unknown[] };
-    expect(payload.selected).toHaveLength(1);
-    expect((payload.selected[0] as { id: string }).id).toBe('opp-1');
-  });
-
-  it('does not fire signal when no opportunities are selected', () => {
-    const { onSignal } = renderPanel({
-      state: makeState({ intake: 'completed', scan: 'completed', review: 'awaiting-signal' }),
-      stepOutputs: { scan: SCAN_STEP_OUTPUT },
-    });
-    // save button is disabled — clicking it should not fire
-    const saveButton = screen.getByText('Save opportunities');
-    expect(saveButton.closest('button')?.disabled).toBe(true);
-    expect(onSignal).not.toHaveBeenCalled();
-  });
-
-  it('can select and deselect opportunities', () => {
-    const { onSignal } = renderPanel({
-      state: makeState({ intake: 'completed', scan: 'completed', review: 'awaiting-signal' }),
-      stepOutputs: { scan: SCAN_STEP_OUTPUT },
-    });
-
-    // select first then deselect
-    const firstCard = screen.getByText('Anyone using X for tracing?');
-    fireEvent.click(firstCard);
-    fireEvent.click(firstCard); // deselect
-
-    // select second
-    fireEvent.click(screen.getByText('Frustrated with current APM tools'));
-
-    fireEvent.click(screen.getByText('Save 1 opportunity'));
-
-    expect(onSignal).toHaveBeenCalledTimes(1);
-    const payload = onSignal.mock.calls[0]?.[1] as { selected: unknown[] };
-    expect((payload.selected[0] as { id: string }).id).toBe('opp-2');
-  });
-
-  // ── Persist screen ────────────────────────────────────────────────────────
-
-  it('shows a loading state while persist is in-flight', () => {
+  it("shows an analyzing spinner while review is gated and analyze output is absent", () => {
     renderPanel({
       state: makeState({
-        intake: 'completed',
-        scan: 'completed',
-        review: 'completed',
-        persist: 'in-flight',
+        intake: "completed",
+        scrape: "completed",
+        analyze: "in-flight",
       }),
       stepOutputs: {},
     });
-    screen.getByText('Saving artifacts');
+    screen.getByText("Analyzing the site");
   });
 
-  it('renders saved artifacts from persist output when run completes', () => {
+  it("renders inferred keywords and subreddits as editable chips on the review screen", () => {
+    renderPanel({
+      state: makeState({
+        intake: "completed",
+        scrape: "completed",
+        analyze: "completed",
+        review: "awaiting-signal",
+      }),
+      stepOutputs: { analyze: ANALYZE_STEP_OUTPUT },
+    });
+    screen.getByText("Review keywords and subreddits");
+    screen.getByText("observability");
+    screen.getByText("distributed tracing");
+    screen.getByText("devops");
+    screen.getByText("sre");
+  });
+
+  it("fires recommendation-review with the approved keywords, subreddits, and competitors", () => {
+    const { onSignal } = renderPanel({
+      state: makeState({
+        intake: "completed",
+        scrape: "completed",
+        analyze: "completed",
+        review: "awaiting-signal",
+      }),
+      stepOutputs: { analyze: ANALYZE_STEP_OUTPUT },
+    });
+
+    fireEvent.click(screen.getByText("Scan Reddit"));
+
+    expect(onSignal).toHaveBeenCalledTimes(1);
+    expect(onSignal.mock.calls[0]?.[0]).toBe("recommendation-review");
+    const payload = onSignal.mock.calls[0]?.[1] as {
+      keywords: string[];
+      subreddits: string[];
+      competitors: string[];
+      businessContext: string;
+    };
+    expect(payload.keywords).toEqual(["observability", "distributed tracing"]);
+    expect(payload.subreddits).toEqual(["devops", "sre"]);
+    expect(payload.competitors).toEqual(["Datadog"]);
+    expect(payload.businessContext).toContain("Observability tooling");
+  });
+
+  it("lets the operator remove an inferred keyword before scanning", () => {
+    const { onSignal } = renderPanel({
+      state: makeState({
+        intake: "completed",
+        scrape: "completed",
+        analyze: "completed",
+        review: "awaiting-signal",
+      }),
+      stepOutputs: { analyze: ANALYZE_STEP_OUTPUT },
+    });
+
+    fireEvent.click(screen.getByLabelText("Remove distributed tracing"));
+    fireEvent.click(screen.getByText("Scan Reddit"));
+
+    const payload = onSignal.mock.calls[0]?.[1] as { keywords: string[] };
+    expect(payload.keywords).toEqual(["observability"]);
+  });
+
+  it("shows a malformed-analysis error when analyze output fails validation", () => {
+    renderPanel({
+      state: makeState({
+        intake: "completed",
+        scrape: "completed",
+        analyze: "completed",
+        review: "awaiting-signal",
+      }),
+      stepOutputs: { analyze: { reply: "not json{{" } },
+    });
+    screen.getByText("Couldn't read the analysis.");
+  });
+
+  // ── Scan screen ──────────────────────────────────────────────────────────────
+
+  it("shows a loading state while scan is in-flight", () => {
+    renderPanel({
+      state: makeState({ ...REVIEW_DONE, scan: "in-flight" }),
+      stepOutputs: {},
+    });
+    screen.getByText("Scanning Reddit");
+  });
+
+  it("renders ranked opportunities when scan completes and selection is gated", () => {
+    renderPanel({
+      state: makeState({
+        ...REVIEW_DONE,
+        scan: "completed",
+        selection: "awaiting-signal",
+      }),
+      stepOutputs: { scan: SCAN_STEP_OUTPUT },
+    });
+    screen.getByText("Anyone using X for tracing?");
+    screen.getByText("Frustrated with current APM tools");
+  });
+
+  // ── Selection screen ──────────────────────────────────────────────────────────
+
+  it("fires opportunity-selection with selected opportunity objects", () => {
+    const { onSignal } = renderPanel({
+      state: makeState({
+        ...REVIEW_DONE,
+        scan: "completed",
+        selection: "awaiting-signal",
+      }),
+      stepOutputs: { scan: SCAN_STEP_OUTPUT },
+    });
+
+    fireEvent.click(screen.getByText("Anyone using X for tracing?"));
+    fireEvent.click(screen.getByText("Save 1 opportunity"));
+
+    expect(onSignal).toHaveBeenCalledTimes(1);
+    expect(onSignal.mock.calls[0]?.[0]).toBe("opportunity-selection");
+    const payload = onSignal.mock.calls[0]?.[1] as { selected: unknown[] };
+    expect(payload.selected).toHaveLength(1);
+    expect((payload.selected[0] as { id: string }).id).toBe("opp-1");
+  });
+
+  it("does not fire selection when no opportunities are selected", () => {
+    const { onSignal } = renderPanel({
+      state: makeState({
+        ...REVIEW_DONE,
+        scan: "completed",
+        selection: "awaiting-signal",
+      }),
+      stepOutputs: { scan: SCAN_STEP_OUTPUT },
+    });
+    const saveButton = screen.getByText("Save opportunities");
+    expect(saveButton.closest("button")?.disabled).toBe(true);
+    expect(onSignal).not.toHaveBeenCalled();
+  });
+
+  it("can select then deselect an opportunity", () => {
+    const { onSignal } = renderPanel({
+      state: makeState({
+        ...REVIEW_DONE,
+        scan: "completed",
+        selection: "awaiting-signal",
+      }),
+      stepOutputs: { scan: SCAN_STEP_OUTPUT },
+    });
+
+    const firstCard = screen.getByText("Anyone using X for tracing?");
+    fireEvent.click(firstCard);
+    fireEvent.click(firstCard);
+    fireEvent.click(screen.getByText("Frustrated with current APM tools"));
+    fireEvent.click(screen.getByText("Save 1 opportunity"));
+
+    const payload = onSignal.mock.calls[0]?.[1] as { selected: unknown[] };
+    expect((payload.selected[0] as { id: string }).id).toBe("opp-2");
+  });
+
+  it("shows a no-results message when scan produced no opportunities", () => {
+    renderPanel({
+      state: makeState({
+        ...REVIEW_DONE,
+        scan: "completed",
+        selection: "awaiting-signal",
+      }),
+      stepOutputs: { scan: { reply: JSON.stringify({ opportunities: [] }) } },
+    });
+    screen.getByText("No opportunities to review.");
+  });
+
+  // ── Persist screen ────────────────────────────────────────────────────────────
+
+  it("shows a loading state while persist is in-flight", () => {
+    renderPanel({
+      state: makeState({
+        ...REVIEW_DONE,
+        scan: "completed",
+        selection: "completed",
+        persist: "in-flight",
+      }),
+      stepOutputs: {},
+    });
+    screen.getByText("Saving artifacts");
+  });
+
+  it("renders saved artifacts from persist output when run completes", () => {
     const persistOutput = [
       {
-        callId: 'c1',
-        content: JSON.stringify({ artifactId: 'art-1', title: 'Opp 1', kind: 'document' }),
+        callId: "c1",
+        content: JSON.stringify({
+          artifactId: "art-1",
+          title: "Opp 1",
+          kind: "document",
+        }),
       },
     ];
     renderPanel({
       state: makeState({
-        intake: 'completed',
-        scan: 'completed',
-        review: 'completed',
-        persist: 'completed',
+        ...REVIEW_DONE,
+        scan: "completed",
+        selection: "completed",
+        persist: "completed",
       }),
       stepOutputs: { persist: persistOutput },
     });
-    screen.getByText('Done — 1 artifact saved');
-    screen.getByText('Opp 1');
+    screen.getByText("Done — 1 artifact saved");
+    screen.getByText("Opp 1");
   });
 
-  it('shows a Close button on the persist screen and calls onClose', () => {
-    renderPanel({
+  it("shows a Close button on the persist screen and calls onClose", () => {
+    const { onClose } = renderPanel({
       state: makeState({
-        intake: 'completed',
-        scan: 'completed',
-        review: 'completed',
-        persist: 'completed',
+        ...REVIEW_DONE,
+        scan: "completed",
+        selection: "completed",
+        persist: "completed",
       }),
       stepOutputs: { persist: [] },
     });
-    screen.getByText('Done — 0 artifacts saved');
-    screen.getByText('Close'); // the persist-screen close button
+    screen.getByText("Done — 0 artifacts saved");
+    fireEvent.click(screen.getByText("Close"));
+    expect(onClose).toHaveBeenCalled();
   });
 
-  // ── Failure ───────────────────────────────────────────────────────────────
+  // ── Failure ───────────────────────────────────────────────────────────────────
 
-  it('shows a failure banner with the step error when a step fails', () => {
+  it("shows a failure banner with the step error when a step fails", () => {
     const steps = new Map<string, StepState>();
-    steps.set('intake', stepState('intake', 'completed'));
-    steps.set('scan', {
-      stepId: 'scan',
-      phase: 'failed',
+    steps.set("intake", stepState("intake", "completed"));
+    steps.set("scan", {
+      stepId: "scan",
+      phase: "failed",
       currentAttempt: 1,
-      lastError: { message: 'Reddit API rate limited' },
+      lastError: { message: "Reddit API rate limited" },
     } as StepState);
-    renderPanel({ state: { steps, phase: 'failed' } as unknown as RunState });
-    screen.getByText('This run failed.');
-    screen.getByText('Reddit API rate limited');
+    renderPanel({ state: { steps, phase: "failed" } as unknown as RunState });
+    screen.getByText("This run failed.");
+    screen.getByText("Reddit API rate limited");
   });
 
-  // ── Guided layout — only active step rendered ────────────────────────────
+  // ── Guided layout — only the active step rendered ──────────────────────────────
 
-  it('does not render intake form while scan is active', () => {
+  it("does not render the intake form while scrape is active", () => {
     renderPanel({
-      state: makeState({ intake: 'completed', scan: 'in-flight' }),
+      state: makeState({ intake: "completed", scrape: "in-flight" }),
     });
-    expect(screen.queryByLabelText('Subreddits (without r/)')).toBeNull();
+    expect(screen.queryByLabelText(/Website URL/)).toBeNull();
   });
 
-  it('does not render review screen while scan is in-flight', () => {
-    renderPanel({
-      state: makeState({ intake: 'completed', scan: 'in-flight' }),
-    });
-    // review approve action should not appear
-    expect(screen.queryByText('Save opportunities')).toBeNull();
+  it("does not render the selection action while scan is in-flight", () => {
+    renderPanel({ state: makeState({ ...REVIEW_DONE, scan: "in-flight" }) });
+    expect(screen.queryByText("Save opportunities")).toBeNull();
     expect(screen.queryByText(/Save \d+ opportunit/)).toBeNull();
   });
 });
