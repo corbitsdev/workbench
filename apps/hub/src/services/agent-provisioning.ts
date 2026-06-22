@@ -1,6 +1,11 @@
 import { eq, and, inArray, like } from "drizzle-orm";
-import { schema as intxSchema, resolveInstanceModelSources } from "@intx/db";
+import { schema as intxSchema, resolveModelSources } from "@intx/db";
 import type { DB } from "@intx/db";
+import {
+  ModelRequirements,
+  InvokerModelPreferences,
+  type ProviderPreference,
+} from "@intx/types";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import type {
@@ -27,6 +32,43 @@ const { agent, agentInstance, agentSession, grant, tenant } = intxSchema;
 
 export const LAUNCH_RETRY_DELAY_MS = 1_000;
 export const MAX_LAUNCH_ATTEMPTS = 3;
+
+/**
+ * Resolve an instance's inference sources from its agent *definition's* model
+ * requirements against the *instance's* tenant catalog, walking the ancestor
+ * chain for offerings and credentials.
+ *
+ * The definition may live in an ancestor tenant — a child-tenant instance of a
+ * shared parent definition (e.g. a workbench instance of a global-org agent).
+ * The tenant-exact `resolveInstanceModelSources` re-looks-up the agent scoped
+ * to the resolving tenant, so it cannot see an ancestor-owned definition and
+ * reports `no_requirements`. We instead resolve from the requirements on the
+ * already-fetched definition row, anchoring catalog + credential resolution at
+ * the instance tenant so descendant-local credentials shadow inherited ones.
+ * Mirrors Interchange's native instances route.
+ */
+export async function resolveInstanceSourcesFromDefinition(
+  db: DB["db"],
+  tenantId: string,
+  agentRow: typeof agent.$inferSelect,
+  modelPreferences: unknown,
+) {
+  const modelRequirements =
+    agentRow.modelRequirements !== null
+      ? ModelRequirements.assert(agentRow.modelRequirements)
+      : [];
+  const invokerPreferences: Record<string, ProviderPreference> = {};
+  const preferences =
+    modelPreferences !== null && modelPreferences !== undefined
+      ? InvokerModelPreferences.assert(modelPreferences)
+      : [];
+  for (const preference of preferences) {
+    invokerPreferences[preference.model] = preference.providers;
+  }
+  return resolveModelSources(db, tenantId, modelRequirements, {
+    invokerPreferences,
+  });
+}
 
 /**
  * Reconcile the persisted `tool:*` grant rows for an instance principal to the
@@ -159,24 +201,38 @@ export async function launchAgentSession(
   } = opts;
   const address = `${instanceId}@${tenantDomain}`;
 
-  const resolution = await resolveInstanceModelSources(db, tenantId, {
-    agentId,
-    modelPreferences: null,
+  const agentRow = await db.query.agent.findFirst({
+    where: eq(agent.id, agentId),
   });
+  if (!agentRow) throw new Error(`Agent not found: ${agentId}`);
+
+  // Resolve from the instance's persisted invoker preferences so launch,
+  // reconnect, and the /me credential check reproduce the same source ordering
+  // (the resolution contract is a pure function of persisted instance state).
+  const instanceRow = await db.query.agentInstance.findFirst({
+    where: eq(agentInstance.id, instanceId),
+  });
+
+  const resolution = await resolveInstanceSourcesFromDefinition(
+    db,
+    tenantId,
+    agentRow,
+    instanceRow?.modelPreferences ?? null,
+  );
   if (!resolution.ok) {
+    const reason =
+      resolution.reason === "model_unavailable"
+        ? `model_unavailable (${resolution.model})`
+        : resolution.reason;
     throw new Error(
       "No resolvable inference sources for agent credential requirements: " +
-        resolution.reason,
+        reason,
     );
   }
 
   const sources = resolution.sources;
   const defaultSource = sources[0]!.id;
 
-  const agentRow = await db.query.agent.findFirst({
-    where: eq(agent.id, agentId),
-  });
-  if (!agentRow) throw new Error(`Agent not found: ${agentId}`);
   const toolNames = getToolNamesFromCapabilities(agentRow.capabilities ?? null);
   const tools = buildToolDefinitions(toolNames);
 
@@ -248,9 +304,7 @@ export async function launchAgentSession(
   // slipped past the routable guard in relaunchInstanceIfNeeded and created a
   // fresh session, orphaning the prior one and dropping in-flight live events
   // whose turns belonged to the superseded session.
-  const existing = await db.query.agentInstance.findFirst({
-    where: eq(agentInstance.id, instanceId),
-  });
+  const existing = instanceRow;
   let sessionId: string | undefined;
   if (existing?.sessionId) {
     const existingSession = await db.query.agentSession.findFirst({
@@ -412,13 +466,11 @@ export async function relaunchInstanceIfNeeded(
   // a tenant whose catalog is not yet seeded fires a launch that always fails
   // with `no_requirements`. This is the same resolution launchAgentSession runs,
   // so the guard and the launch agree by construction.
-  const guardResolution = await resolveInstanceModelSources(
+  const guardResolution = await resolveInstanceSourcesFromDefinition(
     db,
     instance.tenantId,
-    {
-      agentId: instance.agentId,
-      modelPreferences: null,
-    },
+    agentRow,
+    instance.modelPreferences,
   );
   if (!guardResolution.ok) return;
 

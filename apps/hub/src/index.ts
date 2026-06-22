@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
 import { describeRoute, openAPIRouteHandler } from 'hono-openapi';
 import { upgradeWebSocket, websocket } from 'hono/bun';
-import { schema as intxSchema, createGrantStore, resolveInstanceModelSources } from '@intx/db';
+import { schema as intxSchema, createGrantStore } from '@intx/db';
 import { createApp } from '@intx/hub-api';
 import {
   createAgentRepoStore,
@@ -47,6 +47,7 @@ import { createAgentProvisioningRouter } from './routes/agents';
 import {
   relaunchInstanceIfNeeded,
   registerDisconnectReconciler,
+  resolveInstanceSourcesFromDefinition,
 } from './services/agent-provisioning';
 import { createMembersRouter } from './routes/members';
 import { createArtifactsRouter } from './routes/artifacts';
@@ -481,11 +482,18 @@ v1.get('/me', async (c) => {
     });
     if (paInstance) {
       try {
-        const resolution = await resolveInstanceModelSources(db, workingTenantId, {
-          agentId: paInstance.agentId,
-          modelPreferences: paInstance.modelPreferences,
+        const agentRow = await db.query.agent.findFirst({
+          where: eq(intxSchema.agent.id, paInstance.agentId),
         });
-        credentialResolved = resolution.ok && resolution.sources.length > 0;
+        if (agentRow) {
+          const resolution = await resolveInstanceSourcesFromDefinition(
+            db,
+            workingTenantId,
+            agentRow,
+            paInstance.modelPreferences
+          );
+          credentialResolved = resolution.ok && resolution.sources.length > 0;
+        }
       } catch (err) {
         log.warn('Instance source resolution failed on /me', {
           error: err,

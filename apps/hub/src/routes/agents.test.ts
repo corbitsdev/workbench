@@ -17,15 +17,17 @@ mock.module("../config", () => ({
   }),
 }));
 
-// Launch outcome is driven by resolveInstanceModelSources: tests set
-// `sourcesImpl` to return sources (launch proceeds), an empty array (resolution
-// fails with no_requirements), or throw (resolution errors).
+// Launch outcome is driven by resolveModelSources: tests set `sourcesImpl` to
+// return sources (launch proceeds), an empty array (resolution fails with
+// no_requirements), or throw (resolution errors). The launch path resolves a
+// definition's requirements against the instance tenant via resolveModelSources
+// (CL-2229), so the definition may be ancestor-owned.
 // CL-1521: sources are now plaintext (stored plaintext in DB, not encrypted).
 let sourcesImpl: () => Promise<unknown[]> = () =>
   Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
 mock.module("@intx/db", () => ({
   ...intxDbReal,
-  resolveInstanceModelSources: async () => {
+  resolveModelSources: async () => {
     const sources = await sourcesImpl();
     if (sources.length === 0) return { ok: false, reason: "no_requirements" };
     return { ok: true, sources };

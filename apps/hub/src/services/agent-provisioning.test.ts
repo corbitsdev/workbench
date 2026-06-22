@@ -16,15 +16,43 @@ mock.module("../config", () => ({
   }),
 }));
 
-// Launch outcome is driven by resolveInstanceModelSources: tests set
-// `sourcesImpl` to return sources (launch proceeds), an empty array (resolution
-// fails with no_requirements), or throw (resolution errors).
+// Launch outcome is driven by resolveModelSources: tests set `sourcesImpl` to
+// return sources (launch proceeds), an empty array (resolution fails with
+// no_requirements), or throw (resolution errors). `resolveModelSources` is the
+// definition-anchored resolver the launch path uses; it resolves an ancestor-
+// owned definition's requirements against the instance tenant. The legacy
+// tenant-exact `resolveInstanceModelSources` is driven separately by
+// `instanceSourcesImpl` so a test can simulate its tenant-exact miss and prove
+// the launch path no longer consults it.
 let sourcesImpl: () => Promise<unknown[]> = () =>
   Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+let instanceSourcesImpl: (() => Promise<unknown[]>) | null = null;
 mock.module("@intx/db", () => ({
   ...intxDbReal,
-  resolveInstanceModelSources: async () => {
+  resolveModelSources: async (
+    _db: unknown,
+    _tenantId: unknown,
+    _requirements: unknown,
+    opts?: { invokerPreferences?: Record<string, unknown> },
+  ) => {
+    // Stand in for the catalog resolver: a non-empty invoker preference here
+    // models a `pin` that excludes every tenant source, so the launch path
+    // forwarding the instance's persisted preferences yields no source. This
+    // lets a test assert launch *behavior* (fails) rather than the call args.
+    if (Object.keys(opts?.invokerPreferences ?? {}).length > 0) {
+      return {
+        ok: false,
+        reason: "model_unavailable",
+        model: "deepseek-v4-flash",
+        skips: [],
+      };
+    }
     const sources = await sourcesImpl();
+    if (sources.length === 0) return { ok: false, reason: "no_requirements" };
+    return { ok: true, sources };
+  },
+  resolveInstanceModelSources: async () => {
+    const sources = await (instanceSourcesImpl ?? sourcesImpl)();
     if (sources.length === 0) return { ok: false, reason: "no_requirements" };
     return { ok: true, sources };
   },
@@ -340,5 +368,110 @@ describe("launchAgentSession retry behavior", () => {
       ),
     ).rejects.toBe(provisionError);
     expect(launchSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("launches an instance whose definition lives in an ancestor tenant", async () => {
+    // The definition is owned by a parent tenant ("tnt-parent"); the instance
+    // launches in the child tenant ("tnt-child"). The tenant-exact resolver
+    // (resolveInstanceModelSources) would miss the ancestor-owned definition
+    // and report no_requirements; the launch path must instead resolve the
+    // definition's requirements against the instance tenant via
+    // resolveModelSources, which succeeds.
+    instanceSourcesImpl = () => Promise.resolve([]); // tenant-exact miss
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    const db = makeMockDb();
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        id: "agt-shared",
+        tenantId: "tnt-parent",
+        contextConfig: null,
+        initialState: null,
+        modelConfig: null,
+        capabilities: { tools: [] },
+        credentialRequirements: null,
+        modelRequirements: [{ model: "deepseek-v4-flash" }],
+        grantRequirements: [],
+        toolPackages: [],
+      }),
+    );
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: "ins-child", sessionId: null }),
+    );
+
+    const launchSession = mock(() => Promise.resolve());
+    const sessionService = { ...mockSessionService, launchSession };
+
+    try {
+      const result = await launchAgentSession(
+        db as never,
+        sessionService as never,
+        mockGrantStore as never,
+        mockEventCollectors as never,
+        {
+          ...BASE_OPTS,
+          agentId: "agt-shared",
+          instanceId: "ins-child",
+          tenantId: "tnt-child",
+          tenantDomain: "tnt-child.localhost",
+        },
+      );
+
+      expect(result.sessionId).toBeTruthy();
+      expect(launchSession).toHaveBeenCalledTimes(1);
+    } finally {
+      instanceSourcesImpl = null;
+    }
+  });
+
+  it("resolves using the instance's persisted model preferences", async () => {
+    // The instance carries an invoker `pin` preference. The mocked resolver
+    // treats any non-empty preference as excluding all sources, so launch must
+    // fail — proving the launch path forwards the persisted preferences rather
+    // than ignoring them (which would resolve sources and launch successfully).
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    const db = makeMockDb();
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        id: "agt-1",
+        contextConfig: null,
+        initialState: null,
+        modelConfig: null,
+        capabilities: { tools: [] },
+        credentialRequirements: null,
+        modelRequirements: [{ model: "deepseek-v4-flash" }],
+        grantRequirements: [],
+        toolPackages: [],
+      }),
+    );
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({
+        id: "ins-1",
+        sessionId: null,
+        modelPreferences: [
+          {
+            model: "deepseek-v4-flash",
+            providers: { mode: "pin", order: ["nonexistent"] },
+          },
+        ],
+      }),
+    );
+
+    const launchSession = mock(() => Promise.resolve());
+    const sessionService = { ...mockSessionService, launchSession };
+
+    await expect(
+      launchAgentSession(
+        db as never,
+        sessionService as never,
+        mockGrantStore as never,
+        mockEventCollectors as never,
+        BASE_OPTS,
+      ),
+    ).rejects.toThrow(/model_unavailable/);
+    expect(launchSession).not.toHaveBeenCalled();
   });
 });
