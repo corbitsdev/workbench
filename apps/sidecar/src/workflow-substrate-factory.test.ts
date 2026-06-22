@@ -484,6 +484,109 @@ describe('createSidecarStepInvoker', () => {
     // The inline branch tore the agent down.
     expect(closed).toBe(true);
   });
+
+  // CL-2253: the inline branch must attach a draining stream() consumer so the
+  // agent's pre-start event buffer drains instead of overflowing (the WARN
+  // "no stream() consumer ever attached to drain it" on staging) and the step's
+  // live progress events are observable. This stub emits events through stream()
+  // and blocks the iterator open until close() fires; the assertion is that the
+  // inline branch consumed every emitted event AND returned the correct reply.
+  // Under the pre-CL-2253 no-drain code stream() is never called, so
+  // consumedEvents stays empty and this test fails.
+  test('inline-inference branch drains the agent event stream', async () => {
+    const dataDir = await makeDataDir();
+    const INLINE_REPLY = '{"painPoints":[]}';
+    const turn = { role: 'assistant', content: INLINE_REPLY } as unknown as SendTurn;
+    const emitted = [{ type: 'reactor.start' }, { type: 'inference.done' }] as const;
+
+    const consumedEvents: unknown[] = [];
+    let streamInvoked = false;
+    let closed = false;
+    // Gate the iterator's terminal `done` on close() so the test proves the
+    // consumer drains concurrently with send() and exits cleanly on teardown
+    // (a leaked, never-closing iterator would hang the invoker).
+    let resolveDone: (() => void) | undefined;
+    const donePromise = new Promise<void>((resolve) => {
+      resolveDone = resolve;
+    });
+
+    const stubAgent: Agent = {
+      send: async (content: Parameters<Agent['send']>[0]) => {
+        void content;
+        return { reply: INLINE_REPLY, turn };
+      },
+      stream: () => {
+        streamInvoked = true;
+        let index = 0;
+        return {
+          [Symbol.asyncIterator]: () => ({
+            next: async () => {
+              if (index < emitted.length) {
+                const value = emitted[index];
+                index += 1;
+                return { value, done: false };
+              }
+              await donePromise;
+              return { value: undefined, done: true };
+            },
+          }),
+        };
+      },
+      deliver: () => {},
+      close: async () => {
+        closed = true;
+        resolveDone?.();
+      },
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
+
+    // Wrap stream() so the test observes exactly which events the inline branch
+    // pulled off the iterator.
+    const realStream = stubAgent.stream.bind(stubAgent);
+    stubAgent.stream = () => {
+      const it = realStream()[Symbol.asyncIterator]();
+      return {
+        [Symbol.asyncIterator]: () => ({
+          next: async () => {
+            const r = await it.next();
+            if (!r.done) consumedEvents.push(r.value);
+            return r;
+          },
+        }),
+      };
+    };
+
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => 'sig',
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      agentFactory: async () => stubAgent,
+    });
+
+    const inlineAgent: AgentDefinition<BaseEnv> = {
+      ...makeAgentDefinition('inline-analyze'),
+      tags: { 'workbench.stepKind': 'inline-inference' },
+    };
+    const req: StepInvokeRequest = {
+      agent: inlineAgent,
+      input: { transcript: 'they hate slow onboarding' },
+      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
+      signal: new AbortController().signal,
+    };
+
+    const result = await invoke(req);
+
+    // Reply is unchanged by the drain.
+    expect(result.output).toEqual({ reply: INLINE_REPLY, turn });
+    // A draining consumer was attached and pulled every emitted event.
+    expect(streamInvoked).toBe(true);
+    expect(consumedEvents).toEqual([...emitted]);
+    // The agent was torn down (which is what releases the iterator).
+    expect(closed).toBe(true);
+  });
 });
 
 describe('createStepToolContextResolver', () => {

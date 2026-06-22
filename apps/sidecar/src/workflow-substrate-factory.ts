@@ -704,11 +704,35 @@ async function runInlineInferenceStep(args: {
   const envBase = await args.buildEnv(args.req);
   const env: BaseEnv = { ...envBase, authorize: inlineDenyAllAuthorize };
   const agent = await args.agentFactory(args.req.agent, env);
+  // Attach a draining stream() consumer BEFORE send() so the agent's
+  // pre-start event buffer drains into it instead of overflowing (the
+  // CL-2253 staging WARN "no stream() consumer ever attached to drain it")
+  // and the step's live progress events flow to the sidecar logs. The
+  // consumer is consume-and-discard: the workflow-child invokeStep wrapper
+  // voids onEvent for inline steps, so there is nowhere to forward to. The
+  // loop ends when close() terminates the stream consumer with done:true; a
+  // StreamBackpressureError is caught and logged rather than left to reject
+  // (we await the loop after close, so an unsettled rejection would surface
+  // as an unhandled rejection). Mirrors the deployed harness forwardEvents
+  // pattern in default-harness.ts.
+  const drainStream = async (): Promise<void> => {
+    try {
+      for await (const _event of agent.stream()) {
+        void _event;
+      }
+    } catch (err) {
+      logger.warn`inline inference step: event stream drain stopped: ${
+        err instanceof Error ? err.message : String(err)
+      }`;
+    }
+  };
+  const draining = drainStream();
   try {
     const sendResult = await agent.send(synthesizeStepInput(args.req.input));
     return { output: { reply: sendResult.reply, turn: sendResult.turn } };
   } finally {
     await agent.close();
+    await draining;
   }
 }
 
