@@ -96,7 +96,7 @@ export function AbComparisonNewPane({
           credentialId: cred?.id ?? '',
           providerName: cred?.providerName ?? '',
           providerPlugin: cred?.providerPlugin ?? '',
-          model: defaultAbComparisonModel(cred?.providerPlugin ?? ''),
+          model: defaultAbComparisonModel(cred?.providerName ?? '', cred?.providerPlugin ?? ''),
           skillIds: [],
         };
         return next;
@@ -132,7 +132,7 @@ export function AbComparisonNewPane({
         setError('Select a model for each comparison.');
         return false;
       }
-      if (!isAbComparisonModelAllowed(option.providerPlugin, option.model)) {
+      if (!isAbComparisonModelAllowed(option.providerName, option.providerPlugin, option.model)) {
         setError(`Model ${option.model} is not available for ${option.providerName}.`);
         return false;
       }
@@ -279,7 +279,7 @@ export function AbComparisonNewPane({
                           onChange={(e) => updateSlotModel(index, e.target.value)}
                           className="w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text focus:outline-none focus:ring-1 focus:ring-orange/40"
                         >
-                          {listAbComparisonModels(option.providerPlugin).map((model) => (
+                          {listAbComparisonModels(option.providerName, option.providerPlugin).map((model) => (
                             <option key={model} value={model}>
                               {model}
                             </option>
