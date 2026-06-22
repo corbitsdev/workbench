@@ -15,12 +15,7 @@ mock.module('../../hooks/use-workflow', () => ({
     isPending: false,
   }),
   useStartWorkflow: () => ({
-    mutateAsync: async ({ kind }: { kind: string }) => ({
-      deploymentId: `started-${kind}`,
-      runId: null,
-      correlationMessageId: `corr-${kind}`,
-      accepted: true,
-    }),
+    mutateAsync: async ({ kind }: { kind: string }) => ({ deploymentId: `started-${kind}` }),
     isPending: false,
   }),
 }));
@@ -182,7 +177,7 @@ describe('UnifiedCatalogModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('opens the run via deploymentId and runId after clicking a workflow card', async () => {
+  it('calls onWorkflowStarted with deploymentId after clicking a workflow card', async () => {
     render(
       <UnifiedCatalogModal
         open={true}
@@ -199,9 +194,7 @@ describe('UnifiedCatalogModal', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Start' })[0]!);
 
-    await waitFor(() =>
-      expect(onWorkflowStarted).toHaveBeenCalledWith('started-collateral-generation', null)
-    );
+    await waitFor(() => expect(onWorkflowStarted).toHaveBeenCalledWith('started-collateral-generation'));
   });
 
   it('opens on the Workflows tab when defaultTab is workflows', async () => {

@@ -77,7 +77,6 @@ const signalMutateAsync = mock(async () => undefined);
 // Spread the real module so untouched exports keep their real implementations.
 mock.module('../hooks/use-workflow', () => ({
   ...workflowHooks,
-  useMyRuns: () => ({ data: [], isPending: false }),
   useWorkflowRuns: () => ({
     data: [
       { deploymentId: 'dep-panel', kind: 'with-panel', status: 'active', createdAt: '' },
@@ -92,7 +91,7 @@ mock.module('../hooks/use-workflow', () => ({
     isPending: false,
   }),
   useAllStepOutputs: (deploymentId: string | null) => allStepOutputsMock(deploymentId),
-  useSetRunStatus: () => ({ mutate: () => undefined }),
+  useSetWorkflowStatus: () => ({ mutate: () => undefined }),
   isTerminalPhase: workflowHooks.isTerminalPhase,
 }));
 

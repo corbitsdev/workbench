@@ -49,52 +49,6 @@ export function useWorkflowRuns(tenantId?: string | null) {
   });
 }
 
-// One row from `GET /workflow-runs/mine` — the caller's own run instances.
-// `runId` is null until the sidecar reconciles the started run back to the hub.
-const myRunSchema = type({
-  runId: 'string | null',
-  correlationMessageId: 'string',
-  deploymentId: 'string',
-  kind: 'string',
-  status: 'string',
-  startedAt: 'string',
-});
-export type MyRun = typeof myRunSchema.infer;
-const myRunListSchema = myRunSchema.array();
-
-export function useMyRuns(tenantId?: string | null) {
-  return useQuery<MyRun[]>({
-    queryKey: ['my-runs', tenantId ?? null],
-    queryFn: async () => {
-      const raw = await api<unknown>('GET', withTenant('/workflow-runs/mine', tenantId));
-      const parsed = myRunListSchema(raw);
-      if (parsed instanceof type.errors) {
-        throw new Error(`Unexpected workflow-runs/mine response: ${parsed.summary}`);
-      }
-      return [...parsed];
-    },
-  });
-}
-
-// Delete a single run instance: run-scoped hard-delete that drops only this run
-// from the user's list/stream, NOT the underlying deployment. This is the only
-// Remove path (CL-2233) — there is deliberately no deployment-level undeploy
-// hook, so a co-tenant cannot tear down a shared deployment.
-export function useDeleteRun(tenantId?: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (runId: string) =>
-      api<unknown>(
-        'DELETE',
-        withTenant(`/workflow-runs/instances/${encodeURIComponent(runId)}`, tenantId)
-      ),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['my-runs'] });
-      void queryClient.invalidateQueries({ queryKey: ['workflow-runs'] });
-    },
-  });
-}
-
 export interface WorkflowRunStateResult {
   state: RunState | null;
   events: WorkflowEvent[];
@@ -147,8 +101,7 @@ export function isTerminalPhase(phase: RunPhase): boolean {
 
 export function useWorkflowRunState(
   deploymentId: string | null,
-  tenantId?: string | null,
-  runId?: string | null
+  tenantId?: string | null
 ): WorkflowRunStateResult {
   const [frames, setFrames] = useState<Map<string, RunFrame>>(new Map());
   const [connected, setConnected] = useState(false);
@@ -169,18 +122,12 @@ export function useWorkflowRunState(
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // The stream is run-scoped and access-controlled (CL-2233): the backend
-    // REQUIRES a runId the caller owns and 403s otherwise. A just-started run
-    // has no runId until the hub reconciles it (surfaced via useMyRuns), so we
-    // do not open the stream until both the deployment and the runId are known —
-    // callers render the loading placeholder (settled=false) until then.
-    if (!deploymentId || !runId) return;
+    if (!deploymentId) return;
     framesRef.current = new Map();
     setFrames(new Map());
     setConnected(true);
     setSettled(false);
-    const baseUrl = streamUrl(`/workflow-runs/${deploymentId}/stream`, tenantId);
-    const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}runId=${encodeURIComponent(runId)}`;
+    const url = streamUrl(`/workflow-runs/${deploymentId}/stream`, tenantId);
     const flush = () => {
       flushTimer.current = null;
       setFrames(new Map(framesRef.current));
@@ -206,18 +153,27 @@ export function useWorkflowRunState(
       flushTimer.current = null;
       unsubscribe();
     };
-  }, [deploymentId, tenantId, runId]);
+  }, [deploymentId, tenantId]);
 
-  // Events for the scoped run, sorted by its per-run seq. The stream is always
-  // run-scoped now (CL-2233), so every frame belongs to `runId`; reduce just
-  // that run's frames and ignore any stray frame that does not match.
+  // The latest run's events, sorted by its per-run seq. Map insertion order is
+  // the stream's chronological delivery order, so the last distinct runId seen
+  // is the most recently started run.
   const latestRunEvents = useMemo<WorkflowEvent[]>(() => {
-    if (frames.size === 0 || !runId) return [];
-    return [...frames.values()]
-      .filter((frame) => frame.runId === runId)
+    if (frames.size === 0) return [];
+    const byRun = new Map<string, RunFrame[]>();
+    for (const frame of frames.values()) {
+      const bucket = byRun.get(frame.runId);
+      if (bucket === undefined) byRun.set(frame.runId, [frame]);
+      else bucket.push(frame);
+    }
+    const runIds = [...byRun.keys()];
+    const latestRunId = runIds[runIds.length - 1];
+    if (latestRunId === undefined) return [];
+    return (byRun.get(latestRunId) ?? [])
+      .slice()
       .sort((a, b) => a.seq - b.seq)
       .map((frame) => frame.event);
-  }, [frames, runId]);
+  }, [frames]);
 
   const state = useMemo<RunState | null>(() => {
     if (latestRunEvents.length === 0) return null;
@@ -244,15 +200,11 @@ const stepOutputSchema = type({ stepId: 'string', output: 'unknown' });
 export async function fetchStepOutput(
   deploymentId: string,
   stepId: string,
-  runId: string,
   tenantId?: string | null
 ): Promise<unknown> {
   const raw = await api<unknown>(
     'GET',
-    withTenant(
-      `/workflow-runs/${deploymentId}/steps/${stepId}/output?runId=${encodeURIComponent(runId)}`,
-      tenantId
-    )
+    withTenant(`/workflow-runs/${deploymentId}/steps/${stepId}/output`, tenantId)
   );
   const parsed = stepOutputSchema(raw);
   if (parsed instanceof type.errors) {
@@ -272,15 +224,13 @@ export async function fetchStepOutput(
 export function useStepOutput(
   deploymentId: string | null,
   stepId: string | null,
-  runId: string | null,
   opts?: { enabled?: boolean; tenantId?: string | null }
 ) {
   return useQuery<unknown>({
-    queryKey: ['workflow-step-output', deploymentId, stepId, runId, opts?.tenantId ?? null],
-    enabled: !!deploymentId && !!stepId && !!runId && (opts?.enabled ?? true),
+    queryKey: ['workflow-step-output', deploymentId, stepId, opts?.tenantId ?? null],
+    enabled: !!deploymentId && !!stepId && (opts?.enabled ?? true),
     staleTime: Infinity,
-    queryFn: () =>
-      fetchStepOutput(deploymentId as string, stepId as string, runId as string, opts?.tenantId),
+    queryFn: () => fetchStepOutput(deploymentId as string, stepId as string, opts?.tenantId),
   });
 }
 
@@ -293,25 +243,15 @@ const allStepOutputsSchema = type({ outputs: type({ '[string]': 'unknown' }) });
 export function useAllStepOutputs(
   deploymentId: string | null,
   tenantId: string | null | undefined,
-  runId: string | null,
   opts?: { lastSeq?: number }
 ) {
   return useQuery<Record<string, unknown>>({
-    queryKey: [
-      'workflow-all-step-outputs',
-      deploymentId,
-      tenantId ?? null,
-      runId,
-      opts?.lastSeq ?? 0,
-    ],
-    enabled: !!deploymentId && !!runId,
+    queryKey: ['workflow-all-step-outputs', deploymentId, tenantId ?? null, opts?.lastSeq ?? 0],
+    enabled: !!deploymentId,
     queryFn: async () => {
       const raw = await api<unknown>(
         'GET',
-        withTenant(
-          `/workflow-runs/${deploymentId as string}/steps?runId=${encodeURIComponent(runId as string)}`,
-          tenantId
-        )
+        withTenant(`/workflow-runs/${deploymentId as string}/steps`, tenantId)
       );
       const parsed = allStepOutputsSchema(raw);
       if (parsed instanceof type.errors) {
@@ -324,15 +264,12 @@ export function useAllStepOutputs(
 
 // Persist the run's terminal status to the hub so the library rail can show
 // the final Completed / Failed badge without relying on the live stream.
-// Run-scoped (CL-2233): updates only the caller's own run instance via the
-// instance route, never the shared deployment status (which any co-tenant could
-// otherwise flip).
-export function useSetRunStatus(tenantId?: string | null) {
+export function useSetWorkflowStatus(tenantId?: string | null) {
   return useMutation({
-    mutationFn: async ({ runId, status }: { runId: string; status: string }) => {
+    mutationFn: async ({ deploymentId, status }: { deploymentId: string; status: string }) => {
       return api<unknown>(
         'PATCH',
-        withTenant(`/workflow-runs/instances/${encodeURIComponent(runId)}/status`, tenantId),
+        withTenant(`/workflow-runs/${encodeURIComponent(deploymentId)}/status`, tenantId),
         { status }
       );
     },
@@ -342,15 +279,30 @@ export function useSetRunStatus(tenantId?: string | null) {
 export function useStartWorkflow(tenantId?: string | null) {
   return useMutation({
     mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
-      const res = await api<{
-        deploymentId: string;
-        runId: string | null;
-        correlationMessageId: string;
-        accepted: boolean;
-      }>('POST', withTenant(`/workflow-runs/${encodeURIComponent(kind)}/start`, tenantId), {
-        input,
-      });
+      const res = await api<{ deploymentId: string }>(
+        'POST',
+        withTenant(`/workflow-runs/${encodeURIComponent(kind)}/start`, tenantId),
+        { input }
+      );
       return res;
+    },
+  });
+}
+
+// Delete (undeploy) a workflow deployment: operator-gated soft-delete that
+// drops it from the list/stream/start, undeploys the sidecar supervisor, and
+// stops its step instances. Used to finish/remove a completed or stuck run.
+export function useDeleteWorkflow(tenantId?: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (deploymentId: string) =>
+      api<unknown>(
+        'DELETE',
+        withTenant(`/workflows/${encodeURIComponent(deploymentId)}`, tenantId)
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workflow-runs'] });
+      void queryClient.invalidateQueries({ queryKey: ['workflows'] });
     },
   });
 }

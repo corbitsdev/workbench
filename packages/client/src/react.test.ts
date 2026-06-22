@@ -9,7 +9,7 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import type { ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
-import { useArtifacts, useLibraryResources, useMyRuns } from './react';
+import { useArtifacts, useLibraryResources } from './react';
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
 
@@ -135,57 +135,6 @@ describe('useLibraryResources', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toBeInstanceOf(Error);
     expect((result.current.error as Error).message).toBe('forbidden');
-  });
-});
-
-describe('useMyRuns', () => {
-  it('keys the query under the my-runs namespace by tenantId', () => {
-    const { fetcher } = makeFetch(() => Promise.resolve(jsonResponse([])));
-    const client = newClient();
-
-    renderHook(
-      () => useMyRuns({ baseUrl: 'http://localhost:4000', fetch: fetcher }, { tenantId: 'tn-1' }),
-      { wrapper: wrapper(client) }
-    );
-
-    expect(client.getQueryCache().findAll({ queryKey: ['my-runs', 'tn-1'] }).length).toBe(1);
-  });
-
-  it('stays disabled and does not fetch when tenantId is null', () => {
-    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([])));
-
-    const { result } = renderHook(
-      () => useMyRuns({ baseUrl: 'http://localhost:4000', fetch: fetcher }, { tenantId: null }),
-      { wrapper: wrapper(newClient()) }
-    );
-
-    expect(result.current.fetchStatus).toBe('idle');
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it('hits /workflow-runs/mine and surfaces the parsed rows on success', async () => {
-    const rows = [
-      {
-        runId: null,
-        correlationMessageId: 'msg-1',
-        deploymentId: 'dep-1',
-        kind: 'collateral-generation',
-        status: 'running',
-        startedAt: new Date().toISOString(),
-      },
-    ];
-    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse(rows)));
-
-    const { result } = renderHook(
-      () => useMyRuns({ baseUrl: 'http://localhost:4000', fetch: fetcher }, { tenantId: 'tn-1' }),
-      { wrapper: wrapper(newClient()) }
-    );
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(rows);
-    expect(spy.mock.calls[0]?.[0]).toBe(
-      'http://localhost:4000/api/v1/workflow-runs/mine?tenantId=tn-1'
-    );
   });
 });
 

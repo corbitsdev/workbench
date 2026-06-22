@@ -4,19 +4,17 @@ import { RunConsole } from './RunConsole';
 import { ErrorBoundary } from './ErrorBoundary';
 import { loadWorkflowUI } from '../lib/workflow-ui';
 import {
-  useMyRuns,
   useWorkflowRuns,
   useWorkflowRunState,
   useSignalWorkflow,
   useAllStepOutputs,
-  useSetRunStatus,
+  useSetWorkflowStatus,
   isTerminalPhase,
 } from '../hooks/use-workflow';
 
 interface WorkflowRunPaneProps {
   deploymentId: string;
   tenantId?: string | null;
-  runId?: string | null;
   onClose: () => void;
 }
 
@@ -25,7 +23,7 @@ interface WorkflowRunPaneProps {
 // loaded run list keyed by deploymentId — never from navigation props. Completed
 // steps' outputs are resolved here (host-side) and handed to the Panel as the
 // `stepOutputs` map so panels stay pure presentational components.
-export function WorkflowRunPane({ deploymentId, tenantId, runId, onClose }: WorkflowRunPaneProps) {
+export function WorkflowRunPane({ deploymentId, tenantId, onClose }: WorkflowRunPaneProps) {
   // Bug fix (3): guard against an empty deploymentId propagating into hooks and
   // triggering a `/workflow-runs//stream` 404. Render nothing until we have one.
   if (!deploymentId) {
@@ -36,32 +34,18 @@ export function WorkflowRunPane({ deploymentId, tenantId, runId, onClose }: Work
     );
   }
 
-  return (
-    <WorkflowRunPaneInner
-      deploymentId={deploymentId}
-      tenantId={tenantId}
-      runId={runId}
-      onClose={onClose}
-    />
-  );
+  return <WorkflowRunPaneInner deploymentId={deploymentId} tenantId={tenantId} onClose={onClose} />;
 }
 
 // Separated so that all hooks below are called only after deploymentId is known
 // to be non-empty. React requires consistent hook call order per render, so we
 // can't conditionally invoke hooks inside WorkflowRunPane.
-function WorkflowRunPaneInner({ deploymentId, tenantId, runId, onClose }: WorkflowRunPaneProps) {
-  const { data: myRuns = [] } = useMyRuns(tenantId);
+function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPaneProps) {
   const { data: runs = [] } = useWorkflowRuns(tenantId);
-  // Prefer resolving the kind from the selected run (keyed by runId), so the
-  // right view is chosen for THIS run. Fall back to the deployment catalog when
-  // the run has not yet reconciled a runId.
-  const kind = useMemo(() => {
-    if (runId) {
-      const mine = myRuns.find((run) => run.runId === runId);
-      if (mine) return mine.kind;
-    }
-    return runs.find((run) => run.deploymentId === deploymentId)?.kind ?? null;
-  }, [myRuns, runs, deploymentId, runId]);
+  const kind = useMemo(
+    () => runs.find((run) => run.deploymentId === deploymentId)?.kind ?? null,
+    [runs, deploymentId]
+  );
 
   const { data: uiModule } = useQuery({
     queryKey: ['workflow-ui-module', kind],
@@ -73,20 +57,20 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, runId, onClose }: Workfl
   // Bug fix (1): `settled` is false while the initial SSE backlog is being
   // replayed — the debounce hasn't fired yet. Show "Loading run…" until it
   // becomes true so the UI never animates through past steps.
-  const { state, connected, settled } = useWorkflowRunState(deploymentId, tenantId, runId);
+  const { state, connected, settled } = useWorkflowRunState(deploymentId, tenantId);
 
   const terminal = state !== null && isTerminalPhase(state.phase);
 
   // Bug fix (5): persist terminal status to the hub once (idempotent via the
   // ref so a re-render doesn't fire a second PATCH).
-  const setStatus = useSetRunStatus(tenantId);
+  const setStatus = useSetWorkflowStatus(tenantId);
   const statusPersisted = useRef<string | null>(null);
   useEffect(() => {
-    if (!terminal || !state?.runId) return;
+    if (!terminal || !state) return;
     if (statusPersisted.current === state.phase) return;
     statusPersisted.current = state.phase;
-    setStatus.mutate({ runId: state.runId, status: state.phase }, { onError: () => undefined });
-  }, [terminal, state, setStatus]);
+    setStatus.mutate({ deploymentId, status: state.phase }, { onError: () => undefined });
+  }, [terminal, state, deploymentId, setStatus]);
 
   // Bug fix (2): gate signal mutations when the run is in a terminal phase.
   const signal = useSignalWorkflow(deploymentId, tenantId);
@@ -96,12 +80,9 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, runId, onClose }: Workfl
   // Bug fix (4): replace per-step allSettled batch with a single bulk call.
   // Re-keyed on `state.lastSeq` so TanStack Query refetches as new steps
   // complete without re-fetching already-resolved outputs unnecessarily.
-  const { data: allOutputs } = useAllStepOutputs(
-    Panel ? deploymentId : null,
-    tenantId,
-    runId ?? state?.runId ?? null,
-    { lastSeq: state?.lastSeq }
-  );
+  const { data: allOutputs } = useAllStepOutputs(Panel ? deploymentId : null, tenantId, {
+    lastSeq: state?.lastSeq,
+  });
 
   // Only expose outputs for completed steps that carry an outputRef; any key
   // missing from the bulk response is simply absent from the map.

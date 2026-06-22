@@ -4,7 +4,7 @@
 // and error propagation behavior so a backwards-incompatible change fails loudly.
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import './test-setup';
-import { listArtifacts, listMyRuns, listWorkflows } from './index';
+import { listArtifacts, listWorkflows } from './index';
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
 
@@ -215,60 +215,6 @@ describe('@workbench/client response and error handling', () => {
     await expect(
       listWorkflows({ baseUrl: 'http://localhost:4000', fetch: fetcher })
     ).rejects.toThrow('HTTP 404');
-  });
-
-  it('builds the /workflow-runs/mine URL under the api/v1 prefix', async () => {
-    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([])));
-
-    await listMyRuns({ baseUrl: 'http://localhost:4000', fetch: fetcher });
-
-    expect(spy.mock.calls[0]?.[0]).toBe('http://localhost:4000/api/v1/workflow-runs/mine');
-  });
-
-  it('forwards a url-encoded tenantId on /workflow-runs/mine', async () => {
-    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([])));
-
-    await listMyRuns({ baseUrl: 'http://localhost:4000', fetch: fetcher }, { tenantId: 'tn-1' });
-
-    expect(spy.mock.calls[0]?.[0]).toBe(
-      'http://localhost:4000/api/v1/workflow-runs/mine?tenantId=tn-1'
-    );
-  });
-
-  it('parses /workflow-runs/mine rows, admitting a null runId', async () => {
-    const payload = [
-      {
-        runId: null,
-        correlationMessageId: 'msg-1',
-        deploymentId: 'dep-1',
-        kind: 'collateral-generation',
-        status: 'running',
-        startedAt: '2026-01-01T00:00:00.000Z',
-      },
-      {
-        runId: 'run-2',
-        correlationMessageId: 'msg-2',
-        deploymentId: 'dep-2',
-        kind: 'presentation-generation',
-        status: 'completed',
-        startedAt: '2026-01-02T00:00:00.000Z',
-      },
-    ];
-    const { fetcher } = makeFetch(() => Promise.resolve(jsonResponse(payload)));
-
-    const result = await listMyRuns({ baseUrl: 'http://localhost:4000', fetch: fetcher });
-
-    expect(result).toEqual(payload);
-  });
-
-  it('throws when a /workflow-runs/mine row fails schema validation', async () => {
-    const { fetcher } = makeFetch(() =>
-      Promise.resolve(jsonResponse([{ correlationMessageId: 'msg-1' }]))
-    );
-
-    await expect(listMyRuns({ baseUrl: 'http://localhost:4000', fetch: fetcher })).rejects.toThrow(
-      /Invalid \/workflow-runs\/mine response/
-    );
   });
 
   it('uses the global fetch when no custom fetch is supplied', async () => {

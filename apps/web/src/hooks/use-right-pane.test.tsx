@@ -42,8 +42,8 @@ describe('useRightPane', () => {
   it('routes to the workflow pane and calls onShow', () => {
     const onShow = mock(() => {});
     render(React.createElement(Harness, { onShow }));
-    act(() => api.showWorkflow('wf-42', 'run-42'));
-    expect(api.rightPane).toEqual({ view: 'workflow', deploymentId: 'wf-42', runId: 'run-42' });
+    act(() => api.showWorkflow('wf-42'));
+    expect(api.rightPane).toEqual({ view: 'workflow', deploymentId: 'wf-42' });
     expect(onShow).toHaveBeenCalledTimes(1);
   });
 
@@ -52,7 +52,7 @@ describe('useRightPane', () => {
     render(React.createElement(Harness, { onClose }));
     act(() => api.showWorkflow('wf-1'));
     act(() => api.closeWorkflow('wf-other'));
-    expect(api.rightPane).toEqual({ view: 'workflow', deploymentId: 'wf-1', runId: null });
+    expect(api.rightPane).toEqual({ view: 'workflow', deploymentId: 'wf-1' });
     act(() => api.closeWorkflow('wf-1'));
     expect(api.rightPane.view).toBe('gallery');
     expect(onClose).toHaveBeenCalled();
