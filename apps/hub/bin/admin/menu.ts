@@ -110,7 +110,10 @@ export function extractItems(data: unknown): {
   return { items: [] };
 }
 
-// A human label for a picker row: prefer a readable name, fall back to id.
+// A human label for a picker row: lead with a readable name (the resource's
+// own name, or for an agent instance the agent it runs), then append the most
+// useful disambiguators the list response carries — status and a short date —
+// so opaque-id resources (instances) are still identifiable at a glance.
 export function itemLabel(item: unknown): {
   label: string;
   id: string | undefined;
@@ -121,15 +124,25 @@ export function itemLabel(item: unknown): {
   const id = typeof obj["id"] === "string" ? obj["id"] : undefined;
   const named =
     obj["name"] ??
+    obj["agentName"] ??
     obj["email"] ??
     obj["slug"] ??
     obj["title"] ??
     obj["kind"] ??
     id;
-  const label =
+  let label =
     id && named !== id
       ? `${String(named)} [${id}]`
       : String(named ?? id ?? "?");
+
+  const extras: string[] = [];
+  if (typeof obj["status"] === "string") extras.push(obj["status"]);
+  const created = obj["createdAt"];
+  if (typeof created === "string" && created.length >= 10) {
+    extras.push(created.slice(0, 10));
+  }
+  if (extras.length > 0) label += ` · ${extras.join(" · ")}`;
+
   return { label, id };
 }
 

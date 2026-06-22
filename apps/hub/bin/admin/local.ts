@@ -64,6 +64,12 @@ export const LOCAL_ACTIONS: LocalAction[] = [
     tenantAware: true,
   },
   {
+    label: "Delete agent instances in bulk (cleanup)",
+    group: SETUP_GROUP,
+    script: "cleanup-instances.ts",
+    tenantAware: true,
+  },
+  {
     label: "Build tool packages",
     group: SETUP_GROUP,
     script: "build-tool-packages.ts",

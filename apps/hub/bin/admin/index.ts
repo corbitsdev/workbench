@@ -388,7 +388,9 @@ async function runOnce(client: HubClient, tenant: TenantChoice): Promise<void> {
     ...(chosen.specGroup?.operations ?? []).map((op) => ({
       kind: "spec" as const,
       op,
-      label: `${op.method.toUpperCase()} ${op.path}${op.summary ? ` — ${op.summary}` : ""}`,
+      label: op.summary
+        ? `${op.summary}  ·  ${op.method.toUpperCase()} ${op.path}`
+        : `${op.method.toUpperCase()} ${op.path}`,
     })),
   ];
 
