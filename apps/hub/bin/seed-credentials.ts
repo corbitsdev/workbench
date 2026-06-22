@@ -106,6 +106,10 @@ export function buildEntries(): CredentialEntry[] {
 
   // Numbered entries: OPENAI_COMPATIBLE_API_KEY_1, _2, … until a gap is hit.
   // Each set uses its own CREDENTIAL_NAME, MODEL, BASE_URL, MAX_TOKENS suffixed with _N.
+  // Each gets its OWN provider (named after the credential) rather than sharing the
+  // canonical "openai-compatible" row: baseURL/model live on the provider, so a shared
+  // row makes distinct endpoints impossible and lets the last seed clobber the others.
+  // The unnumbered entry keeps the canonical name — agents resolve it by providerName.
   for (let i = 1; ; i++) {
     const key = env(`OPENAI_COMPATIBLE_API_KEY_${i}`);
     if (!key) break;
@@ -117,7 +121,7 @@ export function buildEntries(): CredentialEntry[] {
       continue;
     }
     entries.push({
-      providerName: "openai-compatible",
+      providerName: name,
       providerPlugin: "openai-compatible",
       credentialName: name,
       secret: key,
