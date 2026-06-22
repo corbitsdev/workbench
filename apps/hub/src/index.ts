@@ -39,6 +39,7 @@ import {
 } from './routes/workflow-deploy';
 import { createWorkflowRunsRouter, type EnsureDeploymentRoutableFn } from './routes/workflow-runs';
 import { createWorkflowRunRecordsRouter } from './routes/workflow-run-records';
+import { wrapRepoStoreWithProjection } from './workflow-executor/projection-bridge';
 import { createWorkflowDeployService } from './services/workflow-deploy';
 import { createWorkflowReconciler } from './services/workflow-reconciler';
 import { createWorkbenchDirectorRegistry } from '@workbench/agents';
@@ -197,10 +198,13 @@ log.info('Loaded signing key registry: active version {version}', {
 
 // ─── Agent repo store ──────────────────────────────────────────────
 
-const repoStore = createAgentRepoStore({
-  dataDir: hub.dataDir,
-  signingKey: registry.active,
-});
+const repoStore = wrapRepoStoreWithProjection(
+  createAgentRepoStore({
+    dataDir: hub.dataDir,
+    signingKey: registry.active,
+  }),
+  { db }
+);
 // ─── Skill asset substrate ─────────────────────────────────────────
 
 const assetService = createAssetService({ db, repoStore: repoStore.repoStore });
@@ -587,10 +591,21 @@ v1.route(
   })
 );
 
-// Thin-executor workflow runs (CL-2240): hub-side execution of deployed
-// definitions held in a plain run record. Distinct route prefix
-// (/workflow-exec) from the native supervisor path above.
-v1.route('/', createWorkflowRunRecordsRouter({ db, repoStore }));
+// Workflow runs (CL-2243): /workflow-exec start/resume drive the SIDECAR
+// supervisor (definition deployed like an agent) and persist run state to a
+// workflow_run_record row the UI polls; the projection bridge wrapped around
+// repoStore folds the sidecar's run events into that row.
+v1.route(
+  '/',
+  createWorkflowRunRecordsRouter({
+    db,
+    sidecarRouter,
+    sessionService,
+    cryptoProvider: createNodeCrypto(registry.active),
+    deploymentDomain: config.globalTenant.domain,
+    ensureDeploymentRoutable,
+  })
+);
 
 // Hub-as-control-plane reconciler (CL-2224): re-establish workflow supervisors
 // from DB + workflow-repo state on startup and on every sidecar reconnect, so

@@ -5,22 +5,21 @@ import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { describeRoute, resolver } from 'hono-openapi';
 import { requestBodySchema } from '../lib/openapi';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { HubDb } from '../db';
 import { workflowRun } from '../db/schema';
 import { getRequestedUserContext } from '../lib/user-context';
-import { advanceRun, resumeRun, type ExecutorDeps } from '../workflow-executor/executor';
-import { createHubReasoningRunner, createHubToolRunner } from '../workflow-executor/hub-runners';
-import { projectWorkflow, type ProjectedWorkflow } from '../workflow-executor/projection';
+import type { RunState } from '../workflow-executor/executor';
 import {
   createRunStore,
   insertRunRecord,
   listRunRecords,
   loadRunRecord,
 } from '../workflow-executor/run-store';
-import type { AgentRepoStore } from '@intx/hub-sessions';
-import type { WorkflowDefinition } from '@intx/workflow';
-import { readWorkflowDefinition } from '../services/workflow-deploy';
+import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
+import type { CryptoProvider } from '@intx/types/runtime';
+import { deriveDeploymentAddress } from '@intx/workflow-deploy';
+import type { EnsureDeploymentRoutableFn } from './workflow-runs';
 
 const log = getLogger(['api', 'workflow-run-records']);
 
@@ -49,7 +48,7 @@ async function resolveDeployment(
   db: HubDb,
   chain: readonly string[],
   kind: string
-): Promise<{ deploymentId: string; tenantId: string } | null> {
+): Promise<{ deploymentId: string; tenantId: string; principalId: string } | null> {
   const candidates = await db.query.workflowRun.findMany({
     where: and(
       eq(workflowRun.kind, kind),
@@ -70,7 +69,11 @@ async function resolveDeployment(
     }
   }
   if (!best?.deploymentId) return null;
-  return { deploymentId: best.deploymentId, tenantId: best.tenantId };
+  return {
+    deploymentId: best.deploymentId,
+    tenantId: best.tenantId,
+    principalId: best.principalId,
+  };
 }
 
 // Ownership/tenancy gate for reading or resuming a specific run. The record's
@@ -119,47 +122,33 @@ function stateResponse(state: {
   };
 }
 
-// Thin-executor workflow runs (CL-2240). State lives in the workflow_run_record
-// row; execution walks the deployed definition hub-side via @intx/agent + the
-// hub tool registry. No sidecar supervisor, no event-log replay — reads are a
-// single indexed row lookup and resume reads the record and continues.
+// Workflow runs surface (CL-2243). State lives in the workflow_run_record row,
+// but EXECUTION runs on the sidecar supervisor (the definition is deployed like
+// an agent). /start seeds the row and fires the deployment's trigger mail;
+// /resume delivers the gate signal. The projection bridge
+// (wrapRepoStoreWithProjection) folds the sidecar's run events back into this
+// row, which the UI polls. Reads are a single indexed row lookup — no replay.
 export function createWorkflowRunRecordsRouter(deps: {
   db: HubDb;
-  repoStore: AgentRepoStore;
-  // Injectable for tests; production wires the hub-side executor + run store.
-  executorDeps?: ExecutorDeps;
-  readDefinition?: (repoStore: AgentRepoStore, kind: string) => Promise<WorkflowDefinition>;
+  sidecarRouter: SidecarRouter;
+  sessionService: SessionService;
+  cryptoProvider: CryptoProvider;
+  deploymentDomain: string;
+  ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
+  // Injectable for tests only.
   resolveContext?: typeof getRequestedUserContext;
 }): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
   const resolveContext = deps.resolveContext ?? getRequestedUserContext;
-
-  const executorDeps: ExecutorDeps = deps.executorDeps ?? {
-    store: createRunStore(deps.db),
-    toolRunner: createHubToolRunner({ db: deps.db }),
-    reasoningRunner: createHubReasoningRunner({ db: deps.db }),
-  };
-  const readDefinition = deps.readDefinition ?? readWorkflowDefinition;
-
-  // Cache the projected workflow per kind for the lifetime of the process; the
-  // deployed definition is immutable per deployment.
-  const projectionCache = new Map<string, ProjectedWorkflow>();
-  async function getProjection(kind: string): Promise<ProjectedWorkflow> {
-    const cached = projectionCache.get(kind);
-    if (cached) return cached;
-    const definition = await readDefinition(deps.repoStore, kind);
-    const projected = projectWorkflow(definition);
-    projectionCache.set(kind, projected);
-    return projected;
-  }
+  const runStore = createRunStore(deps.db);
 
   router.post(
     '/workflow-exec/:kind/start',
     describeRoute({
       tags: ['Workflows'],
-      summary: 'Start a thin-executor workflow run',
+      summary: 'Start a workflow run',
       description:
-        'Mints a run record, executes the deployed definition hub-side until the first gate or completion, and returns the run state. Optional `?tenantId=` selects a workbench the user belongs to.',
+        'Seeds a run record and triggers the run on the sidecar supervisor (the deployed definition executes there). Returns the seeded run state immediately; the record advances asynchronously as the sidecar emits events. Optional `?tenantId=` selects a workbench the user belongs to.',
       parameters: [
         {
           name: 'kind',
@@ -216,7 +205,10 @@ export function createWorkflowRunRecordsRouter(deps: {
       const parsed = StartBody(body);
       const input = parsed instanceof type.errors ? {} : (parsed.input ?? {});
 
-      const projection = await getProjection(kind);
+      // Mint the runId here and thread it to the sidecar as the trigger mail's
+      // messageId. The supervisor derives the run's id from the message id, so
+      // the seeded row and every run event the sidecar emits share this id — the
+      // projection bridge folds those events back into this exact row.
       const runId = mintRunId();
       const state = await insertRunRecord(deps.db, {
         runId,
@@ -227,11 +219,48 @@ export function createWorkflowRunRecordsRouter(deps: {
         input,
       });
 
-      const advanced = await advanceRun(projection, executorDeps, state);
-      if (advanced.status === 'failed') {
-        log.error('workflow run failed during start', { runId, kind, error: advanced.error });
+      try {
+        // The supervisor may have been dropped from the hub's addressIndex by a
+        // restart since deploy; re-establish before delivering so the run does
+        // not dead-end on `agent is unreachable` (CL-2225).
+        await deps.ensureDeploymentRoutable({
+          deploymentId: deployment.deploymentId,
+          kind,
+          tenantId: deployment.tenantId,
+          creatorPrincipalId: deployment.principalId,
+        });
+        await deps.sessionService.sendUserMessage({
+          agentAddress: deriveDeploymentAddress({
+            deploymentId: deployment.deploymentId,
+            deploymentDomain: deps.deploymentDomain,
+          }),
+          from: `hub@${deps.deploymentDomain}`,
+          messageId: runId,
+          date: new Date(),
+          content: JSON.stringify(input),
+          sessionId: randomUUID(),
+          tenantId: deployment.tenantId,
+          cryptoProvider: deps.cryptoProvider,
+        });
+      } catch (err) {
+        log.error('workflow run-start failed', {
+          runId,
+          kind,
+          deploymentId: deployment.deploymentId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+        const failed: RunState = {
+          ...state,
+          status: 'failed',
+          error: 'failed to start workflow run',
+        };
+        await runStore.save(failed);
+        return c.json({ error: 'failed to start workflow run' }, 500);
       }
-      return c.json(stateResponse(advanced));
+
+      // Return the seeded row immediately (status 'running'); the UI polls it and
+      // the projection bridge advances it as the sidecar emits run events.
+      return c.json(stateResponse(state));
     }
   );
 
@@ -328,9 +357,9 @@ export function createWorkflowRunRecordsRouter(deps: {
     '/workflow-exec/records/:runId/resume',
     describeRoute({
       tags: ['Workflows'],
-      summary: 'Resume a gated thin-executor workflow run',
+      summary: 'Resume a gated workflow run',
       description:
-        "Applies a gate signal's payload as the awaiting step's output and continues execution until the next gate or completion. State is read from the record, so a restart mid-gate resumes cleanly.",
+        "Delivers the gate signal to the run's sidecar supervisor and optimistically marks the run running. The record advances as the sidecar emits the next step events.",
       parameters: [
         {
           name: 'runId',
@@ -388,21 +417,52 @@ export function createWorkflowRunRecordsRouter(deps: {
         return c.json({ error: `invalid resume body: ${parsed.summary}` }, 400);
       }
 
-      const projection = await getProjection(state.kind);
-      try {
-        const advanced = await resumeRun(
-          projection,
-          executorDeps,
-          state,
-          parsed.signalName,
-          parsed.payload ?? {}
-        );
-        return c.json(stateResponse(advanced));
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause);
-        log.warn('resume rejected', { runId, error: message });
-        return c.json({ error: message }, 400);
+      if (state.deploymentId === undefined) {
+        return c.json({ error: 'run has no deployment to signal' }, 400);
       }
+
+      // Re-establish + address the run's supervisor, then deliver the gate signal.
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const deployment = await deps.db.query.workflowRun.findFirst({
+        where: and(
+          eq(workflowRun.deploymentId, state.deploymentId),
+          inArray(workflowRun.tenantId, chain)
+        ),
+      });
+      if (!deployment) return c.json({ error: 'workflow deployment not found' }, 404);
+
+      try {
+        await deps.ensureDeploymentRoutable({
+          deploymentId: state.deploymentId,
+          kind: state.kind,
+          tenantId: deployment.tenantId,
+          creatorPrincipalId: deployment.principalId,
+        });
+        deps.sidecarRouter.sendSignalDeliver({
+          agentAddress: deriveDeploymentAddress({
+            deploymentId: state.deploymentId,
+            deploymentDomain: deps.deploymentDomain,
+          }),
+          runId: state.runId,
+          signalName: parsed.signalName,
+          signalId: randomUUID(),
+          payload: parsed.payload ?? {},
+        });
+      } catch (err) {
+        log.error('workflow resume signal failed', {
+          runId,
+          signalName: parsed.signalName,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+        return c.json({ error: 'failed to deliver signal' }, 500);
+      }
+
+      // Optimistically clear the gate so the UI resumes polling — a row in
+      // 'awaiting' pauses the poll. The projection bridge advances it as the
+      // sidecar emits the next StepStarted/StepCompleted/RunCompleted.
+      const advanced: RunState = { ...state, status: 'running' };
+      await runStore.save(advanced);
+      return c.json(stateResponse(advanced));
     }
   );
 

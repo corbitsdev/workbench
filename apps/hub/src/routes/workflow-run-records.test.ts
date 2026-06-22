@@ -1,17 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
-import type { WorkflowDefinition } from '@intx/workflow';
-import {
-  DETERMINISTIC_TOOL_KIND,
-  STEP_ARGMAP_TAG,
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-} from '@workbench/agents';
+import type { CryptoProvider } from '@intx/types/runtime';
+import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
 import type { HubDb } from '../db';
-import type { AgentRepoStore } from '@intx/hub-sessions';
 import type { RunState } from '../workflow-executor/executor';
 
-// Override only getAncestorChain (the route walks the tenant chain); preserve
+// Override only getAncestorChain (the routes walk the tenant chain); preserve
 // every other @intx/db export so sibling suites in the same process keep theirs.
 const realDb = await import('@intx/db');
 let ancestorChain: readonly string[] = ['tn-1'];
@@ -20,155 +14,10 @@ mock.module('@intx/db', () => ({
   getAncestorChain: async () => [...ancestorChain],
 }));
 
-// Injected (not module-mocked) so this suite never leaks a fixed user context
-// into sibling route suites running in the same bun-test process.
-const resolveContext = async () => ({
-  context: { tenantId: 'tn-1', principalId: 'prn-1' },
-  forbidden: false,
-});
-
-// The deployed pain-point-collateral definition, shaped like the read-back
-// JSON. Gates between every reasoning/tool cluster, ending in a persist map.
-function painPointDefinition(): WorkflowDefinition {
-  return {
-    id: 'pain-point-collateral',
-    triggers: [],
-    stepOrder: [
-      'intake',
-      'select',
-      'fetch',
-      'context',
-      'analyze',
-      'ppSelection',
-      'fmtSelection',
-      'generate',
-      'review',
-      'persist',
-    ],
-    steps: {
-      intake: {
-        kind: 'step',
-        id: 'intake',
-        agent: {
-          id: 'intake',
-          tags: { [STEP_KIND_TAG]: DETERMINISTIC_TOOL_KIND, [STEP_TOOL_TAG]: 'granola_list_notes' },
-          inference: { sources: [] },
-        },
-        input: { literal: {} },
-      },
-      select: { kind: 'awaitSignal', id: 'select', name: 'note-selection', after: ['intake'] },
-      fetch: {
-        kind: 'step',
-        id: 'fetch',
-        agent: {
-          id: 'fetch',
-          tags: { [STEP_KIND_TAG]: DETERMINISTIC_TOOL_KIND, [STEP_TOOL_TAG]: 'granola_get_note' },
-          inference: { sources: [] },
-        },
-        input: { from: 'steps.select.output' },
-        after: ['select'],
-      },
-      context: { kind: 'awaitSignal', id: 'context', name: 'context', after: ['fetch'] },
-      analyze: {
-        kind: 'step',
-        id: 'analyze',
-        agent: {
-          id: 'analyze',
-          systemPrompt: 'extract',
-          tags: { credentialName: 'opencode-zen' },
-          inference: { sources: [{ provider: 'openai-compatible', model: 'm' }] },
-        },
-        input: { merge: [{ from: 'steps.fetch.output' }, { from: 'steps.context.output' }] },
-        after: ['context'],
-      },
-      ppSelection: {
-        kind: 'awaitSignal',
-        id: 'ppSelection',
-        name: 'pain-point-selection',
-        after: ['analyze'],
-      },
-      fmtSelection: {
-        kind: 'awaitSignal',
-        id: 'fmtSelection',
-        name: 'format-selection',
-        after: ['ppSelection'],
-      },
-      generate: {
-        kind: 'map',
-        id: 'generate',
-        over: { from: 'steps.fmtSelection.output.formats' },
-        step: {
-          kind: 'step',
-          id: 'generate.child',
-          agent: {
-            id: 'generate',
-            systemPrompt: 'gen',
-            tags: { credentialName: 'opencode-zen' },
-            inference: { sources: [{ provider: 'openai-compatible', model: 'm' }] },
-          },
-          input: { from: 'trigger.payload' },
-        },
-        after: ['fmtSelection'],
-      },
-      review: { kind: 'awaitSignal', id: 'review', name: 'review', after: ['generate'] },
-      persist: {
-        kind: 'map',
-        id: 'persist',
-        over: { from: 'steps.review.output.decisions' },
-        step: {
-          kind: 'step',
-          id: 'persist.child',
-          agent: {
-            id: 'persist',
-            tags: {
-              [STEP_KIND_TAG]: DETERMINISTIC_TOOL_KIND,
-              [STEP_TOOL_TAG]: 'artifact_create',
-              [STEP_ARGMAP_TAG]: JSON.stringify({
-                title: { from: 'title' },
-                kind: { literal: 'document' },
-                content: { from: 'content' },
-              }),
-            },
-            inference: { sources: [] },
-          },
-          input: { from: 'trigger.payload' },
-        },
-        after: ['review'],
-      },
-    } as unknown as WorkflowDefinition['steps'],
-  };
-}
-
-// Hub-side runners: the real executor calls these. We stub them at the runner
-// module boundary so the test exercises the full router + projection + executor
-// + run-store seam without a live DB credential or LLM. The tool runner returns
-// the pre-substrate `{content}` envelope; reasoning returns `{reply}`.
-const toolCalls: Array<{ tool: string; input: unknown }> = [];
-const reasoningCalls: Array<{ stepId: string; input: unknown }> = [];
-mock.module('../workflow-executor/hub-runners', () => ({
-  createHubToolRunner: () => ({
-    run: async ({ tool, input }: { tool: string; input: unknown }) => {
-      toolCalls.push({ tool, input });
-      if (tool === 'granola_list_notes') {
-        return { content: JSON.stringify({ notes: [{ id: 'n1', title: 'Acme call' }] }) };
-      }
-      if (tool === 'granola_get_note') {
-        return { content: JSON.stringify({ transcript: 'we struggle with X' }) };
-      }
-      return { content: JSON.stringify({ artifactId: `art-${toolCalls.length}` }) };
-    },
-  }),
-  createHubReasoningRunner: () => ({
-    run: async ({ stepId, input }: { stepId: string; input: unknown }) => {
-      reasoningCalls.push({ stepId, input });
-      return { reply: JSON.stringify({ reasoned: stepId }) };
-    },
-  }),
-}));
-
-// In-memory run-store: persists run state to a Map keyed by runId. insert
-// creates, save updates, load reads — exactly the durable record contract the
-// route relies on, so resume reads back what start persisted.
+// In-memory run-store: the row is the durable record the UI polls. insert seeds
+// it at /start, save updates it (the optimistic resume flip, and what the
+// projection bridge would do), load reads it back — including deploymentId, which
+// resume needs to address the sidecar.
 const runs = new Map<string, RunState>();
 mock.module('../workflow-executor/run-store', () => ({
   createRunStore: () => ({
@@ -178,7 +27,14 @@ mock.module('../workflow-executor/run-store', () => ({
   }),
   insertRunRecord: async (
     _db: unknown,
-    args: { runId: string; kind: string; tenantId: string; principalId: string; input: unknown }
+    args: {
+      runId: string;
+      deploymentId: string | null;
+      kind: string;
+      tenantId: string;
+      principalId: string;
+      input: unknown;
+    }
   ) => {
     const state: RunState = {
       runId: args.runId,
@@ -189,6 +45,7 @@ mock.module('../workflow-executor/run-store', () => ({
       currentStepId: null,
       input: args.input,
       outputs: {},
+      ...(args.deploymentId !== null ? { deploymentId: args.deploymentId } : {}),
     };
     runs.set(state.runId, structuredClone(state));
     return state;
@@ -208,28 +65,86 @@ mock.module('../workflow-executor/run-store', () => ({
 
 const { createWorkflowRunRecordsRouter } = await import('./workflow-run-records');
 
+// Captured sidecar interactions, asserted per test.
+const sentMessages: Array<{ agentAddress: string; messageId: string; content: string }> = [];
+const sentSignals: Array<{
+  agentAddress: string;
+  runId: string;
+  signalName: string;
+  payload: unknown;
+}> = [];
+const ensureCalls: Array<{ deploymentId: string; creatorPrincipalId: string }> = [];
+let sendShouldThrow = false;
+
+function resetCaptures(): void {
+  runs.clear();
+  sentMessages.length = 0;
+  sentSignals.length = 0;
+  ensureCalls.length = 0;
+  sendShouldThrow = false;
+}
+
+const sessionService = {
+  sendUserMessage: async (args: { agentAddress: string; messageId: string; content: string }) => {
+    if (sendShouldThrow) throw new Error('sidecar unreachable');
+    sentMessages.push({
+      agentAddress: args.agentAddress,
+      messageId: args.messageId,
+      content: args.content,
+    });
+  },
+} as unknown as SessionService;
+
+const sidecarRouter = {
+  sendSignalDeliver: (args: {
+    agentAddress: string;
+    runId: string;
+    signalName: string;
+    payload: unknown;
+  }) => {
+    sentSignals.push({
+      agentAddress: args.agentAddress,
+      runId: args.runId,
+      signalName: args.signalName,
+      payload: args.payload,
+    });
+  },
+} as unknown as SidecarRouter;
+
+const ensureDeploymentRoutable = async (args: {
+  deploymentId: string;
+  creatorPrincipalId: string;
+}) => {
+  ensureCalls.push({ deploymentId: args.deploymentId, creatorPrincipalId: args.creatorPrincipalId });
+  return { reestablished: false };
+};
+
+const DEFAULT_DEPLOYMENT = {
+  deploymentId: 'ses_dep1',
+  tenantId: 'tn-1',
+  kind: 'pain-point-collateral',
+  principalId: 'prn-deployer',
+  createdAt: new Date(),
+};
+
 // biome-ignore lint/suspicious/noExplicitAny: structural test mock
 type MockDb = any;
-function makeDb(): HubDb {
+function makeDb(deployments: Array<typeof DEFAULT_DEPLOYMENT> = [DEFAULT_DEPLOYMENT]): HubDb {
   const db: MockDb = {
     query: {
       workflowRun: {
-        // one deployed pain-point-collateral deployment in tn-1
-        findMany: async () => [
-          {
-            deploymentId: 'ses_dep1',
-            tenantId: 'tn-1',
-            kind: 'pain-point-collateral',
-            createdAt: new Date(),
-          },
-        ],
+        findMany: async () => deployments,
+        findFirst: async () => deployments[0],
       },
     },
   };
   return db as HubDb;
 }
 
-function app(): Hono<{ Variables: { userId: string } }> {
+function routerWith(opts: {
+  db?: HubDb;
+  context?: { tenantId: string; principalId: string };
+}): Hono<{ Variables: { userId: string } }> {
   const a = new Hono<{ Variables: { userId: string } }>();
   a.use('*', async (c, next) => {
     c.set('userId', 'user-1');
@@ -238,44 +153,35 @@ function app(): Hono<{ Variables: { userId: string } }> {
   a.route(
     '/',
     createWorkflowRunRecordsRouter({
-      db: makeDb(),
-      repoStore: {} as AgentRepoStore,
-      readDefinition: async () => painPointDefinition(),
-      resolveContext,
+      db: opts.db ?? makeDb(),
+      sidecarRouter,
+      sessionService,
+      cryptoProvider: {} as CryptoProvider,
+      deploymentDomain: 'wf.localhost',
+      ensureDeploymentRoutable,
+      resolveContext: async () => ({
+        context: opts.context ?? { tenantId: 'tn-1', principalId: 'prn-1' },
+        forbidden: false,
+      }),
     })
   );
   return a;
 }
 
-// Build an app whose resolveContext returns a specific (tenant, principal),
-// to exercise the ownership/tenancy gate as a different caller.
+function app(): Hono<{ Variables: { userId: string } }> {
+  return routerWith({});
+}
+
 function appAs(ctx: { tenantId: string; principalId: string }): Hono<{
   Variables: { userId: string };
 }> {
-  const a = new Hono<{ Variables: { userId: string } }>();
-  a.use('*', async (c, next) => {
-    c.set('userId', 'user-x');
-    await next();
-  });
-  a.route(
-    '/',
-    createWorkflowRunRecordsRouter({
-      db: makeDb(),
-      repoStore: {} as AgentRepoStore,
-      readDefinition: async () => painPointDefinition(),
-      resolveContext: async () => ({ context: ctx, forbidden: false }),
-    })
-  );
-  return a;
+  return routerWith({ context: ctx });
 }
 
 type AppHono = Hono<{ Variables: { userId: string } }>;
 
-async function post(
-  a: AppHono,
-  path: string,
-  body: unknown
-): Promise<{ status: number; json: any }> {
+// biome-ignore lint/suspicious/noExplicitAny: test response shape
+async function post(a: AppHono, path: string, body: unknown): Promise<{ status: number; json: any }> {
   const res = await a.request(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -284,196 +190,140 @@ async function post(
   return { status: res.status, json: await res.json() };
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: test response shape
 async function get(a: AppHono, path: string): Promise<{ status: number; json: any }> {
   const res = await a.request(path);
   return { status: res.status, json: await res.json() };
 }
 
-describe('pain-point-collateral via the thin executor (end-to-end seam)', () => {
-  test('start runs intake then parks at the note-selection gate', async () => {
-    runs.clear();
-    toolCalls.length = 0;
+describe('workflow runs on the sidecar (records router)', () => {
+  test('start seeds a running run record and fires the sidecar trigger with messageId == runId', async () => {
+    resetCaptures();
+    const a = app();
+    const { status, json } = await post(a, '/workflow-exec/pain-point-collateral/start', {
+      input: { topic: 'Acme' },
+    });
+
+    expect(status).toBe(200);
+    expect(json.status).toBe('running');
+    expect(json.currentStepId).toBeNull();
+    expect(json.outputs).toEqual({});
+    expect(typeof json.runId).toBe('string');
+
+    // The linchpin of the projection bridge: the trigger mail's messageId IS the
+    // run record id, so the supervisor-derived runId on every emitted event
+    // matches the seeded row.
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]?.messageId).toBe(json.runId);
+    expect(sentMessages[0]?.content).toBe(JSON.stringify({ topic: 'Acme' }));
+
+    // Supervisor re-established with the DEPLOYMENT owner's principal, not the caller's.
+    expect(ensureCalls).toHaveLength(1);
+    expect(ensureCalls[0]?.deploymentId).toBe('ses_dep1');
+    expect(ensureCalls[0]?.creatorPrincipalId).toBe('prn-deployer');
+  });
+
+  test('start returns 404 when no workflow of the kind is deployed', async () => {
+    resetCaptures();
+    const a = routerWith({ db: makeDb([]) });
+    const { status } = await post(a, '/workflow-exec/pain-point-collateral/start', { input: {} });
+    expect(status).toBe(404);
+    expect(sentMessages).toHaveLength(0);
+  });
+
+  test('start marks the run failed and 500s when the sidecar trigger send throws', async () => {
+    resetCaptures();
+    sendShouldThrow = true;
     const a = app();
     const { status, json } = await post(a, '/workflow-exec/pain-point-collateral/start', {
       input: {},
     });
-
-    expect(status).toBe(200);
-    expect(json.status).toBe('awaiting');
-    expect(json.currentStepId).toBe('select');
-    // intake ran; the note list is in outputs immediately (no event-log replay)
-    expect(toolCalls.map((c) => c.tool)).toEqual(['granola_list_notes']);
-    const intake = JSON.parse(json.outputs.intake.content);
-    expect(intake.notes[0].id).toBe('n1');
+    expect(status).toBe(500);
+    expect(json.error).toMatch(/failed to start/);
+    // The seeded row was flipped to failed so the UI doesn't poll a phantom run.
+    const seeded = [...runs.values()][0];
+    expect(seeded?.status).toBe('failed');
   });
 
-  test('full happy path: every gate resumed → completed with persisted artifacts', async () => {
-    runs.clear();
-    toolCalls.length = 0;
-    reasoningCalls.length = 0;
-    const a = app();
-
-    const start = await post(a, '/workflow-exec/pain-point-collateral/start', { input: {} });
-    const runId = start.json.runId;
-
-    // select transcript -> fetches the note, parks at context gate
-    let r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: 'note-selection',
-      payload: { noteId: 'n1' },
-    });
-    expect(r.json.currentStepId).toBe('context');
-    expect(toolCalls.find((c) => c.tool === 'granola_get_note')?.input).toEqual({ noteId: 'n1' });
-
-    // add context -> runs analyze (reasoning), parks at pain-point-selection
-    r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: 'context',
-      payload: { context: 'enterprise buyer' },
-    });
-    expect(r.json.currentStepId).toBe('ppSelection');
-    // analyze input = merge(fetch envelope, context gate payload). The fetch
-    // tool output is the `{content}` envelope; the context payload merges over it.
-    expect(reasoningCalls.find((c) => c.stepId === 'analyze')?.input).toEqual({
-      content: JSON.stringify({ transcript: 'we struggle with X' }),
-      context: 'enterprise buyer',
-    });
-
-    // select pain points -> parks at format-selection
-    r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: 'pain-point-selection',
-      payload: { selectedIds: ['pp1'] },
-    });
-    expect(r.json.currentStepId).toBe('fmtSelection');
-
-    // select formats -> generate map fans out, parks at review
-    r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: 'format-selection',
-      payload: { formats: [{ format: 'email' }, { format: 'linkedin' }] },
-    });
-    expect(r.json.currentStepId).toBe('review');
-    expect(r.json.outputs.generate).toHaveLength(2);
-    expect(reasoningCalls.filter((c) => c.stepId === 'generate.child')).toHaveLength(2);
-
-    // approve -> persist map creates one artifact per approved decision, completes
-    r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: 'review',
-      payload: { decisions: [{ title: 'Email', content: 'body', format: 'email' }] },
-    });
-    expect(r.json.status).toBe('completed');
-    expect(r.json.outputs.persist).toHaveLength(1);
-    const persistCalls = toolCalls.filter((c) => c.tool === 'artifact_create');
-    expect(persistCalls).toHaveLength(1);
-    // argMap reshaped trigger.payload -> tool args
-    expect(persistCalls[0]?.input).toEqual({ title: 'Email', kind: 'document', content: 'body' });
-  });
-
-  test('GET run state is a single record read (no replay) and matches resume result', async () => {
-    runs.clear();
+  test('resume delivers the gate signal to the sidecar and optimistically marks running', async () => {
+    resetCaptures();
     const a = app();
     const start = await post(a, '/workflow-exec/pain-point-collateral/start', { input: {} });
     const runId = start.json.runId;
+    // Simulate the bridge having parked the row at a gate.
+    const parked = runs.get(runId);
+    if (parked) runs.set(runId, { ...parked, status: 'awaiting', currentStepId: 'select' });
 
-    const read = await get(a, `/workflow-exec/records/${runId}`);
-    expect(read.status).toBe(200);
-    expect(read.json.runId).toBe(runId);
-    expect(read.json.status).toBe('awaiting');
-    expect(read.json.currentStepId).toBe('select');
-  });
-
-  test('restart mid-gate: a fresh router instance resumes from the persisted record', async () => {
-    runs.clear();
-    const a1 = app();
-    const start = await post(a1, '/workflow-exec/pain-point-collateral/start', { input: {} });
-    const runId = start.json.runId;
-    expect(start.json.status).toBe('awaiting');
-
-    // Simulate a hub restart: a brand-new router (fresh projection cache, fresh
-    // executor) over the SAME persisted run store. Resume must continue.
-    const a2 = app();
-    const r = await post(a2, `/workflow-exec/records/${runId}/resume`, {
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
       signalName: 'note-selection',
       payload: { noteId: 'n1' },
     });
+
     expect(r.status).toBe(200);
-    expect(r.json.currentStepId).toBe('context');
+    expect(r.json.status).toBe('running'); // optimistic flip so the UI resumes polling
+    expect(sentSignals).toHaveLength(1);
+    expect(sentSignals[0]?.runId).toBe(runId);
+    expect(sentSignals[0]?.signalName).toBe('note-selection');
+    expect(sentSignals[0]?.payload).toEqual({ noteId: 'n1' });
   });
 
-  test('resume with a wrong signal name is rejected 400', async () => {
-    runs.clear();
+  test('resume on an unknown run is 404 and sends no signal', async () => {
+    resetCaptures();
     const a = app();
-    const start = await post(a, '/workflow-exec/pain-point-collateral/start', { input: {} });
-    const r = await post(a, `/workflow-exec/records/${start.json.runId}/resume`, {
-      signalName: 'not-the-gate',
+    const r = await post(a, '/workflow-exec/records/wfr_missing/resume', {
+      signalName: 'x',
       payload: {},
     });
-    expect(r.status).toBe(400);
-    expect(r.json.error).toMatch(/awaits signal/);
+    expect(r.status).toBe(404);
+    expect(sentSignals).toHaveLength(0);
+  });
+
+  test('GET run state is a single record read', async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, '/workflow-exec/pain-point-collateral/start', { input: {} });
+    const read = await get(a, `/workflow-exec/records/${start.json.runId}`);
+    expect(read.status).toBe(200);
+    expect(read.json.runId).toBe(start.json.runId);
+    expect(read.json.status).toBe('running');
   });
 
   test('cross-user GET /records/:runId is forbidden 403', async () => {
-    runs.clear();
+    resetCaptures();
     const owner = app();
     const start = await post(owner, '/workflow-exec/pain-point-collateral/start', { input: {} });
-    const runId = start.json.runId;
-
-    // A different user (same tenant chain, different principal) reads the run.
     const intruder = appAs({ tenantId: 'tn-1', principalId: 'prn-other' });
-    const read = await get(intruder, `/workflow-exec/records/${runId}`);
+    const read = await get(intruder, `/workflow-exec/records/${start.json.runId}`);
     expect(read.status).toBe(403);
     expect(read.json.error).toBe('Forbidden');
   });
 
-  test('cross-user resume is forbidden 403', async () => {
-    runs.clear();
+  test('cross-user resume is forbidden 403 and sends no signal', async () => {
+    resetCaptures();
     const owner = app();
     const start = await post(owner, '/workflow-exec/pain-point-collateral/start', { input: {} });
-    const runId = start.json.runId;
-
     const intruder = appAs({ tenantId: 'tn-1', principalId: 'prn-other' });
-    const r = await post(intruder, `/workflow-exec/records/${runId}/resume`, {
+    const r = await post(intruder, `/workflow-exec/records/${start.json.runId}/resume`, {
       signalName: 'note-selection',
-      payload: { noteId: 'n1' },
+      payload: {},
     });
     expect(r.status).toBe(403);
-    expect(r.json.error).toBe('Forbidden');
+    expect(sentSignals).toHaveLength(0);
   });
 
   test('a run in a tenant outside the callers chain reads as 404', async () => {
-    runs.clear();
+    resetCaptures();
     const owner = app();
     const start = await post(owner, '/workflow-exec/pain-point-collateral/start', { input: {} });
-    const runId = start.json.runId;
-
-    // The run lives in tn-1; this caller's chain excludes tn-1, so the record
-    // does not exist for them.
     ancestorChain = ['tn-9'];
     try {
       const read = await get(
         appAs({ tenantId: 'tn-9', principalId: 'prn-9' }),
-        `/workflow-exec/records/${runId}`
+        `/workflow-exec/records/${start.json.runId}`
       );
       expect(read.status).toBe(404);
     } finally {
       ancestorChain = ['tn-1'];
     }
-  });
-
-  test('start with no deployed kind returns 404', async () => {
-    const a = new Hono<{ Variables: { userId: string } }>();
-    a.use('*', async (c, next) => {
-      c.set('userId', 'u');
-      await next();
-    });
-    const db = { query: { workflowRun: { findMany: async () => [] } } } as unknown as HubDb;
-    a.route(
-      '/',
-      createWorkflowRunRecordsRouter({
-        db,
-        repoStore: {} as AgentRepoStore,
-        readDefinition: async () => painPointDefinition(),
-        resolveContext,
-      })
-    );
-    const r = await post(a, '/workflow-exec/pain-point-collateral/start', { input: {} });
-    expect(r.status).toBe(404);
   });
 });

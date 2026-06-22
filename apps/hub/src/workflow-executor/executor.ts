@@ -17,6 +17,10 @@ export interface RunState {
   input: unknown;
   outputs: Record<string, unknown>;
   error?: string;
+  // The deployment this run belongs to. Read by the records router to address
+  // the sidecar supervisor for trigger/signal delivery; the in-process executor
+  // ignores it.
+  deploymentId?: string;
 }
 
 // Persists the run state after every step transition so a restart mid-run

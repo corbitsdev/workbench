@@ -14,6 +14,7 @@ function rowToState(row: WorkflowRunRecordRow): RunState {
     input: row.input,
     outputs: row.outputs,
     ...(row.error !== null ? { error: row.error } : {}),
+    ...(row.deploymentId !== null ? { deploymentId: row.deploymentId } : {}),
   };
 }
 
