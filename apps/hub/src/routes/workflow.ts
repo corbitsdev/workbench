@@ -473,7 +473,7 @@ export function createWorkflowRouter(db: HubDb): Hono<{ Variables: { userId: str
         return c.json({ error: 'At least two providers are required' }, 400);
       }
       const providerValidation = validateAbComparisonProviders(
-        providers as Array<{ providerPlugin?: string; model?: string }>
+        providers as Array<{ providerName?: string; providerPlugin?: string; model?: string }>
       );
       if (!providerValidation.valid) {
         return c.json({ error: providerValidation.error }, 400);
