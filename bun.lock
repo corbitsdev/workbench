@@ -41,7 +41,7 @@
         "@intx/workflow-deploy": "workspace:*",
         "@intx/workflow-host": "workspace:*",
         "@workbench/agents": "workspace:*",
-        "@workbench/catalog": "workspace:*",
+        "@workbench/analytics": "workspace:*",
         "@workbench/event-collector": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
         "@workbench/openapi-arktype": "workspace:*",
@@ -50,6 +50,7 @@
         "@workbench/tool-credentials": "workspace:*",
         "@workbench/tools-agents": "workspace:*",
         "@workbench/tools-artifact": "workspace:*",
+        "@workbench/tools-attio": "workspace:*",
         "@workbench/tools-bluesky": "workspace:*",
         "@workbench/tools-dispatch": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
@@ -59,6 +60,7 @@
         "@workbench/tools-granola": "workspace:*",
         "@workbench/tools-hackernews": "workspace:*",
         "@workbench/tools-last30days": "workspace:*",
+        "@workbench/tools-linear": "workspace:*",
         "@workbench/tools-polymarket": "workspace:*",
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
@@ -783,6 +785,19 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-attio": {
+      "name": "@workbench/tools-attio",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-bluesky": {
       "name": "@workbench/tools-bluesky",
       "version": "0.1.0",
@@ -900,6 +915,19 @@
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-linear": {
+      "name": "@workbench/tools-linear",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -2074,6 +2102,8 @@
 
     "@workbench/tools-artifact": ["@workbench/tools-artifact@workspace:packages/tools-artifact"],
 
+    "@workbench/tools-attio": ["@workbench/tools-attio@workspace:packages/tools-attio"],
+
     "@workbench/tools-bluesky": ["@workbench/tools-bluesky@workspace:packages/tools-bluesky"],
 
     "@workbench/tools-dispatch": ["@workbench/tools-dispatch@workspace:packages/tools-dispatch"],
@@ -2091,6 +2121,8 @@
     "@workbench/tools-hackernews": ["@workbench/tools-hackernews@workspace:packages/tools-hackernews"],
 
     "@workbench/tools-last30days": ["@workbench/tools-last30days@workspace:packages/tools-last30days"],
+
+    "@workbench/tools-linear": ["@workbench/tools-linear@workspace:packages/tools-linear"],
 
     "@workbench/tools-polymarket": ["@workbench/tools-polymarket@workspace:packages/tools-polymarket"],
 

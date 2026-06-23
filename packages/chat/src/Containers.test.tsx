@@ -101,6 +101,39 @@ describe('FloatingChat', () => {
     expect(screen.queryByText('hidden panel')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
+
+  it('fills the viewport (full-screen overlay) when open', () => {
+    render(
+      <FloatingChat open>
+        <div>full panel</div>
+      </FloatingChat>
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Chat' });
+    expect(dialog.className).toContain('fixed');
+    expect(dialog.className).toContain('inset-0');
+  });
+
+  it('calls onClose when Escape is pressed so a full-screen panel is never a trap', () => {
+    const onClose = mock(() => {});
+    render(
+      <FloatingChat open onClose={onClose}>
+        <div>closable panel</div>
+      </FloatingChat>
+    );
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(onClose.mock.calls.length).toBe(1);
+  });
+
+  it('does not call onClose for non-Escape keys', () => {
+    const onClose = mock(() => {});
+    render(
+      <FloatingChat open onClose={onClose}>
+        <div>panel</div>
+      </FloatingChat>
+    );
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(onClose.mock.calls.length).toBe(0);
+  });
 });
 
 describe('TypingIndicator', () => {

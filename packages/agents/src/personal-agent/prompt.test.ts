@@ -23,25 +23,23 @@ describe('buildPersonalAgentSystemPrompt', () => {
     expect(prompt).toContain('<guidelines>');
   });
 
-  it('describes runtime discovery and delegation to specialist agents', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('discover them at runtime');
-    expect(prompt).toContain('delegate');
-  });
-
-  it('includes a dedicated delegation section', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('<delegation>');
-  });
-
-  it('documents the direct tools: files, web search, artifacts, directory, and messaging', () => {
+  it('documents the direct tools: files, web search, artifacts, directory, and domain tools', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('<tools>');
     expect(prompt).toContain('write_file');
     expect(prompt).toContain('exa_search');
     expect(prompt).toContain('artifact_create');
     expect(prompt).toContain('list_agents');
-    expect(prompt).toContain('mail_send');
+    expect(prompt).toContain('granola_list_notes');
+    expect(prompt).toContain('linear_list_issues');
+    expect(prompt).toContain('attio_query_records');
+  });
+
+  it('no longer advertises mail tools or a delegation section', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).not.toContain('mail_send');
+    expect(prompt).not.toContain('<delegation>');
+    expect(prompt).not.toContain('PENDING.md');
   });
 
   it('coordinates expertise rather than claiming authority', () => {
@@ -87,28 +85,15 @@ describe('buildPersonalAgentSystemPrompt', () => {
     expect(prompt).toContain('Never call the person you work for "your operator" out loud');
   });
 
-  // Never broadcast the same question to multiple agents
-  it('forbids broadcasting the same question to multiple agents', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('Never send the same question to multiple agents');
-  });
-
-  // Route by each agent's described purpose
-  it('directs the agent to route by each specialist’s described purpose', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('description');
-    expect(prompt).toContain('the one specialist whose purpose fits');
-  });
-
-  // Source priority: agents first, then own notes, artifacts for shared work
-  it('orders information sources: ask agents first, then own notes, then artifacts', () => {
+  // Source priority: domain tools first, then own notes, then artifacts
+  it('orders information sources: domain tools first, then own notes, then artifacts', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('<sources>');
-    expect(prompt.toLowerCase()).toContain('ask the right specialist');
+    expect(prompt).toContain('The right tool for the domain');
   });
 
   // Temporal/recency requests fetch fresh, never a stale artifact
-  it('requires fresh data from the owning agent for time-bound requests', () => {
+  it('requires fresh data from the owning tool for time-bound requests', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt.toLowerCase()).toContain('my last call');
     expect(prompt).toContain('Do not answer it from an artifact');
@@ -121,12 +106,6 @@ describe('buildPersonalAgentSystemPrompt', () => {
     for (const file of ['MEMORY.md', 'SCRATCHPAD.md', 'CONTACTS.md', 'ERRORS.md', 'HUMAN.md']) {
       expect(prompt).toContain(file);
     }
-  });
-
-  // CL-1784 — mail query arguments are objects, not JSON strings
-  it('warns that mail query arguments are objects, not JSON strings', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('as a JSON object, not a string');
   });
 
   // Per-operator appendix
@@ -153,43 +132,6 @@ describe('buildPersonalAgentSystemPrompt', () => {
       operatorProfile: '   ',
     });
     expect(prompt).not.toContain('<operator>');
-  });
-
-  // CL-1789 — mail_wait removed; async delegation pattern
-  it('does not instruct Myra to call mail_wait', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).not.toContain('mail_wait');
-  });
-
-  it('instructs Myra to end her turn after sending and inform the user she is waiting', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('end your turn');
-    expect(prompt).toContain('waiting on the reply');
-  });
-
-  it('instructs Myra to record pending delegations in her notes before ending the turn', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('PENDING.md');
-  });
-
-  it('instructs Myra to check for inbound agent replies at the start of a new turn', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain(
-      'When a new inbound message arrives that is not from the person you work for'
-    );
-    expect(prompt).toContain('PENDING.md');
-    expect(prompt).toContain('mail_search');
-  });
-
-  it('provides a fallback when mail_search finds no pending match', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('no matching pending delegation');
-  });
-
-  it('instructs Myra to surface stale pending delegations to the user', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('older than');
-    expect(prompt).toContain('unresolved');
   });
 
   // CL-1951 — a referenced artifact id should be loaded via artifact_read, not asked about

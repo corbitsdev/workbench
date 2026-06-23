@@ -63,22 +63,24 @@ describe('AGENT_TEMPLATES', () => {
     }
   });
 
-  it('keeps Myra static grants (mail_send) without the deliver grant', () => {
+  it('drops the mail_send static grant (mail tools removed) and never bakes in the deliver grant', () => {
     const myra = AGENT_TEMPLATES.find((t) => t.key === 'myra');
     expect(myra).toBeDefined();
     const resources = myra?.grantRequirements.map((g) => g.resource) ?? [];
-    expect(resources).toContain('tool:mail_send');
+    expect(resources).not.toContain('tool:mail_send');
+    // The dynamic per-workbench tenant:<id> deliver grant is computed at launch,
+    // never seeded into the static definition.
+    expect(resources.some((r) => r.startsWith('tenant:'))).toBe(false);
   });
 
-  it('Myra capabilities include async mail tools but not mail_wait', () => {
+  it('Myra capabilities carry the read-only domain tools and no mail tools', () => {
     const myra = AGENT_TEMPLATES.find((t) => t.key === 'myra');
     expect(myra).toBeDefined();
     const tools = myra?.capabilities.tools ?? [];
-    expect(tools).toContain('mail_send');
-    expect(tools).toContain('mail_reply');
-    expect(tools).toContain('mail_search');
-    expect(tools).toContain('mail_read');
-    expect(tools).not.toContain('mail_wait');
+    expect(tools.some((t) => t.startsWith('mail_'))).toBe(false);
+    expect(tools).toContain('@workbench/tools-granola/granola:granola_list_notes');
+    expect(tools).toContain('@workbench/tools-linear/linear:linear_list_issues');
+    expect(tools).toContain('@workbench/tools-attio/attio:attio_query_records');
   });
 
   it('every dispatch-capable specialist has mail_search and mail_reply grants', () => {

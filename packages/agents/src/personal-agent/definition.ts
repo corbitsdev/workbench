@@ -12,11 +12,6 @@ export function buildPersonalAgentGrantRequirements(
   return [
     {
       source: 'invoker',
-      resource: 'tool:mail_send',
-      action: 'invoke',
-    },
-    {
-      source: 'invoker',
       resource: `tenant:${workbenchTenantId}`,
       action: 'deliver',
     },
@@ -50,8 +45,6 @@ export const PERSONAL_AGENT_DEPLOY_PROMPT: string = buildPersonalAgentSystemProm
  *
  * Tool grants (`tool:<name>/invoke`) are synthesized from this list at launch
  * (persistInstanceToolGrants), so listing a tool here is what authorizes it.
- * Mail tools are provided by the sidecar harness — `mail_send` is also covered
- * by the invoker delegation grant in `buildPersonalAgentGrantRequirements`.
  */
 export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   'read_file',
@@ -59,14 +52,21 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   'edit_file',
   'search_files',
   'exa_search',
+  'linear_list_issues',
+  'linear_get_issue',
+  'linear_list_teams',
+  'linear_list_users',
+  'attio_list_objects',
+  'attio_query_records',
+  'attio_get_record',
+  'attio_list_workspace_members',
+  'granola_list_notes',
+  'granola_get_note',
+  'granola_list_folders',
   'artifact_create',
   'artifact_read',
   'artifact_write',
   'artifact_list',
   'list_agents',
   'list_principals',
-  'mail_send',
-  'mail_reply',
-  'mail_search',
-  'mail_read',
 ]);

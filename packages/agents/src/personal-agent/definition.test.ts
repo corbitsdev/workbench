@@ -26,9 +26,25 @@ describe('PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)', () => {
     expect(PERSONAL_AGENT_BASE_TOOLS).toContain('@workbench/tools-artifact/artifact:artifact_list');
   });
 
-  it('leaves local runner tools (mail/posix) unprefixed', () => {
-    expect(PERSONAL_AGENT_BASE_TOOLS).toContain('mail_send');
+  it('leaves local runner tools (posix) unprefixed', () => {
     expect(PERSONAL_AGENT_BASE_TOOLS).toContain('read_file');
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain('search_files');
+  });
+
+  it('includes the read-only Granola, Linear, and Attio tools (prefixed)', () => {
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      '@workbench/tools-granola/granola:granola_list_notes'
+    );
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      '@workbench/tools-linear/linear:linear_list_issues'
+    );
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain('@workbench/tools-attio/attio:attio_query_records');
+  });
+
+  it('no longer carries the mail tools (removed in favor of direct domain tools)', () => {
+    for (const tool of PERSONAL_AGENT_BASE_TOOLS) {
+      expect(tool.startsWith('mail_')).toBe(false);
+    }
   });
 });
 

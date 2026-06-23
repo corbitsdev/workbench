@@ -50,6 +50,46 @@ describe("seed-credentials buildEntries", () => {
     expect(entries.find((e) => e.providerName === "youtube")).toBeUndefined();
   });
 
+  it("includes linear entry with GraphQL baseURL when LINEAR_API_KEY is set", () => {
+    process.env["LINEAR_API_KEY"] = "lin_api_test123";
+
+    const entries = buildEntries();
+
+    const linear = entries.find((e) => e.providerName === "linear");
+    expect(linear).toBeDefined();
+    expect(linear?.secret).toBe("lin_api_test123");
+    expect(linear?.providerPlugin).toBe("linear");
+    expect(linear?.metadata?.["baseURL"]).toBe("https://api.linear.app/graphql");
+  });
+
+  it("omits linear entry when LINEAR_API_KEY is not set", () => {
+    delete process.env["LINEAR_API_KEY"];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === "linear")).toBeUndefined();
+  });
+
+  it("includes attio entry with REST baseURL when ATTIO_API_KEY is set", () => {
+    process.env["ATTIO_API_KEY"] = "attio_test123";
+
+    const entries = buildEntries();
+
+    const attio = entries.find((e) => e.providerName === "attio");
+    expect(attio).toBeDefined();
+    expect(attio?.secret).toBe("attio_test123");
+    expect(attio?.providerPlugin).toBe("attio");
+    expect(attio?.metadata?.["baseURL"]).toBe("https://api.attio.com");
+  });
+
+  it("omits attio entry when ATTIO_API_KEY is not set", () => {
+    delete process.env["ATTIO_API_KEY"];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === "attio")).toBeUndefined();
+  });
+
   it("includes anthropic provider metadata when ANTHROPIC_API_KEY is set", () => {
     process.env["ANTHROPIC_API_KEY"] = "sk-ant-test123";
 

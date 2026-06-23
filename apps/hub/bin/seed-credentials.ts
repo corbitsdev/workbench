@@ -245,6 +245,28 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const linearKey = env("LINEAR_API_KEY");
+  if (linearKey) {
+    entries.push({
+      providerName: "linear",
+      providerPlugin: "linear",
+      credentialName: "Linear",
+      secret: linearKey,
+      metadata: { baseURL: "https://api.linear.app/graphql" },
+    });
+  }
+
+  const attioKey = env("ATTIO_API_KEY");
+  if (attioKey) {
+    entries.push({
+      providerName: "attio",
+      providerPlugin: "attio",
+      credentialName: "Attio",
+      secret: attioKey,
+      metadata: { baseURL: "https://api.attio.com" },
+    });
+  }
+
   const youtubeKey = env("YOUTUBE_API_KEY");
   if (youtubeKey) {
     entries.push({

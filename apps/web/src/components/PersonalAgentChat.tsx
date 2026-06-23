@@ -456,7 +456,9 @@ export function PersonalAgentChat() {
   return (
     <>
       {!launcherHidden && <ChatLauncher onClick={() => setOpen((prev) => !prev)} open={open} />}
-      <FloatingChat open={open}>{panel}</FloatingChat>
+      <FloatingChat open={open} onClose={() => setOpen(false)}>
+        {panel}
+      </FloatingChat>
     </>
   );
 }

@@ -44,10 +44,6 @@ export const PERSONAL_AGENT_SEED_FILES: SeedWorkspaceFile[] = [
       'Standing brief on the person you work for: preferences, priorities, open tasks and todos.'
     ),
   },
-  {
-    path: 'PENDING.md',
-    content: stubFor('Pending', 'Open delegations awaiting a reply.'),
-  },
 ];
 
 const SEED_MARKER_PREFIX = '<!-- workbench:memory-seed=';

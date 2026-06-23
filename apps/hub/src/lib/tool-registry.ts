@@ -4,8 +4,10 @@ import { createPosixTools } from '@intx/tools-posix';
 import { TOOL_DEFINITIONS as MAIL_TOOL_DEFINITIONS } from '@intx/tools-mail';
 import type { ToolDefinition } from '@intx/types/runtime';
 import { AGENTS_HUB_TOOLS } from '@workbench/tools-agents';
+import { ATTIO_HUB_TOOLS } from '@workbench/tools-attio';
 import { BLUESKY_HUB_TOOLS } from '@workbench/tools-bluesky';
 import { EXA_HUB_TOOLS } from '@workbench/tools-exa';
+import { LINEAR_HUB_TOOLS } from '@workbench/tools-linear';
 import { FIRECRAWL_HUB_TOOLS } from '@workbench/tools-firecrawl';
 import { GAMMA_HUB_TOOLS } from '@workbench/tools-gamma';
 import { GRANOLA_HUB_TOOLS } from '@workbench/tools-granola';
@@ -30,9 +32,11 @@ import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@int
 // no tarball form and stay permanently. See docs/CREATING_AGENTS_AND_TOOLS.md.
 export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   // Native-migrated (coexistence fallback)
+  ...ATTIO_HUB_TOOLS,
   ...BLUESKY_HUB_TOOLS,
   ...EXA_HUB_TOOLS,
   ...FIRECRAWL_HUB_TOOLS,
+  ...LINEAR_HUB_TOOLS,
   // gamma_list_templates is a ContextToolEntry (reads tenant DB), not a credential tool.
   // The remaining GAMMA_HUB_TOOLS entries are credential tools that call the Gamma API.
   gamma_list_templates: GAMMA_LIST_TEMPLATES_HUB_TOOL,

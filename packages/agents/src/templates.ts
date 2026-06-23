@@ -152,6 +152,9 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     kind: 'personal',
     toolPackages: [
       { name: '@workbench/tools-exa', version: '^0.1.0' },
+      { name: '@workbench/tools-linear', version: '^0.1.0' },
+      { name: '@workbench/tools-attio', version: '^0.1.0' },
+      { name: '@workbench/tools-granola', version: '^0.1.0' },
       { name: '@workbench/tools-artifact', version: '^0.1.0' },
       { name: '@workbench/tools-agents', version: '^0.1.0' },
     ],

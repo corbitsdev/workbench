@@ -18,6 +18,12 @@ import type { ToolPackagePin } from '@intx/types/tool-packages';
 
 const PACKAGE_TOOLS: Record<string, readonly string[]> = {
   '@workbench/tools-agents/agents': ['list_agents', 'list_principals'],
+  '@workbench/tools-attio/attio': [
+    'attio_list_objects',
+    'attio_query_records',
+    'attio_get_record',
+    'attio_list_workspace_members',
+  ],
   '@workbench/tools-artifact/artifact': [
     'artifact_create',
     'artifact_read',
@@ -59,6 +65,12 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     'granola_list_folders',
   ],
   '@workbench/tools-hackernews/hackernews': ['hackernews_search'],
+  '@workbench/tools-linear/linear': [
+    'linear_list_issues',
+    'linear_get_issue',
+    'linear_list_teams',
+    'linear_list_users',
+  ],
   '@workbench/tools-last30days/core': [
     'last30days_core_extract',
     'last30days_core_report',
@@ -89,10 +101,12 @@ const FACTORY_ID_BY_TOOL: Record<string, string> = Object.fromEntries(
 // dispatch, hackernews, polymarket, last30days) and need no tenant credential.
 // Keep in sync with each package's `interchange-tools.ts` provider.
 const PACKAGE_PROVIDERS: Record<string, string> = {
+  '@workbench/tools-attio': 'attio',
   '@workbench/tools-bluesky': 'bluesky',
   '@workbench/tools-exa': 'exa',
   '@workbench/tools-firecrawl': 'firecrawl',
   '@workbench/tools-gamma': 'gamma',
+  '@workbench/tools-linear': 'linear',
   '@workbench/tools-github': 'github',
   '@workbench/tools-granola': 'granola',
   '@workbench/tools-reddit': 'scrapecreators',
