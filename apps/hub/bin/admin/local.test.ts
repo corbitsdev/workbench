@@ -60,6 +60,16 @@ describe("buildLocalCommand", () => {
     ]);
   });
 
+  it("publish-tool-packages uses an absolute path for --from so it works from any cwd", () => {
+    const publish = LOCAL_ACTIONS.find(
+      (a) => a.script === "publish-tool-packages.ts",
+    );
+    const from = publish?.baseArgs?.[1];
+    expect(typeof from).toBe("string");
+    expect((from as string).startsWith("/")).toBe(true);
+    expect(from).toContain("dist/tool-packages");
+  });
+
   it("only the bootstrap superadmin seed is marked bootstrap", () => {
     const bootstrap = LOCAL_ACTIONS.filter((a) => a.bootstrap).map(
       (a) => a.script,

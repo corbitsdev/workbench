@@ -36,6 +36,9 @@ export interface LocalAction {
   bootstrap?: boolean;
 }
 
+const BIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+const REPO_ROOT = dirname(dirname(BIN_DIR));
+
 export const SETUP_GROUP = "Local actions (build, seed)";
 export const WORKFLOWS_GROUP = "Workflows";
 
@@ -79,7 +82,9 @@ export const LOCAL_ACTIONS: LocalAction[] = [
     label: "Publish tool packages",
     group: SETUP_GROUP,
     script: "publish-tool-packages.ts",
-    baseArgs: ["--from", "dist/tool-packages"],
+    get baseArgs() {
+      return ["--from", join(REPO_ROOT, "dist/tool-packages")];
+    },
     tenantAware: true,
   },
   {
@@ -195,8 +200,6 @@ export function buildLocalCommand(
   if (action.tenantAware) argv.push("--tenant", tenantSlug);
   return argv;
 }
-
-const BIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export async function runLocalAction(
   action: LocalAction,
