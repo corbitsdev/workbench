@@ -9,6 +9,7 @@ import Settings from './pages/Settings';
 import { SkillsLibrary } from './pages/SkillsLibrary';
 import { SkillsNew } from './pages/SkillsNew';
 import { SkillDetail } from './pages/SkillDetail';
+import { InsightsDashboard } from './pages/InsightsDashboard';
 
 function ProtectedLayout() {
   const { session } = useAuth();
@@ -52,6 +53,7 @@ export const router = createBrowserRouter([
           { path: '/skills', element: <SkillsLibrary /> },
           { path: '/skills/new', element: <SkillsNew /> },
           { path: '/skills/:id', element: <SkillDetail /> },
+          { path: '/insights', element: <InsightsDashboard /> },
           { path: '/workbenches/:slug', element: <WorkbenchHome /> },
         ],
       },
