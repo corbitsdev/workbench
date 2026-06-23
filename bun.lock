@@ -42,6 +42,7 @@
         "@intx/workflow-host": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/analytics": "workspace:*",
+        "@workbench/catalog": "workspace:*",
         "@workbench/event-collector": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
         "@workbench/openapi-arktype": "workspace:*",
