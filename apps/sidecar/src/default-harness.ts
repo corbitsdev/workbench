@@ -1,29 +1,44 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { evaluateGrants } from '@intx/authz';
-import { createToolRunner, createDefaultDirectorRegistry, defineTool } from '@intx/agent';
-import { createHarness, createHarnessRuntimeCapabilities } from '@intx/harness';
-import { readDeployTree } from '@intx/hub-agent';
-import { hasProvider } from '@intx/inference';
-import { getLogger } from '@intx/log';
-import { createIsogitStore, createMailAuditStore } from '@intx/storage-isogit';
-import { createMailTools } from '@intx/tools-mail';
-import { createPosixTools } from '@intx/tools-posix';
-import { createLSPPlugin } from '@intx/tools-lsp';
-import { createBlobReader } from '@intx/types/runtime';
-import type { InferenceSource, ToolDefinition, ToolRunner } from '@intx/types/runtime';
-import type { HarnessBuilder, HarnessBundle } from '@intx/hub-agent';
-import { hasSeedMarker, parseSeedMarker, stripSeedMarker } from '@workbench/agents/seed';
-import { PERSONAL_AGENT_NAME } from '@workbench/agents';
-import { createAskPrincipalTool } from '@workbench/approvals';
-import { seedWorkspaceFiles } from './seed-workspace-files';
-import { healTurns } from '@workbench/context-repair';
-import { withActiveContext } from '@workbench/prompts';
-import { createGuardedMailRunner } from './mail-guard';
-import type { ContextStore } from '@intx/types/runtime';
-import { createHubToolRunner } from './hub-tool-runner';
+import fs from "node:fs";
+import path from "node:path";
+import { evaluateGrants } from "@intx/authz";
+import { createToolRunner, defineTool } from "@intx/agent";
+import { createWorkbenchDirectorRegistry } from "@workbench/agents";
+import {
+  HUB_RPC_ENV_KEY,
+  providerFromEnvKey,
+} from "@workbench/tool-credentials";
+import {
+  mergeToolRunners,
+  fetchToolCredentials,
+  filterToolRunner,
+  loadToolPackages,
+  wsUrlToHttp,
+  type DefinedRunner,
+} from "./agent-tools";
+import { createHarness, createHarnessRuntimeCapabilities } from "@intx/harness";
+import { readDeployTree } from "@intx/hub-agent";
+import { hasProvider } from "@intx/inference";
+import { getLogger } from "@intx/log";
+import { createIsogitStore, createMailAuditStore } from "@intx/storage-isogit";
+import { createMailTools } from "@intx/tools-mail";
+import { createPosixTools } from "@intx/tools-posix";
+import { createBlobReader } from "@intx/types/runtime";
+import type { InferenceSource } from "@intx/types/runtime";
+import type { HarnessBuilder, HarnessBundle } from "@intx/hub-agent";
+import {
+  hasSeedMarker,
+  parseSeedMarker,
+  stripSeedMarker,
+} from "@workbench/agents/seed";
+import { PERSONAL_AGENT_NAME } from "@workbench/agents";
+import { createAskPrincipalTool } from "@workbench/approvals";
+import { seedWorkspaceFiles } from "./seed-workspace-files";
+import { healTurns } from "@workbench/context-repair";
+import { withActiveContext } from "@workbench/prompts";
+import { createGuardedMailRunner } from "./mail-guard";
+import type { ContextStore } from "@intx/types/runtime";
 
-const logger = getLogger(['sidecar', 'harness-builder']);
+const logger = getLogger(["sidecar", "harness-builder"]);
 const DEFAULT_MAIL_OUTBOUND_PER_TURN = 8;
 const PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN = 100;
 
@@ -35,111 +50,75 @@ const PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN = 100;
  * every replay until removed — ending and relaunching the session alone does
  * not clear them, because the isogit store is reused.
  */
-export async function healContextStore(storage: ContextStore, agentAddress: string): Promise<void> {
+export async function healContextStore(
+  storage: ContextStore,
+  agentAddress: string,
+): Promise<void> {
   const { turns } = await storage.load();
   const healed = healTurns(turns);
   if (!healed.changed) return;
 
   await storage.writeTurns(healed.turns);
-  await storage.commit({ message: 'recover: heal unsendable turns and tool_call pairing' });
+  await storage.commit({
+    message: "recover: heal unsendable turns and tool_call pairing",
+  });
   logger.warn(
-    'Healed context for {address}: removed {removed} unsendable turn(s), synthesized {synth} tool result(s), dropped {dangling} dangling result(s)',
+    "Healed context for {address}: removed {removed} unsendable turn(s), synthesized {synth} tool result(s), dropped {dangling} dangling result(s)",
     {
       address: agentAddress,
       removed: healed.unsendableRemoved,
       synth: healed.toolResultsSynthesized,
       dangling: healed.danglingResultsDropped,
-    }
+    },
   );
 }
 
-function mergeToolRunners(runners: ToolRunner[]): ToolRunner & { definitions: ToolDefinition[] } {
-  const allDefinitions = runners.flatMap((r) => (r as any).definitions ?? []);
-  const toolToRunner = new Map<string, ToolRunner>();
-  for (const runner of runners) {
-    const definitions = (runner as any).definitions ?? [];
-    for (const def of definitions) {
-      toolToRunner.set(def.name, runner);
-    }
-  }
-
-  return {
-    definitions: allDefinitions,
-    async run(call, signal) {
-      const runner = toolToRunner.get(call.name);
-      if (!runner) {
-        return {
-          callId: call.id,
-          content: { error: `Tool "${call.name}" is not available` },
-          isError: true,
-        };
-      }
-      return runner.run(call, signal);
-    },
-  };
-}
-
-export { mergeToolRunners as combineRunners };
-
-type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
-
-/**
- * Derive the hub's HTTP origin from its websocket URL.
- */
-export function wsUrlToHttp(wsUrl: string): string {
-  const url = new URL(wsUrl);
-  const protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-  return `${protocol}//${url.host}`;
-}
+export {
+  mergeToolRunners as combineRunners,
+  wsUrlToHttp,
+  fetchToolCredentials,
+};
 
 export function resolveMailOutboundLimit(systemPrompt: string): number {
-  if (systemPrompt.includes(`${PERSONAL_AGENT_NAME} is a Chief of Staff and Executive Assistant`)) {
+  if (
+    systemPrompt.includes(
+      `${PERSONAL_AGENT_NAME} is a Chief of Staff and Executive Assistant`,
+    )
+  ) {
     return PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN;
   }
   return DEFAULT_MAIL_OUTBOUND_PER_TURN;
 }
 
-/**
- * Filter a merged tool runner to only expose the tool definitions the hub
- * configured for this agent.
- */
-function filterToolRunner(runner: DefinedRunner, allowedNames: Set<string>): DefinedRunner {
-  const filtered = runner.definitions.filter((d) => allowedNames.has(d.name));
-  return {
-    definitions: filtered,
-    async run(call, signal) {
-      if (!allowedNames.has(call.name)) {
-        return {
-          callId: call.id,
-          content: { error: `Tool "${call.name}" is not enabled for this agent` },
-          isError: true,
-        };
-      }
-      return runner.run(call, signal);
-    },
-  };
-}
-
 type HarnessBuilderOpts = {
   hubHttpUrl: string;
   sidecarToken: string;
+  cacheRoot: string;
+  cacheMaxBytes: number;
+  registryMaxTarballBytes: number;
 };
 
 export function createDefaultHarnessBuilder({
   hubHttpUrl,
   sidecarToken,
+  cacheRoot,
+  cacheMaxBytes,
+  registryMaxTarballBytes,
 }: HarnessBuilderOpts): HarnessBuilder {
   return {
     canBuildSource(source: InferenceSource): void {
       if (!hasProvider(source.provider)) {
-        throw new Error(`Source provider "${source.provider}" is not registered`);
+        throw new Error(
+          `Source provider "${source.provider}" is not registered`,
+        );
       }
     },
 
     async build({
       agentAddress,
       agentConfig,
-      source,
+      sources,
+      defaultSource,
       storeDir,
       agentTransport,
       crypto,
@@ -169,14 +148,19 @@ export function createDefaultHarnessBuilder({
       // agentConfig principal is the synthetic per-instance principal — so only
       // the live date is populated until user identity is threaded through the
       // launch config.
-      const systemPrompt = withActiveContext(cleanedPrompt, { now: new Date() });
+      const systemPrompt = withActiveContext(cleanedPrompt, {
+        now: new Date(),
+      });
 
       const grantsRef = { current: agentConfig.grants };
       const { principalId, tenantId } = agentConfig;
       const authorize = async (resource: string, action: string) =>
-        evaluateGrants(grantsRef.current, resource, action, { principalId, tenantId });
+        evaluateGrants(grantsRef.current, resource, action, {
+          principalId,
+          tenantId,
+        });
 
-      const workDir = path.join(storeDir, 'workspace');
+      const workDir = path.join(storeDir, "workspace");
       await fs.promises.mkdir(workDir, { recursive: true });
 
       // Seed the memory files the agent documents but does not create itself, so
@@ -187,29 +171,39 @@ export function createDefaultHarnessBuilder({
         // A marker that resolves zero files is a malformed/empty marker — a
         // contract break between the prompt builder and the seed table. Surface
         // it rather than silently seed nothing (CL-1952).
-        logger.warn('Seed marker for {address} resolved zero files (malformed)', {
-          address: agentAddress,
-        });
+        logger.warn(
+          "Seed marker for {address} resolved zero files (malformed)",
+          {
+            address: agentAddress,
+          },
+        );
       }
       const seedResult = await seedWorkspaceFiles(workDir, declaredSeedFiles);
-      logger.info('Seeded {created} workspace file(s) for {address}, skipped {skipped} existing', {
-        address: agentAddress,
-        created: seedResult.created,
-        skipped: seedResult.skipped,
-      });
+      logger.info(
+        "Seeded {created} workspace file(s) for {address}, skipped {skipped} existing",
+        {
+          address: agentAddress,
+          created: seedResult.created,
+          skipped: seedResult.skipped,
+        },
+      );
 
       const blobReader = createBlobReader(storage);
       const posixTools = createPosixTools({
         cwd: workDir,
-        plugins: [createLSPPlugin({ cwd: workDir })],
         blobReader,
       });
 
-      const capabilities = createHarnessRuntimeCapabilities({ transport: agentTransport });
-      const mailTools = createMailTools({ capabilities });
-      const guardedMailTools = createGuardedMailRunner(mailTools as DefinedRunner, {
-        maxOutboundPerTurn: resolveMailOutboundLimit(cleanedPrompt),
+      const capabilities = createHarnessRuntimeCapabilities({
+        transport: agentTransport,
       });
+      const mailTools = createMailTools({ capabilities });
+      const guardedMailTools = createGuardedMailRunner(
+        mailTools as DefinedRunner,
+        {
+          maxOutboundPerTurn: resolveMailOutboundLimit(cleanedPrompt),
+        },
+      );
 
       const askPrincipalRunner = createToolRunner([
         createAskPrincipalTool({
@@ -221,34 +215,128 @@ export function createDefaultHarnessBuilder({
         }),
       ]);
 
-      const localToolNames = new Set([
-        ...posixTools.definitions.map((d) => d.name),
-        ...mailTools.definitions.map((d) => d.name),
-        ...askPrincipalRunner.definitions.map((d) => d.name),
-      ]);
+      // Materialize the agent's pinned tool packages, then resolve the
+      // credentials they declare via `requires: [workbench.cred.<provider>]`
+      // and inject them into env before instantiating each factory. A
+      // factory that throws is skipped (fail-soft); only the names that
+      // actually load are shadowed away from the proxy.
+      const loadedPackages = await loadToolPackages({
+        rawManifestBytes: deployTree.toolPackageManifestRaw,
+        assetMounts: deployTree.assetMounts,
+        storeDir,
+        agentAddress,
+        cacheRoot,
+        cacheMaxBytes,
+        registryMaxTarballBytes,
+      });
 
-      const hubToolRunner = createHubToolRunner({
+      const requiredProviders = new Set<string>();
+      for (const pkg of loadedPackages) {
+        for (const factory of pkg.factories) {
+          for (const key of factory.requires) {
+            const provider = providerFromEnvKey(key);
+            if (provider !== undefined) requiredProviders.add(provider);
+          }
+        }
+      }
+      const credentialEnv = await fetchToolCredentials({
         hubHttpUrl,
         sidecarToken,
         tenantId,
         agentId: agentConfig.agentId,
-        principalId,
-        sessionId: agentConfig.sessionId,
-        toolDefinitions: agentConfig.tools.filter((t) => !localToolNames.has(t.name)),
+        providerNames: [...requiredProviders],
+        agentAddress,
       });
 
+      // Hub-RPC context for hub-backed native tool packages (artifact,
+      // agents, dispatch). Their factory declares `requires: [HUB_RPC_ENV_KEY]`
+      // and forwards each call to the hub's scoped endpoint with this identity.
+      const hubRpcContext = {
+        baseURL: hubHttpUrl,
+        token: sidecarToken,
+        tenantId,
+        agentId: agentConfig.agentId,
+        principalId,
+        sessionId: agentConfig.sessionId,
+      };
+
+      const env = {
+        sources,
+        defaultSource,
+        storage,
+        workdir: workDir,
+        audit: storage,
+        authorize,
+        directors: createWorkbenchDirectorRegistry(),
+        transport: agentTransport,
+        address: agentAddress,
+        onConnectorStateChanged,
+        ...credentialEnv,
+        [HUB_RPC_ENV_KEY]: hubRpcContext,
+      };
+
+      const loadedRunners: DefinedRunner[] = [];
+      const loadedDisposers: Array<() => Promise<void>> = [];
+      const loadedToolNames = new Set<string>();
+      for (const pkg of loadedPackages) {
+        for (const factory of pkg.factories) {
+          // Fail-soft per-package: construction depends on runtime resources
+          // (e.g. a credential the hub fetched fail-soft — fetchToolCredentials
+          // returns {} on a transient blip), so a throw here drops THIS
+          // package's tools and logs, rather than bricking the whole agent
+          // launch (including its local tools + inference). Manifest integrity
+          // is the hard gate — that lives in loadToolPackages, not here.
+          let bundle: ReturnType<typeof factory>;
+          try {
+            bundle = factory(env);
+          } catch (err) {
+            logger.warn(
+              "Tool-package factory {id} failed to construct for {address}: {msg}",
+              {
+                id: factory.id,
+                address: agentAddress,
+                msg: err instanceof Error ? err.message : String(err),
+              },
+            );
+            continue;
+          }
+          loadedRunners.push({
+            definitions: [...bundle.definitions],
+            run: (call, signal) => bundle.run(call, signal),
+          });
+          for (const def of bundle.definitions) loadedToolNames.add(def.name);
+          if (bundle.dispose !== undefined) {
+            loadedDisposers.push(async () => {
+              await bundle.dispose?.();
+            });
+          }
+        }
+      }
+      if (loadedToolNames.size > 0) {
+        logger.info("Loaded {count} native tool(s) for {address}: {names}", {
+          count: loadedToolNames.size,
+          address: agentAddress,
+          names: [...loadedToolNames].join(", "),
+        });
+      }
+
+      // Agent tools come from local runners (posix/mail/ask-principal) plus
+      // the materialized native packages — there is no hub-side tool proxy.
       const allTools = mergeToolRunners([
         posixTools,
         guardedMailTools,
         askPrincipalRunner as DefinedRunner,
-        hubToolRunner,
+        ...loadedRunners,
       ]);
-      const allowedNames = new Set(agentConfig.tools.map((t) => t.name));
+      const allowedNames = new Set([
+        ...agentConfig.tools.map((t) => t.name),
+        ...loadedToolNames,
+      ]);
       const tools = filterToolRunner(allTools as DefinedRunner, allowedNames);
 
       try {
         const toolsFactory = defineTool({
-          id: '@workbench/sidecar/tools',
+          id: "@workbench/sidecar/tools",
           factory: () => ({
             definitions: tools.definitions,
             run: tools.run.bind(tools),
@@ -261,18 +349,6 @@ export function createDefaultHarnessBuilder({
           toolFactories: [toolsFactory] as const,
           capabilities: [],
           inference: { sources: [] as const },
-        };
-
-        const env = {
-          source,
-          storage,
-          workdir: workDir,
-          audit: storage,
-          authorize,
-          directors: createDefaultDirectorRegistry(),
-          transport: agentTransport,
-          address: agentAddress,
-          onConnectorStateChanged,
         };
 
         const harness = await createHarness(def, env);
@@ -292,17 +368,20 @@ export function createDefaultHarnessBuilder({
         async function forwardEvents(): Promise<void> {
           try {
             for await (const event of harness.stream()) {
-              if (event.type === 'message.received') {
+              if (event.type === "message.received") {
                 guardedMailTools.resetOutboundBudget();
                 continue;
               }
               onEvent(event);
             }
           } catch (err) {
-            logger.warn('Harness event forwarding stopped for {address}: {msg}', {
-              address: agentAddress,
-              msg: err instanceof Error ? err.message : String(err),
-            });
+            logger.warn(
+              "Harness event forwarding stopped for {address}: {msg}",
+              {
+                address: agentAddress,
+                msg: err instanceof Error ? err.message : String(err),
+              },
+            );
           }
         }
         const eventForwarding = forwardEvents();
@@ -313,20 +392,37 @@ export function createDefaultHarnessBuilder({
           updateGrants(grants) {
             grantsRef.current = grants;
           },
-          disposers: [() => mailTools.dispose(), () => posixTools.dispose(), () => eventForwarding],
+          disposers: [
+            () => mailTools.dispose(),
+            () => posixTools.dispose(),
+            ...loadedDisposers,
+            () => eventForwarding,
+          ],
         };
       } catch (err) {
         try {
           await mailTools.dispose();
         } catch (disposeErr) {
-          const msg = disposeErr instanceof Error ? disposeErr.message : String(disposeErr);
-          logger.warn('mailTools.dispose failed during harness rollback: {msg}', { msg });
+          const msg =
+            disposeErr instanceof Error
+              ? disposeErr.message
+              : String(disposeErr);
+          logger.warn(
+            "mailTools.dispose failed during harness rollback: {msg}",
+            { msg },
+          );
         }
         try {
           await posixTools.dispose();
         } catch (disposeErr) {
-          const msg = disposeErr instanceof Error ? disposeErr.message : String(disposeErr);
-          logger.warn('posixTools.dispose failed during harness rollback: {msg}', { msg });
+          const msg =
+            disposeErr instanceof Error
+              ? disposeErr.message
+              : String(disposeErr);
+          logger.warn(
+            "posixTools.dispose failed during harness rollback: {msg}",
+            { msg },
+          );
         }
         throw err;
       }

@@ -3,8 +3,7 @@ import { useState } from 'react';
 export type RightPane =
   | { view: 'gallery' }
   | { view: 'agent'; instanceId: string; tenantId: string; agentName: string }
-  | { view: 'workflow'; workflowId: string }
-  | { view: 'new-workflow'; workflowKind: string; seedArtifactId?: string };
+  | { view: 'workflow'; deploymentId: string };
 
 export interface AgentTarget {
   instanceId: string;
@@ -29,29 +28,13 @@ export function useRightPane(options: { onShow?: () => void; onClose?: () => voi
     onShow?.();
   };
 
-  const showWorkflow = (workflowId: string) => {
-    setRightPane({ view: 'workflow', workflowId });
+  const showWorkflow = (deploymentId: string) => {
+    setRightPane({ view: 'workflow', deploymentId });
     onShow?.();
   };
 
-  const showNewWorkflow = (workflowKind: string, seedArtifactId?: string) => {
-    setRightPane({
-      view: 'new-workflow',
-      workflowKind,
-      ...(seedArtifactId ? { seedArtifactId } : {}),
-    });
-    onShow?.();
-  };
-
-  // Promote a freshly created workflow from the new-workflow wizard into the
-  // live workflow panel; ignored if the wizard is no longer the active pane.
-  const promoteCreatedWorkflow = (workflowId: string) => {
-    if (rightPane.view !== 'new-workflow') return;
-    setRightPane({ view: 'workflow', workflowId });
-  };
-
-  const closeWorkflow = (workflowId: string) => {
-    if (rightPane.view === 'workflow' && rightPane.workflowId === workflowId) {
+  const closeWorkflow = (deploymentId: string) => {
+    if (rightPane.view === 'workflow' && rightPane.deploymentId === deploymentId) {
       showGallery();
     }
   };
@@ -61,8 +44,6 @@ export function useRightPane(options: { onShow?: () => void; onClose?: () => voi
     showGallery,
     showAgent,
     showWorkflow,
-    showNewWorkflow,
-    promoteCreatedWorkflow,
     closeWorkflow,
   };
 }

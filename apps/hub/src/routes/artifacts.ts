@@ -1,0 +1,281 @@
+import { Hono } from "hono";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  lt,
+  ne,
+  or,
+} from "drizzle-orm";
+import { getLogger } from "@intx/log";
+import { schema as intxSchema } from "@intx/db";
+import type { HubDb } from "../db";
+import { artifact, artifactStatus } from "../db/schema";
+import { getRequestedUserContext } from "../lib/user-context";
+
+const log = getLogger(["api", "artifacts"]);
+
+// Kinds whose content is a downloadable file (served by GET /artifacts/:id/download).
+// Mirrors the pre-M6 DOWNLOADABLE_ARTIFACT_KINDS; the SEO-enrichment CSV export is
+// the only file-shaped artifact today.
+const DOWNLOADABLE_ARTIFACT_KINDS: ReadonlySet<string> = new Set([
+  "csv-export",
+]);
+
+type ArtifactRow = typeof artifact.$inferSelect;
+
+// Serialize an artifact row to the `Artifact` shape the web client parses
+// (@workbench/shared). Timestamps are ISO strings; nullable columns default to
+// null so the boundary schema validates.
+function serializeArtifact(a: ArtifactRow) {
+  return {
+    id: a.id,
+    sessionId: a.sessionId,
+    parentId: a.parentId ?? null,
+    painPointId: a.painPointId ?? null,
+    kind: a.kind,
+    title: a.title,
+    content: a.content,
+    source: a.source ?? null,
+    status: a.status,
+    version: a.version,
+    ownerPrincipalId: a.ownerPrincipalId ?? null,
+    createdAt: a.createdAt.toISOString(),
+    updatedAt: a.updatedAt.toISOString(),
+  };
+}
+
+function csvDownloadFilename(title: string): string {
+  const cleaned = title
+    .replace(/[\r\n"\\]/g, "")
+    .replace(/\.csv$/i, "")
+    .trim();
+  return `${cleaned.length > 0 ? cleaned : "export"}.csv`;
+}
+
+/**
+ * Artifacts HTTP routes, restoring the surface the M6 cutover (#296) removed when
+ * it deleted the old collateral/workflow router. The web `ArtifactGallery` GETs
+ * `/artifacts` and `ArtifactBody` links to `/artifacts/:id/download`.
+ *
+ * Artifacts are tenant-scoped: every artifact (agent-written or workflow-written)
+ * carries `tenantId`, so listing by the caller's resolved tenant returns the full
+ * workbench set. `sessionName`/`sessionStatus` are left null — the pre-M6 workflow
+ * display enrichment depended on the deleted workflow registry and is not part of
+ * restoring the gallery.
+ */
+export function createArtifactsRouter(
+  db: HubDb,
+): Hono<{ Variables: { userId: string } }> {
+  const router = new Hono<{ Variables: { userId: string } }>();
+
+  // List the caller's tenant artifacts for the gallery, newest-first by default.
+  router.get("/artifacts", async (c) => {
+    const userId = c.get("userId");
+
+    const requestedTenantId = c.req.query("tenantId");
+    const searchQuery = (c.req.query("query")?.trim() ?? "")
+      .slice(0, 200)
+      .replace(/[%_\\]/g, "\\$&");
+    const sortParam = c.req.query("sort");
+    const kindParam = c.req.query("kind");
+    const statusParam = c.req.query("status");
+    const ownerPrincipalIdParam = c.req.query("ownerPrincipalId");
+    const cursorParam = c.req.query("cursor");
+    const limitParam = c.req.query("limit");
+
+    type ArtifactStatusValue = (typeof artifactStatus)[number];
+    const isArtifactStatus = (value: string): value is ArtifactStatusValue =>
+      (artifactStatus as readonly string[]).includes(value);
+
+    let statusFilter: ArtifactStatusValue | undefined;
+    if (statusParam !== undefined) {
+      if (!isArtifactStatus(statusParam)) {
+        return c.json({ error: "Invalid status filter" }, 400);
+      }
+      statusFilter = statusParam;
+    }
+
+    const pageLimit = Math.min(
+      Math.max(1, Number(limitParam ?? 20) || 20),
+      100,
+    );
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      requestedTenantId,
+    );
+    if (forbidden) {
+      log.warn("User requested artifacts for inaccessible tenant", {
+        userId,
+        requestedTenantId,
+      });
+      return c.json({ error: "Tenant not accessible" }, 403);
+    }
+    if (!userContext) {
+      return c.json({ artifacts: [], nextCursor: null });
+    }
+
+    const tenantWhere = eq(artifact.tenantId, userContext.tenantId);
+    const searchWhere = searchQuery
+      ? or(
+          ilike(artifact.title, `%${searchQuery}%`),
+          ilike(artifact.content, `%${searchQuery}%`),
+        )
+      : undefined;
+    // Hide rejected by default; an explicit status filter overrides that.
+    const hideRejectedWhere =
+      statusFilter === undefined ? ne(artifact.status, "rejected") : undefined;
+    const statusWhere = statusFilter
+      ? eq(artifact.status, statusFilter)
+      : undefined;
+    const kindWhere = kindParam ? eq(artifact.kind, kindParam) : undefined;
+    const ownerWhere = ownerPrincipalIdParam
+      ? eq(artifact.ownerPrincipalId, ownerPrincipalIdParam)
+      : undefined;
+
+    let cursorWhere: ReturnType<typeof or> | undefined;
+    if (cursorParam !== undefined) {
+      const separatorIndex = cursorParam.lastIndexOf("__");
+      const cursorDate = new Date(cursorParam.slice(0, separatorIndex));
+      const cursorId = cursorParam.slice(separatorIndex + 2);
+      if (
+        separatorIndex === -1 ||
+        Number.isNaN(cursorDate.getTime()) ||
+        cursorId.length === 0
+      ) {
+        return c.json({ error: "Invalid cursor" }, 400);
+      }
+      cursorWhere =
+        sortParam === "oldest"
+          ? or(
+              gt(artifact.updatedAt, cursorDate),
+              and(
+                eq(artifact.updatedAt, cursorDate),
+                gt(artifact.id, cursorId),
+              ),
+            )
+          : or(
+              lt(artifact.updatedAt, cursorDate),
+              and(
+                eq(artifact.updatedAt, cursorDate),
+                lt(artifact.id, cursorId),
+              ),
+            );
+    }
+
+    const whereConditions = [
+      tenantWhere,
+      hideRejectedWhere,
+      statusWhere,
+      kindWhere,
+      ownerWhere,
+      searchWhere,
+      cursorWhere,
+    ].filter((cond): cond is NonNullable<typeof cond> => cond != null);
+
+    const orderBy =
+      sortParam === "oldest"
+        ? [asc(artifact.updatedAt), asc(artifact.id)]
+        : [desc(artifact.updatedAt), desc(artifact.id)];
+
+    const fetched = await db.query.artifact.findMany({
+      where: and(...whereConditions),
+      orderBy,
+      limit: pageLimit + 1,
+    });
+
+    let nextCursor: string | null = null;
+    let page = fetched;
+    if (fetched.length > pageLimit) {
+      page = fetched.slice(0, pageLimit);
+      const last = page[page.length - 1];
+      if (last) nextCursor = `${last.updatedAt.toISOString()}__${last.id}`;
+    }
+
+    const rows = page.map((a) => ({
+      ...serializeArtifact(a),
+      sessionName: null,
+      sessionStatus: null,
+      ownerName: null as string | null,
+    }));
+
+    // Resolve owner display names for the page (drives the gallery owner filter).
+    const ownerIds = [
+      ...new Set(
+        rows
+          .map((r) => r.ownerPrincipalId)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    if (ownerIds.length > 0) {
+      const ownerPrincipals = await db
+        .select({
+          id: intxSchema.principal.id,
+          refId: intxSchema.principal.refId,
+        })
+        .from(intxSchema.principal)
+        .where(inArray(intxSchema.principal.id, ownerIds));
+      const refIds = [...new Set(ownerPrincipals.map((p) => p.refId))];
+      const users =
+        refIds.length > 0
+          ? await db
+              .select({ id: intxSchema.user.id, name: intxSchema.user.name })
+              .from(intxSchema.user)
+              .where(inArray(intxSchema.user.id, refIds))
+          : [];
+      const nameByRefId = new Map(users.map((u) => [u.id, u.name]));
+      const nameByPrincipalId = new Map(
+        ownerPrincipals.map((p) => [p.id, nameByRefId.get(p.refId) ?? null]),
+      );
+      for (const r of rows) {
+        if (r.ownerPrincipalId !== null) {
+          r.ownerName = nameByPrincipalId.get(r.ownerPrincipalId) ?? null;
+        }
+      }
+    }
+
+    return c.json({ artifacts: rows, nextCursor });
+  });
+
+  // Download a file-shaped artifact's content (CSV export). Tenant-scoped.
+  router.get("/artifacts/:id/download", async (c) => {
+    const id = c.req.param("id");
+    const userId = c.get("userId");
+
+    const art = await db.query.artifact.findFirst({
+      where: eq(artifact.id, id),
+    });
+    if (!art) return c.json({ error: "Artifact not found" }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      art.tenantId,
+    );
+    if (forbidden || !userContext || art.tenantId !== userContext.tenantId) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    if (!DOWNLOADABLE_ARTIFACT_KINDS.has(art.kind)) {
+      return c.json(
+        { error: `Artifact kind "${art.kind}" is not downloadable` },
+        400,
+      );
+    }
+
+    c.header("Content-Type", "text/csv; charset=utf-8");
+    c.header(
+      "Content-Disposition",
+      `attachment; filename="${csvDownloadFilename(art.title)}"`,
+    );
+    return c.body(art.content);
+  });
+
+  return router;
+}

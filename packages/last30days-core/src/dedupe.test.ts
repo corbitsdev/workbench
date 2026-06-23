@@ -114,7 +114,12 @@ describe('dedupe', () => {
   });
 
   test('deduplicates items where one has engagement and one does not', () => {
-    const withEng = makeItem({ url: 'https://example.com/story', title: 'Story', source: 'hn', engagement: { upvotes: 100, comments: 10 } });
+    const withEng = makeItem({
+      url: 'https://example.com/story',
+      title: 'Story',
+      source: 'hn',
+      engagement: { upvotes: 100, comments: 10 },
+    });
     const withoutEng = {
       url: 'https://example.com/story',
       title: 'Story',

@@ -1,6 +1,6 @@
 import { generateId } from '@intx/hub-common';
 import { getLogger } from '@intx/log';
-import { schema as intxSchema, resolveInstanceSources, createGrantStore } from '@intx/db';
+import { schema as intxSchema, resolveInstanceModelSources, createGrantStore } from '@intx/db';
 import type { DB } from '@intx/db';
 import { generateKeyPair, createNodeCrypto } from '@intx/crypto-node';
 import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
@@ -9,28 +9,11 @@ import type { ToolDefinition } from '@intx/types/runtime';
 
 export type { ToolDefinition };
 import { and, eq } from 'drizzle-orm';
+import { DISPATCH_AGENT_DEFINITION } from './definition';
+
+export { DISPATCH_AGENT_DEFINITION };
 
 const log = getLogger(['tools', 'dispatch']);
-
-export const DISPATCH_AGENT_DEFINITION: ToolDefinition = {
-  name: 'dispatch_agent',
-  description:
-    'Create a new running instance of an existing agent definition and send it an initial task. Returns the new instance ID and address so the caller can track or communicate with it later.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      agentDefinitionId: {
-        type: 'string',
-        description: 'The agent definition ID to spawn an instance from',
-      },
-      task: {
-        type: 'string',
-        description: 'The initial message to send to the new agent instance',
-      },
-    },
-    required: ['agentDefinitionId', 'task'],
-  },
-};
 
 export type DispatchContext = {
   db: DB['db'];
@@ -137,15 +120,17 @@ async function launchAgentInstance(
 
   const grantStore = createGrantStore(db);
 
-  const rawSources = await resolveInstanceSources(db, tenantId, {
+  const resolution = await resolveInstanceModelSources(db, tenantId, {
     agentId: agentDefinitionId,
-    sessionId: null,
+    modelPreferences: null,
   });
-  if (rawSources.length === 0) {
-    throw new Error('No resolvable inference sources for agent credential requirements');
+  if (!resolution.ok) {
+    throw new Error(
+      'No resolvable inference sources for agent credential requirements: ' + resolution.reason
+    );
   }
 
-  const sources = rawSources;
+  const sources = resolution.sources;
   const defaultSource = sources[0]!.id;
 
   const toolNames = getToolNamesFromCapabilities(agentRow.capabilities ?? null);

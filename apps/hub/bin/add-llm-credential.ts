@@ -11,6 +11,8 @@
  * Requires the dev user to have owner/admin grants. Run seed:superadmin first.
  */
 
+import { resolveTargetTenant } from "./_lib";
+
 function env(name: string, fallback: string): string {
   return process.env[name] ?? fallback;
 }
@@ -22,7 +24,7 @@ const PASSWORD = env("SUPERADMIN_PASS", "password123");
 // Use this in production where email/password auth is disabled (OAuth-only).
 // In DevTools: Application → Cookies → copy the value of the `better-auth.session_token` cookie.
 const SESSION_TOKEN = process.env["SESSION_TOKEN"];
-const TENANT_SLUG = env("GLOBAL_TENANT_SLUG", "abklabs");
+const GLOBAL_SLUG = env("GLOBAL_TENANT_SLUG", "abklabs");
 
 // Auto-detect provider from well-known env vars if no explicit override is set.
 // Priority: LLM_PROVIDER_NAME > ANTHROPIC_API_KEY > OPENAI_API_KEY > openai-compatible default.
@@ -305,29 +307,15 @@ if (import.meta.main) {
     sessionCookies = signIn.cookies;
   }
 
-  const principalsRes = await api(
-    "GET",
-    "/api/me/principals",
-    undefined,
-    sessionCookies,
-  );
-  if (principalsRes.status !== 200)
-    fail("/api/me/principals", principalsRes.status, principalsRes.data);
-
-  const principals =
-    (
-      principalsRes.data as {
-        data?: Array<{ tenantId: string; tenantSlug?: string }>;
-      }
-    ).data ?? [];
-  const principal =
-    principals.find((p) => p.tenantSlug === TENANT_SLUG) ?? principals[0];
-  if (!principal) {
-    console.error("[credential] No tenant principal found for signed-in user");
-    process.exit(1);
-  }
-  const tenantId = principal.tenantId;
-  log(`Tenant ID: ${tenantId}`);
+  const target = await resolveTargetTenant({
+    base: BASE,
+    cookies: sessionCookies,
+    argv: process.argv.slice(2),
+    envVar: "WORKBENCH_SLUG",
+    globalSlug: GLOBAL_SLUG,
+  });
+  const tenantId = target.tenantId;
+  log(`Tenant: ${target.name} [${target.slug}] (${tenantId})`);
 
   // Primary provider (Anthropic, OpenAI, or openai-compatible depending on env vars).
   const detected = detectProvider();

@@ -44,9 +44,13 @@ describe('parseSeedMarker (CL-1952)', () => {
     // Mirrors composePersonalAgentPromptForInstance: the hub appends an
     // <operator> section before launch. Exact-equality matching the whole
     // prompt fails here — the marker survives because the builder embeds it.
-    const personalized = buildPersonalAgentSystemPrompt('Myra', { xml: true }, {
-      operatorProfile: 'You work for Sawyer Cutler, lead product engineer at Corbits.',
-    });
+    const personalized = buildPersonalAgentSystemPrompt(
+      'Myra',
+      { xml: true },
+      {
+        operatorProfile: 'You work for Sawyer Cutler, lead product engineer at Corbits.',
+      }
+    );
     expect(personalized).toContain('<operator>');
 
     const resolved = parseSeedMarker(personalized);
@@ -84,7 +88,11 @@ describe('stripSeedMarker (CL-1952)', () => {
   it('removes the marker so the model never sees the control-plane sentinel', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', { xml: true });
     // The base prompt carries the marker; parsing must still resolve all files.
-    expect(parseSeedMarker(prompt).map((f) => f.path).sort()).toEqual([...EXPECTED_FILES].sort());
+    expect(
+      parseSeedMarker(prompt)
+        .map((f) => f.path)
+        .sort()
+    ).toEqual([...EXPECTED_FILES].sort());
 
     const cleaned = stripSeedMarker(prompt);
     expect(cleaned).not.toContain('workbench:memory-seed');
@@ -106,7 +114,11 @@ describe('stripSeedMarker (CL-1952)', () => {
     const marker = buildSeedMarker(PERSONAL_AGENT_SEED_FILES);
     const body = '<role>do things</role>';
     const prompt = `${body}\n\n${marker}`;
-    expect(parseSeedMarker(prompt).map((f) => f.path).sort()).toEqual([...EXPECTED_FILES].sort());
+    expect(
+      parseSeedMarker(prompt)
+        .map((f) => f.path)
+        .sort()
+    ).toEqual([...EXPECTED_FILES].sort());
     expect(stripSeedMarker(prompt)).toBe(body);
   });
 });

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { getLogger } from '@intx/log';
 import type { HubDb } from '../db';
 import { upload } from '../db/schema';
-import { getRequestedUserContext } from '../services/workflow-orchestration';
+import { getRequestedUserContext } from '../lib/user-context';
 
 const log = getLogger(['api', 'uploads']);
 

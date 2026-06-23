@@ -1,0 +1,143 @@
+import type { ToolPackagePin } from '@intx/types/tool-packages';
+
+// Canonical (namespace-prefixed) tool names for native tool packages.
+//
+// The sidecar tool-packaging loader prefixes every tool definition name with
+// its package factory id (`<factoryId>:<name>`), and the authz layer grants and
+// checks `tool:<runtime name>` at invoke time. Agent capability lists must
+// therefore carry the prefixed name so the grants the hub seeds from them match
+// what the runtime asks for (CL-2145). Local sidecar runners — posix
+// (`read_file`, `write_file`, `edit_file`, `search_files`, `run_shell`, `grep`),
+// mail (`mail_*`), ask-principal — are merged directly (not loaded as packages)
+// and are NOT prefixed; they pass through unchanged.
+//
+// This table mirrors each package's `interchange.tools` factory id and the tool
+// definition names it exports. Keep it in sync when a tool package adds, renames,
+// or removes a tool. Names not present here (locals, or not-yet-real tools) are
+// returned verbatim.
+
+const PACKAGE_TOOLS: Record<string, readonly string[]> = {
+  '@workbench/tools-agents/agents': ['list_agents', 'list_principals'],
+  '@workbench/tools-artifact/artifact': [
+    'artifact_create',
+    'artifact_read',
+    'artifact_write',
+    'artifact_list',
+    'artifact_find_by_title',
+    'artifact_link_file',
+    'artifact_link_presentation',
+    'write_artifact',
+  ],
+  '@workbench/tools-bluesky/bluesky': ['bluesky_search'],
+  '@workbench/tools-dispatch/dispatch': ['dispatch_agent'],
+  '@workbench/tools-exa/exa': ['exa_search', 'web_search'],
+  '@workbench/tools-firecrawl/firecrawl': [
+    'firecrawl_scrape',
+    'firecrawl_search',
+    'firecrawl_map',
+    'firecrawl_crawl_start',
+    'firecrawl_crawl_status',
+    'firecrawl_batch_scrape_start',
+    'firecrawl_batch_scrape_status',
+    'firecrawl_extract_start',
+    'firecrawl_extract_status',
+    'firecrawl_agent',
+    'firecrawl_parse',
+    'firecrawl_credit_usage',
+    'firecrawl_token_usage',
+  ],
+  '@workbench/tools-gamma/gamma': [
+    'gamma_create_from_template',
+    'gamma_duplicate_presentation',
+    'gamma_list_templates',
+    'gamma_list_themes',
+  ],
+  '@workbench/tools-github/github': ['github_activity'],
+  '@workbench/tools-granola/granola': [
+    'granola_list_notes',
+    'granola_get_note',
+    'granola_list_folders',
+  ],
+  '@workbench/tools-hackernews/hackernews': ['hackernews_search'],
+  '@workbench/tools-last30days/core': [
+    'last30days_core_extract',
+    'last30days_core_report',
+    'last30days_validate',
+  ],
+  '@workbench/tools-polymarket/polymarket': ['polymarket_odds'],
+  '@workbench/tools-reddit/reddit': ['reddit_search', 'reddit_subreddit_search'],
+  '@workbench/tools-scrapecreators/scrapecreators': [
+    'scrapecreators_tiktok',
+    'scrapecreators_instagram',
+    'scrapecreators_threads',
+    'scrapecreators_pinterest',
+  ],
+  '@workbench/tools-x/x': ['x_search'],
+  '@workbench/tools-youtube/youtube': ['youtube_search'],
+};
+
+const FACTORY_ID_BY_TOOL: Record<string, string> = Object.fromEntries(
+  Object.entries(PACKAGE_TOOLS).flatMap(([factoryId, names]) =>
+    names.map((name) => [name, factoryId])
+  )
+);
+
+// The credential provider each tool package's factory declares
+// (`defineCredentialedToolPackage({ provider })`). Keyed by pin name (the
+// `@scope/package` an agent pins, i.e. the factory id without its tool
+// segment). Packages absent here are keyless or hub-backed (agents, artifact,
+// dispatch, hackernews, polymarket, last30days) and need no tenant credential.
+// Keep in sync with each package's `interchange-tools.ts` provider.
+const PACKAGE_PROVIDERS: Record<string, string> = {
+  '@workbench/tools-bluesky': 'bluesky',
+  '@workbench/tools-exa': 'exa',
+  '@workbench/tools-firecrawl': 'firecrawl',
+  '@workbench/tools-gamma': 'gamma',
+  '@workbench/tools-github': 'github',
+  '@workbench/tools-granola': 'granola',
+  '@workbench/tools-reddit': 'scrapecreators',
+  '@workbench/tools-scrapecreators': 'scrapecreators',
+  '@workbench/tools-x': 'xai',
+  '@workbench/tools-youtube': 'youtube',
+};
+
+// The distinct credential providers a set of pinned tool packages requires.
+// The hub credential gate authorizes a deployed agent (or workflow step) for
+// exactly these providers — derived from its persisted pins, not a tool-name
+// registry. Keyless/hub-backed packages contribute nothing.
+export function providersForToolPackages(pins: readonly ToolPackagePin[]): string[] {
+  const providers = new Set<string>();
+  for (const pin of pins) {
+    const provider = PACKAGE_PROVIDERS[pin.name];
+    if (provider !== undefined) providers.add(provider);
+  }
+  return [...providers];
+}
+
+/**
+ * Map raw tool-definition names to the canonical runtime names the sidecar
+ * loader emits (`<factoryId>:<name>`). Names belonging to a known tool package
+ * are prefixed; everything else (local runners) is returned unchanged.
+ */
+export function canonicalizeToolNames(names: readonly string[]): string[] {
+  return names.map((name) => {
+    const factoryId = FACTORY_ID_BY_TOOL[name];
+    return factoryId === undefined ? name : `${factoryId}:${name}`;
+  });
+}
+
+// Resolve the npm tool packages that back a set of capability names (bare or
+// canonical `<factoryId>:<name>`). A capability with no known package (a local
+// runner) contributes nothing. Used to derive a deploy's toolPackagePins from
+// the tools its workflow steps declare, so the sidecar loader materializes them.
+export function toolPackagesForCapabilities(capabilities: readonly string[]): ToolPackagePin[] {
+  const packages = new Set<string>();
+  for (const cap of capabilities) {
+    const factoryId = cap.includes(':')
+      ? cap.slice(0, cap.lastIndexOf(':'))
+      : FACTORY_ID_BY_TOOL[cap];
+    if (factoryId === undefined) continue;
+    packages.add(factoryId.split('/').slice(0, 2).join('/'));
+  }
+  return [...packages].sort().map((name) => ({ name, version: '^0.1.0' }));
+}

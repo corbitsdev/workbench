@@ -1,185 +1,37 @@
-import type { AgentTool } from "@intx/agent";
-import type { ToolDefinition } from "@intx/types/runtime";
-import { type } from "arktype";
+// Hub-proxy registry entries for the stateless last30days core tools.
+//
+// The tool implementations live in @workbench/tools-last30days (a native
+// tool package). This file adapts them into the ContextToolEntry shape the
+// KNOWN_TOOLS proxy expects so they keep working during the proxy
+// coexistence window; the proxy and these entries are removed in M3.8.
+
 import {
-  buildReport,
-  entityExtract,
-  ResearchItem,
-} from "@workbench/last30days-core";
-import type { ContextToolEntry } from "../lib/tool-registry";
+  LAST30DAYS_CORE_EXTRACT_DEFINITION,
+  LAST30DAYS_CORE_REPORT_DEFINITION,
+  LAST30DAYS_VALIDATE_DEFINITION,
+  createLast30daysTools,
+} from '@workbench/tools-last30days';
+import type { ContextToolEntry } from '../lib/tool-registry';
 
-const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
-  name: "last30days_core_extract",
-  description:
-    "Extract entities (handles, repos, subreddits, hashtags, keywords) from a topic string.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      topic: {
-        type: "string",
-        description: "Topic string to extract entities from.",
-      },
-    },
-    required: ["topic"],
-  },
-};
-
-const LAST30DAYS_CORE_REPORT_DEFINITION: ToolDefinition = {
-  name: "last30days_core_report",
-  description:
-    "Build a structured research brief from raw ResearchItems. Applies date filter, dedupe, cluster-merge, and rank scoring, and returns ranked clusters, stats, a lead headline, best-takes, items, and citations. Pass the returned object verbatim as write_artifact { data } for rich rendering.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      rawItems: {
-        type: "array",
-        items: { type: "object" },
-        description: "Array of ResearchItem objects to process.",
-      },
-      topic: { type: "string", description: "Topic label for the report." },
-      days: {
-        type: "number",
-        description:
-          "Number of days to include in the date window. Defaults to 30.",
-      },
-      topK: {
-        type: "number",
-        description: "Maximum number of top items to include. Defaults to 20.",
-      },
-    },
-    required: ["rawItems", "topic"],
-  },
-};
-
-const LAST30DAYS_VALIDATE_DEFINITION: ToolDefinition = {
-  name: "last30days_validate",
-  description:
-    "Validate a report body against its citations. (Stub — full validation is CL-1569.)",
-  inputSchema: {
-    type: "object",
-    properties: {
-      body: { type: "string", description: "Report body to validate." },
-      citations: {
-        type: "array",
-        items: { type: "object" },
-        description: "Citations to check against.",
-      },
-      returnedItemUrls: {
-        type: "array",
-        items: { type: "string" },
-        description: "URLs of items returned from research.",
-      },
-    },
-    required: ["body", "citations", "returnedItemUrls"],
-  },
-};
-
-function createLast30daysCoreExtractTool(): AgentTool {
-  return {
-    kind: "string",
-    definition: LAST30DAYS_CORE_EXTRACT_DEFINITION,
-    handler: async (args, _signal) => {
-      let effectiveArgs = args;
-      if (typeof (args as Record<string, unknown>)._raw === "string") {
-        const parsed: unknown = JSON.parse(
-          (args as Record<string, unknown>)._raw as string,
-        );
-        if (
-          typeof parsed !== "object" ||
-          parsed === null ||
-          Array.isArray(parsed)
-        ) {
-          throw new Error("_raw fallback is not a JSON object");
-        }
-        effectiveArgs = parsed as Record<string, unknown>;
-      }
-      const topic = effectiveArgs.topic;
-      if (typeof topic !== "string" || topic.trim().length === 0) {
-        throw new Error("topic is required");
-      }
-      const result = entityExtract(topic);
-      return JSON.stringify(result);
-    },
-  };
-}
-
-function createLast30daysCoreReportTool(): AgentTool {
-  return {
-    kind: "string",
-    definition: LAST30DAYS_CORE_REPORT_DEFINITION,
-    handler: async (args, _signal) => {
-      let effectiveArgs = args;
-      if (typeof (args as Record<string, unknown>)._raw === "string") {
-        const parsed: unknown = JSON.parse(
-          (args as Record<string, unknown>)._raw as string,
-        );
-        if (
-          typeof parsed !== "object" ||
-          parsed === null ||
-          Array.isArray(parsed)
-        ) {
-          throw new Error("_raw fallback is not a JSON object");
-        }
-        effectiveArgs = parsed as Record<string, unknown>;
-      }
-      const topic = effectiveArgs.topic;
-      if (typeof topic !== "string" || topic.trim().length === 0) {
-        throw new Error("topic is required");
-      }
-      let rawItemsInput: unknown = effectiveArgs.rawItems;
-      if (typeof rawItemsInput === "string") {
-        const parsed: unknown = JSON.parse(rawItemsInput);
-        if (!Array.isArray(parsed)) {
-          throw new Error("rawItems stringified value is not an array");
-        }
-        rawItemsInput = parsed;
-      }
-      if (!Array.isArray(rawItemsInput)) {
-        throw new Error("rawItems must be an array");
-      }
-      const rawItems = rawItemsInput.map((item: unknown, i: number) => {
-        const validated = ResearchItem(item);
-        if (validated instanceof type.errors) {
-          throw new Error(`rawItems[${i}] is invalid: ${String(validated)}`);
-        }
-        return validated;
-      });
-      const days =
-        typeof effectiveArgs.days === "number" ? effectiveArgs.days : 30;
-      const topK =
-        typeof effectiveArgs.topK === "number" ? effectiveArgs.topK : 20;
-      const nowIso = new Date().toISOString();
-      const report = buildReport(rawItems, { topic, days, topK, nowIso });
-      return JSON.stringify(report);
-    },
-  };
-}
-
-function createLast30daysValidateTool(): AgentTool {
-  return {
-    kind: "string",
-    definition: LAST30DAYS_VALIDATE_DEFINITION,
-    handler: async (args, _signal) => {
-      const body = args.body;
-      if (typeof body !== "string") {
-        throw new Error("body is required");
-      }
-      return JSON.stringify({ ok: true, body });
-    },
+function toolByName(name: string) {
+  return () => {
+    const tool = createLast30daysTools().find((t) => t.definition.name === name);
+    if (tool === undefined) throw new Error(`last30days tool not found: ${name}`);
+    return [tool];
   };
 }
 
 export const LAST30DAYS_CORE_HUB_TOOLS: Record<string, ContextToolEntry> = {
   last30days_core_extract: {
     definition: LAST30DAYS_CORE_EXTRACT_DEFINITION,
-    createTools: (_context) => [createLast30daysCoreExtractTool()],
+    createTools: toolByName('last30days_core_extract'),
   },
   last30days_core_report: {
     definition: LAST30DAYS_CORE_REPORT_DEFINITION,
-    createTools: (_context) => [createLast30daysCoreReportTool()],
+    createTools: toolByName('last30days_core_report'),
   },
   last30days_validate: {
     definition: LAST30DAYS_VALIDATE_DEFINITION,
-    createTools: (_context) => [createLast30daysValidateTool()],
+    createTools: toolByName('last30days_validate'),
   },
 };

@@ -1,4 +1,5 @@
 import type { CredentialRequirement, GrantRequirement } from '@intx/types';
+import type { ToolPackagePin } from '@intx/types/tool-packages';
 import {
   PERSONAL_AGENT_DEPLOY_PROMPT,
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
@@ -50,18 +51,12 @@ import {
   LINCOLN_MODEL_CONFIG,
 } from './lincoln/definition';
 import {
-  BOBBY_DEPLOY_PROMPT,
-  BOBBY_CREDENTIAL_REQUIREMENTS,
-  BOBBY_GRANT_REQUIREMENTS,
-  BOBBY_CAPABILITIES,
-  BOBBY_MODEL_CONFIG,
-} from './bobby/definition';
-import {
   LARRY_DEPLOY_PROMPT,
   LARRY_CREDENTIAL_REQUIREMENTS,
   LARRY_GRANT_REQUIREMENTS,
   LARRY_CAPABILITIES,
   LARRY_MODEL_CONFIG,
+  LARRY_TOOL_PACKAGES,
 } from './larry/definition';
 import {
   FREDDIE_DEPLOY_PROMPT,
@@ -71,6 +66,7 @@ import {
   FREDDIE_MODEL_CONFIG,
 } from './freddie/definition';
 import {
+  FANNIE_DEPLOY_PROMPT,
   FANNIE_CREDENTIAL_REQUIREMENTS,
   FANNIE_GRANT_REQUIREMENTS,
   FANNIE_CAPABILITIES,
@@ -113,6 +109,11 @@ export interface AgentTemplate {
   modelConfig?: Record<string, unknown>;
   deployable?: boolean;
   kind?: 'personal';
+  /**
+   * Native tool packages this agent pins. Persisted to the agent DB row at
+   * seed time and read back via `parseAgentRow(row).toolPackages` at launch.
+   */
+  toolPackages?: ToolPackagePin[];
 }
 
 /**
@@ -128,6 +129,16 @@ export interface AgentTemplate {
  *   - Walter: WALTER_CAPABILITIES.tools
  *   - Hammy:  HAMMY_CAPABILITIES.tools
  */
+// Freddie and Fannie share the same research + artifact tool set.
+const FABLE_TOOL_PACKAGES: ToolPackagePin[] = [
+  { name: '@workbench/tools-firecrawl', version: '^0.1.0' },
+  { name: '@workbench/tools-hackernews', version: '^0.1.0' },
+  { name: '@workbench/tools-github', version: '^0.1.0' },
+  { name: '@workbench/tools-bluesky', version: '^0.1.0' },
+  { name: '@workbench/tools-scrapecreators', version: '^0.1.0' },
+  { name: '@workbench/tools-artifact', version: '^0.1.0' },
+];
+
 export const AGENT_TEMPLATES: AgentTemplate[] = [
   {
     key: 'myra',
@@ -139,6 +150,11 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     capabilities: { tools: [...PERSONAL_AGENT_BASE_TOOLS] },
     modelConfig: PERSONAL_AGENT_MODEL_CONFIG,
     kind: 'personal',
+    toolPackages: [
+      { name: '@workbench/tools-exa', version: '^0.1.0' },
+      { name: '@workbench/tools-artifact', version: '^0.1.0' },
+      { name: '@workbench/tools-agents', version: '^0.1.0' },
+    ],
   },
   {
     key: 'oat',
@@ -149,6 +165,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     grantRequirements: GRANOLA_GRANT_REQUIREMENTS,
     capabilities: { tools: [...GRANOLA_CAPABILITIES.tools] },
     modelConfig: GRANOLA_MODEL_CONFIG,
+    toolPackages: [{ name: '@workbench/tools-granola', version: '^0.1.0' }],
   },
   {
     key: 'loop',
@@ -171,17 +188,19 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     grantRequirements: FREDDIE_GRANT_REQUIREMENTS,
     capabilities: { tools: [...FREDDIE_CAPABILITIES.tools] },
     modelConfig: FREDDIE_MODEL_CONFIG,
+    toolPackages: FABLE_TOOL_PACKAGES,
   },
   {
     key: 'fannie',
     name: 'Fannie',
     description:
       'Fable-style Sonnet agent with broad research and local artifact-writing tools, excluding outbound mail send.',
-    systemPrompt: FREDDIE_DEPLOY_PROMPT,
+    systemPrompt: FANNIE_DEPLOY_PROMPT,
     credentialRequirements: FANNIE_CREDENTIAL_REQUIREMENTS,
     grantRequirements: FANNIE_GRANT_REQUIREMENTS,
     capabilities: { tools: [...FANNIE_CAPABILITIES.tools] },
     modelConfig: FANNIE_MODEL_CONFIG,
+    toolPackages: FABLE_TOOL_PACKAGES,
   },
   {
     key: 'freddy',
@@ -192,6 +211,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     grantRequirements: FIRECRAWL_GRANT_REQUIREMENTS,
     capabilities: { tools: [...FIRECRAWL_CAPABILITIES.tools] },
     modelConfig: FIRECRAWL_MODEL_CONFIG,
+    toolPackages: [{ name: '@workbench/tools-firecrawl', version: '^0.1.0' }],
   },
   {
     key: 'walter',
@@ -202,6 +222,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     grantRequirements: WALTER_GRANT_REQUIREMENTS,
     capabilities: { tools: [...WALTER_CAPABILITIES.tools] },
     modelConfig: WALTER_MODEL_CONFIG,
+    toolPackages: [{ name: '@workbench/tools-artifact', version: '^0.1.0' }],
   },
   {
     key: 'hammy',
@@ -213,17 +234,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     grantRequirements: HAMMY_GRANT_REQUIREMENTS,
     capabilities: { tools: [...HAMMY_CAPABILITIES.tools] },
     modelConfig: HAMMY_MODEL_CONFIG,
-  },
-  {
-    key: 'bobby',
-    name: 'Bobby',
-    description:
-      'Browser automation agent — navigates real sites, fills forms, and extracts what only a live page can give.',
-    systemPrompt: BOBBY_DEPLOY_PROMPT,
-    credentialRequirements: BOBBY_CREDENTIAL_REQUIREMENTS,
-    grantRequirements: BOBBY_GRANT_REQUIREMENTS,
-    capabilities: { tools: [...BOBBY_CAPABILITIES.tools] },
-    modelConfig: BOBBY_MODEL_CONFIG,
+    toolPackages: [{ name: '@workbench/tools-artifact', version: '^0.1.0' }],
   },
   {
     key: 'lincoln',
@@ -235,6 +246,10 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     grantRequirements: LINCOLN_GRANT_REQUIREMENTS,
     capabilities: { tools: [...LINCOLN_CAPABILITIES.tools] },
     modelConfig: LINCOLN_MODEL_CONFIG,
+    toolPackages: [
+      { name: '@workbench/tools-firecrawl', version: '^0.1.0' },
+      { name: '@workbench/tools-artifact', version: '^0.1.0' },
+    ],
   },
   {
     key: 'larry',
@@ -246,5 +261,6 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     grantRequirements: LARRY_GRANT_REQUIREMENTS,
     capabilities: { tools: [...LARRY_CAPABILITIES.tools] },
     modelConfig: LARRY_MODEL_CONFIG,
+    toolPackages: LARRY_TOOL_PACKAGES,
   },
 ];

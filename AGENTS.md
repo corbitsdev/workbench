@@ -12,6 +12,8 @@
 
 GTM Workbench is an AI-assisted GTM workspace built on top of Interchange. Users get a personal agent (Myra), shared workspace agents (Oat, others), and workflows for turning call data into publishable collateral. For current product and architecture details, read the scribe-managed docs.
 
+Operators run all tenancy, credential, tool, and workflow operations through the admin CLI — `bun run admin` / `admin:staging` / `admin:production` (`apps/hub/bin/admin/`); see `docs/ADMIN_CLI.md`.
+
 ### Monorepo layout
 
 - `interchange/` — Interchange dependency. Do not modify.
@@ -44,16 +46,16 @@ Every agent lifecycle operation, credential flow, session, grant, and inference 
 
 ### What Interchange owns — never reimplement
 
-| Domain                  | What Interchange does | Where to look |
-| ----------------------- | --------------------- | ------------- |
-| Credential resolution   | Resolves from tenant hierarchy by `providerName` + `source` + optional `name` | `@intx/db` → `resolveCredentialRequirement`, `resolveOneCredential` |
-| Agent launch            | Resolves `credentialRequirements` → builds inference sources → launches via sidecar | `@intx/hub-sessions` → `SessionService.launchSession` |
-| Credential requirements | Interchange resolves them at launch; `source: 'tenant'` = tenant-owned (`principalId: null`) | `@intx/types` → `CredentialRequirement` |
-| Grant resolution        | Collects all grants for a principal including role-based grants | `@intx/db` → `createGrantStore` → `collectGrants` |
-| Session orchestration   | Session lifecycle, sidecar registration, reconnect | `@intx/hub-sessions` → `createHubSessionOrchestrator` |
-| ID generation           | Typed, prefixed IDs for every entity | `@intx/hub-common` → `generateId` |
-| LLM inference           | All inference calls go through the agent runtime | `@intx/agent` — never direct fetch to LLM endpoints |
-| DB schema + types       | Tables, ID formats, row types | `@intx/db/schema`, `@intx/types` |
+| Domain                  | What Interchange does                                                                        | Where to look                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Credential resolution   | Resolves from tenant hierarchy by `providerName` + `source` + optional `name`                | `@intx/db` → `resolveCredentialRequirement`, `resolveOneCredential` |
+| Agent launch            | Resolves `credentialRequirements` → builds inference sources → launches via sidecar          | `@intx/hub-sessions` → `SessionService.launchSession`               |
+| Credential requirements | Interchange resolves them at launch; `source: 'tenant'` = tenant-owned (`principalId: null`) | `@intx/types` → `CredentialRequirement`                             |
+| Grant resolution        | Collects all grants for a principal including role-based grants                              | `@intx/db` → `createGrantStore` → `collectGrants`                   |
+| Session orchestration   | Session lifecycle, sidecar registration, reconnect                                           | `@intx/hub-sessions` → `createHubSessionOrchestrator`               |
+| ID generation           | Typed, prefixed IDs for every entity                                                         | `@intx/hub-common` → `generateId`                                   |
+| LLM inference           | All inference calls go through the agent runtime                                             | `@intx/agent` — never direct fetch to LLM endpoints                 |
+| DB schema + types       | Tables, ID formats, row types                                                                | `@intx/db/schema`, `@intx/types`                                    |
 
 ### Credential + launch pattern
 
@@ -92,12 +94,20 @@ Each step is a separate commit.
 
 ## Testing
 
-- **80% merged line coverage is a hard floor.** Measure with `bun run coverage`. Never let a change drop below it.
+**Coverage is a floor, never the goal. We want the highest *meaningful* coverage — never coverage for its own number.** A test earns its place by being able to fail when the behavior breaks. If a test cannot fail for a real reason, it is worse than no test: it is green noise that hides the gap. So:
+
+- **Maximize real coverage, not the percentage.** Chase the untested behavior that matters; do not write a test purely to move the number.
+- **A useless test is a bug.** If a test asserts nothing that could break (tautology, asserts the mock, render-without-crash, exercises a line without checking its effect), either rewrite it to assert real behavior or delete it. Do not keep it for the %.
+- **Do it right or don't do it.** Half a test that pretends a path is covered is more dangerous than an honest gap. If you can't test it properly yet, leave it untested and say so (in the PR / a ticket) rather than faking it.
+- **Mocking the boundary you depend on can make a green suite that proves nothing about the integrated system.** Unit tests that mock `@intx/*` prove the pieces, not the machine. Any critical end-to-end path (e.g. workflow start → run → step execution → artifact) MUST have at least one integration test that exercises the real components across their seams — that is where the bugs that make the app "useless while green" actually live. A subsystem whose only failure mode is a seam between mocked components is, by definition, untested.
+
+- **80% merged line coverage is a hard floor**, not a target. Measure with `bun run coverage`. Never let a change drop below it — but clearing 80% with hollow tests does not satisfy this rule.
 - Every package with runnable code must define `test` and `test:coverage` scripts. Pure type-only packages exempt (document it).
 - Assert behavior, not execution — no tautologies, no render-without-crash tests.
 - `screen.getByText('X')` throws if absent — do not append `.toBeDefined()`.
 - Never assert the mock. A test that checks a value it fed to a mock proves nothing.
 - Mock only at the `@intx/*` or a true module boundary via `mock.module(...)`.
+- Run the suite with `bun test --isolate` (a fresh global per test file). `mock.module(...)` is process-global in bun, so without isolation a mock from one file leaks into another — the usual cause of a test that passes alone but fails in the full run. If a test passes in isolation but fails in the suite, suspect mock leakage, not a product bug.
 
 ## Build Requirements
 
@@ -113,7 +123,13 @@ Each image uses a targeted `COPY` list. When you add/remove/rename a package or 
 
 - New `packages/*` dep → add `COPY packages/<name>/` and `COPY packages/<name>/package.json` in every image that depends on it.
 - Removed package → remove its lines from all Dockerfiles.
-- The manifest-copy section (`COPY packages/*/package.json` before `bun install`) must list every workspace member.
+- **Manifests vs source — two different lists, two different rules:**
+  - The manifest-copy section (`COPY <member>/package.json` before `bun install`) **must list every workspace member**, in every image. `bun.lock` is workspace-global; `--frozen-lockfile` compares the on-disk member set against the lockfile and fails with `lockfile had changes` if any recorded member's manifest is missing — even members the image never imports. (Members without a `package.json`, e.g. scaffold dirs, are not in the lockfile and are correctly omitted.)
+  - The full-source COPY section (after `bun install`) lists **only the image's runtime closure**. The **sidecar copies no `@workbench/tools-*` source** — tool packages reach it as registry tarballs at launch (the package-registry substrate), not through its image. Do not add tool source to the sidecar image.
+- **Interchange pin SHA** — each image clones interchange at a hardcoded commit (the `git -C interchange checkout <sha>` line). When you bump the `interchange` submodule pin, bump that SHA in all four Dockerfiles too, or `bun install --frozen-lockfile` validates against the wrong `@intx/*` graph and the build fails.
+- **Bun version** — keep `FROM oven/bun:<ver>` in the four images aligned with the bun that authored `bun.lock` (general hygiene; relock and bump together).
+- **Interchange undeclared hoisted deps** — `@intx/agent` now declares `@intx/log` upstream, so the former root-`package.json` force-hoist of `@intx/log` has been removed. If another interchange package ever imports an `@intx/*` dep it does not declare (symptom: `Cannot find module @intx/<x>` at startup), force-hoist it by declaring it in the **root** `package.json` until interchange declares it upstream.
+- **Vendored workflow-host wiring (pin-bump gate)** — `apps/sidecar/src/workflow-host-wiring.ts`, `workflow-substrate-factory.ts`, `workflow-run-pack-client.ts`, and `bin/workflow-child` are copied verbatim from interchange's reference `apps/sidecar` (the `createSidecarDeployRouter` supervisor wiring is not packaged in any `@intx/*` — `@intx/workflow-host` ships only the building blocks). They duck-type the `@intx/workflow-host` hand-off, so a contract change won't surface at compile time. **`workflow-host-wiring.ts` is no longer verbatim: it carries WORKBENCH-LOCAL CL-2231 additions** (the `ownedDirs` field on `ActiveMultiStepSupervisor`, its capture in the multi-step deploy branch, the undeploy-hook reclaim sweep, and the `sanitizeAgentAddress` helper) — each marked with a `// WORKBENCH-LOCAL (CL-2231)` comment. The re-sync must **preserve these on top of upstream**, not overwrite them (a literal copy would silently drop the deployment reclaim and re-introduce the sidecar-volume inode leak with a green build). On every interchange pin bump: (1) diff these four files against `interchange/apps/sidecar/src/*` + `bin/workflow-child` at the new pin and re-apply upstream changes **while re-applying every `WORKBENCH-LOCAL` block**, (2) re-run `bun run --filter @workbench/sidecar test` (the vendored upstream tests come with them; `workflow-host-wiring-undeploy-reclaim.test.ts` guards the CL-2231 block), and (3) re-verify the `as AgentDeployWorkflow['definition']` cast in `apps/hub/src/services/workflow-deploy.ts` still reflects only exactOptional variance.
 
 ## Credential Seeding Maintenance
 
@@ -137,6 +153,8 @@ Keyless tools need no seed entry — say so in the package README.
 ## Code Style
 
 - No comments unless the WHY is non-obvious. Never narrate what the code does.
+- No stubs ANYWHERE when implementing — never leave placeholder or canned-output code paths in production; implement fully or fail loudly, and surface the gap rather than stubbing it.
+- Deterministic workflow steps (a tool/API call, fetch, export) MUST use `deterministicToolStep` from `@workbench/agents` (or an `awaitSignal` form for human input) — never an LLM agent. Only genuine-reasoning steps are agents.
 - TypeScript strict mode. Load `gaas:typescript` before writing or reviewing TypeScript.
 - No `console.log` — use `@intx/log` in hub/sidecar, nothing in web.
 - No IIFEs or dynamic imports in production — use named async functions and static imports.
@@ -145,9 +163,21 @@ Keyless tools need no seed entry — say so in the package README.
 - All env var validation lives in `apps/hub/src/config.ts`.
 - Do not modify `eslint`, `prettier`, `tsconfig`, or `package.json` unless explicitly asked.
 
-## Types (packages/ only)
+## Types — arktype is the default (`packages/` and `apps/`)
 
-Prefer `type(...)` from `arktype` over `interface` or `type` aliases for new types in `packages/`. When you encounter a raw type outside tests or build output, upgrade it in a separate commit — check downstream `infer` and narrowing usage before upgrading. `interchange/` and `apps/` are out of scope.
+Define new types with `type(...)` from `arktype`, deriving the TypeScript type via
+`typeof Schema.infer`. This is the rule for new code in **both `packages/` and `apps/`**
+(`apps/hub` and `apps/web`) — prefer it over `interface` or bare `type` aliases.
+
+- **Parse at every trust boundary.** API responses, request bodies, anything typed
+  `unknown` — validate through an arktype schema, never cast (`as T`) untrusted data.
+- **Internal, already-trusted shapes** (React props, local state, values you just
+  constructed) may stay plain `type`/`interface` — arktype's runtime validation buys
+  nothing there. When a shape is also serialized across the API, define it once as an
+  arktype schema and share it.
+- When you touch a raw type that crosses a boundary, upgrade it to arktype — in a
+  separate commit, after checking downstream `infer`/narrowing usage.
+- `interchange/` (`@intx/*`) is out of scope — never modify upstream types.
 
 ## Dependency Injection
 

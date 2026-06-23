@@ -25,12 +25,12 @@ function makeFetch(impl: (...args: FetchArgs) => Promise<Response>) {
 }
 
 describe('@workbench/client request construction', () => {
-  it('builds the workflows URL under the api/v1 prefix against the provided baseUrl', async () => {
+  it('builds the workflow-runs URL under the api/v1 prefix against the provided baseUrl', async () => {
     const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([])));
 
     await listWorkflows({ baseUrl: 'http://localhost:4000', fetch: fetcher });
 
-    expect(spy.mock.calls[0]?.[0]).toBe('http://localhost:4000/api/v1/workflows');
+    expect(spy.mock.calls[0]?.[0]).toBe('http://localhost:4000/api/v1/workflow-runs');
   });
 
   it('builds the artifacts URL under the api/v1 prefix against the provided baseUrl', async () => {
@@ -82,7 +82,7 @@ describe('@workbench/client request construction', () => {
     expect(init?.credentials).toBe('omit');
   });
 
-  it('appends a url-encoded tenantId query param for workflows', async () => {
+  it('forwards tenantId on the query string, url-encoded, so the active workbench is visible', async () => {
     const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([])));
 
     await listWorkflows(
@@ -91,7 +91,7 @@ describe('@workbench/client request construction', () => {
     );
 
     expect(spy.mock.calls[0]?.[0]).toBe(
-      'http://localhost:4000/api/v1/workflows?tenantId=tenant%2Fwith%20space'
+      'http://localhost:4000/api/v1/workflow-runs?tenantId=tenant%2Fwith%20space'
     );
   });
 
@@ -132,7 +132,7 @@ describe('@workbench/client baseUrl resolution', () => {
 
     await listWorkflows({ fetch: fetcher });
 
-    expect(spy.mock.calls[0]?.[0]).toBe(`${globalThis.location.origin}/api/v1/workflows`);
+    expect(spy.mock.calls[0]?.[0]).toBe(`${globalThis.location.origin}/api/v1/workflow-runs`);
   });
 
   it('throws a descriptive error when there is no baseUrl and no global location', async () => {
@@ -155,16 +155,38 @@ describe('@workbench/client response and error handling', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('returns the parsed JSON body on a successful response', async () => {
-    const payload = [{ id: 'wf-1', companyName: 'Acme' }];
+  it('maps each /workflow-runs row, exposing deploymentId as id', async () => {
+    const payload = [
+      {
+        deploymentId: 'dep-1',
+        kind: 'presentation-generation',
+        status: 'running',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ];
     const { fetcher } = makeFetch(() => Promise.resolve(jsonResponse(payload)));
 
-    const result: unknown = await listWorkflows({
+    const result = await listWorkflows({
       baseUrl: 'http://localhost:4000',
       fetch: fetcher,
     });
 
-    expect(result).toEqual(payload);
+    expect(result).toEqual([
+      {
+        id: 'dep-1',
+        kind: 'presentation-generation',
+        status: 'running',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('throws when the /workflow-runs response fails schema validation', async () => {
+    const { fetcher } = makeFetch(() => Promise.resolve(jsonResponse([{ deploymentId: 'dep-1' }])));
+
+    await expect(
+      listWorkflows({ baseUrl: 'http://localhost:4000', fetch: fetcher })
+    ).rejects.toThrow(/Invalid \/workflow-runs response/);
   });
 
   it('throws the server-supplied error message on a non-ok response', async () => {

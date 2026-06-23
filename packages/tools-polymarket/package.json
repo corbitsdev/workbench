@@ -1,7 +1,11 @@
 {
   "name": "@workbench/tools-polymarket",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "interchange": {
+    "tools": "./dist/interchange-tools.js"
+  },
   "exports": {
     ".": {
       "types": "./src/index.ts",

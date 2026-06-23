@@ -1,8 +1,11 @@
 .DS_Store
 .pi
 .env
+.env.local
 .env.hub
 .env.sidecar
+.env.staging
+.env.production
 node_modules
 .agents
 .claude/settings.local.json

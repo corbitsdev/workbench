@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -6,8 +6,8 @@ import {
   listAgentTemplates,
   type AgentCatalogEntry,
 } from '../../lib/hub-api';
-import { useWorkflowCatalog, useInstallWorkflow, type WorkflowCatalogEntry } from '../../hooks/use-workflow';
-import { workflowAcceptsArtifactKind } from '@workbench/gtm-workflows';
+import { toHumanLabel } from '@workbench/ui';
+import { useStartWorkflow, useWorkflowDeployments } from '../../hooks/use-workflow';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -17,7 +17,6 @@ const TOOL_PROVIDER_LABELS: Record<string, string> = {
   firecrawl: 'Firecrawl',
   gamma: 'Gamma',
   exa: 'Exa',
-  browserbase: 'Browserbase',
   reddit: 'Reddit',
   scrapecreators: 'ScrapeCreators',
 };
@@ -42,47 +41,58 @@ export interface UnifiedCatalogModalProps {
   tenantId: string | null;
   onClose: () => void;
   onAgentDeployed: () => void;
-  onWorkflowSelected: (kind: string) => void;
+  onWorkflowStarted: (deploymentId: string) => void;
+  // Controls which tab opens by default when the modal opens.
   defaultTab?: Tab;
-  // When the catalog is opened from an artifact, only workflows that accept the
-  // artifact's kind are shown and the workflows tab is selected. Null means the
-  // catalog was opened without an artifact context (all workflows shown).
-  artifactKind?: string | null;
 }
 
+// Dumb launcher. Lists deployed agent templates and workflow kinds; clicking a
+// workflow card starts a run immediately and hands the new deploymentId back.
+// There is no pre-workflow screen — the run's own Panel renders the experience.
 export function UnifiedCatalogModal({
   open,
   tenantId,
   onClose,
   onAgentDeployed,
-  onWorkflowSelected,
+  onWorkflowStarted,
   defaultTab = 'agents',
-  artifactKind = null,
 }: UnifiedCatalogModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  // An artifact context forces the workflows tab — agents are not seeded from
-  // artifacts, so only matching workflows are relevant.
-  const effectiveDefaultTab: Tab = artifactKind !== null ? 'workflows' : defaultTab;
-  const [tab, setTab] = useState<Tab>(effectiveDefaultTab);
+  const [tab, setTab] = useState<Tab>(defaultTab);
   const [search, setSearch] = useState('');
   const [deploying, setDeploying] = useState<string | null>(null);
-  const [installingKind, setInstallingKind] = useState<string | null>(null);
+  const [startingKind, setStartingKind] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const { data: agentCatalog = [] } = useQuery<AgentCatalogEntry[]>({
     queryKey: ['agent-templates'],
     queryFn: listAgentTemplates,
     enabled: open,
+    staleTime: 5 * 60_000,
   });
 
-  const workflowCatalogQuery = useWorkflowCatalog();
-  const installWorkflow = useInstallWorkflow(tenantId);
+  const { data: workflowDeployments = [], isPending: workflowsPending } =
+    useWorkflowDeployments(tenantId);
+  const startWorkflow = useStartWorkflow(tenantId);
+
+  const deployedKinds = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const deployment of workflowDeployments) {
+      if (!seen.has(deployment.kind)) {
+        seen.add(deployment.kind);
+        result.push(deployment.kind);
+      }
+    }
+    return result;
+  }, [workflowDeployments]);
 
   const handleClose = useCallback(() => {
     setError(null);
     setSearch('');
+    setTab(defaultTab);
     onClose();
-  }, [onClose]);
+  }, [onClose, defaultTab]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -111,19 +121,14 @@ export function UnifiedCatalogModal({
     [handleClose]
   );
 
-  useEffect(() => {
+  // Focus the first interactive element whenever the modal opens. This is a DOM
+  // mutation — useLayoutEffect runs synchronously after the DOM updates, before
+  // the browser paints, which prevents flicker.
+  useLayoutEffect(() => {
     if (!open || !panelRef.current) return;
     const items = panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
     (items[0] ?? panelRef.current).focus();
   }, [open]);
-
-  useEffect(() => {
-    if (open) {
-      setTab(effectiveDefaultTab);
-      setSearch('');
-      setError(null);
-    }
-  }, [open, effectiveDefaultTab]);
 
   const query = search.toLowerCase();
 
@@ -131,12 +136,9 @@ export function UnifiedCatalogModal({
     (a) => a.name.toLowerCase().includes(query) || a.description.toLowerCase().includes(query)
   );
 
-  const filteredWorkflows = (workflowCatalogQuery.data ?? [])
-    .filter((w) => artifactKind === null || workflowAcceptsArtifactKind(w.kind, artifactKind))
-    .filter(
-      (w) =>
-        w.name.toLowerCase().includes(query) || (w.description ?? '').toLowerCase().includes(query)
-    );
+  const filteredWorkflowKinds = deployedKinds.filter((kind) =>
+    toHumanLabel(kind).toLowerCase().includes(query)
+  );
 
   const handleDeployAgent = async (entry: AgentCatalogEntry) => {
     if (!tenantId || deploying) return;
@@ -153,22 +155,25 @@ export function UnifiedCatalogModal({
     }
   };
 
-  const handleStartWorkflow = async (entry: WorkflowCatalogEntry) => {
-    if (installingKind) return;
-    setInstallingKind(entry.kind);
+  const handleStartWorkflow = (kind: string) => {
+    if (startingKind) return;
+    setStartingKind(kind);
     setError(null);
-    try {
-      await installWorkflow.mutateAsync({ kind: entry.kind, assignments: {} });
-      handleClose();
-      onWorkflowSelected(entry.kind);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start workflow');
-    } finally {
-      setInstallingKind(null);
-    }
+    startWorkflow
+      .mutateAsync({ kind, input: {} })
+      .then((res) => {
+        handleClose();
+        onWorkflowStarted(res.runId);
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Could not start the workflow.');
+      })
+      .finally(() => {
+        setStartingKind(null);
+      });
   };
 
-  const isLoading = deploying !== null || installingKind !== null;
+  const isGridBusy = deploying !== null || startingKind !== null;
 
   return (
     <AnimatePresence>
@@ -219,36 +224,22 @@ export function UnifiedCatalogModal({
             {/* Tabs + search */}
             <div className="flex items-center gap-2 border-b border-border px-5 py-3">
               <div className="flex gap-1 rounded-[8px] bg-surface-2 p-[3px]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab('agents');
-                    setSearch('');
-                    setError(null);
-                  }}
-                  className={`rounded-[6px] px-3 py-1 text-[13px] font-medium transition-colors ${
-                    tab === 'agents'
-                      ? 'bg-surface text-text shadow-sm'
-                      : 'text-text-2 hover:text-text'
-                  }`}
-                >
-                  Agents
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab('workflows');
-                    setSearch('');
-                    setError(null);
-                  }}
-                  className={`rounded-[6px] px-3 py-1 text-[13px] font-medium transition-colors ${
-                    tab === 'workflows'
-                      ? 'bg-surface text-text shadow-sm'
-                      : 'text-text-2 hover:text-text'
-                  }`}
-                >
-                  Workflows
-                </button>
+                {(['agents', 'workflows'] as Tab[]).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => {
+                      setTab(t);
+                      setSearch('');
+                      setError(null);
+                    }}
+                    className={`rounded-[6px] px-3 py-1 text-[13px] font-medium capitalize transition-colors ${
+                      tab === t ? 'bg-surface text-text shadow-sm' : 'text-text-2 hover:text-text'
+                    }`}
+                  >
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
               </div>
               <div className="relative flex-1">
                 <svg
@@ -271,7 +262,6 @@ export function UnifiedCatalogModal({
               </div>
             </div>
 
-            {/* Error banner */}
             {error && (
               <div className="mx-5 mt-3 rounded-lg border border-orange bg-[rgba(233,132,40,0.12)] px-3 py-2 text-[13px] text-orange-deep">
                 {error}
@@ -309,7 +299,7 @@ export function UnifiedCatalogModal({
                         </div>
                         <button
                           type="button"
-                          disabled={isLoading || !tenantId}
+                          disabled={isGridBusy || !tenantId}
                           onClick={() => void handleDeployAgent(entry)}
                           className="self-start rounded-[7px] border border-border px-3 py-1 text-[12px] font-semibold text-text-2 transition-colors active:scale-[0.97] disabled:opacity-50 hover:border-orange hover:text-orange"
                         >
@@ -328,40 +318,46 @@ export function UnifiedCatalogModal({
 
               {tab === 'workflows' && (
                 <div className="grid grid-cols-2 gap-2">
-                  {workflowCatalogQuery.isLoading && (
-                    <p className="col-span-2 text-[13px] text-text-3">Loading…</p>
-                  )}
-                  {workflowCatalogQuery.isError && (
-                    <p className="col-span-2 text-[13px] text-orange">Failed to load workflows.</p>
-                  )}
-                  {filteredWorkflows.map((entry) => (
-                    <div
-                      key={entry.kind}
-                      className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-[14px] font-semibold text-text">{entry.name}</p>
-                        {entry.description && (
-                          <p className="mt-1 text-[12px] leading-[1.4] text-text-3">
-                            {entry.description}
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        disabled={isLoading}
-                        onClick={() => void handleStartWorkflow(entry)}
-                        className="self-start rounded-[7px] border border-border px-3 py-1 text-[12px] font-semibold text-text-2 transition-colors active:scale-[0.97] disabled:opacity-50 hover:border-orange hover:text-orange"
-                      >
-                        {installingKind === entry.kind ? 'Starting…' : 'Start'}
-                      </button>
-                    </div>
-                  ))}
-                  {!workflowCatalogQuery.isLoading && filteredWorkflows.length === 0 && (
+                  {workflowsPending && (
                     <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
-                      No workflows match your search.
+                      Loading workflows…
                     </p>
                   )}
+                  {!workflowsPending &&
+                    filteredWorkflowKinds.map((kind) => (
+                      <div
+                        key={kind}
+                        className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-[14px] font-semibold text-text">
+                            {toHumanLabel(kind)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isGridBusy}
+                          onClick={() => handleStartWorkflow(kind)}
+                          className="self-start rounded-[7px] border border-border px-3 py-1 text-[12px] font-semibold text-text-2 transition-colors active:scale-[0.97] disabled:opacity-50 hover:border-orange hover:text-orange"
+                        >
+                          {startingKind === kind ? 'Starting…' : 'Start'}
+                        </button>
+                      </div>
+                    ))}
+                  {!workflowsPending &&
+                    filteredWorkflowKinds.length === 0 &&
+                    deployedKinds.length === 0 && (
+                      <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                        No workflows deployed yet.
+                      </p>
+                    )}
+                  {!workflowsPending &&
+                    filteredWorkflowKinds.length === 0 &&
+                    deployedKinds.length > 0 && (
+                      <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                        No workflows match your search.
+                      </p>
+                    )}
                 </div>
               )}
             </div>

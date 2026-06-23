@@ -47,7 +47,9 @@ function renderWithSeededArtifacts(
   ui: React.ReactElement
 ) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY, refetchOnMount: false } },
+    defaultOptions: {
+      queries: { retry: false, staleTime: Number.POSITIVE_INFINITY, refetchOnMount: false },
+    },
   });
   client.setQueryData(['artifacts', tenantId, '', 'newest', '', '', ''], artifacts);
   client.setQueryData(['members', tenantId], []);

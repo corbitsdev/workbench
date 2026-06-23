@@ -1,19 +1,16 @@
 /**
  * Provider registry for non-inference ("other") credentials.
  *
- * Tool names and descriptions are sourced from the actual tool packages.
+ * Tool names and descriptions are inlined here rather than imported from tool
+ * packages — those packages depend on @intx/agent which uses node:path and
+ * cannot be bundled for the browser.
+ *
  * Field specs use the hub API's field naming (`baseURL`, `apiKey`) since
  * that's what CreateTenantCredentialInput accepts.
  *
  * Note: tools packages use `baseUrl` internally; the hub API uses `baseURL`.
  * Fields here use the hub API convention.
  */
-import {
-  GRANOLA_LIST_NOTES_DEFINITION,
-  GRANOLA_GET_NOTE_DEFINITION,
-} from '@workbench/tools-granola';
-import { EXA_SEARCH_DEFINITION } from '@workbench/tools-exa';
-import { FIRECRAWL_DEFINITIONS } from '@workbench/tools-firecrawl';
 
 export type FieldSpec = {
   key: 'apiKey' | 'baseURL';
@@ -54,14 +51,14 @@ const GRANOLA: ProviderMeta = {
   ],
   tools: [
     {
-      name: GRANOLA_LIST_NOTES_DEFINITION.name,
+      name: 'granola_list_notes',
       label: 'List Notes',
-      description: GRANOLA_LIST_NOTES_DEFINITION.description,
+      description: 'List recent notes from Granola.',
     },
     {
-      name: GRANOLA_GET_NOTE_DEFINITION.name,
+      name: 'granola_get_note',
       label: 'Get Note',
-      description: GRANOLA_GET_NOTE_DEFINITION.description,
+      description: 'Get the full content of a Granola note by ID.',
     },
   ],
 };
@@ -88,9 +85,9 @@ const EXA: ProviderMeta = {
   ],
   tools: [
     {
-      name: EXA_SEARCH_DEFINITION.name,
+      name: 'exa_search',
       label: 'Search',
-      description: EXA_SEARCH_DEFINITION.description,
+      description: 'Search the web via Exa.',
     },
   ],
 };
@@ -115,11 +112,31 @@ const FIRECRAWL: ProviderMeta = {
       placeholder: 'https://api.firecrawl.dev/v2',
     },
   ],
-  tools: FIRECRAWL_DEFINITIONS.map((definition) => ({
-    name: definition.name,
-    label: definition.name.replace(/^firecrawl_/, '').replace(/_/g, ' '),
-    description: definition.description,
-  })),
+  tools: [
+    { name: 'firecrawl_scrape', label: 'scrape', description: 'Scrape a URL to markdown.' },
+    { name: 'firecrawl_map', label: 'map', description: 'Map all URLs from a domain.' },
+    { name: 'firecrawl_search', label: 'search', description: 'Search the web via Firecrawl.' },
+    { name: 'firecrawl_crawl_start', label: 'crawl start', description: 'Start a crawl job.' },
+    { name: 'firecrawl_crawl_status', label: 'crawl status', description: 'Get crawl job status.' },
+    { name: 'firecrawl_crawl_active', label: 'crawl active', description: 'List active crawl pages.' },
+    { name: 'firecrawl_crawl_errors', label: 'crawl errors', description: 'List crawl errors.' },
+    { name: 'firecrawl_crawl_cancel', label: 'crawl cancel', description: 'Cancel a crawl job.' },
+    { name: 'firecrawl_crawl_params_preview', label: 'crawl params preview', description: 'Preview crawl params.' },
+    { name: 'firecrawl_batch_scrape_start', label: 'batch scrape start', description: 'Start a batch scrape job.' },
+    { name: 'firecrawl_batch_scrape_status', label: 'batch scrape status', description: 'Get batch scrape status.' },
+    { name: 'firecrawl_batch_scrape_errors', label: 'batch scrape errors', description: 'List batch scrape errors.' },
+    { name: 'firecrawl_batch_scrape_cancel', label: 'batch scrape cancel', description: 'Cancel a batch scrape job.' },
+    { name: 'firecrawl_extract_start', label: 'extract start', description: 'Start an extraction job.' },
+    { name: 'firecrawl_extract_status', label: 'extract status', description: 'Get extraction status.' },
+    { name: 'firecrawl_monitor_create', label: 'monitor create', description: 'Create a monitor.' },
+    { name: 'firecrawl_monitor_get', label: 'monitor get', description: 'Get a monitor.' },
+    { name: 'firecrawl_monitor_update', label: 'monitor update', description: 'Update a monitor.' },
+    { name: 'firecrawl_monitor_delete', label: 'monitor delete', description: 'Delete a monitor.' },
+    { name: 'firecrawl_monitor_list', label: 'monitor list', description: 'List monitors.' },
+    { name: 'firecrawl_monitor_run', label: 'monitor run', description: 'Run a monitor.' },
+    { name: 'firecrawl_monitor_check', label: 'monitor check', description: 'Check monitor status.' },
+    { name: 'firecrawl_parse', label: 'parse', description: 'Parse a document.' },
+  ],
 };
 
 export const PROVIDER_REGISTRY: ProviderMeta[] = [GRANOLA, EXA, FIRECRAWL];

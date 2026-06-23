@@ -76,9 +76,7 @@ export const GAMMA_DUPLICATE_PRESENTATION_DEFINITION: ToolDefinition = {
   },
 };
 
-export const PRESENTATION_DEFINITIONS: ToolDefinition[] = [
-  GAMMA_DUPLICATE_PRESENTATION_DEFINITION,
-];
+export const PRESENTATION_DEFINITIONS: ToolDefinition[] = [GAMMA_DUPLICATE_PRESENTATION_DEFINITION];
 
 export function createPresentationTools(config: GammaToolsConfig): AgentTool[] {
   const resolved = resolveConfig(config);

@@ -4,7 +4,10 @@ import { logger } from './logger';
 const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
 export function buildApiUrl(path: string): string {
-  return new URL(`/api/v1/${path.replace(/^\//, '')}`, apiBase || window.location.origin).toString();
+  return new URL(
+    `/api/v1/${path.replace(/^\//, '')}`,
+    apiBase || window.location.origin
+  ).toString();
 }
 
 export class ApiError extends Error {
@@ -57,10 +60,7 @@ export async function uploadFile<T>(
   file: File,
   options?: { tenantId?: string | null }
 ): Promise<T> {
-  const url = new URL(
-    `/api/v1/${path.replace(/^\//, '')}`,
-    apiBase || window.location.origin
-  );
+  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, apiBase || window.location.origin);
   if (options?.tenantId) {
     url.searchParams.set('tenantId', options.tenantId);
   }
@@ -81,6 +81,35 @@ export async function uploadFile<T>(
         ? (body as { error: string }).error
         : `HTTP ${res.status}`;
     logger.error('API upload failed', { url: urlString, status: res.status, error: message });
+    throw new ApiError(message, res.status);
+  }
+
+  return (await res.json()) as T;
+}
+
+export async function uploadForm<T>(
+  path: string,
+  form: FormData,
+  options?: { tenantId?: string | null }
+): Promise<T> {
+  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, apiBase || window.location.origin);
+  if (options?.tenantId) {
+    url.searchParams.set('tenantId', options.tenantId);
+  }
+  const urlString = url.toString();
+  logger.info('API form upload', { url: urlString });
+
+  const res = await fetch(urlString, { method: 'POST', credentials: 'include', body: form });
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    const message =
+      body !== null &&
+      typeof body === 'object' &&
+      'error' in body &&
+      typeof (body as Record<string, unknown>).error === 'string'
+        ? (body as { error: string }).error
+        : `HTTP ${res.status}`;
+    logger.error('API form upload failed', { url: urlString, status: res.status, error: message });
     throw new ApiError(message, res.status);
   }
 

@@ -13,159 +13,114 @@ Currently unauthenticated for prototype. Lightweight auth (demo gate or minimal)
 
 ## Workflow API
 
-The core API is a simple state machine: create a workflow, query its state, and advance it through steps.
+Workflows run on Interchange's native workflow runtime. There is no hub-routed
+step state machine — a workflow is a git-backed deployed asset, and a run is an
+event log the hub exposes for observation and human-in-the-loop control. See
+[`DEPLOYING_WORKFLOWS.md`](DEPLOYING_WORKFLOWS.md) for the full deploy model.
 
-### Create Workflow
+The API splits into one **operator** route (deploy) and three **user** routes
+(observe and approve runs).
+
+### Deploy a Workflow (operator)
 
 ```
-POST /workflows
+POST /api/internal/workflows/deploy
+Authorization: Bearer <HUB_SERVICE_TOKEN>
 Content-Type: application/json
 
-{
-  "source": "paste" | "granola",
-  "transcript": "...",          // Required if source="paste"
-  "granolaId": "..."            // Required if source="granola"
-}
+<serialized @intx/workflow definition envelope>
 ```
 
-**Response** (201 Created):
+Operator-only — gated by the hub service token, the same gate as the other
+`/api/internal` routes (a member session cannot reach it). The hub validates the
+definition, resolves the tenant deploy config (base inference source from the
+tenant LLM credential), and hands it to the `@intx/workflow-deploy` orchestrator,
+which commits `workflow.json` + `capability-declarations.json` to a git-backed
+`workflow` repo and launches one session per step.
 
-```json
-{
-  "id": "uuid",
-  "status": "analyzing",
-  "steps": {
-    "intake": { "completed": true, "transcriptId": "uuid" }
-  }
-}
-```
-
-**Status codes:**
-
-- `201`: Workflow created successfully
-- `400`: Invalid source or missing required fields
-- `413`: Transcript exceeds maximum length (500KB)
-- `503`: Granola API not configured
-
----
-
-### Get Workflow
-
-```
-GET /workflows/:id
-```
+Pushed in practice via the admin CLI's **Local actions → Push a workflow** (see
+[ADMIN_CLI.md](./ADMIN_CLI.md)), which imports `@workbench/workflow-<kind>`,
+serializes its `workflow`, and POSTs it here.
 
 **Response** (200 OK):
 
 ```json
 {
-  "id": "uuid",
-  "status": "reviewing",
-  "currentStep": "generate",
-  "steps": {
-    "intake": {
-      "completed": true,
-      "transcriptId": "uuid",
-      "transcript": "..."
-    },
-    "analyze": {
-      "completed": true,
-      "painPoints": [
-        {
-          "id": "uuid",
-          "workflowId": "uuid",
-          "severity": "high",
-          "context": "Customer mentioned slow approval process",
-          "quote": "Takes 3 weeks to get approvals",
-          "selected": true,
-          "createdAt": "2026-05-28T10:00:00Z"
-        }
-      ]
-    },
-    "generate": {
-      "completed": false,
-      "collateral": []
-    },
-    "improve": { "completed": false },
-    "export": { "completed": false }
-  }
+  "kind": "collateral-generation",
+  "deploymentId": "...",
+  "result": { "kind": "multi-step", "publicKey": "..." }
 }
 ```
-
-**Fields:**
-
-- `currentStep`: Derived from `status`. Maps to step name: `intake`, `analyze`, `generate`, `improve`, `export`
-- `status`: Internal state value (see Status Mapping below)
-- `steps`: Keyed by step name. Each step has:
-  - `completed`: boolean
-  - Step-specific payload (painPoints, collateral, etc.)
 
 **Status codes:**
 
-- `200`: Success
-- `404`: Workflow not found
+- `200`: Deployed
+- `400`: Invalid or non-serializable definition (e.g. inline tool factories)
+- `401`: Missing or incorrect service token
 
 ---
 
-### Run Step
+### List Workflow Runs (user)
 
 ```
-POST /workflows/:id/steps
-Content-Type: application/json
-
-{
-  "step": "analyze" | "generate" | "improve" | "export",
-  "painPointIds": ["uuid", ...],        // Required for generate
-  "collateralId": "uuid",               // Required for improve
-  "feedback": "..."                     // Optional for analyze; required for improve
-}
+GET /api/v1/workflow-runs
 ```
+
+Tenant-scoped index of deployed runs from the `workflow_run` table (non-deleted,
+`deploymentId IS NOT NULL`).
 
 **Response** (200 OK):
 
 ```json
-{
-  "id": "uuid",
-  "status": "reviewing",
-  "currentStep": "generate",
-  "steps": { ... }  // Updated state after step completed
-}
+[
+  {
+    "deploymentId": "...",
+    "kind": "collateral-generation",
+    "status": "running",
+    "createdAt": "2026-06-19T10:00:00Z"
+  }
+]
 ```
 
-**Step Behaviors:**
+---
 
-#### Analyze
+### Stream Workflow Run Events (user, SSE)
 
-- Extracts pain points from the transcript
-- Accepts optional `feedback` to refine the LLM prompt
-- **Feedback example**: "Focus on automation pain" → LLM prioritizes pain points related to automation
-- Returns updated `steps.analyze.painPoints` array
-- Sets workflow status to `reviewing`
+```
+GET /api/v1/workflow-runs/:deploymentId/stream
+Accept: text/event-stream
+```
 
-#### Generate
+Server-Sent Events stream of the run's native `WorkflowEvent` log, read from the
+git-backed `workflow-run` repo via `subscribeKind`. Each message carries
+`{ seq, runId, event }`. Event types include `RunStarted`, `StepStarted`,
+`StepCompleted`, `StepFailed`, `SignalAwaited`, `SignalReceived`, `RunCompleted`,
+`RunFailed`, `RunCancelled` (17 on-disk types in total). The web app reduces the
+stream into a `RunState` via `resumeFromLog` and renders the generic run console.
 
-- Requires array of pain point IDs (`painPointIds`)
-- Creates collateral items (email, LinkedIn, one-pager, battlecard) for each selected pain point
-- Returns updated `steps.generate.collateral` array
-- Sets workflow status to `generating`
+---
 
-#### Improve
+### Signal a Workflow Run (user, HITL)
 
-- Requires specific collateral ID and feedback text
-- Applies feedback to refine the collateral (e.g., "make it shorter", "more executive tone")
-- Archives previous version in `collateral_version` table
-- Returns updated collateral with new version
-- If no more collateral to improve, moves workflow to `exporting`
+```
+POST /api/v1/workflow-runs/:deploymentId/signal
+Content-Type: application/json
 
-#### Export
+{ "runId": "...", "signalName": "artifact-approval", "payload": { ... } }
+```
 
-- Not yet implemented (returns 501)
+Delivers a signal to the running workflow — this is how a human-in-the-loop
+approval gate (`awaitSignal`) is resolved. The hub forwards it to the sidecar via
+`sendSignalDeliver` at the deployment's mail address.
 
-**Error responses:**
+**Response** (202 Accepted):
 
-- `400`: Invalid step or missing required parameters
-- `404`: Workflow or resource not found
-- `501`: Step not implemented
+```json
+{ "accepted": true }
+```
+
+> **Not yet wired:** run-start via mail (`POST /api/v1/workflow-runs/:kind/start`)
+> is a staging TODO — not yet wired. Runs currently start at deploy time.
 
 ---
 
@@ -213,94 +168,6 @@ GET /health
   "service": "GTM Workbench"
 }
 ```
-
----
-
-## Status Mapping
-
-Internal `status` values map to frontend `currentStep`:
-
-| Status     | Current Step | Meaning                            |
-| ---------- | ------------ | ---------------------------------- |
-| analyzing  | analyze      | Extracting pain points             |
-| reviewing  | generate     | User selecting pain points         |
-| generating | generate     | Generating collateral              |
-| improving  | improve      | User improving selected collateral |
-| exporting  | export       | Assembling final output            |
-| done       | export       | Workflow complete                  |
-
-Mapping is defined in `apps/hub/src/routes/workflow.ts:deriveCurrentStep()`.
-
----
-
-## Data Types
-
-### Pain Point
-
-```typescript
-{
-  id: string; // UUID
-  workflowId: string; // UUID (same as sessionId)
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  context: string; // Summary of the pain
-  quote: string; // Exact customer words
-  selected: boolean; // User-selected for collateral generation
-  createdAt: string; // ISO 8601 timestamp
-}
-```
-
-### Collateral Item
-
-```typescript
-{
-  id: string; // UUID
-  painPointId: string; // UUID
-  type: 'email' | 'linkedin' | 'one-pager' | 'battlecard';
-  title: string;
-  body: string;
-  status: 'draft' | 'approved' | 'rejected';
-  version: number; // Incremented on feedback
-  createdAt: string; // ISO 8601 timestamp
-  updatedAt: string; // ISO 8601 timestamp
-}
-```
-
----
-
-## Feedback Flow
-
-### Analysis Feedback
-
-User provides feedback in the **Live Analysis** stage to refine pain point extraction:
-
-1. User types feedback in LiveAnalysisReview textarea (e.g., "Focus on automation")
-2. Frontend calls `POST /workflows/:id/steps` with:
-   ```json
-   {
-     "step": "analyze",
-     "feedback": "Focus on automation"
-   }
-   ```
-3. API extracts pain points again, conditioning the LLM prompt on the feedback
-4. Frontend fetches updated workflow state and re-renders the pain point list
-5. User can refine further or proceed to select pain points
-
-### Improvement Feedback
-
-User provides feedback during the **Improvement** stage to refine collateral:
-
-1. User types feedback in CollateralImprovement textarea for each approved item (e.g., "shorter version")
-2. Frontend calls `POST /workflows/:id/steps` for each item with:
-   ```json
-   {
-     "step": "improve",
-     "collateralId": "uuid",
-     "feedback": "shorter version"
-   }
-   ```
-3. API applies feedback heuristics (keywords like "shorter", "punch", "hook")
-4. Previous version is archived; new version is saved
-5. Frontend fetches updated workflow and moves to Final Export
 
 ---
 

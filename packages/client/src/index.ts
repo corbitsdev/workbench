@@ -91,13 +91,172 @@ export interface ArtifactsPage {
   nextCursor: string | null;
 }
 
-/** Fetch the current user's jobs (`GET /workflows`). */
-export function listWorkflows(
+const WorkflowRunRowSchema = type({
+  deploymentId: 'string',
+  kind: 'string',
+  status: 'string',
+  createdAt: 'string',
+});
+const WorkflowRunsResponseSchema = WorkflowRunRowSchema.array();
+
+/**
+ * Fetch the tenant's natively-deployed workflows (`GET /workflow-runs`).
+ * `tenantId` MUST be forwarded: the route resolves visibility against the
+ * requested workbench (walking its ancestor chain to the global tenant). With
+ * it omitted the hub falls back to the caller's default context, whose chain
+ * does not include a child workbench, so an active-workbench deployment is
+ * invisible and the library rail shows nothing.
+ */
+export async function listWorkflows(
   options: ClientOptions = {},
   params: ListWorkflowsParams = {}
 ): Promise<WorkflowSummary[]> {
   const search = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
-  return request<WorkflowSummary[]>(`workflows${search}`, options);
+  const raw = await request<unknown>(`workflow-runs${search}`, options);
+  const parsed = WorkflowRunsResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /workflow-runs response: ${parsed.summary}`);
+  }
+  return parsed.map((row) => ({
+    id: row.deploymentId,
+    kind: row.kind,
+    status: row.status,
+    createdAt: row.createdAt,
+  }));
+}
+
+export type SkillItem = {
+  id: string;
+  name: string;
+  displayName: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export interface ListSkillsParams {
+  tenantId?: string | null;
+}
+
+export interface CreateSkillParams {
+  tenantId?: string | null;
+  name: string;
+  description?: string | null;
+  text: string;
+}
+
+export interface UpdateSkillParams {
+  tenantId?: string | null;
+  assetId: string;
+  description?: string | null;
+  text: string;
+}
+
+export interface AttachSkillParams {
+  tenantId?: string | null;
+  agentId: string;
+  assetId: string;
+}
+
+export interface DetachSkillParams {
+  tenantId?: string | null;
+  agentId: string;
+  assetId: string;
+}
+
+const SkillItemSchema = type({
+  id: 'string',
+  name: 'string',
+  displayName: 'string | null',
+  createdAt: 'string',
+  updatedAt: 'string',
+});
+
+const SkillsResponseSchema = type({ skills: SkillItemSchema.array() });
+const SkillResponseSchema = type({ skill: SkillItemSchema });
+
+export async function listSkills(
+  options: ClientOptions = {},
+  params: ListSkillsParams = {}
+): Promise<SkillItem[]> {
+  const search = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  const raw = await request<unknown>(`skills${search}`, options);
+  const parsed = SkillsResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /skills response: ${parsed.summary}`);
+  }
+  return parsed.skills;
+}
+
+export async function createSkill(
+  options: ClientOptions = {},
+  params: CreateSkillParams
+): Promise<SkillItem> {
+  const qs = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  const raw = await request<unknown>(`skills${qs}`, {
+    ...options,
+    init: {
+      ...options.init,
+      method: 'POST',
+      body: JSON.stringify({
+        name: params.name,
+        description: params.description,
+        text: params.text,
+      }),
+      headers: { 'Content-Type': 'application/json', ...options.init?.headers },
+    },
+  });
+  const parsed = SkillResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /skills response: ${parsed.summary}`);
+  }
+  return parsed.skill;
+}
+
+export async function updateSkill(
+  options: ClientOptions = {},
+  params: UpdateSkillParams
+): Promise<SkillItem> {
+  const qs = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  const raw = await request<unknown>(`skills${qs}`, {
+    ...options,
+    init: {
+      ...options.init,
+      method: 'POST',
+      body: JSON.stringify({
+        assetId: params.assetId,
+        description: params.description,
+        text: params.text,
+      }),
+      headers: { 'Content-Type': 'application/json', ...options.init?.headers },
+    },
+  });
+  const parsed = SkillResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /skills response: ${parsed.summary}`);
+  }
+  return parsed.skill;
+}
+
+export async function attachSkill(
+  options: ClientOptions = {},
+  params: AttachSkillParams
+): Promise<void> {
+  const qs = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  await request<unknown>(`agents/${params.agentId}/skills/${params.assetId}${qs}`, {
+    ...options,
+    init: { ...options.init, method: 'POST' },
+  });
+}
+
+export async function detachSkill(
+  options: ClientOptions = {},
+  params: DetachSkillParams
+): Promise<void> {
+  const qs = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  await request<unknown>(`agents/${params.agentId}/skills/${params.assetId}${qs}`, {
+    ...options,
+    init: { ...options.init, method: 'DELETE' },
+  });
 }
 
 /**

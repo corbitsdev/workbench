@@ -5,7 +5,7 @@ dockerfilePath = "apps/hub/Dockerfile"
 watchPatterns = ["apps/hub/**", "packages/**", "scripts/**", "package.json", "bun.lock"]
 
 [deploy]
-preDeployCommand = "bun run scripts/db-setup.ts"
+preDeployCommand = "bun run scripts/db-setup.ts && bun run apps/hub/bin/seed-startup.ts"
 startCommand = "bun run apps/hub/src/index.ts"
 healthcheckPath = "/health"
 healthcheckTimeout = 30

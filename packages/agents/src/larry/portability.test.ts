@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { LARRY_SKILL_CONTENT } from './skill';
 import { LARRY_CAPABILITIES, LARRY_DEPLOY_DESCRIPTOR } from './definition';
 import { buildLarrySystemPrompt } from './prompt';
+import { canonicalizeToolNames } from '../tool-names';
 
 describe('Larry skill portability', () => {
   it('a Myra-shaped config with LARRY_SKILL_CONTENT has the same skill section as Larry', () => {
@@ -22,8 +23,10 @@ ${LARRY_SKILL_CONTENT}
   it('a skill-equipped Myra tool list matches Larry tool list', () => {
     const larryTools = [...LARRY_CAPABILITIES.tools].sort();
 
-    // Myra equipped with the last30days skill would need the same tools
-    const myraWithLarrySkillTools = [
+    // Myra equipped with the last30days skill would need the same tools. The
+    // capability list carries canonical (prefixed) package-tool names, so the
+    // expected list goes through the same canonicalization (CL-2145).
+    const myraWithLarrySkillTools = canonicalizeToolNames([
       'hackernews_search',
       'github_activity',
       'polymarket_odds',
@@ -44,7 +47,7 @@ ${LARRY_SKILL_CONTENT}
       'scrapecreators_pinterest',
       'mail_search',
       'mail_reply',
-    ].sort();
+    ]).sort();
 
     expect(myraWithLarrySkillTools).toEqual(larryTools);
   });

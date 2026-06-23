@@ -186,7 +186,7 @@ Tailwind's default breakpoints (already configured):
 
 ### Current Responsive Issues
 
-**Critical issues to fix (CL-1001):**
+**Critical issues to fix:**
 
 1. **Buttons out of view**
    - Overflow on small screens (likely due to fixed widths, `nowrap`)

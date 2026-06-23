@@ -1,7 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import {
-  createWorkbench,
   deleteAgentInstance,
   deployAgentFromTemplate,
   getMe,
@@ -165,18 +164,6 @@ describe('hub-api network helpers', () => {
 
     expect((await getMyPrincipals()) as unknown).toEqual(data);
     expect(calls[0]!.url).toContain('/api/me/principals');
-  });
-
-  it('createWorkbench POSTs a JSON name body', async () => {
-    const calls = installFetch(() => ({ body: { id: 'wb1', name: 'Acme' } }));
-
-    await createWorkbench('Acme');
-    expect(calls[0]!.url).toContain('/api/v1/workbenches');
-    expect(calls[0]!.init?.method).toBe('POST');
-    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ name: 'Acme' });
-    expect((calls[0]!.init!.headers as Record<string, string>)['Content-Type']).toBe(
-      'application/json'
-    );
   });
 
   it('listWorkbenches joins principals with /me and excludes root tenants', async () => {

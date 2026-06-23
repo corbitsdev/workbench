@@ -121,58 +121,18 @@ describe('ArtifactBody rendering', () => {
       })
     );
     const link = screen.getByRole('link', { name: /download csv/i }) as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toBe('/api/v1/artifacts/art-9/download');
+    // buildApiUrl resolves to an absolute same-origin URL; assert the path suffix.
+    expect(link.getAttribute('href')).toMatch(/\/api\/v1\/artifacts\/art-9\/download$/);
   });
 
-  it('renders reddit opportunity scan artifacts from JSON content', () => {
-    const scan = {
-      artifactType: 'reddit-opportunity-scan',
-      title: 'Reddit opportunities for Acme',
-      summary: 'Three conversations are worth engaging.',
-      inputUrl: 'https://example.com',
-      businessProfile: {
-        whatTheySell: 'Analytics software',
-        mainKeywords: ['analytics'],
-        competitors: ['Mixpanel'],
-        evidence: ['Homepage hero'],
-      },
-      recommendations: {
-        keywords: [
-          { label: 'analytics', reason: 'Core product', confidence: 0.9, source: 'accepted' },
-        ],
-        subreddits: [
-          { label: 'SaaS', reason: 'Buyer community', confidence: 0.8, source: 'accepted' },
-        ],
-      },
-      scanConfig: {
-        timeWindow: '30d',
-        matchMode: 'semantic',
-        scope: 'posts-and-comments',
-        threshold: 70,
-        resultCap: 25,
-      },
-      opportunities: [],
-      watchlist: {
-        keywords: ['analytics'],
-        subreddits: ['SaaS'],
-        competitors: ['Mixpanel'],
-        lastScannedAt: '2026-06-17T00:00:00.000Z',
-      },
-      exports: {
-        channelBrief: 'Brief',
-        responsePlaybook: 'Playbook',
-        opportunityFeed: 'Feed',
-      },
-    };
-
+  it('renders unrecognized kinds with the document fallback', () => {
     render(
       React.createElement(ArtifactBody, {
-        artifact: { content: JSON.stringify(scan), kind: 'reddit-opportunity-scan', source: {} },
+        artifact: { content: 'Some opportunity notes', kind: 'reddit-opportunity-scan', source: {} },
       })
     );
 
-    expect(screen.getByText('Reddit opportunities for Acme')).not.toBeNull();
-    expect(screen.queryByText(/invalid reddit opportunity artifact payload/i)).toBeNull();
+    expect(screen.getByText('Some opportunity notes')).not.toBeNull();
   });
 
   it('does not render a download link for non-export kinds', () => {

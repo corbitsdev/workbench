@@ -1,9 +1,25 @@
 /// <reference types="bun" />
 import '../../test-setup';
 import { afterEach, describe, it, expect, mock, beforeEach } from 'bun:test';
-import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, within, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { UnifiedCatalogModal } from './UnifiedCatalogModal';
+
+mock.module('../../hooks/use-workflow', () => ({
+  useWorkflowDeployments: () => ({
+    data: [
+      { deploymentId: 'dep-1', kind: 'collateral-generation', status: 'running', createdAt: '' },
+      { deploymentId: 'dep-2', kind: 'presentation-generation', status: 'running', createdAt: '' },
+      { deploymentId: 'dep-3', kind: 'seo-enrichment', status: 'running', createdAt: '' },
+    ],
+    isPending: false,
+  }),
+  useStartWorkflow: () => ({
+    mutateAsync: async ({ kind }: { kind: string }) => ({ runId: `started-${kind}` }),
+    isPending: false,
+  }),
+}));
 
 // This mock must be a superset that also satisfies sibling files mocking the
 // same hub-api module: bun applies mock.module globally for the whole run and
@@ -35,7 +51,6 @@ mock.module('../../lib/hub-api', () => ({
       credentialResolved: true,
     }),
   getMyPrincipals: () => Promise.resolve([]),
-  createWorkbench: () => Promise.resolve({ id: '', name: '', slug: '', tenantId: '' }),
   listWorkbenches: () =>
     Promise.resolve([
       {
@@ -49,32 +64,9 @@ mock.module('../../lib/hub-api', () => ({
   launchInstanceSession: () => Promise.resolve({ launched: true }),
 }));
 
-mock.module('../../hooks/use-workflow', () => ({
-  useWorkflowCatalog: () => ({
-    isLoading: false,
-    isError: false,
-    data: [
-      {
-        kind: 'collateral-generation',
-        name: 'Collateral Generation',
-        description: 'Turn transcripts into collateral',
-        credentialRequirements: [],
-        steps: [],
-      },
-      {
-        kind: 'presentation-generation',
-        name: 'Presentation Generation',
-        description: 'Build Gamma decks',
-        credentialRequirements: [],
-        steps: [],
-      },
-    ],
-  }),
-  useInstallWorkflow: () => ({
-    isPending: false,
-    mutateAsync: async ({ kind }: { kind: string }) => ({ kind }),
-  }),
-}));
+function screen() {
+  return within(document.body);
+}
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient({
@@ -86,12 +78,12 @@ function wrapper({ children }: { children: React.ReactNode }) {
 describe('UnifiedCatalogModal', () => {
   let onClose: ReturnType<typeof mock>;
   let onAgentDeployed: ReturnType<typeof mock>;
-  let onWorkflowSelected: ReturnType<typeof mock>;
+  let onWorkflowStarted: ReturnType<typeof mock>;
 
   beforeEach(() => {
     onClose = mock(() => undefined);
     onAgentDeployed = mock(() => undefined);
-    onWorkflowSelected = mock(() => undefined);
+    onWorkflowStarted = mock(() => undefined);
   });
 
   afterEach(cleanup);
@@ -103,14 +95,14 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
 
-    await waitFor(() => screen.getByText('Oat'));
-    screen.getByText('Freddy');
-    screen.getByText('Granola notes agent');
+    await waitFor(() => screen().getByText('Oat'));
+    screen().getByText('Freddy');
+    screen().getByText('Granola notes agent');
   });
 
   it('shows tool provider labels on agent cards', async () => {
@@ -120,14 +112,14 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
 
-    await waitFor(() => screen.getByText('Oat'));
-    screen.getByText('Granola');
-    screen.getByText('Firecrawl');
+    await waitFor(() => screen().getByText('Oat'));
+    screen().getByText('Granola');
+    screen().getByText('Firecrawl');
   });
 
   it('switches to Workflows tab and shows workflow cards', async () => {
@@ -137,15 +129,16 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Workflows' }));
+    fireEvent.click(screen().getByRole('button', { name: 'Workflows' }));
 
-    await waitFor(() => screen.getByText('Collateral Generation'));
-    screen.getByText('Presentation Generation');
+    await waitFor(() => screen().getByText('Collateral Generation'));
+    screen().getByText('Presentation Generation');
+    screen().getByText('SEO Enrichment');
   });
 
   it('filters agents by search query', async () => {
@@ -155,18 +148,19 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
 
-    await waitFor(() => screen.getByText('Oat'));
+    await waitFor(() => screen().getByText('Oat'));
 
-    const searchInput = screen.getByPlaceholderText(/search/i);
-    fireEvent.change(searchInput, { target: { value: 'granola' } });
+    const user = userEvent.setup();
+    const searchInput = screen().getByPlaceholderText(/search/i);
+    await user.type(searchInput, 'granola');
 
-    screen.getByText('Oat');
-    expect(screen.queryByText('Freddy')).toBeNull();
+    screen().getByText('Oat');
+    await waitFor(() => expect(screen().queryByText('Freddy')).toBeNull());
   });
 
   it('calls onAgentDeployed and onClose after successful deploy', async () => {
@@ -176,73 +170,55 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
 
-    await waitFor(() => screen.getByText('Oat'));
-    const addButtons = screen.getAllByRole('button', { name: 'Add' });
+    await waitFor(() => screen().getByText('Oat'));
+    const addButtons = screen().getAllByRole('button', { name: 'Add' });
     fireEvent.click(addButtons[0]!);
 
     await waitFor(() => expect(onAgentDeployed).toHaveBeenCalledTimes(1));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onWorkflowSelected with kind after clicking a workflow card', async () => {
+  it('calls onWorkflowStarted with the new run id after clicking a workflow card', async () => {
     render(
       <UnifiedCatalogModal
         open={true}
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Workflows' }));
-    await waitFor(() => screen.getByText('Collateral Generation'));
+    fireEvent.click(screen().getByRole('button', { name: 'Workflows' }));
+    await waitFor(() => screen().getByText('Collateral Generation'));
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Start' })[0]!);
+    fireEvent.click(screen().getAllByRole('button', { name: 'Start' })[0]!);
 
-    await waitFor(() => expect(onWorkflowSelected).toHaveBeenCalledWith('collateral-generation'));
+    await waitFor(() =>
+      expect(onWorkflowStarted).toHaveBeenCalledWith('started-collateral-generation')
+    );
   });
 
-  it('opens on the Workflows tab and hides workflows that reject the artifact kind', async () => {
+  it('opens on the Workflows tab when defaultTab is workflows', async () => {
     render(
       <UnifiedCatalogModal
         open={true}
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
-        artifactKind="email"
+        onWorkflowStarted={onWorkflowStarted}
+        defaultTab="workflows"
       />,
       { wrapper }
     );
 
-    // 'email' is accepted by the general presentation workflow but not by
-    // collateral generation, which only seeds from transcripts/pain points.
-    await waitFor(() => screen.getByText('Presentation Generation'));
-    expect(screen.queryByText('Collateral Generation')).toBeNull();
-  });
-
-  it('shows both workflows for an artifact kind collateral accepts', async () => {
-    render(
-      <UnifiedCatalogModal
-        open={true}
-        tenantId="tenant-1"
-        onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
-        artifactKind="pain-points"
-      />,
-      { wrapper }
-    );
-
-    await waitFor(() => screen.getByText('Collateral Generation'));
-    screen.getByText('Presentation Generation');
+    await waitFor(() => screen().getByText('Collateral Generation'));
   });
 
   it('does not render when open is false', () => {
@@ -252,12 +228,12 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
 
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen().queryByRole('dialog')).toBeNull();
   });
 
   it('closes on Escape key', async () => {
@@ -267,13 +243,13 @@ describe('UnifiedCatalogModal', () => {
         tenantId="tenant-1"
         onClose={onClose}
         onAgentDeployed={onAgentDeployed}
-        onWorkflowSelected={onWorkflowSelected}
+        onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper }
     );
 
-    await waitFor(() => screen.getByRole('dialog'));
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => screen().getByRole('dialog'));
+    fireEvent.keyDown(screen().getByRole('dialog'), { key: 'Escape' });
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });

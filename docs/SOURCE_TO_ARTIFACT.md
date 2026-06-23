@@ -85,9 +85,9 @@ version history, and provenance.
 
 A Workflow Contract is the Workbench-facing contract for a reusable recipe. It
 describes how a workflow appears to users and what Workbench surfaces it needs.
-It is not an executable workflow definition. In the current app it may point to a
-local implementation. As Interchange deployable workflows land, it should point
-to a deployed workflow definition owned by the Interchange runtime.
+It is not an executable workflow definition. It points to a deployed workflow
+definition owned by the Interchange runtime (the native `@intx/workflow`
+definition deployed via the admin CLI's **Local actions → Push a workflow**; see DEPLOYING_WORKFLOWS.md).
 
 Examples:
 

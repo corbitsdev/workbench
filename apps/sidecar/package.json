@@ -7,6 +7,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
     "test": "bun test",
+    "test:authz": "bun test src/step-tool-authz.test.ts",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text"
   },
   "dependencies": {
@@ -15,20 +16,24 @@
     "@intx/crypto-node": "workspace:*",
     "@intx/harness": "workspace:*",
     "@intx/hub-agent": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/log": "workspace:*",
     "@intx/mail-memory": "workspace:*",
     "@intx/storage-isogit": "workspace:*",
+    "@intx/tool-packaging": "workspace:*",
     "@intx/tools-lsp": "workspace:*",
     "@intx/tools-mail": "workspace:*",
     "@intx/tools-posix": "workspace:*",
     "@intx/types": "workspace:*",
+    "@intx/workflow": "workspace:*",
+    "@intx/workflow-host": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/approvals": "workspace:*",
+    "@workbench/tool-credentials": "workspace:*",
     "@workbench/context-repair": "workspace:*",
     "@workbench/prompts": "workspace:*",
-    "@workbench/sentry": "workspace:*",
-    "@workbench/tools-exa": "workspace:*"
+    "@workbench/sentry": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -30,9 +30,11 @@ function getHandler(
   handle?: string,
   appPassword?: string
 ) {
-  const tool = createBlueskyTools({ fetcher, handle, appPassword }).find(
-    (t) => t.definition.name === 'bluesky_search'
-  );
+  const tool = createBlueskyTools({
+    fetcher,
+    ...(handle !== undefined ? { handle } : {}),
+    ...(appPassword !== undefined ? { appPassword } : {}),
+  }).find((t) => t.definition.name === 'bluesky_search');
   if (!tool || tool.kind !== 'string') throw new Error('bluesky_search tool not found');
   return tool.handler;
 }
@@ -43,9 +45,9 @@ const OLD = '2020-01-01T00:00:00.000Z';
 describe('BLUESKY_HUB_TOOLS', () => {
   it('exposes bluesky_search as a credential tool with providerName bluesky', () => {
     expect('bluesky_search' in BLUESKY_HUB_TOOLS).toBe(true);
-    expect(
-      (BLUESKY_HUB_TOOLS.bluesky_search as { providerName: string }).providerName
-    ).toBe('bluesky');
+    expect((BLUESKY_HUB_TOOLS.bluesky_search as { providerName: string }).providerName).toBe(
+      'bluesky'
+    );
   });
 });
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
-import { resolveSidecarHeartbeat } from './config';
+import path from 'node:path';
+import { resolveSidecarHeartbeat, resolveToolPackageCache } from './config';
 
 describe('resolveSidecarHeartbeat', () => {
   it('uses fast defaults when env is unset', () => {
@@ -27,5 +28,32 @@ describe('resolveSidecarHeartbeat', () => {
     expect(() => resolveSidecarHeartbeat({ SIDECAR_RECONNECT_DELAY_MS: '0' })).toThrow(
       'SIDECAR_RECONNECT_DELAY_MS must be a positive integer (got "0")'
     );
+  });
+});
+
+describe('resolveToolPackageCache', () => {
+  it('defaults the cache root under the data dir', () => {
+    const cache = resolveToolPackageCache({}, '/var/sidecar');
+    expect(cache.cacheRoot).toBe(path.join('/var/sidecar', 'cache', 'tool-packages'));
+    expect(cache.cacheMaxBytes).toBeGreaterThan(0);
+    expect(cache.registryMaxTarballBytes).toBeGreaterThan(0);
+  });
+
+  it('honors an explicit cache dir and byte caps', () => {
+    const cache = resolveToolPackageCache(
+      {
+        SIDECAR_TOOL_CACHE_DIR: '/mnt/cache',
+        SIDECAR_TOOL_CACHE_MAX_BYTES: '1024',
+        SIDECAR_REGISTRY_MAX_TARBALL_BYTES: '512',
+      },
+      '/var/sidecar'
+    );
+    expect(cache.cacheRoot).toBe('/mnt/cache');
+    expect(cache.cacheMaxBytes).toBe(1024);
+    expect(cache.registryMaxTarballBytes).toBe(512);
+  });
+
+  it('rejects a non-positive byte cap', () => {
+    expect(() => resolveToolPackageCache({ SIDECAR_TOOL_CACHE_MAX_BYTES: '0' }, '/d')).toThrow();
   });
 });

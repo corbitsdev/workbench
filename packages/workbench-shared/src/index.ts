@@ -88,19 +88,15 @@ export type ArtifactWithSession = Artifact & {
 };
 
 /**
- * One row from `GET /workflows` — a summary of a user's session, used to
- * populate the library rail.
+ * One row from `GET /workflow-runs` — a summary of a natively-deployed
+ * workflow, used to populate the library rail. `status` is the free-form
+ * `workflow_run.status` text, not a {@link SessionStatus}.
  */
 export interface WorkflowSummary {
   id: string;
   kind: string;
-  status: SessionStatus;
+  status: string;
   createdAt: string;
-  transcriptId: string;
-  companyName: string | null;
-  transcriptPreview: string | null;
-  painPointCount: number;
-  firstPainPoint: string | null;
 }
 
 export interface TranscriptInput {

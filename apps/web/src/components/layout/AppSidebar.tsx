@@ -1,33 +1,29 @@
-import { Home, Settings, LogOut, BookOpen } from "lucide-react";
-import { NavLink, Link, useLocation } from "react-router";
-import { useAuth } from "../AuthProvider";
+import { Home, Settings, LogOut, BookOpen } from 'lucide-react';
+import { NavLink, Link, useLocation } from 'react-router';
+import { useAuth } from '../AuthProvider';
 
 export function AppSidebar() {
   const { session, signOut } = useAuth();
-  const name = session.status === "authenticated" ? session.user.name : "";
+  const name = session.status === 'authenticated' ? session.user.name : '';
   const initials =
     name
-      .split(" ")
+      .split(' ')
       .map((p) => p[0])
-      .join("")
+      .join('')
       .slice(0, 2)
-      .toUpperCase() || "··";
+      .toUpperCase() || '··';
   const location = useLocation();
-  const settingsActive = location.pathname.startsWith("/settings");
+  const settingsActive = location.pathname.startsWith('/settings');
 
   const navIconClass = (isActive: boolean) =>
     `grid h-[40px] w-[40px] place-items-center rounded-[10px] transition-colors duration-150 ease-in-out ${
-      isActive ? "text-orange" : "text-text-3 hover:text-text"
+      isActive ? 'text-orange' : 'text-text-3 hover:text-text'
     }`;
 
   return (
     <aside className="flex h-full w-[56px] flex-col items-center border-r border-border bg-surface py-3">
       <div className="flex flex-col items-center gap-0">
-        <Link
-          to="/"
-          className="group grid h-[40px] w-[40px] place-items-center"
-          aria-label="Home"
-        >
+        <Link to="/" className="group grid h-[40px] w-[40px] place-items-center" aria-label="Home">
           <span className="grid h-[30px] w-[30px] place-items-center rounded-[10px] bg-orange shadow-[var(--accent-glow)] will-change-transform transition-transform duration-[400ms] ease-spring group-hover:rotate-[-8deg] group-hover:scale-[1.08]">
             <svg
               viewBox="32 115 437 270"
@@ -44,10 +40,7 @@ export function AppSidebar() {
         </Link>
       </div>
 
-      <nav
-        className="mt-4 flex flex-col items-center gap-1"
-        aria-label="Main navigation"
-      >
+      <nav className="mt-4 flex flex-col items-center gap-1" aria-label="Main navigation">
         <NavLink
           to="/"
           end

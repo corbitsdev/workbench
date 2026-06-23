@@ -7,7 +7,6 @@ import { buildGranolaSystemPrompt } from './granola/prompt';
 import { buildFirecrawlSystemPrompt } from './firecrawl/prompt';
 import { buildWalterSystemPrompt } from './walter/prompt';
 import { buildHammySystemPrompt } from './hammy-the-humanizer/prompt';
-import { buildBobbySystemPrompt } from './bobby/prompt';
 import { buildLincolnSystemPrompt } from './lincoln/prompt';
 import { HAMMY_SKILL_CONTENT } from './hammy-the-humanizer/skill';
 
@@ -59,7 +58,6 @@ describe('specialist agent dispatch-reply contract', () => {
     ['hammy', (name) => buildHammySystemPrompt(name, { xml: true })],
     ['loop', (name) => buildLoopAgentSystemPrompt(name, { xml: true })],
     ['lincoln', (_name) => buildLincolnSystemPrompt('Lincoln')],
-    ['bobby', (name) => buildBobbySystemPrompt(name, { xml: true })],
   ];
 
   for (const [agentName, buildPrompt] of dispatchSpecialists) {

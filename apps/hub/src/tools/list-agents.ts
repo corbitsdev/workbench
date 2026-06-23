@@ -1,8 +1,8 @@
 import type { AgentTool } from '@intx/agent';
 import type { DB } from '@intx/db';
 import { schema as intxSchema } from '@intx/db';
-import type { ToolDefinition } from '@intx/types/runtime';
 import {
+  LIST_AGENTS_DEFINITION,
   parseListLimit,
   parsePrincipalIds,
   resolveStatusFilter,
@@ -12,32 +12,7 @@ import { and, desc, eq, inArray, isNull, or } from './sql-predicates';
 import { memberAgentInstance } from '../db/schema';
 import type { ContextToolEntry } from '../lib/tool-registry';
 
-export const LIST_AGENTS_DEFINITION: ToolDefinition = {
-  name: 'list_agents',
-  description:
-    'List the agents you can address. Returns each agent instance with its name, description (what the agent is for — use it to pick the right specialist), mail address, status, definition id, and instance id. Use the address with mail_send to message an agent. By default returns your own operator\'s running agents — the agents owned by the same user you act for. Pass a status to filter (or "all" for every status), and a principals array of member principal ids (from list_principals) to list another operator\'s agents instead.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      status: {
-        type: 'string',
-        description:
-          'Status filter: deployed, running, updating, error, stopped, or all. Defaults to running (agents reachable right now). Use all to return every status.',
-      },
-      principals: {
-        type: 'array',
-        items: { type: 'string' },
-        description:
-          "Member (user) principal ids whose agents to list. Defaults to your own operator. Get ids from list_principals to address another operator's agents.",
-      },
-      limit: {
-        type: 'number',
-        description: 'Maximum number of agents to return (1-200, default 50).',
-      },
-    },
-    required: [],
-  },
-};
+export { LIST_AGENTS_DEFINITION };
 
 export type ListAgentsContext = {
   db: DB['db'];

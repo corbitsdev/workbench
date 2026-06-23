@@ -5,11 +5,7 @@ import { useArtifacts } from '@workbench/client/react';
 import { clientOptions } from '../lib/client-options';
 import { AgentChat } from '../components/AgentChat';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import {
-  getWorkflowUi,
-  type WorkflowNewPaneProps,
-  type WorkflowSelectedPanelProps,
-} from '../workflows/registry';
+import { WorkflowRunPane } from '../components/WorkflowRunPane';
 import { LibraryRail } from '../components/layout/LibraryRail';
 import { UnifiedCatalogModal } from '../components/layout/UnifiedCatalogModal';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
@@ -19,7 +15,6 @@ import { useMediaQuery } from '../lib/use-media-query';
 import { deployAgentFromTemplate, getMe } from '../lib/hub-api';
 import { useWorkbenches } from '../hooks/use-workbenches';
 import { useRightPane } from '../hooks/use-right-pane';
-import { useWorkflow } from '../hooks/use-workflow';
 import { useChatLauncher } from '../lib/chat-launcher-context';
 import type { AgentSelection } from '../components/layout/LibraryRail';
 import type { MeResponse, WorkbenchEntry } from '../lib/hub-api';
@@ -171,34 +166,6 @@ function useWorkbenchContext(slug: string | undefined): {
   return { tenantId, workbenches, loaded };
 }
 
-// Resolve the workflow's package-owned UI from the registry. The page renders
-// these generically — no workflow-kind branching lives here. The selected
-// panel derives its kind from the loaded workflow, not a navigation prop.
-function SelectedWorkflowView({ workflowId, onClose, onOpenAgent }: WorkflowSelectedPanelProps) {
-  const { data: workflow, isError } = useWorkflow(workflowId);
-  if (isError) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-[13px] text-text-3">Could not load workflow.</p>
-      </div>
-    );
-  }
-  if (!workflow) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-[13px] text-text-3">Loading workflow…</p>
-      </div>
-    );
-  }
-  const { SelectedPanel } = getWorkflowUi(workflow.kind);
-  return <SelectedPanel workflowId={workflowId} onClose={onClose} onOpenAgent={onOpenAgent} />;
-}
-
-function NewWorkflowView(props: WorkflowNewPaneProps) {
-  const { NewPane } = getWorkflowUi(props.workflowKind);
-  return <NewPane {...props} />;
-}
-
 export default function WorkbenchHome() {
   const { state: provisioningState, retry: retryProvisioning } = useProvisioningGuard();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
@@ -213,15 +180,7 @@ export default function WorkbenchHome() {
   const { slug } = useParams<{ slug?: string }>();
   const navigate = useNavigate();
   const { setHidden: setLauncherHidden, notifyProvisioned } = useChatLauncher();
-  const {
-    rightPane,
-    showGallery,
-    showAgent,
-    showWorkflow,
-    showNewWorkflow,
-    promoteCreatedWorkflow,
-    closeWorkflow,
-  } = useRightPane({
+  const { rightPane, showGallery, showAgent, showWorkflow } = useRightPane({
     onShow: () => setLauncherHidden(true),
     onClose: () => setLauncherHidden(false),
   });
@@ -273,7 +232,14 @@ export default function WorkbenchHome() {
         { replace: true }
       );
     }
-  }, [artifactIdFromURL, artifactsForURL, artifactsLoaded, setSearchParams, setWorkflowArtifact, setActiveModal]);
+  }, [
+    artifactIdFromURL,
+    artifactsForURL,
+    artifactsLoaded,
+    setSearchParams,
+    setWorkflowArtifact,
+    setActiveModal,
+  ]);
 
   if (provisioningState.status === 'error') {
     return (
@@ -332,8 +298,8 @@ export default function WorkbenchHome() {
     showAgent(selection);
   };
 
-  const handleWorkflowSelect = (workflowId: string) => {
-    showWorkflow(workflowId);
+  const handleWorkflowSelect = (deploymentId: string) => {
+    showWorkflow(deploymentId);
   };
 
   const handleNewWorkflow = () => {
@@ -351,23 +317,15 @@ export default function WorkbenchHome() {
     setWorkflowArtifact(null);
   };
 
-  const handleWorkflowKindSelected = (kind: string) => {
+  const handleWorkflowStarted = (deploymentId: string) => {
     setActiveModal('none');
-    showNewWorkflow(kind, workflowArtifact?.id);
     setWorkflowArtifact(null);
-  };
-
-  const handleWorkflowCreated = (workflowId: string) => {
-    promoteCreatedWorkflow(workflowId);
+    showWorkflow(deploymentId);
   };
 
   const handleAgentDeleted = () => {
     setAgentRefreshTick((n) => n + 1);
     showGallery();
-  };
-
-  const handleWorkflowDeleted = (workflowId: string) => {
-    closeWorkflow(workflowId);
   };
 
   const paneTransition: Transition = {
@@ -403,27 +361,14 @@ export default function WorkbenchHome() {
     if (rightPane.view === 'workflow') {
       return (
         <motion.div
-          key={`workflow-${rightPane.workflowId}`}
+          key={`workflow-${rightPane.deploymentId}`}
           {...paneFade}
-          className="min-h-0 flex-1 overflow-hidden"
+          className="min-h-0 flex-1 overflow-hidden rounded-panel border border-border bg-surface"
         >
-          <SelectedWorkflowView
-            workflowId={rightPane.workflowId}
-            onOpenAgent={handleAgentSelect}
-            onClose={showGallery}
-          />
-        </motion.div>
-      );
-    }
-    if (rightPane.view === 'new-workflow') {
-      return (
-        <motion.div key="new-workflow" {...paneFade} className="min-h-0 flex-1 overflow-hidden">
-          <NewWorkflowView
-            workflowKind={rightPane.workflowKind}
+          <WorkflowRunPane
+            deploymentId={rightPane.deploymentId}
             tenantId={workbenchTenantId}
-            onCreated={handleWorkflowCreated}
             onClose={showGallery}
-            {...(rightPane.seedArtifactId ? { seedArtifactId: rightPane.seedArtifactId } : {})}
           />
         </motion.div>
       );
@@ -449,7 +394,7 @@ export default function WorkbenchHome() {
   // error fallback, instead of the new pane staying hidden behind it.
   function getPaneKey(): string {
     if (rightPane.view === 'agent') return `agent-${rightPane.instanceId}`;
-    if (rightPane.view === 'workflow') return `workflow-${rightPane.workflowId}`;
+    if (rightPane.view === 'workflow') return `workflow-${rightPane.deploymentId}`;
     return rightPane.view;
   }
   const paneKey = getPaneKey();
@@ -468,18 +413,10 @@ export default function WorkbenchHome() {
               }}
             />
           ) : rightPane.view === 'workflow' ? (
-            <SelectedWorkflowView
-              workflowId={rightPane.workflowId}
-              onOpenAgent={handleAgentSelect}
-              onClose={showGallery}
-            />
-          ) : rightPane.view === 'new-workflow' ? (
-            <NewWorkflowView
-              workflowKind={rightPane.workflowKind}
+            <WorkflowRunPane
+              deploymentId={rightPane.deploymentId}
               tenantId={workbenchTenantId}
-              onCreated={handleWorkflowCreated}
               onClose={showGallery}
-              {...(rightPane.seedArtifactId ? { seedArtifactId: rightPane.seedArtifactId } : {})}
             />
           ) : (
             <ArtifactGallery
@@ -499,9 +436,8 @@ export default function WorkbenchHome() {
               onWorkflowSelect={handleWorkflowSelect}
               onWorkbenchSelect={handleWorkbenchSelect}
               onAgentDeleted={handleAgentDeleted}
-              onWorkflowDeleted={handleWorkflowDeleted}
               activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
-              activeWorkflowId={rightPane.view === 'workflow' ? rightPane.workflowId : undefined}
+              activeWorkflowId={rightPane.view === 'workflow' ? rightPane.deploymentId : undefined}
               activeWorkbenchSlug={slug}
               refreshTick={agentRefreshTick}
             />
@@ -515,8 +451,8 @@ export default function WorkbenchHome() {
             setActiveModal('none');
             setAgentRefreshTick((n) => n + 1);
           }}
-          onWorkflowSelected={handleWorkflowKindSelected}
-          artifactKind={workflowArtifact?.kind ?? null}
+          onWorkflowStarted={handleWorkflowStarted}
+          defaultTab={workflowArtifact ? 'workflows' : 'agents'}
         />
       </div>
     );
@@ -536,9 +472,8 @@ export default function WorkbenchHome() {
             onWorkflowSelect={handleWorkflowSelect}
             onWorkbenchSelect={handleWorkbenchSelect}
             onAgentDeleted={handleAgentDeleted}
-            onWorkflowDeleted={handleWorkflowDeleted}
             activeAgentInstanceId={rightPane.view === 'agent' ? rightPane.instanceId : undefined}
-            activeWorkflowId={rightPane.view === 'workflow' ? rightPane.workflowId : undefined}
+            activeWorkflowId={rightPane.view === 'workflow' ? rightPane.deploymentId : undefined}
             activeWorkbenchSlug={slug}
             refreshTick={agentRefreshTick}
           />
@@ -574,8 +509,8 @@ export default function WorkbenchHome() {
           setActiveModal('none');
           setAgentRefreshTick((n) => n + 1);
         }}
-        onWorkflowSelected={handleWorkflowKindSelected}
-        artifactKind={workflowArtifact?.kind ?? null}
+        onWorkflowStarted={handleWorkflowStarted}
+        defaultTab={workflowArtifact ? 'workflows' : 'agents'}
       />
     </>
   );

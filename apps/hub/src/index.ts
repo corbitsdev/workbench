@@ -1,15 +1,18 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
+import { describeRoute, openAPIRouteHandler } from 'hono-openapi';
 import { upgradeWebSocket, websocket } from 'hono/bun';
-import { schema as intxSchema, createGrantStore, resolveInstanceSources } from '@intx/db';
+import { schema as intxSchema, createGrantStore } from '@intx/db';
 import { createApp } from '@intx/hub-api';
 import {
   createAgentRepoStore,
+  createAssetService,
   createHubSessionLookups,
   createHubSessionOrchestrator,
   createSessionService,
   createSidecarRouter,
+  WORKSPACE_BUILTINS_REGISTRY,
   type WsHandle,
 } from '@intx/hub-sessions';
 // Per-agent serialized event-collector registry (CL-1656). Drop-in for
@@ -18,6 +21,7 @@ import {
 // dropped thinking/reply parts.
 import { createEventCollectorRegistry } from '@workbench/event-collector';
 import { hexEncode } from '@intx/types';
+import { createNodeCrypto } from '@intx/crypto-node';
 import { getLogger } from '@intx/log';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -26,32 +30,54 @@ import postgres from 'postgres';
 import { and, eq, isNull } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { createSidecarConnectionRegistry } from './sidecar-connections';
-import { createWorkflowRouter } from './routes/workflow';
+import {
+  createWorkflowDeployGrantGuard,
+  createWorkflowDeployRouter,
+  deployWorkflowHandler,
+  deleteWorkflowHandler,
+  type WorkflowDeployCoreDeps,
+} from './routes/workflow-deploy';
+import { createWorkflowRunsRouter, type EnsureDeploymentRoutableFn } from './routes/workflow-runs';
+import { createWorkflowRunRecordsRouter } from './routes/workflow-run-records';
+import {
+  abortRunHandler,
+  abortActiveRunsHandler,
+  abortRunRouteDescription,
+  abortActiveRunsRouteDescription,
+} from './routes/workflow-run-abort';
+import { wrapRepoStoreWithProjection } from './workflow-executor/projection-bridge';
+import { createWorkflowDeployService } from './services/workflow-deploy';
+import { createInternalWorkflowSkillsRouter } from './routes/workflow-skills';
+import { createWorkflowReconciler } from './services/workflow-reconciler';
+import { createWorkbenchDirectorRegistry } from '@workbench/agents';
 import { createUploadsRouter } from './routes/uploads';
-import { workflowRegistry } from '@workbench/workflow-core';
+import { createSkillsRouter } from './routes/skills';
 import { createAgentProvisioningRouter } from './routes/agents';
 import {
   relaunchInstanceIfNeeded,
   registerDisconnectReconciler,
-  persistInstanceToolGrants,
+  resolveInstanceSourcesFromDefinition,
 } from './services/agent-provisioning';
-import { createWorkbenchesRouter } from './routes/workbenches';
 import { createMembersRouter } from './routes/members';
+import { createArtifactsRouter } from './routes/artifacts';
 import { createGammaTemplatesRouter } from './routes/gamma-templates';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
-import { createInternalToolsRouter } from './routes/tools';
-import { buildToolDefinitions, getToolNamesFromCapabilities } from './lib/tool-registry';
+import { createHubToolsRouter } from './routes/hub-tools';
+import { createToolCredentialsRouter } from './routes/tool-credentials';
+import { createToolManifestRouter } from './routes/tool-manifest';
+import { createInternalDeploymentsRouter } from './routes/internal-deployments';
+import { buildToolDefinitions } from './lib/tool-registry';
 import { schema } from './db';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
   seedGlobalTenant,
   seedAgentTemplates,
-  seedTenantWorkflows,
   ensureGlobalMember,
   provisionMemberInstances,
   getMyraInstanceId,
 } from './lib/tenant-provisioning';
 import { setupObservability, flushSentry } from '@workbench/sentry';
+import { serverErrorReporter, SERVER_ERROR_LOGGED } from './lib/server-error-logger';
 import { createFatalErrorRecovery } from './lib/fatal-error-recovery';
 import { resolveCorsAllowOrigin } from './lib/cors-origin';
 import { createRateLimiter } from './lib/rate-limit';
@@ -83,15 +109,6 @@ log.info('Global org tenant ready', { globalTenantId });
 // (CL-1530). Depends on the global tenant existing. Fail-loud.
 await seedAgentTemplates(db);
 log.info('Agent templates seeded');
-
-// Seed tenant-scoped workflow rows so every registered workflow is available to
-// all members of the global org tenant without any per-user action. Idempotent.
-await seedTenantWorkflows(
-  db,
-  globalTenantId,
-  workflowRegistry.list().map((w) => w.kind)
-);
-log.info('Tenant workflows seeded', { tenantId: globalTenantId });
 
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 
@@ -189,16 +206,22 @@ log.info('Loaded signing key registry: active version {version}', {
 
 // ─── Agent repo store ──────────────────────────────────────────────
 
-const agentRepoStore = createAgentRepoStore({
-  dataDir: hub.dataDir,
-  signingKey: registry.active,
-});
+const repoStore = wrapRepoStoreWithProjection(
+  createAgentRepoStore({
+    dataDir: hub.dataDir,
+    signingKey: registry.active,
+  }),
+  { db }
+);
+// ─── Skill asset substrate ─────────────────────────────────────────
+
+const assetService = createAssetService({ db, repoStore: repoStore.repoStore });
 
 // ─── Hub services ──────────────────────────────────────────────────
 
 const grantStore = createGrantStore(db);
 
-const lookups = createHubSessionLookups({ db, agentRepoStore });
+const lookups = createHubSessionLookups({ db, agentRepoStore: repoStore });
 
 const sidecarRouter = createSidecarRouter({
   hubPublicKey: hexEncode(registry.active.publicKey),
@@ -236,7 +259,7 @@ createHubSessionOrchestrator({
   db,
   eventCollectors,
   grantStore,
-  agentRepoStore,
+  agentRepoStore: repoStore,
 });
 
 // The orchestrator above only abandons event collectors on sidecar.disconnect;
@@ -254,49 +277,21 @@ createHubSessionOrchestrator({
 // signal instead of local router state.
 registerDisconnectReconciler({ db, router: sidecarRouter });
 
-const rawSessionService = createSessionService({
+const sessionService = createSessionService({
   sidecarRouter,
-  agentRepoStore,
-});
-
-// Wrap launchSession so that Interchange's native instance-creation path
-// (which always passes tools: []) picks up tool definitions from the agent's
-// capabilities column. Our own provisioning route already passes the correct
-// tools; the guard on tools.length === 0 avoids double-injection there.
-const sessionService: typeof rawSessionService = {
-  ...rawSessionService,
-  async launchSession(params) {
-    if (params.config.tools.length === 0) {
-      const agentRow = await db.query.agent.findFirst({
-        where: eq(intxSchema.agent.id, params.agentId),
-      });
-      if (agentRow?.capabilities) {
-        const toolNames = getToolNamesFromCapabilities(agentRow.capabilities);
-        if (toolNames.length > 0) {
-          const tools = buildToolDefinitions(toolNames);
-          await persistInstanceToolGrants(db, {
-            tenantId: params.config.tenantId,
-            principalId: params.config.principalId,
-            toolNames,
-            now: new Date(),
-          });
-          // Re-collect grants after persisting tool grants — the snapshot
-          // in params.config.grants was built before persistence and is stale.
-          const grants = await grantStore.collectGrants(
-            params.config.principalId,
-            params.config.tenantId
-          );
-          params = { ...params, config: { ...params.config, tools, grants } };
-          log.info('Injected tool definitions for agent {agentId}', {
-            agentId: params.agentId,
-            toolNames,
-          });
-        }
-      }
-    }
-    return rawSessionService.launchSession(params);
+  agentRepoStore: repoStore,
+  assetService,
+  db,
+  // Asset-sourced tool packages: the resolver auto-includes every
+  // package-registry asset visible to the agent's tenant keyed by
+  // asset.name, so the workspace-builtins asset satisfies the default
+  // registry. No HTTP registries — our tarballs are self-contained.
+  // Only consulted for agents with non-empty toolPackagePins.
+  toolPackageRegistries: {
+    httpRegistries: new Map(),
+    defaultRegistry: WORKSPACE_BUILTINS_REGISTRY,
   },
-};
+});
 
 // ─── Hub app ────────────────────────────────────────────────────────
 //
@@ -331,8 +326,9 @@ const hubApp = createApp({
   sessionService,
   eventCollectors,
   grantStore,
-  assetService: null,
-  repoStore: null,
+  assetService,
+  repoStore: repoStore.repoStore,
+  maxTarballBytes: 10 * 1024 * 1024,
   sidecarWsHandler: upgradeWebSocket((_c) => {
     let handle: WsHandle;
     return {
@@ -363,9 +359,13 @@ const hubApp = createApp({
 
 // ─── Parent Hono ────────────────────────────────────────────────────
 
-const app = new Hono();
+const app = new Hono<{ Variables: { [SERVER_ERROR_LOGGED]?: boolean } }>();
 
 app.use('*', honoLogger());
+
+// Report any >= 500 response — including handled errors returned via c.json
+// that never throw — to the error log / Sentry sink.
+app.use('*', serverErrorReporter());
 
 if (corsOrigins.length > 0) {
   app.use(
@@ -381,6 +381,27 @@ if (corsOrigins.length > 0) {
 // Brute-force defense on credential sign-in. Single-process in-memory limiter;
 // infra-level limiting across replicas is still expected in production.
 app.use('/api/auth/sign-in/*', createRateLimiter({ windowMs: 60_000, max: 10 }));
+
+// ─── OpenAPI ─────────────────────────────────────────────────────────
+//
+// Shadows the Interchange-internal /openapi.json so the spec covers all
+// workbench routes (ours + Interchange's), not just Interchange's. Order
+// matters: app.route() flattens a sub-app's routes into the parent at call
+// time, and Hono runs the first-registered handler for a path. Registering
+// this before mounting hubApp ensures our handler shadows the sub-app's copy.
+// openAPIRouteHandler walks app.routes lazily at request time, so it still
+// captures every sub-app route mounted after this point. Auth routes are
+// excluded via RegExp — hono-openapi only treats RegExp instances as patterns.
+app.get(
+  '/openapi.json',
+  openAPIRouteHandler(app, {
+    documentation: {
+      info: { title: 'GTM Workbench', version: '1.0.0' },
+      servers: [{ url: config.auth.baseUrl }],
+    },
+    exclude: ['/openapi.json', '/health', '/status', /^\/api\/auth\//],
+  })
+);
 
 // Mount hub app
 app.route('/', hubApp);
@@ -478,11 +499,18 @@ v1.get('/me', async (c) => {
     });
     if (paInstance) {
       try {
-        const sources = await resolveInstanceSources(db, workingTenantId, {
-          agentId: paInstance.agentId,
-          sessionId: null,
+        const agentRow = await db.query.agent.findFirst({
+          where: eq(intxSchema.agent.id, paInstance.agentId),
         });
-        credentialResolved = sources.length > 0;
+        if (agentRow) {
+          const resolution = await resolveInstanceSourcesFromDefinition(
+            db,
+            workingTenantId,
+            agentRow,
+            paInstance.modelPreferences
+          );
+          credentialResolved = resolution.ok && resolution.sources.length > 0;
+        }
       } catch (err) {
         log.warn('Instance source resolution failed on /me', {
           error: err,
@@ -530,16 +558,170 @@ v1.get('/me', async (c) => {
   });
 });
 
-v1.route('/', createWorkflowRouter(db));
 v1.route(
   '/',
   createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors)
 );
-v1.route('/', createWorkbenchesRouter(db));
 v1.route('/', createMembersRouter(db));
+v1.route('/', createArtifactsRouter(db));
 v1.route('/', createGammaTemplatesRouter(db));
 v1.route('/', createApprovalsRouter(db));
 v1.route('/', createUploadsRouter(db));
+v1.route('/', createSkillsRouter(db, assetService, repoStore.repoStore));
+// Built before the runs router so the run-start/signal handlers and the
+// reconciler can share its idempotent `ensureDeploymentRoutable` re-establish
+// primitive.
+const workflowDeployService = createWorkflowDeployService({
+  db,
+  repoStore,
+  sidecarRouter,
+  sessionService,
+  directorRegistry: createWorkbenchDirectorRegistry(),
+});
+
+const hubPublicKeyHex = hexEncode(registry.active.publicKey);
+
+// Pre-bind the re-establish primitive over the deployment domain so callers
+// pass only the per-deployment identity. Idempotent and coalesced per
+// deploymentId inside the service.
+const ensureDeploymentRoutable: EnsureDeploymentRoutableFn = (args) =>
+  workflowDeployService.ensureDeploymentRoutable({
+    ...args,
+    deploymentDomain: config.globalTenant.domain,
+  });
+
+v1.route(
+  '/',
+  createWorkflowRunsRouter({
+    db,
+    repoStore: repoStore.repoStore,
+    sidecarRouter,
+    sessionService,
+    cryptoProvider: createNodeCrypto(registry.active),
+    deploymentDomain: config.globalTenant.domain,
+    ensureDeploymentRoutable,
+  })
+);
+
+// Workflow runs (CL-2243): /workflow-exec start/resume drive the SIDECAR
+// supervisor (definition deployed like an agent) and persist run state to a
+// workflow_run_record row the UI polls; the projection bridge wrapped around
+// repoStore folds the sidecar's run events into that row.
+v1.route(
+  '/',
+  createWorkflowRunRecordsRouter({
+    db,
+    sidecarRouter,
+    sessionService,
+    cryptoProvider: createNodeCrypto(registry.active),
+    deploymentDomain: config.globalTenant.domain,
+    ensureDeploymentRoutable,
+  })
+);
+
+// Hub-as-control-plane reconciler (CL-2224): re-establish workflow supervisors
+// from DB + workflow-repo state on startup and on every sidecar reconnect, so
+// runs survive hub/sidecar restarts. Idempotent — a no-op when supervisors are
+// already routable.
+const workflowReconciler = createWorkflowReconciler({
+  db,
+  events: sidecarRouter.events,
+  ensureDeploymentRoutable,
+  getRoutableAddresses: sidecarRouter.getRoutableAddresses,
+  deploymentDomain: config.globalTenant.domain,
+});
+workflowReconciler.start();
+// CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
+// snapshot — before reconcileAll re-registers supervisors and makes every run
+// look routable. Then re-establish supervisors so NEW runs work.
+void workflowReconciler
+  .failOrphanedRuns()
+  .catch((err) => {
+    log.warn('initial failOrphanedRuns failed', {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  })
+  .then(() => workflowReconciler.reconcileAll())
+  .catch((err) => {
+    log.warn('initial workflow reconcile failed', {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  });
+
+// Workflow deploy, shared by the session-authorized operator path
+// (/api/v1/workflows/deploy, gated by the native grant check) and the
+// service-token machine path (/api/internal/workflows/deploy).
+const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
+  db,
+  workflowDeployService,
+  sessionService,
+  hubPublicKey: hubPublicKeyHex,
+  deploymentDomain: config.globalTenant.domain,
+  globalTenantId,
+};
+
+v1.post(
+  '/workflows/deploy',
+  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  deployWorkflowHandler(workflowDeployCoreDeps)
+);
+
+// DELETE/undeploy a workflow deployment. Same operator grant guard as the
+// session-authorized deploy route; tenant-scoped lookup keeps a caller from
+// deleting another tenant's deployment.
+v1.delete(
+  '/workflows/:deploymentId',
+  describeRoute({
+    tags: ['Workflows'],
+    summary: 'Delete (undeploy) a workflow deployment',
+    description:
+      'Operator-gated. Soft-deletes the deployment (drops it from list/stream/start), undeploys the sidecar supervisor, and stops its step instances. Optional `?tenantId=` selects a workbench the user belongs to.',
+    parameters: [
+      {
+        name: 'deploymentId',
+        in: 'path',
+        required: true,
+        description: 'Deployment id (ses_…) of the workflow to delete.',
+        schema: { type: 'string' },
+      },
+      {
+        name: 'tenantId',
+        in: 'query',
+        required: false,
+        description: 'Target workbench tenant id. Omit for the active workbench.',
+        schema: { type: 'string' },
+      },
+    ],
+    responses: {
+      204: { description: 'Deployment deleted and undeployed' },
+      403: {
+        description: 'User context not found or forbidden for the requested tenant',
+      },
+      404: { description: 'Workflow deployment not found' },
+    },
+  }),
+  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  deleteWorkflowHandler(workflowDeployCoreDeps)
+);
+
+// Abort workflow RUNS (CL-2262), operator-gated by the same session grant guard
+// as the deploy/delete-deployment routes — an operator can abort ANY run, so
+// there is no per-user ownership check (unlike the user-facing /workflow-exec
+// read/resume routes). Marks the run record terminal; CL-2248's boot-reconciler
+// reaps the sidecar dir on next restart. `abort-active` is registered before the
+// `:runId` route so the literal segment is not captured as a runId.
+v1.post(
+  '/workflow-exec/records/abort-active',
+  abortActiveRunsRouteDescription,
+  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  abortActiveRunsHandler({ db })
+);
+v1.delete(
+  '/workflow-exec/records/:runId',
+  abortRunRouteDescription,
+  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  abortRunHandler({ db })
+);
 
 app.route('/api/v1', v1);
 
@@ -548,11 +730,25 @@ app.route('/api/v1', v1);
 app.route('/api/internal', createInternalApprovalsRouter(db, config.sidecarToken));
 app.route(
   '/api/internal',
-  createInternalToolsRouter(db, config.sidecarToken, {
+  createHubToolsRouter(db, config.sidecarToken, {
     sessionService,
     eventCollectors,
     sidecarRouter,
     buildToolDefinitions,
+  })
+);
+app.route('/api/internal', createToolCredentialsRouter(db, config.sidecarToken));
+app.route('/api/internal', createInternalWorkflowSkillsRouter(db, repoStore.repoStore, config.sidecarToken));
+app.route('/api/internal', createToolManifestRouter(db, config.sidecarToken, assetService));
+app.route(
+  '/api/internal',
+  createInternalDeploymentsRouter(db, config.sidecarToken, repoStore, config.globalTenant.domain)
+);
+app.route(
+  '/api/internal',
+  createWorkflowDeployRouter({
+    ...workflowDeployCoreDeps,
+    serviceToken: config.sidecarToken,
   })
 );
 
@@ -625,6 +821,8 @@ app.onError((err, c) => {
     method: c.req.method,
     path: c.req.path,
   });
+  // Flag so serverErrorReporter does not log this 500 a second time.
+  c.set(SERVER_ERROR_LOGGED, true);
   return c.json({ error: 'Internal Server Error' }, 500);
 });
 

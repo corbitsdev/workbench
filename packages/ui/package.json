@@ -16,8 +16,10 @@
     "test:coverage": "bun test --preload ./src/test-setup.ts --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
+    "@intx/workflow": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "react-markdown": "^10.1.0",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
@@ -26,12 +28,14 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/bun": "latest",
     "@types/react": "^19.0.0",
+    "framer-motion": "^12.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.9.0"
   },
   "peerDependencies": {
+    "framer-motion": "*",
     "react": "*",
     "tailwindcss": "*"
   }

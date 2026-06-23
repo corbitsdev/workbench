@@ -1,5 +1,23 @@
 // Shared constants
 export { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from './constants';
+export {
+  canonicalizeToolNames,
+  toolPackagesForCapabilities,
+  providersForToolPackages,
+} from './tool-names';
+export {
+  deterministicToolStep,
+  inlineInferenceStep,
+  STEP_KIND_TAG,
+  STEP_TOOL_TAG,
+  STEP_ARGMAP_TAG,
+  DETERMINISTIC_TOOL_KIND,
+  INLINE_INFERENCE_KIND,
+  ArgMap,
+  ArgMapSpec,
+  type DeterministicToolStepOpts,
+  type InlineInferenceStepOpts,
+} from './deterministic-step';
 
 // Personal agent
 export { buildPersonalAgentSystemPrompt } from './personal-agent/prompt';
@@ -39,6 +57,12 @@ export {
   FIRECRAWL_DEPLOY_PROMPT,
 } from './firecrawl/definition';
 export { createFirecrawlDirector } from './firecrawl/director';
+export {
+  createWorkbenchDirectorRegistry,
+  personalAgentDirector,
+  granolaDirector,
+  firecrawlDirector,
+} from './director-registry';
 
 // Walter agent
 export { buildWalterSystemPrompt } from './walter/prompt';
@@ -47,16 +71,6 @@ export {
   WALTER_CREDENTIAL_REQUIREMENTS,
   WALTER_DEPLOY_PROMPT,
 } from './walter/definition';
-
-// Bobby — the browser
-export { buildBobbySystemPrompt } from './bobby/prompt';
-export {
-  BOBBY_GRANT_REQUIREMENTS,
-  BOBBY_CREDENTIAL_REQUIREMENTS,
-  BOBBY_DEPLOY_PROMPT,
-  BOBBY_CAPABILITIES,
-  BOBBY_DEPLOY_DESCRIPTOR,
-} from './bobby/definition';
 
 // Lincoln agent
 export { buildLincolnSystemPrompt } from './lincoln/prompt';
@@ -86,18 +100,24 @@ export {
   LARRY_DEPLOY_PROMPT,
   LARRY_CAPABILITIES,
   LARRY_DEPLOY_DESCRIPTOR,
+  LARRY_TOOL_PACKAGES,
 } from './larry/definition';
-
-// Skills registry
-export {
-  SKILLS_REGISTRY,
-  getSkillById,
-  listSkills,
-  type SkillEntry,
-} from './skills-registry';
 
 // Agent templates registry
 export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
+
+// Model catalog derived from the agent templates (single source of truth)
+export {
+  AGENT_CATALOG,
+  buildAgentCatalog,
+  templateModelName,
+  templateModelRequirements,
+  type AgentCatalogSpec,
+  type CatalogProviderSpec,
+  type CatalogModelSpec,
+  type CatalogOfferingSpec,
+  type ModelPlugin,
+} from './catalog';
 
 // Shared adapter
 export { convertInstanceEvents } from './adapter';
