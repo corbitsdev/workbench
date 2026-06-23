@@ -13,6 +13,7 @@ import {
   createSessionService,
   createSidecarRouter,
   WORKSPACE_BUILTINS_REGISTRY,
+  type SidecarLookups,
   type WsHandle,
 } from '@intx/hub-sessions';
 // Per-agent serialized event-collector registry (CL-1656). Drop-in for
@@ -221,7 +222,55 @@ const assetService = createAssetService({ db, repoStore: repoStore.repoStore });
 
 const grantStore = createGrantStore(db);
 
-const lookups = createHubSessionLookups({ db, agentRepoStore: repoStore });
+const baseLookups = createHubSessionLookups({ db, agentRepoStore: repoStore });
+
+function isWorkflowRunBootstrapRace(message: string): boolean {
+  return /non_fast_forward: ref refs\/heads\/main expected null but found [0-9a-f]{40}/.test(
+    message
+  );
+}
+
+const lookups: SidecarLookups = {
+  ...baseLookups,
+  async receiveWorkflowRunPack(repoId, pack, ref, commitSha) {
+    if (repoId.kind !== 'workflow-run') {
+      throw new Error(
+        `hub-session lookups receiveWorkflowRunPack received unsupported repo kind ${JSON.stringify(repoId.kind)}`
+      );
+    }
+    const deploymentId = repoId.id;
+    try {
+      await repoStore.receiveWorkflowRunPack(
+        { kind: 'workflow-run', id: deploymentId },
+        pack,
+        ref,
+        commitSha
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.startsWith('path_violation')) {
+        log.warn('Workflow-run pack rejected for {deploymentId}: {message}', {
+          deploymentId,
+          message: msg,
+        });
+        return { accepted: false, reason: 'path_violation' as const };
+      }
+      if (isWorkflowRunBootstrapRace(msg)) {
+        log.warn('Workflow-run pack bootstrap race for {deploymentId}: {message}', {
+          deploymentId,
+          message: msg,
+        });
+        return { accepted: false, reason: 'corrupt' as const };
+      }
+      log.error('Workflow-run pack receive failed for {deploymentId}: {message}', {
+        deploymentId,
+        message: msg,
+      });
+      return { accepted: false, reason: 'corrupt' as const };
+    }
+    return { accepted: true };
+  },
+};
 
 const sidecarRouter = createSidecarRouter({
   hubPublicKey: hexEncode(registry.active.publicKey),
