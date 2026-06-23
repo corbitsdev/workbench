@@ -77,6 +77,7 @@ import { schema } from './db';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
   seedGlobalTenant,
+  seedAgentTemplates,
   ensureGlobalMember,
   provisionMemberInstances,
   getMyraInstanceId,
@@ -108,6 +109,16 @@ log.info('Database connection established');
 // start, because every same-domain user joins it as a principal.
 const { tenantId: globalTenantId } = await seedGlobalTenant(db);
 log.info('Global org tenant ready', { globalTenantId });
+
+// Re-seed agent templates (Myra, Oat, …) into the global tenant on every boot
+// so a deploy that changes a template's prompt, tool-package pins, or
+// capabilities actually reaches the agent rows. seedGlobalTenant returns early
+// when the tenant already exists, so without this the rows stay frozen at
+// whatever an earlier manual seed wrote (CL-1530's "seeded at hub boot"
+// contract was never wired). Idempotent upsert; fail-loud to surface a
+// malformed template at deploy rather than silently shipping stale agents.
+await seedAgentTemplates(db);
+log.info('Agent templates seeded', { globalTenantId });
 
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 
