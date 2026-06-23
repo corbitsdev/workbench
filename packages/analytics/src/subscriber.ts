@@ -10,6 +10,8 @@ import type { InferenceEvent } from '@intx/types/runtime';
 import { factsFromInferenceEvent, type AnalyticsFact } from './event-mapping';
 import { analyticsEvent, analyticsRollupDaily } from './schema';
 
+type Tx = Parameters<Parameters<DB['db']['transaction']>[0]>[0];
+
 const log = getLogger(['hub', 'analytics']);
 
 export type AnalyticsSubscriber = {
@@ -65,6 +67,11 @@ async function persistFact(
   instance: ActiveInstance,
   fact: AnalyticsFact
 ): Promise<void> {
+  if (!instance.sessionId) {
+    throw new Error(
+      `agentInstance ${instance.id} has no sessionId — cannot build an idempotent event key`
+    );
+  }
   // Qualify the event key with sessionId so seq resets on agent restart don't
   // collide with prior-session rows and silently drop events.
   const sessionScopedKey = `${instance.sessionId}:${fact.eventKey}`;
@@ -99,12 +106,16 @@ async function persistFact(
 
     if (inserted.length === 0) return;
 
+    // inference_done contributes no rollup increments (token accounting lives
+    // on inference_usage; skipping here avoids a no-op write on every turn).
+    if (fact.eventType === 'inference_done') return;
+
     await upsertDailyRollup(tx, instance, fact);
   });
 }
 
 async function upsertDailyRollup(
-  db: DB['db'],
+  db: Tx,
   instance: ActiveInstance,
   fact: AnalyticsFact
 ): Promise<void> {

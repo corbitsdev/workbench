@@ -19,7 +19,6 @@ export const analyticsEvent = pgTable(
     agentId: text('agent_id'),
     instanceId: text('instance_id'),
     sessionId: text('session_id'),
-    turnId: text('turn_id'),
     toolCallId: text('tool_call_id'),
     eventKey: text('event_key').notNull(),
     eventType: text('event_type', {

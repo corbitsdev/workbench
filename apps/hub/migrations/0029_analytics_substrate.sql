@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS "analytics_event" (
   "agent_id" text,
   "instance_id" text,
   "session_id" text,
-  "turn_id" text,
   "tool_call_id" text,
   "event_key" text NOT NULL,
   "event_type" text NOT NULL,
