@@ -76,7 +76,6 @@ import { schema } from './db';
 import { loadSigningKeyRegistry } from './lib/signing-keys';
 import {
   seedGlobalTenant,
-  seedAgentTemplates,
   ensureGlobalMember,
   provisionMemberInstances,
   getMyraInstanceId,
@@ -108,12 +107,6 @@ log.info('Database connection established');
 // start, because every same-domain user joins it as a principal.
 const { tenantId: globalTenantId } = await seedGlobalTenant(db);
 log.info('Global org tenant ready', { globalTenantId });
-
-// Seed each agent template as a first-class agent definition in the global org
-// tenant so admins can manage them and members get per-user instances later
-// (CL-1530). Depends on the global tenant existing. Fail-loud.
-await seedAgentTemplates(db);
-log.info('Agent templates seeded');
 
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 

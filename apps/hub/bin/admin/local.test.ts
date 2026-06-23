@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import {
   buildLocalCommand,
+  discoverAgentTemplates,
   localGroups,
   LOCAL_ACTIONS,
   WORKFLOWS_GROUP,
@@ -59,11 +60,14 @@ describe('buildLocalCommand', () => {
 });
 
 describe('localGroups', () => {
-  it('surfaces Workflows as its own resource group with the push action', () => {
+  it('surfaces Workflows as its own resource group with the push and deploy actions', () => {
     const groups = localGroups();
     const workflows = groups.find((g) => g.group === WORKFLOWS_GROUP);
     expect(workflows).toBeDefined();
-    expect(workflows?.actions.map((a) => a.script)).toEqual(['deploy-workflow.ts']);
+    expect(workflows?.actions.map((a) => a.script)).toEqual([
+      'deploy-workflow.ts',
+      'deploy-agent.ts',
+    ]);
   });
 
   it('partitions every local action into exactly one group', () => {
@@ -91,5 +95,14 @@ describe('workflowKindFromPackageName', () => {
     expect(workflowKindFromPackageName('@workbench/workflow-')).toBeNull();
     expect(workflowKindFromPackageName(undefined)).toBeNull();
     expect(workflowKindFromPackageName(42)).toBeNull();
+  });
+});
+
+describe('discoverAgentTemplates', () => {
+  it('returns a sorted list of agent template keys', () => {
+    const keys = discoverAgentTemplates();
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys).toContain('oat');
+    expect(keys).toEqual([...keys].sort());
   });
 });
