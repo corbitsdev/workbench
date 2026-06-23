@@ -49,10 +49,21 @@ const workflowDeploymentSchema = type({
 export type WorkflowDeployment = typeof workflowDeploymentSchema.infer;
 const workflowDeploymentListSchema = workflowDeploymentSchema.array();
 
+// The run list is static once every run is terminal (or there are none) — a new
+// run only appears via a mutation that invalidates the query. Poll only while
+// something is still advancing so the app frame stops hitting the endpoint every
+// 5s forever when nothing is running.
+export function runListIsActive(runs: ReadonlyArray<{ status: string }>): boolean {
+  return runs.some((r) => !isRecordTerminal(r.status as RunRecord['status']));
+}
+
 export function useWorkflowRuns(tenantId?: string | null) {
   return useQuery<WorkflowRun[]>({
     queryKey: ['workflow-runs', tenantId ?? null],
-    refetchInterval: 5000,
+    refetchInterval: (query) => {
+      const runs = query.state.data;
+      return runs && runListIsActive(runs) ? 5000 : false;
+    },
     queryFn: async () => {
       const raw = await api<unknown>('GET', withTenant('/workflow-exec/records', tenantId));
       const parsed = workflowRunListSchema(raw);
@@ -92,7 +103,10 @@ export function useWorkflowRecord(runId: string | null, tenantId?: string | null
     queryKey: ['workflow-record', runId, tenantId ?? null],
     enabled: !!runId,
     staleTime: 0,
-    refetchInterval: (query) => (query.state.data?.status === 'running' ? 500 : false),
+    // A forbidden/missing record is not transient — don't retry it on the poll
+    // cadence (that turned a single 403 into a steady stream against one record).
+    retry: false,
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 2000 : false),
     queryFn: async () => {
       const raw = await api<unknown>(
         'GET',

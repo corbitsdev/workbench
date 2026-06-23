@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { createElement } from 'react';
 import {
   isRecordTerminal,
+  runListIsActive,
   useResumeWorkflow,
   useStartWorkflow,
   useWorkflowRecord,
@@ -50,7 +51,31 @@ describe('isRecordTerminal', () => {
   });
 });
 
+describe('runListIsActive', () => {
+  it('is false for an empty or all-terminal list, true if any run still advances', () => {
+    expect(runListIsActive([])).toBe(false);
+    expect(runListIsActive([{ status: 'completed' }, { status: 'failed' }])).toBe(false);
+    expect(runListIsActive([{ status: 'completed' }, { status: 'running' }])).toBe(true);
+    expect(runListIsActive([{ status: 'awaiting' }])).toBe(true);
+  });
+});
+
 describe('useWorkflowRecord', () => {
+  it('does not retry a forbidden record and surfaces the error after one fetch', async () => {
+    let calls = 0;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      calls += 1;
+      return Promise.resolve(jsonResponse(403, { error: 'Forbidden' }));
+    }) as typeof fetch;
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useWorkflowRecord('wfr_1'), {
+      wrapper: recordWrapper(client),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(calls).toBe(1);
+  });
+
   it('is disabled when runId is null', () => {
     let called = false;
     globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
