@@ -921,14 +921,16 @@ function ReviewStep({
 function DoneStep({
   stepOutputs,
   persistPhase,
+  runCompleted,
   onClose,
 }: {
   stepOutputs: Record<string, unknown>;
   persistPhase: StepPhase | undefined;
+  runCompleted: boolean;
   onClose: () => void;
 }) {
-  if (persistPhase !== 'completed') {
-    return <Placeholder label="Saving collateral to artifacts…" />;
+  if (persistPhase !== 'completed' && !runCompleted) {
+    return <Placeholder label="Finishing up…" />;
   }
 
   const result = parsePersistOutput(stepOutputs.review);
@@ -1120,6 +1122,7 @@ export function Panel(props: WorkflowPanelProps) {
             <DoneStep
               stepOutputs={stepOutputs}
               persistPhase={phaseFor(state, 'persist')}
+              runCompleted={state?.phase === 'completed'}
               onClose={onClose}
             />
           </SectionCard>
