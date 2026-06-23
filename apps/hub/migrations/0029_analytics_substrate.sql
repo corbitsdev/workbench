@@ -27,11 +27,10 @@ CREATE TABLE IF NOT EXISTS "analytics_event" (
 ALTER TABLE "analytics_event"
   ADD CONSTRAINT "analytics_event_event_key" UNIQUE ("event_key");
 
-CREATE INDEX IF NOT EXISTS "analytics_event_tenant_occurred_at_idx"
-  ON "analytics_event" ("tenant_id", "occurred_at");
-
-CREATE INDEX IF NOT EXISTS "analytics_event_instance_occurred_at_idx"
-  ON "analytics_event" ("instance_id", "occurred_at");
+-- Secondary indexes on analytics_event are deferred: the table is append-only
+-- and high-write (one row per turn, tool call, and inference event). Add
+-- (tenant_id, occurred_at) and (instance_id, occurred_at) only when a raw-fact
+-- query requires them — all current reads go through the rollup table.
 
 CREATE TABLE IF NOT EXISTS "analytics_rollup_daily" (
   "id" text PRIMARY KEY NOT NULL,
@@ -57,8 +56,14 @@ CREATE TABLE IF NOT EXISTS "analytics_rollup_daily" (
 ALTER TABLE "analytics_rollup_daily"
   ADD CONSTRAINT "analytics_rollup_daily_rollup_key" UNIQUE ("rollup_key");
 
+-- Tenant summary (all agents, optional date range) — primary dashboard query.
 CREATE INDEX IF NOT EXISTS "analytics_rollup_daily_tenant_bucket_idx"
   ON "analytics_rollup_daily" ("tenant_id", "bucket_date");
 
+-- Per-agent breakdown queries ("how much is Myra costing?").
+CREATE INDEX IF NOT EXISTS "analytics_rollup_daily_tenant_agent_bucket_idx"
+  ON "analytics_rollup_daily" ("tenant_id", "agent_id", "bucket_date");
+
+-- Per-instance queries.
 CREATE INDEX IF NOT EXISTS "analytics_rollup_daily_instance_bucket_idx"
   ON "analytics_rollup_daily" ("instance_id", "bucket_date");

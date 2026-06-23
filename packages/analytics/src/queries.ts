@@ -9,6 +9,13 @@ export type AnalyticsDateRange = {
   endDate?: string;
 };
 
+export type AnalyticsSummaryFilter = {
+  tenantId: string;
+  agentId?: string;
+  instanceId?: string;
+  range?: AnalyticsDateRange;
+};
+
 export type AnalyticsSummary = {
   tenantId: string;
   turnCount: number;
@@ -22,12 +29,10 @@ export type AnalyticsSummary = {
   thinkingTokens: number;
 };
 
-export async function getAnalyticsSummary(args: {
-  db: DB['db'];
-  tenantId: string;
-  range?: AnalyticsDateRange;
-}): Promise<AnalyticsSummary> {
-  const { db, tenantId, range } = args;
+export async function getAnalyticsSummary(
+  args: { db: DB['db'] } & AnalyticsSummaryFilter
+): Promise<AnalyticsSummary> {
+  const { db, tenantId, agentId, instanceId, range } = args;
   const rows = await db
     .select({
       turnCount: sumInteger(analyticsRollupDaily.turnCount),
@@ -41,7 +46,19 @@ export async function getAnalyticsSummary(args: {
       thinkingTokens: sumInteger(analyticsRollupDaily.thinkingTokens),
     })
     .from(analyticsRollupDaily)
-    .where(rollupWhere(tenantId, range));
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        agentId !== undefined ? eq(analyticsRollupDaily.agentId, agentId) : undefined,
+        instanceId !== undefined ? eq(analyticsRollupDaily.instanceId, instanceId) : undefined,
+        range?.startDate !== undefined
+          ? gte(analyticsRollupDaily.bucketDate, range.startDate)
+          : undefined,
+        range?.endDate !== undefined
+          ? lte(analyticsRollupDaily.bucketDate, range.endDate)
+          : undefined
+      )
+    );
 
   const row = rows[0];
   return {
@@ -58,16 +75,9 @@ export async function getAnalyticsSummary(args: {
   };
 }
 
-function rollupWhere(tenantId: string, range: AnalyticsDateRange | undefined) {
-  return and(
-    eq(analyticsRollupDaily.tenantId, tenantId),
-    range?.startDate === undefined
-      ? undefined
-      : gte(analyticsRollupDaily.bucketDate, range.startDate),
-    range?.endDate === undefined ? undefined : lte(analyticsRollupDaily.bucketDate, range.endDate)
-  );
-}
-
 function sumInteger(column: AnyColumn) {
+  // Token sums use bigint columns but are returned as JS number. At current
+  // tenant scale this is safe. If per-tenant cumulative tokens approach 2^53,
+  // switch the return type to bigint and update the route serialization.
   return sql<number>`coalesce(sum(${column}), 0)`.mapWith(Number);
 }

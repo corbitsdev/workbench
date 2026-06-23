@@ -47,8 +47,9 @@ export const analyticsEvent = pgTable(
   },
   (t) => [
     unique('analytics_event_event_key').on(t.eventKey),
-    index('analytics_event_tenant_occurred_at_idx').on(t.tenantId, t.occurredAt),
-    index('analytics_event_instance_occurred_at_idx').on(t.instanceId, t.occurredAt),
+    // Secondary indexes deferred: analytics_event is append-only and high-write.
+    // Add (tenant_id, occurred_at) and (instance_id, occurred_at) only when a
+    // raw-fact query needs them — the rollup table serves all current reads.
   ]
 );
 
@@ -76,7 +77,15 @@ export const analyticsRollupDaily = pgTable(
   },
   (t) => [
     unique('analytics_rollup_daily_rollup_key').on(t.rollupKey),
+    // Primary read path: tenant summary (all agents, optional date range).
     index('analytics_rollup_daily_tenant_bucket_idx').on(t.tenantId, t.bucketDate),
+    // Per-agent breakdown: "how much is Myra costing" queries.
+    index('analytics_rollup_daily_tenant_agent_bucket_idx').on(
+      t.tenantId,
+      t.agentId,
+      t.bucketDate
+    ),
+    // Per-instance queries.
     index('analytics_rollup_daily_instance_bucket_idx').on(t.instanceId, t.bucketDate),
   ]
 );
