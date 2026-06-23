@@ -50,6 +50,15 @@ export interface ChatMessage {
   content: string;
   /** ISO-8601 timestamp of when the message was created. */
   createdAt: string;
+  /**
+   * Stable identity for feedback (thumbs up/down), independent of the display
+   * `id`. An agent reply is first rendered as a client-clock turn and later, once
+   * its server-timestamped mail arrives, as that mail — flipping `id` from the
+   * turnId to the mailId. A rating saved against the turnId would then be orphaned.
+   * `feedbackId` pins the rating subject to the turnId across that collapse; absent
+   * when the message has no echoing turn (use `id`).
+   */
+  feedbackId?: string;
   /** Delivery state. Absent means delivered/no tracking needed. */
   status?: ChatMessageStatus;
   /**

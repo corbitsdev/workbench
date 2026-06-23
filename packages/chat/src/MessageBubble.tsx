@@ -135,10 +135,12 @@ export function MessageBubble({
         message.images!.map((image, index) => <InlineImage key={index} image={image} />)}
       {message.role === 'agent' && message.status !== 'sending' && onRate !== undefined && (
         <MessageFeedback
-          subjectId={message.id}
+          subjectId={message.feedbackId ?? message.id}
           subjectKind="turn_part"
           savedRating={
-            getRating !== undefined ? (getRating(message.id, 'turn_part') ?? null) : null
+            getRating !== undefined
+              ? (getRating(message.feedbackId ?? message.id, 'turn_part') ?? null)
+              : null
           }
           onRate={onRate}
         />

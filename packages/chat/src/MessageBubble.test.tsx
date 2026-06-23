@@ -258,6 +258,31 @@ describe('MessageBubble', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('keys feedback on feedbackId, not the display id, so a rating survives the turn→mail collapse', () => {
+    // The bubble's display id is the mail id ("a1"), but the rating was saved
+    // against the turn id ("t1") carried on feedbackId. Both the read (getRating)
+    // and the write (onRate) must use feedbackId, or the thumb reverts on rebuild.
+    const message: ChatMessage = {
+      id: 'a1',
+      feedbackId: 't1',
+      role: 'agent',
+      content: 'Same content',
+      createdAt: '2026-06-04T00:11:00Z',
+    };
+    const getRating = mock((subjectId: string) => (subjectId === 't1' ? (1 as const) : null));
+    const onRate = mock(() => Promise.resolve());
+
+    render(<MessageBubble message={message} getRating={getRating} onRate={onRate} />);
+
+    // Saved rating is read under the turn id and shows as pressed.
+    const up = screen.getByRole('button', { name: 'Thumbs up' });
+    expect(up.getAttribute('aria-pressed')).toBe('true');
+    expect(getRating).toHaveBeenCalledWith('t1', 'turn_part');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thumbs down' }));
+    expect(onRate).toHaveBeenCalledWith('t1', 'turn_part', -1);
+  });
+
   it('shows a broken-image fallback on load error without crashing', () => {
     const message: ChatMessage = {
       id: 'img3',

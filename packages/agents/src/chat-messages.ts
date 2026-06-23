@@ -74,6 +74,11 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
   // mail's own (possibly late) occurrence is skipped without content-collapsing
   // unrelated duplicates.
   const hoistedMailIds = new Set<string>();
+  // mailId → the turnId it replaced. A rating may have been saved against the
+  // turnId while the reply rendered as a turn (before its mail arrived); pinning
+  // the surviving mail's feedback subject to that turnId keeps the rating from
+  // being orphaned when the bubble id flips to the mailId.
+  const feedbackTurnIdByMailId = new Map<string, string>();
   const deduped: InstanceEvent[] = [];
   for (const e of events) {
     // A text-only turn echoed by an assistant mail is redundant: emit that
@@ -91,6 +96,7 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
         ?.find((m) => m.kind === 'mail' && !hoistedMailIds.has(m.id));
       if (mail !== undefined && mail.kind === 'mail') {
         hoistedMailIds.add(mail.id);
+        feedbackTurnIdByMailId.set(mail.id, e.turnId);
         deduped.push(mail);
       }
       continue;
@@ -116,7 +122,8 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
   for (const msg of converted) {
     if (!seen.has(msg.id)) {
       seen.add(msg.id);
-      messages.push(msg);
+      const feedbackTurnId = feedbackTurnIdByMailId.get(msg.id);
+      messages.push(feedbackTurnId !== undefined ? { ...msg, feedbackId: feedbackTurnId } : msg);
     }
   }
 

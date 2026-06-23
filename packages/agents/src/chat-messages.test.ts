@@ -229,6 +229,42 @@ describe('composeChatMessages', () => {
     expect(agentMessages[0]?.id).toBe('a1');
   });
 
+  it('keeps a stable feedback id across the turn→mail collapse so a saved rating survives', () => {
+    // A text-only reply is first rendered live as a turn (its echoing assistant
+    // mail has not arrived yet), so the bubble id — and the rating subjectId the
+    // user saves under — is the turnId. Once the mail lands, the turn is dropped
+    // and the surviving bubble's display id becomes the mail id. If feedback were
+    // keyed on the display id, getRating(mailId) would miss the rating stored
+    // under turnId and the thumb would revert. feedbackId must stay the turnId.
+    const turn: InstanceEvent = {
+      kind: 'turn',
+      turnId: 't1',
+      content: 'Same content',
+      timestamp: '2024-01-01T00:00:30.000Z',
+    };
+
+    const liveOnly = composeChatMessages({
+      events: [userMail('u1', 'hi', '2024-01-01T00:00:00.000Z'), turn],
+      streaming: '',
+    });
+    const liveBubble = liveOnly.messages.find((m) => m.content === 'Same content');
+    const savedSubjectId = liveBubble?.feedbackId ?? liveBubble?.id;
+    expect(savedSubjectId).toBe('t1');
+
+    const afterMail = composeChatMessages({
+      events: [
+        userMail('u1', 'hi', '2024-01-01T00:00:00.000Z'),
+        turn,
+        assistantMail('a1', 'Same content', '2024-01-01T00:00:45.000Z'),
+      ],
+      streaming: '',
+    });
+    const settledBubble = afterMail.messages.find((m) => m.content === 'Same content');
+    // Display id flips to the durable mail id, but the feedback subject must not.
+    expect(settledBubble?.id).toBe('a1');
+    expect(settledBubble?.feedbackId ?? settledBubble?.id).toBe(savedSubjectId);
+  });
+
   it('keeps a tool-call turn and drops the assistant mail that echoes it', () => {
     const toolTurn: InstanceEvent = {
       kind: 'turn',
