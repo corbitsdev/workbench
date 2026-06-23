@@ -300,7 +300,7 @@ export function createWorkflowRunRecordsRouter(deps: {
       if (forbidden) return c.json({ error: 'Forbidden' }, 403);
       if (!context) return c.json({ error: 'User context not found' }, 403);
       const chain = await getAncestorChain(deps.db, context.tenantId);
-      const rows = await listRunRecords(deps.db, chain, c.req.query('kind'));
+      const rows = await listRunRecords(deps.db, chain, context.principalId, c.req.query('kind'));
       return c.json(rows);
     }
   );

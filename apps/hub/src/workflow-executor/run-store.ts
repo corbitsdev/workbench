@@ -80,10 +80,12 @@ export async function loadRunRecord(db: HubDb, runId: string): Promise<RunState 
 export async function listRunRecords(
   db: HubDb,
   tenantIds: readonly string[],
+  principalId: string,
   kind?: string
 ): Promise<Array<{ runId: string; kind: string; status: string; createdAt: Date }>> {
   const conditions = [
     inArray(workflowRunRecord.tenantId, [...tenantIds]),
+    eq(workflowRunRecord.principalId, principalId),
     isNull(workflowRunRecord.deletedAt),
   ];
   if (kind !== undefined) conditions.push(eq(workflowRunRecord.kind, kind));

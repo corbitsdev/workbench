@@ -54,13 +54,21 @@ mock.module('../workflow-executor/run-store', () => ({
     const found = runs.get(runId);
     return found ? structuredClone(found) : null;
   },
-  listRunRecords: async () =>
-    [...runs.values()].map((r) => ({
-      runId: r.runId,
-      kind: r.kind,
-      status: r.status,
-      createdAt: new Date(),
-    })),
+  listRunRecords: async (
+    _db: unknown,
+    _tenantIds: readonly string[],
+    principalId: string,
+    kind?: string
+  ) =>
+    [...runs.values()]
+      .filter((r) => r.principalId === principalId)
+      .filter((r) => kind === undefined || r.kind === kind)
+      .map((r) => ({
+        runId: r.runId,
+        kind: r.kind,
+        status: r.status,
+        createdAt: new Date(),
+      })),
 }));
 
 const { createWorkflowRunRecordsRouter } = await import('./workflow-run-records');
@@ -286,6 +294,19 @@ describe('workflow runs on the sidecar (records router)', () => {
     expect(read.status).toBe(200);
     expect(read.json.runId).toBe(start.json.runId);
     expect(read.json.status).toBe('running');
+  });
+
+  test('GET /records lists only the callers own runs (per-user private)', async () => {
+    resetCaptures();
+    const mine = app();
+    const theirs = appAs({ tenantId: 'tn-1', principalId: 'prn-other' });
+    const start = await post(mine, '/workflow-exec/pain-point-collateral/start', { input: {} });
+    await post(theirs, '/workflow-exec/pain-point-collateral/start', { input: {} });
+    const list = await get(mine, '/workflow-exec/records');
+    expect(list.status).toBe(200);
+    const ids = list.json.map((r: { runId: string }) => r.runId);
+    expect(ids).toContain(start.json.runId);
+    expect(ids).toHaveLength(1);
   });
 
   test('cross-user GET /records/:runId is forbidden 403', async () => {
