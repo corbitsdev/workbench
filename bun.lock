@@ -41,6 +41,7 @@
         "@intx/workflow-deploy": "workspace:*",
         "@intx/workflow-host": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/analytics": "workspace:*",
         "@workbench/event-collector": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
         "@workbench/openapi-arktype": "workspace:*",
@@ -549,6 +550,20 @@
         "@intx/workflow": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/prompts": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/analytics": {
+      "name": "@workbench/analytics",
+      "dependencies": {
+        "@intx/db": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/types": "workspace:*",
+        "drizzle-orm": "catalog:",
+        "hono": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -2006,6 +2021,8 @@
     "@vitejs/plugin-react": ["@vitejs/plugin-react@4.7.0", "", { "dependencies": { "@babel/core": "^7.28.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-beta.27", "@types/babel__core": "^7.20.5", "react-refresh": "^0.17.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0" } }, "sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA=="],
 
     "@workbench/agents": ["@workbench/agents@workspace:packages/agents"],
+
+    "@workbench/analytics": ["@workbench/analytics@workspace:packages/analytics"],
 
     "@workbench/approvals": ["@workbench/approvals@workspace:packages/approvals"],
 

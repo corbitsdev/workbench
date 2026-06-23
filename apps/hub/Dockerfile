@@ -20,6 +20,7 @@ COPY packages/artifact/package.json packages/artifact/
 COPY packages/chat/package.json packages/chat/
 COPY packages/client/package.json packages/client/
 COPY packages/context-repair/package.json packages/context-repair/
+COPY packages/analytics/package.json packages/analytics/
 COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/last30days-core/package.json packages/last30days-core/
 COPY packages/openapi-arktype/package.json packages/openapi-arktype/
@@ -59,6 +60,7 @@ COPY apps/hub/ apps/hub/
 # Railway's pre-deploy command runs `bun run scripts/db-setup.ts` in this image
 COPY scripts/ scripts/
 COPY packages/agents/ packages/agents/
+COPY packages/analytics/ packages/analytics/
 COPY packages/event-collector/ packages/event-collector/
 COPY packages/chat/ packages/chat/
 COPY packages/last30days-core/ packages/last30days-core/
