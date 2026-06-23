@@ -22,10 +22,16 @@ export const analyticsEvent = pgTable(
     toolCallId: text('tool_call_id'),
     eventKey: text('event_key').notNull(),
     eventType: text('event_type', {
-      enum: ['inference_usage', 'inference_done', 'tool_call', 'turn_completed', 'turn_failed'],
+      enum: [
+        'inference_usage',
+        'inference_done',
+        'inference_error',
+        'tool_call',
+        'turn_completed',
+        'turn_failed',
+      ],
     }).notNull(),
     model: text('model'),
-    toolName: text('tool_name'),
     status: text('status', {
       enum: ['running', 'completed', 'failed', 'error'],
     }),

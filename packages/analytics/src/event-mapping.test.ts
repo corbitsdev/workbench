@@ -39,7 +39,6 @@ describe('factsFromInferenceEvent', () => {
         eventType: 'inference_usage',
         model: 'anthropic/claude-sonnet-4',
         toolCallId: null,
-        toolName: null,
         status: null,
         inputTokens: 100,
         outputTokens: 11,
@@ -82,7 +81,6 @@ describe('factsFromInferenceEvent', () => {
         eventType: 'tool_call',
         model: null,
         toolCallId: 'call_123',
-        toolName: null,
         status: 'error',
         inputTokens: 0,
         outputTokens: 0,
@@ -115,22 +113,21 @@ describe('factsFromInferenceEvent', () => {
     ).toEqual([]);
   });
 
-  test('maps reactor.done to a turn_completed fact with zero tokens', () => {
+  test('maps message.run.ended completed to turn_completed with zero tokens', () => {
     const event: InferenceEvent = {
-      type: 'reactor.done',
+      type: 'message.run.ended',
       seq: 20,
-      data: {},
+      data: { messageRunId: 'mrn_1', messageId: 'msg_1', status: 'completed' },
     };
 
     expect(
       factsFromInferenceEvent({ agentAddress: 'agent@example.test', event, now: occurredAt })
     ).toEqual([
       {
-        eventKey: 'agent@example.test:20:reactor.done',
+        eventKey: 'agent@example.test:20:message.run.ended',
         eventType: 'turn_completed',
         model: null,
         toolCallId: null,
-        toolName: null,
         status: 'completed',
         inputTokens: 0,
         outputTokens: 0,
@@ -144,22 +141,26 @@ describe('factsFromInferenceEvent', () => {
     ]);
   });
 
-  test('maps reactor.error to a turn_failed fact with error metadata', () => {
+  test('maps message.run.ended failed to turn_failed with error metadata', () => {
     const event: InferenceEvent = {
-      type: 'reactor.error',
+      type: 'message.run.ended',
       seq: 21,
-      data: { error: 'context limit exceeded', fatal: true },
+      data: {
+        messageRunId: 'mrn_2',
+        messageId: 'msg_2',
+        status: 'failed',
+        error: { message: 'context limit exceeded', kind: 'reactor_fatal' },
+      },
     };
 
     expect(
       factsFromInferenceEvent({ agentAddress: 'agent@example.test', event, now: occurredAt })
     ).toEqual([
       {
-        eventKey: 'agent@example.test:21:reactor.error',
+        eventKey: 'agent@example.test:21:message.run.ended',
         eventType: 'turn_failed',
         model: null,
         toolCallId: null,
-        toolName: null,
         status: 'failed',
         inputTokens: 0,
         outputTokens: 0,
@@ -167,9 +168,52 @@ describe('factsFromInferenceEvent', () => {
         cacheWriteTokens: 0,
         thinkingTokens: 0,
         source: null,
-        metadata: { error: 'context limit exceeded', fatal: true },
+        metadata: { message: 'context limit exceeded', kind: 'reactor_fatal' },
         occurredAt,
       },
     ]);
+  });
+
+  test('maps inference.error to inference_error fact with error metadata', () => {
+    const event: InferenceEvent = {
+      type: 'inference.error',
+      seq: 8,
+      data: {
+        error: { category: 'quota_exhausted', message: 'rate limit exceeded' },
+        partial: { text: '' },
+      },
+    };
+
+    expect(
+      factsFromInferenceEvent({ agentAddress: 'agent@example.test', event, now: occurredAt })
+    ).toEqual([
+      {
+        eventKey: 'agent@example.test:8:inference.error',
+        eventType: 'inference_error',
+        model: null,
+        toolCallId: null,
+        status: 'error',
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        thinkingTokens: 0,
+        source: null,
+        metadata: { category: 'quota_exhausted', message: 'rate limit exceeded' },
+        occurredAt,
+      },
+    ]);
+  });
+
+  test('reactor.done is not mapped (session-level shutdown, not a per-turn event)', () => {
+    const event: InferenceEvent = {
+      type: 'reactor.done',
+      seq: 30,
+      data: {},
+    };
+
+    expect(
+      factsFromInferenceEvent({ agentAddress: 'agent@example.test', event, now: occurredAt })
+    ).toEqual([]);
   });
 });

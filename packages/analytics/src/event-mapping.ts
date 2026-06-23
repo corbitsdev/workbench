@@ -3,6 +3,7 @@ import type { InferenceEvent } from '@intx/types/runtime';
 export type AnalyticsEventType =
   | 'inference_usage'
   | 'inference_done'
+  | 'inference_error'
   | 'tool_call'
   | 'turn_completed'
   | 'turn_failed';
@@ -12,7 +13,6 @@ export type AnalyticsFact = {
   eventType: AnalyticsEventType;
   model: string | null;
   toolCallId: string | null;
-  toolName: string | null;
   status: 'running' | 'completed' | 'failed' | 'error' | null;
   inputTokens: number;
   outputTokens: number;
@@ -40,7 +40,6 @@ export function factsFromInferenceEvent(args: {
           eventType: 'inference_usage',
           model: event.data.source.model,
           toolCallId: null,
-          toolName: null,
           status: null,
           ...tokens(event.data.usage),
           source: event.data.source,
@@ -55,7 +54,6 @@ export function factsFromInferenceEvent(args: {
           eventType: 'inference_done',
           model: event.data.source.model,
           toolCallId: null,
-          toolName: null,
           status: 'completed',
           ...tokens(event.data.usage),
           source: event.data.source,
@@ -63,6 +61,20 @@ export function factsFromInferenceEvent(args: {
             event.data.pacingDelayMs === undefined
               ? null
               : { pacingDelayMs: event.data.pacingDelayMs },
+          occurredAt: now,
+        },
+      ];
+    case 'inference.error':
+      return [
+        {
+          eventKey: baseKey,
+          eventType: 'inference_error',
+          model: null,
+          toolCallId: null,
+          status: 'error',
+          ...tokens(null),
+          source: null,
+          metadata: { category: event.data.error.category, message: event.data.error.message },
           occurredAt: now,
         },
       ];
@@ -74,7 +86,6 @@ export function factsFromInferenceEvent(args: {
           eventType: 'tool_call',
           model: null,
           toolCallId: result.callId,
-          toolName: null,
           status: result.isError === true ? 'error' : 'completed',
           ...tokens(null),
           source: null,
@@ -83,36 +94,25 @@ export function factsFromInferenceEvent(args: {
         },
       ];
     }
-    case 'reactor.done':
+    // message.run.ended is the per-turn boundary event (one per user message processed).
+    // reactor.done fires once at session shutdown — not a per-turn event, not mapped.
+    // reactor.error fires for non-fatal mid-session errors — not a turn failure, not mapped.
+    case 'message.run.ended':
       return [
         {
           eventKey: baseKey,
-          eventType: 'turn_completed',
+          eventType: event.data.status === 'completed' ? 'turn_completed' : 'turn_failed',
           model: null,
           toolCallId: null,
-          toolName: null,
-          status: 'completed',
+          status: event.data.status,
           ...tokens(null),
           source: null,
-          metadata: null,
+          metadata: event.data.error ?? null,
           occurredAt: now,
         },
       ];
-    case 'reactor.error':
-      return [
-        {
-          eventKey: baseKey,
-          eventType: 'turn_failed',
-          model: null,
-          toolCallId: null,
-          toolName: null,
-          status: 'failed',
-          ...tokens(null),
-          source: null,
-          metadata: { error: event.data.error, fatal: event.data.fatal },
-          occurredAt: now,
-        },
-      ];
+    // inference.retry fires between retry attempts — the failed attempt's tokens were
+    // already counted via inference.usage. No additional rollup contribution needed.
     default:
       return [];
   }

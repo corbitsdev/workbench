@@ -4,7 +4,6 @@ import type { InferenceEvent } from '@intx/types/runtime';
 
 import { createAnalyticsSubscriber } from './subscriber';
 
-// Minimal agentInstance row. sessionId is intentionally set in most cases.
 const baseInstance = {
   id: 'ins_test',
   agentId: 'agt_test',
@@ -56,10 +55,10 @@ const usageEvent: InferenceEvent = {
   },
 };
 
-const reactorDoneEvent: InferenceEvent = {
-  type: 'reactor.done',
+const turnCompletedEvent: InferenceEvent = {
+  type: 'message.run.ended',
   seq: 2,
-  data: {},
+  data: { messageRunId: 'mrn_1', messageId: 'msg_1', status: 'completed' },
 };
 
 const inferenceDoneEvent: InferenceEvent = {
@@ -99,56 +98,55 @@ describe('createAnalyticsSubscriber', () => {
     const { db } = makeDb({ instance: nullSession as never });
     const subscriber = createAnalyticsSubscriber({ db: db as never });
 
-    // onAgentEvent catches errors and logs them; test that it doesn't silently succeed
-    // by checking insert was never called (the error aborted before any write).
     await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: usageEvent });
 
     expect(db.insert).not.toHaveBeenCalled();
   });
 
+  test('caches instance lookup — findFirst called once across multiple events', async () => {
+    const { db } = makeDb();
+    const subscriber = createAnalyticsSubscriber({ db: db as never });
+
+    await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: usageEvent });
+    await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: usageEvent });
+
+    expect(db.query.agentInstance.findFirst).toHaveBeenCalledTimes(1);
+  });
+
   test('qualifies the event key with sessionId to prevent cross-session collisions', async () => {
     const capturedInserts: unknown[] = [];
-    const { db } = makeDb({ onInsert: (values) => capturedInserts.push(values) });
+    const { db } = makeDb({ onInsert: (v) => capturedInserts.push(v) });
     const subscriber = createAnalyticsSubscriber({ db: db as never });
 
     await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: usageEvent });
 
     const factInsert = capturedInserts[0] as Record<string, unknown>;
-    expect(String(factInsert['eventKey'])).toStartWith(
-      'ses_test:agent@example.test:1:inference.usage'
-    );
+    expect(String(factInsert['eventKey'])).toStartWith('ses_test:agent@example.test:1:inference.usage');
   });
 
   test('skips rollup upsert when event key already exists (onConflictDoNothing)', async () => {
-    // onConflictDoNothing returns [] when a conflict is detected
-    const { db, insertChain } = makeDb({ insertReturns: [] });
+    const { db } = makeDb({ insertReturns: [] });
     const subscriber = createAnalyticsSubscriber({ db: db as never });
 
     await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: usageEvent });
 
-    // insert called once for the fact row; second insert (rollup) must NOT be called
     expect(db.insert).toHaveBeenCalledTimes(1);
-    void insertChain;
   });
 
   test('skips rollup upsert for inference_done events', async () => {
     const { db } = makeDb();
     const subscriber = createAnalyticsSubscriber({ db: db as never });
 
-    await subscriber.onAgentEvent({
-      agentAddress: 'agent@example.test',
-      event: inferenceDoneEvent,
-    });
+    await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: inferenceDoneEvent });
 
-    // Only the fact insert; no rollup upsert
     expect(db.insert).toHaveBeenCalledTimes(1);
   });
 
-  test('performs both fact insert and rollup upsert for reactor.done', async () => {
+  test('performs both fact insert and rollup upsert for message.run.ended (turn_completed)', async () => {
     const { db } = makeDb();
     const subscriber = createAnalyticsSubscriber({ db: db as never });
 
-    await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: reactorDoneEvent });
+    await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: turnCompletedEvent });
 
     expect(db.insert).toHaveBeenCalledTimes(2);
   });

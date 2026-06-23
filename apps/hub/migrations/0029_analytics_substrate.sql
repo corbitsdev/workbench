@@ -12,7 +12,6 @@ CREATE TABLE IF NOT EXISTS "analytics_event" (
   "event_key" text NOT NULL,
   "event_type" text NOT NULL,
   "model" text,
-  "tool_name" text,
   "status" text,
   "input_tokens" bigint DEFAULT 0 NOT NULL,
   "output_tokens" bigint DEFAULT 0 NOT NULL,

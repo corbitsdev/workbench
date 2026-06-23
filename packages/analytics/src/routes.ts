@@ -2,6 +2,7 @@ import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import { type } from 'arktype';
 
 import type { DB } from '@intx/db';
+import { getLogger } from '@intx/log';
 
 import { getAnalyticsSummary } from './queries';
 
@@ -14,6 +15,8 @@ export type CreateAnalyticsRoutesDeps = {
   db: DB['db'];
   requireRead: MiddlewareHandler;
 };
+
+const log = getLogger(['hub', 'analytics', 'routes']);
 
 export function createAnalyticsRoutes({ db, requireRead }: CreateAnalyticsRoutesDeps): Hono {
   const app = new Hono();
@@ -36,7 +39,11 @@ export function createAnalyticsRoutes({ db, requireRead }: CreateAnalyticsRoutes
 
     try {
       return c.json(await getAnalyticsSummary({ db, tenantId, range }));
-    } catch {
+    } catch (error) {
+      log.error('Analytics summary query failed for tenant {tenantId}: {error}', {
+        tenantId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return c.json(
         { error: { code: 'internal_error', message: 'Failed to query analytics' } },
         500

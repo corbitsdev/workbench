@@ -11,6 +11,7 @@ import { factsFromInferenceEvent, type AnalyticsFact } from './event-mapping';
 import { analyticsEvent, analyticsRollupDaily } from './schema';
 
 type Tx = Parameters<Parameters<DB['db']['transaction']>[0]>[0];
+type ActiveInstance = typeof agentInstance.$inferSelect;
 
 const log = getLogger(['hub', 'analytics']);
 
@@ -24,6 +25,10 @@ export type AnalyticsSubscriberConfig = {
 
 export function createAnalyticsSubscriber(config: AnalyticsSubscriberConfig): AnalyticsSubscriber {
   const { db } = config;
+  // Cache address → instance for the lifetime of this subscriber. Safe because
+  // sidecar stops emitting events for an address once the instance ends, so a
+  // cached active instance never becomes stale under normal operation.
+  const instanceCache = new Map<string, ActiveInstance>();
 
   return {
     async onAgentEvent({ agentAddress, event }) {
@@ -31,7 +36,7 @@ export function createAnalyticsSubscriber(config: AnalyticsSubscriberConfig): An
       if (facts.length === 0) return;
 
       try {
-        const instance = await findActiveInstance(db, agentAddress);
+        const instance = await resolveInstance(db, instanceCache, agentAddress);
         if (instance === null) {
           log.warn('Skipping analytics event for unknown agent address: {agentAddress}', {
             agentAddress,
@@ -43,7 +48,7 @@ export function createAnalyticsSubscriber(config: AnalyticsSubscriberConfig): An
           await persistFact(db, instance, fact);
         }
       } catch (error) {
-        log.warn('Failed to persist analytics event for {agentAddress}: {error}', {
+        log.error('Failed to persist analytics event for {agentAddress}: {error}', {
           agentAddress,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -52,15 +57,22 @@ export function createAnalyticsSubscriber(config: AnalyticsSubscriberConfig): An
   };
 }
 
-async function findActiveInstance(db: DB['db'], agentAddress: string) {
-  return (
-    (await db.query.agentInstance.findFirst({
-      where: and(eq(agentInstance.address, agentAddress), isNull(agentInstance.endedAt)),
-    })) ?? null
-  );
-}
+async function resolveInstance(
+  db: DB['db'],
+  cache: Map<string, ActiveInstance>,
+  agentAddress: string
+): Promise<ActiveInstance | null> {
+  const cached = cache.get(agentAddress);
+  if (cached !== undefined) return cached;
 
-type ActiveInstance = NonNullable<Awaited<ReturnType<typeof findActiveInstance>>>;
+  const row = await db.query.agentInstance.findFirst({
+    where: and(eq(agentInstance.address, agentAddress), isNull(agentInstance.endedAt)),
+  });
+
+  if (row === undefined) return null;
+  cache.set(agentAddress, row);
+  return row;
+}
 
 async function persistFact(
   db: DB['db'],
@@ -90,7 +102,6 @@ async function persistFact(
         eventKey: sessionScopedKey,
         eventType: fact.eventType,
         model: fact.model,
-        toolName: fact.toolName,
         status: fact.status,
         inputTokens: fact.inputTokens,
         outputTokens: fact.outputTokens,
@@ -106,22 +117,18 @@ async function persistFact(
 
     if (inserted.length === 0) return;
 
-    // inference_done contributes no rollup increments (token accounting lives
-    // on inference_usage; skipping here avoids a no-op write on every turn).
-    if (fact.eventType === 'inference_done') return;
+    // These event types are stored as facts for raw querying but contribute
+    // no rollup increments: inference_done (same tokens as inference_usage),
+    // inference_error (no tokens spent on failed calls).
+    if (fact.eventType === 'inference_done' || fact.eventType === 'inference_error') return;
 
     await upsertDailyRollup(tx, instance, fact);
   });
 }
 
-async function upsertDailyRollup(
-  db: Tx,
-  instance: ActiveInstance,
-  fact: AnalyticsFact
-): Promise<void> {
+async function upsertDailyRollup(db: Tx, instance: ActiveInstance, fact: AnalyticsFact) {
+  // Bucket date is UTC. All daily boundaries are UTC-anchored.
   const bucketDate = fact.occurredAt.toISOString().slice(0, 10);
-  // toolName is not available from the current InferenceEvent shape and is
-  // excluded from the rollup key to avoid spurious empty-string dimensions.
   const rollupKey = [
     instance.tenantId,
     instance.agentId,
