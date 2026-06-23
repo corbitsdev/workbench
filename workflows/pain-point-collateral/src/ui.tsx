@@ -625,18 +625,18 @@ function PainPointStep({
 // Step 4 — Format selection
 // -------------------------------------------------------------------------
 
-const COLLATERAL_FORMATS: { id: string; label: string }[] = [
-  { id: 'email', label: 'Email follow-up' },
-  { id: 'one-pager', label: 'One-pager' },
-  { id: 'linkedin-post', label: 'LinkedIn post' },
-  { id: 'linkedin-daily', label: 'Daily LinkedIn post' },
-  { id: 'twitter-post', label: 'Twitter post' },
-  { id: 'founder-pov-post', label: 'Founder POV post' },
-  { id: 'blog', label: 'Blog post' },
-  { id: 'case-study', label: 'Case study' },
-  { id: 'objection-handling', label: 'Objection handling' },
-  { id: 'customer-quotes', label: 'Customer quotes' },
-  { id: 'battlecard', label: 'Battlecard' },
+const COLLATERAL_FORMATS: { id: string; label: string; description: string }[] = [
+  { id: 'email', label: 'Email follow-up', description: 'Draft a personal follow-up email to send after the call' },
+  { id: 'one-pager', label: 'One-pager', description: 'A sales leave-behind that stands on its own' },
+  { id: 'linkedin-post', label: 'LinkedIn post', description: 'First-person field observation for a professional audience' },
+  { id: 'linkedin-daily', label: 'Daily LinkedIn post', description: 'A practitioner-voice post with a concrete lesson' },
+  { id: 'twitter-post', label: 'Twitter post', description: 'Short first-person take built around one sharp insight' },
+  { id: 'founder-pov-post', label: 'Founder POV post', description: 'A founder perspective on the problem category' },
+  { id: 'blog', label: 'Blog post', description: 'Narrative arc with hook, story, and lessons' },
+  { id: 'case-study', label: 'Case study', description: 'Challenge, solution, and measurable results' },
+  { id: 'objection-handling', label: 'Objection handling', description: 'Tactical rebuttal guide for common buyer objections' },
+  { id: 'customer-quotes', label: 'Customer quotes', description: 'Curated verbatim quotes with context and theme' },
+  { id: 'battlecard', label: 'Battlecard', description: 'Competitive positioning reference for sellers' },
 ];
 
 const MAX_FORMATS = 3;
@@ -674,20 +674,23 @@ function FormatStep({
     <div className="space-y-3">
       <p className="text-[12px] text-text-3">Choose up to {MAX_FORMATS} collateral formats.</p>
       <ul className="space-y-2">
-        {COLLATERAL_FORMATS.map(({ id, label }) => {
+        {COLLATERAL_FORMATS.map(({ id, label, description }) => {
           const checked = selected.has(id);
           const atCap = selected.size >= MAX_FORMATS && !checked;
           return (
             <li key={id}>
-              <label className="flex cursor-pointer items-center gap-3 rounded-[8px] border border-border bg-bg px-3 py-2.5 transition-colors hover:border-orange has-[:checked]:border-orange has-[:checked]:bg-orange/5">
+              <label className="flex cursor-pointer items-start gap-3 rounded-[8px] border border-border bg-bg px-3 py-2.5 transition-colors hover:border-orange has-[:checked]:border-orange has-[:checked]:bg-orange/5">
                 <input
                   type="checkbox"
                   disabled={disabled || atCap}
                   checked={checked}
                   onChange={() => toggle(id)}
-                  className="h-4 w-4 accent-orange disabled:cursor-not-allowed"
+                  className="mt-0.5 h-4 w-4 accent-orange disabled:cursor-not-allowed"
                 />
-                <span className="text-[13px] font-medium text-text">{label}</span>
+                <div>
+                  <p className="text-[13px] font-medium text-text">{description}</p>
+                  <p className="text-[12px] text-text-3">{label}</p>
+                </div>
               </label>
             </li>
           );

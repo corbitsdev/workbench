@@ -445,9 +445,9 @@ describe('Panel — format selection (step 4)', () => {
       />
     );
 
-    screen.getByText('Email follow-up');
-    screen.getByText('One-pager');
-    screen.getByText('LinkedIn post');
+    screen.getByText('Draft a personal follow-up email to send after the call');
+    screen.getByText('A sales leave-behind that stands on its own');
+    screen.getByText('First-person field observation for a professional audience');
   });
 
   it('fires format-selection signal with cartesian product items on submit', async () => {
@@ -473,8 +473,8 @@ describe('Panel — format selection (step 4)', () => {
     );
 
     // Select "Email" and "One-pager" (2 formats × 2 pain points = 4 items)
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Email follow-up' }));
-    await userEvent.click(screen.getByRole('checkbox', { name: 'One-pager' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /Draft a personal follow-up email/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /A sales leave-behind/ }));
 
     await userEvent.click(screen.getByRole('button', { name: /Generate 2 formats/ }));
 
