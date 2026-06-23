@@ -4,7 +4,8 @@ import { logger as honoLogger } from 'hono/logger';
 import { describeRoute, openAPIRouteHandler } from 'hono-openapi';
 import { upgradeWebSocket, websocket } from 'hono/bun';
 import { schema as intxSchema, createGrantStore } from '@intx/db';
-import { createApp } from '@intx/hub-api';
+import { createApp, createRequireGrant } from '@intx/hub-api';
+import { timeWindowEvaluator } from '@intx/authz';
 import {
   createAgentRepoStore,
   createAssetService,
@@ -20,6 +21,9 @@ import {
 // agent so a turn row commits before its parts, fixing the FK race that
 // dropped thinking/reply parts.
 import { createEventCollectorRegistry } from '@workbench/event-collector';
+import { createAnalyticsSubscriber, createAnalyticsRoutes } from '@workbench/analytics';
+import { parseInferenceEvent } from '@intx/types/runtime';
+import { type } from 'arktype';
 import { hexEncode } from '@intx/types';
 import { createNodeCrypto } from '@intx/crypto-node';
 import { getLogger } from '@intx/log';
@@ -229,6 +233,19 @@ const sidecarRouter = createSidecarRouter({
   lookups,
 });
 
+const analyticsSubscriber = createAnalyticsSubscriber({ db });
+
+sidecarRouter.events.on('agent.event', ({ agentAddress, event }) => {
+  const validated = parseInferenceEvent(event);
+  if (validated instanceof type.errors) {
+    log.warn('Skipping analytics for invalid agent event: {summary}', {
+      summary: validated.summary,
+    });
+    return;
+  }
+  void analyticsSubscriber.onAgentEvent({ agentAddress, event: validated });
+});
+
 const sidecarConnections = createSidecarConnectionRegistry();
 
 const fatalErrorRecovery = createFatalErrorRecovery(db);
@@ -357,6 +374,16 @@ const hubApp = createApp({
     };
   }),
 });
+
+const requireGrant = createRequireGrant({
+  grantStore,
+  conditionRegistry: { time_window: timeWindowEvaluator },
+});
+
+hubApp.route(
+  '/api/tenants/:tenantId/analytics',
+  createAnalyticsRoutes({ db, requireRead: requireGrant('analytics:*', 'read') })
+);
 
 // ─── Parent Hono ────────────────────────────────────────────────────
 
@@ -740,7 +767,10 @@ app.route(
   })
 );
 app.route('/api/internal', createToolCredentialsRouter(db, config.sidecarToken));
-app.route('/api/internal', createInternalWorkflowSkillsRouter(db, repoStore.repoStore, config.sidecarToken));
+app.route(
+  '/api/internal',
+  createInternalWorkflowSkillsRouter(db, repoStore.repoStore, config.sidecarToken)
+);
 app.route('/api/internal', createToolManifestRouter(db, config.sidecarToken, assetService));
 app.route(
   '/api/internal',
