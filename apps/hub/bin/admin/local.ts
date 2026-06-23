@@ -37,7 +37,7 @@ export interface LocalAction {
 }
 
 const BIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
-const REPO_ROOT = dirname(dirname(BIN_DIR));
+const REPO_ROOT = dirname(dirname(dirname(BIN_DIR)));
 
 export const SETUP_GROUP = "Local actions (build, seed)";
 export const WORKFLOWS_GROUP = "Workflows";
