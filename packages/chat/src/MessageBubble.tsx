@@ -68,9 +68,12 @@ export function MessageBubble({
   const isStreaming = message.status === 'sending';
   const hasReasoning = message.role === 'agent' && (message.reasoning ?? '').trim() !== '';
   const hasImages = message.images !== undefined && message.images.length > 0;
+  // Trimmed so a turn that commits as only whitespace ("\n\n") is treated as
+  // empty rather than rendering a blank bubble.
+  const hasBody = message.content.trim() !== '';
 
   // Nothing to show: no body, not streaming, no reasoning, and no images.
-  if (!message.content && message.status !== 'sending' && !hasReasoning && !hasImages) return null;
+  if (!hasBody && message.status !== 'sending' && !hasReasoning && !hasImages) return null;
 
   // Only attempt block extraction on settled agent/system messages — a partial
   // stream may contain a half-written fence we should not try to parse yet.
@@ -115,7 +118,7 @@ export function MessageBubble({
           streaming={isStreaming && message.content === ''}
         />
       )}
-      {(message.content !== '' || (message.status === 'sending' && !hasReasoning)) && (
+      {(hasBody || (message.status === 'sending' && !hasReasoning)) && (
         <div
           className={cn(
             'max-w-[80%] rounded-lg px-3 py-2 text-sm break-words',

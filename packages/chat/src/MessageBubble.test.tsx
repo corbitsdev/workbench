@@ -202,6 +202,17 @@ describe('MessageBubble', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('renders nothing for a settled agent message that is only whitespace', () => {
+    const message: ChatMessage = {
+      id: 'ws1',
+      role: 'agent',
+      content: '\n\n   \n',
+      createdAt: '2026-06-04T00:10:00Z',
+    };
+    const { container } = render(<MessageBubble message={message} />);
+    expect(container.firstChild).toBeNull();
+  });
+
   it('shows a broken-image fallback on load error without crashing', () => {
     const message: ChatMessage = {
       id: 'img3',
