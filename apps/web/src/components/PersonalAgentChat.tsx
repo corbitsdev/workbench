@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
   composeChatMessages,
+  friendlyToolSummary,
   createToolNameTracker,
   createLiveTextTracker,
   createReasoningTracker,
@@ -457,6 +458,7 @@ export function PersonalAgentChat() {
         onRate={onRate}
         getRating={getRating}
         hideToolCall={hideMyraSelfManagement}
+        formatToolSummary={friendlyToolSummary}
       />
     );
   }

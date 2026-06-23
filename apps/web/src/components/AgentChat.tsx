@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
   composeChatMessages,
+  friendlyToolSummary,
   createToolNameTracker,
   createLiveTextTracker,
   createReasoningTracker,
@@ -107,7 +108,6 @@ export function AgentChat({
       );
     },
   });
-
 
   const { mutate: launch, status: launchStatus } = useMutation({
     mutationFn: async () => {
@@ -343,6 +343,7 @@ export function AgentChat({
       getRating={(subjectId: string, subjectKind: FeedbackSubjectKind) =>
         ratingsMap.get(`${subjectId}:${subjectKind}`) ?? null
       }
+      formatToolSummary={friendlyToolSummary}
     />
   );
 }

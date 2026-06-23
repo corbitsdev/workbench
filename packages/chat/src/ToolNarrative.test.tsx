@@ -26,6 +26,27 @@ describe('ToolNarrative', () => {
     expect(screen.getByText('· minimax m3')).toBeDefined();
   });
 
+  it('suppresses the raw arg chip when a formatSummary is supplied', () => {
+    const calls: ToolCall[] = [
+      {
+        id: 'c1',
+        name: '@workbench/tools-exa/exa:exa_search',
+        arguments: { query: 'minimax m3', numResults: 5 },
+        result: 'some results',
+        isError: false,
+      },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={() => 'Searching the web for minimax m3'}
+      />
+    );
+    expect(screen.getByText('Searching the web for minimax m3')).toBeDefined();
+    // The formatter owns the line, so the duplicate "· minimax m3" chip is gone.
+    expect(screen.queryByText('· minimax m3')).toBeNull();
+  });
+
   it('reveals the result when an expandable row is clicked', () => {
     const calls: ToolCall[] = [
       {

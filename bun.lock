@@ -554,6 +554,7 @@
         "@workbench/catalog": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/prompts": "workspace:*",
+        "@workbench/ui": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",

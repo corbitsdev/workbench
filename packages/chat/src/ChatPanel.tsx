@@ -44,6 +44,8 @@ export interface ChatPanelProps {
   getRating?: (subjectId: string, subjectKind: FeedbackSubjectKind) => 1 | -1 | null | undefined;
   /** Hide individual tool calls from the narrative (e.g. an agent's private memory file ops). */
   hideToolCall?: ChatThreadProps['hideToolCall'];
+  /** Host formatter turning a tool call into a friendly narrative summary line. */
+  formatToolSummary?: ChatThreadProps['formatToolSummary'];
   className?: string;
   notice?: React.ReactNode;
 }
@@ -72,6 +74,7 @@ export function ChatPanel({
   onRate,
   getRating,
   hideToolCall,
+  formatToolSummary,
   className,
   notice,
 }: ChatPanelProps) {
@@ -141,6 +144,7 @@ export function ChatPanel({
         {...(onRate !== undefined ? { onRate } : {})}
         {...(getRating !== undefined ? { getRating } : {})}
         {...(hideToolCall !== undefined ? { hideToolCall } : {})}
+        {...(formatToolSummary !== undefined ? { formatToolSummary } : {})}
       />
 
       {quickReplies !== undefined && quickReplies.length > 0 && onQuickReply !== undefined && (

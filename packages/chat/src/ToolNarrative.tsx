@@ -116,17 +116,22 @@ function ChevronIcon({ open }: { open: boolean }) {
 function ToolRow({
   call,
   summary,
+  suppressArgsSummary,
   onRespond,
   onAction,
 }: {
   call: ToolCall;
   summary: string;
+  // When the host supplies a formatter, the summary line already conveys the
+  // relevant argument (e.g. "Searching the web for X"), so the raw arg chip
+  // would render it twice. The full arguments remain available on expand.
+  suppressArgsSummary: boolean;
   onRespond?: (response: UIResponse) => void;
   onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
 }) {
   const [open, setOpen] = useState(false);
   const pending = call.result === undefined && !call.isError;
-  const argsSummary = summarizeArgs(call.arguments);
+  const argsSummary = suppressArgsSummary ? null : summarizeArgs(call.arguments);
   const hasArgs = call.arguments !== undefined && Object.keys(call.arguments).length > 0;
   const expandable = !pending && (call.result !== undefined || hasArgs);
   const resultBlock =
@@ -209,6 +214,7 @@ export function ToolNarrative({
             key={call.id}
             call={call}
             summary={summary}
+            suppressArgsSummary={formatSummary !== undefined}
             {...(onRespond !== undefined ? { onRespond } : {})}
             {...(onAction !== undefined ? { onAction } : {})}
           />
