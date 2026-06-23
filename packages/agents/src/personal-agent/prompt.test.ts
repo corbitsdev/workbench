@@ -8,7 +8,7 @@ describe('buildPersonalAgentSystemPrompt', () => {
   it('frames the named agent as a Chief of Staff for one person', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('Myra is a Chief of Staff and Executive Assistant');
-    expect(prompt).toContain('single person');
+    expect(prompt).toContain('one person');
   });
 
   it('interpolates whatever name is supplied', () => {
@@ -16,16 +16,15 @@ describe('buildPersonalAgentSystemPrompt', () => {
     expect(prompt).toContain('Assistant is a Chief of Staff');
   });
 
-  it('includes the role, capabilities, and guidelines sections', () => {
+  it('includes the role, ownership, and style sections', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('<role>');
-    expect(prompt).toContain('<capabilities>');
-    expect(prompt).toContain('<guidelines>');
+    expect(prompt).toContain('<ownership>');
+    expect(prompt).toContain('<style>');
   });
 
   it('documents the direct tools: files, web search, artifacts, directory, and domain tools', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('<tools>');
     expect(prompt).toContain('write_file');
     expect(prompt).toContain('exa_search');
     expect(prompt).toContain('artifact_create');
@@ -82,29 +81,36 @@ describe('buildPersonalAgentSystemPrompt', () => {
   it('keeps the operator framing internal — no reciting a title or calling them "operator"', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('do not announce your title');
-    expect(prompt).toContain('Never call the person you work for "your operator" out loud');
+    expect(prompt).toContain('Never call them "your operator" out loud');
   });
 
-  // Source priority: domain tools first, then own notes, then artifacts
-  it('orders information sources: domain tools first, then own notes, then artifacts', () => {
+  // Source priority: pull from the owning domain tool before guessing
+  it('directs the agent to pull from the tool that owns the answer', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('<sources>');
-    expect(prompt).toContain('The right tool for the domain');
+    expect(prompt).toContain('Pull from the tool that owns the answer');
   });
 
   // Temporal/recency requests fetch fresh, never a stale artifact
   it('requires fresh data from the owning tool for time-bound requests', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt.toLowerCase()).toContain('my last call');
-    expect(prompt).toContain('Do not answer it from an artifact');
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat).toLowerCase();
+    expect(prompt).toContain('my last call');
+    expect(prompt).toContain('do not answer it from an artifact');
   });
 
-  // Self-notes convention
-  it('documents the self-notes files Myra maintains', () => {
+  // Self-notes convention — two slots only: durable memory and transient scratch
+  it('documents the two self-notes files Myra maintains', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('<notes>');
-    for (const file of ['MEMORY.md', 'SCRATCHPAD.md', 'CONTACTS.md', 'ERRORS.md', 'HUMAN.md']) {
+    for (const file of ['MEMORY.md', 'SCRATCHPAD.md']) {
       expect(prompt).toContain(file);
+    }
+  });
+
+  it('no longer carries the retired CONTACTS/ERRORS/HUMAN memory files', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    for (const file of ['CONTACTS.md', 'ERRORS.md', 'HUMAN.md']) {
+      expect(prompt).not.toContain(file);
     }
   });
 

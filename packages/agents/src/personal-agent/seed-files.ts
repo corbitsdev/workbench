@@ -16,33 +16,35 @@ function stubFor(title: string, description: string): string {
  * Myra's documented memory files (see the personal-agent prompt `<notes>`
  * section). On first launch none of these exist, so reading them fails; the
  * harness seeds these stubs so the agent always has them to read and append to.
+ *
+ * Two slots only: durable memory (MEMORY.md) and transient task scratch
+ * (SCRATCHPAD.md). Durable memory is organized into sections inside MEMORY.md
+ * — folding the former CONTACTS/ERRORS/HUMAN files in keeps the agent from
+ * fanning reads and writes across near-identical files.
  */
 export const PERSONAL_AGENT_SEED_FILES: SeedWorkspaceFile[] = [
   {
     path: 'MEMORY.md',
-    content: stubFor('Memory', 'Durable facts worth keeping across tasks.'),
+    content: `# Memory
+
+Durable memory worth keeping across tasks. Keep it organized under these headings; add to the right one rather than starting new files.
+
+## The Person
+Standing brief on the person you work for: preferences, priorities, open tasks and todos.
+
+## Facts
+Durable facts and decisions worth remembering.
+
+## Contacts
+Agents and people: who they are, what they are for, their addresses.
+
+## Errors
+Failures you hit, with enough detail to avoid them next time.
+`,
   },
   {
     path: 'SCRATCHPAD.md',
-    content: stubFor('Scratchpad', 'Transient notes for the current task.'),
-  },
-  {
-    path: 'CONTACTS.md',
-    content: stubFor(
-      'Contacts',
-      'Agents and people: who they are, what they are for, their addresses.'
-    ),
-  },
-  {
-    path: 'ERRORS.md',
-    content: stubFor('Errors', 'Failures hit, with enough detail to avoid them next time.'),
-  },
-  {
-    path: 'HUMAN.md',
-    content: stubFor(
-      'Human',
-      'Standing brief on the person you work for: preferences, priorities, open tasks and todos.'
-    ),
+    content: stubFor('Scratchpad', 'Transient notes for the current task. Not durable memory.'),
   },
 ];
 

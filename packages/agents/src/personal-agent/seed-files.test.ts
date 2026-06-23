@@ -9,10 +9,10 @@ import {
   hasSeedMarker,
 } from './seed-files';
 
-const EXPECTED_FILES = ['MEMORY.md', 'SCRATCHPAD.md', 'CONTACTS.md', 'ERRORS.md', 'HUMAN.md'];
+const EXPECTED_FILES = ['MEMORY.md', 'SCRATCHPAD.md'];
 
 describe('PERSONAL_AGENT_SEED_FILES (CL-1952)', () => {
-  it('declares the five documented memory files', () => {
+  it('declares the two documented memory files', () => {
     expect(PERSONAL_AGENT_SEED_FILES.map((f) => f.path).sort()).toEqual([...EXPECTED_FILES].sort());
   });
 

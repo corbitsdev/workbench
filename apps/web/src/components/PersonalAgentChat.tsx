@@ -39,7 +39,7 @@ import { useChatLauncher } from '../lib/chat-launcher-context';
 
 const MYRA: ChatAgentIdentity = { name: 'Myra', tagline: 'Personal agent' };
 
-// Myra's file tools are private working memory (MEMORY.md, HUMAN.md, etc.).
+// Myra's file tools are private working memory (MEMORY.md, SCRATCHPAD.md).
 // Hide those tool-call lines from the thread so her self-management does not
 // clutter the conversation.
 const PRIVATE_FILE_TOOLS = new Set(['read_file', 'write_file', 'edit_file', 'search_files']);

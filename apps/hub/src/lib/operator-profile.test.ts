@@ -46,14 +46,14 @@ describe('promptFormatForProvider', () => {
 });
 
 describe('buildOperatorProfile', () => {
-  it('names the operator and points at HUMAN.md', () => {
+  it('names the operator and points at the standing brief in MEMORY.md', () => {
     const profile = buildOperatorProfile({
       name: 'Sawyer Cutler',
       email: 'sawyer@abklabs.com',
     });
     expect(profile).toContain('Sawyer Cutler');
     expect(profile).toContain('sawyer@abklabs.com');
-    expect(profile).toContain('HUMAN.md');
+    expect(profile).toContain('MEMORY.md');
   });
 });
 

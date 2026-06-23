@@ -27,9 +27,9 @@ export function promptFormatForProvider(provider: string): PromptFormat {
   return { xml: provider === 'anthropic' };
 }
 
-/** Terse standing brief naming the operator and pointing Myra at HUMAN.md. */
+/** Terse standing brief naming the operator and pointing Myra at MEMORY.md. */
 export function buildOperatorProfile(user: { name: string; email: string }): string {
-  return `You work for ${user.name} (${user.email}). Keep HUMAN.md as your standing brief on them — preferences, priorities, open todos — and update it as you learn.`;
+  return `You work for ${user.name} (${user.email}). Keep your standing brief on them — preferences, priorities, open todos — under the "The Person" heading in MEMORY.md, and update it as you learn.`;
 }
 
 /**
