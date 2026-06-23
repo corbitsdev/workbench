@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   deployAgentFromTemplate,
   listAgentTemplates,
@@ -60,8 +60,6 @@ export function UnifiedCatalogModal({
   const panelRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Tab>(defaultTab);
   const [search, setSearch] = useState('');
-  const [deploying, setDeploying] = useState<string | null>(null);
-  const [startingKind, setStartingKind] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const { data: agentCatalog = [] } = useQuery<AgentCatalogEntry[]>({
@@ -121,6 +119,24 @@ export function UnifiedCatalogModal({
     [handleClose]
   );
 
+  const deployAgentMutation = useMutation({
+    mutationFn: ({ tenantId: tid, key }: { tenantId: string; key: string }) =>
+      deployAgentFromTemplate(tid, key),
+    onSuccess: () => {
+      handleClose();
+      onAgentDeployed();
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : 'Failed to add agent');
+    },
+  });
+
+  const deploying = deployAgentMutation.isPending
+    ? (deployAgentMutation.variables?.key ?? null)
+    : null;
+
+  const startingKind = startWorkflow.isPending ? (startWorkflow.variables?.kind ?? null) : null;
+
   // Focus the first interactive element whenever the modal opens. This is a DOM
   // mutation — useLayoutEffect runs synchronously after the DOM updates, before
   // the browser paints, which prevents flicker.
@@ -140,24 +156,14 @@ export function UnifiedCatalogModal({
     toHumanLabel(kind).toLowerCase().includes(query)
   );
 
-  const handleDeployAgent = async (entry: AgentCatalogEntry) => {
-    if (!tenantId || deploying) return;
-    setDeploying(entry.key);
+  const handleDeployAgent = (entry: AgentCatalogEntry) => {
+    if (!tenantId || deployAgentMutation.isPending) return;
     setError(null);
-    try {
-      await deployAgentFromTemplate(tenantId, entry.key);
-      handleClose();
-      onAgentDeployed();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add agent');
-    } finally {
-      setDeploying(null);
-    }
+    deployAgentMutation.mutate({ tenantId, key: entry.key });
   };
 
   const handleStartWorkflow = (kind: string) => {
-    if (startingKind) return;
-    setStartingKind(kind);
+    if (startWorkflow.isPending) return;
     setError(null);
     startWorkflow
       .mutateAsync({ kind, input: {} })
@@ -167,13 +173,10 @@ export function UnifiedCatalogModal({
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'Could not start the workflow.');
-      })
-      .finally(() => {
-        setStartingKind(null);
       });
   };
 
-  const isGridBusy = deploying !== null || startingKind !== null;
+  const isGridBusy = deployAgentMutation.isPending || startWorkflow.isPending;
 
   return (
     <AnimatePresence>
