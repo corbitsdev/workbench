@@ -136,9 +136,18 @@ async function seedCatalog(tenantId: string, cookies: CookieJar): Promise<void> 
   for (const existing of listData<NamedRow>(provRes.data)) {
     providerIdByName.set(existing.name, existing.id);
   }
+  // Providers whose credential is not present in this tenant are skipped (and
+  // their offerings below) rather than failing the whole seed — a tenant need
+  // only carry credentials for the providers it actually uses.
+  const skippedProviders = new Set<string>();
   for (const provider of FULL_CATALOG.providers) {
     if (providerIdByName.has(provider.name)) {
       log(`Provider exists: ${provider.name}`);
+      continue;
+    }
+    if (!credentials.some((c) => c.name === provider.credentialName)) {
+      skippedProviders.add(provider.name);
+      log(`Skipping provider ${provider.name} — no '${provider.credentialName}' credential here`);
       continue;
     }
     const cred = resolveCredentialBinding(credentials, provider.credentialName);
@@ -190,6 +199,10 @@ async function seedCatalog(tenantId: string, cookies: CookieJar): Promise<void> 
     )
   );
   for (const offering of FULL_CATALOG.offerings) {
+    if (skippedProviders.has(offering.provider)) {
+      log(`Skipping offering ${offering.model} via ${offering.provider} — provider not seeded`);
+      continue;
+    }
     const modelId = modelIdByName.get(offering.model);
     const providerId = providerIdByName.get(offering.provider);
     if (!modelId || !providerId) {
