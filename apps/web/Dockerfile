@@ -18,6 +18,7 @@ COPY packages/agents/package.json packages/agents/
 COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
 COPY packages/chat/package.json packages/chat/
+COPY packages/catalog/package.json packages/catalog/
 COPY packages/client/package.json packages/client/
 COPY packages/context-repair/package.json packages/context-repair/
 COPY packages/analytics/package.json packages/analytics/
