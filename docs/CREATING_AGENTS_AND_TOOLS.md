@@ -171,13 +171,13 @@ credential rail — not an execution registry, and not in any workflow path
 ## Creating an Agent Package
 
 Copy an existing agent as a starting point. Agents live as subdirectories of the
-`@workbench/agents` package (`packages/agents/src/<name>`) — `packages/agents/src/larry`
-is a good minimal example of an agent that uses tools.
+`@workbench/agents` package (`packages/agents/src/<name>`) — copy a small existing
+agent that matches the tool/inference shape you need.
 
 ### 1. Scaffold
 
 ```bash
-cp -r packages/agents/src/larry packages/agents/src/<name>
+cp -r packages/agents/src/walter packages/agents/src/<name>
 ```
 
 Rename the exported identifiers and strip the copied agent's prompt/tools down to
@@ -358,7 +358,7 @@ A director may still allow a system sender address (e.g. `scheduler@system`) for
 
 ## Checklist: Shipping a New Agent
 
-- [ ] `packages/agents/src/<name>/` created from an existing agent (e.g. `larry`), builds cleanly
+- [ ] `packages/agents/src/<name>/` created from an existing agent, builds cleanly
 - [ ] `credentialRequirements` declared for inference + any external services
 - [ ] `capabilities.tools` lists every tool the agent is allowed to call
 - [ ] System prompt written via `buildSystemPrompt` + `formatFromModel`

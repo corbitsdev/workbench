@@ -41,7 +41,7 @@ function makeState(
 
 const MOCK_SKILLS: WorkflowSkill[] = [
   { id: 'skill_hammy', name: 'hammy-humanizer', displayName: 'Hammy Humanizer' },
-  { id: 'skill_larry', name: 'larry-research', displayName: 'Larry Research' },
+  { id: 'skill_research', name: 'last30days-research', displayName: 'last30days Research' },
 ];
 
 const MOCK_CREDENTIALS: WorkflowCredential[] = [

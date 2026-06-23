@@ -10,5 +10,5 @@ Native Interchange tool package for the stateless last30days core tools:
 - The hub's `LAST30DAYS_CORE_HUB_TOOLS` (proxy fallback during coexistence)
   re-exports these tools rather than carrying its own copy.
 
-Pinned on Larry. See `docs/CREATING_AGENTS_AND_TOOLS.md` for the tool-package
-model and the build/push flow.
+Pinned by the `last30days-research` workflow. See `docs/DEPLOYING_WORKFLOWS.md`
+for the workflow package model and deploy flow.

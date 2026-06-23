@@ -67,7 +67,6 @@ Every same-domain user **auto-joins the global tenant as a `member` principal** 
 | **Myra**   | Personal Chief of Staff / Executive Assistant for each user                                                                      |
 | **Oat**    | Processes Granola calls into call document artifacts when prompted                                                               |
 | **Freddy** | Firecrawl-backed web research agent                                                                                              |
-| **Larry**  | last30days research agent — mines HN/GitHub/Reddit/X/YouTube/Bluesky/web for recent signal and emits a structured research brief |
 | **Walter** | Content writer — turns briefs and research into polished GTM collateral                                                          |
 | **Loop**   | Iterative refinement agent                                                                                                       |
 

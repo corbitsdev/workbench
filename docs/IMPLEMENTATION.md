@@ -53,7 +53,7 @@ The merged `ToolRunner` is wrapped as an Interchange `toolFactory` via `defineTo
 
 ### `packages/agents` (`@workbench/agents`)
 
-Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter. This package is the source of truth for all template content. At hub boot, `seedAgentTemplates(db)` reads the templates from this package and idempotently upserts one Interchange agent definition per template (Myra, Oat, Freddy, Walter, Loop, Larry, …) into the global tenant — re-boot is a no-op.
+Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter. This package is the source of truth for all template content. At hub boot, `seedAgentTemplates(db)` reads the templates from this package and idempotently upserts one Interchange agent definition per template (Myra, Oat, Freddy, Walter, Loop, …) into the global tenant — re-boot is a no-op.
 
 ```
 src/
@@ -106,9 +106,9 @@ No tool package reads env vars or resolves credentials. Config (`apiKey`, `baseU
 
 **`packages/tools-firecrawl`** (`@workbench/tools-firecrawl`): Firecrawl v2 API. Exports `FIRECRAWL_HUB_TOOLS` with `firecrawl_scrape`, crawl start/status/active/errors/cancel/params-preview tools, batch scrape start/status/errors/cancel tools, `firecrawl_map`, `firecrawl_search`, extract start/status tools, `firecrawl_agent` (autonomous research via POST /agent), `firecrawl_parse` (document parsing), `firecrawl_interact`, `firecrawl_browser_sessions_list`, `firecrawl_browser_session_delete`, monitor CRUD (create/get/update/delete/list/run/check), `firecrawl_credit_usage`, `firecrawl_historical_credit_usage`, `firecrawl_token_usage`, `firecrawl_historical_token_usage`, and `firecrawl_activity` (providerName: `'firecrawl'`). Long-running endpoints return job IDs and require explicit polling tools.
 
-#### last30days research (Larry)
+#### last30days research workflow
 
-The `last30days` research capability is split into per-source fetch tools, a deterministic core, and a portable skill, all attachable to the **Larry** agent (`packages/agents/src/larry`).
+The `last30days` research capability is split into per-source fetch tools, a deterministic core, and the `last30days-research` workflow (`workflows/last30days-research`). Inline inference steps use the workflow runtime's `createAgent` path and do not deploy idling per-step agents.
 
 - **Source tools** each normalize their API into a shared `ResearchItem` (`{ url, title, publishedAt, source, engagement, author?, topComments? }`): `tools-hackernews`, `tools-github`, `tools-exa` (web), `tools-reddit` (`reddit_search`/`reddit_subreddit_search` via ScrapeCreators, passing through top comments when the payload carries them), `tools-x`, `tools-polymarket`, `tools-scrapecreators` (tiktok/instagram/threads/pinterest), `tools-youtube` (`youtube_search`, providerName `'youtube'`), and `tools-bluesky` (`bluesky_search`, unauthenticated public AppView — no credential).
 - **`packages/last30days-core`** (`@workbench/last30days-core`): pure pipeline — `entityExtract`, `dateFilter`, `dedupe`, `clusterMerge`, `rankScore` (engagement + freshness + source-breadth + a capped top-comment "fun" bonus, minus a degraded penalty), and `buildReport`, which returns a typed, ArkType-validated `ResearchBrief`: `{ topic, days, queryType?, stats: { sourceCount, itemCount, dateRange? }, leadInsight?, clusters[], bestTakes[], items[], citations[] }`. `parseReport(unknown)` is the canonical boundary parser consumers use instead of re-declaring the schema.

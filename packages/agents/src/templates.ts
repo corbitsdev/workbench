@@ -51,14 +51,6 @@ import {
   LINCOLN_MODEL_CONFIG,
 } from './lincoln/definition';
 import {
-  LARRY_DEPLOY_PROMPT,
-  LARRY_CREDENTIAL_REQUIREMENTS,
-  LARRY_GRANT_REQUIREMENTS,
-  LARRY_CAPABILITIES,
-  LARRY_MODEL_CONFIG,
-  LARRY_TOOL_PACKAGES,
-} from './larry/definition';
-import {
   FREDDIE_DEPLOY_PROMPT,
   FREDDIE_CREDENTIAL_REQUIREMENTS,
   FREDDIE_GRANT_REQUIREMENTS,
@@ -253,17 +245,5 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
       { name: '@workbench/tools-firecrawl', version: '^0.1.0' },
       { name: '@workbench/tools-artifact', version: '^0.1.0' },
     ],
-  },
-  {
-    key: 'larry',
-    name: 'Larry',
-    description:
-      'Research agent — mines Reddit, X, HackerNews, and social platforms for the last 30 days of signal.',
-    systemPrompt: LARRY_DEPLOY_PROMPT,
-    credentialRequirements: LARRY_CREDENTIAL_REQUIREMENTS,
-    grantRequirements: LARRY_GRANT_REQUIREMENTS,
-    capabilities: { tools: [...LARRY_CAPABILITIES.tools] },
-    modelConfig: LARRY_MODEL_CONFIG,
-    toolPackages: LARRY_TOOL_PACKAGES,
   },
 ];
