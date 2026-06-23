@@ -364,3 +364,4 @@ A director may still allow a system sender address (e.g. `scheduler@system`) for
 - [ ] Director filters inbound senders
 - [ ] Provisioning wired in `tenant-provisioning.ts`
 - [ ] Credential provider entries exist for every requirement
+- [ ] Rollout understood — a template edit only reaches users after the hub boots (`seedAgentTemplates`) and instances relaunch; seed the global tenant + publish tool packages **before** deploy. See [Rolling out agent changes](#rolling-out-agent-changes-how-an-edit-reaches-existing-users).
