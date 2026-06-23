@@ -3,8 +3,22 @@ import { type } from 'arktype';
 
 import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
+import type { Env } from 'hono';
+
+/** Matches @intx/hub-api TenantEnv variables used by analytics routes. */
+export type AnalyticsRouteEnv = Env & {
+  Variables: {
+    tenant: { id: string };
+    principal: { id: string };
+  };
+};
 
 import { getAnalyticsSummary } from './queries';
+
+function optionalQuery(c: Context, name: string): string | undefined {
+  const value = c.req.query(name);
+  return value === undefined || value === '' ? undefined : value;
+}
 
 const SummaryQuery = type({
   'startDate?': /^\d{4}-\d{2}-\d{2}$/,
@@ -20,20 +34,31 @@ export type CreateAnalyticsRoutesDeps = {
   requireRead: MiddlewareHandler;
 };
 
-export function createAnalyticsRoutes({ db, requireRead }: CreateAnalyticsRoutesDeps): Hono {
-  const app = new Hono();
+export function createAnalyticsRoutes({ db, requireRead }: CreateAnalyticsRoutesDeps): Hono<AnalyticsRouteEnv> {
+  const app = new Hono<AnalyticsRouteEnv>();
 
-  const summaryHandler = async (c: Context) => {
-    const tenantId = c.req.param('tenantId');
-    if (!tenantId)
+  const summaryHandler = async (c: Context<AnalyticsRouteEnv>) => {
+    const tenantId = c.req.param('tenantId') ?? c.get('tenant').id;
+    if (!tenantId) {
       return c.json({ error: { code: 'bad_request', message: 'Missing tenantId' } }, 400);
+    }
 
-    const query = SummaryQuery({
-      startDate: c.req.query('startDate'),
-      endDate: c.req.query('endDate'),
-      agentId: c.req.query('agentId'),
-      instanceId: c.req.query('instanceId'),
-    });
+    const queryInput: {
+      startDate?: string;
+      endDate?: string;
+      agentId?: string;
+      instanceId?: string;
+    } = {};
+    const startDate = optionalQuery(c, 'startDate');
+    const endDate = optionalQuery(c, 'endDate');
+    const agentId = optionalQuery(c, 'agentId');
+    const instanceId = optionalQuery(c, 'instanceId');
+    if (startDate !== undefined) queryInput.startDate = startDate;
+    if (endDate !== undefined) queryInput.endDate = endDate;
+    if (agentId !== undefined) queryInput.agentId = agentId;
+    if (instanceId !== undefined) queryInput.instanceId = instanceId;
+
+    const query = SummaryQuery(queryInput);
     if (query instanceof type.errors) {
       return c.json({ error: { code: 'bad_request', message: query.summary } }, 400);
     }

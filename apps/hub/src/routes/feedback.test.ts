@@ -64,22 +64,29 @@ function makeDb(overrides: Partial<HubDb> = {}): HubDb {
   return db;
 }
 
-describe('POST /v1/feedback', () => {
+function mountFeedbackApp(db: HubDb) {
+  const v1 = new Hono<{ Variables: { userId: string } }>();
+  v1.use((c, next) => {
+    c.set('userId', c.req.header('x-test-user-id') ?? '');
+    return next();
+  });
+  v1.route('/', createFeedbackRouter(db));
+  const app = new Hono();
+  app.route('/api/v1', v1);
+  return app;
+}
+
+describe('POST /api/v1/instances/:instanceId/feedback', () => {
   function setup(dbOverrides?: Partial<HubDb>) {
     const db = makeDb(dbOverrides);
-    const app = new Hono<{ Variables: { userId: string } }>();
-    app.use((c, next) => {
-      c.set('userId', c.req.header('x-test-user-id') ?? '');
-      return next();
-    });
-    app.route('/', createFeedbackRouter(db));
+    const app = mountFeedbackApp(db);
     return { app, db };
   }
 
   it('returns 201 on a valid thumbs-up for a turn_part', async () => {
     const { app } = setup();
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', {
         body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: 1 },
       })
     );
@@ -89,7 +96,7 @@ describe('POST /v1/feedback', () => {
   it('returns 201 on a valid thumbs-down for a workflow_step', async () => {
     const { app } = setup();
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', {
         body: { subjectId: 'step-abc', subjectKind: 'workflow_step', rating: -1 },
       })
     );
@@ -105,7 +112,7 @@ describe('POST /v1/feedback', () => {
       } as unknown as HubDb['query'],
     });
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/missing/feedback', {
+      makeRequest('http://localhost/api/v1/instances/missing/feedback', {
         body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: 1 },
       })
     );
@@ -123,7 +130,7 @@ describe('POST /v1/feedback', () => {
       } as unknown as HubDb['query'],
     });
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', {
         body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: 1 },
         userId: 'intruder',
       })
@@ -149,7 +156,7 @@ describe('POST /v1/feedback', () => {
       } as unknown as HubDb['query'],
     });
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', {
         body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: 1 },
         userId: 'other-user',
       })
@@ -160,7 +167,7 @@ describe('POST /v1/feedback', () => {
   it('returns 400 on an invalid rating value', async () => {
     const { app } = setup();
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', {
         body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: 99 },
       })
     );
@@ -170,7 +177,7 @@ describe('POST /v1/feedback', () => {
   it('returns 400 on an invalid subjectKind', async () => {
     const { app } = setup();
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', {
         body: { subjectId: 'tp-abc', subjectKind: 'unknown_kind', rating: 1 },
       })
     );
@@ -195,12 +202,12 @@ describe('POST /v1/feedback', () => {
     });
 
     await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', {
         body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: 1 },
       })
     );
     await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', {
         body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: -1 },
       })
     );
@@ -213,22 +220,17 @@ describe('POST /v1/feedback', () => {
   });
 });
 
-describe('GET /v1/instances/:instanceId/feedback', () => {
+describe('GET /api/v1/instances/:instanceId/feedback', () => {
   function setup(dbOverrides?: Partial<HubDb>) {
     const db = makeDb(dbOverrides);
-    const app = new Hono<{ Variables: { userId: string } }>();
-    app.use((c, next) => {
-      c.set('userId', c.req.header('x-test-user-id') ?? '');
-      return next();
-    });
-    app.route('/', createFeedbackRouter(db));
+    const app = mountFeedbackApp(db);
     return { app, db };
   }
 
   it('returns all ratings for the caller on this instance', async () => {
     const { app } = setup();
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', { method: 'GET' })
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', { method: 'GET' })
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ratings: unknown[] };
@@ -244,7 +246,7 @@ describe('GET /v1/instances/:instanceId/feedback', () => {
       } as unknown as HubDb['query'],
     });
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/missing/feedback', { method: 'GET' })
+      makeRequest('http://localhost/api/v1/instances/missing/feedback', { method: 'GET' })
     );
     expect(res.status).toBe(404);
   });
@@ -260,7 +262,7 @@ describe('GET /v1/instances/:instanceId/feedback', () => {
       } as unknown as HubDb['query'],
     });
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', {
         method: 'GET',
         userId: 'intruder',
       })
@@ -277,7 +279,7 @@ describe('GET /v1/instances/:instanceId/feedback', () => {
       })) as unknown as HubDb['select'],
     });
     const res = await app.request(
-      makeRequest('http://localhost/v1/instances/ins-1/feedback', { method: 'GET' })
+      makeRequest('http://localhost/api/v1/instances/ins-1/feedback', { method: 'GET' })
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ratings: unknown[] };

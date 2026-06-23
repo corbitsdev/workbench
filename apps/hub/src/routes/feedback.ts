@@ -51,7 +51,7 @@ export function createFeedbackRouter(db: HubDb): Hono<{ Variables: { userId: str
   const app = new Hono<{ Variables: { userId: string } }>();
 
   app.post(
-    '/v1/instances/:instanceId/feedback',
+    '/instances/:instanceId/feedback',
     describeRoute({
       tags: ['Feedback'],
       summary: 'Submit thumbs up/down feedback for an agent or workflow output',
@@ -121,7 +121,7 @@ export function createFeedbackRouter(db: HubDb): Hono<{ Variables: { userId: str
   );
 
   app.get(
-    '/v1/instances/:instanceId/feedback',
+    '/instances/:instanceId/feedback',
     describeRoute({
       tags: ['Feedback'],
       summary: 'Get all feedback ratings submitted by the caller for this instance',
