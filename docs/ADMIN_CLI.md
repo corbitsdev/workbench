@@ -59,18 +59,31 @@ against the tenant **model catalog** (`model` / `model_provider` /
 the catalog or every agent launch fails with `no_requirements` (no Myra/Oat;
 artifacts appear broken).
 
+> **v1 tenancy — seed at the GLOBAL tenant.** Myra and every other agent
+> currently run as instances in the **global org tenant** (agent templates are
+> seeded there at hub boot; see [ARCHITECTURE.md](./ARCHITECTURE.md) §Tenancy).
+> Their inference resolves against that tenant's catalog, so the **model catalog
+> and the LLM credentials must be seeded on the global tenant** — descendant
+> workbenches inherit both via the nearest-ancestor walk. Seeding them only on a
+> sub-tenant (e.g. a single workbench) is **not** enough and leaves Myra showing
+> "No API credential is set up." This global-tenant placement is a deliberate v1
+> mechanism and is expected to change when agents move to per-workbench tenancy.
+
 Order on a fresh environment (run against the **global** tenant so descendant
 workbenches inherit via the catalog ancestor walk):
 
 1. **Seed tool credentials from env** — creates the LLM credentials
    (`opencode-zen`, `anthropic-api`, …) the catalog providers authenticate with.
-2. **Seed model catalog** — derived from the agent definitions themselves
-   (`AGENT_CATALOG` in `@workbench/agents`): one `model_provider` per inference
-   credential (baseURL read from the credential's metadata), one `model` per
-   canonical name an agent declares, and an offering linking them. Idempotent —
-   re-runs skip existing rows. To change a provider's baseURL or credential
-   binding, delete the catalog provider and re-seed; the seeder does not
-   reconcile an existing row in place.
+2. **Seed model catalog** — derived from `FULL_CATALOG` in `@workbench/catalog`:
+   one `model_provider` per inference credential (baseURL read from the
+   credential's metadata), one `model` per canonical name, and an offering
+   linking them. Idempotent — re-runs skip existing rows. A provider whose
+   credential is **not** present in the tenant (and its offerings) is skipped
+   with a warning rather than failing the whole seed, so a tenant carrying only
+   `opencode-zen` + `anthropic-api` seeds cleanly — seed step 1 first for every
+   provider you actually want offerings for. To change a provider's baseURL or
+   credential binding, delete the catalog provider and re-seed; the seeder does
+   not reconcile an existing row in place.
 3. **Redeploy the hub** — `seedAgentTemplates` writes each agent's
    `modelRequirements` onto its row on boot (insert and update), so existing
    agents migrate in place; no backfill script.
