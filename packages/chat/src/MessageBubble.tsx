@@ -24,8 +24,9 @@ export interface MessageBubbleProps {
 }
 
 /**
- * A single chat bubble. User messages align right with the brand accent;
- * agent and system messages align left on a neutral surface.
+ * A single chat bubble. User messages align right in the brand-accent bubble;
+ * agent messages render as plain full-width prose on the panel background (no
+ * card), and system messages align left on a neutral surface.
  *
  * Agent and system messages are rendered as Markdown via Streamdown. When an
  * agent reply embeds a fenced ```ui block (the agent reformatting tool output
@@ -121,9 +122,9 @@ export function MessageBubble({
       {(hasBody || (message.status === 'sending' && !hasReasoning)) && (
         <div
           className={cn(
-            'max-w-[80%] rounded-lg px-3 py-2 text-sm break-words',
+            'text-sm break-words',
+            message.role === 'agent' ? 'w-full text-text' : 'max-w-[80%] rounded-lg px-3 py-2',
             isUser && 'bg-orange text-white whitespace-pre-wrap',
-            message.role === 'agent' && 'border border-border bg-surface-2 text-text',
             isSystem && 'bg-surface-2 text-text-3 italic'
           )}
         >

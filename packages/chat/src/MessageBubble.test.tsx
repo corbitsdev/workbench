@@ -22,6 +22,51 @@ describe('MessageBubble', () => {
     expect(screen.getByText('Hello agent')).not.toBeNull();
   });
 
+  it('renders the user message in a width-constrained orange bubble', () => {
+    const message: ChatMessage = {
+      id: 'u-box',
+      role: 'user',
+      content: 'In a bubble',
+      createdAt: '2026-06-04T00:00:00Z',
+    };
+    const { container } = render(<MessageBubble message={message} />);
+    const body = container.querySelector('.bg-orange') as HTMLElement;
+    expect(body).not.toBeNull();
+    expect(body.className).toContain('max-w-[80%]');
+    expect(body.className).toContain('rounded-lg');
+  });
+
+  it('renders the agent message full-width with no surface fill, border, or radius', () => {
+    const message: ChatMessage = {
+      id: 'a-plain',
+      role: 'agent',
+      content: 'Plain agent reply',
+      createdAt: '2026-06-04T00:01:00Z',
+    };
+    const { container } = render(<MessageBubble message={message} />);
+    const body = container.querySelector('.chat-md')?.parentElement as HTMLElement;
+    expect(body).not.toBeNull();
+    expect(body.className).not.toContain('bg-surface-2');
+    expect(body.className).not.toContain('border');
+    expect(body.className).not.toContain('rounded-lg');
+    expect(body.className).not.toContain('max-w-[80%]');
+    expect(body.className).toContain('w-full');
+  });
+
+  it('keeps the system message on its surface treatment', () => {
+    const message: ChatMessage = {
+      id: 'sys-box',
+      role: 'system',
+      content: 'System notice',
+      createdAt: '2026-06-04T00:02:00Z',
+    };
+    const { container } = render(<MessageBubble message={message} />);
+    const body = container.querySelector('.bg-surface-2') as HTMLElement;
+    expect(body).not.toBeNull();
+    expect(body.className).toContain('italic');
+    expect(body.className).toContain('max-w-[80%]');
+  });
+
   it('renders a reasoning disclosure when the agent message carries reasoning', () => {
     const message: ChatMessage = {
       id: 'r1',
