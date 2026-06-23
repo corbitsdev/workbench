@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { cn, toHumanLabel } from '@workbench/ui';
-import { type ChatMessage, type ChatActivity } from './types';
+import { type ChatMessage, type ChatActivity, type ToolCall } from './types';
 import { MessageBubble } from './MessageBubble';
 import { ToolNarrative, type ToolNarrativeProps } from './ToolNarrative';
 import { TypingIndicator } from './TypingIndicator';
@@ -38,6 +38,12 @@ export interface ChatThreadProps {
    * raw tool names and results into readable summary lines.
    */
   formatToolSummary?: ToolNarrativeProps['formatSummary'];
+  /**
+   * Predicate to hide individual tool calls from the narrative (the call still
+   * runs; it is just not rendered). Used to abstract an agent's private
+   * self-management — e.g. reads/writes of its own memory files.
+   */
+  hideToolCall?: (call: ToolCall) => boolean;
   /** Wired to send an interactive UI block's response back to the agent. */
   onRespond?: (response: UIResponse) => void;
   /** Wired to document UI block actions (copy / download / save-artifact). */
@@ -58,6 +64,7 @@ export function ChatThread({
   typingLabel,
   emptyState,
   formatToolSummary,
+  hideToolCall,
   onRespond,
   onAction,
   onRate,
@@ -115,16 +122,24 @@ export function ChatThread({
               <UrlImageCard key={url} url={url} />
             ))}
             {message.role === 'agent' &&
-              message.toolCalls !== undefined &&
-              message.toolCalls.length > 0 && (
-                <ToolNarrative
-                  toolCalls={message.toolCalls}
-                  {...(formatToolSummary !== undefined ? { formatSummary: formatToolSummary } : {})}
-                  {...(onRespond !== undefined ? { onRespond } : {})}
-                  {...(onAction !== undefined ? { onAction } : {})}
-                  className="pl-1"
-                />
-              )}
+              (() => {
+                const visibleToolCalls =
+                  hideToolCall === undefined
+                    ? message.toolCalls
+                    : message.toolCalls?.filter((c) => !hideToolCall(c));
+                if (visibleToolCalls === undefined || visibleToolCalls.length === 0) return null;
+                return (
+                  <ToolNarrative
+                    toolCalls={visibleToolCalls}
+                    {...(formatToolSummary !== undefined
+                      ? { formatSummary: formatToolSummary }
+                      : {})}
+                    {...(onRespond !== undefined ? { onRespond } : {})}
+                    {...(onAction !== undefined ? { onAction } : {})}
+                    className="pl-1"
+                  />
+                );
+              })()}
           </div>
         );
       })}

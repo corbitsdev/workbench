@@ -38,6 +38,13 @@ import { useChatLauncher } from '../lib/chat-launcher-context';
 
 const MYRA: ChatAgentIdentity = { name: 'Myra', tagline: 'Personal agent' };
 
+// Myra's file tools are private working memory (MEMORY.md, HUMAN.md, etc.).
+// Hide those tool-call lines from the thread so her self-management does not
+// clutter the conversation.
+const PRIVATE_FILE_TOOLS = new Set(['read_file', 'write_file', 'edit_file', 'search_files']);
+const hideMyraSelfManagement = (call: { name: string }): boolean =>
+  PRIVATE_FILE_TOOLS.has(call.name);
+
 // Send a message to Myra, recovering from a dropped session once. A hub or
 // sidecar restart leaves the instance not running, so the first send 409s;
 // relaunching the session and retrying heals it without losing the message.
@@ -449,6 +456,7 @@ export function PersonalAgentChat() {
         onClose={() => setOpen(false)}
         onRate={onRate}
         getRating={getRating}
+        hideToolCall={hideMyraSelfManagement}
       />
     );
   }

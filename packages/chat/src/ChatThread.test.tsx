@@ -87,6 +87,50 @@ describe('ChatThread', () => {
     expect(screen.queryByText('should not appear')).toBeNull();
   });
 
+  it('hides tool calls matched by hideToolCall but keeps the rest', () => {
+    const mixed: ChatMessage[] = [
+      {
+        id: 't3',
+        role: 'agent',
+        content: 'Working',
+        createdAt: '2026-06-04T00:00:00Z',
+        toolCalls: [
+          { id: 'c1', name: 'read_file', result: 'mem' },
+          { id: 'c2', name: 'exa_search', result: 'done' },
+        ],
+      },
+    ];
+    render(
+      <ChatThread
+        messages={mixed}
+        formatToolSummary={(call) => `ran ${call.name}`}
+        hideToolCall={(call) => call.name === 'read_file'}
+      />
+    );
+    expect(screen.queryByText('ran read_file')).toBeNull();
+    expect(screen.getByText('ran exa_search')).toBeDefined();
+  });
+
+  it('renders no narrative when hideToolCall hides every call', () => {
+    const allHidden: ChatMessage[] = [
+      {
+        id: 't4',
+        role: 'agent',
+        content: 'Bookkeeping',
+        createdAt: '2026-06-04T00:00:00Z',
+        toolCalls: [{ id: 'c1', name: 'read_file', result: 'mem' }],
+      },
+    ];
+    render(
+      <ChatThread
+        messages={allHidden}
+        formatToolSummary={() => 'should not appear'}
+        hideToolCall={() => true}
+      />
+    );
+    expect(screen.queryByText('should not appear')).toBeNull();
+  });
+
   it('shows an activity label instead of the typing indicator', () => {
     render(
       <ChatThread messages={messages} activity={{ type: 'thinking' }} agentName="Ada" typing />

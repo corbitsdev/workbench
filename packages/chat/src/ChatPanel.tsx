@@ -7,7 +7,7 @@ import {
   type QuickReply,
   type ChatActivity,
 } from './types';
-import { ChatThread } from './ChatThread';
+import { ChatThread, type ChatThreadProps } from './ChatThread';
 import { QuickReplyChips } from './QuickReplyChips';
 import { ChatInput } from './ChatInput';
 import type { UIBlock, UIResponse } from './ui-block';
@@ -42,6 +42,8 @@ export interface ChatPanelProps {
   onRate?: (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) => Promise<void>;
   /** Returns the server-fetched rating for a subject. Passed down to MessageFeedback. */
   getRating?: (subjectId: string, subjectKind: FeedbackSubjectKind) => 1 | -1 | null | undefined;
+  /** Hide individual tool calls from the narrative (e.g. an agent's private memory file ops). */
+  hideToolCall?: ChatThreadProps['hideToolCall'];
   className?: string;
   notice?: React.ReactNode;
 }
@@ -69,6 +71,7 @@ export function ChatPanel({
   onAction,
   onRate,
   getRating,
+  hideToolCall,
   className,
   notice,
 }: ChatPanelProps) {
@@ -137,6 +140,7 @@ export function ChatPanel({
         {...(onAction !== undefined ? { onAction } : {})}
         {...(onRate !== undefined ? { onRate } : {})}
         {...(getRating !== undefined ? { getRating } : {})}
+        {...(hideToolCall !== undefined ? { hideToolCall } : {})}
       />
 
       {quickReplies !== undefined && quickReplies.length > 0 && onQuickReply !== undefined && (
