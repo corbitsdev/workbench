@@ -75,11 +75,11 @@ const PP_SELECTION = { selectedIds: ['pp1', 'pp2'] };
 
 const GENERATED_PIECES = [
   agentReply({
-    format: 'Email',
+    format: 'email',
     title: 'Cut onboarding time',
     content: 'Dear prospect, cut onboarding from weeks to days.',
   }),
-  agentReply({ format: 'One-pager', title: 'ROI at a glance', content: 'Track ROI from day one.' }),
+  agentReply({ format: 'one-pager', title: 'ROI at a glance', content: 'Track ROI from day one.' }),
 ];
 
 // ---------------------------------------------------------------------------
@@ -445,7 +445,7 @@ describe('Panel — format selection (step 4)', () => {
       />
     );
 
-    screen.getByText('Email');
+    screen.getByText('Email follow-up');
     screen.getByText('One-pager');
     screen.getByText('LinkedIn post');
   });
@@ -473,7 +473,7 @@ describe('Panel — format selection (step 4)', () => {
     );
 
     // Select "Email" and "One-pager" (2 formats × 2 pain points = 4 items)
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Email' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Email follow-up' }));
     await userEvent.click(screen.getByRole('checkbox', { name: 'One-pager' }));
 
     await userEvent.click(screen.getByRole('button', { name: /Generate 2 formats/ }));
@@ -486,7 +486,7 @@ describe('Panel — format selection (step 4)', () => {
     expect(signalName).toBe('format-selection');
     expect(payload.items).toHaveLength(4);
     expect(payload.items.map((i) => i.format)).toEqual(
-      expect.arrayContaining(['Email', 'One-pager'])
+      expect.arrayContaining(['email', 'one-pager'])
     );
     expect(payload.items.map((i) => i.painPointId)).toEqual(expect.arrayContaining(['pp1', 'pp2']));
   });
@@ -591,10 +591,10 @@ describe('Panel — review generated pieces (step 5)', () => {
     ];
     expect(name).toBe('review');
     expect(payload.decisions).toHaveLength(2);
-    expect(payload.decisions[0]).toMatchObject({ format: 'Email', approved: true });
-    expect(payload.decisions[1]).toMatchObject({ format: 'One-pager', approved: false });
+    expect(payload.decisions[0]).toMatchObject({ format: 'email', approved: true });
+    expect(payload.decisions[1]).toMatchObject({ format: 'one-pager', approved: false });
     expect(payload.approvedPieces).toHaveLength(1);
-    expect(payload.approvedPieces[0]!.format).toBe('Email');
+    expect(payload.approvedPieces[0]!.format).toBe('email');
   });
 
   it('fires review signal with all pieces when all are approved', async () => {
@@ -633,7 +633,7 @@ describe('Panel — review generated pieces (step 5)', () => {
     expect(payload.decisions).toHaveLength(2);
     expect(payload.decisions.every((decision) => decision.approved)).toBe(true);
     expect(payload.approvedPieces.map((d) => d.format)).toEqual(
-      expect.arrayContaining(['Email', 'One-pager'])
+      expect.arrayContaining(['email', 'one-pager'])
     );
   });
 
@@ -654,7 +654,7 @@ describe('Panel — review generated pieces (step 5)', () => {
   it('renders a generated piece content as parsed markdown', () => {
     const markdownPieces = [
       agentReply({
-        format: 'One-pager',
+        format: 'one-pager',
         title: 'Cut onboarding time',
         content: 'A **bold** outcome',
       }),
@@ -727,8 +727,8 @@ describe('Panel — review generated pieces (step 5)', () => {
       string,
       { decisions: { format: string; approved: boolean }[] },
     ];
-    expect(payload.decisions[0]).toMatchObject({ format: 'Email', approved: false });
-    expect(payload.decisions[1]).toMatchObject({ format: 'One-pager', approved: true });
+    expect(payload.decisions[0]).toMatchObject({ format: 'email', approved: false });
+    expect(payload.decisions[1]).toMatchObject({ format: 'one-pager', approved: true });
   });
 
   it('keeps Approve/Deny enabled during review while the step is awaiting-signal', () => {
@@ -897,7 +897,7 @@ describe('Panel — review generated pieces (step 5)', () => {
           generate: [
             {
               reply: `\`\`\`json
-{"format":"Email","title":"Cut onboarding time","content":"Dear prospect, cut onboarding from weeks to days."}
+{"format":"email","title":"Cut onboarding time","content":"Dear prospect, cut onboarding from weeks to days."}
 \`\`\``,
             },
           ],
@@ -936,7 +936,7 @@ describe('Panel — review generated pieces (step 5)', () => {
   }
 
   const PIECE_JSON =
-    '{"format":"Email","title":"Cut onboarding time","content":"Dear prospect, cut onboarding from weeks to days."}';
+    '{"format":"email","title":"Cut onboarding time","content":"Dear prospect, cut onboarding from weeks to days."}';
 
   it('reads a plain strict JSON reply with no fence', () => {
     renderReviewWithReply(PIECE_JSON);
@@ -1046,9 +1046,9 @@ describe('Panel — done (step 6)', () => {
           generate: GENERATED_PIECES,
           review: {
             decisions: [
-              { format: 'Email', title: 'Cut onboarding time', content: 'Hi...', approved: true },
+              { format: 'email', title: 'Cut onboarding time', content: 'Hi...', approved: true },
               {
-                format: 'One-pager',
+                format: 'one-pager',
                 title: 'ROI at a glance',
                 content: 'Track...',
                 approved: false,

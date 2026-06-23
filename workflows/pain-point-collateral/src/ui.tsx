@@ -625,14 +625,19 @@ function PainPointStep({
 // Step 4 — Format selection
 // -------------------------------------------------------------------------
 
-const COLLATERAL_FORMATS = [
-  'Email',
-  'One-pager',
-  'LinkedIn post',
-  'Cold outreach',
-  'Case study snippet',
-  'Executive summary',
-] as const;
+const COLLATERAL_FORMATS: { id: string; label: string }[] = [
+  { id: 'email', label: 'Email follow-up' },
+  { id: 'one-pager', label: 'One-pager' },
+  { id: 'linkedin-post', label: 'LinkedIn post' },
+  { id: 'linkedin-daily', label: 'Daily LinkedIn post' },
+  { id: 'twitter-post', label: 'Twitter post' },
+  { id: 'founder-pov-post', label: 'Founder POV post' },
+  { id: 'blog', label: 'Blog post' },
+  { id: 'case-study', label: 'Case study' },
+  { id: 'objection-handling', label: 'Objection handling' },
+  { id: 'customer-quotes', label: 'Customer quotes' },
+  { id: 'battlecard', label: 'Battlecard' },
+];
 
 const MAX_FORMATS = 3;
 
@@ -653,13 +658,13 @@ function FormatStep({
   const submitting = fmtSelectionPhase === 'in-flight';
   const disabled = !awaiting;
 
-  function toggle(fmt: string) {
+  function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(fmt)) {
-        next.delete(fmt);
+      if (next.has(id)) {
+        next.delete(id);
       } else if (next.size < MAX_FORMATS) {
-        next.add(fmt);
+        next.add(id);
       }
       return next;
     });
@@ -669,20 +674,20 @@ function FormatStep({
     <div className="space-y-3">
       <p className="text-[12px] text-text-3">Choose up to {MAX_FORMATS} collateral formats.</p>
       <ul className="space-y-2">
-        {COLLATERAL_FORMATS.map((fmt) => {
-          const checked = selected.has(fmt);
+        {COLLATERAL_FORMATS.map(({ id, label }) => {
+          const checked = selected.has(id);
           const atCap = selected.size >= MAX_FORMATS && !checked;
           return (
-            <li key={fmt}>
+            <li key={id}>
               <label className="flex cursor-pointer items-center gap-3 rounded-[8px] border border-border bg-bg px-3 py-2.5 transition-colors hover:border-orange has-[:checked]:border-orange has-[:checked]:bg-orange/5">
                 <input
                   type="checkbox"
                   disabled={disabled || atCap}
                   checked={checked}
-                  onChange={() => toggle(fmt)}
+                  onChange={() => toggle(id)}
                   className="h-4 w-4 accent-orange disabled:cursor-not-allowed"
                 />
-                <span className="text-[13px] font-medium text-text">{fmt}</span>
+                <span className="text-[13px] font-medium text-text">{label}</span>
               </label>
             </li>
           );
