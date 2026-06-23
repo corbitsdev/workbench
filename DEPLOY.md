@@ -361,26 +361,19 @@ to a provider row whose `baseURL` is stale. Inference reads `baseURL` from the
 provider the credential is bound to — not from the credential's own metadata —
 so a single stale provider row routes the right key to the wrong endpoint.
 
-Audit every `openai-compatible` provider, its stored `baseURL`, and the
-credentials bound to it:
+Use the **admin CLI** (`bun run admin:production` or `admin:staging`; see
+[`docs/ADMIN_CLI.md`](docs/ADMIN_CLI.md)) against the affected tenant (usually
+the **global** org tenant for Myra/Oat):
 
-```bash
-DATABASE_URL=<postgres connection string> \
-bun run apps/hub/bin/diagnose-providers.ts
-```
+1. **Seed tool credentials from env** — ensures tenant-owned LLM credentials match
+   your env keys and provider metadata.
+2. **Seed model catalog** — rebuilds `model_provider` rows (including `baseURL`
+   from credential metadata). The seeder does not patch an existing provider in
+   place; delete the stale catalog provider in admin-ui first if you need a clean
+   re-bind, then re-run the seed.
 
-Pass `--fix` to rewrite every `openai-compatible` provider's `baseURL` (and
-`model`) from `OPENAI_COMPATIBLE_BASE_URL` / `OPENAI_COMPATIBLE_MODEL`. This is
-the cross-tenant correction the per-tenant credential seed cannot make — an
-agent resolves its provider from its own tenant, so a stale row on any tenant
-breaks inference even when the global tenant is seeded correctly:
-
-```bash
-DATABASE_URL=<postgres connection string> \
-OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1 \
-OPENAI_COMPATIBLE_MODEL=gpt-4o \
-bun run apps/hub/bin/diagnose-providers.ts --fix
-```
+Inspect providers and credentials in **admin-ui** (Tenants → Providers /
+Credentials) when you need a cross-tenant audit the CLI does not surface.
 
 `baseURL` is resolved at session launch, so relaunch affected agents afterward
 (delete + reload, or the relaunch runbook above) to pick up the new endpoint.
@@ -388,19 +381,34 @@ bun run apps/hub/bin/diagnose-providers.ts --fix
 ### Reset a user's Myra (no admin-ui)
 
 When a user's personal agent (Myra) is wedged and admin-ui (Google auth) is
-unavailable, delete and re-provision it via the API. The delete tears down the
-sidecar session and drops the `memberAgentInstance` mapping, so the next
-`/api/v1/me` (a web app reload) re-provisions a fresh Myra and auto-relaunches
-it. Authenticate with the user's own `better-auth.session_token` (DevTools →
-Application → Cookies):
+unavailable, delete the instance via the hub API so the sidecar session is torn
+down and the `memberAgentInstance` mapping is removed. The next `/api/v1/me` (a
+web app reload) re-provisions a fresh Myra and auto-relaunches it.
+
+**Via admin CLI** (recommended): set the **user's** session cookie, not the
+superadmin account:
 
 ```bash
 HUB_URL=https://<hub domain> \
 SESSION_TOKEN=<__Secure-better-auth.session_token from the browser> \
-bun run apps/hub/bin/reset-myra.ts
+bun run admin:production
 ```
 
-Then reload the web app to bring the new Myra online.
+Select the user's tenant → **Agents** → **List agent instances** → note Myra's
+`instanceId` → **Delete an agent instance** (same tenant and id). Then reload the
+web app.
+
+**Via curl** (same auth):
+
+```bash
+# List instances (find Myra's instanceId in the response)
+curl -s "https://<hub domain>/api/v1/tenants/<tenantId>/agents/instances" \
+  -H "Cookie: __Secure-better-auth.session_token=<token>"
+
+curl -X DELETE \
+  "https://<hub domain>/api/v1/tenants/<tenantId>/agents/instances/<instanceId>" \
+  -H "Cookie: __Secure-better-auth.session_token=<token>"
+```
 
 ### Add a new agent definition
 
