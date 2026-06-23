@@ -60,7 +60,7 @@ describe('AGENT_CATALOG coverage', () => {
       new Set(['opencode-zen', 'anthropic-api'])
     );
     expect(new Set(AGENT_CATALOG.models.map((m) => m.canonicalName))).toEqual(
-      new Set(['deepseek-v4-flash', 'claude-opus-4-8', 'claude-sonnet-4-6'])
+      new Set(['deepseek-v4-flash', 'kimi-k2.6', 'claude-opus-4-8', 'claude-sonnet-4-6'])
     );
     const openai = AGENT_CATALOG.providers.find((p) => p.name === 'opencode-zen');
     expect(openai?.plugin).toBe('openai-compatible');

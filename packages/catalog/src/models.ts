@@ -21,6 +21,8 @@ const ALL_MODELS: CatalogModelSpec[] = [
   // opencode-zen / DeepSeek models
   { canonicalName: "deepseek-v4-flash" },
   { canonicalName: "deepseek-v4-pro" },
+  // opencode-zen / Moonshot models
+  { canonicalName: "kimi-k2.6" },
   // near-ai models
   { canonicalName: "near-ai/llama-3.1-70b-instruct" },
   { canonicalName: "near-ai/llama-3.3-70b-instruct" },
