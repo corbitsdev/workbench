@@ -113,8 +113,6 @@ export function SkillDetail() {
   const deleteMutation = useDeleteSkill();
   const restoreMutation = useRestoreSkillVersion();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [restoreError, setRestoreError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
 
@@ -131,26 +129,17 @@ export function SkillDetail() {
 
   const handleRestore = (sha: string) => {
     if (!id) return;
-    setRestoreError(null);
-    restoreMutation.mutate(
-      { assetId: id, sha, tenantId },
-      {
-        onError: (err) =>
-          setRestoreError(err instanceof Error ? err.message : 'Failed to restore version'),
-      }
-    );
+    restoreMutation.mutate({ assetId: id, sha, tenantId });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!id) return;
-    setDeleteError(null);
     deleteMutation
       .mutateAsync({ assetId: id, tenantId })
       .then(() => {
         navigate('/skills');
       })
-      .catch((err: unknown) => {
-        setDeleteError(err instanceof Error ? err.message : 'Failed to delete skill');
+      .catch(() => {
         setConfirmDelete(false);
       });
   };
@@ -179,7 +168,13 @@ export function SkillDetail() {
           </div>
         </div>
 
-        {deleteError && <p className="text-[12px] text-red-500">{deleteError}</p>}
+        {deleteMutation.error && (
+          <p className="text-[12px] text-red-500">
+            {deleteMutation.error instanceof Error
+              ? deleteMutation.error.message
+              : 'Failed to delete skill'}
+          </p>
+        )}
         {skill && !confirmDelete && (
           <button
             type="button"
@@ -277,8 +272,12 @@ export function SkillDetail() {
                     Show older versions ({totalVersions - versions.length} more)
                   </button>
                 )}
-                {restoreError && (
-                  <p className="px-4 py-2 text-[12px] text-red-500">{restoreError}</p>
+                {restoreMutation.error && (
+                  <p className="px-4 py-2 text-[12px] text-red-500">
+                    {restoreMutation.error instanceof Error
+                      ? restoreMutation.error.message
+                      : 'Failed to restore version'}
+                  </p>
                 )}
               </section>
             )}

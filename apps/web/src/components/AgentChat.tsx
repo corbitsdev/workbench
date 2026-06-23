@@ -77,9 +77,6 @@ export function AgentChat({
   const liveTextRef = useRef<LiveTextTracker | null>(null);
   const reasoningRef = useRef<ReasoningTracker | null>(null);
   const imageTrackerRef = useRef<ImageTracker | null>(null);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryCountRef = useRef(0);
-
   const queryClient = useQueryClient();
 
   const { data: ratingsData } = useQuery({
@@ -111,6 +108,7 @@ export function AgentChat({
     },
   });
 
+
   const { mutate: launch, status: launchStatus } = useMutation({
     mutationFn: async () => {
       const result = await launchInstanceSession(instanceId);
@@ -119,23 +117,20 @@ export function AgentChat({
       }
       return result;
     },
+    retry: (failureCount, error) => {
+      const launchError = error instanceof Error ? error.message : String(error);
+      const classified = classifyLaunchState(instanceStatus, launchError);
+      return (
+        (classified.kind === 'connecting' || classified.kind === 'deploying') &&
+        failureCount < MAX_TRANSIENT_RETRIES
+      );
+    },
+    retryDelay: retryDelayMs,
     onError: (err) => {
       const launchError = err instanceof Error ? err.message : String(err);
       const classified = classifyLaunchState(instanceStatus, launchError);
       if (classified.kind === 'connecting' || classified.kind === 'deploying') {
-        // Transient: the sidecar is likely still coming up. Show a waiting
-        // notice and re-attempt the launch on an interval until it succeeds or
-        // we exhaust the retry budget.
         setSessionState({ phase: 'pending', reason: classified.kind });
-        if (retryCountRef.current < MAX_TRANSIENT_RETRIES) {
-          retryCountRef.current += 1;
-          retryTimerRef.current = setTimeout(() => launch(), retryDelayMs);
-        } else {
-          setSessionState({
-            phase: 'error',
-            message: launchError,
-          });
-        }
       } else if (classified.kind === 'missing-config') {
         setSessionState({ phase: 'missing-config', message: classified.message });
       } else {
@@ -148,14 +143,9 @@ export function AgentChat({
   // Skip launch only when the instance is not launchable (stopped/provisioning)
   // — show the passive deploying notice instead.
   useEffect(() => {
-    retryCountRef.current = 0;
-    if (retryTimerRef.current !== null) clearTimeout(retryTimerRef.current);
     if (!isLaunchable) return;
     setSessionState({ phase: 'loading' });
     launch();
-    return () => {
-      if (retryTimerRef.current !== null) clearTimeout(retryTimerRef.current);
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instanceId, isLaunchable]);
 
@@ -312,7 +302,6 @@ export function AgentChat({
             <button
               className="underline"
               onClick={() => {
-                retryCountRef.current = 0;
                 setSessionState({ phase: 'loading' });
                 launch();
               }}

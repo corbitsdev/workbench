@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { approveRequest, listApprovals, rejectRequest } from '../lib/approvals-api';
 import type { Approval, ApproveScope } from '../lib/approvals-api';
 
@@ -20,89 +21,48 @@ export type ReviewGateProps = {
 
 type RequestState = 'idle' | 'approving' | 'rejecting';
 
-type ApprovalItemState = {
-  approval: Approval;
-  /** Per-item in-flight state. */
-  requestState: RequestState;
-  /** Error from the most recent approve/reject attempt. */
-  error: string | null;
-};
-
-function buildItemState(approval: Approval): ApprovalItemState {
-  return { approval, requestState: 'idle', error: null };
-}
-
 export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
-  const [items, setItems] = useState<ApprovalItemState[]>([]);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const stopPolling = useCallback(() => {
-    if (pollRef.current !== null) {
-      clearTimeout(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
-
-  const scheduleNextPoll = useCallback(
-    (hasPending: boolean) => {
-      stopPolling();
-      pollRef.current = setTimeout(() => void poll(), hasPending ? POLL_INTERVAL_MS : POLL_IDLE_MS);
-    },
-    // poll is defined below; we break the cycle via a ref
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stopPolling]
-  );
-
-  const poll = useCallback(async () => {
-    try {
+  const { data: approvals = [], error: fetchError } = useQuery({
+    queryKey: ['approvals', tenantId, sessionId],
+    queryFn: async () => {
       const all = await listApprovals(tenantId);
-      const filtered = sessionId ? all.filter((a) => a.sessionId === sessionId) : all;
+      return sessionId ? all.filter((a) => a.sessionId === sessionId) : all;
+    },
+    refetchInterval: (query) => {
+      const data = query.state.data ?? [];
+      return data.some((a) => a.status === 'pending') ? POLL_INTERVAL_MS : POLL_IDLE_MS;
+    },
+  });
 
-      setFetchError(null);
-      setItems((prev) => {
-        // Merge: preserve per-item request state for items already in flight.
-        const prevMap = new Map(prev.map((i) => [i.approval.id, i]));
-        return filtered.map((approval) => {
-          const existing = prevMap.get(approval.id);
-          // If the item was in flight but the server now shows it resolved,
-          // adopt the resolved state but clear the in-flight flag.
-          if (existing && existing.requestState !== 'idle') {
-            if (approval.status !== 'pending') {
-              return { ...existing, approval, requestState: 'idle' as RequestState };
-            }
-            return { ...existing, approval };
-          }
-          return existing ? { ...existing, approval } : buildItemState(approval);
-        });
-      });
+  const [itemStates, setItemStates] = useState<
+    Map<string, { requestState: RequestState; error: string | null }>
+  >(new Map());
 
-      const hasPending = filtered.some((a) => a.status === 'pending');
-      scheduleNextPoll(hasPending);
-    } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'Failed to load approval requests.');
-      scheduleNextPoll(false);
-    }
-  }, [tenantId, sessionId, scheduleNextPoll]);
-
-  useEffect(() => {
-    void poll();
-    return stopPolling;
-    // Run once on mount and whenever tenantId/sessionId change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId, sessionId]);
-
-  function setItemState(id: string, patch: Partial<ApprovalItemState>) {
-    setItems((prev) => prev.map((i) => (i.approval.id === id ? { ...i, ...patch } : i)));
+  function getItemState(id: string) {
+    return itemStates.get(id) ?? { requestState: 'idle' as RequestState, error: null };
   }
 
+  function patchItemState(
+    id: string,
+    patch: { requestState?: RequestState; error?: string | null }
+  ) {
+    setItemStates((prev) => {
+      const current = prev.get(id) ?? { requestState: 'idle' as RequestState, error: null };
+      const next = new Map(prev);
+      next.set(id, { ...current, ...patch });
+      return next;
+    });
+  }
+
+  if (approvals.length === 0 && !fetchError) return null;
+
   async function handleApprove(id: string, scope: ApproveScope) {
-    setItemState(id, { requestState: 'approving', error: null });
+    patchItemState(id, { requestState: 'approving', error: null });
     try {
-      const updated = await approveRequest(tenantId, id, scope);
-      setItemState(id, { approval: updated, requestState: 'idle' });
+      await approveRequest(tenantId, id, scope);
+      patchItemState(id, { requestState: 'idle' });
     } catch (err) {
-      setItemState(id, {
+      patchItemState(id, {
         requestState: 'idle',
         error: err instanceof Error ? err.message : 'Approval failed.',
       });
@@ -110,29 +70,27 @@ export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
   }
 
   async function handleReject(id: string) {
-    setItemState(id, { requestState: 'rejecting', error: null });
+    patchItemState(id, { requestState: 'rejecting', error: null });
     try {
-      const updated = await rejectRequest(tenantId, id);
-      setItemState(id, { approval: updated, requestState: 'idle' });
+      await rejectRequest(tenantId, id);
+      patchItemState(id, { requestState: 'idle' });
     } catch (err) {
-      setItemState(id, {
+      patchItemState(id, {
         requestState: 'idle',
         error: err instanceof Error ? err.message : 'Rejection failed.',
       });
     }
   }
 
-  // Nothing to show — no items and no fetch error.
-  if (items.length === 0 && fetchError === null) return null;
-
   return (
     <div className="flex flex-col gap-2" data-testid="review-gate">
       {fetchError !== null && (
         <p className="rounded-[8px] bg-red-500/10 px-3 py-2 text-[13px] text-red-400">
-          {fetchError}
+          {fetchError instanceof Error ? fetchError.message : 'Failed to load approval requests.'}
         </p>
       )}
-      {items.map(({ approval, requestState, error }) => {
+      {approvals.map((approval: Approval) => {
+        const { requestState, error } = getItemState(approval.id);
         const isPending = approval.status === 'pending';
         const isApproving = requestState === 'approving';
         const isRejecting = requestState === 'rejecting';

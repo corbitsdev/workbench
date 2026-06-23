@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, type Transition } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useArtifacts } from '@workbench/client/react';
 import { clientOptions } from '../lib/client-options';
@@ -31,53 +32,39 @@ function useProvisioningGuard(): {
   state: ProvisioningState;
   retry: () => void;
 } {
-  const [state, setState] = useState<ProvisioningState>({ status: 'loading' });
-  const [attempt, setAttempt] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const retryCountRef = useRef(0);
+  const query = useQuery({
+    queryKey: ['provisioning-guard'],
+    queryFn: getMe,
+    refetchInterval: 3000,
+    retry: ME_MAX_RETRIES,
+  });
 
-  useEffect(() => {
-    retryCountRef.current = 0;
+  const retry = useCallback(() => {
+    void query.refetch();
+  }, [query]);
 
-    function clear() {
-      if (intervalRef.current !== null) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
+  if (query.isError) {
+    return {
+      state: {
+        status: 'error',
+        message: 'Could not reach the server. Check your connection and try again.',
+      },
+      retry,
+    };
+  }
 
-    async function check() {
-      try {
-        const me = await getMe();
-        setState(
-          me.provisioned && me.paInstanceId
-            ? { status: 'ready' }
-            : { status: 'needs-onboarding', me }
-        );
-        clear();
-      } catch {
-        retryCountRef.current += 1;
-        if (retryCountRef.current >= ME_MAX_RETRIES) {
-          clear();
-          setState({
-            status: 'error',
-            message: 'Could not reach the server. Check your connection and try again.',
-          });
-        }
-      }
-    }
+  if (query.isSuccess) {
+    const me = query.data;
+    return {
+      state:
+        me.provisioned && me.paInstanceId
+          ? { status: 'ready' }
+          : { status: 'needs-onboarding', me },
+      retry,
+    };
+  }
 
-    void check();
-    intervalRef.current = setInterval(() => void check(), 3000);
-    return clear;
-  }, [attempt]);
-
-  const retry = () => {
-    setState({ status: 'loading' });
-    setAttempt((n) => n + 1);
-  };
-
-  return { state, retry };
+  return { state: { status: 'loading' }, retry };
 }
 
 function OnboardingScreen({

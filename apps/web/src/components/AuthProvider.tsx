@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from 'react';
+import { useEffect, useCallback, createContext, useContext, type ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { authClient } from '../lib/auth-client';
 
 type Session =
@@ -28,13 +29,21 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session>({ status: 'loading' });
+  const queryClient = useQueryClient();
 
-  const checkSession = useCallback(async () => {
-    try {
+  const { data, isLoading } = useQuery({
+    queryKey: ['auth-session'],
+    queryFn: async () => {
       const { data } = await authClient.getSession();
-      if (data?.user) {
-        setSession({
+      return data ?? null;
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  const session: Session = isLoading
+    ? { status: 'loading' }
+    : data?.user
+      ? {
           status: 'authenticated',
           user: {
             id: data.user.id,
@@ -42,32 +51,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name: data.user.name,
             image: data.user.image,
           },
-        });
-      } else {
-        setSession({ status: 'unauthenticated' });
-      }
-    } catch {
-      setSession({ status: 'unauthenticated' });
-    }
-  }, []);
+        }
+      : { status: 'unauthenticated' };
 
   useEffect(() => {
-    checkSession();
     function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') checkSession();
+      if (document.visibilityState === 'visible') {
+        void queryClient.invalidateQueries({ queryKey: ['auth-session'] });
+      }
     }
-    window.addEventListener('focus', checkSession);
+    function handleFocus() {
+      void queryClient.invalidateQueries({ queryKey: ['auth-session'] });
+    }
+    window.addEventListener('focus', handleFocus);
     window.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
-      window.removeEventListener('focus', checkSession);
+      window.removeEventListener('focus', handleFocus);
       window.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [checkSession]);
+  }, [queryClient]);
 
   const handleSignOut = useCallback(async () => {
     await authClient.signOut();
-    setSession({ status: 'unauthenticated' });
-  }, []);
+    queryClient.setQueryData(['auth-session'], null);
+  }, [queryClient]);
 
   return (
     <AuthContext.Provider value={{ session, signOut: handleSignOut }}>

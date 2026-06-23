@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import {
   SettingsPage,
   type SettingsFieldValue,
@@ -7,8 +8,6 @@ import {
 } from '@workbench/settings';
 import { isTheme, useTheme, THEMES, THEME_LABELS } from '@workbench/ui';
 import { api } from '../lib/api';
-
-type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
   {
@@ -58,8 +57,15 @@ const INITIAL_VALUES: SettingsValues = {
 export default function Settings() {
   const { theme, setTheme } = useTheme();
   const [values, setValues] = useState<SettingsValues>({ ...INITIAL_VALUES });
-  const [saveState, setSaveState] = useState<SaveState>('idle');
   const [savedDisplayName, setSavedDisplayName] = useState<string>('');
+
+  const saveMutation = useMutation({
+    mutationFn: async (name: string) => {
+      await api('PATCH', '/me/profile', { displayName: name });
+      return name;
+    },
+    onSuccess: (name) => setSavedDisplayName(name),
+  });
 
   const handleChange = (key: string, value: SettingsFieldValue) => {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -67,24 +73,17 @@ export default function Settings() {
       setTheme(value);
     }
     if (key === 'displayName') {
-      setSaveState('idle');
+      saveMutation.reset();
     }
   };
 
   const displayNameDirty =
     typeof values.displayName === 'string' && values.displayName !== savedDisplayName;
 
-  const handleSaveDisplayName = async () => {
+  const handleSaveDisplayName = () => {
     const name = typeof values.displayName === 'string' ? values.displayName.trim() : '';
     if (!name) return;
-    setSaveState('saving');
-    try {
-      await api('PATCH', '/me/profile', { displayName: name });
-      setSavedDisplayName(name);
-      setSaveState('saved');
-    } catch {
-      setSaveState('error');
-    }
+    saveMutation.mutate(name);
   };
 
   return (
@@ -101,18 +100,18 @@ export default function Settings() {
             <button
               type="button"
               onClick={handleSaveDisplayName}
-              disabled={saveState === 'saving'}
+              disabled={saveMutation.isPending}
               className="rounded-lg bg-orange px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-deep disabled:opacity-50"
             >
-              {saveState === 'saving' ? 'Saving…' : 'Save display name'}
+              {saveMutation.isPending ? 'Saving…' : 'Save display name'}
             </button>
-            {saveState === 'error' && (
+            {saveMutation.isError && (
               <span className="text-sm text-red-500">Failed to save. Please try again.</span>
             )}
           </div>
         </div>
       )}
-      {saveState === 'saved' && (
+      {saveMutation.isSuccess && (
         <div className="mx-auto w-full max-w-2xl px-4 pb-4">
           <p className="text-sm text-green-600">Display name saved.</p>
         </div>
