@@ -28,10 +28,7 @@ export const LARRY_TOOL_PACKAGES: ToolPackagePin[] = [
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
-export const LARRY_GRANT_REQUIREMENTS: GrantRequirementType[] = [
-  { source: 'invoker', resource: 'tool:mail_search', action: 'invoke' },
-  { source: 'invoker', resource: 'tool:mail_reply', action: 'invoke' },
-];
+export const LARRY_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
 
 export const LARRY_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
@@ -63,8 +60,6 @@ export const LARRY_CAPABILITIES = {
     'scrapecreators_instagram',
     'scrapecreators_threads',
     'scrapecreators_pinterest',
-    'mail_search',
-    'mail_reply',
   ]),
 } as const;
 

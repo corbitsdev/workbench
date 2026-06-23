@@ -7,10 +7,7 @@ import { LLM_CREDENTIAL_NAME } from '../constants';
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
-export const LINCOLN_GRANT_REQUIREMENTS: GrantRequirementType[] = [
-  { source: 'invoker', resource: 'tool:mail_search', action: 'invoke' },
-  { source: 'invoker', resource: 'tool:mail_reply', action: 'invoke' },
-];
+export const LINCOLN_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
 
 export const LINCOLN_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
@@ -30,8 +27,6 @@ export const LINCOLN_CAPABILITIES = {
     'artifact_link_file',
     'firecrawl_scrape',
     'firecrawl_search',
-    'mail_search',
-    'mail_reply',
   ]),
 } as const;
 

@@ -39,11 +39,6 @@ describe('LARRY_CAPABILITIES tools', () => {
     }
   });
 
-  it('includes mail_search and mail_reply for dispatch replies', () => {
-    expect(LARRY_CAPABILITIES.tools).toContain('mail_search');
-    expect(LARRY_CAPABILITIES.tools).toContain('mail_reply');
-  });
-
   it('requiredTools is a subset of defaultTools', () => {
     const defaultSet = new Set(LARRY_DEPLOY_DESCRIPTOR.defaultTools);
     for (const tool of LARRY_DEPLOY_DESCRIPTOR.requiredTools) {

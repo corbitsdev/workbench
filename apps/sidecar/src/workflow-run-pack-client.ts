@@ -58,6 +58,7 @@ async function buildFullChainPack(
   if (result.packfile === undefined) {
     throw new Error(`packObjects returned no packfile for ref "${ref}" (${commitSha})`);
   }
+  logger.info`workflow-run pack built: ref=${ref} commit=${commitSha} objects=${seen.size} bytes=${result.packfile.byteLength}`;
   return { pack: result.packfile, commitSha };
 }
 
@@ -90,6 +91,7 @@ export function createWorkflowRunPackClient(
         );
       }
       const { pack, commitSha } = await buildFullChainPack(substrate.getRepoDir(repoId), ref);
+      logger.info`workflow-run pack push start: repoId=${repoId.id} agent=${agentAddress} ref=${ref} commit=${commitSha} bytes=${pack.byteLength}`;
       await hubLink.pushWorkflowRunPack({
         agentAddress,
         repoId,
@@ -97,6 +99,7 @@ export function createWorkflowRunPackClient(
         ref,
         commitSha,
       });
+      logger.info`workflow-run pack push ack: repoId=${repoId.id} commit=${commitSha}`;
     },
   };
 }

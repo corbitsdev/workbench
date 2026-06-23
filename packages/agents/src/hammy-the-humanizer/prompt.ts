@@ -1,4 +1,4 @@
-import { buildSystemPrompt, SPECIALIST_MAIL_SECTION, type PromptFormat } from '../prompt-builder';
+import { buildSystemPrompt, type PromptFormat } from '../prompt-builder';
 import { HAMMY_SKILL_CONTENT } from './skill';
 
 export function buildHammySystemPrompt(name: string, format: PromptFormat): string {
@@ -12,7 +12,6 @@ export function buildHammySystemPrompt(name: string, format: PromptFormat): stri
         tag: 'skill',
         content: HAMMY_SKILL_CONTENT,
       },
-      SPECIALIST_MAIL_SECTION,
     ],
     format
   );

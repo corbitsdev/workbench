@@ -45,8 +45,6 @@ ${LARRY_SKILL_CONTENT}
       'scrapecreators_instagram',
       'scrapecreators_threads',
       'scrapecreators_pinterest',
-      'mail_search',
-      'mail_reply',
     ]).sort();
 
     expect(myraWithLarrySkillTools).toEqual(larryTools);

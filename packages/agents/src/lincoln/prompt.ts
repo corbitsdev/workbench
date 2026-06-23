@@ -1,6 +1,5 @@
 import {
   LINKEDIN_WRITING_SECTIONS,
-  SPECIALIST_MAIL_SECTION,
   buildStructuredSystemPrompt,
   structuredSection,
   bulletList,
@@ -41,6 +40,5 @@ export function buildLincolnSystemPrompt(name: string): string {
         'If asked for multiple variants, write each as a separate file with a numbered suffix.',
       ])
     ),
-    structuredSection(SPECIALIST_MAIL_SECTION.tag, SPECIALIST_MAIL_SECTION.content),
   ]);
 }

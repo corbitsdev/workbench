@@ -8,10 +8,7 @@ export const FANNIE_DEPLOY_PROMPT = FABLE_BASE_PROMPT + WORKBENCH_AGENT_GUIDANCE
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
-export const FANNIE_GRANT_REQUIREMENTS: GrantRequirementType[] = [
-  { source: 'invoker', resource: 'tool:mail_search', action: 'invoke' },
-  { source: 'invoker', resource: 'tool:mail_reply', action: 'invoke' },
-];
+export const FANNIE_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
 
 export const FANNIE_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
@@ -59,8 +56,6 @@ export const FANNIE_CAPABILITIES = {
     'grep',
     'write_artifact',
     'artifact_create',
-    'mail_search',
-    'mail_reply',
     'bluesky_search',
     'scrapecreators_tiktok',
     'scrapecreators_instagram',

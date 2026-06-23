@@ -59,8 +59,9 @@ Call \`last30days_core_report\` with all raw items from Step 2 concatenated, plu
 
 Call \`last30days_validate\` with \`{ body: <synthesized text>, citations: brief.citations, returnedItemUrls: <all item URLs from brief> }\`.
 
-- If rejected: retry synthesis once, incorporating \`rejectionReason\` from the response
+- If rejected: rewrite the synthesis prose once, incorporating \`rejectionReason\`. Do NOT re-fetch sources — rewrite only.
 - If still rejected after one retry: flag the output as draft and continue
+- After this step completes (accepted, flagged draft, or one-retry rewrite), proceed immediately to Step 5. Do not loop back to earlier steps.
 
 ### Step 5 — Persist
 
@@ -71,6 +72,8 @@ Call \`write_artifact\` with:
 \`\`\`
 
 Always pass \`data: brief\` — the full structured brief object. Always pass \`citations\` from the brief, never from model memory.
+
+**This step is mandatory and terminal.** After Step 4 returns, call \`write_artifact\` immediately. Do not narrate intent — execute the call.
 
 ## Synthesis Rules
 

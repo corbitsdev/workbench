@@ -7,20 +7,9 @@ type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
 export function buildPersonalAgentGrantRequirements(
-  workbenchTenantId: string
+  _workbenchTenantId: string
 ): GrantRequirementType[] {
-  return [
-    {
-      source: 'invoker',
-      resource: 'tool:mail_send',
-      action: 'invoke',
-    },
-    {
-      source: 'invoker',
-      resource: `tenant:${workbenchTenantId}`,
-      action: 'deliver',
-    },
-  ];
+  return [];
 }
 
 export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
@@ -50,8 +39,6 @@ export const PERSONAL_AGENT_DEPLOY_PROMPT: string = buildPersonalAgentSystemProm
  *
  * Tool grants (`tool:<name>/invoke`) are synthesized from this list at launch
  * (persistInstanceToolGrants), so listing a tool here is what authorizes it.
- * Mail tools are provided by the sidecar harness — `mail_send` is also covered
- * by the invoker delegation grant in `buildPersonalAgentGrantRequirements`.
  */
 export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   'read_file',
@@ -65,8 +52,4 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   'artifact_list',
   'list_agents',
   'list_principals',
-  'mail_send',
-  'mail_reply',
-  'mail_search',
-  'mail_read',
 ]);

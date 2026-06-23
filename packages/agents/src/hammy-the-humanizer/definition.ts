@@ -7,10 +7,7 @@ import { LLM_CREDENTIAL_NAME } from '../constants';
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
-export const HAMMY_GRANT_REQUIREMENTS: GrantRequirementType[] = [
-  { source: 'invoker', resource: 'tool:mail_search', action: 'invoke' },
-  { source: 'invoker', resource: 'tool:mail_reply', action: 'invoke' },
-];
+export const HAMMY_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
 
 export const HAMMY_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
@@ -30,8 +27,6 @@ export const HAMMY_CAPABILITIES = {
     'write_file',
     'edit_file',
     'artifact_link_file',
-    'mail_search',
-    'mail_reply',
   ]),
 } as const;
 

@@ -6,10 +6,7 @@ import { LLM_CREDENTIAL_NAME } from '../constants';
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
-export const LOOP_GRANT_REQUIREMENTS: GrantRequirementType[] = [
-  { source: 'invoker', resource: 'tool:mail_search', action: 'invoke' },
-  { source: 'invoker', resource: 'tool:mail_reply', action: 'invoke' },
-];
+export const LOOP_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
 
 export const LOOP_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
@@ -31,6 +28,6 @@ export const LOOP_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   modelConfig: LOOP_MODEL_CONFIG,
   systemPrompt: LOOP_DEPLOY_PROMPT,
   credentialProviderNames: ['openai-compatible'],
-  defaultTools: ['mail_search', 'mail_reply'],
-  requiredTools: ['mail_search', 'mail_reply'],
+  defaultTools: [],
+  requiredTools: [],
 };

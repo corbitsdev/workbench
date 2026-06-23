@@ -26,9 +26,12 @@ describe('PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)', () => {
     expect(PERSONAL_AGENT_BASE_TOOLS).toContain('@workbench/tools-artifact/artifact:artifact_list');
   });
 
-  it('leaves local runner tools (mail/posix) unprefixed', () => {
-    expect(PERSONAL_AGENT_BASE_TOOLS).toContain('mail_send');
+  it('leaves local runner tools (posix) unprefixed', () => {
     expect(PERSONAL_AGENT_BASE_TOOLS).toContain('read_file');
+    expect(PERSONAL_AGENT_BASE_TOOLS).not.toContain('mail_send');
+    expect(PERSONAL_AGENT_BASE_TOOLS).not.toContain('mail_reply');
+    expect(PERSONAL_AGENT_BASE_TOOLS).not.toContain('mail_search');
+    expect(PERSONAL_AGENT_BASE_TOOLS).not.toContain('mail_read');
   });
 });
 
