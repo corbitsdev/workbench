@@ -200,3 +200,35 @@ export async function deployAgentFromTemplate(
     templateKey,
   });
 }
+
+const AnalyticsSummarySchema = type({
+  tenantId: 'string',
+  turnCount: 'number',
+  failedTurnCount: 'number',
+  toolCallCount: 'number',
+  toolErrorCount: 'number',
+  inputTokens: 'number',
+  outputTokens: 'number',
+  cacheReadTokens: 'number',
+  cacheWriteTokens: 'number',
+  thinkingTokens: 'number',
+});
+
+export type AnalyticsSummary = typeof AnalyticsSummarySchema.infer;
+
+export async function getAnalyticsSummary(
+  tenantId: string,
+  opts?: { startDate?: string; endDate?: string }
+): Promise<AnalyticsSummary> {
+  const params = new URLSearchParams();
+  if (opts?.startDate) params.set('startDate', opts.startDate);
+  if (opts?.endDate) params.set('endDate', opts.endDate);
+  const qs = params.toString();
+  const path = `tenants/${encodeURIComponent(tenantId)}/analytics/summary${qs ? `?${qs}` : ''}`;
+  const raw = await hubFetch<unknown>('GET', path);
+  const result = AnalyticsSummarySchema(raw);
+  if (result instanceof type.errors) {
+    throw new Error(`Invalid analytics summary response: ${result.summary}`);
+  }
+  return result;
+}
