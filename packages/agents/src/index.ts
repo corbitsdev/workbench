@@ -119,9 +119,6 @@ export {
   type ModelPlugin,
 } from './catalog';
 
-// Friendly tool-call summaries for the chat narrative
-export { friendlyToolSummary, toolOperationKey } from './friendly-tool-summary';
-
 // Shared adapter
 export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
