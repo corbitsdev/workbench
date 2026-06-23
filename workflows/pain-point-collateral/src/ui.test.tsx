@@ -123,6 +123,27 @@ describe('Panel — transcript selection (step 1)', () => {
     expect(onSignal.mock.calls[0]).toEqual(['note-selection', { noteId: 'note_1' }]);
   });
 
+  it('marks only the clicked note as opening while selection is in-flight', async () => {
+    const onSignal = mock((_name: string, _payload?: unknown) => {});
+    const props = {
+      deploymentId: 'dep_1',
+      connected: true,
+      signalPending: false,
+      stepOutputs: { intake: NOTE_LIST },
+      onSignal,
+      onClose: noop,
+    };
+    const { rerender } = render(
+      <Panel {...props} state={makeState({ intake: 'completed', select: 'awaiting-signal' })} />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /Acme discovery call/ }));
+    rerender(<Panel {...props} state={makeState({ intake: 'completed', select: 'in-flight' })} />);
+
+    screen.getByRole('button', { name: /Acme discovery call.*Opening/s });
+    screen.getByRole('button', { name: /Beta renewal.*Select/s });
+  });
+
   it('disables note buttons before the select step reaches awaiting-signal', async () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(

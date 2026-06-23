@@ -375,6 +375,7 @@ function TranscriptStep({
   selectPhase: StepPhase | undefined;
   onSelect: (noteId: string) => void;
 }) {
+  const [openingNoteId, setOpeningNoteId] = useState<string | null>(null);
   const result = parseNoteList(stepOutputs.intake);
 
   if (result.status === 'pending') {
@@ -413,6 +414,7 @@ function TranscriptStep({
                 disabled={!selectable}
                 onClick={() => {
                   if (!selectable) return;
+                  setOpeningNoteId(note.id);
                   onSelect(note.id);
                 }}
                 className="group w-full rounded-[12px] border border-border bg-bg px-4 py-3 text-left shadow-sm transition-colors enabled:hover:border-orange enabled:hover:bg-orange/5 disabled:cursor-not-allowed disabled:opacity-60"
@@ -429,7 +431,7 @@ function TranscriptStep({
                     ) : null}
                   </span>
                   <span className="shrink-0 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-text-3 group-enabled:group-hover:border-orange/50 group-enabled:group-hover:text-orange">
-                    {selecting ? 'Opening…' : 'Select'}
+                    {selecting && openingNoteId === note.id ? 'Opening…' : 'Select'}
                   </span>
                 </span>
               </button>

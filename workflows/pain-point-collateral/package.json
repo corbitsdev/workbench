@@ -25,9 +25,6 @@
     "arktype": "catalog:",
     "react": "^19.0.0"
   },
-  "peerDependencies": {
-    "react": "*"
-  },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.9.0",
     "@testing-library/react": "^16.3.2",
@@ -35,5 +32,8 @@
     "@types/bun": "latest",
     "@types/react": "^19.0.0",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "*"
   }
 }
