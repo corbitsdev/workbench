@@ -49,6 +49,7 @@ COPY packages/ui/package.json packages/ui/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 COPY workflows/ab-compare/package.json workflows/ab-compare/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
+COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
 COPY workflows/seo-enrichment-from-image/package.json workflows/seo-enrichment-from-image/

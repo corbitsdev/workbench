@@ -91,18 +91,6 @@ export {
   HAMMY_CAPABILITIES,
 } from './hammy-the-humanizer/definition';
 
-// Larry — last30days research
-export { buildLarrySystemPrompt } from './larry/prompt';
-export { LARRY_SKILL_CONTENT } from './larry/skill';
-export {
-  LARRY_GRANT_REQUIREMENTS,
-  LARRY_CREDENTIAL_REQUIREMENTS,
-  LARRY_DEPLOY_PROMPT,
-  LARRY_CAPABILITIES,
-  LARRY_DEPLOY_DESCRIPTOR,
-  LARRY_TOOL_PACKAGES,
-} from './larry/definition';
-
 // Agent templates registry
 export { AGENT_TEMPLATES, type AgentTemplate } from './templates';
 

@@ -12,14 +12,13 @@ describe('AGENT_TEMPLATES', () => {
     'xai',
   ]);
 
-  it('contains all ten templates', () => {
+  it('contains all seeded templates', () => {
     const keys = AGENT_TEMPLATES.map((t) => t.key).sort();
     expect(keys).toEqual([
       'fannie',
       'freddie',
       'freddy',
       'hammy',
-      'larry',
       'lincoln',
       'loop',
       'myra',

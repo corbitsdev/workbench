@@ -1,0 +1,22 @@
+{
+  "name": "@workbench/workflow-last30days-research",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --isolate",
+    "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text"
+  },
+  "dependencies": {
+    "@intx/workflow": "workspace:*",
+    "@workbench/agents": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "catalog:"
+  }
+}
