@@ -1,10 +1,10 @@
 /* eslint-disable no-console */
 
-import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { AGENT_TEMPLATES } from "@workbench/agents";
+import { spawn } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { AGENT_TEMPLATES } from '@workbench/agents';
 
 // "Local actions" — operator tasks the spec-driven HTTP menu can't express
 // because they run locally rather than as a single hub request: bootstrap
@@ -39,86 +39,86 @@ export interface LocalAction {
 const BIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = dirname(dirname(dirname(BIN_DIR)));
 
-export const SETUP_GROUP = "Local actions (build, seed)";
-export const WORKFLOWS_GROUP = "Workflows";
+export const SETUP_GROUP = 'Local actions (build, seed)';
+export const WORKFLOWS_GROUP = 'Workflows';
 
 export const LOCAL_ACTIONS: LocalAction[] = [
   {
-    label: "Seed superadmin (bootstrap)",
+    label: 'Seed superadmin (bootstrap)',
     group: SETUP_GROUP,
-    script: "seed.ts",
+    script: 'seed.ts',
     bootstrap: true,
   },
   {
-    label: "Seed tool credentials from env",
+    label: 'Seed tool credentials from env',
     group: SETUP_GROUP,
-    script: "seed-credentials.ts",
+    script: 'seed-credentials.ts',
     tenantAware: true,
   },
   {
-    label: "Seed model catalog (providers, models, offerings)",
+    label: 'Seed model catalog (providers, models, offerings)',
     group: SETUP_GROUP,
-    script: "seed-catalog.ts",
+    script: 'seed-catalog.ts',
     tenantAware: true,
   },
   {
-    label: "Add LLM credential",
+    label: 'Add LLM credential',
     group: SETUP_GROUP,
-    script: "add-llm-credential.ts",
+    script: 'add-llm-credential.ts',
     tenantAware: true,
   },
   {
-    label: "Delete agent instances in bulk (cleanup)",
+    label: 'Delete agent instances in bulk (cleanup)',
     group: SETUP_GROUP,
-    script: "cleanup-instances.ts",
+    script: 'cleanup-instances.ts',
     tenantAware: true,
   },
   {
-    label: "Build tool packages",
+    label: 'Build tool packages',
     group: SETUP_GROUP,
-    script: "build-tool-packages.ts",
+    script: 'build-tool-packages.ts',
   },
   {
-    label: "Publish tool packages",
+    label: 'Publish tool packages',
     group: SETUP_GROUP,
-    script: "publish-tool-packages.ts",
+    script: 'publish-tool-packages.ts',
     get baseArgs() {
-      return ["--from", join(REPO_ROOT, "dist/tool-packages")];
+      return ['--from', join(REPO_ROOT, 'dist/tool-packages')];
     },
     tenantAware: true,
   },
   {
-    label: "Push (deploy) a workflow",
+    label: 'Push (deploy) a workflow',
     group: WORKFLOWS_GROUP,
-    script: "deploy-workflow.ts",
+    script: 'deploy-workflow.ts',
     tenantAware: true,
     choices: {
-      text: "Workflow",
-      flag: "--kind",
+      text: 'Workflow',
+      flag: '--kind',
       discover: discoverWorkflowKinds,
     },
   },
   {
-    label: "Deploy an agent definition",
+    label: 'Deploy an agent definition',
     group: WORKFLOWS_GROUP,
-    script: "deploy-agent.ts",
+    script: 'deploy-agent.ts',
     tenantAware: true,
     choices: {
-      text: "Agent template",
-      flag: "--template",
+      text: 'Agent template',
+      flag: '--template',
       discover: discoverAgentTemplates,
     },
   },
   {
-    label: "Purge all credentials + providers from a tenant",
+    label: 'Purge all credentials + providers from a tenant',
     group: SETUP_GROUP,
-    script: "purge-credentials.ts",
+    script: 'purge-credentials.ts',
     tenantAware: true,
   },
   {
-    label: "Delete a tenant (IRREVERSIBLE — requires DATABASE_URL)",
+    label: 'Delete a tenant (IRREVERSIBLE — requires DATABASE_URL)',
     group: SETUP_GROUP,
-    script: "delete-tenant.ts",
+    script: 'delete-tenant.ts',
     tenantAware: true,
   },
 ];
@@ -150,10 +150,10 @@ export function localGroups(): LocalGroup[] {
 // package name that isn't a workflow package so non-workflow members are
 // ignored.
 export function workflowKindFromPackageName(name: unknown): string | null {
-  const prefix = "@workbench/workflow-";
-  if (typeof name !== "string" || !name.startsWith(prefix)) return null;
+  const prefix = '@workbench/workflow-';
+  if (typeof name !== 'string' || !name.startsWith(prefix)) return null;
   const kind = name.slice(prefix.length);
-  return kind === "" ? null : kind;
+  return kind === '' ? null : kind;
 }
 
 // Discover every workflow kind that can be pushed by reading the repo's
@@ -162,15 +162,15 @@ export function workflowKindFromPackageName(name: unknown): string | null {
 // deploy — no hard-coded kinds to drift out of date.
 export function discoverWorkflowKinds(): string[] {
   const repoRoot = dirname(dirname(dirname(BIN_DIR)));
-  const workflowsDir = join(repoRoot, "workflows");
+  const workflowsDir = join(repoRoot, 'workflows');
   if (!existsSync(workflowsDir)) return [];
   const kinds: string[] = [];
   for (const entry of readdirSync(workflowsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    const manifest = join(workflowsDir, entry.name, "package.json");
+    const manifest = join(workflowsDir, entry.name, 'package.json');
     if (!existsSync(manifest)) continue;
     try {
-      const pkg = JSON.parse(readFileSync(manifest, "utf8")) as {
+      const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as {
         name?: unknown;
       };
       const kind = workflowKindFromPackageName(pkg.name);
@@ -192,24 +192,24 @@ export function buildLocalCommand(
   action: LocalAction,
   binDir: string,
   tenantSlug: string,
-  extraArgs: string[],
+  extraArgs: string[]
 ): string[] {
-  const argv = ["run", join(binDir, action.script)];
+  const argv = ['run', join(binDir, action.script)];
   if (action.baseArgs) argv.push(...action.baseArgs);
   argv.push(...extraArgs);
-  if (action.tenantAware) argv.push("--tenant", tenantSlug);
+  if (action.tenantAware) argv.push('--tenant', tenantSlug);
   return argv;
 }
 
 export async function runLocalAction(
   action: LocalAction,
   tenantSlug: string,
-  extraArgs: string[],
+  extraArgs: string[]
 ): Promise<number> {
   const argv = buildLocalCommand(action, BIN_DIR, tenantSlug, extraArgs);
-  console.log(`\n$ bun ${argv.join(" ")}\n`);
+  console.log(`\n$ bun ${argv.join(' ')}\n`);
   return new Promise<number>((resolve) => {
-    const child = spawn("bun", argv, { stdio: "inherit", env: process.env });
-    child.on("close", (code) => resolve(code ?? 0));
+    const child = spawn('bun', argv, { stdio: 'inherit', env: process.env });
+    child.on('close', (code) => resolve(code ?? 0));
   });
 }

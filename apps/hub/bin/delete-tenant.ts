@@ -19,7 +19,7 @@
  *   2. Type the exact tenant slug to confirm the correct target.
  */
 
-import postgres from "postgres";
+import postgres from 'postgres';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -43,13 +43,13 @@ function readFlag(argv: string[], flag: string): string | undefined {
   return undefined;
 }
 
-const slug = readFlag(process.argv.slice(2), "--tenant");
+const slug = readFlag(process.argv.slice(2), '--tenant');
 if (!slug) {
-  console.error("[delete-tenant] --tenant <slug> is required");
+  console.error('[delete-tenant] --tenant <slug> is required');
   process.exit(1);
 }
 
-const databaseUrl = requireEnv("DATABASE_URL");
+const databaseUrl = requireEnv('DATABASE_URL');
 const sql = postgres(databaseUrl, { max: 1 });
 
 try {
@@ -66,27 +66,21 @@ try {
   log(`  ID:   ${row.id}`);
   log(`  Name: ${row.name}`);
   log(`  Slug: ${row.slug}`);
-  log("");
-  log(
-    "WARNING: This will permanently delete the tenant and ALL associated data:",
-  );
-  log(
-    "  principals, credentials, providers, agents, instances, sessions, grants, roles.",
-  );
-  log("There is no recovery path.");
-  log("");
+  log('');
+  log('WARNING: This will permanently delete the tenant and ALL associated data:');
+  log('  principals, credentials, providers, agents, instances, sessions, grants, roles.');
+  log('There is no recovery path.');
+  log('');
 
   const first = prompt('Type "DELETE" to confirm this is irreversible:');
-  if (first !== "DELETE") {
-    log("Aborted.");
+  if (first !== 'DELETE') {
+    log('Aborted.');
     process.exit(1);
   }
 
-  const second = prompt(
-    `Type the tenant slug "${row.slug}" to confirm the target:`,
-  );
+  const second = prompt(`Type the tenant slug "${row.slug}" to confirm the target:`);
   if (second !== row.slug) {
-    log("Aborted (slug did not match).");
+    log('Aborted (slug did not match).');
     process.exit(1);
   }
 
@@ -98,7 +92,7 @@ try {
 
   if (deleted.length === 0) {
     console.error(
-      "[delete-tenant] Delete returned no rows — tenant may have already been deleted.",
+      '[delete-tenant] Delete returned no rows — tenant may have already been deleted.'
     );
     process.exit(1);
   }
