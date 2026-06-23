@@ -62,6 +62,7 @@ import { createMembersRouter } from './routes/members';
 import { createArtifactsRouter } from './routes/artifacts';
 import { createGammaTemplatesRouter } from './routes/gamma-templates';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
+import { createFeedbackRouter } from './routes/feedback';
 import { createHubToolsRouter } from './routes/hub-tools';
 import { createToolCredentialsRouter } from './routes/tool-credentials';
 import { createToolManifestRouter } from './routes/tool-manifest';
@@ -566,6 +567,7 @@ v1.route('/', createMembersRouter(db));
 v1.route('/', createArtifactsRouter(db));
 v1.route('/', createGammaTemplatesRouter(db));
 v1.route('/', createApprovalsRouter(db));
+v1.route('/', createFeedbackRouter(db));
 v1.route('/', createUploadsRouter(db));
 v1.route('/', createSkillsRouter(db, assetService, repoStore.repoStore));
 // Built before the runs router so the run-start/signal handlers and the

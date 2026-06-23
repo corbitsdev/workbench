@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
   composeChatMessages,
@@ -19,7 +19,13 @@ import {
   type ChatActivity,
 } from '@workbench/chat';
 import { type AgentActivity } from '@intx/hub-client';
-import { launchInstanceSession } from '../lib/hub-api';
+import {
+  getOutputFeedback,
+  launchInstanceSession,
+  saveOutputFeedback,
+  upsertRating,
+} from '../lib/hub-api';
+import type { FeedbackSubjectKind, SavedRating } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 import { classifyLaunchState, isLaunchableStatus } from './agent-launch-helpers';
 
@@ -73,6 +79,37 @@ export function AgentChat({
   const imageTrackerRef = useRef<ImageTracker | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
+
+  const queryClient = useQueryClient();
+
+  const { data: ratingsData } = useQuery({
+    queryKey: ['feedback', instanceId],
+    queryFn: () => getOutputFeedback(instanceId),
+    enabled: !!instanceId,
+    staleTime: 5 * 60_000,
+  });
+
+  const ratingsMap = useMemo(
+    () => new Map((ratingsData ?? []).map((r) => [`${r.subjectId}:${r.subjectKind}`, r.rating])),
+    [ratingsData]
+  );
+
+  const { mutateAsync: rateMutateAsync } = useMutation({
+    mutationFn: ({
+      subjectId,
+      subjectKind,
+      rating,
+    }: {
+      subjectId: string;
+      subjectKind: FeedbackSubjectKind;
+      rating: 1 | -1;
+    }) => saveOutputFeedback(instanceId, subjectId, subjectKind, rating),
+    onSuccess: (_, { subjectId, subjectKind, rating }) => {
+      queryClient.setQueryData<SavedRating[]>(['feedback', instanceId], (prev) =>
+        upsertRating(prev, { subjectId, subjectKind, rating })
+      );
+    },
+  });
 
   const { mutate: launch, status: launchStatus } = useMutation({
     mutationFn: async () => {
@@ -311,6 +348,12 @@ export function AgentChat({
       }}
       activity={activity}
       onClose={onClose}
+      onRate={(subjectId, subjectKind, rating) =>
+        rateMutateAsync({ subjectId, subjectKind, rating }).catch(() => {})
+      }
+      getRating={(subjectId: string, subjectKind: FeedbackSubjectKind) =>
+        ratingsMap.get(`${subjectId}:${subjectKind}`) ?? null
+      }
     />
   );
 }

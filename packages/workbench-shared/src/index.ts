@@ -156,3 +156,38 @@ export interface ImproveResponse {
   artifact: Artifact;
   status: SessionStatus;
 }
+
+// Output-feedback (thumbs up/down). One canonical definition shared by the hub
+// route, the web boundary parser, and the chat component.
+//
+// `workflow_step` is forward plumbing: the workflow-step rating surface is not
+// wired into a UI yet, but the kind, schema, route handling, and DB column all
+// carry it so adding that surface is purely additive.
+//
+// `feedbackSubjectKinds` is the readonly tuple the Drizzle `text` enum column
+// needs; `FeedbackSubjectKindSchema` is the arktype validator. They are kept in
+// lockstep so the DB enum and the wire schema can never drift.
+export const feedbackSubjectKinds = ['turn_part', 'workflow_step'] as const;
+
+export const FeedbackSubjectKindSchema = type("'turn_part' | 'workflow_step'");
+export type FeedbackSubjectKind = typeof FeedbackSubjectKindSchema.infer;
+
+export const FeedbackRatingSchema = type('1 | -1');
+export type FeedbackRating = typeof FeedbackRatingSchema.infer;
+
+export const FeedbackRequest = type({
+  subjectId: 'string',
+  subjectKind: FeedbackSubjectKindSchema,
+  rating: FeedbackRatingSchema,
+});
+export type FeedbackRequest = typeof FeedbackRequest.infer;
+
+export const SavedRating = type({
+  subjectId: 'string',
+  subjectKind: FeedbackSubjectKindSchema,
+  rating: FeedbackRatingSchema,
+});
+export type SavedRating = typeof SavedRating.infer;
+
+export const FeedbackListResponse = type({ ratings: SavedRating.array() });
+export type FeedbackListResponse = typeof FeedbackListResponse.infer;

@@ -41,3 +41,5 @@ export { ChatLauncher, type ChatLauncherProps } from './ChatLauncher';
 export { FloatingChat, type FloatingChatProps } from './FloatingChat';
 export { DockedChatBar, type DockedChatBarProps, DOCKED_BAR_HEIGHT } from './DockedChatBar';
 export { UrlImageCard, type UrlImageCardProps } from './UrlImageCard';
+export { MessageFeedback, type MessageFeedbackProps } from './MessageFeedback';
+export type { FeedbackSubjectKind } from './feedback-types';

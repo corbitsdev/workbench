@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
   composeChatMessages,
@@ -24,7 +25,14 @@ import {
   type UIResponse,
 } from '@workbench/chat';
 import { type AgentActivity } from '@intx/hub-client';
-import { getMe, launchInstanceSession } from '../lib/hub-api';
+import {
+  getMe,
+  getOutputFeedback,
+  launchInstanceSession,
+  saveOutputFeedback,
+  upsertRating,
+} from '../lib/hub-api';
+import type { FeedbackSubjectKind, SavedRating } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 import { useChatLauncher } from '../lib/chat-launcher-context';
 
@@ -232,6 +240,41 @@ export function PersonalAgentChat() {
     };
   }, [attempt]);
 
+  const queryClient = useQueryClient();
+
+  const instanceId = instanceIdRef.current;
+
+  const { data: ratingsData } = useQuery({
+    queryKey: ['feedback', instanceId],
+    queryFn: () => getOutputFeedback(instanceId!),
+    enabled: instanceId !== null,
+    staleTime: 5 * 60_000,
+  });
+
+  const ratingsMap = useMemo(
+    () => new Map((ratingsData ?? []).map((r) => [`${r.subjectId}:${r.subjectKind}`, r.rating])),
+    [ratingsData]
+  );
+
+  const { mutateAsync: rateMutateAsync } = useMutation({
+    mutationFn: ({
+      instanceId: iid,
+      subjectId,
+      subjectKind,
+      rating,
+    }: {
+      instanceId: string;
+      subjectId: string;
+      subjectKind: FeedbackSubjectKind;
+      rating: 1 | -1;
+    }) => saveOutputFeedback(iid, subjectId, subjectKind, rating),
+    onSuccess: (_, { instanceId: iid, subjectId, subjectKind, rating }) => {
+      queryClient.setQueryData<SavedRating[]>(['feedback', iid], (prev) =>
+        upsertRating(prev, { subjectId, subjectKind, rating })
+      );
+    },
+  });
+
   const reconnect = () => setAttempt((n) => n + 1);
 
   const toggleDock = () => {
@@ -363,6 +406,24 @@ export function PersonalAgentChat() {
       handleSend(response.value);
     };
 
+    const currentInstanceId = instanceIdRef.current;
+    const onRate =
+      currentInstanceId !== null
+        ? (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) =>
+            rateMutateAsync({
+              instanceId: currentInstanceId,
+              subjectId,
+              subjectKind,
+              rating,
+            }).catch(() => {})
+        : undefined;
+
+    const getRating =
+      currentInstanceId !== null
+        ? (subjectId: string, subjectKind: FeedbackSubjectKind) =>
+            ratingsMap.get(`${subjectId}:${subjectKind}`) ?? null
+        : undefined;
+
     return (
       <ChatPanel
         agent={MYRA}
@@ -373,6 +434,8 @@ export function PersonalAgentChat() {
         dockState={dockState}
         onToggleDock={toggleDock}
         onClose={() => setOpen(false)}
+        onRate={onRate}
+        getRating={getRating}
       />
     );
   }

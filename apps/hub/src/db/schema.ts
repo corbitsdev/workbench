@@ -1,6 +1,8 @@
+import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
+  check,
   customType,
   integer,
   jsonb,
@@ -10,6 +12,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { feedbackSubjectKinds } from '@workbench/shared';
 
 // Postgres bytea has no first-class Drizzle column helper; map it to Buffer.
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -301,3 +304,35 @@ export const approval = pgTable('approval', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   resolvedAt: timestamp('resolved_at'),
 });
+
+export { feedbackSubjectKinds as feedbackSubjectKind } from '@workbench/shared';
+export type { FeedbackSubjectKind } from '@workbench/shared';
+
+export const outputFeedback = pgTable(
+  'output_feedback',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: text('tenant_id').notNull(),
+    principalId: text('principal_id').notNull(),
+    instanceId: text('instance_id'),
+    subjectKind: text('subject_kind', { enum: feedbackSubjectKinds }).notNull(),
+    subjectId: text('subject_id').notNull(),
+    rating: integer('rating').notNull().$type<1 | -1>(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    outputFeedbackUniq: unique('output_feedback_principal_subject_uniq').on(
+      t.principalId,
+      t.subjectId,
+      t.subjectKind
+    ),
+    // Mirror the SQL CHECK from the migration so non-HTTP writers fail at the Drizzle layer.
+    ratingCheck: check('output_feedback_rating_check', sql`${t.rating} IN (1, -1)`),
+  })
+);
+
+export type OutputFeedbackRow = typeof outputFeedback.$inferSelect;

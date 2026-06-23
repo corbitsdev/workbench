@@ -5,6 +5,7 @@ import { MessageBubble } from './MessageBubble';
 import { ToolNarrative, type ToolNarrativeProps } from './ToolNarrative';
 import { TypingIndicator } from './TypingIndicator';
 import type { UIBlock, UIResponse } from './ui-block';
+import type { FeedbackSubjectKind } from './feedback-types';
 import { extractImageURLs } from './url-image';
 import { UrlImageCard } from './UrlImageCard';
 
@@ -41,6 +42,10 @@ export interface ChatThreadProps {
   onRespond?: (response: UIResponse) => void;
   /** Wired to document UI block actions (copy / download / save-artifact). */
   onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
+  /** When provided, thumbs up/down buttons appear below settled agent messages. */
+  onRate?: (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) => Promise<void>;
+  /** Returns the server-fetched rating for a subject. Passed to MessageBubble → MessageFeedback. */
+  getRating?: (subjectId: string, subjectKind: FeedbackSubjectKind) => 1 | -1 | null | undefined;
   className?: string;
 }
 
@@ -55,6 +60,8 @@ export function ChatThread({
   formatToolSummary,
   onRespond,
   onAction,
+  onRate,
+  getRating,
   className,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -101,6 +108,8 @@ export function ChatThread({
               message={displayMessage}
               {...(onRespond !== undefined ? { onRespond } : {})}
               {...(onAction !== undefined ? { onAction } : {})}
+              {...(onRate !== undefined ? { onRate } : {})}
+              {...(getRating !== undefined ? { getRating } : {})}
             />
             {urls.map((url) => (
               <UrlImageCard key={url} url={url} />
