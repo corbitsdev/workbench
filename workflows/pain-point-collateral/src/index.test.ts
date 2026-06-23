@@ -75,7 +75,17 @@ describe('pain-point-collateral native workflow', () => {
     await run.signal('note-selection', { noteId: 'note_1' });
     await run.signal('context', { context: 'Focus on onboarding' });
     await run.signal('pain-point-selection', { selectedIds: ['pp1'] });
-    await run.signal('format-selection', { formats: [{ format: 'Email' }] });
+    await run.signal('format-selection', {
+      items: [
+        {
+          format: 'Email',
+          painPointId: 'pp1',
+          painPointTitle: 'Test pain point',
+          painPointDetail: 'Detail here',
+          severity: 'high',
+        },
+      ],
+    });
     await run.signal('review', {
       decisions: [{ format: 'Email', title: 'Email', content: 'Hi...', approved: true }],
       approvedPieces: [{ format: 'Email', title: 'Email', content: 'Hi...' }],
@@ -136,20 +146,14 @@ describe('pain-point-collateral native workflow', () => {
     });
   });
 
-  test('generate map iterates over fmtSelection.output.formats', () => {
+  test('generate map iterates over fmtSelection.output.items', () => {
     const gen = mapPrimitive('generate');
-    expect(gen.over).toEqual({ from: 'steps.fmtSelection.output.formats' });
+    expect(gen.over).toEqual({ from: 'steps.fmtSelection.output.items' });
   });
 
-  test('generate inner step merges trigger.payload with analyze and ppSelection outputs', () => {
+  test('generate inner step reads input from trigger.payload only', () => {
     const gen = mapPrimitive('generate');
-    expect(gen.step.input).toEqual({
-      merge: [
-        { from: 'trigger.payload' },
-        { from: 'steps.analyze.output' },
-        { from: 'steps.ppSelection.output' },
-      ],
-    });
+    expect(gen.step.input).toEqual({ from: 'trigger.payload' });
   });
 
   test('persist map iterates over review.output.approvedPieces', () => {
@@ -203,7 +207,7 @@ describe('pain-point-collateral native workflow', () => {
     // Send context — workflow continues
     await run.signal('context', { context: '' });
     await run.signal('pain-point-selection', { selectedIds: [] });
-    await run.signal('format-selection', { formats: [] });
+    await run.signal('format-selection', { items: [] });
     await run.signal('review', { decisions: [], approvedPieces: [] });
     const result = await run.complete;
     expect(result.terminalStatus).toBe('completed');
@@ -236,7 +240,7 @@ describe('pain-point-collateral native workflow', () => {
     expect(ran.some((r) => r.id === 'pain-point-collateral-generate')).toBe(false);
 
     await run.signal('pain-point-selection', { selectedIds: ['pp1'] });
-    await run.signal('format-selection', { formats: [] });
+    await run.signal('format-selection', { items: [] });
     await run.signal('review', { decisions: [], approvedPieces: [] });
     await run.complete;
   });

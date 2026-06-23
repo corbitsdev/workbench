@@ -32,9 +32,9 @@ export const kind = 'pain-point-collateral';
 //   context      awaitSignal            context             → {context: string}
 //   analyze      inlineInferenceStep    input merge fetch+context outputs
 //   ppSelection  awaitSignal            pain-point-selection → {selectedIds: string[]}
-//   fmtSelection awaitSignal            format-selection    → {formats: Array<{format: string}>}
-//   generate     map over fmtSelection.output.formats
-//     └ inlineInferenceStep input merge trigger.payload + analyze + ppSelection outputs
+//   fmtSelection awaitSignal            format-selection    → {items: Array<{format,painPointId,...}>}
+//   generate     map over fmtSelection.output.items (max 9: 3 pain points × 3 formats)
+//     └ inlineInferenceStep input from trigger.payload only (item carries all LLM-needed data)
 //   review       awaitSignal            review              → {decisions: Array<{format,title,content}>}
 //                                       (panel sends ONLY approved pieces)
 //   persist      map over review.output.decisions
@@ -56,15 +56,10 @@ export const kind = 'pain-point-collateral';
 const generateStep = inlineInferenceStep({
   id: 'pain-point-collateral-generate',
   systemPrompt: buildCollateralGenerationSystemPrompt(),
-  // trigger.payload = {format: string} (one item from fmtSelection array)
-  // merge brings format + pain-point extraction + selected ids together
-  input: {
-    merge: [
-      { from: 'trigger.payload' },
-      { from: 'steps.analyze.output' },
-      { from: 'steps.ppSelection.output' },
-    ],
-  },
+  // trigger.payload = one {format, painPointId, painPointTitle, painPointDetail, severity} item
+  // The UI pre-computes the cartesian product (max 3 pain points × 3 formats = 9 items) and
+  // embeds all LLM-needed data in each item — no merge needed.
+  input: { from: 'trigger.payload' },
 });
 
 const persistStep = deterministicToolStep({
@@ -122,9 +117,9 @@ export const workflow = defineWorkflow({
     // 7. Human selects output formats — payload: {formats: Array<{format: string}>}
     fmtSelection: awaitSignal({ name: 'format-selection', after: ['ppSelection'] }),
 
-    // 8. Generate one collateral piece per format (sequential map; see deviation note)
+    // 8. Generate one collateral piece per (pain point × format) item, capped at 9
     generate: map({
-      over: { from: 'steps.fmtSelection.output.formats' },
+      over: { from: 'steps.fmtSelection.output.items' },
       step: generateStep,
       after: ['fmtSelection'],
     }),

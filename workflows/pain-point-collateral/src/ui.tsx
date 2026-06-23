@@ -84,6 +84,8 @@ const PersistOutput = type({
   'approvedPieces?': ApprovedPiece.array(),
 });
 
+const PpSelectionOutput = type({ selectedIds: 'string[]' });
+
 // -------------------------------------------------------------------------
 // Output parsing helpers
 // -------------------------------------------------------------------------
@@ -177,18 +179,20 @@ function parseAnalyze(raw: unknown): Decoded<PainPoint[]> {
 }
 
 function parseGeneratedPieces(raw: unknown): Decoded<GeneratedPiece[]> {
-  // map step output is an array of agent step outputs: Array<{reply: string}>
+  // map step output is Array<{reply: string, turn: unknown}>, one entry per (pain point × format) item
   if (!Array.isArray(raw)) return { status: 'pending' };
+  if (raw.length === 0) return { status: 'pending' };
   const pieces: GeneratedPiece[] = [];
   for (const item of raw) {
     const envelope = AgentReplyEnvelope(item);
-    if (envelope instanceof type.errors) return { status: 'malformed' };
+    if (envelope instanceof type.errors) continue;
     const decoded = parseAgentJson(envelope.reply);
-    if (decoded.status !== 'ok') return { status: 'malformed' };
+    if (decoded.status !== 'ok') continue;
     const parsed = GeneratedPiece(decoded.value);
-    if (parsed instanceof type.errors) return { status: 'malformed' };
+    if (parsed instanceof type.errors) continue;
     pieces.push(parsed);
   }
+  if (pieces.length === 0) return { status: 'malformed' };
   return { status: 'ok', value: pieces };
 }
 
@@ -547,12 +551,14 @@ function PainPointStep({
   const submitting = ppSelectionPhase === 'in-flight';
   const disabled = !awaiting;
 
+  const MAX_PAIN_POINTS = 3;
+
   function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
-      } else {
+      } else if (next.size < MAX_PAIN_POINTS) {
         next.add(id);
       }
       return next;
@@ -562,17 +568,18 @@ function PainPointStep({
   return (
     <div className="space-y-3">
       <p className="text-[12px] text-text-3">
-        Select the pain points you want to address in collateral.
+        Select up to {MAX_PAIN_POINTS} pain points to address in collateral.
       </p>
       <ul className="space-y-2">
         {result.value.map((pp) => {
           const checked = selected.has(pp.id);
+          const atCap = selected.size >= MAX_PAIN_POINTS && !checked;
           return (
             <li key={pp.id}>
               <label className="flex cursor-pointer items-start gap-3 rounded-[8px] border border-border bg-bg px-3 py-2.5 transition-colors hover:border-orange has-[:checked]:border-orange has-[:checked]:bg-orange/5">
                 <input
                   type="checkbox"
-                  disabled={disabled}
+                  disabled={disabled || atCap}
                   checked={checked}
                   onChange={() => toggle(pp.id)}
                   className="mt-0.5 h-4 w-4 accent-orange disabled:cursor-not-allowed"
@@ -627,12 +634,14 @@ const COLLATERAL_FORMATS = [
   'Executive summary',
 ] as const;
 
+const MAX_FORMATS = 3;
+
 function FormatStep({
   fmtSelectionPhase,
   onSubmit,
 }: {
   fmtSelectionPhase: StepPhase | undefined;
-  onSubmit: (formats: Array<{ format: string }>) => void;
+  onSubmit: (formats: string[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -649,7 +658,7 @@ function FormatStep({
       const next = new Set(prev);
       if (next.has(fmt)) {
         next.delete(fmt);
-      } else {
+      } else if (next.size < MAX_FORMATS) {
         next.add(fmt);
       }
       return next;
@@ -658,16 +667,17 @@ function FormatStep({
 
   return (
     <div className="space-y-3">
-      <p className="text-[12px] text-text-3">Choose the collateral formats to generate.</p>
+      <p className="text-[12px] text-text-3">Choose up to {MAX_FORMATS} collateral formats.</p>
       <ul className="space-y-2">
         {COLLATERAL_FORMATS.map((fmt) => {
           const checked = selected.has(fmt);
+          const atCap = selected.size >= MAX_FORMATS && !checked;
           return (
             <li key={fmt}>
               <label className="flex cursor-pointer items-center gap-3 rounded-[8px] border border-border bg-bg px-3 py-2.5 transition-colors hover:border-orange has-[:checked]:border-orange has-[:checked]:bg-orange/5">
                 <input
                   type="checkbox"
-                  disabled={disabled}
+                  disabled={disabled || atCap}
                   checked={checked}
                   onChange={() => toggle(fmt)}
                   className="h-4 w-4 accent-orange disabled:cursor-not-allowed"
@@ -685,7 +695,7 @@ function FormatStep({
         disabled={disabled || selected.size === 0}
         onClick={() => {
           if (disabled) return;
-          onSubmit([...selected].map((format) => ({ format })));
+          onSubmit([...selected]);
         }}
       >
         {submitting ? 'Generating…' : 'Generate'}{' '}
@@ -1056,7 +1066,25 @@ export function Panel(props: WorkflowPanelProps) {
           <SectionCard title="Choose formats">
             <FormatStep
               fmtSelectionPhase={phaseFor(state, 'fmtSelection')}
-              onSubmit={(formats) => onSignal('format-selection', { formats })}
+              onSubmit={(formats) => {
+                const ppOut = PpSelectionOutput(stepOutputs.ppSelection);
+                const analyzeOut = parseAnalyze(stepOutputs.analyze);
+                const selectedIds = ppOut instanceof type.errors ? [] : ppOut.selectedIds;
+                const painPoints = analyzeOut.status === 'ok' ? analyzeOut.value : [];
+                const selectedPPs = painPoints
+                  .filter((pp) => selectedIds.includes(pp.id))
+                  .slice(0, MAX_FORMATS);
+                const items = selectedPPs.flatMap((pp) =>
+                  formats.slice(0, MAX_FORMATS).map((format) => ({
+                    format,
+                    painPointId: pp.id,
+                    painPointTitle: pp.title,
+                    painPointDetail: pp.detail,
+                    severity: pp.severity ?? 'medium',
+                  }))
+                );
+                onSignal('format-selection', { items });
+              }}
             />
           </SectionCard>
         )}

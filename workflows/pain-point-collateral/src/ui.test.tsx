@@ -71,6 +71,8 @@ const PAIN_POINTS = agentReply({
   ],
 });
 
+const PP_SELECTION = { selectedIds: ['pp1', 'pp2'] };
+
 const GENERATED_PIECES = [
   agentReply({
     format: 'Email',
@@ -448,7 +450,7 @@ describe('Panel — format selection (step 4)', () => {
     screen.getByText('LinkedIn post');
   });
 
-  it('fires format-selection signal with correct {format} objects on submit', async () => {
+  it('fires format-selection signal with cartesian product items on submit', async () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
@@ -464,13 +466,13 @@ describe('Panel — format selection (step 4)', () => {
         })}
         connected
         signalPending={false}
-        stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS }}
+        stepOutputs={{ intake: NOTE_LIST, analyze: PAIN_POINTS, ppSelection: PP_SELECTION }}
         onSignal={onSignal}
         onClose={noop}
       />
     );
 
-    // Select "Email" and "One-pager"
+    // Select "Email" and "One-pager" (2 formats × 2 pain points = 4 items)
     await userEvent.click(screen.getByRole('checkbox', { name: 'Email' }));
     await userEvent.click(screen.getByRole('checkbox', { name: 'One-pager' }));
 
@@ -479,13 +481,14 @@ describe('Panel — format selection (step 4)', () => {
     expect(onSignal).toHaveBeenCalledTimes(1);
     const [signalName, payload] = onSignal.mock.calls[0] as [
       string,
-      { formats: { format: string }[] },
+      { items: { format: string; painPointId: string }[] },
     ];
     expect(signalName).toBe('format-selection');
-    expect(payload.formats).toEqual(
-      expect.arrayContaining([{ format: 'Email' }, { format: 'One-pager' }])
+    expect(payload.items).toHaveLength(4);
+    expect(payload.items.map((i) => i.format)).toEqual(
+      expect.arrayContaining(['Email', 'One-pager'])
     );
-    expect(payload.formats).toHaveLength(2);
+    expect(payload.items.map((i) => i.painPointId)).toEqual(expect.arrayContaining(['pp1', 'pp2']));
   });
 
   it('disables submit when no formats are selected', () => {

@@ -80,7 +80,7 @@ Format guidance:
 - Battlecard: competitor or scenario, their claim, our differentiation, proof points. Factual and direct.
 
 Output contract:
-Return strict JSON only. No markdown fences, no preamble, no trailing text. Match this exact shape:
+The input is a JSON object with these fields: format, painPointId, painPointTitle, painPointDetail, severity. Generate exactly one piece of collateral for that single format addressing that single pain point. Return strict JSON only — no markdown fences, no preamble, no trailing text. Match this exact shape:
 {
   "format": "requested format name",
   "title": "short artifact title",
