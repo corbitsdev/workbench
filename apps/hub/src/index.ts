@@ -82,6 +82,8 @@ import {
   provisionMemberInstances,
   getMyraInstanceId,
 } from './lib/tenant-provisioning';
+import { reconcileMemberInstanceGrants } from './services/grant-reconcile';
+import { AGENT_TEMPLATES } from '@workbench/agents';
 import { setupObservability, flushSentry } from '@workbench/sentry';
 import { serverErrorReporter, SERVER_ERROR_LOGGED } from './lib/server-error-logger';
 import { createFatalErrorRecovery } from './lib/fatal-error-recovery';
@@ -119,6 +121,16 @@ log.info('Global org tenant ready', { globalTenantId });
 // malformed template at deploy rather than silently shipping stale agents.
 await seedAgentTemplates(db);
 log.info('Agent templates seeded', { globalTenantId });
+
+// seedAgentTemplates updates the org agent rows, but existing member instances
+// keep the tool grants synthesized at their last launch — provisionMemberInstances
+// skips members who already have an instance. So a tool added to a template never
+// reaches existing members until each relaunches, surfacing as
+// "No matching grants for tool:…/invoke". Reconcile every member instance's grants
+// to the freshly-seeded definitions here. DB-only: sidecars reconnect after the
+// hub starts and the orchestrator pushes the current DB grants on reconnect.
+const reconciled = await reconcileMemberInstanceGrants(db, AGENT_TEMPLATES);
+log.info('Member instance grants reconciled', { globalTenantId, results: reconciled });
 
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 

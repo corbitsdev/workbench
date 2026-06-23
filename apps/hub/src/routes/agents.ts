@@ -20,6 +20,8 @@ import {
 } from '../services/agent-provisioning';
 import { getToolNamesFromCapabilities } from '../lib/tool-registry';
 import { requestBodySchema } from '../lib/openapi';
+import { getConfig } from '../config';
+import { reconcileMemberInstanceGrants } from '../services/grant-reconcile';
 
 const log = getLogger(['api', 'agents']);
 
@@ -59,6 +61,13 @@ const AgentTemplate = type({
 const AgentTemplateListResponse = type({ data: AgentTemplate.array() });
 
 const LaunchSessionResponse = type({ launched: 'boolean' });
+
+const ReconcileGrantsResponse = type({
+  templateKey: 'string',
+  reconciled: 'number',
+  pushed: 'number',
+  skipped: 'number',
+});
 
 const CreateInstanceRequest = type({ templateKey: 'string' });
 const CreateInstanceResponse = type({ instanceId: 'string', created: 'boolean' });
@@ -703,6 +712,79 @@ export function createAgentProvisioningRouter(
       }
 
       return c.json({ instanceId, created: true }, 201);
+    }
+  );
+
+  // Reconcile every member instance's tool + requirement grants for a template
+  // to the current org definition, pushing fresh grants to any live sidecar.
+  // The boot reseed only updates the org agent row; existing members keep the
+  // grants from their last launch (provisionMemberInstances skips them), so a
+  // newly-added tool surfaces as "No matching grants" until a relaunch. This is
+  // the in-process, no-restart remedy operators run without redeploying.
+  app.post(
+    '/admin/templates/:templateKey/reconcile-grants',
+    describeRoute({
+      tags: ['Agents'],
+      summary: 'Reconcile member instance grants for a template',
+      description:
+        "Rewrites every member instance's tool/requirement grants to the current org definition and pushes them to live sidecars without restarting. Caller must be a user principal of the global tenant.",
+      parameters: [
+        {
+          name: 'templateKey',
+          in: 'path',
+          required: true,
+          description: 'Template key to reconcile (e.g. "myra").',
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        200: {
+          description: 'Reconciliation counts',
+          content: {
+            'application/json': { schema: resolver(ReconcileGrantsResponse) },
+          },
+        },
+        403: {
+          description: 'Caller is not a user principal of the global tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: 'Unknown template key',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get('userId');
+      const templateKey = c.req.param('templateKey');
+
+      const template = AGENT_TEMPLATES.find((t) => t.key === templateKey);
+      if (!template) {
+        return c.json({ error: `Unknown template key: ${templateKey}` }, 404);
+      }
+
+      const { slug } = getConfig().globalTenant;
+      const globalTenant = await db.query.tenant.findFirst({ where: eq(tenant.slug, slug) });
+      if (!globalTenant) {
+        return c.json({ error: 'Global tenant not seeded' }, 403);
+      }
+
+      const callerPrincipal = await db.query.principal.findFirst({
+        where: and(
+          eq(principal.tenantId, globalTenant.id),
+          eq(principal.kind, 'user'),
+          eq(principal.refId, userId)
+        ),
+      });
+      if (!callerPrincipal) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+
+      const [result] = await reconcileMemberInstanceGrants(db, [template], {
+        sidecarRouter,
+        grantStore,
+      });
+      return c.json(result ?? { templateKey, reconciled: 0, pushed: 0, skipped: 0 });
     }
   );
 
