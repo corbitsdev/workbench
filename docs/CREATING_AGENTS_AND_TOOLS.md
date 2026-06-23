@@ -256,6 +256,30 @@ Add the agent to `apps/hub/src/lib/tenant-provisioning.ts`. This is where agents
 
 ---
 
+## Rolling out agent changes (how an edit reaches existing users)
+
+Editing a template in `@workbench/agents` (prompt, `toolPackages` pins, capabilities, model) does **not** reach running agents by itself. Two facts drive the rollout:
+
+- **Definitions are shared, not per-user.** Every user's Myra instance points at a *single* `agent` row in the global tenant (one row per template). Instances are thin pointers — they store status/principal, not the prompt/pins. So one upsert updates everyone.
+- **The shared row is (re)written by `seedAgentTemplates(db)`, which runs on every hub boot** (`apps/hub/src/index.ts`, right after `seedGlobalTenant`). It is an idempotent upsert over `AGENT_TEMPLATES`. **This is the only thing that writes template changes to the DB** — `seedGlobalTenant` returns early when the tenant already exists and does not touch agent rows. (Before this call existed, every template edit was silently ignored on already-seeded environments — agents stayed frozen at the first manual seed.)
+- **Instances adopt the new definition on their next launch.** `launchSession` reads `agentRow.toolPackages` + `systemPrompt` fresh each time. Running sessions are auto-relaunched when the hub reboots on deploy; stopped/idle instances relaunch on the user's next app load. No per-instance migration or backfill is needed.
+
+### Production rollout order
+
+Do the tenant-side seeding **before** deploying the hub, so that when instances relaunch with new pins the packages actually resolve (otherwise launches partially load — the package that isn't published is silently dropped):
+
+1. **Build + Publish tool packages to the prod GLOBAL tenant** (`admin:production` → Build, then Publish → global org) — required whenever a pinned package is added or bumped.
+2. **Seed the prod global tenant**: LLM credential, model catalog, and tool credentials (`admin:production`). See [ADMIN_CLI.md](./ADMIN_CLI.md).
+3. **Deploy the hub.** Boot runs `seedAgentTemplates` → the shared rows update → relaunches inherit the new definition.
+4. **(Optional) Force an immediate refresh:** restart the **sidecar** service so all running sessions relaunch at once. This is the safe hammer — no history loss.
+
+### Do NOT
+
+- **Mass-delete instances** (`cleanup-instances`) to "force an update" — instances are pointers and re-provision automatically, and bulk deletion churns the sidecar volume (corrupt-pack / `ENOENT` storage errors). Use a sidecar restart instead if you need an instant refresh.
+- Assume a code push alone updates agents — it only updates the DB once the **hub boots** the new code (and the registry/catalog/credentials are in place).
+
+---
+
 ## Creating a Workflow
 
 Workflows are **native `@intx/workflow` definitions**, not hub code. Each kind is its own package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` and `workflow`. The hub imports no workflow code — adding a workflow needs no hub change. Full guide: [DEPLOYING_WORKFLOWS.md](./DEPLOYING_WORKFLOWS.md).
