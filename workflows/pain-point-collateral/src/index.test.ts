@@ -174,7 +174,7 @@ describe('pain-point-collateral native workflow', () => {
     if (argMapTag === undefined) throw new Error('expected argMap tag on persist inner step');
     expect(JSON.parse(argMapTag)).toEqual({
       title: { from: 'title' },
-      kind: { literal: 'document' },
+      kind: { from: 'format' },
       content: { from: 'content' },
     });
   });

@@ -70,7 +70,7 @@ const persistStep = deterministicToolStep({
   input: { from: 'trigger.payload' },
   argMap: {
     title: { from: 'title' },
-    kind: { literal: 'document' },
+    kind: { from: 'format' },
     content: { from: 'content' },
   },
 });
