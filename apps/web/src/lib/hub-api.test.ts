@@ -5,6 +5,7 @@ import {
   deployAgentFromTemplate,
   getMe,
   getMyPrincipals,
+  getAnalyticsSummary,
   getOutputFeedback,
   launchInstanceSession,
   listAgentInstances,
@@ -241,6 +242,33 @@ describe('hub-api network helpers', () => {
 
     await deployAgentFromTemplate('t1', 'oat');
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ templateKey: 'oat' });
+  });
+
+  it('getAnalyticsSummary validates the response and passes date query params', async () => {
+    const summary = {
+      tenantId: 't1',
+      turnCount: 10,
+      failedTurnCount: 1,
+      toolCallCount: 5,
+      toolErrorCount: 0,
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
+    };
+    const calls = installFetch(() => ({ body: summary }));
+
+    await expect(getAnalyticsSummary('t1', { startDate: '2026-06-01' })).resolves.toEqual(summary);
+    expect(calls[0]!.url).toContain('/api/tenants/t1/analytics/summary');
+    expect(calls[0]!.url).toContain('startDate=2026-06-01');
+    expect(calls[0]!.init?.method).toBe('GET');
+  });
+
+  it('getAnalyticsSummary rejects malformed responses', async () => {
+    installFetch(() => ({ body: { tenantId: 't1', turnCount: 'nope' } }));
+
+    await expect(getAnalyticsSummary('t1')).rejects.toThrow(/Invalid analytics summary response/);
   });
 
   it('getOutputFeedback parses the ratings envelope and returns the array', async () => {
