@@ -22,20 +22,12 @@ export const workflow = defineWorkflow({
       after: ['intake'],
     }),
 
-    extract: deterministicToolStep({
-      id: 'last30days-extract-entities',
-      tool: 'last30days_core_extract',
-      input: { from: 'steps.normalize.output' },
-      argMap: { topic: { from: 'content' } },
-      after: ['normalize'],
-    }),
-
     hackernews: deterministicToolStep({
       id: 'last30days-fetch-hackernews',
       tool: 'hackernews_search',
       input: { from: 'steps.normalize.output' },
       argMap: { query: { from: 'content' } },
-      after: ['extract'],
+      after: ['normalize'],
     }),
 
     github: deterministicToolStep({
@@ -43,7 +35,7 @@ export const workflow = defineWorkflow({
       tool: 'github_activity',
       input: { from: 'steps.normalize.output' },
       argMap: { query: { from: 'content' } },
-      after: ['extract'],
+      after: ['normalize'],
     }),
 
     web: deterministicToolStep({
@@ -51,7 +43,7 @@ export const workflow = defineWorkflow({
       tool: 'exa_search',
       input: { from: 'steps.normalize.output' },
       argMap: { query: { from: 'content' } },
-      after: ['extract'],
+      after: ['normalize'],
     }),
 
     reddit: deterministicToolStep({
@@ -59,7 +51,7 @@ export const workflow = defineWorkflow({
       tool: 'reddit_search',
       input: { from: 'steps.normalize.output' },
       argMap: { query: { from: 'content' } },
-      after: ['extract'],
+      after: ['normalize'],
     }),
 
     x: deterministicToolStep({
@@ -67,7 +59,7 @@ export const workflow = defineWorkflow({
       tool: 'x_search',
       input: { from: 'steps.normalize.output' },
       argMap: { query: { from: 'content' } },
-      after: ['extract'],
+      after: ['normalize'],
     }),
 
     youtube: deterministicToolStep({
@@ -75,7 +67,7 @@ export const workflow = defineWorkflow({
       tool: 'youtube_search',
       input: { from: 'steps.normalize.output' },
       argMap: { query: { from: 'content' } },
-      after: ['extract'],
+      after: ['normalize'],
     }),
 
     bluesky: deterministicToolStep({
@@ -83,7 +75,7 @@ export const workflow = defineWorkflow({
       tool: 'bluesky_search',
       input: { from: 'steps.normalize.output' },
       argMap: { query: { from: 'content' } },
-      after: ['extract'],
+      after: ['normalize'],
     }),
 
     brief: deterministicToolStep({
@@ -102,18 +94,6 @@ export const workflow = defineWorkflow({
       after: ['brief'],
     }),
 
-    validate: deterministicToolStep({
-      id: 'last30days-validate-report',
-      tool: 'last30days_validate',
-      input: { from: 'steps.write.output' },
-      argMap: {
-        body: { from: 'reply' },
-        citations: { literal: [] },
-        returnedItemUrls: { literal: [] },
-      },
-      after: ['write'],
-    }),
-
     persist: deterministicToolStep({
       id: 'last30days-persist-artifact',
       tool: 'write_artifact',
@@ -126,7 +106,7 @@ export const workflow = defineWorkflow({
         citations: { literal: [] },
         kind: { literal: 'research' },
       },
-      after: ['validate'],
+      after: ['write'],
     }),
   },
 });
