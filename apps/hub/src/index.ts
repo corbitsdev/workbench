@@ -77,6 +77,7 @@ import {
   getMyraInstanceId,
 } from './lib/tenant-provisioning';
 import { setupObservability, flushSentry } from '@workbench/sentry';
+import { serverErrorReporter, SERVER_ERROR_LOGGED } from './lib/server-error-logger';
 import { createFatalErrorRecovery } from './lib/fatal-error-recovery';
 import { resolveCorsAllowOrigin } from './lib/cors-origin';
 import { createRateLimiter } from './lib/rate-limit';
@@ -358,9 +359,13 @@ const hubApp = createApp({
 
 // ─── Parent Hono ────────────────────────────────────────────────────
 
-const app = new Hono();
+const app = new Hono<{ Variables: { [SERVER_ERROR_LOGGED]?: boolean } }>();
 
 app.use('*', honoLogger());
+
+// Report any >= 500 response — including handled errors returned via c.json
+// that never throw — to the error log / Sentry sink.
+app.use('*', serverErrorReporter());
 
 if (corsOrigins.length > 0) {
   app.use(
@@ -816,6 +821,8 @@ app.onError((err, c) => {
     method: c.req.method,
     path: c.req.path,
   });
+  // Flag so serverErrorReporter does not log this 500 a second time.
+  c.set(SERVER_ERROR_LOGGED, true);
   return c.json({ error: 'Internal Server Error' }, 500);
 });
 
