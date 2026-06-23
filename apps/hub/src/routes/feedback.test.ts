@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test';
-import type { DB } from '@intx/db';
+import type { HubDb } from '../db';
 
 mock.module('../config', () => ({
   getConfig: () => ({}),
@@ -28,7 +28,7 @@ const fakeRatings = [
   { subjectId: 'step-xyz', subjectKind: 'workflow_step', rating: -1 },
 ];
 
-function makeDb(overrides: Partial<DB['db']> = {}): DB['db'] {
+function makeDb(overrides: Partial<HubDb> = {}): HubDb {
   const fakePrincipal = {
     id: 'pri-1',
     tenantId: 'ten-1',
@@ -44,6 +44,9 @@ function makeDb(overrides: Partial<DB['db']> = {}): DB['db'] {
       agentInstance: {
         findFirst: mock(async () => ({ id: 'ins-1', tenantId: 'ten-1' })),
       },
+      memberAgentInstance: {
+        findFirst: mock(async () => ({ instanceId: 'ins-1', memberPrincipalId: 'pri-1' })),
+      },
     },
     insert: mock(() => ({
       values: mock(() => ({
@@ -56,13 +59,13 @@ function makeDb(overrides: Partial<DB['db']> = {}): DB['db'] {
       })),
     })),
     ...overrides,
-  } as unknown as DB['db'];
+  } as unknown as HubDb;
 
   return db;
 }
 
 describe('POST /v1/feedback', () => {
-  function setup(dbOverrides?: Partial<DB['db']>) {
+  function setup(dbOverrides?: Partial<HubDb>) {
     const db = makeDb(dbOverrides);
     const app = new Hono<{ Variables: { userId: string } }>();
     app.use((c, next) => {
@@ -98,7 +101,8 @@ describe('POST /v1/feedback', () => {
       query: {
         agentInstance: { findFirst: mock(async () => null) },
         principal: { findFirst: mock(async () => null) },
-      } as unknown as DB['db']['query'],
+        memberAgentInstance: { findFirst: mock(async () => null) },
+      } as unknown as HubDb['query'],
     });
     const res = await app.request(
       makeRequest('http://localhost/v1/instances/missing/feedback', {
@@ -115,12 +119,39 @@ describe('POST /v1/feedback', () => {
           findFirst: mock(async () => ({ id: 'ins-1', tenantId: 'ten-1' })),
         },
         principal: { findFirst: mock(async () => null) },
-      } as unknown as DB['db']['query'],
+        memberAgentInstance: { findFirst: mock(async () => null) },
+      } as unknown as HubDb['query'],
     });
     const res = await app.request(
       makeRequest('http://localhost/v1/instances/ins-1/feedback', {
         body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: 1 },
         userId: 'intruder',
+      })
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when the caller is not the instance owner', async () => {
+    const { app } = setup({
+      query: {
+        agentInstance: {
+          findFirst: mock(async () => ({ id: 'ins-1', tenantId: 'ten-1' })),
+        },
+        principal: {
+          findFirst: mock(async () => ({
+            id: 'pri-2',
+            tenantId: 'ten-1',
+            kind: 'user',
+            refId: 'other-user',
+          })),
+        },
+        memberAgentInstance: { findFirst: mock(async () => null) },
+      } as unknown as HubDb['query'],
+    });
+    const res = await app.request(
+      makeRequest('http://localhost/v1/instances/ins-1/feedback', {
+        body: { subjectId: 'tp-abc', subjectKind: 'turn_part', rating: 1 },
+        userId: 'other-user',
       })
     );
     expect(res.status).toBe(404);
@@ -160,7 +191,7 @@ describe('POST /v1/feedback', () => {
     const { app } = setup({
       insert: mock(() => ({
         values: mock(() => ({ onConflictDoUpdate })),
-      })) as unknown as DB['db']['insert'],
+      })) as unknown as HubDb['insert'],
     });
 
     await app.request(
@@ -183,7 +214,7 @@ describe('POST /v1/feedback', () => {
 });
 
 describe('GET /v1/instances/:instanceId/feedback', () => {
-  function setup(dbOverrides?: Partial<DB['db']>) {
+  function setup(dbOverrides?: Partial<HubDb>) {
     const db = makeDb(dbOverrides);
     const app = new Hono<{ Variables: { userId: string } }>();
     app.use((c, next) => {
@@ -209,7 +240,8 @@ describe('GET /v1/instances/:instanceId/feedback', () => {
       query: {
         agentInstance: { findFirst: mock(async () => null) },
         principal: { findFirst: mock(async () => null) },
-      } as unknown as DB['db']['query'],
+        memberAgentInstance: { findFirst: mock(async () => null) },
+      } as unknown as HubDb['query'],
     });
     const res = await app.request(
       makeRequest('http://localhost/v1/instances/missing/feedback', { method: 'GET' })
@@ -224,7 +256,8 @@ describe('GET /v1/instances/:instanceId/feedback', () => {
           findFirst: mock(async () => ({ id: 'ins-1', tenantId: 'ten-1' })),
         },
         principal: { findFirst: mock(async () => null) },
-      } as unknown as DB['db']['query'],
+        memberAgentInstance: { findFirst: mock(async () => null) },
+      } as unknown as HubDb['query'],
     });
     const res = await app.request(
       makeRequest('http://localhost/v1/instances/ins-1/feedback', {
@@ -241,7 +274,7 @@ describe('GET /v1/instances/:instanceId/feedback', () => {
         from: mock(() => ({
           where: mock(async () => []),
         })),
-      })) as unknown as DB['db']['select'],
+      })) as unknown as HubDb['select'],
     });
     const res = await app.request(
       makeRequest('http://localhost/v1/instances/ins-1/feedback', { method: 'GET' })

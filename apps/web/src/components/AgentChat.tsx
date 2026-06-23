@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
@@ -85,11 +85,13 @@ export function AgentChat({
   const { data: ratingsData } = useQuery({
     queryKey: ['feedback', instanceId],
     queryFn: () => getOutputFeedback(instanceId),
+    enabled: !!instanceId,
     staleTime: 5 * 60_000,
   });
 
-  const ratingsMap = new Map(
-    (ratingsData ?? []).map((r) => [`${r.subjectId}:${r.subjectKind}`, r.rating])
+  const ratingsMap = useMemo(
+    () => new Map((ratingsData ?? []).map((r) => [`${r.subjectId}:${r.subjectKind}`, r.rating])),
+    [ratingsData]
   );
 
   const { mutateAsync: rateMutateAsync } = useMutation({
@@ -99,14 +101,13 @@ export function AgentChat({
       rating,
     }: {
       subjectId: string;
-      subjectKind: Parameters<typeof saveOutputFeedback>[2];
+      subjectKind: FeedbackSubjectKind;
       rating: 1 | -1;
     }) => saveOutputFeedback(instanceId, subjectId, subjectKind, rating),
     onSuccess: (_, { subjectId, subjectKind, rating }) => {
       queryClient.setQueryData<SavedRating[]>(['feedback', instanceId], (prev) =>
         upsertRating(prev, { subjectId, subjectKind, rating })
       );
-      void queryClient.invalidateQueries({ queryKey: ['feedback', instanceId] });
     },
   });
 

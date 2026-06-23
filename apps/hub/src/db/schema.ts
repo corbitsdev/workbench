@@ -1,6 +1,8 @@
+import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
+  check,
   customType,
   integer,
   jsonb,
@@ -315,7 +317,7 @@ export const outputFeedback = pgTable(
     instanceId: text('instance_id'),
     subjectKind: text('subject_kind', { enum: feedbackSubjectKinds }).notNull(),
     subjectId: text('subject_id').notNull(),
-    rating: integer('rating').notNull(),
+    rating: integer('rating').notNull().$type<1 | -1>(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at')
       .notNull()
@@ -328,6 +330,8 @@ export const outputFeedback = pgTable(
       t.subjectId,
       t.subjectKind
     ),
+    // Mirror the SQL CHECK from the migration so non-HTTP writers fail at the Drizzle layer.
+    ratingCheck: check('output_feedback_rating_check', sql`${t.rating} IN (1, -1)`),
   })
 );
 

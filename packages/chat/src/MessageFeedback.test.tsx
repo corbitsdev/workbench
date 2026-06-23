@@ -6,11 +6,10 @@ import { MessageFeedback } from './MessageFeedback';
 afterEach(cleanup);
 
 describe('MessageFeedback', () => {
-  it('renders thumbs up and thumbs down buttons', () => {
+  it('renders without triggering onRate before any interaction', () => {
     const onRate = mock(async () => {});
     render(<MessageFeedback subjectId="tp-1" subjectKind="turn_part" onRate={onRate} />);
-    expect(screen.getByRole('button', { name: 'Thumbs up' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Thumbs down' })).toBeTruthy();
+    expect(onRate).not.toHaveBeenCalled();
   });
 
   it('calls onRate with 1 when thumbs up is clicked', async () => {

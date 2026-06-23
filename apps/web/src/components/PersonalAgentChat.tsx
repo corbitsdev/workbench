@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
@@ -251,8 +251,9 @@ export function PersonalAgentChat() {
     staleTime: 5 * 60_000,
   });
 
-  const ratingsMap = new Map(
-    (ratingsData ?? []).map((r) => [`${r.subjectId}:${r.subjectKind}`, r.rating])
+  const ratingsMap = useMemo(
+    () => new Map((ratingsData ?? []).map((r) => [`${r.subjectId}:${r.subjectKind}`, r.rating])),
+    [ratingsData]
   );
 
   const { mutateAsync: rateMutateAsync } = useMutation({
@@ -264,14 +265,13 @@ export function PersonalAgentChat() {
     }: {
       instanceId: string;
       subjectId: string;
-      subjectKind: Parameters<typeof saveOutputFeedback>[2];
+      subjectKind: FeedbackSubjectKind;
       rating: 1 | -1;
     }) => saveOutputFeedback(iid, subjectId, subjectKind, rating),
     onSuccess: (_, { instanceId: iid, subjectId, subjectKind, rating }) => {
       queryClient.setQueryData<SavedRating[]>(['feedback', iid], (prev) =>
         upsertRating(prev, { subjectId, subjectKind, rating })
       );
-      void queryClient.invalidateQueries({ queryKey: ['feedback', iid] });
     },
   });
 
@@ -409,11 +409,7 @@ export function PersonalAgentChat() {
     const currentInstanceId = instanceIdRef.current;
     const onRate =
       currentInstanceId !== null
-        ? (
-            subjectId: string,
-            subjectKind: Parameters<typeof saveOutputFeedback>[2],
-            rating: 1 | -1
-          ) =>
+        ? (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) =>
             rateMutateAsync({
               instanceId: currentInstanceId,
               subjectId,
