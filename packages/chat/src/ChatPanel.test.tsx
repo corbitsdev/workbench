@@ -166,6 +166,49 @@ describe('ChatPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Dock chat' }));
     expect(onToggleDock).toHaveBeenCalledTimes(1);
   });
+
+  it('toggles expand via the header control in floating mode', async () => {
+    const user = userEvent.setup();
+    const onToggleExpand = mock(() => {});
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        dockState="floating"
+        onToggleExpand={onToggleExpand}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Expand chat' }));
+    expect(onToggleExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows Collapse and hides the expand control when docked', () => {
+    const { rerender } = render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        dockState="floating"
+        expanded
+        onToggleExpand={() => {}}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Collapse chat' })).toBeDefined();
+
+    rerender(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        dockState="docked"
+        onToggleExpand={() => {}}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Expand chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Collapse chat' })).toBeNull();
+  });
 });
 
 describe('ChatPanel empty state', () => {

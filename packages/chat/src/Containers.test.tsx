@@ -102,15 +102,28 @@ describe('FloatingChat', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('fills the viewport (full-screen overlay) when open', () => {
+  it('defaults to the small bottom-right popup when open and not expanded', () => {
     render(
       <FloatingChat open>
-        <div>full panel</div>
+        <div>popup panel</div>
       </FloatingChat>
     );
     const dialog = screen.getByRole('dialog', { name: 'Chat' });
-    expect(dialog.className).toContain('fixed');
-    expect(dialog.className).toContain('inset-0');
+    expect(dialog.className).toContain('bottom-24');
+    expect(dialog.className).toContain('right-6');
+    expect(dialog.className).toContain('w-96');
+    expect(dialog.className).not.toContain('inset-4');
+  });
+
+  it('grows to a near-full-screen overlay when expanded', () => {
+    render(
+      <FloatingChat open expanded>
+        <div>expanded panel</div>
+      </FloatingChat>
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Chat' });
+    expect(dialog.className).toContain('inset-4');
+    expect(dialog.className).not.toContain('w-96');
   });
 
   it('calls onClose when Escape is pressed so a full-screen panel is never a trap', () => {

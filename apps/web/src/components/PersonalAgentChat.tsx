@@ -87,6 +87,7 @@ type SessionState =
 
 export function PersonalAgentChat() {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [dockState, setDockState] = useState<ChatDockState>(readDockState);
   const [sessionState, setSessionState] = useState<SessionState>({
     phase: 'loading',
@@ -285,6 +286,8 @@ export function PersonalAgentChat() {
     });
   };
 
+  const toggleExpand = () => setExpanded((prev) => !prev);
+
   function buildMessages(session: InstanceSession): ChatMessage[] {
     const { messages } = composeChatMessages({
       events: session.events,
@@ -331,6 +334,8 @@ export function PersonalAgentChat() {
           inputDisabled
           dockState={dockState}
           onToggleDock={toggleDock}
+          expanded={expanded}
+          onToggleExpand={toggleExpand}
           onClose={() => setOpen(false)}
         />
       );
@@ -346,6 +351,8 @@ export function PersonalAgentChat() {
           notice={setupNotice}
           dockState={dockState}
           onToggleDock={toggleDock}
+          expanded={expanded}
+          onToggleExpand={toggleExpand}
           onClose={() => setOpen(false)}
         />
       );
@@ -361,6 +368,8 @@ export function PersonalAgentChat() {
           notice={credentialErrorNotice}
           dockState={dockState}
           onToggleDock={toggleDock}
+          expanded={expanded}
+          onToggleExpand={toggleExpand}
           onClose={() => setOpen(false)}
         />
       );
@@ -376,6 +385,8 @@ export function PersonalAgentChat() {
           notice={errorNotice}
           dockState={dockState}
           onToggleDock={toggleDock}
+          expanded={expanded}
+          onToggleExpand={toggleExpand}
           onClose={() => setOpen(false)}
         />
       );
@@ -433,6 +444,8 @@ export function PersonalAgentChat() {
         activity={activity}
         dockState={dockState}
         onToggleDock={toggleDock}
+        expanded={expanded}
+        onToggleExpand={toggleExpand}
         onClose={() => setOpen(false)}
         onRate={onRate}
         getRating={getRating}
@@ -456,7 +469,7 @@ export function PersonalAgentChat() {
   return (
     <>
       {!launcherHidden && <ChatLauncher onClick={() => setOpen((prev) => !prev)} open={open} />}
-      <FloatingChat open={open} onClose={() => setOpen(false)}>
+      <FloatingChat open={open} expanded={expanded} onClose={() => setOpen(false)}>
         {panel}
       </FloatingChat>
     </>

@@ -27,6 +27,10 @@ export interface ChatPanelProps {
   dockState?: ChatDockState;
   /** Toggle between floating and docked. */
   onToggleDock?: () => void;
+  /** Whether the floating panel is expanded to near-full-screen. */
+  expanded?: boolean;
+  /** Toggle the floating panel between the small popup and near-full-screen. */
+  onToggleExpand?: () => void;
   /** Close the panel (floating mode). */
   onClose?: () => void;
   inputDisabled?: boolean;
@@ -57,6 +61,8 @@ export function ChatPanel({
   onQuickReply,
   dockState = 'floating',
   onToggleDock,
+  expanded,
+  onToggleExpand,
   onClose,
   inputDisabled,
   onRespond,
@@ -84,6 +90,16 @@ export function ChatPanel({
           )}
         </div>
         <div className="flex items-center gap-1">
+          {onToggleExpand !== undefined && dockState !== 'docked' && (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              aria-label={expanded === true ? 'Collapse chat' : 'Expand chat'}
+              className="rounded-md px-2 py-1 text-xs text-text-2 hover:bg-surface-2 hover:text-text cursor-pointer"
+            >
+              {expanded === true ? 'Collapse' : 'Expand'}
+            </button>
+          )}
           {onToggleDock !== undefined && (
             <button
               type="button"
