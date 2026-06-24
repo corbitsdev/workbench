@@ -72,6 +72,13 @@ export function buildSeedMarker(files: SeedWorkspaceFile[]): string {
 const seedFileByPath = new Map(PERSONAL_AGENT_SEED_FILES.map((file) => [file.path, file]));
 
 /**
+ * Basenames that older deployed prompts may still list in the memory-seed marker
+ * but are no longer seeded. Skipped on parse so sidecar session restore survives
+ * prompt/schema drift without re-launching every instance (CL-1952).
+ */
+const RETIRED_SEED_BASENAMES = new Set<string>(['SCRATCHPAD.md']);
+
+/**
  * Whether a system prompt carries a seed marker at all. Lets the harness tell a
  * present-but-empty (malformed) marker apart from no marker: the former is a
  * contract break worth a warning, the latter is a normal non-seeding agent.
@@ -88,7 +95,9 @@ export function hasSeedMarker(systemPrompt: string): boolean {
  * marker (any non-personal agent) yields an empty list.
  *
  * A marker naming a file with no known stub is a contract break between the
- * prompt builder and this table — fail loudly rather than silently seed less.
+ * prompt builder and this table — fail loudly rather than silently seed less,
+ * except for basenames in `RETIRED_SEED_BASENAMES` (dropped from the table but
+ * still listed on prompts persisted before a sidecar restart).
  */
 export function parseSeedMarker(systemPrompt: string): SeedWorkspaceFile[] {
   const match = SEED_MARKER_PATTERN.exec(systemPrompt);
@@ -99,14 +108,20 @@ export function parseSeedMarker(systemPrompt: string): SeedWorkspaceFile[] {
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
 
-  return declared.map((name) => {
+  const resolved: SeedWorkspaceFile[] = [];
+  for (const name of declared) {
     assertPlainBasename(name);
     const file = seedFileByPath.get(name);
-    if (!file) {
-      throw new Error(`Seed marker declares "${name}" but no stub content is registered for it`);
+    if (file) {
+      resolved.push(file);
+      continue;
     }
-    return file;
-  });
+    if (RETIRED_SEED_BASENAMES.has(name)) {
+      continue;
+    }
+    throw new Error(`Seed marker declares "${name}" but no stub content is registered for it`);
+  }
+  return resolved;
 }
 
 /**

@@ -70,6 +70,12 @@ describe('parseSeedMarker (CL-1952)', () => {
     expect(parseSeedMarker('some other agent prompt with no marker')).toEqual([]);
   });
 
+  it('ignores retired seed basenames still present in legacy deployed prompts', () => {
+    const legacy = '<!-- workbench:memory-seed=MEMORY.md,SCRATCHPAD.md -->';
+    const resolved = parseSeedMarker(`prelude\n\n${legacy}`);
+    expect(resolved.map((f) => f.path)).toEqual(['MEMORY.md']);
+  });
+
   it('throws when the marker names a file with no registered stub', () => {
     const rogue = buildSeedMarker([{ path: 'UNKNOWN.md', content: '# Unknown\n' }]);
     expect(() => parseSeedMarker(`prelude\n\n${rogue}`)).toThrow('UNKNOWN.md');
