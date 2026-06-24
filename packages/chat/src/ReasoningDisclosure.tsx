@@ -17,9 +17,8 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 /**
  * Collapsible "Reasoning" disclosure that streams the agent's reasoning.
  *
- * While the agent is still reasoning (streaming, no answer yet) it auto-expands
- * so the user watches the reasoning form. Once the answer starts — or for a
- * past turn — it collapses to a toggle so the thread isn't dominated by it.
+ * Collapsed by default (including while reasoning is still streaming) so the
+ * thread stays focused on the answer; users expand when they want the detail.
  * Visually subordinate to the answer: narrower, muted, smaller, no bubble
  * chrome, so it reads as a quiet aside rather than a second message.
  *
@@ -29,9 +28,7 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
  */
 export function ReasoningDisclosure({ reasoning, streaming }: ReasoningDisclosureProps) {
   const [manuallyToggled, setManuallyToggled] = useState<boolean | null>(null);
-  // Auto-expanded while actively reasoning; collapsed otherwise — unless the
-  // user has explicitly toggled, in which case respect their choice.
-  const open = manuallyToggled ?? streaming;
+  const open = manuallyToggled ?? false;
 
   return (
     <div className="flex w-full max-w-[68%] flex-col gap-1">

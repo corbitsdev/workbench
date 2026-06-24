@@ -80,7 +80,7 @@ describe('MessageBubble', () => {
     expect(screen.getByText('Final answer')).not.toBeNull();
   });
 
-  it('shows streaming reasoning expanded with the Reasoning label', () => {
+  it('shows streaming reasoning collapsed by default with the Reasoning label', () => {
     const message: ChatMessage = {
       id: 'r2',
       role: 'agent',
@@ -91,7 +91,10 @@ describe('MessageBubble', () => {
     };
     render(<MessageBubble message={message} />);
     expect(screen.getByText('Reasoning')).not.toBeNull();
-    expect(screen.getByText('Working through it')).not.toBeNull();
+    expect(screen.queryByText('Working through it')).toBeNull();
+    expect(screen.getByRole('button', { name: /Reasoning/i }).getAttribute('aria-expanded')).toBe(
+      'false'
+    );
   });
 
   it('renders agent message with markdown support', () => {
