@@ -27,7 +27,7 @@ Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter
 - `GET /api/tenants/:tenantId/analytics/summary` — tenant totals (`startDate`, `endDate`, `agentId`, `instanceId` query params)
 - `GET /api/tenants/:tenantId/analytics/summary/by-agent` — per-`agentId` breakdown (same filters)
 
-Requires grant `analytics:*` read on the tenant.
+Requires an active principal on the tenant (Interchange `resolveTenant` on `/api/tenants/:tenantId/*`). Org members do not carry role grants; analytics is membership-gated like other product reads.
 
 ## Staging verification (CL-2301)
 

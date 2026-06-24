@@ -332,6 +332,19 @@ describe('hub-api network helpers', () => {
     await expect(getMe()).rejects.toMatchObject({ message: 'forbidden', status: 403 });
   });
 
+  it('throws with nested error.message from structured hub errors', async () => {
+    installFetch(() => ({
+      ok: false,
+      status: 500,
+      body: { error: { code: 'internal_error', message: 'Failed to query analytics' } },
+    }));
+
+    await expect(getAnalyticsSummary('tenant-1')).rejects.toMatchObject({
+      message: 'Failed to query analytics',
+      status: 500,
+    });
+  });
+
   it('throws an HTTP fallback message when the error body is not JSON', async () => {
     installFetch(() => ({ ok: false, status: 500, bodyThrows: true }));
 

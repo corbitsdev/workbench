@@ -24,8 +24,12 @@ CREATE TABLE IF NOT EXISTS "analytics_event" (
   "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
-ALTER TABLE "analytics_event"
-  ADD CONSTRAINT "analytics_event_event_key" UNIQUE ("event_key");
+DO $$ BEGIN
+  ALTER TABLE "analytics_event"
+    ADD CONSTRAINT "analytics_event_event_key" UNIQUE ("event_key");
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
 -- Secondary indexes on analytics_event are deferred: the table is append-only
 -- and high-write (one row per turn, tool call, and inference event). Add
@@ -53,8 +57,12 @@ CREATE TABLE IF NOT EXISTS "analytics_rollup_daily" (
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
-ALTER TABLE "analytics_rollup_daily"
-  ADD CONSTRAINT "analytics_rollup_daily_rollup_key" UNIQUE ("rollup_key");
+DO $$ BEGIN
+  ALTER TABLE "analytics_rollup_daily"
+    ADD CONSTRAINT "analytics_rollup_daily_rollup_key" UNIQUE ("rollup_key");
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
 -- Tenant summary (all agents, optional date range) — primary dashboard query.
 CREATE INDEX IF NOT EXISTS "analytics_rollup_daily_tenant_bucket_idx"

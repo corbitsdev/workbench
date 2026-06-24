@@ -4,8 +4,7 @@ import { logger as honoLogger } from 'hono/logger';
 import { describeRoute, openAPIRouteHandler } from 'hono-openapi';
 import { upgradeWebSocket, websocket } from 'hono/bun';
 import { schema as intxSchema, createGrantStore } from '@intx/db';
-import { createApp, createRequireGrant } from '@intx/hub-api';
-import { timeWindowEvaluator } from '@intx/authz';
+import { createApp } from '@intx/hub-api';
 import {
   createAgentRepoStore,
   createAssetService,
@@ -446,15 +445,9 @@ const hubApp = createApp({
   }),
 });
 
-const requireGrant = createRequireGrant({
-  grantStore,
-  conditionRegistry: { time_window: timeWindowEvaluator },
-});
-
-hubApp.route(
-  '/api/tenants/:tenantId/analytics',
-  createAnalyticsRoutes({ db, requireRead: requireGrant('analytics:*', 'read') })
-);
+// Active tenant membership is enforced by createApp's resolveTenant on
+// /api/tenants/:tenantId/* (org members have no role grants).
+hubApp.route('/api/tenants/:tenantId/analytics', createAnalyticsRoutes({ db }));
 
 // ─── Parent Hono ────────────────────────────────────────────────────
 

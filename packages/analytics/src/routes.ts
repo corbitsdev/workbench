@@ -31,7 +31,8 @@ const log = getLogger(['hub', 'analytics', 'routes']);
 
 export type CreateAnalyticsRoutesDeps = {
   db: DB['db'];
-  requireRead: MiddlewareHandler;
+  /** Optional extra gate after Interchange `resolveTenant` (active tenant membership). */
+  requireRead?: MiddlewareHandler;
 };
 
 export function createAnalyticsRoutes({
@@ -39,6 +40,11 @@ export function createAnalyticsRoutes({
   requireRead,
 }: CreateAnalyticsRoutesDeps): Hono<AnalyticsRouteEnv> {
   const app = new Hono<AnalyticsRouteEnv>();
+  const readGate: MiddlewareHandler =
+    requireRead ??
+    (async (_c, next) => {
+      await next();
+    });
 
   const summaryHandler = async (c: Context<AnalyticsRouteEnv>) => {
     const tenantId = c.req.param('tenantId') ?? c.get('tenant').id;
@@ -151,8 +157,8 @@ export function createAnalyticsRoutes({
     }
   };
 
-  app.get('/summary', requireRead, summaryHandler);
-  app.get('/summary/by-agent', requireRead, byAgentHandler);
+  app.get('/summary', readGate, summaryHandler);
+  app.get('/summary/by-agent', readGate, byAgentHandler);
 
   return app;
 }

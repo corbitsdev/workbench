@@ -2,7 +2,11 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart2 } from 'lucide-react';
 import { useWorkbenches } from '../hooks/use-workbenches';
-import { getAnalyticsSummary, getAnalyticsSummaryByAgent } from '../lib/hub-api';
+import {
+  describeHubApiFailure,
+  getAnalyticsSummary,
+  getAnalyticsSummaryByAgent,
+} from '../lib/hub-api';
 import type { AnalyticsAgentRow, AnalyticsSummary } from '../lib/hub-api';
 
 type Preset = '7d' | '30d' | '90d' | 'all';
@@ -271,7 +275,7 @@ export function InsightsDashboard() {
 
           {summaryQuery.isError && (
             <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
-              Failed to load analytics data. Check your connection and try again.
+              {describeHubApiFailure(summaryQuery.error)}
             </div>
           )}
 

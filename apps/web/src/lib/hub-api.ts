@@ -11,6 +11,39 @@ import {
 
 const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
+function hubErrorMessage(body: { error?: unknown }, status: number): string {
+  const e = body.error;
+  if (typeof e === 'string' && e.length > 0) return e;
+  if (e && typeof e === 'object' && 'message' in e) {
+    const msg = (e as { message?: unknown }).message;
+    if (typeof msg === 'string' && msg.length > 0) return msg;
+  }
+  return `HTTP ${status}`;
+}
+
+/** User-facing hint when analytics (or other hub API) calls fail in production. */
+export function describeHubApiFailure(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'Failed to load analytics data. Check your connection and try again.';
+  }
+  const status = (error as Error & { status?: number }).status;
+  const msg = error.message;
+
+  if (!apiBase && import.meta.env.PROD) {
+    return 'Web app is not pointed at the hub (VITE_API_BASE_URL). Rebuild and redeploy web with your hub URL.';
+  }
+  if (status === 404) {
+    return 'Analytics API was not found on the hub. Redeploy the hub (migrations run on pre-deploy) and try again.';
+  }
+  if (msg.startsWith('Invalid analytics')) {
+    return 'Hub returned an unexpected response. Confirm VITE_API_BASE_URL is the hub origin, not the web app URL.';
+  }
+  if (msg.length > 0 && msg !== '[object Object]') {
+    return msg;
+  }
+  return 'Failed to load analytics data. Check your connection and try again.';
+}
+
 async function hubFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
   const url = new URL(
     `/api/${path.replace(/^\//, '')}`,
@@ -23,8 +56,8 @@ async function hubFetch<T>(method: string, path: string, body?: unknown): Promis
   }
   const res = await fetch(url, init);
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw Object.assign(new Error(err.error || `HTTP ${res.status}`), {
+    const errBody = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(hubErrorMessage(errBody, res.status)), {
       status: res.status,
     });
   }
