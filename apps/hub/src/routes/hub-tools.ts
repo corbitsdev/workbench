@@ -7,7 +7,12 @@ import { getLogger } from '@intx/log';
 import { and, eq } from 'drizzle-orm';
 import { HUB_BACKED_TOOLS } from '../lib/hub-backed-tools';
 import { buildToolDefinitions, getToolNamesFromCapabilities } from '../lib/tool-registry';
-import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
+import type {
+  SessionService,
+  EventCollectorRegistry,
+  SidecarRouter,
+  RepoStore,
+} from '@intx/hub-sessions';
 import { requestBodySchema } from '../lib/openapi';
 
 const log = getLogger(['api', 'hub-tools']);
@@ -43,6 +48,7 @@ export function createHubToolsRouter(
     sessionService: SessionService;
     eventCollectors: EventCollectorRegistry;
     sidecarRouter: SidecarRouter;
+    repoStore: RepoStore;
     buildToolDefinitions: typeof buildToolDefinitions;
   }
 ): Hono {

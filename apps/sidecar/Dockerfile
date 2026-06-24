@@ -52,6 +52,7 @@ COPY packages/tools-last30days/package.json packages/tools-last30days/
 COPY packages/tools-polymarket/package.json packages/tools-polymarket/
 COPY packages/tools-reddit/package.json packages/tools-reddit/
 COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
+COPY packages/tools-skills/package.json packages/tools-skills/
 COPY packages/tools-x/package.json packages/tools-x/
 COPY packages/tools-youtube/package.json packages/tools-youtube/
 COPY packages/transcript/package.json packages/transcript/

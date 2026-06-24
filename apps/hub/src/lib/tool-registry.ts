@@ -22,9 +22,15 @@ import { ARTIFACT_HUB_TOOLS } from './artifact-tools';
 import { DISPATCH_HUB_TOOLS } from '@workbench/tools-dispatch';
 import { WRITE_ARTIFACT_HUB_TOOLS } from '../tools/write-artifact';
 import { LIST_AGENTS_HUB_TOOLS } from '../tools/list-agents';
+import { SKILLS_HUB_TOOLS } from '../tools/list-skills';
 import { LAST30DAYS_CORE_HUB_TOOLS } from '../tools/last30days-core-tools';
 import { GAMMA_LIST_TEMPLATES_HUB_TOOL } from '../tools/gamma-templates';
-import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
+import type {
+  SessionService,
+  EventCollectorRegistry,
+  SidecarRouter,
+  RepoStore,
+} from '@intx/hub-sessions';
 import { canonicalizeToolNames, expandToolAliasGrants } from '@workbench/agents';
 
 // Hub-session-token rail. Native-migrated tools (the first group) are
@@ -56,6 +62,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...DISPATCH_HUB_TOOLS,
   ...AGENTS_HUB_TOOLS,
   ...LIST_AGENTS_HUB_TOOLS,
+  ...SKILLS_HUB_TOOLS,
   ...WRITE_ARTIFACT_HUB_TOOLS,
 };
 
@@ -76,6 +83,7 @@ export type ContextToolEntry = {
     sessionService?: SessionService;
     eventCollectors?: EventCollectorRegistry;
     sidecarRouter?: SidecarRouter;
+    repoStore?: RepoStore;
     buildToolDefinitions?: (names: string[]) => ToolDefinition[];
   }) => AgentTool[];
 };

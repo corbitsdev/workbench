@@ -1036,6 +1036,7 @@ app.route(
     sessionService,
     eventCollectors,
     sidecarRouter,
+    repoStore: repoStore.repoStore,
     buildToolDefinitions,
   })
 );

@@ -149,6 +149,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
       { name: '@workbench/tools-granola', version: '^0.1.0' },
       { name: '@workbench/tools-artifact', version: '^0.1.0' },
       { name: '@workbench/tools-agents', version: '^0.1.0' },
+      { name: '@workbench/tools-skills', version: '^0.1.0' },
     ],
   },
   {

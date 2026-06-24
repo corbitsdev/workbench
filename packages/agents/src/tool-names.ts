@@ -86,6 +86,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     'scrapecreators_threads',
     'scrapecreators_pinterest',
   ],
+  '@workbench/tools-skills/skills': ['list_skills', 'search_skills', 'load_skill'],
   '@workbench/tools-x/x': ['x_search'],
   '@workbench/tools-youtube/youtube': ['youtube_search'],
 };

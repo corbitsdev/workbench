@@ -73,4 +73,7 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   'artifact_list',
   'list_agents',
   'list_principals',
+  'list_skills',
+  'search_skills',
+  'load_skill',
 ]);

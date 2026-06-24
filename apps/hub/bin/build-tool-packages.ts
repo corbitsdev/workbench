@@ -32,6 +32,7 @@ export interface BuiltToolPackage {
 export const TOOL_PACKAGES: ToolPackageSpec[] = [
   { name: '@workbench/tools-artifact', packageDir: 'packages/tools-artifact' },
   { name: '@workbench/tools-agents', packageDir: 'packages/tools-agents' },
+  { name: '@workbench/tools-skills', packageDir: 'packages/tools-skills' },
   { name: '@workbench/tools-dispatch', packageDir: 'packages/tools-dispatch' },
   { name: '@workbench/tools-hackernews', packageDir: 'packages/tools-hackernews' },
   { name: '@workbench/tools-polymarket', packageDir: 'packages/tools-polymarket' },

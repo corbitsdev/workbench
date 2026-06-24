@@ -65,6 +65,7 @@
         "@workbench/tools-polymarket": "workspace:*",
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
+        "@workbench/tools-skills": "workspace:*",
         "@workbench/tools-x": "workspace:*",
         "@workbench/tools-youtube": "workspace:*",
         "arktype": "catalog:",
@@ -1012,6 +1013,20 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-skills": {
+      "name": "@workbench/tools-skills",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-x": {
       "name": "@workbench/tools-x",
       "version": "0.1.0",
@@ -1155,6 +1170,18 @@
       },
       "peerDependencies": {
         "react": "^19.0.0",
+      },
+    },
+    "workflows/myra-ephemeral-spike": {
+      "name": "@workbench/workflow-myra-ephemeral-spike",
+      "dependencies": {
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
       },
     },
     "workflows/pain-point-collateral": {
@@ -2193,6 +2220,8 @@
 
     "@workbench/tools-scrapecreators": ["@workbench/tools-scrapecreators@workspace:packages/tools-scrapecreators"],
 
+    "@workbench/tools-skills": ["@workbench/tools-skills@workspace:packages/tools-skills"],
+
     "@workbench/tools-x": ["@workbench/tools-x@workspace:packages/tools-x"],
 
     "@workbench/tools-youtube": ["@workbench/tools-youtube@workspace:packages/tools-youtube"],
@@ -2208,6 +2237,8 @@
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
 
     "@workbench/workflow-last30days-research": ["@workbench/workflow-last30days-research@workspace:workflows/last30days-research"],
+
+    "@workbench/workflow-myra-ephemeral-spike": ["@workbench/workflow-myra-ephemeral-spike@workspace:workflows/myra-ephemeral-spike"],
 
     "@workbench/workflow-pain-point-collateral": ["@workbench/workflow-pain-point-collateral@workspace:workflows/pain-point-collateral"],
 
