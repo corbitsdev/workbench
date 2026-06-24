@@ -1,5 +1,5 @@
-@import '@workbench/ui/styles.css';
-@import '@workbench/chat/styles.css';
+@import "@workbench/ui/styles.css";
+@import "@workbench/chat/styles.css";
 @source '../../../packages/artifact/src';
 @source '../../../packages/transcript/src';
 @source '../../../packages/workflow/src';
@@ -8,3 +8,59 @@
 @source '../../../packages/auth/src';
 @source '../../../packages/agents/src';
 @source '../../../node_modules/streamdown/dist/*.js';
+
+/*
+ * highlight.js token palette, mapped onto brand tokens. highlight.js (via
+ * rehype-highlight/lowlight) tokenizes safely into class-tagged React nodes;
+ * these rules only assign brand colors — no markup or code execution.
+ */
+.hljs-comment,
+.hljs-quote {
+  color: var(--text-3);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-type,
+.hljs-built_in,
+.hljs-meta,
+.hljs-doctag {
+  color: var(--accent-soft);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-template-tag {
+  color: var(--green-soft);
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable,
+.hljs-attribute,
+.hljs-attr,
+.hljs-link {
+  color: var(--blue-soft);
+}
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--cream);
+}
+.hljs-tag,
+.hljs-punctuation,
+.hljs-operator {
+  color: var(--text-2);
+}
+.hljs-deletion {
+  color: var(--accent-deep);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
+}
