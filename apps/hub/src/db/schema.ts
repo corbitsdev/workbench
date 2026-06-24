@@ -220,6 +220,8 @@ export const memberAgentInstance = pgTable(
     agentId: text('agent_id').notNull(),
     // The per-user agent_instance id.
     instanceId: text('instance_id').notNull(),
+    /** UI label for this instance row (Myra threads, etc.). */
+    label: text('label'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   () => ({})

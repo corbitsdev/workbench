@@ -67,6 +67,7 @@ import {
   assessPersonalAgentSync,
 } from './services/grant-reconcile';
 import { createMembersRouter } from './routes/members';
+import { createMyraThreadsRouter } from './routes/myra-threads';
 import { createArtifactsRouter } from './routes/artifacts';
 import { createActivityRouter } from './routes/activity';
 import { createGammaTemplatesRouter } from './routes/gamma-templates';
@@ -860,6 +861,7 @@ v1.route(
   createAgentProvisioningRouter(db, sessionService, grantStore, sidecarRouter, eventCollectors)
 );
 v1.route('/', createMembersRouter(db));
+v1.route('/', createMyraThreadsRouter(db, sessionService, grantStore, eventCollectors));
 v1.route('/', createArtifactsRouter(db));
 v1.route('/', createGammaTemplatesRouter(db));
 v1.route('/', createApprovalsRouter(db));
