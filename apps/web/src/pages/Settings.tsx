@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { useMutation } from '@tanstack/react-query';
 import {
   SettingsPage,
@@ -116,6 +117,19 @@ export default function Settings() {
           <p className="text-sm text-green-600">Display name saved.</p>
         </div>
       )}
+      <div className="mx-auto w-full max-w-2xl px-4 pb-8">
+        <h2 className="mb-2 text-sm font-semibold text-text-1">Myra (workflow)</h2>
+        <p className="mb-2 text-sm text-text-2">
+          Ephemeral Myra uses workflow inline inference — not your personal instance session in the
+          docked chat.
+        </p>
+        <Link
+          to="/labs/myra-ephemeral"
+          className="text-sm font-medium text-accent underline-offset-2 hover:underline"
+        >
+          Open Myra workflow chat
+        </Link>
+      </div>
     </div>
   );
 }

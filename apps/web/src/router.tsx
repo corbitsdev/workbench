@@ -10,6 +10,7 @@ import { SkillsLibrary } from './pages/SkillsLibrary';
 import { SkillsNew } from './pages/SkillsNew';
 import { SkillDetail } from './pages/SkillDetail';
 import { InsightsDashboard } from './pages/InsightsDashboard';
+import { EphemeralMyraSpikePage } from './pages/EphemeralMyraSpikePage';
 
 function ProtectedLayout() {
   const { session } = useAuth();
@@ -30,6 +31,19 @@ function AppShell() {
           </main>
           <PersonalAgentChat />
         </div>
+      </div>
+    </ChatLauncherProvider>
+  );
+}
+
+function LabsShell() {
+  return (
+    <ChatLauncherProvider>
+      <div className="flex h-screen flex-row bg-page">
+        <AppSidebar />
+        <main className="flex-1 overflow-hidden">
+          <Outlet />
+        </main>
       </div>
     </ChatLauncherProvider>
   );
@@ -56,6 +70,10 @@ export const router = createBrowserRouter([
           { path: '/insights', element: <InsightsDashboard /> },
           { path: '/workbenches/:slug', element: <WorkbenchHome /> },
         ],
+      },
+      {
+        element: <LabsShell />,
+        children: [{ path: '/labs/myra-ephemeral', element: <EphemeralMyraSpikePage /> }],
       },
     ],
   },
