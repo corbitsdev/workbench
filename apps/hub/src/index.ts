@@ -1068,9 +1068,12 @@ if (import.meta.main) {
 
 // ─── Graceful shutdown ──────────────────────────────────────────────
 //
-// Stop accepting new connections and wait up to 10 s for in-flight
-// requests to drain before exiting. Railway sends SIGTERM then waits
-// 10 s before SIGKILL — this uses that window rather than dying instantly.
+// Railway sends SIGTERM then SIGKILL after ~10 s. Close sidecar WebSockets
+// first: awaiting server.stop() while a sidecar link is still open never
+// reaches closeAll(), so the sidecar sits on a zombie socket until pong
+// timeout. Then drain in-flight HTTP briefly and exit.
+
+const SHUTDOWN_DRAIN_MS = 8_000;
 
 let server: ReturnType<typeof Bun.serve> | undefined;
 
@@ -1078,16 +1081,16 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, async () => {
     try {
       log.info('Received {signal}, draining', { signal });
-      // Stop accepting new connections first so no WebSocket upgrade can slip in
-      // after closeAll (CL-1654).
-      await server?.stop();
-      // Close sidecar sockets deliberately so each sidecar sees a clean close
-      // and reconnects on its short reconnect delay, rather than waiting for its
-      // heartbeat to time out the zombie socket left by an abrupt exit (CL-1654).
       log.info('Closing sidecar connections', {
         count: sidecarConnections.size(),
       });
       sidecarConnections.closeAll();
+      await Promise.race([
+        server?.stop() ?? Promise.resolve(),
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, SHUTDOWN_DRAIN_MS);
+        }),
+      ]);
       log.info('Server stopped, exiting');
       process.exit(0);
     } catch (err) {
