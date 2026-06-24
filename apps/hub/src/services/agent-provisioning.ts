@@ -1,32 +1,18 @@
-import { eq, and, inArray, like } from "drizzle-orm";
-import { schema as intxSchema, resolveModelSources } from "@intx/db";
-import type { DB } from "@intx/db";
-import {
-  ModelRequirements,
-  InvokerModelPreferences,
-  type ProviderPreference,
-} from "@intx/types";
-import { generateId } from "@intx/hub-common";
-import { getLogger } from "@intx/log";
-import type {
-  SessionService,
-  SidecarRouter,
-  EventCollectorRegistry,
-} from "@intx/hub-sessions";
-import { SessionLaunchError } from "@intx/hub-sessions";
-import type { GrantStore } from "@intx/types/authz";
-import { composePersonalAgentPromptForInstance } from "../lib/operator-profile";
-import {
-  buildToolDefinitions,
-  getToolNamesFromCapabilities,
-} from "../lib/tool-registry";
-import { parseAgentRow } from "@intx/db";
-import {
-  buildToolGrantRows,
-  TOOL_GRANT_RESOURCE_PREFIX,
-} from "../lib/tool-grants";
+import { eq, and, inArray, like } from 'drizzle-orm';
+import { schema as intxSchema, resolveModelSources } from '@intx/db';
+import type { DB } from '@intx/db';
+import { ModelRequirements, InvokerModelPreferences, type ProviderPreference } from '@intx/types';
+import { generateId } from '@intx/hub-common';
+import { getLogger } from '@intx/log';
+import type { SessionService, SidecarRouter, EventCollectorRegistry } from '@intx/hub-sessions';
+import { SessionLaunchError } from '@intx/hub-sessions';
+import type { GrantStore } from '@intx/types/authz';
+import { composePersonalAgentPromptForInstance } from '../lib/operator-profile';
+import { buildToolDefinitions, getToolNamesFromCapabilities } from '../lib/tool-registry';
+import { parseAgentRow } from '@intx/db';
+import { buildToolGrantRows, TOOL_GRANT_RESOURCE_PREFIX } from '../lib/tool-grants';
 
-const log = getLogger(["api", "agents"]);
+const log = getLogger(['api', 'agents']);
 
 const { agent, agentInstance, agentSession, grant, tenant } = intxSchema;
 
@@ -48,15 +34,13 @@ export const MAX_LAUNCH_ATTEMPTS = 3;
  * Mirrors Interchange's native instances route.
  */
 export async function resolveInstanceSourcesFromDefinition(
-  db: DB["db"],
+  db: DB['db'],
   tenantId: string,
   agentRow: typeof agent.$inferSelect,
-  modelPreferences: unknown,
+  modelPreferences: unknown
 ) {
   const modelRequirements =
-    agentRow.modelRequirements !== null
-      ? ModelRequirements.assert(agentRow.modelRequirements)
-      : [];
+    agentRow.modelRequirements !== null ? ModelRequirements.assert(agentRow.modelRequirements) : [];
   const invokerPreferences: Record<string, ProviderPreference> = {};
   const preferences =
     modelPreferences !== null && modelPreferences !== undefined
@@ -77,13 +61,13 @@ export async function resolveInstanceSourcesFromDefinition(
  * the orchestrator's reconnect path. Idempotent; safe to call on every launch.
  */
 export async function persistInstanceToolGrants(
-  db: DB["db"],
+  db: DB['db'],
   opts: {
     tenantId: string;
     principalId: string;
     toolNames: string[];
     now: Date;
-  },
+  }
 ): Promise<void> {
   const { tenantId, principalId, toolNames, now } = opts;
   const rows = buildToolGrantRows(toolNames, { tenantId, principalId }, now);
@@ -93,9 +77,9 @@ export async function persistInstanceToolGrants(
       .where(
         and(
           eq(grant.principalId, principalId),
-          eq(grant.origin, "system"),
-          like(grant.resource, `${TOOL_GRANT_RESOURCE_PREFIX}%`),
-        ),
+          eq(grant.origin, 'system'),
+          like(grant.resource, `${TOOL_GRANT_RESOURCE_PREFIX}%`)
+        )
       );
     if (rows.length > 0) {
       await tx.insert(grant).values(rows);
@@ -104,10 +88,10 @@ export async function persistInstanceToolGrants(
 }
 
 export type GrantRequirementRow = {
-  source: "tenant" | "creator" | "invoker";
+  source: 'tenant' | 'creator' | 'invoker';
   resource: string;
   action: string;
-  effect?: "allow" | "deny";
+  effect?: 'allow' | 'deny';
   conditions?: Record<string, unknown> | null;
 };
 
@@ -122,40 +106,39 @@ export type GrantRequirementRow = {
  * principal and re-inserts, so launch and reconnect agree.
  */
 export async function persistInstanceGrantRequirements(
-  db: DB["db"],
+  db: DB['db'],
   opts: {
     tenantId: string;
     principalId: string;
     grantRequirements: GrantRequirementRow[];
     now: Date;
-  },
+  }
 ): Promise<void> {
   const { tenantId, principalId, grantRequirements, now } = opts;
 
   const rows = grantRequirements.map((req) => ({
-    id: generateId("grant"),
+    id: generateId('grant'),
     tenantId,
     principalId,
     resource: req.resource,
     action: req.action,
-    effect: req.effect ?? ("allow" as const),
+    effect: req.effect ?? ('allow' as const),
     conditions: req.conditions ?? null,
-    origin:
-      req.source === "creator" ? ("creator" as const) : ("invoker" as const),
+    origin: req.source === 'creator' ? ('creator' as const) : ('invoker' as const),
     createdAt: now,
     updatedAt: now,
   }));
 
   // The dynamic per-tenant deliver grant, computed at launch (not seeded).
   rows.push({
-    id: generateId("grant"),
+    id: generateId('grant'),
     tenantId,
     principalId,
     resource: `tenant:${tenantId}`,
-    action: "deliver",
-    effect: "allow" as const,
+    action: 'deliver',
+    effect: 'allow' as const,
     conditions: null,
-    origin: "invoker" as const,
+    origin: 'invoker' as const,
     createdAt: now,
     updatedAt: now,
   });
@@ -164,10 +147,7 @@ export async function persistInstanceGrantRequirements(
     await tx
       .delete(grant)
       .where(
-        and(
-          eq(grant.principalId, principalId),
-          inArray(grant.origin, ["creator", "invoker"]),
-        ),
+        and(eq(grant.principalId, principalId), inArray(grant.origin, ['creator', 'invoker']))
       );
     if (rows.length > 0) {
       await tx.insert(grant).values(rows);
@@ -176,7 +156,7 @@ export async function persistInstanceGrantRequirements(
 }
 
 export async function launchAgentSession(
-  db: DB["db"],
+  db: DB['db'],
   sessionService: SessionService,
   grantStore: GrantStore,
   eventCollectors: EventCollectorRegistry,
@@ -188,17 +168,10 @@ export async function launchAgentSession(
     tenantDomain: string;
     systemPrompt: string;
     now: Date;
-  },
+  }
 ): Promise<{ address: string; sessionId: string }> {
-  const {
-    agentId,
-    instanceId,
-    instancePrincipalId,
-    tenantId,
-    tenantDomain,
-    systemPrompt,
-    now,
-  } = opts;
+  const { agentId, instanceId, instancePrincipalId, tenantId, tenantDomain, systemPrompt, now } =
+    opts;
   const address = `${instanceId}@${tenantDomain}`;
 
   const agentRow = await db.query.agent.findFirst({
@@ -217,17 +190,14 @@ export async function launchAgentSession(
     db,
     tenantId,
     agentRow,
-    instanceRow?.modelPreferences ?? null,
+    instanceRow?.modelPreferences ?? null
   );
   if (!resolution.ok) {
     const reason =
-      resolution.reason === "model_unavailable"
+      resolution.reason === 'model_unavailable'
         ? `model_unavailable (${resolution.model})`
         : resolution.reason;
-    throw new Error(
-      "No resolvable inference sources for agent credential requirements: " +
-        reason,
-    );
+    throw new Error('No resolvable inference sources for agent credential requirements: ' + reason);
   }
 
   const sources = resolution.sources;
@@ -243,8 +213,7 @@ export async function launchAgentSession(
   // a non-personal instance or an unresolved operator keeps the seeded prompt,
   // never a launch failure.
   const defaultSourceProvider =
-    sources.find((s) => s.id === defaultSource)?.provider ??
-    sources[0]!.provider;
+    sources.find((s) => s.id === defaultSource)?.provider ?? sources[0]!.provider;
   let effectiveSystemPrompt = systemPrompt;
   try {
     const personalized = await composePersonalAgentPromptForInstance(db, {
@@ -256,13 +225,10 @@ export async function launchAgentSession(
       effectiveSystemPrompt = personalized;
     }
   } catch (err) {
-    log.warn(
-      "Failed to personalize personal-agent prompt; using seeded prompt",
-      {
-        instanceId,
-        error: err instanceof Error ? err.message : String(err),
-      },
-    );
+    log.warn('Failed to personalize personal-agent prompt; using seeded prompt', {
+      instanceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Persist the agent's tool grants on the instance principal before collecting.
@@ -290,8 +256,7 @@ export async function launchAgentSession(
   await persistInstanceGrantRequirements(db, {
     tenantId,
     principalId: instancePrincipalId,
-    grantRequirements: (agentRow.grantRequirements ??
-      []) as GrantRequirementRow[],
+    grantRequirements: (agentRow.grantRequirements ?? []) as GrantRequirementRow[],
     now,
   });
 
@@ -300,7 +265,7 @@ export async function launchAgentSession(
   // Resolve the session to launch under. Reuse the instance's existing active
   // session (resume) rather than minting a new one on every call. Minting
   // unconditionally caused session churn (CL-1651): a transient sidecar
-  // disconnect made the instance briefly unroutable, so every GET /v1/me poll
+  // disconnect made the instance briefly unroutable, so every POST /v1/me sync poll
   // slipped past the routable guard in relaunchInstanceIfNeeded and created a
   // fresh session, orphaning the prior one and dropping in-flight live events
   // whose turns belonged to the superseded session.
@@ -314,18 +279,18 @@ export async function launchAgentSession(
     // points at it — we resume in place rather than repointing the instance at a
     // different active session. The skipped agentInstance.update below relies on
     // that invariant.
-    if (existingSession?.status === "active") {
+    if (existingSession?.status === 'active') {
       sessionId = existing.sessionId;
     }
   }
   if (sessionId === undefined) {
-    sessionId = generateId("session");
+    sessionId = generateId('session');
     await db.insert(agentSession).values({
       id: sessionId,
       tenantId,
       agentId,
       principalId: instancePrincipalId,
-      status: "active",
+      status: 'active',
       createdAt: now,
       updatedAt: now,
     });
@@ -357,8 +322,7 @@ export async function launchAgentSession(
     // from buildToolDefinitions in the same change as adding the package pin.
     // Guard against null: the column is NOT NULL DEFAULT [] but rows seeded before
     // migration 0029 may carry null in legacy deployments.
-    toolPackagePins:
-      agentRow.toolPackages != null ? parseAgentRow(agentRow).toolPackages : [],
+    toolPackagePins: agentRow.toolPackages != null ? parseAgentRow(agentRow).toolPackages : [],
   };
 
   let lastError: unknown;
@@ -370,19 +334,17 @@ export async function launchAgentSession(
       eventCollectors.create(address, tenantId, sessionId, instanceId);
       await db
         .update(agentInstance)
-        .set({ status: "running", updatedAt: new Date() })
+        .set({ status: 'running', updatedAt: new Date() })
         .where(eq(agentInstance.id, instanceId));
-      log.info("Agent session launched", { instanceId, agentId, tenantId });
+      log.info('Agent session launched', { instanceId, agentId, tenantId });
       return { address, sessionId };
     } catch (err) {
       lastError = err;
       // Provision-phase failures mean the sidecar already has the agent or
       // rejected the config. Neither condition improves with retries.
-      if (err instanceof SessionLaunchError && err.phase === "provision") break;
+      if (err instanceof SessionLaunchError && err.phase === 'provision') break;
       if (attempt < MAX_LAUNCH_ATTEMPTS - 1) {
-        await new Promise<void>((resolve) =>
-          setTimeout(resolve, LAUNCH_RETRY_DELAY_MS),
-        );
+        await new Promise<void>((resolve) => setTimeout(resolve, LAUNCH_RETRY_DELAY_MS));
       }
     }
   }
@@ -392,10 +354,8 @@ export async function launchAgentSession(
   const failedAt = new Date();
   await db
     .update(agentSession)
-    .set({ status: "ended", endedAt: failedAt, updatedAt: failedAt })
-    .where(
-      and(eq(agentSession.id, sessionId), eq(agentSession.status, "active")),
-    );
+    .set({ status: 'ended', endedAt: failedAt, updatedAt: failedAt })
+    .where(and(eq(agentSession.id, sessionId), eq(agentSession.status, 'active')));
 
   // Clean up any tool grants written before the launch loop — they're orphaned
   // since no session launched, and would otherwise be returned by collectGrants
@@ -405,23 +365,23 @@ export async function launchAgentSession(
     .where(
       and(
         eq(grant.principalId, instancePrincipalId),
-        eq(grant.origin, "system"),
-        like(grant.resource, `${TOOL_GRANT_RESOURCE_PREFIX}%`),
-      ),
+        eq(grant.origin, 'system'),
+        like(grant.resource, `${TOOL_GRANT_RESOURCE_PREFIX}%`)
+      )
     );
 
   throw lastError;
 }
 
 // Relaunch a Myra instance's session if it has no active session but has credentials granted.
-// Called from GET /v1/me so existing users get Myra running automatically on login.
+// Called from POST /v1/me so existing users get Myra running automatically on login.
 export async function relaunchInstanceIfNeeded(
-  db: DB["db"],
+  db: DB['db'],
   sessionService: SessionService,
   grantStore: GrantStore,
   eventCollectors: EventCollectorRegistry,
   instanceId: string,
-  sidecarRouter: SidecarRouter,
+  sidecarRouter: SidecarRouter
 ): Promise<void> {
   const instance = await db.query.agentInstance.findFirst({
     where: eq(agentInstance.id, instanceId),
@@ -430,13 +390,13 @@ export async function relaunchInstanceIfNeeded(
 
   // A stopped instance with endedAt set was explicitly deleted — it cannot be
   // relaunched.
-  if (instance.status === "stopped" && instance.endedAt !== null) return;
+  if (instance.status === 'stopped' && instance.endedAt !== null) return;
 
   // The sidecar — not the hub — owns the lifecycle of a launched agent. If the
   // address is routable on a connected sidecar the agent is live; and even while
   // momentarily unroutable during a sidecar reconnect, an instance that already
   // has an active session is restored by the sidecar (see the agent.reconnected
-  // path in hub-session-orchestrator). Relaunching from the poll-driven /v1/me
+  // path in hub-session-orchestrator). Relaunching from the poll-driven POST /v1/me
   // path in either case churns sessions and can evict the live agent ("Agent
   // already exists" → router eviction → 502). So relaunch only for a genuine cold
   // start: an instance with no active session yet. (CL-1651)
@@ -448,7 +408,7 @@ export async function relaunchInstanceIfNeeded(
     // Active or ending: the harness owns it (live, or mid-teardown). Only a fully
     // ended session leaves nothing for the harness to resume — relaunching while
     // a session is 'ending' would mint a fresh one mid-teardown and re-churn.
-    if (session && session.status !== "ended") return;
+    if (session && session.status !== 'ended') return;
   }
 
   const tenantRow = await db.query.tenant.findFirst({
@@ -462,7 +422,7 @@ export async function relaunchInstanceIfNeeded(
   if (!agentRow?.systemPrompt) return;
 
   // Guard: do not attempt launch if the agent's model requirements cannot
-  // resolve against the tenant catalog. Without this, every GET /v1/me poll for
+  // resolve against the tenant catalog. Without this, every POST /v1/me sync for
   // a tenant whose catalog is not yet seeded fires a launch that always fails
   // with `no_requirements`. This is the same resolution launchAgentSession runs,
   // so the guard and the launch agree by construction.
@@ -470,7 +430,7 @@ export async function relaunchInstanceIfNeeded(
     db,
     instance.tenantId,
     agentRow,
-    instance.modelPreferences,
+    instance.modelPreferences
   );
   if (!guardResolution.ok) return;
 
@@ -499,7 +459,7 @@ export async function relaunchInstanceIfNeeded(
  */
 export function isAgentAlreadyExistsError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
-  return err.message.includes("Agent already exists for address");
+  return err.message.includes('Agent already exists for address');
 }
 
 // A sidecar that fully restarts (every redeploy) reconnects with no agents, so
@@ -521,9 +481,9 @@ const DEFAULT_DISCONNECT_RECONCILE_GRACE_MS = 90_000;
  * bring it back, instead of mistaking the stale session for a live agent. (CL-1692)
  */
 export async function reconcileDisconnectedSession(
-  db: DB["db"],
+  db: DB['db'],
   sidecarRouter: SidecarRouter,
-  agentAddress: string,
+  agentAddress: string
 ): Promise<void> {
   if (sidecarRouter.getRoutableAddresses().includes(agentAddress)) return;
 
@@ -535,15 +495,15 @@ export async function reconcileDisconnectedSession(
   const session = await db.query.agentSession.findFirst({
     where: eq(agentSession.id, instance.sessionId),
   });
-  if (!session || session.status === "ended") return;
+  if (!session || session.status === 'ended') return;
 
   const now = new Date();
   await db
     .update(agentSession)
-    .set({ status: "ended", endedAt: now, updatedAt: now })
+    .set({ status: 'ended', endedAt: now, updatedAt: now })
     .where(eq(agentSession.id, session.id));
 
-  log.info("Reconciled stale session for disconnected agent", {
+  log.info('Reconciled stale session for disconnected agent', {
     agentAddress,
     sessionId: session.id,
   });
@@ -555,24 +515,22 @@ export async function reconcileDisconnectedSession(
  * window lets a genuine reconnect win the race before we tear the session down.
  */
 export function registerDisconnectReconciler(deps: {
-  db: DB["db"];
+  db: DB['db'];
   router: SidecarRouter;
   graceMs?: number;
 }): () => void {
   const { db, router } = deps;
   const graceMs = deps.graceMs ?? DEFAULT_DISCONNECT_RECONCILE_GRACE_MS;
 
-  return router.events.on("sidecar.disconnect", ({ agentAddresses }) => {
+  return router.events.on('sidecar.disconnect', ({ agentAddresses }) => {
     for (const agentAddress of agentAddresses) {
       setTimeout(() => {
-        void reconcileDisconnectedSession(db, router, agentAddress).catch(
-          (err) => {
-            log.warn("Failed to reconcile disconnected agent session", {
-              agentAddress,
-              error: err instanceof Error ? err : new Error(String(err)),
-            });
-          },
-        );
+        void reconcileDisconnectedSession(db, router, agentAddress).catch((err) => {
+          log.warn('Failed to reconcile disconnected agent session', {
+            agentAddress,
+            error: err instanceof Error ? err : new Error(String(err)),
+          });
+        });
       }, graceMs);
     }
   });

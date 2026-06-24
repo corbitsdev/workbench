@@ -20,7 +20,11 @@ mock.module('./agent-provisioning', () => ({
   }),
 }));
 
-const { reconcileMemberInstanceGrants } = await import('./grant-reconcile');
+const {
+  reconcileMemberInstanceGrants,
+  refreshInstanceGrantsFromDefinition,
+  personalAgentUpdateAvailable,
+} = await import('./grant-reconcile');
 
 const CANONICAL_TOOL = '@workbench/tools-granola/granola:granola_list_notes';
 
@@ -161,6 +165,7 @@ describe('reconcileMemberInstanceGrants', () => {
         },
         memberAgentInstance: { findMany: async () => [{ instanceId: 'ins-1' }] },
       },
+      update: () => ({ set: () => ({ where: mock(async () => {}) }) }),
     } as unknown as Parameters<typeof reconcileMemberInstanceGrants>[0];
 
     const live = {
@@ -209,5 +214,85 @@ describe('reconcileMemberInstanceGrants', () => {
     const [result] = await reconcileMemberInstanceGrants(db, [MYRA], live);
     expect(result).toEqual({ templateKey: 'myra', reconciled: 1, pushed: 0, skipped: 0 });
     expect(sendGrantsUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('refreshInstanceGrantsFromDefinition', () => {
+  it('pushes grants when live and routable', async () => {
+    const sendGrantsUpdate = mock(async () => {});
+    const collectGrants = mock(async () => [{ resource: 'tool:attio_query_records', action: 'invoke' }]);
+    const update = mock(async () => {});
+    const db = {
+      query: {
+        agent: {
+          findFirst: async () => ({
+            id: 'agt-1',
+            capabilities: { tools: [CANONICAL_TOOL] },
+            grantRequirements: [],
+          }),
+        },
+      },
+      update: () => ({ set: () => ({ where: update }) }),
+    } as unknown as Parameters<typeof refreshInstanceGrantsFromDefinition>[0];
+
+    const result = await refreshInstanceGrantsFromDefinition(
+      db,
+      {
+        agentId: 'agt-1',
+        tenantId: 'ten-1',
+        principalId: 'prn-1',
+        address: 'live@global.example.com',
+      },
+      {
+        sidecarRouter: {
+          getRoutableAddresses: () => ['live@global.example.com'],
+          sendGrantsUpdate,
+        },
+        grantStore: { collectGrants },
+      }
+    );
+
+    expect(result).toEqual({ refreshed: true, pushed: true });
+    expect(toolGrantCalls).toHaveLength(1);
+    expect(sendGrantsUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('rewrites DB grants but does not push when not routable', async () => {
+    const sendGrantsUpdate = mock(async () => {});
+    const db = {
+      query: {
+        agent: {
+          findFirst: async () => ({
+            id: 'agt-1',
+            capabilities: { tools: [CANONICAL_TOOL] },
+            grantRequirements: [],
+          }),
+        },
+      },
+    } as unknown as Parameters<typeof refreshInstanceGrantsFromDefinition>[0];
+
+    const result = await refreshInstanceGrantsFromDefinition(
+      db,
+      {
+        agentId: 'agt-1',
+        tenantId: 'ten-1',
+        principalId: 'prn-1',
+        address: 'down@global.example.com',
+      },
+      {
+        sidecarRouter: { getRoutableAddresses: () => [], sendGrantsUpdate },
+        grantStore: { collectGrants: mock(async () => []) },
+      }
+    );
+
+    expect(result).toEqual({ refreshed: true, pushed: false });
+    expect(toolGrantCalls).toHaveLength(1);
+    expect(sendGrantsUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('personalAgentUpdateAvailable', () => {
+  it('is true when paInstanceId is missing', async () => {
+    expect(await personalAgentUpdateAvailable({} as never, null)).toBe(true);
   });
 });

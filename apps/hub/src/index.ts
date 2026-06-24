@@ -63,6 +63,10 @@ import {
   registerDisconnectReconciler,
   resolveInstanceSourcesFromDefinition,
 } from './services/agent-provisioning';
+import {
+  refreshInstanceGrantsFromDefinition,
+  personalAgentUpdateAvailable,
+} from './services/grant-reconcile';
 import { createMembersRouter } from './routes/members';
 import { createArtifactsRouter } from './routes/artifacts';
 import { createGammaTemplatesRouter } from './routes/gamma-templates';
@@ -79,6 +83,7 @@ import {
   seedGlobalTenant,
   seedAgentTemplates,
   ensureGlobalMember,
+  lookupGlobalMember,
   provisionMemberInstances,
   getMyraInstanceId,
 } from './lib/tenant-provisioning';
@@ -515,12 +520,29 @@ v1.use('*', async (c, next) => {
   await next();
 });
 
-v1.get('/me', async (c) => {
-  const userId = c.get('userId');
+const MePostBody = type({
+  'syncPersonalAgent?': 'boolean',
+});
 
-  // The user's working tenant is the shared global org tenant (CL-1452). Repair
-  // path: if signup/session provisioning failed, ensure the member principal and
-  // their Myra here — both idempotent, so a healthy user is a no-op.
+async function myraInstanceIdForMember(
+  workingTenantId: string,
+  memberPrincipalId: string
+): Promise<string | null> {
+  const { memberAgentInstance } = schema;
+  const mapping = await db.query.memberAgentInstance.findFirst({
+    where: and(
+      eq(memberAgentInstance.tenantId, workingTenantId),
+      eq(memberAgentInstance.memberPrincipalId, memberPrincipalId),
+      eq(memberAgentInstance.templateKey, 'myra')
+    ),
+  });
+  return mapping?.instanceId ?? null;
+}
+
+async function syncPersonalAgentForUser(
+  userId: string,
+  syncPersonalAgent: boolean
+): Promise<{ workingTenantId: string | null; memberPrincipalId: string | null; paInstanceId: string | null }> {
   let workingTenantId: string | null = null;
   let memberPrincipalId: string | null = null;
   try {
@@ -528,42 +550,33 @@ v1.get('/me', async (c) => {
     workingTenantId = tenantId;
     memberPrincipalId = principalId;
   } catch (err) {
-    log.error('Failed to ensure global member on /me', {
+    log.error('Failed to ensure global member on POST /v1/me', {
       userId,
       error: err instanceof Error ? err : new Error(String(err)),
     });
+    return { workingTenantId: null, memberPrincipalId: null, paInstanceId: null };
   }
 
   let paInstanceId: string | null = null;
   if (workingTenantId && memberPrincipalId) {
-    const { memberAgentInstance } = schema;
-    const mapping = await db.query.memberAgentInstance.findFirst({
-      where: and(
-        eq(memberAgentInstance.tenantId, workingTenantId),
-        eq(memberAgentInstance.memberPrincipalId, memberPrincipalId),
-        eq(memberAgentInstance.templateKey, 'myra')
-      ),
-    });
-    paInstanceId = mapping?.instanceId ?? null;
+    paInstanceId = await myraInstanceIdForMember(workingTenantId, memberPrincipalId);
 
-    // If the mapping is missing (e.g. user deleted Myra), re-provision it.
     if (!paInstanceId) {
       try {
         const instances = await provisionMemberInstances(db, {
           userId,
-          memberPrincipalId: memberPrincipalId,
+          memberPrincipalId,
         });
         paInstanceId = getMyraInstanceId(instances);
       } catch (err) {
-        log.warn('Failed to re-provision Myra on /me', {
+        log.warn('Failed to re-provision Myra on POST /v1/me', {
           userId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
       }
     }
 
-    // If credentials are already granted but no session is running, relaunch automatically.
-    if (paInstanceId) {
+    if (paInstanceId && syncPersonalAgent) {
       try {
         await relaunchInstanceIfNeeded(
           db,
@@ -580,10 +593,50 @@ v1.get('/me', async (c) => {
           error: err instanceof Error ? err : new Error(String(err)),
         });
       }
+
+      try {
+        const paForGrants = await db.query.agentInstance.findFirst({
+          where: eq(intxSchema.agentInstance.id, paInstanceId),
+        });
+        if (paForGrants && sidecarRouter.getRoutableAddresses().includes(paForGrants.address)) {
+          await refreshInstanceGrantsFromDefinition(
+            db,
+            {
+              agentId: paForGrants.agentId,
+              tenantId: paForGrants.tenantId,
+              principalId: paForGrants.principalId,
+              address: paForGrants.address,
+            },
+            { sidecarRouter, grantStore }
+          );
+        }
+      } catch (err) {
+        log.warn('Failed to refresh live Myra grants on POST /v1/me', {
+          userId,
+          instanceId: paInstanceId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
     }
   }
 
+  return { workingTenantId, memberPrincipalId, paInstanceId };
+}
+
+v1.get('/me', async (c) => {
+  const userId = c.get('userId');
   const userName = c.get('userName');
+
+  const membership = await lookupGlobalMember(db, { userId });
+  const workingTenantId = membership?.tenantId ?? null;
+  const memberPrincipalId = membership?.principalId ?? null;
+
+  let paInstanceId: string | null = null;
+  if (workingTenantId && memberPrincipalId) {
+    paInstanceId = await myraInstanceIdForMember(workingTenantId, memberPrincipalId);
+  }
+
+  const personalAgentSyncAvailable = await personalAgentUpdateAvailable(db, paInstanceId);
 
   let credentialResolved = false;
   if (paInstanceId && workingTenantId) {
@@ -648,6 +701,83 @@ v1.get('/me', async (c) => {
     paInstanceId,
     provisioned: workingTenantId !== null,
     credentialResolved,
+    personalAgentSyncAvailable,
+  });
+});
+
+v1.post('/me', async (c) => {
+  const userId = c.get('userId');
+  const userName = c.get('userName');
+
+  const raw = await c.req.json().catch(() => ({}));
+  const parsed = MePostBody(raw);
+  if (parsed instanceof type.errors) {
+    return c.json({ error: parsed.summary }, 400);
+  }
+  const syncPersonalAgent = parsed.syncPersonalAgent ?? true;
+
+  const { workingTenantId, paInstanceId } = await syncPersonalAgentForUser(userId, syncPersonalAgent);
+
+  let credentialResolved = false;
+  if (paInstanceId && workingTenantId) {
+    const paInstance = await db.query.agentInstance.findFirst({
+      where: eq(intxSchema.agentInstance.id, paInstanceId),
+    });
+    if (paInstance) {
+      try {
+        const agentRow = await db.query.agent.findFirst({
+          where: eq(intxSchema.agent.id, paInstance.agentId),
+        });
+        if (agentRow) {
+          const resolution = await resolveInstanceSourcesFromDefinition(
+            db,
+            workingTenantId,
+            agentRow,
+            paInstance.modelPreferences
+          );
+          credentialResolved = resolution.ok && resolution.sources.length > 0;
+        }
+      } catch (err) {
+        log.warn('Instance source resolution failed on POST /me', {
+          error: err,
+          tenantId: workingTenantId,
+        });
+        credentialResolved = false;
+      }
+    }
+  }
+
+  const rootTenantIds: string[] = [];
+  try {
+    const rootPrincipals = await db
+      .select({ tenantId: intxSchema.principal.tenantId })
+      .from(intxSchema.principal)
+      .innerJoin(intxSchema.tenant, eq(intxSchema.tenant.id, intxSchema.principal.tenantId))
+      .where(
+        and(
+          eq(intxSchema.principal.refId, userId),
+          eq(intxSchema.principal.kind, 'user'),
+          isNull(intxSchema.tenant.parentId)
+        )
+      );
+    for (const row of rootPrincipals) {
+      rootTenantIds.push(row.tenantId);
+    }
+  } catch (err) {
+    log.warn('Root tenant lookup failed on POST /me', { error: err, userId });
+  }
+
+  const personalAgentSyncAvailable = await personalAgentUpdateAvailable(db, paInstanceId);
+
+  return c.json({
+    userId,
+    userName,
+    personalTenantId: workingTenantId,
+    rootTenantIds,
+    paInstanceId,
+    provisioned: workingTenantId !== null,
+    credentialResolved,
+    personalAgentSyncAvailable,
   });
 });
 

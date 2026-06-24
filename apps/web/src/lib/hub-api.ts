@@ -68,10 +68,30 @@ export type MeResponse = {
   paInstanceId: string | null;
   provisioned: boolean;
   credentialResolved: boolean;
+  /** When true, call postMe() to provision or push template/grant updates. */
+  personalAgentSyncAvailable?: boolean;
 };
 
 export async function getMe(): Promise<MeResponse> {
   return hubFetch<MeResponse>('GET', 'v1/me');
+}
+
+export type PostMeBody = {
+  syncPersonalAgent?: boolean;
+};
+
+/** Ensures org membership / Myra and syncs live session grants (safe to repeat). */
+export async function postMe(body: PostMeBody = {}): Promise<MeResponse> {
+  return hubFetch<MeResponse>('POST', 'v1/me', body);
+}
+
+/** Read-only status; runs postMe when the hub signals an update is available. */
+export async function ensureMeSynced(): Promise<MeResponse> {
+  const me = await getMe();
+  if (me.personalAgentSyncAvailable) {
+    return postMe();
+  }
+  return me;
 }
 
 export async function getMyPrincipals(): Promise<Principal[]> {

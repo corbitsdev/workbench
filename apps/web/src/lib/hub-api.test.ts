@@ -4,6 +4,8 @@ import {
   deleteAgentInstance,
   deployAgentFromTemplate,
   getMe,
+  postMe,
+  ensureMeSynced,
   getMyPrincipals,
   getAnalyticsSummary,
   getOutputFeedback,
@@ -160,6 +162,33 @@ describe('hub-api network helpers', () => {
     expect(calls[0]!.url).toContain('/api/v1/me');
     expect(calls[0]!.init?.method).toBe('GET');
     expect(calls[0]!.init?.credentials).toBe('include');
+  });
+
+  it('ensureMeSynced GETs first and POSTs only when personalAgentSyncAvailable', async () => {
+    const stale = { userId: 'u1', personalAgentSyncAvailable: true };
+    const fresh = { userId: 'u1', personalAgentSyncAvailable: false };
+    let call = 0;
+    const calls = installFetch(() => {
+      call += 1;
+      if (call === 1) return { body: stale };
+      return { body: fresh };
+    });
+
+    expect((await ensureMeSynced()) as unknown).toEqual(fresh);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.init?.method).toBe('GET');
+    expect(calls[1]!.init?.method).toBe('POST');
+  });
+
+  it('postMe issues a credentialed POST to /api/v1/me with JSON body', async () => {
+    const me = { userId: 'u1', userName: 'Sawyer', provisioned: true };
+    const calls = installFetch(() => ({ body: me }));
+
+    expect((await postMe({ syncPersonalAgent: true })) as unknown).toEqual(me);
+    expect(calls[0]!.url).toContain('/api/v1/me');
+    expect(calls[0]!.init?.method).toBe('POST');
+    expect(calls[0]!.init?.credentials).toBe('include');
+    expect(calls[0]!.init?.body).toBe(JSON.stringify({ syncPersonalAgent: true }));
   });
 
   it('getMyPrincipals unwraps the data envelope', async () => {

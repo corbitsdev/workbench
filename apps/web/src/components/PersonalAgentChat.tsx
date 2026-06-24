@@ -27,7 +27,7 @@ import {
 } from '@workbench/chat';
 import { type AgentActivity } from '@intx/hub-client';
 import {
-  getMe,
+  ensureMeSynced,
   getOutputFeedback,
   launchInstanceSession,
   saveOutputFeedback,
@@ -154,7 +154,7 @@ export function PersonalAgentChat() {
 
     async function connect() {
       try {
-        const me = await getMe();
+        const me = await ensureMeSynced();
         if (cancelled) return;
 
         if (!me.personalTenantId || !me.paInstanceId) {

@@ -1,6 +1,7 @@
 import { useEffect, useCallback, createContext, useContext, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { authClient } from '../lib/auth-client';
+import { postMe } from '../lib/hub-api';
 
 type Session =
   | { status: 'loading' }
@@ -39,6 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     staleTime: 5 * 60_000,
   });
+
+  useEffect(() => {
+    if (isLoading || !data?.user) return;
+    void postMe().catch(() => {
+      // Non-fatal: provisioning guard and chat connect will retry sync.
+    });
+  }, [isLoading, data?.user?.id]);
 
   const session: Session = isLoading
     ? { status: 'loading' }

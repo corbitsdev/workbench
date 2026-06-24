@@ -288,6 +288,28 @@ export async function ensureGlobalMember(
   }
 }
 
+/** Read-only: returns global org membership if it already exists. */
+export async function lookupGlobalMember(
+  db: ProductionDB,
+  opts: { userId: string }
+): Promise<{ tenantId: string; principalId: string } | null> {
+  const { slug } = getConfig().globalTenant;
+  const globalTenant = await db.query.tenant.findFirst({
+    where: eq(tenant.slug, slug),
+  });
+  if (!globalTenant) return null;
+
+  const existing = await db.query.principal.findFirst({
+    where: and(
+      eq(principal.tenantId, globalTenant.id),
+      eq(principal.kind, 'user'),
+      eq(principal.refId, opts.userId)
+    ),
+  });
+  if (!existing) return null;
+  return { tenantId: globalTenant.id, principalId: existing.id };
+}
+
 /**
  * Stable synthetic refId for the dedicated system principal that owns every
  * seeded agent template. Distinct from any real user refId (which are user IDs),

@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useArtifacts } from '@workbench/client/react';
 import { clientOptions } from '../lib/client-options';
@@ -13,7 +13,7 @@ import { ArtifactGallery } from '../components/layout/ArtifactGallery';
 import type { ArtifactWithSession } from '@workbench/artifact';
 import { useResizableRail } from '@workbench/ui';
 import { useMediaQuery } from '../lib/use-media-query';
-import { deployAgentFromTemplate, getMe } from '../lib/hub-api';
+import { deployAgentFromTemplate, getMe, postMe } from '../lib/hub-api';
 import { useWorkbenches } from '../hooks/use-workbenches';
 import { useRightPane } from '../hooks/use-right-pane';
 import { useChatLauncher } from '../lib/chat-launcher-context';
@@ -32,12 +32,27 @@ function useProvisioningGuard(): {
   state: ProvisioningState;
   retry: () => void;
 } {
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['provisioning-guard'],
     queryFn: getMe,
     refetchInterval: 3000,
     retry: ME_MAX_RETRIES,
   });
+
+  const syncInFlight = useRef(false);
+  useEffect(() => {
+    const me = query.data;
+    if (!me?.personalAgentSyncAvailable || syncInFlight.current) return;
+    syncInFlight.current = true;
+    void postMe()
+      .then((synced) => {
+        queryClient.setQueryData(['provisioning-guard'], synced);
+      })
+      .finally(() => {
+        syncInFlight.current = false;
+      });
+  }, [query.data, queryClient]);
 
   const retry = useCallback(() => {
     void query.refetch();

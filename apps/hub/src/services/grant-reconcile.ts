@@ -9,13 +9,14 @@ import { memberAgentInstance } from '../db/schema';
 import type { HubDb } from '../db';
 import { getConfig } from '../config';
 import { getToolNamesFromCapabilities } from '../lib/tool-registry';
+import { TOOL_GRANT_RESOURCE_PREFIX } from '../lib/tool-grants';
 import {
   persistInstanceToolGrants,
   persistInstanceGrantRequirements,
   type GrantRequirementRow,
 } from './agent-provisioning';
 
-const { agent, agentInstance, tenant } = intxSchema;
+const { agent, agentInstance, grant, tenant } = intxSchema;
 const log = getLogger('grant-reconcile');
 
 export interface TemplateReconcileResult {
@@ -38,6 +39,59 @@ export interface TemplateReconcileResult {
 export interface LiveReconcileDeps {
   sidecarRouter: SidecarRouter;
   grantStore: GrantStore;
+}
+
+export interface InstanceGrantRefreshTarget {
+  agentId: string;
+  tenantId: string;
+  principalId: string;
+  address: string;
+}
+
+/**
+ * Rewrite one instance principal's tool + requirement grants from its org agent
+ * definition. When `live` is supplied and the address is routable, push the new
+ * snapshot to the sidecar without restarting the agent (same as POST …/sessions
+ * for an already-live instance).
+ */
+export async function refreshInstanceGrantsFromDefinition(
+  db: DB['db'],
+  instance: InstanceGrantRefreshTarget,
+  live?: LiveReconcileDeps
+): Promise<{ refreshed: boolean; pushed: boolean }> {
+  const agentRow = await db.query.agent.findFirst({
+    where: eq(agent.id, instance.agentId),
+  });
+  if (!agentRow) {
+    return { refreshed: false, pushed: false };
+  }
+
+  const toolNames = getToolNamesFromCapabilities(agentRow.capabilities ?? null);
+  const now = new Date();
+  await persistInstanceToolGrants(db, {
+    tenantId: instance.tenantId,
+    principalId: instance.principalId,
+    toolNames,
+    now,
+  });
+  await persistInstanceGrantRequirements(db, {
+    tenantId: instance.tenantId,
+    principalId: instance.principalId,
+    grantRequirements: (agentRow.grantRequirements ?? []) as GrantRequirementRow[],
+    now,
+  });
+
+  if (!live || !live.sidecarRouter.getRoutableAddresses().includes(instance.address)) {
+    return { refreshed: true, pushed: false };
+  }
+
+  const grants = await live.grantStore.collectGrants(instance.principalId, instance.tenantId);
+  await live.sidecarRouter.sendGrantsUpdate(instance.address, grants);
+  await db
+    .update(agentInstance)
+    .set({ updatedAt: new Date() })
+    .where(eq(agentInstance.address, instance.address));
+  return { refreshed: true, pushed: true };
 }
 
 /**
@@ -72,8 +126,6 @@ export async function reconcileMemberInstanceGrants(
   }
   const tenantId = globalTenant.id;
   const hubDb = db as unknown as HubDb;
-  const routable = live ? new Set(live.sidecarRouter.getRoutableAddresses()) : null;
-
   const results: TemplateReconcileResult[] = [];
 
   for (const template of templates) {
@@ -91,7 +143,6 @@ export async function reconcileMemberInstanceGrants(
     if (mappings.length === 0) continue;
 
     const toolNames = getToolNamesFromCapabilities(def.capabilities ?? null);
-    const grantRequirements = (def.grantRequirements ?? []) as GrantRequirementRow[];
 
     let reconciled = 0;
     let pushed = 0;
@@ -106,24 +157,18 @@ export async function reconcileMemberInstanceGrants(
         continue;
       }
 
-      const now = new Date();
-      await persistInstanceToolGrants(db, {
-        tenantId,
-        principalId: instance.principalId,
-        toolNames,
-        now,
-      });
-      await persistInstanceGrantRequirements(db, {
-        tenantId,
-        principalId: instance.principalId,
-        grantRequirements,
-        now,
-      });
+      const { pushed: didPush } = await refreshInstanceGrantsFromDefinition(
+        db,
+        {
+          agentId: def.id,
+          tenantId,
+          principalId: instance.principalId,
+          address: instance.address,
+        },
+        live
+      );
       reconciled += 1;
-
-      if (live && routable?.has(instance.address)) {
-        const grants = await live.grantStore.collectGrants(instance.principalId, tenantId);
-        await live.sidecarRouter.sendGrantsUpdate(instance.address, grants);
+      if (didPush) {
         pushed += 1;
       }
     }
@@ -139,4 +184,77 @@ export async function reconcileMemberInstanceGrants(
   }
 
   return results;
+}
+
+function sortedToolNames(names: Iterable<string>): string[] {
+  return [...new Set(names)].sort();
+}
+
+function grantToolNamesEqual(expected: string[], actual: string[]): boolean {
+  if (expected.length !== actual.length) return false;
+  for (let i = 0; i < expected.length; i++) {
+    if (expected[i] !== actual[i]) return false;
+  }
+  return true;
+}
+
+async function toolGrantNamesForPrincipal(
+  db: DB['db'],
+  tenantId: string,
+  principalId: string
+): Promise<string[]> {
+  const rows = await db
+    .select({ resource: grant.resource })
+    .from(grant)
+    .where(
+      and(
+        eq(grant.tenantId, tenantId),
+        eq(grant.principalId, principalId),
+        eq(grant.action, 'invoke'),
+        eq(grant.effect, 'allow')
+      )
+    );
+  const names: string[] = [];
+  for (const row of rows) {
+    if (row.resource.startsWith(TOOL_GRANT_RESOURCE_PREFIX)) {
+      names.push(row.resource.slice(TOOL_GRANT_RESOURCE_PREFIX.length));
+    }
+  }
+  return sortedToolNames(names);
+}
+
+/** Read-only: whether POST /v1/me should run again (GET must not mutate). */
+export async function personalAgentUpdateAvailable(
+  db: DB['db'],
+  paInstanceId: string | null
+): Promise<boolean> {
+  if (!paInstanceId) {
+    return true;
+  }
+
+  const instance = await db.query.agentInstance.findFirst({
+    where: eq(agentInstance.id, paInstanceId),
+  });
+  if (!instance || instance.endedAt) {
+    return true;
+  }
+
+  const agentRow = await db.query.agent.findFirst({
+    where: eq(agent.id, instance.agentId),
+  });
+  if (!agentRow) {
+    return true;
+  }
+
+  const expected = sortedToolNames(getToolNamesFromCapabilities(agentRow.capabilities ?? null));
+  const actual = await toolGrantNamesForPrincipal(db, instance.tenantId, instance.principalId);
+  if (!grantToolNamesEqual(expected, actual)) {
+    return true;
+  }
+
+  if (agentRow.updatedAt.getTime() > instance.updatedAt.getTime()) {
+    return true;
+  }
+
+  return false;
 }

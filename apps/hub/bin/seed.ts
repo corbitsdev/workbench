@@ -107,7 +107,7 @@ log(`  User ID: ${userId}`);
 
 // This route triggers existing repair/provisioning. Agent definitions are
 // already Interchange agent rows seeded at hub boot by seedAgentTemplates(db).
-const me = await api('GET', '/api/v1/me', undefined, cookies);
+const me = await api('POST', '/api/v1/me', {}, cookies);
 if (me.status !== 200) fail('/api/v1/me', me.status, me.data);
 
 const body = me.data as Record<string, unknown>;
