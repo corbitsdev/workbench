@@ -7,7 +7,8 @@ export const description =
   'Research the last 30 days of market and community signal, synthesize a cited brief, and save it as an artifact.';
 export const kind = 'last30days-research';
 
-const intakeInput = { from: 'steps.intake.output' } as const;
+const sourceSearchInput = { from: 'steps.intake.output' } as const;
+const sourceQueryArgMap = { query: { from: 'query' } } as const;
 
 export const workflow = defineWorkflow({
   id: kind,
@@ -15,67 +16,60 @@ export const workflow = defineWorkflow({
   steps: {
     intake: awaitSignal({ name: 'intake' }),
 
-    normalize: deterministicToolStep({
-      id: 'last30days-normalize-intake',
-      tool: 'last30days_workflow_normalize_intake',
-      input: intakeInput,
-      after: ['intake'],
-    }),
-
     hackernews: deterministicToolStep({
       id: 'last30days-fetch-hackernews',
       tool: 'hackernews_search',
-      input: { from: 'steps.normalize.output' },
-      argMap: { query: { from: 'content' } },
-      after: ['normalize'],
+      input: sourceSearchInput,
+      argMap: sourceQueryArgMap,
+      after: ['intake'],
     }),
 
     github: deterministicToolStep({
       id: 'last30days-fetch-github',
       tool: 'github_activity',
-      input: { from: 'steps.normalize.output' },
-      argMap: { query: { from: 'content' } },
-      after: ['normalize'],
+      input: sourceSearchInput,
+      argMap: sourceQueryArgMap,
+      after: ['intake'],
     }),
 
     web: deterministicToolStep({
       id: 'last30days-fetch-web',
       tool: 'exa_search',
-      input: { from: 'steps.normalize.output' },
-      argMap: { query: { from: 'content' } },
-      after: ['normalize'],
+      input: sourceSearchInput,
+      argMap: sourceQueryArgMap,
+      after: ['intake'],
     }),
 
     reddit: deterministicToolStep({
       id: 'last30days-fetch-reddit',
       tool: 'reddit_search',
-      input: { from: 'steps.normalize.output' },
-      argMap: { query: { from: 'content' } },
-      after: ['normalize'],
+      input: sourceSearchInput,
+      argMap: sourceQueryArgMap,
+      after: ['intake'],
     }),
 
     x: deterministicToolStep({
       id: 'last30days-fetch-x',
       tool: 'x_search',
-      input: { from: 'steps.normalize.output' },
-      argMap: { query: { from: 'content' } },
-      after: ['normalize'],
+      input: sourceSearchInput,
+      argMap: sourceQueryArgMap,
+      after: ['intake'],
     }),
 
     youtube: deterministicToolStep({
       id: 'last30days-fetch-youtube',
       tool: 'youtube_search',
-      input: { from: 'steps.normalize.output' },
-      argMap: { query: { from: 'content' } },
-      after: ['normalize'],
+      input: sourceSearchInput,
+      argMap: sourceQueryArgMap,
+      after: ['intake'],
     }),
 
     bluesky: deterministicToolStep({
       id: 'last30days-fetch-bluesky',
       tool: 'bluesky_search',
-      input: { from: 'steps.normalize.output' },
-      argMap: { query: { from: 'content' } },
-      after: ['normalize'],
+      input: sourceSearchInput,
+      argMap: sourceQueryArgMap,
+      after: ['intake'],
     }),
 
     brief: deterministicToolStep({

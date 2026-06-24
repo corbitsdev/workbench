@@ -35,14 +35,13 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
 describe('last30days-research native workflow', () => {
   test('gates on intake, fans out sources, briefs, writes, then persists', async () => {
     const { invoker, ran } = makeRecordingInvoker({
-      'last30days-normalize-intake': { content: 'AI coding tools' },
       'last30days-build-brief': { content: '{"topic":"AI coding tools"}' },
       'last30days-write-report': { reply: 'What I learned about AI coding tools:' },
       'last30days-persist-artifact': { artifactId: 'art_1' },
     });
     const run = runLocal(workflow, { invokeStep: invoker });
 
-    await run.signal('intake', { topic: 'AI coding tools', days: 30 });
+    await run.signal('intake', { topic: 'AI coding tools', query: 'AI coding tools', days: 30 });
 
     const result = await run.complete;
     expect(result.terminalStatus).toBe('completed');
@@ -51,7 +50,6 @@ describe('last30days-research native workflow', () => {
     for (const source of SOURCE_STEP_IDS) {
       expect(ranIds).toContain(`last30days-fetch-${source}`);
     }
-    expect(ranIds).toContain('last30days-normalize-intake');
     expect(ranIds).toContain('last30days-build-brief');
     expect(ranIds).toContain('last30days-write-report');
     expect(ranIds).toContain('last30days-persist-artifact');
@@ -60,23 +58,31 @@ describe('last30days-research native workflow', () => {
     expect(ranIds).not.toContain('last30days-extract-entities');
     expect(ranIds).not.toContain('last30days-validate-report');
 
-    // Normalize precedes every source; persist runs last.
-    const normalizeAt = ranIds.indexOf('last30days-normalize-intake');
     for (const source of SOURCE_STEP_IDS) {
-      expect(ranIds.indexOf(`last30days-fetch-${source}`)).toBeGreaterThan(normalizeAt);
+      expect(ranIds).toContain(`last30days-fetch-${source}`);
     }
     expect(ranIds.at(-1)).toBe('last30days-persist-artifact');
   });
 
-  test('sources are deterministic tool steps gated after normalize', () => {
+  test('sources are deterministic tool steps gated after intake', () => {
     for (const source of SOURCE_STEP_IDS) {
       const step = workflow.steps[source];
       if (step === undefined || step.kind !== 'step') {
         throw new Error(`expected a step primitive for ${source}`);
       }
       expect(step.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-      expect(step.after).toContain('normalize');
+      expect(step.after).toContain('intake');
     }
+  });
+
+  test('brief step pins last30days_workflow_brief with a canonical runtime name', () => {
+    const brief = workflow.steps.brief;
+    if (brief === undefined || brief.kind !== 'step') {
+      throw new Error('expected a step primitive for brief');
+    }
+    expect(brief.agent.tags?.[STEP_TOOL_TAG]).toBe(
+      '@workbench/tools-last30days/core:last30days_workflow_brief'
+    );
   });
 
   test('write is an inline-inference step; persist is deterministic and gated on write', () => {

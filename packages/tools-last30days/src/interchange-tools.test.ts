@@ -19,7 +19,6 @@ describe('tools-last30days interchange.tools entry', () => {
       'last30days_core_report',
       'last30days_validate',
       'last30days_workflow_brief',
-      'last30days_workflow_normalize_intake',
     ]);
   });
 
@@ -30,17 +29,6 @@ describe('tools-last30days interchange.tools entry', () => {
     const out = await extract.handler({ topic: 'solana defi' }, AbortSignal.timeout(1000));
     expect(typeof out).toBe('string');
     expect(out.length).toBeGreaterThan(0);
-  });
-
-  test('workflow normalize prefers content over topic for the search query', async () => {
-    const tools = createLast30daysTools();
-    const normalize = tools.find((t) => t.definition.name === 'last30days_workflow_normalize_intake');
-    if (normalize?.kind !== 'string') throw new Error('expected a string tool');
-    const out = await normalize.handler(
-      { topic: 'Broad topic', content: 'narrow query' },
-      AbortSignal.timeout(1000)
-    );
-    expect(out).toBe('narrow query');
   });
 
   test('workflow brief folds source step envelopes into a report', async () => {

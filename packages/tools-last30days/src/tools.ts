@@ -42,20 +42,6 @@ export const LAST30DAYS_CORE_REPORT_DEFINITION: ToolDefinition = {
   },
 };
 
-export const LAST30DAYS_WORKFLOW_NORMALIZE_INTAKE_DEFINITION: ToolDefinition = {
-  name: 'last30days_workflow_normalize_intake',
-  description:
-    'Normalize last30days workflow intake and return the non-empty research topic string.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      topic: { type: 'string', description: 'Research topic.' },
-      days: { type: 'number', description: 'Optional lookback window.' },
-    },
-    required: ['topic'],
-  },
-};
-
 export const LAST30DAYS_WORKFLOW_BRIEF_DEFINITION: ToolDefinition = {
   name: 'last30days_workflow_brief',
   description:
@@ -194,25 +180,6 @@ const SOURCE_STEP_IDS = [
   'bluesky',
 ] as const;
 
-function createWorkflowNormalizeIntakeTool(): AgentTool {
-  return {
-    kind: 'string',
-    definition: LAST30DAYS_WORKFLOW_NORMALIZE_INTAKE_DEFINITION,
-    handler: async (args) => {
-      const effective = coerceArgsObject(args);
-      const topic = effective.topic;
-      if (typeof topic !== 'string' || topic.trim().length === 0) {
-        throw new Error('topic is required');
-      }
-      const content = effective.content;
-      if (typeof content === 'string' && content.trim().length > 0) {
-        return content.trim();
-      }
-      return topic.trim();
-    },
-  };
-}
-
 function createWorkflowBriefTool(): AgentTool {
   return {
     kind: 'string',
@@ -260,11 +227,5 @@ function createValidateTool(): AgentTool {
 
 /** The stateless last30days core tools (no credential, no host context). */
 export function createLast30daysTools(): AgentTool[] {
-  return [
-    createExtractTool(),
-    createReportTool(),
-    createWorkflowNormalizeIntakeTool(),
-    createWorkflowBriefTool(),
-    createValidateTool(),
-  ];
+  return [createExtractTool(), createReportTool(), createWorkflowBriefTool(), createValidateTool()];
 }

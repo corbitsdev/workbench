@@ -39,7 +39,6 @@ function phaseFor(state: RunState | null, stepId: string): StepPhase | undefined
 
 function researchPhase(state: RunState | null): StepPhase | undefined {
   const ids = [
-    'normalize',
     'hackernews',
     'github',
     'web',
@@ -135,7 +134,8 @@ function Spinner({ label }: { label?: string }) {
   );
 }
 
-export type IntakePayload = { topic: string; content?: string; days?: number };
+/** `query` is the string every source search uses (focus text when set, else topic). */
+export type IntakePayload = { topic: string; query: string; days?: number };
 
 function IntakeScreen({
   phase,
@@ -177,7 +177,7 @@ function IntakeScreen({
           const trimmedFocus = focus.trim();
           onSubmit({
             topic: trimmedTopic,
-            ...(trimmedFocus.length > 0 ? { content: trimmedFocus } : {}),
+            query: trimmedFocus.length > 0 ? trimmedFocus : trimmedTopic,
             days: 30,
           });
         }}

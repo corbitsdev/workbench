@@ -5,6 +5,7 @@ import {
   expandToolAliasGrants,
   providersForToolPackages,
   toLlmToolName,
+  toolPackagesForCapabilities,
 } from './tool-names';
 
 describe('toLlmToolName (CL-2306)', () => {
@@ -80,6 +81,12 @@ describe('canonicalizeToolNames (CL-2145)', () => {
     ]);
   });
 
+  it('maps last30days_workflow_brief to the core package', () => {
+    expect(canonicalizeToolNames(['last30days_workflow_brief'])).toEqual([
+      '@workbench/tools-last30days/core:last30days_workflow_brief',
+    ]);
+  });
+
   it('leaves local runner tools (mail/posix) unprefixed', () => {
     expect(canonicalizeToolNames(['mail_search', 'read_file', 'run_shell'])).toEqual([
       'mail_search',
@@ -100,6 +107,13 @@ describe('canonicalizeToolNames (CL-2145)', () => {
     const seededResource = `tool:${canonical}`;
     const runtimeResource = 'tool:@workbench/tools-granola/granola:granola_list_notes';
     expect(seededResource).toBe(runtimeResource);
+  });
+});
+
+describe('toolPackagesForCapabilities', () => {
+  it('pins @workbench/tools-last30days when the workflow brief tool is declared', () => {
+    const pins = toolPackagesForCapabilities(canonicalizeToolNames(['last30days_workflow_brief']));
+    expect(pins).toEqual([{ name: '@workbench/tools-last30days', version: '^0.1.0' }]);
   });
 });
 

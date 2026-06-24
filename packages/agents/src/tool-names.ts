@@ -75,6 +75,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     'last30days_core_extract',
     'last30days_core_report',
     'last30days_validate',
+    'last30days_workflow_brief',
   ],
   '@workbench/tools-polymarket/polymarket': ['polymarket_odds'],
   '@workbench/tools-reddit/reddit': ['reddit_search', 'reddit_subreddit_search'],

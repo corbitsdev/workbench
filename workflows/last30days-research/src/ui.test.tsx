@@ -33,7 +33,7 @@ describe('last30days Panel', () => {
             steps,
           } as unknown as RunState
         }
-      />,
+      />
     );
     expect(screen.getByRole('button', { name: /start research/i })).toBeDefined();
     expect(screen.getByPlaceholderText(/ai coding agents/i)).toBeDefined();
@@ -49,7 +49,7 @@ describe('last30days Panel', () => {
             phase: 'completed',
             steps: new Map([
               ['intake', { phase: 'completed' }],
-              ['normalize', { phase: 'completed' }],
+              ['hackernews', { phase: 'completed' }],
               ['brief', { phase: 'completed' }],
               ['write', { phase: 'completed' }],
               ['persist', { phase: 'completed' }],
@@ -81,7 +81,7 @@ describe('last30days Panel', () => {
             content: JSON.stringify({ title: 'GTM agents', artifactId: 'art_1', kind: 'research' }),
           },
         }}
-      />,
+      />
     );
     expect(screen.getByText(/Saved to workbench/)).toBeDefined();
     expect(screen.getByRole('link', { name: /HN thread/i })).toBeDefined();
