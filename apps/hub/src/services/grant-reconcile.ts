@@ -4,7 +4,7 @@ import type { DB } from '@intx/db';
 import { getLogger } from '@intx/log';
 import type { SidecarRouter } from '@intx/hub-sessions';
 import type { GrantStore } from '@intx/types/authz';
-import type { AgentTemplate } from '@workbench/agents';
+import { type AgentTemplate, toLlmToolName } from '@workbench/agents';
 import { memberAgentInstance } from '../db/schema';
 import type { HubDb } from '../db';
 import { getConfig } from '../config';
@@ -267,7 +267,12 @@ export async function assessPersonalAgentSync(
     return { available: true, reason: 'missing_org_agent' };
   }
 
-  const expected = sortedToolNames(getToolNamesFromCapabilities(agentRow.capabilities ?? null));
+  // Stored tool grants are keyed on the LLM-safe name (buildToolGrantRows), so
+  // map the definition's canonical capabilities through the same transform before
+  // comparing — otherwise every assessment reports false drift (CL-2306).
+  const expected = sortedToolNames(
+    getToolNamesFromCapabilities(agentRow.capabilities ?? null).map(toLlmToolName)
+  );
   const actual = await toolGrantNamesForPrincipal(db, instance.tenantId, instance.principalId);
   if (!grantToolNamesEqual(expected, actual)) {
     return { available: true, reason: 'tool_grant_drift' };

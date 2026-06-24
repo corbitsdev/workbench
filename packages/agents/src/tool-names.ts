@@ -140,6 +140,30 @@ export function canonicalizeToolNames(names: readonly string[]): string[] {
   });
 }
 
+/**
+ * Map a canonical runtime tool name (`<factoryId>:<tool>`) to an LLM-safe
+ * function name. Provider function names must match `[a-zA-Z0-9_-]` (≤64); the
+ * canonical name's `@`, `/`, and especially `:` do not round-trip (kimi-k2.6
+ * returns only the part before the `:`, so the call never matches its grant or
+ * the loader's dispatch entry — CL-2306). Emits `<pkgShort>__<tool>`, dropping a
+ * redundant `<pkgShort>_` prefix on the tool name
+ * (`@workbench/tools-exa/exa:exa_search` → `exa__search`). Bare local names (no
+ * `:`, e.g. `read_file`) are already safe and pass through unchanged.
+ *
+ * The hub keys tool grants on this name and the sidecar presents it to the
+ * model; the canonical `:` name survives only inside the sidecar's dispatch map
+ * and pin derivation, neither of which crosses the model boundary.
+ */
+export function toLlmToolName(name: string): string {
+  const colon = name.lastIndexOf(':');
+  if (colon === -1) return name;
+  const factoryId = name.slice(0, colon);
+  const tool = name.slice(colon + 1);
+  const pkgShort = factoryId.slice(factoryId.lastIndexOf('/') + 1);
+  const short = tool.startsWith(`${pkgShort}_`) ? tool.slice(pkgShort.length + 1) : tool;
+  return `${pkgShort}__${short}`;
+}
+
 function factoryIdFromCanonicalOrBare(name: string): string | undefined {
   const colon = name.lastIndexOf(':');
   if (colon === -1) return FACTORY_ID_BY_TOOL[name];

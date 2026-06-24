@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { evaluateGrants } from '@intx/authz';
 import { createToolRunner, defineTool } from '@intx/agent';
-import { createWorkbenchDirectorRegistry } from '@workbench/agents';
+import { createWorkbenchDirectorRegistry, toLlmToolName } from '@workbench/agents';
 import { HUB_RPC_ENV_KEY, providerFromEnvKey } from '@workbench/tool-credentials';
 import {
   mergeToolRunners,
@@ -268,11 +268,28 @@ export function createDefaultHarnessBuilder({
             });
             continue;
           }
-          loadedRunners.push({
-            definitions: [...bundle.definitions],
-            run: (call, signal) => bundle.run(call, signal),
+          // The loader prefixes every tool with `<factoryId>:<name>`
+          // (e.g. `@workbench/tools-exa/exa:exa_search`). That string carries
+          // `@`, `/`, and `:`, which violate LLM function-name constraints and do
+          // not round-trip (kimi truncates at the `:`), so the model's tool call
+          // never matches its grant or the loader's dispatch entry. Present an
+          // LLM-safe alias to the model and translate it back to the canonical
+          // name before delegating to the bundle's run() (CL-2306).
+          const aliasToCanonical = new Map<string, string>();
+          const safeDefinitions = bundle.definitions.map((def) => {
+            const safe = toLlmToolName(def.name);
+            aliasToCanonical.set(safe, def.name);
+            return { ...def, name: safe };
           });
-          for (const def of bundle.definitions) loadedToolNames.add(def.name);
+          loadedRunners.push({
+            definitions: safeDefinitions,
+            run: (call, signal) =>
+              bundle.run(
+                { ...call, name: aliasToCanonical.get(call.name) ?? call.name },
+                signal
+              ),
+          });
+          for (const def of safeDefinitions) loadedToolNames.add(def.name);
           if (bundle.dispose !== undefined) {
             loadedDisposers.push(async () => {
               await bundle.dispose?.();

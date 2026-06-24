@@ -5,6 +5,7 @@ export {
   expandToolAliasGrants,
   toolPackagesForCapabilities,
   providersForToolPackages,
+  toLlmToolName,
 } from './tool-names';
 export {
   deterministicToolStep,

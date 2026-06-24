@@ -29,6 +29,12 @@ describe('buildToolGrantRows', () => {
     expect(rows).toHaveLength(1);
   });
 
+  it('keys the grant resource on the LLM-safe name for canonical package tools (CL-2306)', () => {
+    const rows = buildToolGrantRows(['@workbench/tools-exa/exa:exa_search'], scope, now);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.resource).toBe(`${TOOL_GRANT_RESOURCE_PREFIX}exa__search`);
+  });
+
   it('returns no rows for an empty tool list', () => {
     expect(buildToolGrantRows([], scope, now)).toEqual([]);
   });

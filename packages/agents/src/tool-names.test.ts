@@ -4,7 +4,64 @@ import {
   canonicalizeToolNames,
   expandToolAliasGrants,
   providersForToolPackages,
+  toLlmToolName,
 } from './tool-names';
+
+describe('toLlmToolName (CL-2306)', () => {
+  it('maps a canonical name to <pkgShort>__<tool>, dropping a redundant prefix', () => {
+    expect(toLlmToolName('@workbench/tools-exa/exa:exa_search')).toBe('exa__search');
+    expect(toLlmToolName('@workbench/tools-firecrawl/firecrawl:firecrawl_scrape')).toBe(
+      'firecrawl__scrape'
+    );
+    expect(toLlmToolName('@workbench/tools-attio/attio:attio_query_records')).toBe(
+      'attio__query_records'
+    );
+  });
+
+  it('keeps the tool name when it does not start with the package short prefix', () => {
+    expect(toLlmToolName('@workbench/tools-exa/exa:web_search')).toBe('exa__web_search');
+    expect(toLlmToolName('@workbench/tools-agents/agents:list_agents')).toBe('agents__list_agents');
+  });
+
+  it('passes bare local names through unchanged (already LLM-safe)', () => {
+    expect(toLlmToolName('read_file')).toBe('read_file');
+    expect(toLlmToolName('mail_send')).toBe('mail_send');
+  });
+
+  it('produces unique, charset-safe (<=64) names across the real tool registry', () => {
+    const bare = [
+      'list_agents',
+      'list_principals',
+      'attio_list_objects',
+      'attio_query_records',
+      'attio_get_record',
+      'attio_list_workspace_members',
+      'exa_search',
+      'web_search',
+      'firecrawl_scrape',
+      'firecrawl_batch_scrape_status',
+      'gamma_create_from_template',
+      'github_activity',
+      'granola_list_notes',
+      'linear_list_issues',
+      'last30days_core_extract',
+      'last30days_validate',
+      'reddit_search',
+      'reddit_subreddit_search',
+      'scrapecreators_tiktok',
+      'x_search',
+      'youtube_search',
+      'artifact_create',
+      'write_artifact',
+      'dispatch_agent',
+    ];
+    const safe = canonicalizeToolNames(bare).map(toLlmToolName);
+    expect(new Set(safe).size).toBe(safe.length);
+    for (const name of safe) {
+      expect(name).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
+    }
+  });
+});
 
 describe('canonicalizeToolNames (CL-2145)', () => {
   it('prefixes a package tool with its factory id', () => {

@@ -1,5 +1,6 @@
 import { schema as intxSchema } from '@intx/db';
 import { generateId } from '@intx/hub-common';
+import { toLlmToolName } from '@workbench/agents';
 
 const { grant } = intxSchema;
 
@@ -25,14 +26,18 @@ export const TOOL_GRANT_RESOURCE_PREFIX = 'tool:';
 
 /**
  * Build the persisted grant rows for an instance principal's tool set. Tool
- * names are de-duplicated; an empty list yields no rows.
+ * names are mapped to their LLM-safe form (`toLlmToolName`) so the grant
+ * resource matches what the model actually invokes (the sidecar presents the
+ * same safe name and the authz `beforeTool` check keys on `call.name`); the
+ * canonical `:` name never round-trips through the model (CL-2306). Names are
+ * de-duplicated after mapping; an empty list yields no rows.
  */
 export function buildToolGrantRows(
   toolNames: string[],
   scope: { tenantId: string; principalId: string },
   now: Date
 ): ToolGrantRow[] {
-  const unique = [...new Set(toolNames)];
+  const unique = [...new Set(toolNames.map(toLlmToolName))];
   return unique.map((name) => ({
     id: generateId('grant'),
     tenantId: scope.tenantId,
