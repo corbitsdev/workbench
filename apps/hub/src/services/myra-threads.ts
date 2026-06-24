@@ -10,8 +10,6 @@ import {
 import type { InferenceSource } from '@intx/types/runtime';
 import { createIsogitStore } from '@workbench/storage-isogit';
 import { randomUUID } from 'node:crypto';
-import { rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AGENT_TEMPLATES, PERSONAL_AGENT_NAME } from '@workbench/agents';
 import type { SessionService, EventCollectorRegistry } from '@intx/hub-sessions';
@@ -301,21 +299,48 @@ async function resolveTitleSource(db: HubDb, tenantId: string): Promise<Inferenc
   return { ...head, model: TITLE_MODEL, defaults: { ...head.defaults, maxTokens: 64 } };
 }
 
+// Serializes title turns per member principal. A member's title turns share one
+// durable working tree (their audit repo), so they must not run concurrently;
+// different principals run fully in parallel. The map holds one tail promise per
+// principal (bounded by active members).
+const titleLocks = new Map<string, Promise<unknown>>();
+function runSerializedPerPrincipal<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = titleLocks.get(key) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  titleLocks.set(
+    key,
+    run.catch(() => undefined)
+  );
+  return run;
+}
+
 /**
  * Run ONE non-streaming @intx/agent turn for the title, pumping every emitted
  * InferenceEvent into a hand-rolled event-collector so the turn is recorded to
- * analytics under the thread's instance + tenant (rolls up in /insights).
+ * analytics under the thread's instance + tenant (rolls up in /insights). The
+ * turn's audit commits land in the member's durable per-principal repo.
  */
 async function runTitleTurn(
   db: HubDb,
   opts: {
     tenantId: string;
+    memberPrincipalId: string;
     instanceId: string;
     source: InferenceSource;
     firstMessage: string;
   }
 ): Promise<string | null> {
-  const contextDir = join(tmpdir(), `myra-title-${randomUUID()}`);
+  // Durable per-(tenant, principal) audit repo on the hub's persistent volume
+  // (the same dataDir agent repos live on). One-way: each title turn's audit
+  // commits accumulate here as the title-agent-use trail; never deleted. Keyed
+  // per principal so each member's titling is its own repo (attribution) and
+  // only a member's own concurrent titles ever contend (serialized below).
+  const contextDir = join(
+    getConfig().hub.dataDir,
+    'myra-title',
+    opts.tenantId,
+    opts.memberPrincipalId
+  );
   const store = await createIsogitStore(contextDir);
 
   const def = defineAgent({
@@ -376,11 +401,6 @@ async function runTitleTurn(
     await pumpDone.catch(() => undefined);
     await collector.abandon().catch(() => undefined);
     throw err;
-  } finally {
-    // Remove the per-title ephemeral isogit repo. Skipping this orphans a git
-    // repo in tmpdir on every title — the same inode/ENOSPC leak that bit the
-    // sidecar (CL-2231). Best-effort; never let cleanup failure surface.
-    await rm(contextDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -420,12 +440,15 @@ export async function generateMyraThreadTitle(
       return null;
     }
 
-    const raw = await runTitleTurn(db, {
-      tenantId: opts.tenantId,
-      instanceId: mapping.instanceId,
-      source,
-      firstMessage,
-    });
+    const raw = await runSerializedPerPrincipal(opts.memberPrincipalId, () =>
+      runTitleTurn(db, {
+        tenantId: opts.tenantId,
+        memberPrincipalId: opts.memberPrincipalId,
+        instanceId: mapping.instanceId,
+        source,
+        firstMessage,
+      })
+    );
     if (raw === null) return null;
 
     const title = sanitizeTitle(raw);

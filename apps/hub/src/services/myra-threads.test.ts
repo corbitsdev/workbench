@@ -10,16 +10,21 @@ let lastCreateEventCollectorConfig: {
 let collectorEvents: { type: string }[] = [];
 let agentReply = 'Pricing Deep Dive';
 let agentShouldThrow = false;
+let lastIsogitDir: string | null = null;
 
 function resetTitleMocks() {
   lastCreateEventCollectorConfig = null;
   collectorEvents = [];
   agentReply = 'Pricing Deep Dive';
   agentShouldThrow = false;
+  lastIsogitDir = null;
 }
 
 mock.module('@workbench/storage-isogit', () => ({
-  createIsogitStore: mock(() => Promise.resolve({})),
+  createIsogitStore: mock((dir: string) => {
+    lastIsogitDir = dir;
+    return Promise.resolve({});
+  }),
 }));
 
 mock.module('@workbench/event-collector', () => ({
@@ -81,6 +86,13 @@ mock.module('@intx/db', () => ({
     grant: {},
   },
   resolveCredentialRequirement: resolveCredentialRequirementMock,
+}));
+
+mock.module('../config', () => ({
+  getConfig: () => ({
+    hub: { dataDir: '/tmp/myra-title-test' },
+    globalTenant: { slug: 'global', domain: 'global.test' },
+  }),
 }));
 
 mock.module('./agent-provisioning', () => ({
@@ -271,6 +283,8 @@ describe('generateMyraThreadTitle', () => {
 
     expect(persistedLabel).toBe('Pricing Strategy');
     expect(result?.label).toBe('Pricing Strategy');
+    // Durable audit repo lives under the hub dataDir, keyed per (tenant, principal).
+    expect(lastIsogitDir).toBe('/tmp/myra-title-test/myra-title/tn-global/prn-member');
   });
 
   it('returns null when firstMessage is blank without touching the db', async () => {
