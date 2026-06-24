@@ -52,12 +52,11 @@ describe('PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)', () => {
   });
 });
 
-describe('PERSONAL_AGENT_DEPLOY_PROMPT (CL-1555)', () => {
-  it('mentions artifact_create in the prompt', () => {
-    expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain('artifact_create');
-  });
-
-  it('mentions artifact_read in the prompt', () => {
-    expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain('artifact_read');
+describe('PERSONAL_AGENT_DEPLOY_PROMPT (CL-2306)', () => {
+  it('guides shared-document behavior without hardcoding tool names', () => {
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain('Shared documents are versioned');
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain('load its content before responding');
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).not.toContain('artifact_create');
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).not.toContain('artifact_read');
   });
 });

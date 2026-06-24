@@ -9,11 +9,15 @@ import {
   hasSeedMarker,
 } from './seed-files';
 
-const EXPECTED_FILES = ['MEMORY.md', 'SCRATCHPAD.md'];
+const EXPECTED_FILES = ['MEMORY.md'];
 
 describe('PERSONAL_AGENT_SEED_FILES (CL-1952)', () => {
-  it('declares the two documented memory files', () => {
+  it('declares MEMORY.md as the single durable memory file', () => {
     expect(PERSONAL_AGENT_SEED_FILES.map((f) => f.path).sort()).toEqual([...EXPECTED_FILES].sort());
+  });
+
+  it('no longer seeds the transient SCRATCHPAD.md', () => {
+    expect(PERSONAL_AGENT_SEED_FILES.map((f) => f.path)).not.toContain('SCRATCHPAD.md');
   });
 
   it('gives every seed file a stub that opens with a markdown header', () => {
@@ -95,7 +99,7 @@ describe('stripSeedMarker (CL-1952)', () => {
   it('preserves the substantive prompt body when stripping the marker', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', { xml: true });
     const cleaned = stripSeedMarker(prompt);
-    expect(cleaned).toContain('Chief of Staff and Executive Assistant');
+    expect(cleaned).toContain('You are Myra, Chief of Staff');
     expect(cleaned).toContain('<role>');
   });
 

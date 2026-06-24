@@ -8,19 +8,15 @@ export interface SeedWorkspaceFile {
   content: string;
 }
 
-function stubFor(title: string, description: string): string {
-  return `# ${title}\n\n${description}\n`;
-}
-
 /**
  * Myra's documented memory files (see the personal-agent prompt `<notes>`
  * section). On first launch none of these exist, so reading them fails; the
  * harness seeds these stubs so the agent always has them to read and append to.
  *
- * Two slots only: durable memory (MEMORY.md) and transient task scratch
- * (SCRATCHPAD.md). Durable memory is organized into sections inside MEMORY.md
- * — folding the former CONTACTS/ERRORS/HUMAN files in keeps the agent from
- * fanning reads and writes across near-identical files.
+ * One slot only: durable memory (MEMORY.md), organized into sections — folding
+ * the former CONTACTS/ERRORS/HUMAN files in (and dropping the transient
+ * SCRATCHPAD) keeps the agent from fanning reads and writes across
+ * near-identical files.
  */
 export const PERSONAL_AGENT_SEED_FILES: SeedWorkspaceFile[] = [
   {
@@ -41,10 +37,6 @@ Agents and people: who they are, what they are for, their addresses.
 ## Errors
 Failures you hit, with enough detail to avoid them next time.
 `,
-  },
-  {
-    path: 'SCRATCHPAD.md',
-    content: stubFor('Scratchpad', 'Transient notes for the current task. Not durable memory.'),
   },
 ];
 

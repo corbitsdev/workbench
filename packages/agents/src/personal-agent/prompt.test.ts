@@ -5,33 +5,44 @@ const xmlFormat = { xml: true };
 const markdownFormat = { xml: false };
 
 describe('buildPersonalAgentSystemPrompt', () => {
-  it('frames the named agent as a Chief of Staff for one person', () => {
+  it('frames the named agent as Chief of Staff and company brain for one person', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('Myra is a Chief of Staff and Executive Assistant');
-    expect(prompt).toContain('one person');
+    expect(prompt).toContain('You are Myra, Chief of Staff to the one person you work for');
+    expect(prompt).toContain("the company's brain");
   });
 
   it('interpolates whatever name is supplied', () => {
     const prompt = buildPersonalAgentSystemPrompt('Assistant', xmlFormat);
-    expect(prompt).toContain('Assistant is a Chief of Staff');
+    expect(prompt).toContain('You are Assistant, Chief of Staff');
   });
 
-  it('includes the role, ownership, and style sections', () => {
+  it('includes the role, ownership, knowledge, and style sections', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('<role>');
     expect(prompt).toContain('<ownership>');
+    expect(prompt).toContain('<knowledge>');
     expect(prompt).toContain('<style>');
   });
 
-  it('documents the direct tools: files, web search, artifacts, directory, and domain tools', () => {
+  // Tools are discovered dynamically from the function list — the prompt must
+  // NOT hardcode tool names (which go stale and, when prefixed, fail to
+  // round-trip through the model). The prompt instead defers to the function list.
+  it('hardcodes no package tool names and defers to the function list', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('write_file');
-    expect(prompt).toContain('exa_search');
-    expect(prompt).toContain('artifact_create');
-    expect(prompt).toContain('list_agents');
-    expect(prompt).toContain('granola_list_notes');
-    expect(prompt).toContain('linear_list_issues');
-    expect(prompt).toContain('attio_query_records');
+    for (const stale of [
+      'exa_search',
+      'exa__search',
+      'granola_list_notes',
+      'attio_query_records',
+      'linear_list_issues',
+      'artifact_create',
+      'list_agents',
+      'read_file',
+    ]) {
+      expect(prompt).not.toContain(stale);
+    }
+    expect(prompt).toContain('Your function list is the source of truth');
+    expect(prompt).toContain('call a tool by the exact name it gives');
   });
 
   it('no longer advertises mail tools or a delegation section', () => {
@@ -49,6 +60,12 @@ describe('buildPersonalAgentSystemPrompt', () => {
   it('directs the agent to confirm before irreversible or high-stakes actions', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt.toLowerCase()).toContain('irreversible');
+  });
+
+  it('applies the person’s known way of working rather than a generic default', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('Apply what you already know about how they work');
+    expect(prompt).toContain('not a generic default');
   });
 
   it('forbids fabrication and impersonation of the person served', () => {
@@ -84,27 +101,40 @@ describe('buildPersonalAgentSystemPrompt', () => {
     expect(prompt).toContain('Never call them "your operator" out loud');
   });
 
-  // Source priority: pull from the owning domain tool before guessing
-  it('directs the agent to pull from the tool that owns the answer', () => {
+  // Internal-first: company knowledge is primary, web search is supplemental
+  it('directs the agent to reach for company knowledge before web search', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
-    expect(prompt).toContain('<sources>');
-    expect(prompt).toContain('Pull from the tool that owns the answer');
+    expect(prompt).toContain('reach for what the company already knows before anything else');
+    expect(prompt).toContain('Web search is supplemental');
   });
 
-  // Temporal/recency requests fetch fresh, never a stale artifact
-  it('requires fresh data from the owning tool for time-bound requests', () => {
+  // A named company/person/deal grounds in internal context before reaching out
+  it('checks what is already known about a named company, person, or deal first', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('When a request names a company, person, or deal');
+    expect(prompt).toContain('lead with that internal picture before adding outside context');
+  });
+
+  // Gather intensely but efficiently — most direct instrument, shortest path
+  it('directs intense but efficient gathering, not broad repeated calls', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('One targeted read or scrape beats fifty broad listings');
+    expect(prompt).toContain('do not re-pull what you already hold');
+  });
+
+  // Temporal/recency requests fetch fresh, never a stale snapshot
+  it('requires fresh data from the owning source for time-bound requests', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat).toLowerCase();
     expect(prompt).toContain('my last call');
-    expect(prompt).toContain('do not answer it from an artifact');
+    expect(prompt).toContain('snapshots, not current state');
   });
 
-  // Self-notes convention — two slots only: durable memory and transient scratch
-  it('documents the two self-notes files Myra maintains', () => {
+  // Self-notes convention — one durable slot only (SCRATCHPAD dropped)
+  it('documents MEMORY.md as the single durable memory file', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
     expect(prompt).toContain('<notes>');
-    for (const file of ['MEMORY.md', 'SCRATCHPAD.md']) {
-      expect(prompt).toContain(file);
-    }
+    expect(prompt).toContain('MEMORY.md');
+    expect(prompt).not.toContain('SCRATCHPAD.md');
   });
 
   it('no longer carries the retired CONTACTS/ERRORS/HUMAN memory files', () => {
@@ -140,17 +170,16 @@ describe('buildPersonalAgentSystemPrompt', () => {
     expect(prompt).not.toContain('<operator>');
   });
 
-  // CL-1951 — a referenced artifact id should be loaded via artifact_read, not asked about
-  it('directs Myra to load a referenced artifact id with artifact_read', () => {
+  // A referenced document id should be loaded directly, not asked about
+  it('directs Myra to load a referenced document id rather than ask for it', () => {
     const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat).toLowerCase();
-    expect(prompt).toContain('artifact_read');
-    expect(prompt).toContain('that artifact is the subject of the request');
+    expect(prompt).toContain('that document is the subject of the request');
+    expect(prompt).toContain('load its content before responding');
   });
 
-  it('keeps the artifact_read nudge consistent with the <sources> recency rules', () => {
-    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat).toLowerCase();
-    expect(prompt).toContain('<sources> recency rules still govern');
-    expect(prompt).toContain('do not answer it from an artifact');
+  it('keeps the document-load nudge consistent with the <knowledge> recency rules', () => {
+    const prompt = buildPersonalAgentSystemPrompt('Myra', xmlFormat);
+    expect(prompt).toContain('<knowledge> recency rules still govern');
   });
 
   // CL-1952 — the base prompt carries the memory-seed marker so the sidecar can

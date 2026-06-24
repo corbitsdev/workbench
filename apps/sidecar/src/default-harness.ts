@@ -66,7 +66,7 @@ export async function healContextStore(storage: ContextStore, agentAddress: stri
 export { mergeToolRunners as combineRunners, wsUrlToHttp, fetchToolCredentials };
 
 export function resolveMailOutboundLimit(systemPrompt: string): number {
-  if (systemPrompt.includes(`${PERSONAL_AGENT_NAME} is a Chief of Staff and Executive Assistant`)) {
+  if (systemPrompt.includes(`You are ${PERSONAL_AGENT_NAME}, Chief of Staff`)) {
     return PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN;
   }
   return DEFAULT_MAIL_OUTBOUND_PER_TURN;

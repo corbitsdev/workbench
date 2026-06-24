@@ -282,11 +282,11 @@ describe('createDefaultHarnessBuilder', () => {
         expect(modelPrompt).not.toContain('workbench:memory-seed');
         expect(modelPrompt).not.toContain('<!--');
         // But the substantive prompt body survives.
-        expect(modelPrompt).toContain('Chief of Staff and Executive Assistant');
+        expect(modelPrompt).toContain('You are Myra, Chief of Staff');
 
-        // And the workspace was seeded with the documented memory files.
+        // And the workspace was seeded with the documented memory file.
         const seeded = await fs.promises.readdir(path.join(storeDir, 'workspace'));
-        expect(seeded.sort()).toEqual(['MEMORY.md', 'SCRATCHPAD.md'].sort());
+        expect(seeded.sort()).toEqual(['MEMORY.md'].sort());
       } finally {
         await fs.promises.rm(storeDir, { recursive: true, force: true });
       }
