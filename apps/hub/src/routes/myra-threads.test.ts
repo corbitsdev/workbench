@@ -10,6 +10,8 @@ const createMyraThread = mock<(...args: any[]) => Promise<any>>(() =>
 const renameMyraThread = mock<(...args: any[]) => Promise<any>>(() => Promise.resolve(null));
 // biome-ignore lint/suspicious/noExplicitAny: structural mocks for service boundary
 const deleteMyraThread = mock<(...args: any[]) => Promise<boolean>>(() => Promise.resolve(false));
+// biome-ignore lint/suspicious/noExplicitAny: structural mocks for service boundary
+const generateMyraThreadTitle = mock<(...args: any[]) => Promise<any>>(() => Promise.resolve(null));
 const resolveMyraThreadContext = mock(() =>
   Promise.resolve<{ tenantId: string; tenantDomain: string; memberPrincipalId: string } | null>({
     tenantId: 'tn-global',
@@ -23,6 +25,7 @@ mock.module('../services/myra-threads', () => ({
   createMyraThread,
   renameMyraThread,
   deleteMyraThread,
+  generateMyraThreadTitle,
   resolveMyraThreadContext,
 }));
 
@@ -49,6 +52,7 @@ describe('Myra threads router', () => {
     createMyraThread.mockClear();
     renameMyraThread.mockClear();
     deleteMyraThread.mockClear();
+    generateMyraThreadTitle.mockClear();
     resolveMyraThreadContext.mockClear();
     resolveMyraThreadContext.mockResolvedValue({
       tenantId: 'tn-global',
@@ -198,6 +202,70 @@ describe('Myra threads router', () => {
     const app = wrapWithAuth(buildRouter());
     const res = await app.request('/me/myra/threads/map-x', { method: 'DELETE' });
     expect(res.status).toBe(404);
+  });
+
+  it('titles a thread and returns 200 with the titled thread', async () => {
+    generateMyraThreadTitle.mockResolvedValueOnce({
+      id: 'map-1',
+      instanceId: 'inst-1',
+      label: 'Pricing Deep Dive',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    const app = wrapWithAuth(buildRouter());
+    const res = await app.request('/me/myra/threads/map-1/title', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstMessage: 'How should we price the enterprise tier?' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { thread: { label: string } | null };
+    expect(body.thread?.label).toBe('Pricing Deep Dive');
+    expect(generateMyraThreadTitle).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        threadId: 'map-1',
+        firstMessage: 'How should we price the enterprise tier?',
+        tenantId: 'tn-global',
+        memberPrincipalId: 'prn-member',
+      })
+    );
+  });
+
+  it('returns 200 with thread null when titling is a no-op', async () => {
+    generateMyraThreadTitle.mockResolvedValueOnce(null);
+    const app = wrapWithAuth(buildRouter());
+    const res = await app.request('/me/myra/threads/map-1/title', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstMessage: 'Hi' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { thread: unknown };
+    expect(body.thread).toBeNull();
+  });
+
+  it('returns 400 on title when firstMessage is empty', async () => {
+    const app = wrapWithAuth(buildRouter());
+    const res = await app.request('/me/myra/threads/map-1/title', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstMessage: '' }),
+    });
+    expect(res.status).toBe(400);
+    expect(generateMyraThreadTitle).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 on title when the member is not provisioned', async () => {
+    resolveMyraThreadContext.mockResolvedValueOnce(null);
+    const app = wrapWithAuth(buildRouter());
+    const res = await app.request('/me/myra/threads/map-1/title', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstMessage: 'Hello there' }),
+    });
+    expect(res.status).toBe(503);
+    expect(generateMyraThreadTitle).not.toHaveBeenCalled();
   });
 
   it('returns 503 on delete when the member is not provisioned', async () => {

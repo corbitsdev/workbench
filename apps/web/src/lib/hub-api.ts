@@ -177,6 +177,25 @@ export async function deleteMyraThread(id: string): Promise<void> {
   await hubFetch<void>('DELETE', `v1/me/myra/threads/${encodeURIComponent(id)}`);
 }
 
+/**
+ * Best-effort: ask the hub to title a thread from its first message. The hub
+ * no-ops if the thread already has a custom title. Returns the updated thread,
+ * or null on a no-op/failure (titling never blocks chat).
+ */
+export async function generateMyraThreadTitle(
+  id: string,
+  firstMessage: string
+): Promise<MyraThread | null> {
+  const raw = await hubFetch<unknown>(
+    'POST',
+    `v1/me/myra/threads/${encodeURIComponent(id)}/title`,
+    { firstMessage }
+  );
+  const parsed = type({ thread: MyraThreadSchema.or('null') })(raw);
+  if (parsed instanceof type.errors) return null;
+  return parsed.thread;
+}
+
 export async function getMyPrincipals(): Promise<Principal[]> {
   const res = await hubFetch<{ data: Principal[] }>('GET', 'me/principals');
   return res.data;

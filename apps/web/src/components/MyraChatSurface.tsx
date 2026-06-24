@@ -20,6 +20,8 @@ type MyraChatSurfaceProps = {
   session: MyraSession;
   /** Optional thread label shown as the agent tagline (multi-thread chat). */
   threadLabel?: string;
+  /** Notified with the text whenever the user sends a message (for auto-title). */
+  onUserSend?: (text: string) => void;
   dockState?: ChatDockState;
   onToggleDock?: () => void;
   expanded?: boolean;
@@ -30,6 +32,7 @@ type MyraChatSurfaceProps = {
 export function MyraChatSurface({
   session,
   threadLabel,
+  onUserSend,
   dockState,
   onToggleDock,
   expanded,
@@ -101,13 +104,17 @@ export function MyraChatSurface({
     );
   }
 
+  const handleSend = (text: string) => {
+    onUserSend?.(text);
+    session.send(text);
+  };
   const handleRespond = (response: UIResponse) => session.send(response.value);
 
   return (
     <ChatPanel
       {...chrome}
       messages={session.messages}
-      onSend={session.send}
+      onSend={handleSend}
       onRespond={handleRespond}
       activity={session.activity}
       onRate={session.onRate}

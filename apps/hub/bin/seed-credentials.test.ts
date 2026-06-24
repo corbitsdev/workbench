@@ -195,6 +195,30 @@ describe('seed-credentials buildEntries', () => {
     expect(near?.metadata?.['baseURL']).toBe('https://api.near.ai/v1');
   });
 
+  it('includes the optional Myra Title LLM entry when MYRA_TITLE_LLM_API_KEY is set', () => {
+    process.env['MYRA_TITLE_LLM_API_KEY'] = 'sk-title';
+    process.env['MYRA_TITLE_LLM_MODEL'] = 'gpt-4o-mini';
+    process.env['MYRA_TITLE_LLM_BASE_URL'] = 'https://titles.example/v1';
+
+    const entries = buildEntries();
+
+    const title = entries.find((e) => e.providerName === 'Myra Title LLM');
+    expect(title).toBeDefined();
+    expect(title?.secret).toBe('sk-title');
+    expect(title?.providerPlugin).toBe('openai-compatible');
+    expect(title?.credentialName).toBe('Myra Title LLM');
+    expect(title?.metadata?.['model']).toBe('gpt-4o-mini');
+    expect(title?.metadata?.['baseURL']).toBe('https://titles.example/v1');
+  });
+
+  it('omits the Myra Title LLM entry when MYRA_TITLE_LLM_API_KEY is unset', () => {
+    delete process.env['MYRA_TITLE_LLM_API_KEY'];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === 'Myra Title LLM')).toBeUndefined();
+  });
+
   it('does not collide numbered openai-compatible providers with the canonical one', () => {
     process.env['OPENAI_COMPATIBLE_API_KEY'] = 'sk-canonical';
     process.env['OPENAI_COMPATIBLE_CREDENTIAL_NAME'] = 'opencode-zen';

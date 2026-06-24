@@ -2,10 +2,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createMyraThread,
   deleteMyraThread,
+  generateMyraThreadTitle,
   listMyraThreads,
   renameMyraThread,
   type MyraThread,
 } from '../lib/hub-api';
+
+/** Matches the hub's default labels ('Chat', 'Chat 2', …) — i.e. not user-set. */
+export function isDefaultThreadLabel(label: string): boolean {
+  return /^Chat( \d+)?$/.test(label.trim());
+}
 
 const MYRA_THREADS_KEY = ['myra-threads'] as const;
 const LAST_ACTIVE_THREAD_KEY = 'myra-last-active-thread';
@@ -82,6 +88,17 @@ export function useDeleteMyraThread() {
     mutationFn: (id: string) => deleteMyraThread(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: MYRA_THREADS_KEY });
+    },
+  });
+}
+
+export function useGenerateMyraThreadTitle() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, firstMessage }: { id: string; firstMessage: string }) =>
+      generateMyraThreadTitle(id, firstMessage),
+    onSuccess: (thread) => {
+      if (thread) void queryClient.invalidateQueries({ queryKey: MYRA_THREADS_KEY });
     },
   });
 }

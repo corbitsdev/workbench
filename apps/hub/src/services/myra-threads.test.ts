@@ -1,5 +1,299 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { deleteMyraThread, listMyraThreads, renameMyraThread } from './myra-threads';
+
+// --- Module-boundary mocks for the title-generation inference path ---
+
+let lastCreateEventCollectorConfig: {
+  instanceId: string;
+  tenantId: string;
+  sessionId: string;
+} | null = null;
+let collectorEvents: { type: string }[] = [];
+let agentReply = 'Pricing Deep Dive';
+let agentShouldThrow = false;
+
+function resetTitleMocks() {
+  lastCreateEventCollectorConfig = null;
+  collectorEvents = [];
+  agentReply = 'Pricing Deep Dive';
+  agentShouldThrow = false;
+}
+
+mock.module('@workbench/storage-isogit', () => ({
+  createIsogitStore: mock(() => Promise.resolve({})),
+}));
+
+mock.module('@workbench/event-collector', () => ({
+  createEventCollector: mock(
+    (config: {
+      instanceId: string;
+      tenantId: string;
+      sessionId: string;
+      onTurnFinalized?: (turn: unknown) => void;
+    }) => {
+      lastCreateEventCollectorConfig = {
+        instanceId: config.instanceId,
+        tenantId: config.tenantId,
+        sessionId: config.sessionId,
+      };
+      return {
+        onEvent: mock((event: { type: string }) => {
+          collectorEvents.push(event);
+          if (event.type === 'inference.done' && config.onTurnFinalized) {
+            config.onTurnFinalized({ turnId: 't1', status: 'completed', text: agentReply });
+          }
+          return Promise.resolve();
+        }),
+        abandon: mock(() => Promise.resolve()),
+        getAccumulatedText: () => agentReply,
+        getCurrentTurnId: () => null,
+        getLastTurnId: () => 't1',
+      };
+    }
+  ),
+}));
+
+mock.module('@intx/agent', () => ({
+  defineAgent: mock((def: unknown) => def),
+  createDefaultDirectorRegistry: mock(() => ({})),
+  createAgent: mock(() =>
+    Promise.resolve({
+      // eslint-disable-next-line require-yield
+      async *stream() {
+        yield { type: 'inference.start', data: { model: 'm' } };
+        yield { type: 'inference.done', data: { turn: { content: [] } } };
+        yield { type: 'message.received', data: {} };
+      },
+      send: mock(() => {
+        if (agentShouldThrow) return Promise.reject(new Error('inference boom'));
+        return Promise.resolve({ reply: agentReply });
+      }),
+      close: mock(() => Promise.resolve()),
+    })
+  ),
+}));
+
+const resolveCredentialRequirementMock = mock(() => Promise.resolve(null));
+mock.module('@intx/db', () => ({
+  schema: {
+    agent: { tenantId: 'agent.tenantId', name: 'agent.name' },
+    agentInstance: {},
+    principal: {},
+    grant: {},
+  },
+  resolveCredentialRequirement: resolveCredentialRequirementMock,
+}));
+
+mock.module('./agent-provisioning', () => ({
+  resolveInstanceSourcesFromDefinition: mock(() =>
+    Promise.resolve({
+      ok: true,
+      sources: [
+        {
+          id: 'ofr_1',
+          provider: 'openai-compatible',
+          baseURL: 'https://llm.example/v1',
+          apiKey: 'sk-myra',
+          model: 'gpt-4o',
+        },
+      ],
+    })
+  ),
+  launchAgentSession: mock(() => Promise.resolve({ address: 'a', sessionId: 's' })),
+}));
+
+import {
+  deleteMyraThread,
+  generateMyraThreadTitle,
+  listMyraThreads,
+  renameMyraThread,
+} from './myra-threads';
+
+describe('generateMyraThreadTitle', () => {
+  function buildTitleDb(opts: {
+    mappingRow: { id: string; instanceId: string; label: string | null } | undefined;
+    renamed?: { id: string; instanceId: string; label: string; createdAt: Date };
+  }) {
+    const updateReturning = mock(() => Promise.resolve(opts.renamed ? [opts.renamed] : []));
+    return {
+      query: {
+        memberAgentInstance: { findFirst: mock(() => Promise.resolve(opts.mappingRow)) },
+        agent: { findFirst: mock(() => Promise.resolve({ id: 'agt', modelRequirements: null })) },
+        provider: { findFirst: mock(() => Promise.resolve(undefined)) },
+      },
+      update: mock(() => ({ set: () => ({ where: () => ({ returning: updateReturning }) }) })),
+    };
+  }
+
+  it('titles a default-labelled thread and records the turn under its instance', async () => {
+    resetTitleMocks();
+    const db = buildTitleDb({
+      mappingRow: { id: 'map-1', instanceId: 'inst-1', label: 'Chat' },
+      renamed: {
+        id: 'map-1',
+        instanceId: 'inst-1',
+        label: 'Pricing Deep Dive',
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(
+      db as any,
+      {},
+      {
+        tenantId: 'tn-global',
+        memberPrincipalId: 'prn-member',
+        threadId: 'map-1',
+        firstMessage: 'How should we price the enterprise tier?',
+      }
+    );
+
+    expect(result).toEqual({
+      id: 'map-1',
+      instanceId: 'inst-1',
+      label: 'Pricing Deep Dive',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    // The turn was recorded under the thread's instance + tenant.
+    expect(lastCreateEventCollectorConfig?.instanceId).toBe('inst-1');
+    expect(lastCreateEventCollectorConfig?.tenantId).toBe('tn-global');
+    // Events were actually pumped into the collector (and message.received filtered).
+    expect(collectorEvents.map((e) => e.type)).toEqual(['inference.start', 'inference.done']);
+  });
+
+  it('no-ops on a custom (non-default) label without running inference', async () => {
+    resetTitleMocks();
+    const db = buildTitleDb({
+      mappingRow: { id: 'map-1', instanceId: 'inst-1', label: 'Existing Title' },
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(
+      db as any,
+      {},
+      {
+        tenantId: 'tn-global',
+        memberPrincipalId: 'prn-member',
+        threadId: 'map-1',
+        firstMessage: 'Hello',
+      }
+    );
+
+    expect(result).toBeNull();
+    expect(lastCreateEventCollectorConfig).toBeNull();
+  });
+
+  it('returns null when the mapping is not found', async () => {
+    resetTitleMocks();
+    const db = buildTitleDb({ mappingRow: undefined });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(
+      db as any,
+      {},
+      {
+        tenantId: 'tn-global',
+        memberPrincipalId: 'prn-member',
+        threadId: 'missing',
+        firstMessage: 'Hello',
+      }
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('does not throw and returns null when inference fails', async () => {
+    resetTitleMocks();
+    agentShouldThrow = true;
+    const db = buildTitleDb({
+      mappingRow: { id: 'map-1', instanceId: 'inst-1', label: 'Chat 2' },
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(
+      db as any,
+      {},
+      {
+        tenantId: 'tn-global',
+        memberPrincipalId: 'prn-member',
+        threadId: 'map-1',
+        firstMessage: 'Hello',
+      }
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('sanitizes the model output before persisting it', async () => {
+    resetTitleMocks();
+    agentReply = '  "Pricing  Strategy."  \n';
+    let persistedLabel = '';
+    const db = buildTitleDb({
+      mappingRow: { id: 'map-1', instanceId: 'inst-1', label: '' },
+      renamed: {
+        id: 'map-1',
+        instanceId: 'inst-1',
+        label: 'Pricing Strategy',
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    });
+    // Capture the label handed to update().set().
+    db.update = mock(() => ({
+      set: (vals: { label: string }) => {
+        persistedLabel = vals.label;
+        return {
+          where: () => ({
+            returning: () =>
+              Promise.resolve([
+                {
+                  id: 'map-1',
+                  instanceId: 'inst-1',
+                  label: vals.label,
+                  createdAt: new Date('2026-01-01T00:00:00Z'),
+                },
+              ]),
+          }),
+        };
+      },
+    })) as never;
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(
+      db as any,
+      {},
+      {
+        tenantId: 'tn-global',
+        memberPrincipalId: 'prn-member',
+        threadId: 'map-1',
+        firstMessage: 'pricing?',
+      }
+    );
+
+    expect(persistedLabel).toBe('Pricing Strategy');
+    expect(result?.label).toBe('Pricing Strategy');
+  });
+
+  it('returns null when firstMessage is blank without touching the db', async () => {
+    resetTitleMocks();
+    const findFirst = mock(() => Promise.resolve(undefined));
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const db: any = { query: { memberAgentInstance: { findFirst } } };
+
+    const result = await generateMyraThreadTitle(
+      db,
+      {},
+      {
+        tenantId: 'tn-global',
+        memberPrincipalId: 'prn-member',
+        threadId: 'map-1',
+        firstMessage: '   ',
+      }
+    );
+
+    expect(result).toBeNull();
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+});
 
 describe('listMyraThreads', () => {
   it('maps rows and falls back to default labels by position', async () => {

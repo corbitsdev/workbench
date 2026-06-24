@@ -131,6 +131,23 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  // Optional cheap model dedicated to auto-titling Myra chat threads. When unset,
+  // title generation falls back to the standard 'Myra LLM' source — so this entry
+  // is purely an optimization (use a smaller/cheaper model for short titles).
+  const myraTitleKey = env('MYRA_TITLE_LLM_API_KEY');
+  if (myraTitleKey) {
+    entries.push({
+      providerName: 'Myra Title LLM',
+      providerPlugin: 'openai-compatible',
+      credentialName: 'Myra Title LLM',
+      secret: myraTitleKey,
+      metadata: {
+        model: env('MYRA_TITLE_LLM_MODEL', 'gpt-4o-mini'),
+        baseURL: env('MYRA_TITLE_LLM_BASE_URL', 'https://api.openai.com/v1'),
+      },
+    });
+  }
+
   const openaiKey = env('OPENAI_API_KEY');
   if (openaiKey) {
     entries.push({
