@@ -86,9 +86,10 @@ function SummaryContent({ data }: { data: AnalyticsSummary }) {
     );
   }
 
-  const failureRate =
+  const successfulTurnCount = data.turnCount - data.failedTurnCount;
+  const successRate =
     data.turnCount > 0
-      ? `${((data.failedTurnCount / data.turnCount) * 100).toFixed(1)}% failure rate`
+      ? `${((successfulTurnCount / data.turnCount) * 100).toFixed(1)}% success rate`
       : undefined;
 
   const toolErrorRate =
@@ -101,9 +102,9 @@ function SummaryContent({ data }: { data: AnalyticsSummary }) {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KPICard label="Total turns" value={formatNumber(data.turnCount)} />
         <KPICard
-          label="Failed turns"
-          value={formatNumber(data.failedTurnCount)}
-          sub={failureRate}
+          label="Successful turns"
+          value={formatNumber(successfulTurnCount)}
+          sub={successRate}
           accent={data.failedTurnCount > 0}
         />
         <KPICard label="Tool calls" value={formatNumber(data.toolCallCount)} />
