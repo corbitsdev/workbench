@@ -80,7 +80,9 @@ function ThreadRow({
         type="button"
         onClick={() => onOpen(thread)}
         className={`flex-1 truncate rounded-[8px] px-2 py-1.5 text-left text-sm transition-colors ${
-          active ? 'bg-page text-text' : 'text-text-2 hover:bg-page hover:text-text'
+          active
+            ? 'bg-orange/10 font-medium text-orange'
+            : 'text-text-2 hover:bg-page hover:text-text'
         }`}
       >
         {thread.label}

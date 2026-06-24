@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart2 } from 'lucide-react';
-import { useWorkbenches } from '../hooks/use-workbenches';
+import { useActiveWorkbench } from '../lib/active-workbench-context';
 import { describeHubApiFailure, getActivityOverview } from '../lib/hub-api';
 import type { ActivityOverview, AnalyticsAgentRow, AnalyticsSummary } from '../lib/hub-api';
 
@@ -297,28 +297,18 @@ function InstanceBreakdown({
 
 export function InsightsDashboard() {
   const [preset, setPreset] = useState<Preset>('30d');
-  const [tenantOverride, setTenantOverride] = useState<string | null>(null);
-  const workbenches = useWorkbenches();
-  const workbenchList = workbenches.data ?? [];
-
-  const defaultTenantId = workbenchList[0]?.tenantId ?? null;
-  const tenantId =
-    tenantOverride && workbenchList.some((w) => w.tenantId === tenantOverride)
-      ? tenantOverride
-      : defaultTenantId;
-
-  const activeWorkbench = workbenchList.find((w) => w.tenantId === tenantId) ?? null;
+  const { activeTenantId, activeWorkbench, loading } = useActiveWorkbench();
 
   const dates = presetToDates(preset);
 
   const overviewQuery = useQuery({
-    queryKey: ['activity-overview', tenantId, preset],
-    queryFn: () => getActivityOverview(tenantId!, dates),
-    enabled: !!tenantId,
+    queryKey: ['activity-overview', activeTenantId, preset],
+    queryFn: () => getActivityOverview(activeTenantId!, dates),
+    enabled: !!activeTenantId,
     staleTime: 5 * 60_000,
   });
 
-  const showSummaryLoading = workbenches.isLoading || (!!tenantId && overviewQuery.isLoading);
+  const showSummaryLoading = loading || (!!activeTenantId && overviewQuery.isLoading);
 
   return (
     <div className="flex h-full overflow-hidden bg-bg">
@@ -329,27 +319,11 @@ export function InsightsDashboard() {
               <BarChart2 className="h-4 w-4 shrink-0 text-text-3" />
               <p className="text-[14px] font-semibold text-text">Data &amp; Insights</p>
             </div>
-            {activeWorkbench && workbenchList.length === 1 && (
+            {activeWorkbench && (
               <p className="truncate pl-6 text-[12px] text-text-3">{activeWorkbench.tenantName}</p>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {workbenchList.length > 1 && (
-              <label className="flex items-center gap-1.5 text-[12px] text-text-3">
-                <span className="sr-only">Workbench</span>
-                <select
-                  className="rounded-[8px] border border-border bg-bg px-2 py-1 text-[12px] text-text"
-                  value={tenantId ?? ''}
-                  onChange={(e) => setTenantOverride(e.target.value)}
-                >
-                  {workbenchList.map((wb) => (
-                    <option key={wb.tenantId} value={wb.tenantId}>
-                      {wb.tenantName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
             <div className="flex items-center gap-1">
               {PRESETS.map((p) => (
                 <button
@@ -372,9 +346,9 @@ export function InsightsDashboard() {
         <div className="flex-1 overflow-y-auto px-5 py-5">
           {showSummaryLoading && <SkeletonGrid />}
 
-          {workbenches.isSuccess && !tenantId && (
+          {!loading && !activeTenantId && (
             <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
-              No workbench is available for analytics yet.
+              Select a workbench to view analytics.
             </div>
           )}
 

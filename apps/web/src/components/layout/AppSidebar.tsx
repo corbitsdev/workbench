@@ -1,4 +1,4 @@
-import { Home, Settings, LogOut, BookOpen, BarChart2, Workflow, Plus } from 'lucide-react';
+import { Home, Settings, LogOut, BookOpen, BarChart2, Workflow, Plus, Files } from 'lucide-react';
 import { NavLink, Link, useNavigate } from 'react-router';
 import { useAuth } from '../AuthProvider';
 import { useCreateMyraThread, writeLastActiveThreadId } from '../../hooks/use-myra-threads';
@@ -7,6 +7,7 @@ import { WorkbenchSelector } from './WorkbenchSelector';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Chats', icon: Home, end: true },
+  { to: '/artifacts', label: 'Artifacts', icon: Files, end: false },
   { to: '/workflows', label: 'Workflows', icon: Workflow, end: false },
   { to: '/skills', label: 'Skills', icon: BookOpen, end: false },
   { to: '/insights', label: 'Insights', icon: BarChart2, end: false },
@@ -27,7 +28,9 @@ export function AppSidebar() {
 
   const navItemClass = (isActive: boolean) =>
     `flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm transition-colors duration-150 ${
-      isActive ? 'bg-page text-orange' : 'text-text-2 hover:bg-page hover:text-text'
+      isActive
+        ? 'bg-orange/10 font-medium text-orange'
+        : 'text-text-2 hover:bg-page hover:text-text'
     }`;
 
   const newChat = () => {

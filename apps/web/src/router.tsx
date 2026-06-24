@@ -3,9 +3,10 @@ import { useAuth } from './components/AuthProvider';
 import { AppSidebar } from './components/layout/AppSidebar';
 import { PersonalAgentChat } from './components/PersonalAgentChat';
 import { ChatLauncherProvider } from './lib/chat-launcher-context';
+import { ActiveWorkbenchProvider } from './lib/active-workbench-context';
 import { LoginPage } from './pages/LoginPage';
-import WorkbenchHome from './pages/WorkbenchHome';
 import { ChatThreadPage } from './pages/ChatThreadPage';
+import { ArtifactsPage } from './pages/ArtifactsPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
 import Settings from './pages/Settings';
 import { SkillsLibrary } from './pages/SkillsLibrary';
@@ -23,17 +24,19 @@ function ProtectedLayout() {
 
 function AppShell() {
   return (
-    <ChatLauncherProvider>
-      <div className="flex h-screen flex-row bg-page">
-        <AppSidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <main className="flex-1 overflow-hidden">
-            <Outlet />
-          </main>
-          <PersonalAgentChat />
+    <ActiveWorkbenchProvider>
+      <ChatLauncherProvider>
+        <div className="flex h-screen flex-row bg-page">
+          <AppSidebar />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <main className="flex-1 overflow-hidden">
+              <Outlet />
+            </main>
+            <PersonalAgentChat />
+          </div>
         </div>
-      </div>
-    </ChatLauncherProvider>
+      </ChatLauncherProvider>
+    </ActiveWorkbenchProvider>
   );
 }
 
@@ -54,13 +57,14 @@ export const router = createBrowserRouter([
           { path: '/chats/:threadId', element: <ChatThreadPage /> },
           { path: '/onboarding', element: <Navigate to="/" replace /> },
           { path: '/dashboard', element: <Navigate to="/" replace /> },
+          { path: '/artifacts', element: <ArtifactsPage /> },
+          { path: '/workbenches/:slug', element: <Navigate to="/artifacts" replace /> },
           { path: '/workflows', element: <WorkflowsPage /> },
           { path: '/settings', element: <Settings /> },
           { path: '/skills', element: <SkillsLibrary /> },
           { path: '/skills/new', element: <SkillsNew /> },
           { path: '/skills/:id', element: <SkillDetail /> },
           { path: '/insights', element: <InsightsDashboard /> },
-          { path: '/workbenches/:slug', element: <WorkbenchHome /> },
         ],
       },
     ],

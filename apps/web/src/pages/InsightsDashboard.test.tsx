@@ -4,21 +4,25 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-mock.module('../hooks/use-workbenches', () => ({
-  useWorkbenches: () => ({
-    data: [
-      {
-        id: 'p1',
-        tenantId: 'tenant-1',
-        tenantSlug: 'acme',
-        tenantName: 'Acme Corp',
-      },
-    ],
-    isLoading: false,
-    isSuccess: true,
-    isError: false,
-  }),
+let activeContext: {
+  workbenches: unknown[];
+  loading: boolean;
+  activeWorkbench: { id: string; tenantId: string; tenantName: string } | null;
+  activeTenantId: string | null;
+  setActiveWorkbench: () => void;
+} = {
+  workbenches: [],
+  loading: false,
+  activeWorkbench: { id: 'p1', tenantId: 'tenant-1', tenantName: 'Acme Corp' },
+  activeTenantId: 'tenant-1',
+  setActiveWorkbench: () => {},
+};
+
+mock.module('../lib/active-workbench-context', () => ({
+  useActiveWorkbench: () => activeContext,
 }));
+
+let lastTenantId: string | null = null;
 
 const mockOverview = {
   tenantId: 'tenant-1',
@@ -71,7 +75,10 @@ const mockOverview = {
 };
 
 mock.module('../lib/hub-api', () => ({
-  getActivityOverview: () => Promise.resolve(mockOverview),
+  getActivityOverview: (tenantId: string) => {
+    lastTenantId = tenantId;
+    return Promise.resolve(mockOverview);
+  },
   describeHubApiFailure: (e: unknown) => String(e),
 }));
 
@@ -88,6 +95,14 @@ function renderPage() {
 
 beforeEach(() => {
   window.happyDOM.setURL('http://localhost/insights');
+  lastTenantId = null;
+  activeContext = {
+    workbenches: [],
+    loading: false,
+    activeWorkbench: { id: 'p1', tenantId: 'tenant-1', tenantName: 'Acme Corp' },
+    activeTenantId: 'tenant-1',
+    setActiveWorkbench: () => {},
+  };
 });
 
 afterEach(() => {
@@ -137,5 +152,31 @@ describe('InsightsDashboard', () => {
       expect(screen.getByText('Myra')).toBeDefined();
     });
     expect(screen.getByText('10')).toBeDefined();
+  });
+
+  it('scopes analytics queries to the active workbench tenant and shows its name', async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('Operational ledger')).toBeDefined();
+    });
+    expect(lastTenantId).toBe('tenant-1');
+    expect(screen.getByText('Acme Corp')).toBeDefined();
+  });
+
+  it('shows a select-a-workbench state and fires no query when no workbench is active', async () => {
+    activeContext = {
+      workbenches: [],
+      loading: false,
+      activeWorkbench: null,
+      activeTenantId: null,
+      setActiveWorkbench: () => {},
+    };
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('Select a workbench to view analytics.')).toBeDefined();
+    });
+    expect(lastTenantId).toBeNull();
   });
 });

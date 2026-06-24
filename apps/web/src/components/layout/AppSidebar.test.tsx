@@ -24,8 +24,14 @@ mock.module('../../hooks/use-myra-threads', () => ({
   resolveActiveThread: () => null,
 }));
 
-mock.module('../../hooks/use-workbenches', () => ({
-  useWorkbenches: () => ({ data: [], isLoading: false }),
+mock.module('../../lib/active-workbench-context', () => ({
+  useActiveWorkbench: () => ({
+    workbenches: [],
+    loading: false,
+    activeWorkbench: null,
+    activeTenantId: null,
+    setActiveWorkbench: () => {},
+  }),
 }));
 
 const { AppSidebar } = require('./AppSidebar');
