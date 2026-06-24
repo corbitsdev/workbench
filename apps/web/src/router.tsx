@@ -8,6 +8,7 @@ import { LoginPage } from './pages/LoginPage';
 import { ChatThreadPage } from './pages/ChatThreadPage';
 import { ChatsListPage } from './pages/ChatsListPage';
 import { ArtifactsPage } from './pages/ArtifactsPage';
+import { ArtifactDetailPage } from './pages/ArtifactDetailPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
 import Settings from './pages/Settings';
 import { SkillsLibrary } from './pages/SkillsLibrary';
@@ -60,6 +61,7 @@ export const router = createBrowserRouter([
           { path: '/onboarding', element: <Navigate to="/" replace /> },
           { path: '/dashboard', element: <Navigate to="/" replace /> },
           { path: '/artifacts', element: <ArtifactsPage /> },
+          { path: '/artifacts/:artifactId', element: <ArtifactDetailPage /> },
           { path: '/workbenches/:slug', element: <Navigate to="/artifacts" replace /> },
           { path: '/workflows', element: <WorkflowsPage /> },
           { path: '/settings', element: <Settings /> },

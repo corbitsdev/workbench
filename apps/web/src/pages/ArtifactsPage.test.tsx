@@ -3,6 +3,11 @@ import '../test-setup';
 import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, render, screen } from '@testing-library/react';
 import React from 'react';
+import { MemoryRouter } from 'react-router';
+
+function renderPage() {
+  render(React.createElement(MemoryRouter, null, React.createElement(ArtifactsPage)));
+}
 
 let ctx: {
   workbenches: unknown[];
@@ -29,7 +34,7 @@ describe('ArtifactsPage', () => {
       activeTenantId: null,
       setActiveWorkbench: () => {},
     };
-    render(React.createElement(ArtifactsPage));
+    renderPage();
     expect(screen.getByText('Loading…')).toBeDefined();
   });
 
@@ -41,7 +46,7 @@ describe('ArtifactsPage', () => {
       activeTenantId: null,
       setActiveWorkbench: () => {},
     };
-    render(React.createElement(ArtifactsPage));
+    renderPage();
     expect(screen.getByText(/not been provided access/i)).toBeDefined();
   });
 });

@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { takePendingFirstMessage } from '../lib/pending-first-message';
 import { MyraChatSurface } from '../components/MyraChatSurface';
 import { useMyraSession } from '../hooks/use-myra-session';
 import {
@@ -33,6 +34,21 @@ export function ChatThreadPage() {
   }, [active]);
 
   const session = useMyraSession(active?.instanceId ?? null, active !== null);
+
+  // Deliver a message seeded by another surface (e.g. the artifact page's chat
+  // composer creating this thread). Once, when the session is ready.
+  const deliveredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (session.state.phase !== 'ready' || !active) return;
+    if (deliveredRef.current === active.id) return;
+    const pending = takePendingFirstMessage(active.id);
+    if (pending) {
+      deliveredRef.current = active.id;
+      session.send(pending);
+    }
+    // session.send is recreated each render; gate on phase + thread id instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.state.phase, active]);
 
   if (isLoading) {
     return <CenteredNotice>Loading your chats…</CenteredNotice>;

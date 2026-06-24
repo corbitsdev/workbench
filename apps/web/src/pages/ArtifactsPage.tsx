@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ArtifactGallery } from '../components/layout/ArtifactGallery';
 import { useActiveWorkbench } from '../lib/active-workbench-context';
@@ -9,6 +10,7 @@ import { useActiveWorkbench } from '../lib/active-workbench-context';
  */
 export function ArtifactsPage() {
   const { workbenches, loading, activeTenantId } = useActiveWorkbench();
+  const navigate = useNavigate();
 
   if (loading) {
     return (
@@ -34,7 +36,10 @@ export function ArtifactsPage() {
   return (
     <ErrorBoundary>
       <div className="h-full overflow-y-auto px-4 pb-10 pt-2">
-        <ArtifactGallery tenantId={activeTenantId} />
+        <ArtifactGallery
+          tenantId={activeTenantId}
+          onOpenArtifact={(artifact) => navigate(`/artifacts/${artifact.id}`)}
+        />
       </div>
     </ErrorBoundary>
   );

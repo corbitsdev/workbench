@@ -24,6 +24,11 @@ interface ArtifactGalleryProps {
   onOpenLibrary?: () => void;
   /** Open the workflow catalog seeded with this artifact (owned by the page). */
   onUseInWorkflow?: (artifact: ArtifactWithSession) => void;
+  /**
+   * When provided, opening an artifact calls this (e.g. navigate to a full-page
+   * artifact view) instead of the built-in preview modal.
+   */
+  onOpenArtifact?: (artifact: ArtifactWithSession) => void;
 }
 
 // Hand the agent a reference, not the body: it loads the current content via
@@ -41,6 +46,7 @@ export function ArtifactGallery({
   onNew,
   onOpenLibrary,
   onUseInWorkflow,
+  onOpenArtifact,
 }: ArtifactGalleryProps) {
   const { openWithMessage } = useChatLauncher();
   const [inputQuery, setInputQuery] = useState('');
@@ -74,6 +80,10 @@ export function ArtifactGallery({
 
   const handleOpen = (gallery: GalleryArtifact) => {
     const full = (artifacts ?? []).find((a) => a.id === gallery.id) ?? null;
+    if (onOpenArtifact && full) {
+      onOpenArtifact(full);
+      return;
+    }
     setSelected(full);
   };
 
