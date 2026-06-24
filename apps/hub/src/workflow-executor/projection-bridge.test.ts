@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { createCoalescingScheduler, foldRunEvents, type RunEventEntry } from './projection-bridge';
+import {
+  createCoalescingScheduler,
+  foldRunEvents,
+  isNewWorkflowRunFailure,
+  type RunEventEntry,
+} from './projection-bridge';
 
 function entry(runId: string, type: string, rest: Record<string, unknown> = {}): RunEventEntry {
   return { runId, event: { type, seq: 0, ...rest } };
@@ -86,6 +91,18 @@ describe('foldRunEvents', () => {
     ]);
     expect(runs.get('r1')?.completedRefs).toEqual([]);
     expect(runs.get('r1')?.status).toBe('completed');
+  });
+});
+
+describe('isNewWorkflowRunFailure', () => {
+  test('true when status newly becomes failed', () => {
+    expect(isNewWorkflowRunFailure('running', 'failed')).toBe(true);
+    expect(isNewWorkflowRunFailure('awaiting', 'failed')).toBe(true);
+  });
+
+  test('false when already failed or not a failure transition', () => {
+    expect(isNewWorkflowRunFailure('failed', 'failed')).toBe(false);
+    expect(isNewWorkflowRunFailure('running', 'completed')).toBe(false);
   });
 });
 

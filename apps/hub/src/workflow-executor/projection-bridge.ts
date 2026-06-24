@@ -61,6 +61,28 @@ const WithErrorMessage = type({ error: { message: 'string' }, '+': 'ignore' });
 
 type RunRecordStatus = 'running' | 'awaiting' | 'completed' | 'failed';
 
+export function isNewWorkflowRunFailure(
+  previousStatus: RunRecordStatus,
+  nextStatus: RunRecordStatus
+): boolean {
+  return previousStatus !== 'failed' && nextStatus === 'failed';
+}
+
+export function logNewWorkflowRunFailureIfNeeded(
+  previousStatus: RunRecordStatus,
+  projected: ProjectedRun,
+  context: { runId: string; kind: string; deploymentId: string | null }
+): void {
+  if (!isNewWorkflowRunFailure(previousStatus, projected.status)) return;
+  const detail = projected.error ?? 'workflow run failed';
+  log.error('workflow run failed', {
+    runId: context.runId,
+    kind: context.kind,
+    ...(context.deploymentId !== null ? { deploymentId: context.deploymentId } : {}),
+    error: new Error(detail),
+  });
+}
+
 export interface RunEventEntry {
   runId: string;
   event: { type: string } & Record<string, unknown>;
@@ -242,6 +264,12 @@ export async function projectWorkflowRunRepo(
       currentStepId: projected.currentStepId,
       outputs,
       ...(projected.error !== undefined ? { error: projected.error } : {}),
+    });
+
+    logNewWorkflowRunFailureIfNeeded(existing.status, projected, {
+      runId,
+      kind: existing.kind,
+      deploymentId: existing.deploymentId ?? null,
     });
   }
 }
