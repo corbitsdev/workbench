@@ -24,6 +24,7 @@ const {
   reconcileMemberInstanceGrants,
   refreshInstanceGrantsFromDefinition,
   personalAgentUpdateAvailable,
+  assessPersonalAgentSync,
 } = await import('./grant-reconcile');
 
 const CANONICAL_TOOL = '@workbench/tools-granola/granola:granola_list_notes';
@@ -294,5 +295,10 @@ describe('refreshInstanceGrantsFromDefinition', () => {
 describe('personalAgentUpdateAvailable', () => {
   it('is true when paInstanceId is missing', async () => {
     expect(await personalAgentUpdateAvailable({} as never, null)).toBe(true);
+  });
+
+  it('assessPersonalAgentSync returns a reason when sync is needed', async () => {
+    const assessment = await assessPersonalAgentSync({} as never, null);
+    expect(assessment).toEqual({ available: true, reason: 'no_myra_instance' });
   });
 });

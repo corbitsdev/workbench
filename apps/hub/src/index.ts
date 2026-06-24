@@ -65,7 +65,7 @@ import {
 } from './services/agent-provisioning';
 import {
   refreshInstanceGrantsFromDefinition,
-  personalAgentUpdateAvailable,
+  assessPersonalAgentSync,
 } from './services/grant-reconcile';
 import { createMembersRouter } from './routes/members';
 import { createArtifactsRouter } from './routes/artifacts';
@@ -97,6 +97,7 @@ import { createRateLimiter } from './lib/rate-limit';
 
 await setupObservability({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
+const meLog = getLogger(['api', 'v1-me']);
 
 const config = loadConfig();
 
@@ -542,7 +543,14 @@ async function myraInstanceIdForMember(
 async function syncPersonalAgentForUser(
   userId: string,
   syncPersonalAgent: boolean
-): Promise<{ workingTenantId: string | null; memberPrincipalId: string | null; paInstanceId: string | null }> {
+): Promise<{
+  workingTenantId: string | null;
+  memberPrincipalId: string | null;
+  paInstanceId: string | null;
+  provisionedMyra: boolean;
+  grantsRefreshed: boolean;
+  grantsPushedLive: boolean;
+}> {
   let workingTenantId: string | null = null;
   let memberPrincipalId: string | null = null;
   try {
@@ -554,10 +562,20 @@ async function syncPersonalAgentForUser(
       userId,
       error: err instanceof Error ? err : new Error(String(err)),
     });
-    return { workingTenantId: null, memberPrincipalId: null, paInstanceId: null };
+    return {
+      workingTenantId: null,
+      memberPrincipalId: null,
+      paInstanceId: null,
+      provisionedMyra: false,
+      grantsRefreshed: false,
+      grantsPushedLive: false,
+    };
   }
 
   let paInstanceId: string | null = null;
+  let provisionedMyra = false;
+  let grantsRefreshed = false;
+  let grantsPushedLive = false;
   if (workingTenantId && memberPrincipalId) {
     paInstanceId = await myraInstanceIdForMember(workingTenantId, memberPrincipalId);
 
@@ -568,6 +586,10 @@ async function syncPersonalAgentForUser(
           memberPrincipalId,
         });
         paInstanceId = getMyraInstanceId(instances);
+        provisionedMyra = paInstanceId !== null;
+        if (provisionedMyra) {
+          meLog.info('Provisioned Myra instance on POST /v1/me', { userId, instanceId: paInstanceId });
+        }
       } catch (err) {
         log.warn('Failed to re-provision Myra on POST /v1/me', {
           userId,
@@ -598,8 +620,9 @@ async function syncPersonalAgentForUser(
         const paForGrants = await db.query.agentInstance.findFirst({
           where: eq(intxSchema.agentInstance.id, paInstanceId),
         });
-        if (paForGrants && sidecarRouter.getRoutableAddresses().includes(paForGrants.address)) {
-          await refreshInstanceGrantsFromDefinition(
+        if (paForGrants) {
+          const routable = sidecarRouter.getRoutableAddresses().includes(paForGrants.address);
+          const grantResult = await refreshInstanceGrantsFromDefinition(
             db,
             {
               agentId: paForGrants.agentId,
@@ -607,8 +630,19 @@ async function syncPersonalAgentForUser(
               principalId: paForGrants.principalId,
               address: paForGrants.address,
             },
-            { sidecarRouter, grantStore }
+            routable ? { sidecarRouter, grantStore } : undefined
           );
+          grantsRefreshed = grantResult.refreshed;
+          grantsPushedLive = grantResult.pushed;
+          if (grantResult.refreshed) {
+            meLog.info('Myra grant reconcile on POST /v1/me', {
+              userId,
+              instanceId: paInstanceId,
+              address: paForGrants.address,
+              pushedLive: grantResult.pushed,
+              routable,
+            });
+          }
         }
       } catch (err) {
         log.warn('Failed to refresh live Myra grants on POST /v1/me', {
@@ -620,7 +654,14 @@ async function syncPersonalAgentForUser(
     }
   }
 
-  return { workingTenantId, memberPrincipalId, paInstanceId };
+  return {
+    workingTenantId,
+    memberPrincipalId,
+    paInstanceId,
+    provisionedMyra,
+    grantsRefreshed,
+    grantsPushedLive,
+  };
 }
 
 v1.get('/me', async (c) => {
@@ -636,7 +677,15 @@ v1.get('/me', async (c) => {
     paInstanceId = await myraInstanceIdForMember(workingTenantId, memberPrincipalId);
   }
 
-  const personalAgentSyncAvailable = await personalAgentUpdateAvailable(db, paInstanceId);
+  const syncAssessment = await assessPersonalAgentSync(db, paInstanceId);
+  const personalAgentSyncAvailable = syncAssessment.available;
+  if (personalAgentSyncAvailable) {
+    meLog.info('GET /v1/me recommends personal agent sync', {
+      userId,
+      paInstanceId,
+      reason: syncAssessment.reason,
+    });
+  }
 
   let credentialResolved = false;
   if (paInstanceId && workingTenantId) {
@@ -716,7 +765,13 @@ v1.post('/me', async (c) => {
   }
   const syncPersonalAgent = parsed.syncPersonalAgent ?? true;
 
-  const { workingTenantId, paInstanceId } = await syncPersonalAgentForUser(userId, syncPersonalAgent);
+  meLog.info('POST /v1/me personal agent sync started', {
+    userId,
+    syncPersonalAgent,
+  });
+
+  const syncOutcome = await syncPersonalAgentForUser(userId, syncPersonalAgent);
+  const { workingTenantId, paInstanceId } = syncOutcome;
 
   let credentialResolved = false;
   if (paInstanceId && workingTenantId) {
@@ -767,7 +822,18 @@ v1.post('/me', async (c) => {
     log.warn('Root tenant lookup failed on POST /me', { error: err, userId });
   }
 
-  const personalAgentSyncAvailable = await personalAgentUpdateAvailable(db, paInstanceId);
+  const postAssessment = await assessPersonalAgentSync(db, paInstanceId);
+  const personalAgentSyncAvailable = postAssessment.available;
+
+  meLog.info('POST /v1/me personal agent sync finished', {
+    userId,
+    paInstanceId,
+    provisionedMyra: syncOutcome.provisionedMyra,
+    grantsRefreshed: syncOutcome.grantsRefreshed,
+    grantsPushedLive: syncOutcome.grantsPushedLive,
+    stillNeedsSync: personalAgentSyncAvailable,
+    remainingReason: postAssessment.reason,
+  });
 
   return c.json({
     userId,

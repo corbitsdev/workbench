@@ -91,6 +91,12 @@ export async function refreshInstanceGrantsFromDefinition(
     .update(agentInstance)
     .set({ updatedAt: new Date() })
     .where(eq(agentInstance.address, instance.address));
+  log.info('Live sidecar grants push', {
+    address: instance.address,
+    principalId: instance.principalId,
+    grantCount: grants.length,
+    toolCount: toolNames.length,
+  });
   return { refreshed: true, pushed: true };
 }
 
@@ -223,38 +229,61 @@ async function toolGrantNamesForPrincipal(
   return sortedToolNames(names);
 }
 
-/** Read-only: whether POST /v1/me should run again (GET must not mutate). */
-export async function personalAgentUpdateAvailable(
+export type PersonalAgentSyncReason =
+  | 'no_myra_instance'
+  | 'instance_ended'
+  | 'missing_org_agent'
+  | 'tool_grant_drift'
+  | 'org_template_newer';
+
+export type PersonalAgentSyncAssessment = {
+  available: boolean;
+  reason: PersonalAgentSyncReason | null;
+};
+
+/** Read-only: why POST /v1/me may be needed (GET must not mutate). */
+export async function assessPersonalAgentSync(
   db: DB['db'],
   paInstanceId: string | null
-): Promise<boolean> {
+): Promise<PersonalAgentSyncAssessment> {
   if (!paInstanceId) {
-    return true;
+    return { available: true, reason: 'no_myra_instance' };
   }
 
   const instance = await db.query.agentInstance.findFirst({
     where: eq(agentInstance.id, paInstanceId),
   });
-  if (!instance || instance.endedAt) {
-    return true;
+  if (!instance) {
+    return { available: true, reason: 'no_myra_instance' };
+  }
+  if (instance.endedAt) {
+    return { available: true, reason: 'instance_ended' };
   }
 
   const agentRow = await db.query.agent.findFirst({
     where: eq(agent.id, instance.agentId),
   });
   if (!agentRow) {
-    return true;
+    return { available: true, reason: 'missing_org_agent' };
   }
 
   const expected = sortedToolNames(getToolNamesFromCapabilities(agentRow.capabilities ?? null));
   const actual = await toolGrantNamesForPrincipal(db, instance.tenantId, instance.principalId);
   if (!grantToolNamesEqual(expected, actual)) {
-    return true;
+    return { available: true, reason: 'tool_grant_drift' };
   }
 
   if (agentRow.updatedAt.getTime() > instance.updatedAt.getTime()) {
-    return true;
+    return { available: true, reason: 'org_template_newer' };
   }
 
-  return false;
+  return { available: false, reason: null };
+}
+
+export async function personalAgentUpdateAvailable(
+  db: DB['db'],
+  paInstanceId: string | null
+): Promise<boolean> {
+  const assessment = await assessPersonalAgentSync(db, paInstanceId);
+  return assessment.available;
 }
