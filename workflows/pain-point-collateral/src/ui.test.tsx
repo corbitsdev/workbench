@@ -473,7 +473,9 @@ describe('Panel — format selection (step 4)', () => {
     );
 
     // Select "Email" and "One-pager" (2 formats × 2 pain points = 4 items)
-    await userEvent.click(screen.getByRole('checkbox', { name: /Draft a personal follow-up email/ }));
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /Draft a personal follow-up email/ })
+    );
     await userEvent.click(screen.getByRole('checkbox', { name: /A sales leave-behind/ }));
 
     await userEvent.click(screen.getByRole('button', { name: /Generate 2 formats/ }));

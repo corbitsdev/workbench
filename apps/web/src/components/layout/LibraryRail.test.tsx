@@ -361,7 +361,9 @@ describe('LibraryRail', () => {
     fireEvent.click(doneToggle);
 
     await waitFor(() => view.getByRole('button', { name: 'Open workflow Collateral Generation' }));
-    expect(view.queryByRole('button', { name: 'Remove workflow Collateral Generation' })).toBeNull();
+    expect(
+      view.queryByRole('button', { name: 'Remove workflow Collateral Generation' })
+    ).toBeNull();
   });
 });
 

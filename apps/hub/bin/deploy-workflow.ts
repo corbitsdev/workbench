@@ -4,18 +4,18 @@
 // gated hub deploy route. The hub imports no workflow code. See
 // docs/DEPLOYING_WORKFLOWS.md.
 
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
-import { type, type Type } from "arktype";
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
+import { type, type Type } from 'arktype';
 
-const DeployResult = type({ kind: "'multi-step'", publicKey: "string" }).or({
+const DeployResult = type({ kind: "'multi-step'", publicKey: 'string' }).or({
   kind: "'trivial'",
 });
 const DeployResponse = type({
-  kind: "string",
-  deploymentId: "string",
+  kind: 'string',
+  deploymentId: 'string',
   result: DeployResult,
 });
 
@@ -25,8 +25,8 @@ const DeployResponse = type({
 // grant check. The machine path uses the hub's service token (SIDECAR_TOKEN)
 // against /api/internal — for unattended/sidecar callers with no session.
 export type DeployAuth =
-  | { mode: "session"; sessionToken: string }
-  | { mode: "service"; serviceToken: string };
+  | { mode: 'session'; sessionToken: string }
+  | { mode: 'service'; serviceToken: string };
 
 export type DeployWorkflowOptions = {
   hubURL: string;
@@ -45,39 +45,33 @@ export type DeployWorkflowOptions = {
 export function buildDeployRequest(
   hubURL: string,
   query: string,
-  auth: DeployAuth,
+  auth: DeployAuth
 ): { url: string; headers: Record<string, string> } {
-  if (auth.mode === "session") {
+  if (auth.mode === 'session') {
     return {
       url: `${hubURL}/api/v1/workflows/deploy${query}`,
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Cookie: [
           `better-auth.session_token=${auth.sessionToken}`,
           `__Secure-better-auth.session_token=${auth.sessionToken}`,
-        ].join("; "),
+        ].join('; '),
       },
     };
   }
   return {
     url: `${hubURL}/api/internal/workflows/deploy${query}`,
     headers: {
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
       Authorization: `Bearer ${auth.serviceToken}`,
     },
   };
 }
 
-function parseSchema<T extends Type>(
-  schema: T,
-  data: unknown,
-  label: string,
-): T["infer"] {
+function parseSchema<T extends Type>(schema: T, data: unknown, label: string): T['infer'] {
   const result = schema(data);
   if (result instanceof type.errors) {
-    throw new Error(
-      `deploy-workflow: validation failed for ${label}: ${result.summary}`,
-    );
+    throw new Error(`deploy-workflow: validation failed for ${label}: ${result.summary}`);
   }
   return result;
 }
@@ -85,17 +79,13 @@ function parseSchema<T extends Type>(
 // Inline tool factories (functions) silently vanish through JSON.stringify, so a
 // workflow that declares tools as factories rather than serializable capability
 // refs would deploy tool-less agents. Refuse such definitions up front.
-function assertSerializable(
-  value: unknown,
-  seen: Set<object>,
-  path: string,
-): void {
-  if (typeof value === "function") {
+function assertSerializable(value: unknown, seen: Set<object>, path: string): void {
+  if (typeof value === 'function') {
     throw new Error(
-      `deploy-workflow: definition is not serializable at ${path} (a function — express tools via capability/director refs, not inline factories)`,
+      `deploy-workflow: definition is not serializable at ${path} (a function — express tools via capability/director refs, not inline factories)`
     );
   }
-  if (value === null || typeof value !== "object") return;
+  if (value === null || typeof value !== 'object') return;
   if (seen.has(value)) return;
   seen.add(value);
   for (const [key, child] of Object.entries(value)) {
@@ -115,24 +105,23 @@ function repoRoot(): string {
 // `apps/hub/node_modules` and a bare-specifier import fails. Resolving by path
 // from `workflows/<kind>` keeps the "no hub edits for a new workflow" promise.
 export function resolveWorkflowEntry(kind: string): string {
-  const pkgDir = join(repoRoot(), "workflows", kind);
-  const manifestPath = join(pkgDir, "package.json");
+  const pkgDir = join(repoRoot(), 'workflows', kind);
+  const manifestPath = join(pkgDir, 'package.json');
   if (!existsSync(manifestPath)) {
     throw new Error(
-      `deploy-workflow: no workflow package at workflows/${kind} (expected workflows/${kind}/package.json)`,
+      `deploy-workflow: no workflow package at workflows/${kind} (expected workflows/${kind}/package.json)`
     );
   }
-  const pkg = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+  const pkg = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
     exports?: Record<string, { default?: string } | string>;
     module?: string;
     main?: string;
   };
-  const dot = pkg.exports?.["."];
-  const entry =
-    typeof dot === "string" ? dot : (dot?.default ?? pkg.module ?? pkg.main);
+  const dot = pkg.exports?.['.'];
+  const entry = typeof dot === 'string' ? dot : (dot?.default ?? pkg.module ?? pkg.main);
   if (entry === undefined) {
     throw new Error(
-      `deploy-workflow: workflows/${kind} declares no "." export, module, or main entry`,
+      `deploy-workflow: workflows/${kind} declares no "." export, module, or main entry`
     );
   }
   return resolve(pkgDir, entry);
@@ -141,49 +130,38 @@ export function resolveWorkflowEntry(kind: string): string {
 async function loadWorkflowDefinition(kind: string): Promise<unknown> {
   const entry = resolveWorkflowEntry(kind);
   const mod: unknown = await import(entry);
-  if (typeof mod !== "object" || mod === null || !("workflow" in mod)) {
-    throw new Error(
-      `deploy-workflow: workflows/${kind} does not export "workflow"`,
-    );
+  if (typeof mod !== 'object' || mod === null || !('workflow' in mod)) {
+    throw new Error(`deploy-workflow: workflows/${kind} does not export "workflow"`);
   }
   const definition = (mod as { workflow: unknown }).workflow;
-  assertSerializable(definition, new Set(), "workflow");
+  assertSerializable(definition, new Set(), 'workflow');
   return definition;
 }
 
-export async function deployWorkflow(
-  opts: DeployWorkflowOptions,
-): Promise<void> {
+export async function deployWorkflow(opts: DeployWorkflowOptions): Promise<void> {
   const definition = await loadWorkflowDefinition(opts.kind);
   const query =
-    opts.tenantSlug !== undefined && opts.tenantSlug !== ""
+    opts.tenantSlug !== undefined && opts.tenantSlug !== ''
       ? `?tenant=${encodeURIComponent(opts.tenantSlug)}`
-      : "";
+      : '';
   const { url, headers } = buildDeployRequest(opts.hubURL, query, opts.auth);
   const res = await fetch(url, {
-    method: "POST",
+    method: 'POST',
     headers,
     body: JSON.stringify(definition),
   });
   if (res.status !== 200) {
-    throw new Error(
-      `deploy-workflow: deploy failed (${String(res.status)}): ${await res.text()}`,
-    );
+    throw new Error(`deploy-workflow: deploy failed (${String(res.status)}): ${await res.text()}`);
   }
-  const parsed = parseSchema(
-    DeployResponse,
-    await res.json(),
-    "deploy response",
-  );
+  const parsed = parseSchema(DeployResponse, await res.json(), 'deploy response');
   process.stdout.write(
-    `Deployed ${parsed.kind} (deployment ${parsed.deploymentId}, ${parsed.result.kind})\n`,
+    `Deployed ${parsed.kind} (deployment ${parsed.deploymentId}, ${parsed.result.kind})\n`
   );
 }
 
 function requireEnv(name: string): string {
   const value = process.env[name];
-  if (value === undefined)
-    throw new Error(`deploy-workflow: ${name} is required`);
+  if (value === undefined) throw new Error(`deploy-workflow: ${name} is required`);
   return value;
 }
 
@@ -193,37 +171,36 @@ function requireEnv(name: string): string {
 // Fall back to the service token (SIDECAR_TOKEN) for unattended/sidecar callers
 // that have no session. HUB_SERVICE_TOKEN is accepted as a legacy alias.
 export function resolveDeployAuth(envSource: NodeJS.ProcessEnv): DeployAuth {
-  const sessionToken = envSource["SESSION_TOKEN"];
-  if (sessionToken !== undefined && sessionToken !== "") {
-    return { mode: "session", sessionToken };
+  const sessionToken = envSource['SESSION_TOKEN'];
+  if (sessionToken !== undefined && sessionToken !== '') {
+    return { mode: 'session', sessionToken };
   }
-  const serviceToken =
-    envSource["SIDECAR_TOKEN"] ?? envSource["HUB_SERVICE_TOKEN"];
-  if (serviceToken !== undefined && serviceToken !== "") {
-    return { mode: "service", serviceToken };
+  const serviceToken = envSource['SIDECAR_TOKEN'] ?? envSource['HUB_SERVICE_TOKEN'];
+  if (serviceToken !== undefined && serviceToken !== '') {
+    return { mode: 'service', serviceToken };
   }
   throw new Error(
-    "deploy-workflow: no credential found — set SESSION_TOKEN (operator) or SIDECAR_TOKEN (service) in your env file",
+    'deploy-workflow: no credential found — set SESSION_TOKEN (operator) or SIDECAR_TOKEN (service) in your env file'
   );
 }
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
-      kind: { type: "string" },
-      "hub-url": { type: "string" },
-      tenant: { type: "string" },
+      kind: { type: 'string' },
+      'hub-url': { type: 'string' },
+      tenant: { type: 'string' },
     },
     strict: true,
   });
   if (values.kind === undefined) {
-    throw new Error("deploy-workflow: --kind <workflow-kind> is required");
+    throw new Error('deploy-workflow: --kind <workflow-kind> is required');
   }
   await deployWorkflow({
-    hubURL: values["hub-url"] ?? requireEnv("HUB_URL"),
+    hubURL: values['hub-url'] ?? requireEnv('HUB_URL'),
     kind: values.kind,
     auth: resolveDeployAuth(process.env),
-    tenantSlug: values.tenant ?? process.env["WORKBENCH_SLUG"],
+    tenantSlug: values.tenant ?? process.env['WORKBENCH_SLUG'],
   });
 }
 

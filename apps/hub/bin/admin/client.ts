@@ -1,10 +1,6 @@
-import { type } from "arktype";
-import {
-  createClient,
-  type ApiClient,
-  type HttpMethod,
-} from "@workbench/openapi-arktype";
-import { api, type CookieJar } from "../_lib";
+import { type } from 'arktype';
+import { createClient, type ApiClient, type HttpMethod } from '@workbench/openapi-arktype';
+import { api, type CookieJar } from '../_lib';
 
 // Typed hub client for the admin CLI. It pairs the vendored openapi-arktype
 // runtime (which loads the hub's live /openapi.json for operation discovery and
@@ -43,17 +39,13 @@ export interface HubClient {
   // Operations the spec advertises, grouped-ready (sorted by tag then path).
   operations(): OperationSummary[];
   // Execute an operation, validating the response against the spec when possible.
-  call(
-    method: HttpMethod,
-    path: string,
-    opts?: CallOptions,
-  ): Promise<CallResult>;
+  call(method: HttpMethod, path: string, opts?: CallOptions): Promise<CallResult>;
 }
 
 function buildPath(
   template: string,
   pathParams: Record<string, string> | undefined,
-  query: Record<string, string | undefined> | undefined,
+  query: Record<string, string | undefined> | undefined
 ): string {
   let path = template;
   if (pathParams) {
@@ -88,10 +80,10 @@ export async function createHubClient(opts: {
       // never authenticate to them, so hide them from the operator menu rather
       // than offer routes that always 401. Operator equivalents live on /api/v1
       // and as local actions.
-      if (path.startsWith("/api/internal/")) continue;
+      if (path.startsWith('/api/internal/')) continue;
       for (const [method, op] of Object.entries(item.operations)) {
         out.push({
-          tag: op.tags[0] ?? "Other",
+          tag: op.tags[0] ?? 'Other',
           method: method as HttpMethod,
           path,
           operationId: op.operationId,
@@ -103,7 +95,7 @@ export async function createHubClient(opts: {
       (a, b) =>
         a.tag.localeCompare(b.tag) ||
         a.path.localeCompare(b.path) ||
-        a.method.localeCompare(b.method),
+        a.method.localeCompare(b.method)
     );
     return out;
   }
@@ -111,7 +103,7 @@ export async function createHubClient(opts: {
   async function call(
     method: HttpMethod,
     path: string,
-    callOpts: CallOptions = {},
+    callOpts: CallOptions = {}
   ): Promise<CallResult> {
     const fullPath = buildPath(path, callOpts.pathParams, callOpts.query);
     const res = await api(
@@ -119,12 +111,11 @@ export async function createHubClient(opts: {
       method.toUpperCase(),
       fullPath,
       callOpts.body,
-      opts.cookies,
+      opts.cookies
     );
 
     const validators = spec.operation(method, path);
-    const jsonValidator =
-      validators?.responses?.[String(res.status)]?.["application/json"];
+    const jsonValidator = validators?.responses?.[String(res.status)]?.['application/json'];
     let valid: boolean | undefined;
     if (jsonValidator) {
       valid = !(jsonValidator(res.data) instanceof type.errors);

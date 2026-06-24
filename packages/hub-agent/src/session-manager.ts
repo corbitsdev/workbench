@@ -24,13 +24,13 @@
 // registration into the builder would break the invariant; pushing
 // authz out of the builder would re-couple the package to authz.
 
-import path from "node:path";
+import path from 'node:path';
 
-import { getLogger } from "@intx/log";
-import { hexEncode } from "@intx/types";
-import type { HubTransport } from "@intx/mail-memory";
-import type { GrantRule } from "@intx/types/authz";
-import type { DeployApplyErrorFrame } from "@intx/types/sidecar";
+import { getLogger } from '@intx/log';
+import { hexEncode } from '@intx/types';
+import type { HubTransport } from '@intx/mail-memory';
+import type { GrantRule } from '@intx/types/authz';
+import type { DeployApplyErrorFrame } from '@intx/types/sidecar';
 import type {
   ConnectorThreadState,
   CryptoProvider,
@@ -39,15 +39,15 @@ import type {
   InferenceEvent,
   InferenceSource,
   KeyPair,
-} from "@intx/types/runtime";
-import type { Harness } from "@intx/harness";
+} from '@intx/types/runtime';
+import type { Harness } from '@intx/harness';
 
-import type { AgentKeyEntry, AgentKeyStore } from "./agent-key-store";
-import type { AgentRepoStore } from "./agent-repo-store";
-import type { HarnessBuilder, HarnessBundle } from "./harness-builder";
-import { applyAssetPack as applyAssetPackFn } from "./apply-asset-pack";
+import type { AgentKeyEntry, AgentKeyStore } from './agent-key-store';
+import type { AgentRepoStore } from './agent-repo-store';
+import type { HarnessBuilder, HarnessBundle } from './harness-builder';
+import { applyAssetPack as applyAssetPackFn } from './apply-asset-pack';
 
-const logger = getLogger(["interchange", "hub-agent", "session"]);
+const logger = getLogger(['interchange', 'hub-agent', 'session']);
 
 /**
  * Public session record. The grants ref and disposers live inside the
@@ -62,17 +62,14 @@ export type AgentSession = {
 export type SessionEventSink = (
   agentAddress: string,
   sessionId: string,
-  event: InferenceEvent,
+  event: InferenceEvent
 ) => void;
 
-export type ConnectorStateSink = (
-  agentAddress: string,
-  state: ConnectorThreadState | null,
-) => void;
+export type ConnectorStateSink = (agentAddress: string, state: ConnectorThreadState | null) => void;
 
 export type DeployApplyErrorSink = (
   agentAddress: string,
-  payload: Omit<DeployApplyErrorFrame, "type" | "agentAddress">,
+  payload: Omit<DeployApplyErrorFrame, 'type' | 'agentAddress'>
 ) => void;
 
 export type SessionManagerConfig = {
@@ -134,7 +131,7 @@ export type SessionManager = {
   updateSources(
     agentAddress: string,
     sources: InferenceSource[],
-    defaultSource: string,
+    defaultSource: string
   ): Promise<void>;
   hasSession(agentAddress: string): boolean;
   isProvisioned(agentAddress: string): boolean;
@@ -150,7 +147,7 @@ export type SessionManager = {
     ref: string,
     commitSha: string,
     transferId: string,
-    verifyCommit?: (payload: string, signature: string) => boolean,
+    verifyCommit?: (payload: string, signature: string) => boolean
   ): Promise<void>;
   /**
    * Materialize an asset pack at `<workspaceRoot>/<mountPath>/` for the
@@ -163,21 +160,15 @@ export type SessionManager = {
     mountPath: string,
     pack: Uint8Array,
     ref: string,
-    commitSha: string,
+    commitSha: string
   ): Promise<void>;
   createStatePack(
-    agentAddress: string,
+    agentAddress: string
   ): Promise<{ pack: Uint8Array; commitSha: string; ref: string }>;
   deleteAgentDir(agentAddress: string): Promise<void>;
   getDeployRef(agentAddress: string): Promise<string | null>;
-  persistHubPublicKey(
-    agentAddress: string,
-    hubPublicKey: string,
-  ): Promise<void>;
-  commitInboundMail(
-    agentAddress: string,
-    rawMessage: Uint8Array,
-  ): Promise<void>;
+  persistHubPublicKey(agentAddress: string, hubPublicKey: string): Promise<void>;
+  commitInboundMail(agentAddress: string, rawMessage: Uint8Array): Promise<void>;
   getSessionId(agentAddress: string): string | undefined;
 };
 
@@ -191,9 +182,7 @@ type LiveSession = AgentSession & {
   bundle: HarnessBundle;
 };
 
-export function createSessionManager(
-  config: SessionManagerConfig,
-): SessionManager {
+export function createSessionManager(config: SessionManagerConfig): SessionManager {
   const {
     transport,
     repoStore,
@@ -217,10 +206,7 @@ export function createSessionManager(
   // emptiness so addresses without subscribers cost a single map miss.
   const agentEventListeners = new Map<string, Set<AgentEventListener>>();
 
-  function onAgentEvent(
-    agentAddress: string,
-    listener: AgentEventListener,
-  ): () => void {
+  function onAgentEvent(agentAddress: string, listener: AgentEventListener): () => void {
     let set = agentEventListeners.get(agentAddress);
     if (set === undefined) {
       set = new Set();
@@ -251,10 +237,7 @@ export function createSessionManager(
   // git operations on the same repository.
   const mailCommitQueues = new Map<string, Promise<void>>();
 
-  function enqueueMailCommit(
-    agentAddress: string,
-    fn: () => Promise<void>,
-  ): void {
+  function enqueueMailCommit(agentAddress: string, fn: () => Promise<void>): void {
     const prev = mailCommitQueues.get(agentAddress) ?? Promise.resolve();
     const next = prev
       .catch(() => undefined)
@@ -272,43 +255,35 @@ export function createSessionManager(
     if (inflight !== undefined) await inflight;
   }
 
-  transport.addMessageSentHandler(
-    async ({ senderAddress, rawMessage, messageId }) => {
-      const session = sessions.get(senderAddress);
-      if (session === undefined) {
-        // Outbound mail for an address with no active session is a
-        // protocol violation — the transport should not have accepted
-        // the send. Surfacing this loudly catches the contract break
-        // before it propagates as silently-dropped audit records.
-        throw new Error(
-          `No active session for sender "${senderAddress}" — cannot audit outbound mail ${messageId}`,
-        );
-      }
-      const mailStore = session.bundle.mailStore;
-      const checkpointHash = lastCheckpointHashes.get(senderAddress);
-      lastCheckpointHashes.delete(senderAddress);
-      enqueueMailCommit(senderAddress, async () => {
-        const result = await mailStore.commitMail(rawMessage, "out", {
-          ignoreDuplicate: true,
-          ...(checkpointHash !== undefined ? { checkpointHash } : {}),
-        });
-        if (result !== null) {
-          logger.info`Committed outbound mail ${messageId} for ${senderAddress}`;
-        }
+  transport.addMessageSentHandler(async ({ senderAddress, rawMessage, messageId }) => {
+    const session = sessions.get(senderAddress);
+    if (session === undefined) {
+      // Outbound mail for an address with no active session is a
+      // protocol violation — the transport should not have accepted
+      // the send. Surfacing this loudly catches the contract break
+      // before it propagates as silently-dropped audit records.
+      throw new Error(
+        `No active session for sender "${senderAddress}" — cannot audit outbound mail ${messageId}`
+      );
+    }
+    const mailStore = session.bundle.mailStore;
+    const checkpointHash = lastCheckpointHashes.get(senderAddress);
+    lastCheckpointHashes.delete(senderAddress);
+    enqueueMailCommit(senderAddress, async () => {
+      const result = await mailStore.commitMail(rawMessage, 'out', {
+        ignoreDuplicate: true,
+        ...(checkpointHash !== undefined ? { checkpointHash } : {}),
       });
-    },
-  );
+      if (result !== null) {
+        logger.info`Committed outbound mail ${messageId} for ${senderAddress}`;
+      }
+    });
+  });
 
-  async function provisionAgent(
-    agentConfig: AgentConfig,
-  ): Promise<ProvisionResult> {
+  async function provisionAgent(agentConfig: AgentConfig): Promise<ProvisionResult> {
     const { agentAddress } = agentConfig;
 
-    if (
-      sessions.has(agentAddress) ||
-      provisioned.has(agentAddress) ||
-      pending.has(agentAddress)
-    ) {
+    if (sessions.has(agentAddress) || provisioned.has(agentAddress) || pending.has(agentAddress)) {
       throw new Error(`Agent already exists for address "${agentAddress}"`);
     }
 
@@ -345,12 +320,10 @@ export function createSessionManager(
 
     const { config: agentConfig, keyPair } = entry;
 
-    const source = agentConfig.sources.find(
-      (s) => s.id === agentConfig.defaultSource,
-    );
+    const source = agentConfig.sources.find((s) => s.id === agentConfig.defaultSource);
     if (source === undefined) {
       throw new Error(
-        `No source matches defaultSource "${agentConfig.defaultSource}" for agent "${agentAddress}"`,
+        `No source matches defaultSource "${agentConfig.defaultSource}" for agent "${agentAddress}"`
       );
     }
     buildHarness.canBuildSource(source);
@@ -374,10 +347,7 @@ export function createSessionManager(
         agentTransport,
         crypto,
         onEvent(event: InferenceEvent) {
-          if (
-            event.type === "connector.reply" &&
-            event.data.checkpointHash !== undefined
-          ) {
+          if (event.type === 'connector.reply' && event.data.checkpointHash !== undefined) {
             lastCheckpointHashes.set(agentAddress, event.data.checkpointHash);
           }
           // Per-agent listeners fire before the global sink so an
@@ -394,8 +364,7 @@ export function createSessionManager(
                 listener(event);
               } catch (err: unknown) {
                 if (firstError === undefined) firstError = err;
-                else
-                  logger.error`agent-event listener for ${agentAddress} threw: ${String(err)}`;
+                else logger.error`agent-event listener for ${agentAddress} threw: ${String(err)}`;
               }
             }
           }
@@ -440,10 +409,7 @@ export function createSessionManager(
     }
   }
 
-  async function runDisposers(
-    session: LiveSession,
-    agentAddress: string,
-  ): Promise<Error[]> {
+  async function runDisposers(session: LiveSession, agentAddress: string): Promise<Error[]> {
     // Run every disposer even if some fail; an exception from one must
     // not leak the others. Errors are collected and returned so the
     // caller (destroy / abort) can decide whether to surface a
@@ -486,10 +452,7 @@ export function createSessionManager(
     }
   }
 
-  async function abortSession(
-    agentAddress: string,
-    reason: string,
-  ): Promise<void> {
+  async function abortSession(agentAddress: string, reason: string): Promise<void> {
     if (provisioned.has(agentAddress)) {
       provisioned.delete(agentAddress);
       logger.info`Aborted provisioned agent ${agentAddress}: ${reason}`;
@@ -551,9 +514,7 @@ export function createSessionManager(
     const failed: string[] = [];
 
     for (const entry of configEntries) {
-      const keyEntry: AgentKeyEntry | undefined = keysByAddress.get(
-        entry.address,
-      );
+      const keyEntry: AgentKeyEntry | undefined = keysByAddress.get(entry.address);
       if (keyEntry === undefined) {
         logger.error`Cannot restore "${entry.address}": agent.json exists but key pair is missing`;
         failed.push(entry.address);
@@ -590,10 +551,7 @@ export function createSessionManager(
     return { restored, failed };
   }
 
-  async function updateGrants(
-    agentAddress: string,
-    grants: GrantRule[],
-  ): Promise<void> {
+  async function updateGrants(agentAddress: string, grants: GrantRule[]): Promise<void> {
     const session = sessions.get(agentAddress);
     if (session === undefined) {
       throw new Error(`No session exists for agent "${agentAddress}"`);
@@ -607,7 +565,7 @@ export function createSessionManager(
   async function updateSources(
     agentAddress: string,
     sources: InferenceSource[],
-    defaultSource: string,
+    defaultSource: string
   ): Promise<void> {
     const session = sessions.get(agentAddress);
     if (session === undefined) {
@@ -616,7 +574,7 @@ export function createSessionManager(
     const source = sources.find((s) => s.id === defaultSource);
     if (source === undefined) {
       throw new Error(
-        `No source matches defaultSource "${defaultSource}" in update for agent "${agentAddress}"`,
+        `No source matches defaultSource "${defaultSource}" in update for agent "${agentAddress}"`
       );
     }
     buildHarness.canBuildSource(source);
@@ -632,7 +590,7 @@ export function createSessionManager(
     ref: string,
     commitSha: string,
     transferId: string,
-    verifyCommit?: (payload: string, signature: string) => boolean,
+    verifyCommit?: (payload: string, signature: string) => boolean
   ): Promise<void> {
     const args =
       verifyCommit !== undefined
@@ -653,12 +611,9 @@ export function createSessionManager(
     mountPath: string,
     pack: Uint8Array,
     ref: string,
-    commitSha: string,
+    commitSha: string
   ): Promise<void> {
-    const workspaceRoot = path.join(
-      repoStore.getAgentDir(agentAddress),
-      "workspace",
-    );
+    const workspaceRoot = path.join(repoStore.getAgentDir(agentAddress), 'workspace');
     await applyAssetPackFn({
       workspaceRoot,
       mountPath,
@@ -669,7 +624,7 @@ export function createSessionManager(
   }
 
   async function createStatePack(
-    agentAddress: string,
+    agentAddress: string
   ): Promise<{ pack: Uint8Array; commitSha: string; ref: string }> {
     return repoStore.createStatePack(agentAddress);
   }
@@ -678,26 +633,18 @@ export function createSessionManager(
     await repoStore.remove(agentAddress);
   }
 
-  async function persistHubPublicKey(
-    agentAddress: string,
-    hubPublicKey: string,
-  ): Promise<void> {
+  async function persistHubPublicKey(agentAddress: string, hubPublicKey: string): Promise<void> {
     await repoStore.persistPairing(agentAddress, hubPublicKey);
   }
 
-  async function commitInboundMail(
-    agentAddress: string,
-    rawMessage: Uint8Array,
-  ): Promise<void> {
+  async function commitInboundMail(agentAddress: string, rawMessage: Uint8Array): Promise<void> {
     const session = sessions.get(agentAddress);
     if (session === undefined) {
-      throw new Error(
-        `No active session for "${agentAddress}" — cannot audit inbound mail`,
-      );
+      throw new Error(`No active session for "${agentAddress}" — cannot audit inbound mail`);
     }
     const mailStore = session.bundle.mailStore;
     enqueueMailCommit(agentAddress, async () => {
-      const result = await mailStore.commitMail(rawMessage, "in", {
+      const result = await mailStore.commitMail(rawMessage, 'in', {
         ignoreDuplicate: true,
       });
       if (result !== null) {

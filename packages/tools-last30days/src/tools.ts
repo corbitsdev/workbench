@@ -184,7 +184,15 @@ function collectItems(value: unknown): unknown[] {
   return [];
 }
 
-const SOURCE_STEP_IDS = ['hackernews', 'github', 'web', 'reddit', 'x', 'youtube', 'bluesky'] as const;
+const SOURCE_STEP_IDS = [
+  'hackernews',
+  'github',
+  'web',
+  'reddit',
+  'x',
+  'youtube',
+  'bluesky',
+] as const;
 
 function createWorkflowNormalizeIntakeTool(): AgentTool {
   return {
@@ -207,12 +215,17 @@ function createWorkflowBriefTool(): AgentTool {
     definition: LAST30DAYS_WORKFLOW_BRIEF_DEFINITION,
     handler: async (args) => {
       const steps = coerceArgsObject(args);
-      const intake = isRecord(steps.intake) && isRecord(steps.intake.output) ? steps.intake.output : {};
-      const topic = typeof intake.topic === 'string' && intake.topic.trim().length > 0 ? intake.topic : undefined;
+      const intake =
+        isRecord(steps.intake) && isRecord(steps.intake.output) ? steps.intake.output : {};
+      const topic =
+        typeof intake.topic === 'string' && intake.topic.trim().length > 0
+          ? intake.topic
+          : undefined;
       if (topic === undefined) {
         throw new Error('workflow intake output must include topic');
       }
-      const days = typeof intake.days === 'number' && Number.isFinite(intake.days) ? intake.days : 30;
+      const days =
+        typeof intake.days === 'number' && Number.isFinite(intake.days) ? intake.days : 30;
       const rawInputs: unknown[] = [];
       for (const stepId of SOURCE_STEP_IDS) {
         const step = steps[stepId];

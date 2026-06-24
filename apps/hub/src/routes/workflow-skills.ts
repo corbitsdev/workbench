@@ -38,7 +38,10 @@ export function createInternalWorkflowSkillsRouter(
     }
 
     const run = await db.query.workflowRunRecord.findFirst({
-      where: and(eq(workflowRunRecord.id, parsed.runId), eq(workflowRunRecord.tenantId, parsed.tenantId)),
+      where: and(
+        eq(workflowRunRecord.id, parsed.runId),
+        eq(workflowRunRecord.tenantId, parsed.tenantId)
+      ),
     });
     if (!run) return c.json({ error: 'run not found' }, 404);
 
@@ -79,7 +82,8 @@ export function createInternalWorkflowSkillsRouter(
       });
     }
 
-    if (unresolved.length > 0) return c.json({ error: 'selected skills could not be resolved', unresolved }, 422);
+    if (unresolved.length > 0)
+      return c.json({ error: 'selected skills could not be resolved', unresolved }, 422);
 
     return c.json({ skills: resolved });
   });

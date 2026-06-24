@@ -21,7 +21,11 @@ export { default as HorizontalStepper } from './HorizontalStepper';
 export { default as ProgressChecklist, type ProgressChecklistProps } from './ProgressChecklist';
 export { default as StepSidebar } from './StepSidebar';
 export { buildSteps } from './workflow-steps';
-export { type WorkflowPanelProps, type WorkflowCredential, type WorkflowSkill } from './workflow-panel';
+export {
+  type WorkflowPanelProps,
+  type WorkflowCredential,
+  type WorkflowSkill,
+} from './workflow-panel';
 export {
   type WorkflowStep,
   type WorkflowStepName,

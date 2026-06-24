@@ -80,11 +80,7 @@ export const analyticsRollupDaily = pgTable(
     // Primary read path: tenant summary (all agents, optional date range).
     index('analytics_rollup_daily_tenant_bucket_idx').on(t.tenantId, t.bucketDate),
     // Per-agent breakdown: "how much is Myra costing" queries.
-    index('analytics_rollup_daily_tenant_agent_bucket_idx').on(
-      t.tenantId,
-      t.agentId,
-      t.bucketDate
-    ),
+    index('analytics_rollup_daily_tenant_agent_bucket_idx').on(t.tenantId, t.agentId, t.bucketDate),
     // Per-instance queries.
     index('analytics_rollup_daily_instance_bucket_idx').on(t.instanceId, t.bucketDate),
   ]

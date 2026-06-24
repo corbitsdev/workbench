@@ -12,30 +12,21 @@
 // frame. This test exercises the patched arm end-to-end through the
 // real hub-link WS surface to make the regression observable.
 
-import { describe, test, expect, afterAll } from "bun:test";
-import { Hono } from "hono";
-import { upgradeWebSocket, websocket } from "hono/bun";
-import {
-  createSidecarRouter,
-  type SidecarRouter,
-  type WsHandle,
-} from "@intx/hub-sessions";
-import { createInMemoryTransport } from "@intx/mail-memory";
-import { base64Encode } from "@intx/types";
-import type {
-  HarnessConfig,
-  InboundMessage,
-  InferenceSource,
-  KeyPair,
-} from "@intx/types/runtime";
-import type { GrantRule } from "@intx/types/authz";
-import { sign as nodeSign } from "node:crypto";
-import { importPrivateKeyBytes, verifySSHSignature } from "@intx/crypto-node";
-import { hexDecode } from "@intx/types";
+import { describe, test, expect, afterAll } from 'bun:test';
+import { Hono } from 'hono';
+import { upgradeWebSocket, websocket } from 'hono/bun';
+import { createSidecarRouter, type SidecarRouter, type WsHandle } from '@intx/hub-sessions';
+import { createInMemoryTransport } from '@intx/mail-memory';
+import { base64Encode } from '@intx/types';
+import type { HarnessConfig, InboundMessage, InferenceSource, KeyPair } from '@intx/types/runtime';
+import type { GrantRule } from '@intx/types/authz';
+import { sign as nodeSign } from 'node:crypto';
+import { importPrivateKeyBytes, verifySSHSignature } from '@intx/crypto-node';
+import { hexDecode } from '@intx/types';
 
-import { createHubLink, type DeployRouter } from "./hub-link";
-import type { AgentKeyStore } from "../agent-key-store";
-import type { AgentEventListener, SessionManager } from "../session-manager";
+import { createHubLink, type DeployRouter } from './hub-link';
+import type { AgentKeyStore } from '../agent-key-store';
+import type { AgentEventListener, SessionManager } from '../session-manager';
 
 function createTestKeyStore(): AgentKeyStore & {
   registerKey(address: string, kp: KeyPair): void;
@@ -69,9 +60,7 @@ function createTestKeyStore(): AgentKeyStore & {
     verifyDeployCommit(address, payload, signature) {
       const hubKey = hubKeys.get(address);
       if (hubKey === undefined) {
-        throw new Error(
-          `signature_invalid: no hub public key for "${address}"`,
-        );
+        throw new Error(`signature_invalid: no hub public key for "${address}"`);
       }
       return verifySSHSignature(payload, signature, hubKey);
     },
@@ -82,18 +71,12 @@ function createTestKeyStore(): AgentKeyStore & {
   };
 }
 
-function createTestDeployRouter(
-  sessions: SessionManager,
-  keyStore: AgentKeyStore,
-): DeployRouter {
+function createTestDeployRouter(sessions: SessionManager, keyStore: AgentKeyStore): DeployRouter {
   return {
     async deploy(frame) {
       const result = await sessions.provisionAgent(frame.config);
       keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
-      await sessions.persistHubPublicKey(
-        frame.agentAddress,
-        frame.hubPublicKey,
-      );
+      await sessions.persistHubPublicKey(frame.agentAddress, frame.hubPublicKey);
       return { publicKey: result.publicKey };
     },
   };
@@ -112,7 +95,7 @@ function withTestDeployBindings(sessions: SessionManager): {
 
 async function waitFor(
   predicate: () => boolean | Promise<boolean>,
-  timeoutMs = 2000,
+  timeoutMs = 2000
 ): Promise<void> {
   const start = Date.now();
   while (!(await predicate())) {
@@ -150,7 +133,7 @@ function createMockSessionManager(): SessionManager & {
       mock.provisioned.push(config);
       mock.provisionedAddresses.push(config.agentAddress);
       return {
-        publicKey: "deadbeef",
+        publicKey: 'deadbeef',
         keyPair: {
           publicKey: new Uint8Array(32),
           privateKey: new Uint8Array(32),
@@ -160,9 +143,7 @@ function createMockSessionManager(): SessionManager & {
     async startSession(agentAddress: string): Promise<void> {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
       mock.started.push(agentAddress);
-      mock.provisionedAddresses = mock.provisionedAddresses.filter(
-        (a) => a !== agentAddress,
-      );
+      mock.provisionedAddresses = mock.provisionedAddresses.filter((a) => a !== agentAddress);
       mock.addresses.push(agentAddress);
     },
     async destroySession(agentAddress: string): Promise<void> {
@@ -179,16 +160,13 @@ function createMockSessionManager(): SessionManager & {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
       mock.delivered.push({ agentAddress, message });
     },
-    async updateGrants(
-      _agentAddress: string,
-      _grants: GrantRule[],
-    ): Promise<void> {
+    async updateGrants(_agentAddress: string, _grants: GrantRule[]): Promise<void> {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
     },
     async updateSources(
       _agentAddress: string,
       _sources: InferenceSource[],
-      _defaultSource: string,
+      _defaultSource: string
     ): Promise<void> {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
     },
@@ -209,35 +187,32 @@ function createMockSessionManager(): SessionManager & {
     createStatePack: () =>
       Promise.resolve({
         pack: new Uint8Array([1, 2, 3]),
-        commitSha: "abc123",
-        ref: "refs/heads/main",
+        commitSha: 'abc123',
+        ref: 'refs/heads/main',
       }),
     deleteAgentDir: () => Promise.resolve(),
     getDeployRef: (_agentAddress: string) => Promise.resolve(null),
-    persistHubPublicKey: (_agentAddress: string, _hubPublicKey: string) =>
-      Promise.resolve(),
-    commitInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) =>
-      Promise.resolve(),
+    persistHubPublicKey: (_agentAddress: string, _hubPublicKey: string) => Promise.resolve(),
+    commitInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) => Promise.resolve(),
     getSessionId: (_agentAddress: string) => undefined,
-    onAgentEvent:
-      (_agentAddress: string, _listener: AgentEventListener) => () => {
-        /* no-op disposer: this test does not exercise per-agent events */
-      },
+    onAgentEvent: (_agentAddress: string, _listener: AgentEventListener) => () => {
+      /* no-op disposer: this test does not exercise per-agent events */
+    },
   };
   return mock;
 }
 
 const VALID_MESSAGE = new TextEncoder().encode(
   [
-    "From: external@remote.interchange",
-    "To: agent-1@test.interchange",
-    "Date: Thu, 17 Apr 2026 12:00:00 +0000",
-    "Message-ID: <test-1@remote.interchange>",
-    "Subject: Hello from hub",
-    "Content-Type: text/plain",
-    "",
-    "Test body",
-  ].join("\r\n"),
+    'From: external@remote.interchange',
+    'To: agent-1@test.interchange',
+    'Date: Thu, 17 Apr 2026 12:00:00 +0000',
+    'Message-ID: <test-1@remote.interchange>',
+    'Subject: Hello from hub',
+    'Content-Type: text/plain',
+    '',
+    'Test body',
+  ].join('\r\n')
 );
 
 type TestEnv = {
@@ -248,12 +223,12 @@ type TestEnv = {
 function startTestServer(): TestEnv {
   const router = createSidecarRouter({
     requestTimeoutMs: 5000,
-    hubPublicKey: "a".repeat(64),
+    hubPublicKey: 'a'.repeat(64),
   });
 
   const app = new Hono();
   app.get(
-    "/ws",
+    '/ws',
     upgradeWebSocket((_c) => {
       let handle: WsHandle;
       return {
@@ -269,7 +244,7 @@ function startTestServer(): TestEnv {
           router.handleOpen(handle);
         },
         onMessage(evt, _ws) {
-          if (typeof evt.data === "string") {
+          if (typeof evt.data === 'string') {
             router.handleMessage(handle, evt.data);
           }
         },
@@ -277,7 +252,7 @@ function startTestServer(): TestEnv {
           router.handleClose(handle);
         },
       };
-    }),
+    })
   );
 
   const server = Bun.serve({
@@ -295,11 +270,11 @@ afterAll(() => {
   env.server.stop(true);
 });
 
-describe("hub-link mail.inbound throwing router", () => {
-  test("a throwing mailInboundRouter does not wedge subsequent frames", async () => {
+describe('hub-link mail.inbound throwing router', () => {
+  test('a throwing mailInboundRouter does not wedge subsequent frames', async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
-    const deploymentAddress = "dep_wedge-1@integration.interchange";
+    const deploymentAddress = 'dep_wedge-1@integration.interchange';
     sessions.addresses.push(deploymentAddress);
 
     let calls = 0;
@@ -308,7 +283,7 @@ describe("hub-link mail.inbound throwing router", () => {
       tryRoute(_address: string, message: Uint8Array): boolean {
         calls += 1;
         if (calls === 1) {
-          throw new Error("simulated mail router failure");
+          throw new Error('simulated mail router failure');
         }
         routedAfterThrow.push(message);
         return true;
@@ -317,8 +292,8 @@ describe("hub-link mail.inbound throwing router", () => {
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: "sc-mail-wedge",
-      token: "test-token",
+      sidecarId: 'sc-mail-wedge',
+      token: 'test-token',
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -327,9 +302,7 @@ describe("hub-link mail.inbound throwing router", () => {
 
     client.connect();
     try {
-      await waitFor(() =>
-        env.router.getRoutableAddresses().includes(deploymentAddress),
-      );
+      await waitFor(() => env.router.getRoutableAddresses().includes(deploymentAddress));
 
       const encoded = base64Encode(VALID_MESSAGE);
 
@@ -349,9 +322,7 @@ describe("hub-link mail.inbound throwing router", () => {
       expect(calls).toBe(2);
     } finally {
       client.close();
-      await waitFor(
-        () => !env.router.getConnectedSidecars().includes("sc-mail-wedge"),
-      );
+      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-mail-wedge'));
     }
   });
 });

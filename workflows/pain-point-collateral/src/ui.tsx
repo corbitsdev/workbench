@@ -626,17 +626,57 @@ function PainPointStep({
 // -------------------------------------------------------------------------
 
 const COLLATERAL_FORMATS: { id: string; label: string; description: string }[] = [
-  { id: 'email', label: 'Email follow-up', description: 'Draft a personal follow-up email to send after the call' },
-  { id: 'one-pager', label: 'One-pager', description: 'A sales leave-behind that stands on its own' },
-  { id: 'linkedin-post', label: 'LinkedIn post', description: 'First-person field observation for a professional audience' },
-  { id: 'linkedin-daily', label: 'Daily LinkedIn post', description: 'A practitioner-voice post with a concrete lesson' },
-  { id: 'twitter-post', label: 'Twitter post', description: 'Short first-person take built around one sharp insight' },
-  { id: 'founder-pov-post', label: 'Founder POV post', description: 'A founder perspective on the problem category' },
+  {
+    id: 'email',
+    label: 'Email follow-up',
+    description: 'Draft a personal follow-up email to send after the call',
+  },
+  {
+    id: 'one-pager',
+    label: 'One-pager',
+    description: 'A sales leave-behind that stands on its own',
+  },
+  {
+    id: 'linkedin-post',
+    label: 'LinkedIn post',
+    description: 'First-person field observation for a professional audience',
+  },
+  {
+    id: 'linkedin-daily',
+    label: 'Daily LinkedIn post',
+    description: 'A practitioner-voice post with a concrete lesson',
+  },
+  {
+    id: 'twitter-post',
+    label: 'Twitter post',
+    description: 'Short first-person take built around one sharp insight',
+  },
+  {
+    id: 'founder-pov-post',
+    label: 'Founder POV post',
+    description: 'A founder perspective on the problem category',
+  },
   { id: 'blog', label: 'Blog post', description: 'Narrative arc with hook, story, and lessons' },
-  { id: 'case-study', label: 'Case study', description: 'Challenge, solution, and measurable results' },
-  { id: 'objection-handling', label: 'Objection handling', description: 'Tactical rebuttal guide for common buyer objections' },
-  { id: 'customer-quotes', label: 'Customer quotes', description: 'Curated verbatim quotes with context and theme' },
-  { id: 'battlecard', label: 'Battlecard', description: 'Competitive positioning reference for sellers' },
+  {
+    id: 'case-study',
+    label: 'Case study',
+    description: 'Challenge, solution, and measurable results',
+  },
+  {
+    id: 'objection-handling',
+    label: 'Objection handling',
+    description: 'Tactical rebuttal guide for common buyer objections',
+  },
+  {
+    id: 'customer-quotes',
+    label: 'Customer quotes',
+    description: 'Curated verbatim quotes with context and theme',
+  },
+  {
+    id: 'battlecard',
+    label: 'Battlecard',
+    description: 'Competitive positioning reference for sellers',
+  },
 ];
 
 const MAX_FORMATS = 3;

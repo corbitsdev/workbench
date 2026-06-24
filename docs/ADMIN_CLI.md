@@ -41,7 +41,8 @@ never typed by hand:
 
 - **Local actions (build, seed)** — Seed superadmin (bootstrap), Seed tool
   credentials from env, **Seed model catalog (providers, models, offerings)**,
-  Add LLM credential, Build tool packages, Publish tool packages.
+  Add LLM credential, **Backfill supervisor session IDs (analytics)** (see
+  [ANALYTICS.md](./ANALYTICS.md)), Build tool packages, Publish tool packages.
 - **Workflows** — **Push (deploy) a workflow**: the CLI discovers the available
   workflow kinds from `workflows/*` and presents them as a list to pick from, so
   operators never have to know a kind by heart. The push authenticates with the

@@ -3,6 +3,7 @@ import '../test-setup';
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Approval } from '../lib/approvals-api';
 
 const mockListApprovals = mock<() => Promise<Approval[]>>();
@@ -34,7 +35,14 @@ function makeApproval(overrides: Partial<Approval> = {}): Approval {
 
 function renderGate(tenantId = 'tenant-1', sessionId?: string) {
   const { ReviewGate } = require('./ReviewGate') as typeof import('./ReviewGate');
-  return render(React.createElement(ReviewGate, { tenantId, sessionId }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    React.createElement(
+      QueryClientProvider,
+      { client },
+      React.createElement(ReviewGate, { tenantId, sessionId })
+    )
+  );
 }
 
 afterEach(() => {
@@ -89,8 +97,11 @@ describe('ReviewGate — approve action', () => {
   const approved = makeApproval({ status: 'approved', resolvedAt: new Date().toISOString() });
 
   beforeEach(() => {
-    mockListApprovals.mockResolvedValue([pending]);
-    mockApproveRequest.mockResolvedValue(approved);
+    mockListApprovals.mockImplementation(async () => [pending]);
+    mockApproveRequest.mockImplementation(async () => {
+      mockListApprovals.mockImplementation(async () => [approved]);
+      return approved;
+    });
   });
 
   it('calls approveRequest with correct tenantId, approvalId and scope once', async () => {
@@ -125,8 +136,11 @@ describe('ReviewGate — reject action', () => {
   const rejected = makeApproval({ status: 'rejected', resolvedAt: new Date().toISOString() });
 
   beforeEach(() => {
-    mockListApprovals.mockResolvedValue([pending]);
-    mockRejectRequest.mockResolvedValue(rejected);
+    mockListApprovals.mockImplementation(async () => [pending]);
+    mockRejectRequest.mockImplementation(async () => {
+      mockListApprovals.mockImplementation(async () => [rejected]);
+      return rejected;
+    });
   });
 
   it('calls rejectRequest with correct tenantId and approvalId', async () => {

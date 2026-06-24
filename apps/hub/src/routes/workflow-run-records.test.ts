@@ -123,7 +123,10 @@ const ensureDeploymentRoutable = async (args: {
   deploymentId: string;
   creatorPrincipalId: string;
 }) => {
-  ensureCalls.push({ deploymentId: args.deploymentId, creatorPrincipalId: args.creatorPrincipalId });
+  ensureCalls.push({
+    deploymentId: args.deploymentId,
+    creatorPrincipalId: args.creatorPrincipalId,
+  });
   return { reestablished: false };
 };
 
@@ -189,7 +192,11 @@ function appAs(ctx: { tenantId: string; principalId: string }): Hono<{
 type AppHono = Hono<{ Variables: { userId: string } }>;
 
 // biome-ignore lint/suspicious/noExplicitAny: test response shape
-async function post(a: AppHono, path: string, body: unknown): Promise<{ status: number; json: any }> {
+async function post(
+  a: AppHono,
+  path: string,
+  body: unknown
+): Promise<{ status: number; json: any }> {
   const res = await a.request(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

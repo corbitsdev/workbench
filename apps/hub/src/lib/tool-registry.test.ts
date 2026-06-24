@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { buildToolDefinitions, getToolNamesFromCapabilities, KNOWN_TOOL_SUMMARIES } from './tool-registry';
+import {
+  buildToolDefinitions,
+  getToolNamesFromCapabilities,
+  KNOWN_TOOL_SUMMARIES,
+} from './tool-registry';
 
 describe('tool registry', () => {
   it('builds Interchange-owned POSIX tool definitions and the artifact link tool', () => {
@@ -22,8 +26,14 @@ describe('tool registry', () => {
 
   it('canonicalizes bare package tool names from capabilities for grant reconcile', () => {
     expect(
-      getToolNamesFromCapabilities({ tools: ['web_search', 'read_file', '@workbench/tools-exa/exa:exa_search'] })
-    ).toEqual(['@workbench/tools-exa/exa:web_search', 'read_file', '@workbench/tools-exa/exa:exa_search']);
+      getToolNamesFromCapabilities({
+        tools: ['web_search', 'read_file', '@workbench/tools-exa/exa:exa_search'],
+      })
+    ).toEqual([
+      '@workbench/tools-exa/exa:web_search',
+      'read_file',
+      '@workbench/tools-exa/exa:exa_search',
+    ]);
   });
 
   it('lists artifact_link_file as a Workbench tool', () => {

@@ -113,7 +113,15 @@ export function AgentChat({
     mutationFn: async () => {
       const result = await launchInstanceSession(instanceId);
       if (!result.launched) {
-        throw new Error(result.launchError ?? 'Failed to launch agent session');
+        const launchError = result.launchError ?? 'Failed to launch agent session';
+        const classified = classifyLaunchState(instanceStatus, launchError);
+        if (classified.kind === 'connecting' || classified.kind === 'deploying') {
+          setSessionState({
+            phase: 'pending',
+            reason: classified.kind === 'deploying' ? 'deploying' : 'connecting',
+          });
+        }
+        throw new Error(launchError);
       }
       return result;
     },

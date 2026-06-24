@@ -10,14 +10,14 @@
 // `SubprocessHandle.kill` call, and asserts that `undeploy(frame)`
 // invokes it and awaits the handle's `exited` settlement.
 
-import { describe, test, expect } from "bun:test";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { describe, test, expect } from 'bun:test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
-import { generateKeyPair } from "@intx/crypto-node";
-import { createInMemoryTransport } from "@intx/mail-memory";
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import { generateKeyPair } from '@intx/crypto-node';
+import { createInMemoryTransport } from '@intx/mail-memory';
+import type { RepoId, RepoStore } from '@intx/hub-sessions';
 import {
   createControlChannelSender,
   type FrameReader,
@@ -25,15 +25,15 @@ import {
   type NdjsonWriter,
   type SubprocessHandle,
   type SubprocessSpawner,
-} from "@intx/workflow-host";
-import type { AgentDeployFrame } from "@intx/types/sidecar";
+} from '@intx/workflow-host';
+import type { AgentDeployFrame } from '@intx/types/sidecar';
 
-import { createSidecarDeployRouter } from "./workflow-host-wiring";
+import { createSidecarDeployRouter } from './workflow-host-wiring';
 import {
   createMultistepDrainRouter,
   createMultistepMailRouter,
   createMultistepSignalRouter,
-} from "./workflow-run-pack-client";
+} from './workflow-run-pack-client';
 
 function createMemoryNdjsonStream() {
   const buffer: string[] = [];
@@ -51,7 +51,7 @@ function createMemoryNdjsonStream() {
           if (buffer.length > 0) {
             const next = buffer.shift();
             if (next === undefined) {
-              throw new Error("buffer shift returned undefined");
+              throw new Error('buffer shift returned undefined');
             }
             yield next;
             continue;
@@ -66,7 +66,7 @@ function createMemoryNdjsonStream() {
   };
   const writer: NdjsonWriter = {
     write(line: string) {
-      buffer.push(line.replace(/\n$/, ""));
+      buffer.push(line.replace(/\n$/, ''));
       wake();
       return Promise.resolve();
     },
@@ -75,7 +75,7 @@ function createMemoryNdjsonStream() {
     writer,
     reader,
     inject(line: string) {
-      buffer.push(line.replace(/\n$/, ""));
+      buffer.push(line.replace(/\n$/, ''));
       wake();
     },
     close() {
@@ -101,7 +101,7 @@ function createMemoryFrameStream() {
           if (buffer.length > 0) {
             const next = buffer.shift();
             if (next === undefined) {
-              throw new Error("frame buffer shift returned undefined");
+              throw new Error('frame buffer shift returned undefined');
             }
             yield next;
             continue;
@@ -130,7 +130,7 @@ function createSpawnTestRepoStore(tempBase: string): RepoStore {
     },
     async writeTreePreservingPrefix(_p, _id, _ref, args) {
       await args.merge(new Map());
-      return { commitSha: "stub-sha" };
+      return { commitSha: 'stub-sha' };
     },
   };
   // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub
@@ -139,15 +139,13 @@ function createSpawnTestRepoStore(tempBase: string): RepoStore {
       const value = Reflect.get(target, prop, receiver);
       if (value !== undefined) return value;
       return () => {
-        throw new Error(
-          `stub RepoStore: ${String(prop)} not implemented for this test`,
-        );
+        throw new Error(`stub RepoStore: ${String(prop)} not implemented for this test`);
       };
     },
   });
 }
 
-describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor down", () => {
+describe('createSidecarDeployRouter multi-step undeploy shuts the supervisor down', () => {
   test("undeploy invokes the spawned child's kill and awaits exited", async () => {
     // Per-spawn tracking.
     type Spawn = {
@@ -204,12 +202,8 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
 
     const transport = createInMemoryTransport();
     const keyPair = await generateKeyPair();
-    const tempBase = await fs.mkdtemp(
-      path.join(os.tmpdir(), "sidecar-undeploy-supervisor-"),
-    );
-    const dataDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "sidecar-undeploy-supervisor-data-"),
-    );
+    const tempBase = await fs.mkdtemp(path.join(os.tmpdir(), 'sidecar-undeploy-supervisor-'));
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sidecar-undeploy-supervisor-data-'));
     const repoStore = createSpawnTestRepoStore(tempBase);
 
     const mailRouter = createMultistepMailRouter();
@@ -220,24 +214,18 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- multi-step branch never invokes sessions
       sessions: {
         provisionAgent: async () => {
-          throw new Error("multi-step branch must not invoke provisionAgent");
+          throw new Error('multi-step branch must not invoke provisionAgent');
         },
         persistHubPublicKey: async () => {
-          throw new Error(
-            "multi-step branch must not invoke persistHubPublicKey",
-          );
+          throw new Error('multi-step branch must not invoke persistHubPublicKey');
         },
-      } as unknown as Parameters<
-        typeof createSidecarDeployRouter
-      >[0]["sessions"],
+      } as unknown as Parameters<typeof createSidecarDeployRouter>[0]['sessions'],
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- multi-step branch never invokes keyStore
       keyStore: {
         recordHubKey: () => {
-          throw new Error("multi-step branch must not invoke recordHubKey");
+          throw new Error('multi-step branch must not invoke recordHubKey');
         },
-      } as unknown as Parameters<
-        typeof createSidecarDeployRouter
-      >[0]["keyStore"],
+      } as unknown as Parameters<typeof createSidecarDeployRouter>[0]['keyStore'],
       onAgentEvent: () => () => {
         /* unused */
       },
@@ -260,28 +248,28 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
     });
 
     const frame: AgentDeployFrame = {
-      type: "agent.deploy",
-      agentAddress: "undeploy-supervisor@example.com",
+      type: 'agent.deploy',
+      agentAddress: 'undeploy-supervisor@example.com',
       // Mirrors the orchestrator's `deriveDeploymentAgentId` shape
       // (`ins_<rawDeploymentId>`) the router recovers the raw id from.
-      agentId: "ins_ses_undeploysupervisor",
-      hubPublicKey: "hub-pk",
+      agentId: 'ins_ses_undeploysupervisor',
+      hubPublicKey: 'hub-pk',
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the multi-step branch does not read config
-      config: {} as AgentDeployFrame["config"],
+      config: {} as AgentDeployFrame['config'],
       workflow: {
         definition: {
-          id: "wf-undeploy-supervisor",
-          triggers: [{ type: "manual" }],
-          stepOrder: ["step-1"],
-          steps: { "step-1": { kind: "step" } },
+          id: 'wf-undeploy-supervisor',
+          triggers: [{ type: 'manual' }],
+          stepOrder: ['step-1'],
+          steps: { 'step-1': { kind: 'step' } },
         },
         sources: {
-          "step-1": {
-            id: "step-1",
-            provider: "anthropic",
-            baseURL: "https://api.anthropic.com",
-            apiKey: "sk-step-1",
-            model: "claude-3-5",
+          'step-1': {
+            id: 'step-1',
+            provider: 'anthropic',
+            baseURL: 'https://api.anthropic.com',
+            apiKey: 'sk-step-1',
+            model: 'claude-3-5',
           },
         },
       },
@@ -293,11 +281,11 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
       await new Promise((r) => setTimeout(r, 1));
     }
     const spawn = spawns[0];
-    if (spawn === undefined) throw new Error("unreachable");
+    if (spawn === undefined) throw new Error('unreachable');
 
     const channelId = spawn.env.IPC_CHANNEL_ID;
     if (channelId === undefined) {
-      throw new Error("IPC_CHANNEL_ID missing from spawn env");
+      throw new Error('IPC_CHANNEL_ID missing from spawn env');
     }
     const childIpcKeyPair = await generateKeyPair();
     const childSender = createControlChannelSender({
@@ -311,10 +299,10 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
       },
     });
     await childSender.send({
-      type: "ready",
+      type: 'ready',
       data: {
         childPid: spawn.handle.pid,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString('hex'),
       },
     });
 
@@ -325,13 +313,13 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
 
     const undeploy = router.undeploy;
     if (undeploy === undefined) {
-      throw new Error("router.undeploy is undefined");
+      throw new Error('router.undeploy is undefined');
     }
 
     await undeploy({
-      type: "agent.undeploy",
+      type: 'agent.undeploy',
       agentAddress: frame.agentAddress,
-      reason: "test undeploy",
+      reason: 'test undeploy',
     });
 
     expect(spawn.killed).toBe(true);

@@ -14,17 +14,17 @@
 //   4. The child's runtime env is exactly the supervisor-supplied
 //      env -- unrelated `process.env` entries do not leak in.
 
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
-import { defaultSubprocessSpawner } from "./workflow-host-wiring";
+import { defaultSubprocessSpawner } from './workflow-host-wiring';
 
 let tmpRoot: string;
 
 beforeAll(async () => {
-  tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "intx-spawner-test-"));
+  tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'intx-spawner-test-'));
 });
 
 afterAll(async () => {
@@ -33,11 +33,11 @@ afterAll(async () => {
 
 async function writeChildScript(body: string): Promise<string> {
   const file = path.join(tmpRoot, `child-${String(Date.now())}.ts`);
-  await fs.writeFile(file, body, "utf-8");
+  await fs.writeFile(file, body, 'utf-8');
   return file;
 }
 
-describe("defaultSubprocessSpawner (Bun.spawn-backed)", () => {
+describe('defaultSubprocessSpawner (Bun.spawn-backed)', () => {
   test("surfaces the child's NDJSON output on controlReader and resolves exited with the exit code", async () => {
     // Inline child:
     //   - reads CHILD_TOKEN out of the env and echoes it
@@ -74,41 +74,39 @@ eventStream.write(event, () => {
     await fs.writeFile(
       wrapperPath,
       `#!/bin/sh\nexec "${process.execPath}" "${scriptPath}"\n`,
-      "utf-8",
+      'utf-8'
     );
     await fs.chmod(wrapperPath, 0o755);
 
     // Set SHOULD_NOT_LEAK on the test process; the spawner must NOT
     // forward it to the child because the env arg below excludes
     // it. The child observes the unset variable as "UNSET".
-    process.env.SHOULD_NOT_LEAK = "leaked";
+    process.env.SHOULD_NOT_LEAK = 'leaked';
     try {
       const handle = defaultSubprocessSpawner({
         binaryPath: wrapperPath,
-        env: { CHILD_TOKEN: "spawner-test-value" },
+        env: { CHILD_TOKEN: 'spawner-test-value' },
       });
 
       const ctrlIter = handle.controlReader.read();
       const first = await ctrlIter.next();
       expect(first.done).toBeFalsy();
       if (first.value === undefined) {
-        throw new Error("control reader yielded undefined first value");
+        throw new Error('control reader yielded undefined first value');
       }
       const parsed: unknown = JSON.parse(first.value);
       if (
-        typeof parsed !== "object" ||
+        typeof parsed !== 'object' ||
         parsed === null ||
-        !("probe" in parsed) ||
-        !("token" in parsed) ||
-        !("leaked" in parsed)
+        !('probe' in parsed) ||
+        !('token' in parsed) ||
+        !('leaked' in parsed)
       ) {
-        throw new Error(
-          `child NDJSON payload missing expected fields: ${JSON.stringify(parsed)}`,
-        );
+        throw new Error(`child NDJSON payload missing expected fields: ${JSON.stringify(parsed)}`);
       }
-      expect(parsed.probe).toBe("ready");
-      expect(parsed.token).toBe("spawner-test-value");
-      expect(parsed.leaked).toBe("UNSET");
+      expect(parsed.probe).toBe('ready');
+      expect(parsed.token).toBe('spawner-test-value');
+      expect(parsed.leaked).toBe('UNSET');
 
       // Drain one frame off the event channel. The child wrote one
       // byte sequence to fd 3 before exiting; the supervisor's
@@ -118,9 +116,9 @@ eventStream.write(event, () => {
       const chunk = await eventIter.next();
       expect(chunk.done).toBeFalsy();
       if (chunk.value === undefined) {
-        throw new Error("event reader yielded undefined value");
+        throw new Error('event reader yielded undefined value');
       }
-      expect(new TextDecoder().decode(chunk.value)).toBe("event-byte");
+      expect(new TextDecoder().decode(chunk.value)).toBe('event-byte');
 
       const code = await handle.exited;
       expect(code).toBe(0);
@@ -141,14 +139,11 @@ eventStream.write(event, () => {
     // the terminal code.
     const childScript = `process.exit(7);`;
     const scriptPath = await writeChildScript(childScript);
-    const wrapperPath = path.join(
-      tmpRoot,
-      `wrapper-fail-${String(Date.now())}.sh`,
-    );
+    const wrapperPath = path.join(tmpRoot, `wrapper-fail-${String(Date.now())}.sh`);
     await fs.writeFile(
       wrapperPath,
       `#!/bin/sh\nexec "${process.execPath}" "${scriptPath}"\n`,
-      "utf-8",
+      'utf-8'
     );
     await fs.chmod(wrapperPath, 0o755);
 
@@ -160,7 +155,7 @@ eventStream.write(event, () => {
     expect(code).toBe(7);
   });
 
-  test("Bun.spawn synchronous throws on a missing binary surface to the caller", () => {
+  test('Bun.spawn synchronous throws on a missing binary surface to the caller', () => {
     // The other half of the spawn-time race: a binary path that
     // does not exist on disk surfaces as a synchronous throw from
     // `Bun.spawn`, which the supervisor's `spawn(opts)` propagates
@@ -171,7 +166,7 @@ eventStream.write(event, () => {
     // silently change the supervisor's spawn-error surface.
     expect(() => {
       defaultSubprocessSpawner({
-        binaryPath: "/nonexistent-binary-for-spawner-test",
+        binaryPath: '/nonexistent-binary-for-spawner-test',
         env: {},
       });
     }).toThrow();
@@ -191,14 +186,11 @@ await new Promise((r) => setTimeout(r, 5000));
 process.exit(0);
 `;
     const scriptPath = await writeChildScript(childScript);
-    const wrapperPath = path.join(
-      tmpRoot,
-      `wrapper-kill-${String(Date.now())}.sh`,
-    );
+    const wrapperPath = path.join(tmpRoot, `wrapper-kill-${String(Date.now())}.sh`);
     await fs.writeFile(
       wrapperPath,
       `#!/bin/sh\nexec "${process.execPath}" "${scriptPath}"\n`,
-      "utf-8",
+      'utf-8'
     );
     await fs.chmod(wrapperPath, 0o755);
 
@@ -211,10 +203,10 @@ process.exit(0);
     const ready = await iter.next();
     expect(ready.done).toBeFalsy();
 
-    handle.kill("SIGTERM");
-    handle.kill("SIGKILL");
+    handle.kill('SIGTERM');
+    handle.kill('SIGKILL');
 
     const code = await handle.exited;
-    expect(typeof code).toBe("number");
+    expect(typeof code).toBe('number');
   });
 });

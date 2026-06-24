@@ -74,6 +74,13 @@ export const LOCAL_ACTIONS: LocalAction[] = [
     tenantAware: true,
   },
   {
+    label: 'Backfill supervisor session IDs (analytics)',
+    group: SETUP_GROUP,
+    script: 'backfill-analytics-sessions.ts',
+    tenantAware: true,
+    baseArgs: ['--yes'],
+  },
+  {
     label: 'Build tool packages',
     group: SETUP_GROUP,
     script: 'build-tool-packages.ts',

@@ -1,6 +1,6 @@
-import fs from "node:fs";
-import git from "isomorphic-git";
-import { collectReachableObjects } from "./object-walk";
+import fs from 'node:fs';
+import git from 'isomorphic-git';
+import { collectReachableObjects } from './object-walk';
 
 /**
  * Create a git packfile containing all objects reachable from a ref.
@@ -10,7 +10,7 @@ import { collectReachableObjects } from "./object-walk";
  */
 export async function createDeployPack(
   dir: string,
-  ref: string,
+  ref: string
 ): Promise<{ pack: Uint8Array; commitSha: string }> {
   const commitSha = await git.resolveRef({ fs, dir, ref });
   const oids = await collectReachableObjects(dir, commitSha);
@@ -22,9 +22,7 @@ export async function createDeployPack(
     write: false,
   });
   if (result.packfile === undefined) {
-    throw new Error(
-      `packObjects returned no packfile for ref "${ref}" (${commitSha})`,
-    );
+    throw new Error(`packObjects returned no packfile for ref "${ref}" (${commitSha})`);
   }
 
   return { pack: result.packfile, commitSha };
@@ -43,10 +41,7 @@ export async function createDeployPack(
  */
 export type IncludeShaPredicate = (sha: string) => boolean | Promise<boolean>;
 
-async function collectCommitChain(
-  dir: string,
-  start: string,
-): Promise<string[]> {
+async function collectCommitChain(dir: string, start: string): Promise<string[]> {
   const seen = new Set<string>();
   const queue: string[] = [start];
   while (queue.length > 0) {
@@ -62,10 +57,7 @@ async function collectCommitChain(
   return [...seen];
 }
 
-async function reachableFromCommits(
-  dir: string,
-  commits: readonly string[],
-): Promise<Set<string>> {
+async function reachableFromCommits(dir: string, commits: readonly string[]): Promise<Set<string>> {
   const reachable = new Set<string>();
   for (const commitOid of commits) {
     const chain = await collectCommitChain(dir, commitOid);
@@ -123,14 +115,13 @@ export async function createNegotiatedPack(
   wants: readonly string[],
   haves: readonly string[],
   includeSha?: IncludeShaPredicate,
-  options?: CreateNegotiatedPackOptions,
+  options?: CreateNegotiatedPackOptions
 ): Promise<{ pack: Uint8Array; oids: string[] } | null> {
   if (wants.length === 0) {
-    throw new Error("createNegotiatedPack: wants must be non-empty");
+    throw new Error('createNegotiatedPack: wants must be non-empty');
   }
 
-  const wantedObjects =
-    options?.wantedObjects ?? (await reachableFromCommits(dir, wants));
+  const wantedObjects = options?.wantedObjects ?? (await reachableFromCommits(dir, wants));
 
   const knownHaves: string[] = [];
   for (const have of haves) {
@@ -170,9 +161,7 @@ export async function createNegotiatedPack(
     write: false,
   });
   if (result.packfile === undefined) {
-    throw new Error(
-      `packObjects returned no packfile for ${oids.length.toString()} oids`,
-    );
+    throw new Error(`packObjects returned no packfile for ${oids.length.toString()} oids`);
   }
 
   return { pack: result.packfile, oids };

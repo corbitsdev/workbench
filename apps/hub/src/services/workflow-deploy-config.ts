@@ -1,10 +1,10 @@
-import { generateId } from "@intx/hub-common";
-import { resolveModelSources } from "@intx/db";
-import type { ModelRequirement } from "@intx/types";
-import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
-import type { DeployContent } from "@intx/hub-sessions";
-import { LLM_DEFAULT_MODEL } from "@workbench/agents";
-import type { HubDb } from "../db";
+import { generateId } from '@intx/hub-common';
+import { resolveModelSources } from '@intx/db';
+import type { ModelRequirement } from '@intx/types';
+import type { HarnessConfig, InferenceSource } from '@intx/types/runtime';
+import type { DeployContent } from '@intx/hub-sessions';
+import { LLM_DEFAULT_MODEL } from '@workbench/agents';
+import type { HubDb } from '../db';
 
 export type WorkflowDeployConfig = {
   deploymentId: string;
@@ -28,22 +28,17 @@ export async function resolveWorkflowDeploySource(args: {
   tenantId: string;
 }): Promise<InferenceSource[]> {
   const requirement: ModelRequirement = { model: LLM_DEFAULT_MODEL };
-  const resolution = await resolveModelSources(args.db, args.tenantId, [
-    requirement,
-  ]);
+  const resolution = await resolveModelSources(args.db, args.tenantId, [requirement]);
   if (!resolution.ok) {
-    if (resolution.reason === "no_requirements") {
+    if (resolution.reason === 'no_requirements') {
       throw new Error(
-        `workflow deploy: no model requirement to resolve for tenant ${args.tenantId}`,
+        `workflow deploy: no model requirement to resolve for tenant ${args.tenantId}`
       );
     }
-    const skips = resolution.skips
-      .map((s) => `${s.provider} (${s.reason})`)
-      .join(", ");
-    const detail =
-      skips.length > 0 ? `; skipped: ${skips}` : " (empty tenant catalog)";
+    const skips = resolution.skips.map((s) => `${s.provider} (${s.reason})`).join(', ');
+    const detail = skips.length > 0 ? `; skipped: ${skips}` : ' (empty tenant catalog)';
     throw new Error(
-      `workflow deploy: model "${resolution.model}" is unavailable in tenant ${args.tenantId}${detail}`,
+      `workflow deploy: model "${resolution.model}" is unavailable in tenant ${args.tenantId}${detail}`
     );
   }
   return resolution.sources;
@@ -64,25 +59,23 @@ export function assembleWorkflowDeployConfig(args: {
 }): WorkflowDeployConfig {
   const [head] = args.sources;
   if (head === undefined) {
-    throw new Error(
-      "workflow deploy: cannot assemble config with no inference sources",
-    );
+    throw new Error('workflow deploy: cannot assemble config with no inference sources');
   }
   return {
     deploymentId: args.deploymentId,
     config: {
-      sessionId: generateId("session"),
+      sessionId: generateId('session'),
       agentId: args.deploymentId,
       tenantId: args.tenantId,
       principalId: args.principalId,
       agentAddress: `${args.deploymentId}@${args.deploymentDomain}`,
-      systemPrompt: "",
+      systemPrompt: '',
       tools: [],
       grants: [],
       sources: args.sources,
       defaultSource: head.id,
     },
-    deployContent: { systemPrompt: "" },
+    deployContent: { systemPrompt: '' },
   };
 }
 
@@ -98,7 +91,7 @@ export async function resolveWorkflowDeployConfig(args: {
     tenantId: args.tenantId,
   });
   return assembleWorkflowDeployConfig({
-    deploymentId: generateId("session"),
+    deploymentId: generateId('session'),
     tenantId: args.tenantId,
     principalId: args.principalId,
     deploymentDomain: args.deploymentDomain,

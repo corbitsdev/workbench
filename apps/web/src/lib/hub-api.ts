@@ -252,3 +252,41 @@ export async function getAnalyticsSummary(
   }
   return result;
 }
+
+const AnalyticsAgentRowSchema = type({
+  agentId: 'string',
+  agentName: 'string | null',
+  turnCount: 'number',
+  failedTurnCount: 'number',
+  toolCallCount: 'number',
+  toolErrorCount: 'number',
+  inputTokens: 'number',
+  outputTokens: 'number',
+  cacheReadTokens: 'number',
+  cacheWriteTokens: 'number',
+  thinkingTokens: 'number',
+});
+
+const AnalyticsByAgentResponseSchema = type({
+  tenantId: 'string',
+  agents: AnalyticsAgentRowSchema.array(),
+});
+
+export type AnalyticsAgentRow = typeof AnalyticsAgentRowSchema.infer;
+
+export async function getAnalyticsSummaryByAgent(
+  tenantId: string,
+  opts?: { startDate?: string; endDate?: string }
+): Promise<AnalyticsAgentRow[]> {
+  const params = new URLSearchParams();
+  if (opts?.startDate) params.set('startDate', opts.startDate);
+  if (opts?.endDate) params.set('endDate', opts.endDate);
+  const qs = params.toString();
+  const path = `tenants/${encodeURIComponent(tenantId)}/analytics/summary/by-agent${qs ? `?${qs}` : ''}`;
+  const raw = await hubFetch<unknown>('GET', path);
+  const result = AnalyticsByAgentResponseSchema(raw);
+  if (result instanceof type.errors) {
+    throw new Error(`Invalid analytics by-agent response: ${result.summary}`);
+  }
+  return result.agents;
+}

@@ -94,7 +94,7 @@ Each step is a separate commit.
 
 ## Testing
 
-**Coverage is a floor, never the goal. We want the highest *meaningful* coverage — never coverage for its own number.** A test earns its place by being able to fail when the behavior breaks. If a test cannot fail for a real reason, it is worse than no test: it is green noise that hides the gap. So:
+**Coverage is a floor, never the goal. We want the highest _meaningful_ coverage — never coverage for its own number.** A test earns its place by being able to fail when the behavior breaks. If a test cannot fail for a real reason, it is worse than no test: it is green noise that hides the gap. So:
 
 - **Maximize real coverage, not the percentage.** Chase the untested behavior that matters; do not write a test purely to move the number.
 - **A useless test is a bug.** If a test asserts nothing that could break (tautology, asserts the mock, render-without-crash, exercises a line without checking its effect), either rewrite it to assert real behavior or delete it. Do not keep it for the %.

@@ -47,7 +47,8 @@ describe('fetchToolCredentials', () => {
   });
 
   test('fails soft (empty) on a non-ok response', async () => {
-    globalThis.fetch = (async () => new Response('nope', { status: 422 })) as unknown as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('nope', { status: 422 })) as unknown as typeof fetch;
     const env = await fetchToolCredentials({ ...baseArgs, providerNames: ['exa'] });
     expect(env).toEqual({});
   });

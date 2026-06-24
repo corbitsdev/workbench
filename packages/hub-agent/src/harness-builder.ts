@@ -6,9 +6,9 @@
 // free of dependencies on the concrete tool, storage, authz, and
 // inference packages the harness is wired up against.
 
-import type { Harness } from "@intx/harness";
-import type { MailAuditStore } from "@workbench/storage-isogit";
-import type { GrantRule } from "@intx/types/authz";
+import type { Harness } from '@intx/harness';
+import type { MailAuditStore } from '@workbench/storage-isogit';
+import type { GrantRule } from '@intx/types/authz';
 import type {
   ConnectorThreadState,
   CryptoProvider,
@@ -16,8 +16,8 @@ import type {
   InferenceEvent,
   InferenceSource,
   MessageTransport,
-} from "@intx/types/runtime";
-import type { DeployApplyErrorFrame } from "@intx/types/sidecar";
+} from '@intx/types/runtime';
+import type { DeployApplyErrorFrame } from '@intx/types/sidecar';
 
 /**
  * Per-attempt context the builder uses to emit a deploy-apply error
@@ -25,7 +25,7 @@ import type { DeployApplyErrorFrame } from "@intx/types/sidecar";
  * to hub-link) translates this into the wire-level frame.
  */
 export type DeployApplyErrorEmitter = (
-  payload: Omit<DeployApplyErrorFrame, "type" | "agentAddress">,
+  payload: Omit<DeployApplyErrorFrame, 'type' | 'agentAddress'>
 ) => void;
 
 /**

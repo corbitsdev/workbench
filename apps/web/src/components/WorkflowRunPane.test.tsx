@@ -7,7 +7,13 @@ import type { WorkflowPanelProps } from '@workbench/ui';
 import * as workflowHooks from '../hooks/use-workflow';
 import type { RunRecord } from '../lib/run-state-adapter';
 
-function CustomPanel({ deploymentId, stepOutputs, signalPending, skills, onSignal }: WorkflowPanelProps) {
+function CustomPanel({
+  deploymentId,
+  stepOutputs,
+  signalPending,
+  skills,
+  onSignal,
+}: WorkflowPanelProps) {
   return (
     <div>
       <span>custom-panel-for-{deploymentId}</span>

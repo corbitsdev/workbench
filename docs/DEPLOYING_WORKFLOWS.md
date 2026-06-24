@@ -157,9 +157,10 @@ Without reclamation the sidecar volume accumulated orphaned per-deployment git
 repos and eventually hit `ENOSPC` — **inode exhaustion**, not bytes (repos are
 file-count-heavy). The driver was deployment **churn** (repeated redeploys
 without teardown), not runs: all runs of a kind share one deployment's supervisor
-+ step agents, so per-run cost is tiny. (Tool packages are not a factor — they
-are content-addressed and hardlinked, one copy per `package@version` shared
-across tenants.)
+
+- step agents, so per-run cost is tiny. (Tool packages are not a factor — they
+  are content-addressed and hardlinked, one copy per `package@version` shared
+  across tenants.)
 
 The undeploy hook above reclaims a deployment whose supervisor is still live in
 the sidecar's in-memory map. The **boot reconciler**
@@ -169,7 +170,7 @@ hub-link connects, it fetches the live deployment set from the hub
 whose embedded `ses_<deploymentId>` token is confirmed **absent** from that set.
 It is fail-safe — any fetch/parse failure, or an empty live set while orphans
 exist, deletes **nothing** — and sidecar-local only. The residual boot
-`Reconnection rejected by governance` noise is *live* step-agents re-establishing
+`Reconnection rejected by governance` noise is _live_ step-agents re-establishing
 (bounded, benign); eliminating step agents entirely is the **CL-2232** spike
 (inline `@intx/agent` inference). See IMPLEMENTATION.md § Sidecar deployment
 reclamation.

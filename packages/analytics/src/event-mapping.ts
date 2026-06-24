@@ -111,8 +111,8 @@ export function factsFromInferenceEvent(args: {
           occurredAt: now,
         },
       ];
-    // inference.retry fires between retry attempts — the failed attempt's tokens were
-    // already counted via inference.usage. No additional rollup contribution needed.
+    // inference.retry fires between retry attempts — terminal usage is attributed on
+    // inference.done for the successful attempt. No additional rollup contribution.
     default:
       return [];
   }

@@ -12,14 +12,14 @@
 //                                             `kind: "asset"` entry in
 //                                             the manifest
 
-import fs from "node:fs";
-import path from "node:path";
-import { type } from "arktype";
+import fs from 'node:fs';
+import path from 'node:path';
+import { type } from 'arktype';
 
-import { hasCode } from "@intx/types";
+import { hasCode } from '@intx/types';
 
 const AssetMountsFile = type({
-  assetMounts: type({ "[string]": "string" }),
+  assetMounts: type({ '[string]': 'string' }),
 });
 
 export type DeployTree = {
@@ -56,16 +56,16 @@ export type DeployTree = {
  * errors land on the same failure path.
  */
 export async function readDeployTree(dir: string): Promise<DeployTree> {
-  const promptPath = path.join(dir, "deploy", "prompt.md");
-  const manifestPath = path.join(dir, "deploy", "tool-packages-manifest.json");
-  const assetMountsPath = path.join(dir, "deploy", "asset-mounts.json");
+  const promptPath = path.join(dir, 'deploy', 'prompt.md');
+  const manifestPath = path.join(dir, 'deploy', 'tool-packages-manifest.json');
+  const assetMountsPath = path.join(dir, 'deploy', 'asset-mounts.json');
 
   let systemPrompt: string | undefined;
   try {
-    const raw = await fs.promises.readFile(promptPath, "utf-8");
-    systemPrompt = raw.trim() === "" ? undefined : raw;
+    const raw = await fs.promises.readFile(promptPath, 'utf-8');
+    systemPrompt = raw.trim() === '' ? undefined : raw;
   } catch (e) {
-    if (hasCode(e) && e.code === "ENOENT") {
+    if (hasCode(e) && e.code === 'ENOENT') {
       systemPrompt = undefined;
     } else {
       throw e;
@@ -74,9 +74,9 @@ export async function readDeployTree(dir: string): Promise<DeployTree> {
 
   let toolPackageManifestRaw: string | undefined;
   try {
-    toolPackageManifestRaw = await fs.promises.readFile(manifestPath, "utf-8");
+    toolPackageManifestRaw = await fs.promises.readFile(manifestPath, 'utf-8');
   } catch (e) {
-    if (hasCode(e) && e.code === "ENOENT") {
+    if (hasCode(e) && e.code === 'ENOENT') {
       toolPackageManifestRaw = undefined;
     } else {
       throw e;
@@ -85,17 +85,15 @@ export async function readDeployTree(dir: string): Promise<DeployTree> {
 
   let assetMounts: ReadonlyMap<string, string> = new Map();
   try {
-    const raw = await fs.promises.readFile(assetMountsPath, "utf-8");
+    const raw = await fs.promises.readFile(assetMountsPath, 'utf-8');
     const parsed: unknown = JSON.parse(raw);
     const validated = AssetMountsFile(parsed);
     if (validated instanceof type.errors) {
-      throw new Error(
-        `deploy/asset-mounts.json failed validation: ${validated.summary}`,
-      );
+      throw new Error(`deploy/asset-mounts.json failed validation: ${validated.summary}`);
     }
     assetMounts = new Map(Object.entries(validated.assetMounts));
   } catch (e) {
-    if (hasCode(e) && e.code === "ENOENT") {
+    if (hasCode(e) && e.code === 'ENOENT') {
       assetMounts = new Map();
     } else {
       throw e;

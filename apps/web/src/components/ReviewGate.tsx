@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { approveRequest, listApprovals, rejectRequest } from '../lib/approvals-api';
 import type { Approval, ApproveScope } from '../lib/approvals-api';
 
@@ -22,6 +22,7 @@ export type ReviewGateProps = {
 type RequestState = 'idle' | 'approving' | 'rejecting';
 
 export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
+  const queryClient = useQueryClient();
   const { data: approvals = [], error: fetchError } = useQuery({
     queryKey: ['approvals', tenantId, sessionId],
     queryFn: async () => {
@@ -61,6 +62,7 @@ export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
     try {
       await approveRequest(tenantId, id, scope);
       patchItemState(id, { requestState: 'idle' });
+      await queryClient.invalidateQueries({ queryKey: ['approvals', tenantId, sessionId] });
     } catch (err) {
       patchItemState(id, {
         requestState: 'idle',
@@ -74,6 +76,7 @@ export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
     try {
       await rejectRequest(tenantId, id);
       patchItemState(id, { requestState: 'idle' });
+      await queryClient.invalidateQueries({ queryKey: ['approvals', tenantId, sessionId] });
     } catch (err) {
       patchItemState(id, {
         requestState: 'idle',

@@ -121,7 +121,9 @@ describe('createAnalyticsSubscriber', () => {
     await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: usageEvent });
 
     const factInsert = capturedInserts[0] as Record<string, unknown>;
-    expect(String(factInsert['eventKey'])).toStartWith('ses_test:agent@example.test:1:inference.usage');
+    expect(String(factInsert['eventKey'])).toStartWith(
+      'ses_test:agent@example.test:1:inference.usage'
+    );
   });
 
   test('skips rollup upsert when event key already exists (onConflictDoNothing)', async () => {
@@ -133,20 +135,26 @@ describe('createAnalyticsSubscriber', () => {
     expect(db.insert).toHaveBeenCalledTimes(1);
   });
 
-  test('skips rollup upsert for inference_done events', async () => {
+  test('rolls up token totals from inference_done (not inference.usage)', async () => {
     const { db } = makeDb();
     const subscriber = createAnalyticsSubscriber({ db: db as never });
 
-    await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: inferenceDoneEvent });
+    await subscriber.onAgentEvent({
+      agentAddress: 'agent@example.test',
+      event: inferenceDoneEvent,
+    });
 
-    expect(db.insert).toHaveBeenCalledTimes(1);
+    expect(db.insert).toHaveBeenCalledTimes(2);
   });
 
   test('performs both fact insert and rollup upsert for message.run.ended (turn_completed)', async () => {
     const { db } = makeDb();
     const subscriber = createAnalyticsSubscriber({ db: db as never });
 
-    await subscriber.onAgentEvent({ agentAddress: 'agent@example.test', event: turnCompletedEvent });
+    await subscriber.onAgentEvent({
+      agentAddress: 'agent@example.test',
+      event: turnCompletedEvent,
+    });
 
     expect(db.insert).toHaveBeenCalledTimes(2);
   });

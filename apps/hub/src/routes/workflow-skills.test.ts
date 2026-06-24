@@ -2,13 +2,18 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const runRows = new Map<string, { id: string; tenantId: string; principalId: string }>();
 const principals = new Map<string, { id: string; tenantId: string; refId: string }>();
-const skillAssets = new Map<string, { id: string; name: string; displayName: string | null } | null>();
+const skillAssets = new Map<
+  string,
+  { id: string; name: string; displayName: string | null } | null
+>();
 const skillFiles = new Map<string, { path: string; content?: string }[]>();
 
-const getSkillAsset = mock(async (_db: unknown, _viewer: unknown, assetId: string) =>
-  skillAssets.get(assetId) ?? null
+const getSkillAsset = mock(
+  async (_db: unknown, _viewer: unknown, assetId: string) => skillAssets.get(assetId) ?? null
 );
-const getSkillContent = mock(async (_repoStore: unknown, assetId: string) => skillFiles.get(assetId) ?? []);
+const getSkillContent = mock(
+  async (_repoStore: unknown, assetId: string) => skillFiles.get(assetId) ?? []
+);
 
 mock.module('../services/skill-library', () => ({
   getSkillAsset,

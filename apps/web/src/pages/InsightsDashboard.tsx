@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart2 } from 'lucide-react';
 import { useWorkbenches } from '../hooks/use-workbenches';
-import { getAnalyticsSummary } from '../lib/hub-api';
-import type { AnalyticsSummary } from '../lib/hub-api';
+import { getAnalyticsSummary, getAnalyticsSummaryByAgent } from '../lib/hub-api';
+import type { AnalyticsAgentRow, AnalyticsSummary } from '../lib/hub-api';
 
 type Preset = '7d' | '30d' | '90d' | 'all';
 
@@ -44,7 +44,9 @@ function KPICard({
   return (
     <div className="flex flex-col gap-1 rounded-[12px] border border-border bg-surface p-4">
       <span className="text-[12px] font-medium text-text-3">{label}</span>
-      <span className={`text-[24px] font-bold ${accent ? 'text-orange' : 'text-text'}`}>{value}</span>
+      <span className={`text-[24px] font-bold ${accent ? 'text-orange' : 'text-text'}`}>
+        {value}
+      </span>
       {sub && <span className="text-[12px] text-text-3">{sub}</span>}
     </div>
   );
@@ -127,9 +129,7 @@ function SummaryContent({ data }: { data: AnalyticsSummary }) {
 }
 
 function SkeletonCard() {
-  return (
-    <div className="h-[92px] animate-pulse rounded-[12px] border border-border bg-surface" />
-  );
+  return <div className="h-[92px] animate-pulse rounded-[12px] border border-border bg-surface" />;
 }
 
 function SkeletonGrid() {
@@ -139,6 +139,42 @@ function SkeletonGrid() {
       <SkeletonCard />
       <SkeletonCard />
       <SkeletonCard />
+    </div>
+  );
+}
+
+function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
+  if (agents.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <h2 className="text-[13px] font-semibold text-text">By agent</h2>
+      <div className="overflow-x-auto rounded-[12px] border border-border">
+        <table className="w-full min-w-[480px] text-left text-[13px]">
+          <thead className="border-b border-border bg-surface text-[12px] text-text-3">
+            <tr>
+              <th className="px-4 py-2 font-medium">Agent</th>
+              <th className="px-4 py-2 font-medium text-right">Turns</th>
+              <th className="px-4 py-2 font-medium text-right">Tool calls</th>
+              <th className="px-4 py-2 font-medium text-right">Tokens (in+out)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border bg-bg">
+            {agents.map((row) => (
+              <tr key={row.agentId}>
+                <td className="px-4 py-2 text-text">{row.agentName ?? row.agentId}</td>
+                <td className="px-4 py-2 text-right text-text-2">{formatNumber(row.turnCount)}</td>
+                <td className="px-4 py-2 text-right text-text-2">
+                  {formatNumber(row.toolCallCount)}
+                </td>
+                <td className="px-4 py-2 text-right text-text-2">
+                  {formatNumber(row.inputTokens + row.outputTokens)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -162,6 +198,13 @@ export function InsightsDashboard() {
   const summaryQuery = useQuery({
     queryKey: ['analytics-summary', tenantId, preset],
     queryFn: () => getAnalyticsSummary(tenantId!, dates),
+    enabled: !!tenantId,
+    staleTime: 5 * 60_000,
+  });
+
+  const byAgentQuery = useQuery({
+    queryKey: ['analytics-by-agent', tenantId, preset],
+    queryFn: () => getAnalyticsSummaryByAgent(tenantId!, dates),
     enabled: !!tenantId,
     staleTime: 5 * 60_000,
   });
@@ -232,7 +275,12 @@ export function InsightsDashboard() {
             </div>
           )}
 
-          {summaryQuery.data && <SummaryContent data={summaryQuery.data} />}
+          {summaryQuery.data && (
+            <div className="flex flex-col gap-8">
+              <SummaryContent data={summaryQuery.data} />
+              {byAgentQuery.data && <AgentBreakdown agents={byAgentQuery.data} />}
+            </div>
+          )}
         </div>
       </div>
     </div>

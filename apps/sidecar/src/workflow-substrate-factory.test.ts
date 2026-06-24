@@ -495,7 +495,8 @@ describe('createSidecarStepInvoker', () => {
       calls.push({
         url,
         body: typeof init?.body === 'string' ? JSON.parse(init.body) : null,
-        authorization: init?.headers instanceof Headers ? init.headers.get('authorization') : 'Bearer tok',
+        authorization:
+          init?.headers instanceof Headers ? init.headers.get('authorization') : 'Bearer tok',
       });
       return new Response(
         JSON.stringify({

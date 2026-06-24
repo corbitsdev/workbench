@@ -789,7 +789,8 @@ function PersistScreen({
 // ── Root panel ────────────────────────────────────────────────────────────────
 
 export function Panel(props: WorkflowPanelProps) {
-  const { state, connected, signalPending, stepOutputs, onSignal, onClose, credentials, skills } = props;
+  const { state, connected, signalPending, stepOutputs, onSignal, onClose, credentials, skills } =
+    props;
   const failed = state?.phase === 'failed';
   const current = activeStep(state);
 

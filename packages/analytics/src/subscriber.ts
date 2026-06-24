@@ -117,10 +117,9 @@ async function persistFact(
 
     if (inserted.length === 0) return;
 
-    // These event types are stored as facts for raw querying but contribute
-    // no rollup increments: inference_done (same tokens as inference_usage),
-    // inference_error (no tokens spent on failed calls).
-    if (fact.eventType === 'inference_done' || fact.eventType === 'inference_error') return;
+    // Raw inference_usage facts are stored for auditing; rollups count tokens only
+    // on inference_done. inference_error has no rollup contribution.
+    if (fact.eventType === 'inference_error' || fact.eventType === 'inference_usage') return;
 
     await upsertDailyRollup(tx, instance, fact);
   });
@@ -140,9 +139,7 @@ async function upsertDailyRollup(db: Tx, instance: ActiveInstance, fact: Analyti
   const failedTurnCount = fact.eventType === 'turn_failed' ? 1 : 0;
   const toolCallCount = fact.eventType === 'tool_call' ? 1 : 0;
   const toolErrorCount = fact.eventType === 'tool_call' && fact.status === 'error' ? 1 : 0;
-  // inference_done carries the same TokenUsage as inference_usage for the same
-  // LLM call. Only aggregate tokens from inference_usage to avoid double-counting.
-  const countTokens = fact.eventType === 'inference_usage';
+  const countTokens = fact.eventType === 'inference_done';
 
   await db
     .insert(analyticsRollupDaily)

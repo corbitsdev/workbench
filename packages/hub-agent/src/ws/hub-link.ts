@@ -7,9 +7,9 @@
 // verification, and hub-key bookkeeping. The wire layer itself never
 // touches raw key bytes.
 
-import { getLogger } from "@intx/log";
-import type { HubTransport } from "@intx/mail-memory";
-import { type } from "arktype";
+import { getLogger } from '@intx/log';
+import type { HubTransport } from '@intx/mail-memory';
+import { type } from 'arktype';
 import {
   HubFrame,
   type SidecarFrame,
@@ -30,18 +30,14 @@ import {
   type DrainDeliverFrame,
   type SyncRequestFrame,
   type DeployApplyErrorFrame,
-} from "@intx/types/sidecar";
-import { createPackReceiver, createPackSender } from "@intx/pack-transport";
-import { base64Decode, base64Encode, hexDecode, hexEncode } from "@intx/types";
+} from '@intx/types/sidecar';
+import { createPackReceiver, createPackSender } from '@intx/pack-transport';
+import { base64Decode, base64Encode, hexDecode, hexEncode } from '@intx/types';
 
-import type { AgentKeyStore } from "../agent-key-store";
-import type {
-  ConnectorStateSink,
-  SessionEventSink,
-  SessionManager,
-} from "../session-manager";
+import type { AgentKeyStore } from '../agent-key-store';
+import type { ConnectorStateSink, SessionEventSink, SessionManager } from '../session-manager';
 
-const logger = getLogger(["interchange", "hub-agent", "ws"]);
+const logger = getLogger(['interchange', 'hub-agent', 'ws']);
 
 const DEFAULT_PING_INTERVAL_MS = 30_000;
 const DEFAULT_RECONNECT_DELAY_MS = 3_000;
@@ -53,10 +49,7 @@ const DEFAULT_MAX_OUTBOUND_QUEUE = 4096;
  * can observe whether cancellation actually happened, without relying
  * on wall-clock waits.
  */
-export type ReconnectScheduler = (
-  callback: () => void,
-  delayMs: number,
-) => () => void;
+export type ReconnectScheduler = (callback: () => void, delayMs: number) => () => void;
 
 const defaultScheduleReconnect: ReconnectScheduler = (callback, delayMs) => {
   const handle = setTimeout(callback, delayMs);
@@ -252,7 +245,7 @@ export type HubLink = {
    */
   sendDeployApplyError: (
     agentAddress: string,
-    payload: Omit<DeployApplyErrorFrame, "type" | "agentAddress">,
+    payload: Omit<DeployApplyErrorFrame, 'type' | 'agentAddress'>
   ) => void;
   /**
    * Ship a workflow-run pack to the hub. Streams the supplied pack as
@@ -324,11 +317,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
   }
 
   function flush(): void {
-    while (
-      queue.length > 0 &&
-      ws !== null &&
-      ws.readyState === WebSocket.OPEN
-    ) {
+    while (queue.length > 0 && ws !== null && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(queue.shift()));
     }
   }
@@ -339,7 +328,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
   transport.setRemoteSendHandler(async (rawMessage, recipients) => {
     const encoded = base64Encode(rawMessage);
     send({
-      type: "mail.outbound",
+      type: 'mail.outbound',
       rawMessage: encoded,
       recipients,
     });
@@ -353,7 +342,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     const encoded = base64Encode(ctx.rawMessage);
     const sessionId = sessions.getSessionId(ctx.senderAddress);
     send({
-      type: "mail.outbound",
+      type: 'mail.outbound',
       rawMessage: encoded,
       recipients: ctx.recipients,
       senderAddress: ctx.senderAddress,
@@ -374,7 +363,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       // re-decide; routing lives on the supervisor side of the seam.
       const result = await deployRouter.deploy(frame);
       send({
-        type: "agent.deploy.ack",
+        type: 'agent.deploy.ack',
         agentAddress: frame.agentAddress,
         publicKey: result.publicKey,
       });
@@ -382,7 +371,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       send({
-        type: "agent.error",
+        type: 'agent.error',
         agentAddress: frame.agentAddress,
         error: message,
       });
@@ -393,14 +382,14 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     try {
       await sessions.startSession(frame.agentAddress);
       send({
-        type: "session.start.ack",
+        type: 'session.start.ack',
         agentAddress: frame.agentAddress,
       });
       logger.info`Started session for ${frame.agentAddress}`;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       send({
-        type: "agent.error",
+        type: 'agent.error',
         agentAddress: frame.agentAddress,
         error: message,
       });
@@ -436,9 +425,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     // / disaster-recovery reset surfaces as a `non_fast_forward` on the
     // first post-reset push (the link skips the retry on the stale
     // flag).
-    const bootstrapped = workflowRunPackBootstrappedByAddress.get(
-      frame.agentAddress,
-    );
+    const bootstrapped = workflowRunPackBootstrappedByAddress.get(frame.agentAddress);
     if (bootstrapped !== undefined) {
       for (const key of bootstrapped) {
         workflowRunPackBootstrapped.delete(key);
@@ -462,11 +449,9 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     // pending Promise's rejection on disconnect is intentionally
     // swallowed below.
     try {
-      const { pack, commitSha, ref } = await sessions.createStatePack(
-        frame.agentAddress,
-      );
+      const { pack, commitSha, ref } = await sessions.createStatePack(frame.agentAddress);
       const repoId: RepoId = {
-        kind: "agent-state",
+        kind: 'agent-state',
         id: frame.agentAddress,
       };
 
@@ -500,7 +485,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     keyStore.forgetAgent(frame.agentAddress);
 
     send({
-      type: "agent.undeploy.ack",
+      type: 'agent.undeploy.ack',
       agentAddress: frame.agentAddress,
       statePushed,
     });
@@ -529,12 +514,10 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       });
     }
 
-    send({ type: "challenge.response", responses });
+    send({ type: 'challenge.response', responses });
   }
 
-  async function handleChallengeFailed(
-    frame: ChallengeFailedFrame,
-  ): Promise<void> {
+  async function handleChallengeFailed(frame: ChallengeFailedFrame): Promise<void> {
     // The hub rejected this agent during reconnect — tear it down so
     // the address is freed for future deploys. The agent may not have
     // an active session (provisioned but never started, or already
@@ -557,11 +540,11 @@ export function createHubLink(config: HubLinkConfig): HubLink {
   async function handleSessionAbort(frame: SessionAbortFrame): Promise<void> {
     try {
       await sessions.abortSession(frame.agentAddress, frame.reason);
-      send({ type: "session.ack", requestId: frame.requestId });
+      send({ type: 'session.ack', requestId: frame.requestId });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       send({
-        type: "session.error",
+        type: 'session.error',
         requestId: frame.requestId,
         error: message,
       });
@@ -571,11 +554,11 @@ export function createHubLink(config: HubLinkConfig): HubLink {
   async function handleGrantsUpdate(frame: GrantsUpdateFrame): Promise<void> {
     try {
       await sessions.updateGrants(frame.agentAddress, frame.grants);
-      send({ type: "session.ack", requestId: frame.requestId });
+      send({ type: 'session.ack', requestId: frame.requestId });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       send({
-        type: "session.error",
+        type: 'session.error',
         requestId: frame.requestId,
         error: message,
       });
@@ -584,16 +567,12 @@ export function createHubLink(config: HubLinkConfig): HubLink {
 
   async function handleSourcesUpdate(frame: SourcesUpdateFrame): Promise<void> {
     try {
-      await sessions.updateSources(
-        frame.agentAddress,
-        frame.sources,
-        frame.defaultSource,
-      );
-      send({ type: "session.ack", requestId: frame.requestId });
+      await sessions.updateSources(frame.agentAddress, frame.sources, frame.defaultSource);
+      send({ type: 'session.ack', requestId: frame.requestId });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       send({
-        type: "session.error",
+        type: 'session.error',
         requestId: frame.requestId,
         error: message,
       });
@@ -604,7 +583,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     const reason = packReceiver.handlePush(frame);
     if (reason !== null) {
       send({
-        type: "repo.pack.reject",
+        type: 'repo.pack.reject',
         agentAddress: frame.agentAddress,
         repoId: frame.repoId,
         transferId: frame.transferId,
@@ -617,11 +596,11 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     const result = packReceiver.handleDone(frame);
     if (result === null) {
       send({
-        type: "repo.pack.reject",
+        type: 'repo.pack.reject',
         agentAddress: frame.agentAddress,
         repoId: frame.repoId,
         transferId: frame.transferId,
-        reason: "corrupt",
+        reason: 'corrupt',
       });
       return;
     }
@@ -637,7 +616,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
           frame.mountPath,
           result.pack,
           result.ref,
-          result.commitSha,
+          result.commitSha
         );
       } else {
         const verifyCommit = (payload: string, signature: string) =>
@@ -649,11 +628,11 @@ export function createHubLink(config: HubLinkConfig): HubLink {
           result.ref,
           result.commitSha,
           frame.transferId,
-          verifyCommit,
+          verifyCommit
         );
       }
       send({
-        type: "repo.pack.ack",
+        type: 'repo.pack.ack',
         agentAddress: frame.agentAddress,
         repoId: frame.repoId,
         transferId: frame.transferId,
@@ -663,15 +642,14 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       // asset_materialization_failed errors mirror deploy materialization
       // errors into the same `corrupt` bucket — finer-grained
       // classification is out of scope for v1 asset packs.
-      const reason = msg.startsWith("sha_mismatch")
-        ? "sha_mismatch"
-        : msg.startsWith("signature_invalid") ||
-            msg.startsWith("signature_unsigned")
-          ? "signature_invalid"
-          : "corrupt";
+      const reason = msg.startsWith('sha_mismatch')
+        ? 'sha_mismatch'
+        : msg.startsWith('signature_invalid') || msg.startsWith('signature_unsigned')
+          ? 'signature_invalid'
+          : 'corrupt';
       logger.warn`Pack apply failed for ${frame.agentAddress}: ${msg}`;
       send({
-        type: "repo.pack.reject",
+        type: 'repo.pack.reject',
         agentAddress: frame.agentAddress,
         repoId: frame.repoId,
         transferId: frame.transferId,
@@ -739,9 +717,8 @@ export function createHubLink(config: HubLinkConfig): HubLink {
   async function handleSyncRequest(frame: SyncRequestFrame): Promise<void> {
     const { agentAddress, transferId } = frame;
     try {
-      const { pack, commitSha, ref } =
-        await sessions.createStatePack(agentAddress);
-      const repoId: RepoId = { kind: "agent-state", id: agentAddress };
+      const { pack, commitSha, ref } = await sessions.createStatePack(agentAddress);
+      const repoId: RepoId = { kind: 'agent-state', id: agentAddress };
 
       await packSender.send({
         agentAddress,
@@ -843,9 +820,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         await sendOnce();
       }
       workflowRunPackBootstrapped.add(key);
-      let perAddress = workflowRunPackBootstrappedByAddress.get(
-        opts.agentAddress,
-      );
+      let perAddress = workflowRunPackBootstrappedByAddress.get(opts.agentAddress);
       if (perAddress === undefined) {
         perAddress = new Set<string>();
         workflowRunPackBootstrappedByAddress.set(opts.agentAddress, perAddress);
@@ -892,7 +867,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     const frame = validated;
 
     switch (frame.type) {
-      case "mail.inbound": {
+      case 'mail.inbound': {
         const rawBytes = base64Decode(frame.rawMessage);
         // Multi-step deployments register the deployment-level mail
         // address on `mailInboundRouter` once their supervisor spawns.
@@ -928,52 +903,52 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         void sessions.commitInboundMail(frame.agentAddress, rawBytes);
         break;
       }
-      case "agent.deploy":
+      case 'agent.deploy':
         await handleAgentDeploy(frame);
         break;
-      case "session.start":
+      case 'session.start':
         await handleSessionStart(frame);
         break;
-      case "agent.undeploy":
+      case 'agent.undeploy':
         await handleAgentUndeploy(frame);
         break;
-      case "challenge":
+      case 'challenge':
         handleChallenge(frame);
         break;
-      case "pong":
+      case 'pong':
         lastPongAt = Date.now();
         break;
-      case "challenge.failed":
+      case 'challenge.failed':
         await handleChallengeFailed(frame);
         break;
-      case "session.abort":
+      case 'session.abort':
         await handleSessionAbort(frame);
         break;
-      case "grants.update":
+      case 'grants.update':
         await handleGrantsUpdate(frame);
         break;
-      case "sources.update":
+      case 'sources.update':
         await handleSourcesUpdate(frame);
         break;
-      case "repo.pack.push":
+      case 'repo.pack.push':
         handlePackPush(frame);
         break;
-      case "repo.pack.done":
+      case 'repo.pack.done':
         await handlePackDone(frame);
         break;
-      case "sync.request":
+      case 'sync.request':
         void handleSyncRequest(frame);
         break;
-      case "signal.deliver":
+      case 'signal.deliver':
         await handleSignalDeliver(frame);
         break;
-      case "drain.deliver":
+      case 'drain.deliver':
         await handleDrainDeliver(frame);
         break;
-      case "repo.pack.ack":
+      case 'repo.pack.ack':
         handlePackAck(frame);
         break;
-      case "repo.pack.reject":
+      case 'repo.pack.reject':
         handlePackReject(frame);
         break;
       default:
@@ -995,12 +970,12 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     // against post-close reconnect attempts. A caller invoking connect()
     // after close() is a misuse, not a recoverable state — fail loudly.
     if (closed) {
-      throw new Error("HubLink.connect called after close");
+      throw new Error('HubLink.connect called after close');
     }
 
     ws = new WebSocket(hubURL);
 
-    ws.addEventListener("open", () => {
+    ws.addEventListener('open', () => {
       logger.info`Connected to hub at ${hubURL}`;
 
       lastPongAt = Date.now();
@@ -1014,11 +989,11 @@ export function createHubLink(config: HubLinkConfig): HubLink {
           ws?.close();
           return;
         }
-        send({ type: "ping" });
+        send({ type: 'ping' });
       }, pingIntervalMs);
 
       packReceiver.reset();
-      packSender.cancelAll("Connection lost");
+      packSender.cancelAll('Connection lost');
 
       void (async () => {
         try {
@@ -1040,7 +1015,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
               }
             }
             send({
-              type: "reconnect",
+              type: 'reconnect',
               sidecarId,
               token,
               agentAddresses: restored.map((e) => e.address),
@@ -1053,7 +1028,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
             }
           } else {
             send({
-              type: "register",
+              type: 'register',
               sidecarId,
               token,
               agentAddresses: sessions.getAddresses(),
@@ -1069,8 +1044,8 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       })();
     });
 
-    ws.addEventListener("message", (event) => {
-      if (typeof event.data === "string") {
+    ws.addEventListener('message', (event) => {
+      if (typeof event.data === 'string') {
         // Attach a tail `.catch` to the chained handler so any
         // unhandled throw inside `handleMessage` is observed and
         // surfaces as a logged warning rather than rejecting the
@@ -1085,12 +1060,12 @@ export function createHubLink(config: HubLinkConfig): HubLink {
           handleMessage(data).catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);
             logger.warn`Unhandled error in handleMessage: ${msg}`;
-          }),
+          })
         );
       }
     });
 
-    ws.addEventListener("close", () => {
+    ws.addEventListener('close', () => {
       logger.info`Disconnected from hub`;
       ws = null;
       if (pingTimer !== null) {
@@ -1111,7 +1086,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       }
     });
 
-    ws.addEventListener("error", (event) => {
+    ws.addEventListener('error', (event) => {
       logger.warn`WebSocket error: ${String(event)}`;
     });
   }
@@ -1134,30 +1109,24 @@ export function createHubLink(config: HubLinkConfig): HubLink {
 
   const sendEvent: SessionEventSink = (agentAddress, sessionId, event) => {
     send({
-      type: "agent.event",
+      type: 'agent.event',
       agentAddress,
       sessionId,
       event,
     });
   };
 
-  const sendConnectorState: ConnectorStateSink = (
-    agentAddress,
-    connectorState,
-  ) => {
+  const sendConnectorState: ConnectorStateSink = (agentAddress, connectorState) => {
     send({
-      type: "connector.state.changed",
+      type: 'connector.state.changed',
       agentAddress,
       connectorState,
     });
   };
 
-  const sendDeployApplyError: HubLink["sendDeployApplyError"] = (
-    agentAddress,
-    payload,
-  ) => {
+  const sendDeployApplyError: HubLink['sendDeployApplyError'] = (agentAddress, payload) => {
     send({
-      type: "deploy.apply.error",
+      type: 'deploy.apply.error',
       agentAddress,
       ...payload,
     });

@@ -14,14 +14,14 @@
 // intact. A negative test confirms undeploy is idempotent when the dirs are
 // already absent.
 
-import { describe, test, expect } from "bun:test";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { describe, test, expect } from 'bun:test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
-import { generateKeyPair } from "@intx/crypto-node";
-import { createInMemoryTransport } from "@intx/mail-memory";
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import { generateKeyPair } from '@intx/crypto-node';
+import { createInMemoryTransport } from '@intx/mail-memory';
+import type { RepoId, RepoStore } from '@intx/hub-sessions';
 import {
   createControlChannelSender,
   type FrameReader,
@@ -29,15 +29,15 @@ import {
   type NdjsonWriter,
   type SubprocessHandle,
   type SubprocessSpawner,
-} from "@intx/workflow-host";
-import type { AgentDeployFrame } from "@intx/types/sidecar";
+} from '@intx/workflow-host';
+import type { AgentDeployFrame } from '@intx/types/sidecar';
 
-import { createSidecarDeployRouter } from "./workflow-host-wiring";
+import { createSidecarDeployRouter } from './workflow-host-wiring';
 import {
   createMultistepDrainRouter,
   createMultistepMailRouter,
   createMultistepSignalRouter,
-} from "./workflow-run-pack-client";
+} from './workflow-run-pack-client';
 
 function createMemoryNdjsonStream() {
   const buffer: string[] = [];
@@ -55,7 +55,7 @@ function createMemoryNdjsonStream() {
           if (buffer.length > 0) {
             const next = buffer.shift();
             if (next === undefined) {
-              throw new Error("buffer shift returned undefined");
+              throw new Error('buffer shift returned undefined');
             }
             yield next;
             continue;
@@ -70,7 +70,7 @@ function createMemoryNdjsonStream() {
   };
   const writer: NdjsonWriter = {
     write(line: string) {
-      buffer.push(line.replace(/\n$/, ""));
+      buffer.push(line.replace(/\n$/, ''));
       wake();
       return Promise.resolve();
     },
@@ -79,7 +79,7 @@ function createMemoryNdjsonStream() {
     writer,
     reader,
     inject(line: string) {
-      buffer.push(line.replace(/\n$/, ""));
+      buffer.push(line.replace(/\n$/, ''));
       wake();
     },
     close() {
@@ -105,7 +105,7 @@ function createMemoryFrameStream() {
           if (buffer.length > 0) {
             const next = buffer.shift();
             if (next === undefined) {
-              throw new Error("frame buffer shift returned undefined");
+              throw new Error('frame buffer shift returned undefined');
             }
             yield next;
             continue;
@@ -130,7 +130,7 @@ function createMemoryFrameStream() {
 // Replicate interchange's `sanitizeAddress` (hub-agent agent-paths.ts) so the
 // test computes the same step-agent dir name the production hook does.
 function sanitizeAgentAddress(address: string): string {
-  return address.replace(/@/g, "_at_").replace(/[^a-zA-Z0-9_-]/g, "_");
+  return address.replace(/@/g, '_at_').replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
 // A RepoStore stub whose `getRepoDir` mirrors the real substrate's pure path
@@ -139,9 +139,9 @@ function sanitizeAgentAddress(address: string): string {
 // and `agent-state` (prefix `agents`).
 function createReclaimTestRepoStore(dataDir: string): RepoStore {
   const prefixes: Record<string, string> = {
-    "workflow-run": "workflow-runs",
-    "agent-state": "agents",
-    workflow: "assets/workflow",
+    'workflow-run': 'workflow-runs',
+    'agent-state': 'agents',
+    workflow: 'assets/workflow',
   };
   const stub: Partial<RepoStore> = {
     getRepoDir(repoId: RepoId): string {
@@ -150,7 +150,7 @@ function createReclaimTestRepoStore(dataDir: string): RepoStore {
     },
     async writeTreePreservingPrefix(_p, _id, _ref, args) {
       await args.merge(new Map());
-      return { commitSha: "stub-sha" };
+      return { commitSha: 'stub-sha' };
     },
   };
   // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub
@@ -159,9 +159,7 @@ function createReclaimTestRepoStore(dataDir: string): RepoStore {
       const value = Reflect.get(target, prop, receiver);
       if (value !== undefined) return value;
       return () => {
-        throw new Error(
-          `stub RepoStore: ${String(prop)} not implemented for this test`,
-        );
+        throw new Error(`stub RepoStore: ${String(prop)} not implemented for this test`);
       };
     },
   });
@@ -182,17 +180,17 @@ interface DeployHarness {
 // local-part + slugified domain. For `<local>@example.com` this is
 // `<local>-example-com`. Mirrored here so the test can compute the dirs.
 function slugDeploymentId(agentAddress: string): string {
-  const [local, domain] = agentAddress.split("@");
+  const [local, domain] = agentAddress.split('@');
   if (local === undefined || domain === undefined) {
-    throw new Error("test agent address must be local@domain");
+    throw new Error('test agent address must be local@domain');
   }
-  return `${local}-${domain.replace(/\./g, "-")}`;
+  return `${local}-${domain.replace(/\./g, '-')}`;
 }
 
 async function standUpDeployment(
   agentAddress: string,
   rawDeploymentId: string,
-  stepIds: readonly string[],
+  stepIds: readonly string[]
 ): Promise<DeployHarness> {
   const spawns: {
     handle: SubprocessHandle;
@@ -226,29 +224,25 @@ async function standUpDeployment(
 
   const transport = createInMemoryTransport();
   const keyPair = await generateKeyPair();
-  const dataDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), "sidecar-reclaim-data-"),
-  );
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sidecar-reclaim-data-'));
   const repoStore = createReclaimTestRepoStore(dataDir);
 
   const router = createSidecarDeployRouter({
     // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- multi-step branch never invokes sessions
     sessions: {
       provisionAgent: async () => {
-        throw new Error("multi-step branch must not invoke provisionAgent");
+        throw new Error('multi-step branch must not invoke provisionAgent');
       },
       persistHubPublicKey: async () => {
-        throw new Error(
-          "multi-step branch must not invoke persistHubPublicKey",
-        );
+        throw new Error('multi-step branch must not invoke persistHubPublicKey');
       },
-    } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["sessions"],
+    } as unknown as Parameters<typeof createSidecarDeployRouter>[0]['sessions'],
     // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- multi-step branch never invokes keyStore
     keyStore: {
       recordHubKey: () => {
-        throw new Error("multi-step branch must not invoke recordHubKey");
+        throw new Error('multi-step branch must not invoke recordHubKey');
       },
-    } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["keyStore"],
+    } as unknown as Parameters<typeof createSidecarDeployRouter>[0]['keyStore'],
     onAgentEvent: () => () => {
       /* unused */
     },
@@ -273,34 +267,32 @@ async function standUpDeployment(
   const steps: Record<string, { kind: string }> = {};
   const sources: Record<string, unknown> = {};
   for (const stepId of stepIds) {
-    steps[stepId] = { kind: "step" };
+    steps[stepId] = { kind: 'step' };
     sources[stepId] = {
       id: stepId,
-      provider: "anthropic",
-      baseURL: "https://api.anthropic.com",
+      provider: 'anthropic',
+      baseURL: 'https://api.anthropic.com',
       apiKey: `sk-${stepId}`,
-      model: "claude-3-5",
+      model: 'claude-3-5',
     };
   }
 
   const frame: AgentDeployFrame = {
-    type: "agent.deploy",
+    type: 'agent.deploy',
     agentAddress,
     agentId: `ins_${rawDeploymentId}`,
-    hubPublicKey: "hub-pk",
+    hubPublicKey: 'hub-pk',
     // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the multi-step branch does not read config
-    config: {} as AgentDeployFrame["config"],
+    config: {} as AgentDeployFrame['config'],
     workflow: {
       definition: {
         id: `wf-${rawDeploymentId}`,
-        triggers: [{ type: "manual" }],
+        triggers: [{ type: 'manual' }],
         stepOrder: [...stepIds],
         steps,
       },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test source shape
-      sources: sources as NonNullable<
-        AgentDeployFrame["workflow"]
-      >["sources"],
+      sources: sources as NonNullable<AgentDeployFrame['workflow']>['sources'],
     },
   };
 
@@ -309,11 +301,11 @@ async function standUpDeployment(
     await new Promise((r) => setTimeout(r, 1));
   }
   const spawn = spawns[0];
-  if (spawn === undefined) throw new Error("unreachable");
+  if (spawn === undefined) throw new Error('unreachable');
 
   const channelId = spawn.env.IPC_CHANNEL_ID;
   if (channelId === undefined) {
-    throw new Error("IPC_CHANNEL_ID missing from spawn env");
+    throw new Error('IPC_CHANNEL_ID missing from spawn env');
   }
   const childIpcKeyPair = await generateKeyPair();
   const childSender = createControlChannelSender({
@@ -327,22 +319,18 @@ async function standUpDeployment(
     },
   });
   await childSender.send({
-    type: "ready",
+    type: 'ready',
     data: {
       childPid: spawn.handle.pid,
-      childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+      childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString('hex'),
     },
   });
   await deployPromise;
 
   const deploymentId = slugDeploymentId(agentAddress);
-  const ownedDirs: string[] = [
-    path.join(dataDir, "workflow-runs", deploymentId),
-  ];
+  const ownedDirs: string[] = [path.join(dataDir, 'workflow-runs', deploymentId)];
   for (const stepId of stepIds) {
-    ownedDirs.push(
-      path.join(dataDir, "agents", `${rawDeploymentId}-${stepId}`),
-    );
+    ownedDirs.push(path.join(dataDir, 'agents', `${rawDeploymentId}-${stepId}`));
     const stepAddress = `${deploymentId}-${stepId}`;
     ownedDirs.push(path.join(dataDir, sanitizeAgentAddress(stepAddress)));
   }
@@ -361,7 +349,7 @@ async function standUpDeployment(
 async function materialize(dirs: readonly string[]): Promise<void> {
   for (const dir of dirs) {
     await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(path.join(dir, "marker"), "x", "utf8");
+    await fs.writeFile(path.join(dir, 'marker'), 'x', 'utf8');
   }
 }
 
@@ -374,24 +362,20 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footprint (CL-2231)", () => {
-  test("removes the workflow-run repo + every per-step dir, leaving an unrelated deployment untouched", async () => {
-    const harness = await standUpDeployment(
-      "reclaim-a@example.com",
-      "ses_reclaimA",
-      ["step-1", "step-2"],
-    );
+describe('createSidecarDeployRouter multi-step undeploy reclaims on-disk footprint (CL-2231)', () => {
+  test('removes the workflow-run repo + every per-step dir, leaving an unrelated deployment untouched', async () => {
+    const harness = await standUpDeployment('reclaim-a@example.com', 'ses_reclaimA', [
+      'step-1',
+      'step-2',
+    ]);
     await materialize(harness.ownedDirs);
 
     // An unrelated deployment's dirs under the SAME data dir; the sweep must
     // not touch these.
     const unrelated = [
-      path.join(harness.dataDir, "workflow-runs", "other-example-com"),
-      path.join(harness.dataDir, "agents", "ses_other-step-1"),
-      path.join(
-        harness.dataDir,
-        sanitizeAgentAddress("other-example-com-step-1"),
-      ),
+      path.join(harness.dataDir, 'workflow-runs', 'other-example-com'),
+      path.join(harness.dataDir, 'agents', 'ses_other-step-1'),
+      path.join(harness.dataDir, sanitizeAgentAddress('other-example-com-step-1')),
     ];
     await materialize(unrelated);
 
@@ -400,11 +384,11 @@ describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footpri
     }
 
     const undeploy = harness.router.undeploy;
-    if (undeploy === undefined) throw new Error("router.undeploy is undefined");
+    if (undeploy === undefined) throw new Error('router.undeploy is undefined');
     await undeploy({
-      type: "agent.undeploy",
+      type: 'agent.undeploy',
       agentAddress: harness.agentAddress,
-      reason: "test undeploy",
+      reason: 'test undeploy',
     });
 
     for (const dir of harness.ownedDirs) {
@@ -415,23 +399,19 @@ describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footpri
     }
   });
 
-  test("is idempotent: undeploy does not throw when the owned dirs are already absent", async () => {
-    const harness = await standUpDeployment(
-      "reclaim-b@example.com",
-      "ses_reclaimB",
-      ["step-1"],
-    );
+  test('is idempotent: undeploy does not throw when the owned dirs are already absent', async () => {
+    const harness = await standUpDeployment('reclaim-b@example.com', 'ses_reclaimB', ['step-1']);
     // Deliberately do NOT materialize the owned dirs.
     for (const dir of harness.ownedDirs) {
       expect(await exists(dir)).toBe(false);
     }
 
     const undeploy = harness.router.undeploy;
-    if (undeploy === undefined) throw new Error("router.undeploy is undefined");
+    if (undeploy === undefined) throw new Error('router.undeploy is undefined');
     await undeploy({
-      type: "agent.undeploy",
+      type: 'agent.undeploy',
       agentAddress: harness.agentAddress,
-      reason: "test undeploy idempotent",
+      reason: 'test undeploy idempotent',
     });
 
     for (const dir of harness.ownedDirs) {

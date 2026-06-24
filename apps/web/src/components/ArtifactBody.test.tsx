@@ -128,7 +128,11 @@ describe('ArtifactBody rendering', () => {
   it('renders unrecognized kinds with the document fallback', () => {
     render(
       React.createElement(ArtifactBody, {
-        artifact: { content: 'Some opportunity notes', kind: 'reddit-opportunity-scan', source: {} },
+        artifact: {
+          content: 'Some opportunity notes',
+          kind: 'reddit-opportunity-scan',
+          source: {},
+        },
       })
     );
 

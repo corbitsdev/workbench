@@ -1,13 +1,10 @@
-import { readCommitObject, readTreeEntries } from "./isogit-helpers";
+import { readCommitObject, readTreeEntries } from './isogit-helpers';
 
 /**
  * Collect all unique object OIDs reachable from a commit: the commit itself,
  * its tree, and all blobs and subtrees recursively.
  */
-export async function collectReachableObjects(
-  dir: string,
-  commitOid: string,
-): Promise<string[]> {
+export async function collectReachableObjects(dir: string, commitOid: string): Promise<string[]> {
   const seen = new Set<string>();
   seen.add(commitOid);
 
@@ -19,7 +16,7 @@ export async function collectReachableObjects(
     for (const entry of entries) {
       if (seen.has(entry.oid)) continue;
       seen.add(entry.oid);
-      if (entry.type === "tree") {
+      if (entry.type === 'tree') {
         await walkTree(entry.oid);
       }
     }

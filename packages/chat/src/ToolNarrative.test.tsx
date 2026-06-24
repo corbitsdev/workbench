@@ -37,10 +37,7 @@ describe('ToolNarrative', () => {
       },
     ];
     render(
-      <ToolNarrative
-        toolCalls={calls}
-        formatSummary={() => 'Searching the web for minimax m3'}
-      />
+      <ToolNarrative toolCalls={calls} formatSummary={() => 'Searching the web for minimax m3'} />
     );
     expect(screen.getByText('Searching the web for minimax m3')).toBeDefined();
     // The formatter owns the line, so the duplicate "· minimax m3" chip is gone.

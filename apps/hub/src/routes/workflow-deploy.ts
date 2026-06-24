@@ -1,32 +1,32 @@
-import { and, eq, inArray, isNull, like, ne } from "drizzle-orm";
-import { type } from "arktype";
-import { Hono, type Context, type MiddlewareHandler } from "hono";
-import { describeRoute, resolver } from "hono-openapi";
-import { schema as intxSchema, getAncestorChain } from "@intx/db";
-import { authorize } from "@intx/authz";
-import type { GrantStore } from "@intx/authz";
-import type { SessionService } from "@intx/hub-sessions";
-import type { WorkflowDefinition } from "@intx/workflow";
-import { workflowDefinitionEnvelopeSchema } from "@intx/hub-sessions";
-import { deriveDeploymentAddress } from "@intx/workflow-deploy";
-import { getLogger } from "@intx/log";
-import type { HubDb } from "../db";
-import { workflowRun } from "../db/schema";
-import { getRequestedUserContext } from "../lib/user-context";
-import { ensureGlobalMember } from "../lib/tenant-provisioning";
-import type { WorkflowDeployService } from "../services/workflow-deploy";
-import { resolveWorkflowDeployConfig } from "../services/workflow-deploy-config";
-import { requestBodySchema } from "../lib/openapi";
+import { and, eq, inArray, isNull, like, ne } from 'drizzle-orm';
+import { type } from 'arktype';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { describeRoute, resolver } from 'hono-openapi';
+import { schema as intxSchema, getAncestorChain } from '@intx/db';
+import { authorize } from '@intx/authz';
+import type { GrantStore } from '@intx/authz';
+import type { SessionService } from '@intx/hub-sessions';
+import type { WorkflowDefinition } from '@intx/workflow';
+import { workflowDefinitionEnvelopeSchema } from '@intx/hub-sessions';
+import { deriveDeploymentAddress } from '@intx/workflow-deploy';
+import { getLogger } from '@intx/log';
+import type { HubDb } from '../db';
+import { workflowRun } from '../db/schema';
+import { getRequestedUserContext } from '../lib/user-context';
+import { ensureGlobalMember } from '../lib/tenant-provisioning';
+import type { WorkflowDeployService } from '../services/workflow-deploy';
+import { resolveWorkflowDeployConfig } from '../services/workflow-deploy-config';
+import { requestBodySchema } from '../lib/openapi';
 
-const log = getLogger(["api", "workflow-deploy"]);
+const log = getLogger(['api', 'workflow-deploy']);
 
 // The capability grant a caller must hold to deploy a workflow over the
 // session path, mirroring Interchange's native admin grammar (`agent:*` /
 // `create`, `credential:*` / `create`). The global owner role's `*:*` grant
 // satisfies it, so an owner session deploys workflows the same way it creates
 // agents and credentials.
-const WORKFLOW_DEPLOY_RESOURCE = "workflow:*";
-const WORKFLOW_DEPLOY_ACTION = "create";
+const WORKFLOW_DEPLOY_RESOURCE = 'workflow:*';
+const WORKFLOW_DEPLOY_ACTION = 'create';
 
 // Shared deploy dependencies, independent of how the request is authorized.
 export interface WorkflowDeployCoreDeps {
@@ -81,7 +81,7 @@ export async function tearDownDeployment(deps: {
   const instances = await db.query.agentInstance.findMany({
     where: and(
       eq(intxSchema.agentInstance.tenantId, deps.tenantId),
-      like(intxSchema.agentInstance.address, `ins_${deploymentId}%`),
+      like(intxSchema.agentInstance.address, `ins_${deploymentId}%`)
     ),
     columns: { id: true, address: true },
   });
@@ -92,7 +92,7 @@ export async function tearDownDeployment(deps: {
   for (const instance of instances) addresses.add(instance.address);
   for (const address of addresses) {
     await deps.sessionService.endSession(address, deps.reason).catch((err) => {
-      log.warn("workflow deployment teardown: endSession failed", {
+      log.warn('workflow deployment teardown: endSession failed', {
         deploymentId,
         address,
         error: err instanceof Error ? err.message : String(err),
@@ -107,7 +107,7 @@ export async function tearDownDeployment(deps: {
     const now = new Date();
     await db
       .update(intxSchema.agentInstance)
-      .set({ status: "stopped", endedAt: now, updatedAt: now })
+      .set({ status: 'stopped', endedAt: now, updatedAt: now })
       .where(inArray(intxSchema.agentInstance.id, instanceIds));
   }
 }
@@ -129,7 +129,7 @@ export async function supersedePriorDeployments(deps: {
       eq(workflowRun.kind, deps.kind),
       eq(workflowRun.tenantId, deps.tenantId),
       isNull(workflowRun.deletedAt),
-      ne(workflowRun.deploymentId, deps.newDeploymentId),
+      ne(workflowRun.deploymentId, deps.newDeploymentId)
     ),
     columns: { id: true, deploymentId: true },
   });
@@ -139,7 +139,7 @@ export async function supersedePriorDeployments(deps: {
     const now = new Date();
     await deps.db
       .update(workflowRun)
-      .set({ deletedAt: now, status: "superseded", updatedAt: now })
+      .set({ deletedAt: now, status: 'superseded', updatedAt: now })
       .where(eq(workflowRun.id, prior.id));
     await tearDownDeployment({
       db: deps.db,
@@ -149,7 +149,7 @@ export async function supersedePriorDeployments(deps: {
       tenantId: deps.tenantId,
       reason: `superseded by deployment ${deps.newDeploymentId}`,
     }).catch((err) => {
-      log.warn("workflow supersede teardown failed for prior deployment", {
+      log.warn('workflow supersede teardown failed for prior deployment', {
         kind: deps.kind,
         tenantId: deps.tenantId,
         priorDeploymentId: prior.deploymentId,
@@ -163,11 +163,11 @@ export async function supersedePriorDeployments(deps: {
 // to discover this operation and validate its responses; these schemas document
 // (they do not replace) the handler's existing manual validation.
 const WorkflowDeployResponse = type({
-  kind: "string",
-  deploymentId: "string",
-  result: "unknown",
+  kind: 'string',
+  deploymentId: 'string',
+  result: 'unknown',
 });
-const ErrorResponse = type({ error: "string" });
+const ErrorResponse = type({ error: 'string' });
 
 // Hono middleware that authorizes the session caller to deploy a workflow via
 // Interchange's native grant model: resolve the caller's global principal, then
@@ -180,24 +180,21 @@ export function createWorkflowDeployGrantGuard(deps: {
   globalTenantId: string;
 }): MiddlewareHandler<{ Variables: { userId: string } }> {
   return async (c, next) => {
-    const userId = c.get("userId");
+    const userId = c.get('userId');
     const { principalId } = await ensureGlobalMember(deps.db, { userId });
     const result = await authorize(
       deps.grantStore,
       principalId,
       deps.globalTenantId,
       WORKFLOW_DEPLOY_RESOURCE,
-      WORKFLOW_DEPLOY_ACTION,
+      WORKFLOW_DEPLOY_ACTION
     );
-    if (result.effect !== "allow") {
-      log.info("workflow deploy denied", {
+    if (result.effect !== 'allow') {
+      log.info('workflow deploy denied', {
         principalId,
-        effect: result.effect ?? "no_match",
+        effect: result.effect ?? 'no_match',
       });
-      return c.json(
-        { error: "You do not have permission to deploy workflows" },
-        403,
-      );
+      return c.json({ error: 'You do not have permission to deploy workflows' }, 403);
     }
     return next();
   };
@@ -209,30 +206,27 @@ export function createWorkflowDeployGrantGuard(deps: {
 // repo and launches the steps. The hub imports no workflow code. See
 // docs/DEPLOYING_WORKFLOWS.md.
 export function deployWorkflowHandler(
-  deps: WorkflowDeployCoreDeps,
+  deps: WorkflowDeployCoreDeps
 ): (c: Context) => Promise<Response> {
   return async (c) => {
     let rawBody: unknown;
     try {
       rawBody = await c.req.json();
     } catch {
-      return c.json({ error: "Invalid JSON" }, 400);
+      return c.json({ error: 'Invalid JSON' }, 400);
     }
     const definition = workflowDefinitionEnvelopeSchema(rawBody);
     if (definition instanceof type.errors) {
-      return c.json(
-        { error: `invalid workflow definition: ${definition.summary}` },
-        400,
-      );
+      return c.json({ error: `invalid workflow definition: ${definition.summary}` }, 400);
     }
 
     // Optional target tenant. Default (no `?tenant=`) → the global org tenant,
     // unchanged. A non-global target must be the global tenant or a descendant
     // of it — Interchange resolves catalog/credentials down the hierarchy, so a
     // sub-tenant deploy lands collateral scoped to that workbench only.
-    const targetSlug = c.req.query("tenant");
+    const targetSlug = c.req.query('tenant');
     let targetTenantId = deps.globalTenantId;
-    if (targetSlug !== undefined && targetSlug !== "") {
+    if (targetSlug !== undefined && targetSlug !== '') {
       const targetTenant = await deps.db.query.tenant.findFirst({
         where: eq(intxSchema.tenant.slug, targetSlug),
         columns: { id: true },
@@ -246,7 +240,7 @@ export function deployWorkflowHandler(
           {
             error: `target tenant ${targetSlug} is not the global tenant or a descendant`,
           },
-          403,
+          403
         );
       }
       targetTenantId = targetTenant.id;
@@ -257,24 +251,20 @@ export function deployWorkflowHandler(
     const owner = await deps.db.query.principal.findFirst({
       where: and(
         eq(intxSchema.principal.tenantId, targetTenantId),
-        eq(intxSchema.principal.kind, "user"),
+        eq(intxSchema.principal.kind, 'user')
       ),
     });
     if (!owner) {
-      return c.json(
-        { error: "no deploying principal in the target tenant" },
-        409,
-      );
+      return c.json({ error: 'no deploying principal in the target tenant' }, 409);
     }
 
     try {
-      const { deploymentId, config, deployContent } =
-        await resolveWorkflowDeployConfig({
-          db: deps.db,
-          tenantId: targetTenantId,
-          principalId: owner.id,
-          deploymentDomain: deps.deploymentDomain,
-        });
+      const { deploymentId, config, deployContent } = await resolveWorkflowDeployConfig({
+        db: deps.db,
+        tenantId: targetTenantId,
+        principalId: owner.id,
+        deploymentDomain: deps.deploymentDomain,
+      });
 
       const result = await deps.workflowDeployService.deployWorkflow({
         // Validated envelope; the orchestrator (deployWorkflow → validateWorkflowDefinition)
@@ -296,7 +286,7 @@ export function deployWorkflowHandler(
         tenantId: targetTenantId,
         principalId: owner.id,
         kind: definition.id,
-        status: "running",
+        status: 'running',
       });
 
       // Redeploy supersedes: the newest deploy of a (kind, tenant) is the only
@@ -312,7 +302,7 @@ export function deployWorkflowHandler(
         tenantId: targetTenantId,
         newDeploymentId: deploymentId,
       }).catch((err) => {
-        log.warn("workflow redeploy supersede failed", {
+        log.warn('workflow redeploy supersede failed', {
           kind: definition.id,
           tenantId: targetTenantId,
           newDeploymentId: deploymentId,
@@ -325,9 +315,9 @@ export function deployWorkflowHandler(
       const error = err instanceof Error ? err : new Error(String(err));
       log.error(
         `workflow deploy failed for kind ${definition.id} in tenant ${targetTenantId}: ${error.message}`,
-        { kind: definition.id, tenantId: targetTenantId, error },
+        { kind: definition.id, tenantId: targetTenantId, error }
       );
-      return c.json({ error: "failed to deploy workflow" }, 500);
+      return c.json({ error: 'failed to deploy workflow' }, 500);
     }
   };
 }
@@ -339,40 +329,37 @@ export function deployWorkflowHandler(
 // tears down the sidecar supervisor + step instances. Idempotent-ish: a 404 is
 // returned for an unknown, other-tenant, or already-deleted deployment.
 export function deleteWorkflowHandler(
-  deps: Pick<
-    WorkflowDeployCoreDeps,
-    "db" | "sessionService" | "deploymentDomain"
-  >,
+  deps: Pick<WorkflowDeployCoreDeps, 'db' | 'sessionService' | 'deploymentDomain'>
 ): (c: Context<{ Variables: { userId: string } }>) => Promise<Response> {
   return async (c) => {
-    const userId = c.get("userId");
+    const userId = c.get('userId');
     const { context, forbidden } = await getRequestedUserContext(
       deps.db,
       userId,
-      c.req.query("tenantId"),
+      c.req.query('tenantId')
     );
-    if (forbidden) return c.json({ error: "Forbidden" }, 403);
-    if (!context) return c.json({ error: "User context not found" }, 403);
+    if (forbidden) return c.json({ error: 'Forbidden' }, 403);
+    if (!context) return c.json({ error: 'User context not found' }, 403);
 
-    const deploymentId = c.req.param("deploymentId");
+    const deploymentId = c.req.param('deploymentId');
     if (!deploymentId) {
-      return c.json({ error: "deploymentId is required" }, 400);
+      return c.json({ error: 'deploymentId is required' }, 400);
     }
     const chain = await getAncestorChain(deps.db, context.tenantId);
     const owned = await deps.db.query.workflowRun.findFirst({
       where: and(
         eq(workflowRun.deploymentId, deploymentId),
         inArray(workflowRun.tenantId, chain),
-        isNull(workflowRun.deletedAt),
+        isNull(workflowRun.deletedAt)
       ),
       columns: { id: true, tenantId: true },
     });
-    if (!owned) return c.json({ error: "Workflow deployment not found" }, 404);
+    if (!owned) return c.json({ error: 'Workflow deployment not found' }, 404);
 
     const now = new Date();
     await deps.db
       .update(workflowRun)
-      .set({ deletedAt: now, status: "deleted", updatedAt: now })
+      .set({ deletedAt: now, status: 'deleted', updatedAt: now })
       .where(eq(workflowRun.id, owned.id));
 
     // Best-effort teardown: the row is already soft-deleted (out of the UI),
@@ -384,9 +371,9 @@ export function deleteWorkflowHandler(
       deploymentDomain: deps.deploymentDomain,
       deploymentId,
       tenantId: owned.tenantId,
-      reason: "operator deleted workflow deployment",
+      reason: 'operator deleted workflow deployment',
     }).catch((err) => {
-      log.warn("workflow delete teardown failed", {
+      log.warn('workflow delete teardown failed', {
         deploymentId,
         tenantId: owned.tenantId,
         error: err instanceof Error ? err.message : String(err),
@@ -402,76 +389,76 @@ export function deleteWorkflowHandler(
 // this. The session-authorized operator path is `/api/v1/workflows/deploy`
 // (see createWorkflowDeployGrantGuard). Mounted under /api/internal.
 export function createWorkflowDeployRouter(
-  deps: WorkflowDeployCoreDeps & { serviceToken: string },
+  deps: WorkflowDeployCoreDeps & { serviceToken: string }
 ): Hono {
   const router = new Hono();
 
-  router.use("/workflows/deploy", async (c, next) => {
-    if (c.req.header("Authorization") !== `Bearer ${deps.serviceToken}`) {
-      return c.json({ error: "Unauthorized" }, 401);
+  router.use('/workflows/deploy', async (c, next) => {
+    if (c.req.header('Authorization') !== `Bearer ${deps.serviceToken}`) {
+      return c.json({ error: 'Unauthorized' }, 401);
     }
     return next();
   });
 
   router.post(
-    "/workflows/deploy",
+    '/workflows/deploy',
     describeRoute({
-      tags: ["Workflows"],
-      summary: "Deploy a workflow definition",
+      tags: ['Workflows'],
+      summary: 'Deploy a workflow definition',
       description:
-        "Operator-gated (service token). Validates a serialized @intx/workflow definition, resolves the tenant deploy config, and launches it. Optional `?tenant=<slug>` targets the global tenant or a descendant; default is the global tenant.",
+        'Operator-gated (service token). Validates a serialized @intx/workflow definition, resolves the tenant deploy config, and launches it. Optional `?tenant=<slug>` targets the global tenant or a descendant; default is the global tenant.',
       parameters: [
         {
-          name: "tenant",
-          in: "query",
+          name: 'tenant',
+          in: 'query',
           required: false,
           description:
-            "Target tenant slug (global tenant or a descendant). Omit for the global tenant.",
-          schema: { type: "string" },
+            'Target tenant slug (global tenant or a descendant). Omit for the global tenant.',
+          schema: { type: 'string' },
         },
       ],
       requestBody: {
         required: true,
         content: {
-          "application/json": {
+          'application/json': {
             schema: requestBodySchema(workflowDefinitionEnvelopeSchema),
           },
         },
       },
       responses: {
         200: {
-          description: "Workflow deployed",
+          description: 'Workflow deployed',
           content: {
-            "application/json": { schema: resolver(WorkflowDeployResponse) },
+            'application/json': { schema: resolver(WorkflowDeployResponse) },
           },
         },
         400: {
-          description: "Invalid JSON or workflow definition",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
+          description: 'Invalid JSON or workflow definition',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
         },
         401: {
-          description: "Missing or invalid service token",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
+          description: 'Missing or invalid service token',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
         },
         403: {
-          description: "Target tenant is not the global tenant or a descendant",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
+          description: 'Target tenant is not the global tenant or a descendant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
         },
         404: {
-          description: "Unknown target tenant",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
+          description: 'Unknown target tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
         },
         409: {
-          description: "No deploying principal in the target tenant",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
+          description: 'No deploying principal in the target tenant',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
         },
         500: {
-          description: "Deploy failed",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
+          description: 'Deploy failed',
+          content: { 'application/json': { schema: resolver(ErrorResponse) } },
         },
       },
     }),
-    deployWorkflowHandler(deps),
+    deployWorkflowHandler(deps)
   );
 
   return router;

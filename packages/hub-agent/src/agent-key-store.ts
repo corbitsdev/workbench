@@ -12,11 +12,11 @@
 // signChallenge for challenge response frames and verifyDeployCommit
 // for incoming deploy packs.
 
-import fsp from "node:fs/promises";
-import path from "node:path";
-import { getLogger } from "@intx/log";
-import { hasCode, hexDecode } from "@intx/types";
-import type { KeyPair } from "@intx/types/runtime";
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import { getLogger } from '@intx/log';
+import { hasCode, hexDecode } from '@intx/types';
+import type { KeyPair } from '@intx/types/runtime';
 
 import {
   KEYS_DIR_NAME,
@@ -26,9 +26,9 @@ import {
   keysDir,
   privateKeyPath,
   publicKeyPath,
-} from "./agent-paths";
+} from './agent-paths';
 
-const logger = getLogger(["interchange", "hub-agent", "key-store"]);
+const logger = getLogger(['interchange', 'hub-agent', 'key-store']);
 
 export type AgentKeyEntry = {
   address: string;
@@ -47,11 +47,7 @@ export type AgentKeyStoreDeps = {
    * Verify an SSH signature block against the supplied public key.
    * Used by verifyDeployCommit.
    */
-  verifySSHSig: (
-    payload: string,
-    signature: string,
-    publicKey: Uint8Array,
-  ) => boolean;
+  verifySSHSig: (payload: string, signature: string, publicKey: Uint8Array) => boolean;
 };
 
 export type AgentKeyStore = {
@@ -61,9 +57,7 @@ export type AgentKeyStore = {
    * signChallenge calls do not touch disk. The `isNew` flag is true
    * when the keypair was just generated.
    */
-  loadOrGenerateKey(
-    address: string,
-  ): Promise<{ keyPair: KeyPair; isNew: boolean }>;
+  loadOrGenerateKey(address: string): Promise<{ keyPair: KeyPair; isNew: boolean }>;
   /**
    * Read every persisted keypair in the data directory and warm the
    * in-memory cache with each one. Used by the sidecar's restore path
@@ -89,11 +83,7 @@ export type AgentKeyStore = {
    * given address. Throws when no hub key is cached — a deploy pack
    * cannot be verified without one.
    */
-  verifyDeployCommit(
-    address: string,
-    payload: string,
-    signature: string,
-  ): boolean;
+  verifyDeployCommit(address: string, payload: string, signature: string): boolean;
   /**
    * Drop the in-memory caches for an agent. Called on undeploy and on
    * challenge.failed.
@@ -107,22 +97,15 @@ export function createAgentKeyStore(deps: AgentKeyStoreDeps): AgentKeyStore {
   const agentKeys = new Map<string, KeyPair>();
   const hubKeys = new Map<string, Uint8Array>();
 
-  async function loadOrGenerateKey(
-    address: string,
-  ): Promise<{ keyPair: KeyPair; isNew: boolean }> {
+  async function loadOrGenerateKey(address: string): Promise<{ keyPair: KeyPair; isNew: boolean }> {
     const privPath = privateKeyPath(dataDir, address);
     const pubPath = publicKeyPath(dataDir, address);
 
-    const [privExists, pubExists] = await Promise.all([
-      fileExists(privPath),
-      fileExists(pubPath),
-    ]);
+    const [privExists, pubExists] = await Promise.all([fileExists(privPath), fileExists(pubPath)]);
 
     if (privExists !== pubExists) {
-      const missing = privExists ? "public" : "private";
-      throw new Error(
-        `Corrupt key pair for "${address}": ${missing} key file is missing`,
-      );
+      const missing = privExists ? 'public' : 'private';
+      throw new Error(`Corrupt key pair for "${address}": ${missing} key file is missing`);
     }
 
     if (privExists) {
@@ -153,7 +136,7 @@ export function createAgentKeyStore(deps: AgentKeyStoreDeps): AgentKeyStore {
     try {
       entries = await fsp.readdir(dataDir, { withFileTypes: true });
     } catch (err: unknown) {
-      if (hasCode(err) && err.code === "ENOENT") return [];
+      if (hasCode(err) && err.code === 'ENOENT') return [];
       throw err;
     }
 
@@ -163,10 +146,7 @@ export function createAgentKeyStore(deps: AgentKeyStoreDeps): AgentKeyStore {
       const dir = path.join(dataDir, entry.name);
       const privPath = path.join(dir, KEYS_DIR_NAME, PRIVATE_KEY_FILE);
       const pubPath = path.join(dir, KEYS_DIR_NAME, PUBLIC_KEY_FILE);
-      const [privOk, pubOk] = await Promise.all([
-        fileExists(privPath),
-        fileExists(pubPath),
-      ]);
+      const [privOk, pubOk] = await Promise.all([fileExists(privPath), fileExists(pubPath)]);
       if (!privOk && !pubOk) continue;
       if (!privOk || !pubOk) {
         logger.warn`Skipping ${entry.name}: incomplete key pair (private=${String(privOk)}, public=${String(pubOk)})`;
@@ -186,10 +166,10 @@ export function createAgentKeyStore(deps: AgentKeyStoreDeps): AgentKeyStore {
       } catch {
         continue;
       }
-      if (typeof parsed !== "object" || parsed === null) continue;
-      if (!("address" in parsed)) continue;
+      if (typeof parsed !== 'object' || parsed === null) continue;
+      if (!('address' in parsed)) continue;
       const address = parsed.address;
-      if (typeof address !== "string") continue;
+      if (typeof address !== 'string') continue;
       const [privateKey, publicKey] = await Promise.all([
         fsp.readFile(privPath),
         fsp.readFile(pubPath),
@@ -204,10 +184,7 @@ export function createAgentKeyStore(deps: AgentKeyStoreDeps): AgentKeyStore {
     return results;
   }
 
-  function signChallenge(
-    address: string,
-    payload: Uint8Array,
-  ): Uint8Array | null {
+  function signChallenge(address: string, payload: Uint8Array): Uint8Array | null {
     const keyPair = agentKeys.get(address);
     if (keyPair === undefined) return null;
     return signEd25519(keyPair.privateKey, payload);
@@ -217,16 +194,10 @@ export function createAgentKeyStore(deps: AgentKeyStoreDeps): AgentKeyStore {
     hubKeys.set(address, hexDecode(hexHubPublicKey));
   }
 
-  function verifyDeployCommit(
-    address: string,
-    payload: string,
-    signature: string,
-  ): boolean {
+  function verifyDeployCommit(address: string, payload: string, signature: string): boolean {
     const hubKey = hubKeys.get(address);
     if (hubKey === undefined) {
-      throw new Error(
-        `signature_invalid: no hub public key recorded for "${address}"`,
-      );
+      throw new Error(`signature_invalid: no hub public key recorded for "${address}"`);
     }
     return verifySSHSig(payload, signature, hubKey);
   }
@@ -251,7 +222,7 @@ async function fileExists(filePath: string): Promise<boolean> {
     await fsp.access(filePath);
     return true;
   } catch (err: unknown) {
-    if (hasCode(err) && err.code === "ENOENT") return false;
+    if (hasCode(err) && err.code === 'ENOENT') return false;
     // Any other failure mode (EACCES, EBUSY, EIO, …) must surface so a
     // restart does not silently mint a fresh key over an existing one
     // when the existence check is denied or transiently failing.
@@ -261,9 +232,9 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 async function readOptional(filePath: string): Promise<string | null> {
   try {
-    return await fsp.readFile(filePath, "utf-8");
+    return await fsp.readFile(filePath, 'utf-8');
   } catch (err: unknown) {
-    if (hasCode(err) && err.code === "ENOENT") return null;
+    if (hasCode(err) && err.code === 'ENOENT') return null;
     throw err;
   }
 }
