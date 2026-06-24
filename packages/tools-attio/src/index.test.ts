@@ -283,7 +283,7 @@ describe('attio_get_record handler', () => {
 });
 
 describe('attio_list_workspace_members handler', () => {
-  it('GETs /v2/workspace-members', async () => {
+  it('GETs /v2/workspace_members', async () => {
     const fetcher = makeFetchStub({
       data: [{ id: { workspace_member_id: 'wm_1' } }],
     });
@@ -295,7 +295,7 @@ describe('attio_list_workspace_members handler', () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(fetcher.mock.calls[0]?.[0]).toBe('https://api.attio.com/v2/workspace-members');
+    expect(fetcher.mock.calls[0]?.[0]).toBe('https://api.attio.com/v2/workspace_members');
     expect(JSON.parse(String(result.content))).toEqual([{ id: { workspace_member_id: 'wm_1' } }]);
   });
 });

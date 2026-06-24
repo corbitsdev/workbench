@@ -187,7 +187,7 @@ async function listWorkspaceMembers(
   config: AttioToolsConfig,
   signal: AbortSignal
 ): Promise<unknown> {
-  const url = attioUrl(config, '/v2/workspace-members');
+  const url = attioUrl(config, '/v2/workspace_members');
   return parseDataResponse(await fetchAttioJSON(config, url, { method: 'GET' }, signal));
 }
 
