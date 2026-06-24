@@ -10,6 +10,19 @@ export const kind = 'last30days-research';
 const sourceSearchInput = { from: 'steps.intake.output' } as const;
 const sourceQueryArgMap = { query: { from: 'query' } } as const;
 
+// The seven source fetches are chained sequentially rather than fanned out in
+// parallel. In the sidecar workflow-host topology the runtime body's
+// per-runId commit-chain only serializes body-vs-body event commits; the
+// scheduler's `TimerFired` (emitted on a tool-step retry) is a second,
+// uncoordinated writer to the same run's event log. With a parallel fan-out over
+// rate-limit-prone search APIs, a retry timer lands between a concurrent step's
+// seq read and its append, tripping the runtime's single-writer seq guard and
+// failing the whole run. A serial chain guarantees no body commit is in flight
+// while a step awaits its retry timer, so the scheduler write can never race a
+// body write. The data flow is unchanged (`brief` still reads every source via
+// `{ from: 'steps' }`); only ordering is constrained. Revert to fan-out once the
+// vendored runtime fix coordinates the scheduler with the commit-chain (CL-2314).
+
 export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: 'manual' },
@@ -29,7 +42,7 @@ export const workflow = defineWorkflow({
       tool: 'github_activity',
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['intake'],
+      after: ['hackernews'],
     }),
 
     web: deterministicToolStep({
@@ -37,7 +50,7 @@ export const workflow = defineWorkflow({
       tool: 'exa_search',
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['intake'],
+      after: ['github'],
     }),
 
     reddit: deterministicToolStep({
@@ -45,7 +58,7 @@ export const workflow = defineWorkflow({
       tool: 'reddit_search',
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['intake'],
+      after: ['web'],
     }),
 
     x: deterministicToolStep({
@@ -53,7 +66,7 @@ export const workflow = defineWorkflow({
       tool: 'x_search',
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['intake'],
+      after: ['reddit'],
     }),
 
     youtube: deterministicToolStep({
@@ -61,7 +74,7 @@ export const workflow = defineWorkflow({
       tool: 'youtube_search',
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['intake'],
+      after: ['x'],
     }),
 
     bluesky: deterministicToolStep({
@@ -69,14 +82,14 @@ export const workflow = defineWorkflow({
       tool: 'bluesky_search',
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['intake'],
+      after: ['youtube'],
     }),
 
     brief: deterministicToolStep({
       id: 'last30days-build-brief',
       tool: 'last30days_workflow_brief',
       input: { from: 'steps' },
-      after: ['hackernews', 'github', 'web', 'reddit', 'x', 'youtube', 'bluesky'],
+      after: ['bluesky'],
     }),
 
     write: inlineInferenceStep({

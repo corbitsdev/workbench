@@ -36,12 +36,18 @@ describe('last30days-research native workflow', () => {
   test('gates on intake, fans out sources, briefs, writes, then persists', async () => {
     const { invoker, ran } = makeRecordingInvoker({
       'last30days-build-brief': { content: '{"topic":"AI coding tools"}' },
-      'last30days-write-report': { reply: 'What I learned about AI coding tools:' },
+      'last30days-write-report': {
+        reply: 'What I learned about AI coding tools:',
+      },
       'last30days-persist-artifact': { artifactId: 'art_1' },
     });
     const run = runLocal(workflow, { invokeStep: invoker });
 
-    await run.signal('intake', { topic: 'AI coding tools', query: 'AI coding tools', days: 30 });
+    await run.signal('intake', {
+      topic: 'AI coding tools',
+      query: 'AI coding tools',
+      days: 30,
+    });
 
     const result = await run.complete;
     expect(result.terminalStatus).toBe('completed');
@@ -64,14 +70,27 @@ describe('last30days-research native workflow', () => {
     expect(ranIds.at(-1)).toBe('last30days-persist-artifact');
   });
 
-  test('sources are deterministic tool steps gated after intake', () => {
+  test('sources are deterministic tool steps chained serially after intake', () => {
+    // Serial chain (CL-2314 mitigation): intake -> hackernews -> github -> ... -> bluesky.
+    // The chain is load-bearing — a parallel fan-out races the retry scheduler
+    // on the run event log's single-writer seq guard. Each source must depend on
+    // exactly its predecessor so no two source bodies are ever in flight at once.
+    const expectedPredecessor: Record<(typeof SOURCE_STEP_IDS)[number], string> = {
+      hackernews: 'intake',
+      github: 'hackernews',
+      web: 'github',
+      reddit: 'web',
+      x: 'reddit',
+      youtube: 'x',
+      bluesky: 'youtube',
+    };
     for (const source of SOURCE_STEP_IDS) {
       const step = workflow.steps[source];
       if (step === undefined || step.kind !== 'step') {
         throw new Error(`expected a step primitive for ${source}`);
       }
       expect(step.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-      expect(step.after).toContain('intake');
+      expect(step.after).toEqual([expectedPredecessor[source]]);
     }
   });
 
