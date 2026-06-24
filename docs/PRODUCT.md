@@ -14,6 +14,8 @@ The broader workbench pattern is source-to-artifact: users bring source material
 
 Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staff / Executive Assistant. Each user receives their own Myra instance (provisioned automatically on join) within the shared global org tenant. Myra can coordinate across workbenches and serves as the user's persistent, intelligent assistant throughout the platform.
 
+**Multi-thread chat.** Myra is the default, chat-first experience: the app opens directly into a conversation. A user can run **multiple parallel Myra chats** ("threads") — each thread is a separate, full Myra (its own tools, skills, memory, and history), not a saved transcript. The widened left sidebar lists every thread with **+ New Chat**, and threads can be renamed or deleted. The app remembers the last-active thread, so reopening the app (or the docked quick-chat available on non-chat pages) lands the user back where they were. Workflow run history lives on its own **Workflows** page.
+
 ### Oat — Workspace Granola Agent
 
 **Oat** is a shared workspace agent that processes Granola call recordings and surfaces them as call document artifacts in the workbench. Oat runs in the shared GTM Workbench Interchange tenant. Oat processes calls when prompted; recurring, scheduled ingestion is moving to workflows.
