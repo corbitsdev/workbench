@@ -20,6 +20,18 @@ export {
   type DeterministicToolStepOpts,
   type InlineInferenceStepOpts,
 } from './deterministic-step';
+export {
+  EPHEMERAL_CHAT_TAG,
+  EphemeralChatPayload,
+  compactEphemeralChatInput,
+  type EphemeralChatCompactResult,
+  type EphemeralChatCompactionMeta,
+} from './ephemeral-chat/payload';
+export {
+  EPHEMERAL_INPUT_TOKEN_BUDGET,
+  EPHEMERAL_COMPACT_RATIO,
+  EPHEMERAL_COMPACT_THRESHOLD_TOKENS,
+} from './ephemeral-chat/budget';
 
 // Personal agent
 export { buildPersonalAgentSystemPrompt } from './personal-agent/prompt';

@@ -3,6 +3,7 @@ import { defineAgent } from '@intx/agent';
 import { step } from '@intx/workflow';
 import type { StepPrimitive, Selector } from '@intx/workflow';
 import { canonicalizeToolNames } from './tool-names';
+import { EPHEMERAL_CHAT_TAG } from './ephemeral-chat/payload';
 
 /**
  * Marker tags the sidecar's step invoker reads to dispatch a step as a
@@ -112,6 +113,11 @@ export interface InlineInferenceStepOpts {
   input?: Selector;
   /** Step ids this step depends on. */
   after?: readonly string[];
+  /**
+   * When set, the sidecar compacts `{ message, history }` step input to the v1
+   * ephemeral token budget before the model turn (CL-2308).
+   */
+  ephemeralChat?: 'v1';
 }
 
 /**
@@ -139,6 +145,9 @@ export function inlineInferenceStep(opts: InlineInferenceStepOpts): StepPrimitiv
     inference: { sources: [] },
     tags: {
       [STEP_KIND_TAG]: INLINE_INFERENCE_KIND,
+      ...(opts.ephemeralChat !== undefined
+        ? { [EPHEMERAL_CHAT_TAG]: opts.ephemeralChat }
+        : {}),
     },
   });
   return step({

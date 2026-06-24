@@ -43,6 +43,8 @@ import {
   STEP_ARGMAP_TAG,
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
+  EPHEMERAL_CHAT_TAG,
+  compactEphemeralChatInput,
 } from '@workbench/agents';
 import { wsUrlToHttp } from './agent-tools';
 import { DEFAULT_REGISTRY_MAX_TARBALL_BYTES, DEFAULT_TOOL_CACHE_MAX_BYTES } from './config';
@@ -783,7 +785,13 @@ async function runInlineInferenceStep(args: {
   };
   const draining = drainStream();
   try {
-    const sendResult = await agent.send(synthesizeStepInput(resolvedInput));
+    let inputForSend = resolvedInput;
+    const ephemeralChat = args.req.agent.tags?.[EPHEMERAL_CHAT_TAG];
+    if (ephemeralChat === 'v1') {
+      const compacted = compactEphemeralChatInput(resolvedInput, args.req.agent.systemPrompt);
+      inputForSend = compacted.payload;
+    }
+    const sendResult = await agent.send(synthesizeStepInput(inputForSend));
     return { output: { reply: sendResult.reply, turn: sendResult.turn } };
   } finally {
     await agent.close();
