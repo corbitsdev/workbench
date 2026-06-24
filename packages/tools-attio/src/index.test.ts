@@ -180,6 +180,97 @@ describe('attio_query_records handler', () => {
     });
   });
 
+  it('builds a name filter from the nameContains convenience param', async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
+
+    await runner.run(
+      {
+        id: 'call_1',
+        name: 'attio_query_records',
+        arguments: { object: 'companies', nameContains: 'Tribe Capital' },
+      },
+      new AbortController().signal
+    );
+
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1].body))).toEqual({
+      limit: 25,
+      offset: 0,
+      filter: { name: { $contains: 'Tribe Capital' } },
+    });
+  });
+
+  it('builds a domains filter from the domainContains convenience param', async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
+
+    await runner.run(
+      {
+        id: 'call_1',
+        name: 'attio_query_records',
+        arguments: { object: 'companies', domainContains: 'tribecap.com' },
+      },
+      new AbortController().signal
+    );
+
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1].body))).toEqual({
+      limit: 25,
+      offset: 0,
+      filter: { domains: { domain: { $contains: 'tribecap.com' } } },
+    });
+  });
+
+  it('combines nameContains and domainContains into one implicit-AND filter', async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
+
+    await runner.run(
+      {
+        id: 'call_1',
+        name: 'attio_query_records',
+        arguments: {
+          object: 'companies',
+          nameContains: 'Tribe',
+          domainContains: 'tribecap.com',
+        },
+      },
+      new AbortController().signal
+    );
+
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1].body))).toEqual({
+      limit: 25,
+      offset: 0,
+      filter: {
+        name: { $contains: 'Tribe' },
+        domains: { domain: { $contains: 'tribecap.com' } },
+      },
+    });
+  });
+
+  it('prefers an explicit filter over the convenience params', async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
+
+    await runner.run(
+      {
+        id: 'call_1',
+        name: 'attio_query_records',
+        arguments: {
+          object: 'companies',
+          nameContains: 'ignored',
+          filter: { name: { $eq: 'Tribe Capital' } },
+        },
+      },
+      new AbortController().signal
+    );
+
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1].body))).toEqual({
+      limit: 25,
+      offset: 0,
+      filter: { name: { $eq: 'Tribe Capital' } },
+    });
+  });
+
   it('omits filter and sorts from the body when not provided', async () => {
     const fetcher = makeFetchStub({ data: [] });
     const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));

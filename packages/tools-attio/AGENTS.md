@@ -2,7 +2,7 @@
 
 Read-only Attio CRM tool implementation. Registered in the hub's tool registry as `attio_list_objects`, `attio_query_records`, `attio_search_records`, `attio_get_record`, and `attio_list_workspace_members`.
 
-- `attio_query_records` — structured query against one object (`POST /v2/objects/{object}/records/query`) with optional `filter` (`$eq`/`$contains`/`$starts_with`/`$ends_with`) and `sorts`, passed through as-is
+- `attio_query_records` — structured query against one object (`POST /v2/objects/{object}/records/query`). Exposes flat `nameContains`/`domainContains` convenience params (mapped server-side to a `name`/`domains` `$contains` filter) so weak models reliably scope a lookup without authoring a nested filter; an explicit `filter` (`$eq`/`$contains`/`$starts_with`/`$ends_with`, implicit-AND across attributes) takes precedence and is passed through as-is, alongside `sorts`
 - `attio_search_records` — fuzzy free-text match across people and companies (`POST /v2/records/search`)
 
 - Credential (`attio` provider) is resolved by Interchange at tool execution time — not at agent launch

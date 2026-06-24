@@ -123,6 +123,19 @@ async function listObjects(config: AttioToolsConfig, signal: AbortSignal): Promi
   return parseDataResponse(await fetchAttioJSON(config, url, { method: 'GET' }, signal));
 }
 
+function buildConvenienceFilter(args: Record<string, unknown>): Record<string, unknown> | null {
+  const filter: Record<string, unknown> = {};
+  const nameContains = optionalString(args.nameContains);
+  if (nameContains !== null) {
+    filter.name = { $contains: nameContains };
+  }
+  const domainContains = optionalString(args.domainContains);
+  if (domainContains !== null) {
+    filter.domains = { domain: { $contains: domainContains } };
+  }
+  return Object.keys(filter).length > 0 ? filter : null;
+}
+
 async function queryRecords(
   config: AttioToolsConfig,
   args: Record<string, unknown>,
@@ -140,6 +153,11 @@ async function queryRecords(
   const body: Record<string, unknown> = { limit, offset };
   if (isRecord(args.filter)) {
     body.filter = args.filter;
+  } else {
+    const convenienceFilter = buildConvenienceFilter(args);
+    if (convenienceFilter !== null) {
+      body.filter = convenienceFilter;
+    }
   }
   if (Array.isArray(args.sorts)) {
     body.sorts = args.sorts;
@@ -198,6 +216,16 @@ const QUERY_RECORDS_INPUT_SCHEMA = {
       type: 'string',
       description: 'The object slug to query, e.g. "companies" or "people".',
     },
+    nameContains: {
+      type: 'string',
+      description:
+        'Look up records whose name contains this text — the simplest way to find a specific company or person by name (e.g. "Tribe Capital"). Prefer this over `filter` for a plain name lookup; it is mapped to a name filter for you. Ignored if `filter` is also passed.',
+    },
+    domainContains: {
+      type: 'string',
+      description:
+        'Look up companies whose domain contains this text — use to find a company by website (e.g. "tribecap.com"). Mapped to the Attio domains sub-attribute filter for you. Ignored if `filter` is also passed.',
+    },
     limit: {
       type: 'number',
       description: 'Maximum number of records to return (1-100, default 25).',
@@ -209,7 +237,17 @@ const QUERY_RECORDS_INPUT_SCHEMA = {
     filter: {
       type: 'object',
       description:
-        'Server-side filter — pass this to LOOK UP specific records by name/domain/etc. rather than listing everything. This is the normal way to find a company or person: filter here instead of fetching a large page and scanning it yourself. Example: {"name":{"$contains":"Acme Inc"}}. Supports operators $eq, $contains, $starts_with, $ends_with.',
+        'Advanced Attio filter, passed through as-is — use only when `nameContains`/`domainContains` are not enough. Keys are attribute slugs (e.g. "name", "domains"); each maps to an operator object. Example: {"name":{"$contains":"Tribe Capital"}}. Multiple attributes are combined with implicit AND.',
+      additionalProperties: {
+        type: 'object',
+        description: 'Operator constraints for one attribute. Provide at least one operator.',
+        properties: {
+          $eq: { type: 'string', description: 'Exact match.' },
+          $contains: { type: 'string', description: 'Substring match.' },
+          $starts_with: { type: 'string', description: 'Prefix match.' },
+          $ends_with: { type: 'string', description: 'Suffix match.' },
+        },
+      },
     },
     sorts: {
       type: 'array',
@@ -262,7 +300,7 @@ export const ATTIO_LIST_OBJECTS_DEFINITION: ToolDefinition = {
 export const ATTIO_QUERY_RECORDS_DEFINITION: ToolDefinition = {
   name: 'attio_query_records',
   description:
-    'Find or query records for an Attio object (by slug, e.g. "companies" or "people"). To find a specific company, person, or deal, ALWAYS pass a `filter` (typically by name) with a small `limit` — do not omit the filter to list everything and scan it yourself. An unfiltered query returns only an arbitrary first page (default 25) and is rarely what you want; reach for a name/domain filter first. Supports server-side `filter`, `sorts`, and pagination. Read-only.',
+    'Find or query records for an Attio object (by slug, e.g. "companies" or "people"). To find a specific company or person, pass `nameContains` (or `domainContains`) — the simplest way to look one up by name or website. Do NOT call this with only `object`: an unfiltered query returns an arbitrary first page (default 25) and is rarely what you want. Use `filter` only for advanced multi-attribute queries. Supports `sorts` and pagination. Returns an array of records, each with an `id` (containing `record_id`) and a `values` map of attributes. Read-only.',
   inputSchema: QUERY_RECORDS_INPUT_SCHEMA,
 };
 
