@@ -37,11 +37,11 @@ describe('THEMES / isTheme', () => {
 });
 
 describe('useTheme', () => {
-  it('defaults to corbits-dark and applies it to the document on mount', () => {
+  it('defaults to corbits-light and applies it to the document on mount', () => {
     const { result } = renderHook(() => useTheme());
-    expect(result.current.theme).toBe('corbits-dark');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('corbits-dark');
-    expect(localStorage.getItem(STORAGE_KEY)).toBe('corbits-dark');
+    expect(result.current.theme).toBe('corbits-light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('corbits-light');
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('corbits-light');
   });
 
   it('reads a valid persisted corbits-light theme on init', () => {
@@ -79,10 +79,10 @@ describe('useTheme', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe('corbits-light');
   });
 
-  it('ignores an unknown persisted value and falls back to corbits-dark', () => {
+  it('ignores an unknown persisted value and falls back to corbits-light', () => {
     localStorage.setItem(STORAGE_KEY, 'neon');
     const { result } = renderHook(() => useTheme());
-    expect(result.current.theme).toBe('corbits-dark');
+    expect(result.current.theme).toBe('corbits-light');
   });
 
   it('updates the document and persists when setTheme is called', () => {

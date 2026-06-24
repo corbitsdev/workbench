@@ -24,7 +24,7 @@ const LEGACY_THEME_MAP = new Map<string, Theme>([
 ]);
 
 const STORAGE_KEY = 'cw-theme';
-const DEFAULT_THEME: Theme = 'corbits-dark';
+const DEFAULT_THEME: Theme = 'corbits-light';
 
 function readStoredTheme(): Theme {
   try {
