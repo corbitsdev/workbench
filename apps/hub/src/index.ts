@@ -56,6 +56,7 @@ import { createWorkflowReconciler } from './services/workflow-reconciler';
 import { createWorkbenchDirectorRegistry } from '@workbench/agents';
 import { createUploadsRouter } from './routes/uploads';
 import { createSkillsRouter } from './routes/skills';
+import { createToolsRouter } from './routes/tools';
 import { createAgentProvisioningRouter } from './routes/agents';
 import {
   relaunchInstanceIfNeeded,
@@ -868,6 +869,7 @@ v1.route('/', createApprovalsRouter(db));
 v1.route('/', createFeedbackRouter(db));
 v1.route('/', createUploadsRouter(db));
 v1.route('/', createSkillsRouter(db, assetService, repoStore.repoStore));
+v1.route('/', createToolsRouter(db));
 // Built before the runs router so the run-start/signal handlers and the
 // reconciler can share its idempotent `ensureDeploymentRoutable` re-establish
 // primitive.

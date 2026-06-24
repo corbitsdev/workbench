@@ -14,6 +14,8 @@ import Settings from './pages/Settings';
 import { SkillsLibrary } from './pages/SkillsLibrary';
 import { SkillsNew } from './pages/SkillsNew';
 import { SkillDetail } from './pages/SkillDetail';
+import { ToolsLibrary } from './pages/ToolsLibrary';
+import { ToolDetail } from './pages/ToolDetail';
 import { InsightsDashboard } from './pages/InsightsDashboard';
 
 function ProtectedLayout() {
@@ -68,6 +70,8 @@ export const router = createBrowserRouter([
           { path: '/skills', element: <SkillsLibrary /> },
           { path: '/skills/new', element: <SkillsNew /> },
           { path: '/skills/:id', element: <SkillDetail /> },
+          { path: '/tools', element: <ToolsLibrary /> },
+          { path: '/tools/:name', element: <ToolDetail /> },
           { path: '/insights', element: <InsightsDashboard /> },
         ],
       },

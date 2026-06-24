@@ -1,4 +1,14 @@
-import { Home, Settings, LogOut, BookOpen, BarChart2, Workflow, Plus, Files } from 'lucide-react';
+import {
+  Home,
+  Settings,
+  LogOut,
+  BookOpen,
+  BarChart2,
+  Workflow,
+  Plus,
+  Files,
+  Wrench,
+} from 'lucide-react';
 import { NavLink, Link, useNavigate } from 'react-router';
 import { useAuth } from '../AuthProvider';
 import { useCreateMyraThread, writeLastActiveThreadId } from '../../hooks/use-myra-threads';
@@ -10,6 +20,7 @@ const NAV_ITEMS = [
   { to: '/artifacts', label: 'Artifacts', icon: Files, end: false },
   { to: '/workflows', label: 'Workflows', icon: Workflow, end: false },
   { to: '/skills', label: 'Skills', icon: BookOpen, end: false },
+  { to: '/tools', label: 'Tools', icon: Wrench, end: false },
   { to: '/insights', label: 'Insights', icon: BarChart2, end: false },
 ] as const;
 

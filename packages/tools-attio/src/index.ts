@@ -209,7 +209,7 @@ const QUERY_RECORDS_INPUT_SCHEMA = {
     filter: {
       type: 'object',
       description:
-        'Attio filter object, passed through as-is. Example: {"name":{"$contains":"Tribe Capital"}}. Supports operators $eq, $contains, $starts_with, $ends_with.',
+        'Server-side filter — pass this to LOOK UP specific records by name/domain/etc. rather than listing everything. This is the normal way to find a company or person: filter here instead of fetching a large page and scanning it yourself. Example: {"name":{"$contains":"Acme Inc"}}. Supports operators $eq, $contains, $starts_with, $ends_with.',
     },
     sorts: {
       type: 'array',
@@ -262,7 +262,7 @@ export const ATTIO_LIST_OBJECTS_DEFINITION: ToolDefinition = {
 export const ATTIO_QUERY_RECORDS_DEFINITION: ToolDefinition = {
   name: 'attio_query_records',
   description:
-    'Query records for an Attio object (by slug, e.g. "companies" or "people") with optional server-side filter, sorts, and pagination. Read-only.',
+    'Find or query records for an Attio object (by slug, e.g. "companies" or "people"). To find a specific company, person, or deal, ALWAYS pass a `filter` (typically by name) with a small `limit` — do not omit the filter to list everything and scan it yourself. An unfiltered query returns only an arbitrary first page (default 25) and is rarely what you want; reach for a name/domain filter first. Supports server-side `filter`, `sorts`, and pagination. Read-only.',
   inputSchema: QUERY_RECORDS_INPUT_SCHEMA,
 };
 

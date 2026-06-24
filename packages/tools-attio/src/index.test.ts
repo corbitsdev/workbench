@@ -144,7 +144,7 @@ describe('attio_query_records handler', () => {
         name: 'attio_query_records',
         arguments: {
           object: 'companies',
-          filter: { name: { $contains: 'Tribe Capital' } },
+          filter: { name: { $contains: 'Acme Inc' } },
         },
       },
       new AbortController().signal
@@ -153,7 +153,7 @@ describe('attio_query_records handler', () => {
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1].body))).toEqual({
       limit: 25,
       offset: 0,
-      filter: { name: { $contains: 'Tribe Capital' } },
+      filter: { name: { $contains: 'Acme Inc' } },
     });
   });
 
@@ -208,7 +208,7 @@ describe('attio_search_records handler', () => {
       {
         id: 'call_1',
         name: 'attio_search_records',
-        arguments: { query: 'Tribe Capital' },
+        arguments: { query: 'Acme Inc' },
       },
       new AbortController().signal
     );
@@ -220,7 +220,7 @@ describe('attio_search_records handler', () => {
     expect(call?.[0]).toBe('https://api.attio.com/v2/records/search');
     expect(call?.[1].method).toBe('POST');
     expect(JSON.parse(String(call?.[1].body))).toEqual({
-      query: 'Tribe Capital',
+      query: 'Acme Inc',
     });
   });
 
