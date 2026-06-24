@@ -1,0 +1,80 @@
+/// <reference types="bun" />
+import '../test-setup';
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import React from 'react';
+import { MemoryRouter } from 'react-router';
+
+let threadsResult: {
+  data?: { id: string; instanceId: string; label: string; createdAt: string }[];
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
+};
+const createMutate = mock((_arg: undefined, _opts?: unknown) => {});
+
+mock.module('../hooks/use-myra-threads', () => ({
+  useMyraThreads: () => threadsResult,
+  useCreateMyraThread: () => ({ mutate: createMutate, isPending: false }),
+  writeLastActiveThreadId: () => {},
+}));
+
+const { ChatsListPage } = require('./ChatsListPage');
+
+function renderPage() {
+  render(
+    React.createElement(
+      MemoryRouter,
+      { initialEntries: ['/chats'] },
+      React.createElement(ChatsListPage)
+    )
+  );
+}
+
+beforeEach(() => {
+  createMutate.mockClear();
+  threadsResult = {
+    data: [
+      { id: 't1', instanceId: 'i1', label: 'Pricing strategy', createdAt: '2026-01-01T00:00:00Z' },
+      { id: 't2', instanceId: 'i2', label: 'Onboarding flow', createdAt: '2026-01-02T00:00:00Z' },
+    ],
+    isLoading: false,
+    isError: false,
+    refetch: () => {},
+  };
+});
+
+afterEach(() => cleanup());
+
+describe('ChatsListPage', () => {
+  it('lists all chats', () => {
+    renderPage();
+    expect(screen.getByText('Pricing strategy')).toBeDefined();
+    expect(screen.getByText('Onboarding flow')).toBeDefined();
+  });
+
+  it('filters by the search query', () => {
+    renderPage();
+    fireEvent.change(screen.getByPlaceholderText(/search chats/i), {
+      target: { value: 'pricing' },
+    });
+    expect(screen.getByText('Pricing strategy')).toBeDefined();
+    expect(screen.queryByText('Onboarding flow')).toBeNull();
+  });
+
+  it('shows a no-results message when nothing matches', () => {
+    renderPage();
+    fireEvent.change(screen.getByPlaceholderText(/search chats/i), {
+      target: { value: 'zzz' },
+    });
+    expect(screen.getByText(/no chats match/i)).toBeDefined();
+  });
+
+  it('shows an empty state and creates a chat', () => {
+    threadsResult = { data: [], isLoading: false, isError: false, refetch: () => {} };
+    renderPage();
+    expect(screen.getByText(/don't have any chats yet/i)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /new chat/i }));
+    expect(createMutate).toHaveBeenCalledTimes(1);
+  });
+});

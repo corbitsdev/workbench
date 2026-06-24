@@ -6,6 +6,7 @@ import { ChatLauncherProvider } from './lib/chat-launcher-context';
 import { ActiveWorkbenchProvider } from './lib/active-workbench-context';
 import { LoginPage } from './pages/LoginPage';
 import { ChatThreadPage } from './pages/ChatThreadPage';
+import { ChatsListPage } from './pages/ChatsListPage';
 import { ArtifactsPage } from './pages/ArtifactsPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
 import Settings from './pages/Settings';
@@ -51,9 +52,10 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          // Chat-first: the index and /chats redirect to the last-active thread.
+          // Chat-first: the index redirects into the last-active conversation;
+          // /chats is the searchable list; /chats/:threadId is a conversation.
           { index: true, element: <ChatThreadPage /> },
-          { path: '/chats', element: <ChatThreadPage /> },
+          { path: '/chats', element: <ChatsListPage /> },
           { path: '/chats/:threadId', element: <ChatThreadPage /> },
           { path: '/onboarding', element: <Navigate to="/" replace /> },
           { path: '/dashboard', element: <Navigate to="/" replace /> },

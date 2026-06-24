@@ -3,8 +3,6 @@ import '../test-setup';
 import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { cleanup, render, screen } from '@testing-library/react';
 import React from 'react';
-import { MemoryRouter } from 'react-router';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 let ctx: {
   workbenches: unknown[];
@@ -17,27 +15,8 @@ let ctx: {
 mock.module('../lib/active-workbench-context', () => ({
   useActiveWorkbench: () => ctx,
 }));
-mock.module('../lib/chat-launcher-context', () => ({
-  useChatLauncher: () => ({ setHidden: () => {} }),
-}));
-mock.module('../lib/use-media-query', () => ({ useMediaQuery: () => true }));
 
 const { ArtifactsPage } = require('./ArtifactsPage');
-
-function renderPage() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    React.createElement(
-      QueryClientProvider,
-      { client },
-      React.createElement(
-        MemoryRouter,
-        { initialEntries: ['/artifacts'] },
-        React.createElement(ArtifactsPage)
-      )
-    )
-  );
-}
 
 afterEach(() => cleanup());
 
@@ -50,7 +29,7 @@ describe('ArtifactsPage', () => {
       activeTenantId: null,
       setActiveWorkbench: () => {},
     };
-    renderPage();
+    render(React.createElement(ArtifactsPage));
     expect(screen.getByText('Loading…')).toBeDefined();
   });
 
@@ -62,7 +41,7 @@ describe('ArtifactsPage', () => {
       activeTenantId: null,
       setActiveWorkbench: () => {},
     };
-    renderPage();
+    render(React.createElement(ArtifactsPage));
     expect(screen.getByText(/not been provided access/i)).toBeDefined();
   });
 });

@@ -6,7 +6,7 @@ import { ThreadList } from './ThreadList';
 import { WorkbenchSelector } from './WorkbenchSelector';
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Chats', icon: Home, end: true },
+  { to: '/chats', label: 'Chats', icon: Home, end: false },
   { to: '/artifacts', label: 'Artifacts', icon: Files, end: false },
   { to: '/workflows', label: 'Workflows', icon: Workflow, end: false },
   { to: '/skills', label: 'Skills', icon: BookOpen, end: false },
@@ -82,7 +82,6 @@ export function AppSidebar() {
             {label}
           </NavLink>
         ))}
-        <WorkbenchSelector />
       </nav>
 
       <div className="mt-4 min-h-0 flex-1 overflow-auto px-3">
@@ -90,6 +89,10 @@ export function AppSidebar() {
           Chats
         </div>
         <ThreadList />
+      </div>
+
+      <div className="border-t border-border px-3 py-2">
+        <WorkbenchSelector />
       </div>
 
       <div className="flex items-center justify-between border-t border-border px-4 py-3">
