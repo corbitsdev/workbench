@@ -192,6 +192,10 @@ const auth = betterAuth({
             const { principalId: globalPrincipalId } = await ensureGlobalMember(db, {
               userId: user.id,
             });
+            await provisionMemberInstances(db, {
+              userId: user.id,
+              memberPrincipalId: globalPrincipalId,
+            });
             log.info('User joined global tenant', {
               userId: user.id,
               globalTenantId,
@@ -211,7 +215,11 @@ const auth = betterAuth({
         after: async (session) => {
           // Repair path: ensure global-tenant membership on login in case signup hook failed.
           try {
-            await ensureGlobalMember(db, { userId: session.userId });
+            const { principalId } = await ensureGlobalMember(db, { userId: session.userId });
+            await provisionMemberInstances(db, {
+              userId: session.userId,
+              memberPrincipalId: principalId,
+            });
           } catch (err) {
             log.error('Session repair failed — continuing', {
               userId: session.userId,

@@ -36,6 +36,10 @@ import {
 import type { FeedbackSubjectKind, SavedRating } from '../lib/hub-api';
 import { createHubTransport } from '../lib/instance-transport';
 import { useChatLauncher } from '../lib/chat-launcher-context';
+import { classifyLaunchState } from './agent-launch-helpers';
+
+const LAUNCH_RETRY_DELAY_MS = 4000;
+const MAX_LAUNCH_TRANSIENT_RETRIES = 8;
 
 const MYRA: ChatAgentIdentity = { name: 'Myra', tagline: 'Personal agent' };
 
@@ -168,6 +172,24 @@ export function PersonalAgentChat() {
         }
 
         instanceIdRef.current = me.paInstanceId;
+
+        // Same launch path as workspace agents (Oat): persist tool grants from the
+        // org definition and push them to a live sidecar before opening chat.
+        for (let attempt = 0; ; attempt++) {
+          const launch = await launchInstanceSession(me.paInstanceId);
+          if (launch.launched) break;
+          const launchError = launch.launchError ?? 'Failed to launch Myra session';
+          const classified = classifyLaunchState(undefined, launchError);
+          if (
+            (classified.kind === 'connecting' || classified.kind === 'deploying') &&
+            attempt < MAX_LAUNCH_TRANSIENT_RETRIES
+          ) {
+            await new Promise<void>((resolve) => setTimeout(resolve, LAUNCH_RETRY_DELAY_MS));
+            continue;
+          }
+          throw new Error(launchError);
+        }
+
         const transport = createHubTransport();
         const session = createInstanceSession({
           tenantId: me.personalTenantId,

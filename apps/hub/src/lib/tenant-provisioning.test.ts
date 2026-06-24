@@ -17,6 +17,11 @@ mock.module('../config', () => ({
   }),
 }));
 
+const refreshInstanceGrantsMock = mock(() => Promise.resolve({ refreshed: true, pushed: false }));
+mock.module('../services/grant-reconcile', () => ({
+  refreshInstanceGrantsFromDefinition: refreshInstanceGrantsMock,
+}));
+
 import {
   provisionMemberInstances,
   getMyraInstanceId,
@@ -196,6 +201,7 @@ describe('provisionMemberInstances', () => {
 
     expect(result).toEqual([{ templateKey: 'myra', instanceId: 'ins_existing' }]);
     expect(insertMock).not.toHaveBeenCalled();
+    expect(refreshInstanceGrantsMock).toHaveBeenCalledTimes(1);
   });
 
   it('recreates the instance when the mapping exists but its instance is gone', async () => {

@@ -52,6 +52,7 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   'edit_file',
   'search_files',
   'exa_search',
+  'web_search',
   'linear_list_issues',
   'linear_get_issue',
   'linear_list_teams',

@@ -7,6 +7,7 @@ import { AGENT_TEMPLATES, templateModelRequirements, type AgentTemplate } from '
 import { getConfig } from '../config';
 import type { HubDb } from '../db';
 import { memberAgentInstance, enabledWorkflow } from '../db/schema';
+import { refreshInstanceGrantsFromDefinition } from '../services/grant-reconcile';
 
 const log = getLogger(['api', 'tenant-provisioning']);
 
@@ -687,6 +688,12 @@ export async function provisionMemberInstances(
         where: eq(agentInstance.id, existingMapping.instanceId),
       });
       if (existingInstance) {
+        await refreshInstanceGrantsFromDefinition(db, {
+          agentId: existingInstance.agentId,
+          tenantId: existingInstance.tenantId,
+          principalId: existingInstance.principalId,
+          address: existingInstance.address,
+        });
         results.push({
           templateKey: template.key,
           instanceId: existingMapping.instanceId,
@@ -722,15 +729,22 @@ export async function provisionMemberInstances(
           updatedAt: now,
         });
 
-        await tx.insert(memberAgentInstance).values({
-          id: generateId('instance'),
-          tenantId,
-          memberPrincipalId: opts.memberPrincipalId,
-          templateKey: template.key,
-          agentId,
-          instanceId,
-          createdAt: now,
-        });
+        if (existingMapping) {
+          await tx
+            .update(memberAgentInstance)
+            .set({ agentId, instanceId })
+            .where(eq(memberAgentInstance.id, existingMapping.id));
+        } else {
+          await tx.insert(memberAgentInstance).values({
+            id: generateId('instance'),
+            tenantId,
+            memberPrincipalId: opts.memberPrincipalId,
+            templateKey: template.key,
+            agentId,
+            instanceId,
+            createdAt: now,
+          });
+        }
 
         // The global tenant's `member` role deliberately carries no grants (see
         // `seedGlobalTenant`), so the owning member needs principal-scoped grants
@@ -758,9 +772,15 @@ export async function provisionMemberInstances(
           agentId,
           instanceId,
         });
-        return { templateKey: template.key, instanceId };
+        return { templateKey: template.key, instanceId, agentId, instancePrincipalId };
       });
-      results.push(created);
+      await refreshInstanceGrantsFromDefinition(db, {
+        agentId: created.agentId,
+        tenantId,
+        principalId: created.instancePrincipalId,
+        address: `${created.instanceId}@${domain}`,
+      });
+      results.push({ templateKey: created.templateKey, instanceId: created.instanceId });
     } catch (err) {
       // A concurrent join created the mapping between our pre-check and insert;
       // the (tenant, member, template) unique constraint aborts our transaction.
@@ -772,6 +792,17 @@ export async function provisionMemberInstances(
           templateKey: template.key,
           instanceId: racedMapping.instanceId,
         });
+        const racedInstance = await db.query.agentInstance.findFirst({
+          where: eq(agentInstance.id, racedMapping.instanceId),
+        });
+        if (racedInstance) {
+          await refreshInstanceGrantsFromDefinition(db, {
+            agentId: racedInstance.agentId,
+            tenantId: racedInstance.tenantId,
+            principalId: racedInstance.principalId,
+            address: racedInstance.address,
+          });
+        }
         results.push({
           templateKey: template.key,
           instanceId: racedMapping.instanceId,

@@ -2,6 +2,7 @@
 export { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from './constants';
 export {
   canonicalizeToolNames,
+  expandToolAliasGrants,
   toolPackagesForCapabilities,
   providersForToolPackages,
 } from './tool-names';

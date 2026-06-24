@@ -1,6 +1,10 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import { canonicalizeToolNames, providersForToolPackages } from './tool-names';
+import {
+  canonicalizeToolNames,
+  expandToolAliasGrants,
+  providersForToolPackages,
+} from './tool-names';
 
 describe('canonicalizeToolNames (CL-2145)', () => {
   it('prefixes a package tool with its factory id', () => {
@@ -39,6 +43,21 @@ describe('canonicalizeToolNames (CL-2145)', () => {
     const seededResource = `tool:${canonical}`;
     const runtimeResource = 'tool:@workbench/tools-granola/granola:granola_list_notes';
     expect(seededResource).toBe(runtimeResource);
+  });
+});
+
+describe('expandToolAliasGrants', () => {
+  it('adds web_search when capabilities only list exa_search', () => {
+    const expanded = expandToolAliasGrants(canonicalizeToolNames(['exa_search']));
+    expect(expanded).toContain('@workbench/tools-exa/exa:exa_search');
+    expect(expanded).toContain('@workbench/tools-exa/exa:web_search');
+  });
+
+  it('does not expand unrelated tools', () => {
+    const expanded = expandToolAliasGrants(
+      canonicalizeToolNames(['read_file', 'granola_list_notes'])
+    );
+    expect(expanded).toEqual(['read_file', '@workbench/tools-granola/granola:granola_list_notes']);
   });
 });
 

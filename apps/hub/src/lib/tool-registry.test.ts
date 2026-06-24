@@ -36,6 +36,13 @@ describe('tool registry', () => {
     ]);
   });
 
+  it('expands exa_search to include the web_search grant alias', () => {
+    expect(getToolNamesFromCapabilities({ tools: ['exa_search'] })).toEqual([
+      '@workbench/tools-exa/exa:exa_search',
+      '@workbench/tools-exa/exa:web_search',
+    ]);
+  });
+
   it('lists artifact_link_file as a Workbench tool', () => {
     expect(KNOWN_TOOL_SUMMARIES).toContainEqual(
       expect.objectContaining({ name: 'artifact_link_file', providerName: 'workbench' })

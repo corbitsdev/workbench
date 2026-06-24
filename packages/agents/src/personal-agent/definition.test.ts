@@ -31,6 +31,10 @@ describe('PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)', () => {
     expect(PERSONAL_AGENT_BASE_TOOLS).toContain('search_files');
   });
 
+  it('includes the Exa web_search alias (prefixed)', () => {
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain('@workbench/tools-exa/exa:web_search');
+  });
+
   it('includes the read-only Granola, Linear, and Attio tools (prefixed)', () => {
     expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
       '@workbench/tools-granola/granola:granola_list_notes'

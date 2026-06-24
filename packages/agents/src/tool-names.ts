@@ -140,6 +140,29 @@ export function canonicalizeToolNames(names: readonly string[]): string[] {
   });
 }
 
+function factoryIdFromCanonicalOrBare(name: string): string | undefined {
+  const colon = name.lastIndexOf(':');
+  if (colon === -1) return FACTORY_ID_BY_TOOL[name];
+  return name.slice(0, colon);
+}
+
+const EXA_FACTORY_ID = '@workbench/tools-exa/exa';
+
+/**
+ * Exa registers `exa_search` and `web_search` as the same capability; the model
+ * often calls the generic `web_search` name while capabilities list only
+ * `exa_search`. Grant both runtime names when either is authorized.
+ */
+export function expandToolAliasGrants(canonicalNames: readonly string[]): string[] {
+  const out = new Set(canonicalNames);
+  const hasExa = canonicalNames.some((n) => factoryIdFromCanonicalOrBare(n) === EXA_FACTORY_ID);
+  if (!hasExa) return [...out];
+  for (const bare of PACKAGE_TOOLS[EXA_FACTORY_ID] ?? []) {
+    out.add(`${EXA_FACTORY_ID}:${bare}`);
+  }
+  return [...out];
+}
+
 // Resolve the npm tool packages that back a set of capability names (bare or
 // canonical `<factoryId>:<name>`). A capability with no known package (a local
 // runner) contributes nothing. Used to derive a deploy's toolPackagePins from
