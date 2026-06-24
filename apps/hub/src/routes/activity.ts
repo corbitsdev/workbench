@@ -20,6 +20,10 @@ const OverviewQuery = type({
   'endDate?': 'string',
 });
 
+function optionalQuery(value: string | undefined): string | undefined {
+  return value === undefined || value === '' ? undefined : value;
+}
+
 export type CreateActivityRouterDeps = {
   db: DB['db'];
 };
@@ -34,10 +38,13 @@ export function createActivityRouter({ db }: CreateActivityRouterDeps): Hono<Act
 
   app.get('/overview', async (c) => {
     const tenant = c.get('tenant');
-    const query = OverviewQuery({
-      startDate: c.req.query('startDate'),
-      endDate: c.req.query('endDate'),
-    });
+    const queryInput: { startDate?: string; endDate?: string } = {};
+    const startDate = optionalQuery(c.req.query('startDate'));
+    const endDate = optionalQuery(c.req.query('endDate'));
+    if (startDate !== undefined) queryInput.startDate = startDate;
+    if (endDate !== undefined) queryInput.endDate = endDate;
+
+    const query = OverviewQuery(queryInput);
     if (query instanceof type.errors) {
       return c.json({ error: { code: 'bad_request', message: query.summary } }, 400);
     }
