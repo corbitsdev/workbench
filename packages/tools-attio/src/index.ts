@@ -137,7 +137,28 @@ async function queryRecords(
   const offset = optionalNonNegativeInteger(args.offset, DEFAULT_OFFSET);
 
   const url = attioUrl(config, `/v2/objects/${encodeURIComponent(object)}/records/query`);
-  const body = { limit, offset };
+  const body: Record<string, unknown> = { limit, offset };
+  if (isRecord(args.filter)) {
+    body.filter = args.filter;
+  }
+  if (Array.isArray(args.sorts)) {
+    body.sorts = args.sorts;
+  }
+  return parseDataResponse(await fetchAttioJSON(config, url, { method: 'POST', body }, signal));
+}
+
+async function searchRecords(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal
+): Promise<unknown> {
+  const query = optionalString(args.query);
+  if (query === null) {
+    throw new Error('query is required');
+  }
+
+  const url = attioUrl(config, '/v2/records/search');
+  const body = { query };
   return parseDataResponse(await fetchAttioJSON(config, url, { method: 'POST', body }, signal));
 }
 
@@ -185,8 +206,30 @@ const QUERY_RECORDS_INPUT_SCHEMA = {
       type: 'number',
       description: 'Number of records to skip for pagination (default 0).',
     },
+    filter: {
+      type: 'object',
+      description:
+        'Attio filter object, passed through as-is. Example: {"name":{"$contains":"Tribe Capital"}}. Supports operators $eq, $contains, $starts_with, $ends_with.',
+    },
+    sorts: {
+      type: 'array',
+      description:
+        'Attio sorts array, passed through as-is. Example: [{"attribute":"name","direction":"asc"}].',
+    },
   },
   required: ['object'],
+};
+
+const SEARCH_RECORDS_INPUT_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        'Fuzzy search string matched against names, domains, emails, phone numbers, and social handles across people and companies.',
+    },
+  },
+  required: ['query'],
 };
 
 const GET_RECORD_INPUT_SCHEMA = {
@@ -219,8 +262,15 @@ export const ATTIO_LIST_OBJECTS_DEFINITION: ToolDefinition = {
 export const ATTIO_QUERY_RECORDS_DEFINITION: ToolDefinition = {
   name: 'attio_query_records',
   description:
-    'Query records for an Attio object (by slug, e.g. "companies" or "people") with pagination. Read-only.',
+    'Query records for an Attio object (by slug, e.g. "companies" or "people") with optional server-side filter, sorts, and pagination. Read-only.',
   inputSchema: QUERY_RECORDS_INPUT_SCHEMA,
+};
+
+export const ATTIO_SEARCH_RECORDS_DEFINITION: ToolDefinition = {
+  name: 'attio_search_records',
+  description:
+    'Fuzzy-search Attio records across people and companies by a free-text query (matches names, domains, emails, phone numbers, social handles). Read-only.',
+  inputSchema: SEARCH_RECORDS_INPUT_SCHEMA,
 };
 
 export const ATTIO_GET_RECORD_DEFINITION: ToolDefinition = {
@@ -243,6 +293,11 @@ function buildListObjectsHandler(config: AttioToolsConfig) {
 function buildQueryRecordsHandler(config: AttioToolsConfig) {
   return async (args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await queryRecords(config, args, signal));
+}
+
+function buildSearchRecordsHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await searchRecords(config, args, signal));
 }
 
 function buildGetRecordHandler(config: AttioToolsConfig) {
@@ -271,6 +326,11 @@ export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
     },
     {
       kind: 'string',
+      definition: ATTIO_SEARCH_RECORDS_DEFINITION,
+      handler: buildSearchRecordsHandler(config),
+    },
+    {
+      kind: 'string',
       definition: ATTIO_GET_RECORD_DEFINITION,
       handler: buildGetRecordHandler(config),
     },
@@ -288,6 +348,8 @@ function handlerForDefinition(config: AttioToolsConfig, name: string) {
       return buildListObjectsHandler(config);
     case ATTIO_QUERY_RECORDS_DEFINITION.name:
       return buildQueryRecordsHandler(config);
+    case ATTIO_SEARCH_RECORDS_DEFINITION.name:
+      return buildSearchRecordsHandler(config);
     case ATTIO_GET_RECORD_DEFINITION.name:
       return buildGetRecordHandler(config);
     case ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION.name:
@@ -299,7 +361,13 @@ function handlerForDefinition(config: AttioToolsConfig, name: string) {
 
 function createAttioToolFor(config: AttioToolsConfig, definition: ToolDefinition): AgentTool[] {
   validateConfig(config);
-  return [{ kind: 'string', definition, handler: handlerForDefinition(config, definition.name) }];
+  return [
+    {
+      kind: 'string',
+      definition,
+      handler: handlerForDefinition(config, definition.name),
+    },
+  ];
 }
 
 function resolveBaseUrl(config: { apiKey: string; baseURL: string }): AttioToolsConfig {
@@ -330,6 +398,12 @@ export const ATTIO_HUB_TOOLS = {
     providerName: 'attio' as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createAttioToolFor(resolveBaseUrl(config), ATTIO_QUERY_RECORDS_DEFINITION),
+  },
+  attio_search_records: {
+    definition: ATTIO_SEARCH_RECORDS_DEFINITION,
+    providerName: 'attio' as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(resolveBaseUrl(config), ATTIO_SEARCH_RECORDS_DEFINITION),
   },
   attio_get_record: {
     definition: ATTIO_GET_RECORD_DEFINITION,

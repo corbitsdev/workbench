@@ -21,6 +21,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
   '@workbench/tools-attio/attio': [
     'attio_list_objects',
     'attio_query_records',
+    'attio_search_records',
     'attio_get_record',
     'attio_list_workspace_members',
   ],

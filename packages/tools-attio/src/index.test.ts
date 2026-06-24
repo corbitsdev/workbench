@@ -18,7 +18,7 @@ function makeFetchStub(response: unknown, status = 200): FetchStub {
 }
 
 describe('createAttioTools', () => {
-  it('exposes the four read-only tools', () => {
+  it('exposes the read-only tools', () => {
     const tools = createAttioTools({ apiKey: 'test-key' });
     const names = tools.map((t) => t.definition.name).sort();
     expect(names).toEqual([
@@ -26,6 +26,7 @@ describe('createAttioTools', () => {
       'attio_list_objects',
       'attio_list_workspace_members',
       'attio_query_records',
+      'attio_search_records',
     ]);
   });
 
@@ -67,14 +68,21 @@ describe('attio_query_records handler', () => {
     const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
 
     await runner.run(
-      { id: 'call_1', name: 'attio_query_records', arguments: { object: 'companies' } },
+      {
+        id: 'call_1',
+        name: 'attio_query_records',
+        arguments: { object: 'companies' },
+      },
       new AbortController().signal
     );
 
     const call = fetcher.mock.calls[0];
     expect(call?.[0]).toBe('https://api.attio.com/v2/objects/companies/records/query');
     expect(call?.[1].method).toBe('POST');
-    expect(JSON.parse(String(call?.[1].body))).toEqual({ limit: 25, offset: 0 });
+    expect(JSON.parse(String(call?.[1].body))).toEqual({
+      limit: 25,
+      offset: 0,
+    });
   });
 
   it('caps limit at 100 and forwards offset', async () => {
@@ -99,7 +107,11 @@ describe('attio_query_records handler', () => {
     const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
 
     await runner.run(
-      { id: 'call_1', name: 'attio_query_records', arguments: { object: 'my objects' } },
+      {
+        id: 'call_1',
+        name: 'attio_query_records',
+        arguments: { object: 'my objects' },
+      },
       new AbortController().signal
     );
 
@@ -121,6 +133,110 @@ describe('attio_query_records handler', () => {
     expect(result.content).toContain('object is required');
     expect(fetcher.mock.calls).toHaveLength(0);
   });
+
+  it('forwards a filter object into the request body', async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
+
+    await runner.run(
+      {
+        id: 'call_1',
+        name: 'attio_query_records',
+        arguments: {
+          object: 'companies',
+          filter: { name: { $contains: 'Tribe Capital' } },
+        },
+      },
+      new AbortController().signal
+    );
+
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1].body))).toEqual({
+      limit: 25,
+      offset: 0,
+      filter: { name: { $contains: 'Tribe Capital' } },
+    });
+  });
+
+  it('forwards a sorts array into the request body', async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
+
+    await runner.run(
+      {
+        id: 'call_1',
+        name: 'attio_query_records',
+        arguments: {
+          object: 'companies',
+          sorts: [{ attribute: 'name', direction: 'asc' }],
+        },
+      },
+      new AbortController().signal
+    );
+
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1].body))).toEqual({
+      limit: 25,
+      offset: 0,
+      sorts: [{ attribute: 'name', direction: 'asc' }],
+    });
+  });
+
+  it('omits filter and sorts from the body when not provided', async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
+
+    await runner.run(
+      {
+        id: 'call_1',
+        name: 'attio_query_records',
+        arguments: { object: 'companies' },
+      },
+      new AbortController().signal
+    );
+
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1].body));
+    expect('filter' in body).toBe(false);
+    expect('sorts' in body).toBe(false);
+  });
+});
+
+describe('attio_search_records handler', () => {
+  it('POSTs the query to /v2/records/search and returns the data field', async () => {
+    const fetcher = makeFetchStub({ data: [{ id: { record_id: 'rec_1' } }] });
+    const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
+
+    const result = await runner.run(
+      {
+        id: 'call_1',
+        name: 'attio_search_records',
+        arguments: { query: 'Tribe Capital' },
+      },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual([{ id: { record_id: 'rec_1' } }]);
+
+    const call = fetcher.mock.calls[0];
+    expect(call?.[0]).toBe('https://api.attio.com/v2/records/search');
+    expect(call?.[1].method).toBe('POST');
+    expect(JSON.parse(String(call?.[1].body))).toEqual({
+      query: 'Tribe Capital',
+    });
+  });
+
+  it('requires the query argument', async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
+
+    const result = await runner.run(
+      { id: 'call_1', name: 'attio_search_records', arguments: {} },
+      new AbortController().signal
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('query is required');
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
 });
 
 describe('attio_get_record handler', () => {
@@ -138,7 +254,9 @@ describe('attio_get_record handler', () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(String(result.content))).toEqual({ id: { record_id: 'rec_1' } });
+    expect(JSON.parse(String(result.content))).toEqual({
+      id: { record_id: 'rec_1' },
+    });
 
     const call = fetcher.mock.calls[0];
     expect(call?.[0]).toBe('https://api.attio.com/v2/objects/companies/records/rec%2F1');
@@ -150,7 +268,11 @@ describe('attio_get_record handler', () => {
     const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
 
     const result = await runner.run(
-      { id: 'call_1', name: 'attio_get_record', arguments: { object: 'companies' } },
+      {
+        id: 'call_1',
+        name: 'attio_get_record',
+        arguments: { object: 'companies' },
+      },
       new AbortController().signal
     );
 
@@ -162,7 +284,9 @@ describe('attio_get_record handler', () => {
 
 describe('attio_list_workspace_members handler', () => {
   it('GETs /v2/workspace-members', async () => {
-    const fetcher = makeFetchStub({ data: [{ id: { workspace_member_id: 'wm_1' } }] });
+    const fetcher = makeFetchStub({
+      data: [{ id: { workspace_member_id: 'wm_1' } }],
+    });
     const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
 
     const result = await runner.run(
@@ -212,7 +336,11 @@ describe('error handling', () => {
     const runner = createToolRunner(createAttioTools({ apiKey: 'test-key', fetcher }));
 
     const result = await runner.run(
-      { id: 'call_1', name: 'attio_query_records', arguments: { object: 'companies' } },
+      {
+        id: 'call_1',
+        name: 'attio_query_records',
+        arguments: { object: 'companies' },
+      },
       new AbortController().signal
     );
 
@@ -239,7 +367,10 @@ describe('ATTIO_HUB_TOOLS', () => {
     for (const [name, entry] of Object.entries(ATTIO_HUB_TOOLS)) {
       expect(entry.providerName).toBe('attio');
       expect(entry.definition.name).toBe(name);
-      const tools = entry.createTools({ apiKey: 'k', baseURL: 'https://api.attio.com' });
+      const tools = entry.createTools({
+        apiKey: 'k',
+        baseURL: 'https://api.attio.com',
+      });
       expect(tools).toHaveLength(1);
       expect(tools[0]?.definition.name).toBe(name);
     }
@@ -253,7 +384,11 @@ describe('ATTIO_HUB_TOOLS', () => {
     });
     // The hub createTools path does not accept a fetcher, so exercise the default
     // base resolution via createAttioTools directly to confirm override behavior.
-    const direct = createAttioTools({ apiKey: 'k', baseUrl: 'https://eu.attio.test', fetcher });
+    const direct = createAttioTools({
+      apiKey: 'k',
+      baseUrl: 'https://eu.attio.test',
+      fetcher,
+    });
     const runner = createToolRunner(direct);
     await runner.run(
       { id: 'c', name: 'attio_list_objects', arguments: {} },

@@ -26,7 +26,9 @@ export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[]
   },
 ];
 
-export const PERSONAL_AGENT_MODEL_CONFIG = { defaultModel: 'kimi-k2.6' } as const;
+export const PERSONAL_AGENT_MODEL_CONFIG = {
+  defaultModel: 'kimi-k2.6',
+} as const;
 
 /** Display name of the personal agent; also the per-tenant seed idempotency key. */
 export const PERSONAL_AGENT_NAME = 'Myra';
@@ -59,6 +61,7 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   'linear_list_users',
   'attio_list_objects',
   'attio_query_records',
+  'attio_search_records',
   'attio_get_record',
   'attio_list_workspace_members',
   'granola_list_notes',

@@ -49,6 +49,7 @@ const PHRASES: Record<string, FriendlyPhrase> = {
 
   // Attio CRM
   attio_query_records: 'Searching the CRM',
+  attio_search_records: 'Searching the CRM',
   attio_get_record: 'Looking up a CRM record',
   attio_list_objects: 'Browsing CRM objects',
   attio_list_workspace_members: 'Listing workspace members',

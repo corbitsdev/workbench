@@ -35,6 +35,7 @@ describe('toLlmToolName (CL-2306)', () => {
       'list_principals',
       'attio_list_objects',
       'attio_query_records',
+      'attio_search_records',
       'attio_get_record',
       'attio_list_workspace_members',
       'exa_search',
