@@ -323,3 +323,73 @@ export async function getAnalyticsSummaryByAgent(
   }
   return result.agents;
 }
+
+const ActivityCountRowSchema = type({
+  key: 'string',
+  count: 'number',
+});
+
+const ActivityOverviewSchema = type({
+  tenantId: 'string',
+  range: {
+    'startDate?': 'string',
+    'endDate?': 'string',
+  },
+  artifacts: {
+    total: 'number',
+    createdInRange: 'number',
+    byStatus: ActivityCountRowSchema.array(),
+    byKind: ActivityCountRowSchema.array(),
+  },
+  workflowRuns: {
+    executionRecords: 'number',
+    executionsStartedInRange: 'number',
+    activeExecutions: 'number',
+    byStatus: ActivityCountRowSchema.array(),
+    byKind: ActivityCountRowSchema.array(),
+    deploymentsIndexed: 'number',
+  },
+  agentInstances: {
+    active: 'number',
+    startedInRange: 'number',
+    endedInRange: 'number',
+    total: 'number',
+  },
+  inference: {
+    summary: AnalyticsSummarySchema,
+    byAgent: AnalyticsAgentRowSchema.array(),
+    byInstance: type({
+      instanceId: 'string',
+      agentId: 'string',
+      agentName: 'string | null',
+      turnCount: 'number',
+      failedTurnCount: 'number',
+      toolCallCount: 'number',
+      toolErrorCount: 'number',
+      inputTokens: 'number',
+      outputTokens: 'number',
+      cacheReadTokens: 'number',
+      cacheWriteTokens: 'number',
+      thinkingTokens: 'number',
+    }).array(),
+  },
+});
+
+export type ActivityOverview = typeof ActivityOverviewSchema.infer;
+
+export async function getActivityOverview(
+  tenantId: string,
+  opts?: { startDate?: string; endDate?: string }
+): Promise<ActivityOverview> {
+  const params = new URLSearchParams();
+  if (opts?.startDate) params.set('startDate', opts.startDate);
+  if (opts?.endDate) params.set('endDate', opts.endDate);
+  const qs = params.toString();
+  const path = `tenants/${encodeURIComponent(tenantId)}/activity/overview${qs ? `?${qs}` : ''}`;
+  const raw = await hubFetch<unknown>('GET', path);
+  const result = ActivityOverviewSchema(raw);
+  if (result instanceof type.errors) {
+    throw new Error(`Invalid activity overview response: ${result.summary}`);
+  }
+  return result;
+}

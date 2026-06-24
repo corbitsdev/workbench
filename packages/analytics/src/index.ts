@@ -6,7 +6,9 @@ export {
 export {
   getAnalyticsSummary,
   getAnalyticsSummaryByAgent,
+  getAnalyticsSummaryByInstance,
   type AnalyticsAgentRow,
+  type AnalyticsInstanceRow,
   type AnalyticsDateRange,
   type AnalyticsSummary,
 } from './queries';

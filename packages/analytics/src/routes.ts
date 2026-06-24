@@ -13,7 +13,11 @@ export type AnalyticsRouteEnv = Env & {
   };
 };
 
-import { getAnalyticsSummary, getAnalyticsSummaryByAgent } from './queries';
+import {
+  getAnalyticsSummary,
+  getAnalyticsSummaryByAgent,
+  getAnalyticsSummaryByInstance,
+} from './queries';
 
 function optionalQuery(c: Context, name: string): string | undefined {
   const value = c.req.query(name);
@@ -157,8 +161,65 @@ export function createAnalyticsRoutes({
     }
   };
 
+  const byInstanceHandler = async (c: Context<AnalyticsRouteEnv>) => {
+    const tenantId = c.req.param('tenantId') ?? c.get('tenant').id;
+    if (!tenantId) {
+      return c.json({ error: { code: 'bad_request', message: 'Missing tenantId' } }, 400);
+    }
+
+    const queryInput: {
+      startDate?: string;
+      endDate?: string;
+      agentId?: string;
+      instanceId?: string;
+    } = {};
+    const startDate = optionalQuery(c, 'startDate');
+    const endDate = optionalQuery(c, 'endDate');
+    const agentId = optionalQuery(c, 'agentId');
+    const instanceId = optionalQuery(c, 'instanceId');
+    if (startDate !== undefined) queryInput.startDate = startDate;
+    if (endDate !== undefined) queryInput.endDate = endDate;
+    if (agentId !== undefined) queryInput.agentId = agentId;
+    if (instanceId !== undefined) queryInput.instanceId = instanceId;
+
+    const query = SummaryQuery(queryInput);
+    if (query instanceof type.errors) {
+      return c.json({ error: { code: 'bad_request', message: query.summary } }, 400);
+    }
+
+    try {
+      const range =
+        query.startDate !== undefined || query.endDate !== undefined
+          ? {
+              ...(query.startDate !== undefined ? { startDate: query.startDate } : {}),
+              ...(query.endDate !== undefined ? { endDate: query.endDate } : {}),
+            }
+          : undefined;
+      return c.json({
+        tenantId,
+        instances: await getAnalyticsSummaryByInstance({
+          db,
+          tenantId,
+          ...(query.agentId !== undefined ? { agentId: query.agentId } : {}),
+          ...(query.instanceId !== undefined ? { instanceId: query.instanceId } : {}),
+          ...(range !== undefined ? { range } : {}),
+        }),
+      });
+    } catch (error) {
+      log.error('Analytics by-instance query failed for tenant {tenantId}: {error}', {
+        tenantId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return c.json(
+        { error: { code: 'internal_error', message: 'Failed to query analytics' } },
+        500
+      );
+    }
+  };
+
   app.get('/summary', readGate, summaryHandler);
   app.get('/summary/by-agent', readGate, byAgentHandler);
+  app.get('/summary/by-instance', readGate, byInstanceHandler);
 
   return app;
 }

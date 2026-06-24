@@ -68,6 +68,7 @@ import {
 } from './services/grant-reconcile';
 import { createMembersRouter } from './routes/members';
 import { createArtifactsRouter } from './routes/artifacts';
+import { createActivityRouter } from './routes/activity';
 import { createGammaTemplatesRouter } from './routes/gamma-templates';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createFeedbackRouter } from './routes/feedback';
@@ -456,6 +457,7 @@ const hubApp = createApp({
 // Active tenant membership is enforced by createApp's resolveTenant on
 // /api/tenants/:tenantId/* (org members have no role grants).
 hubApp.route('/api/tenants/:tenantId/analytics', createAnalyticsRoutes({ db }));
+hubApp.route('/api/tenants/:tenantId/activity', createActivityRouter({ db }));
 
 // ─── Parent Hono ────────────────────────────────────────────────────
 

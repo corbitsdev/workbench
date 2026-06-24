@@ -4,28 +4,31 @@ GTM Workbench records agent and workflow usage in PostgreSQL and exposes tenant-
 
 ## Architecture
 
-| Layer                  | Responsibility                                                                                                                   |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `@workbench/analytics` | Event mapping, fact + daily rollup persistence, Hono routes                                                                      |
-| Hub                    | Subscribes to sidecar `agent.event` frames; mounts `/api/tenants/:tenantId/analytics/*`                                          |
-| Sidecar                | Forwards harness inference events (chat agents) and **multi-step workflow** supervisor events to the hub via `hubLink.sendEvent` |
-| Web                    | `getAnalyticsSummary` → Insights KPI cards                                                                                       |
+| Layer                  | Responsibility                                                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `@workbench/analytics` | Event mapping, fact + daily rollup persistence, Hono routes                                                                            |
+| Hub                    | Subscribes to sidecar `agent.event` frames; mounts `/api/tenants/:tenantId/analytics/*`                                                |
+| Sidecar                | Forwards harness inference events (chat agents) and **multi-step workflow** supervisor events to the hub via `hubLink.sendEvent`       |
+| Hub (activity)         | `GET /api/tenants/:tenantId/activity/overview` — operational counts (artifacts, workflow runs, instances) + embedded inference rollups |
+| Web                    | `getActivityOverview` → Insights operational ledger + inference KPIs                                                                   |
 
 Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter.events` → `createAnalyticsSubscriber` → `analytics_event` + `analytics_rollup_daily`.**
 
 ## Event coverage matrix
 
-| Source                                   | Event types ingested                                                                     | Rollup contribution                                                                                |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Chat agent (Myra, Oat, …)                | `inference.usage`, `inference.done`, `inference.error`, `tool.done`, `message.run.ended` | Turns/tools from run boundaries; **tokens from `inference.done` only** (usage stored as raw facts) |
-| Multi-step workflow (supervisor address) | Same inference vocabulary from workflow-process child                                    | Same rules; requires deploy frame `config.sessionId` and supervisor `agent_instance` row           |
-| Feedback / workflow product actions      | Not in v1 analytics schema                                                               | Use `output_feedback` and workflow_run tables for product metrics                                  |
-| CRM / Attio / external sync              | **No dedicated analytics stream**                                                        | Counted when agents call those integrations via **`tool.done`** (tool call + error rollups)        |
+| Source                                   | Event types ingested                                                                     | Rollup contribution                                                                                    |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Chat agent (Myra, Oat, …)                | `inference.usage`, `inference.done`, `inference.error`, `tool.done`, `message.run.ended` | Turns/tools from run boundaries; **tokens from `inference.done` only** (usage stored as raw facts)     |
+| Multi-step workflow (supervisor address) | Same inference vocabulary from workflow-process child                                    | Same rules; requires deploy frame `config.sessionId` and supervisor `agent_instance` row               |
+| Feedback / workflow product actions      | Not in v1 analytics schema                                                               | Workflow executions and artifacts surface on **activity/overview**; feedback remains `output_feedback` |
+| CRM / Attio / external sync              | **No dedicated analytics stream**                                                        | Counted when agents call those integrations via **`tool.done`** (tool call + error rollups)            |
 
 ## API
 
 - `GET /api/tenants/:tenantId/analytics/summary` — tenant totals (`startDate`, `endDate`, `agentId`, `instanceId` query params)
 - `GET /api/tenants/:tenantId/analytics/summary/by-agent` — per-`agentId` breakdown (same filters)
+- `GET /api/tenants/:tenantId/analytics/summary/by-instance` — per-`instanceId` breakdown (same filters)
+- `GET /api/tenants/:tenantId/activity/overview` — tenant operational ledger (`startDate`, `endDate`): artifact and workflow-run counts from hub tables, agent-instance lifecycle counts, plus `inference` block (summary, by-agent, by-instance) from `analytics_rollup_daily`
 
 Requires an active principal on the tenant (Interchange `resolveTenant` on `/api/tenants/:tenantId/*`). Org members do not carry role grants; analytics is membership-gated like other product reads.
 

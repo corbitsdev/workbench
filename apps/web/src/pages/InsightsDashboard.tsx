@@ -2,12 +2,8 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart2 } from 'lucide-react';
 import { useWorkbenches } from '../hooks/use-workbenches';
-import {
-  describeHubApiFailure,
-  getAnalyticsSummary,
-  getAnalyticsSummaryByAgent,
-} from '../lib/hub-api';
-import type { AnalyticsAgentRow, AnalyticsSummary } from '../lib/hub-api';
+import { describeHubApiFailure, getActivityOverview } from '../lib/hub-api';
+import type { ActivityOverview, AnalyticsAgentRow, AnalyticsSummary } from '../lib/hub-api';
 
 type Preset = '7d' | '30d' | '90d' | 'all';
 
@@ -149,6 +145,78 @@ function SkeletonGrid() {
   );
 }
 
+function CountTable({ title, rows }: { title: string; rows: { key: string; count: number }[] }) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-[12px] border border-border bg-surface p-4">
+        <h3 className="mb-2 text-[13px] font-semibold text-text">{title}</h3>
+        <p className="text-[13px] text-text-3">None recorded</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[12px] border border-border bg-surface p-4">
+      <h3 className="mb-3 text-[13px] font-semibold text-text">{title}</h3>
+      <table className="w-full text-left text-[13px]">
+        <thead className="text-[12px] text-text-3">
+          <tr>
+            <th className="pb-2 font-medium">Key</th>
+            <th className="pb-2 text-right font-medium">Count</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <td className="py-1.5 text-text-2">{row.key}</td>
+              <td className="py-1.5 text-right font-medium text-text">{formatNumber(row.count)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function OperationalLedger({ data }: { data: ActivityOverview }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 className="text-[14px] font-semibold text-text">Operational ledger</h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <KPICard label="Artifacts (total)" value={formatNumber(data.artifacts.total)} />
+        <KPICard label="Artifacts (in range)" value={formatNumber(data.artifacts.createdInRange)} />
+        <KPICard
+          label="Workflow executions"
+          value={formatNumber(data.workflowRuns.executionRecords)}
+        />
+        <KPICard
+          label="Active workflow runs"
+          value={formatNumber(data.workflowRuns.activeExecutions)}
+        />
+        <KPICard
+          label="Agent instances (active)"
+          value={formatNumber(data.agentInstances.active)}
+        />
+        <KPICard label="Agent instances (total)" value={formatNumber(data.agentInstances.total)} />
+        <KPICard
+          label="Instances started (range)"
+          value={formatNumber(data.agentInstances.startedInRange)}
+        />
+        <KPICard
+          label="Deployments indexed"
+          value={formatNumber(data.workflowRuns.deploymentsIndexed)}
+        />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <CountTable title="Artifacts by status" rows={data.artifacts.byStatus} />
+        <CountTable title="Artifacts by kind" rows={data.artifacts.byKind} />
+        <CountTable title="Workflow runs by status" rows={data.workflowRuns.byStatus} />
+        <CountTable title="Workflow runs by kind" rows={data.workflowRuns.byKind} />
+      </div>
+    </div>
+  );
+}
+
 function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
   if (agents.length === 0) return null;
 
@@ -185,6 +253,48 @@ function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
   );
 }
 
+function InstanceBreakdown({
+  instances,
+}: {
+  instances: ActivityOverview['inference']['byInstance'];
+}) {
+  if (instances.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <h2 className="text-[13px] font-semibold text-text">By agent instance</h2>
+      <div className="overflow-x-auto rounded-[12px] border border-border">
+        <table className="w-full min-w-[560px] text-left text-[13px]">
+          <thead className="border-b border-border bg-surface text-[12px] text-text-3">
+            <tr>
+              <th className="px-4 py-2 font-medium">Instance</th>
+              <th className="px-4 py-2 font-medium">Agent</th>
+              <th className="px-4 py-2 font-medium text-right">Turns</th>
+              <th className="px-4 py-2 font-medium text-right">Tool calls</th>
+              <th className="px-4 py-2 font-medium text-right">Tokens (in+out)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border bg-bg">
+            {instances.map((row) => (
+              <tr key={row.instanceId}>
+                <td className="px-4 py-2 font-mono text-[12px] text-text-2">{row.instanceId}</td>
+                <td className="px-4 py-2 text-text">{row.agentName ?? row.agentId}</td>
+                <td className="px-4 py-2 text-right text-text-2">{formatNumber(row.turnCount)}</td>
+                <td className="px-4 py-2 text-right text-text-2">
+                  {formatNumber(row.toolCallCount)}
+                </td>
+                <td className="px-4 py-2 text-right text-text-2">
+                  {formatNumber(row.inputTokens + row.outputTokens)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function InsightsDashboard() {
   const [preset, setPreset] = useState<Preset>('30d');
   const [tenantOverride, setTenantOverride] = useState<string | null>(null);
@@ -201,21 +311,14 @@ export function InsightsDashboard() {
 
   const dates = presetToDates(preset);
 
-  const summaryQuery = useQuery({
-    queryKey: ['analytics-summary', tenantId, preset],
-    queryFn: () => getAnalyticsSummary(tenantId!, dates),
+  const overviewQuery = useQuery({
+    queryKey: ['activity-overview', tenantId, preset],
+    queryFn: () => getActivityOverview(tenantId!, dates),
     enabled: !!tenantId,
     staleTime: 5 * 60_000,
   });
 
-  const byAgentQuery = useQuery({
-    queryKey: ['analytics-by-agent', tenantId, preset],
-    queryFn: () => getAnalyticsSummaryByAgent(tenantId!, dates),
-    enabled: !!tenantId,
-    staleTime: 5 * 60_000,
-  });
-
-  const showSummaryLoading = workbenches.isLoading || (!!tenantId && summaryQuery.isLoading);
+  const showSummaryLoading = workbenches.isLoading || (!!tenantId && overviewQuery.isLoading);
 
   return (
     <div className="flex h-full overflow-hidden bg-bg">
@@ -275,16 +378,21 @@ export function InsightsDashboard() {
             </div>
           )}
 
-          {summaryQuery.isError && (
+          {overviewQuery.isError && (
             <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
-              {describeHubApiFailure(summaryQuery.error)}
+              {describeHubApiFailure(overviewQuery.error)}
             </div>
           )}
 
-          {summaryQuery.data && (
-            <div className="flex flex-col gap-8">
-              <SummaryContent data={summaryQuery.data} />
-              {byAgentQuery.data && <AgentBreakdown agents={byAgentQuery.data} />}
+          {overviewQuery.data && (
+            <div className="flex flex-col gap-10">
+              <OperationalLedger data={overviewQuery.data} />
+              <div className="flex flex-col gap-4">
+                <h2 className="text-[14px] font-semibold text-text">Inference &amp; tool usage</h2>
+                <SummaryContent data={overviewQuery.data.inference.summary} />
+                <AgentBreakdown agents={overviewQuery.data.inference.byAgent} />
+                <InstanceBreakdown instances={overviewQuery.data.inference.byInstance} />
+              </div>
             </div>
           )}
         </div>
