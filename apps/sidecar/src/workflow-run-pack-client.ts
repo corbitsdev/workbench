@@ -17,8 +17,8 @@ import fs from 'node:fs';
 import git from 'isomorphic-git';
 import { getLogger } from '@intx/log';
 import type { RepoId, RepoStore } from '@intx/hub-sessions';
-import { collectReachableObjects } from '@intx/storage-isogit';
-import type { HubLink } from '@intx/hub-agent';
+import { collectReachableObjects } from '@workbench/storage-isogit';
+import type { HubLink } from '@workbench/hub-agent';
 
 const logger = getLogger(['interchange', 'sidecar', 'workflow-run-pack-client']);
 

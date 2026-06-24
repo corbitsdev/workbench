@@ -588,7 +588,10 @@ async function syncPersonalAgentForUser(
         paInstanceId = getMyraInstanceId(instances);
         provisionedMyra = paInstanceId !== null;
         if (provisionedMyra) {
-          meLog.info('Provisioned Myra instance on POST /v1/me', { userId, instanceId: paInstanceId });
+          meLog.info('Provisioned Myra instance on POST /v1/me', {
+            userId,
+            instanceId: paInstanceId,
+          });
         }
       } catch (err) {
         log.warn('Failed to re-provision Myra on POST /v1/me', {
@@ -615,7 +618,9 @@ async function syncPersonalAgentForUser(
           error: err instanceof Error ? err : new Error(String(err)),
         });
       }
+    }
 
+    if (paInstanceId) {
       try {
         const paForGrants = await db.query.agentInstance.findFirst({
           where: eq(intxSchema.agentInstance.id, paInstanceId),

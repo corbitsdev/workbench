@@ -68,9 +68,12 @@ describe('Members router', () => {
     expect(bob?.name).toBe('Bob');
   });
 
-  it('falls back to truncated principal id when user row is missing', async () => {
+  it('omits user principals with no matching user row', async () => {
     const callerPrincipal = { id: 'prn-1', refId: 'usr-1' };
-    const userPrincipals = [{ id: 'prn-ABCDEFGH', refId: 'usr-orphan', kind: 'user' }];
+    const userPrincipals = [
+      { id: 'prn-1', refId: 'usr-1', kind: 'user' },
+      { id: 'prn-ABCDEFGH', refId: 'system', kind: 'user' },
+    ];
     // biome-ignore lint/suspicious/noExplicitAny: structural mock
     const db: any = {
       query: {
@@ -79,7 +82,7 @@ describe('Members router', () => {
           findMany: mock(() => Promise.resolve(userPrincipals)),
         },
         user: {
-          findMany: mock(() => Promise.resolve([])),
+          findMany: mock(() => Promise.resolve([{ id: 'usr-1', name: 'Alice' }])),
         },
       },
     };
@@ -87,7 +90,8 @@ describe('Members router', () => {
     const res = await app.request('/members?tenantId=tn-1');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { members: { id: string; name: string }[] };
-    const member = body.members.find((m) => m.id === 'prn-ABCDEFGH');
-    expect(member?.name).toBe('prn-ABCD');
+    expect(body.members).toHaveLength(1);
+    expect(body.members[0]?.id).toBe('prn-1');
+    expect(body.members.find((m) => m.id === 'prn-ABCDEFGH')).toBeUndefined();
   });
 });

@@ -9,11 +9,16 @@ import {
   importPrivateKeyBytes,
   verifySSHSignature,
 } from '@intx/crypto-node';
-import { createSidecarOrchestrator, type HubLink } from '@intx/hub-agent';
+import { createSidecarOrchestrator, type HubLink } from '@workbench/hub-agent';
+import type { InferenceEvent } from '@intx/types/runtime';
 import { createAgentRepoStore } from '@intx/hub-sessions';
 import { installGeminiThoughtSignaturePatch } from './gemini-thought-signature-patch';
 import { createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
-import { resolveSidecarHeartbeat, resolveToolPackageCache } from './config';
+import {
+  resolveSidecarHeartbeat,
+  resolveSidecarHubLinkQueue,
+  resolveToolPackageCache,
+} from './config';
 // Workflow-host wiring: `createSidecarDeployRouter` is the production
 // deploy routing the orchestrator hands to the link's `agent.deploy`
 // handler. Every inbound frame flows through a freshly-constructed
@@ -49,6 +54,7 @@ function requireEnv(name: string): string {
 }
 
 const heartbeat = resolveSidecarHeartbeat(process.env);
+const hubLinkQueue = resolveSidecarHubLinkQueue(process.env);
 const dataDir = requireEnv('SIDECAR_DATA_DIR');
 const toolPackageCache = resolveToolPackageCache(process.env, dataDir);
 
@@ -165,6 +171,10 @@ const wrappedRepoStore = createWorkflowRunPackPushingRepoStore({
 // are propagated so the child's `#!/usr/bin/env bun` shebang can resolve
 // `bun`, agent code can find a writable home, and tmp-file APIs land on
 // the same temp root the host uses.
+const workflowInferencePublisher: {
+  send?: (agentAddress: string, sessionId: string, event: InferenceEvent) => void;
+} = {};
+
 const multistepSubstrateEnv: Record<string, string> = {
   SIDECAR_DATA_DIR: dataDir,
   SIDECAR_SIGNING_PUBLIC_KEY: Buffer.from(sidecarSigningKey.publicKey).toString('hex'),
@@ -190,6 +200,7 @@ const orchestrator = createSidecarOrchestrator({
   dataDir,
   pingIntervalMs: heartbeat.pingIntervalMs,
   reconnectDelayMs: heartbeat.reconnectDelayMs,
+  maxOutboundQueue: hubLinkQueue.maxOutboundQueue,
   transport,
   buildHarness: createDefaultHarnessBuilder({
     hubHttpUrl: wsUrlToHttp(hubWsUrl),
@@ -228,10 +239,14 @@ const orchestrator = createSidecarOrchestrator({
       multistepSignalRouter,
       multistepDrainRouter,
       multistepSubstrateEnv,
+      publishWorkflowInferenceEvent: (agentAddress, sessionId, event) => {
+        workflowInferencePublisher.send?.(agentAddress, sessionId, event as InferenceEvent);
+      },
     }),
 });
 
 resolvedHubLink = orchestrator.hubLink;
+workflowInferencePublisher.send = orchestrator.hubLink.sendEvent;
 
 // Prune orphaned on-disk deployment dirs BEFORE the orchestrator's hub-link
 // connects, so interchange's `restoreSessions()` never re-establishes

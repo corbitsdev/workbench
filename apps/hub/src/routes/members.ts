@@ -86,17 +86,19 @@ export function createMembersRouter(db: DB['db']): Hono<{ Variables: { userId: s
 
       const userById = new Map(users.map((u) => [u.id, u]));
 
-      const members = userPrincipals.map((p) => {
-        const name = userById.get(p.refId)?.name;
-        if (!name) {
+      const members: { id: string; name: string }[] = [];
+      for (const p of userPrincipals) {
+        const userRow = userById.get(p.refId);
+        if (!userRow) {
           log.warn('User principal has no matching user row — data integrity issue', {
             principalId: p.id,
             refId: p.refId,
             tenantId,
           });
+          continue;
         }
-        return { id: p.id, name: name ?? p.id.slice(0, 8) };
-      });
+        members.push({ id: p.id, name: userRow.name });
+      }
 
       return c.json({ members });
     }

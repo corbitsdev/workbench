@@ -23,6 +23,8 @@ COPY packages/client/package.json packages/client/
 COPY packages/context-repair/package.json packages/context-repair/
 COPY packages/analytics/package.json packages/analytics/
 COPY packages/event-collector/package.json packages/event-collector/
+COPY packages/hub-agent/package.json packages/hub-agent/
+COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
 COPY packages/openapi-arktype/package.json packages/openapi-arktype/
 COPY packages/prompts/package.json packages/prompts/
@@ -67,6 +69,8 @@ COPY packages/agents/ packages/agents/
 COPY packages/analytics/ packages/analytics/
 COPY packages/catalog/ packages/catalog/
 COPY packages/event-collector/ packages/event-collector/
+COPY packages/hub-agent/ packages/hub-agent/
+COPY packages/storage-isogit/ packages/storage-isogit/
 COPY packages/chat/ packages/chat/
 COPY packages/last30days-core/ packages/last30days-core/
 COPY packages/prompts/ packages/prompts/

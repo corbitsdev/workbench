@@ -4,7 +4,7 @@ import { describe, it, expect, mock } from 'bun:test';
 // build() touches isogit and posix tools — all real filesystem/process
 // operations. We mock at the module boundary to keep the tests fast and hermetic.
 
-mock.module('@intx/storage-isogit', () => ({
+mock.module('@workbench/storage-isogit', () => ({
   createIsogitStore: mock(async () => ({
     type: 'isogit',
     load: mock(async () => ({
@@ -44,7 +44,7 @@ mock.module('@intx/harness', () => ({
 const readDeployTreeMock = mock(async () => ({
   systemPrompt: undefined as string | undefined,
 }));
-mock.module('@intx/hub-agent', () => ({
+mock.module('@workbench/hub-agent', () => ({
   readDeployTree: readDeployTreeMock,
 }));
 

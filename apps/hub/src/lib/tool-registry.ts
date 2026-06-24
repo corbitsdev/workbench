@@ -25,6 +25,7 @@ import { LIST_AGENTS_HUB_TOOLS } from '../tools/list-agents';
 import { LAST30DAYS_CORE_HUB_TOOLS } from '../tools/last30days-core-tools';
 import { GAMMA_LIST_TEMPLATES_HUB_TOOL } from '../tools/gamma-templates';
 import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
+import { canonicalizeToolNames } from '@workbench/agents';
 
 // Hub-session-token rail. Native-migrated tools (the first group) are
 // here only as the coexistence fallback and are removed once the native
@@ -127,5 +128,6 @@ export function getToolNamesFromCapabilities(capabilities: unknown): string[] {
   if (typeof capabilities !== 'object' || capabilities === null) return [];
   const tools = (capabilities as Record<string, unknown>)['tools'];
   if (!Array.isArray(tools)) return [];
-  return tools.filter((t): t is string => typeof t === 'string');
+  const names = tools.filter((t): t is string => typeof t === 'string');
+  return canonicalizeToolNames(names);
 }

@@ -49,7 +49,7 @@ import { DEFAULT_REGISTRY_MAX_TARBALL_BYTES, DEFAULT_TOOL_CACHE_MAX_BYTES } from
 import type { Agent, AgentDefinition, AuthorizeFn, BaseEnv, DirectorRegistry } from '@intx/agent';
 import { createAgent, createDefaultDirectorRegistry } from '@intx/agent';
 import { createSSHSignature } from '@intx/crypto-node';
-import { createIsogitStore, type CommitSigner } from '@intx/storage-isogit';
+import { createIsogitStore, type CommitSigner } from '@workbench/storage-isogit';
 import { createWorkbenchDirectorRegistry } from '@workbench/agents';
 import {
   createAgentRepoStore,
@@ -698,7 +698,11 @@ function stepToolContext(env: StepEnvBase): StepToolContext {
   return context as StepToolContext;
 }
 
-async function resolveInputSkills(input: unknown, env: StepEnvBase, runId: string): Promise<unknown> {
+async function resolveInputSkills(
+  input: unknown,
+  env: StepEnvBase,
+  runId: string
+): Promise<unknown> {
   const skillIds = selectedSkillIds(input);
   if (skillIds.length === 0) return input;
 
@@ -716,7 +720,9 @@ async function resolveInputSkills(input: unknown, env: StepEnvBase, runId: strin
     }),
   });
   if (!response.ok) {
-    throw new Error(`inline inference step: failed to resolve selected skills (${response.status})`);
+    throw new Error(
+      `inline inference step: failed to resolve selected skills (${response.status})`
+    );
   }
   const body = (await response.json()) as { skills?: unknown };
   if (!Array.isArray(body.skills)) {
@@ -746,7 +752,9 @@ async function runInlineInferenceStep(args: {
   const envBase = await args.buildEnv(args.req);
   const runId = args.req.authzContext.runId;
   if (runId === undefined) {
-    throw new Error('inline inference step: AuthorizeContext.runId is required to resolve selected skills');
+    throw new Error(
+      'inline inference step: AuthorizeContext.runId is required to resolve selected skills'
+    );
   }
   const resolvedInput = await resolveInputSkills(args.req.input, envBase, runId);
   const env: BaseEnv = { ...envBase, authorize: inlineDenyAllAuthorize };

@@ -7,25 +7,21 @@
 // Any logic that would benefit a future alternative-sidecar
 // implementation lives inside `@intx/workflow-host`, not here.
 
-import { createHash, createPublicKey, sign as nodeSign } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join as pathJoin } from "node:path";
-import { fileURLToPath } from "node:url";
+import { createHash, createPublicKey, sign as nodeSign } from 'node:crypto';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, join as pathJoin } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { importPrivateKeyBytes } from "@intx/crypto-node";
-import { getLogger } from "@intx/log";
-import type { HubTransport } from "@intx/mail-memory";
-import type {
-  RepoId,
-  RepoStore,
-  WorkflowRunSupervisorPrincipal,
-} from "@intx/hub-sessions";
+import { importPrivateKeyBytes } from '@intx/crypto-node';
+import { getLogger } from '@intx/log';
+import type { HubTransport } from '@intx/mail-memory';
+import type { RepoId, RepoStore, WorkflowRunSupervisorPrincipal } from '@intx/hub-sessions';
 import type {
   AgentKeyStore,
   DeployRouter,
   DeployRouterResult,
   SessionManager,
-} from "@intx/hub-agent";
+} from '@workbench/hub-agent';
 import {
   createWorkflowSupervisor,
   wrapHubTransportAsMailBus,
@@ -43,18 +39,19 @@ import {
   type SupervisorRunEvent,
   type TrivialLaunch,
   type WorkflowSupervisor,
-} from "@intx/workflow-host";
-import type { InferenceEvent } from "@intx/types/runtime";
-import type { AgentDeployFrame } from "@intx/types/sidecar";
-import { STEP_ID_PATTERN } from "@intx/workflow";
+} from '@intx/workflow-host';
+import { HarnessConfig, type InferenceEvent } from '@intx/types/runtime';
+import { type } from 'arktype';
+import type { AgentDeployFrame } from '@intx/types/sidecar';
+import { STEP_ID_PATTERN } from '@intx/workflow';
 
 import type {
   MultistepDrainRouter,
   MultistepMailRouter,
   MultistepSignalRouter,
-} from "./workflow-run-pack-client";
+} from './workflow-run-pack-client';
 
-const logger = getLogger(["interchange", "sidecar", "workflow-host-wiring"]);
+const logger = getLogger(['interchange', 'sidecar', 'workflow-host-wiring']);
 
 /**
  * Project an agent address into a substrate-safe deployment id for
@@ -77,7 +74,7 @@ const logger = getLogger(["interchange", "sidecar", "workflow-host-wiring"]);
  * deployments are claiming the same trivial workflow surface.
  */
 export function deriveTrivialDeploymentId(agentAddress: string): string {
-  return agentAddress.replaceAll(/[^a-zA-Z0-9_-]/g, "-");
+  return agentAddress.replaceAll(/[^a-zA-Z0-9_-]/g, '-');
 }
 
 // The supervisor's `binaryPath` binding resolves to the sidecar's
@@ -89,7 +86,7 @@ export function deriveTrivialDeploymentId(agentAddress: string): string {
 // path via the `binaryPath` opts override; production wiring
 // closes over this constant.
 const SIDECAR_WORKFLOW_CHILD_BINARY: string = (() => {
-  const url = import.meta.resolve("../bin/workflow-child");
+  const url = import.meta.resolve('../bin/workflow-child');
   return fileURLToPath(url);
 })();
 
@@ -127,9 +124,9 @@ function ndjsonWriterFromFileSink(sink: Bun.FileSink): NdjsonWriter {
   return {
     async write(line: string): Promise<void> {
       const result = sink.write(line);
-      if (typeof result !== "number") await result;
+      if (typeof result !== 'number') await result;
       const flushed = sink.flush();
-      if (typeof flushed !== "number") await flushed;
+      if (typeof flushed !== 'number') await flushed;
     },
   };
 }
@@ -141,26 +138,24 @@ function ndjsonWriterFromFileSink(sink: Bun.FileSink): NdjsonWriter {
  * receiver's iterator finalises only on EOF, which mirrors the
  * `defaultControlReader` shape the child wires for `process.stdin`.
  */
-function ndjsonReaderFromReadableStream(
-  stream: ReadableStream<Uint8Array>,
-): NdjsonReader {
+function ndjsonReaderFromReadableStream(stream: ReadableStream<Uint8Array>): NdjsonReader {
   return {
     read(): AsyncIterableIterator<string> {
       return (async function* () {
-        const decoder = new TextDecoder("utf-8");
-        let pending = "";
+        const decoder = new TextDecoder('utf-8');
+        let pending = '';
         const reader = stream.getReader();
         try {
           while (true) {
             const { value, done } = await reader.read();
             if (value !== undefined) {
               pending += decoder.decode(value, { stream: true });
-              let nl = pending.indexOf("\n");
+              let nl = pending.indexOf('\n');
               while (nl >= 0) {
-                const line = pending.slice(0, nl).replace(/\r$/, "");
+                const line = pending.slice(0, nl).replace(/\r$/, '');
                 pending = pending.slice(nl + 1);
                 if (line.length > 0) yield line;
-                nl = pending.indexOf("\n");
+                nl = pending.indexOf('\n');
               }
             }
             if (done) break;
@@ -224,13 +219,13 @@ export const defaultSubprocessSpawner: SubprocessSpawner = ({
   env,
 }): SubprocessHandle => {
   const proc = Bun.spawn([binaryPath], {
-    stdio: ["pipe", "pipe", "inherit", "pipe"],
+    stdio: ['pipe', 'pipe', 'inherit', 'pipe'],
     env,
   });
   const eventFd = proc.stdio[CHILD_EVENT_CHANNEL_FD];
-  if (typeof eventFd !== "number") {
+  if (typeof eventFd !== 'number') {
     throw new Error(
-      `workflow-host-wiring: Bun.spawn did not return a numeric fd at stdio[${String(CHILD_EVENT_CHANNEL_FD)}] for the event channel; got ${typeof eventFd}`,
+      `workflow-host-wiring: Bun.spawn did not return a numeric fd at stdio[${String(CHILD_EVENT_CHANNEL_FD)}] for the event channel; got ${typeof eventFd}`
     );
   }
   return {
@@ -250,7 +245,7 @@ export const defaultSubprocessSpawner: SubprocessSpawner = ({
         proc.kill();
         return;
       }
-      if (typeof signal === "number") {
+      if (typeof signal === 'number') {
         proc.kill(signal);
         return;
       }
@@ -337,7 +332,7 @@ type ActiveMultiStepSupervisor = {
  * `interchange/packages/hub-agent/src/agent-paths.ts`.
  */
 export function sanitizeAgentAddress(address: string): string {
-  return address.replace(/@/g, "_at_").replace(/[^a-zA-Z0-9_-]/g, "_");
+  return address.replace(/@/g, '_at_').replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
 /**
@@ -365,7 +360,7 @@ export function sanitizeAgentAddress(address: string): string {
  * it. The trivial workflow has exactly one step per run, so the id
  * is a constant rather than a per-deploy mint.
  */
-const TRIVIAL_STEP_ID = "trivial";
+const TRIVIAL_STEP_ID = 'trivial';
 
 /**
  * Env key the multi-step branch uses to carry per-step inference source
@@ -377,7 +372,7 @@ const TRIVIAL_STEP_ID = "trivial";
  * Listed here so the router and the future substrate-factory consumer
  * spell the key the same way without a magic-string trip hazard.
  */
-export const STEP_INFERENCE_SOURCES_ENV_KEY = "STEP_INFERENCE_SOURCES";
+export const STEP_INFERENCE_SOURCES_ENV_KEY = 'STEP_INFERENCE_SOURCES';
 
 /**
  * Env key carrying the RAW hub deploymentId (`ses_<id>`) down to the
@@ -400,7 +395,7 @@ export const STEP_INFERENCE_SOURCES_ENV_KEY = "STEP_INFERENCE_SOURCES";
  * threaded verbatim, so the child trusts a value instead of re-inverting
  * the upstream id formulas.
  */
-export const RAW_DEPLOYMENT_ID_ENV_KEY = "WORKFLOW_RAW_DEPLOYMENT_ID";
+export const RAW_DEPLOYMENT_ID_ENV_KEY = 'WORKFLOW_RAW_DEPLOYMENT_ID';
 
 /**
  * Recover the RAW hub deploymentId (`ses_<id>`) from the multi-step
@@ -418,10 +413,10 @@ export const RAW_DEPLOYMENT_ID_ENV_KEY = "WORKFLOW_RAW_DEPLOYMENT_ID";
  * key exists to close.
  */
 export function deriveRawDeploymentId(agentId: string): string {
-  const prefix = "ins_";
+  const prefix = 'ins_';
   if (!agentId.startsWith(prefix) || agentId.length === prefix.length) {
     throw new Error(
-      `sidecar deploy router: cannot recover raw deploymentId from agentId ${JSON.stringify(agentId)}; expected the orchestrator's deriveDeploymentAgentId shape "ins_<deploymentId>"`,
+      `sidecar deploy router: cannot recover raw deploymentId from agentId ${JSON.stringify(agentId)}; expected the orchestrator's deriveDeploymentAgentId shape "ins_<deploymentId>"`
     );
   }
   return agentId.slice(prefix.length);
@@ -464,47 +459,41 @@ export function validateWorkflowProjection(projection: {
   sources: unknown;
 }): void {
   const def = projection.definition;
-  if (typeof def.id !== "string" || def.id.length === 0) {
-    throw new Error(
-      "sidecar deploy router: workflow.definition.id must be a non-empty string",
-    );
+  if (typeof def.id !== 'string' || def.id.length === 0) {
+    throw new Error('sidecar deploy router: workflow.definition.id must be a non-empty string');
   }
   if (!Array.isArray(def.stepOrder) || def.stepOrder.length === 0) {
     throw new Error(
-      "sidecar deploy router: workflow.definition.stepOrder must be a non-empty array",
+      'sidecar deploy router: workflow.definition.stepOrder must be a non-empty array'
     );
   }
-  if (typeof def.steps !== "object" || def.steps === null) {
-    throw new Error(
-      "sidecar deploy router: workflow.definition.steps must be an object",
-    );
+  if (typeof def.steps !== 'object' || def.steps === null) {
+    throw new Error('sidecar deploy router: workflow.definition.steps must be an object');
   }
-  if (typeof projection.sources !== "object" || projection.sources === null) {
-    throw new Error(
-      "sidecar deploy router: workflow.sources must be an object",
-    );
+  if (typeof projection.sources !== 'object' || projection.sources === null) {
+    throw new Error('sidecar deploy router: workflow.sources must be an object');
   }
   const steps = def.steps;
   const sources = projection.sources;
   for (const stepId of def.stepOrder) {
-    if (typeof stepId !== "string" || stepId.length === 0) {
+    if (typeof stepId !== 'string' || stepId.length === 0) {
       throw new Error(
-        "sidecar deploy router: workflow.definition.stepOrder entries must be non-empty strings",
+        'sidecar deploy router: workflow.definition.stepOrder entries must be non-empty strings'
       );
     }
     if (!STEP_ID_PATTERN.test(stepId)) {
       throw new Error(
-        `sidecar deploy router: stepId ${JSON.stringify(stepId)} must match ${STEP_ID_PATTERN.source}`,
+        `sidecar deploy router: stepId ${JSON.stringify(stepId)} must match ${STEP_ID_PATTERN.source}`
       );
     }
     if (!Object.prototype.hasOwnProperty.call(steps, stepId)) {
       throw new Error(
-        `sidecar deploy router: workflow.definition.steps is missing entry for stepId ${JSON.stringify(stepId)}`,
+        `sidecar deploy router: workflow.definition.steps is missing entry for stepId ${JSON.stringify(stepId)}`
       );
     }
     if (!Object.prototype.hasOwnProperty.call(sources, stepId)) {
       throw new Error(
-        `sidecar deploy router: workflow.sources is missing entry for stepId ${JSON.stringify(stepId)}`,
+        `sidecar deploy router: workflow.sources is missing entry for stepId ${JSON.stringify(stepId)}`
       );
     }
   }
@@ -522,18 +511,16 @@ export function validateWorkflowProjection(projection: {
  * for equality checks (`packages/workflow/src/runlocal/repo-store.ts`).
  */
 function canonicalJsonStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") {
+  if (value === null || typeof value !== 'object') {
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
-    return `[${value.map(canonicalJsonStringify).join(",")}]`;
+    return `[${value.map(canonicalJsonStringify).join(',')}]`;
   }
-  const entries = Object.entries(value).sort(([a], [b]) =>
-    a < b ? -1 : a > b ? 1 : 0,
-  );
+  const entries = Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return `{${entries
     .map(([k, v]) => `${JSON.stringify(k)}:${canonicalJsonStringify(v)}`)
-    .join(",")}}`;
+    .join(',')}}`;
 }
 
 /**
@@ -549,7 +536,7 @@ function canonicalJsonStringify(value: unknown): string {
  */
 export function computeWireDefinitionHash(definition: unknown): string {
   const canonical = canonicalJsonStringify(definition);
-  return createHash("sha256").update(canonical, "utf8").digest("hex");
+  return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
 /**
@@ -565,19 +552,19 @@ function derivePrincipalPublicKeyHex(signingKeySeed: Uint8Array): string {
   // last 32 bytes of the structure (RFC 8410). The export keeps this
   // module independent of `exportPublicKeyBytes` from `@intx/crypto-node`,
   // which is not part of the package's public surface.
-  const der = publicKey.export({ type: "spki", format: "der" });
+  const der = publicKey.export({ type: 'spki', format: 'der' });
   if (der.length < 32) {
     throw new Error(
-      `sidecar deploy router: unexpected SPKI DER length ${String(der.length)} for Ed25519 public key`,
+      `sidecar deploy router: unexpected SPKI DER length ${String(der.length)} for Ed25519 public key`
     );
   }
-  return der.subarray(der.length - 32).toString("hex");
+  return der.subarray(der.length - 32).toString('hex');
 }
 
 export function createSidecarDeployRouter(deps: {
   sessions: SessionManager;
   keyStore: AgentKeyStore;
-  onAgentEvent: SessionManager["onAgentEvent"];
+  onAgentEvent: SessionManager['onAgentEvent'];
   transport: HubTransport;
   repoStore: RepoStore;
   signingKeySeed: Uint8Array;
@@ -589,10 +576,7 @@ export function createSidecarDeployRouter(deps: {
    * commit (which triggers the push hook) sees the mapping. Tests that
    * do not exercise the pack push path may pass a no-op.
    */
-  registerDeployment: (entry: {
-    deploymentId: string;
-    agentAddress: string;
-  }) => void;
+  registerDeployment: (entry: { deploymentId: string; agentAddress: string }) => void;
   /**
    * Symmetric removal hook for `registerDeployment`. Fires from the
    * link's `agent.undeploy` path so the boot edge's
@@ -603,10 +587,7 @@ export function createSidecarDeployRouter(deps: {
    * silently resolving to the prior address. Tests that do not
    * exercise the pack push path may pass a no-op.
    */
-  unregisterDeployment: (entry: {
-    deploymentId: string;
-    agentAddress: string;
-  }) => void;
+  unregisterDeployment: (entry: { deploymentId: string; agentAddress: string }) => void;
   /**
    * Substrate-config env keys the multi-step branch propagates into
    * the workflow-process child's spawn-time env (see
@@ -640,7 +621,8 @@ export function createSidecarDeployRouter(deps: {
    */
   publishWorkflowInferenceEvent?: (
     agentAddress: string,
-    event: EventPayload,
+    sessionId: string,
+    event: EventPayload
   ) => void;
   /**
    * Optional override for the multi-step branch's per-step mail-address
@@ -701,21 +683,17 @@ export function createSidecarDeployRouter(deps: {
    */
   multistepDrainRouter?: MultistepDrainRouter;
 }): DeployRouter {
-  const principalPublicKeyHex = derivePrincipalPublicKeyHex(
-    deps.signingKeySeed,
-  );
+  const principalPublicKeyHex = derivePrincipalPublicKeyHex(deps.signingKeySeed);
   const publishInferenceEvent =
     deps.publishWorkflowInferenceEvent ??
-    ((_address: string, _event: EventPayload): void => {
+    ((_address: string, _sessionId: string, _event: EventPayload): void => {
       /* no-op default: tests and production-without-a-publisher
          deployments do not consume events. */
     });
   const multistepSubstrateEnv = deps.multistepSubstrateEnv ?? {};
-  const multistepSpawner =
-    deps.multistepSubprocessSpawner ?? defaultSubprocessSpawner;
+  const multistepSpawner = deps.multistepSubprocessSpawner ?? defaultSubprocessSpawner;
   const multistepDeriveStepAddress: DeriveStepAddress =
-    deps.multistepDeriveStepAddress ??
-    (({ deploymentId, stepId }) => `${deploymentId}-${stepId}`);
+    deps.multistepDeriveStepAddress ?? (({ deploymentId, stepId }) => `${deploymentId}-${stepId}`);
 
   // Per-deployment supervisor tracking. The multi-step branch
   // constructs one `SidecarWorkflowSupervisor` per `agent.deploy`
@@ -751,7 +729,7 @@ export function createSidecarDeployRouter(deps: {
     const existing = slugClaims.get(deploymentId);
     if (existing !== undefined && existing !== agentAddress) {
       throw new Error(
-        `deriveTrivialDeploymentId collision: agent addresses ${JSON.stringify(existing)} and ${JSON.stringify(agentAddress)} both project to deploymentId ${JSON.stringify(deploymentId)}`,
+        `deriveTrivialDeploymentId collision: agent addresses ${JSON.stringify(existing)} and ${JSON.stringify(agentAddress)} both project to deploymentId ${JSON.stringify(deploymentId)}`
       );
     }
     slugClaims.set(deploymentId, agentAddress);
@@ -764,7 +742,7 @@ export function createSidecarDeployRouter(deps: {
 
   async function deployMultiStep(
     frame: AgentDeployFrame,
-    projection: NonNullable<AgentDeployFrame["workflow"]>,
+    projection: NonNullable<AgentDeployFrame['workflow']>
   ): Promise<DeployRouterResult> {
     // Boundary validation: a malformed projection is rejected at the
     // router edge before the supervisor is constructed so the link
@@ -793,7 +771,7 @@ export function createSidecarDeployRouter(deps: {
       const incomingHash = computeWireDefinitionHash(projection.definition);
       if (active.definitionHash !== incomingHash) {
         throw new Error(
-          `multi-step deploy: address ${frame.agentAddress} already has a live supervisor with a different definition; refusing to replace it (deploymentId is expected to be 1:1 with definition)`,
+          `multi-step deploy: address ${frame.agentAddress} already has a live supervisor with a different definition; refusing to replace it (deploymentId is expected to be 1:1 with definition)`
         );
       }
       logger.info`multi-step deploy: supervisor already active for ${frame.agentAddress}; re-confirming without respawn`;
@@ -855,9 +833,9 @@ export function createSidecarDeployRouter(deps: {
       const substrateEnv: Record<string, string> = {
         ...multistepSubstrateEnv,
         WORKFLOW_DEFINITION_REPO_ID: projection.definition.id,
-        WORKFLOW_DEFINITION_REF: "refs/heads/main",
+        WORKFLOW_DEFINITION_REF: 'refs/heads/main',
         WORKFLOW_RUN_REPO_ID: deploymentId,
-        WORKFLOW_RUN_REF: "refs/heads/main",
+        WORKFLOW_RUN_REF: 'refs/heads/main',
         // Per-deploy tenant scope the step harness needs to resolve
         // tenant-owned tool credentials + tool-package tarballs from the
         // hub. Not present in the boot-edge `multistepSubstrateEnv` (which
@@ -893,17 +871,17 @@ export function createSidecarDeployRouter(deps: {
       // The child reads via `fs.readFile`, not via a git ref resolution,
       // so writing the bytes outside any git operation is sufficient.
       const sidecarDataDir = substrateEnv.SIDECAR_DATA_DIR;
-      if (typeof sidecarDataDir !== "string" || sidecarDataDir.length === 0) {
+      if (typeof sidecarDataDir !== 'string' || sidecarDataDir.length === 0) {
         throw new Error(
-          "sidecar deploy router: SIDECAR_DATA_DIR must be present in the multi-step substrate env for the multi-step branch; the workflow-process child resolves the workflow-asset repo dir against this data dir",
+          'sidecar deploy router: SIDECAR_DATA_DIR must be present in the multi-step substrate env for the multi-step branch; the workflow-process child resolves the workflow-asset repo dir against this data dir'
         );
       }
       const workflowAssetPath = pathJoin(
         sidecarDataDir,
-        "assets",
-        "workflow",
+        'assets',
+        'workflow',
         projection.definition.id,
-        "workflow.json",
+        'workflow.json'
       );
       const workflowAssetBytes = JSON.stringify(projection.definition, null, 2);
       try {
@@ -912,26 +890,26 @@ export function createSidecarDeployRouter(deps: {
         // the projection. Treats a missing file as different.
         let existing: string | null = null;
         try {
-          existing = await readFile(workflowAssetPath, "utf8");
+          existing = await readFile(workflowAssetPath, 'utf8');
         } catch (cause) {
           if (
             !(
               cause instanceof Error &&
-              "code" in cause &&
-              (cause as { code: unknown }).code === "ENOENT"
+              'code' in cause &&
+              (cause as { code: unknown }).code === 'ENOENT'
             )
           ) {
             throw cause;
           }
         }
         if (existing !== workflowAssetBytes) {
-          await writeFile(workflowAssetPath, workflowAssetBytes, "utf8");
+          await writeFile(workflowAssetPath, workflowAssetBytes, 'utf8');
         }
       } catch (cause) {
         const reason = cause instanceof Error ? cause.message : String(cause);
         throw new Error(
           `sidecar deploy router: failed to materialize workflow.json at ${workflowAssetPath}: ${reason}`,
-          { cause },
+          { cause }
         );
       }
 
@@ -945,35 +923,35 @@ export function createSidecarDeployRouter(deps: {
         repoStore: deps.repoStore,
         signingKeySeed: deps.signingKeySeed,
         workflowRunRepoId: {
-          kind: "workflow-run",
+          kind: 'workflow-run',
           id: deploymentId,
         },
-        workflowRunRef: "refs/heads/main",
+        workflowRunRef: 'refs/heads/main',
         deploymentId,
         deploymentMailAddress: frame.agentAddress,
         deriveStepAddress: multistepDeriveStepAddress,
         substrateEnv,
         subprocessSpawner: multistepSpawner,
-        ...(deps.multistepBinaryPath !== undefined
-          ? { binaryPath: deps.multistepBinaryPath }
-          : {}),
+        ...(deps.multistepBinaryPath !== undefined ? { binaryPath: deps.multistepBinaryPath } : {}),
         // The multi-step branch never invokes trivialLaunch, but the
         // supervisor's constructor requires the binding. Wire a sentinel
         // that throws so a stray invocation surfaces loudly rather than
         // silently succeeding.
         trivialLaunch: () => {
           throw new Error(
-            "sidecar deploy router: trivialLaunch invoked on the multi-step branch; this is a programming bug",
+            'sidecar deploy router: trivialLaunch invoked on the multi-step branch; this is a programming bug'
           );
         },
       });
 
       const stepOrder = [...projection.definition.stepOrder];
+      const hubSessionId = harnessSessionIdFromDeployFrame(frame);
       const spawnOpts: SpawnOpts = {
         stepOrder,
         definitionHash,
         onInferenceEvent: (event) => {
-          publishInferenceEvent(frame.agentAddress, event);
+          if (hubSessionId === null) return;
+          publishInferenceEvent(frame.agentAddress, hubSessionId, event);
         },
       };
 
@@ -1014,7 +992,7 @@ export function createSidecarDeployRouter(deps: {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- validateWorkflowProjection narrowed stepOrder to string[]
       const stepIds = projection.definition.stepOrder as string[];
       const ownedDirs: string[] = [
-        deps.repoStore.getRepoDir({ kind: "workflow-run", id: deploymentId }),
+        deps.repoStore.getRepoDir({ kind: 'workflow-run', id: deploymentId }),
       ];
       for (const stepId of stepIds) {
         // The step's agent-state repo dir, keyed on the RAW hub
@@ -1024,9 +1002,9 @@ export function createSidecarDeployRouter(deps: {
         // sidecar's substrate factory.
         ownedDirs.push(
           deps.repoStore.getRepoDir({
-            kind: "agent-state",
+            kind: 'agent-state',
             id: `${rawDeploymentId}-${stepId}`,
-          }),
+          })
         );
         // The step agent's on-disk dir (keys + agent.json), keyed by the
         // sanitized step mail address the supervisor launches with
@@ -1035,9 +1013,7 @@ export function createSidecarDeployRouter(deps: {
           deploymentId,
           stepId,
         });
-        ownedDirs.push(
-          pathJoin(sidecarDataDir, sanitizeAgentAddress(stepAddress)),
-        );
+        ownedDirs.push(pathJoin(sidecarDataDir, sanitizeAgentAddress(stepAddress)));
       }
       activeSupervisors.set(frame.agentAddress, {
         wired,
@@ -1104,8 +1080,7 @@ export function createSidecarDeployRouter(deps: {
         }
         if (wiredForUnwind !== undefined) {
           await wiredForUnwind.supervisor.shutdown().catch((cause) => {
-            const message =
-              cause instanceof Error ? cause.message : String(cause);
+            const message = cause instanceof Error ? cause.message : String(cause);
             logger.warn`multi-step deploy unwind: supervisor.shutdown failed: ${message}`;
           });
         }
@@ -1139,14 +1114,13 @@ export function createSidecarDeployRouter(deps: {
           repoStore: deps.repoStore,
           signingKeySeed: deps.signingKeySeed,
           workflowRunRepoId: {
-            kind: "workflow-run",
+            kind: 'workflow-run',
             id: deploymentId,
           },
-          workflowRunRef: "refs/heads/main",
+          workflowRunRef: 'refs/heads/main',
           deploymentId,
           deploymentMailAddress: frame.agentAddress,
-          deriveStepAddress: ({ deploymentId: dep, stepId }) =>
-            `${dep}-${stepId}`,
+          deriveStepAddress: ({ deploymentId: dep, stepId }) => `${dep}-${stepId}`,
           substrateEnv: {},
           trivialLaunch: async (bindings) => {
             const result = await deps.sessions.provisionAgent(
@@ -1156,18 +1130,10 @@ export function createSidecarDeployRouter(deps: {
               // verbatim, and `SessionManager.provisionAgent`
               // expects exactly that.
               // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- frame.config is the validated HarnessConfig the link surfaced
-              bindings.config as Parameters<
-                SessionManager["provisionAgent"]
-              >[0],
+              bindings.config as Parameters<SessionManager['provisionAgent']>[0]
             );
-            deps.keyStore.recordHubKey(
-              bindings.agentAddress,
-              bindings.hubPublicKey,
-            );
-            await deps.sessions.persistHubPublicKey(
-              bindings.agentAddress,
-              bindings.hubPublicKey,
-            );
+            deps.keyStore.recordHubKey(bindings.agentAddress, bindings.hubPublicKey);
+            await deps.sessions.persistHubPublicKey(bindings.agentAddress, bindings.hubPublicKey);
             publicKey = result.publicKey;
             // Subscribe to per-agent InferenceEvents and project the
             // reactor's run-bracket vocabulary onto the workflow-run
@@ -1185,19 +1151,17 @@ export function createSidecarDeployRouter(deps: {
               stepStarted: false,
             };
             deps.onAgentEvent(bindings.agentAddress, (event) => {
-              driveTrivialRunChain(event, bindings.recordRunEvent, cell).catch(
-                (err: unknown) => {
-                  // Capture rejections inside the listener so a substrate
-                  // failure (e.g. the hub rejecting the workflow-run pack
-                  // push) does not surface as an unhandled rejection on
-                  // the host process. The trivial branch's audit chain
-                  // is best-effort against the deploy path; persistent
-                  // substrate or transport misconfigurations log loudly
-                  // here without killing the agent's reactor.
-                  const msg = err instanceof Error ? err.message : String(err);
-                  logger.warn`trivial run-event recording failed for ${bindings.agentAddress}: ${msg}`;
-                },
-              );
+              driveTrivialRunChain(event, bindings.recordRunEvent, cell).catch((err: unknown) => {
+                // Capture rejections inside the listener so a substrate
+                // failure (e.g. the hub rejecting the workflow-run pack
+                // push) does not surface as an unhandled rejection on
+                // the host process. The trivial branch's audit chain
+                // is best-effort against the deploy path; persistent
+                // substrate or transport misconfigurations log loudly
+                // here without killing the agent's reactor.
+                const msg = err instanceof Error ? err.message : String(err);
+                logger.warn`trivial run-event recording failed for ${bindings.agentAddress}: ${msg}`;
+              });
             });
           },
         });
@@ -1208,9 +1172,7 @@ export function createSidecarDeployRouter(deps: {
           hubPublicKey: frame.hubPublicKey,
         });
         if (publicKey === undefined) {
-          throw new Error(
-            "sidecar deploy router: trivialLaunch did not surface a public key",
-          );
+          throw new Error('sidecar deploy router: trivialLaunch did not surface a public key');
         }
         // Register the deployment-address mapping last so a failure in
         // `supervisor.deploy` (e.g. the host-supplied `trivialLaunch`
@@ -1293,8 +1255,7 @@ export function createSidecarDeployRouter(deps: {
           try {
             await rm(dir, { recursive: true, force: true });
           } catch (cause) {
-            const reason =
-              cause instanceof Error ? cause.message : String(cause);
+            const reason = cause instanceof Error ? cause.message : String(cause);
             logger.warn`undeploy: failed to reclaim deployment dir ${dir} for ${frame.agentAddress}: ${reason}`;
           }
         }
@@ -1324,7 +1285,16 @@ export interface TrivialRunCell {
  * then the on-disk envelope carries a stable sentinel so audit-log
  * consumers see a consistent value across deployments.
  */
-const TRIVIAL_DEFINITION_HASH = "trivial:v1";
+const TRIVIAL_DEFINITION_HASH = 'trivial:v1';
+
+function harnessSessionIdFromDeployFrame(frame: AgentDeployFrame): string | null {
+  const config = frame.config as { sessionId?: unknown };
+  const sessionId = config.sessionId;
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    return null;
+  }
+  return sessionId;
+}
 
 /**
  * Map one InferenceEvent into `recordRunEvent` calls when the
@@ -1355,18 +1325,18 @@ const TRIVIAL_DEFINITION_HASH = "trivial:v1";
 export async function driveTrivialRunChain(
   event: InferenceEvent,
   recordRunEvent: RecordRunEvent,
-  cell: TrivialRunCell,
+  cell: TrivialRunCell
 ): Promise<void> {
-  if (event.type === "message.run.started") {
+  if (event.type === 'message.run.started') {
     cell.runId = event.data.messageRunId;
     cell.stepStarted = false;
     const runStarted: SupervisorRunEvent = {
-      kind: "RunStarted",
+      kind: 'RunStarted',
       runId: event.data.messageRunId,
       at: new Date().toISOString(),
       definitionHash: TRIVIAL_DEFINITION_HASH,
       trigger: {
-        type: "mail",
+        type: 'mail',
         payload: { messageId: event.data.messageId },
       },
       consumedMessageId: event.data.messageId,
@@ -1374,37 +1344,37 @@ export async function driveTrivialRunChain(
     await recordRunEvent(runStarted);
     return;
   }
-  if (event.type === "inference.start") {
+  if (event.type === 'inference.start') {
     if (cell.runId === null) return;
     if (cell.stepStarted) return;
     cell.stepStarted = true;
     await recordRunEvent({
-      kind: "StepStarted",
+      kind: 'StepStarted',
       runId: cell.runId,
       at: new Date().toISOString(),
       stepId: TRIVIAL_STEP_ID,
       attempt: 1,
-      input: { ref: "refs/heads/main" },
+      input: { ref: 'refs/heads/main' },
     });
     return;
   }
-  if (event.type === "message.run.ended") {
+  if (event.type === 'message.run.ended') {
     const runId = cell.runId;
     if (runId === null) return;
     cell.runId = null;
     cell.stepStarted = false;
     const at = new Date().toISOString();
     await recordRunEvent({
-      kind: "StepCompleted",
+      kind: 'StepCompleted',
       runId,
       at,
       stepId: TRIVIAL_STEP_ID,
       attempt: 1,
-      output: { ref: "refs/heads/main" },
+      output: { ref: 'refs/heads/main' },
     });
-    if (event.data.status === "completed") {
+    if (event.data.status === 'completed') {
       await recordRunEvent({
-        kind: "RunCompleted",
+        kind: 'RunCompleted',
         runId,
         at,
       });
@@ -1423,13 +1393,13 @@ export async function driveTrivialRunChain(
  */
 export function deriveSidecarMailAuditRef(deploymentId: string): (
   messageId: string,
-  rawMessage: Uint8Array,
+  rawMessage: Uint8Array
 ) => {
   store: string;
   path: string;
 } {
   return (messageId, _rawMessage) => ({
-    store: "sidecar-mail-audit",
+    store: 'sidecar-mail-audit',
     path: `${deploymentId}/${messageId}`,
   });
 }
@@ -1442,13 +1412,11 @@ export function deriveSidecarMailAuditRef(deploymentId: string): (
  * on-disk surfaces stay bit-identical to the pre-supervisor path.
  */
 export function createSidecarWorkflowSupervisor(
-  opts: CreateSidecarWorkflowSupervisorOpts,
+  opts: CreateSidecarWorkflowSupervisorOpts
 ): SidecarWorkflowSupervisor {
-  const mailBus: HubTransportMailBusAdapter = wrapHubTransportAsMailBus(
-    opts.transport,
-  );
+  const mailBus: HubTransportMailBusAdapter = wrapHubTransportAsMailBus(opts.transport);
   const supervisorPrincipal: WorkflowRunSupervisorPrincipal = {
-    kind: "supervisor",
+    kind: 'supervisor',
     deploymentId: opts.deploymentId,
   };
   const supervisor = createWorkflowSupervisor({

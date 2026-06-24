@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import git from 'isomorphic-git';
 
 import type { RepoId, RepoStore } from '@intx/hub-sessions';
-import { receivePackObjects } from '@intx/storage-isogit';
+import { receivePackObjects } from '@workbench/storage-isogit';
 
 import {
   createDeploymentAddressRegistry,

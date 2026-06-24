@@ -15,12 +15,12 @@
     "@intx/authz": "workspace:*",
     "@intx/crypto-node": "workspace:*",
     "@intx/harness": "workspace:*",
-    "@intx/hub-agent": "workspace:*",
+    "@workbench/hub-agent": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/log": "workspace:*",
     "@intx/mail-memory": "workspace:*",
-    "@intx/storage-isogit": "workspace:*",
+    "@workbench/storage-isogit": "workspace:*",
     "@intx/tool-packaging": "workspace:*",
     "@intx/tools-lsp": "workspace:*",
     "@intx/tools-mail": "workspace:*",
@@ -30,10 +30,10 @@
     "@intx/workflow-host": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/approvals": "workspace:*",
-    "@workbench/tool-credentials": "workspace:*",
     "@workbench/context-repair": "workspace:*",
     "@workbench/prompts": "workspace:*",
-    "@workbench/sentry": "workspace:*"
+    "@workbench/sentry": "workspace:*",
+    "@workbench/tool-credentials": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -221,7 +221,9 @@ describe('reconcileMemberInstanceGrants', () => {
 describe('refreshInstanceGrantsFromDefinition', () => {
   it('pushes grants when live and routable', async () => {
     const sendGrantsUpdate = mock(async () => {});
-    const collectGrants = mock(async () => [{ resource: 'tool:attio_query_records', action: 'invoke' }]);
+    const collectGrants = mock(async () => [
+      { resource: 'tool:attio_query_records', action: 'invoke' },
+    ]);
     const update = mock(async () => {});
     const db = {
       query: {

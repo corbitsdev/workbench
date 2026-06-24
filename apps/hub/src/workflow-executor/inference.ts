@@ -1,6 +1,6 @@
 import { createAgent, createDefaultDirectorRegistry, defineAgent } from '@intx/agent';
 import type { AuthorizeFn } from '@intx/agent';
-import { createIsogitStore } from '@intx/storage-isogit';
+import { createIsogitStore } from '@workbench/storage-isogit';
 import type { InferenceSource } from '@intx/types/runtime';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';

@@ -32,7 +32,6 @@
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
-        "@intx/storage-isogit": "workspace:*",
         "@intx/tool-packaging": "workspace:*",
         "@intx/tools-mail": "workspace:*",
         "@intx/tools-posix": "workspace:*",
@@ -48,6 +47,7 @@
         "@workbench/openapi-arktype": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/storage-isogit": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
         "@workbench/tools-agents": "workspace:*",
         "@workbench/tools-artifact": "workspace:*",
@@ -91,12 +91,10 @@
         "@intx/authz": "workspace:*",
         "@intx/crypto-node": "workspace:*",
         "@intx/harness": "workspace:*",
-        "@intx/hub-agent": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mail-memory": "workspace:*",
-        "@intx/storage-isogit": "workspace:*",
         "@intx/tool-packaging": "workspace:*",
         "@intx/tools-lsp": "workspace:*",
         "@intx/tools-mail": "workspace:*",
@@ -107,8 +105,10 @@
         "@workbench/agents": "workspace:*",
         "@workbench/approvals": "workspace:*",
         "@workbench/context-repair": "workspace:*",
+        "@workbench/hub-agent": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/sentry": "workspace:*",
+        "@workbench/storage-isogit": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
       },
       "devDependencies": {
@@ -686,6 +686,25 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/hub-agent": {
+      "name": "@workbench/hub-agent",
+      "version": "0.1.2",
+      "dependencies": {
+        "@intx/harness": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/mail-memory": "workspace:*",
+        "@intx/pack-transport": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@workbench/storage-isogit": "workspace:*",
+        "arktype": "catalog:",
+        "isomorphic-git": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/crypto-node": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
+        "hono": "catalog:",
+      },
+    },
     "packages/last30days-core": {
       "name": "@workbench/last30days-core",
       "dependencies": {
@@ -745,6 +764,19 @@
       },
       "peerDependencies": {
         "react": "*",
+      },
+    },
+    "packages/storage-isogit": {
+      "name": "@workbench/storage-isogit",
+      "version": "0.1.2",
+      "dependencies": {
+        "@intx/mime": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+        "isomorphic-git": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/crypto-node": "workspace:*",
       },
     },
     "packages/tool-credentials": {
@@ -2096,6 +2128,8 @@
 
     "@workbench/hub": ["@workbench/hub@workspace:apps/hub"],
 
+    "@workbench/hub-agent": ["@workbench/hub-agent@workspace:packages/hub-agent"],
+
     "@workbench/last30days-core": ["@workbench/last30days-core@workspace:packages/last30days-core"],
 
     "@workbench/openapi-arktype": ["@workbench/openapi-arktype@workspace:packages/openapi-arktype"],
@@ -2109,6 +2143,8 @@
     "@workbench/shared": ["@workbench/shared@workspace:packages/workbench-shared"],
 
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
+
+    "@workbench/storage-isogit": ["@workbench/storage-isogit@workspace:packages/storage-isogit"],
 
     "@workbench/tool-credentials": ["@workbench/tool-credentials@workspace:packages/tool-credentials"],
 
