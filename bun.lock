@@ -1172,18 +1172,6 @@
         "react": "^19.0.0",
       },
     },
-    "workflows/myra-ephemeral-spike": {
-      "name": "@workbench/workflow-myra-ephemeral-spike",
-      "dependencies": {
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "catalog:",
-      },
-    },
     "workflows/pain-point-collateral": {
       "name": "@workbench/workflow-pain-point-collateral",
       "dependencies": {
@@ -2237,8 +2225,6 @@
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
 
     "@workbench/workflow-last30days-research": ["@workbench/workflow-last30days-research@workspace:workflows/last30days-research"],
-
-    "@workbench/workflow-myra-ephemeral-spike": ["@workbench/workflow-myra-ephemeral-spike@workspace:workflows/myra-ephemeral-spike"],
 
     "@workbench/workflow-pain-point-collateral": ["@workbench/workflow-pain-point-collateral@workspace:workflows/pain-point-collateral"],
 
