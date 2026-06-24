@@ -38,6 +38,10 @@ export interface ChatThreadProps {
    * raw tool names and results into readable summary lines.
    */
   formatToolSummary?: ToolNarrativeProps['formatSummary'];
+  /** When true, completed turns with many tool calls collapse to a summary line. */
+  compactToolActivity?: ToolNarrativeProps['compact'];
+  /** Rolls a turn's tool calls into one summary line for the collapsed view. */
+  summarizeToolCalls?: ToolNarrativeProps['summarizeCalls'];
   /**
    * Predicate to hide individual tool calls from the narrative (the call still
    * runs; it is just not rendered). Used to abstract an agent's private
@@ -64,6 +68,8 @@ export function ChatThread({
   typingLabel,
   emptyState,
   formatToolSummary,
+  compactToolActivity,
+  summarizeToolCalls,
   hideToolCall,
   onRespond,
   onAction,
@@ -133,6 +139,10 @@ export function ChatThread({
                     toolCalls={visibleToolCalls}
                     {...(formatToolSummary !== undefined
                       ? { formatSummary: formatToolSummary }
+                      : {})}
+                    {...(compactToolActivity !== undefined ? { compact: compactToolActivity } : {})}
+                    {...(summarizeToolCalls !== undefined
+                      ? { summarizeCalls: summarizeToolCalls }
                       : {})}
                     {...(onRespond !== undefined ? { onRespond } : {})}
                     {...(onAction !== undefined ? { onAction } : {})}

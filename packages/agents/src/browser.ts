@@ -14,7 +14,16 @@ export {
   WALTER_CAPABILITIES,
   WALTER_DEPLOY_DESCRIPTOR,
 } from './walter/definition';
-export { friendlyToolSummary, toolOperationKey } from './friendly-tool-summary';
+export {
+  friendlyToolSummary,
+  summarizeToolCalls,
+  toolOperationKey,
+  isToolSummaryStyle,
+  TOOL_SUMMARY_STYLES,
+  TOOL_SUMMARY_STYLE_LABELS,
+  TOOL_SUMMARY_PREVIEW_CALLS,
+  type ToolSummaryStyle,
+} from './friendly-tool-summary';
 export { convertInstanceEvents } from './adapter';
 export { createToolNameTracker, type ToolNameTracker } from './tool-name-tracker';
 export { createLiveTextTracker, type LiveTextTracker } from './live-text-tracker';

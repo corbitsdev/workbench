@@ -26,6 +26,7 @@ mock.module('@workbench/chat', () => ({
 
 mock.module('@workbench/agents/browser', () => ({
   friendlyToolSummary: () => '',
+  summarizeToolCalls: () => '',
 }));
 
 const { MyraChatSurface } = require('./MyraChatSurface');

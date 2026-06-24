@@ -93,9 +93,95 @@ describe('ToolNarrative', () => {
 
   it('omits the summary when arguments have no stringifiable scalar values', () => {
     const calls: ToolCall[] = [
-      { id: 'c1', name: 'apply_filter', arguments: { rules: [1, 2, 3] }, result: 'ok' },
+      {
+        id: 'c1',
+        name: 'apply_filter',
+        arguments: { rules: [1, 2, 3] },
+        result: 'ok',
+      },
     ];
     render(<ToolNarrative toolCalls={calls} />);
     expect(screen.queryByText(/·/)).toBeNull();
+  });
+
+  const settled = (id: string, name: string): ToolCall => ({
+    id,
+    name,
+    arguments: { query: 'x' },
+    result: 'ok',
+    isError: false,
+  });
+
+  it('collapses a completed turn of 3+ calls into a summary line when compact is on', () => {
+    const calls = [
+      settled('c1', 'attio_get_record'),
+      settled('c2', 'attio_get_record'),
+      settled('c3', 'linear_get_issue'),
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        compact
+        summarizeCalls={() => 'Did a bunch of things'}
+        formatSummary={(c) => `summary-of-${c.id}`}
+      />
+    );
+    expect(screen.getByText('Did a bunch of things')).toBeDefined();
+    expect(screen.getByText('· 3 tools')).toBeDefined();
+    // Individual rows are hidden until expanded.
+    expect(screen.queryByText('summary-of-c1')).toBeNull();
+    fireEvent.click(screen.getByText('Did a bunch of things'));
+    expect(screen.getByText('summary-of-c1')).toBeDefined();
+    expect(screen.getByText('summary-of-c3')).toBeDefined();
+  });
+
+  it('does not collapse while any call is still in flight', () => {
+    const calls: ToolCall[] = [
+      settled('c1', 'attio_get_record'),
+      settled('c2', 'attio_get_record'),
+      { id: 'c3', name: 'linear_get_issue', arguments: { query: 'x' } },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        compact
+        summarizeCalls={() => 'Did a bunch of things'}
+        formatSummary={(c) => `summary-of-${c.id}`}
+      />
+    );
+    expect(screen.queryByText('Did a bunch of things')).toBeNull();
+    expect(screen.getByText('summary-of-c1')).toBeDefined();
+  });
+
+  it('does not collapse below the threshold', () => {
+    const calls = [settled('c1', 'attio_get_record'), settled('c2', 'linear_get_issue')];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        compact
+        summarizeCalls={() => 'Did a bunch of things'}
+        formatSummary={(c) => `summary-of-${c.id}`}
+      />
+    );
+    expect(screen.queryByText('Did a bunch of things')).toBeNull();
+    expect(screen.getByText('summary-of-c1')).toBeDefined();
+  });
+
+  it('renders the flat list when compact is off, even for many calls', () => {
+    const calls = [
+      settled('c1', 'attio_get_record'),
+      settled('c2', 'attio_get_record'),
+      settled('c3', 'linear_get_issue'),
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        summarizeCalls={() => 'Did a bunch of things'}
+        formatSummary={(c) => `summary-of-${c.id}`}
+      />
+    );
+    expect(screen.queryByText('Did a bunch of things')).toBeNull();
+    expect(screen.getByText('summary-of-c1')).toBeDefined();
+    expect(screen.getByText('summary-of-c3')).toBeDefined();
   });
 });

@@ -46,6 +46,10 @@ export interface ChatPanelProps {
   hideToolCall?: ChatThreadProps['hideToolCall'];
   /** Host formatter turning a tool call into a friendly narrative summary line. */
   formatToolSummary?: ChatThreadProps['formatToolSummary'];
+  /** When true, completed turns with many tool calls collapse to a summary line. */
+  compactToolActivity?: ChatThreadProps['compactToolActivity'];
+  /** Rolls a turn's tool calls into one summary line for the collapsed view. */
+  summarizeToolCalls?: ChatThreadProps['summarizeToolCalls'];
   className?: string;
   notice?: React.ReactNode;
 }
@@ -75,6 +79,8 @@ export function ChatPanel({
   getRating,
   hideToolCall,
   formatToolSummary,
+  compactToolActivity,
+  summarizeToolCalls,
   className,
   notice,
 }: ChatPanelProps) {
@@ -145,6 +151,8 @@ export function ChatPanel({
         {...(getRating !== undefined ? { getRating } : {})}
         {...(hideToolCall !== undefined ? { hideToolCall } : {})}
         {...(formatToolSummary !== undefined ? { formatToolSummary } : {})}
+        {...(compactToolActivity !== undefined ? { compactToolActivity } : {})}
+        {...(summarizeToolCalls !== undefined ? { summarizeToolCalls } : {})}
       />
 
       {quickReplies !== undefined && quickReplies.length > 0 && onQuickReply !== undefined && (

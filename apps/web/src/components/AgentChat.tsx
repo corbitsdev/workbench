@@ -4,6 +4,7 @@ import { createInstanceSession, type InstanceSession } from '@intx/hub-client';
 import {
   composeChatMessages,
   friendlyToolSummary,
+  summarizeToolCalls,
   createToolNameTracker,
   createLiveTextTracker,
   createReasoningTracker,
@@ -18,7 +19,9 @@ import {
   type ChatAgentIdentity,
   type ChatMessage,
   type ChatActivity,
+  type ToolCall,
 } from '@workbench/chat';
+import { useCompactToolActivity, useToolSummaryStyle } from '@workbench/ui';
 import { type AgentActivity } from '@intx/hub-client';
 import {
   getOutputFeedback,
@@ -65,6 +68,9 @@ export function AgentChat({
   retryDelayMs = DEFAULT_RETRY_DELAY_MS,
 }: AgentChatProps) {
   const identity: ChatAgentIdentity = { name: agentName };
+  const { compact: compactToolActivity } = useCompactToolActivity();
+  const { style: toolSummaryStyle } = useToolSummaryStyle();
+  const summarize = (calls: ToolCall[]) => summarizeToolCalls(calls, toolSummaryStyle);
 
   const isLaunchable = isLaunchableStatus(instanceStatus);
   const [sessionState, setSessionState] = useState<SessionState>(
@@ -140,7 +146,10 @@ export function AgentChat({
       if (classified.kind === 'connecting' || classified.kind === 'deploying') {
         setSessionState({ phase: 'pending', reason: classified.kind });
       } else if (classified.kind === 'missing-config') {
-        setSessionState({ phase: 'missing-config', message: classified.message });
+        setSessionState({
+          phase: 'missing-config',
+          message: classified.message,
+        });
       } else {
         setSessionState({ phase: 'error', message: classified.message });
       }
@@ -201,15 +210,24 @@ export function AgentChat({
     // avoids a double-render race where the session and tracker connections
     // deliver the same delta at slightly different times (three independent
     // SSE connections to the same endpoint).
-    liveTextRef.current = createLiveTextTracker(transport, { tenantId, instanceId });
+    liveTextRef.current = createLiveTextTracker(transport, {
+      tenantId,
+      instanceId,
+    });
 
     // Live reasoning for the current turn, sourced like the text tracker. No
     // onUpdate — the session's onChange drives renders; we read it at render.
-    reasoningRef.current = createReasoningTracker(transport, { tenantId, instanceId });
+    reasoningRef.current = createReasoningTracker(transport, {
+      tenantId,
+      instanceId,
+    });
 
     // Live images for the current turn. No onUpdate — the session's onChange
     // drives renders; we read the captured images at render time.
-    imageTrackerRef.current = createImageTracker(transport, { tenantId, instanceId });
+    imageTrackerRef.current = createImageTracker(transport, {
+      tenantId,
+      instanceId,
+    });
 
     if (!cancelled) setSessionState({ phase: 'ready', session });
 
@@ -352,6 +370,8 @@ export function AgentChat({
         ratingsMap.get(`${subjectId}:${subjectKind}`) ?? null
       }
       formatToolSummary={friendlyToolSummary}
+      compactToolActivity={compactToolActivity}
+      summarizeToolCalls={summarize}
     />
   );
 }

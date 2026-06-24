@@ -170,3 +170,226 @@ export function friendlyToolSummary(call: ToolCall): string {
   const interpolated = phrase(call.arguments ?? {});
   return interpolated ?? toHumanLabel(key);
 }
+
+// A tool's "family" is the prefix before the first underscore of its operation
+// key — `attio_get_record` and `attio_query_records` both belong to `attio`.
+// This is what lets a turn's many calls roll up into one clause per provider.
+function toolFamilyKey(name: string): string {
+  const op = toolOperationKey(name);
+  const underscore = op.indexOf('_');
+  return underscore === -1 ? op : op.slice(0, underscore);
+}
+
+/**
+ * How the roll-up sentence reads. All styles are deterministic — a given turn
+ * always renders the same way.
+ * - `symbols` — compact counts: "Searched Attio 6×, read 5 notes, checked Linear 2×"
+ * - `natural` — spelled counts: "Searched Attio 6 times, read 5 notes, checked Linear twice"
+ * - `detail`  — natural + a light detail from results: "found 2 Linear issues (one high-priority)"
+ * - `varied`  — rotated verbs per family: "Combed Attio 6 times, skimmed 5 notes…"
+ * - `mixed`   — varied verbs + natural counts + detail
+ */
+export type ToolSummaryStyle = 'symbols' | 'natural' | 'detail' | 'varied' | 'mixed';
+
+export const TOOL_SUMMARY_STYLES: readonly ToolSummaryStyle[] = [
+  'symbols',
+  'natural',
+  'detail',
+  'varied',
+  'mixed',
+];
+
+export const TOOL_SUMMARY_STYLE_LABELS: Readonly<Record<ToolSummaryStyle, string>> = {
+  symbols: 'Symbols (6×)',
+  natural: 'Natural counts (twice)',
+  detail: 'Natural + detail',
+  varied: 'Varied verbs',
+  mixed: 'Mix everything',
+};
+
+const STYLE_SET = new Set<string>(TOOL_SUMMARY_STYLES);
+
+export function isToolSummaryStyle(value: unknown): value is ToolSummaryStyle {
+  return typeof value === 'string' && STYLE_SET.has(value);
+}
+
+function usesAltVerb(style: ToolSummaryStyle): boolean {
+  return style === 'varied' || style === 'mixed';
+}
+
+function usesDetail(style: ToolSummaryStyle): boolean {
+  return style === 'detail' || style === 'mixed';
+}
+
+// The count suffix for a verb-only family. Omitted for a single call so one
+// Attio lookup reads "searched Attio", not "searched Attio 1×".
+function countSuffix(count: number, style: ToolSummaryStyle): string {
+  if (count <= 1) return '';
+  if (style === 'symbols') return ` ${count}×`;
+  if (count === 2) return ' twice';
+  return ` ${count} times`;
+}
+
+interface FamilyDef {
+  // Past-tense verb phrase for a verb-only family ("searched Attio"), or the
+  // action for a counted-noun family ("read").
+  verb: string;
+  // Alternate verb used by the `varied`/`mixed` styles.
+  altVerb?: string;
+  // Present for families whose calls count discrete objects ("5 notes").
+  noun?: { one: string; many: string };
+  // Best-effort richer clause built from the calls' results, used by the
+  // `detail`/`mixed` styles. Returns null to fall back to the plain clause.
+  detail?: (calls: ToolCall[]) => string | null;
+}
+
+function pluralize(count: number, one: string, many: string): string {
+  return count === 1 ? one : many;
+}
+
+// Detects how many issues a Linear turn pulled and whether any are high-stakes,
+// degrading to null when a result is not the expected JSON shape.
+function linearDetail(calls: ToolCall[]): string | null {
+  let issues = 0;
+  let high = 0;
+  for (const call of calls) {
+    if (call.result === undefined || call.result === '') continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(call.result);
+    } catch {
+      continue;
+    }
+    const list = Array.isArray(parsed)
+      ? parsed
+      : typeof parsed === 'object' &&
+          parsed !== null &&
+          Array.isArray((parsed as { issues?: unknown }).issues)
+        ? (parsed as { issues: unknown[] }).issues
+        : null;
+    if (list === null) continue;
+    for (const item of list) {
+      if (typeof item !== 'object' || item === null) continue;
+      issues += 1;
+      const priority = (item as { priority?: unknown }).priority;
+      const name =
+        typeof priority === 'object' && priority !== null
+          ? (priority as { name?: unknown }).name
+          : priority;
+      if (name === 1 || name === 2 || name === 'Urgent' || name === 'High') high += 1;
+    }
+  }
+  if (issues === 0) return null;
+  const noun = pluralize(issues, 'Linear issue', 'Linear issues');
+  if (high === 1) return `found ${issues} ${noun} (one high-priority)`;
+  if (high > 1) return `found ${issues} ${noun} (${high} high-priority)`;
+  return `found ${issues} ${noun}`;
+}
+
+const FAMILY_DEFS: Record<string, FamilyDef> = {
+  granola: { verb: 'read', altVerb: 'skimmed', noun: { one: 'note', many: 'notes' } },
+  firecrawl: { verb: 'read', altVerb: 'pulled', noun: { one: 'web page', many: 'web pages' } },
+  artifact: { verb: 'updated', altVerb: 'touched', noun: { one: 'artifact', many: 'artifacts' } },
+  exa: { verb: 'searched the web', altVerb: 'scoured the web' },
+  web: { verb: 'searched the web', altVerb: 'scoured the web' },
+  attio: { verb: 'searched Attio', altVerb: 'combed Attio' },
+  linear: { verb: 'checked Linear', altVerb: 'dug through Linear', detail: linearDetail },
+  github: { verb: 'checked GitHub', altVerb: 'browsed GitHub' },
+  reddit: { verb: 'searched Reddit', altVerb: 'scoured Reddit' },
+  x: { verb: 'searched X', altVerb: 'scanned X' },
+  youtube: { verb: 'searched YouTube', altVerb: 'scanned YouTube' },
+  hackernews: { verb: 'searched Hacker News', altVerb: 'scanned Hacker News' },
+  bluesky: { verb: 'searched Bluesky', altVerb: 'scanned Bluesky' },
+  polymarket: { verb: 'checked prediction markets', altVerb: 'eyed prediction markets' },
+  scrapecreators: { verb: 'pulled social data', altVerb: 'gathered social data' },
+  gamma: { verb: 'worked on a presentation', altVerb: 'built a presentation' },
+  dispatch: { verb: 'delegated to another agent', altVerb: 'handed off to another agent' },
+  last30days: { verb: 'researched', altVerb: 'dug into the research' },
+};
+
+function familyClause(
+  family: string,
+  calls: ToolCall[],
+  count: number,
+  style: ToolSummaryStyle
+): string {
+  const def = FAMILY_DEFS[family];
+  if (def === undefined) {
+    return `${toHumanLabel(family).toLowerCase()}${countSuffix(count, style)}`;
+  }
+  if (usesDetail(style) && def.detail !== undefined) {
+    const detail = def.detail(calls);
+    if (detail !== null) return detail;
+  }
+  const verb = usesAltVerb(style) && def.altVerb !== undefined ? def.altVerb : def.verb;
+  if (def.noun !== undefined) {
+    return `${verb} ${count} ${pluralize(count, def.noun.one, def.noun.many)}`;
+  }
+  return `${verb}${countSuffix(count, style)}`;
+}
+
+function joinClauses(clauses: string[]): string {
+  if (clauses.length <= 1) return clauses.join('');
+  if (clauses.length === 2) return clauses.join(' and ');
+  const last = clauses[clauses.length - 1];
+  return `${clauses.slice(0, -1).join(', ')}, and ${last}`;
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * Rolls a turn's tool calls up into a single human-readable summary line,
+ * grouped by provider family and counted, e.g.
+ * "Searched Attio 6×, read 5 notes, and checked Linear 2×".
+ *
+ * Families are ordered by first appearance so the sentence mirrors what the
+ * agent actually did. The `style` selects the phrasing. Returns an empty string
+ * for no calls.
+ */
+export function summarizeToolCalls(calls: ToolCall[], style: ToolSummaryStyle = 'symbols'): string {
+  if (calls.length === 0) return '';
+  const order: string[] = [];
+  const byFamily = new Map<string, ToolCall[]>();
+  for (const call of calls) {
+    const family = toolFamilyKey(call.name);
+    const existing = byFamily.get(family);
+    if (existing === undefined) {
+      order.push(family);
+      byFamily.set(family, [call]);
+    } else {
+      existing.push(call);
+    }
+  }
+  const clauses = order.map((family) => {
+    const familyCalls = byFamily.get(family) ?? [];
+    return familyClause(family, familyCalls, familyCalls.length, style);
+  });
+  return capitalize(joinClauses(clauses));
+}
+
+// A representative turn used to render a live example of each style in Settings,
+// so the preview always matches real output (including detail extraction). The
+// Linear result is shaped so the `detail`/`mixed` styles surface the priority.
+export const TOOL_SUMMARY_PREVIEW_CALLS: ToolCall[] = [
+  { id: 'p1', name: '@workbench/tools-attio/attio:attio_search_records', result: 'ok' },
+  { id: 'p2', name: '@workbench/tools-attio/attio:attio_get_record', result: 'ok' },
+  { id: 'p3', name: '@workbench/tools-attio/attio:attio_get_record', result: 'ok' },
+  { id: 'p4', name: '@workbench/tools-attio/attio:attio_get_record', result: 'ok' },
+  { id: 'p5', name: '@workbench/tools-attio/attio:attio_get_record', result: 'ok' },
+  { id: 'p6', name: '@workbench/tools-attio/attio:attio_query_records', result: 'ok' },
+  { id: 'p7', name: '@workbench/tools-granola/granola:granola_list_notes', result: 'ok' },
+  { id: 'p8', name: '@workbench/tools-granola/granola:granola_get_note', result: 'ok' },
+  { id: 'p9', name: '@workbench/tools-granola/granola:granola_get_note', result: 'ok' },
+  { id: 'p10', name: '@workbench/tools-granola/granola:granola_get_note', result: 'ok' },
+  { id: 'p11', name: '@workbench/tools-granola/granola:granola_get_note', result: 'ok' },
+  {
+    id: 'p12',
+    name: '@workbench/tools-linear/linear:linear_list_issues',
+    result: JSON.stringify([
+      { id: 'CL-1', priority: 'High' },
+      { id: 'CL-2', priority: 'Medium' },
+    ]),
+  },
+];

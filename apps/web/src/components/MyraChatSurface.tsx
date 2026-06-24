@@ -4,7 +4,9 @@ import {
   type ChatDockState,
   type UIResponse,
 } from '@workbench/chat';
-import { friendlyToolSummary } from '@workbench/agents/browser';
+import { friendlyToolSummary, summarizeToolCalls } from '@workbench/agents/browser';
+import { useCompactToolActivity, useToolSummaryStyle } from '@workbench/ui';
+import type { ToolCall } from '@workbench/chat';
 import type { MyraSession } from '../hooks/use-myra-session';
 
 const MYRA: ChatAgentIdentity = { name: 'Myra', tagline: 'Personal agent' };
@@ -40,6 +42,9 @@ export function MyraChatSurface({
   onClose,
 }: MyraChatSurfaceProps) {
   const agent: ChatAgentIdentity = threadLabel ? { ...MYRA, tagline: threadLabel } : MYRA;
+  const { compact: compactToolActivity } = useCompactToolActivity();
+  const { style: toolSummaryStyle } = useToolSummaryStyle();
+  const summarize = (calls: ToolCall[]) => summarizeToolCalls(calls, toolSummaryStyle);
 
   const chrome = {
     agent,
@@ -121,6 +126,8 @@ export function MyraChatSurface({
       getRating={session.getRating}
       hideToolCall={hideMyraSelfManagement}
       formatToolSummary={friendlyToolSummary}
+      compactToolActivity={compactToolActivity}
+      summarizeToolCalls={summarize}
     />
   );
 }

@@ -6,7 +6,21 @@ import {
   type SettingsSectionDescriptor,
   type SettingsValues,
 } from '@workbench/settings';
-import { isTheme, useTheme, THEMES, THEME_LABELS } from '@workbench/ui';
+import {
+  isTheme,
+  useTheme,
+  useCompactToolActivity,
+  useToolSummaryStyle,
+  THEMES,
+  THEME_LABELS,
+} from '@workbench/ui';
+import {
+  summarizeToolCalls,
+  isToolSummaryStyle,
+  TOOL_SUMMARY_STYLES,
+  TOOL_SUMMARY_STYLE_LABELS,
+  TOOL_SUMMARY_PREVIEW_CALLS,
+} from '@workbench/agents/browser';
 import { api } from '../lib/api';
 
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
@@ -45,6 +59,23 @@ const SECTIONS: readonly SettingsSectionDescriptor[] = [
         kind: 'select',
         options: THEMES.map((t) => ({ value: t, label: THEME_LABELS[t] })),
       },
+      {
+        key: 'compactToolActivity',
+        label: 'Compact tool activity',
+        kind: 'toggle',
+        description: "Collapse a turn's tool calls into a single summary line you can expand.",
+      },
+      {
+        key: 'toolSummaryStyle',
+        label: 'Tool summary style',
+        kind: 'select',
+        description:
+          'How the collapsed summary line reads. Applies when compact tool activity is on.',
+        options: TOOL_SUMMARY_STYLES.map((s) => ({
+          value: s,
+          label: TOOL_SUMMARY_STYLE_LABELS[s],
+        })),
+      },
     ],
   },
 ];
@@ -56,6 +87,9 @@ const INITIAL_VALUES: SettingsValues = {
 
 export default function Settings() {
   const { theme, setTheme } = useTheme();
+  const { compact: compactToolActivity, setCompact: setCompactToolActivity } =
+    useCompactToolActivity();
+  const { style: toolSummaryStyle, setStyle: setToolSummaryStyle } = useToolSummaryStyle();
   const [values, setValues] = useState<SettingsValues>({ ...INITIAL_VALUES });
   const [savedDisplayName, setSavedDisplayName] = useState<string>('');
 
@@ -71,6 +105,12 @@ export default function Settings() {
     setValues((prev) => ({ ...prev, [key]: value }));
     if (key === 'theme' && isTheme(value)) {
       setTheme(value);
+    }
+    if (key === 'compactToolActivity' && typeof value === 'boolean') {
+      setCompactToolActivity(value);
+    }
+    if (key === 'toolSummaryStyle' && isToolSummaryStyle(value)) {
+      setToolSummaryStyle(value);
     }
     if (key === 'displayName') {
       saveMutation.reset();
@@ -90,10 +130,21 @@ export default function Settings() {
     <div className="h-full overflow-y-auto">
       <SettingsPage
         sections={SECTIONS}
-        values={{ ...values, theme }}
+        values={{ ...values, theme, compactToolActivity, toolSummaryStyle }}
         onChange={handleChange}
         description="Manage your workbench preferences."
       />
+      <div
+        className={`mx-auto w-full max-w-2xl px-4 pb-6${compactToolActivity ? '' : ' opacity-50'}`}
+      >
+        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-text-3">
+          Example
+          {!compactToolActivity && ' (turn on compact tool activity to use)'}
+        </p>
+        <p className="text-sm text-text-2">
+          {summarizeToolCalls(TOOL_SUMMARY_PREVIEW_CALLS, toolSummaryStyle)}
+        </p>
+      </div>
       {displayNameDirty && (
         <div className="mx-auto w-full max-w-2xl px-4 pb-4">
           <div className="flex items-center gap-3">

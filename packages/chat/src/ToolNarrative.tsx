@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { cn, toHumanLabel } from '@workbench/ui';
 import { motion } from 'framer-motion';
 import type { ToolCall } from './types';
@@ -56,6 +56,10 @@ function ActiveIcon() {
   );
 }
 
+// Below this count there is no benefit to collapsing — the flat list is short
+// and more informative than a roll-up sentence.
+const COLLAPSE_THRESHOLD = 3;
+
 export interface ToolNarrativeProps {
   toolCalls: ToolCall[];
   /**
@@ -63,6 +67,17 @@ export interface ToolNarrativeProps {
    * human-readable summary line. Falls back to the call's `label` or `name`.
    */
   formatSummary?: (call: ToolCall) => string;
+  /**
+   * When true (and a `summarizeCalls` is supplied), a completed turn with
+   * {@link COLLAPSE_THRESHOLD}+ tool calls collapses into a single summary line
+   * that expands on click. A turn still in flight always shows the live list.
+   */
+  compact?: boolean;
+  /**
+   * Rolls the whole turn's calls into one summary line for the collapsed view,
+   * e.g. "Searched Attio 6×, read 5 notes, and checked Linear 2×".
+   */
+  summarizeCalls?: (calls: ToolCall[]) => string;
   /** Forwarded to interactive UI blocks rendered from a structured tool result. */
   onRespond?: (response: UIResponse) => void;
   /** Forwarded to document UI blocks for copy / download / save-artifact. */
@@ -193,19 +208,15 @@ function ToolRow({
   );
 }
 
-export function ToolNarrative({
+function ToolRows({
   toolCalls,
   formatSummary,
   onRespond,
   onAction,
-  className,
-}: ToolNarrativeProps) {
-  if (toolCalls.length === 0) return null;
-
+}: Pick<ToolNarrativeProps, 'toolCalls' | 'formatSummary' | 'onRespond' | 'onAction'>) {
   const fmt = formatSummary ?? defaultSummary;
-
   return (
-    <div className={cn('space-y-2', className)} data-testid="tool-narrative">
+    <>
       {toolCalls.map((call) => {
         const pending = call.result === undefined && !call.isError;
         const summary = pending ? (call.label ?? call.name) : fmt(call);
@@ -220,6 +231,89 @@ export function ToolNarrative({
           />
         );
       })}
+    </>
+  );
+}
+
+function CollapsedToolSummary({
+  summary,
+  count,
+  hasError,
+  children,
+}: {
+  summary: string;
+  count: number;
+  hasError: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-col">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex items-start gap-2.5 text-left cursor-pointer"
+      >
+        <span className="mt-0.5">
+          <DoneIcon isError={hasError} />
+        </span>
+        <span
+          className={cn(
+            'flex min-w-0 items-center gap-1.5 text-sm leading-snug',
+            hasError ? 'text-red-600' : 'text-text-3'
+          )}
+        >
+          <span className="min-w-0 truncate">{summary}</span>
+          <span className="shrink-0 text-text-3/70">· {count} tools</span>
+          <ChevronIcon open={open} />
+        </span>
+      </button>
+      {open && <div className="mt-1.5 space-y-2">{children}</div>}
+    </div>
+  );
+}
+
+export function ToolNarrative({
+  toolCalls,
+  formatSummary,
+  compact,
+  summarizeCalls,
+  onRespond,
+  onAction,
+  className,
+}: ToolNarrativeProps) {
+  if (toolCalls.length === 0) return null;
+
+  const anyPending = toolCalls.some((c) => c.result === undefined && c.isError !== true);
+  const shouldCollapse =
+    compact === true &&
+    summarizeCalls !== undefined &&
+    !anyPending &&
+    toolCalls.length >= COLLAPSE_THRESHOLD;
+
+  const rows = (
+    <ToolRows
+      toolCalls={toolCalls}
+      {...(formatSummary !== undefined ? { formatSummary } : {})}
+      {...(onRespond !== undefined ? { onRespond } : {})}
+      {...(onAction !== undefined ? { onAction } : {})}
+    />
+  );
+
+  return (
+    <div className={cn('space-y-2', className)} data-testid="tool-narrative">
+      {shouldCollapse ? (
+        <CollapsedToolSummary
+          summary={summarizeCalls(toolCalls)}
+          count={toolCalls.length}
+          hasError={toolCalls.some((c) => c.isError === true)}
+        >
+          {rows}
+        </CollapsedToolSummary>
+      ) : (
+        rows
+      )}
     </div>
   );
 }
