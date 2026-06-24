@@ -103,7 +103,8 @@ const MARKDOWN_PROSE_CLASS = `prose prose-sm prose-invert max-w-none text-text-2
   [&_h1]:text-[20px] [&_h1]:font-bold [&_h1]:text-text [&_h1]:mb-3
   [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-text [&_h2]:mb-2 [&_h2]:mt-5
   [&_h3]:text-[14px] [&_h3]:font-semibold [&_h3]:text-text [&_h3]:mb-1.5 [&_h3]:mt-4
-  [&_p]:text-[13px] [&_p]:leading-relaxed [&_p]:mb-3
+  [&_p]:text-[13px] [&_p]:leading-relaxed [&_p]:mb-3 [&_p]:break-words
+  [&_*]:min-w-0
   [&_ul]:pl-5 [&_ul]:mb-3 [&_li]:text-[13px] [&_li]:mb-1
   [&_ol]:pl-5 [&_ol]:mb-3
   [&_code]:font-mono [&_code]:text-[12px] [&_code]:bg-bg [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
@@ -314,6 +315,12 @@ export function SkillDetail() {
         )}
       </div>
 
+      {detailQuery.isError && (
+        <div className="flex flex-1 items-center justify-center p-5 text-[13px] text-text-3">
+          Could not load this skill.
+        </div>
+      )}
+
       {detailQuery.data && (
         <div className="flex flex-1 overflow-hidden">
           {tree.length > 0 && (
@@ -330,7 +337,7 @@ export function SkillDetail() {
             </div>
           )}
 
-          <div className="relative flex-1 overflow-y-auto p-5 space-y-5">
+          <div className="flex-1 space-y-5 overflow-y-auto p-5">
             {versions.length > 0 && (
               <section className="rounded-[10px] border border-border bg-surface">
                 <div className="border-b border-border px-4 py-2">
@@ -402,15 +409,30 @@ export function SkillDetail() {
             )}
             {selectedFile ? (
               <div className="rounded-[10px] border border-border bg-surface">
-                <div className="flex items-center justify-between border-b border-border px-4 py-2">
-                  <p className="font-mono text-[12px] text-text-3">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+                  <p className="min-w-0 truncate font-mono text-[12px] text-text-3">
                     {selectedFile.path}
                   </p>
+                  {selectedFile.content !== undefined && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSource((v) => !v)}
+                      aria-pressed={showSource}
+                      className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-border px-2.5 py-1 text-[12px] text-text-3 transition-colors hover:border-border-strong hover:text-text"
+                    >
+                      {showSource ? (
+                        <Eye className="h-3.5 w-3.5" />
+                      ) : (
+                        <Code className="h-3.5 w-3.5" />
+                      )}
+                      {showSource ? "Preview" : "Source"}
+                    </button>
+                  )}
                 </div>
-                <div className="p-5">
+                <div className="overflow-x-auto p-5">
                   {selectedFile.content !== undefined ? (
                     showSource ? (
-                      <pre className="whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-text-2">
+                      <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-text-2">
                         {selectedFile.content}
                       </pre>
                     ) : (
@@ -430,21 +452,6 @@ export function SkillDetail() {
               <p className="text-[13px] text-text-3">
                 Select a file to view its contents.
               </p>
-            )}
-
-            {selectedFile?.content !== undefined && (
-              <button
-                type="button"
-                onClick={() => setShowSource((v) => !v)}
-                className="absolute bottom-9 left-9 flex items-center gap-1.5 rounded-[9px] border border-border bg-surface px-3 py-1.5 text-[12px] text-text-3 shadow-sm hover:text-text"
-              >
-                {showSource ? (
-                  <Eye className="h-3.5 w-3.5" />
-                ) : (
-                  <Code className="h-3.5 w-3.5" />
-                )}
-                {showSource ? "Preview" : "Source"}
-              </button>
             )}
           </div>
         </div>

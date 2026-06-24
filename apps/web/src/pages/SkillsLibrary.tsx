@@ -93,13 +93,9 @@ function SkillGlyph({ kind }: { kind: "code" | "doc" | "grid" | "nodes" }) {
 }
 
 const GLYPHS = ["code", "doc", "grid", "nodes"] as const;
-const FILLS = [
-  "bg-orange",
-  "bg-blue",
-  "bg-green",
-  "bg-charcoal",
-  "bg-cream",
-] as const;
+// White glyphs/badges require a dark fill — mirror the artifact gallery palette,
+// which deliberately omits the light `bg-cream` for this reason.
+const FILLS = ["bg-orange", "bg-blue", "bg-green", "bg-charcoal"] as const;
 
 // Deterministic, stable visual per skill so the grid looks varied but never
 // reshuffles between renders.
@@ -215,6 +211,7 @@ export function SkillsLibrary() {
           <div className="flex-1" />
           <input
             type="search"
+            aria-label="Search skills"
             placeholder="Search skills"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

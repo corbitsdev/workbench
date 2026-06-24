@@ -31,7 +31,8 @@
 .hljs-string,
 .hljs-regexp,
 .hljs-addition,
-.hljs-template-tag {
+.hljs-template-variable,
+.hljs-subst {
   color: var(--green-soft);
 }
 .hljs-number,
