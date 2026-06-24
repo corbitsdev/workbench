@@ -1,9 +1,21 @@
-import { Home, Settings, LogOut, BookOpen, BarChart2 } from 'lucide-react';
-import { NavLink, Link, useLocation } from 'react-router';
+import { Home, Settings, LogOut, BookOpen, BarChart2, Workflow, Plus } from 'lucide-react';
+import { NavLink, Link, useNavigate } from 'react-router';
 import { useAuth } from '../AuthProvider';
+import { useCreateMyraThread, writeLastActiveThreadId } from '../../hooks/use-myra-threads';
+import { ThreadList } from './ThreadList';
+import { WorkbenchSelector } from './WorkbenchSelector';
+
+const NAV_ITEMS = [
+  { to: '/', label: 'Chats', icon: Home, end: true },
+  { to: '/workflows', label: 'Workflows', icon: Workflow, end: false },
+  { to: '/skills', label: 'Skills', icon: BookOpen, end: false },
+  { to: '/insights', label: 'Insights', icon: BarChart2, end: false },
+] as const;
 
 export function AppSidebar() {
   const { session, signOut } = useAuth();
+  const navigate = useNavigate();
+  const createThread = useCreateMyraThread();
   const name = session.status === 'authenticated' ? session.user.name : '';
   const initials =
     name
@@ -12,18 +24,25 @@ export function AppSidebar() {
       .join('')
       .slice(0, 2)
       .toUpperCase() || '··';
-  const location = useLocation();
-  const settingsActive = location.pathname.startsWith('/settings');
 
-  const navIconClass = (isActive: boolean) =>
-    `grid h-[40px] w-[40px] place-items-center rounded-[10px] transition-colors duration-150 ease-in-out ${
-      isActive ? 'text-orange' : 'text-text-3 hover:text-text'
+  const navItemClass = (isActive: boolean) =>
+    `flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm transition-colors duration-150 ${
+      isActive ? 'bg-page text-orange' : 'text-text-2 hover:bg-page hover:text-text'
     }`;
 
+  const newChat = () => {
+    createThread.mutate(undefined, {
+      onSuccess: (thread) => {
+        writeLastActiveThreadId(thread.id);
+        navigate(`/chats/${thread.id}`);
+      },
+    });
+  };
+
   return (
-    <aside className="flex h-full w-[56px] flex-col items-center border-r border-border bg-surface py-3">
-      <div className="flex flex-col items-center gap-0">
-        <Link to="/" className="group grid h-[40px] w-[40px] place-items-center" aria-label="Home">
+    <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-border bg-surface">
+      <div className="flex items-center gap-2 px-4 py-4">
+        <Link to="/" className="group grid h-[34px] w-[34px] place-items-center" aria-label="Home">
           <span className="grid h-[30px] w-[30px] place-items-center rounded-[10px] bg-orange shadow-[var(--accent-glow)] will-change-transform transition-transform duration-[400ms] ease-spring group-hover:rotate-[-8deg] group-hover:scale-[1.08]">
             <svg
               viewBox="32 115 437 270"
@@ -38,64 +57,67 @@ export function AppSidebar() {
             </svg>
           </span>
         </Link>
+        <span className="text-sm font-semibold text-text">Workbench</span>
       </div>
 
-      <nav className="mt-4 flex flex-col items-center gap-1" aria-label="Main navigation">
-        <NavLink
-          to="/"
-          end
-          title="Workbench"
-          aria-label="Workbench"
-          className={({ isActive }) => navIconClass(isActive)}
-        >
-          <Home size={18} />
-        </NavLink>
-
-        <NavLink
-          to="/skills"
-          title="Skills Library"
-          aria-label="Skills Library"
-          className={({ isActive }) => navIconClass(isActive)}
-        >
-          <BookOpen size={18} />
-        </NavLink>
-
-        <NavLink
-          to="/insights"
-          title="Data & Insights"
-          aria-label="Data and Insights"
-          className={({ isActive }) => navIconClass(isActive)}
-        >
-          <BarChart2 size={18} />
-        </NavLink>
-
-        <Link
-          to="/settings"
-          title="Settings"
-          aria-label="Settings"
-          className={navIconClass(settingsActive)}
-        >
-          <Settings size={18} />
-        </Link>
-      </nav>
-
-      <div className="mt-auto flex flex-col items-center gap-2 pb-1">
-        <div
-          className="grid h-[30px] w-[30px] place-items-center rounded-full bg-blue text-[10px] font-bold text-white"
-          title={name}
-        >
-          {initials}
-        </div>
-
+      <div className="px-3">
         <button
           type="button"
-          onClick={signOut}
-          title="Sign out"
-          aria-label="Sign out"
-          className="grid h-[40px] w-[40px] place-items-center rounded-[10px] text-text-2 transition-colors duration-150 ease-in-out hover:text-text"
+          onClick={newChat}
+          disabled={createThread.isPending}
+          className="flex w-full items-center gap-2 rounded-[10px] border border-border px-2.5 py-2 text-sm font-medium text-text transition-colors hover:bg-page disabled:opacity-50"
         >
-          <LogOut size={18} />
+          <Plus size={16} className="text-orange" />
+          {createThread.isPending ? 'Creating…' : 'New Chat'}
         </button>
+      </div>
+
+      <nav className="mt-3 flex flex-col gap-0.5 px-3" aria-label="Main navigation">
+        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+          <NavLink key={to} to={to} end={end} className={({ isActive }) => navItemClass(isActive)}>
+            <Icon size={17} />
+            {label}
+          </NavLink>
+        ))}
+        <WorkbenchSelector />
+      </nav>
+
+      <div className="mt-4 min-h-0 flex-1 overflow-auto px-3">
+        <div className="px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-3">
+          Chats
+        </div>
+        <ThreadList />
+      </div>
+
+      <div className="flex items-center justify-between border-t border-border px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div
+            className="grid h-[30px] w-[30px] place-items-center rounded-full bg-blue text-[10px] font-bold text-white"
+            title={name}
+          >
+            {initials}
+          </div>
+          <span className="max-w-[110px] truncate text-xs text-text-2">{name}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Link
+            to="/settings"
+            title="Settings"
+            aria-label="Settings"
+            className="grid h-[34px] w-[34px] place-items-center rounded-[10px] text-text-2 transition-colors hover:text-text"
+          >
+            <Settings size={17} />
+          </Link>
+          <button
+            type="button"
+            onClick={signOut}
+            title="Sign out"
+            aria-label="Sign out"
+            className="grid h-[34px] w-[34px] place-items-center rounded-[10px] text-text-2 transition-colors hover:text-text"
+          >
+            <LogOut size={17} />
+          </button>
+        </div>
       </div>
     </aside>
   );

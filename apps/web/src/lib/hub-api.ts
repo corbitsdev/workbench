@@ -127,6 +127,56 @@ export async function ensureMeSynced(): Promise<MeResponse> {
   return me;
 }
 
+const MyraThreadSchema = type({
+  id: 'string',
+  instanceId: 'string',
+  label: 'string',
+  createdAt: 'string',
+});
+export type MyraThread = typeof MyraThreadSchema.infer;
+const MyraThreadListSchema = type({ threads: MyraThreadSchema.array() });
+
+export async function listMyraThreads(): Promise<MyraThread[]> {
+  const raw = await hubFetch<unknown>('GET', 'v1/me/myra/threads');
+  const parsed = MyraThreadListSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid Myra threads response: ${parsed.summary}`);
+  }
+  return parsed.threads;
+}
+
+const MyraThreadCreateSchema = type({ thread: MyraThreadSchema, created: 'true' });
+
+export async function createMyraThread(label?: string): Promise<MyraThread> {
+  const raw = await hubFetch<unknown>(
+    'POST',
+    'v1/me/myra/threads',
+    label !== undefined ? { label } : {}
+  );
+  const parsed = MyraThreadCreateSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid Myra thread create response: ${parsed.summary}`);
+  }
+  return parsed.thread;
+}
+
+const MyraThreadMutateSchema = type({ thread: MyraThreadSchema });
+
+export async function renameMyraThread(id: string, label: string): Promise<MyraThread> {
+  const raw = await hubFetch<unknown>('PATCH', `v1/me/myra/threads/${encodeURIComponent(id)}`, {
+    label,
+  });
+  const parsed = MyraThreadMutateSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid Myra thread rename response: ${parsed.summary}`);
+  }
+  return parsed.thread;
+}
+
+export async function deleteMyraThread(id: string): Promise<void> {
+  await hubFetch<void>('DELETE', `v1/me/myra/threads/${encodeURIComponent(id)}`);
+}
+
 export async function getMyPrincipals(): Promise<Principal[]> {
   const res = await hubFetch<{ data: Principal[] }>('GET', 'me/principals');
   return res.data;

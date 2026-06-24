@@ -5,12 +5,13 @@ import { PersonalAgentChat } from './components/PersonalAgentChat';
 import { ChatLauncherProvider } from './lib/chat-launcher-context';
 import { LoginPage } from './pages/LoginPage';
 import WorkbenchHome from './pages/WorkbenchHome';
+import { ChatThreadPage } from './pages/ChatThreadPage';
+import { WorkflowsPage } from './pages/WorkflowsPage';
 import Settings from './pages/Settings';
 import { SkillsLibrary } from './pages/SkillsLibrary';
 import { SkillsNew } from './pages/SkillsNew';
 import { SkillDetail } from './pages/SkillDetail';
 import { InsightsDashboard } from './pages/InsightsDashboard';
-import { EphemeralMyraSpikePage } from './pages/EphemeralMyraSpikePage';
 
 function ProtectedLayout() {
   const { session } = useAuth();
@@ -36,19 +37,6 @@ function AppShell() {
   );
 }
 
-function LabsShell() {
-  return (
-    <ChatLauncherProvider>
-      <div className="flex h-screen flex-row bg-page">
-        <AppSidebar />
-        <main className="flex-1 overflow-hidden">
-          <Outlet />
-        </main>
-      </div>
-    </ChatLauncherProvider>
-  );
-}
-
 export const router = createBrowserRouter([
   {
     path: '/login',
@@ -60,9 +48,13 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          { index: true, element: <WorkbenchHome /> },
+          // Chat-first: the index and /chats redirect to the last-active thread.
+          { index: true, element: <ChatThreadPage /> },
+          { path: '/chats', element: <ChatThreadPage /> },
+          { path: '/chats/:threadId', element: <ChatThreadPage /> },
           { path: '/onboarding', element: <Navigate to="/" replace /> },
           { path: '/dashboard', element: <Navigate to="/" replace /> },
+          { path: '/workflows', element: <WorkflowsPage /> },
           { path: '/settings', element: <Settings /> },
           { path: '/skills', element: <SkillsLibrary /> },
           { path: '/skills/new', element: <SkillsNew /> },
@@ -70,10 +62,6 @@ export const router = createBrowserRouter([
           { path: '/insights', element: <InsightsDashboard /> },
           { path: '/workbenches/:slug', element: <WorkbenchHome /> },
         ],
-      },
-      {
-        element: <LabsShell />,
-        children: [{ path: '/labs/myra-ephemeral', element: <EphemeralMyraSpikePage /> }],
       },
     ],
   },
