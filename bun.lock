@@ -136,6 +136,7 @@
         "@workbench/ui": "workspace:*",
         "@workbench/workflow-ab-compare": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
+        "@workbench/workflow-last30days-research": "workspace:*",
         "@workbench/workflow-pain-point-collateral": "workspace:*",
         "@workbench/workflow-reddit-opportunity-scanner": "workspace:*",
         "@workbench/workflow-seo-enrichment-from-image": "workspace:*",
@@ -1138,10 +1139,20 @@
       "dependencies": {
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/last30days-core": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+        "react": "^19.0.0",
       },
       "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
+        "@testing-library/react": "^16.3.2",
         "@types/bun": "latest",
+        "@types/react": "^19.0.0",
         "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
       },
     },
     "workflows/pain-point-collateral": {

@@ -1,5 +1,6 @@
 import type { AgentTool } from '@intx/agent';
 import type { DB } from '@intx/db';
+import { parseReport } from '@workbench/last30days-core';
 import { WRITE_ARTIFACT_DEFINITION } from '@workbench/tools-artifact';
 import { and, eq, max } from 'drizzle-orm';
 import { artifact, artifactVersion } from '../db/schema';
@@ -31,14 +32,29 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
         const body = requireString(args, 'body');
         const kind = requireString(args, 'kind');
 
-        const rawCitations = args.citations;
-        const citations = Array.isArray(rawCitations) ? rawCitations : [];
+        let citations = Array.isArray(args.citations) ? args.citations : [];
 
+        let brief: Record<string, unknown> | undefined;
         const rawData = args.data;
-        const brief =
-          typeof rawData === 'object' && rawData !== null && !Array.isArray(rawData)
-            ? (rawData as Record<string, unknown>)
-            : undefined;
+        if (typeof rawData === 'object' && rawData !== null && !Array.isArray(rawData)) {
+          brief = rawData as Record<string, unknown>;
+        }
+
+        const rawBriefContent = args.content;
+        if (typeof rawBriefContent === 'string' && rawBriefContent.trim().length > 0) {
+          try {
+            const parsedBrief = parseReport(JSON.parse(rawBriefContent));
+            if (parsedBrief !== null) {
+              brief = parsedBrief as unknown as Record<string, unknown>;
+              if (citations.length === 0) {
+                citations = parsedBrief.citations;
+              }
+            }
+          } catch {
+            // Non-JSON brief content is ignored; explicit citations/data still apply.
+          }
+        }
+
         const source: Record<string, unknown> =
           brief === undefined ? { citations } : { citations, brief };
 

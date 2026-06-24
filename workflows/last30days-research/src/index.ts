@@ -98,13 +98,17 @@ export const workflow = defineWorkflow({
       id: 'last30days-persist-artifact',
       tool: 'write_artifact',
       input: {
-        merge: [{ from: 'steps.intake.output' }, { from: 'steps.write.output' }],
+        merge: [
+          { from: 'steps.intake.output' },
+          { from: 'steps.brief.output' },
+          { from: 'steps.write.output' },
+        ],
       },
       argMap: {
         title: { from: 'topic' },
         body: { from: 'reply' },
-        citations: { literal: [] },
         kind: { literal: 'research' },
+        content: { from: 'content' },
       },
       after: ['write'],
     }),

@@ -204,6 +204,10 @@ function createWorkflowNormalizeIntakeTool(): AgentTool {
       if (typeof topic !== 'string' || topic.trim().length === 0) {
         throw new Error('topic is required');
       }
+      const content = effective.content;
+      if (typeof content === 'string' && content.trim().length > 0) {
+        return content.trim();
+      }
       return topic.trim();
     },
   };

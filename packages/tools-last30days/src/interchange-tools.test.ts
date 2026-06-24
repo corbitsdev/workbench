@@ -32,6 +32,17 @@ describe('tools-last30days interchange.tools entry', () => {
     expect(out.length).toBeGreaterThan(0);
   });
 
+  test('workflow normalize prefers content over topic for the search query', async () => {
+    const tools = createLast30daysTools();
+    const normalize = tools.find((t) => t.definition.name === 'last30days_workflow_normalize_intake');
+    if (normalize?.kind !== 'string') throw new Error('expected a string tool');
+    const out = await normalize.handler(
+      { topic: 'Broad topic', content: 'narrow query' },
+      AbortSignal.timeout(1000)
+    );
+    expect(out).toBe('narrow query');
+  });
+
   test('workflow brief folds source step envelopes into a report', async () => {
     const tools = createLast30daysTools();
     const brief = tools.find((t) => t.definition.name === 'last30days_workflow_brief');

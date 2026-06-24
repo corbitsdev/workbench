@@ -288,6 +288,47 @@ describe('write_artifact tool', () => {
     expect('brief' in (artifactInserts[0]?.source ?? {})).toBe(false);
   });
 
+  it('content: parses last30days brief JSON into source.brief and citations', async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: 'tnt-1',
+      principalId: 'prn-1',
+    });
+
+    const briefPayload = {
+      topic: 'GTM agents',
+      days: 30,
+      stats: { sourceCount: 1, itemCount: 1 },
+      clusters: [],
+      bestTakes: [],
+      items: [],
+      citations: [
+        {
+          url: 'https://example.com/a',
+          source: 'web',
+          retrievedAt: '2026-03-23T00:00:00.000Z',
+          title: 'Example',
+        },
+      ],
+      generatedAt: '2026-03-23T00:00:00.000Z',
+    };
+
+    await handler(
+      {
+        title: 'Brief',
+        body: 'Body',
+        kind: 'research',
+        content: JSON.stringify(briefPayload),
+      },
+      SIGNAL
+    );
+
+    expect(artifactInserts[0]?.source.brief).toMatchObject({ topic: 'GTM agents' });
+    expect(artifactInserts[0]?.source.citations).toHaveLength(1);
+  });
+
   it('update path: refreshes the parent row content, source, and version', async () => {
     const updates: Record<string, unknown>[] = [];
     const db = makeMockDb({
