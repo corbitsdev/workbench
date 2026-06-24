@@ -216,6 +216,10 @@ export async function renameMyraThread(
 }
 
 const TITLE_CREDENTIAL_NAME = 'Myra Title LLM';
+// Cheap, fast model for titling. Served by the same openai-compatible gateway
+// (opencode-zen) the Myra LLM credential already points at, so titling works
+// with no extra credential — we just pin the flash model on the existing key.
+const TITLE_MODEL = 'deepseek-v4-flash';
 const TITLE_SYSTEM_PROMPT =
   "Generate a concise 3-6 word title for a chat that begins with the user's message. Reply with ONLY the title — no quotes, no punctuation at the end.";
 
@@ -292,7 +296,9 @@ async function resolveTitleSource(db: HubDb, tenantId: string): Promise<Inferenc
   if (!resolution.ok) return null;
   const [head] = resolution.sources;
   if (!head) return null;
-  return { ...head, defaults: { ...head.defaults, maxTokens: 64 } };
+  // Reuse the Myra credential's key + gateway (opencode-zen) but pin the cheap
+  // flash model for titles.
+  return { ...head, model: TITLE_MODEL, defaults: { ...head.defaults, maxTokens: 64 } };
 }
 
 /**
