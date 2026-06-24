@@ -80,17 +80,19 @@ describe('InsightsDashboard', () => {
     });
     expect(screen.getAllByText('12').length).toBe(2);
     expect(screen.getAllByText('Tool calls').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('4')).toBeDefined();
+    expect(screen.getAllByText('4').length).toBe(2);
   });
 
-  it('shows success rate instead of failure rate on the turns KPI', async () => {
+  it('shows success rates for turns and tool calls instead of failure or error rates', async () => {
     renderPage();
 
     await waitFor(() => {
       expect(screen.getByText('Successful turns')).toBeDefined();
     });
-    expect(screen.getByText('100.0% success rate')).toBeDefined();
+    expect(screen.getByText('Successful tool calls')).toBeDefined();
+    expect(screen.getAllByText('100.0% success rate').length).toBe(2);
     expect(screen.queryByText(/failure rate/)).toBeNull();
+    expect(screen.queryByText(/error rate/)).toBeNull();
   });
 
   it('renders per-agent breakdown when by-agent data is available', async () => {

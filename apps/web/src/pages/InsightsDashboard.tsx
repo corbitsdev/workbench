@@ -92,9 +92,10 @@ function SummaryContent({ data }: { data: AnalyticsSummary }) {
       ? `${((successfulTurnCount / data.turnCount) * 100).toFixed(1)}% success rate`
       : undefined;
 
-  const toolErrorRate =
+  const successfulToolCallCount = data.toolCallCount - data.toolErrorCount;
+  const toolSuccessRate =
     data.toolCallCount > 0
-      ? `${((data.toolErrorCount / data.toolCallCount) * 100).toFixed(1)}% error rate`
+      ? `${((successfulToolCallCount / data.toolCallCount) * 100).toFixed(1)}% success rate`
       : undefined;
 
   return (
@@ -109,9 +110,9 @@ function SummaryContent({ data }: { data: AnalyticsSummary }) {
         />
         <KPICard label="Tool calls" value={formatNumber(data.toolCallCount)} />
         <KPICard
-          label="Tool errors"
-          value={formatNumber(data.toolErrorCount)}
-          sub={toolErrorRate}
+          label="Successful tool calls"
+          value={formatNumber(successfulToolCallCount)}
+          sub={toolSuccessRate}
           accent={data.toolErrorCount > 0}
         />
       </div>
