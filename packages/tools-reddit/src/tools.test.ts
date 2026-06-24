@@ -198,6 +198,50 @@ describe('reddit_subreddit_search', () => {
   });
 });
 
+describe('limit handling', () => {
+  function manyPosts(count: number) {
+    return {
+      posts: Array.from({ length: count }, (_, i) => ({
+        id: `p${i}`,
+        title: `Post ${i}`,
+        permalink: `/r/rust/comments/p${i}/post_${i}/`,
+        created_utc: 1700100000 + i,
+        ups: 1,
+        num_comments: 0,
+        subreddit: 'rust',
+      })),
+    };
+  }
+
+  it('caps results at the default of 10 when no limit is given', async () => {
+    const handler = getHandler(
+      createRedditTools({
+        apiKey: 'k',
+        fetcher: async () => new Response(JSON.stringify(manyPosts(25))),
+      }),
+      'reddit_search'
+    );
+    const items = JSON.parse(
+      await handler({ query: 'rust' }, new AbortController().signal)
+    ) as unknown[];
+    expect(items).toHaveLength(10);
+  });
+
+  it('clamps an explicit limit to the MAX of 100', async () => {
+    const handler = getHandler(
+      createRedditTools({
+        apiKey: 'k',
+        fetcher: async () => new Response(JSON.stringify(manyPosts(150))),
+      }),
+      'reddit_search'
+    );
+    const items = JSON.parse(
+      await handler({ query: 'rust', limit: 500 }, new AbortController().signal)
+    ) as unknown[];
+    expect(items).toHaveLength(100);
+  });
+});
+
 describe('malformed posts', () => {
   it('skips posts missing a permalink or a resolvable date instead of emitting garbage', async () => {
     const response = {

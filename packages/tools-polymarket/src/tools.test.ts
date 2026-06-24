@@ -59,6 +59,46 @@ describe('polymarket_odds tool', () => {
     expect(first.entityTag).toBe('cond-btc-200k');
   });
 
+  test('sends default limit of 10 when none provided', async () => {
+    const fetcher = makeFetchStub(mockMarketsResponse);
+    const runner = createToolRunner(createPolymarketTools({ fetcher }));
+
+    await runner.run(
+      { id: 'call_1', name: 'polymarket_odds', arguments: { query: 'AI' } },
+      new AbortController().signal
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const calledUrl = new URL((fetcher as ReturnType<typeof mock>).mock.calls[0][0] as string);
+    expect(calledUrl.searchParams.get('limit')).toBe('10');
+  });
+
+  test('forwards an explicit limit', async () => {
+    const fetcher = makeFetchStub(mockMarketsResponse);
+    const runner = createToolRunner(createPolymarketTools({ fetcher }));
+
+    await runner.run(
+      { id: 'call_1', name: 'polymarket_odds', arguments: { query: 'AI', limit: 5 } },
+      new AbortController().signal
+    );
+
+    const calledUrl = new URL((fetcher as ReturnType<typeof mock>).mock.calls[0][0] as string);
+    expect(calledUrl.searchParams.get('limit')).toBe('5');
+  });
+
+  test('clamps limit above the max to 50', async () => {
+    const fetcher = makeFetchStub(mockMarketsResponse);
+    const runner = createToolRunner(createPolymarketTools({ fetcher }));
+
+    await runner.run(
+      { id: 'call_1', name: 'polymarket_odds', arguments: { query: 'AI', limit: 999 } },
+      new AbortController().signal
+    );
+
+    const calledUrl = new URL((fetcher as ReturnType<typeof mock>).mock.calls[0][0] as string);
+    expect(calledUrl.searchParams.get('limit')).toBe('50');
+  });
+
   test('returns empty array when response is empty', async () => {
     const fetcher = makeFetchStub([]);
     const runner = createToolRunner(createPolymarketTools({ fetcher }));

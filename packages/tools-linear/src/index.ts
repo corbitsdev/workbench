@@ -10,8 +10,8 @@ export type LinearToolsConfig = {
 };
 
 const DEFAULT_BASE_URL = 'https://api.linear.app/graphql';
-const DEFAULT_ISSUE_LIMIT = 25;
-const DEFAULT_LIST_LIMIT = 50;
+const DEFAULT_ISSUE_LIMIT = 10;
+const DEFAULT_LIST_LIMIT = 25;
 const MAX_LIMIT = 100;
 
 function linearHeaders(apiKey: string): Record<string, string> {
@@ -123,15 +123,15 @@ const ISSUE_FIELDS = `
   url
 `;
 
-const LIST_ISSUES_QUERY = `query ListIssues($first: Int!) {
-  issues(first: $first) {
+const LIST_ISSUES_QUERY = `query ListIssues($first: Int!, $filter: IssueFilter) {
+  issues(first: $first, filter: $filter) {
     nodes {${ISSUE_FIELDS}}
   }
 }`;
 
-const LIST_TEAM_ISSUES_QUERY = `query ListTeamIssues($teamId: String!, $first: Int!) {
+const LIST_TEAM_ISSUES_QUERY = `query ListTeamIssues($teamId: String!, $first: Int!, $filter: IssueFilter) {
   team(id: $teamId) {
-    issues(first: $first) {
+    issues(first: $first, filter: $filter) {
       nodes {${ISSUE_FIELDS}}
     }
   }
@@ -165,6 +165,19 @@ const LIST_USERS_QUERY = `query ListUsers($first: Int!) {
   }
 }`;
 
+function buildIssueFilter(args: Record<string, unknown>): Record<string, unknown> | null {
+  const state = optionalString(args.state);
+  const assignee = optionalString(args.assignee);
+  const filter: Record<string, unknown> = {};
+  if (state !== null) {
+    filter.state = { name: { eqIgnoreCase: state } };
+  }
+  if (assignee !== null) {
+    filter.assignee = { name: { eqIgnoreCase: assignee } };
+  }
+  return Object.keys(filter).length > 0 ? filter : null;
+}
+
 async function listIssues(
   config: LinearToolsConfig,
   args: Record<string, unknown>,
@@ -172,12 +185,13 @@ async function listIssues(
 ): Promise<unknown> {
   const first = optionalPositiveInteger(args.first, DEFAULT_ISSUE_LIMIT, MAX_LIMIT);
   const teamId = optionalString(args.teamId);
+  const filter = buildIssueFilter(args);
 
   if (teamId !== null) {
     const data = await fetchLinearGraphQL(
       config,
       LIST_TEAM_ISSUES_QUERY,
-      { teamId, first },
+      { teamId, first, ...(filter !== null ? { filter } : {}) },
       signal
     );
     if (!isRecord(data.team)) {
@@ -186,7 +200,12 @@ async function listIssues(
     return data.team.issues;
   }
 
-  const data = await fetchLinearGraphQL(config, LIST_ISSUES_QUERY, { first }, signal);
+  const data = await fetchLinearGraphQL(
+    config,
+    LIST_ISSUES_QUERY,
+    { first, ...(filter !== null ? { filter } : {}) },
+    signal
+  );
   return data.issues;
 }
 
@@ -231,11 +250,20 @@ const LIST_ISSUES_INPUT_SCHEMA = {
   properties: {
     first: {
       type: 'number',
-      description: 'Maximum number of issues to return (1-100, default 25).',
+      description: 'Maximum number of issues to return (1-100, default 10).',
     },
     teamId: {
       type: 'string',
       description: 'Optional team id to scope the issues to a single team.',
+    },
+    state: {
+      type: 'string',
+      description:
+        'Optional workflow state name to filter by (e.g. "Todo", "In Progress", "Done"). Case-insensitive.',
+    },
+    assignee: {
+      type: 'string',
+      description: 'Optional assignee name to filter by. Case-insensitive.',
     },
   },
   required: [],
@@ -257,7 +285,7 @@ const LIST_LIMIT_INPUT_SCHEMA = {
   properties: {
     first: {
       type: 'number',
-      description: 'Maximum number of records to return (1-100, default 50).',
+      description: 'Maximum number of records to return (1-100, default 25).',
     },
   },
   required: [],
@@ -266,7 +294,7 @@ const LIST_LIMIT_INPUT_SCHEMA = {
 export const LINEAR_LIST_ISSUES_DEFINITION: ToolDefinition = {
   name: 'linear_list_issues',
   description:
-    'List Linear issues across the workspace, or scoped to a team when teamId is given. Read-only. Returns issue id, identifier, title, state, assignee, team, updatedAt, and url.',
+    'List Linear issues across the workspace. Read-only. Scope the query with teamId, state, and/or assignee rather than listing everything; returns 10 issues by default (max 100). Returns issue id, identifier, title, state, assignee, team, updatedAt, and url.',
   inputSchema: LIST_ISSUES_INPUT_SCHEMA,
 };
 

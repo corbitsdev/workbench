@@ -206,6 +206,47 @@ describe('youtube_search tool', () => {
     expect(String(result.content)).toContain('query is required');
   });
 
+  async function runAndCaptureSearchUrl(args: Record<string, unknown>): Promise<URL> {
+    const videoIds = ['abc123'];
+    const responses = [makeSearchResponse(videoIds), makeVideosResponse(videoIds)];
+    let callIndex = 0;
+    let searchUrl: URL | undefined;
+    const fetcher: YouTubeFetch = mock((url: string) => {
+      if (callIndex === 0) {
+        searchUrl = new URL(url);
+      }
+      const response = responses[callIndex] ?? responses[responses.length - 1];
+      callIndex++;
+      return Promise.resolve(new Response(JSON.stringify(response), { status: 200 }));
+    });
+    const runner = createToolRunner(createYouTubeTools({ apiKey: FAKE_API_KEY, fetcher }));
+
+    await runner.run(
+      { id: 'call_1', name: 'youtube_search', arguments: args },
+      new AbortController().signal
+    );
+
+    if (searchUrl === undefined) {
+      throw new Error('search request was never made');
+    }
+    return searchUrl;
+  }
+
+  test('defaults maxResults to 10 on the search request', async () => {
+    const url = await runAndCaptureSearchUrl({ query: 'AI tools' });
+    expect(url.searchParams.get('maxResults')).toBe('10');
+  });
+
+  test('forwards an explicit limit as maxResults', async () => {
+    const url = await runAndCaptureSearchUrl({ query: 'AI tools', limit: 5 });
+    expect(url.searchParams.get('maxResults')).toBe('5');
+  });
+
+  test('clamps an over-max limit to 20', async () => {
+    const url = await runAndCaptureSearchUrl({ query: 'AI tools', limit: 999 });
+    expect(url.searchParams.get('maxResults')).toBe('20');
+  });
+
   test('YOUTUBE_HUB_TOOLS has correct structure', () => {
     expect(YOUTUBE_HUB_TOOLS.youtube_search.definition.name).toBe('youtube_search');
     expect(YOUTUBE_HUB_TOOLS.youtube_search.providerName).toBe('youtube');

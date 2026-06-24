@@ -5,6 +5,8 @@ import type { GitHubIssueOrPR, GitHubRepo } from './types';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const DEFAULT_DAYS = 30;
+const DEFAULT_PER_LIST = 5;
+const MAX_PER_LIST = 25;
 
 export type GitHubFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -16,7 +18,7 @@ export type GitHubToolsConfig = {
 export const GITHUB_ACTIVITY_DEFINITION: ToolDefinition = {
   name: 'github_activity',
   description:
-    'Search GitHub for recently active repositories, issues, and pull requests matching a topic. Pass keyword terms only — do not include GitHub search qualifiers like is:issue, is:pr, or repo: in the query; those are added automatically. Returns normalized research items with star, reaction, and comment counts.',
+    'Search GitHub for recently active repositories, issues, and pull requests matching a topic. Scope the search tightly: pass specific keyword terms and a narrow days window rather than pulling everything — the default returns only a few results per category. Pass keyword terms only — do not include GitHub search qualifiers like is:issue, is:pr, or repo: in the query; those are added automatically. Returns normalized research items with star, reaction, and comment counts.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -28,6 +30,10 @@ export const GITHUB_ACTIVITY_DEFINITION: ToolDefinition = {
       days: {
         type: 'number',
         description: 'Number of days to look back (default 30).',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum results per category — repos, issues, PRs each (1-25, default 5).',
       },
     },
     required: ['query'],
@@ -117,20 +123,26 @@ async function searchGitHub(
   const cutoff = new Date(Date.now() - days * 86400 * 1000);
   const cutoffDate = cutoff.toISOString().slice(0, 10);
 
+  const perList =
+    typeof args.limit === 'number' && Number.isInteger(args.limit) && args.limit > 0
+      ? Math.min(args.limit, MAX_PER_LIST)
+      : DEFAULT_PER_LIST;
+  const perPage = String(perList);
+
   const reposUrl = new URL(`${GITHUB_API_BASE}/search/repositories`);
   reposUrl.searchParams.set('q', `${query} pushed:>=${cutoffDate}`);
   reposUrl.searchParams.set('sort', 'stars');
-  reposUrl.searchParams.set('per_page', '20');
+  reposUrl.searchParams.set('per_page', perPage);
 
   const issuesUrl = new URL(`${GITHUB_API_BASE}/search/issues`);
   issuesUrl.searchParams.set('q', `${query} is:issue updated:>=${cutoffDate}`);
   issuesUrl.searchParams.set('sort', 'reactions');
-  issuesUrl.searchParams.set('per_page', '10');
+  issuesUrl.searchParams.set('per_page', perPage);
 
   const prsUrl = new URL(`${GITHUB_API_BASE}/search/issues`);
   prsUrl.searchParams.set('q', `${query} is:pr updated:>=${cutoffDate}`);
   prsUrl.searchParams.set('sort', 'reactions');
-  prsUrl.searchParams.set('per_page', '10');
+  prsUrl.searchParams.set('per_page', perPage);
 
   const [reposRaw, issuesRaw, prsRaw] = await Promise.all([
     fetchGitHubJSON(reposUrl, config, signal),

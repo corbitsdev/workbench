@@ -187,6 +187,82 @@ describe('github_activity tool', () => {
     }
   });
 
+  test('defaults per_page to 5 on each of the three search URLs', async () => {
+    const calls: string[] = [];
+    const fetcher: GitHubFetch = mock((url: string) => {
+      calls.push(url);
+      return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    });
+
+    const runner = createToolRunner(createGitHubTools({ apiKey: '', fetcher }));
+    await runner.run(
+      { id: 'call_limit_1', name: 'github_activity', arguments: { query: 'test' } },
+      new AbortController().signal
+    );
+
+    expect(calls).toHaveLength(3);
+    for (const url of calls) {
+      expect(new URL(url).searchParams.get('per_page')).toBe('5');
+    }
+  });
+
+  test('forwards an explicit limit to per_page on every search URL', async () => {
+    const calls: string[] = [];
+    const fetcher: GitHubFetch = mock((url: string) => {
+      calls.push(url);
+      return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    });
+
+    const runner = createToolRunner(createGitHubTools({ apiKey: '', fetcher }));
+    await runner.run(
+      { id: 'call_limit_2', name: 'github_activity', arguments: { query: 'test', limit: 12 } },
+      new AbortController().signal
+    );
+
+    expect(calls).toHaveLength(3);
+    for (const url of calls) {
+      expect(new URL(url).searchParams.get('per_page')).toBe('12');
+    }
+  });
+
+  test('clamps an over-max limit to 25', async () => {
+    const calls: string[] = [];
+    const fetcher: GitHubFetch = mock((url: string) => {
+      calls.push(url);
+      return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    });
+
+    const runner = createToolRunner(createGitHubTools({ apiKey: '', fetcher }));
+    await runner.run(
+      { id: 'call_limit_3', name: 'github_activity', arguments: { query: 'test', limit: 999 } },
+      new AbortController().signal
+    );
+
+    expect(calls).toHaveLength(3);
+    for (const url of calls) {
+      expect(new URL(url).searchParams.get('per_page')).toBe('25');
+    }
+  });
+
+  test('falls back to default per_page for an invalid limit', async () => {
+    const calls: string[] = [];
+    const fetcher: GitHubFetch = mock((url: string) => {
+      calls.push(url);
+      return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    });
+
+    const runner = createToolRunner(createGitHubTools({ apiKey: '', fetcher }));
+    await runner.run(
+      { id: 'call_limit_4', name: 'github_activity', arguments: { query: 'test', limit: -3 } },
+      new AbortController().signal
+    );
+
+    expect(calls).toHaveLength(3);
+    for (const url of calls) {
+      expect(new URL(url).searchParams.get('per_page')).toBe('5');
+    }
+  });
+
   test('omits Authorization header when apiKey is empty', async () => {
     const calls: { url: string; init: RequestInit | undefined }[] = [];
     const fetcher: GitHubFetch = mock((url: string, init?: RequestInit) => {

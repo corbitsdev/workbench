@@ -10,6 +10,7 @@ import type {
 
 const YOUTUBE_BASE_URL = 'https://www.googleapis.com/youtube/v3';
 const DEFAULT_DAYS = 30;
+const DEFAULT_RESULTS = 10;
 const MAX_RESULTS = 20;
 
 export type YouTubeFetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -22,7 +23,7 @@ export type YouTubeToolsConfig = {
 export const YOUTUBE_SEARCH_DEFINITION: ToolDefinition = {
   name: 'youtube_search',
   description:
-    'Search YouTube videos from the last N days. Returns normalized research items with engagement data including views, likes, and comments.',
+    'Search YouTube videos from the last N days. Returns normalized research items with engagement data including views, likes, and comments. Scope each call with a specific query and a tight days window rather than pulling the maximum — the default is 10 results, and every result also costs a second statistics lookup, so over-fetching is doubly expensive.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -33,6 +34,10 @@ export const YOUTUBE_SEARCH_DEFINITION: ToolDefinition = {
       days: {
         type: 'number',
         description: 'Number of days to look back (default 30).',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of videos to return (1-20, default 10).',
       },
     },
     required: ['query'],
@@ -96,6 +101,7 @@ async function fetchSearchResults(
   config: YouTubeToolsConfig,
   query: string,
   publishedAfter: string,
+  maxResults: number,
   signal: AbortSignal
 ): Promise<YouTubeSearchResponse> {
   const url = new URL(`${YOUTUBE_BASE_URL}/search`);
@@ -104,7 +110,7 @@ async function fetchSearchResults(
   url.searchParams.set('type', 'video');
   url.searchParams.set('order', 'relevance');
   url.searchParams.set('publishedAfter', publishedAfter);
-  url.searchParams.set('maxResults', String(MAX_RESULTS));
+  url.searchParams.set('maxResults', String(maxResults));
   url.searchParams.set('key', config.apiKey);
 
   const fetcher = config.fetcher ?? fetch;
@@ -158,10 +164,20 @@ async function searchYouTube(
   }
   const days =
     typeof args.days === 'number' && args.days > 0 ? Math.floor(args.days) : DEFAULT_DAYS;
+  const maxResults =
+    typeof args.limit === 'number' && Number.isInteger(args.limit) && args.limit > 0
+      ? Math.min(args.limit, MAX_RESULTS)
+      : DEFAULT_RESULTS;
 
   const publishedAfter = new Date(Date.now() - days * 86400 * 1000).toISOString();
 
-  const searchResponse = await fetchSearchResults(config, query, publishedAfter, signal);
+  const searchResponse = await fetchSearchResults(
+    config,
+    query,
+    publishedAfter,
+    maxResults,
+    signal
+  );
 
   if (searchResponse.items.length === 0) {
     return JSON.stringify([], null, 2);

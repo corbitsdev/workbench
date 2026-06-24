@@ -5,6 +5,8 @@ import type { HNPost, HNSearchResponse } from './types';
 
 const HN_BASE_URL = 'https://hn.algolia.com/api/v1';
 const DEFAULT_DAYS = 30;
+const DEFAULT_HITS = 10;
+const MAX_HITS = 50;
 
 export type HNFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -15,7 +17,7 @@ export type HackerNewsToolsConfig = {
 export const HACKERNEWS_SEARCH_DEFINITION: ToolDefinition = {
   name: 'hackernews_search',
   description:
-    'Search Hacker News stories from the last N days. Returns normalized research items with engagement data.',
+    'Search Hacker News stories from the last N days. Returns normalized research items with engagement data. Scope each call with a specific query and the days window rather than pulling everything; the default returns 10 stories.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -26,6 +28,10 @@ export const HACKERNEWS_SEARCH_DEFINITION: ToolDefinition = {
       days: {
         type: 'number',
         description: 'Number of days to look back (default 30).',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of stories to return (1-50, default 10).',
       },
     },
     required: ['query'],
@@ -69,12 +75,16 @@ async function searchHackerNews(
   const days =
     typeof args.days === 'number' && args.days > 0 ? Math.floor(args.days) : DEFAULT_DAYS;
   const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+  const limit =
+    Number.isInteger(args.limit) && (args.limit as number) > 0
+      ? Math.min(args.limit as number, MAX_HITS)
+      : DEFAULT_HITS;
 
   const url = new URL(`${HN_BASE_URL}/search`);
   url.searchParams.set('query', query);
   url.searchParams.set('tags', 'story');
   url.searchParams.set('numericFilters', `created_at_i>=${cutoff}`);
-  url.searchParams.set('hitsPerPage', '20');
+  url.searchParams.set('hitsPerPage', String(limit));
 
   const fetcher = config.fetcher ?? fetch;
   const response = await fetcher(url.toString(), { signal });

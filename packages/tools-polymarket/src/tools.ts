@@ -5,6 +5,9 @@ import type { PolymarketMarket } from './types';
 
 const POLYMARKET_API_BASE = 'https://gamma-api.polymarket.com';
 
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 50;
+
 export type PolymarketFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 export type PolymarketToolsConfig = {
@@ -14,13 +17,17 @@ export type PolymarketToolsConfig = {
 export const POLYMARKET_ODDS_DEFINITION: ToolDefinition = {
   name: 'polymarket_odds',
   description:
-    'Search active Polymarket prediction markets matching a query. Returns normalized research items with market volume as engagement.',
+    'Search active Polymarket prediction markets matching a query. Use a specific query to scope results to the markets you actually need rather than pulling everything; returns the top 10 by default. Returns normalized research items with market volume as engagement.',
   inputSchema: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
         description: 'The search query string.',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of markets to return (1-50, default 10).',
       },
     },
     required: ['query'],
@@ -58,10 +65,15 @@ async function searchPolymarket(
     throw new Error('query is required');
   }
 
+  const limit =
+    Number.isInteger(args.limit) && typeof args.limit === 'number' && args.limit > 0
+      ? Math.min(args.limit, MAX_LIMIT)
+      : DEFAULT_LIMIT;
+
   const url = new URL(`${POLYMARKET_API_BASE}/markets`);
   url.searchParams.set('q', query);
   url.searchParams.set('active', 'true');
-  url.searchParams.set('limit', '20');
+  url.searchParams.set('limit', String(limit));
 
   const fetcher = config.fetcher ?? fetch;
   const response = await fetcher(url.toString(), { signal });

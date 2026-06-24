@@ -110,6 +110,50 @@ describe('scrapecreators_tiktok happy path', () => {
   });
 });
 
+describe('result limit', () => {
+  function buildTikTokItems(count: number): unknown[] {
+    return Array.from({ length: count }, (_, i) => ({
+      aweme_info: {
+        aweme_id: `vid_${i}`,
+        share_url: `https://www.tiktok.com/@creator/video/vid_${i}`,
+        desc: `video ${i}`,
+      },
+    }));
+  }
+
+  it('caps results at the default of 10 when no limit is given', async () => {
+    const fetcher = mock(
+      async () =>
+        new Response(JSON.stringify({ search_item_list: buildTikTokItems(25) }), { status: 200 })
+    );
+    const result = await runTool('scrapecreators_tiktok', { query: 'q' }, fetcher);
+    expect(result.isError).toBeUndefined();
+    const items = JSON.parse(String(result.content)) as unknown[];
+    expect(items).toHaveLength(10);
+  });
+
+  it('clamps an explicit limit above the max to 100', async () => {
+    const fetcher = mock(
+      async () =>
+        new Response(JSON.stringify({ search_item_list: buildTikTokItems(150) }), { status: 200 })
+    );
+    const result = await runTool('scrapecreators_tiktok', { query: 'q', limit: 500 }, fetcher);
+    expect(result.isError).toBeUndefined();
+    const items = JSON.parse(String(result.content)) as unknown[];
+    expect(items).toHaveLength(100);
+  });
+
+  it('honors an explicit limit within range', async () => {
+    const fetcher = mock(
+      async () =>
+        new Response(JSON.stringify({ search_item_list: buildTikTokItems(25) }), { status: 200 })
+    );
+    const result = await runTool('scrapecreators_tiktok', { query: 'q', limit: 5 }, fetcher);
+    const items = JSON.parse(String(result.content)) as unknown[];
+    expect(items).toHaveLength(5);
+  });
+});
+
 describe('scrapecreators_instagram happy path', () => {
   it('hits the reels search endpoint and parses reels', async () => {
     const fetcher = mock(async (input: string) => {

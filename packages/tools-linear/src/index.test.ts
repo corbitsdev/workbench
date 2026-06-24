@@ -105,9 +105,33 @@ describe('linear_list_issues handler', () => {
     expect(JSON.parse(String(result.content))).toEqual({ nodes });
 
     const body = lastBody(fetcher);
-    expect(body.query).toContain('issues(first: $first)');
+    expect(body.query).toContain('issues(first: $first, filter: $filter)');
     expect(body.query).not.toContain('team(id:');
-    expect(body.variables).toEqual({ first: 25 });
+    expect(body.variables).toEqual({ first: 10 });
+  });
+
+  it('forwards state and assignee as an IssueFilter', async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(createLinearTools({ apiKey: 'k', fetcher }));
+
+    await runner.run(
+      {
+        id: 'c1',
+        name: 'linear_list_issues',
+        arguments: { state: 'In Progress', assignee: 'Ada' },
+      },
+      new AbortController().signal
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.query).toContain('issues(first: $first, filter: $filter)');
+    expect(body.variables).toEqual({
+      first: 10,
+      filter: {
+        state: { name: { eqIgnoreCase: 'In Progress' } },
+        assignee: { name: { eqIgnoreCase: 'Ada' } },
+      },
+    });
   });
 
   it('scopes to a team and caps first at 100', async () => {
@@ -148,7 +172,7 @@ describe('linear_list_issues handler', () => {
       new AbortController().signal
     );
 
-    expect(lastBody(fetcher).variables).toEqual({ first: 25 });
+    expect(lastBody(fetcher).variables).toEqual({ first: 10 });
   });
 });
 
@@ -223,7 +247,7 @@ describe('linear_list_teams and linear_list_users', () => {
     expect(JSON.parse(String(result.content))).toEqual({ nodes });
     const body = lastBody(fetcher);
     expect(body.query).toContain('teams(first: $first)');
-    expect(body.variables).toEqual({ first: 50 });
+    expect(body.variables).toEqual({ first: 25 });
   });
 
   it('lists users with a custom first', async () => {

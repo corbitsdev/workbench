@@ -75,6 +75,33 @@ describe('bluesky_search unauthenticated path', () => {
     expect(url.searchParams.get('sort')).toBe('top');
   });
 
+  it('sends the default limit of 25 when no limit arg is provided', async () => {
+    const captured: CapturedRequest[] = [];
+    const handler = getHandler(capturingFetcher({ posts: [] }, captured));
+    await handler({ query: 'solana' }, new AbortController().signal);
+
+    const url = new URL(captured[0]!.url);
+    expect(url.searchParams.get('limit')).toBe('25');
+  });
+
+  it('forwards an explicit limit arg', async () => {
+    const captured: CapturedRequest[] = [];
+    const handler = getHandler(capturingFetcher({ posts: [] }, captured));
+    await handler({ query: 'solana', limit: 10 }, new AbortController().signal);
+
+    const url = new URL(captured[0]!.url);
+    expect(url.searchParams.get('limit')).toBe('10');
+  });
+
+  it('clamps an over-max limit arg to 100', async () => {
+    const captured: CapturedRequest[] = [];
+    const handler = getHandler(capturingFetcher({ posts: [] }, captured));
+    await handler({ query: 'solana', limit: 500 }, new AbortController().signal);
+
+    const url = new URL(captured[0]!.url);
+    expect(url.searchParams.get('limit')).toBe('100');
+  });
+
   it('sends no Authorization header when no credentials are provided', async () => {
     const captured: CapturedRequest[] = [];
     const handler = getHandler(capturingFetcher({ posts: [] }, captured));

@@ -104,6 +104,69 @@ describe('hackernews_search tool', () => {
     expect(String(result.content)).toContain('HN API error: 403');
   });
 
+  test('defaults hitsPerPage to 10', async () => {
+    let captured = '';
+    const fetcher: HNFetch = mock((url: string) => {
+      captured = url;
+      return Promise.resolve(
+        new Response(JSON.stringify({ hits: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    });
+    const runner = createToolRunner(createHackerNewsTools({ fetcher }));
+
+    await runner.run(
+      { id: 'call_1', name: 'hackernews_search', arguments: { query: 'AI' } },
+      new AbortController().signal
+    );
+
+    expect(new URL(captured).searchParams.get('hitsPerPage')).toBe('10');
+  });
+
+  test('forwards an explicit limit', async () => {
+    let captured = '';
+    const fetcher: HNFetch = mock((url: string) => {
+      captured = url;
+      return Promise.resolve(
+        new Response(JSON.stringify({ hits: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    });
+    const runner = createToolRunner(createHackerNewsTools({ fetcher }));
+
+    await runner.run(
+      { id: 'call_1', name: 'hackernews_search', arguments: { query: 'AI', limit: 25 } },
+      new AbortController().signal
+    );
+
+    expect(new URL(captured).searchParams.get('hitsPerPage')).toBe('25');
+  });
+
+  test('clamps a limit over the max to 50', async () => {
+    let captured = '';
+    const fetcher: HNFetch = mock((url: string) => {
+      captured = url;
+      return Promise.resolve(
+        new Response(JSON.stringify({ hits: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    });
+    const runner = createToolRunner(createHackerNewsTools({ fetcher }));
+
+    await runner.run(
+      { id: 'call_1', name: 'hackernews_search', arguments: { query: 'AI', limit: 999 } },
+      new AbortController().signal
+    );
+
+    expect(new URL(captured).searchParams.get('hitsPerPage')).toBe('50');
+  });
+
   test('surfaces missing query as tool error', async () => {
     const fetcher = makeFetchStub({ hits: [] });
     const runner = createToolRunner(createHackerNewsTools({ fetcher }));

@@ -14,6 +14,9 @@ export const SCRAPECREATORS_DEFAULT_BASE_URL = 'https://api.scrapecreators.com';
 
 const MAX_ERROR_BODY_LENGTH = 500;
 
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 100;
+
 export type ScrapeCreatorsFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 export type ScrapeCreatorsToolsConfig = {
@@ -58,9 +61,9 @@ async function fetchJSON(
 
 function resolveLimit(args: Record<string, unknown>): number {
   if (typeof args.limit === 'number' && args.limit > 0) {
-    return Math.floor(args.limit);
+    return Math.min(Math.floor(args.limit), MAX_LIMIT);
   }
-  return 20;
+  return DEFAULT_LIMIT;
 }
 
 function stringField(rec: Record<string, unknown>, keys: string[]): string | undefined {
@@ -272,14 +275,14 @@ function parsePinterestPin(value: unknown): PinterestPin {
 export const SCRAPECREATORS_TIKTOK_DEFINITION: ToolDefinition = {
   name: 'scrapecreators_tiktok',
   description:
-    'Search TikTok posts and videos via ScrapeCreators. Returns normalized research items with engagement data (likes).',
+    'Search TikTok posts and videos via ScrapeCreators. Returns normalized research items with engagement data (likes). Use a specific query to scope results rather than pulling everything; defaults to 10 results.',
   inputSchema: {
     type: 'object',
     properties: {
       query: { type: 'string', description: 'Search query.' },
       limit: {
         type: 'number',
-        description: 'Maximum number of results (default 20).',
+        description: 'Maximum number of results (1-100, default 10).',
       },
     },
     required: ['query'],
@@ -289,7 +292,7 @@ export const SCRAPECREATORS_TIKTOK_DEFINITION: ToolDefinition = {
 export const SCRAPECREATORS_INSTAGRAM_DEFINITION: ToolDefinition = {
   name: 'scrapecreators_instagram',
   description:
-    'Search Instagram reels by keyword via ScrapeCreators. Returns normalized research items.',
+    'Search Instagram reels by keyword via ScrapeCreators. Returns normalized research items. Use a specific query to scope results rather than pulling everything; defaults to 10 results.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -299,7 +302,7 @@ export const SCRAPECREATORS_INSTAGRAM_DEFINITION: ToolDefinition = {
       },
       limit: {
         type: 'number',
-        description: 'Maximum number of results (default 20).',
+        description: 'Maximum number of results (1-100, default 10).',
       },
     },
     required: ['query'],
@@ -309,14 +312,14 @@ export const SCRAPECREATORS_INSTAGRAM_DEFINITION: ToolDefinition = {
 export const SCRAPECREATORS_THREADS_DEFINITION: ToolDefinition = {
   name: 'scrapecreators_threads',
   description:
-    'Search Threads posts via ScrapeCreators. Returns normalized research items with engagement data.',
+    'Search Threads posts via ScrapeCreators. Returns normalized research items with engagement data. Use a specific query to scope results rather than pulling everything; defaults to 10 results.',
   inputSchema: {
     type: 'object',
     properties: {
       query: { type: 'string', description: 'Search query.' },
       limit: {
         type: 'number',
-        description: 'Maximum number of results (default 20).',
+        description: 'Maximum number of results (1-100, default 10).',
       },
     },
     required: ['query'],
@@ -326,14 +329,14 @@ export const SCRAPECREATORS_THREADS_DEFINITION: ToolDefinition = {
 export const SCRAPECREATORS_PINTEREST_DEFINITION: ToolDefinition = {
   name: 'scrapecreators_pinterest',
   description:
-    'Search Pinterest pins via ScrapeCreators. Returns normalized research items with save counts.',
+    'Search Pinterest pins via ScrapeCreators. Returns normalized research items with save counts. Use a specific query to scope results rather than pulling everything; defaults to 10 results.',
   inputSchema: {
     type: 'object',
     properties: {
       query: { type: 'string', description: 'Search query.' },
       limit: {
         type: 'number',
-        description: 'Maximum number of results (default 20).',
+        description: 'Maximum number of results (1-100, default 10).',
       },
     },
     required: ['query'],

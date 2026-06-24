@@ -123,6 +123,54 @@ describe('createXTools / x_search handler', () => {
     expect(body).not.toHaveProperty('search_parameters');
   });
 
+  function promptText(calls: { url: string; init: RequestInit }[]): string {
+    const body = JSON.parse(String(calls[0]?.init.body)) as {
+      input: { content: string }[];
+    };
+    return body.input[0]!.content;
+  }
+
+  it('requests the default count (10) when no limit is given', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const tools = createXTools({
+      apiKey: 'test-key',
+      fetcher: makeCapturingFetcher(responsesApiResponse, calls),
+    });
+    const xSearch = findStringTool(tools, 'x_search');
+
+    await xSearch.handler({ query: 'AI funding' }, new AbortController().signal);
+
+    expect(promptText(calls)).toContain('Find up to 10 high-quality');
+  });
+
+  it('uses an explicit limit in the prompt', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const tools = createXTools({
+      apiKey: 'test-key',
+      fetcher: makeCapturingFetcher(responsesApiResponse, calls),
+    });
+    const xSearch = findStringTool(tools, 'x_search');
+
+    await xSearch.handler({ query: 'AI funding', limit: 5 }, new AbortController().signal);
+
+    expect(promptText(calls)).toContain('Find up to 5 high-quality');
+  });
+
+  it('clamps a limit over the maximum to 20', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const tools = createXTools({
+      apiKey: 'test-key',
+      fetcher: makeCapturingFetcher(responsesApiResponse, calls),
+    });
+    const xSearch = findStringTool(tools, 'x_search');
+
+    await xSearch.handler({ query: 'AI funding', limit: 50 }, new AbortController().signal);
+
+    const prompt = promptText(calls);
+    expect(prompt).toContain('Find up to 20 high-quality');
+    expect(prompt).not.toContain('Find up to 50');
+  });
+
   it('ignores an empty hub baseURL and uses the xAI default endpoint', async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const tools = createXTools({

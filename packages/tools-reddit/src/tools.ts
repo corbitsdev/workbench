@@ -11,7 +11,8 @@ import type { RedditPost, RedditTopComment } from './types';
 export const SCRAPECREATORS_DEFAULT_BASE_URL = 'https://api.scrapecreators.com';
 
 const MAX_ERROR_BODY_LENGTH = 500;
-const DEFAULT_LIMIT = 25;
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 100;
 
 export type RedditFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -175,7 +176,7 @@ function parseRedditPost(value: unknown): RedditPost | null {
 
 function resolveLimit(args: Record<string, unknown>): number {
   if (typeof args.limit === 'number' && args.limit > 0) {
-    return Math.floor(args.limit);
+    return Math.min(Math.floor(args.limit), MAX_LIMIT);
   }
   return DEFAULT_LIMIT;
 }
@@ -191,7 +192,7 @@ function applyCommonParams(url: URL, args: Record<string, unknown>): void {
 const REDDIT_SEARCH_DEFINITION: ToolDefinition = {
   name: 'reddit_search',
   description:
-    'Search Reddit posts across all subreddits via ScrapeCreators. Returns normalized research items with upvote and comment counts.',
+    'Search Reddit posts across all subreddits via ScrapeCreators. Returns normalized research items with upvote and comment counts. Scope the search with a focused query and timeframe rather than pulling everything; returns 10 results by default.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -206,7 +207,7 @@ const REDDIT_SEARCH_DEFINITION: ToolDefinition = {
       },
       limit: {
         type: 'number',
-        description: 'Maximum number of results to return (default 25).',
+        description: 'Maximum number of results to return (1-100, default 10).',
       },
     },
     required: ['query'],
@@ -216,7 +217,7 @@ const REDDIT_SEARCH_DEFINITION: ToolDefinition = {
 const REDDIT_SUBREDDIT_SEARCH_DEFINITION: ToolDefinition = {
   name: 'reddit_subreddit_search',
   description:
-    'Search Reddit posts within a specific subreddit via ScrapeCreators. Returns normalized research items with upvote and comment counts.',
+    'Search Reddit posts within a specific subreddit via ScrapeCreators. Returns normalized research items with upvote and comment counts. Scope the search with a focused query, subreddit, and timeframe rather than pulling everything; returns 10 results by default.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -235,7 +236,7 @@ const REDDIT_SUBREDDIT_SEARCH_DEFINITION: ToolDefinition = {
       },
       limit: {
         type: 'number',
-        description: 'Maximum number of results to return (default 25).',
+        description: 'Maximum number of results to return (1-100, default 10).',
       },
     },
     required: ['subreddit', 'query'],

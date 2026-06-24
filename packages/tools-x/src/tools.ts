@@ -6,6 +6,7 @@ import type { XSearchResult } from './types';
 const XAI_BASE_URL = 'https://api.x.ai';
 const XAI_MODEL = 'grok-4-1-fast';
 const MAX_RESULTS = 20;
+const DEFAULT_RESULTS = 10;
 const DEFAULT_DAYS = 30;
 
 export type XFetch = (input: string, init: RequestInit) => Promise<Response>;
@@ -19,7 +20,7 @@ export type XToolsConfig = {
 export const X_SEARCH_DEFINITION: ToolDefinition = {
   name: 'x_search',
   description:
-    'Search X/Twitter via xAI Grok live search. Returns a semantic sampling of recent posts and content for the query. Results are a semantic sampling by Grok, not stable post IDs — cite as approximate.',
+    'Search X/Twitter via xAI Grok live search. Returns a semantic sampling of recent posts and content for the query. Results are a semantic sampling by Grok, not stable post IDs — cite as approximate. Scope the search with a specific query and the date range (days or fromDate/toDate) rather than pulling the maximum; returns up to 10 posts by default and at most 20 (raise via limit only when you genuinely need more).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -38,6 +39,10 @@ export const X_SEARCH_DEFINITION: ToolDefinition = {
       toDate: {
         type: 'string',
         description: 'End date for X search, formatted as YYYY-MM-DD.',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of posts to return (1-20, default 10).',
       },
     },
     required: ['query'],
@@ -225,6 +230,10 @@ async function searchX(
 
   const endpoint = resolveResponsesEndpoint(config);
   const { fromDate, toDate } = resolveDateRange(args);
+  const limit =
+    typeof args.limit === 'number' && Number.isInteger(args.limit) && args.limit > 0
+      ? Math.min(args.limit, MAX_RESULTS)
+      : DEFAULT_RESULTS;
 
   const body = {
     model: XAI_MODEL,
@@ -233,7 +242,7 @@ async function searchX(
       {
         role: 'user',
         content: `Search for posts about: ${query}
-Focus on posts from ${fromDate} to ${toDate}. Find up to ${MAX_RESULTS} high-quality, relevant posts.
+Focus on posts from ${fromDate} to ${toDate}. Find up to ${limit} high-quality, relevant posts.
 
 Return only valid JSON in this exact format, no prose:
 {

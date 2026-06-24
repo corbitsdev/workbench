@@ -12,6 +12,8 @@ const BLUESKY_AUTHED_SEARCH_URL = 'https://bsky.network/xrpc/app.bsky.feed.searc
 const BLUESKY_CREATE_SESSION_URL = 'https://bsky.social/xrpc/com.atproto.server.createSession';
 const BLUESKY_USER_AGENT = 'gtm-workbench-bluesky/1.0';
 const DEFAULT_DAYS = 30;
+const DEFAULT_LIMIT = 25;
+const MAX_LIMIT = 100;
 const MAX_ERROR_BODY_LENGTH = 500;
 
 export type BlueskyFetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -33,7 +35,7 @@ export type BlueskyToolsConfig = {
 export const BLUESKY_SEARCH_DEFINITION: ToolDefinition = {
   name: 'bluesky_search',
   description:
-    'Search Bluesky posts from the last N days. Returns normalized research items with engagement data (likes, replies, reposts).',
+    'Search Bluesky posts from the last N days. Returns normalized research items with engagement data (likes, replies, reposts). Scope the search with a specific query and the days window rather than pulling everything; returns up to 25 posts by default.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -44,6 +46,10 @@ export const BLUESKY_SEARCH_DEFINITION: ToolDefinition = {
       days: {
         type: 'number',
         description: 'Number of days to look back (default 30).',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of posts to return (1-100, default 25).',
       },
     },
     required: ['query'],
@@ -167,6 +173,10 @@ async function searchBluesky(
   const days =
     typeof args.days === 'number' && args.days > 0 ? Math.floor(args.days) : DEFAULT_DAYS;
   const cutoffMs = Date.now() - days * 86400 * 1000;
+  const limit =
+    typeof args.limit === 'number' && Number.isInteger(args.limit) && args.limit > 0
+      ? Math.min(args.limit, MAX_LIMIT)
+      : DEFAULT_LIMIT;
 
   const fetcher = config.fetcher ?? fetch;
   const hasCredentials =
@@ -177,7 +187,7 @@ async function searchBluesky(
 
   const searchUrl = new URL(hasCredentials ? BLUESKY_AUTHED_SEARCH_URL : BLUESKY_PUBLIC_SEARCH_URL);
   searchUrl.searchParams.set('q', query);
-  searchUrl.searchParams.set('limit', '100');
+  searchUrl.searchParams.set('limit', String(limit));
   searchUrl.searchParams.set('sort', 'top');
 
   if (!hasCredentials) {
