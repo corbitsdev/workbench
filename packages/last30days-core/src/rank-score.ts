@@ -1,11 +1,13 @@
+import { type } from "arktype";
 import type { Cluster } from "./cluster-merge";
 import type { ResearchItem } from "./schema";
 
-export type RankScoreOptions = {
-  topic: string;
-  nowIso: string;
-  maxPerAuthor?: number;
-};
+export const RankScoreOptions = type({
+  topic: "string",
+  nowIso: "string",
+  "maxPerAuthor?": "number",
+});
+export type RankScoreOptions = typeof RankScoreOptions.infer;
 
 export type RankedCluster = Cluster & { score: number };
 
