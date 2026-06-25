@@ -1,13 +1,38 @@
+import { type } from 'arktype';
 import { logger } from './logger';
 
 // Empty string means same-origin (frontend served from the API).
 const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
+// Single source of truth for the hub origin: explicit base, else same-origin.
+function resolveBase(): string {
+  return apiBase || window.location.origin;
+}
+
 export function buildApiUrl(path: string): string {
-  return new URL(
-    `/api/v1/${path.replace(/^\//, '')}`,
-    apiBase || window.location.origin
-  ).toString();
+  return new URL(`/api/v1/${path.replace(/^\//, '')}`, resolveBase()).toString();
+}
+
+// Root-level (non-/api/v1) hub paths, e.g. /version. Same base-URL rules.
+export function buildRootUrl(path: string): string {
+  return new URL(`/${path.replace(/^\//, '')}`, resolveBase()).toString();
+}
+
+const VersionResponse = type({
+  buildSha: 'string | null',
+});
+
+// Fetches the hub's live build SHA from the root-level /version route (null in
+// local dev). Lives here so the page module makes no raw fetch.
+export async function fetchBuildSha(): Promise<string | null> {
+  const res = await fetch(buildRootUrl('/version'), { credentials: 'include' });
+  if (!res.ok) throw new Error(`Version check failed: HTTP ${res.status}`);
+  const raw: unknown = await res.json();
+  const parsed = VersionResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected /version response: ${parsed.summary}`);
+  }
+  return parsed.buildSha;
 }
 
 export class ApiError extends Error {
@@ -21,10 +46,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const url = new URL(
-    `/api/v1/${path.replace(/^\//, '')}`,
-    apiBase || window.location.origin
-  ).toString();
+  const url = buildApiUrl(path);
   const init: RequestInit = { method, credentials: 'include' };
   if (body) {
     init.headers = { 'Content-Type': 'application/json' };
@@ -60,7 +82,7 @@ export async function uploadFile<T>(
   file: File,
   options?: { tenantId?: string | null }
 ): Promise<T> {
-  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, apiBase || window.location.origin);
+  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, resolveBase());
   if (options?.tenantId) {
     url.searchParams.set('tenantId', options.tenantId);
   }
@@ -92,7 +114,7 @@ export async function uploadForm<T>(
   form: FormData,
   options?: { tenantId?: string | null }
 ): Promise<T> {
-  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, apiBase || window.location.origin);
+  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, resolveBase());
   if (options?.tenantId) {
     url.searchParams.set('tenantId', options.tenantId);
   }

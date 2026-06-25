@@ -96,6 +96,7 @@ import { serverErrorReporter, SERVER_ERROR_LOGGED } from './lib/server-error-log
 import { createFatalErrorRecovery } from './lib/fatal-error-recovery';
 import { resolveCorsAllowOrigin } from './lib/cors-origin';
 import { createRateLimiter } from './lib/rate-limit';
+import { createSystemRouter } from './routes/system';
 
 await setupObservability({ dev: process.env.NODE_ENV !== 'production' });
 const log = getLogger(['api']);
@@ -503,7 +504,7 @@ app.get(
       info: { title: 'GTM Workbench', version: '1.0.0' },
       servers: [{ url: config.auth.baseUrl }],
     },
-    exclude: ['/openapi.json', '/health', '/status', /^\/api\/auth\//],
+    exclude: ['/openapi.json', /^\/api\/auth\//],
   })
 );
 
@@ -1061,11 +1062,9 @@ app.route(
 // The web SPA is deployed as its own static Railway service (apps/web),
 // not served from here. The hub is API-only.
 
-// ─── Health ─────────────────────────────────────────────────────────
+// ─── Health & version ───────────────────────────────────────────────
 
-app.get('/health', (c) => {
-  return c.json({});
-});
+app.route('/', createSystemRouter(config.buildSha));
 
 const port = Number(config.port);
 

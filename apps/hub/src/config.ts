@@ -81,6 +81,9 @@ export function loadConfig() {
       name: requireEnv('GLOBAL_TENANT_NAME'),
       domain: requireEnv('GLOBAL_TENANT_DOMAIN'),
     },
+    // Build SHA injected by Railway at image build time via RAILWAY_GIT_COMMIT_SHA.
+    // Absent in local dev — null is the correct value there.
+    buildSha: optionalEnv('RAILWAY_GIT_COMMIT_SHA') ?? null,
   };
 
   log.info('Configuration loaded', {

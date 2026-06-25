@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   SettingsPage,
   type SettingsFieldValue,
@@ -21,7 +21,7 @@ import {
   TOOL_SUMMARY_STYLE_LABELS,
   TOOL_SUMMARY_PREVIEW_CALLS,
 } from '@workbench/agents/browser';
-import { api } from '../lib/api';
+import { api, fetchBuildSha } from '../lib/api';
 
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
   {
@@ -92,6 +92,11 @@ export default function Settings() {
   const { style: toolSummaryStyle, setStyle: setToolSummaryStyle } = useToolSummaryStyle();
   const [values, setValues] = useState<SettingsValues>({ ...INITIAL_VALUES });
   const [savedDisplayName, setSavedDisplayName] = useState<string>('');
+  const buildShaQuery = useQuery({
+    queryKey: ['version', 'buildSha'],
+    queryFn: fetchBuildSha,
+    staleTime: 5 * 60_000,
+  });
 
   const saveMutation = useMutation({
     mutationFn: async (name: string) => {
@@ -119,6 +124,10 @@ export default function Settings() {
 
   const displayNameDirty =
     typeof values.displayName === 'string' && values.displayName !== savedDisplayName;
+
+  // Show the 7-char short SHA in the UI; the API contract keeps the full value.
+  const fullSha = buildShaQuery.isSuccess ? buildShaQuery.data : null;
+  const buildLabel = fullSha ? fullSha.slice(0, 7) : 'unknown';
 
   const handleSaveDisplayName = () => {
     const name = typeof values.displayName === 'string' ? values.displayName.trim() : '';
@@ -167,6 +176,19 @@ export default function Settings() {
           <p className="text-sm text-green-600">Display name saved.</p>
         </div>
       )}
+      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
+        {buildShaQuery.isPending ? (
+          // Reserve the line's height while loading so settling the query
+          // causes no layout shift.
+          <p className="h-4 animate-pulse font-mono text-xs text-text-3">build …</p>
+        ) : (
+          // An unavailable SHA (null in local dev, an error, or an unexpected
+          // shape) degrades to "build unknown" on purpose: this is an operator
+          // diagnostic, not a user-facing failure, so it must never surface a
+          // scary error.
+          <p className="font-mono text-xs text-text-3">build {buildLabel}</p>
+        )}
+      </div>
     </div>
   );
 }

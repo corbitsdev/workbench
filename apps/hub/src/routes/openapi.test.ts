@@ -15,7 +15,7 @@ function createOpenApiApp(baseUrl: string) {
         info: { title: 'GTM Workbench', version: '1.0.0' },
         servers: [{ url: baseUrl }],
       },
-      exclude: ['/openapi.json', '/health', '/status', /^\/api\/auth\//],
+      exclude: ['/openapi.json', /^\/api\/auth\//],
     })
   );
 
@@ -29,7 +29,11 @@ function createOpenApiApp(baseUrl: string) {
     (c) => c.json([])
   );
   sub.get('/api/auth/sign-in', (c) => c.json({}));
-  sub.get('/health', (c) => c.json({}));
+  sub.get(
+    '/health',
+    describeRoute({ tags: ['System'], responses: { 200: { description: 'ok' } } }),
+    (c) => c.json({})
+  );
   app.route('/', sub);
 
   return app;
@@ -66,13 +70,23 @@ describe('GET /openapi.json', () => {
     expect(body.paths?.['/api/v1/workflow-runs']).toBeDefined();
   });
 
-  it('excludes /api/auth and /health routes from the spec', async () => {
+  it('excludes /api/auth routes from the spec', async () => {
     const app = createOpenApiApp('https://hub.example.com');
     const res = await app.request('/openapi.json');
     const body = (await res.json()) as { paths?: Record<string, unknown> };
 
     const paths = Object.keys(body.paths ?? {});
     expect(paths.some((p) => p.startsWith('/api/auth'))).toBe(false);
-    expect(body.paths?.['/health']).toBeUndefined();
+  });
+
+  it('includes the describeRoute-annotated /health route in the spec', async () => {
+    const app = createOpenApiApp('https://hub.example.com');
+    const res = await app.request('/openapi.json');
+    const body = (await res.json()) as {
+      paths?: Record<string, { get?: { tags?: string[] } }>;
+    };
+
+    expect(body.paths?.['/health']).toBeDefined();
+    expect(body.paths?.['/health']?.get?.tags).toContain('System');
   });
 });
