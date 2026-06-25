@@ -45,15 +45,30 @@ describe("CatalogGlyph", () => {
     expect(container.querySelectorAll("rect")).toHaveLength(0);
     expect(container.querySelectorAll("path")).toHaveLength(2);
   });
+
+  it("gates its hover scale behind a fine-pointer media query", () => {
+    const { container } = render(<CatalogGlyph kind="doc" />);
+    const wrapper = container.firstElementChild;
+    expect(wrapper?.className).toContain(
+      "[@media(hover:hover)_and_(pointer:fine)]:group-hover:scale-[1.06]",
+    );
+    // The bare group-hover scale (the touch-device bug) must not be present.
+    expect(wrapper?.className).not.toContain(" group-hover:scale-[1.06]");
+  });
 });
 
 describe("catalog tile styling", () => {
-  it("gates the lift transforms behind a fine-pointer media query", () => {
-    expect(catalogCardClassName).toContain(
-      "[@media(hover:hover)_and_(pointer:fine)]:hover:-translate-y-1.5",
-    );
-    // The bare hover transform (the touch-device bug) must not be present.
-    expect(catalogCardClassName).not.toContain(" hover:-translate-y-1.5");
+  it("gates every lift transform behind a fine-pointer media query", () => {
+    const gate = "[@media(hover:hover)_and_(pointer:fine)]:hover:";
+    for (const transform of [
+      "-translate-y-1.5",
+      "rotate-[-1deg]",
+      "scale-[1.02]",
+    ]) {
+      expect(catalogCardClassName).toContain(`${gate}${transform}`);
+      // No bare (ungated) hover transform — that was the touch-device bug.
+      expect(catalogCardClassName).not.toContain(` hover:${transform}`);
+    }
   });
 
   it("exposes matching kind and fill option counts for index-based selection", () => {
