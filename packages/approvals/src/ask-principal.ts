@@ -19,7 +19,7 @@ export type ApprovalStatus = typeof ApprovalStatusSchema.infer;
 
 const ApprovalRecordSchema = type({
   id: "string",
-  status: "'pending' | 'approved' | 'rejected'",
+  status: ApprovalStatusSchema,
   message: "string | null",
 });
 type ApprovalRecord = typeof ApprovalRecordSchema.infer;
@@ -46,6 +46,13 @@ class HubRequestError extends Error {
     message: string,
   ) {
     super(message);
+  }
+}
+
+class ApprovalParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApprovalParseError";
   }
 }
 
@@ -78,7 +85,9 @@ async function fetchHub(
 function parseApprovalRecord(raw: unknown): ApprovalRecord {
   const parsed = ApprovalRecordSchema(raw);
   if (parsed instanceof type.errors) {
-    throw new Error(`Invalid approval record from hub: ${parsed.summary}`);
+    throw new ApprovalParseError(
+      `Invalid approval record from hub: ${parsed.summary}`,
+    );
   }
   return parsed;
 }
@@ -188,14 +197,15 @@ export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
             return { callId: call.id, content: `${verdict}${detail}` };
           }
         } catch (err) {
-          // Permanent errors (404 = record gone, 401/403 = auth failure) — abort immediately.
+          // Permanent errors (404 = record gone, 401/403 = auth failure, invalid body) — abort immediately.
           if (
-            err instanceof HubRequestError &&
-            (err.status === 404 || err.status < 500)
+            err instanceof ApprovalParseError ||
+            (err instanceof HubRequestError &&
+              (err.status === 404 || err.status < 500))
           ) {
             return {
               callId: call.id,
-              content: `Approval poll failed permanently: ${err.message}`,
+              content: `Approval poll failed permanently: ${err instanceof Error ? err.message : String(err)}`,
               isError: true,
             };
           }
