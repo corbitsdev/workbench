@@ -1,3 +1,4 @@
+import { PagePanel } from "@workbench/ui";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -199,84 +200,82 @@ export function SkillsLibrary() {
   const isSearching = query.trim().length > 0;
 
   return (
-    <div className="flex h-full overflow-hidden bg-bg">
-      <section className="flex min-h-full flex-1 flex-col overflow-y-auto rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
-        <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
-          <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
-            Skills
-          </h1>
-          <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
-            {filteredLibrary.length} items
-          </span>
-          <div className="flex-1" />
-          <input
-            type="search"
-            aria-label="Search skills"
-            placeholder="Search skills"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => navigate("/skills/new")}
-            className="flex items-center gap-[7px] rounded-[9px] border border-charcoal bg-charcoal px-[13px] py-[7px] text-[12.5px] font-semibold text-cream transition-colors"
+    <PagePanel>
+      <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
+        <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
+          Skills
+        </h1>
+        <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
+          {filteredLibrary.length} items
+        </span>
+        <div className="flex-1" />
+        <input
+          type="search"
+          aria-label="Search skills"
+          placeholder="Search skills"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => navigate("/skills/new")}
+          className="flex items-center gap-[7px] rounded-[9px] border border-charcoal bg-charcoal px-[13px] py-[7px] text-[12.5px] font-semibold text-cream transition-colors"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-3.5 w-3.5"
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="h-3.5 w-3.5"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            Add Skill
-          </button>
-        </div>
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          Add Skill
+        </button>
+      </div>
 
-        <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
-          {skillsQuery.isLoading && (
-            <div className="py-10 text-[13px] text-text-3">Loading skills…</div>
-          )}
-          {skillsQuery.isError && (
+      <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
+        {skillsQuery.isLoading && (
+          <div className="py-10 text-[13px] text-text-3">Loading skills…</div>
+        )}
+        {skillsQuery.isError && (
+          <div className="py-10 text-[13px] text-text-3">
+            Could not load skills.
+          </div>
+        )}
+        {!skillsQuery.isLoading &&
+          !skillsQuery.isError &&
+          filteredLibrary.length === 0 && (
             <div className="py-10 text-[13px] text-text-3">
-              Could not load skills.
+              {isSearching ? (
+                <>No results for &ldquo;{query.trim()}&rdquo;.</>
+              ) : (
+                <>
+                  No skills yet.{" "}
+                  <button
+                    type="button"
+                    onClick={() => navigate("/skills/new")}
+                    className="text-orange hover:underline"
+                  >
+                    Add your first skill
+                  </button>
+                </>
+              )}
             </div>
           )}
-          {!skillsQuery.isLoading &&
-            !skillsQuery.isError &&
-            filteredLibrary.length === 0 && (
-              <div className="py-10 text-[13px] text-text-3">
-                {isSearching ? (
-                  <>No results for &ldquo;{query.trim()}&rdquo;.</>
-                ) : (
-                  <>
-                    No skills yet.{" "}
-                    <button
-                      type="button"
-                      onClick={() => navigate("/skills/new")}
-                      className="text-orange hover:underline"
-                    >
-                      Add your first skill
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-            {filteredLibrary.map((skill, i) => (
-              <SkillCard
-                key={skill.id}
-                skill={skill}
-                accessLabel={accessLabel(skill)}
-                index={i + 1}
-                onSelect={() => navigate(`/skills/${skill.id}`)}
-              />
-            ))}
-          </div>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
+          {filteredLibrary.map((skill, i) => (
+            <SkillCard
+              key={skill.id}
+              skill={skill}
+              accessLabel={accessLabel(skill)}
+              index={i + 1}
+              onSelect={() => navigate(`/skills/${skill.id}`)}
+            />
+          ))}
         </div>
-      </section>
-    </div>
+      </div>
+    </PagePanel>
   );
 }

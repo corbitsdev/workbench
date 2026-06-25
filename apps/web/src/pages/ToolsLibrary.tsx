@@ -1,3 +1,4 @@
+import { PagePanel } from "@workbench/ui";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -182,60 +183,58 @@ export function ToolsLibrary() {
   const isSearching = query.trim().length > 0;
 
   return (
-    <div className="flex h-full overflow-hidden bg-bg">
-      <section className="flex min-h-full flex-1 flex-col overflow-y-auto rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
-        <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
-          <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
-            Tools
-          </h1>
-          <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
-            {filtered.length} items
-          </span>
-          <div className="flex-1" />
-          <input
-            type="search"
-            aria-label="Search tools"
-            placeholder="Search tools"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
-          />
-        </div>
+    <PagePanel>
+      <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
+        <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
+          Tools
+        </h1>
+        <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
+          {filtered.length} items
+        </span>
+        <div className="flex-1" />
+        <input
+          type="search"
+          aria-label="Search tools"
+          placeholder="Search tools"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
+        />
+      </div>
 
-        <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
-          {toolsQuery.isLoading && (
-            <div className="py-10 text-[13px] text-text-3">Loading tools…</div>
-          )}
-          {toolsQuery.isError && (
+      <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
+        {toolsQuery.isLoading && (
+          <div className="py-10 text-[13px] text-text-3">Loading tools…</div>
+        )}
+        {toolsQuery.isError && (
+          <div className="py-10 text-[13px] text-text-3">
+            Could not load tools.
+          </div>
+        )}
+        {!toolsQuery.isLoading &&
+          !toolsQuery.isError &&
+          filtered.length === 0 && (
             <div className="py-10 text-[13px] text-text-3">
-              Could not load tools.
+              {isSearching ? (
+                <>No results for &ldquo;{query.trim()}&rdquo;.</>
+              ) : (
+                <>No tools available.</>
+              )}
             </div>
           )}
-          {!toolsQuery.isLoading &&
-            !toolsQuery.isError &&
-            filtered.length === 0 && (
-              <div className="py-10 text-[13px] text-text-3">
-                {isSearching ? (
-                  <>No results for &ldquo;{query.trim()}&rdquo;.</>
-                ) : (
-                  <>No tools available.</>
-                )}
-              </div>
-            )}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-            {filtered.map((tool, i) => (
-              <ToolCard
-                key={tool.name}
-                tool={tool}
-                index={i + 1}
-                onSelect={() =>
-                  navigate(`/tools/${encodeURIComponent(tool.name)}`)
-                }
-              />
-            ))}
-          </div>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
+          {filtered.map((tool, i) => (
+            <ToolCard
+              key={tool.name}
+              tool={tool}
+              index={i + 1}
+              onSelect={() =>
+                navigate(`/tools/${encodeURIComponent(tool.name)}`)
+              }
+            />
+          ))}
         </div>
-      </section>
-    </div>
+      </div>
+    </PagePanel>
   );
 }

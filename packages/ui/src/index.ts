@@ -1,6 +1,7 @@
 export { Button, buttonVariants } from "./Button";
 export { FileInput } from "./FileInput";
 export { Markdown } from "./Markdown";
+export { PagePanel } from "./PagePanel";
 export {
   Steps,
   Step,

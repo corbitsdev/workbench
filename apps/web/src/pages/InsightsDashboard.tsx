@@ -1,3 +1,4 @@
+import { PagePanel } from "@workbench/ui";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart2 } from "lucide-react";
@@ -372,74 +373,72 @@ export function InsightsDashboard() {
     loading || (!!activeTenantId && overviewQuery.isLoading);
 
   return (
-    <div className="flex h-full overflow-hidden bg-bg">
-      <div className="flex flex-1 flex-col overflow-hidden rounded-panel border border-border bg-bg">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              <BarChart2 className="h-4 w-4 shrink-0 text-text-3" />
-              <p className="text-[14px] font-semibold text-text">
-                Data &amp; Insights
-              </p>
-            </div>
-            {activeWorkbench && (
-              <p className="truncate pl-6 text-[12px] text-text-3">
-                {activeWorkbench.tenantName}
-              </p>
-            )}
+    <PagePanel scroll={false} flat>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <BarChart2 className="h-4 w-4 shrink-0 text-text-3" />
+            <p className="text-[14px] font-semibold text-text">
+              Data &amp; Insights
+            </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="flex items-center gap-1">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => setPreset(p.value)}
-                  className={`rounded-[8px] px-3 py-1 text-[12px] font-medium transition-colors ${
-                    preset === p.value
-                      ? "bg-orange/10 text-orange"
-                      : "text-text-3 hover:bg-[var(--row-hover)] hover:text-text"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          {activeWorkbench && (
+            <p className="truncate pl-6 text-[12px] text-text-3">
+              {activeWorkbench.tenantName}
+            </p>
+          )}
         </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-5">
-          {showSummaryLoading && <SkeletonGrid />}
-
-          {!loading && !activeTenantId && (
-            <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
-              Select a workbench to view analytics.
-            </div>
-          )}
-
-          {overviewQuery.isError && (
-            <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
-              {describeHubApiFailure(overviewQuery.error)}
-            </div>
-          )}
-
-          {overviewQuery.data && (
-            <div className="flex flex-col gap-10">
-              <OperationalLedger data={overviewQuery.data} />
-              <div className="flex flex-col gap-4">
-                <h2 className="text-[14px] font-semibold text-text">
-                  Inference &amp; tool usage
-                </h2>
-                <SummaryContent data={overviewQuery.data.inference.summary} />
-                <AgentBreakdown agents={overviewQuery.data.inference.byAgent} />
-                <InstanceBreakdown
-                  instances={overviewQuery.data.inference.byInstance}
-                />
-              </div>
-            </div>
-          )}
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="flex items-center gap-1">
+            {PRESETS.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => setPreset(p.value)}
+                className={`rounded-[8px] px-3 py-1 text-[12px] font-medium transition-colors ${
+                  preset === p.value
+                    ? "bg-orange/10 text-orange"
+                    : "text-text-3 hover:bg-[var(--row-hover)] hover:text-text"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+
+      <div className="flex-1 overflow-y-auto px-5 py-5">
+        {showSummaryLoading && <SkeletonGrid />}
+
+        {!loading && !activeTenantId && (
+          <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
+            Select a workbench to view analytics.
+          </div>
+        )}
+
+        {overviewQuery.isError && (
+          <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
+            {describeHubApiFailure(overviewQuery.error)}
+          </div>
+        )}
+
+        {overviewQuery.data && (
+          <div className="flex flex-col gap-10">
+            <OperationalLedger data={overviewQuery.data} />
+            <div className="flex flex-col gap-4">
+              <h2 className="text-[14px] font-semibold text-text">
+                Inference &amp; tool usage
+              </h2>
+              <SummaryContent data={overviewQuery.data.inference.summary} />
+              <AgentBreakdown agents={overviewQuery.data.inference.byAgent} />
+              <InstanceBreakdown
+                instances={overviewQuery.data.inference.byInstance}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </PagePanel>
   );
 }

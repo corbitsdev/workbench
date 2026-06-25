@@ -1,3 +1,4 @@
+import { PagePanel } from "@workbench/ui";
 import { useNavigate } from "react-router";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ArtifactGallery } from "../components/layout/ArtifactGallery";
@@ -35,12 +36,12 @@ export function ArtifactsPage() {
 
   return (
     <ErrorBoundary>
-      <div className="h-full overflow-y-auto px-4 pb-10 pt-2">
+      <PagePanel className="px-4 pb-10 pt-2">
         <ArtifactGallery
           tenantId={activeTenantId}
           onOpenArtifact={(artifact) => navigate(`/artifacts/${artifact.id}`)}
         />
-      </div>
+      </PagePanel>
     </ErrorBoundary>
   );
 }
