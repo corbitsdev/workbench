@@ -110,8 +110,10 @@ export function useGenerateMyraThreadTitle() {
  * Returns a callback that auto-titles `active` from its first user message.
  * Shared by every Myra surface (full-page chat and the dock) so titling fires
  * wherever a thread is first used, not just on `/chats`. No-ops once the thread
- * has a custom label, once it has already been titled this session, or once a
- * user turn already exists in the stream.
+ * has a custom label, once it has already been titled while this surface is
+ * mounted, or once a user turn already exists in the stream. (The hub re-checks
+ * the default-label guard under a per-principal lock, so a redundant call from
+ * another surface is a safe no-op, not an overwrite.)
  */
 export function useAutoTitleFirstMessage(
   active: MyraThread | null,
@@ -119,11 +121,19 @@ export function useAutoTitleFirstMessage(
 ): (text: string) => void {
   const generateTitle = useGenerateMyraThreadTitle();
   const titledRef = useRef<Set<string>>(new Set());
+  // Read active/messages through refs so the returned callback always evaluates
+  // its guards against the live render's values — correct even when invoked from
+  // an effect that captured an earlier instance, or if a caller memoizes it.
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   return (text: string) => {
-    if (!active || !isDefaultThreadLabel(active.label)) return;
-    if (titledRef.current.has(active.id)) return;
-    if (messages.some((m) => m.role === "user")) return;
-    titledRef.current.add(active.id);
-    generateTitle.mutate({ id: active.id, firstMessage: text });
+    const thread = activeRef.current;
+    if (!thread || !isDefaultThreadLabel(thread.label)) return;
+    if (titledRef.current.has(thread.id)) return;
+    if (messagesRef.current.some((m) => m.role === "user")) return;
+    titledRef.current.add(thread.id);
+    generateTitle.mutate({ id: thread.id, firstMessage: text });
   };
 }

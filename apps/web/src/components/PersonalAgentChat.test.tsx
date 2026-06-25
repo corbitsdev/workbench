@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import React from "react";
 import { MemoryRouter } from "react-router";
 import { setPendingFirstMessage } from "../lib/pending-first-message";
@@ -56,8 +62,16 @@ mock.module("@workbench/chat", () => ({
   DOCKED_BAR_HEIGHT: 340,
 }));
 mock.module("./MyraChatSurface", () => ({
-  MyraChatSurface: () =>
-    React.createElement("div", { "data-testid": "surface" }),
+  MyraChatSurface: (props: { onUserSend?: (t: string) => void }) =>
+    React.createElement(
+      "div",
+      { "data-testid": "surface" },
+      React.createElement(
+        "button",
+        { onClick: () => props.onUserSend?.("typed in dock") },
+        "send",
+      ),
+    ),
 }));
 mock.module("./ThreadSwitcher", () => ({
   ThreadSwitcher: () => React.createElement("div"),
@@ -112,6 +126,14 @@ describe("PersonalAgentChat dock handoff", () => {
     expect(sendSpy).toHaveBeenCalledTimes(1);
     expect(autoTitleSpy).toHaveBeenCalledWith("seeded question");
     expect(clearPendingDockThread).toHaveBeenCalled();
+  });
+
+  it("auto-titles when the user sends the first message via the dock surface", () => {
+    // The bug being fixed: the dock surface must wire onUserSend so a typed
+    // first message titles the thread, not just the programmatic handoff paths.
+    renderAt("/artifacts/art-1");
+    fireEvent.click(screen.getByRole("button", { name: "send" }));
+    expect(autoTitleSpy).toHaveBeenCalledWith("typed in dock");
   });
 
   it("does not send when there is no pending message for the active thread", async () => {
