@@ -32,6 +32,17 @@ const resolveMyraThreadContext = mock(() =>
   }),
 );
 
+class MyraThreadLaunchError extends Error {
+  readonly phase: string | null;
+  readonly detail: string;
+  constructor(phase: string | null, detail: string) {
+    super("Myra thread session launch failed");
+    this.name = "MyraThreadLaunchError";
+    this.phase = phase;
+    this.detail = detail;
+  }
+}
+
 mock.module("../services/myra-threads", () => ({
   listMyraThreads,
   createMyraThread,
@@ -39,6 +50,7 @@ mock.module("../services/myra-threads", () => ({
   deleteMyraThread,
   generateMyraThreadTitle,
   resolveMyraThreadContext,
+  MyraThreadLaunchError,
 }));
 
 const { createMyraThreadsRouter } = await import("./myra-threads");
@@ -140,6 +152,30 @@ describe("Myra threads router", () => {
         label: "Pricing",
       }),
     );
+  });
+
+  it("returns 503 with phase + detail (not 201) when the chat session fails to launch", async () => {
+    createMyraThread.mockRejectedValueOnce(
+      new MyraThreadLaunchError(
+        "pack",
+        "tool-package @workbench/tools-granola@1.2.3 failed",
+      ),
+    );
+    const app = wrapWithAuth(buildRouter());
+    const res = await app.request("/me/myra/threads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as {
+      error: string;
+      phase: string;
+      detail: string;
+    };
+    expect(body.error).toBe("Failed to launch Myra chat session");
+    expect(body.phase).toBe("pack");
+    expect(body.detail).toContain("@workbench/tools-granola@1.2.3");
   });
 
   it("returns 503 on create when the member is not provisioned", async () => {

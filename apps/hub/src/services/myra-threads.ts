@@ -26,16 +26,38 @@ import type { HubDb } from "../db";
 import { getConfig } from "../config";
 import { lookupGlobalMember } from "../lib/tenant-provisioning";
 import {
+  describeLaunchError,
   launchAgentSession,
   resolveInstanceSourcesFromDefinition,
+  type LaunchErrorDescription,
 } from "./agent-provisioning";
 import { getLogger } from "@intx/log";
 
 const log = getLogger(["api", "myra-threads"]);
 
-const { agent, agentInstance, principal, grant } = intxSchema;
+const { agent, agentInstance, agentSession, principal, grant } = intxSchema;
 
 export const MYRA_TEMPLATE_KEY = "myra";
+
+/**
+ * Raised when a new Myra thread's session could not be launched. The thread's
+ * rows are torn down before this is thrown, so a failed create leaves no orphan
+ * instance that looks healthy. Carries the launch phase + detail (which names
+ * the failing tool package where the sidecar surfaced it) for the HTTP layer.
+ */
+export class MyraThreadLaunchError extends Error {
+  readonly phase: string | null;
+  readonly detail: string;
+  constructor(
+    description: LaunchErrorDescription,
+    options?: { cause?: unknown },
+  ) {
+    super("Myra thread session launch failed", options);
+    this.name = "MyraThreadLaunchError";
+    this.phase = description.phase;
+    this.detail = description.detail;
+  }
+}
 
 export type MyraThreadRow = {
   id: string;
@@ -68,6 +90,43 @@ export async function listMyraThreads(
     label: row.label?.trim() || defaultThreadLabel(index),
     createdAt: row.createdAt.toISOString(),
   }));
+}
+
+/**
+ * Delete the rows a Myra thread owns in one transaction. Shared by the
+ * create-launch-failure rollback and the explicit delete path so both tear a
+ * thread down identically.
+ *
+ * Order is FK-dictated: `agentInstance.sessionId → agentSession` and
+ * `agentSession.principalId → principal` are both RESTRICT. `launchAgentSession`
+ * inserts the session row before the sidecar call and only marks it `ended` on
+ * failure (never deletes it), so the session outlives a failed launch. We must
+ * delete the instance, then the session, then the principal — deleting the
+ * principal while the ended session still references it raises an FK violation
+ * (aborting the rollback and leaving the orphan it was meant to remove).
+ */
+async function teardownThreadRows(
+  db: HubDb,
+  opts: { instanceId: string; mappingId: string; instancePrincipalId: string },
+): Promise<void> {
+  await db.transaction(async (rawTx) => {
+    const tx = rawTx as unknown as HubDb;
+    await tx
+      .delete(grant)
+      .where(eq(grant.resource, `instance:${opts.instanceId}`));
+    await tx
+      .delete(memberAgentInstance)
+      .where(eq(memberAgentInstance.id, opts.mappingId));
+    await tx.delete(agentInstance).where(eq(agentInstance.id, opts.instanceId));
+    await tx
+      .delete(agentSession)
+      .where(eq(agentSession.principalId, opts.instancePrincipalId));
+    await tx
+      .delete(principal)
+      .where(
+        and(eq(principal.refId, opts.instanceId), eq(principal.kind, "agent")),
+      );
+  });
 }
 
 export async function createMyraThread(
@@ -183,10 +242,31 @@ export async function createMyraThread(
       },
     );
   } catch (err) {
-    log.warn("Myra thread instance created but session launch failed", {
+    // No isAgentAlreadyExistsError carve-out here (unlike the agents.ts deploy
+    // route): every Myra thread gets a freshly-generated instanceId/principalId
+    // and therefore a brand-new agent address that has never been deployed. The
+    // orchestrator's reconnect path only ever re-provisions an existing
+    // instance's address, so an "already exists" collision cannot occur on this
+    // create path — any launch error here is a genuine failure and the
+    // half-created rows must be torn down.
+    const failure = describeLaunchError(err);
+    // Log the real Error (not a stringified message) at error level so the
+    // Sentry sink routes it through captureException with stack + cause.
+    log.error("Myra thread session launch failed; tearing down thread", {
       instanceId,
-      error: err instanceof Error ? err.message : String(err),
+      phase: failure.phase,
+      detail: failure.detail,
+      error: err instanceof Error ? err : new Error(String(err)),
     });
+    // Do not leave an orphan thread that looks healthy. Remove the rows we just
+    // created so the member does not get a 201 for an instance that never
+    // launched and cannot serve chat.
+    await teardownThreadRows(db, {
+      instanceId,
+      mappingId,
+      instancePrincipalId,
+    });
+    throw new MyraThreadLaunchError(failure, { cause: err });
   }
 
   return {
@@ -547,8 +627,23 @@ export async function deleteMyraThread(
   const instance = await db.query.agentInstance.findFirst({
     where: eq(agentInstance.id, instanceId),
   });
+  // The mapping row references this instance; a missing instance or missing
+  // principalId is data corruption, not an expected state. Fail loudly rather
+  // than fall back to an empty principalId, which would make the agent_session
+  // delete a silent no-op and leave the FK-blocking orphan this teardown exists
+  // to remove.
+  if (!instance) {
+    throw new Error(
+      `Myra thread mapping ${opts.threadId} references missing instance ${instanceId}`,
+    );
+  }
+  if (!instance.principalId) {
+    throw new Error(
+      `Myra thread instance ${instanceId} has no principalId; cannot tear down`,
+    );
+  }
 
-  if (instance?.address) {
+  if (instance.address) {
     try {
       await deps.sessionService.endSession(
         instance.address,
@@ -565,16 +660,10 @@ export async function deleteMyraThread(
     }
   }
 
-  await db.transaction(async (rawTx) => {
-    const tx = rawTx as unknown as HubDb;
-    await tx.delete(grant).where(eq(grant.resource, `instance:${instanceId}`));
-    await tx
-      .delete(memberAgentInstance)
-      .where(eq(memberAgentInstance.id, opts.threadId));
-    await tx.delete(agentInstance).where(eq(agentInstance.id, instanceId));
-    await tx
-      .delete(principal)
-      .where(and(eq(principal.refId, instanceId), eq(principal.kind, "agent")));
+  await teardownThreadRows(db, {
+    instanceId,
+    mappingId: opts.threadId,
+    instancePrincipalId: instance.principalId,
   });
 
   return true;

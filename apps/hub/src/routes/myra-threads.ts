@@ -14,6 +14,7 @@ import {
   deleteMyraThread,
   generateMyraThreadTitle,
   listMyraThreads,
+  MyraThreadLaunchError,
   renameMyraThread,
   resolveMyraThreadContext,
 } from "../services/myra-threads";
@@ -95,6 +96,21 @@ export function createMyraThreadsRouter(
             },
           },
         },
+        503: {
+          description:
+            "Member not provisioned, or the chat session failed to launch",
+          content: {
+            "application/json": {
+              schema: resolver(
+                type({
+                  error: "string",
+                  "phase?": "string | null",
+                  "detail?": "string",
+                }),
+              ),
+            },
+          },
+        },
       },
     }),
     async (c) => {
@@ -106,17 +122,31 @@ export function createMyraThreadsRouter(
       if (!ctx) {
         return c.json({ error: "Member not provisioned" }, 503);
       }
-      const result = await createMyraThread(
-        hubDb,
-        { sessionService, grantStore, eventCollectors },
-        {
-          tenantId: ctx.tenantId,
-          tenantDomain: ctx.tenantDomain,
-          memberPrincipalId: ctx.memberPrincipalId,
-          ...(body.label !== undefined ? { label: body.label } : {}),
-        },
-      );
-      return c.json(result, 201);
+      try {
+        const result = await createMyraThread(
+          hubDb,
+          { sessionService, grantStore, eventCollectors },
+          {
+            tenantId: ctx.tenantId,
+            tenantDomain: ctx.tenantDomain,
+            memberPrincipalId: ctx.memberPrincipalId,
+            ...(body.label !== undefined ? { label: body.label } : {}),
+          },
+        );
+        return c.json(result, 201);
+      } catch (err) {
+        if (err instanceof MyraThreadLaunchError) {
+          return c.json(
+            {
+              error: "Failed to launch Myra chat session",
+              phase: err.phase,
+              detail: err.detail,
+            },
+            503,
+          );
+        }
+        throw err;
+      }
     },
   );
 

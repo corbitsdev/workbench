@@ -16,8 +16,10 @@ import { AGENT_TEMPLATES } from "@workbench/agents";
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
 import {
+  describeLaunchError,
   isAgentAlreadyExistsError,
   launchAgentSession,
+  type LaunchErrorDescription,
 } from "../services/agent-provisioning";
 import { requestBodySchema } from "../lib/openapi";
 import { getConfig } from "../config";
@@ -28,7 +30,8 @@ import {
 
 const log = getLogger(["api", "agents"]);
 
-const { agent, agentInstance, principal, tenant, grant } = intxSchema;
+const { agent, agentInstance, agentSession, principal, tenant, grant } =
+  intxSchema;
 
 // Ephemeral workflow step/supervisor instances are launched by the sidecar
 // workflow-host and carry a session-derived id (`ins_ses_…`). They hold no
@@ -79,6 +82,11 @@ const CreateInstanceResponse = type({
 });
 
 const ErrorResponse = type({ error: "string" });
+const LaunchErrorResponse = type({
+  error: "string",
+  phase: "string | null",
+  detail: "string",
+});
 
 // ─── Route ────────────────────────────────────────────────────────
 
@@ -374,7 +382,9 @@ export function createAgentProvisioningRouter(
         },
         503: {
           description: "Failed to launch the agent session",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
+          content: {
+            "application/json": { schema: resolver(LaunchErrorResponse) },
+          },
         },
       },
     }),
@@ -465,7 +475,7 @@ export function createAgentProvisioningRouter(
       const now = new Date();
 
       let launched = false;
-      let launchError: string | undefined;
+      let launchFailure: LaunchErrorDescription | undefined;
 
       try {
         await launchAgentSession(
@@ -495,17 +505,30 @@ export function createAgentProvisioningRouter(
             .where(eq(agentInstance.id, instanceId));
           launched = true;
         } else {
-          launchError = err instanceof Error ? err.message : String(err);
+          launchFailure = describeLaunchError(err);
+          // Log the real Error object (not a pre-stringified message) so the
+          // Sentry sink routes it through captureException with stack + cause,
+          // and surface the SessionLaunchError phase + cause detail.
           log.error("Failed to launch agent session", {
             instanceId,
-            error: launchError,
+            phase: launchFailure.phase,
+            detail: launchFailure.detail,
+            error: err instanceof Error ? err : new Error(String(err)),
           });
         }
       }
 
       if (!launched) {
+        const failure = launchFailure ?? {
+          phase: null,
+          detail: "Failed to launch agent session",
+        };
         return c.json(
-          { error: launchError ?? "Failed to launch agent session" },
+          {
+            error: "Failed to launch agent session",
+            phase: failure.phase,
+            detail: failure.detail,
+          },
           503,
         );
       }
@@ -593,6 +616,13 @@ export function createAgentProvisioningRouter(
         500: {
           description: "Tenant configuration missing",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        503: {
+          description:
+            "Failed to launch the agent session (instance rolled back)",
+          content: {
+            "application/json": { schema: resolver(LaunchErrorResponse) },
+          },
         },
       },
     }),
@@ -740,10 +770,64 @@ export function createAgentProvisioningRouter(
           },
         );
       } catch (err) {
-        log.warn("Agent instance created but session launch failed", {
-          instanceId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        // A race between the orchestrator's reconnect path and this explicit
+        // launch can report the agent as already provisioned. The agent is
+        // live, so keep the instance and treat it as a successful deploy —
+        // tearing it down here would delete a healthy instance.
+        if (!isAgentAlreadyExistsError(err)) {
+          const failure = describeLaunchError(err);
+          // Log the real Error at error level so the Sentry sink reports it via
+          // captureException with stack + cause (not a stringified captureMessage).
+          log.error(
+            "Agent instance created but session launch failed; tearing down instance",
+            {
+              instanceId,
+              phase: failure.phase,
+              detail: failure.detail,
+              error: err instanceof Error ? err : new Error(String(err)),
+            },
+          );
+          // Do not leave an orphan instance that looks healthy (status 'deployed',
+          // a member mapping, owner grants) but never launched and cannot serve
+          // chat. Roll back the rows we just created and fail loudly so the caller
+          // does not get a 201 for a dead instance.
+          // FK-dictated order: agentInstance.sessionId → agentSession and
+          // agentSession.principalId → principal are both RESTRICT, and
+          // launchAgentSession leaves the session row behind (marked 'ended', not
+          // deleted) on a failed launch. Delete instance → session → principal so
+          // the principal delete does not FK-violate and abort the rollback.
+          await hubDb.transaction(async (rawTx) => {
+            const tx = rawTx as unknown as HubDb;
+            await tx
+              .delete(grant)
+              .where(eq(grant.resource, `instance:${instanceId}`));
+            await tx
+              .delete(memberAgentInstance)
+              .where(eq(memberAgentInstance.instanceId, instanceId));
+            await tx
+              .delete(agentInstance)
+              .where(eq(agentInstance.id, instanceId));
+            await tx
+              .delete(agentSession)
+              .where(eq(agentSession.principalId, instancePrincipalId));
+            await tx
+              .delete(principal)
+              .where(
+                and(
+                  eq(principal.refId, instanceId),
+                  eq(principal.kind, "agent"),
+                ),
+              );
+          });
+          return c.json(
+            {
+              error: "Failed to launch agent session",
+              phase: failure.phase,
+              detail: failure.detail,
+            },
+            503,
+          );
+        }
       }
 
       return c.json({ instanceId, created: true }, 201);

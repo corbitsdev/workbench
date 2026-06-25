@@ -492,6 +492,31 @@ export async function relaunchInstanceIfNeeded(
 }
 
 /**
+ * Structured description of a failed launch for the HTTP layer. `phase` is the
+ * SessionLaunchError phase ("write" | "provision" | "pack" | "start") when the
+ * failure carries one; `detail` is the underlying cause message (which the
+ * tool-package loader and harness already stamp with the offending package /
+ * provider name), so the response names the failing tool package wherever the
+ * sidecar surfaced it.
+ */
+export type LaunchErrorDescription = {
+  phase: string | null;
+  detail: string;
+};
+
+export function describeLaunchError(err: unknown): LaunchErrorDescription {
+  if (err instanceof SessionLaunchError) {
+    const cause = err.cause;
+    const detail = cause instanceof Error ? cause.message : err.message;
+    return { phase: err.phase, detail };
+  }
+  if (err instanceof Error) {
+    return { phase: null, detail: err.message };
+  }
+  return { phase: null, detail: String(err) };
+}
+
+/**
  * Returns true when the error indicates the sidecar already has the agent
  * provisioned. This can happen in a race between the orchestrator's reconnect
  * path and an explicit launch call — the agent is live and the caller should

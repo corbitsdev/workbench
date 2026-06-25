@@ -38,6 +38,7 @@ import { Hono } from "hono";
 import { createAgentProvisioningRouter } from "./agents";
 import { memberAgentInstance } from "../db/schema";
 import {
+  describeLaunchError,
   persistInstanceToolGrants,
   persistInstanceGrantRequirements,
   launchAgentSession,
@@ -46,7 +47,11 @@ import {
   registerDisconnectReconciler,
 } from "../services/agent-provisioning";
 
-const { agentInstance: agentInstanceTable } = intxDbReal.schema;
+const {
+  agentInstance: agentInstanceTable,
+  agentSession: agentSessionTable,
+  principal: principalTable,
+} = intxDbReal.schema;
 
 function makeRequest(
   url: string,
@@ -492,7 +497,71 @@ describe("POST /instances/:instanceId/sessions", () => {
     );
     expect(res.status).toBe(503);
     const json = await res.json();
-    expect(json.error).toContain("No resolvable inference sources");
+    expect(json.error).toBe("Failed to launch agent session");
+    expect(json.detail).toContain("No resolvable inference sources");
+    expect(json.phase).toBeNull();
+  });
+
+  it("surfaces the SessionLaunchError phase and the failing-package detail in the 503 body", async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    const launchError = new SessionLaunchError(
+      "pack",
+      new Error(
+        "tool-package @workbench/tools-granola@1.2.3 failed validation",
+      ),
+      false,
+    );
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.reject(launchError)),
+    };
+    const app = buildApp(db, sessionService);
+    const res = await app.fetch(
+      makeRequest("http://localhost/instances/ins-1/sessions", {
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(503);
+    const json = await res.json();
+    expect(json.error).toBe("Failed to launch agent session");
+    expect(json.phase).toBe("pack");
+    expect(json.detail).toContain("@workbench/tools-granola@1.2.3");
+  });
+});
+
+describe("describeLaunchError", () => {
+  it("extracts phase and the cause message from a SessionLaunchError", () => {
+    const err = new SessionLaunchError(
+      "provision",
+      new Error("tool-package @workbench/tools-exa@2.0.0 failed validation"),
+      false,
+    );
+    expect(describeLaunchError(err)).toEqual({
+      phase: "provision",
+      detail: "tool-package @workbench/tools-exa@2.0.0 failed validation",
+    });
+  });
+
+  it("reports a plain Error with a null phase", () => {
+    expect(describeLaunchError(new Error("boom"))).toEqual({
+      phase: null,
+      detail: "boom",
+    });
+  });
+
+  it("stringifies a non-Error value", () => {
+    expect(describeLaunchError("nope")).toEqual({
+      phase: null,
+      detail: "nope",
+    });
   });
 });
 
@@ -1229,6 +1298,8 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
     systemPrompt: "You are Oat.",
     capabilities: { tools: [] },
     grantRequirements: [],
+    modelRequirements: null,
+    toolPackages: null,
   };
 
   function deployDb() {
@@ -1378,7 +1449,6 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
       }),
     );
     expect(res.status).toBe(201);
-
     const instanceId = (await res.json()).instanceId as string;
     const memberGrants = inserted.filter(
       (row) =>
@@ -1393,10 +1463,22 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
     ]);
   });
 
-  it("still returns 201 when the post-create session launch fails", async () => {
+  it("returns 503 with phase + detail and rolls back the instance when the post-create launch fails", async () => {
     const db = deployDb();
-    // No sources -> launchAgentSession throws -> caught and logged, route still 201.
+    // No sources -> launchAgentSession throws -> rolled back and surfaced as 503.
     sourcesImpl = () => Promise.resolve([]);
+
+    const insertMock = mock(() => ({ values: mock(() => Promise.resolve()) }));
+    const deletedTables: unknown[] = [];
+    const deleteMock = mock((table: unknown) => {
+      deletedTables.push(table);
+      return { where: mock(() => Promise.resolve()) };
+    });
+    db.insert = insertMock as never;
+    db.transaction = mock((fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ insert: insertMock, update: db.update, delete: deleteMock }),
+    ) as never;
+
     const app = buildApp(db);
     const res = await app.fetch(
       makeRequest("http://localhost/tenants/tenant-1/agents/instances", {
@@ -1404,6 +1486,59 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
         body: { templateKey: "oat" },
       }),
     );
+    expect(res.status).toBe(503);
+    const json = await res.json();
+    expect(json.error).toBe("Failed to launch agent session");
+    expect(json.detail).toContain("No resolvable inference sources");
+    expect(json.phase).toBeNull();
+    // The teardown deletes the instance, then the lingering agent_session
+    // (FK→principal, RESTRICT), then the principal — in that order, so the
+    // principal delete cannot FK-violate and abort the rollback. The
+    // agent_session delete is the load-bearing one: without it a real DB would
+    // 500 and leave the orphan this rollback exists to remove.
+    const instanceIdx = deletedTables.indexOf(agentInstanceTable);
+    const sessionIdx = deletedTables.indexOf(agentSessionTable);
+    const principalIdx = deletedTables.indexOf(principalTable);
+    expect(sessionIdx).toBeGreaterThanOrEqual(0);
+    expect(instanceIdx).toBeLessThan(sessionIdx);
+    expect(sessionIdx).toBeLessThan(principalIdx);
+  });
+
+  it("keeps the instance and returns 201 when launch reports the agent already exists", async () => {
+    const db = deployDb();
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    // Reconnect race: the orchestrator already provisioned the agent, so the
+    // sidecar reports "Agent already exists" (wrapped in a provision-phase
+    // SessionLaunchError). The agent is live — the deploy must NOT tear it down.
+    const provisionError = new SessionLaunchError(
+      "provision",
+      new Error('Agent already exists for address "ins-1@tenant-1.localhost"'),
+      false,
+    );
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.reject(provisionError)),
+    };
+
+    const insertMock = mock(() => ({ values: mock(() => Promise.resolve()) }));
+    db.insert = insertMock as never;
+    db.transaction = mock((fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ insert: insertMock, update: db.update, delete: db.delete }),
+    ) as never;
+
+    const app = buildApp(db, sessionService);
+    const res = await app.fetch(
+      makeRequest("http://localhost/tenants/tenant-1/agents/instances", {
+        method: "POST",
+        body: { templateKey: "oat" },
+      }),
+    );
+    // Launch was attempted, hit the already-exists race, and the route kept the
+    // live instance instead of tearing it down + 503 (the failure branch returns
+    // 503, so a 201 proves no teardown ran).
+    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
     expect(res.status).toBe(201);
     expect((await res.json()).created).toBe(true);
   });

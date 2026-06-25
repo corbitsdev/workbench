@@ -1,4 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
+import { getTableName } from "drizzle-orm";
+import type { PgTable } from "drizzle-orm/pg-core";
 
 // --- Module-boundary mocks for the title-generation inference path ---
 
@@ -86,6 +88,7 @@ mock.module("@intx/db", () => ({
   schema: {
     agent: { tenantId: "agent.tenantId", name: "agent.name" },
     agentInstance: {},
+    agentSession: {},
     principal: {},
     grant: {},
   },
@@ -99,6 +102,11 @@ mock.module("../config", () => ({
   }),
 }));
 
+let launchShouldThrow: unknown = null;
+const launchAgentSessionMock = mock(() => {
+  if (launchShouldThrow !== null) return Promise.reject(launchShouldThrow);
+  return Promise.resolve({ address: "a", sessionId: "s" });
+});
 mock.module("./agent-provisioning", () => ({
   resolveInstanceSourcesFromDefinition: mock(() =>
     Promise.resolve({
@@ -114,17 +122,117 @@ mock.module("./agent-provisioning", () => ({
       ],
     }),
   ),
-  launchAgentSession: mock(() =>
-    Promise.resolve({ address: "a", sessionId: "s" }),
-  ),
+  launchAgentSession: launchAgentSessionMock,
+  describeLaunchError: (err: unknown) => ({
+    phase: null,
+    detail: err instanceof Error ? err.message : String(err),
+  }),
 }));
 
 import {
+  createMyraThread,
   deleteMyraThread,
   generateMyraThreadTitle,
   listMyraThreads,
+  MyraThreadLaunchError,
   renameMyraThread,
 } from "./myra-threads";
+
+describe("createMyraThread", () => {
+  function buildCreateDb(opts: {
+    transactions: () => void;
+    deleted?: unknown[];
+  }) {
+    return {
+      query: {
+        agent: {
+          findFirst: mock(() =>
+            Promise.resolve({ id: "agt-myra", systemPrompt: "You are Myra." }),
+          ),
+        },
+        memberAgentInstance: { findMany: mock(() => Promise.resolve([])) },
+      },
+      transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
+        opts.transactions();
+        await fn({
+          insert: () => ({ values: () => Promise.resolve(undefined) }),
+          delete: (table: unknown) => {
+            opts.deleted?.push(table);
+            return { where: () => Promise.resolve(undefined) };
+          },
+        });
+      }),
+    };
+  }
+
+  const deps = {
+    // biome-ignore lint/suspicious/noExplicitAny: structural mock
+    sessionService: {} as any,
+    // biome-ignore lint/suspicious/noExplicitAny: structural mock
+    grantStore: {} as any,
+    // biome-ignore lint/suspicious/noExplicitAny: structural mock
+    eventCollectors: {} as any,
+  };
+
+  it("returns created:true when the session launches", async () => {
+    launchShouldThrow = null;
+    let txCount = 0;
+    const db = buildCreateDb({ transactions: () => (txCount += 1) });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, deps, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(true);
+    expect(launchAgentSessionMock).toHaveBeenCalled();
+    // Only the create transaction ran — no teardown.
+    expect(txCount).toBe(1);
+  });
+
+  it("throws MyraThreadLaunchError and tears down the rows when the launch fails", async () => {
+    launchShouldThrow = new Error(
+      'Source provider "granola" is not registered',
+    );
+    let txCount = 0;
+    const deleted: unknown[] = [];
+    const db = buildCreateDb({ transactions: () => (txCount += 1), deleted });
+
+    let thrown: unknown;
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+      await createMyraThread(db as any, deps, {
+        tenantId: "tn-global",
+        tenantDomain: "global.test",
+        memberPrincipalId: "prn-member",
+      });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(MyraThreadLaunchError);
+    expect((thrown as MyraThreadLaunchError).detail).toContain("granola");
+    // The create transaction AND the teardown transaction both ran, so no
+    // orphan thread row survives a failed launch.
+    expect(txCount).toBe(2);
+    // Teardown deletes five rows: grant, member mapping, instance, the lingering
+    // agent_session, then the principal. The agent_session delete is the
+    // load-bearing one — without it the principal delete FK-violates (RESTRICT)
+    // and the rollback leaves the orphan it exists to remove. A count of 5 (not
+    // 4) is what guards that delete from being dropped. (The agents.ts rollback
+    // test pins the FK-dictated session→principal ordering by table identity.)
+    expect(deleted).toHaveLength(5);
+    // Pin the deletes by drizzle table name so a future change that drops the
+    // agent_session or principal delete — but adds an extra delete elsewhere,
+    // keeping the count at 5 — still fails here. getTableName reads the real
+    // table identity, so this asserts the actual rows torn down, not the count.
+    const deletedNames = deleted.map((d) => getTableName(d as PgTable));
+    expect(deletedNames).toContain("agent_session");
+    expect(deletedNames).toContain("principal");
+  });
+});
 
 describe("generateMyraThreadTitle", () => {
   function buildTitleDb(opts: {
@@ -498,7 +606,7 @@ describe("deleteMyraThread", () => {
     let deletes = 0;
     const db = buildDeleteDb(
       { id: "map-1", instanceId: "inst-1" },
-      { id: "inst-1", address: "inst-1@myra.test" },
+      { id: "inst-1", address: "inst-1@myra.test", principalId: "prn-inst-1" },
       () => {
         deletes += 1;
       },
@@ -519,7 +627,8 @@ describe("deleteMyraThread", () => {
       "inst-1@myra.test",
       "myra_thread_deleted",
     );
-    expect(deletes).toBe(4);
+    // grant, member mapping, instance, agent_session, principal.
+    expect(deletes).toBe(5);
   });
 
   it("returns false and skips teardown when the mapping is not found", async () => {
@@ -537,6 +646,35 @@ describe("deleteMyraThread", () => {
 
     expect(result).toBe(false);
     expect(endSession).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("throws (no silent no-op teardown) when the instance has no principalId", async () => {
+    const db = buildDeleteDb(
+      { id: "map-1", instanceId: "inst-1" },
+      { id: "inst-1", address: "inst-1@myra.test" },
+      () => {},
+    );
+    const endSession = mock(() => Promise.resolve());
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const deps: any = { sessionService: { endSession } };
+
+    let thrown: unknown;
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+      await deleteMyraThread(db as any, deps, {
+        tenantId: "tn-global",
+        memberPrincipalId: "prn-member",
+        threadId: "map-1",
+      });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain("no principalId");
+    // It must fail before tearing anything down — a partial delete with an
+    // empty principalId is exactly the orphan this guards against.
     expect(db.transaction).not.toHaveBeenCalled();
   });
 });
