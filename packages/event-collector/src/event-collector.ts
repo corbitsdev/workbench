@@ -34,7 +34,7 @@ export type TurnToolCall = typeof TurnToolCallSchema.infer;
 
 const TurnFinalizedSchema = type({
   turnId: "string",
-  "status": "'completed' | 'failed'",
+  status: "'completed' | 'failed'",
   text: "string",
   hadReply: "boolean",
   hadError: "boolean",
