@@ -25,6 +25,10 @@ function isUnsendableAssistantTurn(turn: ConversationTurn): boolean {
   );
 }
 
+// turns: "unknown[]" -- ConversationTurn is a recursive discriminated union from
+// @intx/types/runtime (interchange, out of scope for arktype's string DSL). The
+// exported type intersection below restores the correct static type; element-level
+// validation of turns is intentionally skipped.
 const ContextRepairResult = type({ turns: "unknown[]", removedCount: "number" });
 export type ContextRepairResult = Omit<typeof ContextRepairResult.infer, "turns"> & {
   turns: ConversationTurn[];
@@ -77,9 +81,12 @@ function synthesizeResultTurn(
   };
 }
 
+// turns: "unknown[]" -- same ConversationTurn constraint as ContextRepairResult above.
 const ToolPairingRepairResult = type({
   turns: "unknown[]",
+  // tool_results synthesized for assistant tool_calls that had none.
   synthesizedResults: "number",
+  // dangling tool_result blocks dropped (no matching tool_call).
   droppedResults: "number",
 });
 export type ToolPairingRepairResult = Omit<
@@ -154,6 +161,7 @@ export function repairToolCallPairing(
   return { turns: repaired, synthesizedResults, droppedResults };
 }
 
+// turns: "unknown[]" -- same ConversationTurn constraint as above.
 const ContextHealResult = type({
   turns: "unknown[]",
   changed: "boolean",
