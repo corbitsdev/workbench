@@ -270,9 +270,6 @@ export type ScrapeArgs = typeof ScrapeArgsSchema.infer;
 export const RequiredIdArgsSchema = type({ id: "string > 0" });
 export type RequiredIdArgs = typeof RequiredIdArgsSchema.infer;
 
-export const RequiredUrlArgsSchema = type({ url: "string > 0" });
-export type RequiredUrlArgs = typeof RequiredUrlArgsSchema.infer;
-
 export const CrawlStartArgsSchema = type({
   url: "string > 0",
   "limit?": "number",
@@ -301,7 +298,7 @@ export type BatchScrapeStartArgs = typeof BatchScrapeStartArgsSchema.infer;
 
 export const MapArgsSchema = type({
   url: "string > 0",
-  "search?": "string",
+  "search?": "string > 0",
   "limit?": "number",
   "includeSubdomains?": "boolean",
   "sitemapOnly?": "boolean",
@@ -313,7 +310,7 @@ export const SearchArgsSchema = type({
   query: "string > 0",
   "limit?": "number",
   "sources?": "string[]",
-  "tbs?": "string",
+  "tbs?": "string > 0",
   "scrapeOptions?": "Record<string, unknown>",
 });
 
@@ -337,9 +334,9 @@ export type FireAgentArgs = typeof FireAgentArgsSchema.infer;
 
 export const InteractArgsSchema = type({
   jobId: "string > 0",
-  "code?": "string",
-  "prompt?": "string",
-  "language?": "string",
+  "code?": "string > 0",
+  "prompt?": "string > 0",
+  "language?": "string > 0",
   "timeout?": "number",
 });
 
