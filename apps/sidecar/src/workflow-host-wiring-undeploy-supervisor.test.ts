@@ -270,8 +270,18 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
         /* no-op */
       },
       multistepSubprocessSpawner: spawner,
+      // Mirror the real boot-edge substrate env (see index.ts) so the deploy
+      // router's CL-2363 completeness assertion passes; SIDECAR_DATA_DIR is
+      // the live per-test temp dir, the rest are boot-edge constants.
       multistepSubstrateEnv: {
         SIDECAR_DATA_DIR: dataDir,
+        SIDECAR_SIGNING_PUBLIC_KEY: "deadbeef",
+        SIDECAR_SIGNING_PRIVATE_KEY: "cafef00d",
+        HUB_WS_URL: "ws://hub.test/ws",
+        SIDECAR_ID: "sc_test",
+        SIDECAR_TOKEN: "tok_test",
+        SIDECAR_CACHE_MAX_BYTES: "1000000",
+        SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
       },
       multistepMailRouter: mailRouter,
       multistepSignalRouter: signalRouter,
@@ -284,10 +294,11 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
       // step's agent-state repo from `parseAgentId(agentAddress)`, which
       // requires the canonical `ins_<id>@<domain>` instance shape.
       agentAddress: "ins_undeploy-supervisor@example.com",
-      agentId: "undeploy-supervisor-agent",
+      // `ins_<deploymentId>` shape `deriveRawDeploymentId` requires.
+      agentId: "ins_undeploy-supervisor-agent",
       hubPublicKey: "hub-pk",
 
-      config: {} as AgentDeployFrame["config"],
+      config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
       workflow: {
         definition: {
           id: "wf-undeploy-supervisor",

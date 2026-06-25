@@ -33,6 +33,8 @@ import {
   createMultistepMailRouter,
   type MultistepMailRouter,
 } from "./workflow-run-pack-client";
+import { SIDECAR_SUBSTRATE_CONFIG_KEYS } from "./workflow-substrate-factory";
+import { sanitizeAddress } from "@workbench/hub-agent";
 
 function createMinimalStubRepoStore(): RepoStore {
   const stub: Partial<RepoStore> = {
@@ -593,14 +595,18 @@ function makeMultistepFrame(args: MultistepDeployArgs): AgentDeployFrame {
   return {
     type: "agent.deploy",
     agentAddress: args.agentAddress ?? "multi@example.com",
-    agentId: "multi-agent",
+    // `ins_<deploymentId>` shape the orchestrator's `deriveDeploymentAgentId`
+    // mints; the deploy router's `deriveRawDeploymentId` recovers the raw
+    // deploymentId from it and throws on any other shape.
+    agentId: "ins_multi-agent",
     hubPublicKey: "hub-pk",
-    // The wire-side HarnessConfig has many required fields. The router
-    // never inspects `config` on the multi-step branch (only the
-    // trivial branch hands it to provisionAgent), so an opaque
-    // placeholder satisfies the surface contract for these tests.
+    // The wire-side HarnessConfig has many required fields. The router's
+    // multi-step branch reads `config.tenantId` (threaded into the
+    // workflow-child's `TENANT_ID` substrate-config key) and `config.grants`;
+    // an opaque placeholder carrying `tenantId` satisfies the surface
+    // contract for these tests.
 
-    config: {} as AgentDeployFrame["config"],
+    config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
     workflow: {
       definition: args.definition,
       sources: args.sources,
@@ -1108,8 +1114,21 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     // touch a real /tmp path; callers can override
     // `SIDECAR_DATA_DIR` (and any other key) by passing
     // `multistepSubstrateEnv`.
+    // Mirror the real sidecar boot edge (apps/sidecar/src/index.ts
+    // `multistepSubstrateEnv`): every substrate-config key the boot edge
+    // threads through the deploy router must be present here so the fixture
+    // faithfully reproduces production. The deploy router derives the
+    // workflow-definition / workflow-run identity keys, TENANT_ID, and
+    // WORKFLOW_RAW_DEPLOYMENT_ID per-deploy; the rest are boot-edge constants.
     const defaultSubstrateEnv: Record<string, string> = {
       SIDECAR_DATA_DIR: await createTempBaseDir("sidecar-multistep-data-"),
+      SIDECAR_SIGNING_PUBLIC_KEY: "deadbeef",
+      SIDECAR_SIGNING_PRIVATE_KEY: "cafef00d",
+      HUB_WS_URL: "ws://hub.test/ws",
+      SIDECAR_ID: "sc_test",
+      SIDECAR_TOKEN: "tok_test",
+      SIDECAR_CACHE_MAX_BYTES: "1000000",
+      SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
     };
     const mergedSubstrateEnv: Record<string, string> = {
       ...defaultSubstrateEnv,
@@ -1242,6 +1261,19 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     expect(env.DEFINITION_HASH).toBe(computeWireDefinitionHash(definition));
     expect(env[STEP_INFERENCE_SOURCES_ENV_KEY]).toBe(JSON.stringify(sources));
     expect(env.IPC_CHANNEL_ID).toMatch(/^[0-9a-f]{32}$/);
+
+    // CL-2363 superset guard: `toMatchObject` above is a SUBSET matcher — it
+    // passes even when a substrate-config key is absent, which is exactly how
+    // the #364 re-sync dropped TENANT_ID / WORKFLOW_RAW_DEPLOYMENT_ID with a
+    // green build. Assert the captured spawn env carries EVERY
+    // SIDECAR_SUBSTRATE_CONFIG_KEYS member, present and non-empty. The fixture's
+    // `defaultSubstrateEnv` faithfully mirrors the real boot edge, so this test
+    // can actually fail if the deploy router stops threading a key (verified by
+    // temporarily deleting one from the assembled env).
+    for (const key of SIDECAR_SUBSTRATE_CONFIG_KEYS) {
+      const value = env[key];
+      expect(typeof value === "string" && value.length > 0).toBe(true);
+    }
 
     // Drive the `ready` handshake.
     const channelId = env.IPC_CHANNEL_ID;
@@ -1840,5 +1872,56 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     const secondResult = await secondDeploy;
     expect(secondResult.publicKey).toMatch(/^[0-9a-f]{64}$/);
     expect(registerCallCount).toBe(2);
+  });
+
+  test("CL-2363: a multi-step deploy whose assembled substrate env is missing a required key fails loudly at deploy time, naming the key", async () => {
+    // The deploy router derives TENANT_ID from `frame.config.tenantId`. An
+    // empty tenantId yields an empty TENANT_ID in the assembled substrate env,
+    // which the completeness assertion must reject BEFORE the supervisor is
+    // constructed and the child is spawned — converting what would otherwise be
+    // a runtime child-spawn crash into a loud deploy-time failure. The spawner
+    // throws if invoked, proving the assertion fires before spawn.
+    const spawner: SubprocessSpawner = () => {
+      throw new Error(
+        "spawner must not be invoked when the substrate env is incomplete",
+      );
+    };
+    const { router } = await buildMultistepFixture({ spawner });
+
+    const sources = defaultMultistepSources();
+    const definition = {
+      id: "wf-incomplete-env",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["step-1", "step-2"],
+      steps: { "step-1": { kind: "step" }, "step-2": { kind: "step" } },
+    };
+    const frame = makeMultistepFrame({ definition, sources });
+    const frameWithEmptyTenant: AgentDeployFrame = {
+      ...frame,
+      config: { tenantId: "" } as AgentDeployFrame["config"],
+    };
+
+    let caught: unknown;
+    try {
+      await router.deploy(frameWithEmptyTenant);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught instanceof Error && caught.message).toContain('"TENANT_ID"');
+    expect(caught instanceof Error && caught.message).toMatch(
+      /missing required key/,
+    );
+  });
+});
+
+describe("sanitizeAddress (CL-2231 reclaim dir-name contract)", () => {
+  test("maps a representative agent address to its expected on-disk segment", () => {
+    // The CL-2231 undeploy reclaim sweep computes a deployment's owned dirs
+    // from `sanitizeAddress` (imported from @workbench/hub-agent). If a future
+    // interchange pin bump changes this mapping, the reclaim would target the
+    // wrong dir and silently re-introduce the sidecar-volume inode leak. Pin
+    // the mapping here so such a change fails this test instead.
+    expect(sanitizeAddress("ins_x@abklabs.com")).toBe("ins_x_at_abklabs_com");
   });
 });

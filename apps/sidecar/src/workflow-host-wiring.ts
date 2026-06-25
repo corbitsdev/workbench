@@ -67,8 +67,36 @@ import type {
   MultistepMailRouter,
   MultistepSignalRouter,
 } from "./workflow-run-pack-client";
+import { SIDECAR_SUBSTRATE_CONFIG_KEYS } from "./workflow-substrate-factory";
 
 const logger = getLogger(["interchange", "sidecar", "workflow-host-wiring"]);
+
+/**
+ * WORKBENCH-LOCAL (CL-2363): not in upstream interchange — preserve on pin-bump
+ * re-sync of this vendored file.
+ *
+ * Deploy-time completeness assertion for the multi-step workflow-child's
+ * substrate-config env. The hand-off between this wiring and the workflow-child
+ * is duck-typed (no compile-time contract), so a dropped substrate-config key
+ * does NOT fail the build — it surfaces only when the child boots and its
+ * `filterSubstrateConfig` validator throws, i.e. a runtime child-spawn crash in
+ * production. This happened in the #364 pin-bump re-sync, which dropped
+ * `TENANT_ID` and `WORKFLOW_RAW_DEPLOYMENT_ID` (CL-2361). Asserting presence +
+ * non-emptiness of every `SIDECAR_SUBSTRATE_CONFIG_KEYS` member here converts
+ * that silent runtime crash into a loud deploy-time failure naming the missing
+ * key. The key list is imported from `workflow-substrate-factory` (the single
+ * source of truth) rather than duplicated.
+ */
+function assertSubstrateEnvComplete(env: Record<string, string>): void {
+  for (const key of SIDECAR_SUBSTRATE_CONFIG_KEYS) {
+    const value = env[key];
+    if (typeof value !== "string" || value.length === 0) {
+      throw new Error(
+        `sidecar deploy router: assembled workflow-child substrate env is missing required key ${JSON.stringify(key)} (present in SIDECAR_SUBSTRATE_CONFIG_KEYS but absent or empty in the spawn-time env); a dropped substrate-config key would crash the workflow-child at boot — see CL-2361/CL-2363`,
+      );
+    }
+  }
+}
 
 /**
  * Project an agent address into the substrate-safe id of its
@@ -1050,6 +1078,11 @@ export function createSidecarDeployRouter(deps: {
         [RAW_DEPLOYMENT_ID_ENV_KEY]: deriveRawDeploymentId(frame.agentId),
         [STEP_INFERENCE_SOURCES_ENV_KEY]: JSON.stringify(projection.sources),
       };
+
+      // WORKBENCH-LOCAL (CL-2363): fail the deploy loudly if any
+      // substrate-config key the workflow-child requires is missing from the
+      // assembled env, rather than spawning a child that crashes at boot.
+      assertSubstrateEnvComplete(substrateEnv);
 
       // Materialize the workflow asset on the sidecar's local substrate
       // so the workflow-process child's `loadWorkflowDefinition` can read
