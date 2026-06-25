@@ -143,12 +143,12 @@ export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   // them at its boundary. Adopted in the CL-2335 pin bump.
   "SIDECAR_CACHE_MAX_BYTES",
   "SIDECAR_REGISTRY_MAX_TARBALL_BYTES",
-  // INTENTIONAL DIVERGENCE FROM UPSTREAM: the reference sidecar's substrate
+  // WORKBENCH-LOCAL (CL-2199): the reference sidecar's substrate
   // config carries no TENANT_ID. GTM Workbench threads it so the per-step
   // tool-context resolver can scope hub manifest/credential lookups to the
   // deploying tenant. Pin-bump re-diffs: this key is ours; keep it.
   "TENANT_ID",
-  // INTENTIONAL DIVERGENCE FROM UPSTREAM: the raw hub deploymentId
+  // WORKBENCH-LOCAL (CL-2199): the raw hub deploymentId
   // (`ses_<id>`). The step tool-context resolver derives the step agent
   // row id (`ins_<raw>-<step>`) and agent-state repo id (`<raw>-<step>`)
   // from this, not from the slugified workflow-run repo id in
@@ -174,7 +174,11 @@ const SubstrateConfig = type({
   // numeric positive-finite contract is enforced by `parseByteCap` below.
   SIDECAR_CACHE_MAX_BYTES: "string > 0",
   SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "string > 0",
+  // WORKBENCH-LOCAL (CL-2199): not in upstream's SubstrateConfig — the child
+  // requires TENANT_ID to scope hub manifest/credential lookups per step.
   TENANT_ID: "string > 0",
+  // WORKBENCH-LOCAL (CL-2199): not in upstream's SubstrateConfig — the child
+  // requires the raw hub deploymentId to derive step agent/state-repo ids.
   WORKFLOW_RAW_DEPLOYMENT_ID: "string > 0",
 }).onUndeclaredKey("ignore");
 
@@ -432,7 +436,7 @@ export function warmStepStorageRoot(args: {
  * signer, and the director registry once, then derives every other
  * `StepEnvBase` slot per step.
  *
- * INTENTIONAL DIVERGENCE FROM UPSTREAM: interchange's reference
+ * WORKBENCH-LOCAL (CL-2199): interchange's reference
  * sidecar ships a throwing-Proxy stub for `storage`/`audit`/`workdir`/
  * `directors` and a stub step invoker that never builds a real agent.
  * GTM Workbench wires the real harness here so workflow steps run real
@@ -1467,7 +1471,7 @@ export function createSidecarSubstrateFactory(
       };
     };
 
-    // INTENTIONAL DIVERGENCE FROM UPSTREAM REFERENCE SIDECAR.
+    // WORKBENCH-LOCAL (CL-2199): not in upstream reference sidecar.
     // Interchange's reference `apps/sidecar` ships a stub step invoker
     // here (`return { output: { reply: req.agent.id, turn: null } }`)
     // that never builds an agent, so workflows produce canned output.
