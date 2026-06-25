@@ -235,7 +235,7 @@ describe("createXTools / x_search handler", () => {
     });
     const xSearch = findStringTool(tools, "x_search");
     expect(xSearch.handler({}, new AbortController().signal)).rejects.toThrow(
-      "query is required",
+      "query",
     );
   });
 

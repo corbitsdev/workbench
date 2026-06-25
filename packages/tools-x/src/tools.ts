@@ -2,7 +2,7 @@ import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import { normalizeXResult } from "./normalize";
-import { XSearchResult } from "./types";
+import { XSearchResult, XSearchResponse } from "./types";
 
 const XAI_BASE_URL = "https://api.x.ai";
 const XAI_MODEL = "grok-4-1-fast";
@@ -96,15 +96,30 @@ function parseXSearchResult(value: unknown): XSearchResult {
     publishedAt = value.date;
   }
 
-  return {
+  const item = {
     title,
     url: typeof value.url === "string" ? value.url : undefined,
     summary,
     publishedAt,
     engagementSignal,
   };
+  const validated = XSearchResult(item);
+  if (validated instanceof type.errors) {
+    throw new Error(`xAI result item failed validation: ${validated.summary}`);
+  }
+  return validated;
 }
 
+/**
+ * Parses the xAI response text into an array of XSearchResult items. Each
+ * item is validated through the XSearchResult arktype schema.
+ *
+ * XSearchResponse (the { results: XSearchResult[] } schema) is intentionally
+ * not used here as a top-level validator: the xAI API returns either a bare
+ * array or an { items: [...] } envelope — neither matches XSearchResponse's
+ * shape. XSearchResponse is exported for downstream consumers (e.g. the hub
+ * tool registry) that want a typed wrapper around a results array.
+ */
 function parseXSearchResponse(content: string): XSearchResult[] {
   let parsed: unknown;
   try {
