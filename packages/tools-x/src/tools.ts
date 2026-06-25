@@ -20,7 +20,7 @@ export type XToolsConfig = {
 export const X_SEARCH_DEFINITION: ToolDefinition = {
   name: 'x_search',
   description:
-    'Search X/Twitter via xAI Grok live search. Returns a semantic sampling of recent posts and content for the query. Results are a semantic sampling by Grok, not stable post IDs — cite as approximate. Scope the search with a specific query and the date range (days or fromDate/toDate) rather than pulling the maximum; returns up to 10 posts by default and at most 20 (raise via limit only when you genuinely need more).',
+    'Search X/Twitter via xAI Grok live search. Returns a semantic sampling of recent posts and content for the query. Results are a semantic sampling by Grok, not stable post IDs — cite as approximate. Scope the search with a specific query and the date range (days or fromDate/toDate) rather than pulling the maximum; returns up to 10 posts by default and at most 20 (raise via limit only when you genuinely need more). Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "x", author: "x-grok", provenance: "degraded", engagement: { upvotes: 0, comments: 0 } }`. Grok returns no engagement counts (always 0) and no stable per-post author, so author is always "x-grok" and every item is marked provenance "degraded" — treat as approximate.',
   inputSchema: {
     type: 'object',
     properties: {

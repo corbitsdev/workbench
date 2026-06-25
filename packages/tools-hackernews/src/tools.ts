@@ -17,7 +17,7 @@ export type HackerNewsToolsConfig = {
 export const HACKERNEWS_SEARCH_DEFINITION: ToolDefinition = {
   name: 'hackernews_search',
   description:
-    'Search Hacker News stories from the last N days. Returns normalized research items with engagement data. Scope each call with a specific query and the days window rather than pulling everything; the default returns 10 stories.',
+    'Search Hacker News stories from the last N days. Scope each call with a specific query and the days window rather than pulling everything; the default returns 10 stories. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "hn", engagement: { upvotes, comments } }` (points map to upvotes).',
   inputSchema: {
     type: 'object',
     properties: {

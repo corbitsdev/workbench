@@ -249,7 +249,7 @@ const WEB_SEARCH_INPUT_SCHEMA = {
 };
 
 const RESULT_SHAPE_NOTE =
-  'Returns normalized research items (source "web") with title, URL, author, and publish date, ready to pass straight into last30days_core_report.';
+  'Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "web", author?, engagement: { upvotes: 0, comments: 0 } }`. When a result has no real publish date, publishedAt falls back to fetch time and provenance is "degraded". Ready to pass straight into last30days_core_report.';
 
 export const EXA_SEARCH_DEFINITION: ToolDefinition = {
   name: 'exa_search',

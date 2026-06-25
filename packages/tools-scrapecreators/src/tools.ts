@@ -275,7 +275,7 @@ function parsePinterestPin(value: unknown): PinterestPin {
 export const SCRAPECREATORS_TIKTOK_DEFINITION: ToolDefinition = {
   name: 'scrapecreators_tiktok',
   description:
-    'Search TikTok posts and videos via ScrapeCreators. Returns normalized research items with engagement data (likes). Use a specific query to scope results rather than pulling everything; defaults to 10 results.',
+    'Search TikTok posts and videos via ScrapeCreators. Use a specific query to scope results rather than pulling everything; defaults to 10 results. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "tiktok", author (when available), engagement: { upvotes, comments } }` (likes map to upvotes).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -292,7 +292,7 @@ export const SCRAPECREATORS_TIKTOK_DEFINITION: ToolDefinition = {
 export const SCRAPECREATORS_INSTAGRAM_DEFINITION: ToolDefinition = {
   name: 'scrapecreators_instagram',
   description:
-    'Search Instagram reels by keyword via ScrapeCreators. Returns normalized research items. Use a specific query to scope results rather than pulling everything; defaults to 10 results.',
+    'Search Instagram reels by keyword via ScrapeCreators. Use a specific query to scope results rather than pulling everything; defaults to 10 results. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "instagram", author (when available), engagement: { upvotes, comments } }` (likes map to upvotes).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -312,7 +312,7 @@ export const SCRAPECREATORS_INSTAGRAM_DEFINITION: ToolDefinition = {
 export const SCRAPECREATORS_THREADS_DEFINITION: ToolDefinition = {
   name: 'scrapecreators_threads',
   description:
-    'Search Threads posts via ScrapeCreators. Returns normalized research items with engagement data. Use a specific query to scope results rather than pulling everything; defaults to 10 results.',
+    'Search Threads posts via ScrapeCreators. Use a specific query to scope results rather than pulling everything; defaults to 10 results. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "threads", author (when available), engagement: { upvotes, comments: 0 } }` (likes map to upvotes; comments is always 0).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -329,7 +329,7 @@ export const SCRAPECREATORS_THREADS_DEFINITION: ToolDefinition = {
 export const SCRAPECREATORS_PINTEREST_DEFINITION: ToolDefinition = {
   name: 'scrapecreators_pinterest',
   description:
-    'Search Pinterest pins via ScrapeCreators. Returns normalized research items with save counts. Use a specific query to scope results rather than pulling everything; defaults to 10 results.',
+    'Search Pinterest pins via ScrapeCreators. Use a specific query to scope results rather than pulling everything; defaults to 10 results. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "pinterest", author (when available), engagement: { upvotes, comments: 0 } }` (saves map to upvotes; comments is always 0).',
   inputSchema: {
     type: 'object',
     properties: {

@@ -35,7 +35,7 @@ export type BlueskyToolsConfig = {
 export const BLUESKY_SEARCH_DEFINITION: ToolDefinition = {
   name: 'bluesky_search',
   description:
-    'Search Bluesky posts from the last N days. Returns normalized research items with engagement data (likes, replies, reposts). Scope the search with a specific query and the days window rather than pulling everything; returns up to 25 posts by default.',
+    'Search Bluesky posts from the last N days. Scope the search with a specific query and the days window rather than pulling everything; returns up to 25 posts by default. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "bluesky", engagement: { upvotes, comments, shares } }`, where likes map to upvotes, replies to comments, and reposts to shares.',
   inputSchema: {
     type: 'object',
     properties: {

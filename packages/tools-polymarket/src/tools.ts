@@ -17,7 +17,7 @@ export type PolymarketToolsConfig = {
 export const POLYMARKET_ODDS_DEFINITION: ToolDefinition = {
   name: 'polymarket_odds',
   description:
-    'Search active Polymarket prediction markets matching a query. Use a specific query to scope results to the markets you actually need rather than pulling everything; returns the top 10 by default. Returns normalized research items with market volume as engagement.',
+    'Search active Polymarket prediction markets matching a query. Use a specific query to scope results to the markets you actually need rather than pulling everything; returns the top 10 by default. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "polymarket", entityTag (market condition id), engagement: { upvotes, comments: 0 } }`, where engagement.upvotes carries 24-hour market volume and comments is always 0. Note: publishedAt is the market end date (often in the future), not a publish date.',
   inputSchema: {
     type: 'object',
     properties: {

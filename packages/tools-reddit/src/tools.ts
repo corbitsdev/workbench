@@ -192,7 +192,7 @@ function applyCommonParams(url: URL, args: Record<string, unknown>): void {
 const REDDIT_SEARCH_DEFINITION: ToolDefinition = {
   name: 'reddit_search',
   description:
-    'Search Reddit posts across all subreddits via ScrapeCreators. Returns normalized research items with upvote and comment counts. Scope the search with a focused query and timeframe rather than pulling everything; returns 10 results by default.',
+    'Search Reddit posts across all subreddits via ScrapeCreators. Scope the search with a focused query and timeframe rather than pulling everything; returns 10 results by default. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "reddit", author ("r/<subreddit>"), engagement: { upvotes, comments } }`, sometimes with a `topComments` array.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -217,7 +217,7 @@ const REDDIT_SEARCH_DEFINITION: ToolDefinition = {
 const REDDIT_SUBREDDIT_SEARCH_DEFINITION: ToolDefinition = {
   name: 'reddit_subreddit_search',
   description:
-    'Search Reddit posts within a specific subreddit via ScrapeCreators. Returns normalized research items with upvote and comment counts. Scope the search with a focused query, subreddit, and timeframe rather than pulling everything; returns 10 results by default.',
+    'Search Reddit posts within a specific subreddit via ScrapeCreators. Scope the search with a focused query, subreddit, and timeframe rather than pulling everything; returns 10 results by default. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "reddit", author ("r/<subreddit>"), engagement: { upvotes, comments } }`, sometimes with a `topComments` array.',
   inputSchema: {
     type: 'object',
     properties: {

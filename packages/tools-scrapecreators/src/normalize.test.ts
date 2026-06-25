@@ -94,6 +94,7 @@ describe('normalizeThreadsPost', () => {
     expect(result.publishedAt).toBe(new Date(1700100000 * 1000).toISOString());
     expect(result.author).toBe('threaduser');
     expect(result.engagement.upvotes).toBe(55);
+    expect(result.engagement.comments).toBe(0);
     expect(result.source).toBe('threads');
   });
 
@@ -125,6 +126,7 @@ describe('normalizePinterestPin', () => {
     expect(result.publishedAt).toBe('2024-10-01T08:00:00Z');
     expect(result.author).toBe('pinner_user');
     expect(result.engagement.upvotes).toBe(320);
+    expect(result.engagement.comments).toBe(0);
     expect(result.source).toBe('pinterest');
   });
 

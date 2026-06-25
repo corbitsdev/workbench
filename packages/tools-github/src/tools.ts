@@ -18,7 +18,7 @@ export type GitHubToolsConfig = {
 export const GITHUB_ACTIVITY_DEFINITION: ToolDefinition = {
   name: 'github_activity',
   description:
-    'Search GitHub for recently active repositories, issues, and pull requests matching a topic. Scope the search tightly: pass specific keyword terms and a narrow days window rather than pulling everything — the default returns only a few results per category. Pass keyword terms only — do not include GitHub search qualifiers like is:issue, is:pr, or repo: in the query; those are added automatically. Returns normalized research items with star, reaction, and comment counts.',
+    'Search GitHub for recently active repositories, issues, and pull requests matching a topic. Scope the search tightly: pass specific keyword terms and a narrow days window rather than pulling everything — the default returns only a few results per category. Pass keyword terms only — do not include GitHub search qualifiers like is:issue, is:pr, or repo: in the query; those are added automatically. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "github", engagement: { upvotes, comments } }`; repos carry an `entityTag` (full repo name) and `comments: 0`, while issues/PRs map reactions to upvotes and carry a real comment count.',
   inputSchema: {
     type: 'object',
     properties: {

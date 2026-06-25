@@ -23,7 +23,7 @@ export type YouTubeToolsConfig = {
 export const YOUTUBE_SEARCH_DEFINITION: ToolDefinition = {
   name: 'youtube_search',
   description:
-    'Search YouTube videos from the last N days. Returns normalized research items with engagement data including views, likes, and comments. Scope each call with a specific query and a tight days window rather than pulling the maximum — the default is 10 results, and every result also costs a second statistics lookup, so over-fetching is doubly expensive.',
+    'Search YouTube videos from the last N days. Scope each call with a specific query and a tight days window rather than pulling the maximum — the default is 10 results, and every result also costs a second statistics lookup, so over-fetching is doubly expensive. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "youtube", author (channel), engagement: { upvotes, comments, views } }` (likes map to upvotes).',
   inputSchema: {
     type: 'object',
     properties: {
