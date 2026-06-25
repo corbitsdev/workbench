@@ -145,9 +145,51 @@ export function createWorkflowReconciler(deps: {
           ),
         );
 
+      // Only re-establish a supervisor for a deployment that still has work to
+      // resume. A deployment whose run records are ALL terminal — `failed`
+      // (e.g. `failOrphanedRuns` just marked it) or `completed` — needs no live
+      // supervisor; re-establishing it re-spawns a child that replays a
+      // dead/wedged run forever. That is the recurrence vector behind the
+      // staging restart loop: `failOrphanedRuns` failed the run record, but
+      // this pass re-established the deployment anyway (it keyed only off the
+      // un-filtered `workflow_run` row), so the failed run was resurrected on
+      // every sidecar reconnect. A deployment with NO record yet (freshly
+      // deployed, never run) is deliberately left untouched — its supervisor
+      // comes up on first run — so the only deployments SKIPPED are those that
+      // have records and none are non-terminal.
+      const recordRows = await deps.db
+        .select({
+          deploymentId: workflowRunRecord.deploymentId,
+          status: workflowRunRecord.status,
+        })
+        .from(workflowRunRecord)
+        .where(
+          and(
+            isNotNull(workflowRunRecord.deploymentId),
+            isNull(workflowRunRecord.deletedAt),
+          ),
+        );
+      const deploymentsWithRecord = new Set<string>();
+      const deploymentsWithActiveRecord = new Set<string>();
+      for (const r of recordRows) {
+        if (r.deploymentId === null) continue;
+        deploymentsWithRecord.add(r.deploymentId);
+        if (r.status === "running" || r.status === "awaiting") {
+          deploymentsWithActiveRecord.add(r.deploymentId);
+        }
+      }
+
       let reestablished = 0;
+      let skippedTerminal = 0;
       for (const row of rows) {
         if (!row.deploymentId) continue;
+        if (
+          deploymentsWithRecord.has(row.deploymentId) &&
+          !deploymentsWithActiveRecord.has(row.deploymentId)
+        ) {
+          skippedTerminal += 1;
+          continue;
+        }
         try {
           const result = await deps.ensureDeploymentRoutable({
             deploymentId: row.deploymentId,
@@ -164,10 +206,11 @@ export function createWorkflowReconciler(deps: {
           });
         }
       }
-      if (reestablished > 0) {
+      if (reestablished > 0 || skippedTerminal > 0) {
         log.info("workflow reconcile pass complete", {
           active: rows.length,
           reestablished,
+          skippedTerminal,
         });
       }
     } finally {

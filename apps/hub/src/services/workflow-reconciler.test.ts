@@ -3,6 +3,7 @@ import type { SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import { createWorkflowReconciler } from "./workflow-reconciler";
+import { workflowRunRecord } from "../db/schema";
 
 type Row = {
   deploymentId: string | null;
@@ -11,13 +12,22 @@ type Row = {
   principalId: string;
 };
 
+type RecordRow = {
+  deploymentId: string | null;
+  status: "running" | "awaiting" | "completed" | "failed";
+};
+
 // db whose select(...).from(...).where(...) resolves to the given active rows —
-// matching the reconciler's query shape (no orderBy).
-function makeDb(rows: Row[]): HubDb {
+// matching the reconciler's query shape (no orderBy). reconcileAll now issues a
+// SECOND select against workflowRunRecord (to skip terminal-only deployments);
+// the `from` table identity disambiguates which result set to hand back, so
+// callers that pass no record rows keep the original single-query behavior.
+function makeDb(rows: Row[], recordRows: RecordRow[] = []): HubDb {
   return {
     select: () => ({
-      from: () => ({
-        where: () => Promise.resolve(rows),
+      from: (table: unknown) => ({
+        where: () =>
+          Promise.resolve(table === workflowRunRecord ? recordRows : rows),
       }),
     }),
   } as unknown as HubDb;
@@ -176,6 +186,55 @@ describe("createWorkflowReconciler", () => {
       { deploymentId: "ses_a", kind: "pain-point-collateral", tenantId: "t1" },
       { deploymentId: "ses_b", kind: "deck", tenantId: "t2" },
     ]);
+  });
+
+  it("skips deployments whose run records are all terminal, but re-establishes ones with an active record or no record", async () => {
+    const seen: string[] = [];
+    const ensure: EnsureDeploymentRoutableFn = (args) => {
+      seen.push(args.deploymentId);
+      return Promise.resolve({ reestablished: true });
+    };
+    const reconciler = createWorkflowReconciler({
+      db: makeDb(
+        [
+          // active record → re-established
+          {
+            deploymentId: "ses_active",
+            kind: "k",
+            tenantId: "t",
+            principalId: "p",
+          },
+          // record(s) all terminal → SKIPPED (the wedged/failed run must not
+          // be resurrected)
+          {
+            deploymentId: "ses_failed",
+            kind: "k",
+            tenantId: "t",
+            principalId: "p",
+          },
+          // no record at all (freshly deployed) → re-established unchanged
+          {
+            deploymentId: "ses_norecord",
+            kind: "k",
+            tenantId: "t",
+            principalId: "p",
+          },
+        ],
+        [
+          { deploymentId: "ses_active", status: "awaiting" },
+          { deploymentId: "ses_failed", status: "failed" },
+          // a second terminal record for the same deployment must not flip it
+          { deploymentId: "ses_failed", status: "completed" },
+        ],
+      ),
+      events: makeEvents().events,
+      ensureDeploymentRoutable: ensure,
+      ...RECONCILE_ONLY_DEPS,
+    });
+
+    await reconciler.reconcileAll();
+
+    expect(seen).toEqual(["ses_active", "ses_norecord"]);
   });
 
   it("is best-effort: one deployment failing does not abort the pass", async () => {
