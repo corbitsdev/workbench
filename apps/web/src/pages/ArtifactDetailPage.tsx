@@ -207,7 +207,11 @@ export function ArtifactDetailPage() {
   const [thread, setThread] = useState<MyraThread | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
-  const session = useMyraSession(thread?.instanceId ?? null, thread !== null);
+  const session = useMyraSession(
+    thread?.instanceId ?? null,
+    activeTenantId,
+    thread !== null,
+  );
 
   const {
     data: artifacts,

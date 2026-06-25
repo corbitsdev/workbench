@@ -1,5 +1,9 @@
-import { and, eq } from "drizzle-orm";
-import { schema as intxSchema, resolveCredentialRequirement } from "@intx/db";
+import { and, eq, inArray } from "drizzle-orm";
+import {
+  schema as intxSchema,
+  resolveCredentialRequirement,
+  getAncestorChain,
+} from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import {
   createAgent,
@@ -28,7 +32,7 @@ import {
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
 import { getConfig } from "../config";
-import { lookupMember, getRootTenantId } from "../lib/tenant-provisioning";
+import { lookupMember } from "../lib/tenant-provisioning";
 import {
   describeLaunchError,
   launchAgentSession,
@@ -75,6 +79,39 @@ export type MyraThreadRow = {
 function defaultThreadLabel(index: number): string {
   if (index === 0) return "Chat";
   return `Chat ${index + 1}`;
+}
+
+/**
+ * Resolve the Myra agent definition for an active tenant by walking the tenant
+ * hierarchy. The instance/session/analytics live in the active (possibly child)
+ * tenant, but the definition is shared and usually seeded only in the root org
+ * tenant — so we accept any definition in the ancestor chain and pick the most
+ * specific one (nearest to the active tenant). Returns null when no Myra
+ * definition exists anywhere in the chain.
+ */
+async function resolveMyraDefinition(
+  db: HubDb,
+  tenantId: string,
+): Promise<typeof agent.$inferSelect | null> {
+  const chain = await getAncestorChain(db as never, tenantId);
+  const defs = await db.query.agent.findMany({
+    where: and(
+      inArray(agent.tenantId, chain),
+      eq(agent.name, PERSONAL_AGENT_NAME),
+    ),
+  });
+  if (defs.length === 0) return null;
+
+  let best = defs[0]!;
+  let bestIdx = chain.indexOf(best.tenantId);
+  for (const candidate of defs) {
+    const idx = chain.indexOf(candidate.tenantId);
+    if (idx !== -1 && (bestIdx === -1 || idx < bestIdx)) {
+      best = candidate;
+      bestIdx = idx;
+    }
+  }
+  return best;
 }
 
 export async function listMyraThreads(
@@ -154,14 +191,11 @@ export async function createMyraThread(
     throw new Error("Myra template is not registered");
   }
 
-  const def = await db.query.agent.findFirst({
-    where: and(
-      eq(agent.tenantId, opts.tenantId),
-      eq(agent.name, PERSONAL_AGENT_NAME),
-    ),
-  });
+  const def = await resolveMyraDefinition(db, opts.tenantId);
   if (!def) {
-    throw new Error("Myra org definition is not seeded for this tenant");
+    throw new Error(
+      "Myra org definition is not seeded in this tenant hierarchy",
+    );
   }
 
   const now = new Date();
@@ -441,12 +475,7 @@ async function resolveTitleSource(
     }
   }
 
-  const def = await db.query.agent.findFirst({
-    where: and(
-      eq(agent.tenantId, tenantId),
-      eq(agent.name, PERSONAL_AGENT_NAME),
-    ),
-  });
+  const def = await resolveMyraDefinition(db, tenantId);
   if (!def) return null;
   const resolution = await resolveInstanceSourcesFromDefinition(
     db,
@@ -717,19 +746,24 @@ export async function deleteMyraThread(
   return true;
 }
 
+/**
+ * Resolve the thread context for a user acting in a specific (active) tenant.
+ * Returns null when the user is not a member of that tenant — the route turns
+ * that into a 403. The mail domain is deployment-wide (mirrors
+ * `provisionMemberInstances`), not tenant-specific, so it comes from config; the
+ * instance/session/analytics land in the active tenant via `tenantId`.
+ */
 export async function resolveMyraThreadContext(
   db: HubDb,
   userId: string,
+  tenantId: string,
 ): Promise<{
   tenantId: string;
   tenantDomain: string;
   memberPrincipalId: string;
 } | null> {
   const { domain } = getConfig().rootTenant;
-  const rootTenantId = await getRootTenantId(db as never);
-  const member = rootTenantId
-    ? await lookupMember(db as never, { tenantId: rootTenantId, userId })
-    : null;
+  const member = await lookupMember(db as never, { tenantId, userId });
   if (!member) return null;
   return {
     tenantId: member.tenantId,

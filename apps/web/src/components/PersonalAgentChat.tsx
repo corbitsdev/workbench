@@ -8,6 +8,7 @@ import {
   type ChatDockState,
 } from "@workbench/chat";
 import { useChatLauncher } from "../lib/chat-launcher-context";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useMyraSession } from "../hooks/use-myra-session";
 import {
   resolveActiveThread,
@@ -55,12 +56,14 @@ export function PersonalAgentChat() {
   const [dockState, setDockState] = useState<ChatDockState>(readDockState);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
 
+  const { activeTenantId } = useActiveWorkbench();
   const { data: threads } = useMyraThreads();
   const createThread = useCreateMyraThread();
 
   const activeThread = resolveActiveThread(threads ?? [], selectedThreadId);
   const session = useMyraSession(
     activeThread?.instanceId ?? null,
+    activeTenantId,
     !onChatRoute,
   );
 

@@ -43,43 +43,52 @@ describe("hub-api Myra threads", () => {
   it("lists threads and parses the response", async () => {
     const calls: Call[] = [];
     stubFetch({ threads: [thread] }, calls);
-    const result = await listMyraThreads();
+    const result = await listMyraThreads("tnt_child");
     expect(result).toEqual([thread]);
     expect(calls[0]?.method).toBe("GET");
-    expect(calls[0]?.url).toContain("/api/v1/me/myra/threads");
+    expect(calls[0]?.url).toContain(
+      "/api/v1/tenants/tnt_child/me/myra/threads",
+    );
   });
 
   it("throws on a malformed list response", async () => {
     stubFetch({ threads: [{ id: "x" }] });
-    await expect(listMyraThreads()).rejects.toThrow(
+    await expect(listMyraThreads("tnt_child")).rejects.toThrow(
       /Invalid Myra threads response/,
     );
   });
 
-  it("creates a thread, sending the label", async () => {
+  it("creates a thread in the tenant, sending the label", async () => {
     const calls: Call[] = [];
     stubFetch({ thread, created: true }, calls);
-    const result = await createMyraThread("Pricing");
+    const result = await createMyraThread("tnt_child", "Pricing");
     expect(result).toEqual(thread);
     expect(calls[0]?.method).toBe("POST");
+    expect(calls[0]?.url).toContain(
+      "/api/v1/tenants/tnt_child/me/myra/threads",
+    );
     expect(calls[0]?.body).toEqual({ label: "Pricing" });
   });
 
-  it("renames a thread via PATCH", async () => {
+  it("renames a thread via PATCH scoped to the tenant", async () => {
     const calls: Call[] = [];
     stubFetch({ thread: { ...thread, label: "Renamed" } }, calls);
-    const result = await renameMyraThread("map-1", "Renamed");
+    const result = await renameMyraThread("tnt_child", "map-1", "Renamed");
     expect(result.label).toBe("Renamed");
     expect(calls[0]?.method).toBe("PATCH");
-    expect(calls[0]?.url).toContain("/api/v1/me/myra/threads/map-1");
+    expect(calls[0]?.url).toContain(
+      "/api/v1/tenants/tnt_child/me/myra/threads/map-1",
+    );
     expect(calls[0]?.body).toEqual({ label: "Renamed" });
   });
 
-  it("deletes a thread via DELETE", async () => {
+  it("deletes a thread via DELETE scoped to the tenant", async () => {
     const calls: Call[] = [];
     stubFetch({ deleted: true }, calls);
-    await deleteMyraThread("map-1");
+    await deleteMyraThread("tnt_child", "map-1");
     expect(calls[0]?.method).toBe("DELETE");
-    expect(calls[0]?.url).toContain("/api/v1/me/myra/threads/map-1");
+    expect(calls[0]?.url).toContain(
+      "/api/v1/tenants/tnt_child/me/myra/threads/map-1",
+    );
   });
 });

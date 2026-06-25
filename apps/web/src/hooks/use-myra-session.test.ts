@@ -21,12 +21,13 @@ class FakeApiError extends Error {
 }
 
 const destroyed: number[] = [];
+const sessionTenantIds: (string | undefined)[] = [];
 const launchInstanceSession = mock((_id: string) =>
   Promise.resolve({ launched: true }),
 );
 const ensureMeSynced = mock(() =>
   Promise.resolve({
-    personalTenantId: "tenant-1",
+    personalTenantId: "tenant-root",
     credentialResolved: true,
     paInstanceId: "fallback-should-not-be-used",
   }),
@@ -34,9 +35,10 @@ const ensureMeSynced = mock(() =>
 
 mock.module("@intx/hub-client", () => ({
   ApiError: FakeApiError,
-  createInstanceSession: () => {
+  createInstanceSession: (opts: { tenantId?: string }) => {
     const idx = destroyed.length;
     destroyed.push(0);
+    sessionTenantIds.push(opts?.tenantId);
     return {
       events: [],
       activity: null,
@@ -75,6 +77,7 @@ beforeEach(() => {
   launchInstanceSession.mockClear();
   ensureMeSynced.mockClear();
   destroyed.length = 0;
+  sessionTenantIds.length = 0;
 });
 
 afterEach(() => {
@@ -122,30 +125,47 @@ describe("deliverMessage", () => {
 
 describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
   it("does not launch while disabled", async () => {
-    renderHook(() => useMyraSession("inst-1", false), { wrapper });
+    renderHook(() => useMyraSession("inst-1", "tnt-acme", false), { wrapper });
     await new Promise((r) => setTimeout(r, 20));
     expect(launchInstanceSession).not.toHaveBeenCalled();
   });
 
   it("does not launch with a null instance id (threads not resolved yet)", async () => {
-    renderHook(() => useMyraSession(null, true), { wrapper });
+    renderHook(() => useMyraSession(null, "tnt-acme", true), { wrapper });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(launchInstanceSession).not.toHaveBeenCalled();
+  });
+
+  it("does not launch without an active workbench tenant", async () => {
+    renderHook(() => useMyraSession("inst-1", null, true), { wrapper });
     await new Promise((r) => setTimeout(r, 20));
     expect(launchInstanceSession).not.toHaveBeenCalled();
   });
 
   it("launches exactly once for a concrete instance and never uses the paInstanceId fallback", async () => {
-    renderHook(() => useMyraSession("inst-1", true), { wrapper });
+    renderHook(() => useMyraSession("inst-1", "tnt-acme", true), { wrapper });
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(1));
     expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
     await new Promise((r) => setTimeout(r, 20));
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
   });
 
+  it("opens the session against the active workbench tenant, not the working/root tenant", async () => {
+    renderHook(() => useMyraSession("inst-1", "tnt-acme", true), { wrapper });
+    await waitFor(() => expect(sessionTenantIds).toHaveLength(1));
+    // The instance lives in the active workbench (tnt-acme); the session must
+    // connect there, not the working/global-org tenant (tenant-root).
+    expect(sessionTenantIds[0]).toBe("tnt-acme");
+  });
+
   it("tears down the old session and relaunches once when the instance changes", async () => {
-    const { rerender } = renderHook(({ id }) => useMyraSession(id, true), {
-      initialProps: { id: "inst-1" },
-      wrapper,
-    });
+    const { rerender } = renderHook(
+      ({ id }) => useMyraSession(id, "tnt-acme", true),
+      {
+        initialProps: { id: "inst-1" },
+        wrapper,
+      },
+    );
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(1));
     rerender({ id: "inst-2" });
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(2));

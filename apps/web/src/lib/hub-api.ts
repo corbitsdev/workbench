@@ -162,8 +162,12 @@ const MyraThreadSchema = type({
 export type MyraThread = typeof MyraThreadSchema.infer;
 const MyraThreadListSchema = type({ threads: MyraThreadSchema.array() });
 
-export async function listMyraThreads(): Promise<MyraThread[]> {
-  const raw = await hubFetch<unknown>("GET", "v1/me/myra/threads");
+function myraThreadsBase(tenantId: string): string {
+  return `v1/tenants/${encodeURIComponent(tenantId)}/me/myra/threads`;
+}
+
+export async function listMyraThreads(tenantId: string): Promise<MyraThread[]> {
+  const raw = await hubFetch<unknown>("GET", myraThreadsBase(tenantId));
   const parsed = MyraThreadListSchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid Myra threads response: ${parsed.summary}`);
@@ -176,10 +180,13 @@ const MyraThreadCreateSchema = type({
   created: "true",
 });
 
-export async function createMyraThread(label?: string): Promise<MyraThread> {
+export async function createMyraThread(
+  tenantId: string,
+  label?: string,
+): Promise<MyraThread> {
   const raw = await hubFetch<unknown>(
     "POST",
-    "v1/me/myra/threads",
+    myraThreadsBase(tenantId),
     label !== undefined ? { label } : {},
   );
   const parsed = MyraThreadCreateSchema(raw);
@@ -192,12 +199,13 @@ export async function createMyraThread(label?: string): Promise<MyraThread> {
 const MyraThreadMutateSchema = type({ thread: MyraThreadSchema });
 
 export async function renameMyraThread(
+  tenantId: string,
   id: string,
   label: string,
 ): Promise<MyraThread> {
   const raw = await hubFetch<unknown>(
     "PATCH",
-    `v1/me/myra/threads/${encodeURIComponent(id)}`,
+    `${myraThreadsBase(tenantId)}/${encodeURIComponent(id)}`,
     {
       label,
     },
@@ -209,10 +217,13 @@ export async function renameMyraThread(
   return parsed.thread;
 }
 
-export async function deleteMyraThread(id: string): Promise<void> {
+export async function deleteMyraThread(
+  tenantId: string,
+  id: string,
+): Promise<void> {
   await hubFetch<void>(
     "DELETE",
-    `v1/me/myra/threads/${encodeURIComponent(id)}`,
+    `${myraThreadsBase(tenantId)}/${encodeURIComponent(id)}`,
   );
 }
 
@@ -222,12 +233,13 @@ export async function deleteMyraThread(id: string): Promise<void> {
  * or null on a no-op/failure (titling never blocks chat).
  */
 export async function generateMyraThreadTitle(
+  tenantId: string,
   id: string,
   firstMessage: string,
 ): Promise<MyraThread | null> {
   const raw = await hubFetch<unknown>(
     "POST",
-    `v1/me/myra/threads/${encodeURIComponent(id)}/title`,
+    `${myraThreadsBase(tenantId)}/${encodeURIComponent(id)}/title`,
     { firstMessage },
   );
   const parsed = type({ thread: MyraThreadSchema.or("null") })(raw);
@@ -254,10 +266,19 @@ export function principalsToWorkbenches(
 
 export async function listWorkbenches(): Promise<WorkbenchEntry[]> {
   const [principals, me] = await Promise.all([getMyPrincipals(), getMe()]);
-  const excludeIds = me.rootTenantIds?.length
-    ? me.rootTenantIds
-    : [me.personalTenantId];
-  return principalsToWorkbenches(principals, excludeIds);
+  // The working/global-org tenant (`personalTenantId`) stays selectable as the
+  // default "home" workbench: existing Myra threads live in it, and a root-only
+  // user needs it to have any active workbench at all. Only OTHER root tenants
+  // (legacy Interchange personal tenants) are excluded.
+  const workingId = me.personalTenantId;
+  const excludeIds = (me.rootTenantIds ?? []).filter((id) => id !== workingId);
+  const entries = principalsToWorkbenches(principals, excludeIds);
+  if (!workingId) return entries;
+  // List the working tenant first so it is the default active workbench.
+  return [
+    ...entries.filter((e) => e.tenantId === workingId),
+    ...entries.filter((e) => e.tenantId !== workingId),
+  ];
 }
 
 export type CredentialRequirement = {

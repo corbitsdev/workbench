@@ -86,12 +86,15 @@ export type MyraSession = {
 /**
  * Connects to a single Myra instance (chat thread) over the hub transport,
  * driving the same launch + SSE-tracker lifecycle as the original single-instance
- * PersonalAgentChat. Pass the thread's `instanceId`; pass `null` to fall back to
- * the member's default Myra instance (`/me` paInstanceId) while the caller is
- * still resolving the active thread.
+ * PersonalAgentChat. Pass the thread's `instanceId` and the `tenantId` of the
+ * active workbench the thread lives in — the instance is created in the active
+ * workbench (not the root org), so the session/SSE must connect there. Pass a
+ * null `instanceId`/`tenantId` while the caller is still resolving the active
+ * thread or workbench; the session stays in `loading` until both are present.
  */
 export function useMyraSession(
   instanceId: string | null,
+  tenantId: string | null,
   enabled = true,
 ): MyraSession {
   const [state, setState] = useState<MyraSessionPhase>({ phase: "loading" });
@@ -113,11 +116,12 @@ export function useMyraSession(
     // Connect only once the caller has resolved a concrete thread instance.
     // Connecting on a fallback id before the thread list loads caused a wasted
     // launch + a flash back to `loading`, then a churn to the real instance.
-    if (!enabled || !instanceId) return;
+    if (!enabled || !instanceId || !tenantId) return;
     let cancelled = false;
     setState({ phase: "loading" });
 
     const targetInstanceId = instanceId;
+    const targetTenantId = tenantId;
 
     async function connect() {
       try {
@@ -160,7 +164,7 @@ export function useMyraSession(
 
         const transport = createHubTransport();
         const session = createInstanceSession({
-          tenantId: me.personalTenantId,
+          tenantId: targetTenantId,
           instanceId: targetInstanceId,
           transport,
           onChange: () => {
@@ -179,7 +183,7 @@ export function useMyraSession(
         // "call" part failed to persist still render the real tool (CL-1398).
         toolNamesRef.current = createToolNameTracker(
           transport,
-          { tenantId: me.personalTenantId, instanceId: targetInstanceId },
+          { tenantId: targetTenantId, instanceId: targetInstanceId },
           () => {
             if (!cancelled) forceUpdate((n) => n + 1);
           },
@@ -187,15 +191,15 @@ export function useMyraSession(
 
         // Track the current turn's live text from the raw stream (CL-1643).
         liveTextRef.current = createLiveTextTracker(transport, {
-          tenantId: me.personalTenantId,
+          tenantId: targetTenantId,
           instanceId: targetInstanceId,
         });
         reasoningRef.current = createReasoningTracker(transport, {
-          tenantId: me.personalTenantId,
+          tenantId: targetTenantId,
           instanceId: targetInstanceId,
         });
         imageTrackerRef.current = createImageTracker(transport, {
-          tenantId: me.personalTenantId,
+          tenantId: targetTenantId,
           instanceId: targetInstanceId,
         });
 
@@ -228,7 +232,7 @@ export function useMyraSession(
       sessionRef.current?.destroy();
       sessionRef.current = null;
     };
-  }, [attempt, instanceId, enabled]);
+  }, [attempt, instanceId, tenantId, enabled]);
 
   const queryClient = useQueryClient();
 

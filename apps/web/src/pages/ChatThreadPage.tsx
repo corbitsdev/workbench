@@ -4,6 +4,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { takePendingFirstMessage } from "../lib/pending-first-message";
 import { MyraChatSurface } from "../components/MyraChatSurface";
 import { useMyraSession } from "../hooks/use-myra-session";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
 import {
   resolveActiveThread,
   useAutoTitleFirstMessage,
@@ -23,6 +24,7 @@ function CenteredNotice({ children }: { children: React.ReactNode }) {
 export function ChatThreadPage() {
   const { threadId } = useParams();
   const navigate = useNavigate();
+  const { activeTenantId } = useActiveWorkbench();
   const { data: threads, isLoading, isError, refetch } = useMyraThreads();
   const createThread = useCreateMyraThread();
 
@@ -34,7 +36,11 @@ export function ChatThreadPage() {
     if (active) writeLastActiveThreadId(active.id);
   }, [active]);
 
-  const session = useMyraSession(active?.instanceId ?? null, active !== null);
+  const session = useMyraSession(
+    active?.instanceId ?? null,
+    activeTenantId,
+    active !== null,
+  );
 
   // Auto-title a still-default thread from its first message (best-effort; the
   // hub no-ops if the label is already custom).

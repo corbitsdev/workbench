@@ -8,13 +8,17 @@ import {
   renameMyraThread,
   type MyraThread,
 } from "../lib/hub-api";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
 
 /** Matches the hub's default labels ('Chat', 'Chat 2', …) — i.e. not user-set. */
 export function isDefaultThreadLabel(label: string): boolean {
   return /^Chat( \d+)?$/.test(label.trim());
 }
 
-const MYRA_THREADS_KEY = ["myra-threads"] as const;
+const MYRA_THREADS_KEY = "myra-threads";
+function myraThreadsKey(tenantId: string | null) {
+  return [MYRA_THREADS_KEY, tenantId] as const;
+}
 const LAST_ACTIVE_THREAD_KEY = "myra-last-active-thread";
 
 export function readLastActiveThreadId(): string | null {
@@ -55,53 +59,86 @@ export function resolveActiveThread(
   return threads[0] ?? null;
 }
 
+/**
+ * Throws if invoked without an active workbench. The mutation hooks gate their
+ * UI affordances on an active tenant, so this fail-loud guard only fires on a
+ * programming error (calling a mutation while no workbench is selected), never
+ * in normal use.
+ */
+function requireActiveTenant(tenantId: string | null): string {
+  if (!tenantId) {
+    throw new Error("No active workbench selected");
+  }
+  return tenantId;
+}
+
 export function useMyraThreads() {
+  const { activeTenantId } = useActiveWorkbench();
   return useQuery<MyraThread[]>({
-    queryKey: MYRA_THREADS_KEY,
-    queryFn: listMyraThreads,
+    queryKey: myraThreadsKey(activeTenantId),
+    queryFn: () => listMyraThreads(requireActiveTenant(activeTenantId)),
+    enabled: !!activeTenantId,
     staleTime: 60_000,
   });
 }
 
 export function useCreateMyraThread() {
   const queryClient = useQueryClient();
+  const { activeTenantId } = useActiveWorkbench();
   return useMutation({
-    mutationFn: (label?: string) => createMyraThread(label),
+    mutationFn: (label?: string) =>
+      createMyraThread(requireActiveTenant(activeTenantId), label),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: MYRA_THREADS_KEY });
+      void queryClient.invalidateQueries({
+        queryKey: myraThreadsKey(activeTenantId),
+      });
     },
   });
 }
 
 export function useRenameMyraThread() {
   const queryClient = useQueryClient();
+  const { activeTenantId } = useActiveWorkbench();
   return useMutation({
     mutationFn: ({ id, label }: { id: string; label: string }) =>
-      renameMyraThread(id, label),
+      renameMyraThread(requireActiveTenant(activeTenantId), id, label),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: MYRA_THREADS_KEY });
+      void queryClient.invalidateQueries({
+        queryKey: myraThreadsKey(activeTenantId),
+      });
     },
   });
 }
 
 export function useDeleteMyraThread() {
   const queryClient = useQueryClient();
+  const { activeTenantId } = useActiveWorkbench();
   return useMutation({
-    mutationFn: (id: string) => deleteMyraThread(id),
+    mutationFn: (id: string) =>
+      deleteMyraThread(requireActiveTenant(activeTenantId), id),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: MYRA_THREADS_KEY });
+      void queryClient.invalidateQueries({
+        queryKey: myraThreadsKey(activeTenantId),
+      });
     },
   });
 }
 
 export function useGenerateMyraThreadTitle() {
   const queryClient = useQueryClient();
+  const { activeTenantId } = useActiveWorkbench();
   return useMutation({
     mutationFn: ({ id, firstMessage }: { id: string; firstMessage: string }) =>
-      generateMyraThreadTitle(id, firstMessage),
+      generateMyraThreadTitle(
+        requireActiveTenant(activeTenantId),
+        id,
+        firstMessage,
+      ),
     onSuccess: (thread) => {
       if (thread)
-        void queryClient.invalidateQueries({ queryKey: MYRA_THREADS_KEY });
+        void queryClient.invalidateQueries({
+          queryKey: myraThreadsKey(activeTenantId),
+        });
     },
   });
 }

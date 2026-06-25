@@ -100,7 +100,7 @@ describe("Myra threads router", () => {
       },
     ]);
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads");
+    const res = await app.request("/tenants/tn-global/me/myra/threads");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       threads: { id: string; label: string }[];
@@ -113,12 +113,23 @@ describe("Myra threads router", () => {
     });
   });
 
-  it("returns 503 when the member is not provisioned", async () => {
+  it("returns 403 when the user is not a member of the tenant", async () => {
     resolveMyraThreadContext.mockResolvedValueOnce(null);
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads");
-    expect(res.status).toBe(503);
+    const res = await app.request("/tenants/tn-global/me/myra/threads");
+    expect(res.status).toBe(403);
     expect(listMyraThreads).not.toHaveBeenCalled();
+  });
+
+  it("passes the path tenantId through to the service", async () => {
+    listMyraThreads.mockResolvedValueOnce([]);
+    const app = wrapWithAuth(buildRouter());
+    await app.request("/tenants/tn-child/me/myra/threads");
+    expect(resolveMyraThreadContext).toHaveBeenCalledWith(
+      expect.anything(),
+      "usr-1",
+      "tn-child",
+    );
   });
 
   it("creates a thread and returns 201 with the created thread", async () => {
@@ -132,7 +143,7 @@ describe("Myra threads router", () => {
       },
     });
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads", {
+    const res = await app.request("/tenants/tn-global/me/myra/threads", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ label: "Pricing" }),
@@ -162,7 +173,7 @@ describe("Myra threads router", () => {
       ),
     );
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads", {
+    const res = await app.request("/tenants/tn-global/me/myra/threads", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({}),
@@ -178,15 +189,15 @@ describe("Myra threads router", () => {
     expect(body.detail).toContain("@workbench/tools-granola@1.2.3");
   });
 
-  it("returns 503 on create when the member is not provisioned", async () => {
+  it("returns 403 on create when the user is not a member of the tenant", async () => {
     resolveMyraThreadContext.mockResolvedValueOnce(null);
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads", {
+    const res = await app.request("/tenants/tn-global/me/myra/threads", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({}),
     });
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(403);
     expect(createMyraThread).not.toHaveBeenCalled();
   });
 
@@ -198,7 +209,7 @@ describe("Myra threads router", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-1", {
+    const res = await app.request("/tenants/tn-global/me/myra/threads/map-1", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ label: "Renamed" }),
@@ -215,7 +226,7 @@ describe("Myra threads router", () => {
   it("returns 404 on rename when the thread is not found", async () => {
     renameMyraThread.mockResolvedValueOnce(null);
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-x", {
+    const res = await app.request("/tenants/tn-global/me/myra/threads/map-x", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ label: "Whatever" }),
@@ -225,7 +236,7 @@ describe("Myra threads router", () => {
 
   it("returns 400 on rename when the label is empty", async () => {
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-1", {
+    const res = await app.request("/tenants/tn-global/me/myra/threads/map-1", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ label: "   " }),
@@ -234,22 +245,22 @@ describe("Myra threads router", () => {
     expect(renameMyraThread).not.toHaveBeenCalled();
   });
 
-  it("returns 503 on rename when the member is not provisioned", async () => {
+  it("returns 403 on rename when the user is not a member of the tenant", async () => {
     resolveMyraThreadContext.mockResolvedValueOnce(null);
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-1", {
+    const res = await app.request("/tenants/tn-global/me/myra/threads/map-1", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ label: "Renamed" }),
     });
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(403);
     expect(renameMyraThread).not.toHaveBeenCalled();
   });
 
   it("deletes a thread and returns 200", async () => {
     deleteMyraThread.mockResolvedValueOnce(true);
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-1", {
+    const res = await app.request("/tenants/tn-global/me/myra/threads/map-1", {
       method: "DELETE",
     });
     expect(res.status).toBe(200);
@@ -265,7 +276,7 @@ describe("Myra threads router", () => {
   it("returns 404 on delete when the thread is not found", async () => {
     deleteMyraThread.mockResolvedValueOnce(false);
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-x", {
+    const res = await app.request("/tenants/tn-global/me/myra/threads/map-x", {
       method: "DELETE",
     });
     expect(res.status).toBe(404);
@@ -279,13 +290,16 @@ describe("Myra threads router", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-1/title", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        firstMessage: "How should we price the enterprise tier?",
-      }),
-    });
+    const res = await app.request(
+      "/tenants/tn-global/me/myra/threads/map-1/title",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          firstMessage: "How should we price the enterprise tier?",
+        }),
+      },
+    );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { thread: { label: string } | null };
     expect(body.thread?.label).toBe("Pricing Deep Dive");
@@ -304,11 +318,14 @@ describe("Myra threads router", () => {
   it("returns 200 with thread null when titling is a no-op", async () => {
     generateMyraThreadTitle.mockResolvedValueOnce(null);
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-1/title", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ firstMessage: "Hi" }),
-    });
+    const res = await app.request(
+      "/tenants/tn-global/me/myra/threads/map-1/title",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ firstMessage: "Hi" }),
+      },
+    );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { thread: unknown };
     expect(body.thread).toBeNull();
@@ -316,34 +333,40 @@ describe("Myra threads router", () => {
 
   it("returns 400 on title when firstMessage is empty", async () => {
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-1/title", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ firstMessage: "" }),
-    });
+    const res = await app.request(
+      "/tenants/tn-global/me/myra/threads/map-1/title",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ firstMessage: "" }),
+      },
+    );
     expect(res.status).toBe(400);
     expect(generateMyraThreadTitle).not.toHaveBeenCalled();
   });
 
-  it("returns 503 on title when the member is not provisioned", async () => {
+  it("returns 403 on title when the user is not a member of the tenant", async () => {
     resolveMyraThreadContext.mockResolvedValueOnce(null);
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-1/title", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ firstMessage: "Hello there" }),
-    });
-    expect(res.status).toBe(503);
+    const res = await app.request(
+      "/tenants/tn-global/me/myra/threads/map-1/title",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ firstMessage: "Hello there" }),
+      },
+    );
+    expect(res.status).toBe(403);
     expect(generateMyraThreadTitle).not.toHaveBeenCalled();
   });
 
-  it("returns 503 on delete when the member is not provisioned", async () => {
+  it("returns 403 on delete when the user is not a member of the tenant", async () => {
     resolveMyraThreadContext.mockResolvedValueOnce(null);
     const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/me/myra/threads/map-1", {
+    const res = await app.request("/tenants/tn-global/me/myra/threads/map-1", {
       method: "DELETE",
     });
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(403);
     expect(deleteMyraThread).not.toHaveBeenCalled();
   });
 });
