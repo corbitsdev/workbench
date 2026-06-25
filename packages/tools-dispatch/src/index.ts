@@ -22,12 +22,12 @@ import { DISPATCH_AGENT_DEFINITION } from "./definition";
 
 const DispatchArgs = type({ agentDefinitionId: "string > 0", task: "string > 0" });
 
-const DispatchResult = type({
-  instanceId: "string",
-  address: "string",
-  sessionId: "string",
-  status: "'running'",
-});
+type DispatchResult = {
+  instanceId: string;
+  address: string;
+  sessionId: string;
+  status: "running";
+};
 
 export { DISPATCH_AGENT_DEFINITION };
 
@@ -234,8 +234,8 @@ export function createDispatchTools(context: DispatchContext): AgentTool[] {
 
         const parsed = DispatchArgs(args);
         if (parsed instanceof type.errors) {
-          const summary = parsed.summary;
-          if (summary.includes("agentDefinitionId"))
+          const failedField = parsed.issues[0]?.path?.[0];
+          if (failedField === "agentDefinitionId")
             throw new Error("agentDefinitionId is required");
           throw new Error("task is required");
         }
@@ -302,14 +302,12 @@ export function createDispatchTools(context: DispatchContext): AgentTool[] {
           taskLength: task.length,
         });
 
-        const result = DispatchResult({
+        const result: DispatchResult = {
           instanceId: launched.instanceId,
           address: launched.address,
           sessionId: launched.sessionId,
           status: "running",
-        });
-        if (result instanceof type.errors)
-          throw new Error(`dispatch_agent: invalid result shape: ${result.summary}`);
+        };
 
         return JSON.stringify(result, null, 2);
       },
