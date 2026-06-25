@@ -126,6 +126,10 @@ mock.module("./agent-provisioning", () => ({
   describeLaunchError: (err: unknown) => ({
     phase: null,
     detail: err instanceof Error ? err.message : String(err),
+    leakedAgent:
+      err instanceof Error && (err as { leakedAgent?: boolean }).leakedAgent
+        ? true
+        : false,
   }),
 }));
 
@@ -142,8 +146,17 @@ describe("createMyraThread", () => {
   function buildCreateDb(opts: {
     transactions: () => void;
     deleted?: unknown[];
+    updated?: Record<string, unknown>[];
   }) {
     return {
+      update: (table: unknown) => ({
+        set: (values: Record<string, unknown>) => ({
+          where: () => {
+            opts.updated?.push({ table, values });
+            return Promise.resolve(undefined);
+          },
+        }),
+      }),
       query: {
         agent: {
           findFirst: mock(() =>
@@ -231,6 +244,44 @@ describe("createMyraThread", () => {
     const deletedNames = deleted.map((d) => getTableName(d as PgTable));
     expect(deletedNames).toContain("agent_session");
     expect(deletedNames).toContain("principal");
+  });
+
+  it("does NOT tear down and marks the instance error when the launch leaked an agent", async () => {
+    const leaked = new Error("start failed; sidecar undeploy also failed");
+    (leaked as { leakedAgent?: boolean }).leakedAgent = true;
+    launchShouldThrow = leaked;
+    let txCount = 0;
+    const deleted: unknown[] = [];
+    const updated: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      deleted,
+      updated,
+    });
+
+    let thrown: unknown;
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+      await createMyraThread(db as any, deps, {
+        tenantId: "tn-global",
+        tenantDomain: "global.test",
+        memberPrincipalId: "prn-member",
+      });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(MyraThreadLaunchError);
+    expect((thrown as MyraThreadLaunchError).leakedAgent).toBe(true);
+    // Only the create transaction ran — the teardown transaction MUST NOT,
+    // because deleting the rows orphans the leaked sidecar agent.
+    expect(txCount).toBe(1);
+    expect(deleted).toHaveLength(0);
+    // The instance is marked 'error' so a later relaunch can adopt the live
+    // sidecar agent.
+    expect(updated).toHaveLength(1);
+    expect(getTableName(updated[0]!.table as PgTable)).toBe("agent_instance");
+    expect((updated[0]!.values as { status: string }).status).toBe("error");
   });
 });
 

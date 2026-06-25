@@ -48,6 +48,7 @@ export const MYRA_TEMPLATE_KEY = "myra";
 export class MyraThreadLaunchError extends Error {
   readonly phase: string | null;
   readonly detail: string;
+  readonly leakedAgent: boolean;
   constructor(
     description: LaunchErrorDescription,
     options?: { cause?: unknown },
@@ -56,6 +57,7 @@ export class MyraThreadLaunchError extends Error {
     this.name = "MyraThreadLaunchError";
     this.phase = description.phase;
     this.detail = description.detail;
+    this.leakedAgent = description.leakedAgent;
   }
 }
 
@@ -250,12 +252,39 @@ export async function createMyraThread(
     // create path — any launch error here is a genuine failure and the
     // half-created rows must be torn down.
     const failure = describeLaunchError(err);
+    // A leaked agent means the sidecar's own undeploy also failed, so a
+    // provisioned agent survives on the sidecar with no way for the hub to reach
+    // it. Tearing down the hub rows here would orphan that zombie: the address
+    // keeps routing on the sidecar but has no hub row, so the next mail 502s
+    // until a sidecar restart. Keep the rows and mark the instance 'error' so
+    // relaunchInstanceIfNeeded (cold-start path; only skips 'stopped'+endedAt)
+    // re-attempts and the sidecar's already-exists carve-out adopts the live
+    // agent. (CL-2367)
+    if (failure.leakedAgent) {
+      log.error(
+        "Myra thread session launch failed AND the sidecar leaked the agent; keeping rows and marking instance error",
+        {
+          instanceId,
+          phase: failure.phase,
+          detail: failure.detail,
+          leakedAgent: failure.leakedAgent,
+          error: err instanceof Error ? err : new Error(String(err)),
+        },
+      );
+      const errAt = new Date();
+      await db
+        .update(agentInstance)
+        .set({ status: "error", updatedAt: errAt })
+        .where(eq(agentInstance.id, instanceId));
+      throw new MyraThreadLaunchError(failure, { cause: err });
+    }
     // Log the real Error (not a stringified message) at error level so the
     // Sentry sink routes it through captureException with stack + cause.
     log.error("Myra thread session launch failed; tearing down thread", {
       instanceId,
       phase: failure.phase,
       detail: failure.detail,
+      leakedAgent: failure.leakedAgent,
       error: err instanceof Error ? err : new Error(String(err)),
     });
     // Do not leave an orphan thread that looks healthy. Remove the rows we just

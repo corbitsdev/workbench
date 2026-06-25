@@ -502,18 +502,27 @@ export async function relaunchInstanceIfNeeded(
 export type LaunchErrorDescription = {
   phase: string | null;
   detail: string;
+  /**
+   * True when the sidecar's own undeploy/cleanup ALSO failed, so a provisioned
+   * agent is leaked on the sidecar with no way for the hub to reach it. In this
+   * case the hub MUST NOT delete its rows: doing so orphans a zombie sidecar
+   * agent with no hub row, and the next mail to that address 502s until the
+   * sidecar restarts. Only SessionLaunchError carries this; any other error
+   * means no agent was provisioned, so teardown is safe (false).
+   */
+  leakedAgent: boolean;
 };
 
 export function describeLaunchError(err: unknown): LaunchErrorDescription {
   if (err instanceof SessionLaunchError) {
     const cause = err.cause;
     const detail = cause instanceof Error ? cause.message : err.message;
-    return { phase: err.phase, detail };
+    return { phase: err.phase, detail, leakedAgent: err.leakedAgent };
   }
   if (err instanceof Error) {
-    return { phase: null, detail: err.message };
+    return { phase: null, detail: err.message, leakedAgent: false };
   }
-  return { phase: null, detail: String(err) };
+  return { phase: null, detail: String(err), leakedAgent: false };
 }
 
 /**

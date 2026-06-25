@@ -106,6 +106,7 @@ export function createMyraThreadsRouter(
                   error: "string",
                   "phase?": "string | null",
                   "detail?": "string",
+                  "leakedAgent?": "boolean",
                 }),
               ),
             },
@@ -141,6 +142,7 @@ export function createMyraThreadsRouter(
               error: "Failed to launch Myra chat session",
               phase: err.phase,
               detail: err.detail,
+              leakedAgent: err.leakedAgent,
             },
             503,
           );
