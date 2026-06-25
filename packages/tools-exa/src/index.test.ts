@@ -184,6 +184,19 @@ describe("exa_search handler", () => {
     expect(body).toEqual({ query: "q", numResults: 5 });
   });
 
+  it("drops empty-string type from the request body", async () => {
+    const fetcher = makeFetchStub({ results: [] });
+    const runner = createToolRunner(createExaTools({ apiKey: "test-key", fetcher }));
+
+    await runner.run(
+      { id: "call_1", name: "exa_search", arguments: { query: "q", type: "" } },
+      new AbortController().signal,
+    );
+
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1].body));
+    expect(body).not.toHaveProperty("type");
+  });
+
   it("requires a query argument", async () => {
     const fetcher = makeFetchStub({ results: [] });
     const runner = createToolRunner(
@@ -196,7 +209,7 @@ describe("exa_search handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("query is required");
+    expect(result.content).toContain("query");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 

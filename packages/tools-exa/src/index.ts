@@ -174,7 +174,7 @@ async function searchExa(
 ) {
   const parsed = SearchArgs(args);
   if (parsed instanceof type.errors) {
-    throw new Error(`query is required`);
+    throw new Error(parsed.summary);
   }
 
   const numResults = Math.min(
@@ -195,7 +195,7 @@ async function searchExa(
     numResults,
   };
 
-  if (parsed.type !== undefined) {
+  if (parsed.type !== undefined && parsed.type.length > 0) {
     body.type = parsed.type;
   }
   const includeDomains = StringArray(parsed.includeDomains);
