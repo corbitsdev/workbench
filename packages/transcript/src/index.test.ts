@@ -4,7 +4,7 @@ import * as transcript from "./index";
 import {
   parseSelectedPainPointContext,
   parseStructuredTranscript,
-} from "./types";
+} from "./index";
 
 describe("@workbench/transcript barrel", () => {
   it("re-exports both transcript components", () => {

@@ -82,6 +82,8 @@ export type SelectedPainPointContext = typeof SelectedPainPointContext.infer;
  * Validate an untrusted value as a {@link StructuredTranscript}, throwing on
  * mismatch. Use at deserialize / public-API boundaries where the transcript
  * arrives from outside this package (parsed payloads, persisted records).
+ *
+ * @throws {Error} When `value` does not conform to the {@link StructuredTranscript} schema.
  */
 export function parseStructuredTranscript(value: unknown): StructuredTranscript {
   const parsed = StructuredTranscript(value);
@@ -95,6 +97,8 @@ export function parseStructuredTranscript(value: unknown): StructuredTranscript 
  * Validate an untrusted value as a {@link SelectedPainPointContext}, throwing
  * on mismatch. Use at the public-API boundary where pain-point context is
  * projected into the transcript view from outside this package.
+ *
+ * @throws {Error} When `value` does not conform to the {@link SelectedPainPointContext} schema.
  */
 export function parseSelectedPainPointContext(
   value: unknown,
