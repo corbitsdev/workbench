@@ -434,6 +434,43 @@ describe("github_activity tool", () => {
     expect(String(result.content)).toContain("Validation Failed");
   });
 
+  test("returns repo with null description rather than dropping the entire response", async () => {
+    const nullDescriptionResponse = {
+      items: [
+        {
+          full_name: "acme/no-desc-repo",
+          html_url: "https://github.com/acme/no-desc-repo",
+          description: null,
+          stargazers_count: 100,
+          pushed_at: recentDate,
+        },
+      ],
+    };
+    const fetcher = makeGitHubFetcher(
+      nullDescriptionResponse,
+      { items: [] },
+      { items: [] },
+    );
+    const runner = createToolRunner(createGitHubTools({ apiKey: "", fetcher }));
+
+    const result = await runner.run(
+      {
+        id: "call_null_desc",
+        name: "github_activity",
+        arguments: { query: "test" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const items = JSON.parse(String(result.content)) as Record<
+      string,
+      unknown
+    >[];
+    expect(items).toHaveLength(1);
+    expect(items[0]?.entityTag).toBe("acme/no-desc-repo");
+  });
+
   test("surfaces missing query as tool error", async () => {
     const fetcher = makeGitHubFetcher(
       { items: [] },

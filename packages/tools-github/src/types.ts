@@ -3,7 +3,7 @@ import { type } from "arktype";
 export const GitHubRepo = type({
   full_name: "string",
   html_url: "string",
-  "description?": "string | undefined",
+  "description?": "string | null",
   stargazers_count: "number",
   pushed_at: "string",
 });
