@@ -12,6 +12,7 @@
 // proves out (CL-1656). Do not diverge the collector behavior here; the fix
 // lives entirely in the registry's dispatch ordering.
 
+import { type } from "arktype";
 import { eq } from "drizzle-orm";
 
 import { inferenceTurn, turnPart } from "@intx/db/schema";
@@ -23,23 +24,25 @@ import { generateId } from "@intx/hub-common";
 
 const log = getLogger(["hub", "event-collector"]);
 
-export type TurnToolCall = {
-  name: string;
-  arguments: Record<string, unknown>;
-  result: string;
-  isError: boolean;
-};
+const TurnToolCallSchema = type({
+  name: "string",
+  arguments: "Record<string, unknown>",
+  result: "string",
+  isError: "boolean",
+});
+export type TurnToolCall = typeof TurnToolCallSchema.infer;
 
-export type TurnFinalized = {
-  turnId: string;
-  status: "completed" | "failed";
-  text: string;
-  hadReply: boolean;
-  hadError: boolean;
-  errors: { category: string; message: string }[];
-  toolCalls: TurnToolCall[];
-  toolErrors: { name: string; content: string }[];
-};
+const TurnFinalizedSchema = type({
+  turnId: "string",
+  "status": "'completed' | 'failed'",
+  text: "string",
+  hadReply: "boolean",
+  hadError: "boolean",
+  errors: type({ category: "string", message: "string" }).array(),
+  toolCalls: TurnToolCallSchema.array(),
+  toolErrors: type({ name: "string", content: "string" }).array(),
+});
+export type TurnFinalized = typeof TurnFinalizedSchema.infer;
 
 export type EventCollector = {
   onEvent(event: InferenceEvent): Promise<void>;
@@ -358,7 +361,7 @@ export function createEventCollector(
       .where(eq(inferenceTurn.id, turnId));
 
     if (notify && onTurnFinalized) {
-      onTurnFinalized({
+      const turn = TurnFinalizedSchema({
         turnId,
         status,
         text: accumulatedText,
@@ -368,6 +371,10 @@ export function createEventCollector(
         toolCalls: [...accumulatedToolCalls],
         toolErrors: [...accumulatedToolErrors],
       });
+      if (turn instanceof type.errors) {
+        throw new Error(`TurnFinalized: ${turn.summary}`);
+      }
+      onTurnFinalized(turn);
     }
 
     currentTurnId = null;
