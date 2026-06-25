@@ -524,8 +524,34 @@ const ActivityOverviewSchema = type({
     endedInRange: "number",
     total: "number",
   },
+  agentActivity: {
+    active: "number",
+    idle: "number",
+  },
+  conversations: {
+    total: "number",
+    createdInRange: "number",
+  },
+  messages: {
+    total: "number",
+    createdInRange: "number",
+  },
+  dailySeries: type({
+    date: "string",
+    turnCount: "number",
+    failedTurnCount: "number",
+    toolCallCount: "number",
+    toolErrorCount: "number",
+    inputTokens: "number",
+    outputTokens: "number",
+    cacheReadTokens: "number",
+    cacheWriteTokens: "number",
+    thinkingTokens: "number",
+  }).array(),
+  models: ActivityCountRowSchema.array(),
   inference: {
     summary: AnalyticsSummarySchema,
+    previousSummary: AnalyticsSummarySchema.or("null"),
     byAgent: AnalyticsAgentRowSchema.array(),
     byInstance: type({
       instanceId: "string",
