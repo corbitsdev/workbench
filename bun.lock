@@ -1083,6 +1083,7 @@
       "name": "@workbench/ui",
       "dependencies": {
         "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "react-markdown": "^10.1.0",

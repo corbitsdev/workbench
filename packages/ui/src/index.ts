@@ -39,6 +39,7 @@ export {
   hydrateServerPreferences,
   serverPatchForRawChange,
   PREFERENCE_KEYS,
+  ServerPreferencesSchema,
   type ServerPreferences,
 } from "./preferences-store";
 export { useResizableRail, type ResizableRail } from "./use-resizable-rail";
