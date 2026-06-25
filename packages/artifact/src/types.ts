@@ -39,11 +39,7 @@ export const ArtifactVisualSchema = type({
 
 export type ArtifactVisual = typeof ArtifactVisualSchema.infer;
 
-export const GalleryArtifactSchema = type({
-  label: "string",
-  viz: "'bars'|'donut'|'grid'|'lines'|'nodes'|'heat'|'deck'|'cal'",
-  fill: "string",
-  span: "string",
+export const GalleryArtifactSchema = ArtifactVisualSchema.and({
   id: "string",
   title: "string",
   from: "string",

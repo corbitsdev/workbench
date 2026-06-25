@@ -71,6 +71,11 @@ describe("ArtifactVisualSchema", () => {
     expect(result instanceof type.errors).toBe(true);
   });
 
+  it("span accepts any string value", () => {
+    const result = ArtifactVisualSchema({ label: "X", viz: "bars", fill: "bg-x", span: "completely-arbitrary-value" });
+    expect(result instanceof type.errors).toBe(false);
+  });
+
   it("rejects missing required fields", () => {
     const result = ArtifactVisualSchema({ label: "X" });
     expect(result instanceof type.errors).toBe(true);
@@ -101,6 +106,14 @@ describe("GalleryArtifactSchema", () => {
   it("rejects a record missing required fields", () => {
     const result = GalleryArtifactSchema({ label: "X", viz: "bars" });
     expect(result instanceof type.errors).toBe(true);
+  });
+
+  it("accepts empty-string time (formatRelativeTime overflow path)", () => {
+    const result = GalleryArtifactSchema({ ...valid, time: "" });
+    expect(result instanceof type.errors).toBe(false);
+    if (!(result instanceof type.errors)) {
+      expect(result.time).toBe("");
+    }
   });
 });
 
