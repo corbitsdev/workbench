@@ -40,7 +40,7 @@ export const POLYMARKET_ODDS_DEFINITION: ToolDefinition = {
   },
 };
 
-const SearchArgs = type({ query: "string > 0", "limit?": "number" });
+const SearchArgs = type({ query: "string > 0", "limit?": "number.integer > 0" });
 
 async function searchPolymarket(
   config: PolymarketToolsConfig,
@@ -52,11 +52,8 @@ async function searchPolymarket(
     throw new Error(`polymarket_odds: ${parsed.summary}`);
   }
 
-  const rawLimit = parsed.limit;
   const limit =
-    rawLimit !== undefined && Number.isInteger(rawLimit) && rawLimit > 0
-      ? Math.min(rawLimit, MAX_LIMIT)
-      : DEFAULT_LIMIT;
+    parsed.limit !== undefined ? Math.min(parsed.limit, MAX_LIMIT) : DEFAULT_LIMIT;
 
   const url = new URL(`${POLYMARKET_API_BASE}/markets`);
   url.searchParams.set("q", parsed.query);
@@ -72,6 +69,10 @@ async function searchPolymarket(
   }
 
   const raw: unknown = await response.json();
+  // Strict-reject: items that don't match the schema are dropped rather than coerced.
+  // The old parsePolymarketMarket coerced numeric id→String, missing question→"", and
+  // missing outcomePrices→[]. Dropping is intentional — surfacing coerced garbage to
+  // callers is worse than a shorter result set.
   const markets = Array.isArray(raw)
     ? raw.flatMap((item) => {
         const p = PolymarketMarket(item);
