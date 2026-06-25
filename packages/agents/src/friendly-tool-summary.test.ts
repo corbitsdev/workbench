@@ -192,6 +192,31 @@ describe('summarizeToolCalls styles', () => {
     );
   });
 
+  it('detail style falls back when the JSON is valid but the wrong shape', () => {
+    // Valid JSON, but neither an issue array nor a { issues } envelope — the
+    // arktype parse rejects it and the clause degrades to plain.
+    const calls = [linear(JSON.stringify({ unexpected: 'shape' })), linear(JSON.stringify(42))];
+    expect(summarizeToolCalls(calls, 'detail')).toBe('Checked Linear twice');
+  });
+
+  it('detail style reads the { issues } envelope form', () => {
+    const calls = [linear(JSON.stringify({ issues: [{ id: 'a', priority: 2 }] }))];
+    expect(summarizeToolCalls(calls, 'detail')).toBe('Found 1 Linear issue (one high-priority)');
+  });
+
+  it('detail style treats a high-name priority object as high-priority', () => {
+    const calls = [linear(JSON.stringify([{ id: 'a', priority: { name: 'Urgent' } }]))];
+    expect(summarizeToolCalls(calls, 'detail')).toBe('Found 1 Linear issue (one high-priority)');
+  });
+
+  it('detail style does not count a numeric nested priority name as high', () => {
+    // A nested `{ name }` is a human label, never the 1/2 numeric scale; a numeric
+    // value there is an unexpected shape, so the parse rejects it and the clause
+    // degrades to plain rather than mistaking it for an Urgent/High priority.
+    const calls = [linear(JSON.stringify([{ id: 'a', priority: { name: 1 } }]))];
+    expect(summarizeToolCalls(calls, 'detail')).toBe('Checked Linear');
+  });
+
   it('mixed style combines varied verbs, natural counts, and detail', () => {
     const calls = [
       ...attio(6),

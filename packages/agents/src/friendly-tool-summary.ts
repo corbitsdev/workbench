@@ -1,5 +1,12 @@
+import { type } from 'arktype';
 import { toHumanLabel } from '@workbench/ui';
+import type { ToolSummaryStyle } from '@workbench/ui';
 import type { ToolCall } from '@workbench/chat';
+
+// `ToolSummaryStyle` is owned by @workbench/ui (the foundation both this package
+// and the preference hook depend on); re-exported here so callers can keep
+// importing it from @workbench/agents.
+export type { ToolSummaryStyle };
 
 /**
  * Maps a tool operation to a friendly present-participle action phrase shown in
@@ -189,8 +196,6 @@ function toolFamilyKey(name: string): string {
  * - `varied`  — rotated verbs per family: "Combed Attio 6 times, skimmed 5 notes…"
  * - `mixed`   — varied verbs + natural counts + detail
  */
-export type ToolSummaryStyle = 'symbols' | 'natural' | 'detail' | 'varied' | 'mixed';
-
 export const TOOL_SUMMARY_STYLES: readonly ToolSummaryStyle[] = [
   'symbols',
   'natural',
@@ -247,8 +252,28 @@ function pluralize(count: number, one: string, many: string): string {
   return count === 1 ? one : many;
 }
 
+// The slice of a Linear tool result we read for the `detail` styles. A result
+// is either a bare issue array or a `{ issues: [...] }` envelope; each issue may
+// carry a priority as a number (the 0-4 scale), a name string, or a `{ name }`
+// object whose name is a string label. Numeric priorities only appear at the top
+// level; a nested `{ name }` is always a human label, so it is typed as a string.
+// Extra fields are allowed. Validated through arktype rather than guessed so an
+// upstream shape change degrades cleanly to the plain clause instead of mis-parsing.
+const LinearPriority = type('number | string').or({ 'name?': 'string' });
+const LinearIssue = type({ '[string]': 'unknown', 'priority?': LinearPriority });
+const LinearIssues = LinearIssue.array();
+const LinearResult = LinearIssues.or({ issues: LinearIssues });
+
+// Numeric priorities are high only at the top level (Linear's 1 = Urgent, 2 = High);
+// a nested `{ name }` carries the human label, where high means 'Urgent' or 'High'.
+function isHighPriority(priority: typeof LinearPriority.infer | undefined): boolean {
+  if (typeof priority === 'number') return priority === 1 || priority === 2;
+  const name = typeof priority === 'object' && priority !== null ? priority.name : priority;
+  return name === 'Urgent' || name === 'High';
+}
+
 // Detects how many issues a Linear turn pulled and whether any are high-stakes,
-// degrading to null when a result is not the expected JSON shape.
+// degrading to null when a result does not match the expected shape.
 function linearDetail(calls: ToolCall[]): string | null {
   let issues = 0;
   let high = 0;
@@ -260,23 +285,12 @@ function linearDetail(calls: ToolCall[]): string | null {
     } catch {
       continue;
     }
-    const list = Array.isArray(parsed)
-      ? parsed
-      : typeof parsed === 'object' &&
-          parsed !== null &&
-          Array.isArray((parsed as { issues?: unknown }).issues)
-        ? (parsed as { issues: unknown[] }).issues
-        : null;
-    if (list === null) continue;
+    const validated = LinearResult(parsed);
+    if (validated instanceof type.errors) continue;
+    const list = Array.isArray(validated) ? validated : validated.issues;
     for (const item of list) {
-      if (typeof item !== 'object' || item === null) continue;
       issues += 1;
-      const priority = (item as { priority?: unknown }).priority;
-      const name =
-        typeof priority === 'object' && priority !== null
-          ? (priority as { name?: unknown }).name
-          : priority;
-      if (name === 1 || name === 2 || name === 'Urgent' || name === 'High') high += 1;
+      if (isHighPriority(item.priority)) high += 1;
     }
   }
   if (issues === 0) return null;

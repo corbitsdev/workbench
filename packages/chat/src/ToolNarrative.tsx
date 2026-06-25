@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { cn, toHumanLabel } from '@workbench/ui';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { ToolCall } from './types';
 import { parseToolResult, type UIBlock, type UIResponse } from './ui-block';
 import { UIBlockView } from './UIBlockView';
@@ -44,13 +44,19 @@ function DoneIcon({ isError }: { isError?: boolean }) {
 }
 
 function ActiveIcon() {
+  const reduceMotion = useReducedMotion();
   return (
     <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
-      <motion.span
-        className="absolute inline-flex h-full w-full rounded-full bg-orange opacity-60"
-        animate={{ scale: [1, 1.6, 1], opacity: [0.6, 0, 0.6] }}
-        transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
-      />
+      {reduceMotion !== true && (
+        <motion.span
+          aria-hidden="true"
+          className="absolute inline-flex h-full w-full rounded-full bg-orange"
+          // Transform + opacity only, so the pulse stays on the compositor; a
+          // constant repeating pulse reads best with a linear ease.
+          animate={{ scale: [1, 1.6, 1], opacity: [0.6, 0, 0.6] }}
+          transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }}
+        />
+      )}
       <span className="relative inline-flex h-2 w-2 rounded-full bg-orange" />
     </span>
   );
@@ -59,6 +65,21 @@ function ActiveIcon() {
 // Below this count there is no benefit to collapsing — the flat list is short
 // and more informative than a roll-up sentence.
 const COLLAPSE_THRESHOLD = 3;
+
+// Brand ease-out (DESIGN.md), shared with ReasoningDisclosure: snappy settle for
+// small disclosures.
+const EASE_OUT = [0.23, 1, 0.32, 1] as const;
+
+// Dense rows are visually short (~20px). A transparent inset overlay lifts the
+// tap target to ~40px without inflating the row's layout height. The 10px inset
+// is held at exactly half the 20px inter-row gap (`ROW_GAP`/`space-y-5`) so
+// adjacent overlays meet at the gap midpoint instead of overlapping.
+const TOUCH_TARGET =
+  "relative after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-['']";
+
+// Inter-row spacing for interactive lists; sized so the `TOUCH_TARGET` overlay
+// can reach a ~40px tap target without colliding with neighbours.
+const ROW_GAP = 'space-y-5';
 
 export interface ToolNarrativeProps {
   toolCalls: ToolCall[];
@@ -145,6 +166,7 @@ function ToolRow({
   onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const reduceMotion = useReducedMotion();
   const pending = call.result === undefined && !call.isError;
   const argsSummary = suppressArgsSummary ? null : summarizeArgs(call.arguments);
   const hasArgs = call.arguments !== undefined && Object.keys(call.arguments).length > 0;
@@ -160,7 +182,10 @@ function ToolRow({
         type="button"
         disabled={!expandable}
         onClick={() => setOpen((v) => !v)}
-        className={cn('flex items-start gap-2.5 text-left', expandable && 'cursor-pointer')}
+        className={cn(
+          'flex items-start gap-2.5 text-left',
+          expandable && cn('cursor-pointer', TOUCH_TARGET)
+        )}
       >
         <span className="mt-0.5">
           {pending ? <ActiveIcon /> : <DoneIcon isError={call.isError === true} />}
@@ -176,7 +201,7 @@ function ToolRow({
           {expandable && <ChevronIcon open={open} />}
         </span>
       </button>
-      {open && (
+      <ExpandReveal open={open} reduceMotion={reduceMotion === true}>
         <div className="mt-1.5 ml-[26px] space-y-2 text-xs">
           {hasArgs && (
             <pre className="overflow-x-auto rounded bg-surface-2 px-2 py-1.5 font-mono text-text-2">
@@ -203,8 +228,38 @@ function ToolRow({
             </div>
           )}
         </div>
-      )}
+      </ExpandReveal>
     </div>
+  );
+}
+
+// Smooth height/opacity reveal for expand/collapse content, matched to the
+// chevron's timing. Honors reduced-motion by toggling without animating.
+function ExpandReveal({
+  open,
+  reduceMotion,
+  children,
+}: {
+  open: boolean;
+  reduceMotion: boolean;
+  children: ReactNode;
+}) {
+  if (reduceMotion) return open ? <div>{children}</div> : null;
+  return (
+    <AnimatePresence initial={false}>
+      {open && (
+        <motion.div
+          key="reveal"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.18, ease: EASE_OUT }}
+          className="overflow-hidden"
+        >
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -247,13 +302,14 @@ function CollapsedToolSummary({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const reduceMotion = useReducedMotion();
   return (
     <div className="flex flex-col">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex items-start gap-2.5 text-left cursor-pointer"
+        className={cn('flex items-start gap-2.5 text-left cursor-pointer', TOUCH_TARGET)}
       >
         <span className="mt-0.5">
           <DoneIcon isError={hasError} />
@@ -269,7 +325,9 @@ function CollapsedToolSummary({
           <ChevronIcon open={open} />
         </span>
       </button>
-      {open && <div className="mt-1.5 space-y-2">{children}</div>}
+      <ExpandReveal open={open} reduceMotion={reduceMotion === true}>
+        <div className={cn('mt-1.5', ROW_GAP)}>{children}</div>
+      </ExpandReveal>
     </div>
   );
 }
@@ -302,7 +360,7 @@ export function ToolNarrative({
   );
 
   return (
-    <div className={cn('space-y-2', className)} data-testid="tool-narrative">
+    <div className={cn(ROW_GAP, className)} data-testid="tool-narrative">
       {shouldCollapse ? (
         <CollapsedToolSummary
           summary={summarizeCalls(toolCalls)}

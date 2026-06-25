@@ -22,8 +22,8 @@ describe('ToolNarrative', () => {
       },
     ];
     render(<ToolNarrative toolCalls={calls} />);
-    expect(screen.getByText('Exa Search')).toBeDefined();
-    expect(screen.getByText('· minimax m3')).toBeDefined();
+    screen.getByText('Exa Search');
+    screen.getByText('· minimax m3');
   });
 
   it('suppresses the raw arg chip when a formatSummary is supplied', () => {
@@ -39,7 +39,7 @@ describe('ToolNarrative', () => {
     render(
       <ToolNarrative toolCalls={calls} formatSummary={() => 'Searching the web for minimax m3'} />
     );
-    expect(screen.getByText('Searching the web for minimax m3')).toBeDefined();
+    screen.getByText('Searching the web for minimax m3');
     // The formatter owns the line, so the duplicate "· minimax m3" chip is gone.
     expect(screen.queryByText('· minimax m3')).toBeNull();
   });
@@ -57,7 +57,7 @@ describe('ToolNarrative', () => {
     render(<ToolNarrative toolCalls={calls} />);
     expect(screen.queryByText('the full result body')).toBeNull();
     fireEvent.click(screen.getByText('Exa Search'));
-    expect(screen.getByText('the full result body')).toBeDefined();
+    screen.getByText('the full result body');
   });
 
   it('shows the error result for a failed tool call', () => {
@@ -72,7 +72,7 @@ describe('ToolNarrative', () => {
     ];
     render(<ToolNarrative toolCalls={calls} />);
     fireEvent.click(screen.getByText('Exa Search'));
-    expect(screen.getByText('No matching grants for tool:exa_search/invoke')).toBeDefined();
+    screen.getByText('No matching grants for tool:exa_search/invoke');
   });
 
   it('does not expand a pending call', () => {
@@ -88,7 +88,7 @@ describe('ToolNarrative', () => {
       { id: 'c1', name: 'fetch_rows', arguments: { limit: 10 }, result: 'ok' },
     ];
     render(<ToolNarrative toolCalls={calls} />);
-    expect(screen.getByText('· limit: 10')).toBeDefined();
+    screen.getByText('· limit: 10');
   });
 
   it('omits the summary when arguments have no stringifiable scalar values', () => {
@@ -126,13 +126,13 @@ describe('ToolNarrative', () => {
         formatSummary={(c) => `summary-of-${c.id}`}
       />
     );
-    expect(screen.getByText('Did a bunch of things')).toBeDefined();
-    expect(screen.getByText('· 3 tools')).toBeDefined();
+    screen.getByText('Did a bunch of things');
+    screen.getByText('· 3 tools');
     // Individual rows are hidden until expanded.
     expect(screen.queryByText('summary-of-c1')).toBeNull();
     fireEvent.click(screen.getByText('Did a bunch of things'));
-    expect(screen.getByText('summary-of-c1')).toBeDefined();
-    expect(screen.getByText('summary-of-c3')).toBeDefined();
+    screen.getByText('summary-of-c1');
+    screen.getByText('summary-of-c3');
   });
 
   it('does not collapse while any call is still in flight', () => {
@@ -150,7 +150,7 @@ describe('ToolNarrative', () => {
       />
     );
     expect(screen.queryByText('Did a bunch of things')).toBeNull();
-    expect(screen.getByText('summary-of-c1')).toBeDefined();
+    screen.getByText('summary-of-c1');
   });
 
   it('does not collapse below the threshold', () => {
@@ -164,7 +164,7 @@ describe('ToolNarrative', () => {
       />
     );
     expect(screen.queryByText('Did a bunch of things')).toBeNull();
-    expect(screen.getByText('summary-of-c1')).toBeDefined();
+    screen.getByText('summary-of-c1');
   });
 
   it('renders the flat list when compact is off, even for many calls', () => {
@@ -181,7 +181,7 @@ describe('ToolNarrative', () => {
       />
     );
     expect(screen.queryByText('Did a bunch of things')).toBeNull();
-    expect(screen.getByText('summary-of-c1')).toBeDefined();
-    expect(screen.getByText('summary-of-c3')).toBeDefined();
+    screen.getByText('summary-of-c1');
+    screen.getByText('summary-of-c3');
   });
 });
