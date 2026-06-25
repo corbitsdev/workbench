@@ -42,7 +42,7 @@ export const HACKERNEWS_SEARCH_DEFINITION: ToolDefinition = {
 const SearchArgs = type({
   query: "string > 0",
   "days?": "number",
-  "limit?": "number",
+  "limit?": "number.integer",
 });
 
 async function searchHackerNews(
@@ -61,7 +61,7 @@ async function searchHackerNews(
       : DEFAULT_DAYS;
   const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
   const limit =
-    parsed.limit !== undefined && Number.isInteger(parsed.limit) && parsed.limit > 0
+    parsed.limit !== undefined && parsed.limit > 0
       ? Math.min(parsed.limit, MAX_HITS)
       : DEFAULT_HITS;
 
