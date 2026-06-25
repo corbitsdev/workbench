@@ -30,7 +30,7 @@ export function PagePanel({
         className={cn(
           "flex flex-1 flex-col rounded-panel border border-border bg-bg",
           scroll ? "min-h-full overflow-y-auto" : "overflow-hidden",
-          !flat && "shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]",
+          !flat && "shadow-[var(--shadow)]",
           className,
         )}
       >
