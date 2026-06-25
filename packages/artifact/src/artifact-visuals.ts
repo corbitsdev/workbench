@@ -4,6 +4,7 @@
 
 import type { ArtifactWithSession } from "@workbench/shared";
 import { isLinkedInPostArtifactKind } from "./artifact-kinds";
+import { parseGalleryArtifact } from "./types";
 import type { ArtifactVisual, GalleryArtifact } from "./types";
 
 // Default visuals per known artifact kind. The DB `kind` column is free-form,
@@ -126,11 +127,11 @@ export function toGalleryArtifact(
   artifact: ArtifactWithSession,
 ): GalleryArtifact {
   const visual = visualForKind(artifact.kind);
-  return {
+  return parseGalleryArtifact({
     ...visual,
     id: artifact.id,
     title: artifact.title,
     from: artifact.sessionName ?? "Untitled job",
     time: formatRelativeTime(artifact.updatedAt),
-  };
+  });
 }

@@ -6,6 +6,8 @@
 // ArtifactVisual, GalleryArtifact) live here because they describe how the
 // package renders artifacts, not how they are stored.
 
+import { type } from "arktype";
+
 export type {
   Artifact,
   ArtifactStatus,
@@ -15,7 +17,9 @@ export type {
   ArtifactKind,
 } from "@workbench/shared";
 
-/** Decorative chart glyph drawn behind a gallery tile. */
+// VizKind is a presentation-internal union used only within this package to
+// index tile visuals. It is not serialized across any API boundary, so it
+// stays as a plain type alias.
 export type VizKind =
   | "bars"
   | "donut"
@@ -26,22 +30,32 @@ export type VizKind =
   | "deck"
   | "cal";
 
-export interface ArtifactVisual {
-  /** Short type label shown on the tile. */
-  label: string;
-  viz: VizKind;
-  /** Tailwind background utility for the tile's hero area. */
-  fill: string;
-  /** Tailwind grid-span utilities. */
-  span: string;
-}
+export const ArtifactVisualSchema = type({
+  label: "string",
+  viz: "'bars'|'donut'|'grid'|'lines'|'nodes'|'heat'|'deck'|'cal'",
+  fill: "string",
+  span: "string",
+});
 
-/** A gallery-ready view of a single artifact, combining domain data + visuals. */
-export interface GalleryArtifact extends ArtifactVisual {
-  id: string;
-  title: string;
-  /** "From" label — the originating job/company. */
-  from: string;
-  /** Human-readable relative time. */
-  time: string;
+export type ArtifactVisual = typeof ArtifactVisualSchema.infer;
+
+export const GalleryArtifactSchema = type({
+  label: "string",
+  viz: "'bars'|'donut'|'grid'|'lines'|'nodes'|'heat'|'deck'|'cal'",
+  fill: "string",
+  span: "string",
+  id: "string",
+  title: "string",
+  from: "string",
+  time: "string",
+});
+
+export type GalleryArtifact = typeof GalleryArtifactSchema.infer;
+
+export function parseGalleryArtifact(raw: unknown): GalleryArtifact {
+  const result = GalleryArtifactSchema(raw);
+  if (result instanceof type.errors) {
+    throw new Error(`GalleryArtifact: ${result.summary}`);
+  }
+  return result;
 }
