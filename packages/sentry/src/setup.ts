@@ -1,9 +1,21 @@
 import { setup, getConfig, type SetupOptions } from "@intx/log";
 import { configure } from "@logtape/logtape";
 import { initSentry } from "./sentry";
-import { createSentrySink, type SentryClient } from "./sentry-sink";
+import {
+  createSentrySink,
+  type SentryClient,
+  type WarnCategoryPrefix,
+} from "./sentry-sink";
 
 let sentryClient: SentryClient | null = null;
+
+// Observability options that are ours, not @intx/log's. Kept off `SetupOptions`
+// so the @intx/log `setup()` call never sees a field it does not understand.
+export type ObservabilityOptions = {
+  // Category subtrees whose `warning`-level records should also flow to Sentry.
+  // Supplied per app at the boundary (see setupObservability callers).
+  warnCategoryPrefixes?: readonly WarnCategoryPrefix[];
+};
 
 type LoggerLike = { category: string | string[]; sinks?: string[] };
 
@@ -45,6 +57,7 @@ export function attachSentrySink<T extends LoggerLike>(
  */
 export async function setupObservability(
   options: SetupOptions = {},
+  observability: ObservabilityOptions = {},
 ): Promise<void> {
   sentryClient = await initSentry();
 
@@ -58,7 +71,10 @@ export async function setupObservability(
     return;
   }
 
-  const sentrySink = createSentrySink(sentryClient);
+  const sentrySink = createSentrySink(
+    sentryClient,
+    observability.warnCategoryPrefixes,
+  );
   await configure({
     reset: true,
     sinks: { ...current.sinks, sentry: sentrySink },

@@ -37,7 +37,21 @@ import {
   createWorkflowRunPackPushingRepoStore,
 } from "./workflow-run-pack-client";
 
-await setupObservability({ dev: process.env.NODE_ENV !== "production" });
+// The workflow-run failure path logs at `warning`, not `error`, so these
+// categories are invisible to Sentry by default. Route just the
+// high-signal failure subtrees: supervisor replay failures and run-pack push
+// failures (incl. `reason=corrupt`). The WS category
+// (`interchange·hub-agent·ws`) is intentionally excluded — its transient
+// reconnect warnings would flood Sentry.
+await setupObservability(
+  { dev: process.env.NODE_ENV !== "production" },
+  {
+    warnCategoryPrefixes: [
+      ["workflow-host"],
+      ["interchange", "sidecar", "workflow-run-pack-client"],
+    ],
+  },
+);
 
 // Install the google-genai thoughtSignature workaround before any inference
 // happens. This wraps the registered adapter to strip orphan
