@@ -35,7 +35,7 @@ const STATUS_VALUES = [...AGENT_INSTANCE_STATUSES, ALL_STATUSES] as const;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
-const PrincipalIdsSchema = type("string[] > 0");
+const PrincipalIdsSchema = type("string[]");
 
 /**
  * Resolve the agent-instance status filter. Defaults to `running` (the agents

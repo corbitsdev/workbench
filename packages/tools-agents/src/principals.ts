@@ -63,6 +63,9 @@ export function resolvePrincipalKind(
   value: unknown,
 ): PrincipalKind | undefined {
   if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new Error("kind must be a string");
+  }
   const parsed = PrincipalKindSchema(value);
   if (parsed instanceof type.errors) {
     throw new Error(`kind must be one of: ${PrincipalKindSchema.expression}`);
@@ -74,6 +77,9 @@ export function resolvePrincipalStatusFilter(
   value: unknown,
 ): PrincipalStatus | undefined {
   if (value === undefined) return "active";
+  if (typeof value !== "string") {
+    throw new Error("status must be a string");
+  }
   if (value === ALL_STATUSES) return undefined;
   const parsed = PrincipalStatusSchema(value);
   if (parsed instanceof type.errors) {
