@@ -5,10 +5,9 @@ import { takePendingFirstMessage } from "../lib/pending-first-message";
 import { MyraChatSurface } from "../components/MyraChatSurface";
 import { useMyraSession } from "../hooks/use-myra-session";
 import {
-  isDefaultThreadLabel,
   resolveActiveThread,
+  useAutoTitleFirstMessage,
   useCreateMyraThread,
-  useGenerateMyraThreadTitle,
   useMyraThreads,
   writeLastActiveThreadId,
 } from "../hooks/use-myra-threads";
@@ -38,17 +37,11 @@ export function ChatThreadPage() {
   const session = useMyraSession(active?.instanceId ?? null, active !== null);
 
   // Auto-title a still-default thread from its first message (best-effort; the
-  // hub no-ops if the label is already custom). Fire once per thread, only when
-  // this is genuinely the first message (no prior user turn in the stream).
-  const generateTitle = useGenerateMyraThreadTitle();
-  const titledRef = useRef<Set<string>>(new Set());
-  const maybeTitleFromFirstMessage = (text: string) => {
-    if (!active || !isDefaultThreadLabel(active.label)) return;
-    if (titledRef.current.has(active.id)) return;
-    if (session.messages.some((m) => m.role === "user")) return;
-    titledRef.current.add(active.id);
-    generateTitle.mutate({ id: active.id, firstMessage: text });
-  };
+  // hub no-ops if the label is already custom).
+  const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(
+    active,
+    session.messages,
+  );
 
   // Deliver a message seeded by another surface (e.g. the artifact page's chat
   // composer creating this thread). Once, when the session is ready.

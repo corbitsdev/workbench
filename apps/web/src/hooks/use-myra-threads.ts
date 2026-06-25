@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createMyraThread,
@@ -103,4 +104,26 @@ export function useGenerateMyraThreadTitle() {
         void queryClient.invalidateQueries({ queryKey: MYRA_THREADS_KEY });
     },
   });
+}
+
+/**
+ * Returns a callback that auto-titles `active` from its first user message.
+ * Shared by every Myra surface (full-page chat and the dock) so titling fires
+ * wherever a thread is first used, not just on `/chats`. No-ops once the thread
+ * has a custom label, once it has already been titled this session, or once a
+ * user turn already exists in the stream.
+ */
+export function useAutoTitleFirstMessage(
+  active: MyraThread | null,
+  messages: readonly { role: string }[],
+): (text: string) => void {
+  const generateTitle = useGenerateMyraThreadTitle();
+  const titledRef = useRef<Set<string>>(new Set());
+  return (text: string) => {
+    if (!active || !isDefaultThreadLabel(active.label)) return;
+    if (titledRef.current.has(active.id)) return;
+    if (messages.some((m) => m.role === "user")) return;
+    titledRef.current.add(active.id);
+    generateTitle.mutate({ id: active.id, firstMessage: text });
+  };
 }
