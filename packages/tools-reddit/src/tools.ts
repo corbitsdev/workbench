@@ -1,5 +1,6 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
+import { type } from "arktype";
 import { normalizeRedditPost } from "./normalize";
 import type { RedditPost, RedditTopComment } from "./types";
 
@@ -24,6 +25,21 @@ export type RedditToolsConfig = {
   baseURL?: string;
   fetcher?: RedditFetch;
 };
+
+const RedditSearchArgs = type({
+  query: "string > 0",
+  "sort?": "string",
+  "timeframe?": "string",
+  "limit?": "number",
+});
+
+const RedditSubredditSearchArgs = type({
+  subreddit: "string > 0",
+  query: "string > 0",
+  "sort?": "string",
+  "timeframe?": "string",
+  "limit?": "number",
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -265,12 +281,12 @@ async function searchReddit(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = RedditSearchArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`reddit_search: ${parsed.summary}`);
   }
   const url = new URL(`${resolvedBaseURL(config)}/v1/reddit/search`);
-  url.searchParams.set("query", query);
+  url.searchParams.set("query", parsed.query);
   applyCommonParams(url, args);
 
   const data = await fetchJSON(config, url, signal);
@@ -286,17 +302,13 @@ async function searchSubreddit(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const subreddit = typeof args.subreddit === "string" ? args.subreddit : "";
-  if (subreddit.length === 0) {
-    throw new Error("subreddit is required");
-  }
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = RedditSubredditSearchArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`reddit_subreddit_search: ${parsed.summary}`);
   }
   const url = new URL(`${resolvedBaseURL(config)}/v1/reddit/subreddit/search`);
-  url.searchParams.set("subreddit", subreddit);
-  url.searchParams.set("query", query);
+  url.searchParams.set("subreddit", parsed.subreddit);
+  url.searchParams.set("query", parsed.query);
   applyCommonParams(url, args);
 
   const data = await fetchJSON(config, url, signal);

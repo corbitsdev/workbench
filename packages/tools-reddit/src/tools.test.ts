@@ -165,7 +165,7 @@ describe("reddit_search", () => {
     });
     await expect(
       getHandler(tools, "reddit_search")({}, new AbortController().signal),
-    ).rejects.toThrow("query is required");
+    ).rejects.toThrow("reddit_search:");
   });
 });
 
@@ -207,7 +207,7 @@ describe("reddit_subreddit_search", () => {
         { query: "x" },
         new AbortController().signal,
       ),
-    ).rejects.toThrow("subreddit is required");
+    ).rejects.toThrow("reddit_subreddit_search:");
   });
 });
 
