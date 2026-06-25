@@ -84,13 +84,20 @@ export function ToolDetail() {
           )}
           {!toolQuery.isLoading && !toolQuery.isError && toolQuery.data && (
             <div className="max-w-[760px]">
-              <span className="inline-block rounded-full bg-surface-2 px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-text-2">
-                {toolQuery.data.providerName}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="inline-block rounded-full bg-surface-2 px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-text-2">
+                  {toolQuery.data.providerName}
+                </span>
+                {toolQuery.data.version !== null && (
+                  <span className="inline-block rounded-full bg-surface-2 px-2 py-[3px] font-mono text-[10px] text-text-3">
+                    v{toolQuery.data.version}
+                  </span>
+                )}
+              </div>
               <h1 className="mt-2.5 font-mono text-[22px] font-bold tracking-[-0.01em] text-text">
                 {toolQuery.data.name}
               </h1>
-              <p className="mt-2 text-[13.5px] leading-relaxed text-text-2">
+              <p className="mt-2 text-pretty text-[13.5px] leading-relaxed text-text-2">
                 {toolQuery.data.description || 'No description provided.'}
               </p>
 

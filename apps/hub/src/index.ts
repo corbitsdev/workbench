@@ -870,7 +870,7 @@ v1.route('/', createApprovalsRouter(db));
 v1.route('/', createFeedbackRouter(db));
 v1.route('/', createUploadsRouter(db));
 v1.route('/', createSkillsRouter(db, assetService, repoStore.repoStore));
-v1.route('/', createToolsRouter(db));
+v1.route('/', createToolsRouter(db, assetService));
 // Built before the runs router so the run-start/signal handlers and the
 // reconciler can share its idempotent `ensureDeploymentRoutable` re-establish
 // primitive.

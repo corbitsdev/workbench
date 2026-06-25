@@ -1,6 +1,10 @@
-import { resolveCredentialRequirement } from '@intx/db';
+import { resolveCredentialRequirement, listAssetsForTenant } from '@intx/db';
 import { getLogger } from '@intx/log';
+import { createClosureResolver } from '@intx/tool-packaging';
+import { WORKSPACE_BUILTINS_REGISTRY, type AssetService } from '@intx/hub-sessions';
+import { toolPackagesForCapabilities } from '@workbench/agents';
 import type { HubDb } from '../db';
+import { buildTenantRegistryMap } from './tenant-registry-map';
 import {
   KNOWN_TOOLS,
   isCredentialToolEntry,
@@ -113,4 +117,63 @@ export async function getAvailableToolDetail(
     return null;
   }
   return { ...summaryFor(name, entry), inputSchema: entry.definition.inputSchema ?? null };
+}
+
+function packageForTool(toolName: string): string | null {
+  const pins = toolPackagesForCapabilities([toolName]);
+  return pins[0]?.name ?? null;
+}
+
+/**
+ * Resolves the registry version for each tool name by mapping tools to their
+ * npm package, then resolving the closure against the tenant's package-registry
+ * asset. The returned map is keyed by TOOL NAME (not package): the route reads
+ * `version` per summary without re-deriving the package pin. Returns an empty
+ * map when no registry asset exists or resolution fails; the route degrades to
+ * version: null rather than erroring. Tool names that map to no package, or to a
+ * package the closure didn't pin at top level, are simply absent from the map.
+ */
+export async function resolveToolVersions(
+  db: HubDb,
+  tenantId: string,
+  toolNames: string[],
+  assetService: AssetService
+): Promise<Map<string, string>> {
+  const pins = toolPackagesForCapabilities(toolNames);
+  if (pins.length === 0) return new Map();
+
+  const visibleAssets = await listAssetsForTenant(db, tenantId, 'package-registry');
+  const { registryMap } = buildTenantRegistryMap(visibleAssets, assetService);
+  if (!registryMap.has(WORKSPACE_BUILTINS_REGISTRY)) return new Map();
+
+  let manifest: Awaited<ReturnType<ReturnType<typeof createClosureResolver>['resolveClosure']>>;
+  try {
+    manifest = await createClosureResolver({
+      registries: registryMap,
+      defaultRegistry: WORKSPACE_BUILTINS_REGISTRY,
+    }).resolveClosure(pins);
+  } catch (err) {
+    log.error('Registry closure resolution failed during version lookup', {
+      tenantId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return new Map();
+  }
+
+  // Use `topLevel` (the explicitly-pinned packages), not `entries` (the full
+  // transitive closure): the tool's own version must be its top-level pin, and a
+  // transitive dep sharing a name must never shadow it.
+  const versionByPackage = new Map<string, string>();
+  for (const pin of manifest.topLevel) {
+    versionByPackage.set(pin.name, pin.version);
+  }
+
+  const versionByTool = new Map<string, string>();
+  for (const toolName of toolNames) {
+    const pkg = packageForTool(toolName);
+    if (pkg === null) continue;
+    const version = versionByPackage.get(pkg);
+    if (version !== undefined) versionByTool.set(toolName, version);
+  }
+  return versionByTool;
 }

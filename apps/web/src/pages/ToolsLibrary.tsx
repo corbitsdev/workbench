@@ -132,9 +132,12 @@ function ToolCard({
       </div>
       <div className="border-t border-border bg-surface px-[13px] py-[11px]">
         <div className="truncate font-mono text-[13px] font-semibold text-text">{tool.name}</div>
-        <div className="mt-0.5 line-clamp-2 text-[11px] text-text-3">
+        <p className="mt-0.5 line-clamp-2 text-pretty text-[11px] text-text-3">
           {tool.description || 'No description'}
-        </div>
+        </p>
+        {tool.version !== null && (
+          <span className="mt-1.5 block font-mono text-[10px] text-text-3/70">v{tool.version}</span>
+        )}
       </div>
     </div>
   );

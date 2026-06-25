@@ -42,8 +42,18 @@ function jsonResponse(body: unknown): Response {
 }
 
 const tools = [
-  { name: 'attio_query_records', providerName: 'Attio', description: 'Find or query records.' },
-  { name: 'linear_list_issues', providerName: 'Linear', description: 'List Linear issues.' },
+  {
+    name: 'attio_query_records',
+    providerName: 'Attio',
+    description: 'Find or query records.',
+    version: '0.2.3',
+  },
+  {
+    name: 'linear_list_issues',
+    providerName: 'Linear',
+    description: 'List Linear issues.',
+    version: null,
+  },
 ];
 
 beforeEach(() => {
@@ -80,5 +90,18 @@ describe('ToolsLibrary', () => {
     renderPage();
 
     await waitFor(() => expect(document.body.textContent).toContain('2 items'));
+  });
+
+  it('shows version badge when tool has a resolved version', async () => {
+    renderPage();
+
+    await waitFor(() => expect(document.body.textContent).toContain('v0.2.3'));
+  });
+
+  it('omits version badge when version is null', async () => {
+    renderPage();
+
+    await waitFor(() => expect(document.body.textContent).toContain('linear_list_issues'));
+    expect(document.body.textContent).not.toContain('vnull');
   });
 });

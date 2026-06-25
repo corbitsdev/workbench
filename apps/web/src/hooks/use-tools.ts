@@ -6,6 +6,7 @@ const toolSummarySchema = type({
   name: 'string',
   providerName: 'string',
   description: 'string',
+  version: 'string | null',
 });
 
 const toolsResponseSchema = type({ tools: toolSummarySchema.array() });
@@ -17,6 +18,7 @@ const toolDetailSchema = type({
   providerName: 'string',
   description: 'string',
   inputSchema: 'unknown',
+  version: 'string | null',
 });
 
 const toolDetailResponseSchema = type({ tool: toolDetailSchema });
@@ -37,6 +39,7 @@ export function useToolsLibrary(tenantId?: string | null) {
       }
       return parsed.tools;
     },
+    enabled: tenantId !== null && tenantId !== undefined,
     staleTime: 5 * 60_000,
   });
 }
@@ -56,7 +59,7 @@ export function useToolDetail(name: string | null, tenantId?: string | null) {
       }
       return parsed.tool;
     },
-    enabled: Boolean(name),
+    enabled: Boolean(name) && tenantId !== null && tenantId !== undefined,
     staleTime: 5 * 60_000,
   });
 }
