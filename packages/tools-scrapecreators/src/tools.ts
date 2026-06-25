@@ -73,7 +73,7 @@ async function fetchJSON(
   return response.json();
 }
 
-function resolveLimit(args: Record<string, unknown>): number {
+function resolveLimit(args: { limit?: number }): number {
   if (typeof args.limit === "number" && args.limit > 0) {
     return Math.min(Math.floor(args.limit), MAX_LIMIT);
   }
@@ -394,7 +394,7 @@ async function searchTikTok(
     throw new Error(`scrapecreators_tiktok: ${parsed.summary}`);
   }
   const { query } = parsed;
-  const limit = resolveLimit(args);
+  const limit = resolveLimit(parsed);
   const url = new URL(`${resolvedBaseURL(config)}/v1/tiktok/search/keyword`);
   url.searchParams.set("query", query);
   url.searchParams.set("sort_by", "relevance");
@@ -420,7 +420,7 @@ async function searchInstagram(
     throw new Error(`scrapecreators_instagram: ${parsed.summary}`);
   }
   const { query } = parsed;
-  const limit = resolveLimit(args);
+  const limit = resolveLimit(parsed);
   const url = new URL(`${resolvedBaseURL(config)}/v2/instagram/reels/search`);
   url.searchParams.set("query", query);
   const data = await fetchJSON(config, url, signal);
@@ -440,7 +440,7 @@ async function searchThreads(
     throw new Error(`scrapecreators_threads: ${parsed.summary}`);
   }
   const { query } = parsed;
-  const limit = resolveLimit(args);
+  const limit = resolveLimit(parsed);
   const url = new URL(`${resolvedBaseURL(config)}/v1/threads/search`);
   url.searchParams.set("query", query);
   const data = await fetchJSON(config, url, signal);
@@ -466,7 +466,7 @@ async function searchPinterest(
     throw new Error(`scrapecreators_pinterest: ${parsed.summary}`);
   }
   const { query } = parsed;
-  const limit = resolveLimit(args);
+  const limit = resolveLimit(parsed);
   const url = new URL(`${resolvedBaseURL(config)}/v1/pinterest/search`);
   url.searchParams.set("query", query);
   const data = await fetchJSON(config, url, signal);
