@@ -73,7 +73,7 @@ describe("firecrawl_agent handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("prompt is required");
+    expect(result.content).toContain("prompt must be a string");
   });
 
   it("surfaces API errors", async () => {

@@ -171,6 +171,6 @@ describe("firecrawl_crawl_cancel handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("id is required");
+    expect(result.content).toContain("id must be a string");
   });
 });

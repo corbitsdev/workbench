@@ -9,15 +9,13 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
-  type FirecrawlToolsConfig,
+  ExtractStartArgsSchema,
+  RequiredIdArgsSchema,
   firecrawlFetchJSON,
-  optionalBoolean,
-  optionalRecord,
-  optionalString,
-  requiredString,
-  requiredStringArray,
+  parseArgs,
   resolveConfig,
   stringTool,
+  type FirecrawlToolsConfig,
 } from "./shared";
 
 export const FIRECRAWL_EXTRACT_START_DEFINITION: ToolDefinition = {
@@ -77,21 +75,22 @@ export function createExtractTools(config: FirecrawlToolsConfig): AgentTool[] {
   const resolved = resolveConfig(config);
 
   return [
-    stringTool(FIRECRAWL_EXTRACT_START_DEFINITION, async (args, signal) => {
-      const urls = requiredStringArray(args, "urls");
-      const prompt = optionalString(args.prompt);
-      const schema = optionalRecord(args.schema);
-      const enableWebSearch = optionalBoolean(args.enableWebSearch);
+    stringTool(FIRECRAWL_EXTRACT_START_DEFINITION, async (rawArgs, signal) => {
+      const args = parseArgs(
+        ExtractStartArgsSchema,
+        rawArgs,
+        "firecrawl_extract_start",
+      );
 
-      const body: Record<string, unknown> = { urls };
-      if (prompt !== null) {
-        body.prompt = prompt;
+      const body: Record<string, unknown> = { urls: args.urls };
+      if (args.prompt !== undefined) {
+        body.prompt = args.prompt;
       }
-      if (schema !== null) {
-        body.schema = schema;
+      if (args.schema !== undefined) {
+        body.schema = args.schema;
       }
-      if (enableWebSearch !== null) {
-        body.enableWebSearch = enableWebSearch;
+      if (args.enableWebSearch !== undefined) {
+        body.enableWebSearch = args.enableWebSearch;
       }
 
       return firecrawlFetchJSON(
@@ -101,8 +100,12 @@ export function createExtractTools(config: FirecrawlToolsConfig): AgentTool[] {
       );
     }),
 
-    stringTool(FIRECRAWL_EXTRACT_STATUS_DEFINITION, async (args, signal) => {
-      const id = requiredString(args, "id");
+    stringTool(FIRECRAWL_EXTRACT_STATUS_DEFINITION, async (rawArgs, signal) => {
+      const { id } = parseArgs(
+        RequiredIdArgsSchema,
+        rawArgs,
+        "firecrawl_extract_status",
+      );
       return firecrawlFetchJSON(
         resolved,
         { method: "GET", path: `/extract/${encodeURIComponent(id)}` },

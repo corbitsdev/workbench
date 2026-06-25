@@ -1,9 +1,11 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
+  MonitorCreateArgsSchema,
+  MonitorUpdateArgsSchema,
+  RequiredIdArgsSchema,
   firecrawlFetchJSON,
-  optionalRecord,
-  requiredString,
+  parseArgs,
   resolveConfig,
   stringTool,
   type FirecrawlToolsConfig,
@@ -12,13 +14,14 @@ import {
 
 async function createMonitor(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const monitorConfig = optionalRecord(args.config);
-  if (monitorConfig === null) {
-    throw new Error("config is required");
-  }
+  const { config: monitorConfig } = parseArgs(
+    MonitorCreateArgsSchema,
+    rawArgs,
+    "firecrawl_monitor_create",
+  );
 
   return firecrawlFetchJSON(
     config,
@@ -29,10 +32,14 @@ async function createMonitor(
 
 async function getMonitor(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_monitor_get",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "GET", path: `/monitor/${encodeURIComponent(id)}` },
@@ -42,14 +49,14 @@ async function getMonitor(
 
 async function updateMonitor(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
-  const monitorConfig = optionalRecord(args.config);
-  if (monitorConfig === null) {
-    throw new Error("config is required");
-  }
+  const { id, config: monitorConfig } = parseArgs(
+    MonitorUpdateArgsSchema,
+    rawArgs,
+    "firecrawl_monitor_update",
+  );
 
   return firecrawlFetchJSON(
     config,
@@ -64,10 +71,14 @@ async function updateMonitor(
 
 async function deleteMonitor(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_monitor_delete",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "DELETE", path: `/monitor/${encodeURIComponent(id)}` },
@@ -89,10 +100,14 @@ async function listMonitors(
 
 async function runMonitor(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_monitor_run",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "POST", path: `/monitor/${encodeURIComponent(id)}/run` },
@@ -102,10 +117,14 @@ async function runMonitor(
 
 async function listMonitorChecks(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_monitor_check",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "GET", path: `/monitor/${encodeURIComponent(id)}/checks` },

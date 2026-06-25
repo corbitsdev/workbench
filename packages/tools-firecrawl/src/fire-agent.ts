@@ -1,9 +1,9 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
+  FireAgentArgsSchema,
   firecrawlFetchJSON,
-  optionalRecord,
-  requiredString,
+  parseArgs,
   resolveConfig,
   stringTool,
   type FirecrawlToolsConfig,
@@ -12,15 +12,14 @@ import {
 
 async function runAgent(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const prompt = requiredString(args, "prompt");
-  const schema = optionalRecord(args.schema);
+  const args = parseArgs(FireAgentArgsSchema, rawArgs, "firecrawl_agent");
 
-  const body: Record<string, unknown> = { prompt };
-  if (schema !== null) {
-    body.schema = schema;
+  const body: Record<string, unknown> = { prompt: args.prompt };
+  if (args.schema !== undefined) {
+    body.schema = args.schema;
   }
 
   return firecrawlFetchJSON(
