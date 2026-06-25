@@ -1,18 +1,21 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import { normalizePolymarketMarket } from "./normalize";
-import type { PolymarketMarket } from "./types";
+import { PolymarketMarket } from "./types";
 
 const POLYMARKET_API_BASE = "https://gamma-api.polymarket.com";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
+// Not JSON-expressible (function field) — kept as plain type.
 export type PolymarketFetch = (
   url: string,
   init?: RequestInit,
 ) => Promise<Response>;
 
+// Contains a function field (fetcher) — not serializable, kept as plain type.
 export type PolymarketToolsConfig = {
   fetcher?: PolymarketFetch;
 };
@@ -37,47 +40,26 @@ export const POLYMARKET_ODDS_DEFINITION: ToolDefinition = {
   },
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function parsePolymarketMarket(value: unknown): PolymarketMarket {
-  if (!isRecord(value)) {
-    throw new Error("Polymarket market item is not an object");
-  }
-  const outcomePrices = Array.isArray(value.outcomePrices)
-    ? value.outcomePrices.filter((p): p is string => typeof p === "string")
-    : [];
-  return {
-    id: typeof value.id === "string" ? value.id : String(value.id),
-    question: typeof value.question === "string" ? value.question : "",
-    outcomePrices,
-    volume24hr:
-      typeof value.volume24hr === "number" ? value.volume24hr : undefined,
-    endDate: typeof value.endDate === "string" ? value.endDate : undefined,
-    conditionId: typeof value.conditionId === "string" ? value.conditionId : "",
-  };
-}
+const SearchArgs = type({ query: "string > 0", "limit?": "number" });
 
 async function searchPolymarket(
   config: PolymarketToolsConfig,
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = SearchArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`polymarket_odds: ${parsed.summary}`);
   }
 
+  const rawLimit = parsed.limit;
   const limit =
-    Number.isInteger(args.limit) &&
-    typeof args.limit === "number" &&
-    args.limit > 0
-      ? Math.min(args.limit, MAX_LIMIT)
+    rawLimit !== undefined && Number.isInteger(rawLimit) && rawLimit > 0
+      ? Math.min(rawLimit, MAX_LIMIT)
       : DEFAULT_LIMIT;
 
   const url = new URL(`${POLYMARKET_API_BASE}/markets`);
-  url.searchParams.set("q", query);
+  url.searchParams.set("q", parsed.query);
   url.searchParams.set("active", "true");
   url.searchParams.set("limit", String(limit));
 
@@ -90,7 +72,12 @@ async function searchPolymarket(
   }
 
   const raw: unknown = await response.json();
-  const markets = Array.isArray(raw) ? raw.map(parsePolymarketMarket) : [];
+  const markets = Array.isArray(raw)
+    ? raw.flatMap((item) => {
+        const p = PolymarketMarket(item);
+        return p instanceof type.errors ? [] : [p];
+      })
+    : [];
   const items = markets.map(normalizePolymarketMarket);
 
   return JSON.stringify(items, null, 2);
