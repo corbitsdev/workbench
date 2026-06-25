@@ -32,6 +32,31 @@ export const transcript = pgTable('transcript', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
+// Server-persisted per-member UI preferences (theme, chat display options, …).
+// One row per (tenant, member principal); the `preferences` blob is an open map
+// so new keys need no migration. Keyed off the user's global-org member
+// principal (Interchange-owned; referenced by id only).
+export const memberPreferences = pgTable(
+  'member_preferences',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: text('tenant_id').notNull(),
+    memberPrincipalId: text('member_principal_id').notNull(),
+    preferences: jsonb('preferences').notNull().default({}),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    memberPreferencesMemberUniq: unique('member_preferences_tenant_principal_uniq').on(
+      t.tenantId,
+      t.memberPrincipalId
+    ),
+  })
+);
+
 // Binary files uploaded before any workflow run exists. Artifacts require a
 // sessionId (FK to workflow_run), but an xlsx arrives ahead of the run that
 // will consume it (CL-1961), so uploads live in their own tenant-owned table

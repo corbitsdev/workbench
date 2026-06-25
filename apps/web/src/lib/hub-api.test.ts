@@ -164,6 +164,26 @@ describe('hub-api network helpers', () => {
     expect(calls[0]!.init?.credentials).toBe('include');
   });
 
+  it('getMe parses preferences at the boundary and degrades garbage to {}', async () => {
+    installFetch(() => ({
+      body: { userId: 'u1', userName: 'Sawyer', preferences: { theme: 'not-a-theme' } },
+    }));
+    const me = await getMe();
+    expect(me.preferences).toEqual({});
+  });
+
+  it('getMe keeps a valid preferences blob intact', async () => {
+    installFetch(() => ({
+      body: {
+        userId: 'u1',
+        userName: 'Sawyer',
+        preferences: { theme: 'notion', compactToolActivity: true },
+      },
+    }));
+    const me = await getMe();
+    expect(me.preferences).toEqual({ theme: 'notion', compactToolActivity: true });
+  });
+
   it('ensureMeSynced GETs first and POSTs only when personalAgentSyncAvailable', async () => {
     const stale = { userId: 'u1', personalAgentSyncAvailable: true };
     const fresh = { userId: 'u1', personalAgentSyncAvailable: false };

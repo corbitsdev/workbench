@@ -1,38 +1,25 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
+import { PREFERENCE_KEYS, setPreference, usePreferenceRaw } from './preferences-store';
 
-const STORAGE_KEY = 'cw-compact-tools';
-const DEFAULT_COMPACT = false;
-
-function readStored(): boolean {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === 'true';
-  } catch {
-    // localStorage unavailable (e.g. private mode) — fall through to default.
-    return DEFAULT_COMPACT;
-  }
-}
+const STORAGE_KEY = PREFERENCE_KEYS.compactToolActivity;
 
 /**
  * Persists the "compact tool activity" preference: when on, a turn's many tool
- * calls collapse into a single summary line in the chat narrative. Per-browser
- * via localStorage, mirroring `useTheme`. Defaults off so nothing changes until
- * opted in.
+ * calls collapse into a single summary line in the chat narrative. Backed by the
+ * shared preferences store (localStorage cache + server hydration). Defaults off
+ * so nothing changes until opted in.
  */
 export function useCompactToolActivity(): {
   compact: boolean;
   setCompact: (value: boolean) => void;
 } {
-  const [compact, setCompactState] = useState<boolean>(readStored);
+  const raw = usePreferenceRaw(STORAGE_KEY);
+  // Default off. Any non-`'true'` stored value (including absent) reads as off,
+  // so there is nothing to canonicalize — never write on mere mount, which would
+  // persist the default for a user who never opted in.
+  const compact = raw === 'true';
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, String(compact));
-    } catch {
-      // Persistence is best-effort; ignore write failures.
-    }
-  }, [compact]);
-
-  const setCompact = useCallback((next: boolean) => setCompactState(next), []);
+  const setCompact = useCallback((next: boolean) => setPreference(STORAGE_KEY, String(next)), []);
 
   return { compact, setCompact };
 }

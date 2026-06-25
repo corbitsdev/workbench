@@ -1,7 +1,9 @@
 import { useEffect, useCallback, createContext, useContext, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { hydrateServerPreferences, setPreferencePersister } from '@workbench/ui';
 import { authClient } from '../lib/auth-client';
 import { postMe } from '../lib/hub-api';
+import { createPreferencesPersister } from '../lib/preferences-persister';
 
 type Session =
   | { status: 'loading' }
@@ -41,11 +43,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     staleTime: 5 * 60_000,
   });
 
+  // Route preference writes through a debounced server PATCH for the app's
+  // lifetime; the localStorage cache in the store keeps reads instant.
+  useEffect(() => {
+    const { persist, flush } = createPreferencesPersister();
+    setPreferencePersister(persist);
+    function flushOnHide() {
+      if (document.visibilityState === 'hidden') flush();
+    }
+    document.addEventListener('visibilitychange', flushOnHide);
+    return () => {
+      document.removeEventListener('visibilitychange', flushOnHide);
+      flush();
+      setPreferencePersister(null);
+    };
+  }, []);
+
   useEffect(() => {
     if (isLoading || !data?.user) return;
-    void postMe().catch(() => {
-      // Non-fatal: provisioning guard and chat connect will retry sync.
-    });
+    void postMe()
+      .then((me) => {
+        if (me.preferences) hydrateServerPreferences(me.preferences);
+      })
+      .catch(() => {
+        // Non-fatal: provisioning guard and chat connect will retry sync.
+      });
   }, [isLoading, data?.user?.id]);
 
   const session: Session = isLoading

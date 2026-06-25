@@ -13,10 +13,10 @@ afterEach(() => {
 });
 
 describe('useCompactToolActivity', () => {
-  it('defaults to off and persists the default on mount', () => {
+  it('defaults to off and does NOT write the default to storage on mount', () => {
     const { result } = renderHook(() => useCompactToolActivity());
     expect(result.current.compact).toBe(false);
-    expect(localStorage.getItem(STORAGE_KEY)).toBe('false');
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
   it('reads a persisted "true" value on init', () => {

@@ -191,3 +191,24 @@ export type SavedRating = typeof SavedRating.infer;
 
 export const FeedbackListResponse = type({ ratings: SavedRating.array() });
 export type FeedbackListResponse = typeof FeedbackListResponse.infer;
+
+// Per-member UI preferences, persisted server-side and shared by the hub route,
+// the web boundary parser, and the Settings UI. Known keys are validated; the
+// `[string]` index keeps the map open so a new preference needs no schema or DB
+// migration (it just rides along in the jsonb blob). Every key is optional — a
+// PATCH carries only what changed and is merged into the stored blob.
+export const ToolSummaryStyleSchema = type("'symbols' | 'natural' | 'detail' | 'varied' | 'mixed'");
+export type ToolSummaryStyle = typeof ToolSummaryStyleSchema.infer;
+
+// Kept in sync with the `Theme` union in `@workbench/ui`'s use-theme.ts (that
+// package stays dependency-free, so the union is mirrored there, not imported).
+export const ThemeSchema = type("'corbits-dark' | 'corbits-light' | 'tkww' | 'notion'");
+export type Theme = typeof ThemeSchema.infer;
+
+export const MemberPreferences = type({
+  'theme?': ThemeSchema,
+  'compactToolActivity?': 'boolean',
+  'toolSummaryStyle?': ToolSummaryStyleSchema,
+  '[string]': 'unknown',
+});
+export type MemberPreferences = typeof MemberPreferences.infer;

@@ -1,16 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { act, renderHook } from '@testing-library/react';
 import { isTheme, THEMES, useTheme } from './use-theme';
+import { setPreferencePersister } from './preferences-store';
 
 const STORAGE_KEY = 'cw-theme';
 
 beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute('data-theme');
+  setPreferencePersister(null);
 });
 
 afterEach(() => {
   localStorage.clear();
+  setPreferencePersister(null);
 });
 
 describe('THEMES / isTheme', () => {
@@ -41,7 +44,35 @@ describe('useTheme', () => {
     const { result } = renderHook(() => useTheme());
     expect(result.current.theme).toBe('corbits-light');
     expect(document.documentElement.getAttribute('data-theme')).toBe('corbits-light');
-    expect(localStorage.getItem(STORAGE_KEY)).toBe('corbits-light');
+  });
+
+  it('does not write to localStorage on mount when nothing is stored', () => {
+    renderHook(() => useTheme());
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it('does not PATCH the server on first mount with empty storage', () => {
+    const persist = mock((_k: string, _v: string) => {});
+    setPreferencePersister(persist);
+    renderHook(() => useTheme());
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it('does not write when a valid value is already stored (no echo)', () => {
+    localStorage.setItem(STORAGE_KEY, 'tkww');
+    let writes = 0;
+    const original = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = (k: string, v: string) => {
+      writes += 1;
+      original(k, v);
+    };
+    try {
+      renderHook(() => useTheme());
+    } finally {
+      localStorage.setItem = original;
+    }
+    expect(writes).toBe(0);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('tkww');
   });
 
   it('reads a valid persisted corbits-light theme on init', () => {

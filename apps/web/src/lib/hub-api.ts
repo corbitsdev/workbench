@@ -3,6 +3,8 @@ import {
   FeedbackListResponse,
   type FeedbackSubjectKind,
   type SavedRating,
+  type MemberPreferences,
+  MemberPreferences as MemberPreferencesSchema,
 } from '@workbench/shared';
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
@@ -103,10 +105,23 @@ export type MeResponse = {
   credentialResolved: boolean;
   /** When true, call postMe() to provision or push template/grant updates. */
   personalAgentSyncAvailable?: boolean;
+  /** Server-persisted UI preferences, folded into the bootstrap to avoid an extra round-trip. */
+  preferences?: MemberPreferences;
 };
 
+/**
+ * Validates the `preferences` blob at the web trust boundary, degrading to an
+ * empty map on a malformed payload so a bad server value can never poison the
+ * preferences store.
+ */
+function parseMePreferences(me: MeResponse): MeResponse {
+  if (me.preferences === undefined) return me;
+  const parsed = MemberPreferencesSchema(me.preferences);
+  return { ...me, preferences: parsed instanceof type.errors ? {} : parsed };
+}
+
 export async function getMe(): Promise<MeResponse> {
-  return hubFetch<MeResponse>('GET', 'v1/me');
+  return parseMePreferences(await hubFetch<MeResponse>('GET', 'v1/me'));
 }
 
 export type PostMeBody = {
@@ -115,7 +130,14 @@ export type PostMeBody = {
 
 /** Ensures org membership / Myra and syncs live session grants (safe to repeat). */
 export async function postMe(body: PostMeBody = {}): Promise<MeResponse> {
-  return hubFetch<MeResponse>('POST', 'v1/me', body);
+  return parseMePreferences(await hubFetch<MeResponse>('POST', 'v1/me', body));
+}
+
+/** Merge a partial patch into the caller's persisted UI preferences. */
+export async function patchMePreferences(
+  patch: Record<string, unknown>
+): Promise<MemberPreferences> {
+  return hubFetch<MemberPreferences>('PATCH', 'v1/me/preferences', patch);
 }
 
 /** Read-only status; runs postMe when the hub signals an update is available. */

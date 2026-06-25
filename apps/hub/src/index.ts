@@ -74,6 +74,9 @@ import { createActivityRouter } from './routes/activity';
 import { createGammaTemplatesRouter } from './routes/gamma-templates';
 import { createApprovalsRouter, createInternalApprovalsRouter } from './routes/approvals';
 import { createFeedbackRouter } from './routes/feedback';
+import type { MemberPreferences } from '@workbench/shared';
+import { createMePreferencesRouter } from './routes/me-preferences';
+import { readMemberPreferences } from './lib/member-preferences';
 import { createHubToolsRouter } from './routes/hub-tools';
 import { createToolCredentialsRouter } from './routes/tool-credentials';
 import { createToolManifestRouter } from './routes/tool-manifest';
@@ -751,6 +754,13 @@ v1.get('/me', async (c) => {
     log.warn('Root tenant lookup failed on /me', { error: err, userId });
   }
 
+  // Fold persisted UI preferences into the bootstrap so the web client needs no
+  // separate request (no theme flash on load).
+  let preferences: MemberPreferences = {};
+  if (workingTenantId && memberPrincipalId) {
+    preferences = await readMemberPreferences(db, workingTenantId, memberPrincipalId);
+  }
+
   return c.json({
     userId,
     userName,
@@ -762,6 +772,7 @@ v1.get('/me', async (c) => {
     provisioned: workingTenantId !== null,
     credentialResolved,
     personalAgentSyncAvailable,
+    preferences,
   });
 });
 
@@ -782,7 +793,7 @@ v1.post('/me', async (c) => {
   });
 
   const syncOutcome = await syncPersonalAgentForUser(userId, syncPersonalAgent);
-  const { workingTenantId, paInstanceId } = syncOutcome;
+  const { workingTenantId, memberPrincipalId, paInstanceId } = syncOutcome;
 
   let credentialResolved = false;
   if (paInstanceId && workingTenantId) {
@@ -846,6 +857,13 @@ v1.post('/me', async (c) => {
     remainingReason: postAssessment.reason,
   });
 
+  // Fold persisted UI preferences into the bootstrap response (the web client
+  // calls POST /me at startup) so reads cost no extra round-trip.
+  let preferences: MemberPreferences = {};
+  if (workingTenantId && memberPrincipalId) {
+    preferences = await readMemberPreferences(db, workingTenantId, memberPrincipalId);
+  }
+
   return c.json({
     userId,
     userName,
@@ -855,6 +873,7 @@ v1.post('/me', async (c) => {
     provisioned: workingTenantId !== null,
     credentialResolved,
     personalAgentSyncAvailable,
+    preferences,
   });
 });
 
@@ -868,6 +887,7 @@ v1.route('/', createArtifactsRouter(db));
 v1.route('/', createGammaTemplatesRouter(db));
 v1.route('/', createApprovalsRouter(db));
 v1.route('/', createFeedbackRouter(db));
+v1.route('/', createMePreferencesRouter(db));
 v1.route('/', createUploadsRouter(db));
 v1.route('/', createSkillsRouter(db, assetService, repoStore.repoStore));
 v1.route('/', createToolsRouter(db, assetService));

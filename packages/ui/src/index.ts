@@ -18,6 +18,13 @@ export { cn, toHumanLabel } from './utils';
 export { useTheme, isTheme, THEMES, THEME_LABELS, type Theme } from './use-theme';
 export { useCompactToolActivity } from './use-compact-tool-activity';
 export { useToolSummaryStyle, type ToolSummaryStyle } from './use-tool-summary-style';
+export {
+  setPreferencePersister,
+  hydrateServerPreferences,
+  serverPatchForRawChange,
+  PREFERENCE_KEYS,
+  type ServerPreferences,
+} from './preferences-store';
 export { useResizableRail, type ResizableRail } from './use-resizable-rail';
 export { default as HorizontalStepper } from './HorizontalStepper';
 export { default as ProgressChecklist, type ProgressChecklistProps } from './ProgressChecklist';

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
+import { PREFERENCE_KEYS, setPreference, usePreferenceRaw } from './preferences-store';
 
 /**
  * Phrasing for the collapsed tool-activity summary line. Kept in sync with
+ * `ToolSummaryStyleSchema` in `@workbench/shared` (the server-side validator) and
  * `ToolSummaryStyle` in `@workbench/agents`; this package stays dependency-free,
  * so the union is declared here and validated on read.
  */
@@ -9,38 +11,26 @@ export type ToolSummaryStyle = 'symbols' | 'natural' | 'detail' | 'varied' | 'mi
 
 const STYLES = new Set<string>(['symbols', 'natural', 'detail', 'varied', 'mixed']);
 
-const STORAGE_KEY = 'cw-tool-summary-style';
+const STORAGE_KEY = PREFERENCE_KEYS.toolSummaryStyle;
 const DEFAULT_STYLE: ToolSummaryStyle = 'symbols';
 
-function readStored(): ToolSummaryStyle {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored !== null && STYLES.has(stored)) return stored as ToolSummaryStyle;
-  } catch {
-    // localStorage unavailable (e.g. private mode) — fall through to default.
-  }
-  return DEFAULT_STYLE;
+function isStyle(value: string | null): value is ToolSummaryStyle {
+  return value !== null && STYLES.has(value);
 }
 
 /**
- * Persists the tool-summary phrasing preference. Per-browser via localStorage,
- * mirroring `useTheme`. Defaults to `symbols` (the original compact phrasing).
+ * Persists the tool-summary phrasing preference. Backed by the shared
+ * preferences store (localStorage cache + server hydration). Defaults to
+ * `symbols` (the original compact phrasing).
  */
 export function useToolSummaryStyle(): {
   style: ToolSummaryStyle;
   setStyle: (value: ToolSummaryStyle) => void;
 } {
-  const [style, setStyleState] = useState<ToolSummaryStyle>(readStored);
+  const raw = usePreferenceRaw(STORAGE_KEY);
+  const style = isStyle(raw) ? raw : DEFAULT_STYLE;
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, style);
-    } catch {
-      // Persistence is best-effort; ignore write failures.
-    }
-  }, [style]);
-
-  const setStyle = useCallback((next: ToolSummaryStyle) => setStyleState(next), []);
+  const setStyle = useCallback((next: ToolSummaryStyle) => setPreference(STORAGE_KEY, next), []);
 
   return { style, setStyle };
 }

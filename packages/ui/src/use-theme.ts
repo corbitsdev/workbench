@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
+import {
+  PREFERENCE_KEYS,
+  hydratePreference,
+  setPreference,
+  usePreferenceRaw,
+} from './preferences-store';
 
+// Kept in sync with `ThemeSchema` in `@workbench/shared` (the server-side
+// validator on PATCH /me/preferences); this package stays dependency-free, so
+// the union is mirrored here rather than imported.
 export type Theme = 'corbits-dark' | 'corbits-light' | 'tkww' | 'notion';
 
 export const THEMES: readonly Theme[] = ['corbits-dark', 'corbits-light', 'tkww', 'notion'];
@@ -23,23 +32,16 @@ const LEGACY_THEME_MAP = new Map<string, Theme>([
   ['light', 'corbits-light'],
 ]);
 
-const STORAGE_KEY = 'cw-theme';
+const STORAGE_KEY = PREFERENCE_KEYS.theme;
 const DEFAULT_THEME: Theme = 'corbits-light';
 
-function readStoredTheme(): Theme {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored !== null) {
-      const migrated = LEGACY_THEME_MAP.get(stored);
-      const theme = migrated ?? (isTheme(stored) ? stored : null);
-      if (theme !== null) {
-        // Write back immediately so the stored value is always a current Theme name.
-        localStorage.setItem(STORAGE_KEY, theme);
-        return theme;
-      }
-    }
-  } catch {
-    // localStorage unavailable (e.g. private mode) — fall through to default.
+// Resolves a raw stored value to a current Theme, applying the legacy alias map
+// and falling back to the default for unknown/absent values.
+function resolveTheme(raw: string | null): Theme {
+  if (raw !== null) {
+    const migrated = LEGACY_THEME_MAP.get(raw);
+    if (migrated !== undefined) return migrated;
+    if (isTheme(raw)) return raw;
   }
   return DEFAULT_THEME;
 }
@@ -49,18 +51,21 @@ function applyTheme(theme: Theme): void {
 }
 
 export function useTheme(): { theme: Theme; setTheme: (theme: Theme) => void } {
-  const [theme, setThemeState] = useState<Theme>(readStoredTheme);
+  const raw = usePreferenceRaw(STORAGE_KEY);
+  const theme = resolveTheme(raw);
 
   useEffect(() => {
     applyTheme(theme);
-    try {
-      localStorage.setItem(STORAGE_KEY, theme);
-    } catch {
-      // Persistence is best-effort; ignore write failures.
+    // Canonicalize a *stored* legacy/junk value to its current name without a
+    // server echo. Never write on behalf of a user who has no stored value:
+    // doing so would persist the default and PATCH it to the server as if it
+    // were a deliberate choice. A brand-new user stays unset until they act.
+    if (raw !== null && raw !== theme) {
+      hydratePreference(STORAGE_KEY, theme);
     }
-  }, [theme]);
+  }, [raw, theme]);
 
-  const setTheme = useCallback((next: Theme) => setThemeState(next), []);
+  const setTheme = useCallback((next: Theme) => setPreference(STORAGE_KEY, next), []);
 
   return { theme, setTheme };
 }
