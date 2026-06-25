@@ -26,19 +26,29 @@ export type RedditToolsConfig = {
   fetcher?: RedditFetch;
 };
 
+const RedditSortLiteral = type(
+  '"relevance" | "new" | "top" | "comment_count"',
+);
+const RedditSubredditSortLiteral = type(
+  '"relevance" | "hot" | "top" | "new" | "comments"',
+);
+const RedditTimeframeLiteral = type(
+  '"all" | "day" | "week" | "month" | "year"',
+);
+
 const RedditSearchArgs = type({
   query: "string > 0",
-  "sort?": "string",
-  "timeframe?": "string",
-  "limit?": "number",
+  "sort?": RedditSortLiteral,
+  "timeframe?": RedditTimeframeLiteral,
+  "limit?": "1 <= number.integer <= 100",
 });
 
 const RedditSubredditSearchArgs = type({
   subreddit: "string > 0",
   query: "string > 0",
-  "sort?": "string",
-  "timeframe?": "string",
-  "limit?": "number",
+  "sort?": RedditSubredditSortLiteral,
+  "timeframe?": RedditTimeframeLiteral,
+  "limit?": "1 <= number.integer <= 100",
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -198,14 +208,20 @@ function parseRedditPost(value: unknown): RedditPost | null {
   return post;
 }
 
-function resolveLimit(args: Record<string, unknown>): number {
+type CommonParams = {
+  sort?: string;
+  timeframe?: string;
+  limit?: number;
+};
+
+function resolveLimit(args: CommonParams): number {
   if (typeof args.limit === "number" && args.limit > 0) {
     return Math.min(Math.floor(args.limit), MAX_LIMIT);
   }
   return DEFAULT_LIMIT;
 }
 
-function applyCommonParams(url: URL, args: Record<string, unknown>): void {
+function applyCommonParams(url: URL, args: CommonParams): void {
   const sort =
     typeof args.sort === "string" && args.sort.length > 0
       ? args.sort
@@ -287,13 +303,13 @@ async function searchReddit(
   }
   const url = new URL(`${resolvedBaseURL(config)}/v1/reddit/search`);
   url.searchParams.set("query", parsed.query);
-  applyCommonParams(url, args);
+  applyCommonParams(url, parsed);
 
   const data = await fetchJSON(config, url, signal);
   const posts = extractPosts(data)
     .map(parseRedditPost)
     .filter((post): post is RedditPost => post !== null)
-    .slice(0, resolveLimit(args));
+    .slice(0, resolveLimit(parsed));
   return JSON.stringify(posts.map(normalizeRedditPost), null, 2);
 }
 
@@ -309,13 +325,13 @@ async function searchSubreddit(
   const url = new URL(`${resolvedBaseURL(config)}/v1/reddit/subreddit/search`);
   url.searchParams.set("subreddit", parsed.subreddit);
   url.searchParams.set("query", parsed.query);
-  applyCommonParams(url, args);
+  applyCommonParams(url, parsed);
 
   const data = await fetchJSON(config, url, signal);
   const posts = extractPosts(data)
     .map(parseRedditPost)
     .filter((post): post is RedditPost => post !== null)
-    .slice(0, resolveLimit(args));
+    .slice(0, resolveLimit(parsed));
   return JSON.stringify(posts.map(normalizeRedditPost), null, 2);
 }
 
