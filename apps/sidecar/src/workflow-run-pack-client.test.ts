@@ -15,7 +15,33 @@ import {
   createMultistepSignalRouter,
   createWorkflowRunPackClient,
   createWorkflowRunPackPushingRepoStore,
+  WorkflowRunPackTooLargeError,
 } from "./workflow-run-pack-client";
+
+// Build a real linear workflow-run repo and append one commit per call, the
+// append-one-commit-per-event shape the pack client walks.
+async function makeWorkflowRunRepo(): Promise<{
+  dir: string;
+  commit: (seq: number) => Promise<string>;
+}> {
+  const dir = await mkdtemp(join(tmpdir(), "wf-pack-"));
+  await git.init({ fs, dir, defaultBranch: "main" });
+  await mkdir(join(dir, "runs", "r-1", "events"), { recursive: true });
+  async function commit(seq: number): Promise<string> {
+    await writeFile(
+      join(dir, "runs", "r-1", "events", `${String(seq)}.json`),
+      JSON.stringify({ seq }),
+    );
+    await git.add({ fs, dir, filepath: `runs/r-1/events/${String(seq)}.json` });
+    return git.commit({
+      fs,
+      dir,
+      message: `event-${String(seq)}`,
+      author: { name: "test", email: "test@example.com" },
+    });
+  }
+  return { dir, commit };
+}
 
 function createRecordingUnderlyingRepoStore(repoDir = "/tmp/unused"): {
   store: RepoStore;
@@ -160,6 +186,374 @@ describe("createWorkflowRunPackClient", () => {
     } finally {
       await rm(sourceDir, { recursive: true, force: true });
       await rm(targetDir, { recursive: true, force: true });
+    }
+  });
+
+  test("after an acked push, the next push ships only NEW commits as a delta the hub already-warm receiver applies", async () => {
+    // The cursor advances on ack, so the second push must carry only the
+    // commits appended since the first — proportional to NEW events, not the
+    // whole run history (the O(N^2) growth that OOM-killed the sidecar,
+    // CL-2340). We prove "delta, not full chain" two ways: the warm hub
+    // applies the second pack cleanly onto the tip it already holds, AND that
+    // second pack does NOT apply onto an EMPTY repo (it lacks the ancestors).
+    const src = await makeWorkflowRunRepo();
+    const hubDir = await mkdtemp(join(tmpdir(), "wf-hub-"));
+    const emptyDir = await mkdtemp(join(tmpdir(), "wf-empty-"));
+    try {
+      await git.init({ fs, dir: hubDir, defaultBranch: "main" });
+      const { store } = createRecordingUnderlyingRepoStore(src.dir);
+      let hubTip: string | null = null;
+      let transfer = 0;
+      let lastPack: Uint8Array | null = null;
+      const client = createWorkflowRunPackClient({
+        substrate: store,
+        hubLink: {
+          async pushWorkflowRunPack(opts) {
+            // Stand in for the real hub: durably apply the pack, then ack.
+            transfer += 1;
+            lastPack = opts.pack;
+            await receivePackObjects(
+              hubDir,
+              opts.pack,
+              opts.ref,
+              opts.commitSha,
+              `t-${String(transfer)}`,
+              hubTip,
+            );
+            hubTip = opts.commitSha;
+          },
+        },
+      });
+      const repoId: RepoId = { kind: "workflow-run", id: "agent-example-com" };
+      const ref = "refs/heads/main";
+
+      await src.commit(0);
+      await src.commit(1);
+      await client.push({ agentAddress: "a@example.com", repoId, ref });
+      expect(await git.log({ fs, dir: hubDir, ref })).toHaveLength(2);
+
+      const c2 = await src.commit(2);
+      const c3 = await src.commit(3);
+      await client.push({ agentAddress: "a@example.com", repoId, ref });
+      // Warm hub now holds the full 4-commit chain with no dangling parent.
+      expect(await git.resolveRef({ fs, dir: hubDir, ref })).toBe(c3);
+      expect(await git.log({ fs, dir: hubDir, ref })).toHaveLength(4);
+
+      // The second pack is a genuine delta: applied to an EMPTY repo its
+      // objects lack the ancestors c0/c1, so a full-history walk from the tip
+      // cannot complete (throws on the missing parent, or truncates short of
+      // the 4 commits a full-chain pack would carry). A full-chain second pack
+      // would instead walk all 4 here.
+      await git.init({ fs, dir: emptyDir, defaultBranch: "main" });
+      expect(lastPack).not.toBeNull();
+      await receivePackObjects(emptyDir, lastPack!, ref, c3, "t-empty", null);
+      let fullWalk = -1;
+      try {
+        fullWalk = (await git.log({ fs, dir: emptyDir, ref })).length;
+      } catch {
+        fullWalk = -1;
+      }
+      expect(fullWalk).toBeLessThan(4);
+      // Sanity: the delta really did carry c2 and c3 onto the warm hub.
+      expect(c2).not.toBe(c3);
+    } finally {
+      await rm(src.dir, { recursive: true, force: true });
+      await rm(hubDir, { recursive: true, force: true });
+      await rm(emptyDir, { recursive: true, force: true });
+    }
+  });
+
+  test("a rejected push does NOT advance the cursor, so the retry re-ships the un-acked commits", async () => {
+    // The mirror of the upstream poisoning bug: because the cursor advances
+    // only on ack, a failed push leaves it pointing at the last GOOD tip. The
+    // next push therefore re-includes the commits the rejected push tried to
+    // send, and the warm hub applies them with no dangling parent (CL-2340).
+    const src = await makeWorkflowRunRepo();
+    const hubDir = await mkdtemp(join(tmpdir(), "wf-hub-"));
+    try {
+      await git.init({ fs, dir: hubDir, defaultBranch: "main" });
+      const { store } = createRecordingUnderlyingRepoStore(src.dir);
+      let hubTip: string | null = null;
+      let transfer = 0;
+      let rejectNext = false;
+      const client = createWorkflowRunPackClient({
+        substrate: store,
+        hubLink: {
+          async pushWorkflowRunPack(opts) {
+            if (rejectNext) {
+              throw new Error("hub_rejected: simulated transient");
+            }
+            transfer += 1;
+            await receivePackObjects(
+              hubDir,
+              opts.pack,
+              opts.ref,
+              opts.commitSha,
+              `t-${String(transfer)}`,
+              hubTip,
+            );
+            hubTip = opts.commitSha;
+          },
+        },
+      });
+      const repoId: RepoId = { kind: "workflow-run", id: "agent-example-com" };
+      const ref = "refs/heads/main";
+
+      await src.commit(0);
+      await src.commit(1);
+      await client.push({ agentAddress: "a@example.com", repoId, ref }); // cursor -> c1
+      expect(await git.log({ fs, dir: hubDir, ref })).toHaveLength(2);
+
+      await src.commit(2);
+      rejectNext = true;
+      await expect(
+        client.push({ agentAddress: "a@example.com", repoId, ref }),
+      ).rejects.toThrow(/simulated transient/);
+      rejectNext = false;
+
+      const c3 = await src.commit(3);
+      // Cursor stayed at c1, so this delta re-ships c2 and c3; the warm hub
+      // applies both and lands on c3 with the full 4-commit chain intact.
+      await client.push({ agentAddress: "a@example.com", repoId, ref });
+      expect(await git.resolveRef({ fs, dir: hubDir, ref })).toBe(c3);
+      expect(await git.log({ fs, dir: hubDir, ref })).toHaveLength(4);
+    } finally {
+      await rm(src.dir, { recursive: true, force: true });
+      await rm(hubDir, { recursive: true, force: true });
+    }
+  });
+
+  test("a failed push resets the cursor so the next push self-heals with a full chain a cold hub can apply", async () => {
+    // Critique #1: the cursor must not strand a run against a hub that lost its
+    // base (a cold-restarted hub whose durable repo was wiped). A failed push
+    // drops the cursor, so the retry re-bootstraps a full chain — exactly the
+    // self-healing the old full-chain pack always had (CL-2340).
+    const src = await makeWorkflowRunRepo();
+    const coldHub = await mkdtemp(join(tmpdir(), "wf-cold-"));
+    try {
+      const { store } = createRecordingUnderlyingRepoStore(src.dir);
+      let failNext = false;
+      let lastPack: Uint8Array | null = null;
+      const client = createWorkflowRunPackClient({
+        substrate: store,
+        hubLink: {
+          async pushWorkflowRunPack(opts) {
+            lastPack = opts.pack;
+            if (failNext)
+              throw new Error("hub_rejected: pack_walk_dangling_parent");
+          },
+        },
+      });
+      const repoId: RepoId = { kind: "workflow-run", id: "agent-example-com" };
+      const ref = "refs/heads/main";
+
+      await src.commit(0);
+      await src.commit(1);
+      await client.push({ agentAddress: "a@example.com", repoId, ref }); // cursor -> c1
+
+      // Hub lost its base; this delta push fails and must clear the cursor.
+      const c2 = await src.commit(2);
+      failNext = true;
+      await expect(
+        client.push({ agentAddress: "a@example.com", repoId, ref }),
+      ).rejects.toThrow(/dangling/);
+      failNext = false;
+
+      // Retry: cursor was reset, so this is a FULL chain that applies onto a
+      // brand-new cold hub with all 3 commits and no dangling parent.
+      await client.push({ agentAddress: "a@example.com", repoId, ref });
+      await git.init({ fs, dir: coldHub, defaultBranch: "main" });
+      expect(lastPack).not.toBeNull();
+      await receivePackObjects(coldHub, lastPack!, ref, c2, "t-cold", null);
+      expect(await git.log({ fs, dir: coldHub, ref })).toHaveLength(3);
+    } finally {
+      await rm(src.dir, { recursive: true, force: true });
+      await rm(coldHub, { recursive: true, force: true });
+    }
+  });
+
+  test("a push whose tip is unchanged since the last ack is a no-op", async () => {
+    const src = await makeWorkflowRunRepo();
+    try {
+      const { store } = createRecordingUnderlyingRepoStore(src.dir);
+      const sent: string[] = [];
+      const client = createWorkflowRunPackClient({
+        substrate: store,
+        hubLink: {
+          async pushWorkflowRunPack(opts) {
+            sent.push(opts.commitSha);
+          },
+        },
+      });
+      const repoId: RepoId = { kind: "workflow-run", id: "agent-example-com" };
+      const ref = "refs/heads/main";
+      await src.commit(0);
+      await client.push({ agentAddress: "a@example.com", repoId, ref });
+      await client.push({ agentAddress: "a@example.com", repoId, ref });
+      expect(sent).toHaveLength(1);
+    } finally {
+      await rm(src.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("push throws WorkflowRunPackTooLargeError before building a pack that exceeds the commit ceiling", async () => {
+    const src = await makeWorkflowRunRepo();
+    try {
+      for (let i = 0; i < 4; i += 1) await src.commit(i);
+      const { store } = createRecordingUnderlyingRepoStore(src.dir);
+      let pushed = 0;
+      const client = createWorkflowRunPackClient({
+        substrate: store,
+        hubLink: {
+          async pushWorkflowRunPack() {
+            pushed += 1;
+          },
+        },
+        limits: { maxCommits: 2, maxObjects: 1_000_000 },
+      });
+      await expect(
+        client.push({
+          agentAddress: "a@example.com",
+          repoId: { kind: "workflow-run", id: "agent-example-com" },
+          ref: "refs/heads/main",
+        }),
+      ).rejects.toBeInstanceOf(WorkflowRunPackTooLargeError);
+      // The ceiling trips during the walk, before any pack is shipped.
+      expect(pushed).toBe(0);
+    } finally {
+      await rm(src.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("push throws WorkflowRunPackTooLargeError when the object ceiling is exceeded", async () => {
+    const src = await makeWorkflowRunRepo();
+    try {
+      for (let i = 0; i < 3; i += 1) await src.commit(i);
+      const { store } = createRecordingUnderlyingRepoStore(src.dir);
+      const client = createWorkflowRunPackClient({
+        substrate: store,
+        hubLink: { pushWorkflowRunPack: () => Promise.resolve() },
+        limits: { maxCommits: 1_000_000, maxObjects: 1 },
+      });
+      await expect(
+        client.push({
+          agentAddress: "a@example.com",
+          repoId: { kind: "workflow-run", id: "agent-example-com" },
+          ref: "refs/heads/main",
+        }),
+      ).rejects.toBeInstanceOf(WorkflowRunPackTooLargeError);
+    } finally {
+      await rm(src.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("forgetDeployment resets the cursor so the next push ships the full chain again", async () => {
+    // On undeploy the cursor must be dropped: a redeploy may face a fresh hub
+    // that no longer holds the prior tip, so the client must re-bootstrap from
+    // a full chain rather than a delta whose base is gone (CL-2340).
+    const src = await makeWorkflowRunRepo();
+    const freshHub = await mkdtemp(join(tmpdir(), "wf-fresh-"));
+    try {
+      const { store } = createRecordingUnderlyingRepoStore(src.dir);
+      let lastPack: Uint8Array | null = null;
+      const client = createWorkflowRunPackClient({
+        substrate: store,
+        hubLink: {
+          async pushWorkflowRunPack(opts) {
+            lastPack = opts.pack;
+          },
+        },
+      });
+      const repoId: RepoId = { kind: "workflow-run", id: "agent-example-com" };
+      const ref = "refs/heads/main";
+      await src.commit(0);
+      await src.commit(1);
+      await client.push({ agentAddress: "a@example.com", repoId, ref }); // cursor -> c1
+
+      client.forgetDeployment("agent-example-com");
+
+      const c2 = await src.commit(2);
+      await client.push({ agentAddress: "a@example.com", repoId, ref });
+      // Cursor was cleared, so this pack is the FULL chain: it applies onto a
+      // brand-new empty hub with all 3 commits and no dangling parent. A
+      // delta (cursor still at c1) would have dangled here.
+      await git.init({ fs, dir: freshHub, defaultBranch: "main" });
+      expect(lastPack).not.toBeNull();
+      await receivePackObjects(freshHub, lastPack!, ref, c2, "t-fresh", null);
+      expect(await git.log({ fs, dir: freshHub, ref })).toHaveLength(3);
+    } finally {
+      await rm(src.dir, { recursive: true, force: true });
+      await rm(freshHub, { recursive: true, force: true });
+    }
+  });
+
+  test("forgetDeployment during an in-flight push is not resurrected when that push later acks", async () => {
+    // The undeploy seam: forgetDeployment can land WHILE a push is parked on an
+    // unresolved pushWorkflowRunPack. When that push finally acks it must NOT
+    // re-set the cursor — otherwise a redeploy ships a delta against a tip the
+    // (possibly fresh) hub no longer holds, the exact dangling-delta
+    // forgetDeployment exists to prevent (CL-2340). The drain barrier in the
+    // undeploy hook normally orders this, but the cursor logic itself must also
+    // be safe if an ack races the clear.
+    const src = await makeWorkflowRunRepo();
+    const freshHub = await mkdtemp(join(tmpdir(), "wf-resurrect-"));
+    try {
+      const { store } = createRecordingUnderlyingRepoStore(src.dir);
+      let releasePush: () => void = () => {
+        throw new Error("test: push gate resolver not captured before use");
+      };
+      const pushGate = new Promise<void>((resolve) => {
+        releasePush = resolve;
+      });
+      let gateArmed = true;
+      let lastPack: Uint8Array | null = null;
+      const client = createWorkflowRunPackClient({
+        substrate: store,
+        hubLink: {
+          async pushWorkflowRunPack(opts) {
+            lastPack = opts.pack;
+            if (gateArmed) await pushGate;
+          },
+        },
+      });
+      const repoId: RepoId = { kind: "workflow-run", id: "agent-example-com" };
+      const ref = "refs/heads/main";
+      await src.commit(0);
+      await src.commit(1);
+
+      // First push parks inside pushWorkflowRunPack (gate unresolved).
+      const parked = client.push({
+        agentAddress: "a@example.com",
+        repoId,
+        ref,
+      });
+      // Undeploy fires while the push is in flight.
+      client.forgetDeployment("agent-example-com");
+      // Now let the in-flight push ack. If the cursor logic naively set the tip
+      // on ack, it would resurrect the cleared cursor here.
+      releasePush();
+      await parked;
+
+      // Next push must therefore ship the FULL chain (cursor still cleared),
+      // applicable onto a brand-new empty hub. A resurrected cursor would have
+      // produced a delta that dangles on the fresh hub.
+      gateArmed = false;
+      const c2 = await src.commit(2);
+      await client.push({ agentAddress: "a@example.com", repoId, ref });
+      await git.init({ fs, dir: freshHub, defaultBranch: "main" });
+      expect(lastPack).not.toBeNull();
+      await receivePackObjects(
+        freshHub,
+        lastPack!,
+        ref,
+        c2,
+        "t-resurrect",
+        null,
+      );
+      expect(await git.log({ fs, dir: freshHub, ref })).toHaveLength(3);
+    } finally {
+      await rm(src.dir, { recursive: true, force: true });
+      await rm(freshHub, { recursive: true, force: true });
     }
   });
 
@@ -380,6 +774,45 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
         },
       ),
     ).rejects.toThrow(/non_fast_forward/);
+  });
+
+  test("a ceiling-exceeding run surfaces WorkflowRunPackTooLargeError through the latched-error path", async () => {
+    // End-to-end across the seam: the REAL pack client trips its ceiling, the
+    // facade latches the failure, and the next supervisor write re-throws it —
+    // the run fails loudly instead of the sidecar OOM-killing (CL-2340).
+    const src = await makeWorkflowRunRepo();
+    try {
+      for (let i = 0; i < 3; i += 1) await src.commit(i);
+      const { store } = createRecordingUnderlyingRepoStore(src.dir);
+      const registry = createDeploymentAddressRegistry();
+      registry.record("agent-example-com", "a@example.com");
+      const client = createWorkflowRunPackClient({
+        substrate: store,
+        hubLink: { pushWorkflowRunPack: () => Promise.resolve() },
+        limits: { maxCommits: 1, maxObjects: 1_000_000 },
+      });
+      const facade = createWorkflowRunPackPushingRepoStore({
+        underlying: store,
+        packClient: client,
+        registry,
+      });
+      const repoId: RepoId = { kind: "workflow-run", id: "agent-example-com" };
+      await facade.writeTreePreservingPrefix(
+        { kind: "supervisor" },
+        repoId,
+        "refs/heads/main",
+        {
+          preservePrefix: "runs/r-1/events/",
+          merge: async () => ({ "runs/r-1/events/x.json": "{}" }),
+          message: "first",
+        },
+      );
+      await expect(
+        facade.flushWorkflowRunPushes(repoId, "refs/heads/main"),
+      ).rejects.toThrow(/exceeded the safety ceiling/);
+    } finally {
+      await rm(src.dir, { recursive: true, force: true });
+    }
   });
 
   test("flushWorkflowRunPushes resolves immediately when no pushes are pending", async () => {

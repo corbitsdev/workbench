@@ -18,6 +18,7 @@ import {
   resolveSidecarHeartbeat,
   resolveSidecarHubLinkQueue,
   resolveToolPackageCache,
+  resolveWorkflowRunPackLimits,
 } from "./config";
 // Workflow-host wiring: `createSidecarDeployRouter` is the production
 // deploy routing the orchestrator hands to the link's `agent.deploy`
@@ -150,6 +151,7 @@ const transport = createInMemoryTransport();
 let resolvedHubLink: HubLink | null = null;
 const workflowRunPackClient = createWorkflowRunPackClient({
   substrate: agentRepoStore.repoStore,
+  limits: resolveWorkflowRunPackLimits(process.env),
   hubLink: {
     pushWorkflowRunPack(opts) {
       if (resolvedHubLink === null) {
@@ -251,8 +253,14 @@ const orchestrator = createSidecarOrchestrator({
       registerDeployment: ({ deploymentId, agentAddress }) => {
         deploymentAddressRegistry.record(deploymentId, agentAddress);
       },
+      drainWorkflowRunPushes: (deploymentId) =>
+        wrappedRepoStore.flushWorkflowRunPushes(
+          { kind: "workflow-run", id: deploymentId },
+          "refs/heads/main",
+        ),
       unregisterDeployment: ({ deploymentId }) => {
         deploymentAddressRegistry.unregister(deploymentId);
+        workflowRunPackClient.forgetDeployment(deploymentId);
       },
       multistepMailRouter,
       multistepSignalRouter,

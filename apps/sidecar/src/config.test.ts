@@ -1,6 +1,10 @@
 import { describe, it, expect } from "bun:test";
 import path from "node:path";
-import { resolveSidecarHeartbeat, resolveToolPackageCache } from "./config";
+import {
+  resolveSidecarHeartbeat,
+  resolveToolPackageCache,
+  resolveWorkflowRunPackLimits,
+} from "./config";
 
 describe("resolveSidecarHeartbeat", () => {
   it("uses fast defaults when env is unset", () => {
@@ -63,5 +67,42 @@ describe("resolveToolPackageCache", () => {
     expect(() =>
       resolveToolPackageCache({ SIDECAR_TOOL_CACHE_MAX_BYTES: "0" }, "/d"),
     ).toThrow();
+  });
+});
+
+describe("resolveWorkflowRunPackLimits", () => {
+  it("uses generous defaults when env is unset", () => {
+    const limits = resolveWorkflowRunPackLimits({});
+    expect(limits.maxCommits).toBe(10_000);
+    expect(limits.maxObjects).toBe(500_000);
+  });
+
+  it("overrides both ceilings from env when provided", () => {
+    const limits = resolveWorkflowRunPackLimits({
+      SIDECAR_WORKFLOW_RUN_PACK_MAX_COMMITS: "250",
+      SIDECAR_WORKFLOW_RUN_PACK_MAX_OBJECTS: "5000",
+    });
+    expect(limits.maxCommits).toBe(250);
+    expect(limits.maxObjects).toBe(5_000);
+  });
+
+  it("rejects a non-positive commit ceiling", () => {
+    expect(() =>
+      resolveWorkflowRunPackLimits({
+        SIDECAR_WORKFLOW_RUN_PACK_MAX_COMMITS: "0",
+      }),
+    ).toThrow(
+      'SIDECAR_WORKFLOW_RUN_PACK_MAX_COMMITS must be a positive integer (got "0")',
+    );
+  });
+
+  it("rejects a non-integer object ceiling", () => {
+    expect(() =>
+      resolveWorkflowRunPackLimits({
+        SIDECAR_WORKFLOW_RUN_PACK_MAX_OBJECTS: "lots",
+      }),
+    ).toThrow(
+      'SIDECAR_WORKFLOW_RUN_PACK_MAX_OBJECTS must be a positive integer (got "lots")',
+    );
   });
 });

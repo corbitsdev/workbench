@@ -99,3 +99,35 @@ export function resolveSidecarHubLinkQueue(
     ),
   };
 }
+
+// Workflow-run pack-push safety ceiling. A wedged or looping run appends one
+// commit per event without bound; the pack builder walks that chain and
+// materializes every reachable object into a single in-memory buffer. Left
+// uncapped, a runaway run exhausts the sidecar heap and the kernel OOM-kills
+// the whole process — evicting every co-resident deployment, not just the
+// offending run (CL-2340). These ceilings fail the offending run loudly
+// instead. Generous over any real run; overridable for tighter environments.
+export const DEFAULT_WORKFLOW_RUN_PACK_MAX_COMMITS = 10_000;
+export const DEFAULT_WORKFLOW_RUN_PACK_MAX_OBJECTS = 500_000;
+
+export type WorkflowRunPackLimits = {
+  maxCommits: number;
+  maxObjects: number;
+};
+
+export function resolveWorkflowRunPackLimits(
+  env: Record<string, string | undefined>,
+): WorkflowRunPackLimits {
+  return {
+    maxCommits: parsePositiveInt(
+      "SIDECAR_WORKFLOW_RUN_PACK_MAX_COMMITS",
+      env.SIDECAR_WORKFLOW_RUN_PACK_MAX_COMMITS,
+      DEFAULT_WORKFLOW_RUN_PACK_MAX_COMMITS,
+    ),
+    maxObjects: parsePositiveInt(
+      "SIDECAR_WORKFLOW_RUN_PACK_MAX_OBJECTS",
+      env.SIDECAR_WORKFLOW_RUN_PACK_MAX_OBJECTS,
+      DEFAULT_WORKFLOW_RUN_PACK_MAX_OBJECTS,
+    ),
+  };
+}

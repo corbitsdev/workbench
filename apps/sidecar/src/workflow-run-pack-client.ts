@@ -19,6 +19,11 @@ import { getLogger } from "@intx/log";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import { collectReachableObjects } from "@workbench/storage-isogit";
 import type { HubLink } from "@workbench/hub-agent";
+import {
+  DEFAULT_WORKFLOW_RUN_PACK_MAX_COMMITS,
+  DEFAULT_WORKFLOW_RUN_PACK_MAX_OBJECTS,
+  type WorkflowRunPackLimits,
+} from "./config";
 
 const logger = getLogger([
   "interchange",
@@ -26,33 +31,110 @@ const logger = getLogger([
   "workflow-run-pack-client",
 ]);
 
-// Build a packfile carrying EVERY object reachable from the ref tip back to
-// the root commit, walking the full first-parent chain. Workflow-run repos are
-// linear, append-one-commit-per-event histories, so the hub's receiver must
-// see every commit transition; a pack that omits any ancestor commit makes the
-// receiver throw `pack_walk_dangling_parent`.
+// =============================================================================
+// WORKBENCH-LOCAL (CL-2340): not in upstream interchange — preserve on every
+// pin-bump re-sync of the vendored sidecar files. The delta-cursor + size-
+// ceiling machinery below (WorkflowRunPackTooLargeError, buildDeltaPack, the
+// ack-gated `lastAckedTip` cursor, `forgetDeployment`, and the
+// `WorkflowRunPackLimits` plumbing) replaces the substrate's own
+// `createPack`/`lastPackedTip` path to stop the shared sidecar from OOM-ing on
+// a wedged run. A literal upstream copy would silently delete it with a green
+// build. See AGENTS.md "Vendored workflow-host wiring (pin-bump gate)".
+// =============================================================================
+
+/**
+ * Thrown when the objects reachable from a workflow-run ref exceed the
+ * configured safety ceiling. A wedged or looping run appends one commit per
+ * event without bound; left uncapped the pack builder materializes the whole
+ * history into one in-memory buffer and OOM-kills the shared sidecar (CL-2340).
+ * Surfaced loudly per the defensive-coding rule — it rides the existing
+ * latched-error path on the boot-edge facade, failing the offending run rather
+ * than the process.
+ */
+export class WorkflowRunPackTooLargeError extends Error {
+  readonly repoId: string;
+  readonly ref: string;
+  readonly commitCount: number;
+  readonly objectCount: number;
+  readonly limits: WorkflowRunPackLimits;
+  constructor(args: {
+    repoId: string;
+    ref: string;
+    commitCount: number;
+    objectCount: number;
+    limits: WorkflowRunPackLimits;
+  }) {
+    super(
+      `workflow-run pack for ${args.repoId}/${args.ref} exceeded the safety ceiling ` +
+        `(${String(args.commitCount)} commits / ${String(args.objectCount)} objects > ` +
+        `limit ${String(args.limits.maxCommits)} commits / ${String(args.limits.maxObjects)} objects); failing run`,
+    );
+    this.name = "WorkflowRunPackTooLargeError";
+    this.repoId = args.repoId;
+    this.ref = args.ref;
+    this.commitCount = args.commitCount;
+    this.objectCount = args.objectCount;
+    this.limits = args.limits;
+  }
+}
+
+// Build a packfile carrying every object reachable from the ref tip back to
+// `sinceTip` (exclusive), walking the first-parent chain. Workflow-run repos
+// are linear, append-one-commit-per-event histories, so the hub's receiver
+// must see every commit transition between the base it already holds and the
+// new tip; a pack that omits any intervening commit makes the receiver throw
+// `pack_walk_dangling_parent`.
+//
+// `sinceTip` is the last commit the hub durably ACKED (see the cursor below):
+//   - null  -> walk to the root, shipping the FULL chain (cold hub / first
+//              push / post-restart). Always applicable to an empty hub.
+//   - a sha -> stop at it (exclusive). The hub provably holds `sinceTip` and
+//              every ancestor, so the receiver validates the oldest new
+//              commit's parent against its store and dedupes the rest. This is
+//              the delta that keeps each push proportional to NEW commits
+//              rather than total run length (CL-2340).
 //
 // We must NOT use the substrate's `createPack` (its workflow-run branch
-// advances an in-memory `lastPackedTip` cursor on pack *construction*, before
-// and regardless of push success — so a first push the hub never receives
-// poisons every later push into shipping a delta whose base the hub lacks, for
-// the life of the sidecar process). Nor can we use `createDeployPack`: its
-// `collectReachableObjects` walks only a SINGLE commit's tree, not ancestor
-// commits, so on a multi-commit run it ships only the tip and dangles. We
-// therefore walk the chain ourselves (the cursor-free equivalent of
-// interchange's internal `collectChainReachableObjects(tip, null)`), which is
-// idempotent: the hub receiver breaks its walk on commits it already has and
-// dedupes, so a warm hub only applies genuinely-new commits (CL-2230).
-async function buildFullChainPack(
+// advances its own `lastPackedTip` cursor on pack *construction*, before and
+// regardless of push success — a first push the hub never receives poisons
+// every later delta whose base the hub lacks, for the life of the process).
+// Our cursor advances only on ACK (below), so it can only ever lag the hub's
+// true tip, never lead it: a lagging cursor ships an over-large but always
+// applicable pack; a leading cursor would dangle. Returns null when the tip
+// already equals `sinceTip` (nothing new to ship).
+async function buildDeltaPack(
   dir: string,
   ref: string,
-): Promise<{ pack: Uint8Array; commitSha: string }> {
+  sinceTip: string | null,
+  limits: WorkflowRunPackLimits,
+  repoIdLabel: string,
+): Promise<{ pack: Uint8Array; commitSha: string } | null> {
   const commitSha = await git.resolveRef({ fs, dir, ref });
+  if (commitSha === sinceTip) {
+    return null;
+  }
   const seen = new Set<string>();
   let current: string | null = commitSha;
-  while (current !== null) {
+  let commitCount = 0;
+  while (current !== null && current !== sinceTip) {
     for (const oid of await collectReachableObjects(dir, current)) {
       seen.add(oid);
+    }
+    commitCount += 1;
+    // `seen` can overshoot the object ceiling by one commit's reachable set
+    // (we add a commit's objects, then test). That is harmless: the throw fires
+    // before `git.packObjects` runs, so the single large in-memory packfile —
+    // the thing that OOMs the sidecar — is still never built. The ceiling is a
+    // safety trip, not an exact byte budget.
+    if (commitCount > limits.maxCommits || seen.size > limits.maxObjects) {
+      logger.warn`workflow-run pack push ceiling exceeded for ${repoIdLabel}/${ref} (${commitSha}): ${String(commitCount)} commits / ${String(seen.size)} objects over limit ${String(limits.maxCommits)}/${String(limits.maxObjects)}; failing run`;
+      throw new WorkflowRunPackTooLargeError({
+        repoId: repoIdLabel,
+        ref,
+        commitCount,
+        objectCount: seen.size,
+        limits,
+      });
     }
     const { commit } = await git.readCommit({ fs, dir, oid: current });
     const parent = commit.parent[0];
@@ -80,23 +162,67 @@ export type WorkflowRunPackClient = {
    * transfer, or on a substrate-side `createPack` failure. The push
    * failure shape is intentionally loud per the project's
    * defensive-coding rule.
+   *
+   * On a successful ack the per-(repoId.id, ref) cursor advances to the
+   * pushed tip, so the next push ships only commits appended since.
    */
   push(opts: {
     agentAddress: string;
     repoId: RepoId;
     ref: string;
   }): Promise<void>;
+  /**
+   * Drop any delta cursors held for a deployment. Called on
+   * `agent.undeploy` so a redeployed deployment re-bootstraps from a full
+   * chain rather than reusing a tip the (possibly fresh) hub no longer
+   * holds.
+   */
+  forgetDeployment(deploymentId: string): void;
 };
 
 export type CreateWorkflowRunPackClientOpts = {
   substrate: RepoStore;
   hubLink: Pick<HubLink, "pushWorkflowRunPack">;
+  /**
+   * Safety ceiling on a single pack's reachable objects/commits. Defaults
+   * to the generous module constants when omitted; the sidecar boot path
+   * threads in the env-resolved values.
+   */
+  limits?: WorkflowRunPackLimits;
 };
 
 export function createWorkflowRunPackClient(
   opts: CreateWorkflowRunPackClientOpts,
 ): WorkflowRunPackClient {
   const { substrate, hubLink } = opts;
+  const limits: WorkflowRunPackLimits = opts.limits ?? {
+    maxCommits: DEFAULT_WORKFLOW_RUN_PACK_MAX_COMMITS,
+    maxObjects: DEFAULT_WORKFLOW_RUN_PACK_MAX_OBJECTS,
+  };
+
+  // Per-deployment, per-ref last-ACKED tip. Advanced only after
+  // `pushWorkflowRunPack` resolves (the hub durably wrote the ref and acked),
+  // so it can only lag the hub's true tip, never lead it. Process-memory only:
+  // lost on restart -> null -> full chain, which is cold-hub-safe (CL-2340).
+  //
+  // Nested `deploymentId -> (ref -> tip)` rather than a flat composite-string
+  // key: `forgetDeployment` then drops a whole deployment with one O(1)
+  // `delete(deploymentId)` and cannot be tricked by a separator that happens to
+  // appear in a deploymentId or ref (a flat `${id} ${ref}` key would prefix-
+  // collide if either ever contained the separator char).
+  const lastAckedTip = new Map<string, Map<string, string>>();
+
+  // Per-deployment generation counter, bumped by `forgetDeployment`. A push
+  // captures the generation at START and only mutates the cursor on settle if
+  // it is unchanged. This closes the resurrection race: a push parked on an
+  // unresolved `pushWorkflowRunPack` when `forgetDeployment` lands must NOT
+  // re-set (ack) or re-delete (failure) the cursor when it finally settles —
+  // the deployment it belonged to is gone, and a stale ack-set would resurrect
+  // a tip a fresh hub lacks → dangling-delta on redeploy. The undeploy-hook
+  // drain barrier normally serializes this, but the cursor logic stays correct
+  // even if an ack genuinely races the clear (CL-2340).
+  const generation = new Map<string, number>();
+
   return {
     async push({ agentAddress, repoId, ref }) {
       if (repoId.kind !== "workflow-run") {
@@ -104,17 +230,59 @@ export function createWorkflowRunPackClient(
           `workflow-run pack client: repoId.kind must be "workflow-run", got ${JSON.stringify(repoId.kind)}`,
         );
       }
-      const { pack, commitSha } = await buildFullChainPack(
+      const startGen = generation.get(repoId.id) ?? 0;
+      const sinceTip = lastAckedTip.get(repoId.id)?.get(ref) ?? null;
+      const built = await buildDeltaPack(
         substrate.getRepoDir(repoId),
         ref,
+        sinceTip,
+        limits,
+        repoId.id,
       );
-      await hubLink.pushWorkflowRunPack({
-        agentAddress,
-        repoId,
-        pack,
-        ref,
-        commitSha,
-      });
+      if (built === null) {
+        return;
+      }
+      try {
+        await hubLink.pushWorkflowRunPack({
+          agentAddress,
+          repoId,
+          pack: built.pack,
+          ref,
+          commitSha: built.commitSha,
+        });
+      } catch (err) {
+        // The push did not ack. The hub may never have received this base, or
+        // may have lost it (a cold-restarted hub whose durable repo was
+        // wiped). Drop the cursor so the NEXT push re-bootstraps a full,
+        // self-healing chain rather than a delta whose base the hub lacks.
+        // Resetting can only make the next pack larger (the cursor lags
+        // further back), never dangling — the safe direction. (CL-2340)
+        //
+        // Skip if a forget raced this push: the cursor is already gone and the
+        // deployment is being torn down; touching it would only re-create an
+        // empty ref map for a dead deployment.
+        if ((generation.get(repoId.id) ?? 0) === startGen) {
+          lastAckedTip.get(repoId.id)?.delete(ref);
+        }
+        throw err;
+      }
+      // Ack received (the push resolved). Only now is the hub known to hold
+      // this tip, so only now may the cursor advance — UNLESS a forget raced
+      // this push (generation bumped), in which case the ack belongs to a torn-
+      // down deployment and must not resurrect its cursor.
+      if ((generation.get(repoId.id) ?? 0) !== startGen) {
+        return;
+      }
+      let refs = lastAckedTip.get(repoId.id);
+      if (refs === undefined) {
+        refs = new Map<string, string>();
+        lastAckedTip.set(repoId.id, refs);
+      }
+      refs.set(ref, built.commitSha);
+    },
+    forgetDeployment(deploymentId) {
+      lastAckedTip.delete(deploymentId);
+      generation.set(deploymentId, (generation.get(deploymentId) ?? 0) + 1);
     },
   };
 }
@@ -342,22 +510,22 @@ export function createMultistepDrainRouter(): MultistepDrainRouter {
  * pushes (the one already running when the burst starts, plus one
  * more for everything that arrived during it), rather than N
  * serial round-trips' worth of hub-ack latency. The push body
- * captures the current local ref tip at the moment it runs, so the
- * single pack it builds is a FULL reachable-object pack (root → current
- * tip) via `createDeployPack`, so it always covers every commit landed
- * since the prior shipped tip regardless of what the hub already holds;
- * the receiver dedupes and only applies genuinely-new commits.
+ * captures the current local ref tip at the moment it runs, and the
+ * pack client builds a DELTA from the last ACKED tip to the current
+ * tip (a full chain only when the hub holds nothing yet, or after a
+ * failed push reset the cursor). The pack therefore covers every
+ * commit landed since the hub last confirmed, and the receiver dedupes
+ * and applies only genuinely-new commits (CL-2340).
  *
  * Single-writer + FIFO correctness: the underlying substrate
  * serialises local writes via `withRepoLock`, so commits land on
  * disk in submission order. The hub's `receivePack` validates each
- * commit's parent against its existing-commits set; as long as the
- * pack carries the full chain from prior shipped tip to current
- * tip (which `createPack` does for `workflow-run` repos), every
- * intermediate commit is validated by the receiver. Coalescing
- * multiple local commits into one network push therefore preserves
- * the receive-time CAS invariant while collapsing N hub round-trips
- * into 1.
+ * commit's parent against its existing-commits set; the delta carries
+ * the chain from the last acked tip (which the hub provably holds) to
+ * the current tip, so every intermediate commit is validated by the
+ * receiver. Coalescing multiple local commits into one network push
+ * therefore preserves the receive-time CAS invariant while collapsing
+ * N hub round-trips into 1.
  *
  * Failure surfacing: a failed push latches its error on the
  * per-(repoId, ref) slot's `lastError` field. The next call to
@@ -375,7 +543,9 @@ export function createMultistepDrainRouter(): MultistepDrainRouter {
  */
 export type WorkflowRunPackPushingRepoStoreOpts = {
   underlying: RepoStore;
-  packClient: WorkflowRunPackClient;
+  // The facade only fires pushes; cursor lifecycle (`forgetDeployment`) is
+  // driven from the deploy router, so it depends on the narrowest surface.
+  packClient: Pick<WorkflowRunPackClient, "push">;
   registry: DeploymentAddressRegistry;
 };
 

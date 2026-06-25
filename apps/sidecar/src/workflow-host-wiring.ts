@@ -720,6 +720,16 @@ export function createSidecarDeployRouter(deps: {
     deploymentId: string;
     agentAddress: string;
   }) => void;
+  // WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump re-sync.
+  // Drain the workflow-run pack-push pipeline for a deployment to a hub-acked
+  // barrier. The undeploy hook awaits this AFTER the supervisor is shut down
+  // (no new writes can arrive) but BEFORE the CL-2231 reclaim rm and before
+  // `unregisterDeployment` (which clears the delta cursor): a push that started
+  // pre-undeploy must not (a) ack after `forgetDeployment` and resurrect a stale
+  // cursor → dangling-delta on redeploy, nor (b) race the repo-dir rm mid pack
+  // walk. Resolving the barrier first closes both windows. Optional: tests and
+  // trivial wiring that never push may omit it.
+  drainWorkflowRunPushes?: (deploymentId: string) => Promise<void>;
   /**
    * Substrate-config env keys the multi-step branch propagates into
    * the workflow-process child's spawn-time env (see
@@ -1476,6 +1486,23 @@ export function createSidecarDeployRouter(deps: {
       if (active !== undefined) {
         activeSupervisors.delete(frame.agentAddress);
         await active.wired.supervisor.shutdown();
+        // WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump re-sync.
+        // Barrier: drain the workflow-run pack-push pipeline to a hub-acked
+        // resting state now that `shutdown()` guarantees the child can append no
+        // more events. This MUST precede the reclaim rm below (a push must not
+        // race the repo-dir deletion mid pack walk) AND the cursor clear in
+        // `unregisterDeployment` (a push that acks after `forgetDeployment` would
+        // resurrect a stale cursor → dangling-delta on redeploy). Best-effort:
+        // a failed final push has already reset its own cursor, so swallow.
+        if (deps.drainWorkflowRunPushes !== undefined) {
+          try {
+            await deps.drainWorkflowRunPushes(deploymentId);
+          } catch (cause) {
+            const reason =
+              cause instanceof Error ? cause.message : String(cause);
+            logger.warn`undeploy: workflow-run push drain failed for ${frame.agentAddress}: ${reason}`;
+          }
+        }
         // Drop the agent's transport registration installed at spawn for
         // the single-step launched-agent deploy (OUTBOUND half of
         // mailbox ownership, §3a). `unregister` is a no-op when the
@@ -1527,6 +1554,19 @@ export function createSidecarDeployRouter(deps: {
               cause instanceof Error ? cause.message : String(cause);
             logger.warn`undeploy: failed to reclaim deployment dir ${dir} for ${frame.agentAddress}: ${reason}`;
           }
+        }
+      } else if (deps.drainWorkflowRunPushes !== undefined) {
+        // WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump re-sync.
+        // Trivial-branch barrier. No supervisor to shut down, but the routers
+        // are already unregistered above so no new run-event write can arrive;
+        // drain any in-flight push to a hub-acked rest before the cursor clear
+        // in `unregisterDeployment` below, for the same anti-resurrection reason
+        // as the multi-step path.
+        try {
+          await deps.drainWorkflowRunPushes(deploymentId);
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          logger.warn`undeploy: workflow-run push drain failed for ${frame.agentAddress}: ${reason}`;
         }
       }
       releaseSlug(deploymentId, frame.agentAddress);
