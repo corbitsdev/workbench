@@ -14,6 +14,7 @@ type Thread = {
 };
 
 const sendSpy = mock((_text: string) => {});
+const autoTitleSpy = mock((_text: string) => {});
 const clearPendingDockThread = mock(() => {});
 let threads: Thread[];
 let pendingDockThreadId: string | null;
@@ -41,6 +42,7 @@ mock.module("../hooks/use-myra-session", () => ({
 mock.module("../hooks/use-myra-threads", () => ({
   useMyraThreads: () => ({ data: threads }),
   useCreateMyraThread: () => ({ mutate: () => {}, isPending: false }),
+  useAutoTitleFirstMessage: () => autoTitleSpy,
   resolveActiveThread: (list: Thread[], id: string | null) =>
     list.find((t) => t.id === id) ?? list[0] ?? null,
   writeLastActiveThreadId: () => {},
@@ -75,6 +77,7 @@ function renderAt(pathname: string) {
 
 beforeEach(() => {
   sendSpy.mockClear();
+  autoTitleSpy.mockClear();
   clearPendingDockThread.mockClear();
   threads = [
     {
@@ -107,6 +110,7 @@ describe("PersonalAgentChat dock handoff", () => {
       expect(sendSpy).toHaveBeenCalledWith("seeded question"),
     );
     expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(autoTitleSpy).toHaveBeenCalledWith("seeded question");
     expect(clearPendingDockThread).toHaveBeenCalled();
   });
 

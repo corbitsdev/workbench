@@ -26,7 +26,8 @@ let threadsResult: ThreadsResult = {
   refetch: () => {},
 };
 const createMutate = mock((_arg: undefined, _opts?: unknown) => {});
-const titleMutate = mock((_arg: { id: string; firstMessage: string }) => {});
+const autoTitle = mock((_text: string) => {});
+let autoTitleArgs: unknown[] = [];
 // biome-ignore lint/suspicious/noExplicitAny: configurable session mock
 let sessionResult: any = {
   state: { phase: "loading" },
@@ -37,8 +38,10 @@ let sessionResult: any = {
 mock.module("../hooks/use-myra-threads", () => ({
   useMyraThreads: () => threadsResult,
   useCreateMyraThread: () => ({ mutate: createMutate, isPending: false }),
-  useGenerateMyraThreadTitle: () => ({ mutate: titleMutate }),
-  isDefaultThreadLabel: (label: string) => /^Chat( \d+)?$/.test(label.trim()),
+  useAutoTitleFirstMessage: (...args: unknown[]) => {
+    autoTitleArgs = args;
+    return autoTitle;
+  },
   writeLastActiveThreadId: () => {},
   resolveActiveThread: (
     threads: ThreadsResult["data"],
@@ -108,7 +111,8 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   createMutate.mockClear();
-  titleMutate.mockClear();
+  autoTitle.mockClear();
+  autoTitleArgs = [];
   sessionResult = { state: { phase: "loading" }, messages: [], activity: null };
   threadsResult = {
     data: [
@@ -163,66 +167,18 @@ describe("ChatThreadPage", () => {
     expect(createMutate).toHaveBeenCalledTimes(1);
   });
 
-  it("auto-titles a default-labelled thread on its first message", () => {
-    threadsResult = {
-      data: [
-        {
-          id: "t1",
-          instanceId: "i1",
-          label: "Chat",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
+  it("wires the auto-title callback to the surface and binds it to the live thread + stream", () => {
     sessionResult = {
       state: { phase: "ready", session: {} },
-      messages: [],
+      messages: [{ role: "assistant" }],
       activity: null,
     };
     renderAt("/chats/t1");
+    // The page binds the title hook to the resolved thread and the session
+    // message stream, then hands its callback to the surface as onUserSend.
+    expect(autoTitleArgs[0]).toMatchObject({ id: "t1" });
+    expect(autoTitleArgs[1]).toEqual([{ role: "assistant" }]);
     fireEvent.click(screen.getByRole("button", { name: "send" }));
-    expect(titleMutate).toHaveBeenCalledTimes(1);
-    expect(titleMutate.mock.calls[0]?.[0]).toEqual({
-      id: "t1",
-      firstMessage: "hello",
-    });
-  });
-
-  it("does not auto-title a thread that already has a custom label", () => {
-    sessionResult = {
-      state: { phase: "ready", session: {} },
-      messages: [],
-      activity: null,
-    };
-    renderAt("/chats/t1"); // label 'First' (custom)
-    fireEvent.click(screen.getByRole("button", { name: "send" }));
-    expect(titleMutate).not.toHaveBeenCalled();
-  });
-
-  it("does not auto-title when the thread already has a user message", () => {
-    threadsResult = {
-      data: [
-        {
-          id: "t1",
-          instanceId: "i1",
-          label: "Chat",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    sessionResult = {
-      state: { phase: "ready", session: {} },
-      messages: [{ role: "user" }],
-      activity: null,
-    };
-    renderAt("/chats/t1");
-    fireEvent.click(screen.getByRole("button", { name: "send" }));
-    expect(titleMutate).not.toHaveBeenCalled();
+    expect(autoTitle).toHaveBeenCalledWith("hello");
   });
 });
