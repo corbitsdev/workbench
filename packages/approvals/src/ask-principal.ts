@@ -10,17 +10,27 @@
 // the ReviewGate UI calls. This tool uses the internal route authenticated
 // with the sidecar token.
 
+import { type } from "arktype";
 import { tool } from "@intx/agent";
 import type { AgentTool } from "@intx/agent";
 
-export type ApprovalStatus = "pending" | "approved" | "rejected";
+const ApprovalStatusSchema = type("'pending' | 'approved' | 'rejected'");
+export type ApprovalStatus = typeof ApprovalStatusSchema.infer;
 
-type ApprovalRecord = {
-  id: string;
-  status: ApprovalStatus;
-  message: string | null;
-};
+const ApprovalRecordSchema = type({
+  id: "string",
+  status: "'pending' | 'approved' | 'rejected'",
+  message: "string | null",
+});
+type ApprovalRecord = typeof ApprovalRecordSchema.infer;
 
+const ToolArgsSchema = type({
+  action: "string",
+  resource: "string",
+  "context?": "Record<string, unknown>",
+});
+
+// Trusted DI/configuration shape — callers are internal; no runtime validation needed.
 export type AskPrincipalToolOpts = {
   hubHttpUrl: string;
   sidecarToken: string;
@@ -39,13 +49,13 @@ class HubRequestError extends Error {
   }
 }
 
-async function fetchHub<T>(
+async function fetchHub(
   hubHttpUrl: string,
   sidecarToken: string,
   method: string,
   path: string,
   body?: unknown,
-): Promise<T> {
+): Promise<unknown> {
   const url = `${hubHttpUrl.replace(/\/$/, "")}${path}`;
   const res = await fetch(url, {
     method,
@@ -62,7 +72,15 @@ async function fetchHub<T>(
       `Hub request failed: ${res.status} ${text}`,
     );
   }
-  return res.json() as Promise<T>;
+  return res.json();
+}
+
+function parseApprovalRecord(raw: unknown): ApprovalRecord {
+  const parsed = ApprovalRecordSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid approval record from hub: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
@@ -104,15 +122,19 @@ export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
       },
     },
     handler: async (call, signal) => {
-      const args = call.arguments as {
-        action: string;
-        resource: string;
-        context?: Record<string, unknown>;
-      };
+      const parsedArgs = ToolArgsSchema(call.arguments);
+      if (parsedArgs instanceof type.errors) {
+        return {
+          callId: call.id,
+          content: `Invalid tool arguments: ${parsedArgs.summary}`,
+          isError: true,
+        };
+      }
+      const args = parsedArgs;
 
       let approval: ApprovalRecord;
       try {
-        approval = await fetchHub<ApprovalRecord>(
+        const raw = await fetchHub(
           hubHttpUrl,
           sidecarToken,
           "POST",
@@ -126,6 +148,7 @@ export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
             context: args.context ?? null,
           },
         );
+        approval = parseApprovalRecord(raw);
       } catch (err) {
         return {
           callId: call.id,
@@ -150,12 +173,13 @@ export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
         if (signal.aborted) break;
 
         try {
-          const current = await fetchHub<ApprovalRecord>(
+          const raw = await fetchHub(
             hubHttpUrl,
             sidecarToken,
             "GET",
             `/api/internal/approvals/${approval.id}?tenantId=${encodeURIComponent(tenantId)}`,
           );
+          const current = parseApprovalRecord(raw);
 
           if (current.status !== "pending") {
             const verdict =
