@@ -10,7 +10,30 @@ export const kind = "last30days-research";
 const sourceSearchInput = { from: "steps.intake.output" } as const;
 const sourceQueryArgMap = { query: { from: "query" } } as const;
 
-// The seven source fetches are chained sequentially rather than fanned out in
+// A source fetch is best-effort: a dead search API (rate-limit/auth/network)
+// must degrade to a recorded skip in the brief, never fail the run. `nonFatal`
+// makes the sidecar log the reason and return an isError envelope rather than
+// throwing, so the source step completes and `brief` still runs (CL-2401).
+// Tradeoff: a degraded step is "completed", so the runtime's tool-step retry
+// no longer fires — a transient blip degrades on first failure instead of
+// being retried. Acceptable here: not killing the run dominates, and the
+// chronic failures (e.g. bluesky) are permanent, not transient.
+function sourceStep(opts: {
+  id: string;
+  tool: string;
+  after: readonly string[];
+}) {
+  return deterministicToolStep({
+    id: opts.id,
+    tool: opts.tool,
+    input: sourceSearchInput,
+    argMap: sourceQueryArgMap,
+    after: opts.after,
+    nonFatal: true,
+  });
+}
+
+// The source fetches are chained sequentially rather than fanned out in
 // parallel. In the sidecar workflow-host topology the runtime body's
 // per-runId commit-chain only serializes body-vs-body event commits; the
 // scheduler's `TimerFired` (emitted on a tool-step retry) is a second,
@@ -22,6 +45,9 @@ const sourceQueryArgMap = { query: { from: "query" } } as const;
 // body write. The data flow is unchanged (`brief` still reads every source via
 // `{ from: 'steps' }`); only ordering is constrained. Revert to fan-out once the
 // vendored runtime fix coordinates the scheduler with the commit-chain (CL-2314).
+//
+// Bluesky is disabled (CL-2401): its search API fails on every run. It stays
+// out of the chain until the auth path is fixed.
 
 export const workflow = defineWorkflow({
   id: kind,
@@ -29,67 +55,47 @@ export const workflow = defineWorkflow({
   steps: {
     intake: awaitSignal({ name: "intake" }),
 
-    hackernews: deterministicToolStep({
+    hackernews: sourceStep({
       id: "last30days-fetch-hackernews",
       tool: "hackernews_search",
-      input: sourceSearchInput,
-      argMap: sourceQueryArgMap,
       after: ["intake"],
     }),
 
-    github: deterministicToolStep({
+    github: sourceStep({
       id: "last30days-fetch-github",
       tool: "github_activity",
-      input: sourceSearchInput,
-      argMap: sourceQueryArgMap,
       after: ["hackernews"],
     }),
 
-    web: deterministicToolStep({
+    web: sourceStep({
       id: "last30days-fetch-web",
       tool: "exa_search",
-      input: sourceSearchInput,
-      argMap: sourceQueryArgMap,
       after: ["github"],
     }),
 
-    reddit: deterministicToolStep({
+    reddit: sourceStep({
       id: "last30days-fetch-reddit",
       tool: "reddit_search",
-      input: sourceSearchInput,
-      argMap: sourceQueryArgMap,
       after: ["web"],
     }),
 
-    x: deterministicToolStep({
+    x: sourceStep({
       id: "last30days-fetch-x",
       tool: "x_search",
-      input: sourceSearchInput,
-      argMap: sourceQueryArgMap,
       after: ["reddit"],
     }),
 
-    youtube: deterministicToolStep({
+    youtube: sourceStep({
       id: "last30days-fetch-youtube",
       tool: "youtube_search",
-      input: sourceSearchInput,
-      argMap: sourceQueryArgMap,
       after: ["x"],
-    }),
-
-    bluesky: deterministicToolStep({
-      id: "last30days-fetch-bluesky",
-      tool: "bluesky_search",
-      input: sourceSearchInput,
-      argMap: sourceQueryArgMap,
-      after: ["youtube"],
     }),
 
     brief: deterministicToolStep({
       id: "last30days-build-brief",
       tool: "last30days_workflow_brief",
       input: { from: "steps" },
-      after: ["bluesky"],
+      after: ["youtube"],
     }),
 
     write: inlineInferenceStep({

@@ -7,6 +7,7 @@ import {
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
   STEP_ARGMAP_TAG,
+  STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
   ArgMap,
@@ -46,6 +47,23 @@ describe("deterministicToolStep", () => {
     expect(primitive.agent.capabilities[0]).toBe(
       primitive.agent.tags?.[STEP_TOOL_TAG],
     );
+  });
+
+  test("omits the non-fatal tag by default (a failing step fails the run)", () => {
+    const primitive = deterministicToolStep({
+      id: "render",
+      tool: "gamma_create_from_template",
+    });
+    expect(primitive.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
+  });
+
+  test("marks the non-fatal tag when nonFatal is set so a throw degrades to a skip", () => {
+    const primitive = deterministicToolStep({
+      id: "render",
+      tool: "gamma_create_from_template",
+      nonFatal: true,
+    });
+    expect(primitive.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
   });
 
   test("omits the argMap tag when no argMap is supplied", () => {

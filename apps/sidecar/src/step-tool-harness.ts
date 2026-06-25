@@ -404,6 +404,12 @@ export async function runDeterministicToolStep(args: {
   input: unknown;
   /** Raw JSON of the step's `workbench.argMap` tag, if present. */
   argMapJson?: string;
+  /**
+   * When true (the step's `workbench.nonFatal` tag is set), a thrown tool error
+   * is logged and degraded to a completed `isError` envelope instead of
+   * propagating — so one best-effort source cannot fail the whole run.
+   */
+  nonFatal?: boolean;
   signal: AbortSignal;
 }): Promise<{ output: unknown }> {
   const ctx = readStepToolContext(
@@ -451,6 +457,25 @@ export async function runDeterministicToolStep(args: {
       args.signal,
     );
     return { output: result };
+  } catch (cause) {
+    // A degrade must never mask cancellation: if the step's signal aborted (run
+    // cancel/timeout), the throw is the cancellation, not a source failure —
+    // rethrow it so the runtime propagates the cancel instead of letting the
+    // run march on into brief/write/persist.
+    if (args.nonFatal !== true || args.signal.aborted) {
+      throw cause;
+    }
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    logger.error(
+      "Deterministic step tool {tool} failed; degraded to a non-fatal skip for {address}: {msg}",
+      { tool: args.toolName, address: ctx.stepAddress, msg: reason },
+    );
+    return {
+      output: {
+        content: `${args.toolName} step failed: ${reason}`,
+        isError: true,
+      },
+    };
   } finally {
     for (const dispose of disposers) {
       try {

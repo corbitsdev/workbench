@@ -50,7 +50,6 @@ function researchPhase(state: RunState | null): StepPhase | undefined {
     "reddit",
     "x",
     "youtube",
-    "bluesky",
     "brief",
   ] as const;
   if (phaseFor(state, "brief") === "completed") return "completed";
