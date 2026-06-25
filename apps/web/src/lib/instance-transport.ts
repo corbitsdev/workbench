@@ -1,5 +1,5 @@
-import { ApiError, type Transport } from '@intx/hub-client';
-import { subscribeSharedEventStream } from './shared-event-stream';
+import { ApiError, type Transport } from "@intx/hub-client";
+import { subscribeSharedEventStream } from "./shared-event-stream";
 
 // Browser Transport for InstanceSession that targets the hub origin and sends
 // auth cookies. Interchange's stock createBrowserTransport issues relative,
@@ -8,7 +8,7 @@ import { subscribeSharedEventStream } from './shared-event-stream';
 // separate origins (VITE_API_BASE_URL), so instance mail/turn/event calls must
 // be pointed at the hub and carry the session cookie, mirroring hub-api.ts.
 
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
+const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
 
 function toUrl(path: string): string {
   return new URL(path, apiBase || window.location.origin).toString();
@@ -22,16 +22,18 @@ function toUrl(path: string): string {
 // authenticates against the hub. Regular fetch is unaffected and stays on
 // apiBase. In prod there is no proxy, so fall back to apiBase like fetch.
 function toEventSourceUrl(path: string): string {
-  const base = import.meta.env.DEV ? window.location.origin : apiBase || window.location.origin;
+  const base = import.meta.env.DEV
+    ? window.location.origin
+    : apiBase || window.location.origin;
   return new URL(path, base).toString();
 }
 
 export function createHubTransport(): Transport {
   return {
     async fetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-      const init: RequestInit = { method, credentials: 'include' };
+      const init: RequestInit = { method, credentials: "include" };
       if (body !== undefined) {
-        init.headers = { 'Content-Type': 'application/json' };
+        init.headers = { "Content-Type": "application/json" };
         init.body = JSON.stringify(body);
       }
       const res = await fetch(toUrl(path), init);
@@ -41,8 +43,8 @@ export function createHubTransport(): Transport {
         } | null;
         throw new ApiError(
           res.status,
-          raw?.error?.code ?? 'unknown',
-          raw?.error?.message ?? `HTTP ${res.status}`
+          raw?.error?.code ?? "unknown",
+          raw?.error?.message ?? `HTTP ${res.status}`,
         );
       }
       if (res.status === 204) return undefined as T;
@@ -52,7 +54,7 @@ export function createHubTransport(): Transport {
     subscribe(
       path: string,
       onEvent: (event: unknown) => void,
-      opts?: { eventName?: string }
+      opts?: { eventName?: string },
     ): () => void {
       // Delegate to the process-wide shared stream so every consumer of this
       // agent's events (session, live-text / reasoning / phase trackers, the
@@ -61,8 +63,8 @@ export function createHubTransport(): Transport {
       // 'message' is the default unnamed SSE event when no eventName is given.
       return subscribeSharedEventStream(
         toEventSourceUrl(path),
-        opts?.eventName ?? 'message',
-        onEvent
+        opts?.eventName ?? "message",
+        onEvent,
       );
     },
   };

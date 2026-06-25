@@ -1,8 +1,8 @@
-import { describe, expect, it, mock } from 'bun:test';
-import type { SidecarRouter } from '@intx/hub-sessions';
-import type { HubDb } from '../db';
-import type { EnsureDeploymentRoutableFn } from '../routes/workflow-runs';
-import { createWorkflowReconciler } from './workflow-reconciler';
+import { describe, expect, it, mock } from "bun:test";
+import type { SidecarRouter } from "@intx/hub-sessions";
+import type { HubDb } from "../db";
+import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
+import { createWorkflowReconciler } from "./workflow-reconciler";
 
 type Row = {
   deploymentId: string | null;
@@ -27,13 +27,13 @@ function makeDb(rows: Row[]): HubDb {
 // requires. failOrphanedRuns has its own dedicated db + deps below.
 const RECONCILE_ONLY_DEPS = {
   getRoutableAddresses: () => [],
-  deploymentDomain: 'abklabs.com',
+  deploymentDomain: "abklabs.com",
 };
 
 type RunRow = {
   id: string;
   deploymentId: string | null;
-  status: 'running' | 'awaiting' | 'completed' | 'failed';
+  status: "running" | "awaiting" | "completed" | "failed";
 };
 
 // Stateful db for failOrphanedRuns. The reconciler, for each NON-routable
@@ -43,7 +43,7 @@ type RunRow = {
 // status/error transition rather than asserting a mock.
 function makeFailDb(runs: RunRow[], nonRoutableIdsInOrder: string[]) {
   const rows = new Map<string, RunRow & { error: string | null }>(
-    runs.map((r) => [r.id, { ...r, error: null }])
+    runs.map((r) => [r.id, { ...r, error: null }]),
   );
   // The reconciler only calls loadRunRecord (findFirst) for NON-routable
   // candidates, in stuckRuns order. Seed the dequeue with exactly those.
@@ -57,7 +57,7 @@ function makeFailDb(runs: RunRow[], nonRoutableIdsInOrder: string[]) {
             [...rows.values()].map((r) => ({
               id: r.id,
               deploymentId: r.deploymentId,
-            }))
+            })),
           ),
       }),
     }),
@@ -74,9 +74,9 @@ function makeFailDb(runs: RunRow[], nonRoutableIdsInOrder: string[]) {
           return Promise.resolve({
             id: r.id,
             deploymentId: r.deploymentId,
-            kind: 'k',
-            tenantId: 't',
-            principalId: 'p',
+            kind: "k",
+            tenantId: "t",
+            principalId: "p",
             status: r.status,
             currentStepId: null,
             input: {},
@@ -91,7 +91,7 @@ function makeFailDb(runs: RunRow[], nonRoutableIdsInOrder: string[]) {
     },
     update: () => ({
       set: (vals: {
-        status: 'running' | 'awaiting' | 'completed' | 'failed';
+        status: "running" | "awaiting" | "completed" | "failed";
         error: string | null;
       }) => ({
         where: () => {
@@ -118,23 +118,24 @@ function makeEvents() {
       handler = fn;
       return () => {};
     }),
-  } as unknown as SidecarRouter['events'];
+  } as unknown as SidecarRouter["events"];
   return {
     events,
     fireReconnect() {
-      if (handler === undefined) throw new Error('no agent.reconnected handler registered');
+      if (handler === undefined)
+        throw new Error("no agent.reconnected handler registered");
       handler();
     },
   };
 }
 
-describe('createWorkflowReconciler', () => {
-  it('re-establishes every active deployment, skipping rows without a deploymentId', async () => {
-    const calls: Array<{
+describe("createWorkflowReconciler", () => {
+  it("re-establishes every active deployment, skipping rows without a deploymentId", async () => {
+    const calls: {
       deploymentId: string;
       kind: string;
       tenantId: string;
-    }> = [];
+    }[] = [];
     const ensure: EnsureDeploymentRoutableFn = (args) => {
       calls.push({
         deploymentId: args.deploymentId,
@@ -146,22 +147,22 @@ describe('createWorkflowReconciler', () => {
     const reconciler = createWorkflowReconciler({
       db: makeDb([
         {
-          deploymentId: 'ses_a',
-          kind: 'pain-point-collateral',
-          tenantId: 't1',
-          principalId: 'p1',
+          deploymentId: "ses_a",
+          kind: "pain-point-collateral",
+          tenantId: "t1",
+          principalId: "p1",
         },
         {
           deploymentId: null,
-          kind: 'orphan',
-          tenantId: 't1',
-          principalId: 'p1',
+          kind: "orphan",
+          tenantId: "t1",
+          principalId: "p1",
         },
         {
-          deploymentId: 'ses_b',
-          kind: 'deck',
-          tenantId: 't2',
-          principalId: 'p2',
+          deploymentId: "ses_b",
+          kind: "deck",
+          tenantId: "t2",
+          principalId: "p2",
         },
       ]),
       events: makeEvents().events,
@@ -172,22 +173,23 @@ describe('createWorkflowReconciler', () => {
     await reconciler.reconcileAll();
 
     expect(calls).toEqual([
-      { deploymentId: 'ses_a', kind: 'pain-point-collateral', tenantId: 't1' },
-      { deploymentId: 'ses_b', kind: 'deck', tenantId: 't2' },
+      { deploymentId: "ses_a", kind: "pain-point-collateral", tenantId: "t1" },
+      { deploymentId: "ses_b", kind: "deck", tenantId: "t2" },
     ]);
   });
 
-  it('is best-effort: one deployment failing does not abort the pass', async () => {
+  it("is best-effort: one deployment failing does not abort the pass", async () => {
     const seen: string[] = [];
     const ensure: EnsureDeploymentRoutableFn = (args) => {
       seen.push(args.deploymentId);
-      if (args.deploymentId === 'ses_a') return Promise.reject(new Error('boom'));
+      if (args.deploymentId === "ses_a")
+        return Promise.reject(new Error("boom"));
       return Promise.resolve({ reestablished: true });
     };
     const reconciler = createWorkflowReconciler({
       db: makeDb([
-        { deploymentId: 'ses_a', kind: 'k', tenantId: 't', principalId: 'p' },
-        { deploymentId: 'ses_b', kind: 'k', tenantId: 't', principalId: 'p' },
+        { deploymentId: "ses_a", kind: "k", tenantId: "t", principalId: "p" },
+        { deploymentId: "ses_b", kind: "k", tenantId: "t", principalId: "p" },
       ]),
       events: makeEvents().events,
       ensureDeploymentRoutable: ensure,
@@ -196,10 +198,10 @@ describe('createWorkflowReconciler', () => {
 
     await reconciler.reconcileAll();
 
-    expect(seen).toEqual(['ses_a', 'ses_b']);
+    expect(seen).toEqual(["ses_a", "ses_b"]);
   });
 
-  it('reconciles on agent.reconnected, coalescing concurrent triggers into one pass', async () => {
+  it("reconciles on agent.reconnected, coalescing concurrent triggers into one pass", async () => {
     let resolveEnsure: (() => void) | undefined;
     let ensureCalls = 0;
     const ensure: EnsureDeploymentRoutableFn = () => {
@@ -210,7 +212,9 @@ describe('createWorkflowReconciler', () => {
     };
     const evt = makeEvents();
     const reconciler = createWorkflowReconciler({
-      db: makeDb([{ deploymentId: 'ses_a', kind: 'k', tenantId: 't', principalId: 'p' }]),
+      db: makeDb([
+        { deploymentId: "ses_a", kind: "k", tenantId: "t", principalId: "p" },
+      ]),
       events: evt.events,
       ensureDeploymentRoutable: ensure,
       ...RECONCILE_ONLY_DEPS,
@@ -229,7 +233,7 @@ describe('createWorkflowReconciler', () => {
     resolveEnsure?.();
   });
 
-  it('start() subscribes to agent.reconnected', () => {
+  it("start() subscribes to agent.reconnected", () => {
     const evt = makeEvents();
     const reconciler = createWorkflowReconciler({
       db: makeDb([]),
@@ -238,17 +242,23 @@ describe('createWorkflowReconciler', () => {
       ...RECONCILE_ONLY_DEPS,
     });
     reconciler.start();
-    expect(evt.events.on).toHaveBeenCalledWith('agent.reconnected', expect.any(Function));
+    expect(evt.events.on).toHaveBeenCalledWith(
+      "agent.reconnected",
+      expect.any(Function),
+    );
   });
 });
 
-const DOMAIN = 'abklabs.com';
-const noopEnsure: EnsureDeploymentRoutableFn = () => Promise.resolve({ reestablished: false });
+const DOMAIN = "abklabs.com";
+const noopEnsure: EnsureDeploymentRoutableFn = () =>
+  Promise.resolve({ reestablished: false });
 
-describe('failOrphanedRuns', () => {
-  it('fails a run whose supervisor is NOT routable', async () => {
-    const runs: RunRow[] = [{ id: 'run_1', deploymentId: 'ses_gone', status: 'running' }];
-    const { db, rows } = makeFailDb(runs, ['run_1']);
+describe("failOrphanedRuns", () => {
+  it("fails a run whose supervisor is NOT routable", async () => {
+    const runs: RunRow[] = [
+      { id: "run_1", deploymentId: "ses_gone", status: "running" },
+    ];
+    const { db, rows } = makeFailDb(runs, ["run_1"]);
     const reconciler = createWorkflowReconciler({
       db,
       events: makeEvents().events,
@@ -259,12 +269,14 @@ describe('failOrphanedRuns', () => {
 
     await reconciler.failOrphanedRuns();
 
-    expect(rows.get('run_1')!.status).toBe('failed');
-    expect(rows.get('run_1')!.error).toBe('interrupted by restart');
+    expect(rows.get("run_1")!.status).toBe("failed");
+    expect(rows.get("run_1")!.error).toBe("interrupted by restart");
   });
 
-  it('leaves a run whose supervisor IS routable untouched (safety invariant)', async () => {
-    const runs: RunRow[] = [{ id: 'run_live', deploymentId: 'ses_live', status: 'awaiting' }];
+  it("leaves a run whose supervisor IS routable untouched (safety invariant)", async () => {
+    const runs: RunRow[] = [
+      { id: "run_live", deploymentId: "ses_live", status: "awaiting" },
+    ];
     // ses_live's supervisor IS in the routable snapshot — never fail it.
     const { db, rows } = makeFailDb(runs, []);
     const reconciler = createWorkflowReconciler({
@@ -277,18 +289,18 @@ describe('failOrphanedRuns', () => {
 
     await reconciler.failOrphanedRuns();
 
-    expect(rows.get('run_live')!.status).toBe('awaiting');
-    expect(rows.get('run_live')!.error).toBeNull();
+    expect(rows.get("run_live")!.status).toBe("awaiting");
+    expect(rows.get("run_live")!.error).toBeNull();
   });
 
-  it('fails only the non-routable runs in a mixed set, keeping the routable one', async () => {
+  it("fails only the non-routable runs in a mixed set, keeping the routable one", async () => {
     const runs: RunRow[] = [
-      { id: 'run_live', deploymentId: 'ses_live', status: 'running' },
-      { id: 'run_gone', deploymentId: 'ses_gone', status: 'awaiting' },
+      { id: "run_live", deploymentId: "ses_live", status: "running" },
+      { id: "run_gone", deploymentId: "ses_gone", status: "awaiting" },
     ];
     // run_live is routable (skipped, no findFirst); run_gone is the only
     // non-routable candidate, so it is the only id the dequeue serves.
-    const { db, rows } = makeFailDb(runs, ['run_gone']);
+    const { db, rows } = makeFailDb(runs, ["run_gone"]);
     const reconciler = createWorkflowReconciler({
       db,
       events: makeEvents().events,
@@ -299,11 +311,11 @@ describe('failOrphanedRuns', () => {
 
     await reconciler.failOrphanedRuns();
 
-    expect(rows.get('run_live')!.status).toBe('running');
-    expect(rows.get('run_gone')!.status).toBe('failed');
+    expect(rows.get("run_live")!.status).toBe("running");
+    expect(rows.get("run_gone")!.status).toBe("failed");
   });
 
-  it('is idempotent: a second pass with no in-flight rows fails nothing', async () => {
+  it("is idempotent: a second pass with no in-flight rows fails nothing", async () => {
     // After the first pass marks the row failed, the real query would no
     // longer return it (status NOT IN running/awaiting). Model that as an
     // empty candidate set: the pass must complete without writing anything.

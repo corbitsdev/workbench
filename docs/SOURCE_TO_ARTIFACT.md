@@ -59,14 +59,20 @@ making its own long-lived content store the source of truth.
 Minimum shape:
 
 ```ts
-type SourceKind = 'transcript' | 'markdown' | 'document' | 'brain-file' | 'url' | 'artifact';
+type SourceKind =
+  | "transcript"
+  | "markdown"
+  | "document"
+  | "brain-file"
+  | "url"
+  | "artifact";
 type JsonSchemaRef = string;
 
 interface Source {
   id: string;
   kind: SourceKind;
   title: string;
-  origin: 'user-upload' | 'paste' | 'integration' | 'generated-artifact';
+  origin: "user-upload" | "paste" | "integration" | "generated-artifact";
   contentRef: string;
   artifactId?: string;
   metadata: Record<string, unknown>;
@@ -137,12 +143,12 @@ Minimum shape:
 
 ```ts
 type WorkflowOptionKind =
-  | 'single-select'
-  | 'multi-select'
-  | 'text'
-  | 'boolean'
-  | 'source-picker'
-  | 'hook-picker';
+  | "single-select"
+  | "multi-select"
+  | "text"
+  | "boolean"
+  | "source-picker"
+  | "hook-picker";
 
 interface WorkflowOption {
   id: string;
@@ -173,7 +179,7 @@ interface OfferingSuggestionRule {
   sourceKinds?: SourceKind[];
   requiredMetadataKeys?: string[];
   contextKeys?: string[];
-  confidence: 'low' | 'medium' | 'high';
+  confidence: "low" | "medium" | "high";
   reason: string;
 }
 ```
@@ -225,14 +231,14 @@ Minimum shape:
 
 ```ts
 type JobStatus =
-  | 'queued'
-  | 'running'
-  | 'waiting-for-review'
-  | 'generating'
-  | 'delivering'
-  | 'done'
-  | 'failed'
-  | 'canceled';
+  | "queued"
+  | "running"
+  | "waiting-for-review"
+  | "generating"
+  | "delivering"
+  | "done"
+  | "failed"
+  | "canceled";
 
 interface Job {
   id: string;
@@ -285,8 +291,19 @@ Suggested renderer kinds:
 Minimum shape:
 
 ```ts
-type ReviewGateStatus = 'pending' | 'active' | 'approved' | 'rejected' | 'skipped';
-type ReviewGateAction = 'approve' | 'reject' | 'edit' | 'select' | 'skip' | 'continue';
+type ReviewGateStatus =
+  | "pending"
+  | "active"
+  | "approved"
+  | "rejected"
+  | "skipped";
+type ReviewGateAction =
+  | "approve"
+  | "reject"
+  | "edit"
+  | "select"
+  | "skip"
+  | "continue";
 
 interface ReviewGateDefinition {
   id: string;
@@ -354,8 +371,8 @@ interface WorkbenchArtifact {
   content: string;
   sourceIds: string[];
   reviewGateIds: string[];
-  generatedBy: 'agent' | 'human' | 'import';
-  status: 'draft' | 'approved' | 'rejected';
+  generatedBy: "agent" | "human" | "import";
+  status: "draft" | "approved" | "rejected";
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -379,7 +396,7 @@ interface CurrentTranscriptArtifact {
   kind: string;
   title: string;
   content: string;
-  status: 'draft' | 'approved' | 'rejected';
+  status: "draft" | "approved" | "rejected";
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -406,7 +423,7 @@ interface ArtifactPackage {
   jobId: string;
   title: string;
   artifactIds: string[];
-  status: 'draft' | 'approved' | 'delivered';
+  status: "draft" | "approved" | "delivered";
   createdAt: string;
   updatedAt: string;
 }
@@ -428,7 +445,7 @@ Examples:
 Minimum shape:
 
 ```ts
-type HookStatus = 'available' | 'disabled' | 'running' | 'succeeded' | 'failed';
+type HookStatus = "available" | "disabled" | "running" | "succeeded" | "failed";
 
 interface DeliveryHook {
   id: string;

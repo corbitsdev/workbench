@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { cn } from '@workbench/ui';
-import type { FeedbackSubjectKind } from './feedback-types';
+import { useState } from "react";
+import { cn } from "@workbench/ui";
+import type { FeedbackSubjectKind } from "./feedback-types";
 
 export interface MessageFeedbackProps {
   subjectId: string;
@@ -8,7 +8,11 @@ export interface MessageFeedbackProps {
   /** Server-fetched rating for this subject; drives the displayed pressed state. */
   savedRating?: 1 | -1 | null;
   /** Called when the user selects a rating. Returns a promise; buttons are disabled while pending. */
-  onRate: (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) => Promise<void>;
+  onRate: (
+    subjectId: string,
+    subjectKind: FeedbackSubjectKind,
+    rating: 1 | -1,
+  ) => Promise<void>;
 }
 
 export function MessageFeedback({
@@ -41,16 +45,21 @@ export function MessageFeedback({
   }
 
   return (
-    <div className="flex items-center gap-1 mt-1" aria-label="Rate this response">
-      {failed && <span className="text-xs text-orange-soft">Failed to save</span>}
+    <div
+      className="flex items-center gap-1 mt-1"
+      aria-label="Rate this response"
+    >
+      {failed && (
+        <span className="text-xs text-orange-soft">Failed to save</span>
+      )}
       <button
         onClick={() => handleClick(1)}
         disabled={pending}
         aria-label="Thumbs up"
         aria-pressed={displayRating === 1}
         className={cn(
-          'rounded p-1 text-text-3 transition-colors hover:text-text disabled:cursor-not-allowed',
-          displayRating === 1 && 'text-orange'
+          "rounded p-1 text-text-3 transition-colors hover:text-text disabled:cursor-not-allowed",
+          displayRating === 1 && "text-orange",
         )}
       >
         <ThumbUpIcon />
@@ -61,8 +70,8 @@ export function MessageFeedback({
         aria-label="Thumbs down"
         aria-pressed={displayRating === -1}
         className={cn(
-          'rounded p-1 text-text-3 transition-colors hover:text-text disabled:cursor-not-allowed',
-          displayRating === -1 && 'text-orange'
+          "rounded p-1 text-text-3 transition-colors hover:text-text disabled:cursor-not-allowed",
+          displayRating === -1 && "text-orange",
         )}
       >
         <ThumbDownIcon />

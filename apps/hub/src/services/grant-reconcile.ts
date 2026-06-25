@@ -1,23 +1,23 @@
-import { and, eq } from 'drizzle-orm';
-import { schema as intxSchema } from '@intx/db';
-import type { DB } from '@intx/db';
-import { getLogger } from '@intx/log';
-import type { SidecarRouter } from '@intx/hub-sessions';
-import type { GrantStore } from '@intx/types/authz';
-import { type AgentTemplate, toLlmToolName } from '@workbench/agents';
-import { memberAgentInstance } from '../db/schema';
-import type { HubDb } from '../db';
-import { getConfig } from '../config';
-import { getToolNamesFromCapabilities } from '../lib/tool-registry';
-import { TOOL_GRANT_RESOURCE_PREFIX } from '../lib/tool-grants';
+import { and, eq } from "drizzle-orm";
+import { schema as intxSchema } from "@intx/db";
+import type { DB } from "@intx/db";
+import { getLogger } from "@intx/log";
+import type { SidecarRouter } from "@intx/hub-sessions";
+import type { GrantStore } from "@intx/types/authz";
+import { type AgentTemplate, toLlmToolName } from "@workbench/agents";
+import { memberAgentInstance } from "../db/schema";
+import type { HubDb } from "../db";
+import { getConfig } from "../config";
+import { getToolNamesFromCapabilities } from "../lib/tool-registry";
+import { TOOL_GRANT_RESOURCE_PREFIX } from "../lib/tool-grants";
 import {
   persistInstanceToolGrants,
   persistInstanceGrantRequirements,
   type GrantRequirementRow,
-} from './agent-provisioning';
+} from "./agent-provisioning";
 
 const { agent, agentInstance, grant, tenant } = intxSchema;
-const log = getLogger('grant-reconcile');
+const log = getLogger("grant-reconcile");
 
 export interface TemplateReconcileResult {
   templateKey: string;
@@ -55,9 +55,9 @@ export interface InstanceGrantRefreshTarget {
  * for an already-live instance).
  */
 export async function refreshInstanceGrantsFromDefinition(
-  db: DB['db'],
+  db: DB["db"],
   instance: InstanceGrantRefreshTarget,
-  live?: LiveReconcileDeps
+  live?: LiveReconcileDeps,
 ): Promise<{ refreshed: boolean; pushed: boolean }> {
   const agentRow = await db.query.agent.findFirst({
     where: eq(agent.id, instance.agentId),
@@ -77,21 +77,28 @@ export async function refreshInstanceGrantsFromDefinition(
   await persistInstanceGrantRequirements(db, {
     tenantId: instance.tenantId,
     principalId: instance.principalId,
-    grantRequirements: (agentRow.grantRequirements ?? []) as GrantRequirementRow[],
+    grantRequirements: (agentRow.grantRequirements ??
+      []) as GrantRequirementRow[],
     now,
   });
 
-  if (!live || !live.sidecarRouter.getRoutableAddresses().includes(instance.address)) {
+  if (
+    !live ||
+    !live.sidecarRouter.getRoutableAddresses().includes(instance.address)
+  ) {
     return { refreshed: true, pushed: false };
   }
 
-  const grants = await live.grantStore.collectGrants(instance.principalId, instance.tenantId);
+  const grants = await live.grantStore.collectGrants(
+    instance.principalId,
+    instance.tenantId,
+  );
   await live.sidecarRouter.sendGrantsUpdate(instance.address, grants);
   await db
     .update(agentInstance)
     .set({ updatedAt: new Date() })
     .where(eq(agentInstance.address, instance.address));
-  log.info('Live sidecar grants push', {
+  log.info("Live sidecar grants push", {
     address: instance.address,
     principalId: instance.principalId,
     grantCount: grants.length,
@@ -118,16 +125,18 @@ export async function refreshInstanceGrantsFromDefinition(
  * escalation. Per-member `instance:` data-access grants are untouched.
  */
 export async function reconcileMemberInstanceGrants(
-  db: DB['db'],
+  db: DB["db"],
   templates: AgentTemplate[],
-  live?: LiveReconcileDeps
+  live?: LiveReconcileDeps,
 ): Promise<TemplateReconcileResult[]> {
   const { slug } = getConfig().globalTenant;
   const globalTenant = await db.query.tenant.findFirst({
     where: eq(tenant.slug, slug),
   });
   if (!globalTenant) {
-    log.warn('Global tenant not seeded — skipping grant reconciliation', { slug });
+    log.warn("Global tenant not seeded — skipping grant reconciliation", {
+      slug,
+    });
     return [];
   }
   const tenantId = globalTenant.id;
@@ -143,7 +152,7 @@ export async function reconcileMemberInstanceGrants(
     const mappings = await hubDb.query.memberAgentInstance.findMany({
       where: and(
         eq(memberAgentInstance.tenantId, tenantId),
-        eq(memberAgentInstance.templateKey, template.key)
+        eq(memberAgentInstance.templateKey, template.key),
       ),
     });
     if (mappings.length === 0) continue;
@@ -171,7 +180,7 @@ export async function reconcileMemberInstanceGrants(
           principalId: instance.principalId,
           address: instance.address,
         },
-        live
+        live,
       );
       reconciled += 1;
       if (didPush) {
@@ -179,7 +188,7 @@ export async function reconcileMemberInstanceGrants(
       }
     }
 
-    log.info('Reconciled member instance grants', {
+    log.info("Reconciled member instance grants", {
       templateKey: template.key,
       reconciled,
       pushed,
@@ -205,9 +214,9 @@ function grantToolNamesEqual(expected: string[], actual: string[]): boolean {
 }
 
 async function toolGrantNamesForPrincipal(
-  db: DB['db'],
+  db: DB["db"],
   tenantId: string,
-  principalId: string
+  principalId: string,
 ): Promise<string[]> {
   const rows = await db
     .select({ resource: grant.resource })
@@ -216,9 +225,9 @@ async function toolGrantNamesForPrincipal(
       and(
         eq(grant.tenantId, tenantId),
         eq(grant.principalId, principalId),
-        eq(grant.action, 'invoke'),
-        eq(grant.effect, 'allow')
-      )
+        eq(grant.action, "invoke"),
+        eq(grant.effect, "allow"),
+      ),
     );
   const names: string[] = [];
   for (const row of rows) {
@@ -230,11 +239,11 @@ async function toolGrantNamesForPrincipal(
 }
 
 export type PersonalAgentSyncReason =
-  | 'no_myra_instance'
-  | 'instance_ended'
-  | 'missing_org_agent'
-  | 'tool_grant_drift'
-  | 'org_template_newer';
+  | "no_myra_instance"
+  | "instance_ended"
+  | "missing_org_agent"
+  | "tool_grant_drift"
+  | "org_template_newer";
 
 export type PersonalAgentSyncAssessment = {
   available: boolean;
@@ -243,51 +252,57 @@ export type PersonalAgentSyncAssessment = {
 
 /** Read-only: why POST /v1/me may be needed (GET must not mutate). */
 export async function assessPersonalAgentSync(
-  db: DB['db'],
-  paInstanceId: string | null
+  db: DB["db"],
+  paInstanceId: string | null,
 ): Promise<PersonalAgentSyncAssessment> {
   if (!paInstanceId) {
-    return { available: true, reason: 'no_myra_instance' };
+    return { available: true, reason: "no_myra_instance" };
   }
 
   const instance = await db.query.agentInstance.findFirst({
     where: eq(agentInstance.id, paInstanceId),
   });
   if (!instance) {
-    return { available: true, reason: 'no_myra_instance' };
+    return { available: true, reason: "no_myra_instance" };
   }
   if (instance.endedAt) {
-    return { available: true, reason: 'instance_ended' };
+    return { available: true, reason: "instance_ended" };
   }
 
   const agentRow = await db.query.agent.findFirst({
     where: eq(agent.id, instance.agentId),
   });
   if (!agentRow) {
-    return { available: true, reason: 'missing_org_agent' };
+    return { available: true, reason: "missing_org_agent" };
   }
 
   // Stored tool grants are keyed on the LLM-safe name (buildToolGrantRows), so
   // map the definition's canonical capabilities through the same transform before
   // comparing — otherwise every assessment reports false drift (CL-2306).
   const expected = sortedToolNames(
-    getToolNamesFromCapabilities(agentRow.capabilities ?? null).map(toLlmToolName)
+    getToolNamesFromCapabilities(agentRow.capabilities ?? null).map(
+      toLlmToolName,
+    ),
   );
-  const actual = await toolGrantNamesForPrincipal(db, instance.tenantId, instance.principalId);
+  const actual = await toolGrantNamesForPrincipal(
+    db,
+    instance.tenantId,
+    instance.principalId,
+  );
   if (!grantToolNamesEqual(expected, actual)) {
-    return { available: true, reason: 'tool_grant_drift' };
+    return { available: true, reason: "tool_grant_drift" };
   }
 
   if (agentRow.updatedAt.getTime() > instance.updatedAt.getTime()) {
-    return { available: true, reason: 'org_template_newer' };
+    return { available: true, reason: "org_template_newer" };
   }
 
   return { available: false, reason: null };
 }
 
 export async function personalAgentUpdateAvailable(
-  db: DB['db'],
-  paInstanceId: string | null
+  db: DB["db"],
+  paInstanceId: string | null,
 ): Promise<boolean> {
   const assessment = await assessPersonalAgentSync(db, paInstanceId);
   return assessment.available;

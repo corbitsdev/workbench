@@ -1,9 +1,9 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import type { DB } from '@intx/db';
-import { getAncestorChain } from '@intx/db';
-import { workbenchTemplate, workbenchTemplateVersion } from '../db/schema';
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import type { DB } from "@intx/db";
+import { getAncestorChain } from "@intx/db";
+import { workbenchTemplate, workbenchTemplateVersion } from "../db/schema";
 
-export const GAMMA_KIND = 'gamma';
+export const GAMMA_KIND = "gamma";
 
 export type GammaTemplateConfig = {
   gammaId: string;
@@ -24,19 +24,19 @@ export function configToRow(
   version: number,
   name: string,
   config: Record<string, unknown>,
-  createdAt: Date
+  createdAt: Date,
 ): GammaTemplateRow {
-  const gammaId = config['gammaId'];
-  const systemPrompt = config['systemPrompt'];
+  const gammaId = config["gammaId"];
+  const systemPrompt = config["systemPrompt"];
 
-  if (typeof gammaId !== 'string' || gammaId === '') {
+  if (typeof gammaId !== "string" || gammaId === "") {
     throw new Error(
-      `Template ${templateId} has invalid config: gammaId must be a non-empty string`
+      `Template ${templateId} has invalid config: gammaId must be a non-empty string`,
     );
   }
-  if (typeof systemPrompt !== 'string' || systemPrompt === '') {
+  if (typeof systemPrompt !== "string" || systemPrompt === "") {
     throw new Error(
-      `Template ${templateId} has invalid config: systemPrompt must be a non-empty string`
+      `Template ${templateId} has invalid config: systemPrompt must be a non-empty string`,
     );
   }
 
@@ -53,8 +53,8 @@ export function configToRow(
 // Uses DB['db'] (not HubDb) so this function is callable from both the route
 // (HubDb is a superset) and the ContextToolEntry (receives DB['db']).
 export async function listLatestGammaTemplates(
-  db: DB['db'],
-  tenantId: string
+  db: DB["db"],
+  tenantId: string,
 ): Promise<GammaTemplateRow[]> {
   const rows = await db
     .select({
@@ -71,22 +71,29 @@ export async function listLatestGammaTemplates(
         eq(workbenchTemplateVersion.templateId, workbenchTemplate.id),
         eq(
           workbenchTemplateVersion.version,
-          sql<number>`(SELECT MAX(v2.version) FROM template_version v2 WHERE v2.template_id = ${workbenchTemplate.id})`
-        )
-      )
+          sql<number>`(SELECT MAX(v2.version) FROM template_version v2 WHERE v2.template_id = ${workbenchTemplate.id})`,
+        ),
+      ),
     )
-    .where(and(eq(workbenchTemplate.tenantId, tenantId), eq(workbenchTemplate.kind, GAMMA_KIND)))
+    .where(
+      and(
+        eq(workbenchTemplate.tenantId, tenantId),
+        eq(workbenchTemplate.kind, GAMMA_KIND),
+      ),
+    )
     .orderBy(desc(workbenchTemplate.createdAt));
 
-  return rows.map((r) => configToRow(r.id, r.version, r.name, r.config, r.createdAt));
+  return rows.map((r) =>
+    configToRow(r.id, r.version, r.name, r.config, r.createdAt),
+  );
 }
 
 // Reads templates visible to a tenant: its own plus those inherited from any
 // ancestor (active workbench -> ... -> global). Writes still land in a single
 // tenant; only reads walk the chain.
 export async function listInheritedGammaTemplates(
-  db: DB['db'],
-  tenantId: string
+  db: DB["db"],
+  tenantId: string,
 ): Promise<GammaTemplateRow[]> {
   const chain = await getAncestorChain(db, tenantId);
   const rows = await db
@@ -104,12 +111,19 @@ export async function listInheritedGammaTemplates(
         eq(workbenchTemplateVersion.templateId, workbenchTemplate.id),
         eq(
           workbenchTemplateVersion.version,
-          sql<number>`(SELECT MAX(v2.version) FROM template_version v2 WHERE v2.template_id = ${workbenchTemplate.id})`
-        )
-      )
+          sql<number>`(SELECT MAX(v2.version) FROM template_version v2 WHERE v2.template_id = ${workbenchTemplate.id})`,
+        ),
+      ),
     )
-    .where(and(inArray(workbenchTemplate.tenantId, chain), eq(workbenchTemplate.kind, GAMMA_KIND)))
+    .where(
+      and(
+        inArray(workbenchTemplate.tenantId, chain),
+        eq(workbenchTemplate.kind, GAMMA_KIND),
+      ),
+    )
     .orderBy(desc(workbenchTemplate.createdAt));
 
-  return rows.map((r) => configToRow(r.id, r.version, r.name, r.config, r.createdAt));
+  return rows.map((r) =>
+    configToRow(r.id, r.version, r.name, r.config, r.createdAt),
+  );
 }

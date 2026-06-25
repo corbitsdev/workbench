@@ -1,8 +1,8 @@
-import { describe, it, expect, mock } from 'bun:test';
-import { createSidecarConnectionRegistry } from './sidecar-connections';
+import { describe, it, expect, mock } from "bun:test";
+import { createSidecarConnectionRegistry } from "./sidecar-connections";
 
-describe('createSidecarConnectionRegistry', () => {
-  it('closes every tracked connection on closeAll', () => {
+describe("createSidecarConnectionRegistry", () => {
+  it("closes every tracked connection on closeAll", () => {
     const registry = createSidecarConnectionRegistry();
     const a = { close: mock(() => {}) };
     const b = { close: mock(() => {}) };
@@ -16,7 +16,7 @@ describe('createSidecarConnectionRegistry', () => {
     expect(registry.size()).toBe(0);
   });
 
-  it('does not close an untracked connection', () => {
+  it("does not close an untracked connection", () => {
     const registry = createSidecarConnectionRegistry();
     const a = { close: mock(() => {}) };
     registry.track(a);
@@ -27,11 +27,11 @@ describe('createSidecarConnectionRegistry', () => {
     expect(a.close).not.toHaveBeenCalled();
   });
 
-  it('continues closing remaining connections when one throws', () => {
+  it("continues closing remaining connections when one throws", () => {
     const registry = createSidecarConnectionRegistry();
     const bad = {
       close: mock(() => {
-        throw new Error('socket already closing');
+        throw new Error("socket already closing");
       }),
     };
     const good = { close: mock(() => {}) };

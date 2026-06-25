@@ -1,8 +1,8 @@
-import type { InstanceEvent } from '@intx/hub-client';
-import type { ChatMessage, ChatImage } from '@workbench/chat';
-import { convertInstanceEvents } from './adapter';
+import type { InstanceEvent } from "@intx/hub-client";
+import type { ChatMessage, ChatImage } from "@workbench/chat";
+import { convertInstanceEvents } from "./adapter";
 
-export const STREAMING_BUBBLE_ID = 'streaming-synthetic';
+export const STREAMING_BUBBLE_ID = "streaming-synthetic";
 
 export interface ComposeChatInput {
   events: InstanceEvent[];
@@ -44,25 +44,29 @@ export interface ComposeChatResult {
  * prior reply below the just-sent message. Anchoring it to the turn's slot
  * keeps the reply above the newer message without a clock-mixing sort.
  */
-export function composeChatMessages(input: ComposeChatInput): ComposeChatResult {
-  const { events, streaming, toolNames, reasoning = '', liveImages } = input;
+export function composeChatMessages(
+  input: ComposeChatInput,
+): ComposeChatResult {
+  const { events, streaming, toolNames, reasoning = "", liveImages } = input;
 
   // Content of assistant mail (server-timestamped) and of turns that carry tool
   // calls (the only thing mail cannot represent).
   const assistantMailContent = new Set(
-    events.filter((e) => e.kind === 'mail' && e.role === 'assistant').map((e) => e.content.trim())
+    events
+      .filter((e) => e.kind === "mail" && e.role === "assistant")
+      .map((e) => e.content.trim()),
   );
   const toolTurnContent = new Set(
     events
-      .filter((e) => e.kind === 'turn' && (e.toolCalls?.length ?? 0) > 0)
-      .map((e) => e.content.trim())
+      .filter((e) => e.kind === "turn" && (e.toolCalls?.length ?? 0) > 0)
+      .map((e) => e.content.trim()),
   );
   // Assistant mails grouped by content, in arrival order. A text-only turn is
   // matched to the next not-yet-hoisted mail of the same content so distinct
   // replies that happen to share identical text are not collapsed together.
   const assistantMailsByContent = new Map<string, InstanceEvent[]>();
   for (const e of events) {
-    if (e.kind === 'mail' && e.role === 'assistant') {
+    if (e.kind === "mail" && e.role === "assistant") {
       const content = e.content.trim();
       const group = assistantMailsByContent.get(content);
       if (group) group.push(e);
@@ -84,7 +88,7 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
     // A text-only turn echoed by an assistant mail is redundant: emit that
     // server-timestamped mail in the turn's (earliest) slot and drop the turn.
     if (
-      e.kind === 'turn' &&
+      e.kind === "turn" &&
       (e.toolCalls?.length ?? 0) === 0 &&
       assistantMailContent.has(e.content.trim())
     ) {
@@ -93,15 +97,15 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
       // the prior filter's content-collapse behaviour.
       const mail = assistantMailsByContent
         .get(e.content.trim())
-        ?.find((m) => m.kind === 'mail' && !hoistedMailIds.has(m.id));
-      if (mail !== undefined && mail.kind === 'mail') {
+        ?.find((m) => m.kind === "mail" && !hoistedMailIds.has(m.id));
+      if (mail !== undefined && mail.kind === "mail") {
         hoistedMailIds.add(mail.id);
         feedbackTurnIdByMailId.set(mail.id, e.turnId);
         deduped.push(mail);
       }
       continue;
     }
-    if (e.kind === 'mail' && e.role === 'assistant') {
+    if (e.kind === "mail" && e.role === "assistant") {
       // An assistant mail echoed by a tool-call turn is redundant: keep the turn
       // (it carries the tool narrative).
       if (toolTurnContent.has(e.content.trim())) continue;
@@ -123,7 +127,11 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
     if (!seen.has(msg.id)) {
       seen.add(msg.id);
       const feedbackTurnId = feedbackTurnIdByMailId.get(msg.id);
-      messages.push(feedbackTurnId !== undefined ? { ...msg, feedbackId: feedbackTurnId } : msg);
+      messages.push(
+        feedbackTurnId !== undefined
+          ? { ...msg, feedbackId: feedbackTurnId }
+          : msg,
+      );
     }
   }
 
@@ -152,32 +160,32 @@ export function composeChatMessages(input: ComposeChatInput): ComposeChatResult 
   const liveText = streaming.trim();
   const liveReasoning = reasoning.trim();
   const hasLiveImages = liveImages !== undefined && liveImages.length > 0;
-  if (liveText !== '' || liveReasoning !== '' || hasLiveImages) {
+  if (liveText !== "" || liveReasoning !== "" || hasLiveImages) {
     const last = messages[messages.length - 1];
-    if (last?.role === 'agent' && last.content === '') {
-      if (liveText !== '') last.content = streaming;
-      if (liveReasoning !== '') last.reasoning = reasoning;
+    if (last?.role === "agent" && last.content === "") {
+      if (liveText !== "") last.content = streaming;
+      if (liveReasoning !== "") last.reasoning = reasoning;
       if (hasLiveImages) last.images = [...liveImages!];
-      last.status = 'sending';
-    } else if (liveText !== '') {
+      last.status = "sending";
+    } else if (liveText !== "") {
       messages.push({
         id: STREAMING_BUBBLE_ID,
-        role: 'agent',
+        role: "agent",
         content: streaming,
         createdAt: new Date().toISOString(),
-        status: 'sending',
-        ...(liveReasoning !== '' ? { reasoning } : {}),
+        status: "sending",
+        ...(liveReasoning !== "" ? { reasoning } : {}),
         ...(hasLiveImages ? { images: [...liveImages!] } : {}),
       });
-    } else if (liveReasoning !== '' || hasLiveImages) {
+    } else if (liveReasoning !== "" || hasLiveImages) {
       // Reasoning only or images only — agent is thinking/producing output with no text yet.
       messages.push({
         id: STREAMING_BUBBLE_ID,
-        role: 'agent',
-        content: '',
+        role: "agent",
+        content: "",
         createdAt: new Date().toISOString(),
-        status: 'sending',
-        ...(liveReasoning !== '' ? { reasoning } : {}),
+        status: "sending",
+        ...(liveReasoning !== "" ? { reasoning } : {}),
         ...(hasLiveImages ? { images: [...liveImages!] } : {}),
       });
     }

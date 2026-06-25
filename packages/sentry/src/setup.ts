@@ -1,7 +1,7 @@
-import { setup, getConfig, type SetupOptions } from '@intx/log';
-import { configure } from '@logtape/logtape';
-import { initSentry } from './sentry';
-import { createSentrySink, type SentryClient } from './sentry-sink';
+import { setup, getConfig, type SetupOptions } from "@intx/log";
+import { configure } from "@logtape/logtape";
+import { initSentry } from "./sentry";
+import { createSentrySink, type SentryClient } from "./sentry-sink";
 
 let sentryClient: SentryClient | null = null;
 
@@ -15,16 +15,18 @@ type LoggerLike = { category: string | string[]; sinks?: string[] };
  * configured loggers covers their descendants too. Idempotent.
  */
 export function attachSentrySink<T extends LoggerLike>(
-  loggers: T[]
-): (T & { sinks?: string[]; parentSinks?: 'override' })[] {
+  loggers: T[],
+): (T & { sinks?: string[]; parentSinks?: "override" })[] {
   return loggers.map((logger) => {
-    const category = Array.isArray(logger.category) ? logger.category : [logger.category];
-    if (category[0] === 'logtape') {
-      return { ...logger, parentSinks: 'override' as const };
+    const category = Array.isArray(logger.category)
+      ? logger.category
+      : [logger.category];
+    if (category[0] === "logtape") {
+      return { ...logger, parentSinks: "override" as const };
     }
     const sinks = logger.sinks ? [...logger.sinks] : [];
-    if (!sinks.includes('sentry')) {
-      sinks.push('sentry');
+    if (!sinks.includes("sentry")) {
+      sinks.push("sentry");
     }
     return { ...logger, sinks };
   });
@@ -41,7 +43,9 @@ export function attachSentrySink<T extends LoggerLike>(
  *
  * Replaces calling `initSentry()` and `@intx/log` `setup()` separately.
  */
-export async function setupObservability(options: SetupOptions = {}): Promise<void> {
+export async function setupObservability(
+  options: SetupOptions = {},
+): Promise<void> {
   sentryClient = await initSentry();
 
   await setup(options);

@@ -2,8 +2,8 @@ import {
   buildAgentCatalog,
   templateModelName,
   templateModelRequirements,
-} from '@workbench/catalog';
-import { AGENT_TEMPLATES } from './templates';
+} from "@workbench/catalog";
+import { AGENT_TEMPLATES } from "./templates";
 
 export type {
   ModelPlugin,
@@ -11,7 +11,7 @@ export type {
   CatalogModelSpec,
   CatalogOfferingSpec,
   AgentCatalogSpec,
-} from '@workbench/catalog';
+} from "@workbench/catalog";
 export { buildAgentCatalog, templateModelName, templateModelRequirements };
 
 // The catalog for the seeded agent set, resolved at module load.

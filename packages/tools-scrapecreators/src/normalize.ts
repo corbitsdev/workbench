@@ -1,4 +1,9 @@
-import type { TikTokPost, InstagramPost, ThreadsPost, PinterestPin } from './types';
+import type {
+  TikTokPost,
+  InstagramPost,
+  ThreadsPost,
+  PinterestPin,
+} from "./types";
 
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) {
@@ -8,7 +13,7 @@ function truncate(text: string, maxLength: number): string {
 }
 
 function firstLine(text: string): string {
-  const newlineIndex = text.indexOf('\n');
+  const newlineIndex = text.indexOf("\n");
   if (newlineIndex === -1) {
     return text;
   }
@@ -23,10 +28,10 @@ function epochToIso(epoch: number): string {
 }
 
 function toIsoDate(value: number | string | undefined): string {
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return epochToIso(value);
   }
-  if (typeof value === 'string' && value.length > 0) {
+  if (typeof value === "string" && value.length > 0) {
     if (/^\d+$/.test(value)) {
       return epochToIso(Number(value));
     }
@@ -36,75 +41,78 @@ function toIsoDate(value: number | string | undefined): string {
 }
 
 export function normalizeTikTokPost(item: TikTokPost) {
-  const caption = item.desc ?? '';
+  const caption = item.desc ?? "";
   return {
     url: item.url ?? `https://www.tiktok.com/@unknown/video/${item.id}`,
     title: truncate(caption, 100),
     summary: truncate(caption, 200),
     publishedAt: toIsoDate(item.createTime),
-    source: 'tiktok' as const,
+    source: "tiktok" as const,
     engagement: {
       upvotes: item.likes ?? 0,
       comments: item.comments ?? 0,
     },
-    author: item.author ?? '',
+    author: item.author ?? "",
   };
 }
 
 export function normalizeInstagramPost(item: InstagramPost) {
-  const caption = item.caption ?? '';
+  const caption = item.caption ?? "";
   return {
     url:
       item.code !== undefined
         ? `https://www.instagram.com/reel/${item.code}`
-        : 'https://instagram.com',
+        : "https://instagram.com",
     title: firstLine(caption),
     summary: caption,
     publishedAt: toIsoDate(item.takenAt),
-    source: 'instagram' as const,
+    source: "instagram" as const,
     engagement: {
       upvotes: item.likes ?? 0,
       comments: item.comments ?? 0,
     },
-    author: item.author ?? '',
+    author: item.author ?? "",
   };
 }
 
 export function normalizeThreadsPost(item: ThreadsPost) {
-  const text = item.text ?? '';
+  const text = item.text ?? "";
   return {
     url:
       item.code !== undefined
         ? `https://www.threads.net/t/${item.code}`
-        : 'https://www.threads.net',
+        : "https://www.threads.net",
     title: truncate(firstLine(text), 100),
     summary: text,
     publishedAt:
       item.taken_at !== undefined
         ? new Date(item.taken_at * 1000).toISOString()
         : new Date().toISOString(),
-    source: 'threads' as const,
+    source: "threads" as const,
     engagement: {
       upvotes: item.like_count ?? 0,
       comments: 0,
     },
-    author: item.user?.username ?? '',
+    author: item.user?.username ?? "",
   };
 }
 
 export function normalizePinterestPin(item: PinterestPin) {
-  const description = item.description ?? '';
+  const description = item.description ?? "";
   const title = item.title ?? firstLine(description);
   return {
-    url: item.id !== undefined ? `https://pinterest.com/pin/${item.id}` : 'https://pinterest.com',
+    url:
+      item.id !== undefined
+        ? `https://pinterest.com/pin/${item.id}`
+        : "https://pinterest.com",
     title,
     summary: description,
     publishedAt: toIsoDate(item.created_at),
-    source: 'pinterest' as const,
+    source: "pinterest" as const,
     engagement: {
       upvotes: item.save_count ?? 0,
       comments: 0,
     },
-    author: item.pinner?.username ?? '',
+    author: item.pinner?.username ?? "",
   };
 }

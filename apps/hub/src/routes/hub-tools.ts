@@ -1,39 +1,42 @@
-import { type } from 'arktype';
-import { Hono } from 'hono';
-import { describeRoute, resolver } from 'hono-openapi';
-import { schema as intxSchema } from '@intx/db';
-import type { DB } from '@intx/db';
-import { getLogger } from '@intx/log';
-import { and, eq } from 'drizzle-orm';
-import { HUB_BACKED_TOOLS } from '../lib/hub-backed-tools';
-import { buildToolDefinitions, getToolNamesFromCapabilities } from '../lib/tool-registry';
+import { type } from "arktype";
+import { Hono } from "hono";
+import { describeRoute, resolver } from "hono-openapi";
+import { schema as intxSchema } from "@intx/db";
+import type { DB } from "@intx/db";
+import { getLogger } from "@intx/log";
+import { and, eq } from "drizzle-orm";
+import { HUB_BACKED_TOOLS } from "../lib/hub-backed-tools";
+import {
+  buildToolDefinitions,
+  getToolNamesFromCapabilities,
+} from "../lib/tool-registry";
 import type {
   SessionService,
   EventCollectorRegistry,
   SidecarRouter,
   RepoStore,
-} from '@intx/hub-sessions';
-import { requestBodySchema } from '../lib/openapi';
+} from "@intx/hub-sessions";
+import { requestBodySchema } from "../lib/openapi";
 
-const log = getLogger(['api', 'hub-tools']);
+const log = getLogger(["api", "hub-tools"]);
 
 // Request/response shapes for the OpenAPI spec. The hub admin CLI consumes
 // /openapi.json to discover this operation; these schemas document (they do
 // not replace) the handler's existing manual validation. Tool args and the
 // tool result are opaque per-tool payloads, hence `unknown`.
 const RunToolBody = type({
-  tenantId: 'string',
-  agentId: 'string',
-  principalId: 'string',
-  sessionId: 'string',
-  toolName: 'string',
-  args: 'unknown',
+  tenantId: "string",
+  agentId: "string",
+  principalId: "string",
+  sessionId: "string",
+  toolName: "string",
+  args: "unknown",
 });
 const RunToolResponse = type({
-  result: 'unknown',
-  isError: 'boolean',
+  result: "unknown",
+  isError: "boolean",
 });
-const ErrorResponse = type({ error: 'string' });
+const ErrorResponse = type({ error: "string" });
 
 // Scoped execution endpoint for hub-backed native tool packages. The
 // sidecar's `defineHubBackedToolPackage` factory forwards each call here
@@ -42,7 +45,7 @@ const ErrorResponse = type({ error: 'string' });
 // authorizes every call against the agent definition's declared
 // capabilities — a tool the agent was not granted is rejected (403).
 export function createHubToolsRouter(
-  db: DB['db'],
+  db: DB["db"],
   sidecarToken: string,
   hubServices?: {
     sessionService: SessionService;
@@ -50,52 +53,58 @@ export function createHubToolsRouter(
     sidecarRouter: SidecarRouter;
     repoStore: RepoStore;
     buildToolDefinitions: typeof buildToolDefinitions;
-  }
+  },
 ): Hono {
   const router = new Hono();
 
-  router.use('*', async (c, next) => {
-    const auth = c.req.header('Authorization') ?? '';
+  router.use("*", async (c, next) => {
+    const auth = c.req.header("Authorization") ?? "";
     if (auth !== `Bearer ${sidecarToken}`) {
-      return c.json({ error: 'Unauthorized' }, 401);
+      return c.json({ error: "Unauthorized" }, 401);
     }
     return next();
   });
 
   router.post(
-    '/hub-tools/run',
+    "/hub-tools/run",
     describeRoute({
-      tags: ['Tools'],
-      summary: 'Run a hub-backed tool',
+      tags: ["Tools"],
+      summary: "Run a hub-backed tool",
       description:
         "Sidecar-gated (sidecar token). Executes a single HUB_BACKED_TOOLS tool on behalf of an agent instance. The call is authorized against the identity triple (agent belongs to the claimed tenant, principal is an instance of that agent) and the tool must be in the agent definition's declared capabilities. A tool that throws is reported as `{ isError: true }` with HTTP 200.",
       requestBody: {
-        content: { 'application/json': { schema: requestBodySchema(RunToolBody) } },
+        content: {
+          "application/json": { schema: requestBodySchema(RunToolBody) },
+        },
       },
       responses: {
         200: {
-          description: 'Tool executed (check `isError` for tool-level failure)',
-          content: { 'application/json': { schema: resolver(RunToolResponse) } },
+          description: "Tool executed (check `isError` for tool-level failure)",
+          content: {
+            "application/json": { schema: resolver(RunToolResponse) },
+          },
         },
         400: {
-          description: 'Invalid JSON or missing required fields',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "Invalid JSON or missing required fields",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         401: {
-          description: 'Missing or invalid sidecar token',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "Missing or invalid sidecar token",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         403: {
-          description: 'Unknown agent, identity-triple mismatch, or tool not enabled for the agent',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description:
+            "Unknown agent, identity-triple mismatch, or tool not enabled for the agent",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         404: {
-          description: 'Unknown hub tool',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "Unknown hub tool",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         500: {
-          description: 'Tool missing from provider package or unsupported handler kind',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description:
+            "Tool missing from provider package or unsupported handler kind",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
     }),
@@ -104,36 +113,37 @@ export function createHubToolsRouter(
       try {
         body = await c.req.json();
       } catch {
-        return c.json({ error: 'Invalid JSON' }, 400);
+        return c.json({ error: "Invalid JSON" }, 400);
       }
 
       if (
-        typeof body !== 'object' ||
+        typeof body !== "object" ||
         body === null ||
-        typeof (body as Record<string, unknown>)['tenantId'] !== 'string' ||
-        typeof (body as Record<string, unknown>)['toolName'] !== 'string' ||
-        typeof (body as Record<string, unknown>)['agentId'] !== 'string' ||
-        typeof (body as Record<string, unknown>)['principalId'] !== 'string' ||
-        typeof (body as Record<string, unknown>)['sessionId'] !== 'string' ||
-        typeof (body as Record<string, unknown>)['args'] !== 'object'
+        typeof (body as Record<string, unknown>)["tenantId"] !== "string" ||
+        typeof (body as Record<string, unknown>)["toolName"] !== "string" ||
+        typeof (body as Record<string, unknown>)["agentId"] !== "string" ||
+        typeof (body as Record<string, unknown>)["principalId"] !== "string" ||
+        typeof (body as Record<string, unknown>)["sessionId"] !== "string" ||
+        typeof (body as Record<string, unknown>)["args"] !== "object"
       ) {
         return c.json(
           {
             error:
-              'Missing required fields: tenantId, agentId, principalId, sessionId, toolName, args',
+              "Missing required fields: tenantId, agentId, principalId, sessionId, toolName, args",
           },
-          400
+          400,
         );
       }
 
-      const { tenantId, agentId, principalId, sessionId, toolName, args } = body as {
-        tenantId: string;
-        agentId: string;
-        principalId: string;
-        sessionId: string;
-        toolName: string;
-        args: Record<string, unknown>;
-      };
+      const { tenantId, agentId, principalId, sessionId, toolName, args } =
+        body as {
+          tenantId: string;
+          agentId: string;
+          principalId: string;
+          sessionId: string;
+          toolName: string;
+          args: Record<string, unknown>;
+        };
 
       const entry = HUB_BACKED_TOOLS[toolName];
       if (!entry) {
@@ -156,13 +166,16 @@ export function createHubToolsRouter(
       // holder to the instances it actually runs (no forged cross-agent or
       // cross-tenant identity).
       if (agentRow.tenantId !== tenantId) {
-        return c.json({ error: 'Agent does not belong to the claimed tenant' }, 403);
+        return c.json(
+          { error: "Agent does not belong to the claimed tenant" },
+          403,
+        );
       }
       let instance = await db.query.agentInstance.findFirst({
         where: and(
           eq(intxSchema.agentInstance.principalId, principalId),
           eq(intxSchema.agentInstance.agentId, agentId),
-          eq(intxSchema.agentInstance.tenantId, tenantId)
+          eq(intxSchema.agentInstance.tenantId, tenantId),
         ),
       });
       // Workflow step agents call hub tools presenting their OWN agent id as the
@@ -174,7 +187,7 @@ export function createHubToolsRouter(
         instance = await db.query.agentInstance.findFirst({
           where: and(
             eq(intxSchema.agentInstance.agentId, agentId),
-            eq(intxSchema.agentInstance.tenantId, tenantId)
+            eq(intxSchema.agentInstance.tenantId, tenantId),
           ),
         });
       }
@@ -182,21 +195,31 @@ export function createHubToolsRouter(
       // do not launch an instance; attribute their hub-side writes to the deployer.
       const effectivePrincipalId =
         instance?.principalId ??
-        (principalId === agentId && typeof agentRow.creatorPrincipalId === 'string'
+        (principalId === agentId &&
+        typeof agentRow.creatorPrincipalId === "string"
           ? agentRow.creatorPrincipalId
           : undefined);
       if (effectivePrincipalId === undefined) {
-        return c.json({ error: 'principalId is not an instance of this agent' }, 403);
+        return c.json(
+          { error: "principalId is not an instance of this agent" },
+          403,
+        );
       }
       // Capabilities are stored as PREFIXED runtime tool names
       // (`<factoryId>:<name>`, e.g. `@workbench/tools-artifact/artifact:artifact_create`),
       // but hub-backed tools are invoked by their BARE name (`artifact_create`,
       // the HUB_BACKED_TOOLS key). Compare on the bare suffix so a prefixed
       // capability authorizes its bare hub tool.
-      const bareName = (name: string): string => name.slice(name.lastIndexOf(':') + 1);
-      const allowed = getToolNamesFromCapabilities(agentRow.capabilities ?? null).map(bareName);
+      const bareName = (name: string): string =>
+        name.slice(name.lastIndexOf(":") + 1);
+      const allowed = getToolNamesFromCapabilities(
+        agentRow.capabilities ?? null,
+      ).map(bareName);
       if (!allowed.includes(bareName(toolName))) {
-        return c.json({ error: `Tool ${toolName} is not enabled for this agent` }, 403);
+        return c.json(
+          { error: `Tool ${toolName} is not enabled for this agent` },
+          403,
+        );
       }
 
       const tool = entry
@@ -210,25 +233,34 @@ export function createHubToolsRouter(
         })
         .find((candidate) => candidate.definition.name === toolName);
       if (!tool) {
-        return c.json({ error: `Tool ${toolName} not found in provider package` }, 500);
-      }
-      if (tool.kind !== 'string') {
         return c.json(
-          { error: `Tool ${toolName} uses unsupported handler kind: ${tool.kind}` },
-          500
+          { error: `Tool ${toolName} not found in provider package` },
+          500,
+        );
+      }
+      if (tool.kind !== "string") {
+        return c.json(
+          {
+            error: `Tool ${toolName} uses unsupported handler kind: ${tool.kind}`,
+          },
+          500,
         );
       }
       try {
         const controller = new AbortController();
-        c.req.raw.signal.addEventListener('abort', () => controller.abort());
+        c.req.raw.signal.addEventListener("abort", () => controller.abort());
         const result = await tool.handler(args, controller.signal);
         return c.json({ result, isError: false });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        log.error('Hub tool execution failed', { tenantId, toolName, error: message });
+        log.error("Hub tool execution failed", {
+          tenantId,
+          toolName,
+          error: message,
+        });
         return c.json({ result: message, isError: true });
       }
-    }
+    },
   );
 
   return router;

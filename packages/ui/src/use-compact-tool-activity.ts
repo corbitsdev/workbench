@@ -1,5 +1,9 @@
-import { useCallback } from 'react';
-import { PREFERENCE_KEYS, setPreference, usePreferenceRaw } from './preferences-store';
+import { useCallback } from "react";
+import {
+  PREFERENCE_KEYS,
+  setPreference,
+  usePreferenceRaw,
+} from "./preferences-store";
 
 const STORAGE_KEY = PREFERENCE_KEYS.compactToolActivity;
 
@@ -17,9 +21,12 @@ export function useCompactToolActivity(): {
   // Default off. Any non-`'true'` stored value (including absent) reads as off,
   // so there is nothing to canonicalize — never write on mere mount, which would
   // persist the default for a user who never opted in.
-  const compact = raw === 'true';
+  const compact = raw === "true";
 
-  const setCompact = useCallback((next: boolean) => setPreference(STORAGE_KEY, String(next)), []);
+  const setCompact = useCallback(
+    (next: boolean) => setPreference(STORAGE_KEY, String(next)),
+    [],
+  );
 
   return { compact, setCompact };
 }

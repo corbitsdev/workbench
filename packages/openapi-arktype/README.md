@@ -23,12 +23,14 @@ typechecks unmodified. Consumers still get fully-typed exports.
 ## Runtime usage
 
 ```ts
-import { createClient } from '@workbench/openapi-arktype';
+import { createClient } from "@workbench/openapi-arktype";
 
-const client = await createClient({ url: 'https://hub.example.com/openapi.json' });
+const client = await createClient({
+  url: "https://hub.example.com/openapi.json",
+});
 
 // Discover operations
-const op = client.operation('post', '/api/v1/workflows/deploy');
+const op = client.operation("post", "/api/v1/workflows/deploy");
 // Validate a request body / response against the spec's arktype validators
-const result = op?.requestBody?.['application/json']({ kind: '...' });
+const result = op?.requestBody?.["application/json"]({ kind: "..." });
 ```

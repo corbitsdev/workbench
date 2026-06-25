@@ -1,7 +1,7 @@
-import type { Selector } from '@intx/workflow';
-import { evaluateSelector, type SelectorContext } from '@intx/workflow/runtime';
-import type { ArgMap } from '@workbench/agents';
-import type { ProjectedStep, ProjectedWorkflow } from './projection';
+import type { Selector } from "@intx/workflow";
+import { evaluateSelector, type SelectorContext } from "@intx/workflow/runtime";
+import type { ArgMap } from "@workbench/agents";
+import type { ProjectedStep, ProjectedWorkflow } from "./projection";
 
 // The mutable run state the executor reads and writes. Mirrors the
 // `workflow_run_record` row: outputs is a stepId -> output map, the gate parks
@@ -12,7 +12,7 @@ export interface RunState {
   kind: string;
   tenantId: string;
   principalId: string;
-  status: 'running' | 'awaiting' | 'completed' | 'failed';
+  status: "running" | "awaiting" | "completed" | "failed";
   currentStepId: string | null;
   input: unknown;
   outputs: Record<string, unknown>;
@@ -32,7 +32,11 @@ export interface RunStore {
 // Runs a deterministic tool step. The hub implementation resolves the tenant
 // credential (or hub context) and invokes the tool directly — no sidecar.
 export interface ToolRunner {
-  run(args: { tool: string; input: unknown; state: RunState }): Promise<unknown>;
+  run(args: {
+    tool: string;
+    input: unknown;
+    state: RunState;
+  }): Promise<unknown>;
 }
 
 // Runs a reasoning step via single-turn `@intx/agent` inference.
@@ -53,7 +57,10 @@ export interface ExecutorDeps {
   reasoningRunner: ReasoningRunner;
 }
 
-function buildSelectorContext(state: RunState, triggerPayload?: unknown): SelectorContext {
+function buildSelectorContext(
+  state: RunState,
+  triggerPayload?: unknown,
+): SelectorContext {
   const steps: Record<string, { output: unknown }> = {};
   for (const [stepId, output] of Object.entries(state.outputs)) {
     steps[stepId] = { output };
@@ -67,10 +74,13 @@ function buildSelectorContext(state: RunState, triggerPayload?: unknown): Select
 function resolveInput(
   selector: Selector | undefined,
   state: RunState,
-  triggerPayload?: unknown
+  triggerPayload?: unknown,
 ): unknown {
   if (selector === undefined) return {};
-  return evaluateSelector(selector, buildSelectorContext(state, triggerPayload));
+  return evaluateSelector(
+    selector,
+    buildSelectorContext(state, triggerPayload),
+  );
 }
 
 // Reshape an evaluated step input into the tool's argument object using the
@@ -79,13 +89,12 @@ function resolveInput(
 // argMap the evaluated input is passed verbatim.
 function applyArgMap(input: unknown, argMap: ArgMap | undefined): unknown {
   if (argMap === undefined) return input;
-  const source = (typeof input === 'object' && input !== null ? input : {}) as Record<
-    string,
-    unknown
-  >;
+  const source = (
+    typeof input === "object" && input !== null ? input : {}
+  ) as Record<string, unknown>;
   const args: Record<string, unknown> = {};
   for (const [argName, spec] of Object.entries(argMap)) {
-    if ('literal' in spec) {
+    if ("literal" in spec) {
       args[argName] = spec.literal;
     } else {
       args[argName] = source[spec.from];
@@ -95,13 +104,13 @@ function applyArgMap(input: unknown, argMap: ArgMap | undefined): unknown {
 }
 
 async function runLeafStep(
-  step: ProjectedStep & { kind: 'tool' | 'reasoning' },
+  step: ProjectedStep & { kind: "tool" | "reasoning" },
   deps: ExecutorDeps,
   state: RunState,
-  triggerPayload?: unknown
+  triggerPayload?: unknown,
 ): Promise<unknown> {
   const input = resolveInput(step.input, state, triggerPayload);
-  if (step.kind === 'tool') {
+  if (step.kind === "tool") {
     const args = applyArgMap(input, step.argMap);
     return deps.toolRunner.run({ tool: step.tool, input: args, state });
   }
@@ -109,24 +118,36 @@ async function runLeafStep(
     stepId: step.id,
     systemPrompt: step.systemPrompt,
     source: step.source,
-    ...(step.credentialName !== undefined ? { credentialName: step.credentialName } : {}),
+    ...(step.credentialName !== undefined
+      ? { credentialName: step.credentialName }
+      : {}),
     input,
     state,
   });
 }
 
-async function runStep(step: ProjectedStep, deps: ExecutorDeps, state: RunState): Promise<unknown> {
-  if (step.kind === 'map') {
+async function runStep(
+  step: ProjectedStep,
+  deps: ExecutorDeps,
+  state: RunState,
+): Promise<unknown> {
+  if (step.kind === "map") {
     const over = resolveInput(step.over, state);
     if (!Array.isArray(over)) {
-      throw new Error(`map step "${step.id}" over-selector did not resolve to an array`);
+      throw new Error(
+        `map step "${step.id}" over-selector did not resolve to an array`,
+      );
     }
     // Fan-out: run each item concurrently (the old fast path used
     // Promise.allSettled; here a failed item fails the run, surfaced loudly).
-    return Promise.all(over.map((item) => runLeafStep(step.child, deps, state, item)));
+    return Promise.all(
+      over.map((item) => runLeafStep(step.child, deps, state, item)),
+    );
   }
-  if (step.kind === 'gate') {
-    throw new Error(`runStep called on gate step "${step.id}" — gates are parked, not run`);
+  if (step.kind === "gate") {
+    throw new Error(
+      `runStep called on gate step "${step.id}" — gates are parked, not run`,
+    );
   }
   return runLeafStep(step, deps, state, undefined);
 }
@@ -140,7 +161,7 @@ async function runStep(step: ProjectedStep, deps: ExecutorDeps, state: RunState)
 export async function advanceRun(
   workflow: ProjectedWorkflow,
   deps: ExecutorDeps,
-  state: RunState
+  state: RunState,
 ): Promise<RunState> {
   try {
     for (const stepId of workflow.order) {
@@ -148,27 +169,27 @@ export async function advanceRun(
       const step = workflow.steps[stepId];
       if (!step) throw new Error(`step "${stepId}" missing from projection`);
 
-      if (step.kind === 'gate') {
+      if (step.kind === "gate") {
         // Park: the human must supply this step's output via resume.
-        state.status = 'awaiting';
+        state.status = "awaiting";
         state.currentStepId = stepId;
         await deps.store.save(state);
         return state;
       }
 
-      state.status = 'running';
+      state.status = "running";
       state.currentStepId = stepId;
       const output = await runStep(step, deps, state);
       state.outputs[stepId] = output;
       await deps.store.save(state);
     }
 
-    state.status = 'completed';
+    state.status = "completed";
     state.currentStepId = null;
     await deps.store.save(state);
     return state;
   } catch (cause) {
-    state.status = 'failed';
+    state.status = "failed";
     state.error = cause instanceof Error ? cause.message : String(cause);
     await deps.store.save(state);
     return state;
@@ -182,17 +203,21 @@ export async function resumeRun(
   deps: ExecutorDeps,
   state: RunState,
   signalName: string,
-  payload: unknown
+  payload: unknown,
 ): Promise<RunState> {
-  if (state.status !== 'awaiting' || state.currentStepId === null) {
-    throw new Error(`run "${state.runId}" is not awaiting a signal (status: ${state.status})`);
+  if (state.status !== "awaiting" || state.currentStepId === null) {
+    throw new Error(
+      `run "${state.runId}" is not awaiting a signal (status: ${state.status})`,
+    );
   }
   const step = workflow.steps[state.currentStepId];
-  if (!step || step.kind !== 'gate') {
+  if (!step || step.kind !== "gate") {
     throw new Error(`run "${state.runId}" current step is not a gate`);
   }
   if (step.signalName !== signalName) {
-    throw new Error(`run "${state.runId}" awaits signal "${step.signalName}", got "${signalName}"`);
+    throw new Error(
+      `run "${state.runId}" awaits signal "${step.signalName}", got "${signalName}"`,
+    );
   }
   state.outputs[step.id] = payload;
   return advanceRun(workflow, deps, state);

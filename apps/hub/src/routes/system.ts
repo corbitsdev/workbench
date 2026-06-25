@@ -1,6 +1,6 @@
-import { Hono } from 'hono';
-import { describeRoute, resolver } from 'hono-openapi';
-import { type } from 'arktype';
+import { Hono } from "hono";
+import { describeRoute, resolver } from "hono-openapi";
+import { type } from "arktype";
 
 // System routes: liveness + build version.
 //
@@ -15,44 +15,44 @@ export function createSystemRouter(buildSha: string | null): Hono {
   const app = new Hono();
 
   app.get(
-    '/health',
+    "/health",
     describeRoute({
-      tags: ['System'],
-      summary: 'Liveness probe',
-      description: 'Returns an empty object when the hub process is up.',
+      tags: ["System"],
+      summary: "Liveness probe",
+      description: "Returns an empty object when the hub process is up.",
       responses: {
         200: {
-          description: 'Hub is live',
+          description: "Hub is live",
           content: {
-            'application/json': {
+            "application/json": {
               schema: resolver(type({})),
             },
           },
         },
       },
     }),
-    (c) => c.json({})
+    (c) => c.json({}),
   );
 
   app.get(
-    '/version',
+    "/version",
     describeRoute({
-      tags: ['System'],
-      summary: 'Live build SHA',
+      tags: ["System"],
+      summary: "Live build SHA",
       description:
         'Returns the Railway git commit SHA injected at deploy time (null in local dev). Hub and sidecar redeploy from the same commit on a staging push, so the hub SHA alone answers "is my merged code live?".',
       responses: {
         200: {
-          description: 'Live build SHA (null in local dev)',
+          description: "Live build SHA (null in local dev)",
           content: {
-            'application/json': {
-              schema: resolver(type({ buildSha: 'string | null' })),
+            "application/json": {
+              schema: resolver(type({ buildSha: "string | null" })),
             },
           },
         },
       },
     }),
-    (c) => c.json({ buildSha })
+    (c) => c.json({ buildSha }),
   );
 
   return app;

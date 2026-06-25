@@ -1,7 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import git from 'isomorphic-git';
-import { readRawObject } from './isogit-helpers';
+import fs from "node:fs";
+import path from "node:path";
+import git from "isomorphic-git";
+import { readRawObject } from "./isogit-helpers";
 
 /**
  * Verifies the signature embedded in a git commit object.
@@ -39,7 +39,7 @@ export type TreeValidatorResult = true | { ok: false; reason: string };
 export type TreeValidator = (
   topLevelPaths: string[],
   readBlob: (path: string) => Promise<Uint8Array>,
-  listDir: (path: string) => Promise<string[]>
+  listDir: (path: string) => Promise<string[]>,
 ) => boolean | TreeValidatorResult | Promise<boolean | TreeValidatorResult>;
 
 /**
@@ -52,7 +52,7 @@ export type TreeValidator = (
  * with any signature format by parsing the header structure directly.
  */
 function stripGpgsig(raw: string): string {
-  const gpgsigIdx = raw.indexOf('\ngpgsig ');
+  const gpgsigIdx = raw.indexOf("\ngpgsig ");
   if (gpgsigIdx === -1) return raw;
 
   // The gpgsig header spans from "\ngpgsig " to the next header line that
@@ -60,20 +60,20 @@ function stripGpgsig(raw: string): string {
   // indented with a single leading space.
   let endIdx = gpgsigIdx + 1;
   while (endIdx < raw.length) {
-    const nlIdx = raw.indexOf('\n', endIdx);
+    const nlIdx = raw.indexOf("\n", endIdx);
     if (nlIdx === -1) break;
     endIdx = nlIdx + 1;
-    if (endIdx < raw.length && raw[endIdx] !== ' ') break;
+    if (endIdx < raw.length && raw[endIdx] !== " ") break;
   }
 
-  return raw.substring(0, gpgsigIdx) + '\n' + raw.substring(endIdx);
+  return raw.substring(0, gpgsigIdx) + "\n" + raw.substring(endIdx);
 }
 
 const SAFE_PATH_SEGMENT = /^[a-zA-Z0-9_-]+$/;
 
 // Sibling of objects/pack/. Lives on the same filesystem so fs.link and
 // fs.rename between staging and pack/ are atomic metadata operations.
-const STAGING_DIR_NAME = 'pack-staging';
+const STAGING_DIR_NAME = "pack-staging";
 
 /**
  * Derive the externally-visible final paths a publishPackAtomically call
@@ -83,11 +83,11 @@ const STAGING_DIR_NAME = 'pack-staging';
  */
 function publishedPackPaths(
   dir: string,
-  transferId: string
+  transferId: string,
 ): { finalPackPath: string; finalIdxPath: string } {
-  const packDir = path.join(dir, '.git', 'objects', 'pack');
+  const packDir = path.join(dir, ".git", "objects", "pack");
   const finalPackPath = path.join(packDir, `pack-recv-${transferId}.pack`);
-  const finalIdxPath = finalPackPath.replace(/\.pack$/, '.idx');
+  const finalIdxPath = finalPackPath.replace(/\.pack$/, ".idx");
   return { finalPackPath, finalIdxPath };
 }
 
@@ -118,7 +118,7 @@ async function unpublishPack(dir: string, transferId: string): Promise<void> {
 }
 
 type TreeEntry = {
-  type: 'blob' | 'tree' | 'commit';
+  type: "blob" | "tree" | "commit";
   mode: string;
   path: string;
   oid: string;
@@ -143,7 +143,11 @@ async function topLevelNames(dir: string, oid: string): Promise<Set<string>> {
  * function returns), so a restart will re-read from the prior commit, but the
  * working tree will be stale until the next successful applyPack.
  */
-async function checkoutTree(dir: string, commitSha: string, ref: string): Promise<void> {
+async function checkoutTree(
+  dir: string,
+  commitSha: string,
+  ref: string,
+): Promise<void> {
   const { commit } = await git.readCommit({ fs, dir, oid: commitSha });
   const { tree } = await git.readTree({ fs, dir, oid: commit.tree });
 
@@ -173,22 +177,22 @@ async function checkoutTree(dir: string, commitSha: string, ref: string): Promis
 async function writeTreeEntries(
   repoDir: string,
   targetDir: string,
-  entries: TreeEntry[]
+  entries: TreeEntry[],
 ): Promise<void> {
   for (const entry of entries) {
     const entryPath = path.join(targetDir, entry.path);
-    if (entry.type === 'tree') {
+    if (entry.type === "tree") {
       await fs.promises.mkdir(entryPath, { recursive: true });
       const { tree } = await git.readTree({ fs, dir: repoDir, oid: entry.oid });
       await writeTreeEntries(repoDir, entryPath, tree);
-    } else if (entry.type === 'blob') {
+    } else if (entry.type === "blob") {
       const { blob } = await git.readBlob({
         fs,
         dir: repoDir,
         oid: entry.oid,
       });
       await fs.promises.writeFile(entryPath, blob, {
-        mode: entry.mode === '100755' ? 0o755 : 0o644,
+        mode: entry.mode === "100755" ? 0o755 : 0o644,
       });
     }
   }
@@ -351,21 +355,23 @@ async function writeTreeEntries(
 async function publishPackAtomically(
   dir: string,
   pack: Uint8Array,
-  transferId: string
+  transferId: string,
 ): Promise<string[]> {
   if (!SAFE_PATH_SEGMENT.test(transferId)) {
-    throw new Error(`transferId contains unsafe characters: ${JSON.stringify(transferId)}`);
+    throw new Error(
+      `transferId contains unsafe characters: ${JSON.stringify(transferId)}`,
+    );
   }
 
-  const packDir = path.join(dir, '.git', 'objects', 'pack');
-  const stagingRoot = path.join(dir, '.git', 'objects', STAGING_DIR_NAME);
+  const packDir = path.join(dir, ".git", "objects", "pack");
+  const stagingRoot = path.join(dir, ".git", "objects", STAGING_DIR_NAME);
   const stagingDir = path.join(stagingRoot, transferId);
 
   await fs.promises.mkdir(packDir, { recursive: true });
   await fs.promises.mkdir(stagingDir, { recursive: true });
 
-  const stagingPackPath = path.join(stagingDir, 'pack.pack');
-  const stagingIdxPath = stagingPackPath.replace(/\.pack$/, '.idx');
+  const stagingPackPath = path.join(stagingDir, "pack.pack");
+  const stagingIdxPath = stagingPackPath.replace(/\.pack$/, ".idx");
   const { finalPackPath, finalIdxPath } = publishedPackPaths(dir, transferId);
   // iso-git's indexPack takes a repo-root-relative filepath; derive it
   // from the absolute path rather than rebuilding the segment list so
@@ -390,7 +396,9 @@ async function publishPackAtomically(
     // partial state (write succeeded but indexPack threw, etc.). The
     // rm is wrapped so a secondary cleanup failure (permissions, I/O)
     // does not mask the original error.
-    await fs.promises.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+    await fs.promises
+      .rm(stagingDir, { recursive: true, force: true })
+      .catch(() => undefined);
     throw err;
   }
 
@@ -413,11 +421,18 @@ async function publishPackAtomically(
     // as a programmer error and surface it cleanly without running
     // the recovery rms — those would destroy the earlier call's
     // published pack and break any reader holding it.
-    if (err !== null && typeof err === 'object' && 'code' in err && err.code === 'EEXIST') {
-      await fs.promises.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+    if (
+      err !== null &&
+      typeof err === "object" &&
+      "code" in err &&
+      err.code === "EEXIST"
+    ) {
+      await fs.promises
+        .rm(stagingDir, { recursive: true, force: true })
+        .catch(() => undefined);
       throw new Error(
         `transferId "${transferId}" already published in ${dir}; callers must guarantee transferId uniqueness across all historical receives`,
-        { cause: err }
+        { cause: err },
       );
     }
     // Partial-publish recovery: if 3a succeeded and 3b failed we
@@ -427,7 +442,9 @@ async function publishPackAtomically(
     // is wrapped so a secondary failure (permissions, I/O) does not
     // mask the original publish error — the caller needs to see the
     // publish failure, not whatever the cleanup tripped on.
-    await fs.promises.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+    await fs.promises
+      .rm(stagingDir, { recursive: true, force: true })
+      .catch(() => undefined);
     await fs.promises.rm(finalPackPath, { force: true }).catch(() => undefined);
     throw err;
   }
@@ -443,7 +460,9 @@ async function publishPackAtomically(
   // directory on rm failure leaks disk until external cleanup; that
   // is strictly preferable to retroactively destroying a successful
   // publish.
-  await fs.promises.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+  await fs.promises
+    .rm(stagingDir, { recursive: true, force: true })
+    .catch(() => undefined);
 
   return oids;
 }
@@ -455,7 +474,7 @@ export async function receivePackObjects(
   expectedSha: string,
   transferId: string,
   expectedOldSha: string | null,
-  validateTree?: TreeValidator
+  validateTree?: TreeValidator,
 ): Promise<string | null> {
   const oids = await publishPackAtomically(dir, pack, transferId);
 
@@ -467,15 +486,21 @@ export async function receivePackObjects(
   // GC, and the hub does not invoke git gc on agent repos.
   try {
     if (!oids.includes(expectedSha)) {
-      throw new Error(`sha_mismatch: expected commit ${expectedSha} not found in pack`);
+      throw new Error(
+        `sha_mismatch: expected commit ${expectedSha} not found in pack`,
+      );
     }
 
-    const currentOldSha = await git.resolveRef({ fs, dir, ref }).catch(() => null);
+    const currentOldSha = await git
+      .resolveRef({ fs, dir, ref })
+      .catch(() => null);
 
     if (currentOldSha !== expectedOldSha) {
-      const observed = currentOldSha === null ? 'null' : currentOldSha;
-      const expected = expectedOldSha === null ? 'null' : expectedOldSha;
-      throw new Error(`non_fast_forward: ref ${ref} expected ${expected} but found ${observed}`);
+      const observed = currentOldSha === null ? "null" : currentOldSha;
+      const expected = expectedOldSha === null ? "null" : expectedOldSha;
+      throw new Error(
+        `non_fast_forward: ref ${ref} expected ${expected} but found ${observed}`,
+      );
     }
 
     if (validateTree !== undefined) {
@@ -500,35 +525,39 @@ export async function receivePackObjects(
       // allowlist real on this path.
       const topLevelPaths = tree.map((e) => e.path);
       const readBlob = async (relPath: string): Promise<Uint8Array> => {
-        const segments = relPath.split('/');
+        const segments = relPath.split("/");
         let currentTree = tree;
         for (let i = 0; i < segments.length - 1; i += 1) {
           const segment = segments[i];
           const entry = currentTree.find((e) => e.path === segment);
-          if (entry === undefined || entry.type !== 'tree') {
-            throw new Error(`readBlob: path ${relPath} not found in commit ${expectedSha} tree`);
+          if (entry === undefined || entry.type !== "tree") {
+            throw new Error(
+              `readBlob: path ${relPath} not found in commit ${expectedSha} tree`,
+            );
           }
           const next = await git.readTree({ fs, dir, oid: entry.oid });
           currentTree = next.tree;
         }
         const last = segments[segments.length - 1];
         const blobEntry = currentTree.find((e) => e.path === last);
-        if (blobEntry === undefined || blobEntry.type !== 'blob') {
-          throw new Error(`readBlob: path ${relPath} not found in commit ${expectedSha} tree`);
+        if (blobEntry === undefined || blobEntry.type !== "blob") {
+          throw new Error(
+            `readBlob: path ${relPath} not found in commit ${expectedSha} tree`,
+          );
         }
         const { blob } = await git.readBlob({ fs, dir, oid: blobEntry.oid });
         return blob;
       };
       const listDir = async (relPath: string): Promise<string[]> => {
-        if (relPath === '') {
+        if (relPath === "") {
           return tree.map((e) => e.path);
         }
         let currentTree = tree;
-        for (const segment of relPath.split('/')) {
+        for (const segment of relPath.split("/")) {
           const entry = currentTree.find((e) => e.path === segment);
-          if (entry === undefined || entry.type !== 'tree') {
+          if (entry === undefined || entry.type !== "tree") {
             throw new Error(
-              `listDir: path ${relPath} is not a directory in commit ${expectedSha} tree`
+              `listDir: path ${relPath} is not a directory in commit ${expectedSha} tree`,
             );
           }
           const next = await git.readTree({ fs, dir, oid: entry.oid });
@@ -539,9 +568,9 @@ export async function receivePackObjects(
       const verdict = await validateTree(topLevelPaths, readBlob, listDir);
       if (verdict !== true) {
         const reason =
-          typeof verdict === 'object'
+          typeof verdict === "object"
             ? verdict.reason
-            : `commit ${expectedSha} tree contains disallowed paths: ${topLevelPaths.join(', ')}`;
+            : `commit ${expectedSha} tree contains disallowed paths: ${topLevelPaths.join(", ")}`;
         throw new Error(`path_violation: ${reason}`);
       }
     }
@@ -583,7 +612,7 @@ export async function applyPack(
   ref: string,
   expectedSha: string,
   transferId: string,
-  verifyCommit?: CommitVerifier
+  verifyCommit?: CommitVerifier,
 ): Promise<void> {
   const oids = await publishPackAtomically(dir, pack, transferId);
 
@@ -596,7 +625,9 @@ export async function applyPack(
   // internal to this process.
   try {
     if (!oids.includes(expectedSha)) {
-      throw new Error(`sha_mismatch: expected commit ${expectedSha} not found in pack`);
+      throw new Error(
+        `sha_mismatch: expected commit ${expectedSha} not found in pack`,
+      );
     }
 
     if (verifyCommit !== undefined) {
@@ -606,7 +637,9 @@ export async function applyPack(
         oid: expectedSha,
       });
       if (commit.gpgsig === undefined) {
-        throw new Error(`signature_unsigned: commit ${expectedSha} has no signature`);
+        throw new Error(
+          `signature_unsigned: commit ${expectedSha} has no signature`,
+        );
       }
 
       // Reconstruct the signing payload from the raw object bytes.
@@ -616,7 +649,9 @@ export async function applyPack(
       const payload = stripGpgsig(new TextDecoder().decode(rawBytes));
 
       if (!verifyCommit(payload, commit.gpgsig)) {
-        throw new Error(`signature_invalid: commit ${expectedSha} signature verification failed`);
+        throw new Error(
+          `signature_invalid: commit ${expectedSha} signature verification failed`,
+        );
       }
     }
 

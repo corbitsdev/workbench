@@ -1,14 +1,14 @@
-import { awaitSignal, defineWorkflow } from '@intx/workflow';
-import { deterministicToolStep, inlineInferenceStep } from '@workbench/agents';
-import { buildWriterSystemPrompt } from './prompts';
+import { awaitSignal, defineWorkflow } from "@intx/workflow";
+import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
+import { buildWriterSystemPrompt } from "./prompts";
 
-export const label = 'last30days Research';
+export const label = "last30days Research";
 export const description =
-  'Research the last 30 days of market and community signal, synthesize a cited brief, and save it as an artifact.';
-export const kind = 'last30days-research';
+  "Research the last 30 days of market and community signal, synthesize a cited brief, and save it as an artifact.";
+export const kind = "last30days-research";
 
-const sourceSearchInput = { from: 'steps.intake.output' } as const;
-const sourceQueryArgMap = { query: { from: 'query' } } as const;
+const sourceSearchInput = { from: "steps.intake.output" } as const;
+const sourceQueryArgMap = { query: { from: "query" } } as const;
 
 // The seven source fetches are chained sequentially rather than fanned out in
 // parallel. In the sidecar workflow-host topology the runtime body's
@@ -25,99 +25,102 @@ const sourceQueryArgMap = { query: { from: 'query' } } as const;
 
 export const workflow = defineWorkflow({
   id: kind,
-  trigger: { type: 'manual' },
+  trigger: { type: "manual" },
   steps: {
-    intake: awaitSignal({ name: 'intake' }),
+    intake: awaitSignal({ name: "intake" }),
 
     hackernews: deterministicToolStep({
-      id: 'last30days-fetch-hackernews',
-      tool: 'hackernews_search',
+      id: "last30days-fetch-hackernews",
+      tool: "hackernews_search",
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['intake'],
+      after: ["intake"],
     }),
 
     github: deterministicToolStep({
-      id: 'last30days-fetch-github',
-      tool: 'github_activity',
+      id: "last30days-fetch-github",
+      tool: "github_activity",
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['hackernews'],
+      after: ["hackernews"],
     }),
 
     web: deterministicToolStep({
-      id: 'last30days-fetch-web',
-      tool: 'exa_search',
+      id: "last30days-fetch-web",
+      tool: "exa_search",
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['github'],
+      after: ["github"],
     }),
 
     reddit: deterministicToolStep({
-      id: 'last30days-fetch-reddit',
-      tool: 'reddit_search',
+      id: "last30days-fetch-reddit",
+      tool: "reddit_search",
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['web'],
+      after: ["web"],
     }),
 
     x: deterministicToolStep({
-      id: 'last30days-fetch-x',
-      tool: 'x_search',
+      id: "last30days-fetch-x",
+      tool: "x_search",
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['reddit'],
+      after: ["reddit"],
     }),
 
     youtube: deterministicToolStep({
-      id: 'last30days-fetch-youtube',
-      tool: 'youtube_search',
+      id: "last30days-fetch-youtube",
+      tool: "youtube_search",
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['x'],
+      after: ["x"],
     }),
 
     bluesky: deterministicToolStep({
-      id: 'last30days-fetch-bluesky',
-      tool: 'bluesky_search',
+      id: "last30days-fetch-bluesky",
+      tool: "bluesky_search",
       input: sourceSearchInput,
       argMap: sourceQueryArgMap,
-      after: ['youtube'],
+      after: ["youtube"],
     }),
 
     brief: deterministicToolStep({
-      id: 'last30days-build-brief',
-      tool: 'last30days_workflow_brief',
-      input: { from: 'steps' },
-      after: ['bluesky'],
+      id: "last30days-build-brief",
+      tool: "last30days_workflow_brief",
+      input: { from: "steps" },
+      after: ["bluesky"],
     }),
 
     write: inlineInferenceStep({
-      id: 'last30days-write-report',
+      id: "last30days-write-report",
       systemPrompt: buildWriterSystemPrompt(),
       input: {
-        merge: [{ from: 'steps.intake.output' }, { from: 'steps.brief.output' }],
+        merge: [
+          { from: "steps.intake.output" },
+          { from: "steps.brief.output" },
+        ],
       },
-      after: ['brief'],
+      after: ["brief"],
     }),
 
     persist: deterministicToolStep({
-      id: 'last30days-persist-artifact',
-      tool: 'write_artifact',
+      id: "last30days-persist-artifact",
+      tool: "write_artifact",
       input: {
         merge: [
-          { from: 'steps.intake.output' },
-          { from: 'steps.brief.output' },
-          { from: 'steps.write.output' },
+          { from: "steps.intake.output" },
+          { from: "steps.brief.output" },
+          { from: "steps.write.output" },
         ],
       },
       argMap: {
-        title: { from: 'topic' },
-        body: { from: 'reply' },
-        kind: { literal: 'research' },
-        content: { from: 'content' },
+        title: { from: "topic" },
+        body: { from: "reply" },
+        kind: { literal: "research" },
+        content: { from: "content" },
       },
-      after: ['write'],
+      after: ["write"],
     }),
   },
 });

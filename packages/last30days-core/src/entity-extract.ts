@@ -7,54 +7,54 @@ export type EntitySet = {
 };
 
 const STOP_WORDS = new Set([
-  'a',
-  'an',
-  'the',
-  'and',
-  'or',
-  'but',
-  'in',
-  'on',
-  'at',
-  'to',
-  'for',
-  'of',
-  'with',
-  'by',
-  'from',
-  'is',
-  'are',
-  'was',
-  'be',
-  'been',
-  'being',
-  'have',
-  'has',
-  'had',
-  'do',
-  'does',
-  'did',
-  'will',
-  'would',
-  'could',
-  'should',
-  'may',
-  'might',
-  'this',
-  'that',
-  'these',
-  'those',
-  'it',
-  'its',
-  'about',
-  'into',
-  'than',
-  'then',
-  'so',
-  'as',
-  'what',
-  'how',
-  'why',
+  "a",
+  "an",
+  "the",
+  "and",
+  "or",
+  "but",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "of",
+  "with",
+  "by",
+  "from",
+  "is",
+  "are",
+  "was",
+  "be",
+  "been",
+  "being",
+  "have",
+  "has",
+  "had",
+  "do",
+  "does",
+  "did",
+  "will",
+  "would",
+  "could",
+  "should",
+  "may",
+  "might",
+  "this",
+  "that",
+  "these",
+  "those",
+  "it",
+  "its",
+  "about",
+  "into",
+  "than",
+  "then",
+  "so",
+  "as",
+  "what",
+  "how",
+  "why",
 ]);
 
 export function entityExtract(topic: string): EntitySet {
@@ -84,14 +84,14 @@ export function entityExtract(topic: string): EntitySet {
   }
 
   const stripped = topic
-    .replace(/\br\/[a-zA-Z0-9_]+/g, '')
-    .replace(/@[a-zA-Z0-9_]+/g, '')
-    .replace(/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+/g, '')
-    .replace(/#[a-zA-Z0-9_]+/g, '');
+    .replace(/\br\/[a-zA-Z0-9_]+/g, "")
+    .replace(/@[a-zA-Z0-9_]+/g, "")
+    .replace(/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+/g, "")
+    .replace(/#[a-zA-Z0-9_]+/g, "");
 
   const keywords = stripped
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/[^a-z0-9\s]/g, "")
     .split(/\s+/)
     .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
 

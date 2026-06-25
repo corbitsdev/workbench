@@ -1,8 +1,8 @@
-import { type } from 'arktype';
-import { logger } from './logger';
+import { type } from "arktype";
+import { logger } from "./logger";
 
 // Empty string means same-origin (frontend served from the API).
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
+const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
 
 // Single source of truth for the hub origin: explicit base, else same-origin.
 function resolveBase(): string {
@@ -10,22 +10,25 @@ function resolveBase(): string {
 }
 
 export function buildApiUrl(path: string): string {
-  return new URL(`/api/v1/${path.replace(/^\//, '')}`, resolveBase()).toString();
+  return new URL(
+    `/api/v1/${path.replace(/^\//, "")}`,
+    resolveBase(),
+  ).toString();
 }
 
 // Root-level (non-/api/v1) hub paths, e.g. /version. Same base-URL rules.
 export function buildRootUrl(path: string): string {
-  return new URL(`/${path.replace(/^\//, '')}`, resolveBase()).toString();
+  return new URL(`/${path.replace(/^\//, "")}`, resolveBase()).toString();
 }
 
 const VersionResponse = type({
-  buildSha: 'string | null',
+  buildSha: "string | null",
 });
 
 // Fetches the hub's live build SHA from the root-level /version route (null in
 // local dev). Lives here so the page module makes no raw fetch.
 export async function fetchBuildSha(): Promise<string | null> {
-  const res = await fetch(buildRootUrl('/version'), { credentials: 'include' });
+  const res = await fetch(buildRootUrl("/version"), { credentials: "include" });
   if (!res.ok) throw new Error(`Version check failed: HTTP ${res.status}`);
   const raw: unknown = await res.json();
   const parsed = VersionResponse(raw);
@@ -38,39 +41,48 @@ export async function fetchBuildSha(): Promise<string | null> {
 export class ApiError extends Error {
   constructor(
     message: string,
-    public readonly status: number
+    public readonly status: number,
   ) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
   }
 }
 
-export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function api<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const url = buildApiUrl(path);
-  const init: RequestInit = { method, credentials: 'include' };
+  const init: RequestInit = { method, credentials: "include" };
   if (body) {
-    init.headers = { 'Content-Type': 'application/json' };
+    init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify(body);
   }
 
-  logger.info('API request', { method, url });
+  logger.info("API request", { method, url });
 
   const res = await fetch(url, init);
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => null);
     const message =
       body !== null &&
-      typeof body === 'object' &&
-      'error' in body &&
-      typeof (body as Record<string, unknown>).error === 'string'
+      typeof body === "object" &&
+      "error" in body &&
+      typeof (body as Record<string, unknown>).error === "string"
         ? (body as { error: string }).error
         : `HTTP ${res.status}`;
-    logger.error('API request failed', { method, url, status: res.status, error: message });
+    logger.error("API request failed", {
+      method,
+      url,
+      status: res.status,
+      error: message,
+    });
     throw new ApiError(message, res.status);
   }
 
   const data = (await res.json()) as T;
-  logger.info('API response', { method, url, status: res.status });
+  logger.info("API response", { method, url, status: res.status });
   return data;
 }
 
@@ -80,29 +92,41 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
 export async function uploadFile<T>(
   path: string,
   file: File,
-  options?: { tenantId?: string | null }
+  options?: { tenantId?: string | null },
 ): Promise<T> {
-  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, resolveBase());
+  const url = new URL(`/api/v1/${path.replace(/^\//, "")}`, resolveBase());
   if (options?.tenantId) {
-    url.searchParams.set('tenantId', options.tenantId);
+    url.searchParams.set("tenantId", options.tenantId);
   }
   const urlString = url.toString();
   const form = new FormData();
-  form.set('file', file);
+  form.set("file", file);
 
-  logger.info('API upload', { url: urlString, filename: file.name, size: file.size });
+  logger.info("API upload", {
+    url: urlString,
+    filename: file.name,
+    size: file.size,
+  });
 
-  const res = await fetch(urlString, { method: 'POST', credentials: 'include', body: form });
+  const res = await fetch(urlString, {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => null);
     const message =
       body !== null &&
-      typeof body === 'object' &&
-      'error' in body &&
-      typeof (body as Record<string, unknown>).error === 'string'
+      typeof body === "object" &&
+      "error" in body &&
+      typeof (body as Record<string, unknown>).error === "string"
         ? (body as { error: string }).error
         : `HTTP ${res.status}`;
-    logger.error('API upload failed', { url: urlString, status: res.status, error: message });
+    logger.error("API upload failed", {
+      url: urlString,
+      status: res.status,
+      error: message,
+    });
     throw new ApiError(message, res.status);
   }
 
@@ -112,26 +136,34 @@ export async function uploadFile<T>(
 export async function uploadForm<T>(
   path: string,
   form: FormData,
-  options?: { tenantId?: string | null }
+  options?: { tenantId?: string | null },
 ): Promise<T> {
-  const url = new URL(`/api/v1/${path.replace(/^\//, '')}`, resolveBase());
+  const url = new URL(`/api/v1/${path.replace(/^\//, "")}`, resolveBase());
   if (options?.tenantId) {
-    url.searchParams.set('tenantId', options.tenantId);
+    url.searchParams.set("tenantId", options.tenantId);
   }
   const urlString = url.toString();
-  logger.info('API form upload', { url: urlString });
+  logger.info("API form upload", { url: urlString });
 
-  const res = await fetch(urlString, { method: 'POST', credentials: 'include', body: form });
+  const res = await fetch(urlString, {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => null);
     const message =
       body !== null &&
-      typeof body === 'object' &&
-      'error' in body &&
-      typeof (body as Record<string, unknown>).error === 'string'
+      typeof body === "object" &&
+      "error" in body &&
+      typeof (body as Record<string, unknown>).error === "string"
         ? (body as { error: string }).error
         : `HTTP ${res.status}`;
-    logger.error('API form upload failed', { url: urlString, status: res.status, error: message });
+    logger.error("API form upload failed", {
+      url: urlString,
+      status: res.status,
+      error: message,
+    });
     throw new ApiError(message, res.status);
   }
 

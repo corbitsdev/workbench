@@ -1,26 +1,37 @@
 // Decorative chart glyph drawn behind a gallery tile's hero area. Pure,
 // presentational, driven entirely by the `kind` prop.
 
-import type { VizKind } from './types';
+import type { VizKind } from "./types";
 
-const W = 'rgba(255,255,255,.9)';
-const W2 = 'rgba(255,255,255,.45)';
+const W = "rgba(255,255,255,.9)";
+const W2 = "rgba(255,255,255,.45)";
 
 export function ArtifactViz({ kind }: { kind: VizKind }) {
   switch (kind) {
-    case 'bars':
+    case "bars":
       return (
-        <svg className="h-full w-full" viewBox="0 0 120 80" preserveAspectRatio="none">
+        <svg
+          className="h-full w-full"
+          viewBox="0 0 120 80"
+          preserveAspectRatio="none"
+        >
           <rect x="14" y="44" width="14" height="30" fill={W2} />
           <rect x="36" y="30" width="14" height="44" fill={W} />
           <rect x="58" y="38" width="14" height="36" fill={W2} />
           <rect x="80" y="18" width="14" height="56" fill={W} />
         </svg>
       );
-    case 'donut':
+    case "donut":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 80">
-          <circle cx="60" cy="40" r="24" fill="none" stroke={W2} strokeWidth="11" />
+          <circle
+            cx="60"
+            cy="40"
+            r="24"
+            fill="none"
+            stroke={W2}
+            strokeWidth="11"
+          />
           <circle
             cx="60"
             cy="40"
@@ -33,7 +44,7 @@ export function ArtifactViz({ kind }: { kind: VizKind }) {
           />
         </svg>
       );
-    case 'grid':
+    case "grid":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 80">
           {Array.from({ length: 15 }).map((_, i) => (
@@ -49,7 +60,7 @@ export function ArtifactViz({ kind }: { kind: VizKind }) {
           ))}
         </svg>
       );
-    case 'lines':
+    case "lines":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 80">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -65,7 +76,7 @@ export function ArtifactViz({ kind }: { kind: VizKind }) {
           ))}
         </svg>
       );
-    case 'nodes':
+    case "nodes":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 80">
           <line x1="30" y1="26" x2="70" y2="50" stroke={W2} strokeWidth="2" />
@@ -77,7 +88,7 @@ export function ArtifactViz({ kind }: { kind: VizKind }) {
           <circle cx="40" cy="60" r="6" fill={W2} />
         </svg>
       );
-    case 'heat':
+    case "heat":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 80">
           {Array.from({ length: 24 }).map((_, i) => (
@@ -93,17 +104,31 @@ export function ArtifactViz({ kind }: { kind: VizKind }) {
           ))}
         </svg>
       );
-    case 'deck':
+    case "deck":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 120">
           <rect x="22" y="20" width="76" height="46" rx="4" fill={W} />
-          <rect x="30" y="30" width="40" height="6" rx="3" fill="rgba(43,38,39,.4)" />
-          <rect x="30" y="42" width="56" height="4" rx="2" fill="rgba(43,38,39,.25)" />
+          <rect
+            x="30"
+            y="30"
+            width="40"
+            height="6"
+            rx="3"
+            fill="rgba(43,38,39,.4)"
+          />
+          <rect
+            x="30"
+            y="42"
+            width="56"
+            height="4"
+            rx="2"
+            fill="rgba(43,38,39,.25)"
+          />
           <rect x="22" y="74" width="36" height="26" rx="4" fill={W2} />
           <rect x="62" y="74" width="36" height="26" rx="4" fill={W2} />
         </svg>
       );
-    case 'cal':
+    case "cal":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 80">
           {Array.from({ length: 14 }).map((_, i) => (

@@ -3,17 +3,17 @@
 // client (interchange's equivalent bin leaks `@intx/*` resolution across
 // worktrees when driven directly). See docs/CREATING_AGENTS_AND_TOOLS.md.
 
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import { parseArgs } from 'node:util';
-import { type, type Type } from 'arktype';
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { parseArgs } from "node:util";
+import { type, type Type } from "arktype";
 
-import { AssetResponse, AssetWithOriginResponse } from '@intx/types';
-import { WORKSPACE_BUILTINS_REGISTRY } from '@intx/hub-sessions';
+import { AssetResponse, AssetWithOriginResponse } from "@intx/types";
+import { WORKSPACE_BUILTINS_REGISTRY } from "@intx/hub-sessions";
 
-import { resolveTargetTenant } from './_lib';
+import { resolveTargetTenant } from "./_lib";
 
-const TarballPutResponse = type({ commit: 'string', integrity: 'string' });
+const TarballPutResponse = type({ commit: "string", integrity: "string" });
 
 export type PublishOptions = {
   hubURL: string;
@@ -44,10 +44,16 @@ export type PublishSummary = {
 type CookieJar = string[];
 type ApiResult = { status: number; data: unknown; cookies: CookieJar };
 
-function parseSchema<T extends Type>(schema: T, data: unknown, label: string): T['infer'] {
+function parseSchema<T extends Type>(
+  schema: T,
+  data: unknown,
+  label: string,
+): T["infer"] {
   const result = schema(data);
   if (result instanceof type.errors) {
-    throw new Error(`publish-tool-packages: validation failed for ${label}: ${result.summary}`);
+    throw new Error(
+      `publish-tool-packages: validation failed for ${label}: ${result.summary}`,
+    );
   }
   return result;
 }
@@ -55,8 +61,8 @@ function parseSchema<T extends Type>(schema: T, data: unknown, label: string): T
 function mergeSetCookies(prev: CookieJar, setCookies: string[]): CookieJar {
   const next = [...prev];
   for (const sc of setCookies) {
-    const name = sc.split('=')[0];
-    const value = sc.split(';')[0];
+    const name = sc.split("=")[0];
+    const value = sc.split(";")[0];
     if (name === undefined || value === undefined) continue;
     const idx = next.findIndex((c) => c.startsWith(`${name}=`));
     if (idx >= 0) next[idx] = value;
@@ -70,46 +76,56 @@ async function jsonApi(
   method: string,
   apiPath: string,
   body: unknown,
-  cookies: CookieJar
+  cookies: CookieJar,
 ): Promise<ApiResult> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   };
-  if (cookies.length > 0) headers.Cookie = cookies.join('; ');
+  if (cookies.length > 0) headers.Cookie = cookies.join("; ");
   const res = await fetch(`${hubURL}${apiPath}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-    redirect: 'manual',
+    redirect: "manual",
   });
   const nextCookies = mergeSetCookies(cookies, res.headers.getSetCookie());
   let data: unknown = null;
-  if ((res.headers.get('content-type') ?? '').includes('json')) {
+  if ((res.headers.get("content-type") ?? "").includes("json")) {
     data = await res.json();
   }
   return { status: res.status, data, cookies: nextCookies };
 }
 
-async function authenticate(hubURL: string, email: string, password: string): Promise<CookieJar> {
+async function authenticate(
+  hubURL: string,
+  email: string,
+  password: string,
+): Promise<CookieJar> {
   const signUp = await jsonApi(
     hubURL,
-    'POST',
-    '/api/auth/sign-up/email',
-    { name: 'Publish Admin', email, password },
-    []
+    "POST",
+    "/api/auth/sign-up/email",
+    { name: "Publish Admin", email, password },
+    [],
   );
   if (signUp.status === 200) return signUp.cookies;
   // 422 is better-auth's "user already exists" — fall through to sign-in.
   // Anything else is a hub fault that must not masquerade as an auth miss.
   if (signUp.status !== 422) {
     throw new Error(
-      `publish-tool-packages: unexpected sign-up response for ${email}: ${String(signUp.status)}`
+      `publish-tool-packages: unexpected sign-up response for ${email}: ${String(signUp.status)}`,
     );
   }
-  const signIn = await jsonApi(hubURL, 'POST', '/api/auth/sign-in/email', { email, password }, []);
+  const signIn = await jsonApi(
+    hubURL,
+    "POST",
+    "/api/auth/sign-in/email",
+    { email, password },
+    [],
+  );
   if (signIn.status !== 200) {
     throw new Error(
-      `publish-tool-packages: authentication failed for ${email}: ${String(signIn.status)}`
+      `publish-tool-packages: authentication failed for ${email}: ${String(signIn.status)}`,
     );
   }
   return signIn.cookies;
@@ -119,34 +135,40 @@ async function ensureRegistryAsset(
   hubURL: string,
   cookies: CookieJar,
   tenantId: string,
-  registryName: string
+  registryName: string,
 ): Promise<string> {
   const list = await jsonApi(
     hubURL,
-    'GET',
+    "GET",
     `/api/tenants/${tenantId}/assets?kind=package-registry&inherited=false`,
     undefined,
-    cookies
+    cookies,
   );
   if (list.status !== 200) {
-    throw new Error(`publish-tool-packages: failed to list assets: ${String(list.status)}`);
+    throw new Error(
+      `publish-tool-packages: failed to list assets: ${String(list.status)}`,
+    );
   }
-  const rows = parseSchema(AssetWithOriginResponse.array(), list.data, 'list assets response');
+  const rows = parseSchema(
+    AssetWithOriginResponse.array(),
+    list.data,
+    "list assets response",
+  );
   const existing = rows.find((r) => r.name === registryName);
   if (existing !== undefined) return existing.id;
   const create = await jsonApi(
     hubURL,
-    'POST',
+    "POST",
     `/api/tenants/${tenantId}/assets`,
-    { kind: 'package-registry', name: registryName },
-    cookies
+    { kind: "package-registry", name: registryName },
+    cookies,
   );
   if (create.status !== 201) {
     throw new Error(
-      `publish-tool-packages: failed to create asset ${registryName}: ${String(create.status)}`
+      `publish-tool-packages: failed to create asset ${registryName}: ${String(create.status)}`,
     );
   }
-  return parseSchema(AssetResponse, create.data, 'create asset response').id;
+  return parseSchema(AssetResponse, create.data, "create asset response").id;
 }
 
 async function putTarball(
@@ -155,23 +177,23 @@ async function putTarball(
   tenantId: string,
   assetId: string,
   filename: string,
-  bytes: Uint8Array
+  bytes: Uint8Array,
 ): Promise<{ commit: string; integrity: string }> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/octet-stream',
+    "Content-Type": "application/octet-stream",
   };
-  if (cookies.length > 0) headers.Cookie = cookies.join('; ');
+  if (cookies.length > 0) headers.Cookie = cookies.join("; ");
   const url = `${hubURL}/api/tenants/${tenantId}/assets/${assetId}/tarballs/${filename}`;
   const res = await fetch(url, {
-    method: 'PUT',
+    method: "PUT",
     headers,
     body: bytes,
-    redirect: 'manual',
+    redirect: "manual",
   });
   if (res.status !== 200) {
     const text = await res.text();
     throw new Error(
-      `publish-tool-packages: upload failed for ${filename}: ${String(res.status)} ${text}`
+      `publish-tool-packages: upload failed for ${filename}: ${String(res.status)} ${text}`,
     );
   }
   return parseSchema(TarballPutResponse, await res.json(), `PUT ${filename}`);
@@ -179,9 +201,11 @@ async function putTarball(
 
 async function listTarballs(fromDir: string): Promise<string[]> {
   const entries = await fs.readdir(fromDir);
-  const tarballs = entries.filter((f) => f.endsWith('.tgz')).sort();
+  const tarballs = entries.filter((f) => f.endsWith(".tgz")).sort();
   if (tarballs.length === 0) {
-    throw new Error(`publish-tool-packages: no *.tgz files found under ${fromDir}`);
+    throw new Error(
+      `publish-tool-packages: no *.tgz files found under ${fromDir}`,
+    );
   }
   return tarballs;
 }
@@ -197,7 +221,7 @@ async function listTarballs(fromDir: string): Promise<string[]> {
 // hubs alike. This matches the convention in the other hub bins (_lib.ts signIn,
 // reset-myra, seed-credentials, add-llm-credential).
 async function resolveAuthCookies(opts: PublishOptions): Promise<CookieJar> {
-  if (opts.sessionCookie !== undefined && opts.sessionCookie !== '') {
+  if (opts.sessionCookie !== undefined && opts.sessionCookie !== "") {
     return [
       `better-auth.session_token=${opts.sessionCookie}`,
       `__Secure-better-auth.session_token=${opts.sessionCookie}`,
@@ -205,24 +229,34 @@ async function resolveAuthCookies(opts: PublishOptions): Promise<CookieJar> {
   }
   if (opts.adminEmail === undefined || opts.adminPassword === undefined) {
     throw new Error(
-      'publish-tool-packages: set HUB_SESSION_COOKIE, or HUB_ADMIN_EMAIL + HUB_ADMIN_PASSWORD'
+      "publish-tool-packages: set HUB_SESSION_COOKIE, or HUB_ADMIN_EMAIL + HUB_ADMIN_PASSWORD",
     );
   }
   return authenticate(opts.hubURL, opts.adminEmail, opts.adminPassword);
 }
 
-export async function publishToolPackages(opts: PublishOptions): Promise<PublishSummary[]> {
+export async function publishToolPackages(
+  opts: PublishOptions,
+): Promise<PublishSummary[]> {
   const cookies = await resolveAuthCookies(opts);
   const target = await resolveTargetTenant({
     base: opts.hubURL,
     cookies,
-    argv: opts.tenantSlug === undefined ? (opts.argv ?? []) : [`--tenant=${opts.tenantSlug}`],
+    argv:
+      opts.tenantSlug === undefined
+        ? (opts.argv ?? [])
+        : [`--tenant=${opts.tenantSlug}`],
     envVar: opts.tenantEnvVar,
     globalSlug: opts.globalSlug,
   });
   const tenantId = target.tenantId;
   process.stdout.write(`  tenant: ${target.name} [${target.slug}]\n`);
-  const assetId = await ensureRegistryAsset(opts.hubURL, cookies, tenantId, opts.registryName);
+  const assetId = await ensureRegistryAsset(
+    opts.hubURL,
+    cookies,
+    tenantId,
+    opts.registryName,
+  );
   const tarballs = await listTarballs(opts.fromDir);
 
   const summaries: PublishSummary[] = [];
@@ -234,7 +268,7 @@ export async function publishToolPackages(opts: PublishOptions): Promise<Publish
       tenantId,
       assetId,
       filename,
-      new Uint8Array(bytes)
+      new Uint8Array(bytes),
     );
     summaries.push({ filename, ...result });
   }
@@ -243,8 +277,10 @@ export async function publishToolPackages(opts: PublishOptions): Promise<Publish
 
 function requireEnv(name: string): string {
   const value = process.env[name];
-  if (value === undefined || value === '') {
-    throw new Error(`publish-tool-packages: required environment variable ${name} is not set`);
+  if (value === undefined || value === "") {
+    throw new Error(
+      `publish-tool-packages: required environment variable ${name} is not set`,
+    );
   }
   return value;
 }
@@ -252,25 +288,30 @@ function requireEnv(name: string): string {
 async function runCLI(): Promise<void> {
   const { values } = parseArgs({
     options: {
-      registry: { type: 'string', default: WORKSPACE_BUILTINS_REGISTRY },
-      from: { type: 'string', default: 'dist/tool-packages' },
-      tenant: { type: 'string' },
+      registry: { type: "string", default: WORKSPACE_BUILTINS_REGISTRY },
+      from: { type: "string", default: "dist/tool-packages" },
+      tenant: { type: "string" },
     },
     strict: true,
   });
 
-  const hubURL = requireEnv('HUB_URL');
+  const hubURL = requireEnv("HUB_URL");
   // Prefer a session cookie; fall back to admin email + password.
-  const sessionCookie = process.env.HUB_SESSION_COOKIE ?? process.env.SESSION_TOKEN;
-  const useSession = sessionCookie !== undefined && sessionCookie !== '';
-  const adminEmail = useSession ? undefined : requireEnv('HUB_ADMIN_EMAIL');
-  const adminPassword = useSession ? undefined : requireEnv('HUB_ADMIN_PASSWORD');
+  const sessionCookie =
+    process.env.HUB_SESSION_COOKIE ?? process.env.SESSION_TOKEN;
+  const useSession = sessionCookie !== undefined && sessionCookie !== "";
+  const adminEmail = useSession ? undefined : requireEnv("HUB_ADMIN_EMAIL");
+  const adminPassword = useSession
+    ? undefined
+    : requireEnv("HUB_ADMIN_PASSWORD");
   // An explicit slug (flag or HUB_TENANT_SLUG) short-circuits the picker and
   // keeps the tools:push:staging|production scripts non-interactive. With no
   // slug and no TTY, resolveTargetTenant falls through to the global tenant.
   const tenantSlug = values.tenant ?? process.env.HUB_TENANT_SLUG;
   const fromRaw = values.from;
-  const fromDir = path.isAbsolute(fromRaw) ? fromRaw : path.resolve(process.cwd(), fromRaw);
+  const fromDir = path.isAbsolute(fromRaw)
+    ? fromRaw
+    : path.resolve(process.cwd(), fromRaw);
 
   const summaries = await publishToolPackages({
     hubURL,
@@ -279,12 +320,14 @@ async function runCLI(): Promise<void> {
     adminPassword,
     tenantSlug,
     argv: process.argv.slice(2),
-    tenantEnvVar: 'HUB_TENANT_SLUG',
+    tenantEnvVar: "HUB_TENANT_SLUG",
     registryName: values.registry,
     fromDir,
   });
   for (const s of summaries) {
-    process.stdout.write(`  ${s.filename} commit=${s.commit} integrity=${s.integrity}\n`);
+    process.stdout.write(
+      `  ${s.filename} commit=${s.commit} integrity=${s.integrity}\n`,
+    );
   }
 }
 

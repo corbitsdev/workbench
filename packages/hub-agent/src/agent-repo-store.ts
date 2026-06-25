@@ -5,31 +5,31 @@
 // metadata blob. Key custody lives in AgentKeyStore alongside this
 // store; both share the directory-layout helpers in agent-paths.
 
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
-import path from 'node:path';
-import git from 'isomorphic-git';
-import { type } from 'arktype';
-import { getLogger } from '@intx/log';
-import { hasCode } from '@intx/types';
-import { HarnessConfig } from '@intx/types/runtime';
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import git from "isomorphic-git";
+import { type } from "arktype";
+import { getLogger } from "@intx/log";
+import { hasCode } from "@intx/types";
+import { HarnessConfig } from "@intx/types/runtime";
 import {
   initAgentRepo,
   applyPack,
   createDeployPack,
   currentBranch,
   type CommitVerifier,
-} from '@workbench/storage-isogit';
+} from "@workbench/storage-isogit";
 
-import { META_FILE, agentDir, metaPath } from './agent-paths';
+import { META_FILE, agentDir, metaPath } from "./agent-paths";
 
-const logger = getLogger(['interchange', 'hub-agent', 'repo-store']);
+const logger = getLogger(["interchange", "hub-agent", "repo-store"]);
 
 const AgentMeta = type({
-  version: '1',
-  address: 'string',
+  version: "1",
+  address: "string",
   config: HarnessConfig,
-  'hubPublicKey?': 'string',
+  "hubPublicKey?": "string",
 });
 type AgentMeta = typeof AgentMeta.infer;
 
@@ -63,7 +63,9 @@ export type AgentRepoStore = {
   getAgentDir(address: string): string;
   initRepo(address: string): Promise<void>;
   applyDeployPack(args: ApplyDeployPackArgs): Promise<void>;
-  createStatePack(address: string): Promise<{ pack: Uint8Array; commitSha: string; ref: string }>;
+  createStatePack(
+    address: string,
+  ): Promise<{ pack: Uint8Array; commitSha: string; ref: string }>;
   getDeployRef(address: string): Promise<string | null>;
   remove(address: string): Promise<void>;
   /**
@@ -87,7 +89,9 @@ export type AgentRepoStore = {
   scanConfigs(): Promise<AgentConfigEntry[]>;
 };
 
-export function createAgentRepoStore(config: { dataDir: string }): AgentRepoStore {
+export function createAgentRepoStore(config: {
+  dataDir: string;
+}): AgentRepoStore {
   const { dataDir } = config;
 
   function getAgentDir(address: string): string {
@@ -100,12 +104,19 @@ export function createAgentRepoStore(config: { dataDir: string }): AgentRepoStor
 
   async function applyDeployPackImpl(args: ApplyDeployPackArgs): Promise<void> {
     const { address, pack, ref, commitSha, transferId, verifyCommit } = args;
-    await applyPack(getAgentDir(address), pack, ref, commitSha, transferId, verifyCommit);
+    await applyPack(
+      getAgentDir(address),
+      pack,
+      ref,
+      commitSha,
+      transferId,
+      verifyCommit,
+    );
     logger.info`Applied deploy pack for ${address} at ${commitSha.slice(0, 8)}`;
   }
 
   async function createStatePack(
-    address: string
+    address: string,
   ): Promise<{ pack: Uint8Array; commitSha: string; ref: string }> {
     const dir = getAgentDir(address);
     const branch = await currentBranch(dir);
@@ -117,9 +128,9 @@ export function createAgentRepoStore(config: { dataDir: string }): AgentRepoStor
   async function getDeployRef(address: string): Promise<string | null> {
     const dir = getAgentDir(address);
     try {
-      return await git.resolveRef({ fs, dir, ref: 'refs/heads/deploy' });
+      return await git.resolveRef({ fs, dir, ref: "refs/heads/deploy" });
     } catch (err: unknown) {
-      if (hasCode(err) && err.code === 'NotFoundError') {
+      if (hasCode(err) && err.code === "NotFoundError") {
         return null;
       }
       throw err;
@@ -133,7 +144,7 @@ export function createAgentRepoStore(config: { dataDir: string }): AgentRepoStor
 
   async function readMeta(address: string): Promise<AgentMeta | null> {
     try {
-      const raw = await fsp.readFile(metaPath(dataDir, address), 'utf-8');
+      const raw = await fsp.readFile(metaPath(dataDir, address), "utf-8");
       const parsed: unknown = JSON.parse(raw);
       const validated = AgentMeta(parsed);
       if (validated instanceof type.errors) {
@@ -142,7 +153,7 @@ export function createAgentRepoStore(config: { dataDir: string }): AgentRepoStor
       }
       return validated;
     } catch (err: unknown) {
-      if (hasCode(err) && err.code === 'ENOENT') {
+      if (hasCode(err) && err.code === "ENOENT") {
         return null;
       }
       throw err;
@@ -153,7 +164,10 @@ export function createAgentRepoStore(config: { dataDir: string }): AgentRepoStor
     await fsp.writeFile(metaPath(dataDir, meta.address), JSON.stringify(meta));
   }
 
-  async function persistConfig(address: string, config: HarnessConfig): Promise<void> {
+  async function persistConfig(
+    address: string,
+    config: HarnessConfig,
+  ): Promise<void> {
     const existing = await readMeta(address);
     const meta: AgentMeta = { version: 1, address, config };
     if (existing?.hubPublicKey !== undefined) {
@@ -162,10 +176,15 @@ export function createAgentRepoStore(config: { dataDir: string }): AgentRepoStor
     await writeMeta(meta);
   }
 
-  async function persistPairing(address: string, hubPublicKey: string): Promise<void> {
+  async function persistPairing(
+    address: string,
+    hubPublicKey: string,
+  ): Promise<void> {
     const existing = await readMeta(address);
     if (existing === null) {
-      throw new Error(`Cannot persist hub pairing for "${address}": no existing agent.json`);
+      throw new Error(
+        `Cannot persist hub pairing for "${address}": no existing agent.json`,
+      );
     }
     await writeMeta({ ...existing, hubPublicKey });
   }
@@ -175,7 +194,7 @@ export function createAgentRepoStore(config: { dataDir: string }): AgentRepoStor
     try {
       entries = await fsp.readdir(dataDir, { withFileTypes: true });
     } catch (err: unknown) {
-      if (hasCode(err) && err.code === 'ENOENT') return [];
+      if (hasCode(err) && err.code === "ENOENT") return [];
       throw err;
     }
 
@@ -188,9 +207,9 @@ export function createAgentRepoStore(config: { dataDir: string }): AgentRepoStor
       const metaFile = path.join(dataDir, entry.name, META_FILE);
       let raw: string;
       try {
-        raw = await fsp.readFile(metaFile, 'utf-8');
+        raw = await fsp.readFile(metaFile, "utf-8");
       } catch (err: unknown) {
-        if (hasCode(err) && err.code === 'ENOENT') continue;
+        if (hasCode(err) && err.code === "ENOENT") continue;
         throw err;
       }
       const parsed: unknown = JSON.parse(raw);

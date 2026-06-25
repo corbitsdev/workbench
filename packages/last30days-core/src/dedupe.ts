@@ -1,12 +1,14 @@
 function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
-function engagementSum(engagement: { upvotes: number; comments: number } | undefined): number {
+function engagementSum(
+  engagement: { upvotes: number; comments: number } | undefined,
+): number {
   if (engagement === undefined) return 0;
   return engagement.upvotes + engagement.comments;
 }
@@ -43,7 +45,8 @@ export function dedupe<
     if (existingByTitle !== undefined) {
       if (
         existingByTitle.source !== item.source &&
-        engagementSum(item.engagement) > engagementSum(existingByTitle.engagement)
+        engagementSum(item.engagement) >
+          engagementSum(existingByTitle.engagement)
       ) {
         titleMap.set(normalizedTitle, item);
         urlMap.set(item.url, item);

@@ -43,8 +43,17 @@ loader**. There is no hub round-trip at call time.
 Keep the tool implementation as before — a factory returning `AgentTool[]`:
 
 ```ts
-export function createMyTools(config: { apiKey: string; baseURL: string }): AgentTool[] {
-  return [{ kind: 'string', definition: MY_DEFINITION, handler: async (args) => '...' }];
+export function createMyTools(config: {
+  apiKey: string;
+  baseURL: string;
+}): AgentTool[] {
+  return [
+    {
+      kind: "string",
+      definition: MY_DEFINITION,
+      handler: async (args) => "...",
+    },
+  ];
 }
 ```
 
@@ -66,11 +75,11 @@ tarballs) and the entry path:
 Create `src/interchange-tools.ts`. **Keyless** tools:
 
 ```ts
-import { createToolRunner, defineTool } from '@intx/agent';
-import { createMyTools } from './tools';
+import { createToolRunner, defineTool } from "@intx/agent";
+import { createMyTools } from "./tools";
 
 export const myTools = defineTool({
-  id: '@workbench/tools-<name>/<name>',
+  id: "@workbench/tools-<name>/<name>",
   factory: () => createToolRunner(createMyTools()),
 });
 ```
@@ -80,12 +89,12 @@ the key from env (delivered separately from inference sources, never via
 `credentialRequirements`):
 
 ```ts
-import { defineCredentialedToolPackage } from '@workbench/tool-credentials';
-import { MY_HUB_TOOLS } from './index';
+import { defineCredentialedToolPackage } from "@workbench/tool-credentials";
+import { MY_HUB_TOOLS } from "./index";
 
 export const myTools = defineCredentialedToolPackage({
-  id: '@workbench/tools-<name>/<name>',
-  provider: 'my-provider', // tenant credential provider name
+  id: "@workbench/tools-<name>/<name>",
+  provider: "my-provider", // tenant credential provider name
   entries: MY_HUB_TOOLS, // entries' createTools({ apiKey, baseURL }) are reused
 });
 ```
@@ -186,16 +195,19 @@ your own; `seedAgentTemplates` picks the definition up on the next hub boot.
 ### 2. Write the system prompt (`src/prompt.ts`)
 
 ```ts
-import { buildSystemPrompt, formatFromModel } from '@workbench/agents';
+import { buildSystemPrompt, formatFromModel } from "@workbench/agents";
 
 export function buildMyAgentPrompt(model: string): string {
   return buildSystemPrompt(
     [
-      { title: 'Role', content: 'You are...' },
-      { title: 'Pipeline', content: 'Follow these steps in order: ...' },
-      { title: 'Output discipline', content: 'Never produce structured data in chat...' },
+      { title: "Role", content: "You are..." },
+      { title: "Pipeline", content: "Follow these steps in order: ..." },
+      {
+        title: "Output discipline",
+        content: "Never produce structured data in chat...",
+      },
     ],
-    formatFromModel(model)
+    formatFromModel(model),
   );
 }
 ```
@@ -205,20 +217,24 @@ export function buildMyAgentPrompt(model: string): string {
 ### 3. Define the agent (`src/definition.ts`)
 
 ```ts
-import type { AgentDefinition } from '@intx/types';
+import type { AgentDefinition } from "@intx/types";
 
 export const myAgentDefinition: AgentDefinition = {
-  name: 'My Agent',
+  name: "My Agent",
   credentialRequirements: [
     // Inference — required for every agent
-    { providerName: 'openai-compatible', source: 'tenant', name: 'My Agent LLM' },
+    {
+      providerName: "openai-compatible",
+      source: "tenant",
+      name: "My Agent LLM",
+    },
     // External services — declare each one the agent needs
-    { providerName: 'exa', source: 'tenant' },
+    { providerName: "exa", source: "tenant" },
   ],
   capabilities: {
     // List every tool name this agent is allowed to call.
     // Tools not in this list are invisible to the agent at runtime.
-    tools: ['exa_search', 'my_tool'],
+    tools: ["exa_search", "my_tool"],
   },
   modelConfig: {
     temperature: 0.3,
@@ -235,8 +251,8 @@ export const myAgentDefinition: AgentDefinition = {
 Most agents need a custom director to filter inbound senders:
 
 ```ts
-import { createDefaultDirector } from '@intx/agent';
-import type { DirectorFactory } from '@intx/types';
+import { createDefaultDirector } from "@intx/agent";
+import type { DirectorFactory } from "@intx/types";
 
 export const createMyAgentDirector: DirectorFactory = (config) => {
   const base = createDefaultDirector(config);
@@ -289,17 +305,22 @@ Workflows are **native `@intx/workflow` definitions**, not hub code. Each kind i
 
 ```ts
 // workflows/my-workflow/src/index.ts
-import { defineWorkflow, defineAgent, step, awaitSignal } from '@intx/workflow';
+import { defineWorkflow, defineAgent, step, awaitSignal } from "@intx/workflow";
 
-export const kind = 'my-workflow';
+export const kind = "my-workflow";
 
 export const workflow = defineWorkflow({
-  id: 'my-workflow',
-  trigger: { type: 'manual' },
+  id: "my-workflow",
+  trigger: { type: "manual" },
   steps: {
-    intake: step({ agent: defineAgent({ id: 'intake' /* prompt, tools, inference */ }) }),
-    generate: step({ agent: defineAgent({ id: 'generate' /* … */ }), after: ['intake'] }),
-    approval: awaitSignal({ name: 'artifact-approval', after: ['generate'] }), // HITL gate
+    intake: step({
+      agent: defineAgent({ id: "intake" /* prompt, tools, inference */ }),
+    }),
+    generate: step({
+      agent: defineAgent({ id: "generate" /* … */ }),
+      after: ["intake"],
+    }),
+    approval: awaitSignal({ name: "artifact-approval", after: ["generate"] }), // HITL gate
   },
 });
 ```

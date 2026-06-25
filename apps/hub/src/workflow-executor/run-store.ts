@@ -1,7 +1,7 @@
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
-import type { HubDb } from '../db';
-import { workflowRunRecord, type WorkflowRunRecordRow } from '../db/schema';
-import type { RunState, RunStore } from './executor';
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import type { HubDb } from "../db";
+import { workflowRunRecord, type WorkflowRunRecordRow } from "../db/schema";
+import type { RunState, RunStore } from "./executor";
 
 function rowToState(row: WorkflowRunRecordRow): RunState {
   return {
@@ -45,7 +45,7 @@ export async function insertRunRecord(
     tenantId: string;
     principalId: string;
     input: unknown;
-  }
+  },
 ): Promise<RunState> {
   await db.insert(workflowRunRecord).values({
     id: args.runId,
@@ -53,7 +53,7 @@ export async function insertRunRecord(
     kind: args.kind,
     tenantId: args.tenantId,
     principalId: args.principalId,
-    status: 'running',
+    status: "running",
     currentStepId: null,
     input: args.input,
     outputs: {},
@@ -63,16 +63,22 @@ export async function insertRunRecord(
     kind: args.kind,
     tenantId: args.tenantId,
     principalId: args.principalId,
-    status: 'running',
+    status: "running",
     currentStepId: null,
     input: args.input,
     outputs: {},
   };
 }
 
-export async function loadRunRecord(db: HubDb, runId: string): Promise<RunState | null> {
+export async function loadRunRecord(
+  db: HubDb,
+  runId: string,
+): Promise<RunState | null> {
   const row = await db.query.workflowRunRecord.findFirst({
-    where: and(eq(workflowRunRecord.id, runId), isNull(workflowRunRecord.deletedAt)),
+    where: and(
+      eq(workflowRunRecord.id, runId),
+      isNull(workflowRunRecord.deletedAt),
+    ),
   });
   return row ? rowToState(row) : null;
 }
@@ -81,8 +87,8 @@ export async function listRunRecords(
   db: HubDb,
   tenantIds: readonly string[],
   principalId: string,
-  kind?: string
-): Promise<Array<{ runId: string; kind: string; status: string; createdAt: Date }>> {
+  kind?: string,
+): Promise<{ runId: string; kind: string; status: string; createdAt: Date }[]> {
   const conditions = [
     inArray(workflowRunRecord.tenantId, [...tenantIds]),
     eq(workflowRunRecord.principalId, principalId),

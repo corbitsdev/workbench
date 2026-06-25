@@ -1,101 +1,108 @@
-import { useState } from 'react';
-import { type } from 'arktype';
-import type { RunState, StepState } from '@intx/workflow';
+import { useState } from "react";
+import { type } from "arktype";
+import type { RunState, StepState } from "@intx/workflow";
 import {
   Button,
   HorizontalStepper,
   Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
-} from '@workbench/ui';
+} from "@workbench/ui";
 
 // ── Step order + labels ───────────────────────────────────────────────────────
 
 const STEP_ORDER = [
-  'intake',
-  'scrape',
-  'analyze',
-  'review',
-  'scan',
-  'selection',
-  'persist',
+  "intake",
+  "scrape",
+  "analyze",
+  "review",
+  "scan",
+  "selection",
+  "persist",
 ] as const;
 type StepKey = (typeof STEP_ORDER)[number];
 
 const STEP_LABELS: Record<StepKey, string> = {
-  intake: 'Intake',
-  scrape: 'Scrape',
-  analyze: 'Analyze',
-  review: 'Review',
-  scan: 'Scan',
-  selection: 'Select',
-  persist: 'Persist',
+  intake: "Intake",
+  scrape: "Scrape",
+  analyze: "Analyze",
+  review: "Review",
+  scan: "Scan",
+  selection: "Select",
+  persist: "Persist",
 };
 
-const INTAKE_SIGNAL = 'intake';
-const REVIEW_SIGNAL = 'recommendation-review';
-const SELECTION_SIGNAL = 'opportunity-selection';
+const INTAKE_SIGNAL = "intake";
+const REVIEW_SIGNAL = "recommendation-review";
+const SELECTION_SIGNAL = "opportunity-selection";
 
 // ── Output schemas ──────────────────────────────────────────────────────────────
 
 // Agent / inline-inference step output: the sidecar wraps the reply in
 // { reply, turn }. We JSON.parse(reply) to get structured data.
-const AgentStepOutput = type({ reply: 'string', 'turn?': 'unknown' });
+const AgentStepOutput = type({ reply: "string", "turn?": "unknown" });
 
 const Recommendation = type({
-  label: 'string',
-  'reason?': 'string',
-  'confidence?': 'number',
+  label: "string",
+  "reason?": "string",
+  "confidence?": "number",
 });
 
 const AnalyzeJSON = type({
-  'whatTheySell?': 'string',
-  'mainKeywords?': 'string[]',
-  'competitors?': 'string[]',
-  'audienceNotes?': 'string',
-  'keywords?': Recommendation.array(),
-  'subreddits?': Recommendation.array(),
+  "whatTheySell?": "string",
+  "mainKeywords?": "string[]",
+  "competitors?": "string[]",
+  "audienceNotes?": "string",
+  "keywords?": Recommendation.array(),
+  "subreddits?": Recommendation.array(),
 });
 
 export type AnalyzeResult = typeof AnalyzeJSON.infer;
 
 const Opportunity = type({
-  id: 'string',
-  title: 'string',
-  subreddit: 'string',
+  id: "string",
+  title: "string",
+  subreddit: "string",
   signal: "'buying-signal' | 'pain-point' | 'competitor-mention'",
-  detail: 'string',
-  'url?': 'string',
+  detail: "string",
+  "url?": "string",
 });
 
 export type Opportunity = typeof Opportunity.infer;
 
-const ScanJSON = type({ 'opportunities?': Opportunity.array() });
+const ScanJSON = type({ "opportunities?": Opportunity.array() });
 
 // deterministicToolStep output: { callId: string, content: "<JSON>" }
-const ToolResultEnvelope = type({ callId: 'string', content: 'string' });
+const ToolResultEnvelope = type({ callId: "string", content: "string" });
 
 const PersistContent = type({
-  'artifactId?': 'string',
-  'title?': 'string',
-  'kind?': 'string',
-  'version?': 'number',
+  "artifactId?": "string",
+  "title?": "string",
+  "kind?": "string",
+  "version?": "number",
 });
 
 // ── Phase helpers ──────────────────────────────────────────────────────────────
 
-type StepPhase = StepState['phase'];
+type StepPhase = StepState["phase"];
 
-function phaseFor(state: RunState | null, stepId: StepKey): StepPhase | undefined {
+function phaseFor(
+  state: RunState | null,
+  stepId: StepKey,
+): StepPhase | undefined {
   return state?.steps.get(stepId)?.phase;
 }
 
-function toStepperStatus(phase: StepPhase | undefined): WorkflowStep['status'] {
-  if (phase === 'completed') return 'completed';
-  if (phase === 'in-flight' || phase === 'awaiting-signal' || phase === 'awaiting-timer') {
-    return 'current';
+function toStepperStatus(phase: StepPhase | undefined): WorkflowStep["status"] {
+  if (phase === "completed") return "completed";
+  if (
+    phase === "in-flight" ||
+    phase === "awaiting-signal" ||
+    phase === "awaiting-timer"
+  ) {
+    return "current";
   }
-  return 'pending';
+  return "pending";
 }
 
 function buildStepperSteps(state: RunState | null): WorkflowStep[] {
@@ -112,42 +119,42 @@ function buildStepperSteps(state: RunState | null): WorkflowStep[] {
  */
 function activeStep(state: RunState | null): StepKey {
   for (const id of STEP_ORDER) {
-    if (phaseFor(state, id) !== 'completed') return id;
+    if (phaseFor(state, id) !== "completed") return id;
   }
-  return 'persist';
+  return "persist";
 }
 
 // ── Parsers ───────────────────────────────────────────────────────────────────
 
-function parseAnalyzeOutput(raw: unknown): AnalyzeResult | 'pending' | 'error' {
+function parseAnalyzeOutput(raw: unknown): AnalyzeResult | "pending" | "error" {
   const envelope = AgentStepOutput(raw);
-  if (envelope instanceof type.errors) return 'pending';
+  if (envelope instanceof type.errors) return "pending";
 
   let decoded: unknown;
   try {
     decoded = JSON.parse(envelope.reply);
   } catch {
-    return 'error';
+    return "error";
   }
 
   const parsed = AnalyzeJSON(decoded);
-  if (parsed instanceof type.errors) return 'error';
+  if (parsed instanceof type.errors) return "error";
   return parsed;
 }
 
-function parseScanOutput(raw: unknown): Opportunity[] | 'pending' | 'error' {
+function parseScanOutput(raw: unknown): Opportunity[] | "pending" | "error" {
   const envelope = AgentStepOutput(raw);
-  if (envelope instanceof type.errors) return 'pending';
+  if (envelope instanceof type.errors) return "pending";
 
   let decoded: unknown;
   try {
     decoded = JSON.parse(envelope.reply);
   } catch {
-    return 'error';
+    return "error";
   }
 
   const parsed = ScanJSON(decoded);
-  if (parsed instanceof type.errors) return 'error';
+  if (parsed instanceof type.errors) return "error";
   return parsed.opportunities ?? [];
 }
 
@@ -155,7 +162,9 @@ function parseScanOutput(raw: unknown): Opportunity[] | 'pending' | 'error' {
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <section className="rounded-panel border border-border bg-surface p-6">{children}</section>
+    <section className="rounded-panel border border-border bg-surface p-6">
+      {children}
+    </section>
   );
 }
 
@@ -167,7 +176,7 @@ function Spinner({ label }: { label?: string }) {
   return (
     <div className="flex items-center gap-2 text-sm text-text-3">
       <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-border border-t-text-3" />
-      {label ?? 'Working…'}
+      {label ?? "Working…"}
     </div>
   );
 }
@@ -176,7 +185,9 @@ function ErrorCard({ title, detail }: { title: string; detail?: string }) {
   return (
     <Card>
       <p className="text-sm font-medium text-orange">{title}</p>
-      {detail !== undefined ? <p className="mt-1 text-xs text-text-3">{detail}</p> : null}
+      {detail !== undefined ? (
+        <p className="mt-1 text-xs text-text-3">{detail}</p>
+      ) : null}
     </Card>
   );
 }
@@ -200,20 +211,22 @@ function ChipInput({
   onAdd: (value: string) => void;
   onRemove: (value: string) => void;
 }) {
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState("");
 
   const commit = () => {
     const trimmed = draft.trim();
     if (trimmed.length === 0) return;
     if (!items.includes(trimmed)) onAdd(trimmed);
-    setDraft('');
+    setDraft("");
   };
 
   return (
     <div className="space-y-1.5">
       <label htmlFor={id} className="text-xs font-medium text-text">
         {label}
-        {hint !== undefined ? <span className="ml-1 text-text-3"> {hint}</span> : null}
+        {hint !== undefined ? (
+          <span className="ml-1 text-text-3"> {hint}</span>
+        ) : null}
       </label>
       <div className="flex gap-2">
         <input
@@ -222,7 +235,7 @@ function ChipInput({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ',') {
+            if (e.key === "Enter" || e.key === ",") {
               e.preventDefault();
               commit();
             }
@@ -278,15 +291,15 @@ function IntakeScreen({
   signalPending: boolean;
   onSubmit: (payload: IntakePayload) => void;
 }) {
-  const [inputUrl, setInputUrl] = useState('');
-  const [brandName, setBrandName] = useState('');
-  const [targetGeography, setTargetGeography] = useState('');
-  const [icpHints, setIcpHints] = useState('');
+  const [inputUrl, setInputUrl] = useState("");
+  const [brandName, setBrandName] = useState("");
+  const [targetGeography, setTargetGeography] = useState("");
+  const [icpHints, setIcpHints] = useState("");
 
   const urlValid = /^https?:\/\/.+/i.test(inputUrl.trim());
   const canSubmit = connected && !signalPending && urlValid;
 
-  if (phase !== 'awaiting-signal') {
+  if (phase !== "awaiting-signal") {
     return (
       <Card>
         <Spinner />
@@ -303,8 +316,8 @@ function IntakeScreen({
     <Card>
       <CardTitle>What should we analyze?</CardTitle>
       <p className="mb-5 text-xs text-text-3">
-        Enter the website to scan. We crawl it, infer keywords and subreddits, and let you review
-        them before searching Reddit.
+        Enter the website to scan. We crawl it, infer keywords and subreddits,
+        and let you review them before searching Reddit.
       </p>
       <form
         className="space-y-4"
@@ -363,11 +376,18 @@ function IntakeScreen({
           />
         </Field>
         <div className="flex items-center gap-3 pt-1">
-          <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            disabled={!canSubmit}
+          >
             Analyze site
           </Button>
           {!connected ? (
-            <p className="text-xs text-text-3">Reconnecting — input unavailable.</p>
+            <p className="text-xs text-text-3">
+              Reconnecting — input unavailable.
+            </p>
           ) : null}
           {connected && inputUrl.trim().length > 0 && !urlValid ? (
             <p className="text-xs text-orange">Enter a full http(s) URL.</p>
@@ -395,8 +415,12 @@ function Field({
     <div className="space-y-1.5">
       <label htmlFor={id} className="text-xs font-medium text-text">
         {label}
-        {required === true ? <span className="ml-0.5 text-orange">*</span> : null}
-        {hint !== undefined ? <span className="ml-1 text-text-3"> {hint}</span> : null}
+        {required === true ? (
+          <span className="ml-0.5 text-orange">*</span>
+        ) : null}
+        {hint !== undefined ? (
+          <span className="ml-1 text-text-3"> {hint}</span>
+        ) : null}
       </label>
       {children}
     </div>
@@ -406,7 +430,7 @@ function Field({
 // ── Screen: Scrape (deterministic, progress only) ───────────────────────────────
 
 function ScrapeScreen({ phase }: { phase: StepPhase | undefined }) {
-  if (phase === 'failed' || phase === 'cancelled') {
+  if (phase === "failed" || phase === "cancelled") {
     return (
       <ErrorCard
         title="Couldn't scrape the site."
@@ -444,7 +468,7 @@ function RecommendationReview({
 }) {
   const analysis = parseAnalyzeOutput(analyzeOutput);
 
-  if (analysis === 'pending') {
+  if (analysis === "pending") {
     return (
       <Card>
         <CardTitle>Analyzing the site</CardTitle>
@@ -453,7 +477,7 @@ function RecommendationReview({
     );
   }
 
-  if (analysis === 'error') {
+  if (analysis === "error") {
     return (
       <ErrorCard
         title="Couldn't read the analysis."
@@ -462,7 +486,7 @@ function RecommendationReview({
     );
   }
 
-  if (phase !== 'awaiting-signal') {
+  if (phase !== "awaiting-signal") {
     return (
       <Card>
         <Spinner />
@@ -499,22 +523,27 @@ function RecommendationForm({
   }) => void;
 }) {
   const [keywords, setKeywords] = useState<string[]>(() =>
-    (analysis.keywords ?? []).map((k) => k.label)
+    (analysis.keywords ?? []).map((k) => k.label),
   );
   const [subreddits, setSubreddits] = useState<string[]>(() =>
-    (analysis.subreddits ?? []).map((s) => s.label.replace(/^r\//i, ''))
+    (analysis.subreddits ?? []).map((s) => s.label.replace(/^r\//i, "")),
   );
 
   const competitors = analysis.competitors ?? [];
   const businessContext = [
-    analysis.whatTheySell !== undefined ? `What they sell: ${analysis.whatTheySell}` : null,
-    analysis.audienceNotes !== undefined ? `Audience: ${analysis.audienceNotes}` : null,
-    competitors.length > 0 ? `Competitors: ${competitors.join(', ')}` : null,
+    analysis.whatTheySell !== undefined
+      ? `What they sell: ${analysis.whatTheySell}`
+      : null,
+    analysis.audienceNotes !== undefined
+      ? `Audience: ${analysis.audienceNotes}`
+      : null,
+    competitors.length > 0 ? `Competitors: ${competitors.join(", ")}` : null,
   ]
     .filter((line): line is string => line !== null)
-    .join('\n');
+    .join("\n");
 
-  const canSubmit = connected && !signalPending && keywords.length > 0 && subreddits.length > 0;
+  const canSubmit =
+    connected && !signalPending && keywords.length > 0 && subreddits.length > 0;
 
   return (
     <Card>
@@ -525,7 +554,8 @@ function RecommendationForm({
         </div>
       ) : null}
       <p className="mb-5 text-xs text-text-3">
-        We inferred these from the site. Add, remove, or edit them before scanning Reddit.
+        We inferred these from the site. Add, remove, or edit them before
+        scanning Reddit.
       </p>
       <form
         className="space-y-5"
@@ -549,15 +579,24 @@ function RecommendationForm({
           hint="(without r/)"
           placeholder="e.g. devops"
           items={subreddits}
-          onAdd={(v) => setSubreddits((prev) => [...prev, v.replace(/^r\//i, '')])}
+          onAdd={(v) =>
+            setSubreddits((prev) => [...prev, v.replace(/^r\//i, "")])
+          }
           onRemove={(v) => setSubreddits((prev) => prev.filter((s) => s !== v))}
         />
         <div className="flex items-center gap-3 pt-1">
-          <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            disabled={!canSubmit}
+          >
             Scan Reddit
           </Button>
           {!connected ? (
-            <p className="text-xs text-text-3">Reconnecting — action unavailable.</p>
+            <p className="text-xs text-text-3">
+              Reconnecting — action unavailable.
+            </p>
           ) : null}
         </div>
       </form>
@@ -567,24 +606,26 @@ function RecommendationForm({
 
 // ── Opportunity card + badge ────────────────────────────────────────────────────
 
-function SignalBadge({ signal }: { signal: Opportunity['signal'] }) {
+function SignalBadge({ signal }: { signal: Opportunity["signal"] }) {
   const MAP = {
-    'buying-signal': {
-      label: 'Buying signal',
-      className: 'bg-green/10 text-green',
+    "buying-signal": {
+      label: "Buying signal",
+      className: "bg-green/10 text-green",
     },
-    'pain-point': {
-      label: 'Pain point',
-      className: 'bg-orange/10 text-orange',
+    "pain-point": {
+      label: "Pain point",
+      className: "bg-orange/10 text-orange",
     },
-    'competitor-mention': {
-      label: 'Competitor',
-      className: 'bg-surface-2 text-text-2 border border-border',
+    "competitor-mention": {
+      label: "Competitor",
+      className: "bg-surface-2 text-text-2 border border-border",
     },
   } as const;
   const cfg = MAP[signal];
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${cfg.className}`}>
+    <span
+      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${cfg.className}`}
+    >
       {cfg.label}
     </span>
   );
@@ -602,23 +643,29 @@ function OpportunityCard({
   return (
     <div
       className={`rounded-lg border bg-surface-2 p-3 ${
-        selected === true ? 'border-orange' : 'border-border'
-      } ${onToggle !== undefined ? 'cursor-pointer transition-colors hover:border-border-strong' : ''}`}
+        selected === true ? "border-orange" : "border-border"
+      } ${onToggle !== undefined ? "cursor-pointer transition-colors hover:border-border-strong" : ""}`}
       onClick={onToggle}
-      role={onToggle !== undefined ? 'checkbox' : undefined}
+      role={onToggle !== undefined ? "checkbox" : undefined}
       aria-checked={selected}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-text">{opportunity.title}</p>
-          <p className="mt-0.5 font-mono text-xs text-text-3">r/{opportunity.subreddit}</p>
+          <p className="truncate text-sm font-medium text-text">
+            {opportunity.title}
+          </p>
+          <p className="mt-0.5 font-mono text-xs text-text-3">
+            r/{opportunity.subreddit}
+          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <SignalBadge signal={opportunity.signal} />
           {onToggle !== undefined ? (
             <div
               className={`h-4 w-4 rounded border ${
-                selected === true ? 'border-orange bg-orange' : 'border-border bg-bg'
+                selected === true
+                  ? "border-orange bg-orange"
+                  : "border-border bg-bg"
               } flex items-center justify-center`}
             >
               {selected === true ? (
@@ -654,8 +701,14 @@ function OpportunityCard({
 
 // ── Screen: Scan (progress, deployed tool-using step) ───────────────────────────
 
-function ScanScreen({ phase, output }: { phase: StepPhase | undefined; output: unknown }) {
-  if (phase === 'in-flight' || phase === undefined) {
+function ScanScreen({
+  phase,
+  output,
+}: {
+  phase: StepPhase | undefined;
+  output: unknown;
+}) {
+  if (phase === "in-flight" || phase === undefined) {
     return (
       <Card>
         <CardTitle>Scanning Reddit</CardTitle>
@@ -666,7 +719,7 @@ function ScanScreen({ phase, output }: { phase: StepPhase | undefined; output: u
 
   const result = parseScanOutput(output);
 
-  if (result === 'error') {
+  if (result === "error") {
     return (
       <ErrorCard
         title="Couldn't read the scan output."
@@ -675,7 +728,7 @@ function ScanScreen({ phase, output }: { phase: StepPhase | undefined; output: u
     );
   }
 
-  if (result === 'pending') {
+  if (result === "pending") {
     return (
       <Card>
         <CardTitle>Scanning Reddit</CardTitle>
@@ -734,7 +787,7 @@ function SelectionScreen({
     });
   };
 
-  if (phase !== 'awaiting-signal') {
+  if (phase !== "awaiting-signal") {
     return (
       <Card>
         <Spinner />
@@ -751,14 +804,16 @@ function SelectionScreen({
     );
   }
 
-  const selectedOpportunities = opportunities.filter((o) => selectedIds.has(o.id));
+  const selectedOpportunities = opportunities.filter((o) =>
+    selectedIds.has(o.id),
+  );
 
   return (
     <Card>
       <CardTitle>Select opportunities to save</CardTitle>
       <p className="mb-4 text-xs text-text-3">
-        Choose which opportunities to persist as artifacts. Each saved item becomes a document in
-        your workbench.
+        Choose which opportunities to persist as artifacts. Each saved item
+        becomes a document in your workbench.
       </p>
       <div className="space-y-2">
         {opportunities.map((opp) => (
@@ -781,11 +836,13 @@ function SelectionScreen({
             onSubmit({ selected: selectedOpportunities });
           }}
         >
-          Save {selectedIds.size > 0 ? `${selectedIds.size} ` : ''}
-          {selectedIds.size === 1 ? 'opportunity' : 'opportunities'}
+          Save {selectedIds.size > 0 ? `${selectedIds.size} ` : ""}
+          {selectedIds.size === 1 ? "opportunity" : "opportunities"}
         </Button>
         {!connected ? (
-          <p className="text-xs text-text-3">Reconnecting — action unavailable.</p>
+          <p className="text-xs text-text-3">
+            Reconnecting — action unavailable.
+          </p>
         ) : null}
       </div>
     </Card>
@@ -795,7 +852,7 @@ function SelectionScreen({
 // ── Screen: Persist ─────────────────────────────────────────────────────────────
 
 function readPersistedArtifact(
-  raw: unknown
+  raw: unknown,
 ): { artifactId?: string; title?: string; kind?: string } | undefined {
   const envelope = ToolResultEnvelope(raw);
   if (envelope instanceof type.errors) return undefined;
@@ -808,7 +865,9 @@ function readPersistedArtifact(
   const parsed = PersistContent(decoded);
   if (parsed instanceof type.errors) return undefined;
   return {
-    ...(parsed.artifactId !== undefined ? { artifactId: parsed.artifactId } : {}),
+    ...(parsed.artifactId !== undefined
+      ? { artifactId: parsed.artifactId }
+      : {}),
     ...(parsed.title !== undefined ? { title: parsed.title } : {}),
     ...(parsed.kind !== undefined ? { kind: parsed.kind } : {}),
   };
@@ -823,7 +882,7 @@ function PersistScreen({
   output: unknown;
   onClose: () => void;
 }) {
-  if (phase === 'in-flight' || phase === undefined) {
+  if (phase === "in-flight" || phase === undefined) {
     return (
       <Card>
         <CardTitle>Saving artifacts</CardTitle>
@@ -842,7 +901,8 @@ function PersistScreen({
   return (
     <Card>
       <CardTitle>
-        Done — {artifacts.length} artifact{artifacts.length === 1 ? '' : 's'} saved
+        Done — {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}{" "}
+        saved
       </CardTitle>
       {artifacts.length > 0 ? (
         <div className="space-y-2">
@@ -852,16 +912,20 @@ function PersistScreen({
               className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2"
             >
               <span className="min-w-0 truncate text-sm text-text">
-                {artifact.title ?? artifact.artifactId ?? 'Saved artifact'}
+                {artifact.title ?? artifact.artifactId ?? "Saved artifact"}
               </span>
               {artifact.kind !== undefined ? (
-                <span className="shrink-0 text-xs text-text-3">{artifact.kind}</span>
+                <span className="shrink-0 text-xs text-text-3">
+                  {artifact.kind}
+                </span>
               ) : null}
             </div>
           ))}
         </div>
       ) : (
-        <p className="text-sm text-text-3">No artifacts could be read from the persist output.</p>
+        <p className="text-sm text-text-3">
+          No artifacts could be read from the persist output.
+        </p>
       )}
       <div className="mt-5">
         <Button variant="ghost" size="sm" onClick={onClose}>
@@ -875,27 +939,32 @@ function PersistScreen({
 // ── Root Panel ──────────────────────────────────────────────────────────────────
 
 export function Panel(props: WorkflowPanelProps) {
-  const { state, connected, signalPending, stepOutputs, onSignal, onClose } = props;
+  const { state, connected, signalPending, stepOutputs, onSignal, onClose } =
+    props;
 
   const active = activeStep(state);
   const runPhase = state?.phase;
-  const failed = runPhase === 'failed' || runPhase === 'cancelled';
+  const failed = runPhase === "failed" || runPhase === "cancelled";
 
   const failedStep = STEP_ORDER.find((id) => {
     const p = phaseFor(state, id);
-    return p === 'failed' || p === 'cancelled';
+    return p === "failed" || p === "cancelled";
   });
   const failError =
-    failedStep !== undefined ? state?.steps.get(failedStep)?.lastError?.message : undefined;
+    failedStep !== undefined
+      ? state?.steps.get(failedStep)?.lastError?.message
+      : undefined;
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-text">Reddit Opportunity Scanner</p>
+          <p className="truncate text-sm font-semibold text-text">
+            Reddit Opportunity Scanner
+          </p>
           <p className="mt-px font-mono text-[11px] text-text-3">
-            {connected ? 'Live' : 'Reconnecting'}
+            {connected ? "Live" : "Reconnecting"}
           </p>
         </div>
         <button
@@ -923,39 +992,42 @@ export function Panel(props: WorkflowPanelProps) {
         {failed ? (
           <ErrorCard
             title="This run failed."
-            detail={failError ?? 'Review the step details and start a new run.'}
+            detail={failError ?? "Review the step details and start a new run."}
           />
-        ) : active === 'intake' ? (
+        ) : active === "intake" ? (
           <IntakeScreen
-            phase={phaseFor(state, 'intake')}
+            phase={phaseFor(state, "intake")}
             connected={connected}
             signalPending={signalPending}
             onSubmit={(payload) => onSignal(INTAKE_SIGNAL, payload)}
           />
-        ) : active === 'scrape' ? (
-          <ScrapeScreen phase={phaseFor(state, 'scrape')} />
-        ) : active === 'analyze' || active === 'review' ? (
+        ) : active === "scrape" ? (
+          <ScrapeScreen phase={phaseFor(state, "scrape")} />
+        ) : active === "analyze" || active === "review" ? (
           <RecommendationReview
-            phase={phaseFor(state, 'review')}
+            phase={phaseFor(state, "review")}
             connected={connected}
             signalPending={signalPending}
-            analyzeOutput={stepOutputs['analyze']}
+            analyzeOutput={stepOutputs["analyze"]}
             onSubmit={(payload) => onSignal(REVIEW_SIGNAL, payload)}
           />
-        ) : active === 'scan' ? (
-          <ScanScreen phase={phaseFor(state, 'scan')} output={stepOutputs['scan']} />
-        ) : active === 'selection' ? (
+        ) : active === "scan" ? (
+          <ScanScreen
+            phase={phaseFor(state, "scan")}
+            output={stepOutputs["scan"]}
+          />
+        ) : active === "selection" ? (
           <SelectionScreen
-            phase={phaseFor(state, 'selection')}
+            phase={phaseFor(state, "selection")}
             connected={connected}
             signalPending={signalPending}
-            scanOutput={stepOutputs['scan']}
+            scanOutput={stepOutputs["scan"]}
             onSubmit={(payload) => onSignal(SELECTION_SIGNAL, payload)}
           />
         ) : (
           <PersistScreen
-            phase={phaseFor(state, 'persist')}
-            output={stepOutputs['persist']}
+            phase={phaseFor(state, "persist")}
+            output={stepOutputs["persist"]}
             onClose={onClose}
           />
         )}

@@ -5,7 +5,10 @@
 
 const pending = new Map<string, string>();
 
-export function setPendingFirstMessage(threadId: string, message: string): void {
+export function setPendingFirstMessage(
+  threadId: string,
+  message: string,
+): void {
   pending.set(threadId, message);
 }
 

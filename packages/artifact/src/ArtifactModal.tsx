@@ -2,17 +2,23 @@
 // owned by the caller; all actions are reported via callbacks. Provides a
 // dimmed scrim, focus trap, and Escape-to-close. No data fetching.
 
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { Button } from '@workbench/ui';
-import type { ArtifactWithSession } from '@workbench/shared';
-import { isLinkedInPostArtifactKind } from './artifact-kinds';
-import { resolveArtifactClipboardText } from './linkedin-clipboard';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Button } from "@workbench/ui";
+import type { ArtifactWithSession } from "@workbench/shared";
+import { isLinkedInPostArtifactKind } from "./artifact-kinds";
+import { resolveArtifactClipboardText } from "./linkedin-clipboard";
 
 export interface ArtifactModalAction {
   label: string;
   onClick: (artifact: ArtifactWithSession) => void;
-  variant?: 'primary' | 'secondary' | 'ghost';
+  variant?: "primary" | "secondary" | "ghost";
 }
 
 export interface ArtifactModalProps {
@@ -44,10 +50,10 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
   });
 }
 
@@ -63,13 +69,17 @@ export function ArtifactModal({
   canUseInWorkflow,
 }: ArtifactModalProps) {
   const showUseInWorkflow = Boolean(
-    onUseInWorkflow && artifact && (canUseInWorkflow ? canUseInWorkflow(artifact) : true)
+    onUseInWorkflow &&
+      artifact &&
+      (canUseInWorkflow ? canUseInWorkflow(artifact) : true),
   );
   const panelRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const [formatForLinkedIn, setFormatForLinkedIn] = useState(true);
-  const showLinkedInFormatGate = Boolean(artifact && isLinkedInPostArtifactKind(artifact.kind));
+  const showLinkedInFormatGate = Boolean(
+    artifact && isLinkedInPostArtifactKind(artifact.kind),
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -78,12 +88,12 @@ export function ArtifactModal({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
         return;
       }
-      if (e.key !== 'Tab' || !panelRef.current) return;
+      if (e.key !== "Tab" || !panelRef.current) return;
       const items = panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
       if (items.length === 0) {
         e.preventDefault();
@@ -100,7 +110,7 @@ export function ArtifactModal({
         first.focus();
       }
     },
-    [onClose]
+    [onClose],
   );
 
   // Move focus into the panel when it opens.
@@ -137,15 +147,19 @@ export function ArtifactModal({
           >
             <div className="flex items-start gap-3 border-b border-border px-6 py-4">
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[16px] font-bold text-text">{artifact.title}</div>
+                <div className="truncate text-[16px] font-bold text-text">
+                  {artifact.title}
+                </div>
                 <div className="mt-0.5 font-mono text-[11px] text-text-3">
-                  {artifact.sessionName ?? 'Untitled job'} · v{artifact.version}
+                  {artifact.sessionName ?? "Untitled job"} · v{artifact.version}
                 </div>
                 {(kindLabel ?? artifact.createdAt) && (
                   <div className="mt-1 text-[11px] text-text-3">
                     {kindLabel && <span>{kindLabel}</span>}
                     {kindLabel && artifact.createdAt && <span> · </span>}
-                    {artifact.createdAt && <span>{formatDate(artifact.createdAt)}</span>}
+                    {artifact.createdAt && (
+                      <span>{formatDate(artifact.createdAt)}</span>
+                    )}
                   </div>
                 )}
               </div>
@@ -181,12 +195,18 @@ export function ArtifactModal({
               )}
               <button
                 type="button"
-                aria-label={copyFailed ? 'Copy failed' : copied ? 'Copied' : 'Copy content'}
+                aria-label={
+                  copyFailed
+                    ? "Copy failed"
+                    : copied
+                      ? "Copied"
+                      : "Copy content"
+                }
                 onClick={() => {
                   const text = resolveArtifactClipboardText(
                     artifact.content,
                     artifact.kind,
-                    formatForLinkedIn
+                    formatForLinkedIn,
                   );
                   setCopied(false);
                   setCopyFailed(false);
@@ -204,9 +224,9 @@ export function ArtifactModal({
                 className="absolute right-4 top-4 flex items-center gap-1.5 rounded-[7px] border border-border bg-surface px-2 py-1 text-[11px] text-text-3 transition-colors hover:text-text active:scale-[0.97]"
               >
                 {copyFailed ? (
-                  'Copy failed'
+                  "Copy failed"
                 ) : copied ? (
-                  'Copied'
+                  "Copied"
                 ) : (
                   <svg
                     viewBox="0 0 24 24"
@@ -220,25 +240,35 @@ export function ArtifactModal({
                   </svg>
                 )}
               </button>
-              {children ?? <p className="whitespace-pre-wrap">{artifact.content}</p>}
+              {children ?? (
+                <p className="whitespace-pre-wrap">{artifact.content}</p>
+              )}
             </div>
 
             {(actions.length > 0 || onOpenInMyra || showUseInWorkflow) && (
               <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
                 {onOpenInMyra && (
-                  <Button variant="ghost" size="sm" onClick={() => onOpenInMyra(artifact)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onOpenInMyra(artifact)}
+                  >
                     Open in Myra
                   </Button>
                 )}
                 {showUseInWorkflow && artifact && onUseInWorkflow && (
-                  <Button variant="secondary" size="sm" onClick={() => onUseInWorkflow(artifact)}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onUseInWorkflow(artifact)}
+                  >
                     Use in Workflow
                   </Button>
                 )}
                 {actions.map((action) => (
                   <Button
                     key={action.label}
-                    variant={action.variant ?? 'secondary'}
+                    variant={action.variant ?? "secondary"}
                     size="sm"
                     onClick={() => action.onClick(artifact)}
                   >

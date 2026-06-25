@@ -1,8 +1,8 @@
-export { createClient } from "./runtime/index.js"
-export { generate } from "./codegen/index.js"
-export type { GenerateOptions, GenerateResult } from "./codegen/index.js"
-export { convertSchema } from "./parse/schema.js"
-export { loadSpec } from "./parse/load.js"
+export { createClient } from "./runtime/index.js";
+export { generate } from "./codegen/index.js";
+export type { GenerateOptions, GenerateResult } from "./codegen/index.js";
+export { convertSchema } from "./parse/schema.js";
+export { loadSpec } from "./parse/load.js";
 export type {
   ApiClient,
   ApiDescription,
@@ -20,5 +20,5 @@ export type {
   SchemaEntry,
   SchemaMetadata,
   ServerEntry,
-} from "./types.js"
-export { OpenApiArktypeError } from "./types.js"
+} from "./types.js";
+export { OpenApiArktypeError } from "./types.js";

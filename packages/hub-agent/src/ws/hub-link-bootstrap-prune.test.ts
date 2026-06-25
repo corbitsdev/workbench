@@ -18,20 +18,29 @@
 //      Without the fix the link would skip the retry on this push and
 //      surface the rejection to the caller.
 
-import { describe, test, expect, afterAll } from 'bun:test';
-import { Hono } from 'hono';
-import { upgradeWebSocket, websocket } from 'hono/bun';
-import { createSidecarRouter, type SidecarRouter, type WsHandle } from '@intx/hub-sessions';
-import { sign as nodeSign } from 'node:crypto';
-import { createInMemoryTransport } from '@intx/mail-memory';
-import { importPrivateKeyBytes, verifySSHSignature } from '@intx/crypto-node';
-import type { HarnessConfig, InboundMessage, InferenceSource, KeyPair } from '@intx/types/runtime';
-import type { GrantRule } from '@intx/types/authz';
-import { hexDecode } from '@intx/types';
+import { describe, test, expect, afterAll } from "bun:test";
+import { Hono } from "hono";
+import { upgradeWebSocket, websocket } from "hono/bun";
+import {
+  createSidecarRouter,
+  type SidecarRouter,
+  type WsHandle,
+} from "@intx/hub-sessions";
+import { sign as nodeSign } from "node:crypto";
+import { createInMemoryTransport } from "@intx/mail-memory";
+import { importPrivateKeyBytes, verifySSHSignature } from "@intx/crypto-node";
+import type {
+  HarnessConfig,
+  InboundMessage,
+  InferenceSource,
+  KeyPair,
+} from "@intx/types/runtime";
+import type { GrantRule } from "@intx/types/authz";
+import { hexDecode } from "@intx/types";
 
-import { createHubLink, type DeployRouter } from './hub-link';
-import type { AgentKeyStore } from '../agent-key-store';
-import type { AgentEventListener, SessionManager } from '../session-manager';
+import { createHubLink, type DeployRouter } from "./hub-link";
+import type { AgentKeyStore } from "../agent-key-store";
+import type { AgentEventListener, SessionManager } from "../session-manager";
 
 function createTestKeyStore(): AgentKeyStore & {
   registerKey(address: string, kp: KeyPair): void;
@@ -65,7 +74,9 @@ function createTestKeyStore(): AgentKeyStore & {
     verifyDeployCommit(address, payload, signature) {
       const hubKey = hubKeys.get(address);
       if (hubKey === undefined) {
-        throw new Error(`signature_invalid: no hub public key for "${address}"`);
+        throw new Error(
+          `signature_invalid: no hub public key for "${address}"`,
+        );
       }
       return verifySSHSignature(payload, signature, hubKey);
     },
@@ -76,12 +87,18 @@ function createTestKeyStore(): AgentKeyStore & {
   };
 }
 
-function createTestDeployRouter(sessions: SessionManager, keyStore: AgentKeyStore): DeployRouter {
+function createTestDeployRouter(
+  sessions: SessionManager,
+  keyStore: AgentKeyStore,
+): DeployRouter {
   return {
     async deploy(frame) {
       const result = await sessions.provisionAgent(frame.config);
       keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
-      await sessions.persistHubPublicKey(frame.agentAddress, frame.hubPublicKey);
+      await sessions.persistHubPublicKey(
+        frame.agentAddress,
+        frame.hubPublicKey,
+      );
       return { publicKey: result.publicKey };
     },
   };
@@ -101,7 +118,7 @@ function createMockSessionManager(): SessionManager & {
       mock.provisioned.push(config);
       mock.addresses.push(config.agentAddress);
       return {
-        publicKey: 'deadbeef',
+        publicKey: "deadbeef",
         keyPair: {
           publicKey: new Uint8Array(32),
           privateKey: new Uint8Array(32),
@@ -120,13 +137,16 @@ function createMockSessionManager(): SessionManager & {
     deliverMessage(_agentAddress: string, _message: InboundMessage): void {
       /* unused */
     },
-    async updateGrants(_agentAddress: string, _grants: GrantRule[]): Promise<void> {
+    async updateGrants(
+      _agentAddress: string,
+      _grants: GrantRule[],
+    ): Promise<void> {
       /* unused */
     },
     async updateSources(
       _agentAddress: string,
       _sources: InferenceSource[],
-      _defaultSource: string
+      _defaultSource: string,
     ): Promise<void> {
       /* unused */
     },
@@ -147,17 +167,20 @@ function createMockSessionManager(): SessionManager & {
     createStatePack: () =>
       Promise.resolve({
         pack: new Uint8Array([1, 2, 3]),
-        commitSha: 'abc123',
-        ref: 'refs/heads/main',
+        commitSha: "abc123",
+        ref: "refs/heads/main",
       }),
     deleteAgentDir: () => Promise.resolve(),
     getDeployRef: (_agentAddress: string) => Promise.resolve(null),
-    persistHubPublicKey: (_agentAddress: string, _hubPublicKey: string) => Promise.resolve(),
-    commitInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) => Promise.resolve(),
+    persistHubPublicKey: (_agentAddress: string, _hubPublicKey: string) =>
+      Promise.resolve(),
+    commitInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) =>
+      Promise.resolve(),
     getSessionId: (_agentAddress: string) => undefined,
-    onAgentEvent: (_agentAddress: string, _listener: AgentEventListener) => () => {
-      /* unused */
-    },
+    onAgentEvent:
+      (_agentAddress: string, _listener: AgentEventListener) => () => {
+        /* unused */
+      },
   } satisfies SessionManager & {
     provisioned: HarnessConfig[];
     addresses: string[];
@@ -166,29 +189,29 @@ function createMockSessionManager(): SessionManager & {
 }
 
 const TEST_CONFIG: HarnessConfig = {
-  sessionId: 'ses_test-session-prune',
-  agentId: 'agent-prune',
-  tenantId: 'tenant-prune',
-  principalId: 'prin_prune',
-  agentAddress: 'agent-prune@test.interchange',
-  systemPrompt: 'You are a test agent',
+  sessionId: "ses_test-session-prune",
+  agentId: "agent-prune",
+  tenantId: "tenant-prune",
+  principalId: "prin_prune",
+  agentAddress: "agent-prune@test.interchange",
+  systemPrompt: "You are a test agent",
   tools: [],
   grants: [],
   sources: [
     {
-      id: 'anthropic:claude-sonnet-4-20250514',
-      provider: 'anthropic',
-      baseURL: 'https://api.anthropic.com',
-      apiKey: 'sk-test',
-      model: 'claude-sonnet-4-20250514',
+      id: "anthropic:claude-sonnet-4-20250514",
+      provider: "anthropic",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "sk-test",
+      model: "claude-sonnet-4-20250514",
     },
   ],
-  defaultSource: 'anthropic:claude-sonnet-4-20250514',
+  defaultSource: "anthropic:claude-sonnet-4-20250514",
 };
 
 async function waitFor(
   predicate: () => boolean | Promise<boolean>,
-  timeoutMs = 2000
+  timeoutMs = 2000,
 ): Promise<void> {
   const start = Date.now();
   while (!(await predicate())) {
@@ -217,7 +240,7 @@ function startTestServer(): TestEnv {
 
   const router = createSidecarRouter({
     requestTimeoutMs: 5000,
-    hubPublicKey: 'a'.repeat(64),
+    hubPublicKey: "a".repeat(64),
     lookups: {
       async receiveWorkflowRunPack(_repoId, _pack, _ref, _commitSha) {
         receiveCount.value += 1;
@@ -227,7 +250,7 @@ function startTestServer(): TestEnv {
         }
         attemptsThisEpoch += 1;
         if (attemptsThisEpoch === 1) {
-          return { accepted: false, reason: 'corrupt' };
+          return { accepted: false, reason: "corrupt" };
         }
         return { accepted: true };
       },
@@ -236,7 +259,7 @@ function startTestServer(): TestEnv {
 
   const app = new Hono();
   app.get(
-    '/ws',
+    "/ws",
     upgradeWebSocket((_c) => {
       let handle: WsHandle;
       return {
@@ -252,7 +275,7 @@ function startTestServer(): TestEnv {
           router.handleOpen(handle);
         },
         onMessage(evt, _ws) {
-          if (typeof evt.data === 'string') {
+          if (typeof evt.data === "string") {
             router.handleMessage(handle, evt.data);
           }
         },
@@ -260,7 +283,7 @@ function startTestServer(): TestEnv {
           router.handleClose(handle);
         },
       };
-    })
+    }),
   );
 
   const server = Bun.serve({
@@ -278,16 +301,16 @@ afterAll(() => {
   env.server.stop(true);
 });
 
-describe('hub-link workflow-run pack bootstrap prune', () => {
-  test('undeploy prunes bootstrap entries so a subsequent reset retries', async () => {
+describe("hub-link workflow-run pack bootstrap prune", () => {
+  test("undeploy prunes bootstrap entries so a subsequent reset retries", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     const keyStore = createTestKeyStore();
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-bootstrap-prune',
-      token: 'test-token',
+      sidecarId: "sc-bootstrap-prune",
+      token: "test-token",
       transport,
       sessions,
       keyStore,
@@ -296,18 +319,22 @@ describe('hub-link workflow-run pack bootstrap prune', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-bootstrap-prune'));
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-bootstrap-prune"),
+      );
 
       const agentAddress = TEST_CONFIG.agentAddress;
       await env.router.sendAgentDeploy(agentAddress, TEST_CONFIG);
-      await waitFor(() => env.router.getRoutableAddresses().includes(agentAddress));
+      await waitFor(() =>
+        env.router.getRoutableAddresses().includes(agentAddress),
+      );
 
       const repoId = {
-        kind: 'workflow-run' as const,
-        id: 'dep-prune-1',
+        kind: "workflow-run" as const,
+        id: "dep-prune-1",
       };
-      const ref = 'refs/heads/events';
-      const commitSha = 'a'.repeat(40);
+      const ref = "refs/heads/events";
+      const commitSha = "a".repeat(40);
       const pack = new Uint8Array([1, 2, 3, 4, 5]);
 
       // Epoch 1: first push rejected with `corrupt`, link retries
@@ -324,14 +351,18 @@ describe('hub-link workflow-run pack bootstrap prune', () => {
 
       // Undeploy the agent. The fix prunes bootstrap entries owned by
       // this deployment.
-      await env.router.sendAgentUndeploy(agentAddress, 'test prune');
-      await waitFor(() => !env.router.getRoutableAddresses().includes(agentAddress));
+      await env.router.sendAgentUndeploy(agentAddress, "test prune");
+      await waitFor(
+        () => !env.router.getRoutableAddresses().includes(agentAddress),
+      );
 
       // Re-deploy with the same address so the deploymentId is
       // identical -- mirrors the disaster-recovery scenario where the
       // hub's workflow-run repo for `(kind, id, ref)` is reset.
       await env.router.sendAgentDeploy(agentAddress, TEST_CONFIG);
-      await waitFor(() => env.router.getRoutableAddresses().includes(agentAddress));
+      await waitFor(() =>
+        env.router.getRoutableAddresses().includes(agentAddress),
+      );
 
       // Epoch 2: the hub rejects the first push of the new epoch with
       // `corrupt` again. Without the prune, the link skips the
@@ -349,7 +380,9 @@ describe('hub-link workflow-run pack bootstrap prune', () => {
       expect(env.receiveCount.value).toBe(4);
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-bootstrap-prune'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-bootstrap-prune"),
+      );
     }
   });
 });

@@ -12,9 +12,9 @@ Consumed by `@intx/agent` for in-process persistence, and by
 repositories that move between the hub and the sidecar as packs.
 
 ```ts
-import { createIsogitStore } from '@intx/storage-isogit';
+import { createIsogitStore } from "@intx/storage-isogit";
 
-const store = await createIsogitStore('./tmp/agent-repo', signer);
+const store = await createIsogitStore("./tmp/agent-repo", signer);
 
 // store implements both ContextStore and AuditStore -- hand it to
 // the inference and tool layers as appropriate.

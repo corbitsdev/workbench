@@ -1,19 +1,24 @@
-import { eq, and } from 'drizzle-orm';
-import { schema as intxSchema } from '@intx/db';
-import type { DB } from '@intx/db';
-import { getLogger } from '@intx/log';
-import { generateId } from '@intx/hub-common';
-import { AGENT_TEMPLATES, templateModelRequirements, type AgentTemplate } from '@workbench/agents';
-import { getConfig } from '../config';
-import type { HubDb } from '../db';
-import { memberAgentInstance, enabledWorkflow } from '../db/schema';
-import { refreshInstanceGrantsFromDefinition } from '../services/grant-reconcile';
+import { eq, and } from "drizzle-orm";
+import { schema as intxSchema } from "@intx/db";
+import type { DB } from "@intx/db";
+import { getLogger } from "@intx/log";
+import { generateId } from "@intx/hub-common";
+import {
+  AGENT_TEMPLATES,
+  templateModelRequirements,
+  type AgentTemplate,
+} from "@workbench/agents";
+import { getConfig } from "../config";
+import type { HubDb } from "../db";
+import { memberAgentInstance, enabledWorkflow } from "../db/schema";
+import { refreshInstanceGrantsFromDefinition } from "../services/grant-reconcile";
 
-const log = getLogger(['api', 'tenant-provisioning']);
+const log = getLogger(["api", "tenant-provisioning"]);
 
-const { tenant, principal, role, grant, agent, agentInstance, agentVersion } = intxSchema;
+const { tenant, principal, role, grant, agent, agentInstance, agentVersion } =
+  intxSchema;
 
-type ProductionDB = DB['db'];
+type ProductionDB = DB["db"];
 
 // Narrower structural type for tests only — satisfies transaction contract.
 export type ProvisioningDB = {
@@ -22,7 +27,7 @@ export type ProvisioningDB = {
     tenant: {
       findFirst: (
         // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
-        opts: any
+        opts: any,
       ) => Promise<{ id: string; slug: string; config?: unknown } | undefined>;
     };
     // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
@@ -35,7 +40,9 @@ export type ProvisioningDB = {
     grant: { findFirst: (opts: any) => Promise<{ id: string } | undefined> };
     // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
     agent: {
-      findFirst: (opts: any) => Promise<{ id: string; name: string } | undefined>;
+      findFirst: (
+        opts: any,
+      ) => Promise<{ id: string; name: string } | undefined>;
     };
     // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
     agentInstance: {
@@ -43,7 +50,9 @@ export type ProvisioningDB = {
     };
     memberAgentInstance: {
       // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
-      findFirst: (opts: any) => Promise<{ id: string; instanceId: string } | undefined>;
+      findFirst: (
+        opts: any,
+      ) => Promise<{ id: string; instanceId: string } | undefined>;
     };
   };
   // biome-ignore lint/suspicious/noExplicitAny: structural mock interface
@@ -56,10 +65,10 @@ export type ProvisioningDB = {
   };
 };
 
-const SYSTEM_ROLES = ['owner', 'admin', 'member'] as const;
+const SYSTEM_ROLES = ["owner", "admin", "member"] as const;
 
 // The transaction handle passed to a `db.transaction(...)` callback.
-type Tx = Parameters<Parameters<ProductionDB['transaction']>[0]>[0];
+type Tx = Parameters<Parameters<ProductionDB["transaction"]>[0]>[0];
 
 /**
  * Seed the three system roles (owner / admin / member) and their grants for a
@@ -82,11 +91,11 @@ type Tx = Parameters<Parameters<ProductionDB['transaction']>[0]>[0];
 export async function seedSystemRolesAndGrants(
   tx: Tx,
   tenantId: string,
-  now: Date
+  now: Date,
 ): Promise<Record<(typeof SYSTEM_ROLES)[number], string>> {
   const roleIds = {} as Record<(typeof SYSTEM_ROLES)[number], string>;
   for (const roleName of SYSTEM_ROLES) {
-    const roleId = generateId('role');
+    const roleId = generateId("role");
     roleIds[roleName] = roleId;
     await tx.insert(role).values({
       id: roleId,
@@ -100,26 +109,26 @@ export async function seedSystemRolesAndGrants(
   }
 
   await tx.insert(grant).values({
-    id: generateId('grant'),
+    id: generateId("grant"),
     tenantId,
     roleId: roleIds.owner,
-    resource: '*',
-    action: '*',
-    effect: 'allow',
-    origin: 'system',
+    resource: "*",
+    action: "*",
+    effect: "allow",
+    origin: "system",
     createdAt: now,
     updatedAt: now,
   });
 
-  for (const action of ['read', 'create', 'manage'] as const) {
+  for (const action of ["read", "create", "manage"] as const) {
     await tx.insert(grant).values({
-      id: generateId('grant'),
+      id: generateId("grant"),
       tenantId,
       roleId: roleIds.admin,
-      resource: '*',
+      resource: "*",
       action,
-      effect: 'allow',
-      origin: 'system',
+      effect: "allow",
+      origin: "system",
       createdAt: now,
       updatedAt: now,
     });
@@ -146,7 +155,9 @@ export async function seedSystemRolesAndGrants(
  * Does not seed Myra's LLM credential — that real secret flows through the
  * credential-creation path, not code.
  */
-export async function seedGlobalTenant(db: ProductionDB): Promise<{ tenantId: string }> {
+export async function seedGlobalTenant(
+  db: ProductionDB,
+): Promise<{ tenantId: string }> {
   const { slug, name, domain } = getConfig().globalTenant;
 
   const existing = await db.query.tenant.findFirst({
@@ -158,20 +169,20 @@ export async function seedGlobalTenant(db: ProductionDB): Promise<{ tenantId: st
     // ensureGlobalMember would otherwise throw "Member role missing" on every
     // signup at runtime. The boot contract is fail-loud, so surface it here.
     const memberRole = await db.query.role.findFirst({
-      where: and(eq(role.tenantId, existing.id), eq(role.name, 'member')),
+      where: and(eq(role.tenantId, existing.id), eq(role.name, "member")),
     });
     if (!memberRole) {
       throw new Error(
-        `Global tenant ${existing.id} (slug=${slug}) exists but is missing its system roles — refusing to start`
+        `Global tenant ${existing.id} (slug=${slug}) exists but is missing its system roles — refusing to start`,
       );
     }
-    log.info('Global tenant already exists', { tenantId: existing.id, slug });
+    log.info("Global tenant already exists", { tenantId: existing.id, slug });
     return { tenantId: existing.id };
   }
 
   try {
     return await db.transaction(async (tx) => {
-      const tenantId = generateId('tenant');
+      const tenantId = generateId("tenant");
       const now = new Date();
 
       const tenantRows = await tx
@@ -188,12 +199,12 @@ export async function seedGlobalTenant(db: ProductionDB): Promise<{ tenantId: st
         .returning();
 
       const tenantRow = tenantRows[0];
-      if (!tenantRow) throw new Error('Failed to insert global tenant');
+      if (!tenantRow) throw new Error("Failed to insert global tenant");
       const resolvedTenantId = (tenantRow as { id: string }).id;
 
       await seedSystemRolesAndGrants(tx, resolvedTenantId, now);
 
-      log.info('Global tenant seeded', { tenantId: resolvedTenantId, slug });
+      log.info("Global tenant seeded", { tenantId: resolvedTenantId, slug });
       return { tenantId: resolvedTenantId };
     });
   } catch (err) {
@@ -203,7 +214,7 @@ export async function seedGlobalTenant(db: ProductionDB): Promise<{ tenantId: st
       where: eq(tenant.slug, slug),
     });
     if (existingOnConflict) {
-      log.info('Global tenant created concurrently, reselected', {
+      log.info("Global tenant created concurrently, reselected", {
         tenantId: existingOnConflict.id,
         slug,
       });
@@ -228,7 +239,7 @@ export async function seedGlobalTenant(db: ProductionDB): Promise<{ tenantId: st
  */
 export async function ensureGlobalMember(
   db: ProductionDB,
-  opts: { userId: string }
+  opts: { userId: string },
 ): Promise<{ tenantId: string; principalId: string }> {
   const { slug } = getConfig().globalTenant;
 
@@ -236,21 +247,23 @@ export async function ensureGlobalMember(
     where: eq(tenant.slug, slug),
   });
   if (!globalTenant) {
-    throw new Error(`Global tenant (slug=${slug}) not seeded — cannot add member`);
+    throw new Error(
+      `Global tenant (slug=${slug}) not seeded — cannot add member`,
+    );
   }
 
   const reselect = () =>
     db.query.principal.findFirst({
       where: and(
         eq(principal.tenantId, globalTenant.id),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, opts.userId)
+        eq(principal.kind, "user"),
+        eq(principal.refId, opts.userId),
       ),
     });
 
   const existing = await reselect();
   if (existing) {
-    log.info('Global member already exists', {
+    log.info("Global member already exists", {
       userId: opts.userId,
       principalId: existing.id,
     });
@@ -259,19 +272,19 @@ export async function ensureGlobalMember(
 
   try {
     const now = new Date();
-    const principalId = generateId('principal');
+    const principalId = generateId("principal");
 
     await db.insert(principal).values({
       id: principalId,
       tenantId: globalTenant.id,
-      kind: 'user',
+      kind: "user",
       refId: opts.userId,
-      status: 'active',
+      status: "active",
       createdAt: now,
       updatedAt: now,
     });
 
-    log.info('Global member provisioned', { userId: opts.userId, principalId });
+    log.info("Global member provisioned", { userId: opts.userId, principalId });
     return { tenantId: globalTenant.id, principalId };
   } catch (err) {
     // A concurrent join created the principal between our pre-check and insert.
@@ -279,7 +292,7 @@ export async function ensureGlobalMember(
     // reselect runs on a fresh connection.
     const existingOnConflict = await reselect();
     if (existingOnConflict) {
-      log.info('Global member created concurrently, reselected', {
+      log.info("Global member created concurrently, reselected", {
         userId: opts.userId,
         principalId: existingOnConflict.id,
       });
@@ -292,7 +305,7 @@ export async function ensureGlobalMember(
 /** Read-only: returns global org membership if it already exists. */
 export async function lookupGlobalMember(
   db: ProductionDB,
-  opts: { userId: string }
+  opts: { userId: string },
 ): Promise<{ tenantId: string; principalId: string } | null> {
   const { slug } = getConfig().globalTenant;
   const globalTenant = await db.query.tenant.findFirst({
@@ -303,8 +316,8 @@ export async function lookupGlobalMember(
   const existing = await db.query.principal.findFirst({
     where: and(
       eq(principal.tenantId, globalTenant.id),
-      eq(principal.kind, 'user'),
-      eq(principal.refId, opts.userId)
+      eq(principal.kind, "user"),
+      eq(principal.refId, opts.userId),
     ),
   });
   if (!existing) return null;
@@ -316,7 +329,7 @@ export async function lookupGlobalMember(
  * seeded agent template. Distinct from any real user refId (which are user IDs),
  * so it never collides with a human member and is idempotent across boots.
  */
-const SYSTEM_PRINCIPAL_REF_ID = 'system';
+const SYSTEM_PRINCIPAL_REF_ID = "system";
 
 /**
  * Idempotently create and return the dedicated system principal in a tenant.
@@ -329,14 +342,14 @@ const SYSTEM_PRINCIPAL_REF_ID = 'system';
  */
 export async function ensureSystemPrincipal(
   db: ProductionDB,
-  tenantId: string
+  tenantId: string,
 ): Promise<{ principalId: string }> {
   const reselect = () =>
     db.query.principal.findFirst({
       where: and(
         eq(principal.tenantId, tenantId),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, SYSTEM_PRINCIPAL_REF_ID)
+        eq(principal.kind, "user"),
+        eq(principal.refId, SYSTEM_PRINCIPAL_REF_ID),
       ),
     });
 
@@ -347,17 +360,17 @@ export async function ensureSystemPrincipal(
 
   try {
     const now = new Date();
-    const principalId = generateId('principal');
+    const principalId = generateId("principal");
     await db.insert(principal).values({
       id: principalId,
       tenantId,
-      kind: 'user',
+      kind: "user",
       refId: SYSTEM_PRINCIPAL_REF_ID,
-      status: 'active',
+      status: "active",
       createdAt: now,
       updatedAt: now,
     });
-    log.info('System principal provisioned', { tenantId, principalId });
+    log.info("System principal provisioned", { tenantId, principalId });
     return { principalId };
   } catch (err) {
     // A concurrent replica created the system principal between our pre-check
@@ -365,7 +378,7 @@ export async function ensureSystemPrincipal(
     // insert. Reselect on a fresh connection.
     const existingOnConflict = await reselect();
     if (existingOnConflict) {
-      log.info('System principal created concurrently, reselected', {
+      log.info("System principal created concurrently, reselected", {
         tenantId,
         principalId: existingOnConflict.id,
       });
@@ -398,9 +411,12 @@ export async function ensureSystemPrincipal(
 export async function seedAgentTemplateIntoTenant(
   db: ProductionDB,
   tenantId: string,
-  template: AgentTemplate
+  template: AgentTemplate,
 ): Promise<{ agentId: string }> {
-  const { principalId: systemPrincipalId } = await ensureSystemPrincipal(db, tenantId);
+  const { principalId: systemPrincipalId } = await ensureSystemPrincipal(
+    db,
+    tenantId,
+  );
 
   const reselect = () =>
     db.query.agent.findFirst({
@@ -425,7 +441,7 @@ export async function seedAgentTemplateIntoTenant(
         })
         .where(eq(agent.id, existing.id));
     });
-    log.info('Agent template updated', {
+    log.info("Agent template updated", {
       tenantId,
       name: template.name,
       agentId: existing.id,
@@ -437,7 +453,7 @@ export async function seedAgentTemplateIntoTenant(
     let agentId!: string;
     await db.transaction(async (tx) => {
       const now = new Date();
-      agentId = generateId('agent');
+      agentId = generateId("agent");
 
       const agentRows = await tx
         .insert(agent)
@@ -454,8 +470,8 @@ export async function seedAgentTemplateIntoTenant(
           modelConfig: template.modelConfig ?? null,
           modelRequirements: templateModelRequirements(template),
           toolPackages: template.toolPackages ?? [],
-          status: 'deployed',
-          currentVersion: '1',
+          status: "deployed",
+          currentVersion: "1",
           createdAt: now,
           updatedAt: now,
         })
@@ -466,14 +482,14 @@ export async function seedAgentTemplateIntoTenant(
       }
 
       await tx.insert(agentVersion).values({
-        id: generateId('agentVersion'),
+        id: generateId("agentVersion"),
         agentId,
-        version: '1',
-        status: 'active',
+        version: "1",
+        status: "active",
         createdAt: now,
       });
 
-      log.info('Agent template seeded', {
+      log.info("Agent template seeded", {
         tenantId,
         name: template.name,
         agentId,
@@ -486,7 +502,7 @@ export async function seedAgentTemplateIntoTenant(
     // and insert; reselect by (tenantId, name) on a fresh connection.
     const existingOnConflict = await reselect();
     if (existingOnConflict) {
-      log.info('Agent template seeded concurrently, reselected', {
+      log.info("Agent template seeded concurrently, reselected", {
         tenantId,
         name: template.name,
         agentId: existingOnConflict.id,
@@ -504,7 +520,9 @@ export async function seedAgentTemplates(db: ProductionDB): Promise<void> {
     where: eq(tenant.slug, slug),
   });
   if (!globalTenant) {
-    throw new Error(`Global tenant (slug=${slug}) not seeded — cannot seed agent templates`);
+    throw new Error(
+      `Global tenant (slug=${slug}) not seeded — cannot seed agent templates`,
+    );
   }
 
   for (const template of AGENT_TEMPLATES) {
@@ -517,14 +535,14 @@ export async function seedAgentTemplates(db: ProductionDB): Promise<void> {
  * list of agent template keys enabled for the org. Stored on the tenant row
  * (not a per-template table) so enablement is a single generic config edit.
  */
-const ENABLED_AGENT_TEMPLATES_CONFIG_KEY = 'enabledAgentTemplates';
+const ENABLED_AGENT_TEMPLATES_CONFIG_KEY = "enabledAgentTemplates";
 
 /**
  * Default enablement when the global tenant's config is unset, empty, or has no
  * `enabledAgentTemplates` entry. Every member gets Myra on join; other templates
  * are opt-in by an admin (CL-1531).
  */
-const DEFAULT_ENABLED_TEMPLATE_KEYS = ['myra'] as const;
+const DEFAULT_ENABLED_TEMPLATE_KEYS = ["myra"] as const;
 
 /**
  * Resolve the agent templates enabled for the org, in `AGENT_TEMPLATES` order.
@@ -537,25 +555,29 @@ const DEFAULT_ENABLED_TEMPLATE_KEYS = ['myra'] as const;
  * Returns the resolved `AgentTemplate[]`. CL-1532's join path iterates this list
  * to create one per-user agent instance per enabled template.
  */
-export async function getEnabledTemplateKeys(db: ProductionDB): Promise<AgentTemplate[]> {
+export async function getEnabledTemplateKeys(
+  db: ProductionDB,
+): Promise<AgentTemplate[]> {
   const { slug } = getConfig().globalTenant;
 
   const globalTenant = await db.query.tenant.findFirst({
     where: eq(tenant.slug, slug),
   });
   if (!globalTenant) {
-    throw new Error(`Global tenant (slug=${slug}) not seeded — cannot resolve enabled templates`);
+    throw new Error(
+      `Global tenant (slug=${slug}) not seeded — cannot resolve enabled templates`,
+    );
   }
 
   const config = (globalTenant as { config?: unknown }).config;
   const rawKeys =
-    config && typeof config === 'object'
+    config && typeof config === "object"
       ? (config as Record<string, unknown>)[ENABLED_AGENT_TEMPLATES_CONFIG_KEY]
       : undefined;
 
   const configuredKeys =
     Array.isArray(rawKeys) && rawKeys.length > 0
-      ? rawKeys.filter((k): k is string => typeof k === 'string')
+      ? rawKeys.filter((k): k is string => typeof k === "string")
       : [...DEFAULT_ENABLED_TEMPLATE_KEYS];
 
   const resolved: AgentTemplate[] = [];
@@ -570,7 +592,7 @@ export async function getEnabledTemplateKeys(db: ProductionDB): Promise<AgentTem
   }
 
   if (droppedKeys.length > 0) {
-    log.warn('Dropping unknown enabled agent template keys', {
+    log.warn("Dropping unknown enabled agent template keys", {
       tenantId: globalTenant.id,
       droppedKeys,
     });
@@ -594,12 +616,12 @@ export async function getEnabledTemplateKeys(db: ProductionDB): Promise<AgentTem
 export async function seedTenantWorkflows(
   db: ProductionDB,
   tenantId: string,
-  workflowKinds: string[]
+  workflowKinds: string[],
 ): Promise<void> {
   if (workflowKinds.length === 0) return;
   const now = new Date();
   for (const kind of workflowKinds) {
-    const id = generateId('instance'); // reuse prefix; no dedicated workflow id prefix
+    const id = generateId("instance"); // reuse prefix; no dedicated workflow id prefix
     await db
       .insert(enabledWorkflow)
       .values({
@@ -611,12 +633,12 @@ export async function seedTenantWorkflows(
         enabledAt: now,
       })
       .onConflictDoNothing();
-    log.info('Tenant workflow ensured', { tenantId, kind });
+    log.info("Tenant workflow ensured", { tenantId, kind });
   }
 }
 
 /** The Myra template key — the always-enabled personal agent. */
-export const MYRA_TEMPLATE_KEY = 'myra';
+export const MYRA_TEMPLATE_KEY = "myra";
 
 export type MemberInstance = { templateKey: string; instanceId: string };
 
@@ -642,7 +664,7 @@ export type MemberInstance = { templateKey: string; instanceId: string };
  */
 export async function provisionMemberInstances(
   db: HubDb,
-  opts: { userId: string; memberPrincipalId: string }
+  opts: { userId: string; memberPrincipalId: string },
 ): Promise<MemberInstance[]> {
   const { slug, domain } = getConfig().globalTenant;
 
@@ -650,7 +672,9 @@ export async function provisionMemberInstances(
     where: eq(tenant.slug, slug),
   });
   if (!globalTenant) {
-    throw new Error(`Global tenant (slug=${slug}) not seeded — cannot provision member instances`);
+    throw new Error(
+      `Global tenant (slug=${slug}) not seeded — cannot provision member instances`,
+    );
   }
   const tenantId = globalTenant.id;
 
@@ -664,11 +688,14 @@ export async function provisionMemberInstances(
       where: and(eq(agent.tenantId, tenantId), eq(agent.name, template.name)),
     });
     if (!def) {
-      log.warn('Enabled template has no seeded org definition — skipping member instance', {
-        userId: opts.userId,
-        templateKey: template.key,
-        name: template.name,
-      });
+      log.warn(
+        "Enabled template has no seeded org definition — skipping member instance",
+        {
+          userId: opts.userId,
+          templateKey: template.key,
+          name: template.name,
+        },
+      );
       continue;
     }
     const agentId = def.id;
@@ -678,7 +705,7 @@ export async function provisionMemberInstances(
         where: and(
           eq(memberAgentInstance.tenantId, tenantId),
           eq(memberAgentInstance.memberPrincipalId, opts.memberPrincipalId),
-          eq(memberAgentInstance.templateKey, template.key)
+          eq(memberAgentInstance.templateKey, template.key),
         ),
       });
 
@@ -707,14 +734,14 @@ export async function provisionMemberInstances(
       const created = await db.transaction(async (tx) => {
         const now = new Date();
 
-        const instanceId = generateId('instance');
-        const instancePrincipalId = generateId('principal');
+        const instanceId = generateId("instance");
+        const instancePrincipalId = generateId("principal");
         await tx.insert(principal).values({
           id: instancePrincipalId,
           tenantId,
-          kind: 'agent',
+          kind: "agent",
           refId: instanceId,
-          status: 'active',
+          status: "active",
           createdAt: now,
           updatedAt: now,
         });
@@ -724,7 +751,7 @@ export async function provisionMemberInstances(
           tenantId,
           principalId: instancePrincipalId,
           address: `${instanceId}@${domain}`,
-          status: 'deployed',
+          status: "deployed",
           createdAt: now,
           updatedAt: now,
         });
@@ -736,7 +763,7 @@ export async function provisionMemberInstances(
             .where(eq(memberAgentInstance.id, existingMapping.id));
         } else {
           await tx.insert(memberAgentInstance).values({
-            id: generateId('instance'),
+            id: generateId("instance"),
             tenantId,
             memberPrincipalId: opts.memberPrincipalId,
             templateKey: template.key,
@@ -752,27 +779,32 @@ export async function provisionMemberInstances(
         // stream (`GET /instances/:id/events`), write sends mail, manage aborts a
         // turn. Scoped to this instance id alone — it grants nothing about any
         // other member's instances in the shared tenant (CL-1635).
-        for (const action of ['read', 'write', 'manage'] as const) {
+        for (const action of ["read", "write", "manage"] as const) {
           await tx.insert(grant).values({
-            id: generateId('grant'),
+            id: generateId("grant"),
             tenantId,
             principalId: opts.memberPrincipalId,
             resource: `instance:${instanceId}`,
             action,
-            effect: 'allow',
-            origin: 'system',
+            effect: "allow",
+            origin: "system",
             createdAt: now,
             updatedAt: now,
           });
         }
 
-        log.info('Member agent instance provisioned', {
+        log.info("Member agent instance provisioned", {
           userId: opts.userId,
           templateKey: template.key,
           agentId,
           instanceId,
         });
-        return { templateKey: template.key, instanceId, agentId, instancePrincipalId };
+        return {
+          templateKey: template.key,
+          instanceId,
+          agentId,
+          instancePrincipalId,
+        };
       });
       await refreshInstanceGrantsFromDefinition(db, {
         agentId: created.agentId,
@@ -780,14 +812,17 @@ export async function provisionMemberInstances(
         principalId: created.instancePrincipalId,
         address: `${created.instanceId}@${domain}`,
       });
-      results.push({ templateKey: created.templateKey, instanceId: created.instanceId });
+      results.push({
+        templateKey: created.templateKey,
+        instanceId: created.instanceId,
+      });
     } catch (err) {
       // A concurrent join created the mapping between our pre-check and insert;
       // the (tenant, member, template) unique constraint aborts our transaction.
       // Reselect on a fresh connection.
       const racedMapping = await reselectMapping();
       if (racedMapping) {
-        log.info('Member agent instance created concurrently, reselected', {
+        log.info("Member agent instance created concurrently, reselected", {
           userId: opts.userId,
           templateKey: template.key,
           instanceId: racedMapping.instanceId,
@@ -822,5 +857,8 @@ export async function provisionMemberInstances(
  * enabled templates (it always is by default), so the caller can degrade.
  */
 export function getMyraInstanceId(instances: MemberInstance[]): string | null {
-  return instances.find((i) => i.templateKey === MYRA_TEMPLATE_KEY)?.instanceId ?? null;
+  return (
+    instances.find((i) => i.templateKey === MYRA_TEMPLATE_KEY)?.instanceId ??
+    null
+  );
 }

@@ -13,10 +13,18 @@ export type {
   ArtifactWithSession,
   ArtifactWithVersions,
   ArtifactKind,
-} from '@workbench/shared';
+} from "@workbench/shared";
 
 /** Decorative chart glyph drawn behind a gallery tile. */
-export type VizKind = 'bars' | 'donut' | 'grid' | 'lines' | 'nodes' | 'heat' | 'deck' | 'cal';
+export type VizKind =
+  | "bars"
+  | "donut"
+  | "grid"
+  | "lines"
+  | "nodes"
+  | "heat"
+  | "deck"
+  | "cal";
 
 export interface ArtifactVisual {
   /** Short type label shown on the tile. */

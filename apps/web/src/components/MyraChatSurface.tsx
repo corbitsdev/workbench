@@ -3,18 +3,26 @@ import {
   type ChatAgentIdentity,
   type ChatDockState,
   type UIResponse,
-} from '@workbench/chat';
-import { friendlyToolSummary, summarizeToolCalls } from '@workbench/agents/browser';
-import { useCompactToolActivity, useToolSummaryStyle } from '@workbench/ui';
-import type { ToolCall } from '@workbench/chat';
-import type { MyraSession } from '../hooks/use-myra-session';
+} from "@workbench/chat";
+import {
+  friendlyToolSummary,
+  summarizeToolCalls,
+} from "@workbench/agents/browser";
+import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
+import type { ToolCall } from "@workbench/chat";
+import type { MyraSession } from "../hooks/use-myra-session";
 
-const MYRA: ChatAgentIdentity = { name: 'Myra', tagline: 'Personal agent' };
+const MYRA: ChatAgentIdentity = { name: "Myra", tagline: "Personal agent" };
 
 // Myra's file tools are private working memory (MEMORY.md, SCRATCHPAD.md).
 // Hide those tool-call lines from the thread so her self-management does not
 // clutter the conversation.
-const PRIVATE_FILE_TOOLS = new Set(['read_file', 'write_file', 'edit_file', 'search_files']);
+const PRIVATE_FILE_TOOLS = new Set([
+  "read_file",
+  "write_file",
+  "edit_file",
+  "search_files",
+]);
 const hideMyraSelfManagement = (call: { name: string }): boolean =>
   PRIVATE_FILE_TOOLS.has(call.name);
 
@@ -41,10 +49,13 @@ export function MyraChatSurface({
   onToggleExpand,
   onClose,
 }: MyraChatSurfaceProps) {
-  const agent: ChatAgentIdentity = threadLabel ? { ...MYRA, tagline: threadLabel } : MYRA;
+  const agent: ChatAgentIdentity = threadLabel
+    ? { ...MYRA, tagline: threadLabel }
+    : MYRA;
   const { compact: compactToolActivity } = useCompactToolActivity();
   const { style: toolSummaryStyle } = useToolSummaryStyle();
-  const summarize = (calls: ToolCall[]) => summarizeToolCalls(calls, toolSummaryStyle);
+  const summarize = (calls: ToolCall[]) =>
+    summarizeToolCalls(calls, toolSummaryStyle);
 
   const chrome = {
     agent,
@@ -57,11 +68,18 @@ export function MyraChatSurface({
 
   const { state } = session;
 
-  if (state.phase === 'loading') {
-    return <ChatPanel {...chrome} messages={[]} onSend={() => undefined} inputDisabled />;
+  if (state.phase === "loading") {
+    return (
+      <ChatPanel
+        {...chrome}
+        messages={[]}
+        onSend={() => undefined}
+        inputDisabled
+      />
+    );
   }
 
-  if (state.phase === 'provisioning') {
+  if (state.phase === "provisioning") {
     return (
       <ChatPanel
         {...chrome}
@@ -73,7 +91,7 @@ export function MyraChatSurface({
     );
   }
 
-  if (state.phase === 'credential-error') {
+  if (state.phase === "credential-error") {
     return (
       <ChatPanel
         {...chrome}
@@ -82,14 +100,15 @@ export function MyraChatSurface({
         inputDisabled
         notice={
           <span>
-            No API credential is set up for Myra. Ask your admin to finish workspace setup.
+            No API credential is set up for Myra. Ask your admin to finish
+            workspace setup.
           </span>
         }
       />
     );
   }
 
-  if (state.phase === 'error') {
+  if (state.phase === "error") {
     return (
       <ChatPanel
         {...chrome}
@@ -98,8 +117,12 @@ export function MyraChatSurface({
         inputDisabled
         notice={
           <span>
-            Couldn't reach Myra.{' '}
-            <button type="button" onClick={session.reconnect} className="text-orange underline">
+            Couldn't reach Myra.{" "}
+            <button
+              type="button"
+              onClick={session.reconnect}
+              className="text-orange underline"
+            >
               Try again
             </button>
             .

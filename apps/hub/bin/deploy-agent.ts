@@ -25,19 +25,19 @@
  * `gtm.localhost`). Fails loudly on an unknown template id or unresolved tenant.
  */
 
-import { eq, or } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
-import { parseArgs } from 'node:util';
-import { type } from 'arktype';
-import { schema as intxSchema } from '@intx/db';
-import { AGENT_TEMPLATES } from '@workbench/agents';
-import { schema } from '../src/db';
-import { seedAgentTemplateIntoTenant } from '../src/lib/tenant-provisioning';
+import { eq, or } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { parseArgs } from "node:util";
+import { type } from "arktype";
+import { schema as intxSchema } from "@intx/db";
+import { AGENT_TEMPLATES } from "@workbench/agents";
+import { schema } from "../src/db";
+import { seedAgentTemplateIntoTenant } from "../src/lib/tenant-provisioning";
 
 const Args = type({
-  template: 'string',
-  tenant: 'string',
+  template: "string",
+  tenant: "string",
 });
 
 const { tenant } = intxSchema;
@@ -45,15 +45,17 @@ const { tenant } = intxSchema;
 export function resolveTemplate(templateId: string) {
   const template = AGENT_TEMPLATES.find((t) => t.key === templateId);
   if (!template) {
-    const known = AGENT_TEMPLATES.map((t) => t.key).join(', ');
-    throw new Error(`deploy-agent: unknown template "${templateId}" (known: ${known})`);
+    const known = AGENT_TEMPLATES.map((t) => t.key).join(", ");
+    throw new Error(
+      `deploy-agent: unknown template "${templateId}" (known: ${known})`,
+    );
   }
   return template;
 }
 
 function requireEnv(name: string): string {
   const value = process.env[name];
-  if (value === undefined || value === '') {
+  if (value === undefined || value === "") {
     throw new Error(`deploy-agent: ${name} is required`);
   }
   return value;
@@ -62,8 +64,8 @@ function requireEnv(name: string): string {
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
-      template: { type: 'string' },
-      tenant: { type: 'string' },
+      template: { type: "string" },
+      tenant: { type: "string" },
     },
     strict: true,
   });
@@ -71,28 +73,37 @@ async function main(): Promise<void> {
   const parsed = Args(values);
   if (parsed instanceof type.errors) {
     throw new Error(
-      `deploy-agent: --template <id> and --tenant <slug> are required (${parsed.summary})`
+      `deploy-agent: --template <id> and --tenant <slug> are required (${parsed.summary})`,
     );
   }
 
   const template = resolveTemplate(parsed.template);
 
-  const sql = postgres(requireEnv('DATABASE_URL'), { max: 1 });
+  const sql = postgres(requireEnv("DATABASE_URL"), { max: 1 });
   const db = drizzle(sql, { schema });
 
   try {
     const targetTenant = await db.query.tenant.findFirst({
-      where: or(eq(tenant.slug, parsed.tenant), eq(tenant.domain, parsed.tenant)),
+      where: or(
+        eq(tenant.slug, parsed.tenant),
+        eq(tenant.domain, parsed.tenant),
+      ),
     });
     if (!targetTenant) {
-      throw new Error(`deploy-agent: no tenant matching slug or domain "${parsed.tenant}"`);
+      throw new Error(
+        `deploy-agent: no tenant matching slug or domain "${parsed.tenant}"`,
+      );
     }
 
-    const { agentId } = await seedAgentTemplateIntoTenant(db, targetTenant.id, template);
+    const { agentId } = await seedAgentTemplateIntoTenant(
+      db,
+      targetTenant.id,
+      template,
+    );
 
     process.stdout.write(
       `Deployed template "${template.key}" (${template.name}) into tenant ` +
-        `${targetTenant.slug} [${targetTenant.id}] as agent ${agentId}\n`
+        `${targetTenant.slug} [${targetTenant.id}] as agent ${agentId}\n`,
     );
   } finally {
     await sql.end();

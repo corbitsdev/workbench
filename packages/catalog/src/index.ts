@@ -5,13 +5,13 @@ export type {
   CatalogOfferingSpec,
   AgentCatalogSpec,
   AgentTemplateInput,
-} from './catalog';
+} from "./catalog";
 export {
   buildAgentCatalog,
   templateModelName,
   templateModelRequirements,
   FULL_CATALOG,
-} from './catalog';
-export { CATALOG_PROVIDERS } from './providers';
-export { CATALOG_MODELS } from './models';
-export { CATALOG_OFFERINGS } from './offerings';
+} from "./catalog";
+export { CATALOG_PROVIDERS } from "./providers";
+export { CATALOG_MODELS } from "./models";
+export { CATALOG_OFFERINGS } from "./offerings";

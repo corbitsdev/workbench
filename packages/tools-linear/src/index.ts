@@ -1,7 +1,10 @@
-import type { AgentTool } from '@intx/agent';
-import type { ToolDefinition } from '@intx/types/runtime';
+import type { AgentTool } from "@intx/agent";
+import type { ToolDefinition } from "@intx/types/runtime";
 
-export type LinearFetch = (input: string, init: RequestInit) => Promise<Response>;
+export type LinearFetch = (
+  input: string,
+  init: RequestInit,
+) => Promise<Response>;
 
 export type LinearToolsConfig = {
   apiKey: string;
@@ -9,7 +12,7 @@ export type LinearToolsConfig = {
   fetcher?: LinearFetch;
 };
 
-const DEFAULT_BASE_URL = 'https://api.linear.app/graphql';
+const DEFAULT_BASE_URL = "https://api.linear.app/graphql";
 const DEFAULT_ISSUE_LIMIT = 10;
 const DEFAULT_LIST_LIMIT = 25;
 const MAX_LIMIT = 100;
@@ -17,7 +20,7 @@ const MAX_LIMIT = 100;
 function linearHeaders(apiKey: string): Record<string, string> {
   return {
     Authorization: apiKey,
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   };
 }
 
@@ -26,29 +29,33 @@ function jsonResult(value: unknown): string {
 }
 
 function optionalString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function optionalPositiveInteger(value: unknown, fallback: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+function optionalPositiveInteger(
+  value: unknown,
+  fallback: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
     return fallback;
   }
   return Math.min(value, max);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function validateConfig(config: LinearToolsConfig): void {
   if (config.apiKey.length === 0) {
-    throw new Error('Linear apiKey is required');
+    throw new Error("Linear apiKey is required");
   }
   if (config.baseUrl !== undefined) {
     try {
       new URL(config.baseUrl);
     } catch {
-      throw new Error('Linear baseUrl must be a valid URL');
+      throw new Error("Linear baseUrl must be a valid URL");
     }
   }
 }
@@ -59,7 +66,7 @@ function errorMessageFromBody(text: string): string | null {
   }
   try {
     const parsed: unknown = JSON.parse(text);
-    if (isRecord(parsed) && typeof parsed.message === 'string') {
+    if (isRecord(parsed) && typeof parsed.message === "string") {
       return parsed.message;
     }
   } catch {
@@ -70,44 +77,53 @@ function errorMessageFromBody(text: string): string | null {
 
 function graphqlErrorMessage(errors: unknown): string {
   if (!Array.isArray(errors)) {
-    return 'unknown error';
+    return "unknown error";
   }
   const messages = errors
-    .map((entry) => (isRecord(entry) && typeof entry.message === 'string' ? entry.message : null))
+    .map((entry) =>
+      isRecord(entry) && typeof entry.message === "string"
+        ? entry.message
+        : null,
+    )
     .filter((message): message is string => message !== null);
-  return messages.length > 0 ? messages.join('; ') : 'unknown error';
+  return messages.length > 0 ? messages.join("; ") : "unknown error";
 }
 
 async function fetchLinearGraphQL(
   config: LinearToolsConfig,
   query: string,
   variables: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<Record<string, unknown>> {
   const fetcher = config.fetcher ?? fetch;
-  const endpoint = config.baseUrl !== undefined ? config.baseUrl : DEFAULT_BASE_URL;
+  const endpoint =
+    config.baseUrl !== undefined ? config.baseUrl : DEFAULT_BASE_URL;
   const response = await fetcher(endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: linearHeaders(config.apiKey),
     body: JSON.stringify({ query, variables }),
     signal,
   } satisfies RequestInit);
 
   if (!response.ok) {
-    const bodyText = errorMessageFromBody(await response.text().catch(() => ''));
+    const bodyText = errorMessageFromBody(
+      await response.text().catch(() => ""),
+    );
     const detail = response.statusText || bodyText;
-    throw new Error(`Linear API error: ${response.status} ${detail ?? ''}`);
+    throw new Error(`Linear API error: ${response.status} ${detail ?? ""}`);
   }
 
   const payload: unknown = await response.json();
   if (!isRecord(payload)) {
-    throw new Error('Linear response is not a valid object');
+    throw new Error("Linear response is not a valid object");
   }
   if (payload.errors !== undefined) {
-    throw new Error(`Linear GraphQL error: ${graphqlErrorMessage(payload.errors)}`);
+    throw new Error(
+      `Linear GraphQL error: ${graphqlErrorMessage(payload.errors)}`,
+    );
   }
   if (!isRecord(payload.data)) {
-    throw new Error('Linear response is missing data');
+    throw new Error("Linear response is missing data");
   }
   return payload.data;
 }
@@ -165,7 +181,9 @@ const LIST_USERS_QUERY = `query ListUsers($first: Int!) {
   }
 }`;
 
-function buildIssueFilter(args: Record<string, unknown>): Record<string, unknown> | null {
+function buildIssueFilter(
+  args: Record<string, unknown>,
+): Record<string, unknown> | null {
   const state = optionalString(args.state);
   const assignee = optionalString(args.assignee);
   const filter: Record<string, unknown> = {};
@@ -181,9 +199,13 @@ function buildIssueFilter(args: Record<string, unknown>): Record<string, unknown
 async function listIssues(
   config: LinearToolsConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const first = optionalPositiveInteger(args.first, DEFAULT_ISSUE_LIMIT, MAX_LIMIT);
+  const first = optionalPositiveInteger(
+    args.first,
+    DEFAULT_ISSUE_LIMIT,
+    MAX_LIMIT,
+  );
   const teamId = optionalString(args.teamId);
   const filter = buildIssueFilter(args);
 
@@ -192,7 +214,7 @@ async function listIssues(
       config,
       LIST_TEAM_ISSUES_QUERY,
       { teamId, first, ...(filter !== null ? { filter } : {}) },
-      signal
+      signal,
     );
     if (!isRecord(data.team)) {
       throw new Error(`Linear team not found: ${teamId}`);
@@ -204,7 +226,7 @@ async function listIssues(
     config,
     LIST_ISSUES_QUERY,
     { first, ...(filter !== null ? { filter } : {}) },
-    signal
+    signal,
   );
   return data.issues;
 }
@@ -212,13 +234,18 @@ async function listIssues(
 async function getIssue(
   config: LinearToolsConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
   const id = optionalString(args.id);
   if (id === null) {
-    throw new Error('id is required');
+    throw new Error("id is required");
   }
-  const data = await fetchLinearGraphQL(config, GET_ISSUE_QUERY, { id }, signal);
+  const data = await fetchLinearGraphQL(
+    config,
+    GET_ISSUE_QUERY,
+    { id },
+    signal,
+  );
   if (data.issue === null || data.issue === undefined) {
     throw new Error(`Linear issue not found: ${id}`);
   }
@@ -228,100 +255,119 @@ async function getIssue(
 async function listTeams(
   config: LinearToolsConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const first = optionalPositiveInteger(args.first, DEFAULT_LIST_LIMIT, MAX_LIMIT);
-  const data = await fetchLinearGraphQL(config, LIST_TEAMS_QUERY, { first }, signal);
+  const first = optionalPositiveInteger(
+    args.first,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIMIT,
+  );
+  const data = await fetchLinearGraphQL(
+    config,
+    LIST_TEAMS_QUERY,
+    { first },
+    signal,
+  );
   return data.teams;
 }
 
 async function listUsers(
   config: LinearToolsConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const first = optionalPositiveInteger(args.first, DEFAULT_LIST_LIMIT, MAX_LIMIT);
-  const data = await fetchLinearGraphQL(config, LIST_USERS_QUERY, { first }, signal);
+  const first = optionalPositiveInteger(
+    args.first,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIMIT,
+  );
+  const data = await fetchLinearGraphQL(
+    config,
+    LIST_USERS_QUERY,
+    { first },
+    signal,
+  );
   return data.users;
 }
 
 const LIST_ISSUES_INPUT_SCHEMA = {
-  type: 'object' as const,
+  type: "object" as const,
   properties: {
     first: {
-      type: 'number',
-      description: 'Maximum number of issues to return (1-100, default 10).',
+      type: "number",
+      description: "Maximum number of issues to return (1-100, default 10).",
     },
     teamId: {
-      type: 'string',
-      description: 'Optional team id to scope the issues to a single team.',
+      type: "string",
+      description: "Optional team id to scope the issues to a single team.",
     },
     state: {
-      type: 'string',
+      type: "string",
       description:
         'Optional workflow state name to filter by (e.g. "Todo", "In Progress", "Done"). Case-insensitive.',
     },
     assignee: {
-      type: 'string',
-      description: 'Optional assignee name to filter by. Case-insensitive.',
+      type: "string",
+      description: "Optional assignee name to filter by. Case-insensitive.",
     },
   },
   required: [],
 };
 
 const GET_ISSUE_INPUT_SCHEMA = {
-  type: 'object' as const,
+  type: "object" as const,
   properties: {
     id: {
-      type: 'string',
+      type: "string",
       description: 'Issue UUID or identifier (e.g. "ENG-123").',
     },
   },
-  required: ['id'],
+  required: ["id"],
 };
 
 const LIST_LIMIT_INPUT_SCHEMA = {
-  type: 'object' as const,
+  type: "object" as const,
   properties: {
     first: {
-      type: 'number',
-      description: 'Maximum number of records to return (1-100, default 25).',
+      type: "number",
+      description: "Maximum number of records to return (1-100, default 25).",
     },
   },
   required: [],
 };
 
 export const LINEAR_LIST_ISSUES_DEFINITION: ToolDefinition = {
-  name: 'linear_list_issues',
+  name: "linear_list_issues",
   description:
-    'List Linear issues across the workspace. Read-only. Scope the query with teamId, state, and/or assignee rather than listing everything; returns 10 issues by default (max 100). Returns issue id, identifier, title, state, assignee, team, updatedAt, and url.',
+    "List Linear issues across the workspace. Read-only. Scope the query with teamId, state, and/or assignee rather than listing everything; returns 10 issues by default (max 100). Returns issue id, identifier, title, state, assignee, team, updatedAt, and url.",
   inputSchema: LIST_ISSUES_INPUT_SCHEMA,
 };
 
 export const LINEAR_GET_ISSUE_DEFINITION: ToolDefinition = {
-  name: 'linear_get_issue',
+  name: "linear_get_issue",
   description:
     'Get a single Linear issue by UUID or identifier (e.g. "ENG-123"). Read-only. Returns id, identifier, title, description, state, assignee, team, priority, url, createdAt, and updatedAt.',
   inputSchema: GET_ISSUE_INPUT_SCHEMA,
 };
 
 export const LINEAR_LIST_TEAMS_DEFINITION: ToolDefinition = {
-  name: 'linear_list_teams',
-  description: 'List Linear teams in the workspace. Read-only. Returns team id, name, and key.',
+  name: "linear_list_teams",
+  description:
+    "List Linear teams in the workspace. Read-only. Returns team id, name, and key.",
   inputSchema: LIST_LIMIT_INPUT_SCHEMA,
 };
 
 export const LINEAR_LIST_USERS_DEFINITION: ToolDefinition = {
-  name: 'linear_list_users',
+  name: "linear_list_users",
   description:
-    'List Linear users in the workspace. Read-only. Returns user id, name, email, and active status.',
+    "List Linear users in the workspace. Read-only. Returns user id, name, email, and active status.",
   inputSchema: LIST_LIMIT_INPUT_SCHEMA,
 };
 
 type LinearHandler = (
   config: LinearToolsConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ) => Promise<unknown>;
 
 function buildLinearHandler(config: LinearToolsConfig, handler: LinearHandler) {
@@ -333,22 +379,22 @@ export function createLinearTools(config: LinearToolsConfig): AgentTool[] {
   validateConfig(config);
   return [
     {
-      kind: 'string',
+      kind: "string",
       definition: LINEAR_LIST_ISSUES_DEFINITION,
       handler: buildLinearHandler(config, listIssues),
     },
     {
-      kind: 'string',
+      kind: "string",
       definition: LINEAR_GET_ISSUE_DEFINITION,
       handler: buildLinearHandler(config, getIssue),
     },
     {
-      kind: 'string',
+      kind: "string",
       definition: LINEAR_LIST_TEAMS_DEFINITION,
       handler: buildLinearHandler(config, listTeams),
     },
     {
-      kind: 'string',
+      kind: "string",
       definition: LINEAR_LIST_USERS_DEFINITION,
       handler: buildLinearHandler(config, listUsers),
     },
@@ -358,13 +404,22 @@ export function createLinearTools(config: LinearToolsConfig): AgentTool[] {
 function createLinearToolFor(
   config: LinearToolsConfig,
   definition: ToolDefinition,
-  handler: LinearHandler
+  handler: LinearHandler,
 ): AgentTool[] {
   validateConfig(config);
-  return [{ kind: 'string', definition, handler: buildLinearHandler(config, handler) }];
+  return [
+    {
+      kind: "string",
+      definition,
+      handler: buildLinearHandler(config, handler),
+    },
+  ];
 }
 
-function resolveConfig(config: { apiKey: string; baseURL: string }): LinearToolsConfig {
+function resolveConfig(config: {
+  apiKey: string;
+  baseURL: string;
+}): LinearToolsConfig {
   return config.baseURL.length > 0
     ? { apiKey: config.apiKey, baseUrl: config.baseURL }
     : { apiKey: config.apiKey };
@@ -381,26 +436,42 @@ function resolveConfig(config: { apiKey: string; baseURL: string }): LinearTools
 export const LINEAR_HUB_TOOLS = {
   linear_list_issues: {
     definition: LINEAR_LIST_ISSUES_DEFINITION,
-    providerName: 'linear' as const,
+    providerName: "linear" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
-      createLinearToolFor(resolveConfig(config), LINEAR_LIST_ISSUES_DEFINITION, listIssues),
+      createLinearToolFor(
+        resolveConfig(config),
+        LINEAR_LIST_ISSUES_DEFINITION,
+        listIssues,
+      ),
   },
   linear_get_issue: {
     definition: LINEAR_GET_ISSUE_DEFINITION,
-    providerName: 'linear' as const,
+    providerName: "linear" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
-      createLinearToolFor(resolveConfig(config), LINEAR_GET_ISSUE_DEFINITION, getIssue),
+      createLinearToolFor(
+        resolveConfig(config),
+        LINEAR_GET_ISSUE_DEFINITION,
+        getIssue,
+      ),
   },
   linear_list_teams: {
     definition: LINEAR_LIST_TEAMS_DEFINITION,
-    providerName: 'linear' as const,
+    providerName: "linear" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
-      createLinearToolFor(resolveConfig(config), LINEAR_LIST_TEAMS_DEFINITION, listTeams),
+      createLinearToolFor(
+        resolveConfig(config),
+        LINEAR_LIST_TEAMS_DEFINITION,
+        listTeams,
+      ),
   },
   linear_list_users: {
     definition: LINEAR_LIST_USERS_DEFINITION,
-    providerName: 'linear' as const,
+    providerName: "linear" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
-      createLinearToolFor(resolveConfig(config), LINEAR_LIST_USERS_DEFINITION, listUsers),
+      createLinearToolFor(
+        resolveConfig(config),
+        LINEAR_LIST_USERS_DEFINITION,
+        listUsers,
+      ),
   },
 };

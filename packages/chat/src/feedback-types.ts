@@ -1,2 +1,2 @@
-export { FeedbackSubjectKindSchema } from '@workbench/shared';
-export type { FeedbackSubjectKind } from '@workbench/shared';
+export { FeedbackSubjectKindSchema } from "@workbench/shared";
+export type { FeedbackSubjectKind } from "@workbench/shared";

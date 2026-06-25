@@ -1,7 +1,7 @@
-import { describe, expect, it, mock } from 'bun:test';
-import { Hono } from 'hono';
+import { describe, expect, it, mock } from "bun:test";
+import { Hono } from "hono";
 
-import { createActivityRouter } from './activity';
+import { createActivityRouter } from "./activity";
 
 type ActivityRouteEnv = {
   Variables: {
@@ -12,8 +12,8 @@ type ActivityRouteEnv = {
 };
 
 const overviewPayload = {
-  tenantId: 'tnt_test',
-  range: { startDate: '2026-06-16' },
+  tenantId: "tnt_test",
+  range: { startDate: "2026-06-16" },
   artifacts: {
     total: 0,
     createdInRange: 0,
@@ -31,7 +31,7 @@ const overviewPayload = {
   agentInstances: { active: 0, startedInRange: 0, endedInRange: 0, total: 0 },
   inference: {
     summary: {
-      tenantId: 'tnt_test',
+      tenantId: "tnt_test",
       turnCount: 0,
       failedTurnCount: 0,
       toolCallCount: 0,
@@ -47,26 +47,29 @@ const overviewPayload = {
   },
 };
 
-mock.module('../services/activity-overview', () => ({
+mock.module("../services/activity-overview", () => ({
   getActivityOverview: mock(async () => overviewPayload),
 }));
 
-describe('GET /overview', () => {
-  it('accepts startDate without endDate (Insights preset ranges)', async () => {
+describe("GET /overview", () => {
+  it("accepts startDate without endDate (Insights preset ranges)", async () => {
     const hub = new Hono<ActivityRouteEnv>();
-    hub.use('/api/tenants/:tenantId/activity/*', async (c, next) => {
-      c.set('tenant', { id: 'tnt_test' });
-      c.set('principal', { id: 'pri_1' });
+    hub.use("/api/tenants/:tenantId/activity/*", async (c, next) => {
+      c.set("tenant", { id: "tnt_test" });
+      c.set("principal", { id: "pri_1" });
       await next();
     });
 
-    hub.route('/api/tenants/:tenantId/activity', createActivityRouter({ db: {} as never }));
+    hub.route(
+      "/api/tenants/:tenantId/activity",
+      createActivityRouter({ db: {} as never }),
+    );
 
     const res = await hub.request(
-      'http://localhost/api/tenants/tnt_test/activity/overview?startDate=2026-06-16'
+      "http://localhost/api/tenants/tnt_test/activity/overview?startDate=2026-06-16",
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { tenantId: string };
-    expect(body.tenantId).toBe('tnt_test');
+    expect(body.tenantId).toBe("tnt_test");
   });
 });

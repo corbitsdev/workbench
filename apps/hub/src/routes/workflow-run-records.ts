@@ -1,45 +1,45 @@
-import { getAncestorChain, schema as intxSchema } from '@intx/db';
-import { getLogger } from '@intx/log';
-import { type } from 'arktype';
-import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
-import { Hono } from 'hono';
-import { describeRoute, resolver } from 'hono-openapi';
-import { requestBodySchema } from '../lib/openapi';
-import { randomBytes, randomUUID } from 'node:crypto';
-import type { HubDb } from '../db';
-import { workflowRun } from '../db/schema';
-import { getRequestedUserContext } from '../lib/user-context';
-import type { RunState } from '../workflow-executor/executor';
+import { getAncestorChain, schema as intxSchema } from "@intx/db";
+import { getLogger } from "@intx/log";
+import { type } from "arktype";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { Hono } from "hono";
+import { describeRoute, resolver } from "hono-openapi";
+import { requestBodySchema } from "../lib/openapi";
+import { randomBytes, randomUUID } from "node:crypto";
+import type { HubDb } from "../db";
+import { workflowRun } from "../db/schema";
+import { getRequestedUserContext } from "../lib/user-context";
+import type { RunState } from "../workflow-executor/executor";
 import {
   createRunStore,
   insertRunRecord,
   listRunRecords,
   loadRunRecord,
-} from '../workflow-executor/run-store';
-import type { SessionService, SidecarRouter } from '@intx/hub-sessions';
-import type { CryptoProvider } from '@intx/types/runtime';
-import { deriveDeploymentAddress } from '@intx/workflow-deploy';
-import type { EnsureDeploymentRoutableFn } from './workflow-runs';
+} from "../workflow-executor/run-store";
+import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
+import type { CryptoProvider } from "@intx/types/runtime";
+import { deriveDeploymentAddress } from "@intx/workflow-deploy";
+import type { EnsureDeploymentRoutableFn } from "./workflow-runs";
 
-const log = getLogger(['api', 'workflow-run-records']);
+const log = getLogger(["api", "workflow-run-records"]);
 
-const StartBody = type({ 'input?': 'unknown' });
-const ResumeBody = type({ signalName: 'string', 'payload?': 'unknown' });
+const StartBody = type({ "input?": "unknown" });
+const ResumeBody = type({ signalName: "string", "payload?": "unknown" });
 
 const RunStateResponse = type({
-  runId: 'string',
-  kind: 'string',
+  runId: "string",
+  kind: "string",
   status: "'running'|'awaiting'|'completed'|'failed'",
-  currentStepId: 'string|null',
-  outputs: 'object',
-  'error?': 'string',
-  'deploymentId?': 'string',
+  currentStepId: "string|null",
+  outputs: "object",
+  "error?": "string",
+  "deploymentId?": "string",
 });
 
-const ErrorResponse = type({ error: 'string' });
+const ErrorResponse = type({ error: "string" });
 
 function mintRunId(): string {
-  return `wfr_${randomBytes(16).toString('hex')}`;
+  return `wfr_${randomBytes(16).toString("hex")}`;
 }
 
 // Resolve the most-specific deployment of `kind` visible along the user's
@@ -48,14 +48,18 @@ function mintRunId(): string {
 async function resolveDeployment(
   db: HubDb,
   chain: readonly string[],
-  kind: string
-): Promise<{ deploymentId: string; tenantId: string; principalId: string } | null> {
+  kind: string,
+): Promise<{
+  deploymentId: string;
+  tenantId: string;
+  principalId: string;
+} | null> {
   const candidates = await db.query.workflowRun.findMany({
     where: and(
       eq(workflowRun.kind, kind),
       inArray(workflowRun.tenantId, [...chain]),
       isNotNull(workflowRun.deploymentId),
-      isNull(workflowRun.deletedAt)
+      isNull(workflowRun.deletedAt),
     ),
     orderBy: desc(workflowRun.createdAt),
   });
@@ -86,13 +90,13 @@ async function resolveDeployment(
 function assertRunOwnership(
   chain: readonly string[],
   context: { principalId: string },
-  state: { tenantId: string; principalId: string }
+  state: { tenantId: string; principalId: string },
 ): { status: 403 | 404; error: string } | null {
   if (!chain.includes(state.tenantId)) {
-    return { status: 404, error: 'run not found' };
+    return { status: 404, error: "run not found" };
   }
   if (state.principalId !== context.principalId) {
-    return { status: 403, error: 'Forbidden' };
+    return { status: 403, error: "Forbidden" };
   }
   return null;
 }
@@ -100,7 +104,7 @@ function assertRunOwnership(
 function stateResponse(state: {
   runId: string;
   kind: string;
-  status: 'running' | 'awaiting' | 'completed' | 'failed';
+  status: "running" | "awaiting" | "completed" | "failed";
   currentStepId: string | null;
   outputs: Record<string, unknown>;
   error?: string;
@@ -121,7 +125,9 @@ function stateResponse(state: {
     currentStepId: state.currentStepId,
     outputs: state.outputs,
     ...(state.error !== undefined ? { error: state.error } : {}),
-    ...(state.deploymentId !== undefined ? { deploymentId: state.deploymentId } : {}),
+    ...(state.deploymentId !== undefined
+      ? { deploymentId: state.deploymentId }
+      : {}),
   };
 }
 
@@ -146,58 +152,67 @@ export function createWorkflowRunRecordsRouter(deps: {
   const runStore = createRunStore(deps.db);
 
   router.post(
-    '/workflow-exec/:kind/start',
+    "/workflow-exec/:kind/start",
     describeRoute({
-      tags: ['Workflows'],
-      summary: 'Start a workflow run',
+      tags: ["Workflows"],
+      summary: "Start a workflow run",
       description:
-        'Seeds a run record and triggers the run on the sidecar supervisor (the deployed definition executes there). Returns the seeded run state immediately; the record advances asynchronously as the sidecar emits events. Optional `?tenantId=` selects a workbench the user belongs to.',
+        "Seeds a run record and triggers the run on the sidecar supervisor (the deployed definition executes there). Returns the seeded run state immediately; the record advances asynchronously as the sidecar emits events. Optional `?tenantId=` selects a workbench the user belongs to.",
       parameters: [
         {
-          name: 'kind',
-          in: 'path',
+          name: "kind",
+          in: "path",
           required: true,
-          description: 'Workflow kind.',
-          schema: { type: 'string' },
+          description: "Workflow kind.",
+          schema: { type: "string" },
         },
         {
-          name: 'tenantId',
-          in: 'query',
+          name: "tenantId",
+          in: "query",
           required: false,
-          description: 'Target workbench tenant id.',
-          schema: { type: 'string' },
+          description: "Target workbench tenant id.",
+          schema: { type: "string" },
         },
       ],
       requestBody: {
         required: false,
-        description: 'Trigger payload.',
-        content: { 'application/json': { schema: requestBodySchema(StartBody) } },
+        description: "Trigger payload.",
+        content: {
+          "application/json": { schema: requestBodySchema(StartBody) },
+        },
       },
       responses: {
         200: {
-          description: 'Run state after the initial advance',
-          content: { 'application/json': { schema: resolver(RunStateResponse) } },
+          description: "Run state after the initial advance",
+          content: {
+            "application/json": { schema: resolver(RunStateResponse) },
+          },
         },
         403: {
-          description: 'Forbidden',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "Forbidden",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         404: {
-          description: 'No deployment',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "No deployment",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
     }),
     async (c) => {
-      const userId = c.get('userId');
-      const { context, forbidden } = await resolveContext(deps.db, userId, c.req.query('tenantId'));
-      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
-      if (!context) return c.json({ error: 'User context not found' }, 403);
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
 
-      const kind = c.req.param('kind');
+      const kind = c.req.param("kind");
       const chain = await getAncestorChain(deps.db, context.tenantId);
       const deployment = await resolveDeployment(deps.db, chain, kind);
-      if (!deployment) return c.json({ error: `no deployed workflow of kind "${kind}"` }, 404);
+      if (!deployment)
+        return c.json({ error: `no deployed workflow of kind "${kind}"` }, 404);
 
       let body: unknown = {};
       try {
@@ -246,7 +261,7 @@ export function createWorkflowRunRecordsRouter(deps: {
           cryptoProvider: deps.cryptoProvider,
         });
       } catch (err) {
-        log.error('workflow run-start failed', {
+        log.error("workflow run-start failed", {
           runId,
           kind,
           deploymentId: deployment.deploymentId,
@@ -254,158 +269,184 @@ export function createWorkflowRunRecordsRouter(deps: {
         });
         const failed: RunState = {
           ...state,
-          status: 'failed',
-          error: 'failed to start workflow run',
+          status: "failed",
+          error: "failed to start workflow run",
         };
         await runStore.save(failed);
-        return c.json({ error: 'failed to start workflow run' }, 500);
+        return c.json({ error: "failed to start workflow run" }, 500);
       }
 
       // Return the seeded row immediately (status 'running'); the UI polls it and
       // the projection bridge advances it as the sidecar emits run events.
       return c.json(stateResponse(state));
-    }
+    },
   );
 
   router.get(
-    '/workflow-exec/records',
+    "/workflow-exec/records",
     describeRoute({
-      tags: ['Workflows'],
-      summary: 'List thin-executor workflow runs',
+      tags: ["Workflows"],
+      summary: "List thin-executor workflow runs",
       description:
-        'Lists the run records visible to the user along the tenant chain. Optional `?kind=` filters.',
+        "Lists the run records visible to the user along the tenant chain. Optional `?kind=` filters.",
       parameters: [
         {
-          name: 'tenantId',
-          in: 'query',
+          name: "tenantId",
+          in: "query",
           required: false,
-          description: 'Target workbench tenant id.',
-          schema: { type: 'string' },
+          description: "Target workbench tenant id.",
+          schema: { type: "string" },
         },
         {
-          name: 'kind',
-          in: 'query',
+          name: "kind",
+          in: "query",
           required: false,
-          description: 'Filter by workflow kind.',
-          schema: { type: 'string' },
-        },
-      ],
-      responses: {
-        200: { description: 'Run records', content: { 'application/json': {} } },
-        403: {
-          description: 'Forbidden',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
-        },
-      },
-    }),
-    async (c) => {
-      const userId = c.get('userId');
-      const { context, forbidden } = await resolveContext(deps.db, userId, c.req.query('tenantId'));
-      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
-      if (!context) return c.json({ error: 'User context not found' }, 403);
-      const chain = await getAncestorChain(deps.db, context.tenantId);
-      const rows = await listRunRecords(deps.db, chain, context.principalId, c.req.query('kind'));
-      return c.json(rows);
-    }
-  );
-
-  router.get(
-    '/workflow-exec/records/:runId',
-    describeRoute({
-      tags: ['Workflows'],
-      summary: 'Read a thin-executor workflow run state',
-      description:
-        'Returns the run record state — status, currentStepId, and the stepId->output map — as a single indexed read.',
-      parameters: [
-        {
-          name: 'runId',
-          in: 'path',
-          required: true,
-          description: 'Run id.',
-          schema: { type: 'string' },
+          description: "Filter by workflow kind.",
+          schema: { type: "string" },
         },
       ],
       responses: {
         200: {
-          description: 'Run state',
-          content: { 'application/json': { schema: resolver(RunStateResponse) } },
+          description: "Run records",
+          content: { "application/json": {} },
         },
         403: {
-          description: 'Forbidden',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
-        },
-        404: {
-          description: 'Run not found',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "Forbidden",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
     }),
     async (c) => {
-      const userId = c.get('userId');
-      const { context, forbidden } = await resolveContext(deps.db, userId, c.req.query('tenantId'));
-      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
-      if (!context) return c.json({ error: 'User context not found' }, 403);
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const rows = await listRunRecords(
+        deps.db,
+        chain,
+        context.principalId,
+        c.req.query("kind"),
+      );
+      return c.json(rows);
+    },
+  );
 
-      const state = await loadRunRecord(deps.db, c.req.param('runId'));
-      if (!state) return c.json({ error: 'run not found' }, 404);
+  router.get(
+    "/workflow-exec/records/:runId",
+    describeRoute({
+      tags: ["Workflows"],
+      summary: "Read a thin-executor workflow run state",
+      description:
+        "Returns the run record state — status, currentStepId, and the stepId->output map — as a single indexed read.",
+      parameters: [
+        {
+          name: "runId",
+          in: "path",
+          required: true,
+          description: "Run id.",
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Run state",
+          content: {
+            "application/json": { schema: resolver(RunStateResponse) },
+          },
+        },
+        403: {
+          description: "Forbidden",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "Run not found",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
+
+      const state = await loadRunRecord(deps.db, c.req.param("runId"));
+      if (!state) return c.json({ error: "run not found" }, 404);
 
       const chain = await getAncestorChain(deps.db, context.tenantId);
       const gate = assertRunOwnership(chain, context, state);
       if (gate) return c.json({ error: gate.error }, gate.status);
 
       return c.json(stateResponse(state));
-    }
+    },
   );
 
   router.post(
-    '/workflow-exec/records/:runId/resume',
+    "/workflow-exec/records/:runId/resume",
     describeRoute({
-      tags: ['Workflows'],
-      summary: 'Resume a gated workflow run',
+      tags: ["Workflows"],
+      summary: "Resume a gated workflow run",
       description:
         "Delivers the gate signal to the run's sidecar supervisor and optimistically marks the run running. The record advances as the sidecar emits the next step events.",
       parameters: [
         {
-          name: 'runId',
-          in: 'path',
+          name: "runId",
+          in: "path",
           required: true,
-          description: 'Run id.',
-          schema: { type: 'string' },
+          description: "Run id.",
+          schema: { type: "string" },
         },
       ],
       requestBody: {
         required: true,
-        description: 'Signal name and gate payload.',
-        content: { 'application/json': { schema: requestBodySchema(ResumeBody) } },
+        description: "Signal name and gate payload.",
+        content: {
+          "application/json": { schema: requestBodySchema(ResumeBody) },
+        },
       },
       responses: {
         200: {
-          description: 'Run state after resume',
-          content: { 'application/json': { schema: resolver(RunStateResponse) } },
+          description: "Run state after resume",
+          content: {
+            "application/json": { schema: resolver(RunStateResponse) },
+          },
         },
         400: {
-          description: 'Invalid resume',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "Invalid resume",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         403: {
-          description: 'Forbidden',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "Forbidden",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         404: {
-          description: 'Run not found',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "Run not found",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
     }),
     async (c) => {
-      const userId = c.get('userId');
-      const { context, forbidden } = await resolveContext(deps.db, userId, c.req.query('tenantId'));
-      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
-      if (!context) return c.json({ error: 'User context not found' }, 403);
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
 
-      const runId = c.req.param('runId');
+      const runId = c.req.param("runId");
       const state = await loadRunRecord(deps.db, runId);
-      if (!state) return c.json({ error: 'run not found' }, 404);
+      if (!state) return c.json({ error: "run not found" }, 404);
 
       const chain = await getAncestorChain(deps.db, context.tenantId);
       const gate = assertRunOwnership(chain, context, state);
@@ -415,7 +456,7 @@ export function createWorkflowRunRecordsRouter(deps: {
       try {
         body = await c.req.json();
       } catch {
-        return c.json({ error: 'invalid JSON body' }, 400);
+        return c.json({ error: "invalid JSON body" }, 400);
       }
       const parsed = ResumeBody(body);
       if (parsed instanceof type.errors) {
@@ -423,17 +464,18 @@ export function createWorkflowRunRecordsRouter(deps: {
       }
 
       if (state.deploymentId === undefined) {
-        return c.json({ error: 'run has no deployment to signal' }, 400);
+        return c.json({ error: "run has no deployment to signal" }, 400);
       }
 
       // Re-establish + address the run's supervisor, then deliver the gate signal.
       const deployment = await deps.db.query.workflowRun.findFirst({
         where: and(
           eq(workflowRun.deploymentId, state.deploymentId),
-          inArray(workflowRun.tenantId, chain)
+          inArray(workflowRun.tenantId, chain),
         ),
       });
-      if (!deployment) return c.json({ error: 'workflow deployment not found' }, 404);
+      if (!deployment)
+        return c.json({ error: "workflow deployment not found" }, 404);
 
       try {
         await deps.ensureDeploymentRoutable({
@@ -453,55 +495,64 @@ export function createWorkflowRunRecordsRouter(deps: {
           payload: parsed.payload ?? {},
         });
       } catch (err) {
-        log.error('workflow resume signal failed', {
+        log.error("workflow resume signal failed", {
           runId,
           signalName: parsed.signalName,
           error: err instanceof Error ? err : new Error(String(err)),
         });
-        return c.json({ error: 'failed to deliver signal' }, 500);
+        return c.json({ error: "failed to deliver signal" }, 500);
       }
 
       // Optimistically clear the gate so the UI resumes polling — a row in
       // 'awaiting' pauses the poll. The projection bridge advances it as the
       // sidecar emits the next StepStarted/StepCompleted/RunCompleted.
-      const advanced: RunState = { ...state, status: 'running' };
+      const advanced: RunState = { ...state, status: "running" };
       await runStore.save(advanced);
       return c.json(stateResponse(advanced));
-    }
+    },
   );
 
   // Inference credentials visible to the caller's tenant chain — used by the
   // A/B compare config step to populate the provider/model dropdowns. Returns
   // only tenant-owned (principalId IS NULL) credentials whose provider plugin
   // is in the inference whitelist; secrets are never included.
-  const INFERENCE_PLUGINS = new Set(['anthropic', 'openai', 'openai-compatible', 'google-genai']);
+  const INFERENCE_PLUGINS = new Set([
+    "anthropic",
+    "openai",
+    "openai-compatible",
+    "google-genai",
+  ]);
 
   router.get(
-    '/workflow-exec/credentials',
+    "/workflow-exec/credentials",
     describeRoute({
-      tags: ['Workflows'],
-      summary: 'List inference credentials for workflow configuration',
+      tags: ["Workflows"],
+      summary: "List inference credentials for workflow configuration",
       description:
-        'Returns tenant-owned inference credentials (no secrets) whose provider plugin is in the inference whitelist. Used to populate provider/model pickers in workflow config UIs.',
+        "Returns tenant-owned inference credentials (no secrets) whose provider plugin is in the inference whitelist. Used to populate provider/model pickers in workflow config UIs.",
       parameters: [
         {
-          name: 'tenantId',
-          in: 'query',
+          name: "tenantId",
+          in: "query",
           required: false,
-          description: 'Target workbench tenant id.',
-          schema: { type: 'string' },
+          description: "Target workbench tenant id.",
+          schema: { type: "string" },
         },
       ],
       responses: {
-        200: { description: 'List of inference credentials' },
-        403: { description: 'Forbidden' },
+        200: { description: "List of inference credentials" },
+        403: { description: "Forbidden" },
       },
     }),
     async (c) => {
-      const userId = c.get('userId');
-      const { context, forbidden } = await resolveContext(deps.db, userId, c.req.query('tenantId'));
-      if (forbidden) return c.json({ error: 'Forbidden' }, 403);
-      if (!context) return c.json({ error: 'User context not found' }, 403);
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
 
       const chain = await getAncestorChain(deps.db, context.tenantId);
 
@@ -516,16 +567,16 @@ export function createWorkflowRunRecordsRouter(deps: {
         .from(intxSchema.credential)
         .innerJoin(
           intxSchema.provider,
-          eq(intxSchema.credential.providerId, intxSchema.provider.id)
+          eq(intxSchema.credential.providerId, intxSchema.provider.id),
         )
         .where(
           and(
             inArray(intxSchema.credential.tenantId, [...chain]),
-            isNull(intxSchema.credential.principalId)
-          )
+            isNull(intxSchema.credential.principalId),
+          ),
         );
 
-      const CredentialMeta = type({ 'model?': 'string' });
+      const CredentialMeta = type({ "model?": "string" });
       const result = rows
         .filter((r) => INFERENCE_PLUGINS.has(r.providerPlugin))
         .map((r) => {
@@ -540,7 +591,7 @@ export function createWorkflowRunRecordsRouter(deps: {
         });
 
       return c.json(result);
-    }
+    },
   );
 
   return router;

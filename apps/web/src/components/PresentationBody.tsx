@@ -5,7 +5,7 @@ interface PresentationBodyProps {
 export default function PresentationBody({ url }: PresentationBodyProps) {
   return (
     <div className="w-full">
-      <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+      <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
         <iframe
           src={url}
           allow="fullscreen"

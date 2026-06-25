@@ -1,4 +1,4 @@
-import { flushSentry } from './setup';
+import { flushSentry } from "./setup";
 
 type ErrorLogger = {
   error: (message: string, properties?: Record<string, unknown>) => void;
@@ -13,7 +13,7 @@ export async function reportLoggedError(
   log: ErrorLogger,
   message: string,
   err: unknown,
-  properties: Record<string, unknown> = {}
+  properties: Record<string, unknown> = {},
 ): Promise<void> {
   log.error(message, { ...properties, error: toLoggedError(err) });
   await flushSentry();

@@ -1,12 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
-import { type } from 'arktype';
-import { api } from '../lib/api';
+import { useQuery } from "@tanstack/react-query";
+import { type } from "arktype";
+import { api } from "../lib/api";
 
 const toolSummarySchema = type({
-  name: 'string',
-  providerName: 'string',
-  description: 'string',
-  version: 'string | null',
+  name: "string",
+  providerName: "string",
+  description: "string",
+  version: "string | null",
 });
 
 const toolsResponseSchema = type({ tools: toolSummarySchema.array() });
@@ -14,11 +14,11 @@ const toolsResponseSchema = type({ tools: toolSummarySchema.array() });
 export type ToolSummary = typeof toolSummarySchema.infer;
 
 const toolDetailSchema = type({
-  name: 'string',
-  providerName: 'string',
-  description: 'string',
-  inputSchema: 'unknown',
-  version: 'string | null',
+  name: "string",
+  providerName: "string",
+  description: "string",
+  inputSchema: "unknown",
+  version: "string | null",
 });
 
 const toolDetailResponseSchema = type({ tool: toolDetailSchema });
@@ -27,11 +27,11 @@ export type ToolDetail = typeof toolDetailSchema.infer;
 
 export function useToolsLibrary(tenantId?: string | null) {
   return useQuery<ToolSummary[]>({
-    queryKey: ['tools', tenantId ?? null],
+    queryKey: ["tools", tenantId ?? null],
     queryFn: async () => {
       const raw = await api<unknown>(
-        'GET',
-        `/tools${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`
+        "GET",
+        `/tools${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ""}`,
       );
       const parsed = toolsResponseSchema(raw);
       if (parsed instanceof type.errors) {
@@ -46,12 +46,12 @@ export function useToolsLibrary(tenantId?: string | null) {
 
 export function useToolDetail(name: string | null, tenantId?: string | null) {
   return useQuery<ToolDetail>({
-    queryKey: ['tool', name, tenantId ?? null],
+    queryKey: ["tool", name, tenantId ?? null],
     queryFn: async () => {
-      if (!name) throw new Error('Tool name is required');
+      if (!name) throw new Error("Tool name is required");
       const raw = await api<unknown>(
-        'GET',
-        `/tools/${encodeURIComponent(name)}${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`
+        "GET",
+        `/tools/${encodeURIComponent(name)}${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ""}`,
       );
       const parsed = toolDetailResponseSchema(raw);
       if (parsed instanceof type.errors) {

@@ -1,4 +1,4 @@
-import { type, type Type } from "arktype"
+import { type, type Type } from "arktype";
 import type {
   ApiDescription,
   Diagnostic,
@@ -12,8 +12,8 @@ import type {
   ResponseEntry,
   SchemaEntry,
   ServerEntry,
-} from "../types.js"
-import { HTTP_METHODS } from "../types.js"
+} from "../types.js";
+import { HTTP_METHODS } from "../types.js";
 import type {
   OASSpec,
   OASPathItem,
@@ -23,12 +23,12 @@ import type {
   OASResponse,
   OASMediaType,
   OASHeader,
-} from "./spec-types.js"
-import { convertSchema } from "./schema.js"
+} from "./spec-types.js";
+import { convertSchema } from "./schema.js";
 
 export function buildApiDescription(
   spec: OASSpec,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): ApiDescription {
   return {
     title: spec.info.title,
@@ -37,79 +37,79 @@ export function buildApiDescription(
     servers: buildServers(spec),
     paths: buildPaths(spec, diagnostics),
     schemas: buildComponentSchemas(spec, diagnostics),
-  }
+  };
 }
 
 function buildServers(spec: OASSpec): ServerEntry[] {
-  if (!spec.servers) return []
+  if (!spec.servers) return [];
   return spec.servers.map((s) => ({
     url: s.url,
     description: s.description,
-  }))
+  }));
 }
 
 function buildComponentSchemas(
   spec: OASSpec,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): Record<string, SchemaEntry> {
-  const schemasObj = spec.components?.schemas
-  if (!schemasObj) return {}
+  const schemasObj = spec.components?.schemas;
+  if (!schemasObj) return {};
 
-  const result: Record<string, SchemaEntry> = {}
+  const result: Record<string, SchemaEntry> = {};
   for (const [name, schema] of Object.entries(schemasObj)) {
     result[name] = convertSchema(
       schema,
       diagnostics,
       ["components", "schemas", name],
-      name
-    )
+      name,
+    );
   }
-  return result
+  return result;
 }
 
 function buildPaths(
   spec: OASSpec,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): Record<string, PathItem> {
-  if (!spec.paths) return {}
+  if (!spec.paths) return {};
 
-  const result: Record<string, PathItem> = {}
+  const result: Record<string, PathItem> = {};
   for (const [pathStr, pathObj] of Object.entries(spec.paths)) {
-    result[pathStr] = buildPathItem(pathStr, pathObj, diagnostics)
+    result[pathStr] = buildPathItem(pathStr, pathObj, diagnostics);
   }
-  return result
+  return result;
 }
 
 function buildPathItem(
   path: string,
   pathObj: OASPathItem,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): PathItem {
-  const pathParams = buildParameters(
-    pathObj.parameters,
-    diagnostics,
-    ["paths", path, "parameters"]
-  )
+  const pathParams = buildParameters(pathObj.parameters, diagnostics, [
+    "paths",
+    path,
+    "parameters",
+  ]);
 
-  const operations: Partial<Record<HttpMethod, Operation>> = {}
+  const operations: Partial<Record<HttpMethod, Operation>> = {};
   for (const method of HTTP_METHODS) {
-    const opObj = pathObj[method]
-    if (!opObj) continue
+    const opObj = pathObj[method];
+    if (!opObj) continue;
 
     operations[method] = buildOperation(opObj, diagnostics, [
       "paths",
       path,
       method,
-    ])
+    ]);
   }
 
-  return { path, parameters: pathParams, operations }
+  return { path, parameters: pathParams, operations };
 }
 
 function buildOperation(
   opObj: OASOperation,
   diagnostics: Diagnostic[],
-  basePath: string[]
+  basePath: string[],
 ): Operation {
   return {
     operationId: opObj.operationId,
@@ -117,33 +117,30 @@ function buildOperation(
     description: opObj.description,
     tags: opObj.tags ?? [],
     deprecated: opObj.deprecated ?? false,
-    parameters: buildParameters(
-      opObj.parameters,
-      diagnostics,
-      [...basePath, "parameters"]
-    ),
-    requestBody: buildRequestBody(
-      opObj.requestBody,
-      diagnostics,
-      [...basePath, "requestBody"]
-    ),
-    responses: buildResponses(
-      opObj.responses,
-      diagnostics,
-      [...basePath, "responses"]
-    ),
-  }
+    parameters: buildParameters(opObj.parameters, diagnostics, [
+      ...basePath,
+      "parameters",
+    ]),
+    requestBody: buildRequestBody(opObj.requestBody, diagnostics, [
+      ...basePath,
+      "requestBody",
+    ]),
+    responses: buildResponses(opObj.responses, diagnostics, [
+      ...basePath,
+      "responses",
+    ]),
+  };
 }
 
 function buildParameters(
   params: OASParameter[] | undefined,
   diagnostics: Diagnostic[],
-  basePath: string[]
+  basePath: string[],
 ): ParameterEntry[] {
-  if (!params) return []
+  if (!params) return [];
 
   return params.map((p, i) => {
-    const schemaPath = [...basePath, String(i), "schema"]
+    const schemaPath = [...basePath, String(i), "schema"];
     return {
       name: p.name,
       in: p.in,
@@ -152,32 +149,32 @@ function buildParameters(
       schema: p.schema
         ? convertSchema(p.schema, diagnostics, schemaPath)
         : convertSchema({ type: "string" }, diagnostics, schemaPath),
-    }
-  })
+    };
+  });
 }
 
 function buildRequestBody(
   body: OASRequestBody | undefined,
   diagnostics: Diagnostic[],
-  basePath: string[]
+  basePath: string[],
 ): RequestBodyEntry | undefined {
-  if (!body) return undefined
+  if (!body) return undefined;
 
   return {
     required: body.required ?? false,
     description: body.description,
     content: buildContent(body.content, diagnostics, [...basePath, "content"]),
-  }
+  };
 }
 
 function buildResponses(
   responses: Record<string, OASResponse> | undefined,
   diagnostics: Diagnostic[],
-  basePath: string[]
+  basePath: string[],
 ): Record<string, ResponseEntry> {
-  if (!responses) return {}
+  if (!responses) return {};
 
-  const result: Record<string, ResponseEntry> = {}
+  const result: Record<string, ResponseEntry> = {};
   for (const [status, respObj] of Object.entries(responses)) {
     result[status] = {
       description: respObj.description,
@@ -191,19 +188,19 @@ function buildResponses(
         status,
         "headers",
       ]),
-    }
+    };
   }
-  return result
+  return result;
 }
 
 function buildContent(
   content: Record<string, OASMediaType> | undefined,
   diagnostics: Diagnostic[],
-  basePath: string[]
+  basePath: string[],
 ): Record<string, MediaTypeEntry> {
-  if (!content) return {}
+  if (!content) return {};
 
-  const result: Record<string, MediaTypeEntry> = {}
+  const result: Record<string, MediaTypeEntry> = {};
   for (const [mediaType, mtObj] of Object.entries(content)) {
     if (mtObj.schema) {
       result[mediaType] = {
@@ -212,77 +209,77 @@ function buildContent(
           mediaType,
           "schema",
         ]),
-      }
+      };
     }
   }
-  return result
+  return result;
 }
 
 function buildHeaderSchemas(
   headers: Record<string, OASHeader> | undefined,
   diagnostics: Diagnostic[],
-  basePath: string[]
+  basePath: string[],
 ): Record<string, SchemaEntry> {
-  if (!headers) return {}
+  if (!headers) return {};
 
-  const result: Record<string, SchemaEntry> = {}
+  const result: Record<string, SchemaEntry> = {};
   for (const [headerName, headerObj] of Object.entries(headers)) {
     if (headerObj.schema) {
       result[headerName] = convertSchema(headerObj.schema, diagnostics, [
         ...basePath,
         headerName,
         "schema",
-      ])
+      ]);
     }
   }
-  return result
+  return result;
 }
 
 export function buildOperationValidators(
-  operation: Operation
+  operation: Operation,
 ): OperationValidators {
   const result: OperationValidators = {
     responses: {},
-  }
+  };
 
-  const pathParams = operation.parameters.filter((p) => p.in === "path")
-  const queryParams = operation.parameters.filter((p) => p.in === "query")
-  const headerParams = operation.parameters.filter((p) => p.in === "header")
+  const pathParams = operation.parameters.filter((p) => p.in === "path");
+  const queryParams = operation.parameters.filter((p) => p.in === "query");
+  const headerParams = operation.parameters.filter((p) => p.in === "header");
 
   if (pathParams.length > 0) {
-    result.pathParams = paramsToObjectType(pathParams)
+    result.pathParams = paramsToObjectType(pathParams);
   }
   if (queryParams.length > 0) {
-    result.queryParams = paramsToObjectType(queryParams)
+    result.queryParams = paramsToObjectType(queryParams);
   }
   if (headerParams.length > 0) {
-    result.headerParams = paramsToObjectType(headerParams)
+    result.headerParams = paramsToObjectType(headerParams);
   }
 
   if (operation.requestBody) {
-    result.requestBody = {}
+    result.requestBody = {};
     for (const [mediaType, entry] of Object.entries(
-      operation.requestBody.content
+      operation.requestBody.content,
     )) {
-      result.requestBody[mediaType] = entry.schema.validator
+      result.requestBody[mediaType] = entry.schema.validator;
     }
   }
 
   for (const [status, response] of Object.entries(operation.responses)) {
-    result.responses[status] = {}
+    result.responses[status] = {};
     for (const [mediaType, entry] of Object.entries(response.content)) {
-      result.responses[status][mediaType] = entry.schema.validator
+      result.responses[status][mediaType] = entry.schema.validator;
     }
   }
 
-  return result
+  return result;
 }
 
 function paramsToObjectType(params: ParameterEntry[]): Type<unknown> {
-  const props: Record<string, Type<unknown>> = {}
+  const props: Record<string, Type<unknown>> = {};
   for (const param of params) {
-    const key = param.required ? param.name : `${param.name}?`
-    props[key] = param.schema.validator
+    const key = param.required ? param.name : `${param.name}?`;
+    props[key] = param.schema.validator;
   }
-  return type(props as never) as Type<unknown>
+  return type(props as never) as Type<unknown>;
 }

@@ -7,22 +7,30 @@
          Must stay in sync with use-theme.ts (key "cw-theme", default "corbits-light"). -->
     <script>
       function initTheme() {
-        const THEMES = new Set(['corbits-dark', 'corbits-light', 'tkww', 'notion']);
-        const LEGACY = new Map([
-          ['dark', 'corbits-dark'],
-          ['light', 'corbits-light'],
+        const THEMES = new Set([
+          "corbits-dark",
+          "corbits-light",
+          "tkww",
+          "notion",
         ]);
-        const DEFAULT_THEME = 'corbits-light';
+        const LEGACY = new Map([
+          ["dark", "corbits-dark"],
+          ["light", "corbits-light"],
+        ]);
+        const DEFAULT_THEME = "corbits-light";
         try {
-          let t = localStorage.getItem('cw-theme');
+          let t = localStorage.getItem("cw-theme");
           if (t !== null) {
             t = LEGACY.get(t) ?? t;
-            document.documentElement.setAttribute('data-theme', THEMES.has(t) ? t : DEFAULT_THEME);
+            document.documentElement.setAttribute(
+              "data-theme",
+              THEMES.has(t) ? t : DEFAULT_THEME,
+            );
           } else {
-            document.documentElement.setAttribute('data-theme', DEFAULT_THEME);
+            document.documentElement.setAttribute("data-theme", DEFAULT_THEME);
           }
         } catch (e) {
-          document.documentElement.setAttribute('data-theme', DEFAULT_THEME);
+          document.documentElement.setAttribute("data-theme", DEFAULT_THEME);
         }
       }
       initTheme();

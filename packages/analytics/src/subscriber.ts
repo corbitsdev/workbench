@@ -1,29 +1,34 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes } from "node:crypto";
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from "drizzle-orm";
 
-import type { DB } from '@intx/db';
-import { agentInstance } from '@intx/db/schema';
-import { getLogger } from '@intx/log';
-import type { InferenceEvent } from '@intx/types/runtime';
+import type { DB } from "@intx/db";
+import { agentInstance } from "@intx/db/schema";
+import { getLogger } from "@intx/log";
+import type { InferenceEvent } from "@intx/types/runtime";
 
-import { factsFromInferenceEvent, type AnalyticsFact } from './event-mapping';
-import { analyticsEvent, analyticsRollupDaily } from './schema';
+import { factsFromInferenceEvent, type AnalyticsFact } from "./event-mapping";
+import { analyticsEvent, analyticsRollupDaily } from "./schema";
 
-type Tx = Parameters<Parameters<DB['db']['transaction']>[0]>[0];
+type Tx = Parameters<Parameters<DB["db"]["transaction"]>[0]>[0];
 type ActiveInstance = typeof agentInstance.$inferSelect;
 
-const log = getLogger(['hub', 'analytics']);
+const log = getLogger(["hub", "analytics"]);
 
 export type AnalyticsSubscriber = {
-  onAgentEvent(args: { agentAddress: string; event: InferenceEvent }): Promise<void>;
+  onAgentEvent(args: {
+    agentAddress: string;
+    event: InferenceEvent;
+  }): Promise<void>;
 };
 
 export type AnalyticsSubscriberConfig = {
-  db: DB['db'];
+  db: DB["db"];
 };
 
-export function createAnalyticsSubscriber(config: AnalyticsSubscriberConfig): AnalyticsSubscriber {
+export function createAnalyticsSubscriber(
+  config: AnalyticsSubscriberConfig,
+): AnalyticsSubscriber {
   const { db } = config;
   // Cache address → instance for the lifetime of this subscriber. Safe because
   // sidecar stops emitting events for an address once the instance ends, so a
@@ -38,9 +43,12 @@ export function createAnalyticsSubscriber(config: AnalyticsSubscriberConfig): An
       try {
         const instance = await resolveInstance(db, instanceCache, agentAddress);
         if (instance === null) {
-          log.warn('Skipping analytics event for unknown agent address: {agentAddress}', {
-            agentAddress,
-          });
+          log.warn(
+            "Skipping analytics event for unknown agent address: {agentAddress}",
+            {
+              agentAddress,
+            },
+          );
           return;
         }
 
@@ -48,25 +56,31 @@ export function createAnalyticsSubscriber(config: AnalyticsSubscriberConfig): An
           await persistFact(db, instance, fact);
         }
       } catch (error) {
-        log.error('Failed to persist analytics event for {agentAddress}: {error}', {
-          agentAddress,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        log.error(
+          "Failed to persist analytics event for {agentAddress}: {error}",
+          {
+            agentAddress,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       }
     },
   };
 }
 
 async function resolveInstance(
-  db: DB['db'],
+  db: DB["db"],
   cache: Map<string, ActiveInstance>,
-  agentAddress: string
+  agentAddress: string,
 ): Promise<ActiveInstance | null> {
   const cached = cache.get(agentAddress);
   if (cached !== undefined) return cached;
 
   const row = await db.query.agentInstance.findFirst({
-    where: and(eq(agentInstance.address, agentAddress), isNull(agentInstance.endedAt)),
+    where: and(
+      eq(agentInstance.address, agentAddress),
+      isNull(agentInstance.endedAt),
+    ),
   });
 
   if (row === undefined) return null;
@@ -75,13 +89,13 @@ async function resolveInstance(
 }
 
 async function persistFact(
-  db: DB['db'],
+  db: DB["db"],
   instance: ActiveInstance,
-  fact: AnalyticsFact
+  fact: AnalyticsFact,
 ): Promise<void> {
   if (!instance.sessionId) {
     throw new Error(
-      `agentInstance ${instance.id} has no sessionId — cannot build an idempotent event key`
+      `agentInstance ${instance.id} has no sessionId — cannot build an idempotent event key`,
     );
   }
   // Qualify the event key with sessionId so seq resets on agent restart don't
@@ -119,27 +133,36 @@ async function persistFact(
 
     // Raw inference_usage facts are stored for auditing; rollups count tokens only
     // on inference_done. inference_error has no rollup contribution.
-    if (fact.eventType === 'inference_error' || fact.eventType === 'inference_usage') return;
+    if (
+      fact.eventType === "inference_error" ||
+      fact.eventType === "inference_usage"
+    )
+      return;
 
     await upsertDailyRollup(tx, instance, fact);
   });
 }
 
-async function upsertDailyRollup(db: Tx, instance: ActiveInstance, fact: AnalyticsFact) {
+async function upsertDailyRollup(
+  db: Tx,
+  instance: ActiveInstance,
+  fact: AnalyticsFact,
+) {
   // Bucket date is UTC. All daily boundaries are UTC-anchored.
   const bucketDate = fact.occurredAt.toISOString().slice(0, 10);
   const rollupKey = [
     instance.tenantId,
     instance.agentId,
     instance.id,
-    fact.model ?? '',
+    fact.model ?? "",
     bucketDate,
-  ].join(':');
-  const turnCount = fact.eventType === 'turn_completed' ? 1 : 0;
-  const failedTurnCount = fact.eventType === 'turn_failed' ? 1 : 0;
-  const toolCallCount = fact.eventType === 'tool_call' ? 1 : 0;
-  const toolErrorCount = fact.eventType === 'tool_call' && fact.status === 'error' ? 1 : 0;
-  const countTokens = fact.eventType === 'inference_done';
+  ].join(":");
+  const turnCount = fact.eventType === "turn_completed" ? 1 : 0;
+  const failedTurnCount = fact.eventType === "turn_failed" ? 1 : 0;
+  const toolCallCount = fact.eventType === "tool_call" ? 1 : 0;
+  const toolErrorCount =
+    fact.eventType === "tool_call" && fact.status === "error" ? 1 : 0;
+  const countTokens = fact.eventType === "inference_done";
 
   await db
     .insert(analyticsRollupDaily)
@@ -179,9 +202,9 @@ async function upsertDailyRollup(db: Tx, instance: ActiveInstance, fact: Analyti
 }
 
 function analyticsEventId(): string {
-  return `ane_${randomBytes(16).toString('hex')}`;
+  return `ane_${randomBytes(16).toString("hex")}`;
 }
 
 function analyticsRollupDailyId(): string {
-  return `ard_${randomBytes(16).toString('hex')}`;
+  return `ard_${randomBytes(16).toString("hex")}`;
 }

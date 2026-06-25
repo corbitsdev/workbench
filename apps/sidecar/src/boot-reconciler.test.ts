@@ -1,21 +1,24 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import type { LiveDeployment } from '@workbench/tool-credentials';
-import { sanitizeAgentAddress } from './workflow-host-wiring';
-import { reconcileOrphanedDeploymentDirs } from './boot-reconciler';
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { LiveDeployment } from "@workbench/tool-credentials";
+import { sanitizeAgentAddress } from "./workflow-host-wiring";
+import { reconcileOrphanedDeploymentDirs } from "./boot-reconciler";
 
-const DOMAIN = 'abklabs.com';
-const DOMAIN_SLUG = 'abklabs-com';
+const DOMAIN = "abklabs.com";
+const DOMAIN_SLUG = "abklabs-com";
 
 // Canonical deployment ids: `ses_` + 32 lowercase hex chars (the shape
 // `generateId("session")` mints). The token-based reconciler only matches
 // this shape, so tests must use realistic ids rather than `ses_live`.
-const LIVE_ID = 'ses_00112233445566778899aabbccddeeff';
-const DEAD_ID = 'ses_ffeeddccbbaa99887766554433221100';
+const LIVE_ID = "ses_00112233445566778899aabbccddeeff";
+const DEAD_ID = "ses_ffeeddccbbaa99887766554433221100";
 
-function liveDeployment(deploymentId: string, stepIds: string[]): LiveDeployment {
+function liveDeployment(
+  deploymentId: string,
+  stepIds: string[],
+): LiveDeployment {
   return {
     deploymentId,
     supervisorAddress: `ins_${deploymentId}@${DOMAIN}`,
@@ -38,24 +41,28 @@ function liveDeployment(deploymentId: string, stepIds: string[]): LiveDeployment
 //   - `<dataDir>/<sanitizeAddress(supervisor|step address)>` (top-level
 //                                                ins_ agent dirs)
 //   - `workflow-runs/<slug>`                    (workflow-run repo)
-async function layAllForms(dataDir: string, d: LiveDeployment): Promise<string[]> {
+async function layAllForms(
+  dataDir: string,
+  d: LiveDeployment,
+): Promise<string[]> {
   const dirs: string[] = [];
   // Top-level supervisor + step agent dirs (sanitized address).
   dirs.push(join(dataDir, sanitizeAgentAddress(d.supervisorAddress)));
-  for (const addr of d.stepAddresses) dirs.push(join(dataDir, sanitizeAgentAddress(addr)));
+  for (const addr of d.stepAddresses)
+    dirs.push(join(dataDir, sanitizeAgentAddress(addr)));
   // Workflow-run repo.
-  dirs.push(join(dataDir, 'workflow-runs', d.workflowRunSlug));
+  dirs.push(join(dataDir, "workflow-runs", d.workflowRunSlug));
   // Agent-state repos keyed by the raw agentStateRepoId form.
-  for (const id of d.agentStateRepoIds) dirs.push(join(dataDir, 'agents', id));
+  for (const id of d.agentStateRepoIds) dirs.push(join(dataDir, "agents", id));
   // The KEYING-BUG form: a step agent dir keyed by sanitized address that
   // lands UNDER agents/. Its name is NOT in agentStateRepoIds, so the old
   // exact-name enumeration would false-delete it for a live deployment.
   for (const addr of d.stepAddresses) {
-    dirs.push(join(dataDir, 'agents', sanitizeAgentAddress(addr)));
+    dirs.push(join(dataDir, "agents", sanitizeAgentAddress(addr)));
   }
   for (const dir of dirs) {
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, 'marker'), 'x');
+    await writeFile(join(dir, "marker"), "x");
   }
   return dirs;
 }
@@ -75,17 +82,22 @@ async function exists(path: string): Promise<boolean> {
 function okFetch(
   deployments: LiveDeployment[],
   activeRunDeploymentIds?: string[],
-  liveAgentAddresses?: string[]
+  liveAgentAddresses?: string[],
 ): typeof fetch {
-  const active = activeRunDeploymentIds ?? deployments.map((d) => d.deploymentId);
+  const active =
+    activeRunDeploymentIds ?? deployments.map((d) => d.deploymentId);
   const agents = liveAgentAddresses ?? [];
   return (async () =>
     new Response(
-      JSON.stringify({ deployments, activeRunDeploymentIds: active, liveAgentAddresses: agents }),
+      JSON.stringify({
+        deployments,
+        activeRunDeploymentIds: active,
+        liveAgentAddresses: agents,
+      }),
       {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }
+        headers: { "Content-Type": "application/json" },
+      },
     )) as unknown as typeof fetch;
 }
 
@@ -94,7 +106,7 @@ const silentLogger = { info: () => {}, warn: () => {}, error: () => {} };
 let dataDir: string;
 
 beforeEach(async () => {
-  dataDir = await mkdtemp(join(tmpdir(), 'reconciler-'));
+  dataDir = await mkdtemp(join(tmpdir(), "reconciler-"));
 });
 afterEach(async () => {
   await rm(dataDir, { recursive: true, force: true });
@@ -102,13 +114,13 @@ afterEach(async () => {
 
 async function layReserved(): Promise<string[]> {
   const reserved = [
-    join(dataDir, 'cache'),
-    join(dataDir, 'assets'),
-    join(dataDir, '.sidecar-signing'),
+    join(dataDir, "cache"),
+    join(dataDir, "assets"),
+    join(dataDir, ".sidecar-signing"),
   ];
   for (const dir of reserved) {
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, 'marker'), 'x');
+    await writeFile(join(dir, "marker"), "x");
   }
   return reserved;
 }
@@ -116,21 +128,21 @@ async function layReserved(): Promise<string[]> {
 async function run(
   deployments: LiveDeployment[],
   activeRunDeploymentIds?: string[],
-  liveAgentAddresses?: string[]
+  liveAgentAddresses?: string[],
 ): Promise<void> {
   await reconcileOrphanedDeploymentDirs({
     dataDir,
-    hubHttpUrl: 'http://hub',
-    sidecarToken: 't',
+    hubHttpUrl: "http://hub",
+    sidecarToken: "t",
     logger: silentLogger,
     fetchFn: okFetch(deployments, activeRunDeploymentIds, liveAgentAddresses),
   });
 }
 
-describe('reconcileOrphanedDeploymentDirs — deployment-id-token keying', () => {
-  test('keeps ALL on-disk dir-name forms of a live deployment, deletes ALL forms of a dead one', async () => {
-    const live = liveDeployment(LIVE_ID, ['plan', 'execute']);
-    const dead = liveDeployment(DEAD_ID, ['plan', 'execute']);
+describe("reconcileOrphanedDeploymentDirs — deployment-id-token keying", () => {
+  test("keeps ALL on-disk dir-name forms of a live deployment, deletes ALL forms of a dead one", async () => {
+    const live = liveDeployment(LIVE_ID, ["plan", "execute"]);
+    const dead = liveDeployment(DEAD_ID, ["plan", "execute"]);
     const liveDirs = await layAllForms(dataDir, live);
     const deadDirs = await layAllForms(dataDir, dead);
     const reserved = await layReserved();
@@ -146,12 +158,12 @@ describe('reconcileOrphanedDeploymentDirs — deployment-id-token keying', () =>
     for (const dir of deadDirs) expect(await exists(dir)).toBe(false);
   });
 
-  test('keeps a dir under agents/ that has NO deployment-id token (fail-safe)', async () => {
-    const live = liveDeployment(LIVE_ID, ['plan']);
+  test("keeps a dir under agents/ that has NO deployment-id token (fail-safe)", async () => {
+    const live = liveDeployment(LIVE_ID, ["plan"]);
     await layAllForms(dataDir, live);
-    const legacy = join(dataDir, 'agents', 'legacy-thing');
+    const legacy = join(dataDir, "agents", "legacy-thing");
     await mkdir(legacy, { recursive: true });
-    await writeFile(join(legacy, 'marker'), 'x');
+    await writeFile(join(legacy, "marker"), "x");
 
     await run([live]);
 
@@ -159,14 +171,14 @@ describe('reconcileOrphanedDeploymentDirs — deployment-id-token keying', () =>
     expect(await exists(legacy)).toBe(true);
   });
 
-  test('reaps a top-level ins_ dir with no deployment-id token and no matching live agent address (CL-2264)', async () => {
-    const live = liveDeployment(LIVE_ID, ['plan']);
+  test("reaps a top-level ins_ dir with no deployment-id token and no matching live agent address (CL-2264)", async () => {
+    const live = liveDeployment(LIVE_ID, ["plan"]);
     await layAllForms(dataDir, live);
     // A stray ins_ dir whose address does not appear in liveAgentAddresses.
     // CL-2264: now classified as an orphaned agent dir and reaped.
-    const stray = join(dataDir, 'ins_some-other-instance_at_abklabs_com');
+    const stray = join(dataDir, "ins_some-other-instance_at_abklabs_com");
     await mkdir(stray, { recursive: true });
-    await writeFile(join(stray, 'marker'), 'x');
+    await writeFile(join(stray, "marker"), "x");
 
     // No live agent addresses — stray is not in the live set → reaped.
     await run([live], undefined, []);
@@ -175,9 +187,9 @@ describe('reconcileOrphanedDeploymentDirs — deployment-id-token keying', () =>
   });
 });
 
-describe('reconcileOrphanedDeploymentDirs — CL-2248 terminal-run second pass', () => {
-  test('deletes ALL dir forms of a LIVE deployment that has NO active run', async () => {
-    const terminal = liveDeployment(LIVE_ID, ['plan', 'execute']);
+describe("reconcileOrphanedDeploymentDirs — CL-2248 terminal-run second pass", () => {
+  test("deletes ALL dir forms of a LIVE deployment that has NO active run", async () => {
+    const terminal = liveDeployment(LIVE_ID, ["plan", "execute"]);
     const terminalDirs = await layAllForms(dataDir, terminal);
 
     // Deployment is live (in `deployments`) but absent from the active-run
@@ -187,8 +199,8 @@ describe('reconcileOrphanedDeploymentDirs — CL-2248 terminal-run second pass',
     for (const dir of terminalDirs) expect(await exists(dir)).toBe(false);
   });
 
-  test('KEEPS all dir forms of a live deployment that DOES have an active run', async () => {
-    const active = liveDeployment(LIVE_ID, ['plan', 'execute']);
+  test("KEEPS all dir forms of a live deployment that DOES have an active run", async () => {
+    const active = liveDeployment(LIVE_ID, ["plan", "execute"]);
     const activeDirs = await layAllForms(dataDir, active);
 
     await run([active], [LIVE_ID]);
@@ -196,10 +208,12 @@ describe('reconcileOrphanedDeploymentDirs — CL-2248 terminal-run second pass',
     for (const dir of activeDirs) expect(await exists(dir)).toBe(true);
   });
 
-  test('mixed: prunes the terminal live deployment, keeps the active one, deletes the dead one', async () => {
-    const activeDep = liveDeployment(LIVE_ID, ['plan']);
-    const terminalDep = liveDeployment('ses_1111222233334444aaaabbbbccccdddd', ['plan']);
-    const deadDep = liveDeployment(DEAD_ID, ['plan']);
+  test("mixed: prunes the terminal live deployment, keeps the active one, deletes the dead one", async () => {
+    const activeDep = liveDeployment(LIVE_ID, ["plan"]);
+    const terminalDep = liveDeployment("ses_1111222233334444aaaabbbbccccdddd", [
+      "plan",
+    ]);
+    const deadDep = liveDeployment(DEAD_ID, ["plan"]);
     const activeDirs = await layAllForms(dataDir, activeDep);
     const terminalDirs = await layAllForms(dataDir, terminalDep);
     const deadDirs = await layAllForms(dataDir, deadDep);
@@ -214,49 +228,53 @@ describe('reconcileOrphanedDeploymentDirs — CL-2248 terminal-run second pass',
   });
 });
 
-describe('reconcileOrphanedDeploymentDirs — fail-safes', () => {
-  test('FAIL-SAFE: a fetch that throws deletes nothing', async () => {
-    const dead = liveDeployment(DEAD_ID, ['plan']);
+describe("reconcileOrphanedDeploymentDirs — fail-safes", () => {
+  test("FAIL-SAFE: a fetch that throws deletes nothing", async () => {
+    const dead = liveDeployment(DEAD_ID, ["plan"]);
     const deadDirs = await layAllForms(dataDir, dead);
     const reserved = await layReserved();
 
     await reconcileOrphanedDeploymentDirs({
       dataDir,
-      hubHttpUrl: 'http://hub',
-      sidecarToken: 't',
+      hubHttpUrl: "http://hub",
+      sidecarToken: "t",
       logger: silentLogger,
       fetchFn: (async () => {
-        throw new Error('network down');
+        throw new Error("network down");
       }) as unknown as typeof fetch,
     });
 
-    for (const dir of [...deadDirs, ...reserved]) expect(await exists(dir)).toBe(true);
+    for (const dir of [...deadDirs, ...reserved])
+      expect(await exists(dir)).toBe(true);
   });
 
-  test('FAIL-SAFE: a non-200 response deletes nothing', async () => {
-    const dead = liveDeployment(DEAD_ID, ['plan']);
+  test("FAIL-SAFE: a non-200 response deletes nothing", async () => {
+    const dead = liveDeployment(DEAD_ID, ["plan"]);
     const deadDirs = await layAllForms(dataDir, dead);
 
     await reconcileOrphanedDeploymentDirs({
       dataDir,
-      hubHttpUrl: 'http://hub',
-      sidecarToken: 't',
+      hubHttpUrl: "http://hub",
+      sidecarToken: "t",
       logger: silentLogger,
-      fetchFn: (async () => new Response('nope', { status: 500 })) as unknown as typeof fetch,
+      fetchFn: (async () =>
+        new Response("nope", { status: 500 })) as unknown as typeof fetch,
     });
 
     for (const dir of deadDirs) expect(await exists(dir)).toBe(true);
   });
 
-  test('FAIL-SAFE: an empty live set with orphan-looking dirs deletes nothing', async () => {
-    const orphan = liveDeployment('ses_aaaabbbbccccddddeeeeffff00001111', ['plan']);
+  test("FAIL-SAFE: an empty live set with orphan-looking dirs deletes nothing", async () => {
+    const orphan = liveDeployment("ses_aaaabbbbccccddddeeeeffff00001111", [
+      "plan",
+    ]);
     const orphanDirs = await layAllForms(dataDir, orphan);
 
     let warned = false;
     await reconcileOrphanedDeploymentDirs({
       dataDir,
-      hubHttpUrl: 'http://hub',
-      sidecarToken: 't',
+      hubHttpUrl: "http://hub",
+      sidecarToken: "t",
       logger: { info: () => {}, warn: () => (warned = true), error: () => {} },
       fetchFn: okFetch([]),
     });
@@ -265,9 +283,9 @@ describe('reconcileOrphanedDeploymentDirs — fail-safes', () => {
     expect(warned).toBe(true);
   });
 
-  test('idempotent: a second run with the same live set deletes nothing new and does not throw', async () => {
-    const live = liveDeployment(LIVE_ID, ['plan']);
-    const dead = liveDeployment(DEAD_ID, ['plan']);
+  test("idempotent: a second run with the same live set deletes nothing new and does not throw", async () => {
+    const live = liveDeployment(LIVE_ID, ["plan"]);
+    const dead = liveDeployment(DEAD_ID, ["plan"]);
     const liveDirs = await layAllForms(dataDir, live);
     await layAllForms(dataDir, dead);
 
@@ -278,19 +296,19 @@ describe('reconcileOrphanedDeploymentDirs — fail-safes', () => {
   });
 });
 
-describe('reconcileOrphanedDeploymentDirs — CL-2264 orphaned agent dirs', () => {
+describe("reconcileOrphanedDeploymentDirs — CL-2264 orphaned agent dirs", () => {
   // An agent instance address and its sanitized on-disk dir name form.
-  const LIVE_AGENT_ADDR = 'ins_abc123def456abc123def456abc123de@gtm.localhost';
-  const DEAD_AGENT_ADDR = 'ins_111222333444555666777888999000aaa@gtm.localhost';
+  const LIVE_AGENT_ADDR = "ins_abc123def456abc123def456abc123de@gtm.localhost";
+  const DEAD_AGENT_ADDR = "ins_111222333444555666777888999000aaa@gtm.localhost";
 
   function agentDir(address: string): string {
     return join(dataDir, sanitizeAgentAddress(address));
   }
 
-  test('reaps an agent dir whose address is NOT in liveAgentAddresses', async () => {
+  test("reaps an agent dir whose address is NOT in liveAgentAddresses", async () => {
     const orphanDir = agentDir(DEAD_AGENT_ADDR);
     await mkdir(orphanDir, { recursive: true });
-    await writeFile(join(orphanDir, 'marker'), 'x');
+    await writeFile(join(orphanDir, "marker"), "x");
 
     // Hub says only LIVE_AGENT_ADDR is live; DEAD_AGENT_ADDR is absent.
     await run([], undefined, [LIVE_AGENT_ADDR]);
@@ -298,23 +316,23 @@ describe('reconcileOrphanedDeploymentDirs — CL-2264 orphaned agent dirs', () =
     expect(await exists(orphanDir)).toBe(false);
   });
 
-  test('keeps a live agent dir whose address IS in liveAgentAddresses', async () => {
+  test("keeps a live agent dir whose address IS in liveAgentAddresses", async () => {
     const liveDir = agentDir(LIVE_AGENT_ADDR);
     await mkdir(liveDir, { recursive: true });
-    await writeFile(join(liveDir, 'marker'), 'x');
+    await writeFile(join(liveDir, "marker"), "x");
 
     await run([], undefined, [LIVE_AGENT_ADDR]);
 
     expect(await exists(liveDir)).toBe(true);
   });
 
-  test('reaps orphan, keeps live, when both are on disk', async () => {
+  test("reaps orphan, keeps live, when both are on disk", async () => {
     const liveDir = agentDir(LIVE_AGENT_ADDR);
     const deadDir = agentDir(DEAD_AGENT_ADDR);
     await mkdir(liveDir, { recursive: true });
-    await writeFile(join(liveDir, 'marker'), 'x');
+    await writeFile(join(liveDir, "marker"), "x");
     await mkdir(deadDir, { recursive: true });
-    await writeFile(join(deadDir, 'marker'), 'x');
+    await writeFile(join(deadDir, "marker"), "x");
 
     await run([], undefined, [LIVE_AGENT_ADDR]);
 
@@ -322,10 +340,10 @@ describe('reconcileOrphanedDeploymentDirs — CL-2264 orphaned agent dirs', () =
     expect(await exists(deadDir)).toBe(false);
   });
 
-  test('FAIL-SAFE: liveAgentAddresses absent from response → keeps all agent dirs', async () => {
+  test("FAIL-SAFE: liveAgentAddresses absent from response → keeps all agent dirs", async () => {
     const agentDirPath = agentDir(DEAD_AGENT_ADDR);
     await mkdir(agentDirPath, { recursive: true });
-    await writeFile(join(agentDirPath, 'marker'), 'x');
+    await writeFile(join(agentDirPath, "marker"), "x");
 
     // okFetch with no liveAgentAddresses yields [] (empty array), which IS
     // the absent/error case. We test the real fetch-error branch separately:
@@ -336,27 +354,27 @@ describe('reconcileOrphanedDeploymentDirs — CL-2264 orphaned agent dirs', () =
     // no reap. Pass [] explicitly to simulate a hub returning no live agents.
     await reconcileOrphanedDeploymentDirs({
       dataDir,
-      hubHttpUrl: 'http://hub',
-      sidecarToken: 't',
+      hubHttpUrl: "http://hub",
+      sidecarToken: "t",
       logger: silentLogger,
       fetchFn: (async () =>
         new Response(
           // Response omits liveAgentAddresses entirely — simulates an older
           // hub or a partial response. Schema validation will fail → no reap.
           JSON.stringify({ deployments: [], activeRunDeploymentIds: [] }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
+          { status: 200, headers: { "Content-Type": "application/json" } },
         )) as unknown as typeof fetch,
     });
 
     expect(await exists(agentDirPath)).toBe(true);
   });
 
-  test('top-level ins_ dir not matching any live agent address is reaped (CL-2264)', async () => {
+  test("top-level ins_ dir not matching any live agent address is reaped (CL-2264)", async () => {
     // A top-level ins_ dir that doesn't match any live agent address in
     // liveAgentAddresses is treated as an orphaned agent dir and reaped.
-    const stray = join(dataDir, 'ins_unclassifiable_thing');
+    const stray = join(dataDir, "ins_unclassifiable_thing");
     await mkdir(stray, { recursive: true });
-    await writeFile(join(stray, 'marker'), 'x');
+    await writeFile(join(stray, "marker"), "x");
 
     // LIVE_AGENT_ADDR is live but stray's sanitized name doesn't match it.
     await run([], undefined, [LIVE_AGENT_ADDR]);

@@ -1,123 +1,131 @@
-import { useEffect, useMemo, useState } from 'react';
-import { type } from 'arktype';
+import { useEffect, useMemo, useState } from "react";
+import { type } from "arktype";
 import {
   Button,
   HorizontalStepper,
   Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
-} from '@workbench/ui';
-import type { RunState } from '@intx/workflow';
+} from "@workbench/ui";
+import type { RunState } from "@intx/workflow";
 
 // -------------------------------------------------------------------------
 // Step configuration
 // -------------------------------------------------------------------------
 
 const STEP_CONFIG = [
-  { id: 'intake', label: 'Transcript' },
-  { id: 'context', label: 'Context' },
-  { id: 'analyze', label: 'Pain Points' },
-  { id: 'generate', label: 'Generate' },
-  { id: 'review', label: 'Review' },
-  { id: 'persist', label: 'Done' },
+  { id: "intake", label: "Transcript" },
+  { id: "context", label: "Context" },
+  { id: "analyze", label: "Pain Points" },
+  { id: "generate", label: "Generate" },
+  { id: "review", label: "Review" },
+  { id: "persist", label: "Done" },
 ] as const;
 
-type StepPhase = NonNullable<ReturnType<RunState['steps']['get']>>['phase'];
+type StepPhase = NonNullable<ReturnType<RunState["steps"]["get"]>>["phase"];
 
 // -------------------------------------------------------------------------
 // Arktype schemas — parse every untrusted stepOutput
 // -------------------------------------------------------------------------
 
-const ToolResultEnvelope = type({ content: 'string' });
+const ToolResultEnvelope = type({ content: "string" });
 
 const GranolaNote = type({
-  id: 'string',
-  'title?': 'string | null',
-  'created_at?': 'string',
-  'summary?': 'string',
+  id: "string",
+  "title?": "string | null",
+  "created_at?": "string",
+  "summary?": "string",
 });
 type GranolaNote = typeof GranolaNote.infer;
 
 const GranolaListContent = type({ notes: GranolaNote.array() });
 
 const GranolaNoteDetail = type({
-  'id?': 'string',
-  'title?': 'string | null',
-  'summary?': 'string',
-  'transcript?': 'string',
+  "id?": "string",
+  "title?": "string | null",
+  "summary?": "string",
+  "transcript?": "string",
 });
 
 const PainPoint = type({
-  id: 'string',
-  title: 'string',
-  detail: 'string',
-  'severity?': "'low' | 'medium' | 'high' | 'critical'",
+  id: "string",
+  title: "string",
+  detail: "string",
+  "severity?": "'low' | 'medium' | 'high' | 'critical'",
 });
 type PainPoint = typeof PainPoint.infer;
 
 const AnalyzeOutput = type({ painPoints: PainPoint.array() });
 
 const GeneratedPiece = type({
-  format: 'string',
-  title: 'string',
-  content: 'string',
+  format: "string",
+  title: "string",
+  content: "string",
 });
 type GeneratedPiece = typeof GeneratedPiece.infer;
 
-const AgentReplyEnvelope = type({ reply: 'string' });
+const AgentReplyEnvelope = type({ reply: "string" });
 
 const ReviewDecision = type({
-  format: 'string',
-  title: 'string',
-  content: 'string',
-  approved: 'boolean',
+  format: "string",
+  title: "string",
+  content: "string",
+  approved: "boolean",
 });
 
 const ApprovedPiece = type({
-  format: 'string',
-  title: 'string',
-  content: 'string',
+  format: "string",
+  title: "string",
+  content: "string",
 });
 
 const PersistOutput = type({
   decisions: ReviewDecision.array(),
-  'approvedPieces?': ApprovedPiece.array(),
+  "approvedPieces?": ApprovedPiece.array(),
 });
 
-const PpSelectionOutput = type({ selectedIds: 'string[]' });
+const PpSelectionOutput = type({ selectedIds: "string[]" });
 
 // -------------------------------------------------------------------------
 // Output parsing helpers
 // -------------------------------------------------------------------------
 
-type Decoded<T> = { status: 'pending' } | { status: 'malformed' } | { status: 'ok'; value: T };
+type Decoded<T> =
+  | { status: "pending" }
+  | { status: "malformed" }
+  | { status: "ok"; value: T };
 
 function decodeToolEnvelope(
-  raw: unknown
-): { status: 'pending' } | { status: 'malformed' } | { status: 'ok'; value: unknown } {
+  raw: unknown,
+):
+  | { status: "pending" }
+  | { status: "malformed" }
+  | { status: "ok"; value: unknown } {
   const envelope = ToolResultEnvelope(raw);
-  if (envelope instanceof type.errors) return { status: 'pending' };
+  if (envelope instanceof type.errors) return { status: "pending" };
   try {
-    return { status: 'ok', value: JSON.parse(envelope.content) };
+    return { status: "ok", value: JSON.parse(envelope.content) };
   } catch {
-    return { status: 'malformed' };
+    return { status: "malformed" };
   }
 }
 
 function parseNoteList(raw: unknown): Decoded<GranolaNote[]> {
   const decoded = decodeToolEnvelope(raw);
-  if (decoded.status !== 'ok') return decoded;
+  if (decoded.status !== "ok") return decoded;
   const parsed = GranolaListContent(decoded.value);
-  if (parsed instanceof type.errors) return { status: 'malformed' };
-  return { status: 'ok', value: parsed.notes };
+  if (parsed instanceof type.errors) return { status: "malformed" };
+  return { status: "ok", value: parsed.notes };
 }
 
-function parseFetchedNote(raw: unknown): Decoded<typeof GranolaNoteDetail.infer> {
+function parseFetchedNote(
+  raw: unknown,
+): Decoded<typeof GranolaNoteDetail.infer> {
   const decoded = decodeToolEnvelope(raw);
-  if (decoded.status !== 'ok') return decoded;
+  if (decoded.status !== "ok") return decoded;
   const parsed = GranolaNoteDetail(decoded.value);
-  if (parsed instanceof type.errors) return { status: 'malformed' };
-  return { status: 'ok', value: parsed };
+  if (parsed instanceof type.errors) return { status: "malformed" };
+  return { status: "ok", value: parsed };
 }
 
 function stripCodeFence(text: string): string {
@@ -129,7 +137,7 @@ function extractFirstJsonValue(text: string): string | null {
   const start = text.search(/[{[]/);
   if (start === -1) return null;
   const open = text[start]!;
-  const close = open === '{' ? '}' : ']';
+  const close = open === "{" ? "}" : "]";
   let depth = 0;
   let inString = false;
   let escaped = false;
@@ -137,7 +145,7 @@ function extractFirstJsonValue(text: string): string | null {
     const ch = text[i]!;
     if (inString) {
       if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
+      else if (ch === "\\") escaped = true;
       else if (ch === '"') inString = false;
       continue;
     }
@@ -152,54 +160,57 @@ function extractFirstJsonValue(text: string): string | null {
 }
 
 function parseAgentJson(
-  reply: string
-): { status: 'pending' } | { status: 'malformed' } | { status: 'ok'; value: unknown } {
+  reply: string,
+):
+  | { status: "pending" }
+  | { status: "malformed" }
+  | { status: "ok"; value: unknown } {
   const trimmed = reply.trim();
-  if (trimmed === '') return { status: 'pending' };
+  if (trimmed === "") return { status: "pending" };
 
   const unfenced = stripCodeFence(trimmed);
   const jsonText = extractFirstJsonValue(unfenced) ?? unfenced;
 
   try {
-    return { status: 'ok', value: JSON.parse(jsonText) };
+    return { status: "ok", value: JSON.parse(jsonText) };
   } catch {
-    return { status: 'malformed' };
+    return { status: "malformed" };
   }
 }
 
 function parseAnalyze(raw: unknown): Decoded<PainPoint[]> {
   // Agent step: output is { reply: string } — parse JSON from reply
   const envelope = AgentReplyEnvelope(raw);
-  if (envelope instanceof type.errors) return { status: 'pending' };
+  if (envelope instanceof type.errors) return { status: "pending" };
   const decoded = parseAgentJson(envelope.reply);
-  if (decoded.status !== 'ok') return decoded;
+  if (decoded.status !== "ok") return decoded;
   const parsed = AnalyzeOutput(decoded.value);
-  if (parsed instanceof type.errors) return { status: 'malformed' };
-  return { status: 'ok', value: parsed.painPoints };
+  if (parsed instanceof type.errors) return { status: "malformed" };
+  return { status: "ok", value: parsed.painPoints };
 }
 
 function parseGeneratedPieces(raw: unknown): Decoded<GeneratedPiece[]> {
   // map step output is Array<{reply: string, turn: unknown}>, one entry per (pain point × format) item
-  if (!Array.isArray(raw)) return { status: 'pending' };
-  if (raw.length === 0) return { status: 'pending' };
+  if (!Array.isArray(raw)) return { status: "pending" };
+  if (raw.length === 0) return { status: "pending" };
   const pieces: GeneratedPiece[] = [];
   for (const item of raw) {
     const envelope = AgentReplyEnvelope(item);
     if (envelope instanceof type.errors) continue;
     const decoded = parseAgentJson(envelope.reply);
-    if (decoded.status !== 'ok') continue;
+    if (decoded.status !== "ok") continue;
     const parsed = GeneratedPiece(decoded.value);
     if (parsed instanceof type.errors) continue;
     pieces.push(parsed);
   }
-  if (pieces.length === 0) return { status: 'malformed' };
-  return { status: 'ok', value: pieces };
+  if (pieces.length === 0) return { status: "malformed" };
+  return { status: "ok", value: pieces };
 }
 
 function parsePersistOutput(raw: unknown): Decoded<typeof PersistOutput.infer> {
   const parsed = PersistOutput(raw);
-  if (parsed instanceof type.errors) return { status: 'pending' };
-  return { status: 'ok', value: parsed };
+  if (parsed instanceof type.errors) return { status: "pending" };
+  return { status: "ok", value: parsed };
 }
 
 // -------------------------------------------------------------------------
@@ -208,16 +219,16 @@ function parsePersistOutput(raw: unknown): Decoded<typeof PersistOutput.infer> {
 
 // All internal workflow step IDs — used by hasFailed to cover non-display steps
 const ALL_STEP_IDS = [
-  'intake',
-  'select',
-  'fetch',
-  'context',
-  'analyze',
-  'ppSelection',
-  'fmtSelection',
-  'generate',
-  'review',
-  'persist',
+  "intake",
+  "select",
+  "fetch",
+  "context",
+  "analyze",
+  "ppSelection",
+  "fmtSelection",
+  "generate",
+  "review",
+  "persist",
 ] as const;
 
 function phaseFor(state: RunState | null, id: string): StepPhase | undefined {
@@ -226,7 +237,11 @@ function phaseFor(state: RunState | null, id: string): StepPhase | undefined {
 
 function isActive(state: RunState | null, id: string): boolean {
   const phase = phaseFor(state, id);
-  return phase === 'in-flight' || phase === 'awaiting-signal' || phase === 'awaiting-timer';
+  return (
+    phase === "in-flight" ||
+    phase === "awaiting-signal" ||
+    phase === "awaiting-timer"
+  );
 }
 
 /**
@@ -248,24 +263,31 @@ function isActive(state: RunState | null, id: string): boolean {
  * picker screen.
  */
 function activeDisplayIndex(state: RunState | null): number {
-  if (isActive(state, 'intake') || isActive(state, 'select') || isActive(state, 'fetch')) return 0;
-  if (isActive(state, 'context')) return 1;
-  if (isActive(state, 'analyze') || isActive(state, 'ppSelection')) return 2;
-  if (isActive(state, 'fmtSelection')) return 3;
+  if (
+    isActive(state, "intake") ||
+    isActive(state, "select") ||
+    isActive(state, "fetch")
+  )
+    return 0;
+  if (isActive(state, "context")) return 1;
+  if (isActive(state, "analyze") || isActive(state, "ppSelection")) return 2;
+  if (isActive(state, "fmtSelection")) return 3;
   // generate running or review awaiting — show the review/collateral panel
-  if (isActive(state, 'generate') || isActive(state, 'review')) return 4;
-  if (isActive(state, 'persist')) return 5;
+  if (isActive(state, "generate") || isActive(state, "review")) return 4;
+  if (isActive(state, "persist")) return 5;
   // Fall through: derive from first non-completed display step
   const displayGroups = [
-    ['intake', 'select', 'fetch'],
-    ['context'],
-    ['analyze', 'ppSelection'],
-    ['fmtSelection'],
-    ['generate', 'review'],
-    ['persist'],
+    ["intake", "select", "fetch"],
+    ["context"],
+    ["analyze", "ppSelection"],
+    ["fmtSelection"],
+    ["generate", "review"],
+    ["persist"],
   ] as const;
   for (let i = 0; i < displayGroups.length; i += 1) {
-    const anyIncomplete = displayGroups[i]!.some((id) => phaseFor(state, id) !== 'completed');
+    const anyIncomplete = displayGroups[i]!.some(
+      (id) => phaseFor(state, id) !== "completed",
+    );
     if (anyIncomplete) return i;
   }
   return 5;
@@ -274,13 +296,13 @@ function activeDisplayIndex(state: RunState | null): number {
 function buildStepperSteps(state: RunState | null): WorkflowStep[] {
   const activeIdx = activeDisplayIndex(state);
   return STEP_CONFIG.map(({ label }, index) => {
-    let status: WorkflowStep['status'];
+    let status: WorkflowStep["status"];
     if (index < activeIdx) {
-      status = 'completed';
+      status = "completed";
     } else if (index === activeIdx) {
-      status = 'current';
+      status = "current";
     } else {
-      status = 'pending';
+      status = "pending";
     }
     return { number: index + 1, label, status };
   });
@@ -288,9 +310,9 @@ function buildStepperSteps(state: RunState | null): WorkflowStep[] {
 
 function hasFailed(state: RunState | null): boolean {
   if (!state) return false;
-  if (state.phase === 'failed') return true;
+  if (state.phase === "failed") return true;
   for (const id of ALL_STEP_IDS) {
-    if (phaseFor(state, id) === 'failed') return true;
+    if (phaseFor(state, id) === "failed") return true;
   }
   return false;
 }
@@ -299,19 +321,25 @@ function hasFailed(state: RunState | null): boolean {
  * Determine which "display group" is currently active. This drives which
  * SectionCard is rendered in the Panel body.
  */
-type DisplayGroup = 'transcript' | 'context' | 'painPoints' | 'formats' | 'review' | 'done';
+type DisplayGroup =
+  | "transcript"
+  | "context"
+  | "painPoints"
+  | "formats"
+  | "review"
+  | "done";
 
 function activeDisplayGroup(state: RunState | null): DisplayGroup {
   const idx = activeDisplayIndex(state);
   const groups: DisplayGroup[] = [
-    'transcript',
-    'context',
-    'painPoints',
-    'formats',
-    'review',
-    'done',
+    "transcript",
+    "context",
+    "painPoints",
+    "formats",
+    "review",
+    "done",
   ];
-  return groups[idx] ?? 'done';
+  return groups[idx] ?? "done";
 }
 
 // -------------------------------------------------------------------------
@@ -319,9 +347,15 @@ function activeDisplayGroup(state: RunState | null): DisplayGroup {
 // -------------------------------------------------------------------------
 
 const fieldClass =
-  'w-full rounded-[8px] border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange';
+  "w-full rounded-[8px] border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange";
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="rounded-[14px] border border-border bg-surface p-4 shadow-sm">
       <h3 className="mb-3 text-[13px] font-semibold text-text">{title}</h3>
@@ -338,30 +372,32 @@ function ErrorLine({ label }: { label: string }) {
   return <p className="text-[13px] text-orange">{label}</p>;
 }
 
-function severityLabel(severity: PainPoint['severity']): string {
-  if (severity === 'critical') return 'Critical';
-  if (severity === 'high') return 'High';
-  if (severity === 'medium') return 'Medium';
-  return 'Low';
+function severityLabel(severity: PainPoint["severity"]): string {
+  if (severity === "critical") return "Critical";
+  if (severity === "high") return "High";
+  if (severity === "medium") return "Medium";
+  return "Low";
 }
 
-function severityClass(severity: PainPoint['severity']): string {
-  if (severity === 'critical') return 'border-red-500/50 bg-red-500/10 text-red-300';
-  if (severity === 'high') return 'border-orange/50 bg-orange/10 text-orange';
-  if (severity === 'medium') return 'border-yellow-500/50 bg-yellow-500/10 text-yellow-300';
-  return 'border-green/40 bg-green/10 text-green';
+function severityClass(severity: PainPoint["severity"]): string {
+  if (severity === "critical")
+    return "border-red-500/50 bg-red-500/10 text-red-300";
+  if (severity === "high") return "border-orange/50 bg-orange/10 text-orange";
+  if (severity === "medium")
+    return "border-yellow-500/50 bg-yellow-500/10 text-yellow-300";
+  return "border-green/40 bg-green/10 text-green";
 }
 
 function decisionStatus(decision: Decision): string {
-  if (decision.approved === true) return 'Approved';
-  if (decision.approved === false) return 'Denied';
-  return 'Pending';
+  if (decision.approved === true) return "Approved";
+  if (decision.approved === false) return "Denied";
+  return "Pending";
 }
 
 function decisionBadgeClass(approved: boolean | null): string {
-  if (approved === true) return 'bg-green/10 text-green';
-  if (approved === false) return 'bg-orange/10 text-orange';
-  return 'bg-surface-2 text-text-3';
+  if (approved === true) return "bg-green/10 text-green";
+  if (approved === false) return "bg-orange/10 text-orange";
+  return "bg-surface-2 text-text-3";
 }
 
 // -------------------------------------------------------------------------
@@ -382,31 +418,34 @@ function TranscriptStep({
   const [openingNoteId, setOpeningNoteId] = useState<string | null>(null);
   const result = parseNoteList(stepOutputs.intake);
 
-  if (result.status === 'pending') {
-    if (intakePhase === 'completed')
+  if (result.status === "pending") {
+    if (intakePhase === "completed")
       return <ErrorLine label="Couldn't read the Granola note list." />;
     return <Placeholder label="Loading your Granola notes…" />;
   }
-  if (result.status === 'malformed')
+  if (result.status === "malformed")
     return <ErrorLine label="Couldn't read the Granola note list." />;
-  if (result.value.length === 0) return <Placeholder label="No Granola notes were found." />;
+  if (result.value.length === 0)
+    return <Placeholder label="No Granola notes were found." />;
 
   // Server-guided gate: selectable only while the select step awaits its signal.
   // Once the optimistic cache flip reports the step `in-flight`, the buttons stay
   // disabled until the server advances to the next gate — no client submit flag.
-  const selectable = selectPhase === 'awaiting-signal';
-  const selecting = selectPhase === 'in-flight';
-  if (selectPhase === 'completed') {
+  const selectable = selectPhase === "awaiting-signal";
+  const selecting = selectPhase === "in-flight";
+  if (selectPhase === "completed") {
     return <Placeholder label="Note selected. Fetching the transcript…" />;
   }
 
   return (
     <div className="space-y-3">
       <div className="rounded-[10px] border border-orange/20 bg-orange/5 px-3 py-2">
-        <p className="text-[12px] font-medium text-text-2">Pick the customer call to mine</p>
+        <p className="text-[12px] font-medium text-text-2">
+          Pick the customer call to mine
+        </p>
         <p className="mt-0.5 text-[12px] text-text-3">
-          Myra will extract pain points, customer language, and proof points from the selected
-          transcript.
+          Myra will extract pain points, customer language, and proof points
+          from the selected transcript.
         </p>
       </div>
       <ul className="grid gap-2">
@@ -426,7 +465,7 @@ function TranscriptStep({
                 <span className="flex items-start justify-between gap-3">
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-semibold text-text">
-                      {note.title ?? 'Untitled note'}
+                      {note.title ?? "Untitled note"}
                     </span>
                     {note.summary ? (
                       <span className="mt-1 line-clamp-2 block text-[12px] leading-relaxed text-text-3">
@@ -435,7 +474,9 @@ function TranscriptStep({
                     ) : null}
                   </span>
                   <span className="shrink-0 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-text-3 group-enabled:group-hover:border-orange/50 group-enabled:group-hover:text-orange">
-                    {selecting && openingNoteId === note.id ? 'Opening…' : 'Select'}
+                    {selecting && openingNoteId === note.id
+                      ? "Opening…"
+                      : "Select"}
                   </span>
                 </span>
               </button>
@@ -462,28 +503,31 @@ function ContextStep({
   fetchPhase: StepPhase | undefined;
   onSubmit: (context: string) => void;
 }) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
 
-  if (contextPhase === 'completed') {
+  if (contextPhase === "completed") {
     return <Placeholder label="Context saved. Analyzing pain points…" />;
   }
 
-  const awaiting = contextPhase === 'awaiting-signal';
-  const submitting = contextPhase === 'in-flight';
+  const awaiting = contextPhase === "awaiting-signal";
+  const submitting = contextPhase === "in-flight";
   const buttonDisabled = !awaiting;
 
   const fetchResult = parseFetchedNote(stepOutputs.fetch);
   const noteTitle =
-    fetchResult.status === 'ok' ? (fetchResult.value.title ?? undefined) : undefined;
+    fetchResult.status === "ok"
+      ? (fetchResult.value.title ?? undefined)
+      : undefined;
 
   return (
     <div className="space-y-3">
       {noteTitle ? (
         <p className="text-[12px] text-text-3">
-          Transcript: <span className="font-medium text-text-2">{noteTitle}</span>
+          Transcript:{" "}
+          <span className="font-medium text-text-2">{noteTitle}</span>
         </p>
       ) : null}
-      {!noteTitle && fetchPhase === 'in-flight' ? (
+      {!noteTitle && fetchPhase === "in-flight" ? (
         <Placeholder label="Fetching transcript…" />
       ) : null}
 
@@ -510,7 +554,7 @@ function ContextStep({
           onSubmit(value.trim());
         }}
       >
-        {submitting ? 'Continuing…' : 'Continue'}
+        {submitting ? "Continuing…" : "Continue"}
       </Button>
     </div>
   );
@@ -533,22 +577,22 @@ function PainPointStep({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  if (ppSelectionPhase === 'completed') {
+  if (ppSelectionPhase === "completed") {
     return <Placeholder label="Pain points selected. Choose output formats…" />;
   }
 
   const result = parseAnalyze(stepOutputs.analyze);
 
-  if (result.status === 'pending') {
-    if (analyzePhase === 'completed')
+  if (result.status === "pending") {
+    if (analyzePhase === "completed")
       return <ErrorLine label="Couldn't read the extracted pain points." />;
     return <Placeholder label="Analyzing transcript for pain points…" />;
   }
-  if (result.status === 'malformed')
+  if (result.status === "malformed")
     return <ErrorLine label="Couldn't read the extracted pain points." />;
 
-  const awaiting = ppSelectionPhase === 'awaiting-signal';
-  const submitting = ppSelectionPhase === 'in-flight';
+  const awaiting = ppSelectionPhase === "awaiting-signal";
+  const submitting = ppSelectionPhase === "in-flight";
   const disabled = !awaiting;
 
   const MAX_PAIN_POINTS = 3;
@@ -586,16 +630,20 @@ function PainPointStep({
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-[13px] font-medium text-text">{pp.title}</p>
+                    <p className="text-[13px] font-medium text-text">
+                      {pp.title}
+                    </p>
                     <span
                       className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${severityClass(
-                        pp.severity
+                        pp.severity,
                       )}`}
                     >
                       {severityLabel(pp.severity)}
                     </span>
                   </div>
-                  <p className="mt-0.5 text-[12px] leading-relaxed text-text-3">{pp.detail}</p>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-text-3">
+                    {pp.detail}
+                  </p>
                 </div>
               </label>
             </li>
@@ -612,10 +660,10 @@ function PainPointStep({
           onSubmit([...selected]);
         }}
       >
-        {submitting ? 'Selecting…' : 'Select'}{' '}
+        {submitting ? "Selecting…" : "Select"}{" "}
         {selected.size > 0
-          ? `${selected.size} pain point${selected.size === 1 ? '' : 's'}`
-          : 'pain points'}
+          ? `${selected.size} pain point${selected.size === 1 ? "" : "s"}`
+          : "pain points"}
       </Button>
     </div>
   );
@@ -625,59 +673,64 @@ function PainPointStep({
 // Step 4 — Format selection
 // -------------------------------------------------------------------------
 
-const COLLATERAL_FORMATS: { id: string; label: string; description: string }[] = [
-  {
-    id: 'email',
-    label: 'Email follow-up',
-    description: 'Draft a personal follow-up email to send after the call',
-  },
-  {
-    id: 'one-pager',
-    label: 'One-pager',
-    description: 'A sales leave-behind that stands on its own',
-  },
-  {
-    id: 'linkedin-post',
-    label: 'LinkedIn post',
-    description: 'First-person field observation for a professional audience',
-  },
-  {
-    id: 'linkedin-daily',
-    label: 'Daily LinkedIn post',
-    description: 'A practitioner-voice post with a concrete lesson',
-  },
-  {
-    id: 'twitter-post',
-    label: 'Twitter post',
-    description: 'Short first-person take built around one sharp insight',
-  },
-  {
-    id: 'founder-pov-post',
-    label: 'Founder POV post',
-    description: 'A founder perspective on the problem category',
-  },
-  { id: 'blog', label: 'Blog post', description: 'Narrative arc with hook, story, and lessons' },
-  {
-    id: 'case-study',
-    label: 'Case study',
-    description: 'Challenge, solution, and measurable results',
-  },
-  {
-    id: 'objection-handling',
-    label: 'Objection handling',
-    description: 'Tactical rebuttal guide for common buyer objections',
-  },
-  {
-    id: 'customer-quotes',
-    label: 'Customer quotes',
-    description: 'Curated verbatim quotes with context and theme',
-  },
-  {
-    id: 'battlecard',
-    label: 'Battlecard',
-    description: 'Competitive positioning reference for sellers',
-  },
-];
+const COLLATERAL_FORMATS: { id: string; label: string; description: string }[] =
+  [
+    {
+      id: "email",
+      label: "Email follow-up",
+      description: "Draft a personal follow-up email to send after the call",
+    },
+    {
+      id: "one-pager",
+      label: "One-pager",
+      description: "A sales leave-behind that stands on its own",
+    },
+    {
+      id: "linkedin-post",
+      label: "LinkedIn post",
+      description: "First-person field observation for a professional audience",
+    },
+    {
+      id: "linkedin-daily",
+      label: "Daily LinkedIn post",
+      description: "A practitioner-voice post with a concrete lesson",
+    },
+    {
+      id: "twitter-post",
+      label: "Twitter post",
+      description: "Short first-person take built around one sharp insight",
+    },
+    {
+      id: "founder-pov-post",
+      label: "Founder POV post",
+      description: "A founder perspective on the problem category",
+    },
+    {
+      id: "blog",
+      label: "Blog post",
+      description: "Narrative arc with hook, story, and lessons",
+    },
+    {
+      id: "case-study",
+      label: "Case study",
+      description: "Challenge, solution, and measurable results",
+    },
+    {
+      id: "objection-handling",
+      label: "Objection handling",
+      description: "Tactical rebuttal guide for common buyer objections",
+    },
+    {
+      id: "customer-quotes",
+      label: "Customer quotes",
+      description: "Curated verbatim quotes with context and theme",
+    },
+    {
+      id: "battlecard",
+      label: "Battlecard",
+      description: "Competitive positioning reference for sellers",
+    },
+  ];
 
 const MAX_FORMATS = 3;
 
@@ -690,12 +743,12 @@ function FormatStep({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  if (fmtSelectionPhase === 'completed') {
+  if (fmtSelectionPhase === "completed") {
     return <Placeholder label="Formats selected. Generating collateral…" />;
   }
 
-  const awaiting = fmtSelectionPhase === 'awaiting-signal';
-  const submitting = fmtSelectionPhase === 'in-flight';
+  const awaiting = fmtSelectionPhase === "awaiting-signal";
+  const submitting = fmtSelectionPhase === "in-flight";
   const disabled = !awaiting;
 
   function toggle(id: string) {
@@ -712,7 +765,9 @@ function FormatStep({
 
   return (
     <div className="space-y-3">
-      <p className="text-[12px] text-text-3">Choose up to {MAX_FORMATS} collateral formats.</p>
+      <p className="text-[12px] text-text-3">
+        Choose up to {MAX_FORMATS} collateral formats.
+      </p>
       <ul className="space-y-2">
         {COLLATERAL_FORMATS.map(({ id, label, description }) => {
           const checked = selected.has(id);
@@ -728,7 +783,9 @@ function FormatStep({
                   className="mt-0.5 h-4 w-4 accent-orange disabled:cursor-not-allowed"
                 />
                 <div>
-                  <p className="text-[13px] font-medium text-text">{description}</p>
+                  <p className="text-[13px] font-medium text-text">
+                    {description}
+                  </p>
                   <p className="text-[12px] text-text-3">{label}</p>
                 </div>
               </label>
@@ -746,10 +803,10 @@ function FormatStep({
           onSubmit([...selected]);
         }}
       >
-        {submitting ? 'Generating…' : 'Generate'}{' '}
+        {submitting ? "Generating…" : "Generate"}{" "}
         {selected.size > 0
-          ? `${selected.size} format${selected.size === 1 ? '' : 's'}`
-          : 'collateral'}
+          ? `${selected.size} format${selected.size === 1 ? "" : "s"}`
+          : "collateral"}
       </Button>
     </div>
   );
@@ -772,32 +829,37 @@ function ReviewStep({
   reviewPhase: StepPhase | undefined;
   onSubmit: (decisions: Decision[]) => void;
 }) {
-  const result = useMemo(() => parseGeneratedPieces(stepOutputs.generate), [stepOutputs.generate]);
+  const result = useMemo(
+    () => parseGeneratedPieces(stepOutputs.generate),
+    [stepOutputs.generate],
+  );
   const [decisions, setDecisions] = useState<Decision[]>(() =>
-    result.status === 'ok' ? result.value.map((piece) => ({ piece, approved: null })) : []
+    result.status === "ok"
+      ? result.value.map((piece) => ({ piece, approved: null }))
+      : [],
   );
 
-  const pieces = result.status === 'ok' ? result.value : [];
+  const pieces = result.status === "ok" ? result.value : [];
   const synced =
     decisions.length === pieces.length &&
     decisions.every((d, i) => d.piece.format === pieces[i]?.format);
 
   useEffect(() => {
-    if (result.status === 'ok' && !synced) {
+    if (result.status === "ok" && !synced) {
       setDecisions(pieces.map((piece) => ({ piece, approved: null })));
     }
   }, [pieces, result.status, synced]);
 
-  if (reviewPhase === 'completed') {
+  if (reviewPhase === "completed") {
     return <Placeholder label="Review complete. Saving…" />;
   }
 
-  if (result.status === 'pending') {
-    if (generatePhase === 'completed')
+  if (result.status === "pending") {
+    if (generatePhase === "completed")
       return <ErrorLine label="Couldn't read the generated collateral." />;
     return <Placeholder label="Generating collateral…" />;
   }
-  if (result.status === 'malformed')
+  if (result.status === "malformed")
     return <ErrorLine label="Couldn't read the generated collateral." />;
 
   const activeDec: Decision[] = synced
@@ -809,16 +871,17 @@ function ReviewStep({
   // submit posts the review signal; it is server-guided — enabled iff the gate is
   // awaiting-signal, disabled the instant the optimistic cache flip reports
   // `in-flight`, and stays disabled until the server advances.
-  const submitting = reviewPhase === 'in-flight';
-  const decideDisabled = reviewPhase !== 'awaiting-signal';
-  const submitDisabled = reviewPhase !== 'awaiting-signal';
+  const submitting = reviewPhase === "in-flight";
+  const decideDisabled = reviewPhase !== "awaiting-signal";
+  const submitDisabled = reviewPhase !== "awaiting-signal";
   const activeIndex = activeDec.findIndex((d) => d.approved === null);
   const activeDecision = activeIndex >= 0 ? activeDec[activeIndex] : null;
   const approvedCount = activeDec.filter((d) => d.approved === true).length;
   const deniedCount = activeDec.filter((d) => d.approved === false).length;
   // The card immediately before the active one (or the last card when every
   // piece is decided). Back re-opens it by clearing its decision.
-  const lastDecidedIndex = activeIndex > 0 ? activeIndex - 1 : activeDec.length - 1;
+  const lastDecidedIndex =
+    activeIndex > 0 ? activeIndex - 1 : activeDec.length - 1;
   const canGoBack = activeDec.some((d) => d.approved !== null);
 
   function decide(index: number, approved: boolean) {
@@ -826,7 +889,10 @@ function ReviewStep({
     setDecisions((prev) => {
       const base = synced
         ? [...prev]
-        : pieces.map((p, i) => ({ piece: p, approved: prev[i]?.approved ?? null }));
+        : pieces.map((p, i) => ({
+            piece: p,
+            approved: prev[i]?.approved ?? null,
+          }));
       return base.map((d, i) => (i === index ? { ...d, approved } : d));
     });
   }
@@ -836,8 +902,13 @@ function ReviewStep({
     setDecisions((prev) => {
       const base = synced
         ? [...prev]
-        : pieces.map((p, i) => ({ piece: p, approved: prev[i]?.approved ?? null }));
-      return base.map((d, i) => (i === lastDecidedIndex ? { ...d, approved: null } : d));
+        : pieces.map((p, i) => ({
+            piece: p,
+            approved: prev[i]?.approved ?? null,
+          }));
+      return base.map((d, i) =>
+        i === lastDecidedIndex ? { ...d, approved: null } : d,
+      );
     });
   }
 
@@ -864,8 +935,8 @@ function ReviewStep({
                 key={dec.piece.format}
                 className={`flex items-center justify-between gap-3 rounded-[7px] border px-3 py-2 text-[12px] ${
                   current
-                    ? 'border-orange bg-orange/5 text-text'
-                    : 'border-border bg-surface text-text-2'
+                    ? "border-orange bg-orange/5 text-text"
+                    : "border-border bg-surface text-text-2"
                 }`}
               >
                 <span className="truncate">
@@ -873,7 +944,7 @@ function ReviewStep({
                 </span>
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${decisionBadgeClass(
-                    dec.approved
+                    dec.approved,
                   )}`}
                 >
                   {status}
@@ -931,19 +1002,24 @@ function ReviewStep({
       ) : (
         <div className="space-y-4 rounded-[14px] border border-border bg-surface p-5">
           <div>
-            <h3 className="text-[15px] font-semibold text-text">Review complete</h3>
+            <h3 className="text-[15px] font-semibold text-text">
+              Review complete
+            </h3>
             <p className="mt-1 text-[12px] text-text-3">
-              {approvedCount} approved · {deniedCount} denied before saving collateral.
+              {approvedCount} approved · {deniedCount} denied before saving
+              collateral.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="primary"
               size="sm"
-              disabled={submitDisabled || activeDec.some((d) => d.approved === null)}
+              disabled={
+                submitDisabled || activeDec.some((d) => d.approved === null)
+              }
               onClick={submitReview}
             >
-              {submitting ? 'Saving…' : 'Save Collateral to Artifacts'}
+              {submitting ? "Saving…" : "Save Collateral to Artifacts"}
             </Button>
             {canGoBack ? (
               <button
@@ -977,18 +1053,20 @@ function DoneStep({
   runCompleted: boolean;
   onClose: () => void;
 }) {
-  if (persistPhase !== 'completed' && !runCompleted) {
+  if (persistPhase !== "completed" && !runCompleted) {
     return <Placeholder label="Finishing up…" />;
   }
 
   const result = parsePersistOutput(stepOutputs.review);
-  const decisions = result.status === 'ok' ? result.value.decisions : [];
+  const decisions = result.status === "ok" ? result.value.decisions : [];
   const approved = decisions.filter((decision) => decision.approved);
 
   return (
     <div className="space-y-4">
       <p className="text-[13px] font-medium text-text">
-        {approved.length > 0 ? 'Approved artifacts created successfully.' : 'Run complete.'}
+        {approved.length > 0
+          ? "Approved artifacts created successfully."
+          : "Run complete."}
       </p>
       {decisions.length > 0 && (
         <ul className="space-y-1.5">
@@ -1005,7 +1083,7 @@ function DoneStep({
               </span>
               <span
                 className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${decisionBadgeClass(
-                  d.approved
+                  d.approved,
                 )}`}
               >
                 {decisionStatus({ piece: d, approved: d.approved })}
@@ -1041,8 +1119,12 @@ export function Panel(props: WorkflowPanelProps) {
       {/* Header */}
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
         <div className="min-w-0">
-          <p className="truncate text-[14px] font-semibold text-text">Collateral Generation</p>
-          <p className="mt-px text-[11px] text-text-3">{connected ? 'Live' : 'Reconnecting…'}</p>
+          <p className="truncate text-[14px] font-semibold text-text">
+            Collateral Generation
+          </p>
+          <p className="mt-px text-[11px] text-text-3">
+            {connected ? "Live" : "Reconnecting…"}
+          </p>
         </div>
         <button
           type="button"
@@ -1068,7 +1150,9 @@ export function Panel(props: WorkflowPanelProps) {
       <div className="flex-1 space-y-4 overflow-y-auto p-5">
         {failed && (
           <div className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3">
-            <p className="text-[13px] font-medium text-orange">This run failed.</p>
+            <p className="text-[13px] font-medium text-orange">
+              This run failed.
+            </p>
             <p className="mt-1 text-[12px] text-text-3">
               Review the step details and start a new run.
             </p>
@@ -1076,51 +1160,55 @@ export function Panel(props: WorkflowPanelProps) {
         )}
 
         {/* Group 0 — Transcript: intake → select (note-selection signal) → fetch */}
-        {group === 'transcript' && (
+        {group === "transcript" && (
           <SectionCard title="Select a Granola transcript">
             <TranscriptStep
               stepOutputs={stepOutputs}
-              intakePhase={phaseFor(state, 'intake')}
-              selectPhase={phaseFor(state, 'select')}
-              onSelect={(noteId) => onSignal('note-selection', { noteId })}
+              intakePhase={phaseFor(state, "intake")}
+              selectPhase={phaseFor(state, "select")}
+              onSelect={(noteId) => onSignal("note-selection", { noteId })}
             />
           </SectionCard>
         )}
 
         {/* Group 1 — Context: context signal */}
-        {group === 'context' && (
+        {group === "context" && (
           <SectionCard title="Add context">
             <ContextStep
               stepOutputs={stepOutputs}
-              contextPhase={phaseFor(state, 'context')}
-              fetchPhase={phaseFor(state, 'fetch')}
-              onSubmit={(context) => onSignal('context', { context })}
+              contextPhase={phaseFor(state, "context")}
+              fetchPhase={phaseFor(state, "fetch")}
+              onSubmit={(context) => onSignal("context", { context })}
             />
           </SectionCard>
         )}
 
         {/* Group 2 — Pain Points: analyze → ppSelection signal */}
-        {group === 'painPoints' && (
+        {group === "painPoints" && (
           <SectionCard title="Select pain points">
             <PainPointStep
               stepOutputs={stepOutputs}
-              analyzePhase={phaseFor(state, 'analyze')}
-              ppSelectionPhase={phaseFor(state, 'ppSelection')}
-              onSubmit={(selectedIds) => onSignal('pain-point-selection', { selectedIds })}
+              analyzePhase={phaseFor(state, "analyze")}
+              ppSelectionPhase={phaseFor(state, "ppSelection")}
+              onSubmit={(selectedIds) =>
+                onSignal("pain-point-selection", { selectedIds })
+              }
             />
           </SectionCard>
         )}
 
         {/* Group 3 — Generate: fmtSelection signal → generate map */}
-        {group === 'formats' && (
+        {group === "formats" && (
           <SectionCard title="Choose formats">
             <FormatStep
-              fmtSelectionPhase={phaseFor(state, 'fmtSelection')}
+              fmtSelectionPhase={phaseFor(state, "fmtSelection")}
               onSubmit={(formats) => {
                 const ppOut = PpSelectionOutput(stepOutputs.ppSelection);
                 const analyzeOut = parseAnalyze(stepOutputs.analyze);
-                const selectedIds = ppOut instanceof type.errors ? [] : ppOut.selectedIds;
-                const painPoints = analyzeOut.status === 'ok' ? analyzeOut.value : [];
+                const selectedIds =
+                  ppOut instanceof type.errors ? [] : ppOut.selectedIds;
+                const painPoints =
+                  analyzeOut.status === "ok" ? analyzeOut.value : [];
                 const selectedPPs = painPoints
                   .filter((pp) => selectedIds.includes(pp.id))
                   .slice(0, MAX_FORMATS);
@@ -1130,34 +1218,40 @@ export function Panel(props: WorkflowPanelProps) {
                     painPointId: pp.id,
                     painPointTitle: pp.title,
                     painPointDetail: pp.detail,
-                    severity: pp.severity ?? 'medium',
-                  }))
+                    severity: pp.severity ?? "medium",
+                  })),
                 );
-                onSignal('format-selection', { items });
+                onSignal("format-selection", { items });
               }}
             />
           </SectionCard>
         )}
 
         {/* Group 4 — Review: review signal (show generated pieces above) */}
-        {group === 'review' && (
+        {group === "review" && (
           <SectionCard title="Review collateral">
             <ReviewStep
               stepOutputs={stepOutputs}
-              generatePhase={phaseFor(state, 'generate')}
-              reviewPhase={phaseFor(state, 'review')}
+              generatePhase={phaseFor(state, "generate")}
+              reviewPhase={phaseFor(state, "review")}
               onSubmit={(decisions) => {
-                const payloadDecisions = decisions.map(({ piece, approved }) => ({
-                  format: piece.format,
-                  title: piece.title,
-                  content: piece.content,
-                  approved: approved === true,
-                }));
-                onSignal('review', {
+                const payloadDecisions = decisions.map(
+                  ({ piece, approved }) => ({
+                    format: piece.format,
+                    title: piece.title,
+                    content: piece.content,
+                    approved: approved === true,
+                  }),
+                );
+                onSignal("review", {
                   decisions: payloadDecisions,
                   approvedPieces: payloadDecisions
                     .filter((decision) => decision.approved)
-                    .map(({ format, title, content }) => ({ format, title, content })),
+                    .map(({ format, title, content }) => ({
+                      format,
+                      title,
+                      content,
+                    })),
                 });
               }}
             />
@@ -1165,12 +1259,12 @@ export function Panel(props: WorkflowPanelProps) {
         )}
 
         {/* Group 5 — Done: persist map has run */}
-        {group === 'done' && (
+        {group === "done" && (
           <SectionCard title="Done">
             <DoneStep
               stepOutputs={stepOutputs}
-              persistPhase={phaseFor(state, 'persist')}
-              runCompleted={state?.phase === 'completed'}
+              persistPhase={phaseFor(state, "persist")}
+              runCompleted={state?.phase === "completed"}
               onClose={onClose}
             />
           </SectionCard>

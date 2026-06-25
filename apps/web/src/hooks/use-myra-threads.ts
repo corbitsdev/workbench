@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createMyraThread,
   deleteMyraThread,
@@ -6,15 +6,15 @@ import {
   listMyraThreads,
   renameMyraThread,
   type MyraThread,
-} from '../lib/hub-api';
+} from "../lib/hub-api";
 
 /** Matches the hub's default labels ('Chat', 'Chat 2', …) — i.e. not user-set. */
 export function isDefaultThreadLabel(label: string): boolean {
   return /^Chat( \d+)?$/.test(label.trim());
 }
 
-const MYRA_THREADS_KEY = ['myra-threads'] as const;
-const LAST_ACTIVE_THREAD_KEY = 'myra-last-active-thread';
+const MYRA_THREADS_KEY = ["myra-threads"] as const;
+const LAST_ACTIVE_THREAD_KEY = "myra-last-active-thread";
 
 export function readLastActiveThreadId(): string | null {
   try {
@@ -39,7 +39,7 @@ export function writeLastActiveThreadId(threadId: string): void {
  */
 export function resolveActiveThread(
   threads: MyraThread[],
-  explicitId?: string | null
+  explicitId?: string | null,
 ): MyraThread | null {
   if (threads.length === 0) return null;
   if (explicitId) {
@@ -75,7 +75,8 @@ export function useCreateMyraThread() {
 export function useRenameMyraThread() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, label }: { id: string; label: string }) => renameMyraThread(id, label),
+    mutationFn: ({ id, label }: { id: string; label: string }) =>
+      renameMyraThread(id, label),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: MYRA_THREADS_KEY });
     },
@@ -98,7 +99,8 @@ export function useGenerateMyraThreadTitle() {
     mutationFn: ({ id, firstMessage }: { id: string; firstMessage: string }) =>
       generateMyraThreadTitle(id, firstMessage),
     onSuccess: (thread) => {
-      if (thread) void queryClient.invalidateQueries({ queryKey: MYRA_THREADS_KEY });
+      if (thread)
+        void queryClient.invalidateQueries({ queryKey: MYRA_THREADS_KEY });
     },
   });
 }

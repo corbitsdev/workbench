@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 import {
   createCoalescingScheduler,
   foldRunEvents,
@@ -6,109 +6,132 @@ import {
   logNewWorkflowRunFailureIfNeeded,
   type ProjectedRun,
   type RunEventEntry,
-} from './projection-bridge';
+} from "./projection-bridge";
 
-function entry(runId: string, type: string, rest: Record<string, unknown> = {}): RunEventEntry {
+function entry(
+  runId: string,
+  type: string,
+  rest: Record<string, unknown> = {},
+): RunEventEntry {
   return { runId, event: { type, seq: 0, ...rest } };
 }
 
-describe('foldRunEvents', () => {
-  test('parks at a gate: collects completed output refs and the awaiting step', () => {
+describe("foldRunEvents", () => {
+  test("parks at a gate: collects completed output refs and the awaiting step", () => {
     const runs = foldRunEvents([
-      entry('r1', 'RunStarted'),
-      entry('r1', 'StepStarted', { stepId: 'intake' }),
-      entry('r1', 'StepCompleted', { stepId: 'intake', output: { ref: 'blob:1' } }),
-      entry('r1', 'SignalAwaited', { stepId: 'select', signalName: 'note-selection' }),
+      entry("r1", "RunStarted"),
+      entry("r1", "StepStarted", { stepId: "intake" }),
+      entry("r1", "StepCompleted", {
+        stepId: "intake",
+        output: { ref: "blob:1" },
+      }),
+      entry("r1", "SignalAwaited", {
+        stepId: "select",
+        signalName: "note-selection",
+      }),
     ]);
-    const r1 = runs.get('r1');
-    expect(r1?.status).toBe('awaiting');
-    expect(r1?.currentStepId).toBe('select');
-    expect(r1?.completedRefs).toEqual([{ stepId: 'intake', ref: 'blob:1' }]);
+    const r1 = runs.get("r1");
+    expect(r1?.status).toBe("awaiting");
+    expect(r1?.currentStepId).toBe("select");
+    expect(r1?.completedRefs).toEqual([{ stepId: "intake", ref: "blob:1" }]);
   });
 
-  test('SignalReceived clears the gate back to running', () => {
+  test("SignalReceived clears the gate back to running", () => {
     const runs = foldRunEvents([
-      entry('r1', 'SignalAwaited', { stepId: 'select', signalName: 's' }),
-      entry('r1', 'SignalReceived', { signalName: 's', signalId: 'x', payload: {} }),
+      entry("r1", "SignalAwaited", { stepId: "select", signalName: "s" }),
+      entry("r1", "SignalReceived", {
+        signalName: "s",
+        signalId: "x",
+        payload: {},
+      }),
     ]);
-    expect(runs.get('r1')?.status).toBe('running');
+    expect(runs.get("r1")?.status).toBe("running");
   });
 
-  test('RunCompleted is terminal and clears the active step', () => {
+  test("RunCompleted is terminal and clears the active step", () => {
     const runs = foldRunEvents([
-      entry('r1', 'StepStarted', { stepId: 'persist' }),
-      entry('r1', 'StepCompleted', { stepId: 'persist', output: { ref: 'blob:9' } }),
-      entry('r1', 'RunCompleted'),
+      entry("r1", "StepStarted", { stepId: "persist" }),
+      entry("r1", "StepCompleted", {
+        stepId: "persist",
+        output: { ref: "blob:9" },
+      }),
+      entry("r1", "RunCompleted"),
     ]);
-    const r1 = runs.get('r1');
-    expect(r1?.status).toBe('completed');
+    const r1 = runs.get("r1");
+    expect(r1?.status).toBe("completed");
     expect(r1?.currentStepId).toBeNull();
     expect(r1?.completedRefs).toHaveLength(1);
   });
 
-  test('RunFailed surfaces the error message and fails the run', () => {
+  test("RunFailed surfaces the error message and fails the run", () => {
     const runs = foldRunEvents([
-      entry('r1', 'StepStarted', { stepId: 'analyze' }),
-      entry('r1', 'RunFailed', { error: { message: 'boom' } }),
+      entry("r1", "StepStarted", { stepId: "analyze" }),
+      entry("r1", "RunFailed", { error: { message: "boom" } }),
     ]);
-    const r1 = runs.get('r1');
-    expect(r1?.status).toBe('failed');
-    expect(r1?.error).toBe('boom');
+    const r1 = runs.get("r1");
+    expect(r1?.status).toBe("failed");
+    expect(r1?.error).toBe("boom");
     expect(r1?.currentStepId).toBeNull();
   });
 
-  test('StepFailed fails the run with the step error', () => {
+  test("StepFailed fails the run with the step error", () => {
     const runs = foldRunEvents([
-      entry('r1', 'StepFailed', { stepId: 'analyze', error: { message: 'tool 500' } }),
+      entry("r1", "StepFailed", {
+        stepId: "analyze",
+        error: { message: "tool 500" },
+      }),
     ]);
-    expect(runs.get('r1')?.status).toBe('failed');
-    expect(runs.get('r1')?.error).toBe('tool 500');
+    expect(runs.get("r1")?.status).toBe("failed");
+    expect(runs.get("r1")?.error).toBe("tool 500");
   });
 
-  test('RunCancelled is reported as failed/cancelled', () => {
-    const runs = foldRunEvents([entry('r1', 'RunStarted'), entry('r1', 'RunCancelled')]);
-    expect(runs.get('r1')?.status).toBe('failed');
-    expect(runs.get('r1')?.error).toBe('cancelled');
-  });
-
-  test('interleaved runs on one repo project independently', () => {
+  test("RunCancelled is reported as failed/cancelled", () => {
     const runs = foldRunEvents([
-      entry('r1', 'RunStarted'),
-      entry('r2', 'RunStarted'),
-      entry('r1', 'StepStarted', { stepId: 'a' }),
-      entry('r2', 'RunCompleted'),
-      entry('r1', 'SignalAwaited', { stepId: 'gate', signalName: 's' }),
+      entry("r1", "RunStarted"),
+      entry("r1", "RunCancelled"),
     ]);
-    expect(runs.get('r1')?.status).toBe('awaiting');
-    expect(runs.get('r1')?.currentStepId).toBe('gate');
-    expect(runs.get('r2')?.status).toBe('completed');
+    expect(runs.get("r1")?.status).toBe("failed");
+    expect(runs.get("r1")?.error).toBe("cancelled");
   });
 
-  test('a StepCompleted missing its output ref is skipped, not crashed', () => {
+  test("interleaved runs on one repo project independently", () => {
     const runs = foldRunEvents([
-      entry('r1', 'StepStarted', { stepId: 'a' }),
+      entry("r1", "RunStarted"),
+      entry("r2", "RunStarted"),
+      entry("r1", "StepStarted", { stepId: "a" }),
+      entry("r2", "RunCompleted"),
+      entry("r1", "SignalAwaited", { stepId: "gate", signalName: "s" }),
+    ]);
+    expect(runs.get("r1")?.status).toBe("awaiting");
+    expect(runs.get("r1")?.currentStepId).toBe("gate");
+    expect(runs.get("r2")?.status).toBe("completed");
+  });
+
+  test("a StepCompleted missing its output ref is skipped, not crashed", () => {
+    const runs = foldRunEvents([
+      entry("r1", "StepStarted", { stepId: "a" }),
       // malformed: no output.ref
-      entry('r1', 'StepCompleted', { stepId: 'a' }),
-      entry('r1', 'RunCompleted'),
+      entry("r1", "StepCompleted", { stepId: "a" }),
+      entry("r1", "RunCompleted"),
     ]);
-    expect(runs.get('r1')?.completedRefs).toEqual([]);
-    expect(runs.get('r1')?.status).toBe('completed');
+    expect(runs.get("r1")?.completedRefs).toEqual([]);
+    expect(runs.get("r1")?.status).toBe("completed");
   });
 });
 
-describe('isNewWorkflowRunFailure', () => {
-  test('true when status newly becomes failed', () => {
-    expect(isNewWorkflowRunFailure('running', 'failed')).toBe(true);
-    expect(isNewWorkflowRunFailure('awaiting', 'failed')).toBe(true);
+describe("isNewWorkflowRunFailure", () => {
+  test("true when status newly becomes failed", () => {
+    expect(isNewWorkflowRunFailure("running", "failed")).toBe(true);
+    expect(isNewWorkflowRunFailure("awaiting", "failed")).toBe(true);
   });
 
-  test('false when already failed or not a failure transition', () => {
-    expect(isNewWorkflowRunFailure('failed', 'failed')).toBe(false);
-    expect(isNewWorkflowRunFailure('running', 'completed')).toBe(false);
+  test("false when already failed or not a failure transition", () => {
+    expect(isNewWorkflowRunFailure("failed", "failed")).toBe(false);
+    expect(isNewWorkflowRunFailure("running", "completed")).toBe(false);
   });
 });
 
-describe('createCoalescingScheduler', () => {
+describe("createCoalescingScheduler", () => {
   function deferred(): { promise: Promise<void>; resolve: () => void } {
     let resolve!: () => void;
     const promise = new Promise<void>((r) => {
@@ -117,7 +140,7 @@ describe('createCoalescingScheduler', () => {
     return { promise, resolve };
   }
 
-  test('coalesces re-arrivals during a run into exactly one re-run', async () => {
+  test("coalesces re-arrivals during a run into exactly one re-run", async () => {
     const runOrder: number[] = [];
     let n = 0;
     const started = [deferred(), deferred()];
@@ -129,9 +152,9 @@ describe('createCoalescingScheduler', () => {
       await gates[i]?.promise;
     });
 
-    scheduler.schedule('k'); // run 0 starts, holds on gate 0
-    scheduler.schedule('k'); // marks dirty
-    scheduler.schedule('k'); // still dirty (coalesced, not a third run)
+    scheduler.schedule("k"); // run 0 starts, holds on gate 0
+    scheduler.schedule("k"); // marks dirty
+    scheduler.schedule("k"); // still dirty (coalesced, not a third run)
     await started[0]?.promise;
     expect(runOrder).toEqual([0]);
 
@@ -144,69 +167,69 @@ describe('createCoalescingScheduler', () => {
     expect(runOrder).toEqual([0, 1]); // no third run — the two dirty marks coalesced
   });
 
-  test('distinct keys run concurrently and idle() awaits all', async () => {
+  test("distinct keys run concurrently and idle() awaits all", async () => {
     const seen: string[] = [];
     const scheduler = createCoalescingScheduler(async (key) => {
       seen.push(key);
     });
-    scheduler.schedule('a');
-    scheduler.schedule('b');
+    scheduler.schedule("a");
+    scheduler.schedule("b");
     await scheduler.idle();
-    expect(seen.sort()).toEqual(['a', 'b']);
+    expect(seen.sort()).toEqual(["a", "b"]);
   });
 
-  test('a throwing task does not wedge the key for future schedules', async () => {
+  test("a throwing task does not wedge the key for future schedules", async () => {
     let calls = 0;
     const scheduler = createCoalescingScheduler(async () => {
       calls++;
-      if (calls === 1) throw new Error('first fails');
+      if (calls === 1) throw new Error("first fails");
     });
-    scheduler.schedule('k');
+    scheduler.schedule("k");
     await scheduler.idle();
-    scheduler.schedule('k');
+    scheduler.schedule("k");
     await scheduler.idle();
     expect(calls).toBe(2);
   });
 });
 
-describe('logNewWorkflowRunFailureIfNeeded', () => {
-  function failedProjected(error = 'something broke'): ProjectedRun {
-    return { status: 'failed', currentStepId: null, completedRefs: [], error };
+describe("logNewWorkflowRunFailureIfNeeded", () => {
+  function failedProjected(error = "something broke"): ProjectedRun {
+    return { status: "failed", currentStepId: null, completedRefs: [], error };
   }
 
-  test('does not throw when version and sha are provided', () => {
+  test("does not throw when version and sha are provided", () => {
     expect(() =>
-      logNewWorkflowRunFailureIfNeeded('running', failedProjected(), {
-        runId: 'wfr_1',
-        kind: 'pain-point-collateral',
-        deploymentId: 'ses_dep1',
-        version: '1.2.3',
-        sha: 'abc1234',
-      })
+      logNewWorkflowRunFailureIfNeeded("running", failedProjected(), {
+        runId: "wfr_1",
+        kind: "pain-point-collateral",
+        deploymentId: "ses_dep1",
+        version: "1.2.3",
+        sha: "abc1234",
+      }),
     ).not.toThrow();
   });
 
-  test('does not throw when version and sha are absent (old deploy path)', () => {
+  test("does not throw when version and sha are absent (old deploy path)", () => {
     expect(() =>
-      logNewWorkflowRunFailureIfNeeded('running', failedProjected(), {
-        runId: 'wfr_2',
-        kind: 'pain-point-collateral',
+      logNewWorkflowRunFailureIfNeeded("running", failedProjected(), {
+        runId: "wfr_2",
+        kind: "pain-point-collateral",
         deploymentId: null,
-      })
+      }),
     ).not.toThrow();
   });
 
-  test('does not log when the run was already failed (no transition)', () => {
+  test("does not log when the run was already failed (no transition)", () => {
     // If previousStatus is already 'failed', isNewWorkflowRunFailure returns false
     // and the function is a no-op — no throw, no side effect.
     expect(() =>
-      logNewWorkflowRunFailureIfNeeded('failed', failedProjected(), {
-        runId: 'wfr_3',
-        kind: 'ab-compare',
-        deploymentId: 'ses_dep2',
-        version: '0.1.0',
-        sha: 'def5678',
-      })
+      logNewWorkflowRunFailureIfNeeded("failed", failedProjected(), {
+        runId: "wfr_3",
+        kind: "ab-compare",
+        deploymentId: "ses_dep2",
+        version: "0.1.0",
+        sha: "def5678",
+      }),
     ).not.toThrow();
   });
 });

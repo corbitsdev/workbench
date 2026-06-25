@@ -1,20 +1,27 @@
 /// <reference types="bun" />
-import '../../test-setup';
-import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, render, screen } from '@testing-library/react';
-import React from 'react';
-import { MemoryRouter } from 'react-router';
+import "../../test-setup";
+import { afterEach, describe, expect, it, mock } from "bun:test";
+import { cleanup, render, screen } from "@testing-library/react";
+import React from "react";
+import { MemoryRouter } from "react-router";
 
-mock.module('../AuthProvider', () => ({
+mock.module("../AuthProvider", () => ({
   useAuth: () => ({
-    session: { status: 'authenticated', user: { name: 'Alice' } },
+    session: { status: "authenticated", user: { name: "Alice" } },
     signOut: () => {},
   }),
 }));
 
-mock.module('../../hooks/use-myra-threads', () => ({
+mock.module("../../hooks/use-myra-threads", () => ({
   useMyraThreads: () => ({
-    data: [{ id: 't1', instanceId: 'i1', label: 'First chat', createdAt: '2026-01-01T00:00:00Z' }],
+    data: [
+      {
+        id: "t1",
+        instanceId: "i1",
+        label: "First chat",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ],
     isLoading: false,
   }),
   useCreateMyraThread: () => ({ mutate: () => {}, isPending: false }),
@@ -24,7 +31,7 @@ mock.module('../../hooks/use-myra-threads', () => ({
   resolveActiveThread: () => null,
 }));
 
-mock.module('../../lib/active-workbench-context', () => ({
+mock.module("../../lib/active-workbench-context", () => ({
   useActiveWorkbench: () => ({
     workbenches: [],
     loading: false,
@@ -34,50 +41,62 @@ mock.module('../../lib/active-workbench-context', () => ({
   }),
 }));
 
-mock.module('../../lib/app-env', () => ({
-  branding: { env: null, label: null, title: 'Workbench' },
+mock.module("../../lib/app-env", () => ({
+  branding: { env: null, label: null, title: "Workbench" },
 }));
 
-const { AppSidebar } = require('./AppSidebar');
+const { AppSidebar } = require("./AppSidebar");
 
 afterEach(() => {
   cleanup();
 });
 
-function renderSidebar(path = '/') {
+function renderSidebar(path = "/") {
   render(
-    React.createElement(MemoryRouter, { initialEntries: [path] }, React.createElement(AppSidebar))
+    React.createElement(
+      MemoryRouter,
+      { initialEntries: [path] },
+      React.createElement(AppSidebar),
+    ),
   );
 }
 
-describe('AppSidebar', () => {
-  it('renders the primary nav and Settings link', () => {
+describe("AppSidebar", () => {
+  it("renders the primary nav and Settings link", () => {
     renderSidebar();
     expect(
-      (screen.getByRole('link', { name: /workflows/i }) as HTMLAnchorElement).getAttribute('href')
-    ).toBe('/workflows');
+      (
+        screen.getByRole("link", { name: /workflows/i }) as HTMLAnchorElement
+      ).getAttribute("href"),
+    ).toBe("/workflows");
     expect(
-      (screen.getByRole('link', { name: /skills/i }) as HTMLAnchorElement).getAttribute('href')
-    ).toBe('/skills');
+      (
+        screen.getByRole("link", { name: /skills/i }) as HTMLAnchorElement
+      ).getAttribute("href"),
+    ).toBe("/skills");
     expect(
-      (screen.getByRole('link', { name: /insights/i }) as HTMLAnchorElement).getAttribute('href')
-    ).toBe('/insights');
+      (
+        screen.getByRole("link", { name: /insights/i }) as HTMLAnchorElement
+      ).getAttribute("href"),
+    ).toBe("/insights");
     expect(
-      (screen.getByRole('link', { name: /settings/i }) as HTMLAnchorElement).getAttribute('href')
-    ).toBe('/settings');
+      (
+        screen.getByRole("link", { name: /settings/i }) as HTMLAnchorElement
+      ).getAttribute("href"),
+    ).toBe("/settings");
   });
 
-  it('renders the New Chat action and the thread list', () => {
+  it("renders the New Chat action and the thread list", () => {
     renderSidebar();
-    const newChat = screen.getByRole('button', { name: /new chat/i });
+    const newChat = screen.getByRole("button", { name: /new chat/i });
     expect((newChat as HTMLButtonElement).disabled).toBe(false);
-    expect(screen.getByText('First chat').textContent).toBe('First chat');
+    expect(screen.getByText("First chat").textContent).toBe("First chat");
   });
 
-  it('omits the environment badge when no environment is configured', () => {
+  it("omits the environment badge when no environment is configured", () => {
     renderSidebar();
-    expect(screen.getByText('Workbench').textContent).toBe('Workbench');
-    expect(screen.queryByText('Staging')).toBeNull();
-    expect(screen.queryByText('Spike')).toBeNull();
+    expect(screen.getByText("Workbench").textContent).toBe("Workbench");
+    expect(screen.queryByText("Staging")).toBeNull();
+    expect(screen.queryByText("Spike")).toBeNull();
   });
 });

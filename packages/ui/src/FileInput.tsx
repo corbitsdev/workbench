@@ -1,8 +1,9 @@
-import { useRef, type ChangeEvent, type ComponentPropsWithoutRef } from 'react';
-import { Button } from './Button';
-import { cn } from './utils';
+import { useRef, type ChangeEvent, type ComponentPropsWithoutRef } from "react";
+import { Button } from "./Button";
+import { cn } from "./utils";
 
-interface FileInputProps extends Omit<ComponentPropsWithoutRef<'input'>, 'type' | 'className'> {
+interface FileInputProps
+  extends Omit<ComponentPropsWithoutRef<"input">, "type" | "className"> {
   triggerLabel: string;
   pendingLabel?: string;
   isPending?: boolean;
@@ -25,11 +26,11 @@ function FileInput({
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     onChange?.(event);
-    event.target.value = '';
+    event.target.value = "";
   };
 
   return (
-    <div className={cn('w-full', className)}>
+    <div className={cn("w-full", className)}>
       <input
         ref={inputRef}
         type="file"
@@ -44,8 +45,8 @@ function FileInput({
         disabled={isDisabled}
         onClick={() => inputRef.current?.click()}
         className={cn(
-          'w-full border-dashed py-6 text-[13px] font-medium text-text-2 hover:border-orange/60 hover:text-text',
-          triggerClassName
+          "w-full border-dashed py-6 text-[13px] font-medium text-text-2 hover:border-orange/60 hover:text-text",
+          triggerClassName,
         )}
       >
         {isPending && pendingLabel ? pendingLabel : triggerLabel}

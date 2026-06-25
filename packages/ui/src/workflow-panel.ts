@@ -1,4 +1,4 @@
-import type { RunState } from '@intx/workflow';
+import type { RunState } from "@intx/workflow";
 
 export interface WorkflowCredential {
   id: string;

@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -14,7 +14,10 @@ interface ErrorBoundaryState {
 // lifecycle methods (getDerivedStateFromError / componentDidCatch); hooks
 // cannot catch them. Wraps server-derived render surfaces so a malformed
 // payload degrades to a recoverable message instead of a blank screen.
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ErrorBoundary extends Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   state: ErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError(): ErrorBoundaryState {
@@ -38,7 +41,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         <p className="text-[14px] font-medium text-text">
           Something went wrong displaying this view.
         </p>
-        <p className="text-[13px] text-text-3">The data could not be rendered. Try again.</p>
+        <p className="text-[13px] text-text-3">
+          The data could not be rendered. Try again.
+        </p>
         <button
           type="button"
           onClick={this.handleReset}

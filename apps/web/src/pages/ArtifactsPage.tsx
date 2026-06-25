@@ -1,7 +1,7 @@
-import { useNavigate } from 'react-router';
-import { ErrorBoundary } from '../components/ErrorBoundary';
-import { ArtifactGallery } from '../components/layout/ArtifactGallery';
-import { useActiveWorkbench } from '../lib/active-workbench-context';
+import { useNavigate } from "react-router";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { ArtifactGallery } from "../components/layout/ArtifactGallery";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
 
 /**
  * Artifacts for the globally-selected workbench (the sidebar's workbench toggle

@@ -1,14 +1,23 @@
-import { useEffect, useCallback, createContext, useContext, type ReactNode } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { hydrateServerPreferences, setPreferencePersister } from '@workbench/ui';
-import { authClient } from '../lib/auth-client';
-import { postMe } from '../lib/hub-api';
-import { createPreferencesPersister } from '../lib/preferences-persister';
+import {
+  useEffect,
+  useCallback,
+  createContext,
+  useContext,
+  type ReactNode,
+} from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  hydrateServerPreferences,
+  setPreferencePersister,
+} from "@workbench/ui";
+import { authClient } from "../lib/auth-client";
+import { postMe } from "../lib/hub-api";
+import { createPreferencesPersister } from "../lib/preferences-persister";
 
 type Session =
-  | { status: 'loading' }
+  | { status: "loading" }
   | {
-      status: 'authenticated';
+      status: "authenticated";
       user: {
         id: string;
         email: string;
@@ -16,7 +25,7 @@ type Session =
         image?: string | null;
       };
     }
-  | { status: 'unauthenticated' };
+  | { status: "unauthenticated" };
 
 interface AuthContextValue {
   session: Session;
@@ -27,7 +36,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within <AuthProvider>');
+  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
   return ctx;
 }
 
@@ -35,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['auth-session'],
+    queryKey: ["auth-session"],
     queryFn: async () => {
       const { data } = await authClient.getSession();
       return data ?? null;
@@ -49,11 +58,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { persist, flush } = createPreferencesPersister();
     setPreferencePersister(persist);
     function flushOnHide() {
-      if (document.visibilityState === 'hidden') flush();
+      if (document.visibilityState === "hidden") flush();
     }
-    document.addEventListener('visibilitychange', flushOnHide);
+    document.addEventListener("visibilitychange", flushOnHide);
     return () => {
-      document.removeEventListener('visibilitychange', flushOnHide);
+      document.removeEventListener("visibilitychange", flushOnHide);
       flush();
       setPreferencePersister(null);
     };
@@ -71,10 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [isLoading, data?.user?.id]);
 
   const session: Session = isLoading
-    ? { status: 'loading' }
+    ? { status: "loading" }
     : data?.user
       ? {
-          status: 'authenticated',
+          status: "authenticated",
           user: {
             id: data.user.id,
             email: data.user.email,
@@ -82,28 +91,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             image: data.user.image,
           },
         }
-      : { status: 'unauthenticated' };
+      : { status: "unauthenticated" };
 
   useEffect(() => {
     function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') {
-        void queryClient.invalidateQueries({ queryKey: ['auth-session'] });
+      if (document.visibilityState === "visible") {
+        void queryClient.invalidateQueries({ queryKey: ["auth-session"] });
       }
     }
     function handleFocus() {
-      void queryClient.invalidateQueries({ queryKey: ['auth-session'] });
+      void queryClient.invalidateQueries({ queryKey: ["auth-session"] });
     }
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [queryClient]);
 
   const handleSignOut = useCallback(async () => {
     await authClient.signOut();
-    queryClient.setQueryData(['auth-session'], null);
+    queryClient.setQueryData(["auth-session"], null);
   }, [queryClient]);
 
   return (

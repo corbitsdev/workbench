@@ -16,13 +16,13 @@
  * functions cannot be unioned across runs; line coverage is the reported
  * metric and is what the 98.5% target refers to.
  */
-import { resolve } from 'node:path';
+import { resolve } from "node:path";
 
-import { Glob } from 'bun';
+import { Glob } from "bun";
 
 export interface ParsedFile {
   file: string;
-  lines: Array<[number, number]>;
+  lines: [number, number][];
 }
 
 export interface LcovSource {
@@ -36,7 +36,7 @@ export interface CoverageSummary {
   linePct: number;
 }
 
-const EXCLUDE_DIRS = ['/interchange/', '/node_modules/'];
+const EXCLUDE_DIRS = ["/interchange/", "/node_modules/"];
 const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
 
 export function shouldExclude(absPath: string): boolean {
@@ -48,16 +48,16 @@ export function parseLcov(content: string): ParsedFile[] {
   const files: ParsedFile[] = [];
   let current: ParsedFile | null = null;
 
-  for (const rawLine of content.split('\n')) {
+  for (const rawLine of content.split("\n")) {
     const line = rawLine.trim();
-    if (line.startsWith('SF:')) {
+    if (line.startsWith("SF:")) {
       current = { file: line.slice(3), lines: [] };
     } else if (!current) {
       continue;
-    } else if (line.startsWith('DA:')) {
-      const [no, count] = line.slice(3).split(',');
+    } else if (line.startsWith("DA:")) {
+      const [no, count] = line.slice(3).split(",");
       current.lines.push([Number(no), Number(count)]);
-    } else if (line === 'end_of_record') {
+    } else if (line === "end_of_record") {
       files.push(current);
       current = null;
     }
@@ -109,19 +109,22 @@ export function formatSummary(summary: CoverageSummary): string {
 }
 
 async function main(): Promise<void> {
-  const threshold = Number(process.env.COVERAGE_THRESHOLD ?? '0');
-  const glob = new Glob('**/coverage/lcov.info');
+  const threshold = Number(process.env.COVERAGE_THRESHOLD ?? "0");
+  const glob = new Glob("**/coverage/lcov.info");
   const sources: LcovSource[] = [];
 
   for await (const path of glob.scan({ dot: false })) {
-    if (path.includes('interchange/') || path.includes('node_modules/')) continue;
+    if (path.includes("interchange/") || path.includes("node_modules/"))
+      continue;
     // path is <workspace>/coverage/lcov.info; the workspace dir is two up.
-    const baseDir = resolve(path, '..', '..');
+    const baseDir = resolve(path, "..", "..");
     sources.push({ baseDir, content: await Bun.file(path).text() });
   }
 
   if (sources.length === 0) {
-    console.error('No coverage/lcov.info reports found. Run `bun run test:coverage` first.');
+    console.error(
+      "No coverage/lcov.info reports found. Run `bun run test:coverage` first.",
+    );
     process.exit(1);
   }
 
@@ -130,7 +133,9 @@ async function main(): Promise<void> {
   console.log(formatSummary(summary));
 
   if (summary.linePct + 1e-9 < threshold) {
-    console.error(`\nLine coverage ${summary.linePct.toFixed(2)}% is below target ${threshold}%`);
+    console.error(
+      `\nLine coverage ${summary.linePct.toFixed(2)}% is below target ${threshold}%`,
+    );
     process.exit(1);
   }
   console.log(`\nLine coverage meets target (${threshold}%)`);

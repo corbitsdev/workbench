@@ -1,19 +1,19 @@
-import { type } from 'arktype';
+import { type } from "arktype";
 import {
   EPHEMERAL_COMPACT_THRESHOLD_TOKENS,
   EPHEMERAL_TARGET_TOKENS_AFTER_COMPACT,
-} from './budget';
-import { estimateTextTokens } from './tokens';
+} from "./budget";
+import { estimateTextTokens } from "./tokens";
 
-export const EPHEMERAL_CHAT_TAG = 'workbench.ephemeralChat';
+export const EPHEMERAL_CHAT_TAG = "workbench.ephemeralChat";
 
 const HistoryTurn = type({
   role: "'user' | 'assistant'",
-  content: 'string',
+  content: "string",
 });
 
 export const EphemeralChatPayload = type({
-  message: 'string',
+  message: "string",
   history: HistoryTurn.array(),
 });
 
@@ -30,24 +30,33 @@ export type EphemeralChatCompactResult = {
   compaction?: EphemeralChatCompactionMeta;
 };
 
-function estimatePayloadTokens(systemPrompt: string, payload: EphemeralChatPayload): number {
-  const body = JSON.stringify({ message: payload.message, history: payload.history });
+function estimatePayloadTokens(
+  systemPrompt: string,
+  payload: EphemeralChatPayload,
+): number {
+  const body = JSON.stringify({
+    message: payload.message,
+    history: payload.history,
+  });
   return estimateTextTokens(systemPrompt) + estimateTextTokens(body);
 }
 
-function summarizeDroppedTurns(turns: EphemeralChatPayload['history']): string {
-  if (turns.length === 0) return '';
+function summarizeDroppedTurns(turns: EphemeralChatPayload["history"]): string {
+  if (turns.length === 0) return "";
   const lines = turns.map((turn) => {
-    const snippet = turn.content.length > 240 ? `${turn.content.slice(0, 240)}…` : turn.content;
+    const snippet =
+      turn.content.length > 240
+        ? `${turn.content.slice(0, 240)}…`
+        : turn.content;
     return `- ${turn.role}: ${snippet}`;
   });
-  return `[Earlier conversation compacted — ${turns.length} turn(s) summarized to fit context.]\n${lines.join('\n')}`;
+  return `[Earlier conversation compacted — ${turns.length} turn(s) summarized to fit context.]\n${lines.join("\n")}`;
 }
 
 function truncateMessageToTarget(
   systemPrompt: string,
   message: string,
-  history: EphemeralChatPayload['history']
+  history: EphemeralChatPayload["history"],
 ): string {
   let trimmed = message;
   while (
@@ -64,7 +73,7 @@ function truncateMessageToTarget(
     EPHEMERAL_TARGET_TOKENS_AFTER_COMPACT
   ) {
     throw new Error(
-      'ephemeral chat: input still exceeds context budget after compaction; shorten the message or history'
+      "ephemeral chat: input still exceeds context budget after compaction; shorten the message or history",
     );
   }
   return trimmed;
@@ -76,7 +85,7 @@ function truncateMessageToTarget(
  */
 export function compactEphemeralChatInput(
   input: unknown,
-  systemPrompt: string
+  systemPrompt: string,
 ): EphemeralChatCompactResult {
   const parsed = EphemeralChatPayload(input);
   if (parsed instanceof type.errors) {
@@ -88,14 +97,15 @@ export function compactEphemeralChatInput(
     return { payload: parsed };
   }
 
-  const dropped: EphemeralChatPayload['history'] = [];
+  const dropped: EphemeralChatPayload["history"] = [];
   let history = [...parsed.history];
   let message = parsed.message;
 
   let working: EphemeralChatPayload = { message, history };
   while (
     history.length > 0 &&
-    estimatePayloadTokens(systemPrompt, working) > EPHEMERAL_TARGET_TOKENS_AFTER_COMPACT
+    estimatePayloadTokens(systemPrompt, working) >
+      EPHEMERAL_TARGET_TOKENS_AFTER_COMPACT
   ) {
     const removed = history.shift();
     if (removed === undefined) break;
@@ -105,11 +115,14 @@ export function compactEphemeralChatInput(
 
   if (dropped.length > 0) {
     const summary = summarizeDroppedTurns(dropped);
-    history = [{ role: 'user', content: summary }, ...history];
+    history = [{ role: "user", content: summary }, ...history];
     working = { message, history };
   }
 
-  if (estimatePayloadTokens(systemPrompt, working) > EPHEMERAL_TARGET_TOKENS_AFTER_COMPACT) {
+  if (
+    estimatePayloadTokens(systemPrompt, working) >
+    EPHEMERAL_TARGET_TOKENS_AFTER_COMPACT
+  ) {
     message = truncateMessageToTarget(systemPrompt, message, history);
     working = { message, history };
   }

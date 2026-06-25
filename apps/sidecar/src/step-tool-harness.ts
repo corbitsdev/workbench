@@ -13,31 +13,31 @@
 // the same way too — so a step's Granola/Gamma/Reddit/image tools work
 // end-to-end and are gated identically (by the step's persisted `agent` row).
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { type } from 'arktype';
-import { createAgent, defineTool } from '@intx/agent';
-import type { Agent, AgentDefinition, BaseEnv } from '@intx/agent';
-import { evaluateGrants } from '@intx/authz';
-import type { GrantRule } from '@intx/authz';
-import { getLogger } from '@intx/log';
-import { createBlobReader } from '@intx/types/runtime';
-import type { ContextStore } from '@intx/types/runtime';
-import { createPosixTools } from '@intx/tools-posix';
+import fs from "node:fs";
+import path from "node:path";
+import { type } from "arktype";
+import { createAgent, defineTool } from "@intx/agent";
+import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
+import { evaluateGrants } from "@intx/authz";
+import type { GrantRule } from "@intx/authz";
+import { getLogger } from "@intx/log";
+import { createBlobReader } from "@intx/types/runtime";
+import type { ContextStore } from "@intx/types/runtime";
+import { createPosixTools } from "@intx/tools-posix";
 import {
   HUB_RPC_ENV_KEY,
   ToolManifestResponse,
   providerFromEnvKey,
-} from '@workbench/tool-credentials';
-import { ArgMap } from '@workbench/agents';
+} from "@workbench/tool-credentials";
+import { ArgMap } from "@workbench/agents";
 import {
   fetchToolCredentials,
   loadToolPackages,
   mergeToolRunners,
   type DefinedRunner,
-} from './agent-tools';
+} from "./agent-tools";
 
-const logger = getLogger(['sidecar', 'step-tool-harness']);
+const logger = getLogger(["sidecar", "step-tool-harness"]);
 
 /**
  * Per-step identity + hub-connection context the step agentFactory needs
@@ -63,7 +63,7 @@ export interface StepToolContext {
   registryMaxTarballBytes: number;
 }
 
-export const STEP_TOOL_CONTEXT_KEY = 'workbench.stepToolContext';
+export const STEP_TOOL_CONTEXT_KEY = "workbench.stepToolContext";
 
 /**
  * Fetch the step agent's resolved tool-package manifest plus the raw bytes
@@ -88,26 +88,29 @@ export async function fetchStepToolManifest(args: {
   };
   let response: Response;
   try {
-    response = await fetch(`${args.ctx.hubHttpUrl}/api/internal/tools/manifest`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${args.ctx.sidecarToken}`,
+    response = await fetch(
+      `${args.ctx.hubHttpUrl}/api/internal/tools/manifest`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${args.ctx.sidecarToken}`,
+        },
+        body: JSON.stringify({
+          tenantId: args.ctx.tenantId,
+          agentId: args.ctx.stepAgentId,
+        }),
       },
-      body: JSON.stringify({
-        tenantId: args.ctx.tenantId,
-        agentId: args.ctx.stepAgentId,
-      }),
-    });
+    );
   } catch (err) {
-    logger.warn('Step tool-manifest fetch failed for {address}: {msg}', {
+    logger.warn("Step tool-manifest fetch failed for {address}: {msg}", {
       address: args.ctx.stepAddress,
       msg: err instanceof Error ? err.message : String(err),
     });
     return empty;
   }
   if (!response.ok) {
-    logger.warn('Step tool-manifest fetch for {address} returned {status}', {
+    logger.warn("Step tool-manifest fetch for {address} returned {status}", {
       address: args.ctx.stepAddress,
       status: response.status,
     });
@@ -115,34 +118,48 @@ export async function fetchStepToolManifest(args: {
   }
   const parsed = ToolManifestResponse(await response.json());
   if (parsed instanceof type.errors) {
-    logger.warn('Step tool-manifest response for {address} failed validation: {summary}', {
-      address: args.ctx.stepAddress,
-      summary: parsed.summary,
-    });
+    logger.warn(
+      "Step tool-manifest response for {address} failed validation: {summary}",
+      {
+        address: args.ctx.stepAddress,
+        summary: parsed.summary,
+      },
+    );
     return empty;
   }
 
-  const workspaceRoot = path.join(args.storeDir, 'workspace');
+  const workspaceRoot = path.join(args.storeDir, "workspace");
   const assetMounts = new Map<string, string>();
   for (const tarball of parsed.tarballs) {
-    if (path.isAbsolute(tarball.mount) || tarball.mount.includes('..')) {
-      logger.warn('Step tool-manifest tarball mount rejected for {address}: {mount}', {
-        address: args.ctx.stepAddress,
-        mount: tarball.mount,
-      });
+    if (path.isAbsolute(tarball.mount) || tarball.mount.includes("..")) {
+      logger.warn(
+        "Step tool-manifest tarball mount rejected for {address}: {mount}",
+        {
+          address: args.ctx.stepAddress,
+          mount: tarball.mount,
+        },
+      );
       return empty;
     }
     const destDir = path.join(workspaceRoot, tarball.mount);
     const destPath = path.join(destDir, tarball.path);
-    const containment = workspaceRoot.endsWith(path.sep) ? workspaceRoot : workspaceRoot + path.sep;
+    const containment = workspaceRoot.endsWith(path.sep)
+      ? workspaceRoot
+      : workspaceRoot + path.sep;
     if (!destPath.startsWith(containment)) {
-      logger.warn('Step tool-manifest tarball path escaped workspace for {address}', {
-        address: args.ctx.stepAddress,
-      });
+      logger.warn(
+        "Step tool-manifest tarball path escaped workspace for {address}",
+        {
+          address: args.ctx.stepAddress,
+        },
+      );
       return empty;
     }
     await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
-    await fs.promises.writeFile(destPath, Buffer.from(tarball.bytesBase64, 'base64'));
+    await fs.promises.writeFile(
+      destPath,
+      Buffer.from(tarball.bytesBase64, "base64"),
+    );
     assetMounts.set(tarball.assetId, tarball.mount);
   }
 
@@ -158,12 +175,12 @@ function readStepToolContext(env: Record<string, unknown>): StepToolContext {
   const raw = env[STEP_TOOL_CONTEXT_KEY];
   if (raw === undefined) {
     throw new Error(
-      'step-tool-harness: STEP_TOOL_CONTEXT was not stashed on the step env; buildEnv must set it before the agentFactory runs'
+      "step-tool-harness: STEP_TOOL_CONTEXT was not stashed on the step env; buildEnv must set it before the agentFactory runs",
     );
   }
   // Internal value the env builder constructed in-process this same run; it
   // never crosses a trust boundary, so a plain narrowing cast is sound.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- in-process value, not untrusted input
+
   return raw as StepToolContext;
 }
 
@@ -182,7 +199,7 @@ async function buildStepTools(args: {
 }): Promise<{
   runner: DefinedRunner;
   loadedToolNames: Set<string>;
-  disposers: Array<() => Promise<void>>;
+  disposers: (() => Promise<void>)[];
 }> {
   const { ctx } = args;
   const storeDir = path.dirname(args.workdir);
@@ -228,7 +245,7 @@ async function buildStepTools(args: {
     principalId: ctx.principalId,
     // Steps are not session-bound; the hub-RPC rail accepts an empty
     // sessionId for non-session callers.
-    sessionId: '',
+    sessionId: "",
   };
 
   const blobReader = createBlobReader(args.storage);
@@ -246,7 +263,7 @@ async function buildStepTools(args: {
   };
 
   const loadedRunners: DefinedRunner[] = [];
-  const disposers: Array<() => Promise<void>> = [() => posixTools.dispose()];
+  const disposers: (() => Promise<void>)[] = [() => posixTools.dispose()];
   const loadedToolNames = new Set<string>();
   for (const pkg of loadedPackages) {
     for (const factory of pkg.factories) {
@@ -254,11 +271,14 @@ async function buildStepTools(args: {
       try {
         bundle = factory(factoryEnv);
       } catch (err) {
-        logger.warn('Step tool-package factory {id} failed to construct for {address}: {msg}', {
-          id: factory.id,
-          address: ctx.stepAddress,
-          msg: err instanceof Error ? err.message : String(err),
-        });
+        logger.warn(
+          "Step tool-package factory {id} failed to construct for {address}: {msg}",
+          {
+            id: factory.id,
+            address: ctx.stepAddress,
+            msg: err instanceof Error ? err.message : String(err),
+          },
+        );
         continue;
       }
       loadedRunners.push({
@@ -275,10 +295,10 @@ async function buildStepTools(args: {
     }
   }
   if (loadedToolNames.size > 0) {
-    logger.info('Loaded {count} native tool(s) for step {address}: {names}', {
+    logger.info("Loaded {count} native tool(s) for step {address}: {names}", {
       count: loadedToolNames.size,
       address: ctx.stepAddress,
-      names: [...loadedToolNames].join(', '),
+      names: [...loadedToolNames].join(", "),
     });
   }
 
@@ -287,7 +307,10 @@ async function buildStepTools(args: {
   // and the hub gates which packages were resolvable at all via the step's
   // pins. No name-filter is applied here — it would be a no-op (every loaded
   // tool name is already in the merged set).
-  const merged = mergeToolRunners([posixTools, ...loadedRunners]) as DefinedRunner;
+  const merged = mergeToolRunners([
+    posixTools,
+    ...loadedRunners,
+  ]) as DefinedRunner;
   return {
     runner: merged,
     loadedToolNames,
@@ -314,14 +337,17 @@ async function buildStepTools(args: {
  * non-object input (string, number, array) is a real authoring error — the
  * tool's arguments must be an object — so fail loud.
  */
-function verbatimToolArguments(toolName: string, input: unknown): Record<string, unknown> {
+function verbatimToolArguments(
+  toolName: string,
+  input: unknown,
+): Record<string, unknown> {
   if (input === null || input === undefined) return {};
-  if (typeof input !== 'object' || Array.isArray(input)) {
+  if (typeof input !== "object" || Array.isArray(input)) {
     throw new Error(
-      `step-tool-harness: deterministic step "${toolName}" requires an object (or no) input to use as tool arguments; got ${typeof input}`
+      `step-tool-harness: deterministic step "${toolName}" requires an object (or no) input to use as tool arguments; got ${typeof input}`,
     );
   }
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed to a non-null, non-array object above; ToolCall.arguments is Record<string, unknown>
+
   return input as Record<string, unknown>;
 }
 
@@ -335,7 +361,7 @@ function verbatimToolArguments(toolName: string, input: unknown): Record<string,
 function reshapeWithArgMap(
   toolName: string,
   input: unknown,
-  argMapJson: string
+  argMapJson: string,
 ): Record<string, unknown> {
   let parsedJson: unknown;
   try {
@@ -343,29 +369,28 @@ function reshapeWithArgMap(
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     throw new Error(
-      `step-tool-harness: deterministic step "${toolName}" has a non-JSON argMap tag: ${reason}`
+      `step-tool-harness: deterministic step "${toolName}" has a non-JSON argMap tag: ${reason}`,
     );
   }
   const argMap = ArgMap(parsedJson);
   if (argMap instanceof type.errors) {
     throw new Error(
-      `step-tool-harness: deterministic step "${toolName}" argMap failed validation: ${argMap.summary}`
+      `step-tool-harness: deterministic step "${toolName}" argMap failed validation: ${argMap.summary}`,
     );
   }
   const inputRecord =
-    input !== null && typeof input === 'object' && !Array.isArray(input)
-      ? // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed to a non-null, non-array object; field lookups below
-        (input as Record<string, unknown>)
+    input !== null && typeof input === "object" && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
       : undefined;
   const toolArguments: Record<string, unknown> = {};
   for (const [argName, spec] of Object.entries(argMap)) {
-    if ('literal' in spec) {
+    if ("literal" in spec) {
       toolArguments[argName] = spec.literal;
       continue;
     }
     if (inputRecord === undefined || !(spec.from in inputRecord)) {
       throw new Error(
-        `step-tool-harness: deterministic step "${toolName}" argMap maps tool arg "${argName}" from input field "${spec.from}", but that field is absent on the evaluated step input`
+        `step-tool-harness: deterministic step "${toolName}" argMap maps tool arg "${argName}" from input field "${spec.from}", but that field is absent on the evaluated step input`,
       );
     }
     toolArguments[argName] = inputRecord[spec.from];
@@ -374,14 +399,16 @@ function reshapeWithArgMap(
 }
 
 export async function runDeterministicToolStep(args: {
-  env: Omit<BaseEnv, 'authorize'>;
+  env: Omit<BaseEnv, "authorize">;
   toolName: string;
   input: unknown;
   /** Raw JSON of the step's `workbench.argMap` tag, if present. */
   argMapJson?: string;
   signal: AbortSignal;
 }): Promise<{ output: unknown }> {
-  const ctx = readStepToolContext(args.env as unknown as Record<string, unknown>);
+  const ctx = readStepToolContext(
+    args.env as unknown as Record<string, unknown>,
+  );
   const storeDir = path.dirname(args.env.workdir);
 
   // A deterministic tool call never runs the reactor, so no agent-level
@@ -408,7 +435,7 @@ export async function runDeterministicToolStep(args: {
     const available = new Set(runner.definitions.map((d) => d.name));
     if (!available.has(args.toolName)) {
       throw new Error(
-        `step-tool-harness: deterministic step declared tool "${args.toolName}" but it is not in the step's loaded runner; the workflow declared a tool that is not pinned (loaded: ${[...available].join(', ') || 'none'})`
+        `step-tool-harness: deterministic step declared tool "${args.toolName}" but it is not in the step's loaded runner; the workflow declared a tool that is not pinned (loaded: ${[...available].join(", ") || "none"})`,
       );
     }
     const toolArguments =
@@ -421,7 +448,7 @@ export async function runDeterministicToolStep(args: {
         name: args.toolName,
         arguments: toolArguments,
       },
-      args.signal
+      args.signal,
     );
     return { output: result };
   } finally {
@@ -429,19 +456,25 @@ export async function runDeterministicToolStep(args: {
       try {
         await dispose();
       } catch (err) {
-        logger.warn('Deterministic step tool disposer failed for {address}: {msg}', {
-          address: ctx.stepAddress,
-          msg: err instanceof Error ? err.message : String(err),
-        });
+        logger.warn(
+          "Deterministic step tool disposer failed for {address}: {msg}",
+          {
+            address: ctx.stepAddress,
+            msg: err instanceof Error ? err.message : String(err),
+          },
+        );
       }
     }
     try {
       await fs.promises.rm(storeDir, { recursive: true, force: true });
     } catch (err) {
-      logger.warn('Deterministic step store cleanup failed for {address}: {msg}', {
-        address: ctx.stepAddress,
-        msg: err instanceof Error ? err.message : String(err),
-      });
+      logger.warn(
+        "Deterministic step store cleanup failed for {address}: {msg}",
+        {
+          address: ctx.stepAddress,
+          msg: err instanceof Error ? err.message : String(err),
+        },
+      );
     }
   }
 }
@@ -449,7 +482,7 @@ export async function runDeterministicToolStep(args: {
 export interface StepAgentFactoryOpts {
   agentFactory?: <EnvReq extends BaseEnv>(
     def: AgentDefinition<EnvReq>,
-    env: EnvReq
+    env: EnvReq,
   ) => Promise<Agent>;
 }
 
@@ -465,7 +498,7 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
   const underlying = opts.agentFactory ?? createAgent;
   return async <EnvReq extends BaseEnv>(
     def: AgentDefinition<EnvReq>,
-    env: EnvReq
+    env: EnvReq,
   ): Promise<Agent> => {
     const ctx = readStepToolContext(env as unknown as Record<string, unknown>);
 
@@ -490,7 +523,7 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
       });
 
     const toolsFactory = defineTool({
-      id: '@workbench/sidecar/step-tools',
+      id: "@workbench/sidecar/step-tools",
       factory: () => ({
         definitions: runner.definitions,
         run: runner.run.bind(runner),
@@ -520,7 +553,7 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
             try {
               await dispose();
             } catch (err) {
-              logger.warn('Step tool disposer failed for {address}: {msg}', {
+              logger.warn("Step tool disposer failed for {address}: {msg}", {
                 address: ctx.stepAddress,
                 msg: err instanceof Error ? err.message : String(err),
               });
@@ -532,7 +565,7 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
           try {
             await fs.promises.rm(storeDir, { recursive: true, force: true });
           } catch (err) {
-            logger.warn('Step store cleanup failed for {address}: {msg}', {
+            logger.warn("Step store cleanup failed for {address}: {msg}", {
               address: ctx.stepAddress,
               msg: err instanceof Error ? err.message : String(err),
             });

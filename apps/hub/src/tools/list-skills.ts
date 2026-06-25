@@ -1,7 +1,7 @@
-import type { AgentTool } from '@intx/agent';
-import { schema as intxSchema } from '@intx/db';
-import { getLogger } from '@intx/log';
-import type { RepoStore } from '@intx/hub-sessions';
+import type { AgentTool } from "@intx/agent";
+import { schema as intxSchema } from "@intx/db";
+import { getLogger } from "@intx/log";
+import type { RepoStore } from "@intx/hub-sessions";
 import {
   LIST_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
@@ -10,24 +10,24 @@ import {
   parseSkillId,
   skillMatchesQuery,
   type SkillIndexEntry,
-} from '@workbench/tools-skills';
-import { and, eq } from 'drizzle-orm';
-import type { HubDb } from '../db';
+} from "@workbench/tools-skills";
+import { and, eq } from "drizzle-orm";
+import type { HubDb } from "../db";
 import {
   getSkillAsset,
   getSkillContent,
   listSkills,
   type SkillItem,
-} from '../services/skill-library';
-import type { ContextToolEntry } from '../lib/tool-registry';
+} from "../services/skill-library";
+import type { ContextToolEntry } from "../lib/tool-registry";
 
-const log = getLogger(['api', 'skill-tools']);
+const log = getLogger(["api", "skill-tools"]);
 
 export {
   LIST_SKILLS_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
-} from '@workbench/tools-skills';
+} from "@workbench/tools-skills";
 
 export type SkillToolsContext = {
   db: HubDb;
@@ -46,22 +46,25 @@ export type SkillToolsContext = {
 async function resolveViewerUserId(
   db: HubDb,
   tenantId: string,
-  principalId: string
+  principalId: string,
 ): Promise<string | null> {
   const principal = await db.query.principal.findFirst({
     where: and(
       eq(intxSchema.principal.id, principalId),
-      eq(intxSchema.principal.tenantId, tenantId)
+      eq(intxSchema.principal.tenantId, tenantId),
     ),
   });
   if (!principal) {
     // Unknown/foreign/deleted principal — denied by design; log so the
     // fail-closed empty result is observable rather than a silent "no skills".
-    log.warn('skill tools: principal not found; denying skill access', { principalId, tenantId });
+    log.warn("skill tools: principal not found; denying skill access", {
+      principalId,
+      tenantId,
+    });
   } else if (!principal.refId) {
     // A principal with no stable user id (e.g. a synthetic/dispatched agent)
     // is denied by design; log so the fail-closed empty result is observable.
-    log.warn('skill tools: principal has no refId; denying skill access', {
+    log.warn("skill tools: principal has no refId; denying skill access", {
       principalId,
       tenantId,
     });
@@ -87,7 +90,12 @@ function jsonResult(value: unknown): string {
 const MAX_SKILL_FILE_CHARS = 256 * 1024;
 const MAX_SKILL_LOAD_CHARS = 1024 * 1024;
 
-type LoadedFile = { path: string; content?: string; truncated?: true; omitted?: string };
+type LoadedFile = {
+  path: string;
+  content?: string;
+  truncated?: true;
+  omitted?: string;
+};
 
 /**
  * Clamp one file's content against a shared character budget. Binary/unreadable
@@ -96,20 +104,36 @@ type LoadedFile = { path: string; content?: string; truncated?: true; omitted?: 
  */
 function clampContent(
   content: string | undefined,
-  budget: { remaining: number }
+  budget: { remaining: number },
 ): { content?: string; truncated?: true; omitted?: string } {
-  if (content === undefined) return { omitted: 'binary or non-text file; not included' };
-  if (budget.remaining <= 0) return { omitted: 'omitted: load size limit reached' };
-  const allowed = Math.min(content.length, MAX_SKILL_FILE_CHARS, budget.remaining);
+  if (content === undefined)
+    return { omitted: "binary or non-text file; not included" };
+  if (budget.remaining <= 0)
+    return { omitted: "omitted: load size limit reached" };
+  const allowed = Math.min(
+    content.length,
+    MAX_SKILL_FILE_CHARS,
+    budget.remaining,
+  );
   budget.remaining -= allowed;
-  if (allowed < content.length) return { content: content.slice(0, allowed), truncated: true };
+  if (allowed < content.length)
+    return { content: content.slice(0, allowed), truncated: true };
   return { content };
 }
 
-async function visibleIndex(context: SkillToolsContext): Promise<SkillIndexEntry[]> {
-  const userId = await resolveViewerUserId(context.db, context.tenantId, context.principalId);
+async function visibleIndex(
+  context: SkillToolsContext,
+): Promise<SkillIndexEntry[]> {
+  const userId = await resolveViewerUserId(
+    context.db,
+    context.tenantId,
+    context.principalId,
+  );
   if (userId === null) return [];
-  const skills = await listSkills(context.db, { tenantId: context.tenantId, userId });
+  const skills = await listSkills(context.db, {
+    tenantId: context.tenantId,
+    userId,
+  });
   return skills.map(toIndexEntry);
 }
 
@@ -119,50 +143,64 @@ async function listSkillsHandler(context: SkillToolsContext): Promise<string> {
 
 async function searchSkillsHandler(
   context: SkillToolsContext,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
 ): Promise<string> {
   const query = parseSearchQuery(args);
   const index = await visibleIndex(context);
-  return jsonResult({ skills: index.filter((entry) => skillMatchesQuery(entry, query)) });
+  return jsonResult({
+    skills: index.filter((entry) => skillMatchesQuery(entry, query)),
+  });
 }
 
 async function loadSkillHandler(
   context: SkillToolsContext,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
 ): Promise<string> {
   const id = parseSkillId(args);
-  const userId = await resolveViewerUserId(context.db, context.tenantId, context.principalId);
+  const userId = await resolveViewerUserId(
+    context.db,
+    context.tenantId,
+    context.principalId,
+  );
   if (userId === null) {
     throw new Error(`Skill not found: ${id}`);
   }
   // getSkillAsset enforces the same visibility rule as the library list: a
   // skill not in the viewer's tenant chain, or a private skill the viewer does
   // not own, resolves to null and is reported as not found.
-  const skill = await getSkillAsset(context.db, { tenantId: context.tenantId, userId }, id);
+  const skill = await getSkillAsset(
+    context.db,
+    { tenantId: context.tenantId, userId },
+    id,
+  );
   if (!skill) {
     throw new Error(`Skill not found: ${id}`);
   }
   const files = await getSkillContent(context.repoStore, skill.id, skill.name);
-  const entrypoint = files.find((file) => file.path === 'SKILL.md');
-  const siblings = files.filter((file) => file.path !== 'SKILL.md');
+  const entrypoint = files.find((file) => file.path === "SKILL.md");
+  const siblings = files.filter((file) => file.path !== "SKILL.md");
 
   const budget = { remaining: MAX_SKILL_LOAD_CHARS };
-  const bodyClamped = clampContent(entrypoint?.content ?? '', budget);
+  const bodyClamped = clampContent(entrypoint?.content ?? "", budget);
   const loadedSiblings: LoadedFile[] = siblings.map((file) => ({
     path: file.path,
     ...clampContent(file.content, budget),
   }));
   const truncated =
-    bodyClamped.truncated === true || loadedSiblings.some((f) => f.truncated || f.omitted);
+    bodyClamped.truncated === true ||
+    loadedSiblings.some((f) => f.truncated || f.omitted);
 
   return jsonResult({
     id: skill.id,
     name: skill.name,
     displayName: skill.displayName,
-    body: bodyClamped.content ?? '',
+    body: bodyClamped.content ?? "",
     files: loadedSiblings,
     ...(truncated
-      ? { notice: 'Some content was truncated or omitted due to load size limits.' }
+      ? {
+          notice:
+            "Some content was truncated or omitted due to load size limits.",
+        }
       : {}),
   });
 }
@@ -170,17 +208,17 @@ async function loadSkillHandler(
 export function createSkillTools(context: SkillToolsContext): AgentTool[] {
   return [
     {
-      kind: 'string',
+      kind: "string",
       definition: LIST_SKILLS_DEFINITION,
       handler: () => listSkillsHandler(context),
     },
     {
-      kind: 'string',
+      kind: "string",
       definition: SEARCH_SKILLS_DEFINITION,
       handler: (args) => searchSkillsHandler(context, args),
     },
     {
-      kind: 'string',
+      kind: "string",
       definition: LOAD_SKILL_DEFINITION,
       handler: (args) => loadSkillHandler(context, args),
     },
@@ -194,7 +232,7 @@ function requireSkillContext(context: {
   principalId: string;
 }): SkillToolsContext {
   if (!context.repoStore) {
-    throw new Error('Skill tools require a repoStore in the hub tool context');
+    throw new Error("Skill tools require a repoStore in the hub tool context");
   }
   // The registry types `db` against the Interchange schema; the runtime value
   // is the hub db (a superset). The skill-library service is hub-internal and

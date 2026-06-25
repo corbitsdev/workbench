@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { ChevronDown, LayoutGrid } from 'lucide-react';
-import { useActiveWorkbench } from '../../lib/active-workbench-context';
+import { useState } from "react";
+import { ChevronDown, LayoutGrid } from "lucide-react";
+import { useActiveWorkbench } from "../../lib/active-workbench-context";
 
 /**
  * Sidebar tenancy toggle. Switches the active workbench in the global tenancy
@@ -9,7 +9,8 @@ import { useActiveWorkbench } from '../../lib/active-workbench-context';
  */
 export function WorkbenchSelector() {
   const [open, setOpen] = useState(false);
-  const { workbenches, loading, activeWorkbench, setActiveWorkbench } = useActiveWorkbench();
+  const { workbenches, loading, activeWorkbench, setActiveWorkbench } =
+    useActiveWorkbench();
 
   if (!loading && workbenches.length === 0) return null;
 
@@ -24,7 +25,7 @@ export function WorkbenchSelector() {
       >
         <LayoutGrid size={17} />
         <span className="flex-1 truncate text-left">
-          {activeWorkbench?.tenantName ?? 'Workbench'}
+          {activeWorkbench?.tenantName ?? "Workbench"}
         </span>
         <ChevronDown size={14} />
       </button>
@@ -53,7 +54,9 @@ export function WorkbenchSelector() {
                   setOpen(false);
                 }}
                 className={`block w-full truncate px-3 py-2 text-left text-xs transition-colors hover:bg-page ${
-                  w.id === activeWorkbench?.id ? 'text-orange' : 'text-text-2 hover:text-text'
+                  w.id === activeWorkbench?.id
+                    ? "text-orange"
+                    : "text-text-2 hover:text-text"
                 }`}
               >
                 {w.tenantName}

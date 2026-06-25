@@ -1,41 +1,45 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { describe, expect, it, mock } from "bun:test";
 import type {
   ReactorCapabilities,
   ReactorInboundEvent,
   ReactorState,
   ToolDefinition,
-} from '@intx/types/runtime';
-import { createGranolaDirector } from './director';
+} from "@intx/types/runtime";
+import { createGranolaDirector } from "./director";
 
 function makeCapabilities(): ReactorCapabilities & {
   replyArg: string | undefined;
 } {
   const cap = {
     replyArg: undefined as string | undefined,
-    infer: mock(() => ({ type: 'infer' as const })),
-    executeTools: mock(() => ({ type: 'execute_tools' as const, calls: [] })),
+    infer: mock(() => ({ type: "infer" as const })),
+    executeTools: mock(() => ({ type: "execute_tools" as const, calls: [] })),
     suspend: mock(() => ({
-      type: 'suspend' as const,
-      gate: { type: 'approval' as const, gateId: '', timeoutMs: 0 },
+      type: "suspend" as const,
+      gate: { type: "approval" as const, gateId: "", timeoutMs: 0 },
     })),
     fork: mock(() => ({
-      type: 'fork' as const,
-      mode: 'independent' as const,
-      forkId: '',
+      type: "fork" as const,
+      mode: "independent" as const,
+      forkId: "",
     })),
-    emit: mock(() => ({ type: 'emit' as const, eventType: 'custom.x' as const, data: {} })),
+    emit: mock(() => ({
+      type: "emit" as const,
+      eventType: "custom.x" as const,
+      data: {},
+    })),
     reply(content: string) {
       cap.replyArg = content;
-      return { type: 'reply' as const, content };
+      return { type: "reply" as const, content };
     },
-    checkpoint: mock(() => ({ type: 'checkpoint' as const, message: '' })),
+    checkpoint: mock(() => ({ type: "checkpoint" as const, message: "" })),
     compact: mock(() => ({
-      type: 'compact' as const,
-      compactor: '',
-      reason: '',
+      type: "compact" as const,
+      compactor: "",
+      reason: "",
     })),
-    wait: mock(() => ({ type: 'wait' as const })),
-    done: mock(() => ({ type: 'done' as const })),
+    wait: mock(() => ({ type: "wait" as const })),
+    done: mock(() => ({ type: "done" as const })),
   };
   return cap;
 }
@@ -46,37 +50,43 @@ function makeState(): ReactorState {
     activeForks: [],
     pendingOperations: [],
     activeGates: [],
-    tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: 0 },
+    tokenUsage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      thinking: 0,
+    },
     lastCycleUsage: null,
     lastCycleSource: null,
-    sessionId: 'test-session',
+    sessionId: "test-session",
   };
 }
 
 function makeMessageEvent(from: string): ReactorInboundEvent {
   return {
-    type: 'message.received',
+    type: "message.received",
     message: {
-      ref: { uid: 2, mailbox: 'INBOX' },
+      ref: { uid: 2, mailbox: "INBOX" },
       headers: {
         from,
-        to: ['granola@workbench.example'],
+        to: ["granola@workbench.example"],
         date: new Date().toISOString(),
-        messageId: 'msg-2@test',
+        messageId: "msg-2@test",
       },
       flags: [],
-      content: 'Summarize my calls',
-      signatureStatus: 'valid',
+      content: "Summarize my calls",
+      signatureStatus: "valid",
     },
   };
 }
 
-describe('createGranolaDirector', () => {
+describe("createGranolaDirector", () => {
   const tools: ToolDefinition[] = [];
-  const systemPrompt = 'You are the Granola agent.';
-  const adaAddress = 'ada@personal.example';
+  const systemPrompt = "You are the Granola agent.";
+  const adaAddress = "ada@personal.example";
 
-  it('allows messages from Myra and delegates to base director', async () => {
+  it("allows messages from Myra and delegates to base director", async () => {
     const director = createGranolaDirector(systemPrompt, tools, [adaAddress]);
     const cap = makeCapabilities();
     const event = makeMessageEvent(adaAddress);
@@ -84,31 +94,34 @@ describe('createGranolaDirector', () => {
     const actions = await director.decide(event, makeState(), cap);
     const arr = Array.isArray(actions) ? actions : [actions];
 
-    expect(arr.some((a) => a.type === 'infer')).toBe(true);
+    expect(arr.some((a) => a.type === "infer")).toBe(true);
   });
 
-  it('rejects messages from non-Ada senders', async () => {
+  it("rejects messages from non-Ada senders", async () => {
     const director = createGranolaDirector(systemPrompt, tools, [adaAddress]);
     const cap = makeCapabilities();
-    const event = makeMessageEvent('impostor@evil.com');
+    const event = makeMessageEvent("impostor@evil.com");
 
     const actions = await director.decide(event, makeState(), cap);
     const arr = Array.isArray(actions) ? actions : [actions];
 
-    expect(arr.some((a) => a.type === 'reply')).toBe(true);
-    expect(cap.replyArg).toBe('Not authorised');
+    expect(arr.some((a) => a.type === "reply")).toBe(true);
+    expect(cap.replyArg).toBe("Not authorised");
   });
 
-  it('allows messages from the system scheduler address when included in allowedSenders', async () => {
-    const director = createGranolaDirector(systemPrompt, tools, [adaAddress, 'scheduler@system']);
+  it("allows messages from the system scheduler address when included in allowedSenders", async () => {
+    const director = createGranolaDirector(systemPrompt, tools, [
+      adaAddress,
+      "scheduler@system",
+    ]);
     const cap = makeCapabilities();
-    const event = makeMessageEvent('scheduler@system');
+    const event = makeMessageEvent("scheduler@system");
 
     const actions = await director.decide(event, makeState(), cap);
     const arr = Array.isArray(actions) ? actions : [actions];
 
     // Should delegate to base director (infer), not reject.
-    expect(arr.some((a) => a.type === 'infer')).toBe(true);
+    expect(arr.some((a) => a.type === "infer")).toBe(true);
     expect(cap.replyArg).toBeUndefined();
   });
 });

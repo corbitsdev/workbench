@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
-const STORAGE_KEY = 'cw-rail';
+const STORAGE_KEY = "cw-rail";
 const DEFAULT_WIDTH = 340;
 const MIN = 248;
 const MAX = 620;
@@ -56,7 +56,9 @@ export function useResizableRail(): ResizableRail {
 
   const dynamicMax = useCallback((): number => {
     const container = containerRef.current;
-    return container ? Math.min(MAX, container.clientWidth - GALLERY_RESERVE) : MAX;
+    return container
+      ? Math.min(MAX, container.clientWidth - GALLERY_RESERVE)
+      : MAX;
   }, []);
 
   const setRail = useCallback(
@@ -71,7 +73,7 @@ export function useResizableRail(): ResizableRail {
         // best-effort persistence
       }
     },
-    [dynamicMax]
+    [dynamicMax],
   );
 
   // Re-clamp the persisted width against the live container size on mount and
@@ -79,11 +81,10 @@ export function useResizableRail(): ResizableRail {
   useEffect(() => {
     const reclamp = () => setRail(width);
     reclamp();
-    window.addEventListener('resize', reclamp);
-    return () => window.removeEventListener('resize', reclamp);
+    window.addEventListener("resize", reclamp);
+    return () => window.removeEventListener("resize", reclamp);
     // Run once on mount; setRail/width are stable enough and we don't want a
     // re-clamp loop on every width change (drag already clamps).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const draggingRef = useRef(false);
@@ -108,11 +109,11 @@ export function useResizableRail(): ResizableRail {
       draggingRef.current = false;
       setDragging(false);
     }
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
     return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
   }, [setRail]);
 
@@ -120,15 +121,15 @@ export function useResizableRail(): ResizableRail {
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') {
+      if (e.key === "ArrowLeft") {
         setRail(width - KEYBOARD_STEP);
         e.preventDefault();
-      } else if (e.key === 'ArrowRight') {
+      } else if (e.key === "ArrowRight") {
         setRail(width + KEYBOARD_STEP);
         e.preventDefault();
       }
     },
-    [setRail, width]
+    [setRail, width],
   );
 
   return {

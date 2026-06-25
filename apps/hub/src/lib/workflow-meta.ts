@@ -1,4 +1,4 @@
-import { type } from 'arktype';
+import { type } from "arktype";
 
 // Deploy-time provenance captured at workflow deploy and persisted on the
 // workflow_run row (CL-2321): the workflow package version, the repo git short
@@ -10,8 +10,8 @@ import { type } from 'arktype';
 // sync by hand. `deployedAt` is constrained to ISO because the deploy CLI sends
 // `new Date().toISOString()`.
 export const WorkflowMeta = type({
-  version: 'string',
-  sha: 'string',
-  deployedAt: 'string.date.iso',
+  version: "string",
+  sha: "string",
+  deployedAt: "string.date.iso",
 });
 export type WorkflowMeta = typeof WorkflowMeta.infer;

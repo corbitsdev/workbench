@@ -6,7 +6,6 @@
     "dev": "bun --hot src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint .",
     "start": "bun run dist/index.js",
     "test": "bun test --isolate",
     "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text",

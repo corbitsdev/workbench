@@ -1,8 +1,8 @@
 /// <reference types="bun" />
-import '../test-setup';
-import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import React from 'react';
+import "../test-setup";
+import { afterEach, describe, expect, it, mock } from "bun:test";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import React from "react";
 
 let runsResult: {
   data?: unknown[];
@@ -12,16 +12,16 @@ let runsResult: {
 } = { data: [], isLoading: false, isError: false, refetch: () => {} };
 
 let lastRunsTenantId: string | null | undefined;
-let activeTenantId: string | null = 'ten-1';
+let activeTenantId: string | null = "ten-1";
 
-mock.module('../hooks/use-workflow', () => ({
+mock.module("../hooks/use-workflow", () => ({
   useWorkflowRuns: (tenantId?: string | null) => {
     lastRunsTenantId = tenantId;
     return runsResult;
   },
 }));
 
-mock.module('../lib/active-workbench-context', () => ({
+mock.module("../lib/active-workbench-context", () => ({
   useActiveWorkbench: () => ({
     workbenches: [],
     loading: false,
@@ -32,14 +32,21 @@ mock.module('../lib/active-workbench-context', () => ({
 }));
 
 let lastPaneTenantId: string | null | undefined;
-mock.module('../components/WorkflowRunPane', () => ({
-  WorkflowRunPane: (props: { deploymentId: string; tenantId?: string | null }) => {
+mock.module("../components/WorkflowRunPane", () => ({
+  WorkflowRunPane: (props: {
+    deploymentId: string;
+    tenantId?: string | null;
+  }) => {
     lastPaneTenantId = props.tenantId;
-    return React.createElement('div', { 'data-testid': 'run-pane' }, props.deploymentId);
+    return React.createElement(
+      "div",
+      { "data-testid": "run-pane" },
+      props.deploymentId,
+    );
   },
 }));
 
-mock.module('../components/ErrorBoundary', () => ({
+mock.module("../components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) =>
     React.createElement(React.Fragment, null, children),
 }));
@@ -51,7 +58,7 @@ let lastCatalogProps: {
   tenantId: string | null;
   onWorkflowStarted: (runId: string) => void;
 } | null = null;
-mock.module('../components/layout/UnifiedCatalogModal', () => ({
+mock.module("../components/layout/UnifiedCatalogModal", () => ({
   UnifiedCatalogModal: (props: {
     open: boolean;
     tenantId: string | null;
@@ -60,45 +67,58 @@ mock.module('../components/layout/UnifiedCatalogModal', () => ({
     lastCatalogProps = props;
     if (!props.open) return null;
     return React.createElement(
-      'button',
-      { 'data-testid': 'stub-start', onClick: () => props.onWorkflowStarted('run-new') },
-      'start kind'
+      "button",
+      {
+        "data-testid": "stub-start",
+        onClick: () => props.onWorkflowStarted("run-new"),
+      },
+      "start kind",
     );
   },
 }));
 
-const { WorkflowsPage } = require('./WorkflowsPage');
+const { WorkflowsPage } = require("./WorkflowsPage");
 
 afterEach(() => {
   cleanup();
-  activeTenantId = 'ten-1';
+  activeTenantId = "ten-1";
   lastRunsTenantId = undefined;
   lastPaneTenantId = undefined;
   lastCatalogProps = null;
 });
 
-describe('WorkflowsPage', () => {
-  it('shows a loading state', () => {
-    runsResult = { data: undefined, isLoading: true, isError: false, refetch: () => {} };
+describe("WorkflowsPage", () => {
+  it("shows a loading state", () => {
+    runsResult = {
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      refetch: () => {},
+    };
     render(React.createElement(WorkflowsPage));
     expect(screen.getByText(/loading runs/i)).toBeDefined();
   });
 
-  it('shows an empty state when there are no runs', () => {
-    runsResult = { data: [], isLoading: false, isError: false, refetch: () => {} };
+  it("shows an empty state when there are no runs", () => {
+    runsResult = {
+      data: [],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
     render(React.createElement(WorkflowsPage));
     expect(screen.getByText(/no workflow runs yet/i)).toBeDefined();
   });
 
-  it('scopes the run list and run pane to the active workbench tenant', () => {
-    activeTenantId = 'ten-42';
+  it("scopes the run list and run pane to the active workbench tenant", () => {
+    activeTenantId = "ten-42";
     runsResult = {
       data: [
         {
-          runId: 'run-1',
-          kind: 'deck-build',
-          status: 'completed',
-          createdAt: '2026-01-01T00:00:00Z',
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
         },
       ],
       isLoading: false,
@@ -106,19 +126,19 @@ describe('WorkflowsPage', () => {
       refetch: () => {},
     };
     render(React.createElement(WorkflowsPage));
-    expect(lastRunsTenantId).toBe('ten-42');
-    fireEvent.click(screen.getByText('deck-build'));
-    expect(lastPaneTenantId).toBe('ten-42');
+    expect(lastRunsTenantId).toBe("ten-42");
+    fireEvent.click(screen.getByText("deck-build"));
+    expect(lastPaneTenantId).toBe("ten-42");
   });
 
-  it('lists runs and opens the run pane on select', () => {
+  it("lists runs and opens the run pane on select", () => {
     runsResult = {
       data: [
         {
-          runId: 'run-1',
-          kind: 'deck-build',
-          status: 'completed',
-          createdAt: '2026-01-01T00:00:00Z',
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
         },
       ],
       isLoading: false,
@@ -126,25 +146,30 @@ describe('WorkflowsPage', () => {
       refetch: () => {},
     };
     render(React.createElement(WorkflowsPage));
-    expect(screen.getByText('deck-build')).toBeDefined();
-    expect(screen.queryByTestId('run-pane')).toBeNull();
-    fireEvent.click(screen.getByText('deck-build'));
-    expect(screen.getByTestId('run-pane').textContent).toBe('run-1');
+    expect(screen.getByText("deck-build")).toBeDefined();
+    expect(screen.queryByTestId("run-pane")).toBeNull();
+    fireEvent.click(screen.getByText("deck-build"));
+    expect(screen.getByTestId("run-pane").textContent).toBe("run-1");
   });
 
-  it('opens the catalog on New run, and starting a run selects it', () => {
-    activeTenantId = 'ten-7';
-    runsResult = { data: [], isLoading: false, isError: false, refetch: () => {} };
+  it("opens the catalog on New run, and starting a run selects it", () => {
+    activeTenantId = "ten-7";
+    runsResult = {
+      data: [],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
     render(React.createElement(WorkflowsPage));
 
-    expect(screen.queryByTestId('stub-start')).toBeNull();
+    expect(screen.queryByTestId("stub-start")).toBeNull();
     fireEvent.click(screen.getByText(/new run/i));
     expect(lastCatalogProps?.open).toBe(true);
-    expect(lastCatalogProps?.tenantId).toBe('ten-7');
+    expect(lastCatalogProps?.tenantId).toBe("ten-7");
 
-    fireEvent.click(screen.getByTestId('stub-start'));
+    fireEvent.click(screen.getByTestId("stub-start"));
     // The new run's detail opens, scoped to the active tenant.
-    expect(screen.getByTestId('run-pane').textContent).toBe('run-new');
-    expect(lastPaneTenantId).toBe('ten-7');
+    expect(screen.getByTestId("run-pane").textContent).toBe("run-new");
+    expect(lastPaneTenantId).toBe("ten-7");
   });
 });

@@ -20,7 +20,7 @@ export interface SeedWorkspaceFile {
  */
 export const PERSONAL_AGENT_SEED_FILES: SeedWorkspaceFile[] = [
   {
-    path: 'MEMORY.md',
+    path: "MEMORY.md",
     content: `# Memory
 
 Durable memory worth keeping across tasks. Keep it organized under these headings; add to the right one rather than starting new files.
@@ -40,10 +40,11 @@ Failures you hit, with enough detail to avoid them next time.
   },
 ];
 
-const SEED_MARKER_PREFIX = '<!-- workbench:memory-seed=';
-const SEED_MARKER_SUFFIX = ' -->';
+const SEED_MARKER_PREFIX = "<!-- workbench:memory-seed=";
+const SEED_MARKER_SUFFIX = " -->";
 const SEED_MARKER_PATTERN = /<!--\s*workbench:memory-seed=([^>]*?)\s*-->/;
-const SEED_MARKER_PATTERN_GLOBAL = /<!--\s*workbench:memory-seed=([^>]*?)\s*-->/g;
+const SEED_MARKER_PATTERN_GLOBAL =
+  /<!--\s*workbench:memory-seed=([^>]*?)\s*-->/g;
 
 /**
  * A seed-file name is always a plain basename. Anything with a path separator or
@@ -52,7 +53,12 @@ const SEED_MARKER_PATTERN_GLOBAL = /<!--\s*workbench:memory-seed=([^>]*?)\s*-->/
  * containment check) — CL-1952.
  */
 function assertPlainBasename(name: string): void {
-  if (name.includes('/') || name.includes('\\') || name === '..' || name.includes('..')) {
+  if (
+    name.includes("/") ||
+    name.includes("\\") ||
+    name === ".." ||
+    name.includes("..")
+  ) {
     throw new Error(`Seed marker entry "${name}" is not a plain basename`);
   }
 }
@@ -65,18 +71,20 @@ function assertPlainBasename(name: string): void {
  * the whole prompt, which the appended section defeats (CL-1952).
  */
 export function buildSeedMarker(files: SeedWorkspaceFile[]): string {
-  const names = files.map((f) => f.path).join(',');
+  const names = files.map((f) => f.path).join(",");
   return `${SEED_MARKER_PREFIX}${names}${SEED_MARKER_SUFFIX}`;
 }
 
-const seedFileByPath = new Map(PERSONAL_AGENT_SEED_FILES.map((file) => [file.path, file]));
+const seedFileByPath = new Map(
+  PERSONAL_AGENT_SEED_FILES.map((file) => [file.path, file]),
+);
 
 /**
  * Basenames that older deployed prompts may still list in the memory-seed marker
  * but are no longer seeded. Skipped on parse so sidecar session restore survives
  * prompt/schema drift without re-launching every instance (CL-1952).
  */
-const RETIRED_SEED_BASENAMES = new Set<string>(['SCRATCHPAD.md']);
+const RETIRED_SEED_BASENAMES = new Set<string>(["SCRATCHPAD.md"]);
 
 /**
  * Whether a system prompt carries a seed marker at all. Lets the harness tell a
@@ -104,7 +112,7 @@ export function parseSeedMarker(systemPrompt: string): SeedWorkspaceFile[] {
   if (!match || match[1] === undefined) return [];
 
   const declared = match[1]
-    .split(',')
+    .split(",")
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
 
@@ -119,7 +127,9 @@ export function parseSeedMarker(systemPrompt: string): SeedWorkspaceFile[] {
     if (RETIRED_SEED_BASENAMES.has(name)) {
       continue;
     }
-    throw new Error(`Seed marker declares "${name}" but no stub content is registered for it`);
+    throw new Error(
+      `Seed marker declares "${name}" but no stub content is registered for it`,
+    );
   }
   return resolved;
 }
@@ -134,7 +144,7 @@ export function parseSeedMarker(systemPrompt: string): SeedWorkspaceFile[] {
  */
 export function stripSeedMarker(systemPrompt: string): string {
   return systemPrompt
-    .replace(SEED_MARKER_PATTERN_GLOBAL, '')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(SEED_MARKER_PATTERN_GLOBAL, "")
+    .replace(/\n{3,}/g, "\n\n")
     .trimEnd();
 }

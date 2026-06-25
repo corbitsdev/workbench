@@ -1,34 +1,34 @@
-import { useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router';
+import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router";
 import {
   ChatLauncher,
   DockedChatBar,
   DOCKED_BAR_HEIGHT,
   FloatingChat,
   type ChatDockState,
-} from '@workbench/chat';
-import { useChatLauncher } from '../lib/chat-launcher-context';
-import { useMyraSession } from '../hooks/use-myra-session';
+} from "@workbench/chat";
+import { useChatLauncher } from "../lib/chat-launcher-context";
+import { useMyraSession } from "../hooks/use-myra-session";
 import {
   resolveActiveThread,
   useCreateMyraThread,
   useMyraThreads,
   writeLastActiveThreadId,
-} from '../hooks/use-myra-threads';
-import { takePendingFirstMessage } from '../lib/pending-first-message';
-import { MyraChatSurface } from './MyraChatSurface';
-import { ThreadSwitcher } from './ThreadSwitcher';
+} from "../hooks/use-myra-threads";
+import { takePendingFirstMessage } from "../lib/pending-first-message";
+import { MyraChatSurface } from "./MyraChatSurface";
+import { ThreadSwitcher } from "./ThreadSwitcher";
 
-const DOCK_STATE_KEY = 'myra-chat-dock-state';
+const DOCK_STATE_KEY = "myra-chat-dock-state";
 
 function readDockState(): ChatDockState {
   try {
     const stored = localStorage.getItem(DOCK_STATE_KEY);
-    if (stored === 'docked' || stored === 'floating') return stored;
+    if (stored === "docked" || stored === "floating") return stored;
   } catch {
     // localStorage unavailable
   }
-  return 'floating';
+  return "floating";
 }
 
 function writeDockState(state: ChatDockState): void {
@@ -46,7 +46,8 @@ function writeDockState(state: ChatDockState): void {
  */
 export function PersonalAgentChat() {
   const location = useLocation();
-  const onChatRoute = location.pathname === '/' || location.pathname.startsWith('/chats');
+  const onChatRoute =
+    location.pathname === "/" || location.pathname.startsWith("/chats");
 
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -57,7 +58,10 @@ export function PersonalAgentChat() {
   const createThread = useCreateMyraThread();
 
   const activeThread = resolveActiveThread(threads ?? [], selectedThreadId);
-  const session = useMyraSession(activeThread?.instanceId ?? null, !onChatRoute);
+  const session = useMyraSession(
+    activeThread?.instanceId ?? null,
+    !onChatRoute,
+  );
 
   const {
     hidden: launcherHidden,
@@ -78,20 +82,22 @@ export function PersonalAgentChat() {
   useEffect(() => {
     if (pendingMessage === null) return;
     setOpen(true);
-    if (session.state.phase === 'error' || session.state.phase === 'credential-error') {
+    if (
+      session.state.phase === "error" ||
+      session.state.phase === "credential-error"
+    ) {
       clearPendingMessage();
       return;
     }
-    if (session.state.phase !== 'ready') return;
+    if (session.state.phase !== "ready") return;
     session.send(pendingMessage);
     clearPendingMessage();
     // session.send is recreated each render; depend on the phase that gates it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingMessage, session.state.phase, clearPendingMessage]);
 
   const toggleDock = () => {
     setDockState((prev) => {
-      const next = prev === 'docked' ? 'floating' : 'docked';
+      const next = prev === "docked" ? "floating" : "docked";
       writeDockState(next);
       return next;
     });
@@ -115,7 +121,7 @@ export function PersonalAgentChat() {
   // Delete-on-read makes this safe even if another surface also tries.
   const deliveredRef = useRef<string | null>(null);
   useEffect(() => {
-    if (session.state.phase !== 'ready' || !activeThread) return;
+    if (session.state.phase !== "ready" || !activeThread) return;
     if (deliveredRef.current === activeThread.id) return;
     const pending = takePendingFirstMessage(activeThread.id);
     if (pending) {
@@ -123,7 +129,6 @@ export function PersonalAgentChat() {
       session.send(pending);
     }
     // session.send is recreated each render; gate on phase + thread id instead.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.state.phase, activeThread]);
 
   // Consume a "Open in dock" handoff (e.g. from the artifact panel): bind to the
@@ -131,12 +136,11 @@ export function PersonalAgentChat() {
   useEffect(() => {
     if (pendingDockThreadId === null) return;
     selectThread(pendingDockThreadId);
-    setDockState('docked');
-    writeDockState('docked');
+    setDockState("docked");
+    writeDockState("docked");
     setOpen(true);
     clearPendingDockThread();
     // selectThread is recreated each render; the pending id gates this.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingDockThreadId, clearPendingDockThread]);
 
   // The full-page chat owns the session on '/' and /chats routes; suppress the
@@ -171,12 +175,16 @@ export function PersonalAgentChat() {
     </div>
   );
 
-  if (dockState === 'docked') {
+  if (dockState === "docked") {
     return (
       <>
         {/* Spacer reserves height in the flex column so main content shrinks
             above the fixed overlay rather than being hidden behind it. */}
-        <div aria-hidden style={{ height: DOCKED_BAR_HEIGHT + 18 }} className="shrink-0" />
+        <div
+          aria-hidden
+          style={{ height: DOCKED_BAR_HEIGHT + 18 }}
+          className="shrink-0"
+        />
         <DockedChatBar>{panel}</DockedChatBar>
       </>
     );
@@ -184,8 +192,14 @@ export function PersonalAgentChat() {
 
   return (
     <>
-      {!launcherHidden && <ChatLauncher onClick={() => setOpen((prev) => !prev)} open={open} />}
-      <FloatingChat open={open} expanded={expanded} onClose={() => setOpen(false)}>
+      {!launcherHidden && (
+        <ChatLauncher onClick={() => setOpen((prev) => !prev)} open={open} />
+      )}
+      <FloatingChat
+        open={open}
+        expanded={expanded}
+        onClose={() => setOpen(false)}
+      >
         {panel}
       </FloatingChat>
     </>

@@ -1,17 +1,17 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
-import { useToolsLibrary, type ToolSummary } from '../hooks/use-tools';
-import { getMe } from '../lib/hub-api';
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useToolsLibrary, type ToolSummary } from "../hooks/use-tools";
+import { getMe } from "../lib/hub-api";
 
-const W = 'rgba(255,255,255,.9)';
-const W2 = 'rgba(255,255,255,.45)';
+const W = "rgba(255,255,255,.9)";
+const W2 = "rgba(255,255,255,.45)";
 
 // Decorative glyph drawn behind a tool tile's hero area, mirroring the skills
 // and artifact gallery visual language.
-function ToolGlyph({ kind }: { kind: 'code' | 'doc' | 'grid' | 'nodes' }) {
+function ToolGlyph({ kind }: { kind: "code" | "doc" | "grid" | "nodes" }) {
   switch (kind) {
-    case 'code':
+    case "code":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 80">
           <path
@@ -30,10 +30,18 @@ function ToolGlyph({ kind }: { kind: 'code' | 'doc' | 'grid' | 'nodes' }) {
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <line x1="66" y1="22" x2="54" y2="58" stroke={W2} strokeWidth="5" strokeLinecap="round" />
+          <line
+            x1="66"
+            y1="22"
+            x2="54"
+            y2="58"
+            stroke={W2}
+            strokeWidth="5"
+            strokeLinecap="round"
+          />
         </svg>
       );
-    case 'doc':
+    case "doc":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 80">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -49,7 +57,7 @@ function ToolGlyph({ kind }: { kind: 'code' | 'doc' | 'grid' | 'nodes' }) {
           ))}
         </svg>
       );
-    case 'grid':
+    case "grid":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 80">
           {Array.from({ length: 15 }).map((_, i) => (
@@ -65,7 +73,7 @@ function ToolGlyph({ kind }: { kind: 'code' | 'doc' | 'grid' | 'nodes' }) {
           ))}
         </svg>
       );
-    case 'nodes':
+    case "nodes":
       return (
         <svg className="h-full w-full" viewBox="0 0 120 80">
           <line x1="30" y1="26" x2="70" y2="50" stroke={W2} strokeWidth="2" />
@@ -80,8 +88,8 @@ function ToolGlyph({ kind }: { kind: 'code' | 'doc' | 'grid' | 'nodes' }) {
   }
 }
 
-const GLYPHS = ['code', 'doc', 'grid', 'nodes'] as const;
-const FILLS = ['bg-orange', 'bg-blue', 'bg-green', 'bg-charcoal'] as const;
+const GLYPHS = ["code", "doc", "grid", "nodes"] as const;
+const FILLS = ["bg-orange", "bg-blue", "bg-green", "bg-charcoal"] as const;
 
 function hashString(value: string): number {
   let hash = 0;
@@ -112,7 +120,7 @@ function ToolCard({
       aria-label={`Open ${tool.name}`}
       onClick={onSelect}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onSelect();
         }
@@ -122,21 +130,27 @@ function ToolCard({
       <span className="absolute left-[10px] top-[10px] z-[2] rounded-full bg-[rgba(0,0,0,0.32)] px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px]">
         {tool.providerName}
       </span>
-      <div className={`relative grid h-[112px] place-items-center overflow-hidden ${fill}`}>
+      <div
+        className={`relative grid h-[112px] place-items-center overflow-hidden ${fill}`}
+      >
         <div className="h-full w-full transition-transform duration-500 ease-spring group-hover:scale-[1.06]">
           <ToolGlyph kind={glyph} />
         </div>
         <span className="absolute bottom-[10px] right-3 font-mono text-[13px] font-bold text-[rgba(255,255,255,0.85)]">
-          T{index.toString().padStart(2, '0')}
+          T{index.toString().padStart(2, "0")}
         </span>
       </div>
       <div className="border-t border-border bg-surface px-[13px] py-[11px]">
-        <div className="truncate font-mono text-[13px] font-semibold text-text">{tool.name}</div>
+        <div className="truncate font-mono text-[13px] font-semibold text-text">
+          {tool.name}
+        </div>
         <p className="mt-0.5 line-clamp-2 text-pretty text-[11px] text-text-3">
-          {tool.description || 'No description'}
+          {tool.description || "No description"}
         </p>
         {tool.version !== null && (
-          <span className="mt-1.5 block font-mono text-[10px] text-text-3/70">v{tool.version}</span>
+          <span className="mt-1.5 block font-mono text-[10px] text-text-3/70">
+            v{tool.version}
+          </span>
         )}
       </div>
     </div>
@@ -145,8 +159,12 @@ function ToolCard({
 
 export function ToolsLibrary() {
   const navigate = useNavigate();
-  const [query, setQuery] = useState('');
-  const meQuery = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: 5 * 60_000 });
+  const [query, setQuery] = useState("");
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    staleTime: 5 * 60_000,
+  });
   const tenantId = meQuery.data?.personalTenantId ?? null;
   const toolsQuery = useToolsLibrary(tenantId);
 
@@ -157,7 +175,7 @@ export function ToolsLibrary() {
         !q ||
         tool.name.toLowerCase().includes(q) ||
         tool.providerName.toLowerCase().includes(q) ||
-        tool.description.toLowerCase().includes(q)
+        tool.description.toLowerCase().includes(q),
     );
   }, [query, toolsQuery.data]);
 
@@ -167,7 +185,9 @@ export function ToolsLibrary() {
     <div className="flex h-full overflow-hidden bg-bg">
       <section className="flex min-h-full flex-1 flex-col overflow-y-auto rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
         <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
-          <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">Tools</h1>
+          <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
+            Tools
+          </h1>
           <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
             {filtered.length} items
           </span>
@@ -187,24 +207,30 @@ export function ToolsLibrary() {
             <div className="py-10 text-[13px] text-text-3">Loading tools…</div>
           )}
           {toolsQuery.isError && (
-            <div className="py-10 text-[13px] text-text-3">Could not load tools.</div>
-          )}
-          {!toolsQuery.isLoading && !toolsQuery.isError && filtered.length === 0 && (
             <div className="py-10 text-[13px] text-text-3">
-              {isSearching ? (
-                <>No results for &ldquo;{query.trim()}&rdquo;.</>
-              ) : (
-                <>No tools available.</>
-              )}
+              Could not load tools.
             </div>
           )}
+          {!toolsQuery.isLoading &&
+            !toolsQuery.isError &&
+            filtered.length === 0 && (
+              <div className="py-10 text-[13px] text-text-3">
+                {isSearching ? (
+                  <>No results for &ldquo;{query.trim()}&rdquo;.</>
+                ) : (
+                  <>No tools available.</>
+                )}
+              </div>
+            )}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
             {filtered.map((tool, i) => (
               <ToolCard
                 key={tool.name}
                 tool={tool}
                 index={i + 1}
-                onSelect={() => navigate(`/tools/${encodeURIComponent(tool.name)}`)}
+                onSelect={() =>
+                  navigate(`/tools/${encodeURIComponent(tool.name)}`)
+                }
               />
             ))}
           </div>

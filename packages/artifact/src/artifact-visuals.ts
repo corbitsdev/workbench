@@ -2,48 +2,93 @@
 // domain data; this module decides how to visualize it. Maps an artifact
 // `kind` to a gallery tile's label, decorative viz, fill color, and grid span.
 
-import type { ArtifactWithSession } from '@workbench/shared';
-import { isLinkedInPostArtifactKind } from './artifact-kinds';
-import type { ArtifactVisual, GalleryArtifact } from './types';
+import type { ArtifactWithSession } from "@workbench/shared";
+import { isLinkedInPostArtifactKind } from "./artifact-kinds";
+import type { ArtifactVisual, GalleryArtifact } from "./types";
 
 // Default visuals per known artifact kind. The DB `kind` column is free-form,
 // so unknown kinds fall back to a neutral document tile.
 const LINKEDIN_POST_VISUAL: ArtifactVisual = {
-  label: 'LinkedIn Post',
-  viz: 'lines',
-  fill: 'bg-blue',
-  span: 'row-span-2',
+  label: "LinkedIn Post",
+  viz: "lines",
+  fill: "bg-blue",
+  span: "row-span-2",
 };
 
 const KIND_VISUALS: Record<string, ArtifactVisual> = {
-  email: { label: 'Email', viz: 'lines', fill: 'bg-orange', span: 'row-span-3' },
-  'twitter-post': { label: 'Tweet', viz: 'lines', fill: 'bg-blue', span: 'row-span-2' },
-  'founder-pov-post': { label: 'Founder POV', viz: 'lines', fill: 'bg-blue', span: 'row-span-2' },
-  'one-pager': { label: 'One-Pager', viz: 'deck', fill: 'bg-charcoal', span: 'row-span-4' },
-  blog: { label: 'Blog Post', viz: 'deck', fill: 'bg-charcoal', span: 'row-span-4' },
-  'case-study': { label: 'Case Study', viz: 'deck', fill: 'bg-charcoal', span: 'row-span-4' },
-  'objection-handling': {
-    label: 'Objection Handling',
-    viz: 'deck',
-    fill: 'bg-charcoal',
-    span: 'row-span-4',
+  email: {
+    label: "Email",
+    viz: "lines",
+    fill: "bg-orange",
+    span: "row-span-3",
   },
-  'customer-quotes': {
-    label: 'Customer Quotes',
-    viz: 'deck',
-    fill: 'bg-charcoal',
-    span: 'row-span-4',
+  "twitter-post": {
+    label: "Tweet",
+    viz: "lines",
+    fill: "bg-blue",
+    span: "row-span-2",
   },
-  battlecard: { label: 'Battlecard', viz: 'grid', fill: 'bg-green', span: 'row-span-3' },
-  'pain-points': { label: 'Pain Points', viz: 'bars', fill: 'bg-orange', span: 'row-span-3' },
-  'call-transcript': { label: 'Transcript', viz: 'lines', fill: 'bg-cream', span: 'row-span-4' },
+  "founder-pov-post": {
+    label: "Founder POV",
+    viz: "lines",
+    fill: "bg-blue",
+    span: "row-span-2",
+  },
+  "one-pager": {
+    label: "One-Pager",
+    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+  },
+  blog: {
+    label: "Blog Post",
+    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+  },
+  "case-study": {
+    label: "Case Study",
+    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+  },
+  "objection-handling": {
+    label: "Objection Handling",
+    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+  },
+  "customer-quotes": {
+    label: "Customer Quotes",
+    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+  },
+  battlecard: {
+    label: "Battlecard",
+    viz: "grid",
+    fill: "bg-green",
+    span: "row-span-3",
+  },
+  "pain-points": {
+    label: "Pain Points",
+    viz: "bars",
+    fill: "bg-orange",
+    span: "row-span-3",
+  },
+  "call-transcript": {
+    label: "Transcript",
+    viz: "lines",
+    fill: "bg-cream",
+    span: "row-span-4",
+  },
 };
 
 const FALLBACK_VISUAL: ArtifactVisual = {
-  label: 'Document',
-  viz: 'lines',
-  fill: 'bg-cream',
-  span: 'row-span-3',
+  label: "Document",
+  viz: "lines",
+  fill: "bg-cream",
+  span: "row-span-3",
 };
 
 export function visualForKind(kind: string): ArtifactVisual {
@@ -53,20 +98,20 @@ export function visualForKind(kind: string): ArtifactVisual {
   return KIND_VISUALS[kind] ?? FALLBACK_VISUAL;
 }
 
-const RELATIVE_TIME = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+const RELATIVE_TIME = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 const DIVISIONS: { amount: number; unit: Intl.RelativeTimeFormatUnit }[] = [
-  { amount: 60, unit: 'second' },
-  { amount: 60, unit: 'minute' },
-  { amount: 24, unit: 'hour' },
-  { amount: 7, unit: 'day' },
-  { amount: 4.34524, unit: 'week' },
-  { amount: 12, unit: 'month' },
-  { amount: Number.POSITIVE_INFINITY, unit: 'year' },
+  { amount: 60, unit: "second" },
+  { amount: 60, unit: "minute" },
+  { amount: 24, unit: "hour" },
+  { amount: 7, unit: "day" },
+  { amount: 4.34524, unit: "week" },
+  { amount: 12, unit: "month" },
+  { amount: Number.POSITIVE_INFINITY, unit: "year" },
 ];
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
+  if (Number.isNaN(then)) return "";
   let duration = (then - Date.now()) / 1000;
   for (const division of DIVISIONS) {
     if (Math.abs(duration) < division.amount) {
@@ -74,16 +119,18 @@ function formatRelativeTime(iso: string): string {
     }
     duration /= division.amount;
   }
-  return '';
+  return "";
 }
 
-export function toGalleryArtifact(artifact: ArtifactWithSession): GalleryArtifact {
+export function toGalleryArtifact(
+  artifact: ArtifactWithSession,
+): GalleryArtifact {
   const visual = visualForKind(artifact.kind);
   return {
     ...visual,
     id: artifact.id,
     title: artifact.title,
-    from: artifact.sessionName ?? 'Untitled job',
+    from: artifact.sessionName ?? "Untitled job",
     time: formatRelativeTime(artifact.updatedAt),
   };
 }

@@ -1,16 +1,19 @@
-import { resolveCredentialRequirement, listAssetsForTenant } from '@intx/db';
-import { getLogger } from '@intx/log';
-import { createClosureResolver } from '@intx/tool-packaging';
-import { WORKSPACE_BUILTINS_REGISTRY, type AssetService } from '@intx/hub-sessions';
-import { toolPackagesForCapabilities } from '@workbench/agents';
-import type { HubDb } from '../db';
-import { buildTenantRegistryMap } from './tenant-registry-map';
+import { resolveCredentialRequirement, listAssetsForTenant } from "@intx/db";
+import { getLogger } from "@intx/log";
+import { createClosureResolver } from "@intx/tool-packaging";
+import {
+  WORKSPACE_BUILTINS_REGISTRY,
+  type AssetService,
+} from "@intx/hub-sessions";
+import { toolPackagesForCapabilities } from "@workbench/agents";
+import type { HubDb } from "../db";
+import { buildTenantRegistryMap } from "./tenant-registry-map";
 import {
   KNOWN_TOOLS,
   isCredentialToolEntry,
   type ToolEntry,
   type ToolSummary,
-} from './tool-registry';
+} from "./tool-registry";
 
 /**
  * Tenant-scoped tool availability. A credential tool is available to a tenant
@@ -25,13 +28,15 @@ import {
  * resolved once each (the registry has a single-digit number of them).
  */
 
-const log = getLogger(['api', 'tenant-tools']);
+const log = getLogger(["api", "tenant-tools"]);
 
 function summaryFor(name: string, entry: ToolEntry): ToolSummary {
   return {
     name,
-    providerName: isCredentialToolEntry(entry) ? entry.providerName : 'workbench',
-    description: entry.definition.description ?? '',
+    providerName: isCredentialToolEntry(entry)
+      ? entry.providerName
+      : "workbench",
+    description: entry.definition.description ?? "",
   };
 }
 
@@ -54,19 +59,19 @@ function credentialProviderNames(): Set<string> {
 async function providerAvailable(
   db: HubDb,
   tenantId: string,
-  providerName: string
+  providerName: string,
 ): Promise<boolean> {
   try {
     const resolved = await resolveCredentialRequirement(
       db,
       tenantId,
-      { providerName, source: 'tenant' },
+      { providerName, source: "tenant" },
       null,
-      null
+      null,
     );
     return resolved !== null;
   } catch (error) {
-    log.warn('credential resolution failed; hiding provider from the catalog', {
+    log.warn("credential resolution failed; hiding provider from the catalog", {
       providerName,
       tenantId,
       error: error instanceof Error ? error.message : String(error),
@@ -78,13 +83,14 @@ async function providerAvailable(
 async function resolveAvailableProviderNames(
   db: HubDb,
   tenantId: string,
-  wanted: Set<string>
+  wanted: Set<string>,
 ): Promise<Set<string>> {
   const available = new Set<string>();
   await Promise.all(
     [...wanted].map(async (providerName) => {
-      if (await providerAvailable(db, tenantId, providerName)) available.add(providerName);
-    })
+      if (await providerAvailable(db, tenantId, providerName))
+        available.add(providerName);
+    }),
   );
   return available;
 }
@@ -92,11 +98,18 @@ async function resolveAvailableProviderNames(
 /** Summaries of every tool the tenant can run, for the gallery list view. */
 export async function listAvailableToolSummaries(
   db: HubDb,
-  tenantId: string
+  tenantId: string,
 ): Promise<ToolSummary[]> {
-  const available = await resolveAvailableProviderNames(db, tenantId, credentialProviderNames());
+  const available = await resolveAvailableProviderNames(
+    db,
+    tenantId,
+    credentialProviderNames(),
+  );
   return Object.entries(KNOWN_TOOLS)
-    .filter(([, entry]) => !isCredentialToolEntry(entry) || available.has(entry.providerName))
+    .filter(
+      ([, entry]) =>
+        !isCredentialToolEntry(entry) || available.has(entry.providerName),
+    )
     .map(([name, entry]) => summaryFor(name, entry));
 }
 
@@ -106,7 +119,7 @@ export type ToolDetail = ToolSummary & { inputSchema: unknown };
 export async function getAvailableToolDetail(
   db: HubDb,
   tenantId: string,
-  name: string
+  name: string,
 ): Promise<ToolDetail | null> {
   const entry = KNOWN_TOOLS[name];
   if (entry === undefined) return null;
@@ -116,7 +129,10 @@ export async function getAvailableToolDetail(
   ) {
     return null;
   }
-  return { ...summaryFor(name, entry), inputSchema: entry.definition.inputSchema ?? null };
+  return {
+    ...summaryFor(name, entry),
+    inputSchema: entry.definition.inputSchema ?? null,
+  };
 }
 
 function packageForTool(toolName: string): string | null {
@@ -137,23 +153,29 @@ export async function resolveToolVersions(
   db: HubDb,
   tenantId: string,
   toolNames: string[],
-  assetService: AssetService
+  assetService: AssetService,
 ): Promise<Map<string, string>> {
   const pins = toolPackagesForCapabilities(toolNames);
   if (pins.length === 0) return new Map();
 
-  const visibleAssets = await listAssetsForTenant(db, tenantId, 'package-registry');
+  const visibleAssets = await listAssetsForTenant(
+    db,
+    tenantId,
+    "package-registry",
+  );
   const { registryMap } = buildTenantRegistryMap(visibleAssets, assetService);
   if (!registryMap.has(WORKSPACE_BUILTINS_REGISTRY)) return new Map();
 
-  let manifest: Awaited<ReturnType<ReturnType<typeof createClosureResolver>['resolveClosure']>>;
+  let manifest: Awaited<
+    ReturnType<ReturnType<typeof createClosureResolver>["resolveClosure"]>
+  >;
   try {
     manifest = await createClosureResolver({
       registries: registryMap,
       defaultRegistry: WORKSPACE_BUILTINS_REGISTRY,
     }).resolveClosure(pins);
   } catch (err) {
-    log.error('Registry closure resolution failed during version lookup', {
+    log.error("Registry closure resolution failed during version lookup", {
       tenantId,
       error: err instanceof Error ? err.message : String(err),
     });

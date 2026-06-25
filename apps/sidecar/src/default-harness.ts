@@ -1,9 +1,15 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { evaluateGrants } from '@intx/authz';
-import { createToolRunner, defineTool } from '@intx/agent';
-import { createWorkbenchDirectorRegistry, toLlmToolName } from '@workbench/agents';
-import { HUB_RPC_ENV_KEY, providerFromEnvKey } from '@workbench/tool-credentials';
+import fs from "node:fs";
+import path from "node:path";
+import { evaluateGrants } from "@intx/authz";
+import { createToolRunner, defineTool } from "@intx/agent";
+import {
+  createWorkbenchDirectorRegistry,
+  toLlmToolName,
+} from "@workbench/agents";
+import {
+  HUB_RPC_ENV_KEY,
+  providerFromEnvKey,
+} from "@workbench/tool-credentials";
 import {
   mergeToolRunners,
   fetchToolCredentials,
@@ -11,27 +17,34 @@ import {
   loadToolPackages,
   wsUrlToHttp,
   type DefinedRunner,
-} from './agent-tools';
-import { createHarness, createHarnessRuntimeCapabilities } from '@intx/harness';
-import { readDeployTree } from '@workbench/hub-agent';
-import { hasProvider } from '@intx/inference';
-import { getLogger } from '@intx/log';
-import { createIsogitStore, createMailAuditStore } from '@workbench/storage-isogit';
-import { createMailTools } from '@intx/tools-mail';
-import { createPosixTools } from '@intx/tools-posix';
-import { createBlobReader } from '@intx/types/runtime';
-import type { InferenceSource } from '@intx/types/runtime';
-import type { HarnessBuilder, HarnessBundle } from '@workbench/hub-agent';
-import { hasSeedMarker, parseSeedMarker, stripSeedMarker } from '@workbench/agents/seed';
-import { PERSONAL_AGENT_NAME } from '@workbench/agents';
-import { createAskPrincipalTool } from '@workbench/approvals';
-import { seedWorkspaceFiles } from './seed-workspace-files';
-import { healTurns } from '@workbench/context-repair';
-import { withActiveContext } from '@workbench/prompts';
-import { createGuardedMailRunner } from './mail-guard';
-import type { ContextStore } from '@intx/types/runtime';
+} from "./agent-tools";
+import { createHarness, createHarnessRuntimeCapabilities } from "@intx/harness";
+import { readDeployTree } from "@workbench/hub-agent";
+import { hasProvider } from "@intx/inference";
+import { getLogger } from "@intx/log";
+import {
+  createIsogitStore,
+  createMailAuditStore,
+} from "@workbench/storage-isogit";
+import { createMailTools } from "@intx/tools-mail";
+import { createPosixTools } from "@intx/tools-posix";
+import { createBlobReader } from "@intx/types/runtime";
+import type { InferenceSource } from "@intx/types/runtime";
+import type { HarnessBuilder, HarnessBundle } from "@workbench/hub-agent";
+import {
+  hasSeedMarker,
+  parseSeedMarker,
+  stripSeedMarker,
+} from "@workbench/agents/seed";
+import { PERSONAL_AGENT_NAME } from "@workbench/agents";
+import { createAskPrincipalTool } from "@workbench/approvals";
+import { seedWorkspaceFiles } from "./seed-workspace-files";
+import { healTurns } from "@workbench/context-repair";
+import { withActiveContext } from "@workbench/prompts";
+import { createGuardedMailRunner } from "./mail-guard";
+import type { ContextStore } from "@intx/types/runtime";
 
-const logger = getLogger(['sidecar', 'harness-builder']);
+const logger = getLogger(["sidecar", "harness-builder"]);
 const DEFAULT_MAIL_OUTBOUND_PER_TURN = 8;
 const PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN = 100;
 
@@ -43,27 +56,34 @@ const PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN = 100;
  * every replay until removed — ending and relaunching the session alone does
  * not clear them, because the isogit store is reused.
  */
-export async function healContextStore(storage: ContextStore, agentAddress: string): Promise<void> {
+export async function healContextStore(
+  storage: ContextStore,
+  agentAddress: string,
+): Promise<void> {
   const { turns } = await storage.load();
   const healed = healTurns(turns);
   if (!healed.changed) return;
 
   await storage.writeTurns(healed.turns);
   await storage.commit({
-    message: 'recover: heal unsendable turns and tool_call pairing',
+    message: "recover: heal unsendable turns and tool_call pairing",
   });
   logger.warn(
-    'Healed context for {address}: removed {removed} unsendable turn(s), synthesized {synth} tool result(s), dropped {dangling} dangling result(s)',
+    "Healed context for {address}: removed {removed} unsendable turn(s), synthesized {synth} tool result(s), dropped {dangling} dangling result(s)",
     {
       address: agentAddress,
       removed: healed.unsendableRemoved,
       synth: healed.toolResultsSynthesized,
       dangling: healed.danglingResultsDropped,
-    }
+    },
   );
 }
 
-export { mergeToolRunners as combineRunners, wsUrlToHttp, fetchToolCredentials };
+export {
+  mergeToolRunners as combineRunners,
+  wsUrlToHttp,
+  fetchToolCredentials,
+};
 
 export function resolveMailOutboundLimit(systemPrompt: string): number {
   if (systemPrompt.includes(`You are ${PERSONAL_AGENT_NAME}, Chief of Staff`)) {
@@ -90,7 +110,9 @@ export function createDefaultHarnessBuilder({
   return {
     canBuildSource(source: InferenceSource): void {
       if (!hasProvider(source.provider)) {
-        throw new Error(`Source provider "${source.provider}" is not registered`);
+        throw new Error(
+          `Source provider "${source.provider}" is not registered`,
+        );
       }
     },
 
@@ -140,7 +162,7 @@ export function createDefaultHarnessBuilder({
           tenantId,
         });
 
-      const workDir = path.join(storeDir, 'workspace');
+      const workDir = path.join(storeDir, "workspace");
       await fs.promises.mkdir(workDir, { recursive: true });
 
       // Seed the memory files the agent documents but does not create itself, so
@@ -151,16 +173,22 @@ export function createDefaultHarnessBuilder({
         // A marker that resolves zero files is a malformed/empty marker — a
         // contract break between the prompt builder and the seed table. Surface
         // it rather than silently seed nothing (CL-1952).
-        logger.warn('Seed marker for {address} resolved zero files (malformed)', {
-          address: agentAddress,
-        });
+        logger.warn(
+          "Seed marker for {address} resolved zero files (malformed)",
+          {
+            address: agentAddress,
+          },
+        );
       }
       const seedResult = await seedWorkspaceFiles(workDir, declaredSeedFiles);
-      logger.info('Seeded {created} workspace file(s) for {address}, skipped {skipped} existing', {
-        address: agentAddress,
-        created: seedResult.created,
-        skipped: seedResult.skipped,
-      });
+      logger.info(
+        "Seeded {created} workspace file(s) for {address}, skipped {skipped} existing",
+        {
+          address: agentAddress,
+          created: seedResult.created,
+          skipped: seedResult.skipped,
+        },
+      );
 
       const blobReader = createBlobReader(storage);
       const posixTools = createPosixTools({
@@ -172,9 +200,12 @@ export function createDefaultHarnessBuilder({
         transport: agentTransport,
       });
       const mailTools = createMailTools({ capabilities });
-      const guardedMailTools = createGuardedMailRunner(mailTools as DefinedRunner, {
-        maxOutboundPerTurn: resolveMailOutboundLimit(cleanedPrompt),
-      });
+      const guardedMailTools = createGuardedMailRunner(
+        mailTools as DefinedRunner,
+        {
+          maxOutboundPerTurn: resolveMailOutboundLimit(cleanedPrompt),
+        },
+      );
 
       const askPrincipalRunner = createToolRunner([
         createAskPrincipalTool({
@@ -247,7 +278,7 @@ export function createDefaultHarnessBuilder({
       };
 
       const loadedRunners: DefinedRunner[] = [];
-      const loadedDisposers: Array<() => Promise<void>> = [];
+      const loadedDisposers: (() => Promise<void>)[] = [];
       const loadedToolNames = new Set<string>();
       for (const pkg of loadedPackages) {
         for (const factory of pkg.factories) {
@@ -261,11 +292,14 @@ export function createDefaultHarnessBuilder({
           try {
             bundle = factory(env);
           } catch (err) {
-            logger.warn('Tool-package factory {id} failed to construct for {address}: {msg}', {
-              id: factory.id,
-              address: agentAddress,
-              msg: err instanceof Error ? err.message : String(err),
-            });
+            logger.warn(
+              "Tool-package factory {id} failed to construct for {address}: {msg}",
+              {
+                id: factory.id,
+                address: agentAddress,
+                msg: err instanceof Error ? err.message : String(err),
+              },
+            );
             continue;
           }
           // The loader prefixes every tool with `<factoryId>:<name>`
@@ -286,7 +320,7 @@ export function createDefaultHarnessBuilder({
             run: (call, signal) =>
               bundle.run(
                 { ...call, name: aliasToCanonical.get(call.name) ?? call.name },
-                signal
+                signal,
               ),
           });
           for (const def of safeDefinitions) loadedToolNames.add(def.name);
@@ -298,10 +332,10 @@ export function createDefaultHarnessBuilder({
         }
       }
       if (loadedToolNames.size > 0) {
-        logger.info('Loaded {count} native tool(s) for {address}: {names}', {
+        logger.info("Loaded {count} native tool(s) for {address}: {names}", {
           count: loadedToolNames.size,
           address: agentAddress,
-          names: [...loadedToolNames].join(', '),
+          names: [...loadedToolNames].join(", "),
         });
       }
 
@@ -313,12 +347,15 @@ export function createDefaultHarnessBuilder({
         askPrincipalRunner as DefinedRunner,
         ...loadedRunners,
       ]);
-      const allowedNames = new Set([...agentConfig.tools.map((t) => t.name), ...loadedToolNames]);
+      const allowedNames = new Set([
+        ...agentConfig.tools.map((t) => t.name),
+        ...loadedToolNames,
+      ]);
       const tools = filterToolRunner(allTools as DefinedRunner, allowedNames);
 
       try {
         const toolsFactory = defineTool({
-          id: '@workbench/sidecar/tools',
+          id: "@workbench/sidecar/tools",
           factory: () => ({
             definitions: tools.definitions,
             run: tools.run.bind(tools),
@@ -350,17 +387,20 @@ export function createDefaultHarnessBuilder({
         async function forwardEvents(): Promise<void> {
           try {
             for await (const event of harness.stream()) {
-              if (event.type === 'message.received') {
+              if (event.type === "message.received") {
                 guardedMailTools.resetOutboundBudget();
                 continue;
               }
               onEvent(event);
             }
           } catch (err) {
-            logger.warn('Harness event forwarding stopped for {address}: {msg}', {
-              address: agentAddress,
-              msg: err instanceof Error ? err.message : String(err),
-            });
+            logger.warn(
+              "Harness event forwarding stopped for {address}: {msg}",
+              {
+                address: agentAddress,
+                msg: err instanceof Error ? err.message : String(err),
+              },
+            );
           }
         }
         const eventForwarding = forwardEvents();
@@ -382,14 +422,26 @@ export function createDefaultHarnessBuilder({
         try {
           await mailTools.dispose();
         } catch (disposeErr) {
-          const msg = disposeErr instanceof Error ? disposeErr.message : String(disposeErr);
-          logger.warn('mailTools.dispose failed during harness rollback: {msg}', { msg });
+          const msg =
+            disposeErr instanceof Error
+              ? disposeErr.message
+              : String(disposeErr);
+          logger.warn(
+            "mailTools.dispose failed during harness rollback: {msg}",
+            { msg },
+          );
         }
         try {
           await posixTools.dispose();
         } catch (disposeErr) {
-          const msg = disposeErr instanceof Error ? disposeErr.message : String(disposeErr);
-          logger.warn('posixTools.dispose failed during harness rollback: {msg}', { msg });
+          const msg =
+            disposeErr instanceof Error
+              ? disposeErr.message
+              : String(disposeErr);
+          logger.warn(
+            "posixTools.dispose failed during harness rollback: {msg}",
+            { msg },
+          );
         }
         throw err;
       }

@@ -1,13 +1,18 @@
-import { type } from 'arktype';
-import { eq } from 'drizzle-orm';
-import { getLogger } from '@intx/log';
-import { subscribeKind } from '@intx/hub-sessions';
-import type { AgentRepoStore, Principal, RepoId, RepoStore } from '@intx/hub-sessions';
-import { createWorkflowRunBlobSubstrate } from '@intx/workflow-host';
-import type { HubDb } from '../db';
-import { workflowRun } from '../db/schema';
-import { createRunStore, loadRunRecord } from './run-store';
-import { WorkflowMeta } from '../lib/workflow-meta';
+import { type } from "arktype";
+import { eq } from "drizzle-orm";
+import { getLogger } from "@intx/log";
+import { subscribeKind } from "@intx/hub-sessions";
+import type {
+  AgentRepoStore,
+  Principal,
+  RepoId,
+  RepoStore,
+} from "@intx/hub-sessions";
+import { createWorkflowRunBlobSubstrate } from "@intx/workflow-host";
+import type { HubDb } from "../db";
+import { workflowRun } from "../db/schema";
+import { createRunStore, loadRunRecord } from "./run-store";
+import { WorkflowMeta } from "../lib/workflow-meta";
 
 // Projection bridge (CL-2243). Workflows execute on the sidecar supervisor and
 // commit their run events to a workflow-run git repo; the sidecar packs those
@@ -22,10 +27,10 @@ import { WorkflowMeta } from '../lib/workflow-meta';
 // (the full log replays to the same state), so the bridge is safe to run on
 // every pack.
 
-const log = getLogger(['workflow', 'projection-bridge']);
+const log = getLogger(["workflow", "projection-bridge"]);
 
-const HUB_PRINCIPAL: Principal = { kind: 'hub' };
-const RUN_EVENT_REF = 'refs/heads/main';
+const HUB_PRINCIPAL: Principal = { kind: "hub" };
+const RUN_EVENT_REF = "refs/heads/main";
 
 // `subscribeKind` is an infinite live tail (replays the backlog from {seq:0}
 // then blocks for the next event forever). A one-shot projection must stop once
@@ -42,33 +47,41 @@ const BACKLOG_IDLE_MS = 200;
 // All @intx/workflow on-disk event `type` values the fold reacts to. (On disk
 // the state-machine `kind` is written under the field name `type`.)
 const PROJECTED_EVENT_TYPES: readonly string[] = [
-  'RunStarted',
-  'StepStarted',
-  'StepCompleted',
-  'StepFailed',
-  'SignalAwaited',
-  'SignalReceived',
-  'RunCompleted',
-  'RunFailed',
-  'RunCancelled',
+  "RunStarted",
+  "StepStarted",
+  "StepCompleted",
+  "StepFailed",
+  "SignalAwaited",
+  "SignalReceived",
+  "RunCompleted",
+  "RunFailed",
+  "RunCancelled",
 ];
 
 // Envelope shape subscribeKind narrows each committed blob through.
-const WorkflowEventBlob = type({ type: 'string', seq: 'number', '+': 'ignore' });
+const WorkflowEventBlob = type({
+  type: "string",
+  seq: "number",
+  "+": "ignore",
+});
 
 // Field-level narrows for the branches that read more than `type`. We assert
 // only what we read so an envelope-shape drift surfaces loudly at the boundary.
-const WithStepId = type({ stepId: 'string', '+': 'ignore' });
-const WithOutputRef = type({ stepId: 'string', output: { ref: 'string' }, '+': 'ignore' });
-const WithErrorMessage = type({ error: { message: 'string' }, '+': 'ignore' });
+const WithStepId = type({ stepId: "string", "+": "ignore" });
+const WithOutputRef = type({
+  stepId: "string",
+  output: { ref: "string" },
+  "+": "ignore",
+});
+const WithErrorMessage = type({ error: { message: "string" }, "+": "ignore" });
 
-type RunRecordStatus = 'running' | 'awaiting' | 'completed' | 'failed';
+type RunRecordStatus = "running" | "awaiting" | "completed" | "failed";
 
 export function isNewWorkflowRunFailure(
   previousStatus: RunRecordStatus,
-  nextStatus: RunRecordStatus
+  nextStatus: RunRecordStatus,
 ): boolean {
-  return previousStatus !== 'failed' && nextStatus === 'failed';
+  return previousStatus !== "failed" && nextStatus === "failed";
 }
 
 export function logNewWorkflowRunFailureIfNeeded(
@@ -80,14 +93,16 @@ export function logNewWorkflowRunFailureIfNeeded(
     deploymentId: string | null;
     version?: string;
     sha?: string;
-  }
+  },
 ): void {
   if (!isNewWorkflowRunFailure(previousStatus, projected.status)) return;
-  const detail = projected.error ?? 'workflow run failed';
-  log.error('workflow run failed', {
+  const detail = projected.error ?? "workflow run failed";
+  log.error("workflow run failed", {
     runId: context.runId,
     kind: context.kind,
-    ...(context.deploymentId !== null ? { deploymentId: context.deploymentId } : {}),
+    ...(context.deploymentId !== null
+      ? { deploymentId: context.deploymentId }
+      : {}),
     ...(context.version !== undefined ? { version: context.version } : {}),
     ...(context.sha !== undefined ? { sha: context.sha } : {}),
     error: new Error(detail),
@@ -103,19 +118,21 @@ export interface ProjectedRun {
   status: RunRecordStatus;
   currentStepId: string | null;
   // stepId -> output ref, in completion order; resolved to values before save.
-  completedRefs: Array<{ stepId: string; ref: string }>;
+  completedRefs: { stepId: string; ref: string }[];
   error?: string;
 }
 
 // Fold an ordered run-event stream (possibly interleaving several runs on one
 // repo ref) into per-run projected state. Events arrive in seq order, so per-run
 // ordering is preserved and the last status-affecting event wins.
-export function foldRunEvents(entries: readonly RunEventEntry[]): Map<string, ProjectedRun> {
+export function foldRunEvents(
+  entries: readonly RunEventEntry[],
+): Map<string, ProjectedRun> {
   const runs = new Map<string, ProjectedRun>();
   const ensure = (runId: string): ProjectedRun => {
     let run = runs.get(runId);
     if (run === undefined) {
-      run = { status: 'running', currentStepId: null, completedRefs: [] };
+      run = { status: "running", currentStepId: null, completedRefs: [] };
       runs.set(runId, run);
     }
     return run;
@@ -124,58 +141,68 @@ export function foldRunEvents(entries: readonly RunEventEntry[]): Map<string, Pr
   for (const { runId, event } of entries) {
     const run = ensure(runId);
     switch (event.type) {
-      case 'RunStarted': {
-        run.status = 'running';
+      case "RunStarted": {
+        run.status = "running";
         break;
       }
-      case 'StepStarted': {
+      case "StepStarted": {
         const narrowed = WithStepId(event);
         if (!(narrowed instanceof type.errors)) {
-          run.status = 'running';
+          run.status = "running";
           run.currentStepId = narrowed.stepId;
         }
         break;
       }
-      case 'StepCompleted': {
+      case "StepCompleted": {
         const narrowed = WithOutputRef(event);
         if (!(narrowed instanceof type.errors)) {
-          run.completedRefs.push({ stepId: narrowed.stepId, ref: narrowed.output.ref });
+          run.completedRefs.push({
+            stepId: narrowed.stepId,
+            ref: narrowed.output.ref,
+          });
         }
         break;
       }
-      case 'StepFailed': {
+      case "StepFailed": {
         const narrowed = WithErrorMessage(event);
-        run.status = 'failed';
-        run.error = narrowed instanceof type.errors ? 'step failed' : narrowed.error.message;
+        run.status = "failed";
+        run.error =
+          narrowed instanceof type.errors
+            ? "step failed"
+            : narrowed.error.message;
         break;
       }
-      case 'SignalAwaited': {
+      case "SignalAwaited": {
         const narrowed = WithStepId(event);
-        run.status = 'awaiting';
-        if (!(narrowed instanceof type.errors)) run.currentStepId = narrowed.stepId;
+        run.status = "awaiting";
+        if (!(narrowed instanceof type.errors))
+          run.currentStepId = narrowed.stepId;
         break;
       }
-      case 'SignalReceived': {
+      case "SignalReceived": {
         // Gate cleared; the next StepStarted re-marks the active step.
-        run.status = 'running';
+        run.status = "running";
         break;
       }
-      case 'RunCompleted': {
-        run.status = 'completed';
+      case "RunCompleted": {
+        run.status = "completed";
         run.currentStepId = null;
         break;
       }
-      case 'RunFailed': {
+      case "RunFailed": {
         const narrowed = WithErrorMessage(event);
-        run.status = 'failed';
+        run.status = "failed";
         run.currentStepId = null;
-        run.error = narrowed instanceof type.errors ? 'run failed' : narrowed.error.message;
+        run.error =
+          narrowed instanceof type.errors
+            ? "run failed"
+            : narrowed.error.message;
         break;
       }
-      case 'RunCancelled': {
-        run.status = 'failed';
+      case "RunCancelled": {
+        run.status = "failed";
         run.currentStepId = null;
-        run.error = 'cancelled';
+        run.error = "cancelled";
         break;
       }
       default:
@@ -187,13 +214,23 @@ export function foldRunEvents(entries: readonly RunEventEntry[]): Map<string, Pr
 
 // Drain a workflow-run repo's event log once (bounded by the idle guard) into a
 // flat ordered entry list for the fold.
-async function drainRunEvents(repoStore: RepoStore, repoId: RepoId): Promise<RunEventEntry[]> {
+async function drainRunEvents(
+  repoStore: RepoStore,
+  repoId: RepoId,
+): Promise<RunEventEntry[]> {
   const abort = new AbortController();
-  const iter = subscribeKind(repoStore, HUB_PRINCIPAL, repoId, RUN_EVENT_REF, WorkflowEventBlob, {
-    signal: abort.signal,
-    from: { seq: 0 },
-    kinds: PROJECTED_EVENT_TYPES,
-  });
+  const iter = subscribeKind(
+    repoStore,
+    HUB_PRINCIPAL,
+    repoId,
+    RUN_EVENT_REF,
+    WorkflowEventBlob,
+    {
+      signal: abort.signal,
+      from: { seq: 0 },
+      kinds: PROJECTED_EVENT_TYPES,
+    },
+  );
 
   let idle: ReturnType<typeof setTimeout> | undefined;
   const armIdle = (): void => {
@@ -206,7 +243,10 @@ async function drainRunEvents(repoStore: RepoStore, repoId: RepoId): Promise<Run
     armIdle();
     for await (const entry of iter) {
       armIdle();
-      entries.push({ runId: entry.runId, event: entry.event as RunEventEntry['event'] });
+      entries.push({
+        runId: entry.runId,
+        event: entry.event as RunEventEntry["event"],
+      });
     }
   } catch (err) {
     if (!abort.signal.aborted) throw err;
@@ -234,7 +274,7 @@ async function drainRunEvents(repoStore: RepoStore, repoId: RepoId): Promise<Run
 export async function projectWorkflowRunRepo(
   repoStore: RepoStore,
   db: HubDb,
-  repoId: RepoId
+  repoId: RepoId,
 ): Promise<void> {
   const entries = await drainRunEvents(repoStore, repoId);
   if (entries.length === 0) return;
@@ -246,7 +286,9 @@ export async function projectWorkflowRunRepo(
     if (existing === null) continue;
 
     const outputs: Record<string, unknown> = { ...existing.outputs };
-    const unresolved = projected.completedRefs.filter(({ stepId }) => !(stepId in outputs));
+    const unresolved = projected.completedRefs.filter(
+      ({ stepId }) => !(stepId in outputs),
+    );
     if (unresolved.length > 0) {
       const blobs = createWorkflowRunBlobSubstrate({
         substrate: repoStore,
@@ -259,7 +301,7 @@ export async function projectWorkflowRunRepo(
         try {
           outputs[stepId] = await blobs.resolveRef(ref);
         } catch (err) {
-          log.warn('workflow projection: step output resolve failed', {
+          log.warn("workflow projection: step output resolve failed", {
             runId,
             stepId,
             ref,
@@ -278,7 +320,10 @@ export async function projectWorkflowRunRepo(
     });
 
     const deployMeta: { version?: string; sha?: string } = {};
-    if (isNewWorkflowRunFailure(existing.status, projected.status) && existing.deploymentId) {
+    if (
+      isNewWorkflowRunFailure(existing.status, projected.status) &&
+      existing.deploymentId
+    ) {
       const deployment = await db.query.workflowRun.findFirst({
         where: eq(workflowRun.deploymentId, existing.deploymentId),
         columns: { meta: true },
@@ -305,7 +350,9 @@ export async function projectWorkflowRunRepo(
 // dirty and re-runs exactly once on completion. Keeps pack receipt non-blocking
 // (fire-and-forget) while guaranteeing no two projections for the same repo race,
 // and that the latest log state is always projected.
-export function createCoalescingScheduler(run: (key: string) => Promise<void>): {
+export function createCoalescingScheduler(
+  run: (key: string) => Promise<void>,
+): {
   schedule(key: string): void;
   idle(): Promise<void>;
 } {
@@ -349,13 +396,16 @@ export function createCoalescingScheduler(run: (key: string) => Promise<void>): 
 // next pack).
 export function wrapRepoStoreWithProjection(
   base: AgentRepoStore,
-  deps: { db: HubDb }
+  deps: { db: HubDb },
 ): AgentRepoStore {
   const scheduler = createCoalescingScheduler(async (id: string) => {
     try {
-      await projectWorkflowRunRepo(base.repoStore, deps.db, { kind: 'workflow-run', id });
+      await projectWorkflowRunRepo(base.repoStore, deps.db, {
+        kind: "workflow-run",
+        id,
+      });
     } catch (err) {
-      log.error('workflow projection failed', {
+      log.error("workflow projection failed", {
         repoId: id,
         error: err instanceof Error ? err : new Error(String(err)),
       });
@@ -363,7 +413,8 @@ export function wrapRepoStoreWithProjection(
   });
 
   return {
-    writeDeployTree: (agentId, content) => base.writeDeployTree(agentId, content),
+    writeDeployTree: (agentId, content) =>
+      base.writeDeployTree(agentId, content),
     createDeployPack: (agentId) => base.createDeployPack(agentId),
     receiveAgentStatePack: (repoId, pack, ref, commitSha) =>
       base.receiveAgentStatePack(repoId, pack, ref, commitSha),

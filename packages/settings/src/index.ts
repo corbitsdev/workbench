@@ -1,6 +1,6 @@
-export { SettingsPage, type SettingsPageProps } from './SettingsPage';
-export { SettingsSection, type SettingsSectionProps } from './SettingsSection';
-export { TextInput, Toggle, Select } from './primitives';
+export { SettingsPage, type SettingsPageProps } from "./SettingsPage";
+export { SettingsSection, type SettingsSectionProps } from "./SettingsSection";
+export { TextInput, Toggle, Select } from "./primitives";
 export type {
   SettingsFieldKind,
   SettingsFieldValue,
@@ -12,4 +12,4 @@ export type {
   SettingsSectionDescriptor,
   SettingsValues,
   SettingsChangeHandler,
-} from './types';
+} from "./types";

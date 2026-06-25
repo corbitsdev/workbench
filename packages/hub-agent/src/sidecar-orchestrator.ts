@@ -13,20 +13,20 @@
 // the cross-reference is contained inside this module rather than
 // leaking up to the host entry point.
 
-import { getLogger } from '@intx/log';
-import type { HubTransport } from '@intx/mail-memory';
-import type { DeployApplyErrorFrame } from '@intx/types/sidecar';
+import { getLogger } from "@intx/log";
+import type { HubTransport } from "@intx/mail-memory";
+import type { DeployApplyErrorFrame } from "@intx/types/sidecar";
 import type {
   ConnectorThreadState,
   CryptoProvider,
   InferenceEvent,
   KeyPair,
-} from '@intx/types/runtime';
+} from "@intx/types/runtime";
 
-import { createAgentKeyStore, type AgentKeyStore } from './agent-key-store';
-import { createAgentRepoStore, type AgentRepoStore } from './agent-repo-store';
-import { createSessionManager, type SessionManager } from './session-manager';
-import type { HarnessBuilder } from './harness-builder';
+import { createAgentKeyStore, type AgentKeyStore } from "./agent-key-store";
+import { createAgentRepoStore, type AgentRepoStore } from "./agent-repo-store";
+import { createSessionManager, type SessionManager } from "./session-manager";
+import type { HarnessBuilder } from "./harness-builder";
 import {
   createHubLink,
   type DeployRouter,
@@ -35,14 +35,18 @@ import {
   type SignalInboundRouter,
   type DrainInboundRouter,
   type ReconnectScheduler,
-} from './ws/hub-link';
+} from "./ws/hub-link";
 
-const log = getLogger(['interchange', 'hub-agent', 'orchestrator']);
+const log = getLogger(["interchange", "hub-agent", "orchestrator"]);
 
 export type SidecarCryptoOps = {
   generateKeyPair(): Promise<KeyPair>;
   signEd25519(privateKey: Uint8Array, payload: Uint8Array): Uint8Array;
-  verifySSHSig(payload: string, signature: string, publicKey: Uint8Array): boolean;
+  verifySSHSig(
+    payload: string,
+    signature: string,
+    publicKey: Uint8Array,
+  ): boolean;
 };
 
 /**
@@ -64,7 +68,7 @@ export type SidecarCryptoOps = {
 export type CreateDeployRouter = (deps: {
   sessions: SessionManager;
   keyStore: AgentKeyStore;
-  onAgentEvent: SessionManager['onAgentEvent'];
+  onAgentEvent: SessionManager["onAgentEvent"];
 }) => DeployRouter;
 
 export type SidecarOrchestratorConfig = {
@@ -126,7 +130,9 @@ export type SidecarOrchestrator = {
   readonly hubLink: HubLink;
 };
 
-export function createSidecarOrchestrator(config: SidecarOrchestratorConfig): SidecarOrchestrator {
+export function createSidecarOrchestrator(
+  config: SidecarOrchestratorConfig,
+): SidecarOrchestrator {
   const {
     hubURL,
     sidecarId,
@@ -161,19 +167,19 @@ export function createSidecarOrchestrator(config: SidecarOrchestratorConfig): Si
   let dispatchEvent: (
     agentAddress: string,
     sessionId: string,
-    event: InferenceEvent
+    event: InferenceEvent,
   ) => void = () => {
     /* replaced after HubLink construction */
   };
   let dispatchConnectorState: (
     agentAddress: string,
-    state: ConnectorThreadState | null
+    state: ConnectorThreadState | null,
   ) => void = () => {
     /* replaced after HubLink construction */
   };
   let dispatchDeployApplyError: (
     agentAddress: string,
-    payload: Omit<DeployApplyErrorFrame, 'type' | 'agentAddress'>
+    payload: Omit<DeployApplyErrorFrame, "type" | "agentAddress">,
   ) => void = () => {
     /* replaced after HubLink construction */
   };
@@ -224,7 +230,7 @@ export function createSidecarOrchestrator(config: SidecarOrchestratorConfig): Si
 
   function start(): void {
     hubLink.connect();
-    log.info('Sidecar {sidecarId} connecting to {hubURL}', {
+    log.info("Sidecar {sidecarId} connecting to {hubURL}", {
       sidecarId,
       hubURL,
     });

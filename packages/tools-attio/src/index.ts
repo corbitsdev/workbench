@@ -1,7 +1,10 @@
-import type { AgentTool } from '@intx/agent';
-import type { ToolDefinition } from '@intx/types/runtime';
+import type { AgentTool } from "@intx/agent";
+import type { ToolDefinition } from "@intx/types/runtime";
 
-export type AttioFetch = (input: string, init: RequestInit) => Promise<Response>;
+export type AttioFetch = (
+  input: string,
+  init: RequestInit,
+) => Promise<Response>;
 
 export type AttioToolsConfig = {
   apiKey: string;
@@ -9,7 +12,7 @@ export type AttioToolsConfig = {
   fetcher?: AttioFetch;
 };
 
-const DEFAULT_BASE_URL = 'https://api.attio.com';
+const DEFAULT_BASE_URL = "https://api.attio.com";
 const DEFAULT_LIMIT = 25;
 const DEFAULT_OFFSET = 0;
 const MAX_LIMIT = 100;
@@ -17,7 +20,7 @@ const MAX_LIMIT = 100;
 function attioHeaders(apiKey: string): Record<string, string> {
   return {
     Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   };
 }
 
@@ -26,47 +29,51 @@ function jsonResult(value: unknown): string {
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/$/, '');
+  return baseUrl.replace(/\/$/, "");
 }
 
 function optionalString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function optionalPositiveInteger(value: unknown, fallback: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+function optionalPositiveInteger(
+  value: unknown,
+  fallback: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
     return fallback;
   }
   return Math.min(value, max);
 }
 
 function optionalNonNegativeInteger(value: unknown, fallback: number): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     return fallback;
   }
   return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function parseDataResponse(value: unknown): unknown {
-  if (!isRecord(value) || !('data' in value)) {
-    throw new Error('Attio response is missing the data field');
+  if (!isRecord(value) || !("data" in value)) {
+    throw new Error("Attio response is missing the data field");
   }
   return value.data;
 }
 
 function validateConfig(config: AttioToolsConfig): void {
   if (config.apiKey.length === 0) {
-    throw new Error('Attio apiKey is required');
+    throw new Error("Attio apiKey is required");
   }
   if (config.baseUrl !== undefined) {
     try {
       new URL(config.baseUrl);
     } catch {
-      throw new Error('Attio baseUrl must be a valid URL');
+      throw new Error("Attio baseUrl must be a valid URL");
     }
   }
 }
@@ -77,7 +84,7 @@ function errorMessageFromBody(text: string): string | null {
   }
   try {
     const parsed: unknown = JSON.parse(text);
-    if (isRecord(parsed) && typeof parsed.message === 'string') {
+    if (isRecord(parsed) && typeof parsed.message === "string") {
       return parsed.message;
     }
   } catch {
@@ -87,14 +94,16 @@ function errorMessageFromBody(text: string): string | null {
 }
 
 function attioUrl(config: AttioToolsConfig, path: string): URL {
-  return new URL(`${normalizeBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL)}${path}`);
+  return new URL(
+    `${normalizeBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL)}${path}`,
+  );
 }
 
 async function fetchAttioJSON(
   config: AttioToolsConfig,
   url: URL,
-  init: { method: 'GET' | 'POST'; body?: unknown },
-  signal: AbortSignal
+  init: { method: "GET" | "POST"; body?: unknown },
+  signal: AbortSignal,
 ): Promise<unknown> {
   const fetcher = config.fetcher ?? fetch;
   const requestInit: RequestInit = {
@@ -109,21 +118,30 @@ async function fetchAttioJSON(
   const response = await fetcher(url.toString(), requestInit);
 
   if (!response.ok) {
-    const bodyText = errorMessageFromBody(await response.text().catch(() => ''));
+    const bodyText = errorMessageFromBody(
+      await response.text().catch(() => ""),
+    );
     const detail = response.statusText || bodyText;
-    throw new Error(`Attio API error: ${response.status} ${detail ?? ''}`);
+    throw new Error(`Attio API error: ${response.status} ${detail ?? ""}`);
   }
 
   const data: unknown = await response.json();
   return data;
 }
 
-async function listObjects(config: AttioToolsConfig, signal: AbortSignal): Promise<unknown> {
-  const url = attioUrl(config, '/v2/objects');
-  return parseDataResponse(await fetchAttioJSON(config, url, { method: 'GET' }, signal));
+async function listObjects(
+  config: AttioToolsConfig,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const url = attioUrl(config, "/v2/objects");
+  return parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "GET" }, signal),
+  );
 }
 
-function buildConvenienceFilter(args: Record<string, unknown>): Record<string, unknown> | null {
+function buildConvenienceFilter(
+  args: Record<string, unknown>,
+): Record<string, unknown> | null {
   const filter: Record<string, unknown> = {};
   const nameContains = optionalString(args.nameContains);
   if (nameContains !== null) {
@@ -139,17 +157,20 @@ function buildConvenienceFilter(args: Record<string, unknown>): Record<string, u
 async function queryRecords(
   config: AttioToolsConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
   const object = optionalString(args.object);
   if (object === null) {
-    throw new Error('object is required');
+    throw new Error("object is required");
   }
 
   const limit = optionalPositiveInteger(args.limit, DEFAULT_LIMIT, MAX_LIMIT);
   const offset = optionalNonNegativeInteger(args.offset, DEFAULT_OFFSET);
 
-  const url = attioUrl(config, `/v2/objects/${encodeURIComponent(object)}/records/query`);
+  const url = attioUrl(
+    config,
+    `/v2/objects/${encodeURIComponent(object)}/records/query`,
+  );
   const body: Record<string, unknown> = { limit, offset };
   if (isRecord(args.filter)) {
     body.filter = args.filter;
@@ -162,164 +183,174 @@ async function queryRecords(
   if (Array.isArray(args.sorts)) {
     body.sorts = args.sorts;
   }
-  return parseDataResponse(await fetchAttioJSON(config, url, { method: 'POST', body }, signal));
+  return parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "POST", body }, signal),
+  );
 }
 
 async function searchRecords(
   config: AttioToolsConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
   const query = optionalString(args.query);
   if (query === null) {
-    throw new Error('query is required');
+    throw new Error("query is required");
   }
 
-  const url = attioUrl(config, '/v2/records/search');
+  const url = attioUrl(config, "/v2/records/search");
   const body = { query };
-  return parseDataResponse(await fetchAttioJSON(config, url, { method: 'POST', body }, signal));
+  return parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "POST", body }, signal),
+  );
 }
 
 async function getRecord(
   config: AttioToolsConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
   const object = optionalString(args.object);
   if (object === null) {
-    throw new Error('object is required');
+    throw new Error("object is required");
   }
   const recordId = optionalString(args.recordId);
   if (recordId === null) {
-    throw new Error('recordId is required');
+    throw new Error("recordId is required");
   }
 
   const url = attioUrl(
     config,
-    `/v2/objects/${encodeURIComponent(object)}/records/${encodeURIComponent(recordId)}`
+    `/v2/objects/${encodeURIComponent(object)}/records/${encodeURIComponent(recordId)}`,
   );
-  return parseDataResponse(await fetchAttioJSON(config, url, { method: 'GET' }, signal));
+  return parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "GET" }, signal),
+  );
 }
 
 async function listWorkspaceMembers(
   config: AttioToolsConfig,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const url = attioUrl(config, '/v2/workspace_members');
-  return parseDataResponse(await fetchAttioJSON(config, url, { method: 'GET' }, signal));
+  const url = attioUrl(config, "/v2/workspace_members");
+  return parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "GET" }, signal),
+  );
 }
 
 const QUERY_RECORDS_INPUT_SCHEMA = {
-  type: 'object' as const,
+  type: "object" as const,
   properties: {
     object: {
-      type: 'string',
+      type: "string",
       description: 'The object slug to query, e.g. "companies" or "people".',
     },
     nameContains: {
-      type: 'string',
+      type: "string",
       description:
         'Look up records whose name contains this text — the simplest way to find a specific company or person by name (e.g. "Tribe Capital"). Prefer this over `filter` for a plain name lookup; it is mapped to a name filter for you. Ignored if `filter` is also passed.',
     },
     domainContains: {
-      type: 'string',
+      type: "string",
       description:
         'Look up companies whose domain contains this text — use to find a company by website (e.g. "tribecap.com"). Mapped to the Attio domains sub-attribute filter for you. Ignored if `filter` is also passed.',
     },
     limit: {
-      type: 'number',
-      description: 'Maximum number of records to return (1-100, default 25).',
+      type: "number",
+      description: "Maximum number of records to return (1-100, default 25).",
     },
     offset: {
-      type: 'number',
-      description: 'Number of records to skip for pagination (default 0).',
+      type: "number",
+      description: "Number of records to skip for pagination (default 0).",
     },
     filter: {
-      type: 'object',
+      type: "object",
       description:
         'Advanced Attio filter, passed through as-is — use only when `nameContains`/`domainContains` are not enough. Keys are attribute slugs (e.g. "name", "domains"); each maps to an operator object. Example: {"name":{"$contains":"Tribe Capital"}}. Multiple attributes are combined with implicit AND.',
       additionalProperties: {
-        type: 'object',
-        description: 'Operator constraints for one attribute. Provide at least one operator.',
+        type: "object",
+        description:
+          "Operator constraints for one attribute. Provide at least one operator.",
         properties: {
-          $eq: { type: 'string', description: 'Exact match.' },
-          $contains: { type: 'string', description: 'Substring match.' },
-          $starts_with: { type: 'string', description: 'Prefix match.' },
-          $ends_with: { type: 'string', description: 'Suffix match.' },
+          $eq: { type: "string", description: "Exact match." },
+          $contains: { type: "string", description: "Substring match." },
+          $starts_with: { type: "string", description: "Prefix match." },
+          $ends_with: { type: "string", description: "Suffix match." },
         },
       },
     },
     sorts: {
-      type: 'array',
+      type: "array",
       description:
         'Attio sorts array, passed through as-is. Example: [{"attribute":"name","direction":"asc"}].',
     },
   },
-  required: ['object'],
+  required: ["object"],
 };
 
 const SEARCH_RECORDS_INPUT_SCHEMA = {
-  type: 'object' as const,
+  type: "object" as const,
   properties: {
     query: {
-      type: 'string',
+      type: "string",
       description:
-        'Fuzzy search string matched against names, domains, emails, phone numbers, and social handles across people and companies.',
+        "Fuzzy search string matched against names, domains, emails, phone numbers, and social handles across people and companies.",
     },
   },
-  required: ['query'],
+  required: ["query"],
 };
 
 const GET_RECORD_INPUT_SCHEMA = {
-  type: 'object' as const,
+  type: "object" as const,
   properties: {
     object: {
-      type: 'string',
+      type: "string",
       description: 'The object slug, e.g. "companies" or "people".',
     },
     recordId: {
-      type: 'string',
-      description: 'The id of the record to fetch.',
+      type: "string",
+      description: "The id of the record to fetch.",
     },
   },
-  required: ['object', 'recordId'],
+  required: ["object", "recordId"],
 };
 
 const EMPTY_INPUT_SCHEMA = {
-  type: 'object' as const,
+  type: "object" as const,
   properties: {},
 };
 
 export const ATTIO_LIST_OBJECTS_DEFINITION: ToolDefinition = {
-  name: 'attio_list_objects',
+  name: "attio_list_objects",
   description:
-    'List the objects (record types) configured in the Attio workspace, e.g. companies and people. Read-only.',
+    "List the objects (record types) configured in the Attio workspace, e.g. companies and people. Read-only.",
   inputSchema: EMPTY_INPUT_SCHEMA,
 };
 
 export const ATTIO_QUERY_RECORDS_DEFINITION: ToolDefinition = {
-  name: 'attio_query_records',
+  name: "attio_query_records",
   description:
     'Find or query records for an Attio object (by slug, e.g. "companies" or "people"). To find a specific company or person, pass `nameContains` (or `domainContains`) — the simplest way to look one up by name or website. Do NOT call this with only `object`: an unfiltered query returns an arbitrary first page (default 25) and is rarely what you want. Use `filter` only for advanced multi-attribute queries. Supports `sorts` and pagination. Returns an array of records, each with an `id` (containing `record_id`) and a `values` map of attributes. Read-only.',
   inputSchema: QUERY_RECORDS_INPUT_SCHEMA,
 };
 
 export const ATTIO_SEARCH_RECORDS_DEFINITION: ToolDefinition = {
-  name: 'attio_search_records',
+  name: "attio_search_records",
   description:
-    'Fuzzy-search Attio records across people and companies by a free-text query (matches names, domains, emails, phone numbers, social handles). Read-only.',
+    "Fuzzy-search Attio records across people and companies by a free-text query (matches names, domains, emails, phone numbers, social handles). Read-only.",
   inputSchema: SEARCH_RECORDS_INPUT_SCHEMA,
 };
 
 export const ATTIO_GET_RECORD_DEFINITION: ToolDefinition = {
-  name: 'attio_get_record',
-  description: 'Fetch a single Attio record by object slug and record id. Read-only.',
+  name: "attio_get_record",
+  description:
+    "Fetch a single Attio record by object slug and record id. Read-only.",
   inputSchema: GET_RECORD_INPUT_SCHEMA,
 };
 
 export const ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION: ToolDefinition = {
-  name: 'attio_list_workspace_members',
-  description: 'List the members of the Attio workspace. Read-only.',
+  name: "attio_list_workspace_members",
+  description: "List the members of the Attio workspace. Read-only.",
   inputSchema: EMPTY_INPUT_SCHEMA,
 };
 
@@ -353,27 +384,27 @@ export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
 
   return [
     {
-      kind: 'string',
+      kind: "string",
       definition: ATTIO_LIST_OBJECTS_DEFINITION,
       handler: buildListObjectsHandler(config),
     },
     {
-      kind: 'string',
+      kind: "string",
       definition: ATTIO_QUERY_RECORDS_DEFINITION,
       handler: buildQueryRecordsHandler(config),
     },
     {
-      kind: 'string',
+      kind: "string",
       definition: ATTIO_SEARCH_RECORDS_DEFINITION,
       handler: buildSearchRecordsHandler(config),
     },
     {
-      kind: 'string',
+      kind: "string",
       definition: ATTIO_GET_RECORD_DEFINITION,
       handler: buildGetRecordHandler(config),
     },
     {
-      kind: 'string',
+      kind: "string",
       definition: ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION,
       handler: buildListWorkspaceMembersHandler(config),
     },
@@ -397,18 +428,24 @@ function handlerForDefinition(config: AttioToolsConfig, name: string) {
   }
 }
 
-function createAttioToolFor(config: AttioToolsConfig, definition: ToolDefinition): AgentTool[] {
+function createAttioToolFor(
+  config: AttioToolsConfig,
+  definition: ToolDefinition,
+): AgentTool[] {
   validateConfig(config);
   return [
     {
-      kind: 'string',
+      kind: "string",
       definition,
       handler: handlerForDefinition(config, definition.name),
     },
   ];
 }
 
-function resolveBaseUrl(config: { apiKey: string; baseURL: string }): AttioToolsConfig {
+function resolveBaseUrl(config: {
+  apiKey: string;
+  baseURL: string;
+}): AttioToolsConfig {
   const base: AttioToolsConfig = { apiKey: config.apiKey };
   if (config.baseURL.length > 0) {
     base.baseUrl = config.baseURL;
@@ -427,32 +464,41 @@ function resolveBaseUrl(config: { apiKey: string; baseURL: string }): AttioTools
 export const ATTIO_HUB_TOOLS = {
   attio_list_objects: {
     definition: ATTIO_LIST_OBJECTS_DEFINITION,
-    providerName: 'attio' as const,
+    providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createAttioToolFor(resolveBaseUrl(config), ATTIO_LIST_OBJECTS_DEFINITION),
   },
   attio_query_records: {
     definition: ATTIO_QUERY_RECORDS_DEFINITION,
-    providerName: 'attio' as const,
+    providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
-      createAttioToolFor(resolveBaseUrl(config), ATTIO_QUERY_RECORDS_DEFINITION),
+      createAttioToolFor(
+        resolveBaseUrl(config),
+        ATTIO_QUERY_RECORDS_DEFINITION,
+      ),
   },
   attio_search_records: {
     definition: ATTIO_SEARCH_RECORDS_DEFINITION,
-    providerName: 'attio' as const,
+    providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
-      createAttioToolFor(resolveBaseUrl(config), ATTIO_SEARCH_RECORDS_DEFINITION),
+      createAttioToolFor(
+        resolveBaseUrl(config),
+        ATTIO_SEARCH_RECORDS_DEFINITION,
+      ),
   },
   attio_get_record: {
     definition: ATTIO_GET_RECORD_DEFINITION,
-    providerName: 'attio' as const,
+    providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createAttioToolFor(resolveBaseUrl(config), ATTIO_GET_RECORD_DEFINITION),
   },
   attio_list_workspace_members: {
     definition: ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION,
-    providerName: 'attio' as const,
+    providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
-      createAttioToolFor(resolveBaseUrl(config), ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION),
+      createAttioToolFor(
+        resolveBaseUrl(config),
+        ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION,
+      ),
   },
 };

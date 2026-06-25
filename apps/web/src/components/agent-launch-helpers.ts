@@ -4,10 +4,10 @@
  */
 
 const TRANSIENT_PATTERNS = [
-  'No sidecar connected',
-  'No sidecar available',
-  'sidecar not connected',
-  'sidecar not available',
+  "No sidecar connected",
+  "No sidecar available",
+  "sidecar not connected",
+  "sidecar not available",
 ];
 
 export function isTransientLaunchError(error: unknown): boolean {
@@ -16,14 +16,16 @@ export function isTransientLaunchError(error: unknown): boolean {
 }
 
 const MISSING_CONFIG_PATTERNS = [
-  'credential',
-  'no model',
-  'not configured',
-  'missing configuration',
+  "credential",
+  "no model",
+  "not configured",
+  "missing configuration",
 ];
 
 export function isMissingConfigError(error: unknown): boolean {
-  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  const message = (
+    error instanceof Error ? error.message : String(error)
+  ).toLowerCase();
   return MISSING_CONFIG_PATTERNS.some((p) => message.includes(p));
 }
 
@@ -35,14 +37,14 @@ export function isMissingConfigError(error: unknown): boolean {
  * the chat and show a passive deploying notice instead.
  */
 export function isLaunchableStatus(status: string | undefined): boolean {
-  return status === undefined || status === 'running' || status === 'deployed';
+  return status === undefined || status === "running" || status === "deployed";
 }
 
 export type LaunchState =
-  | { kind: 'connecting' }
-  | { kind: 'deploying' }
-  | { kind: 'missing-config'; message: string }
-  | { kind: 'fatal'; message: string };
+  | { kind: "connecting" }
+  | { kind: "deploying" }
+  | { kind: "missing-config"; message: string }
+  | { kind: "fatal"; message: string };
 
 /**
  * Map a raw launch outcome to a user-facing state.
@@ -54,23 +56,23 @@ export type LaunchState =
  */
 export function classifyLaunchState(
   instanceStatus: string | undefined,
-  launchError: string | null
+  launchError: string | null,
 ): LaunchState {
   if (!isLaunchableStatus(instanceStatus)) {
-    return { kind: 'deploying' };
+    return { kind: "deploying" };
   }
 
   if (launchError === null) {
-    return { kind: 'connecting' };
+    return { kind: "connecting" };
   }
 
   if (isTransientLaunchError(launchError)) {
-    return { kind: 'connecting' };
+    return { kind: "connecting" };
   }
 
   if (isMissingConfigError(launchError)) {
-    return { kind: 'missing-config', message: launchError };
+    return { kind: "missing-config", message: launchError };
   }
 
-  return { kind: 'fatal', message: launchError };
+  return { kind: "fatal", message: launchError };
 }

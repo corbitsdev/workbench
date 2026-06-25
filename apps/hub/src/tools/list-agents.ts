@@ -1,21 +1,21 @@
-import type { AgentTool } from '@intx/agent';
-import type { DB } from '@intx/db';
-import { schema as intxSchema } from '@intx/db';
+import type { AgentTool } from "@intx/agent";
+import type { DB } from "@intx/db";
+import { schema as intxSchema } from "@intx/db";
 import {
   LIST_AGENTS_DEFINITION,
   parseListLimit,
   parsePrincipalIds,
   resolveStatusFilter,
   type AgentInstanceStatus,
-} from '@workbench/tools-agents';
-import { and, desc, eq, inArray, isNull, or } from './sql-predicates';
-import { memberAgentInstance } from '../db/schema';
-import type { ContextToolEntry } from '../lib/tool-registry';
+} from "@workbench/tools-agents";
+import { and, desc, eq, inArray, isNull, or } from "./sql-predicates";
+import { memberAgentInstance } from "../db/schema";
+import type { ContextToolEntry } from "../lib/tool-registry";
 
 export { LIST_AGENTS_DEFINITION };
 
 export type ListAgentsContext = {
-  db: DB['db'];
+  db: DB["db"];
   tenantId: string;
   principalId: string;
 };
@@ -37,9 +37,9 @@ export type ListAgentsContext = {
  *   expose every other operator's agents.
  */
 export async function resolveOwnedInstanceIds(
-  db: DB['db'],
+  db: DB["db"],
   context: { tenantId: string; principalId: string },
-  memberPrincipals: string[] | undefined
+  memberPrincipals: string[] | undefined,
 ): Promise<string[] | null> {
   if (memberPrincipals !== undefined) {
     const ownedRows = await db
@@ -48,8 +48,8 @@ export async function resolveOwnedInstanceIds(
       .where(
         and(
           eq(memberAgentInstance.tenantId, context.tenantId),
-          inArray(memberAgentInstance.memberPrincipalId, memberPrincipals)
-        )
+          inArray(memberAgentInstance.memberPrincipalId, memberPrincipals),
+        ),
       );
     return ownedRows.map((row) => row.instanceId);
   }
@@ -61,8 +61,8 @@ export async function resolveOwnedInstanceIds(
     .where(
       and(
         eq(intxSchema.agentInstance.tenantId, context.tenantId),
-        eq(intxSchema.agentInstance.principalId, context.principalId)
-      )
+        eq(intxSchema.agentInstance.principalId, context.principalId),
+      ),
     )
     .limit(1);
 
@@ -75,8 +75,8 @@ export async function resolveOwnedInstanceIds(
     .where(
       and(
         eq(memberAgentInstance.tenantId, context.tenantId),
-        eq(memberAgentInstance.instanceId, callerInstanceId)
-      )
+        eq(memberAgentInstance.instanceId, callerInstanceId),
+      ),
     )
     .limit(1);
 
@@ -99,10 +99,13 @@ export async function resolveOwnedInstanceIds(
     .from(intxSchema.principal)
     .where(
       and(
-        eq(intxSchema.principal.kind, 'user'),
+        eq(intxSchema.principal.kind, "user"),
         eq(intxSchema.principal.refId, userRefId),
-        or(isNull(intxSchema.principal.status), eq(intxSchema.principal.status, 'active'))
-      )
+        or(
+          isNull(intxSchema.principal.status),
+          eq(intxSchema.principal.status, "active"),
+        ),
+      ),
     );
 
   if (allUserPrincipals.length === 0) return null;
@@ -121,14 +124,18 @@ export async function resolveOwnedInstanceIds(
 export function createListAgentsTool(context: ListAgentsContext): AgentTool[] {
   return [
     {
-      kind: 'string',
+      kind: "string",
       definition: LIST_AGENTS_DEFINITION,
       handler: async (args) => {
         const status = resolveStatusFilter(args.status);
         const memberPrincipals = parsePrincipalIds(args.principals);
         const limit = parseListLimit(args.limit);
 
-        const instanceIds = await resolveOwnedInstanceIds(context.db, context, memberPrincipals);
+        const instanceIds = await resolveOwnedInstanceIds(
+          context.db,
+          context,
+          memberPrincipals,
+        );
 
         // Fail closed: an unresolved owner (null) or an owner with no instances
         // ([]) returns an empty directory, never a tenant-wide listing — in the
@@ -139,7 +146,9 @@ export function createListAgentsTool(context: ListAgentsContext): AgentTool[] {
 
         const conditions = [inArray(intxSchema.agentInstance.id, instanceIds)];
         if (status !== undefined) {
-          conditions.push(eq(intxSchema.agentInstance.status, status as AgentInstanceStatus));
+          conditions.push(
+            eq(intxSchema.agentInstance.status, status as AgentInstanceStatus),
+          );
         }
 
         const rows = await context.db
@@ -152,7 +161,10 @@ export function createListAgentsTool(context: ListAgentsContext): AgentTool[] {
             agentDefinitionId: intxSchema.agentInstance.agentId,
           })
           .from(intxSchema.agentInstance)
-          .innerJoin(intxSchema.agent, eq(intxSchema.agentInstance.agentId, intxSchema.agent.id))
+          .innerJoin(
+            intxSchema.agent,
+            eq(intxSchema.agentInstance.agentId, intxSchema.agent.id),
+          )
           .where(and(...conditions))
           .orderBy(desc(intxSchema.agentInstance.createdAt))
           .limit(limit);

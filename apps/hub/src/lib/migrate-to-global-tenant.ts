@@ -1,16 +1,21 @@
-import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
-import { schema as intxSchema } from '@intx/db';
-import { getLogger } from '@intx/log';
-import { getConfig } from '../config';
-import type { HubDb } from '../db';
-import { workflowRun, artifact, artifactVersion, enabledWorkflow } from '../db/schema';
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
+import { schema as intxSchema } from "@intx/db";
+import { getLogger } from "@intx/log";
+import { getConfig } from "../config";
+import type { HubDb } from "../db";
+import {
+  workflowRun,
+  artifact,
+  artifactVersion,
+  enabledWorkflow,
+} from "../db/schema";
 import {
   ensureGlobalMember,
   provisionMemberInstances,
   getMyraInstanceId,
-} from './tenant-provisioning';
+} from "./tenant-provisioning";
 
-const log = getLogger(['migrate', 'global-tenant']);
+const log = getLogger(["migrate", "global-tenant"]);
 
 const { tenant, principal, agentInstance } = intxSchema;
 
@@ -24,7 +29,10 @@ export type MigrationDeps = {
   provisionMemberInstances: typeof provisionMemberInstances;
 };
 
-const defaultDeps: MigrationDeps = { ensureGlobalMember, provisionMemberInstances };
+const defaultDeps: MigrationDeps = {
+  ensureGlobalMember,
+  provisionMemberInstances,
+};
 
 export type UserMigrationResult = {
   userId: string;
@@ -45,7 +53,7 @@ export type MigrationSummary = {
   dryRun: boolean;
   globalTenantId: string;
   users: UserMigrationResult[];
-  failures: Array<{ userId: string; error: string }>;
+  failures: { userId: string; error: string }[];
 };
 
 /**
@@ -70,8 +78,13 @@ export type MigrationSummary = {
  */
 export async function migrateUserToGlobalTenant(
   db: HubDb,
-  opts: { userId: string; globalTenantId: string; globalTenantDomain: string; dryRun: boolean },
-  deps: MigrationDeps = defaultDeps
+  opts: {
+    userId: string;
+    globalTenantId: string;
+    globalTenantDomain: string;
+    dryRun: boolean;
+  },
+  deps: MigrationDeps = defaultDeps,
 ): Promise<UserMigrationResult> {
   const { userId, globalTenantId, dryRun } = opts;
 
@@ -84,8 +97,8 @@ export async function migrateUserToGlobalTenant(
     ? await db.query.principal.findFirst({
         where: and(
           eq(principal.tenantId, personalTenant.id),
-          eq(principal.kind, 'user'),
-          eq(principal.refId, userId)
+          eq(principal.kind, "user"),
+          eq(principal.refId, userId),
         ),
       })
     : null;
@@ -96,7 +109,7 @@ export async function migrateUserToGlobalTenant(
   // a user is a principal of are workbenches they own. If that ever changes
   // (e.g. shared/partner top-level tenants), filter to the owner role here.
   const userPrincipals = await db.query.principal.findMany({
-    where: and(eq(principal.kind, 'user'), eq(principal.refId, userId)),
+    where: and(eq(principal.kind, "user"), eq(principal.refId, userId)),
   });
   const candidateTenantIds = userPrincipals.map((p) => p.tenantId);
   const workbenchTenants = candidateTenantIds.length
@@ -105,7 +118,7 @@ export async function migrateUserToGlobalTenant(
           inArray(tenant.id, candidateTenantIds),
           isNull(tenant.parentId),
           ne(tenant.id, globalTenantId),
-          ne(tenant.slug, personalSlug)
+          ne(tenant.slug, personalSlug),
         ),
       })
     : [];
@@ -116,17 +129,21 @@ export async function migrateUserToGlobalTenant(
     ? await db.query.agentInstance.findMany({
         where: and(
           eq(agentInstance.tenantId, personalTenant.id),
-          inArray(agentInstance.status, ['deployed', 'running', 'updating'])
+          inArray(agentInstance.status, ["deployed", "running", "updating"]),
         ),
       })
     : [];
 
   // Rows to re-key, counted from the OLD personal principal.
   const runs = oldPrincipal
-    ? await db.query.workflowRun.findMany({ where: eq(workflowRun.principalId, oldPrincipal.id) })
+    ? await db.query.workflowRun.findMany({
+        where: eq(workflowRun.principalId, oldPrincipal.id),
+      })
     : [];
   const artifacts = oldPrincipal
-    ? await db.query.artifact.findMany({ where: eq(artifact.principalId, oldPrincipal.id) })
+    ? await db.query.artifact.findMany({
+        where: eq(artifact.principalId, oldPrincipal.id),
+      })
     : [];
   // artifact_version is re-keyed by authorId; count the rows authored by the old principal.
   const authoredVersions = oldPrincipal
@@ -158,13 +175,15 @@ export async function migrateUserToGlobalTenant(
   };
 
   if (dryRun) {
-    log.info('[dry-run] would migrate user', { ...result });
+    log.info("[dry-run] would migrate user", { ...result });
     return result;
   }
 
   // Ensure the global member + per-user Myra OUTSIDE the per-user transaction:
   // they have their own race-safe internal transactions and are idempotent.
-  const { principalId: newPrincipalId } = await deps.ensureGlobalMember(db, { userId });
+  const { principalId: newPrincipalId } = await deps.ensureGlobalMember(db, {
+    userId,
+  });
   result.newPrincipalId = newPrincipalId;
 
   const instances = await deps.provisionMemberInstances(db, {
@@ -189,14 +208,22 @@ export async function migrateUserToGlobalTenant(
       if (runs.length > 0) {
         await tx
           .update(workflowRun)
-          .set({ tenantId: globalTenantId, principalId: newPrincipalId, updatedAt: now })
+          .set({
+            tenantId: globalTenantId,
+            principalId: newPrincipalId,
+            updatedAt: now,
+          })
           .where(eq(workflowRun.principalId, oldPrincipal.id));
       }
 
       if (artifacts.length > 0) {
         await tx
           .update(artifact)
-          .set({ tenantId: globalTenantId, principalId: newPrincipalId, updatedAt: now })
+          .set({
+            tenantId: globalTenantId,
+            principalId: newPrincipalId,
+            updatedAt: now,
+          })
           .where(eq(artifact.principalId, oldPrincipal.id));
       }
 
@@ -221,17 +248,17 @@ export async function migrateUserToGlobalTenant(
     if (personalTenant && oldMyraInstances.length > 0) {
       await tx
         .update(agentInstance)
-        .set({ status: 'stopped', endedAt: now, updatedAt: now })
+        .set({ status: "stopped", endedAt: now, updatedAt: now })
         .where(
           and(
             eq(agentInstance.tenantId, personalTenant.id),
-            inArray(agentInstance.status, ['deployed', 'running', 'updating'])
-          )
+            inArray(agentInstance.status, ["deployed", "running", "updating"]),
+          ),
         );
     }
   });
 
-  log.info('Migrated user into global tenant', { ...result });
+  log.info("Migrated user into global tenant", { ...result });
   return result;
 }
 
@@ -243,13 +270,17 @@ export async function migrateUserToGlobalTenant(
 export async function migrateAllUsersToGlobalTenant(
   db: HubDb,
   opts: { dryRun: boolean },
-  deps: MigrationDeps = defaultDeps
+  deps: MigrationDeps = defaultDeps,
 ): Promise<MigrationSummary> {
   const { slug, domain } = getConfig().globalTenant;
 
-  const globalTenant = await db.query.tenant.findFirst({ where: eq(tenant.slug, slug) });
+  const globalTenant = await db.query.tenant.findFirst({
+    where: eq(tenant.slug, slug),
+  });
   if (!globalTenant) {
-    throw new Error(`Global tenant (slug=${slug}) not seeded — run the hub once before migrating`);
+    throw new Error(
+      `Global tenant (slug=${slug}) not seeded — run the hub once before migrating`,
+    );
   }
 
   // Distinct users are the better-auth user rows.
@@ -272,12 +303,12 @@ export async function migrateAllUsersToGlobalTenant(
           globalTenantDomain: domain,
           dryRun: opts.dryRun,
         },
-        deps
+        deps,
       );
       summary.users.push(res);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log.error('Failed to migrate user — continuing', {
+      log.error("Failed to migrate user — continuing", {
         userId: user.id,
         error: err instanceof Error ? err : new Error(message),
       });
@@ -285,7 +316,7 @@ export async function migrateAllUsersToGlobalTenant(
     }
   }
 
-  log.info('Migration complete', {
+  log.info("Migration complete", {
     dryRun: opts.dryRun,
     migrated: summary.users.length,
     failures: summary.failures.length,

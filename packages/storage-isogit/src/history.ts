@@ -1,7 +1,7 @@
-import fs from 'node:fs';
-import git from 'isomorphic-git';
-import type { ContextCommit } from '@intx/types/runtime';
-import { AUTHOR } from './init';
+import fs from "node:fs";
+import git from "isomorphic-git";
+import type { ContextCommit } from "@intx/types/runtime";
+import { AUTHOR } from "./init";
 
 /**
  * Switch the working tree to the named branch. The branch must already exist.
@@ -13,7 +13,10 @@ export async function switchBranch(dir: string, ref: string): Promise<void> {
 /**
  * Create a new branch at HEAD and immediately switch to it.
  */
-export async function createAndSwitchBranch(dir: string, name: string): Promise<void> {
+export async function createAndSwitchBranch(
+  dir: string,
+  name: string,
+): Promise<void> {
   await git.branch({ fs, dir, ref: name });
   await git.checkout({ fs, dir, ref: name });
 }
@@ -24,7 +27,7 @@ export async function createAndSwitchBranch(dir: string, name: string): Promise<
 export async function currentBranch(dir: string): Promise<string> {
   const branch = await git.currentBranch({ fs, dir });
   if (branch === null || branch === undefined) {
-    throw new Error('Repository is in detached HEAD state');
+    throw new Error("Repository is in detached HEAD state");
   }
   return branch;
 }
@@ -39,7 +42,10 @@ export async function listBranches(dir: string): Promise<string[]> {
 /**
  * Return recent commits as ContextCommit entries.
  */
-export async function logHistory(dir: string, limit = 10): Promise<ContextCommit[]> {
+export async function logHistory(
+  dir: string,
+  limit = 10,
+): Promise<ContextCommit[]> {
   const entries = await git.log({ fs, dir, depth: limit });
   return entries.map((e) => {
     const base = {

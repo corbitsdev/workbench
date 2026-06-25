@@ -1,18 +1,29 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion -- refs[0]! always follows expect(refs).toHaveLength(1) */
-import { describe, test, expect, afterAll } from 'bun:test';
-import { Hono } from 'hono';
-import { upgradeWebSocket, websocket } from 'hono/bun';
-import { createSidecarRouter, type SidecarRouter, type WsHandle } from '@intx/hub-sessions';
-import { sign as nodeSign } from 'node:crypto';
-import { createInMemoryTransport } from '@intx/mail-memory';
-import { importPrivateKeyBytes, verifySSHSignature } from '@intx/crypto-node';
-import { base64Encode, hexEncode } from '@intx/types';
-import type { HarnessConfig, InboundMessage, InferenceSource } from '@intx/types/runtime';
-import type { GrantRule } from '@intx/types/authz';
+import { describe, test, expect, afterAll } from "bun:test";
+import { Hono } from "hono";
+import { upgradeWebSocket, websocket } from "hono/bun";
+import {
+  createSidecarRouter,
+  type SidecarRouter,
+  type WsHandle,
+} from "@intx/hub-sessions";
+import { sign as nodeSign } from "node:crypto";
+import { createInMemoryTransport } from "@intx/mail-memory";
+import { importPrivateKeyBytes, verifySSHSignature } from "@intx/crypto-node";
+import { base64Encode, hexEncode } from "@intx/types";
+import type {
+  HarnessConfig,
+  InboundMessage,
+  InferenceSource,
+} from "@intx/types/runtime";
+import type { GrantRule } from "@intx/types/authz";
 
-import { createHubLink, type DeployRouter, type ReconnectScheduler } from './hub-link';
-import type { AgentKeyStore } from '../agent-key-store';
-import type { AgentEventListener, SessionManager } from '../session-manager';
+import {
+  createHubLink,
+  type DeployRouter,
+  type ReconnectScheduler,
+} from "./hub-link";
+import type { AgentKeyStore } from "../agent-key-store";
+import type { AgentEventListener, SessionManager } from "../session-manager";
 
 /**
  * Test-only deploy router that mirrors the pre-supervisor inline
@@ -22,12 +33,18 @@ import type { AgentEventListener, SessionManager } from '../session-manager';
  * surface against the closure directly so the SessionManager mock
  * assertions are unchanged.
  */
-function createTestDeployRouter(sessions: SessionManager, keyStore: AgentKeyStore): DeployRouter {
+function createTestDeployRouter(
+  sessions: SessionManager,
+  keyStore: AgentKeyStore,
+): DeployRouter {
   return {
     async deploy(frame) {
       const result = await sessions.provisionAgent(frame.config);
       keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
-      await sessions.persistHubPublicKey(frame.agentAddress, frame.hubPublicKey);
+      await sessions.persistHubPublicKey(
+        frame.agentAddress,
+        frame.hubPublicKey,
+      );
       return { publicKey: result.publicKey };
     },
   };
@@ -50,8 +67,8 @@ function withTestDeployBindings(sessions: SessionManager): {
     deployRouter: createTestDeployRouter(sessions, keyStore),
   };
 }
-import type { KeyPair } from '@intx/types/runtime';
-import { hexDecode } from '@intx/types';
+import type { KeyPair } from "@intx/types/runtime";
+import { hexDecode } from "@intx/types";
 
 // In-memory AgentKeyStore for tests. Tests that exercise challenge
 // response or deploy-commit verification register keys via the public
@@ -90,7 +107,9 @@ function createTestKeyStore(): AgentKeyStore & {
     verifyDeployCommit(address, payload, signature) {
       const hubKey = hubKeys.get(address);
       if (hubKey === undefined) {
-        throw new Error(`signature_invalid: no hub public key for "${address}"`);
+        throw new Error(
+          `signature_invalid: no hub public key for "${address}"`,
+        );
       }
       return verifySSHSignature(payload, signature, hubKey);
     },
@@ -107,7 +126,7 @@ function createTestKeyStore(): AgentKeyStore & {
 
 async function waitFor(
   predicate: () => boolean | Promise<boolean>,
-  timeoutMs = 2000
+  timeoutMs = 2000,
 ): Promise<void> {
   const start = Date.now();
   while (!(await predicate())) {
@@ -145,7 +164,7 @@ function createMockSessionManager(): SessionManager & {
       mock.provisioned.push(config);
       mock.provisionedAddresses.push(config.agentAddress);
       return {
-        publicKey: 'deadbeef',
+        publicKey: "deadbeef",
         keyPair: {
           publicKey: new Uint8Array(32),
           privateKey: new Uint8Array(32),
@@ -155,7 +174,9 @@ function createMockSessionManager(): SessionManager & {
     async startSession(agentAddress: string): Promise<void> {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
       mock.started.push(agentAddress);
-      mock.provisionedAddresses = mock.provisionedAddresses.filter((a) => a !== agentAddress);
+      mock.provisionedAddresses = mock.provisionedAddresses.filter(
+        (a) => a !== agentAddress,
+      );
       mock.addresses.push(agentAddress);
     },
     async destroySession(agentAddress: string): Promise<void> {
@@ -172,13 +193,16 @@ function createMockSessionManager(): SessionManager & {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
       mock.delivered.push({ agentAddress, message });
     },
-    async updateGrants(_agentAddress: string, _grants: GrantRule[]): Promise<void> {
+    async updateGrants(
+      _agentAddress: string,
+      _grants: GrantRule[],
+    ): Promise<void> {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
     },
     async updateSources(
       _agentAddress: string,
       _sources: InferenceSource[],
-      _defaultSource: string
+      _defaultSource: string,
     ): Promise<void> {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
     },
@@ -199,53 +223,56 @@ function createMockSessionManager(): SessionManager & {
     createStatePack: () =>
       Promise.resolve({
         pack: new Uint8Array([1, 2, 3]),
-        commitSha: 'abc123',
-        ref: 'refs/heads/main',
+        commitSha: "abc123",
+        ref: "refs/heads/main",
       }),
     deleteAgentDir: () => Promise.resolve(),
     getDeployRef: (_agentAddress: string) => Promise.resolve(null),
-    persistHubPublicKey: (_agentAddress: string, _hubPublicKey: string) => Promise.resolve(),
-    commitInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) => Promise.resolve(),
+    persistHubPublicKey: (_agentAddress: string, _hubPublicKey: string) =>
+      Promise.resolve(),
+    commitInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) =>
+      Promise.resolve(),
     getSessionId: (_agentAddress: string) => undefined,
-    onAgentEvent: (_agentAddress: string, _listener: AgentEventListener) => () => {
-      /* no-op disposer: the link tests do not exercise per-agent events */
-    },
+    onAgentEvent:
+      (_agentAddress: string, _listener: AgentEventListener) => () => {
+        /* no-op disposer: the link tests do not exercise per-agent events */
+      },
   };
   return mock;
 }
 
 const TEST_CONFIG: HarnessConfig = {
-  sessionId: 'ses_test-session-1',
-  agentId: 'agent-1',
-  tenantId: 'tenant-1',
-  principalId: 'prin_test-principal-1',
-  agentAddress: 'agent-1@test.interchange',
-  systemPrompt: 'You are a test agent',
+  sessionId: "ses_test-session-1",
+  agentId: "agent-1",
+  tenantId: "tenant-1",
+  principalId: "prin_test-principal-1",
+  agentAddress: "agent-1@test.interchange",
+  systemPrompt: "You are a test agent",
   tools: [],
   grants: [],
   sources: [
     {
-      id: 'anthropic:claude-sonnet-4-20250514',
-      provider: 'anthropic',
-      baseURL: 'https://api.anthropic.com',
-      apiKey: 'sk-test',
-      model: 'claude-sonnet-4-20250514',
+      id: "anthropic:claude-sonnet-4-20250514",
+      provider: "anthropic",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "sk-test",
+      model: "claude-sonnet-4-20250514",
     },
   ],
-  defaultSource: 'anthropic:claude-sonnet-4-20250514',
+  defaultSource: "anthropic:claude-sonnet-4-20250514",
 };
 
 const VALID_MESSAGE = new TextEncoder().encode(
   [
-    'From: external@remote.interchange',
-    'To: agent-1@test.interchange',
-    'Date: Thu, 17 Apr 2026 12:00:00 +0000',
-    'Message-ID: <test-1@remote.interchange>',
-    'Subject: Hello from hub',
-    'Content-Type: text/plain',
-    '',
-    'Test body',
-  ].join('\r\n')
+    "From: external@remote.interchange",
+    "To: agent-1@test.interchange",
+    "Date: Thu, 17 Apr 2026 12:00:00 +0000",
+    "Message-ID: <test-1@remote.interchange>",
+    "Subject: Hello from hub",
+    "Content-Type: text/plain",
+    "",
+    "Test body",
+  ].join("\r\n"),
 );
 
 // ---------------------------------------------------------------------------
@@ -260,23 +287,26 @@ type TestEnv = {
 };
 
 function startTestServer(): TestEnv {
-  const agentEvents: TestEnv['agentEvents'] = [];
-  const outboundMail: TestEnv['outboundMail'] = [];
+  const agentEvents: TestEnv["agentEvents"] = [];
+  const outboundMail: TestEnv["outboundMail"] = [];
 
   const router = createSidecarRouter({
     requestTimeoutMs: 5000,
-    hubPublicKey: 'a'.repeat(64),
+    hubPublicKey: "a".repeat(64),
   });
-  router.events.on('agent.event', ({ agentAddress, sessionId, event }) => {
+  router.events.on("agent.event", ({ agentAddress, sessionId, event }) => {
     agentEvents.push({ addr: agentAddress, sid: sessionId, event });
   });
-  router.events.on('mail.outbound.undelivered', ({ rawMessage, recipients }) => {
-    outboundMail.push({ rawMessage, recipients });
-  });
+  router.events.on(
+    "mail.outbound.undelivered",
+    ({ rawMessage, recipients }) => {
+      outboundMail.push({ rawMessage, recipients });
+    },
+  );
 
   const app = new Hono();
   app.get(
-    '/ws',
+    "/ws",
     upgradeWebSocket((_c) => {
       let handle: WsHandle;
       return {
@@ -292,7 +322,7 @@ function startTestServer(): TestEnv {
           router.handleOpen(handle);
         },
         onMessage(evt, _ws) {
-          if (typeof evt.data === 'string') {
+          if (typeof evt.data === "string") {
             router.handleMessage(handle, evt.data);
           }
         },
@@ -300,7 +330,7 @@ function startTestServer(): TestEnv {
           router.handleClose(handle);
         },
       };
-    })
+    }),
   );
 
   const server = Bun.serve({
@@ -322,14 +352,14 @@ afterAll(() => {
   env.server.stop(true);
 });
 
-describe('sidecar↔hub integration', () => {
-  test('sidecar registers with hub on connect', async () => {
+describe("sidecar↔hub integration", () => {
+  test("sidecar registers with hub on connect", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'test-sidecar',
-      token: 'test-token',
+      sidecarId: "test-sidecar",
+      token: "test-token",
 
       transport,
       sessions,
@@ -338,21 +368,25 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('test-sidecar'));
-      expect(env.router.getConnectedSidecars()).toContain('test-sidecar');
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("test-sidecar"),
+      );
+      expect(env.router.getConnectedSidecars()).toContain("test-sidecar");
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('test-sidecar'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("test-sidecar"),
+      );
     }
   });
 
-  test('hub sends session.create and sidecar acks', async () => {
+  test("hub sends session.create and sidecar acks", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-create',
-      token: 'test-token',
+      sidecarId: "sc-create",
+      token: "test-token",
 
       transport,
       sessions,
@@ -361,52 +395,33 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-create'));
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-create"),
+      );
 
-      await env.router.sendAgentDeploy('agent-1@test.interchange', TEST_CONFIG);
+      await env.router.sendAgentDeploy("agent-1@test.interchange", TEST_CONFIG);
 
       expect(sessions.provisioned).toHaveLength(1);
-      expect(sessions.provisioned[0]?.agentAddress).toBe('agent-1@test.interchange');
-    } finally {
-      client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-create'));
-    }
-  });
-
-  test('hub receives session.error when create fails', async () => {
-    const transport = createInMemoryTransport();
-    const sessions = createMockSessionManager();
-    sessions.shouldThrow = 'provider not configured';
-    const client = createHubLink({
-      hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-fail',
-      token: 'test-token',
-
-      transport,
-      sessions,
-      ...withTestDeployBindings(sessions),
-    });
-
-    client.connect();
-    try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-fail'));
-
-      await expect(env.router.sendAgentDeploy('fail-agent@test', TEST_CONFIG)).rejects.toThrow(
-        'provider not configured'
+      expect(sessions.provisioned[0]?.agentAddress).toBe(
+        "agent-1@test.interchange",
       );
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-fail'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-create"),
+      );
     }
   });
 
-  test('session.start starts the harness', async () => {
+  test("hub receives session.error when create fails", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
+    sessions.shouldThrow = "provider not configured";
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-start',
-      token: 'test-token',
+      sidecarId: "sc-fail",
+      token: "test-token",
+
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -414,27 +429,63 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-start'));
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-fail"),
+      );
 
-      await env.router.sendAgentDeploy('start-agent@test.interchange', TEST_CONFIG);
+      await expect(
+        env.router.sendAgentDeploy("fail-agent@test", TEST_CONFIG),
+      ).rejects.toThrow("provider not configured");
+    } finally {
+      client.close();
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-fail"),
+      );
+    }
+  });
+
+  test("session.start starts the harness", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+    const client = createHubLink({
+      hubURL: `ws://localhost:${env.server.port}/ws`,
+      sidecarId: "sc-start",
+      token: "test-token",
+      transport,
+      sessions,
+      ...withTestDeployBindings(sessions),
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-start"),
+      );
+
+      await env.router.sendAgentDeploy(
+        "start-agent@test.interchange",
+        TEST_CONFIG,
+      );
       expect(sessions.started).toHaveLength(0);
 
-      await env.router.sendSessionStart('start-agent@test.interchange');
+      await env.router.sendSessionStart("start-agent@test.interchange");
       expect(sessions.started).toHaveLength(1);
-      expect(sessions.started[0]).toBe('start-agent@test.interchange');
+      expect(sessions.started[0]).toBe("start-agent@test.interchange");
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-start'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-start"),
+      );
     }
   });
 
-  test('session.start failure removes agent from routing table', async () => {
+  test("session.start failure removes agent from routing table", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-start-fail',
-      token: 'test-token',
+      sidecarId: "sc-start-fail",
+      token: "test-token",
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -442,33 +493,42 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-start-fail'));
-
-      await env.router.sendAgentDeploy('start-fail@test.interchange', TEST_CONFIG);
-
-      // Make startSession throw on the next call.
-      sessions.shouldThrow = 'deploy tree missing';
-
-      await expect(env.router.sendSessionStart('start-fail@test.interchange')).rejects.toThrow(
-        'deploy tree missing'
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-start-fail"),
       );
 
+      await env.router.sendAgentDeploy(
+        "start-fail@test.interchange",
+        TEST_CONFIG,
+      );
+
+      // Make startSession throw on the next call.
+      sessions.shouldThrow = "deploy tree missing";
+
+      await expect(
+        env.router.sendSessionStart("start-fail@test.interchange"),
+      ).rejects.toThrow("deploy tree missing");
+
       // Failed session start should remove the agent from routing.
-      expect(env.router.getRoutableAddresses()).not.toContain('start-fail@test.interchange');
+      expect(env.router.getRoutableAddresses()).not.toContain(
+        "start-fail@test.interchange",
+      );
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-start-fail'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-start-fail"),
+      );
     }
   });
 
-  test('sidecar forwards agent events to hub', async () => {
+  test("sidecar forwards agent events to hub", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     const startLength = env.agentEvents.length;
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-events',
-      token: 'test-token',
+      sidecarId: "sc-events",
+      token: "test-token",
 
       transport,
       sessions,
@@ -477,43 +537,49 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-events'));
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-events"),
+      );
 
-      client.sendEvent('agent-1@test.interchange', 'sess-1', {
-        type: 'reactor.start',
+      client.sendEvent("agent-1@test.interchange", "sess-1", {
+        type: "reactor.start",
         seq: 0,
         data: {},
       });
 
       await waitFor(() => env.agentEvents.length > startLength);
       const event = env.agentEvents[env.agentEvents.length - 1];
-      expect(event?.addr).toBe('agent-1@test.interchange');
-      expect(event?.sid).toBe('sess-1');
+      expect(event?.addr).toBe("agent-1@test.interchange");
+      expect(event?.sid).toBe("sess-1");
       expect(event?.event).toEqual({
-        type: 'reactor.start',
+        type: "reactor.start",
         seq: 0,
         data: {},
       });
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-events'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-events"),
+      );
     }
   });
 
-  test('hub routes mail inbound to sidecar', async () => {
+  test("hub routes mail inbound to sidecar", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     // The agent must be in the session manager's address list so the
     // register frame includes it in the routing table.
-    sessions.addresses.push('agent-1@test.interchange');
-    const { generateKeyPair, createNodeCrypto } = await import('@intx/crypto-node');
+    sessions.addresses.push("agent-1@test.interchange");
+    const { generateKeyPair, createNodeCrypto } = await import(
+      "@intx/crypto-node"
+    );
     const kp = await generateKeyPair();
-    transport.register('agent-1@test.interchange', createNodeCrypto(kp));
+    transport.register("agent-1@test.interchange", createNodeCrypto(kp));
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-mail-in',
-      token: 'test-token',
+      sidecarId: "sc-mail-in",
+      token: "test-token",
 
       transport,
       sessions,
@@ -522,41 +588,49 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getRoutableAddresses().includes('agent-1@test.interchange'));
+      await waitFor(() =>
+        env.router.getRoutableAddresses().includes("agent-1@test.interchange"),
+      );
 
       const encoded = base64Encode(VALID_MESSAGE);
-      const routed = env.router.routeMail('agent-1@test.interchange', encoded);
+      const routed = env.router.routeMail("agent-1@test.interchange", encoded);
       expect(routed).toBe(true);
 
       // Wait for the message to be delivered to the agent's INBOX.
-      const agentTransport = transport.getTransportFor('agent-1@test.interchange');
+      const agentTransport = transport.getTransportFor(
+        "agent-1@test.interchange",
+      );
       await waitFor(async () => {
-        const refs = await agentTransport.search('INBOX', {});
+        const refs = await agentTransport.search("INBOX", {});
         return refs.length > 0;
       });
 
-      const refs = await agentTransport.search('INBOX', {});
+      const refs = await agentTransport.search("INBOX", {});
       expect(refs).toHaveLength(1);
       const headers = await agentTransport.fetchHeaders(refs[0]!);
-      expect(headers.from).toBe('external@remote.interchange');
+      expect(headers.from).toBe("external@remote.interchange");
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-mail-in'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-mail-in"),
+      );
     }
   });
 
-  test('sidecar forwards outbound mail to hub', async () => {
+  test("sidecar forwards outbound mail to hub", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
-    const { generateKeyPair, createNodeCrypto } = await import('@intx/crypto-node');
+    const { generateKeyPair, createNodeCrypto } = await import(
+      "@intx/crypto-node"
+    );
     const kp = await generateKeyPair();
-    transport.register('sender@test.interchange', createNodeCrypto(kp));
+    transport.register("sender@test.interchange", createNodeCrypto(kp));
 
     const startLength = env.outboundMail.length;
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-mail-out',
-      token: 'test-token',
+      sidecarId: "sc-mail-out",
+      token: "test-token",
 
       transport,
       sessions,
@@ -565,53 +639,61 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-mail-out'));
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-mail-out"),
+      );
 
-      const senderTransport = transport.getTransportFor('sender@test.interchange');
+      const senderTransport = transport.getTransportFor(
+        "sender@test.interchange",
+      );
       await senderTransport.send({
-        to: 'remote@other.interchange',
-        type: 'conversation.message',
-        content: 'Hello from sidecar',
+        to: "remote@other.interchange",
+        type: "conversation.message",
+        content: "Hello from sidecar",
       });
 
       await waitFor(() => env.outboundMail.length > startLength);
       const mail = env.outboundMail[env.outboundMail.length - 1];
-      expect(mail?.recipients).toEqual(['remote@other.interchange']);
+      expect(mail?.recipients).toEqual(["remote@other.interchange"]);
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-mail-out'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-mail-out"),
+      );
     }
   });
 
-  test('mail routes between two sidecars via hub', async () => {
-    const { generateKeyPair, createNodeCrypto } = await import('@intx/crypto-node');
+  test("mail routes between two sidecars via hub", async () => {
+    const { generateKeyPair, createNodeCrypto } = await import(
+      "@intx/crypto-node"
+    );
 
     // Sidecar A
     const transportA = createInMemoryTransport();
     const sessionsA = createMockSessionManager();
-    sessionsA.addresses.push('alice@test.interchange');
+    sessionsA.addresses.push("alice@test.interchange");
     const kpA = await generateKeyPair();
-    transportA.register('alice@test.interchange', createNodeCrypto(kpA));
+    transportA.register("alice@test.interchange", createNodeCrypto(kpA));
 
     // Sidecar B
     const transportB = createInMemoryTransport();
     const sessionsB = createMockSessionManager();
-    sessionsB.addresses.push('bob@test.interchange');
+    sessionsB.addresses.push("bob@test.interchange");
     const kpB = await generateKeyPair();
-    transportB.register('bob@test.interchange', createNodeCrypto(kpB));
+    transportB.register("bob@test.interchange", createNodeCrypto(kpB));
 
     const clientA = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-alice',
-      token: 'test-token',
+      sidecarId: "sc-alice",
+      token: "test-token",
       transport: transportA,
       sessions: sessionsA,
       ...withTestDeployBindings(sessionsA),
     });
     const clientB = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-bob',
-      token: 'test-token',
+      sidecarId: "sc-bob",
+      token: "test-token",
       transport: transportB,
       sessions: sessionsB,
       ...withTestDeployBindings(sessionsB),
@@ -620,45 +702,55 @@ describe('sidecar↔hub integration', () => {
     clientA.connect();
     clientB.connect();
     try {
-      await waitFor(() => env.router.getRoutableAddresses().includes('alice@test.interchange'));
-      await waitFor(() => env.router.getRoutableAddresses().includes('bob@test.interchange'));
+      await waitFor(() =>
+        env.router.getRoutableAddresses().includes("alice@test.interchange"),
+      );
+      await waitFor(() =>
+        env.router.getRoutableAddresses().includes("bob@test.interchange"),
+      );
 
       // Alice sends a message to Bob.
-      const aliceTransport = transportA.getTransportFor('alice@test.interchange');
+      const aliceTransport = transportA.getTransportFor(
+        "alice@test.interchange",
+      );
       await aliceTransport.send({
-        to: 'bob@test.interchange',
-        type: 'conversation.message',
-        content: 'Hello Bob',
+        to: "bob@test.interchange",
+        type: "conversation.message",
+        content: "Hello Bob",
       });
 
       // Bob should receive it in his INBOX.
-      const bobTransport = transportB.getTransportFor('bob@test.interchange');
+      const bobTransport = transportB.getTransportFor("bob@test.interchange");
       await waitFor(async () => {
-        const refs = await bobTransport.search('INBOX', {});
+        const refs = await bobTransport.search("INBOX", {});
         return refs.length > 0;
       });
 
-      const refs = await bobTransport.search('INBOX', {});
+      const refs = await bobTransport.search("INBOX", {});
       expect(refs).toHaveLength(1);
       const headers = await bobTransport.fetchHeaders(refs[0]!);
-      expect(headers.from).toBe('alice@test.interchange');
+      expect(headers.from).toBe("alice@test.interchange");
     } finally {
       clientA.close();
       clientB.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-alice'));
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-bob'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-alice"),
+      );
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-bob"),
+      );
     }
   });
 
-  test('disconnect cleans up routing table', async () => {
+  test("disconnect cleans up routing table", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
-    sessions.addresses.push('tracked@test.interchange');
+    sessions.addresses.push("tracked@test.interchange");
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-disconnect',
-      token: 'test-token',
+      sidecarId: "sc-disconnect",
+      token: "test-token",
 
       transport,
       sessions,
@@ -666,21 +758,29 @@ describe('sidecar↔hub integration', () => {
     });
 
     client.connect();
-    await waitFor(() => env.router.getConnectedSidecars().includes('sc-disconnect'));
-    expect(env.router.getRoutableAddresses()).toContain('tracked@test.interchange');
+    await waitFor(() =>
+      env.router.getConnectedSidecars().includes("sc-disconnect"),
+    );
+    expect(env.router.getRoutableAddresses()).toContain(
+      "tracked@test.interchange",
+    );
 
     client.close();
-    await waitFor(() => !env.router.getConnectedSidecars().includes('sc-disconnect'));
-    expect(env.router.getRoutableAddresses()).not.toContain('tracked@test.interchange');
+    await waitFor(
+      () => !env.router.getConnectedSidecars().includes("sc-disconnect"),
+    );
+    expect(env.router.getRoutableAddresses()).not.toContain(
+      "tracked@test.interchange",
+    );
   });
 
-  test('repo.pack.reject sent when applyDeployPack throws signature_invalid', async () => {
+  test("repo.pack.reject sent when applyDeployPack throws signature_invalid", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-pack-reject',
-      token: 'test-token',
+      sidecarId: "sc-pack-reject",
+      token: "test-token",
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -688,35 +788,42 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-pack-reject'));
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-pack-reject"),
+      );
 
-      await env.router.sendAgentDeploy('pack-agent@test.interchange', TEST_CONFIG);
+      await env.router.sendAgentDeploy(
+        "pack-agent@test.interchange",
+        TEST_CONFIG,
+      );
 
       sessions.applyDeployPack = () => {
-        throw new Error('signature_invalid: bad signature');
+        throw new Error("signature_invalid: bad signature");
       };
 
       await expect(
         env.router.sendPack(
-          'pack-agent@test.interchange',
+          "pack-agent@test.interchange",
           new Uint8Array([1, 2, 3]),
-          'refs/heads/deploy',
-          'a'.repeat(40)
-        )
-      ).rejects.toThrow('Pack rejected: signature_invalid');
+          "refs/heads/deploy",
+          "a".repeat(40),
+        ),
+      ).rejects.toThrow("Pack rejected: signature_invalid");
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-pack-reject'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-pack-reject"),
+      );
     }
   });
 
-  test('signature_unsigned errors also map to repo.pack.reject signature_invalid', async () => {
+  test("signature_unsigned errors also map to repo.pack.reject signature_invalid", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-pack-unsigned',
-      token: 'test-token',
+      sidecarId: "sc-pack-unsigned",
+      token: "test-token",
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -724,41 +831,48 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-pack-unsigned'));
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-pack-unsigned"),
+      );
 
-      await env.router.sendAgentDeploy('unsigned-agent@test.interchange', TEST_CONFIG);
+      await env.router.sendAgentDeploy(
+        "unsigned-agent@test.interchange",
+        TEST_CONFIG,
+      );
 
       sessions.applyDeployPack = () => {
-        throw new Error('signature_unsigned: no signature found');
+        throw new Error("signature_unsigned: no signature found");
       };
 
       await expect(
         env.router.sendPack(
-          'unsigned-agent@test.interchange',
+          "unsigned-agent@test.interchange",
           new Uint8Array([1, 2, 3]),
-          'refs/heads/deploy',
-          'a'.repeat(40)
-        )
-      ).rejects.toThrow('Pack rejected: signature_invalid');
+          "refs/heads/deploy",
+          "a".repeat(40),
+        ),
+      ).rejects.toThrow("Pack rejected: signature_invalid");
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-pack-unsigned'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-pack-unsigned"),
+      );
     }
   });
 
-  test('malformed hubPublicKey in deploy frame sends agent.error', async () => {
+  test("malformed hubPublicKey in deploy frame sends agent.error", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
 
     // Stand up a hub router with an odd-length hex key to trigger hexDecode.
     const badRouter = createSidecarRouter({
       requestTimeoutMs: 5000,
-      hubPublicKey: 'abc', // odd length — hexDecode should throw
+      hubPublicKey: "abc", // odd length — hexDecode should throw
     });
 
     const badApp = new Hono();
     badApp.get(
-      '/ws',
+      "/ws",
       upgradeWebSocket((_c) => {
         let handle: WsHandle;
         return {
@@ -774,7 +888,7 @@ describe('sidecar↔hub integration', () => {
             badRouter.handleOpen(handle);
           },
           onMessage(evt, _ws) {
-            if (typeof evt.data === 'string') {
+            if (typeof evt.data === "string") {
               badRouter.handleMessage(handle, evt.data);
             }
           },
@@ -782,7 +896,7 @@ describe('sidecar↔hub integration', () => {
             badRouter.handleClose(handle);
           },
         };
-      })
+      }),
     );
 
     const badServer = Bun.serve({
@@ -793,8 +907,8 @@ describe('sidecar↔hub integration', () => {
 
     const client = createHubLink({
       hubURL: `ws://localhost:${badServer.port}/ws`,
-      sidecarId: 'sc-bad-hex',
-      token: 'test-token',
+      sidecarId: "sc-bad-hex",
+      token: "test-token",
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -802,27 +916,31 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => badRouter.getConnectedSidecars().includes('sc-bad-hex'));
+      await waitFor(() =>
+        badRouter.getConnectedSidecars().includes("sc-bad-hex"),
+      );
 
       // Deploy should fail because hexDecode throws on the odd-length key.
       await expect(
-        badRouter.sendAgentDeploy('bad-hex@test.interchange', TEST_CONFIG)
-      ).rejects.toThrow('odd-length');
+        badRouter.sendAgentDeploy("bad-hex@test.interchange", TEST_CONFIG),
+      ).rejects.toThrow("odd-length");
     } finally {
       client.close();
       badServer.stop(true);
     }
   });
 
-  test('reconnect restores hubPublicKey into hubKeys map', async () => {
-    const { generateKeyPair, createSSHSignature } = await import('@intx/crypto-node');
+  test("reconnect restores hubPublicKey into hubKeys map", async () => {
+    const { generateKeyPair, createSSHSignature } = await import(
+      "@intx/crypto-node"
+    );
 
     // Agent keypair — used for challenge/response signing.
     const agentKp = await generateKeyPair();
     // Hub keypair — the key whose public half the sidecar stores to verify
     // deploy commit signatures. Distinct from the agent keypair.
     const hubKp = await generateKeyPair();
-    const fakeAddress = 'restored@test.interchange';
+    const fakeAddress = "restored@test.interchange";
 
     const agentPublicKeyHex = hexEncode(agentKp.publicKey);
     const hubPublicKeyHex = hexEncode(hubKp.publicKey);
@@ -833,13 +951,14 @@ describe('sidecar↔hub integration', () => {
       challengeTimeoutMs: 5000,
       hubPublicKey: hubPublicKeyHex,
       lookups: {
-        lookupPublicKey: async (addr) => (addr === fakeAddress ? agentPublicKeyHex : null),
+        lookupPublicKey: async (addr) =>
+          addr === fakeAddress ? agentPublicKeyHex : null,
       },
     });
 
     const reconnectApp = new Hono();
     reconnectApp.get(
-      '/ws',
+      "/ws",
       upgradeWebSocket((_c) => {
         let handle: WsHandle;
         return {
@@ -855,7 +974,7 @@ describe('sidecar↔hub integration', () => {
             reconnectRouter.handleOpen(handle);
           },
           onMessage(evt, _ws) {
-            if (typeof evt.data === 'string') {
+            if (typeof evt.data === "string") {
               reconnectRouter.handleMessage(handle, evt.data);
             }
           },
@@ -863,7 +982,7 @@ describe('sidecar↔hub integration', () => {
             reconnectRouter.handleClose(handle);
           },
         };
-      })
+      }),
     );
 
     const reconnectServer = Bun.serve({
@@ -887,7 +1006,7 @@ describe('sidecar↔hub integration', () => {
       ],
       failed: [],
     });
-    sessions.getDeployRef = async () => 'a'.repeat(40);
+    sessions.getDeployRef = async () => "a".repeat(40);
 
     // In production, SessionManager.restoreSessions populates
     // AgentKeyStore's in-memory cache via scanKeys before HubLink
@@ -898,8 +1017,8 @@ describe('sidecar↔hub integration', () => {
 
     const client = createHubLink({
       hubURL: `ws://localhost:${reconnectServer.port}/ws`,
-      sidecarId: 'sc-restore-key',
-      token: 'test-token',
+      sidecarId: "sc-restore-key",
+      token: "test-token",
       transport,
       sessions,
       keyStore,
@@ -908,7 +1027,10 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => reconnectRouter.getRoutableAddresses().includes(fakeAddress), 5000);
+      await waitFor(
+        () => reconnectRouter.getRoutableAddresses().includes(fakeAddress),
+        5000,
+      );
 
       // Capture the verifyCommit callback to prove the correct hub key
       // was restored — not just any key.
@@ -919,7 +1041,7 @@ describe('sidecar↔hub integration', () => {
         _ref: string,
         _sha: string,
         _tid: string,
-        verifyCommit?: (payload: string, signature: string) => boolean
+        verifyCommit?: (payload: string, signature: string) => boolean,
       ) => {
         capturedVerifyCommit = verifyCommit;
       };
@@ -927,22 +1049,30 @@ describe('sidecar↔hub integration', () => {
       await reconnectRouter.sendPack(
         fakeAddress,
         new Uint8Array([1, 2, 3]),
-        'refs/heads/deploy',
-        'b'.repeat(40)
+        "refs/heads/deploy",
+        "b".repeat(40),
       );
 
       expect(capturedVerifyCommit).toBeFunction();
 
       // Create a real signature with the hub's private key and verify
       // it round-trips through the restored verifyCommit callback.
-      const payload = 'tree abc\nauthor t <t@t> 0 +0000\n\ntest\n';
-      const sig = createSSHSignature(payload, hubKp.privateKey, hubKp.publicKey);
+      const payload = "tree abc\nauthor t <t@t> 0 +0000\n\ntest\n";
+      const sig = createSSHSignature(
+        payload,
+        hubKp.privateKey,
+        hubKp.publicKey,
+      );
       expect(capturedVerifyCommit!(payload, sig)).toBe(true);
 
       // A signature from a different key must fail, proving the callback
       // is bound to the specific hub key that was restored.
       const wrongKp = await generateKeyPair();
-      const wrongSig = createSSHSignature(payload, wrongKp.privateKey, wrongKp.publicKey);
+      const wrongSig = createSSHSignature(
+        payload,
+        wrongKp.privateKey,
+        wrongKp.publicKey,
+      );
       expect(capturedVerifyCommit!(payload, wrongSig)).toBe(false);
     } finally {
       client.close();
@@ -950,7 +1080,7 @@ describe('sidecar↔hub integration', () => {
     }
   });
 
-  test('sidecar sends pings and hub responds with pongs', async () => {
+  test("sidecar sends pings and hub responds with pongs", async () => {
     const pingEnv = startTestServer();
 
     const transport = createInMemoryTransport();
@@ -958,8 +1088,8 @@ describe('sidecar↔hub integration', () => {
 
     const client = createHubLink({
       hubURL: `ws://localhost:${pingEnv.server.port}/ws`,
-      sidecarId: 'sc-ping',
-      token: 'test-token',
+      sidecarId: "sc-ping",
+      token: "test-token",
 
       transport,
       sessions,
@@ -969,20 +1099,22 @@ describe('sidecar↔hub integration', () => {
 
     try {
       client.connect();
-      await waitFor(() => pingEnv.router.getConnectedSidecars().includes('sc-ping'));
+      await waitFor(() =>
+        pingEnv.router.getConnectedSidecars().includes("sc-ping"),
+      );
 
       // Wait long enough for at least one ping/pong round trip.
       await new Promise((r) => setTimeout(r, 250));
 
       // The sidecar should still be connected (pongs keep it alive).
-      expect(pingEnv.router.getConnectedSidecars()).toContain('sc-ping');
+      expect(pingEnv.router.getConnectedSidecars()).toContain("sc-ping");
     } finally {
       client.close();
       pingEnv.server.stop(true);
     }
   });
 
-  test('repo.pack.done with mountPath routes through applyAssetPack', async () => {
+  test("repo.pack.done with mountPath routes through applyAssetPack", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     const deployCalls: string[] = [];
@@ -998,8 +1130,8 @@ describe('sidecar↔hub integration', () => {
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-asset-route',
-      token: 'test-token',
+      sidecarId: "sc-asset-route",
+      token: "test-token",
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -1007,52 +1139,59 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-asset-route'));
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-asset-route"),
+      );
 
-      await env.router.sendAgentDeploy('route-agent@test.interchange', TEST_CONFIG);
+      await env.router.sendAgentDeploy(
+        "route-agent@test.interchange",
+        TEST_CONFIG,
+      );
 
       // Deploy pack (no mountPath) → applyDeployPack.
       await env.router.sendPack(
-        'route-agent@test.interchange',
+        "route-agent@test.interchange",
         new Uint8Array([1, 2, 3]),
-        'refs/heads/deploy',
-        'a'.repeat(40)
+        "refs/heads/deploy",
+        "a".repeat(40),
       );
-      expect(deployCalls).toEqual(['route-agent@test.interchange']);
+      expect(deployCalls).toEqual(["route-agent@test.interchange"]);
       expect(assetCalls).toEqual([]);
 
       // Asset pack (mountPath set) → applyAssetPack.
       await env.router.sendPack(
-        'route-agent@test.interchange',
+        "route-agent@test.interchange",
         new Uint8Array([4, 5, 6]),
-        'refs/heads/main',
-        'b'.repeat(40),
-        { mountPath: 'skills/example/' }
+        "refs/heads/main",
+        "b".repeat(40),
+        { mountPath: "skills/example/" },
       );
-      expect(deployCalls).toEqual(['route-agent@test.interchange']);
+      expect(deployCalls).toEqual(["route-agent@test.interchange"]);
       expect(assetCalls).toEqual([
         {
-          address: 'route-agent@test.interchange',
-          mountPath: 'skills/example/',
+          address: "route-agent@test.interchange",
+          mountPath: "skills/example/",
         },
       ]);
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-asset-route'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-asset-route"),
+      );
     }
   });
 
-  test('asset_materialization_failed reports as pack.reject corrupt', async () => {
+  test("asset_materialization_failed reports as pack.reject corrupt", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     sessions.applyAssetPack = () => {
-      throw new Error('asset_materialization_failed: pack index error');
+      throw new Error("asset_materialization_failed: pack index error");
     };
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-asset-fail',
-      token: 'test-token',
+      sidecarId: "sc-asset-fail",
+      token: "test-token",
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -1060,25 +1199,32 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getConnectedSidecars().includes('sc-asset-fail'));
-      await env.router.sendAgentDeploy('fail-asset@test.interchange', TEST_CONFIG);
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-asset-fail"),
+      );
+      await env.router.sendAgentDeploy(
+        "fail-asset@test.interchange",
+        TEST_CONFIG,
+      );
 
       await expect(
         env.router.sendPack(
-          'fail-asset@test.interchange',
+          "fail-asset@test.interchange",
           new Uint8Array([1, 2, 3]),
-          'refs/heads/main',
-          'a'.repeat(40),
-          { mountPath: 'skills/example/' }
-        )
-      ).rejects.toThrow('Pack rejected: corrupt');
+          "refs/heads/main",
+          "a".repeat(40),
+          { mountPath: "skills/example/" },
+        ),
+      ).rejects.toThrow("Pack rejected: corrupt");
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-asset-fail'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-asset-fail"),
+      );
     }
   });
 
-  test('close cancels a pending reconnect scheduled by the previous disconnect', async () => {
+  test("close cancels a pending reconnect scheduled by the previous disconnect", async () => {
     const reconnectEnv = startTestServer();
 
     // Inject a fake scheduler so we can observe the reconnect callback
@@ -1097,8 +1243,8 @@ describe('sidecar↔hub integration', () => {
     const sessions = createMockSessionManager();
     const client = createHubLink({
       hubURL: `ws://localhost:${reconnectEnv.server.port}/ws`,
-      sidecarId: 'sc-reconnect-race',
-      token: 'test-token',
+      sidecarId: "sc-reconnect-race",
+      token: "test-token",
 
       transport,
       sessions,
@@ -1108,7 +1254,11 @@ describe('sidecar↔hub integration', () => {
 
     try {
       client.connect();
-      await waitFor(() => reconnectEnv.router.getConnectedSidecars().includes('sc-reconnect-race'));
+      await waitFor(() =>
+        reconnectEnv.router
+          .getConnectedSidecars()
+          .includes("sc-reconnect-race"),
+      );
 
       // Force a disconnect by stopping the server. The WebSocket fires
       // its close event on the client, which schedules a reconnect
@@ -1127,7 +1277,7 @@ describe('sidecar↔hub integration', () => {
     }
   });
 
-  test('mailInboundRouter claims an address and skips the legacy fallback', async () => {
+  test("mailInboundRouter claims an address and skips the legacy fallback", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     // The deployment address is what the hub routes mail to. The
@@ -1136,7 +1286,7 @@ describe('sidecar↔hub integration', () => {
     // mail.inbound for it goes through the link's switch case, which
     // must consult mailInboundRouter first and -- on a `true` return
     // -- skip transport.deliver and sessions.commitInboundMail.
-    const deploymentAddress = 'dep_multistep-1@integration.interchange';
+    const deploymentAddress = "dep_multistep-1@integration.interchange";
     sessions.addresses.push(deploymentAddress);
 
     const routed: { address: string; bytes: Uint8Array }[] = [];
@@ -1149,8 +1299,8 @@ describe('sidecar↔hub integration', () => {
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-multistep-mail',
-      token: 'test-token',
+      sidecarId: "sc-multistep-mail",
+      token: "test-token",
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -1159,7 +1309,9 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getRoutableAddresses().includes(deploymentAddress));
+      await waitFor(() =>
+        env.router.getRoutableAddresses().includes(deploymentAddress),
+      );
 
       const encoded = base64Encode(VALID_MESSAGE);
       const accepted = env.router.routeMail(deploymentAddress, encoded);
@@ -1187,16 +1339,20 @@ describe('sidecar↔hub integration', () => {
       expect(sessions.delivered).toHaveLength(0);
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-multistep-mail'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-multistep-mail"),
+      );
     }
   });
 
-  test('mailInboundRouter that returns false falls through to the legacy path', async () => {
+  test("mailInboundRouter that returns false falls through to the legacy path", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
-    const address = 'agent-fallback@test.interchange';
+    const address = "agent-fallback@test.interchange";
     sessions.addresses.push(address);
-    const { generateKeyPair, createNodeCrypto } = await import('@intx/crypto-node');
+    const { generateKeyPair, createNodeCrypto } = await import(
+      "@intx/crypto-node"
+    );
     const kp = await generateKeyPair();
     transport.register(address, createNodeCrypto(kp));
 
@@ -1210,8 +1366,8 @@ describe('sidecar↔hub integration', () => {
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-fallback-mail',
-      token: 'test-token',
+      sidecarId: "sc-fallback-mail",
+      token: "test-token",
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -1227,26 +1383,31 @@ describe('sidecar↔hub integration', () => {
 
       const agentTransport = transport.getTransportFor(address);
       await waitFor(async () => {
-        const refs = await agentTransport.search('INBOX', {});
+        const refs = await agentTransport.search("INBOX", {});
         return refs.length > 0;
       });
 
       expect(consulted).toContain(address);
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-fallback-mail'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-fallback-mail"),
+      );
     }
   });
 
-  test('drainInboundRouter dispatches an inbound drain.deliver frame', async () => {
+  test("drainInboundRouter dispatches an inbound drain.deliver frame", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
-    const deploymentAddress = 'dep_drain-1@integration.interchange';
+    const deploymentAddress = "dep_drain-1@integration.interchange";
     sessions.addresses.push(deploymentAddress);
 
     const routed: { agentAddress: string; deadlineMs: number }[] = [];
     const drainInboundRouter = {
-      async tryRoute(frame: { agentAddress: string; deadlineMs: number }): Promise<boolean> {
+      async tryRoute(frame: {
+        agentAddress: string;
+        deadlineMs: number;
+      }): Promise<boolean> {
         routed.push({
           agentAddress: frame.agentAddress,
           deadlineMs: frame.deadlineMs,
@@ -1257,8 +1418,8 @@ describe('sidecar↔hub integration', () => {
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
-      sidecarId: 'sc-drain-router',
-      token: 'test-token',
+      sidecarId: "sc-drain-router",
+      token: "test-token",
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -1267,7 +1428,9 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => env.router.getRoutableAddresses().includes(deploymentAddress));
+      await waitFor(() =>
+        env.router.getRoutableAddresses().includes(deploymentAddress),
+      );
 
       env.router.sendDrain({
         agentAddress: deploymentAddress,
@@ -1281,7 +1444,9 @@ describe('sidecar↔hub integration', () => {
       expect(routed[0]?.deadlineMs).toBe(4_321);
     } finally {
       client.close();
-      await waitFor(() => !env.router.getConnectedSidecars().includes('sc-drain-router'));
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-drain-router"),
+      );
     }
   });
 
@@ -1297,7 +1462,7 @@ describe('sidecar↔hub integration', () => {
   // This test pins the queue+retry interaction so a future change to
   // the bootstrap-retry surface cannot quietly introduce that
   // spurious retry.
-  test('two concurrent first-pushes to the same (repoId, ref) fire exactly one bootstrap retry', async () => {
+  test("two concurrent first-pushes to the same (repoId, ref) fire exactly one bootstrap retry", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
 
@@ -1311,7 +1476,7 @@ describe('sidecar↔hub integration', () => {
     } = { transferIds: [] };
     const wfrRouter = createSidecarRouter({
       requestTimeoutMs: 5000,
-      hubPublicKey: 'a'.repeat(64),
+      hubPublicKey: "a".repeat(64),
       lookups: {
         async receiveWorkflowRunPack(_repoId, _pack, _ref, _commitSha) {
           receiveCount += 1;
@@ -1319,7 +1484,7 @@ describe('sidecar↔hub integration', () => {
             // Mirror the hub's wire-level translation of an
             // `initRepo` non-fast-forward race: surface a `corrupt`
             // rejection so the sender's bootstrap arm runs once.
-            return { accepted: false, reason: 'corrupt' };
+            return { accepted: false, reason: "corrupt" };
           }
           return { accepted: true };
         },
@@ -1328,7 +1493,7 @@ describe('sidecar↔hub integration', () => {
 
     const wfrApp = new Hono();
     wfrApp.get(
-      '/ws',
+      "/ws",
       upgradeWebSocket((_c) => {
         let handle: WsHandle;
         return {
@@ -1344,7 +1509,7 @@ describe('sidecar↔hub integration', () => {
             wfrRouter.handleOpen(handle);
           },
           onMessage(evt, _ws) {
-            if (typeof evt.data === 'string') {
+            if (typeof evt.data === "string") {
               // Capture every inbound `repo.pack.done` frame so the
               // test can assert how many sends the link actually
               // issued — one per (initial-attempt | retry | second
@@ -1352,12 +1517,12 @@ describe('sidecar↔hub integration', () => {
               try {
                 const parsed: unknown = JSON.parse(evt.data);
                 if (
-                  typeof parsed === 'object' &&
+                  typeof parsed === "object" &&
                   parsed !== null &&
-                  'type' in parsed &&
-                  parsed.type === 'repo.pack.done' &&
-                  'transferId' in parsed &&
-                  typeof parsed.transferId === 'string'
+                  "type" in parsed &&
+                  parsed.type === "repo.pack.done" &&
+                  "transferId" in parsed &&
+                  typeof parsed.transferId === "string"
                 ) {
                   receiveRecord.transferIds.push(parsed.transferId);
                 }
@@ -1371,7 +1536,7 @@ describe('sidecar↔hub integration', () => {
             wfrRouter.handleClose(handle);
           },
         };
-      })
+      }),
     );
 
     const wfrServer = Bun.serve({
@@ -1382,8 +1547,8 @@ describe('sidecar↔hub integration', () => {
 
     const client = createHubLink({
       hubURL: `ws://localhost:${wfrServer.port}/ws`,
-      sidecarId: 'sc-wfr-bootstrap-race',
-      token: 'test-token',
+      sidecarId: "sc-wfr-bootstrap-race",
+      token: "test-token",
       transport,
       sessions,
       ...withTestDeployBindings(sessions),
@@ -1391,21 +1556,25 @@ describe('sidecar↔hub integration', () => {
 
     client.connect();
     try {
-      await waitFor(() => wfrRouter.getConnectedSidecars().includes('sc-wfr-bootstrap-race'));
+      await waitFor(() =>
+        wfrRouter.getConnectedSidecars().includes("sc-wfr-bootstrap-race"),
+      );
 
       // Deploy an agent so the sender's outbound pack frames carry a
       // routable address; otherwise the hub drops the push as
       // "unrouted agent" before it ever reaches `receiveWorkflowRunPack`.
-      const agentAddress = 'race-agent@test.interchange';
+      const agentAddress = "race-agent@test.interchange";
       await wfrRouter.sendAgentDeploy(agentAddress, TEST_CONFIG);
-      await waitFor(() => wfrRouter.getRoutableAddresses().includes(agentAddress));
+      await waitFor(() =>
+        wfrRouter.getRoutableAddresses().includes(agentAddress),
+      );
 
       const repoId = {
-        kind: 'workflow-run',
-        id: 'dep-bootstrap-race',
+        kind: "workflow-run",
+        id: "dep-bootstrap-race",
       } as const;
-      const ref = 'refs/heads/events';
-      const commitSha = 'a'.repeat(40);
+      const ref = "refs/heads/events";
+      const commitSha = "a".repeat(40);
       const pack = new Uint8Array([1, 2, 3, 4, 5]);
 
       // Kick both pushes off in the same tick so they both observe the
@@ -1445,7 +1614,10 @@ describe('sidecar↔hub integration', () => {
       expect(uniqueTransferIds.size).toBe(3);
     } finally {
       client.close();
-      await waitFor(() => !wfrRouter.getConnectedSidecars().includes('sc-wfr-bootstrap-race'));
+      await waitFor(
+        () =>
+          !wfrRouter.getConnectedSidecars().includes("sc-wfr-bootstrap-race"),
+      );
       wfrServer.stop(true);
     }
   });

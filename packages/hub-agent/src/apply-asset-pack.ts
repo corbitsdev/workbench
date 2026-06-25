@@ -14,14 +14,14 @@
 // The cryptographic signature scheme that `applyDeployPack` enforces
 // does not apply.
 
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
-import path from 'node:path';
-import git from 'isomorphic-git';
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import git from "isomorphic-git";
 
-import { getLogger } from '@intx/log';
+import { getLogger } from "@intx/log";
 
-const logger = getLogger(['interchange', 'hub-agent', 'apply-asset-pack']);
+const logger = getLogger(["interchange", "hub-agent", "apply-asset-pack"]);
 
 const SAFE_PATH_SEGMENT = /^[a-zA-Z0-9_./-]+$/;
 
@@ -46,19 +46,21 @@ export type ApplyAssetPackArgs = {
 export async function applyAssetPack(args: ApplyAssetPackArgs): Promise<void> {
   const { workspaceRoot, mountPath, pack, ref, commitSha } = args;
 
-  if (mountPath.length === 0 || mountPath.startsWith('/')) {
-    throw new Error(`asset_materialization_failed: invalid mountPath ${JSON.stringify(mountPath)}`);
+  if (mountPath.length === 0 || mountPath.startsWith("/")) {
+    throw new Error(
+      `asset_materialization_failed: invalid mountPath ${JSON.stringify(mountPath)}`,
+    );
   }
   // Reject any all-dots segment (".", "..", "...") before per-segment
   // SAFE_PATH_SEGMENT screening. The base regex permits "." since it
   // allows the character; without this guard a mountPath of "." would
   // resolve destDir to workspaceRoot itself and the subsequent
   // recursive rm would wipe the entire workspace.
-  for (const segment of mountPath.split('/')) {
-    if (segment === '') continue;
+  for (const segment of mountPath.split("/")) {
+    if (segment === "") continue;
     if (/^\.+$/.test(segment) || !SAFE_PATH_SEGMENT.test(segment)) {
       throw new Error(
-        `asset_materialization_failed: invalid mountPath segment in ${JSON.stringify(mountPath)}`
+        `asset_materialization_failed: invalid mountPath segment in ${JSON.stringify(mountPath)}`,
       );
     }
   }
@@ -66,27 +68,35 @@ export async function applyAssetPack(args: ApplyAssetPackArgs): Promise<void> {
   // and reject anything that still resolves to "." or contains ".."
   // (e.g. a permutation the per-segment loop missed).
   const normalized = path.posix.normalize(mountPath);
-  if (normalized === '.' || normalized === './' || normalized.split('/').includes('..')) {
+  if (
+    normalized === "." ||
+    normalized === "./" ||
+    normalized.split("/").includes("..")
+  ) {
     throw new Error(
-      `asset_materialization_failed: mountPath ${JSON.stringify(mountPath)} normalizes to a workspace-root or escaping path`
+      `asset_materialization_failed: mountPath ${JSON.stringify(mountPath)} normalizes to a workspace-root or escaping path`,
     );
   }
 
-  const normalizedMount = mountPath.endsWith('/') ? mountPath.slice(0, -1) : mountPath;
+  const normalizedMount = mountPath.endsWith("/")
+    ? mountPath.slice(0, -1)
+    : mountPath;
   const destDir = path.join(workspaceRoot, normalizedMount);
 
   await fsp.mkdir(workspaceRoot, { recursive: true });
 
-  const scratchDir = await fsp.mkdtemp(path.join(workspaceRoot, '.intx-asset-scratch-'));
+  const scratchDir = await fsp.mkdtemp(
+    path.join(workspaceRoot, ".intx-asset-scratch-"),
+  );
 
   try {
-    await git.init({ fs, dir: scratchDir, defaultBranch: 'main' });
+    await git.init({ fs, dir: scratchDir, defaultBranch: "main" });
 
-    const packDir = path.join(scratchDir, '.git', 'objects', 'pack');
+    const packDir = path.join(scratchDir, ".git", "objects", "pack");
     await fsp.mkdir(packDir, { recursive: true });
 
     const packFilename = `pack-asset-${path.basename(scratchDir)}.pack`;
-    const relPackPath = path.join('.git', 'objects', 'pack', packFilename);
+    const relPackPath = path.join(".git", "objects", "pack", packFilename);
     const absPackPath = path.join(scratchDir, relPackPath);
     await fsp.writeFile(absPackPath, pack);
 
@@ -129,15 +139,17 @@ export async function applyAssetPack(args: ApplyAssetPackArgs): Promise<void> {
     });
     throw new Error(`asset_materialization_failed: ${msg}`, { cause: err });
   } finally {
-    await fsp.rm(scratchDir, { recursive: true, force: true }).catch((rmErr) => {
-      const rmMsg = rmErr instanceof Error ? rmErr.message : String(rmErr);
-      logger.warn`asset pack scratchDir cleanup failed at ${scratchDir}: ${rmMsg}`;
-    });
+    await fsp
+      .rm(scratchDir, { recursive: true, force: true })
+      .catch((rmErr) => {
+        const rmMsg = rmErr instanceof Error ? rmErr.message : String(rmErr);
+        logger.warn`asset pack scratchDir cleanup failed at ${scratchDir}: ${rmMsg}`;
+      });
   }
 }
 
 type TreeEntry = {
-  type: 'blob' | 'tree' | 'commit';
+  type: "blob" | "tree" | "commit";
   mode: string;
   path: string;
   oid: string;
@@ -146,12 +158,12 @@ type TreeEntry = {
 async function writeTreeEntries(
   repoDir: string,
   targetDir: string,
-  entries: TreeEntry[]
+  entries: TreeEntry[],
 ): Promise<void> {
   for (const entry of entries) {
     const entryPath = path.join(targetDir, entry.path);
     switch (entry.type) {
-      case 'tree': {
+      case "tree": {
         await fsp.mkdir(entryPath, { recursive: true });
         const { tree } = await git.readTree({
           fs,
@@ -161,18 +173,18 @@ async function writeTreeEntries(
         await writeTreeEntries(repoDir, entryPath, tree);
         break;
       }
-      case 'blob': {
+      case "blob": {
         const { blob } = await git.readBlob({
           fs,
           dir: repoDir,
           oid: entry.oid,
         });
         await fsp.writeFile(entryPath, blob, {
-          mode: entry.mode === '100755' ? 0o755 : 0o644,
+          mode: entry.mode === "100755" ? 0o755 : 0o644,
         });
         break;
       }
-      case 'commit': {
+      case "commit": {
         // Submodule reference. Skill assets do not declare submodules
         // and validatePush has no reason to accept one, so seeing
         // entry.type === "commit" here means an asset tree was pushed
@@ -181,13 +193,13 @@ async function writeTreeEntries(
         // half-materialized workspace would diverge from the source
         // with no signal to the operator.
         throw new Error(
-          `asset_materialization_failed: submodule reference at ${entry.path} is not supported`
+          `asset_materialization_failed: submodule reference at ${entry.path} is not supported`,
         );
       }
       default: {
         const exhaustive: never = entry.type;
         throw new Error(
-          `asset_materialization_failed: unknown tree-entry type ${String(exhaustive)} at ${entry.path}`
+          `asset_materialization_failed: unknown tree-entry type ${String(exhaustive)} at ${entry.path}`,
         );
       }
     }

@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router';
-import { ErrorBoundary } from '../components/ErrorBoundary';
-import { takePendingFirstMessage } from '../lib/pending-first-message';
-import { MyraChatSurface } from '../components/MyraChatSurface';
-import { useMyraSession } from '../hooks/use-myra-session';
+import { useEffect, useRef } from "react";
+import { Navigate, useNavigate, useParams } from "react-router";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { takePendingFirstMessage } from "../lib/pending-first-message";
+import { MyraChatSurface } from "../components/MyraChatSurface";
+import { useMyraSession } from "../hooks/use-myra-session";
 import {
   isDefaultThreadLabel,
   resolveActiveThread,
@@ -11,7 +11,7 @@ import {
   useGenerateMyraThreadTitle,
   useMyraThreads,
   writeLastActiveThreadId,
-} from '../hooks/use-myra-threads';
+} from "../hooks/use-myra-threads";
 
 function CenteredNotice({ children }: { children: React.ReactNode }) {
   return (
@@ -45,7 +45,7 @@ export function ChatThreadPage() {
   const maybeTitleFromFirstMessage = (text: string) => {
     if (!active || !isDefaultThreadLabel(active.label)) return;
     if (titledRef.current.has(active.id)) return;
-    if (session.messages.some((m) => m.role === 'user')) return;
+    if (session.messages.some((m) => m.role === "user")) return;
     titledRef.current.add(active.id);
     generateTitle.mutate({ id: active.id, firstMessage: text });
   };
@@ -54,7 +54,7 @@ export function ChatThreadPage() {
   // composer creating this thread). Once, when the session is ready.
   const deliveredRef = useRef<string | null>(null);
   useEffect(() => {
-    if (session.state.phase !== 'ready' || !active) return;
+    if (session.state.phase !== "ready" || !active) return;
     if (deliveredRef.current === active.id) return;
     const pending = takePendingFirstMessage(active.id);
     if (pending) {
@@ -63,7 +63,6 @@ export function ChatThreadPage() {
       session.send(pending);
     }
     // session.send is recreated each render; gate on phase + thread id instead.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.state.phase, active]);
 
   if (isLoading) {
@@ -74,8 +73,14 @@ export function ChatThreadPage() {
     return (
       <CenteredNotice>
         <div className="flex flex-col items-center gap-2">
-          <span>Couldn't load your chats. Check your connection and try again.</span>
-          <button type="button" onClick={() => void refetch()} className="text-orange underline">
+          <span>
+            Couldn't load your chats. Check your connection and try again.
+          </span>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="text-orange underline"
+          >
             Try again
           </button>
         </div>
@@ -101,7 +106,7 @@ export function ChatThreadPage() {
             }
             className="rounded-[8px] bg-orange px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {createThread.isPending ? 'Starting…' : 'Start a chat'}
+            {createThread.isPending ? "Starting…" : "Start a chat"}
           </button>
         </div>
       </CenteredNotice>

@@ -1,4 +1,4 @@
-import { type } from 'arktype';
+import { type } from "arktype";
 
 // The canonical ArtifactKind union, kept for documentation. NOT used to gate
 // the artifact parse: ArtifactBody renders a superset of these (legacy/variant
@@ -7,24 +7,24 @@ import { type } from 'arktype';
 // renderable artifacts. The boundary parser must not be stricter than the
 // renderer — `kind` is validated only as a string below.
 export const artifactKindSchema = type(
-  "'email' | 'linkedin-post' | 'twitter-post' | 'blog' | 'founder-pov-post' | 'one-pager' | 'case-study' | 'objection-handling' | 'customer-quotes' | 'battlecard' | 'pain-points' | 'call-transcript' | 'presentation'"
+  "'email' | 'linkedin-post' | 'twitter-post' | 'blog' | 'founder-pov-post' | 'one-pager' | 'case-study' | 'objection-handling' | 'customer-quotes' | 'battlecard' | 'pain-points' | 'call-transcript' | 'presentation'",
 );
 
 export const painPointSchema = type({
-  id: 'string',
-  context: 'string',
-  quote: 'string',
-  'severity?': "'low' | 'medium' | 'high' | 'critical'",
-  'selected?': 'boolean',
+  id: "string",
+  context: "string",
+  quote: "string",
+  "severity?": "'low' | 'medium' | 'high' | 'critical'",
+  "selected?": "boolean",
 });
 
 export const workflowArtifactSchema = type({
-  id: 'string',
-  kind: 'string',
-  title: 'string',
-  content: 'string',
-  status: 'string',
-  'source?': 'unknown',
+  id: "string",
+  kind: "string",
+  title: "string",
+  content: "string",
+  status: "string",
+  "source?": "unknown",
 });
 
 export type ParsedPainPoint = typeof painPointSchema.infer;
@@ -43,7 +43,9 @@ export function parsePainPoints(value: unknown): ParsedPainPoint[] {
   return valid;
 }
 
-export function parseWorkflowArtifacts(value: unknown): ParsedWorkflowArtifact[] {
+export function parseWorkflowArtifacts(
+  value: unknown,
+): ParsedWorkflowArtifact[] {
   if (!Array.isArray(value)) return [];
   const valid: ParsedWorkflowArtifact[] = [];
   for (const item of value) {

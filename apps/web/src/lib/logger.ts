@@ -1,5 +1,4 @@
-// oxlint-disable no-console
-const isDev = import.meta.env.DEV || process.env.NODE_ENV !== 'production';
+const isDev = import.meta.env.DEV || process.env.NODE_ENV !== "production";
 
 export interface Logger {
   debug(message: string, ...args: unknown[]): void;
@@ -11,11 +10,15 @@ export interface Logger {
 function createLogger(prefix: string): Logger {
   const tag = `[${prefix}]`;
   return {
-    debug: isDev ? (message, ...args) => console.debug(`${tag} ${message}`, ...args) : () => {},
-    info: isDev ? (message, ...args) => console.info(`${tag} ${message}`, ...args) : () => {},
+    debug: isDev
+      ? (message, ...args) => console.debug(`${tag} ${message}`, ...args)
+      : () => {},
+    info: isDev
+      ? (message, ...args) => console.info(`${tag} ${message}`, ...args)
+      : () => {},
     warn: (message, ...args) => console.warn(`${tag} ${message}`, ...args),
     error: (message, ...args) => console.error(`${tag} ${message}`, ...args),
   };
 }
 
-export const logger = createLogger('gtm');
+export const logger = createLogger("gtm");

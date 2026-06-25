@@ -1,5 +1,5 @@
-import { createGoogleGenAIAdapter, registerProvider } from '@intx/inference';
-import type { ProviderAdapter } from '@intx/inference';
+import { createGoogleGenAIAdapter, registerProvider } from "@intx/inference";
+import type { ProviderAdapter } from "@intx/inference";
 
 // TEMPORARY local fix for an upstream Interchange bug — tracked in BD-394 /
 // internal bug linked.
@@ -33,7 +33,7 @@ import type { ProviderAdapter } from '@intx/inference';
 // BD-394 is fixed upstream and the vendored Interchange commit is bumped.
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 // Exported for hermetic testing — this is the load-bearing logic of the
@@ -62,11 +62,12 @@ let installed = false;
 export function installGeminiThoughtSignaturePatch(): void {
   if (installed) return;
   installed = true;
-  registerProvider('google-genai', (source): ProviderAdapter => {
+  registerProvider("google-genai", (source): ProviderAdapter => {
     const inner = createGoogleGenAIAdapter(source);
     return {
       ...inner,
-      parseResponse: (sseData) => inner.parseResponse(stripThoughtSignatures(sseData)),
+      parseResponse: (sseData) =>
+        inner.parseResponse(stripThoughtSignatures(sseData)),
     };
   });
 }

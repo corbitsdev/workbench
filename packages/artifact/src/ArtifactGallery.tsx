@@ -3,11 +3,11 @@
 // The kind->viz/fill/span mapping lives in artifact-visuals (presentation is
 // kept out of the transport layer). This renders the grid and header only.
 
-import { useState } from 'react';
-import type { ArtifactWithSession } from '@workbench/shared';
-import type { GalleryArtifact } from './types';
-import { toGalleryArtifact } from './artifact-visuals';
-import { ArtifactCard } from './ArtifactCard';
+import { useState } from "react";
+import type { ArtifactWithSession } from "@workbench/shared";
+import type { GalleryArtifact } from "./types";
+import { toGalleryArtifact } from "./artifact-visuals";
+import { ArtifactCard } from "./ArtifactCard";
 
 export interface ArtifactGalleryProps {
   /** Artifacts to display. Mapped to gallery tiles internally. */
@@ -25,9 +25,9 @@ export interface ArtifactGalleryProps {
   /** When provided, renders a mobile-only control to open the library overlay. */
   onOpenLibrary?: () => void;
   /** Current sort order. When omitted, the component manages its own state. */
-  sort?: 'newest' | 'oldest';
+  sort?: "newest" | "oldest";
   /** Called when the user toggles the sort order. */
-  onSortChange?: (sort: 'newest' | 'oldest') => void;
+  onSortChange?: (sort: "newest" | "oldest") => void;
   /** Current owner principal ID filter. Undefined means no filter. */
   ownerPrincipalId?: string;
   /** Called when the user changes the owner filter. */
@@ -40,7 +40,7 @@ export function ArtifactGallery({
   artifacts,
   isLoading = false,
   isError = false,
-  query = '',
+  query = "",
   onQueryChange,
   onOpen,
   onNew,
@@ -51,11 +51,13 @@ export function ArtifactGallery({
   onOwnerFilterChange,
   owners,
 }: ArtifactGalleryProps) {
-  const [internalSort, setInternalSort] = useState<'newest' | 'oldest'>('newest');
+  const [internalSort, setInternalSort] = useState<"newest" | "oldest">(
+    "newest",
+  );
   const sort = sortProp ?? internalSort;
 
   function handleSortToggle() {
-    const next = sort === 'newest' ? 'oldest' : 'newest';
+    const next = sort === "newest" ? "oldest" : "newest";
     if (onSortChange) {
       onSortChange(next);
     } else {
@@ -87,16 +89,20 @@ export function ArtifactGallery({
             </svg>
           </button>
         )}
-        <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">Artifacts</h1>
+        <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
+          Artifacts
+        </h1>
         <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
           {tiles.length} items
         </span>
         <div className="flex-1" />
         {owners && owners.length > 1 && onOwnerFilterChange && (
           <select
-            value={ownerPrincipalId ?? ''}
+            value={ownerPrincipalId ?? ""}
             onChange={(e) =>
-              onOwnerFilterChange(e.target.value === '' ? undefined : e.target.value)
+              onOwnerFilterChange(
+                e.target.value === "" ? undefined : e.target.value,
+              )
             }
             className="h-[34px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text focus:border-border-strong focus:outline-none"
           >
@@ -118,7 +124,9 @@ export function ArtifactGallery({
         <button
           type="button"
           onClick={handleSortToggle}
-          aria-label={sort === 'newest' ? 'Sort oldest first' : 'Sort newest first'}
+          aria-label={
+            sort === "newest" ? "Sort oldest first" : "Sort newest first"
+          }
           className="flex items-center gap-[7px] rounded-[9px] border border-border px-[13px] py-[7px] text-[12.5px] font-semibold text-text-2 transition-colors hover:border-border-strong hover:bg-[var(--row-hover)]"
         >
           <svg
@@ -130,7 +138,7 @@ export function ArtifactGallery({
           >
             <path d="M3 6h18M6 12h12M10 18h4" />
           </svg>
-          {sort === 'newest' ? 'Newest' : 'Oldest'}
+          {sort === "newest" ? "Newest" : "Oldest"}
         </button>
         <button
           type="button"
@@ -151,8 +159,16 @@ export function ArtifactGallery({
       </div>
 
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7 [container-type:inline-size]">
-        {isLoading && <div className="py-10 text-[13px] text-text-3">Loading artifacts…</div>}
-        {isError && <div className="py-10 text-[13px] text-text-3">Could not load artifacts.</div>}
+        {isLoading && (
+          <div className="py-10 text-[13px] text-text-3">
+            Loading artifacts…
+          </div>
+        )}
+        {isError && (
+          <div className="py-10 text-[13px] text-text-3">
+            Could not load artifacts.
+          </div>
+        )}
         {!isLoading && !isError && tiles.length === 0 && !isSearching && (
           <div className="py-10 text-[13px] text-text-3">
             No artifacts yet. Start a job to generate collateral.

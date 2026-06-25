@@ -1,11 +1,11 @@
-import { motion } from 'framer-motion';
-import { type WorkflowProgressStatus } from './workflow-step-types';
+import { motion } from "framer-motion";
+import { type WorkflowProgressStatus } from "./workflow-step-types";
 
 const DEFAULT_ANALYSIS_TASKS = [
-  'Reading transcript turns and speaker roles',
-  'Clustering repeated objections and urgency cues',
-  'Pulling exact customer language for reuse',
-  'Drafting pain-point summaries for approval',
+  "Reading transcript turns and speaker roles",
+  "Clustering repeated objections and urgency cues",
+  "Pulling exact customer language for reuse",
+  "Drafting pain-point summaries for approval",
 ];
 
 export interface ProgressChecklistProps {
@@ -13,7 +13,10 @@ export interface ProgressChecklistProps {
   status?: WorkflowProgressStatus;
 }
 
-export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressChecklistProps) {
+export default function ProgressChecklist({
+  tasks,
+  status = "idle",
+}: ProgressChecklistProps) {
   const displayTasks = tasks ?? DEFAULT_ANALYSIS_TASKS;
 
   if (displayTasks.length === 0) {
@@ -24,7 +27,7 @@ export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressCh
     );
   }
 
-  if (status === 'idle') {
+  if (status === "idle") {
     return (
       <div className="space-y-2 mb-6">
         {displayTasks.map((task, i) => (
@@ -50,7 +53,7 @@ export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressCh
     );
   }
 
-  if (status === 'running') {
+  if (status === "running") {
     return (
       <div className="space-y-2 mb-6">
         {displayTasks.map((task, i) => (
@@ -72,13 +75,15 @@ export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressCh
           </motion.div>
         ))}
         <div className="mt-3 p-3 bg-blue-soft border border-blue text-blue-deep rounded-lg">
-          <p className="text-sm animate-pulse">Analyzing transcript... This may take a moment.</p>
+          <p className="text-sm animate-pulse">
+            Analyzing transcript... This may take a moment.
+          </p>
         </div>
       </div>
     );
   }
 
-  if (status === 'error') {
+  if (status === "error") {
     return (
       <div className="space-y-2 mb-6">
         {displayTasks.map((task, i) => (
@@ -96,7 +101,9 @@ export default function ProgressChecklist({ tasks, status = 'idle' }: ProgressCh
           </motion.div>
         ))}
         <div className="mt-3 p-3 bg-orange-soft border border-orange text-orange-deep rounded-lg">
-          <p className="text-sm">Analysis failed. Check the console for details and try again.</p>
+          <p className="text-sm">
+            Analysis failed. Check the console for details and try again.
+          </p>
         </div>
       </div>
     );

@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from "react";
 
 /**
  * Subscribe to a CSS media query and re-render when it changes. Uses
@@ -9,13 +9,16 @@ export function useMediaQuery(query: string): boolean {
   const subscribe = useCallback(
     (onChange: () => void) => {
       const mql = window.matchMedia(query);
-      mql.addEventListener('change', onChange);
-      return () => mql.removeEventListener('change', onChange);
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
     },
-    [query]
+    [query],
   );
 
-  const getSnapshot = useCallback(() => window.matchMedia(query).matches, [query]);
+  const getSnapshot = useCallback(
+    () => window.matchMedia(query).matches,
+    [query],
+  );
 
   return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }

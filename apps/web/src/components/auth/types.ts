@@ -8,7 +8,7 @@
  */
 
 /** Identifier for a supported social sign-in provider. */
-export type OAuthProviderId = 'google';
+export type OAuthProviderId = "google";
 
 /**
  * Descriptor for a social sign-in option rendered on the login surface. The

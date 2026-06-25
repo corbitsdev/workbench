@@ -1,9 +1,9 @@
-import { cn } from '@workbench/ui';
+import { cn } from "@workbench/ui";
 import {
   type SelectedPainPointContext,
   type StructuredTranscript,
   type TranscriptSpeaker,
-} from './types';
+} from "./types";
 
 export interface TranscriptReviewProps {
   /** The structured transcript to render. `undefined` renders the empty state. */
@@ -24,10 +24,10 @@ export interface TranscriptReviewProps {
   className?: string;
 }
 
-const ROLE_LABEL: Record<TranscriptSpeaker['role'], string> = {
-  rep: 'Rep',
-  prospect: 'Prospect',
-  unknown: 'Speaker',
+const ROLE_LABEL: Record<TranscriptSpeaker["role"], string> = {
+  rep: "Rep",
+  prospect: "Prospect",
+  unknown: "Speaker",
 };
 
 function formatTimestamp(seconds: number | undefined): string | undefined {
@@ -35,7 +35,7 @@ function formatTimestamp(seconds: number | undefined): string | undefined {
   const total = Math.max(0, Math.floor(seconds));
   const mins = Math.floor(total / 60);
   const secs = total % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 /**
@@ -52,22 +52,34 @@ export function TranscriptReview({
   onSelectTurn,
   className,
 }: TranscriptReviewProps) {
-  const quotes = (selectedPainPoints ?? []).map((p) => p.quote.trim()).filter((q) => q.length > 0);
+  const quotes = (selectedPainPoints ?? [])
+    .map((p) => p.quote.trim())
+    .filter((q) => q.length > 0);
 
   return (
-    <div className={cn('flex flex-col h-full min-h-0 bg-surface text-text', className)}>
+    <div
+      className={cn(
+        "flex flex-col h-full min-h-0 bg-surface text-text",
+        className,
+      )}
+    >
       <header className="shrink-0 p-6 border-b border-border">
         <div className="text-xs font-semibold text-text-3 uppercase tracking-wide mb-2">
           Transcript
         </div>
         <h2 className="text-xl font-bold text-text">
-          {transcript?.metadata.title ?? transcript?.metadata.companyName ?? 'Source context'}
+          {transcript?.metadata.title ??
+            transcript?.metadata.companyName ??
+            "Source context"}
         </h2>
         {transcript?.metadata.companyName && transcript.metadata.title ? (
-          <p className="text-sm text-text-2 mt-1">{transcript.metadata.companyName}</p>
+          <p className="text-sm text-text-2 mt-1">
+            {transcript.metadata.companyName}
+          </p>
         ) : (
           <p className="text-sm text-text-2 mt-1">
-            The original call stays visible as the agent extracts useful customer language
+            The original call stays visible as the agent extracts useful
+            customer language
           </p>
         )}
       </header>
@@ -78,20 +90,24 @@ export function TranscriptReview({
         ) : transcript && transcript.turns.length > 0 ? (
           <ol className="space-y-5 list-none">
             {transcript.turns.map((turn) => {
-              const speaker = transcript.speakers.find((s) => s.id === turn.speakerId);
+              const speaker = transcript.speakers.find(
+                (s) => s.id === turn.speakerId,
+              );
               const timestamp = formatTimestamp(turn.startSeconds);
               const isHighlighted = quotes.some((q) => turn.text.includes(q));
               return (
                 <li key={turn.id}>
                   <button
                     type="button"
-                    onClick={onSelectTurn ? () => onSelectTurn(turn.id) : undefined}
+                    onClick={
+                      onSelectTurn ? () => onSelectTurn(turn.id) : undefined
+                    }
                     disabled={!onSelectTurn}
                     className={cn(
-                      'w-full text-left rounded-lg px-3 py-2 transition-colors',
-                      onSelectTurn && 'hover:bg-surface-2 cursor-pointer',
-                      !onSelectTurn && 'cursor-default',
-                      isHighlighted && 'bg-orange-soft/20 ring-1 ring-orange'
+                      "w-full text-left rounded-lg px-3 py-2 transition-colors",
+                      onSelectTurn && "hover:bg-surface-2 cursor-pointer",
+                      !onSelectTurn && "cursor-default",
+                      isHighlighted && "bg-orange-soft/20 ring-1 ring-orange",
                     )}
                   >
                     <div className="flex items-baseline gap-2 mb-1">
@@ -141,7 +157,9 @@ function LoadingState() {
 function EmptyState() {
   return (
     <div className="flex items-center justify-center h-full">
-      <p className="text-sm text-text-3 text-center">Transcript not available</p>
+      <p className="text-sm text-text-3 text-center">
+        Transcript not available
+      </p>
     </div>
   );
 }

@@ -8,7 +8,7 @@
  */
 
 /** Discriminator for the kind of control a field renders. */
-export type SettingsFieldKind = 'text' | 'toggle' | 'select';
+export type SettingsFieldKind = "text" | "toggle" | "select";
 
 /** A primitive settings value. Each field kind maps to one of these. */
 export type SettingsFieldValue = string | boolean;
@@ -31,21 +31,24 @@ interface SettingsFieldBase {
 }
 
 export interface SettingsTextField extends SettingsFieldBase {
-  readonly kind: 'text';
+  readonly kind: "text";
   readonly placeholder?: string;
 }
 
 export interface SettingsToggleField extends SettingsFieldBase {
-  readonly kind: 'toggle';
+  readonly kind: "toggle";
 }
 
 export interface SettingsSelectField extends SettingsFieldBase {
-  readonly kind: 'select';
+  readonly kind: "select";
   readonly options: readonly SettingsSelectOption[];
 }
 
 /** Any settings field descriptor. */
-export type SettingsField = SettingsTextField | SettingsToggleField | SettingsSelectField;
+export type SettingsField =
+  | SettingsTextField
+  | SettingsToggleField
+  | SettingsSelectField;
 
 /** A logical grouping of related fields. */
 export interface SettingsSectionDescriptor {
@@ -62,4 +65,7 @@ export interface SettingsSectionDescriptor {
 export type SettingsValues = Readonly<Record<string, SettingsFieldValue>>;
 
 /** Fired when any field's value changes. */
-export type SettingsChangeHandler = (key: string, value: SettingsFieldValue) => void;
+export type SettingsChangeHandler = (
+  key: string,
+  value: SettingsFieldValue,
+) => void;

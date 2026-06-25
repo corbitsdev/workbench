@@ -4,4 +4,4 @@
 // leaked descriptor builders into every other suite that introspects real
 // drizzle SQL (workflow and agents tests), failing them order-dependently
 // (CL-1825). Mocking this narrow seam keeps the blast radius to list-agents.
-export { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+export { and, desc, eq, inArray, isNull, or } from "drizzle-orm";

@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, createInstanceSession, type InstanceSession } from '@intx/hub-client';
-import { type AgentActivity } from '@intx/hub-client';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ApiError,
+  createInstanceSession,
+  type InstanceSession,
+} from "@intx/hub-client";
+import { type AgentActivity } from "@intx/hub-client";
 import {
   composeChatMessages,
   createToolNameTracker,
@@ -12,28 +16,28 @@ import {
   type LiveTextTracker,
   type ReasoningTracker,
   type ImageTracker,
-} from '@workbench/agents/browser';
-import type { ChatActivity, ChatMessage } from '@workbench/chat';
+} from "@workbench/agents/browser";
+import type { ChatActivity, ChatMessage } from "@workbench/chat";
 import {
   ensureMeSynced,
   getOutputFeedback,
   launchInstanceSession,
   saveOutputFeedback,
   upsertRating,
-} from '../lib/hub-api';
-import type { FeedbackSubjectKind, SavedRating } from '../lib/hub-api';
-import { createHubTransport } from '../lib/instance-transport';
-import { classifyLaunchState } from '../components/agent-launch-helpers';
+} from "../lib/hub-api";
+import type { FeedbackSubjectKind, SavedRating } from "../lib/hub-api";
+import { createHubTransport } from "../lib/instance-transport";
+import { classifyLaunchState } from "../components/agent-launch-helpers";
 
 const LAUNCH_RETRY_DELAY_MS = 4000;
 const MAX_LAUNCH_TRANSIENT_RETRIES = 8;
 
 export type MyraSessionPhase =
-  | { phase: 'loading' }
-  | { phase: 'provisioning' }
-  | { phase: 'credential-error' }
-  | { phase: 'ready'; session: InstanceSession }
-  | { phase: 'error'; message: string };
+  | { phase: "loading" }
+  | { phase: "provisioning" }
+  | { phase: "credential-error" }
+  | { phase: "ready"; session: InstanceSession }
+  | { phase: "error"; message: string };
 
 // Send a message to Myra, recovering from a dropped session once. A hub or
 // sidecar restart leaves the instance not running, so the first send 409s;
@@ -41,7 +45,7 @@ export type MyraSessionPhase =
 export async function deliverMessage(
   session: InstanceSession,
   instanceId: string | null,
-  content: string
+  content: string,
 ): Promise<void> {
   try {
     await session.sendMail(content);
@@ -57,7 +61,7 @@ export async function deliverMessage(
 
 function toChatActivity(a: AgentActivity | null): ChatActivity | null {
   if (a === null) return null;
-  if (a.type === 'inferring') return { type: 'thinking' };
+  if (a.type === "inferring") return { type: "thinking" };
   return a as ChatActivity;
 }
 
@@ -68,8 +72,15 @@ export type MyraSession = {
   send: (text: string) => void;
   reconnect: () => void;
   instanceId: string | null;
-  onRate?: (subjectId: string, subjectKind: FeedbackSubjectKind, rating: 1 | -1) => Promise<void>;
-  getRating?: (subjectId: string, subjectKind: FeedbackSubjectKind) => 1 | -1 | null;
+  onRate?: (
+    subjectId: string,
+    subjectKind: FeedbackSubjectKind,
+    rating: 1 | -1,
+  ) => Promise<void>;
+  getRating?: (
+    subjectId: string,
+    subjectKind: FeedbackSubjectKind,
+  ) => 1 | -1 | null;
 };
 
 /**
@@ -79,11 +90,16 @@ export type MyraSession = {
  * the member's default Myra instance (`/me` paInstanceId) while the caller is
  * still resolving the active thread.
  */
-export function useMyraSession(instanceId: string | null, enabled = true): MyraSession {
-  const [state, setState] = useState<MyraSessionPhase>({ phase: 'loading' });
+export function useMyraSession(
+  instanceId: string | null,
+  enabled = true,
+): MyraSession {
+  const [state, setState] = useState<MyraSessionPhase>({ phase: "loading" });
   const [, forceUpdate] = useState(0);
   const resolvedInstanceIdRef = useRef<string | null>(null);
-  const [resolvedInstanceId, setResolvedInstanceId] = useState<string | null>(null);
+  const [resolvedInstanceId, setResolvedInstanceId] = useState<string | null>(
+    null,
+  );
   const [attempt, setAttempt] = useState(0);
 
   const sessionRef = useRef<InstanceSession | null>(null);
@@ -99,7 +115,7 @@ export function useMyraSession(instanceId: string | null, enabled = true): MyraS
     // launch + a flash back to `loading`, then a churn to the real instance.
     if (!enabled || !instanceId) return;
     let cancelled = false;
-    setState({ phase: 'loading' });
+    setState({ phase: "loading" });
 
     const targetInstanceId = instanceId;
 
@@ -109,12 +125,12 @@ export function useMyraSession(instanceId: string | null, enabled = true): MyraS
         if (cancelled) return;
 
         if (!me.personalTenantId) {
-          setState({ phase: 'provisioning' });
+          setState({ phase: "provisioning" });
           return;
         }
 
         if (!me.credentialResolved) {
-          setState({ phase: 'credential-error' });
+          setState({ phase: "credential-error" });
           return;
         }
 
@@ -126,13 +142,17 @@ export function useMyraSession(instanceId: string | null, enabled = true): MyraS
         for (let launchAttempt = 0; ; launchAttempt++) {
           const launch = await launchInstanceSession(targetInstanceId);
           if (launch.launched) break;
-          const launchError = launch.launchError ?? 'Failed to launch Myra session';
+          const launchError =
+            launch.launchError ?? "Failed to launch Myra session";
           const classified = classifyLaunchState(undefined, launchError);
           if (
-            (classified.kind === 'connecting' || classified.kind === 'deploying') &&
+            (classified.kind === "connecting" ||
+              classified.kind === "deploying") &&
             launchAttempt < MAX_LAUNCH_TRANSIENT_RETRIES
           ) {
-            await new Promise<void>((resolve) => setTimeout(resolve, LAUNCH_RETRY_DELAY_MS));
+            await new Promise<void>((resolve) =>
+              setTimeout(resolve, LAUNCH_RETRY_DELAY_MS),
+            );
             continue;
           }
           throw new Error(launchError);
@@ -147,7 +167,7 @@ export function useMyraSession(instanceId: string | null, enabled = true): MyraS
             if (!cancelled) forceUpdate((n) => n + 1);
           },
           onError: (err) => {
-            if (!cancelled) setState({ phase: 'error', message: err.message });
+            if (!cancelled) setState({ phase: "error", message: err.message });
           },
         });
 
@@ -162,7 +182,7 @@ export function useMyraSession(instanceId: string | null, enabled = true): MyraS
           { tenantId: me.personalTenantId, instanceId: targetInstanceId },
           () => {
             if (!cancelled) forceUpdate((n) => n + 1);
-          }
+          },
         );
 
         // Track the current turn's live text from the raw stream (CL-1643).
@@ -179,12 +199,13 @@ export function useMyraSession(instanceId: string | null, enabled = true): MyraS
           instanceId: targetInstanceId,
         });
 
-        if (!cancelled) setState({ phase: 'ready', session });
+        if (!cancelled) setState({ phase: "ready", session });
       } catch {
         if (!cancelled) {
           setState({
-            phase: 'error',
-            message: 'Could not connect to Myra. Check your connection and try again.',
+            phase: "error",
+            message:
+              "Could not connect to Myra. Check your connection and try again.",
           });
         }
       }
@@ -212,15 +233,21 @@ export function useMyraSession(instanceId: string | null, enabled = true): MyraS
   const queryClient = useQueryClient();
 
   const { data: ratingsData } = useQuery({
-    queryKey: ['feedback', resolvedInstanceId],
+    queryKey: ["feedback", resolvedInstanceId],
     queryFn: () => getOutputFeedback(resolvedInstanceId as string),
     enabled: resolvedInstanceId !== null,
     staleTime: 5 * 60_000,
   });
 
   const ratingsMap = useMemo(
-    () => new Map((ratingsData ?? []).map((r) => [`${r.subjectId}:${r.subjectKind}`, r.rating])),
-    [ratingsData]
+    () =>
+      new Map(
+        (ratingsData ?? []).map((r) => [
+          `${r.subjectId}:${r.subjectKind}`,
+          r.rating,
+        ]),
+      ),
+    [ratingsData],
   );
 
   const { mutateAsync: rateMutateAsync } = useMutation({
@@ -236,23 +263,27 @@ export function useMyraSession(instanceId: string | null, enabled = true): MyraS
       rating: 1 | -1;
     }) => saveOutputFeedback(iid, subjectId, subjectKind, rating),
     onSuccess: (_, { instanceId: iid, subjectId, subjectKind, rating }) => {
-      queryClient.setQueryData<SavedRating[]>(['feedback', iid], (prev) =>
-        upsertRating(prev, { subjectId, subjectKind, rating })
+      queryClient.setQueryData<SavedRating[]>(["feedback", iid], (prev) =>
+        upsertRating(prev, { subjectId, subjectKind, rating }),
       );
     },
   });
 
   const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
 
-  const session = state.phase === 'ready' ? state.session : null;
+  const session = state.phase === "ready" ? state.session : null;
 
   const messages: ChatMessage[] = session
     ? composeChatMessages({
         events: session.events,
-        streaming: liveTextRef.current !== null ? liveTextRef.current.text : '',
-        reasoning: reasoningRef.current !== null ? reasoningRef.current.text : '',
-        ...(toolNamesRef.current !== null ? { toolNames: toolNamesRef.current.names } : {}),
-        ...(imageTrackerRef.current !== null && imageTrackerRef.current.images.length > 0
+        streaming: liveTextRef.current !== null ? liveTextRef.current.text : "",
+        reasoning:
+          reasoningRef.current !== null ? reasoningRef.current.text : "",
+        ...(toolNamesRef.current !== null
+          ? { toolNames: toolNamesRef.current.names }
+          : {}),
+        ...(imageTrackerRef.current !== null &&
+        imageTrackerRef.current.images.length > 0
           ? { liveImages: imageTrackerRef.current.images }
           : {}),
       }).messages
@@ -262,12 +293,14 @@ export function useMyraSession(instanceId: string | null, enabled = true): MyraS
 
   const send = (text: string) => {
     if (!session) return;
-    void deliverMessage(session, resolvedInstanceIdRef.current, text).catch(() => {
-      setState({
-        phase: 'error',
-        message: 'Could not reach Myra. Check your connection and try again.',
-      });
-    });
+    void deliverMessage(session, resolvedInstanceIdRef.current, text).catch(
+      () => {
+        setState({
+          phase: "error",
+          message: "Could not reach Myra. Check your connection and try again.",
+        });
+      },
+    );
   };
 
   const currentInstanceId = resolvedInstanceId;

@@ -1,4 +1,4 @@
-import type { Context, MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from "hono";
 
 export interface RateLimitOptions {
   /** Length of the fixed window in milliseconds. */
@@ -36,9 +36,9 @@ export interface RateLimitOptions {
  * attacker both bypass the limit and bloat the bucket map.
  */
 function defaultKeyForRequest(c: Context): string | null {
-  const forwardedFor = c.req.header('x-forwarded-for');
+  const forwardedFor = c.req.header("x-forwarded-for");
   if (forwardedFor) {
-    const hops = forwardedFor.split(',');
+    const hops = forwardedFor.split(",");
     const last = hops[hops.length - 1];
     if (last && last.trim().length > 0) return last.trim();
   }
@@ -56,7 +56,9 @@ interface Bucket {
  * substitute for an infra-level limiter across replicas. Returns 429 with a
  * `Retry-After` header once a key exceeds `max` within `windowMs`.
  */
-export function createRateLimiter(options: RateLimitOptions): MiddlewareHandler {
+export function createRateLimiter(
+  options: RateLimitOptions,
+): MiddlewareHandler {
   const { windowMs, max } = options;
   const keyForRequest = options.keyForRequest ?? defaultKeyForRequest;
   const now = options.now ?? Date.now;
@@ -89,9 +91,12 @@ export function createRateLimiter(options: RateLimitOptions): MiddlewareHandler 
     }
 
     if (bucket.count >= max) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - current) / 1000));
-      c.header('Retry-After', String(retryAfterSeconds));
-      return c.json({ error: 'Too many requests' }, 429);
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((bucket.resetAt - current) / 1000),
+      );
+      c.header("Retry-After", String(retryAfterSeconds));
+      return c.json({ error: "Too many requests" }, 429);
     }
 
     bucket.count += 1;

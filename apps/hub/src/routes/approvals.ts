@@ -1,43 +1,47 @@
-import { Hono } from 'hono';
-import { eq, and } from 'drizzle-orm';
-import { schema as intxSchema } from '@intx/db';
-import type { DB } from '@intx/db';
-import { getLogger } from '@intx/log';
-import { approval } from '../db/schema';
+import { Hono } from "hono";
+import { eq, and } from "drizzle-orm";
+import { schema as intxSchema } from "@intx/db";
+import type { DB } from "@intx/db";
+import { getLogger } from "@intx/log";
+import { approval } from "../db/schema";
 
-const log = getLogger(['api', 'approvals']);
+const log = getLogger(["api", "approvals"]);
 
 const { principal } = intxSchema;
 
 // ─── User-facing routes (BetterAuth session) ───────────────────────
 // Mounted under /api/v1 with the existing auth middleware.
 
-export function createApprovalsRouter(db: DB['db']): Hono<{ Variables: { userId: string } }> {
+export function createApprovalsRouter(
+  db: DB["db"],
+): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
-  router.get('/tenants/:tenantId/approvals', async (c) => {
-    const userId = c.get('userId');
+  router.get("/tenants/:tenantId/approvals", async (c) => {
+    const userId = c.get("userId");
     const { tenantId } = c.req.param();
 
     // Verify the calling user belongs to this tenant before returning approvals.
     const callerPrincipal = await db.query.principal.findFirst({
       where: and(
         eq(principal.tenantId, tenantId),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, userId)
+        eq(principal.kind, "user"),
+        eq(principal.refId, userId),
       ),
     });
-    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+    if (!callerPrincipal) return c.json({ error: "Forbidden" }, 403);
 
     const rows = await db
       .select()
       .from(approval)
-      .where(and(eq(approval.tenantId, tenantId), eq(approval.status, 'pending')));
+      .where(
+        and(eq(approval.tenantId, tenantId), eq(approval.status, "pending")),
+      );
     return c.json(rows.map(formatApproval));
   });
 
-  router.post('/tenants/:tenantId/approvals/:approvalId/approve', async (c) => {
-    const userId = c.get('userId');
+  router.post("/tenants/:tenantId/approvals/:approvalId/approve", async (c) => {
+    const userId = c.get("userId");
     const { tenantId, approvalId } = c.req.param();
 
     // Resolve the BetterAuth userId to an Interchange principalId before
@@ -45,24 +49,24 @@ export function createApprovalsRouter(db: DB['db']): Hono<{ Variables: { userId:
     const callerPrincipal = await db.query.principal.findFirst({
       where: and(
         eq(principal.tenantId, tenantId),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, userId)
+        eq(principal.kind, "user"),
+        eq(principal.refId, userId),
       ),
     });
-    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+    if (!callerPrincipal) return c.json({ error: "Forbidden" }, 403);
 
     const principalId = callerPrincipal.id;
 
     const [updated] = await db
       .update(approval)
-      .set({ status: 'approved', resolvedAt: new Date() })
+      .set({ status: "approved", resolvedAt: new Date() })
       .where(
         and(
           eq(approval.id, approvalId),
           eq(approval.tenantId, tenantId),
           eq(approval.principalId, principalId),
-          eq(approval.status, 'pending')
-        )
+          eq(approval.status, "pending"),
+        ),
       )
       .returning();
 
@@ -70,20 +74,23 @@ export function createApprovalsRouter(db: DB['db']): Hono<{ Variables: { userId:
       const row = await db
         .select()
         .from(approval)
-        .where(and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)))
+        .where(
+          and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)),
+        )
         .limit(1)
         .then((rows: { id: string; principalId: string }[]) => rows[0]);
-      if (!row) return c.json({ error: 'Not found' }, 404);
-      if (row.principalId !== principalId) return c.json({ error: 'Forbidden' }, 403);
-      return c.json({ error: 'Already resolved' }, 409);
+      if (!row) return c.json({ error: "Not found" }, 404);
+      if (row.principalId !== principalId)
+        return c.json({ error: "Forbidden" }, 403);
+      return c.json({ error: "Already resolved" }, 409);
     }
 
-    log.info('Approval approved', { approvalId, tenantId });
+    log.info("Approval approved", { approvalId, tenantId });
     return c.json(formatApproval(updated));
   });
 
-  router.post('/tenants/:tenantId/approvals/:approvalId/reject', async (c) => {
-    const userId = c.get('userId');
+  router.post("/tenants/:tenantId/approvals/:approvalId/reject", async (c) => {
+    const userId = c.get("userId");
     const { tenantId, approvalId } = c.req.param();
     const body = (await c.req.json().catch(() => ({}))) as { message?: string };
 
@@ -92,19 +99,19 @@ export function createApprovalsRouter(db: DB['db']): Hono<{ Variables: { userId:
     const callerPrincipal = await db.query.principal.findFirst({
       where: and(
         eq(principal.tenantId, tenantId),
-        eq(principal.kind, 'user'),
-        eq(principal.refId, userId)
+        eq(principal.kind, "user"),
+        eq(principal.refId, userId),
       ),
     });
-    if (!callerPrincipal) return c.json({ error: 'Forbidden' }, 403);
+    if (!callerPrincipal) return c.json({ error: "Forbidden" }, 403);
 
     const principalId = callerPrincipal.id;
 
     const [updated] = await db
       .update(approval)
       .set({
-        status: 'rejected',
-        message: typeof body.message === 'string' ? body.message : null,
+        status: "rejected",
+        message: typeof body.message === "string" ? body.message : null,
         resolvedAt: new Date(),
       })
       .where(
@@ -112,8 +119,8 @@ export function createApprovalsRouter(db: DB['db']): Hono<{ Variables: { userId:
           eq(approval.id, approvalId),
           eq(approval.tenantId, tenantId),
           eq(approval.principalId, principalId),
-          eq(approval.status, 'pending')
-        )
+          eq(approval.status, "pending"),
+        ),
       )
       .returning();
 
@@ -121,15 +128,18 @@ export function createApprovalsRouter(db: DB['db']): Hono<{ Variables: { userId:
       const row = await db
         .select()
         .from(approval)
-        .where(and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)))
+        .where(
+          and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)),
+        )
         .limit(1)
         .then((rows: { id: string; principalId: string }[]) => rows[0]);
-      if (!row) return c.json({ error: 'Not found' }, 404);
-      if (row.principalId !== principalId) return c.json({ error: 'Forbidden' }, 403);
-      return c.json({ error: 'Already resolved' }, 409);
+      if (!row) return c.json({ error: "Not found" }, 404);
+      if (row.principalId !== principalId)
+        return c.json({ error: "Forbidden" }, 403);
+      return c.json({ error: "Already resolved" }, 409);
     }
 
-    log.info('Approval rejected', { approvalId, tenantId });
+    log.info("Approval rejected", { approvalId, tenantId });
     return c.json(formatApproval(updated));
   });
 
@@ -139,35 +149,38 @@ export function createApprovalsRouter(db: DB['db']): Hono<{ Variables: { userId:
 // ─── Internal routes (sidecar Bearer token) ────────────────────────
 // Mounted under /api/internal — does NOT go through BetterAuth middleware.
 
-export function createInternalApprovalsRouter(db: DB['db'], sidecarToken: string): Hono {
+export function createInternalApprovalsRouter(
+  db: DB["db"],
+  sidecarToken: string,
+): Hono {
   const router = new Hono();
 
-  router.use('*', async (c, next) => {
-    const auth = c.req.header('Authorization') ?? '';
+  router.use("*", async (c, next) => {
+    const auth = c.req.header("Authorization") ?? "";
     if (auth !== `Bearer ${sidecarToken}`) {
-      return c.json({ error: 'Unauthorized' }, 401);
+      return c.json({ error: "Unauthorized" }, 401);
     }
     return next();
   });
 
-  router.post('/approvals', async (c) => {
+  router.post("/approvals", async (c) => {
     let body: unknown;
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: 'Invalid JSON' }, 400);
+      return c.json({ error: "Invalid JSON" }, 400);
     }
 
     if (
-      typeof body !== 'object' ||
+      typeof body !== "object" ||
       body === null ||
-      typeof (body as Record<string, unknown>)['tenantId'] !== 'string' ||
-      typeof (body as Record<string, unknown>)['agentId'] !== 'string' ||
-      typeof (body as Record<string, unknown>)['principalId'] !== 'string' ||
-      typeof (body as Record<string, unknown>)['action'] !== 'string' ||
-      typeof (body as Record<string, unknown>)['resource'] !== 'string'
+      typeof (body as Record<string, unknown>)["tenantId"] !== "string" ||
+      typeof (body as Record<string, unknown>)["agentId"] !== "string" ||
+      typeof (body as Record<string, unknown>)["principalId"] !== "string" ||
+      typeof (body as Record<string, unknown>)["action"] !== "string" ||
+      typeof (body as Record<string, unknown>)["resource"] !== "string"
     ) {
-      return c.json({ error: 'Missing required fields' }, 400);
+      return c.json({ error: "Missing required fields" }, 400);
     }
 
     const validated = body as {
@@ -188,13 +201,13 @@ export function createInternalApprovalsRouter(db: DB['db'], sidecarToken: string
         resource: validated.resource,
         action: validated.action,
         context:
-          validated.context && typeof validated.context === 'object'
+          validated.context && typeof validated.context === "object"
             ? validated.context
             : undefined,
       })
       .returning();
 
-    log.info('Approval created', {
+    log.info("Approval created", {
       id: row!.id,
       tenantId: validated.tenantId,
       agentId: validated.agentId,
@@ -202,10 +215,11 @@ export function createInternalApprovalsRouter(db: DB['db'], sidecarToken: string
     return c.json(formatApproval(row!), 201);
   });
 
-  router.get('/approvals/:id', async (c) => {
+  router.get("/approvals/:id", async (c) => {
     const { id } = c.req.param();
-    const tenantId = c.req.query('tenantId');
-    if (!tenantId) return c.json({ error: 'tenantId query param required' }, 400);
+    const tenantId = c.req.query("tenantId");
+    if (!tenantId)
+      return c.json({ error: "tenantId query param required" }, 400);
 
     const [row] = await db
       .select()
@@ -213,7 +227,7 @@ export function createInternalApprovalsRouter(db: DB['db'], sidecarToken: string
       .where(and(eq(approval.id, id), eq(approval.tenantId, tenantId)))
       .limit(1);
 
-    if (!row) return c.json({ error: 'Not found' }, 404);
+    if (!row) return c.json({ error: "Not found" }, 404);
     return c.json(formatApproval(row));
   });
 

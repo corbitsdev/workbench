@@ -31,12 +31,16 @@ export default function FeedbackSection({
       />
 
       {!analyzeCompleted && (
-        <button onClick={onAnalyze} disabled={isLoading} className="btn-primary w-full">
+        <button
+          onClick={onAnalyze}
+          disabled={isLoading}
+          className="btn-primary w-full"
+        >
           {isLoading
-            ? `Analyzing ${callName ?? 'your call'} and extracting pain points…`
+            ? `Analyzing ${callName ?? "your call"} and extracting pain points…`
             : feedback.trim()
-              ? 'Run analysis with feedback'
-              : 'Run analysis'}
+              ? "Run analysis with feedback"
+              : "Run analysis"}
         </button>
       )}
 
@@ -46,12 +50,12 @@ export default function FeedbackSection({
           disabled={isLoading || selectedCount === 0}
           className="btn-primary w-full"
         >
-          {isLoading ? 'Generating...' : 'Generate collateral'}
+          {isLoading ? "Generating..." : "Generate collateral"}
         </button>
       )}
 
       <p className="text-xs text-text-3">
-        {selectedCount} pain point{selectedCount !== 1 ? 's' : ''} selected
+        {selectedCount} pain point{selectedCount !== 1 ? "s" : ""} selected
       </p>
     </div>
   );

@@ -1,10 +1,10 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
-import { Info } from 'lucide-react';
-import { RunConsole } from './RunConsole';
-import { ErrorBoundary } from './ErrorBoundary';
-import { loadWorkflowUI } from '../lib/workflow-ui';
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useQuery } from "@tanstack/react-query";
+import { Info } from "lucide-react";
+import { RunConsole } from "./RunConsole";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { loadWorkflowUI } from "../lib/workflow-ui";
 import {
   isRecordTerminal,
   runStateFromRecord,
@@ -12,8 +12,8 @@ import {
   useWorkflowCredentials,
   useWorkflowDeployments,
   useWorkflowRecord,
-} from '../hooks/use-workflow';
-import { useSkillLibrary } from '../hooks/use-skills';
+} from "../hooks/use-workflow";
+import { useSkillLibrary } from "../hooks/use-skills";
 
 interface WorkflowRunPaneProps {
   // Opaque run identifier (a thin-executor `runId`, CL-2240). Named
@@ -28,7 +28,11 @@ interface WorkflowRunPaneProps {
 // falls back to the generic RunConsole otherwise. The kind comes from the loaded
 // run record — never from navigation props. The record's `outputs` map is the
 // stepId -> output envelope the panels decode, handed through as `stepOutputs`.
-export function WorkflowRunPane({ deploymentId, tenantId, onClose }: WorkflowRunPaneProps) {
+export function WorkflowRunPane({
+  deploymentId,
+  tenantId,
+  onClose,
+}: WorkflowRunPaneProps) {
   // Guard an empty id so no record query fires against a missing runId.
   if (!deploymentId) {
     return (
@@ -38,13 +42,27 @@ export function WorkflowRunPane({ deploymentId, tenantId, onClose }: WorkflowRun
     );
   }
 
-  return <WorkflowRunPaneInner deploymentId={deploymentId} tenantId={tenantId} onClose={onClose} />;
+  return (
+    <WorkflowRunPaneInner
+      deploymentId={deploymentId}
+      tenantId={tenantId}
+      onClose={onClose}
+    />
+  );
 }
 
 // Separated so hooks below run only once the runId is known non-empty.
-function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPaneProps) {
+function WorkflowRunPaneInner({
+  deploymentId,
+  tenantId,
+  onClose,
+}: WorkflowRunPaneProps) {
   const runId = deploymentId;
-  const { data: record, isLoading, isError } = useWorkflowRecord(runId, tenantId);
+  const {
+    data: record,
+    isLoading,
+    isError,
+  } = useWorkflowRecord(runId, tenantId);
   const resume = useResumeWorkflow(runId, tenantId);
   const { data: credentials } = useWorkflowCredentials(tenantId);
   const { data: skills } = useSkillLibrary(tenantId);
@@ -61,12 +79,14 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
   // deploymentId persistence or its deployment has since been superseded.
   const deploymentMeta = useMemo(() => {
     if (!deployments || !recordDeploymentId) return null;
-    const match = deployments.find((d) => d.deploymentId === recordDeploymentId);
+    const match = deployments.find(
+      (d) => d.deploymentId === recordDeploymentId,
+    );
     return match?.meta ?? null;
   }, [deployments, recordDeploymentId]);
 
   const { data: uiModule } = useQuery({
-    queryKey: ['workflow-ui-module', kind],
+    queryKey: ["workflow-ui-module", kind],
     queryFn: () => loadWorkflowUI(kind as string),
     enabled: kind !== null,
     staleTime: 5 * 60_000,
@@ -74,7 +94,10 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
 
   // The panels read the @intx/workflow RunState shape; synthesize it from the
   // record so their per-step display logic keeps working untouched.
-  const state = useMemo(() => (record ? runStateFromRecord(record) : null), [record]);
+  const state = useMemo(
+    () => (record ? runStateFromRecord(record) : null),
+    [record],
+  );
 
   const Panel = uiModule?.Panel;
 
@@ -109,7 +132,11 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
   if (!Panel) {
     return (
       <div className="relative h-full">
-        <RunConsole deploymentId={runId} tenantId={tenantId} onClose={onClose} />
+        <RunConsole
+          deploymentId={runId}
+          tenantId={tenantId}
+          onClose={onClose}
+        />
         {metaBadge}
       </div>
     );
@@ -139,8 +166,8 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
       fallback={
         <div className="flex h-full items-center justify-center rounded-panel border border-border bg-bg">
           <p className="text-[13px] text-text-3">
-            This workflow view ran into a problem rendering. The run is still active — close and
-            reopen it to retry.
+            This workflow view ran into a problem rendering. The run is still
+            active — close and reopen it to retry.
           </p>
         </div>
       }
@@ -156,7 +183,9 @@ function WorkflowRunPaneInner({ deploymentId, tenantId, onClose }: WorkflowRunPa
           <Panel
             deploymentId={runId}
             state={state}
-            connected={record.status === 'running' || record.status === 'awaiting'}
+            connected={
+              record.status === "running" || record.status === "awaiting"
+            }
             stepOutputs={stepOutputs}
             signalPending={signalPending}
             onSignal={handleSignal}
@@ -216,14 +245,14 @@ function WorkflowMetaBadge({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         e.stopPropagation();
         close();
       }
     };
-    document.addEventListener('keydown', onKey);
+    document.addEventListener("keydown", onKey);
     panelRef.current?.focus();
-    return () => document.removeEventListener('keydown', onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
   return (
@@ -260,7 +289,7 @@ function WorkflowMetaBadge({
               onKeyDown={(e) => {
                 // Read-only content: trap Tab/Shift+Tab on the panel container so
                 // focus can't escape into the Panel/RunConsole behind the overlay.
-                if (e.key === 'Tab') {
+                if (e.key === "Tab") {
                   e.preventDefault();
                   panelRef.current?.focus();
                 }
@@ -284,7 +313,7 @@ function WorkflowMetaBadge({
               </dl>
             </div>
           </>,
-          document.body
+          document.body,
         )}
     </div>
   );

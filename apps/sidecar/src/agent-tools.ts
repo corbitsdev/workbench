@@ -6,16 +6,19 @@
 // and merge/filter the resulting runners — so the two paths cannot drift in
 // how a tool becomes available to an agent.
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { type } from 'arktype';
-import { createTarballCache, createToolLoader } from '@intx/tool-packaging';
-import { ToolPackageManifest } from '@intx/types/tool-packages';
-import { ToolCredentialsResponse, toolCredentialEnvKey } from '@workbench/tool-credentials';
-import { getLogger } from '@intx/log';
-import type { ToolDefinition, ToolRunner } from '@intx/types/runtime';
+import fs from "node:fs";
+import path from "node:path";
+import { type } from "arktype";
+import { createTarballCache, createToolLoader } from "@intx/tool-packaging";
+import { ToolPackageManifest } from "@intx/types/tool-packages";
+import {
+  ToolCredentialsResponse,
+  toolCredentialEnvKey,
+} from "@workbench/tool-credentials";
+import { getLogger } from "@intx/log";
+import type { ToolDefinition, ToolRunner } from "@intx/types/runtime";
 
-const logger = getLogger(['sidecar', 'agent-tools']);
+const logger = getLogger(["sidecar", "agent-tools"]);
 
 export type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
 
@@ -50,13 +53,14 @@ export function createMemoizingImportModule(
   // @intx/tool-packaging createToolLoader (loader.ts `importModule`); we only
   // memoize the same call. The repo's no-dynamic-import rule does not apply to
   // this substrate-mandated import.
-  innerImport: (url: string) => Promise<unknown> = (u) => import(u) as Promise<unknown>
+  innerImport: (url: string) => Promise<unknown> = (u) =>
+    import(u) as Promise<unknown>,
 ): (url: string) => Promise<unknown> {
   const cache = new Map<string, Promise<unknown>>();
   return (url: string) => {
     let integrity: string | null;
     try {
-      integrity = new URL(url).searchParams.get('integrity');
+      integrity = new URL(url).searchParams.get("integrity");
     } catch {
       integrity = null;
     }
@@ -74,9 +78,11 @@ export function createMemoizingImportModule(
 const sharedImportModule = createMemoizingImportModule();
 
 export function mergeToolRunners(
-  runners: ToolRunner[]
+  runners: ToolRunner[],
 ): ToolRunner & { definitions: ToolDefinition[] } {
-  const allDefinitions = runners.flatMap((r) => (r as DefinedRunner).definitions ?? []);
+  const allDefinitions = runners.flatMap(
+    (r) => (r as DefinedRunner).definitions ?? [],
+  );
   const toolToRunner = new Map<string, ToolRunner>();
   for (const runner of runners) {
     const definitions = (runner as DefinedRunner).definitions ?? [];
@@ -105,7 +111,10 @@ export function mergeToolRunners(
  * Filter a merged tool runner to only expose the tool definitions named in
  * `allowedNames`.
  */
-export function filterToolRunner(runner: DefinedRunner, allowedNames: Set<string>): DefinedRunner {
+export function filterToolRunner(
+  runner: DefinedRunner,
+  allowedNames: Set<string>,
+): DefinedRunner {
   const filtered = runner.definitions.filter((d) => allowedNames.has(d.name));
   return {
     definitions: filtered,
@@ -129,7 +138,7 @@ export function filterToolRunner(runner: DefinedRunner, allowedNames: Set<string
  */
 export function wsUrlToHttp(wsUrl: string): string {
   const url = new URL(wsUrl);
-  const protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+  const protocol = url.protocol === "wss:" ? "https:" : "http:";
   return `${protocol}//${url.host}`;
 }
 
@@ -148,7 +157,9 @@ export async function loadToolPackages(args: {
   cacheRoot: string;
   cacheMaxBytes: number;
   registryMaxTarballBytes: number;
-}): Promise<Awaited<ReturnType<ReturnType<typeof createToolLoader>['loadManifest']>>> {
+}): Promise<
+  Awaited<ReturnType<ReturnType<typeof createToolLoader>["loadManifest"]>>
+> {
   if (args.rawManifestBytes === undefined) return [];
 
   let parsed: unknown;
@@ -156,13 +167,13 @@ export async function loadToolPackages(args: {
     parsed = JSON.parse(args.rawManifestBytes);
   } catch (err) {
     throw new Error(
-      `tool-package manifest for ${args.agentAddress} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`
+      `tool-package manifest for ${args.agentAddress} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
   const validated = ToolPackageManifest(parsed);
   if (validated instanceof type.errors) {
     throw new Error(
-      `tool-package manifest for ${args.agentAddress} failed validation: ${validated.summary}`
+      `tool-package manifest for ${args.agentAddress} failed validation: ${validated.summary}`,
     );
   }
 
@@ -179,12 +190,12 @@ export async function loadToolPackages(args: {
     maxRegistryTarballBytes: args.registryMaxTarballBytes,
     importModule: sharedImportModule,
   });
-  const scratchDir = path.join(args.storeDir, 'tool-packages');
+  const scratchDir = path.join(args.storeDir, "tool-packages");
   await fs.promises.mkdir(scratchDir, { recursive: true });
   return loader.loadManifest({
     manifest: validated,
     instanceScratchDir: scratchDir,
-    assetRoot: path.join(args.storeDir, 'workspace'),
+    assetRoot: path.join(args.storeDir, "workspace"),
     assetMounts: args.assetMounts,
   });
 }
@@ -203,27 +214,30 @@ export async function fetchToolCredentials(args: {
   if (args.providerNames.length === 0) return {};
   let response: Response;
   try {
-    response = await fetch(`${args.hubHttpUrl}/api/internal/tools/credentials`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${args.sidecarToken}`,
+    response = await fetch(
+      `${args.hubHttpUrl}/api/internal/tools/credentials`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${args.sidecarToken}`,
+        },
+        body: JSON.stringify({
+          tenantId: args.tenantId,
+          agentId: args.agentId,
+          providerNames: [...args.providerNames],
+        }),
       },
-      body: JSON.stringify({
-        tenantId: args.tenantId,
-        agentId: args.agentId,
-        providerNames: [...args.providerNames],
-      }),
-    });
+    );
   } catch (err) {
-    logger.warn('Tool-credential fetch failed for {address}: {msg}', {
+    logger.warn("Tool-credential fetch failed for {address}: {msg}", {
       address: args.agentAddress,
       msg: err instanceof Error ? err.message : String(err),
     });
     return {};
   }
   if (!response.ok) {
-    logger.warn('Tool-credential fetch for {address} returned {status}', {
+    logger.warn("Tool-credential fetch for {address} returned {status}", {
       address: args.agentAddress,
       status: response.status,
     });
@@ -231,10 +245,13 @@ export async function fetchToolCredentials(args: {
   }
   const parsed = ToolCredentialsResponse(await response.json());
   if (parsed instanceof type.errors) {
-    logger.warn('Tool-credential response for {address} failed validation: {summary}', {
-      address: args.agentAddress,
-      summary: parsed.summary,
-    });
+    logger.warn(
+      "Tool-credential response for {address} failed validation: {summary}",
+      {
+        address: args.agentAddress,
+        summary: parsed.summary,
+      },
+    );
     return {};
   }
   const entries: Record<string, { apiKey: string; baseURL: string }> = {};

@@ -1,11 +1,11 @@
-import { and, eq } from 'drizzle-orm';
-import { type } from 'arktype';
-import { getLogger } from '@intx/log';
-import { MemberPreferences } from '@workbench/shared';
-import { memberPreferences } from '../db/schema';
-import type { HubDb } from '../db';
+import { and, eq } from "drizzle-orm";
+import { type } from "arktype";
+import { getLogger } from "@intx/log";
+import { MemberPreferences } from "@workbench/shared";
+import { memberPreferences } from "../db/schema";
+import type { HubDb } from "../db";
 
-const log = getLogger(['hub', 'member-preferences']);
+const log = getLogger(["hub", "member-preferences"]);
 
 // Reads a member's stored preferences, returning an empty map when none exist.
 // A stored blob that fails validation (legacy/garbage) is tolerated as empty so
@@ -13,18 +13,18 @@ const log = getLogger(['hub', 'member-preferences']);
 export async function readMemberPreferences(
   db: HubDb,
   tenantId: string,
-  memberPrincipalId: string
+  memberPrincipalId: string,
 ): Promise<MemberPreferences> {
   const row = await db.query.memberPreferences.findFirst({
     where: and(
       eq(memberPreferences.tenantId, tenantId),
-      eq(memberPreferences.memberPrincipalId, memberPrincipalId)
+      eq(memberPreferences.memberPrincipalId, memberPrincipalId),
     ),
   });
   if (!row) return {};
   const parsed = MemberPreferences(row.preferences);
   if (parsed instanceof type.errors) {
-    log.warn('Stored member preferences failed validation; treating as empty', {
+    log.warn("Stored member preferences failed validation; treating as empty", {
       tenantId,
       memberPrincipalId,
       error: parsed.summary,
@@ -40,7 +40,7 @@ export async function mergeMemberPreferences(
   db: HubDb,
   tenantId: string,
   memberPrincipalId: string,
-  patch: MemberPreferences
+  patch: MemberPreferences,
 ): Promise<MemberPreferences> {
   const current = await readMemberPreferences(db, tenantId, memberPrincipalId);
   const next: MemberPreferences = { ...current, ...patch };

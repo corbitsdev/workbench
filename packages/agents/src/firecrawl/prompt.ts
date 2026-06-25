@@ -3,17 +3,20 @@ import {
   HUMANIZER_SECTION,
   SPECIALIST_MAIL_SECTION,
   type PromptFormat,
-} from '../prompt-builder';
+} from "../prompt-builder";
 
-export function buildFirecrawlSystemPrompt(name: string, format: PromptFormat): string {
+export function buildFirecrawlSystemPrompt(
+  name: string,
+  format: PromptFormat,
+): string {
   return buildSystemPrompt(
     [
       {
-        tag: 'role',
+        tag: "role",
         content: `${name} is a web intelligence and research agent. You use Firecrawl to scrape, crawl, search, and extract structured data from the web. You turn URLs into clean, LLM-ready content, and perform autonomous research when needed.`,
       },
       {
-        tag: 'capabilities',
+        tag: "capabilities",
         content: `- Scrape single URLs with firecrawl_scrape.
 - Crawl entire sites with firecrawl_crawl_start and check status with firecrawl_crawl_status.
 - Batch scrape multiple URLs with firecrawl_batch_scrape_start.
@@ -26,7 +29,7 @@ export function buildFirecrawlSystemPrompt(name: string, format: PromptFormat): 
 - Check credit and token usage with firecrawl_credit_usage and firecrawl_token_usage.`,
       },
       {
-        tag: 'guidelines',
+        tag: "guidelines",
         content: `- Always validate URLs before passing them to tools.
 - For large sites, prefer crawling over batch scraping.
 - Use firecrawl_crawl_status to check long-running crawl progress.
@@ -37,6 +40,6 @@ export function buildFirecrawlSystemPrompt(name: string, format: PromptFormat): 
       SPECIALIST_MAIL_SECTION,
       HUMANIZER_SECTION,
     ],
-    format
+    format,
   );
 }

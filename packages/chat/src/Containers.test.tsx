@@ -1,10 +1,10 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it } from 'bun:test';
-import { cleanup, render, screen } from '@testing-library/react';
-import React from 'react';
-import { mock } from 'bun:test';
+import { afterEach, describe, expect, it } from "bun:test";
+import { cleanup, render, screen } from "@testing-library/react";
+import React from "react";
+import { mock } from "bun:test";
 
-mock.module('framer-motion', () => ({
+mock.module("framer-motion", () => ({
   motion: new Proxy(
     {},
     {
@@ -19,173 +19,175 @@ mock.module('framer-motion', () => ({
           } = props as Record<string, unknown>;
           return React.createElement(tag, rest, children);
         },
-    }
+    },
   ),
 }));
 
-import { DockedChat } from './DockedChat';
-import { DockedChatBar, DOCKED_BAR_HEIGHT } from './DockedChatBar';
-import { FloatingChat } from './FloatingChat';
-import { TypingIndicator } from './TypingIndicator';
-import { QuickReplyChips } from './QuickReplyChips';
-import { type QuickReply } from './types';
+import { DockedChat } from "./DockedChat";
+import { DockedChatBar, DOCKED_BAR_HEIGHT } from "./DockedChatBar";
+import { FloatingChat } from "./FloatingChat";
+import { TypingIndicator } from "./TypingIndicator";
+import { QuickReplyChips } from "./QuickReplyChips";
+import { type QuickReply } from "./types";
 
 afterEach(() => {
   cleanup();
 });
 
-describe('DockedChat', () => {
-  it('renders children and defaults to the right side at 360px', () => {
+describe("DockedChat", () => {
+  it("renders children and defaults to the right side at 360px", () => {
     render(
       <DockedChat>
         <div>panel</div>
-      </DockedChat>
+      </DockedChat>,
     );
-    const aside = screen.getByText('panel').parentElement as HTMLElement;
-    expect(aside.getAttribute('data-side')).toBe('right');
-    expect(aside.style.width).toBe('360px');
+    const aside = screen.getByText("panel").parentElement as HTMLElement;
+    expect(aside.getAttribute("data-side")).toBe("right");
+    expect(aside.style.width).toBe("360px");
   });
 
-  it('docks to the left when side is left', () => {
+  it("docks to the left when side is left", () => {
     render(
       <DockedChat side="left">
         <div>left panel</div>
-      </DockedChat>
+      </DockedChat>,
     );
-    const aside = screen.getByText('left panel').parentElement as HTMLElement;
-    expect(aside.getAttribute('data-side')).toBe('left');
+    const aside = screen.getByText("left panel").parentElement as HTMLElement;
+    expect(aside.getAttribute("data-side")).toBe("left");
   });
 
-  it('accepts a string width verbatim', () => {
+  it("accepts a string width verbatim", () => {
     render(
       <DockedChat width="50%">
         <div>wide</div>
-      </DockedChat>
+      </DockedChat>,
     );
-    const aside = screen.getByText('wide').parentElement as HTMLElement;
-    expect(aside.style.width).toBe('50%');
+    const aside = screen.getByText("wide").parentElement as HTMLElement;
+    expect(aside.style.width).toBe("50%");
   });
 });
 
-describe('DockedChatBar', () => {
-  it('renders children inside a labeled complementary region at the fixed height', () => {
+describe("DockedChatBar", () => {
+  it("renders children inside a labeled complementary region at the fixed height", () => {
     render(
       <DockedChatBar>
         <div>bar content</div>
-      </DockedChatBar>
+      </DockedChatBar>,
     );
-    const region = screen.getByRole('complementary', { name: 'Chat' });
+    const region = screen.getByRole("complementary", { name: "Chat" });
     expect(region).toBeDefined();
-    expect(screen.getByText('bar content')).toBeDefined();
+    expect(screen.getByText("bar content")).toBeDefined();
     expect(DOCKED_BAR_HEIGHT).toBe(340);
   });
 });
 
-describe('FloatingChat', () => {
-  it('renders the dialog with children when open', () => {
+describe("FloatingChat", () => {
+  it("renders the dialog with children when open", () => {
     render(
       <FloatingChat open>
         <div>floating panel</div>
-      </FloatingChat>
+      </FloatingChat>,
     );
-    expect(screen.getByRole('dialog', { name: 'Chat' })).toBeDefined();
-    expect(screen.getByText('floating panel')).toBeDefined();
+    expect(screen.getByRole("dialog", { name: "Chat" })).toBeDefined();
+    expect(screen.getByText("floating panel")).toBeDefined();
   });
 
-  it('renders nothing when closed', () => {
+  it("renders nothing when closed", () => {
     render(
       <FloatingChat open={false}>
         <div>hidden panel</div>
-      </FloatingChat>
+      </FloatingChat>,
     );
-    expect(screen.queryByText('hidden panel')).toBeNull();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText("hidden panel")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it('defaults to the small bottom-right popup when open and not expanded', () => {
+  it("defaults to the small bottom-right popup when open and not expanded", () => {
     render(
       <FloatingChat open>
         <div>popup panel</div>
-      </FloatingChat>
+      </FloatingChat>,
     );
-    const dialog = screen.getByRole('dialog', { name: 'Chat' });
-    expect(dialog.className).toContain('bottom-24');
-    expect(dialog.className).toContain('right-6');
-    expect(dialog.className).toContain('w-96');
-    expect(dialog.className).not.toContain('inset-4');
+    const dialog = screen.getByRole("dialog", { name: "Chat" });
+    expect(dialog.className).toContain("bottom-24");
+    expect(dialog.className).toContain("right-6");
+    expect(dialog.className).toContain("w-96");
+    expect(dialog.className).not.toContain("inset-4");
   });
 
-  it('grows to a near-full-screen overlay when expanded', () => {
+  it("grows to a near-full-screen overlay when expanded", () => {
     render(
       <FloatingChat open expanded>
         <div>expanded panel</div>
-      </FloatingChat>
+      </FloatingChat>,
     );
-    const dialog = screen.getByRole('dialog', { name: 'Chat' });
-    expect(dialog.className).toContain('inset-4');
-    expect(dialog.className).not.toContain('w-96');
+    const dialog = screen.getByRole("dialog", { name: "Chat" });
+    expect(dialog.className).toContain("inset-4");
+    expect(dialog.className).not.toContain("w-96");
   });
 
-  it('calls onClose when Escape is pressed so a full-screen panel is never a trap', () => {
+  it("calls onClose when Escape is pressed so a full-screen panel is never a trap", () => {
     const onClose = mock(() => {});
     render(
       <FloatingChat open onClose={onClose}>
         <div>closable panel</div>
-      </FloatingChat>
+      </FloatingChat>,
     );
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(onClose.mock.calls.length).toBe(1);
   });
 
-  it('does not call onClose for non-Escape keys', () => {
+  it("does not call onClose for non-Escape keys", () => {
     const onClose = mock(() => {});
     render(
       <FloatingChat open onClose={onClose}>
         <div>panel</div>
-      </FloatingChat>
+      </FloatingChat>,
     );
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     expect(onClose.mock.calls.length).toBe(0);
   });
 });
 
-describe('TypingIndicator', () => {
-  it('renders the dots and an optional label', () => {
+describe("TypingIndicator", () => {
+  it("renders the dots and an optional label", () => {
     render(<TypingIndicator label="Ada is typing" />);
-    expect(screen.getByTestId('typing-indicator')).toBeDefined();
-    expect(screen.getByText('Ada is typing')).toBeDefined();
+    expect(screen.getByTestId("typing-indicator")).toBeDefined();
+    expect(screen.getByText("Ada is typing")).toBeDefined();
   });
 
-  it('omits the label when none is given', () => {
+  it("omits the label when none is given", () => {
     render(<TypingIndicator />);
-    const indicator = screen.getByTestId('typing-indicator');
-    expect(indicator.textContent).toBe('');
+    const indicator = screen.getByTestId("typing-indicator");
+    expect(indicator.textContent).toBe("");
   });
 });
 
-describe('QuickReplyChips', () => {
+describe("QuickReplyChips", () => {
   const replies: QuickReply[] = [
-    { id: 'a', label: 'Yes', value: 'affirmative' },
-    { id: 'b', label: 'No' },
+    { id: "a", label: "Yes", value: "affirmative" },
+    { id: "b", label: "No" },
   ];
 
-  it('renders a chip per reply showing its label', () => {
+  it("renders a chip per reply showing its label", () => {
     render(<QuickReplyChips replies={replies} onSelect={() => {}} />);
-    expect(screen.getByRole('button', { name: 'Yes' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'No' })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Yes" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "No" })).toBeDefined();
   });
 
-  it('fires onSelect with the chosen reply', async () => {
-    const userEvent = (await import('@testing-library/user-event')).default;
+  it("fires onSelect with the chosen reply", async () => {
+    const userEvent = (await import("@testing-library/user-event")).default;
     const user = userEvent.setup();
     const onSelect = mock((_reply: QuickReply) => {});
     render(<QuickReplyChips replies={replies} onSelect={onSelect} />);
-    await user.click(screen.getByRole('button', { name: 'Yes' }));
-    expect(onSelect.mock.calls[0]?.[0]?.id).toBe('a');
+    await user.click(screen.getByRole("button", { name: "Yes" }));
+    expect(onSelect.mock.calls[0]?.[0]?.id).toBe("a");
   });
 
-  it('renders nothing when there are no replies', () => {
-    const { container } = render(<QuickReplyChips replies={[]} onSelect={() => {}} />);
+  it("renders nothing when there are no replies", () => {
+    const { container } = render(
+      <QuickReplyChips replies={[]} onSelect={() => {}} />,
+    );
     expect(container.firstChild).toBeNull();
   });
 });

@@ -1,6 +1,9 @@
-import { useMemo, useSyncExternalStore } from 'react';
-import { createAgentPhaseTracker, type AgentPhase } from '@workbench/agents/browser';
-import { createHubTransport } from './instance-transport';
+import { useMemo, useSyncExternalStore } from "react";
+import {
+  createAgentPhaseTracker,
+  type AgentPhase,
+} from "@workbench/agents/browser";
+import { createHubTransport } from "./instance-transport";
 
 export interface AgentPhaseTarget {
   instanceId: string;
@@ -42,7 +45,7 @@ function createPhaseStore(target: AgentPhaseTarget | null): PhaseStore {
       };
     },
     getSnapshot() {
-      return tracker?.phase ?? 'idle';
+      return tracker?.phase ?? "idle";
     },
   };
 }
@@ -54,7 +57,12 @@ function createPhaseStore(target: AgentPhaseTarget | null): PhaseStore {
  * subscription's lifecycle is owned by React's mount/unmount of the row that
  * calls this, so each agent is independent.
  */
-export function useAgentPhase(target: AgentPhaseTarget | null): AgentPhase | null {
-  const store = useMemo(() => createPhaseStore(target), [target?.tenantId, target?.instanceId]);
+export function useAgentPhase(
+  target: AgentPhaseTarget | null,
+): AgentPhase | null {
+  const store = useMemo(
+    () => createPhaseStore(target),
+    [target?.tenantId, target?.instanceId],
+  );
   return useSyncExternalStore(store.subscribe, store.getSnapshot);
 }

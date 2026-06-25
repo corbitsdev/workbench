@@ -1,4 +1,4 @@
-import { type } from 'arktype';
+import { type } from "arktype";
 
 const AppEnvSchema = type("'production' | 'staging' | 'spike'");
 
@@ -6,12 +6,12 @@ export type AppEnv = typeof AppEnvSchema.infer;
 
 const ENV_LABELS: Record<AppEnv, string | null> = {
   production: null,
-  staging: 'Staging',
-  spike: 'Spike',
+  staging: "Staging",
+  spike: "Spike",
 };
 
-const BASE_TITLE = 'Workbench';
-const PARENT_BRAND = 'Corbits';
+const BASE_TITLE = "Workbench";
+const PARENT_BRAND = "Corbits";
 
 export interface Branding {
   env: AppEnv | null;

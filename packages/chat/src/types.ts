@@ -8,10 +8,10 @@
  */
 
 /** Who authored a chat message. */
-export type ChatRole = 'user' | 'agent' | 'system';
+export type ChatRole = "user" | "agent" | "system";
 
 /** Delivery state of a message, used to render ticks / spinners / retries. */
-export type ChatMessageStatus = 'sending' | 'sent' | 'failed';
+export type ChatMessageStatus = "sending" | "sent" | "failed";
 
 /**
  * Optional classification of a message's purpose.
@@ -19,7 +19,7 @@ export type ChatMessageStatus = 'sending' | 'sent' | 'failed';
  * - `artifact` — a final output (never compacted)
  * Absent means a regular conversational message.
  */
-export type ChatMessageKind = 'tool' | 'artifact';
+export type ChatMessageKind = "tool" | "artifact";
 
 /** A completed or in-progress tool invocation attached to an agent message. */
 export interface ToolCall {
@@ -101,16 +101,16 @@ export interface QuickReply {
 
 /** What the agent is currently doing, shown as a status indicator. */
 export type ChatActivity =
-  | { type: 'thinking' }
-  | { type: 'tool_call'; name: string }
-  | { type: 'tool_running'; name: string }
-  | { type: 'rate_limited'; retryAfterMs: number };
+  | { type: "thinking" }
+  | { type: "tool_call"; name: string }
+  | { type: "tool_running"; name: string }
+  | { type: "rate_limited"; retryAfterMs: number };
 
 /** Whether the chat is shown as a floating overlay or docked into the layout. */
-export type ChatDockState = 'floating' | 'docked';
+export type ChatDockState = "floating" | "docked";
 
 /** Whether the floating launcher / panel is open or closed. */
-export type ChatOpenState = 'open' | 'closed';
+export type ChatOpenState = "open" | "closed";
 
 /** Screen position for the floating launcher and panel. */
 export interface ChatLauncherPosition {

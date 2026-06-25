@@ -1,24 +1,24 @@
-import { type } from 'arktype';
+import { type } from "arktype";
 import {
   FeedbackListResponse,
   type FeedbackSubjectKind,
   type SavedRating,
   type MemberPreferences,
   MemberPreferences as MemberPreferencesSchema,
-} from '@workbench/shared';
+} from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
 // These are interchange endpoints — principals, agent instances, sessions.
 // Credential and tenant management moved to Interchange admin-ui (CL-1535).
 
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
+const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
 
 function hubErrorMessage(body: { error?: unknown }, status: number): string {
   const e = body.error;
-  if (typeof e === 'string' && e.length > 0) return e;
-  if (e && typeof e === 'object' && 'message' in e) {
+  if (typeof e === "string" && e.length > 0) return e;
+  if (e && typeof e === "object" && "message" in e) {
     const msg = (e as { message?: unknown }).message;
-    if (typeof msg === 'string' && msg.length > 0) return msg;
+    if (typeof msg === "string" && msg.length > 0) return msg;
   }
   return `HTTP ${status}`;
 }
@@ -26,34 +26,38 @@ function hubErrorMessage(body: { error?: unknown }, status: number): string {
 /** User-facing hint when analytics (or other hub API) calls fail in production. */
 export function describeHubApiFailure(error: unknown): string {
   if (!(error instanceof Error)) {
-    return 'Failed to load analytics data. Check your connection and try again.';
+    return "Failed to load analytics data. Check your connection and try again.";
   }
   const status = (error as Error & { status?: number }).status;
   const msg = error.message;
 
   if (!apiBase && import.meta.env.PROD) {
-    return 'Web app is not pointed at the hub (VITE_API_BASE_URL). Rebuild and redeploy web with your hub URL.';
+    return "Web app is not pointed at the hub (VITE_API_BASE_URL). Rebuild and redeploy web with your hub URL.";
   }
   if (status === 404) {
-    return 'Analytics API was not found on the hub. Redeploy the hub (migrations run on pre-deploy) and try again.';
+    return "Analytics API was not found on the hub. Redeploy the hub (migrations run on pre-deploy) and try again.";
   }
-  if (msg.startsWith('Invalid analytics')) {
-    return 'Hub returned an unexpected response. Confirm VITE_API_BASE_URL is the hub origin, not the web app URL.';
+  if (msg.startsWith("Invalid analytics")) {
+    return "Hub returned an unexpected response. Confirm VITE_API_BASE_URL is the hub origin, not the web app URL.";
   }
-  if (msg.length > 0 && msg !== '[object Object]') {
+  if (msg.length > 0 && msg !== "[object Object]") {
     return msg;
   }
-  return 'Failed to load analytics data. Check your connection and try again.';
+  return "Failed to load analytics data. Check your connection and try again.";
 }
 
-async function hubFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function hubFetch<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const url = new URL(
-    `/api/${path.replace(/^\//, '')}`,
-    apiBase || window.location.origin
+    `/api/${path.replace(/^\//, "")}`,
+    apiBase || window.location.origin,
   ).toString();
-  const init: RequestInit = { method, credentials: 'include' };
+  const init: RequestInit = { method, credentials: "include" };
   if (body !== undefined) {
-    init.headers = { 'Content-Type': 'application/json' };
+    init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify(body);
   }
   const res = await fetch(url, init);
@@ -63,7 +67,7 @@ async function hubFetch<T>(method: string, path: string, body?: unknown): Promis
       status: res.status,
     });
   }
-  if (res.status === 204 || res.headers.get('content-length') === '0') {
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
     return undefined as T;
   }
   return res.json() as Promise<T>;
@@ -74,7 +78,7 @@ export type Principal = {
   tenantId: string;
   tenantSlug: string;
   tenantName: string;
-  kind: 'user' | 'agent';
+  kind: "user" | "agent";
   status: string;
   roles: { id: string; name: string }[];
 };
@@ -121,7 +125,7 @@ function parseMePreferences(me: MeResponse): MeResponse {
 }
 
 export async function getMe(): Promise<MeResponse> {
-  return parseMePreferences(await hubFetch<MeResponse>('GET', 'v1/me'));
+  return parseMePreferences(await hubFetch<MeResponse>("GET", "v1/me"));
 }
 
 export type PostMeBody = {
@@ -130,14 +134,14 @@ export type PostMeBody = {
 
 /** Ensures org membership / Myra and syncs live session grants (safe to repeat). */
 export async function postMe(body: PostMeBody = {}): Promise<MeResponse> {
-  return parseMePreferences(await hubFetch<MeResponse>('POST', 'v1/me', body));
+  return parseMePreferences(await hubFetch<MeResponse>("POST", "v1/me", body));
 }
 
 /** Merge a partial patch into the caller's persisted UI preferences. */
 export async function patchMePreferences(
-  patch: Record<string, unknown>
+  patch: Record<string, unknown>,
 ): Promise<MemberPreferences> {
-  return hubFetch<MemberPreferences>('PATCH', 'v1/me/preferences', patch);
+  return hubFetch<MemberPreferences>("PATCH", "v1/me/preferences", patch);
 }
 
 /** Read-only status; runs postMe when the hub signals an update is available. */
@@ -150,16 +154,16 @@ export async function ensureMeSynced(): Promise<MeResponse> {
 }
 
 const MyraThreadSchema = type({
-  id: 'string',
-  instanceId: 'string',
-  label: 'string',
-  createdAt: 'string',
+  id: "string",
+  instanceId: "string",
+  label: "string",
+  createdAt: "string",
 });
 export type MyraThread = typeof MyraThreadSchema.infer;
 const MyraThreadListSchema = type({ threads: MyraThreadSchema.array() });
 
 export async function listMyraThreads(): Promise<MyraThread[]> {
-  const raw = await hubFetch<unknown>('GET', 'v1/me/myra/threads');
+  const raw = await hubFetch<unknown>("GET", "v1/me/myra/threads");
   const parsed = MyraThreadListSchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid Myra threads response: ${parsed.summary}`);
@@ -167,13 +171,16 @@ export async function listMyraThreads(): Promise<MyraThread[]> {
   return parsed.threads;
 }
 
-const MyraThreadCreateSchema = type({ thread: MyraThreadSchema, created: 'true' });
+const MyraThreadCreateSchema = type({
+  thread: MyraThreadSchema,
+  created: "true",
+});
 
 export async function createMyraThread(label?: string): Promise<MyraThread> {
   const raw = await hubFetch<unknown>(
-    'POST',
-    'v1/me/myra/threads',
-    label !== undefined ? { label } : {}
+    "POST",
+    "v1/me/myra/threads",
+    label !== undefined ? { label } : {},
   );
   const parsed = MyraThreadCreateSchema(raw);
   if (parsed instanceof type.errors) {
@@ -184,10 +191,17 @@ export async function createMyraThread(label?: string): Promise<MyraThread> {
 
 const MyraThreadMutateSchema = type({ thread: MyraThreadSchema });
 
-export async function renameMyraThread(id: string, label: string): Promise<MyraThread> {
-  const raw = await hubFetch<unknown>('PATCH', `v1/me/myra/threads/${encodeURIComponent(id)}`, {
-    label,
-  });
+export async function renameMyraThread(
+  id: string,
+  label: string,
+): Promise<MyraThread> {
+  const raw = await hubFetch<unknown>(
+    "PATCH",
+    `v1/me/myra/threads/${encodeURIComponent(id)}`,
+    {
+      label,
+    },
+  );
   const parsed = MyraThreadMutateSchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid Myra thread rename response: ${parsed.summary}`);
@@ -196,7 +210,10 @@ export async function renameMyraThread(id: string, label: string): Promise<MyraT
 }
 
 export async function deleteMyraThread(id: string): Promise<void> {
-  await hubFetch<void>('DELETE', `v1/me/myra/threads/${encodeURIComponent(id)}`);
+  await hubFetch<void>(
+    "DELETE",
+    `v1/me/myra/threads/${encodeURIComponent(id)}`,
+  );
 }
 
 /**
@@ -206,40 +223,46 @@ export async function deleteMyraThread(id: string): Promise<void> {
  */
 export async function generateMyraThreadTitle(
   id: string,
-  firstMessage: string
+  firstMessage: string,
 ): Promise<MyraThread | null> {
   const raw = await hubFetch<unknown>(
-    'POST',
+    "POST",
     `v1/me/myra/threads/${encodeURIComponent(id)}/title`,
-    { firstMessage }
+    { firstMessage },
   );
-  const parsed = type({ thread: MyraThreadSchema.or('null') })(raw);
+  const parsed = type({ thread: MyraThreadSchema.or("null") })(raw);
   if (parsed instanceof type.errors) return null;
   return parsed.thread;
 }
 
 export async function getMyPrincipals(): Promise<Principal[]> {
-  const res = await hubFetch<{ data: Principal[] }>('GET', 'me/principals');
+  const res = await hubFetch<{ data: Principal[] }>("GET", "me/principals");
   return res.data;
 }
 
 export function principalsToWorkbenches(
   principals: Principal[],
-  excludeTenantIds: (string | null)[]
+  excludeTenantIds: (string | null)[],
 ): WorkbenchEntry[] {
-  const excluded = new Set(excludeTenantIds.filter((id): id is string => id !== null));
-  return principals.filter((p) => !excluded.has(p.tenantId)).map(principalToWorkbenchEntry);
+  const excluded = new Set(
+    excludeTenantIds.filter((id): id is string => id !== null),
+  );
+  return principals
+    .filter((p) => !excluded.has(p.tenantId))
+    .map(principalToWorkbenchEntry);
 }
 
 export async function listWorkbenches(): Promise<WorkbenchEntry[]> {
   const [principals, me] = await Promise.all([getMyPrincipals(), getMe()]);
-  const excludeIds = me.rootTenantIds?.length ? me.rootTenantIds : [me.personalTenantId];
+  const excludeIds = me.rootTenantIds?.length
+    ? me.rootTenantIds
+    : [me.personalTenantId];
   return principalsToWorkbenches(principals, excludeIds);
 }
 
 export type CredentialRequirement = {
   providerName: string;
-  source: 'tenant' | 'creator' | 'invoker';
+  source: "tenant" | "creator" | "invoker";
   name?: string;
 };
 
@@ -255,16 +278,24 @@ export type AgentInstance = {
   createdAt: string;
 };
 
-export async function listAgentInstances(tenantId: string): Promise<AgentInstance[]> {
+export async function listAgentInstances(
+  tenantId: string,
+): Promise<AgentInstance[]> {
   const res = await hubFetch<{ data: AgentInstance[] }>(
-    'GET',
-    `v1/agents?tenantId=${encodeURIComponent(tenantId)}`
+    "GET",
+    `v1/agents?tenantId=${encodeURIComponent(tenantId)}`,
   );
   return res.data;
 }
 
-export async function deleteAgentInstance(tenantId: string, instanceId: string): Promise<void> {
-  await hubFetch<void>('DELETE', `v1/tenants/${tenantId}/agents/instances/${instanceId}`);
+export async function deleteAgentInstance(
+  tenantId: string,
+  instanceId: string,
+): Promise<void> {
+  await hubFetch<void>(
+    "DELETE",
+    `v1/tenants/${tenantId}/agents/instances/${instanceId}`,
+  );
 }
 
 export type LaunchInstanceSessionResponse = {
@@ -273,13 +304,23 @@ export type LaunchInstanceSessionResponse = {
 };
 
 export async function launchInstanceSession(
-  instanceId: string
+  instanceId: string,
 ): Promise<LaunchInstanceSessionResponse> {
-  return hubFetch<LaunchInstanceSessionResponse>('POST', `v1/instances/${instanceId}/sessions`, {});
+  return hubFetch<LaunchInstanceSessionResponse>(
+    "POST",
+    `v1/instances/${instanceId}/sessions`,
+    {},
+  );
 }
 
-export async function stopAgentInstance(tenantId: string, instanceId: string): Promise<void> {
-  await hubFetch<void>('DELETE', `v1/tenants/${tenantId}/agents/instances/${instanceId}`);
+export async function stopAgentInstance(
+  tenantId: string,
+  instanceId: string,
+): Promise<void> {
+  await hubFetch<void>(
+    "DELETE",
+    `v1/tenants/${tenantId}/agents/instances/${instanceId}`,
+  );
 }
 
 export type DeployAgentResponse = {
@@ -295,7 +336,10 @@ export type AgentCatalogEntry = {
 };
 
 export async function listAgentTemplates(): Promise<AgentCatalogEntry[]> {
-  const res = await hubFetch<{ data: AgentCatalogEntry[] }>('GET', 'v1/agents/templates');
+  const res = await hubFetch<{ data: AgentCatalogEntry[] }>(
+    "GET",
+    "v1/agents/templates",
+  );
   return res.data;
 }
 
@@ -307,15 +351,24 @@ export type { FeedbackSubjectKind, SavedRating };
  * while the invalidate-driven refetch is in flight, so the displayed pressed
  * state never regresses to a stale value between save and refetch.
  */
-export function upsertRating(prev: SavedRating[] | undefined, next: SavedRating): SavedRating[] {
+export function upsertRating(
+  prev: SavedRating[] | undefined,
+  next: SavedRating,
+): SavedRating[] {
   const without = (prev ?? []).filter(
-    (r) => !(r.subjectId === next.subjectId && r.subjectKind === next.subjectKind)
+    (r) =>
+      !(r.subjectId === next.subjectId && r.subjectKind === next.subjectKind),
   );
   return [...without, next];
 }
 
-export async function getOutputFeedback(instanceId: string): Promise<SavedRating[]> {
-  const res = await hubFetch<unknown>('GET', `v1/instances/${instanceId}/feedback`);
+export async function getOutputFeedback(
+  instanceId: string,
+): Promise<SavedRating[]> {
+  const res = await hubFetch<unknown>(
+    "GET",
+    `v1/instances/${instanceId}/feedback`,
+  );
   const parsed = FeedbackListResponse(res);
   if (parsed instanceof type.errors) {
     throw new Error(`Malformed feedback response: ${parsed.summary}`);
@@ -327,9 +380,9 @@ export async function saveOutputFeedback(
   instanceId: string,
   subjectId: string,
   subjectKind: FeedbackSubjectKind,
-  rating: 1 | -1
+  rating: 1 | -1,
 ): Promise<void> {
-  await hubFetch<void>('POST', `v1/instances/${instanceId}/feedback`, {
+  await hubFetch<void>("POST", `v1/instances/${instanceId}/feedback`, {
     subjectId,
     subjectKind,
     rating,
@@ -338,38 +391,42 @@ export async function saveOutputFeedback(
 
 export async function deployAgentFromTemplate(
   tenantId: string,
-  templateKey: string
+  templateKey: string,
 ): Promise<DeployAgentResponse> {
-  return hubFetch<DeployAgentResponse>('POST', `v1/tenants/${tenantId}/agents/instances`, {
-    templateKey,
-  });
+  return hubFetch<DeployAgentResponse>(
+    "POST",
+    `v1/tenants/${tenantId}/agents/instances`,
+    {
+      templateKey,
+    },
+  );
 }
 
 const AnalyticsSummarySchema = type({
-  tenantId: 'string',
-  turnCount: 'number',
-  failedTurnCount: 'number',
-  toolCallCount: 'number',
-  toolErrorCount: 'number',
-  inputTokens: 'number',
-  outputTokens: 'number',
-  cacheReadTokens: 'number',
-  cacheWriteTokens: 'number',
-  thinkingTokens: 'number',
+  tenantId: "string",
+  turnCount: "number",
+  failedTurnCount: "number",
+  toolCallCount: "number",
+  toolErrorCount: "number",
+  inputTokens: "number",
+  outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  thinkingTokens: "number",
 });
 
 export type AnalyticsSummary = typeof AnalyticsSummarySchema.infer;
 
 export async function getAnalyticsSummary(
   tenantId: string,
-  opts?: { startDate?: string; endDate?: string }
+  opts?: { startDate?: string; endDate?: string },
 ): Promise<AnalyticsSummary> {
   const params = new URLSearchParams();
-  if (opts?.startDate) params.set('startDate', opts.startDate);
-  if (opts?.endDate) params.set('endDate', opts.endDate);
+  if (opts?.startDate) params.set("startDate", opts.startDate);
+  if (opts?.endDate) params.set("endDate", opts.endDate);
   const qs = params.toString();
-  const path = `tenants/${encodeURIComponent(tenantId)}/analytics/summary${qs ? `?${qs}` : ''}`;
-  const raw = await hubFetch<unknown>('GET', path);
+  const path = `tenants/${encodeURIComponent(tenantId)}/analytics/summary${qs ? `?${qs}` : ""}`;
+  const raw = await hubFetch<unknown>("GET", path);
   const result = AnalyticsSummarySchema(raw);
   if (result instanceof type.errors) {
     throw new Error(`Invalid analytics summary response: ${result.summary}`);
@@ -378,21 +435,21 @@ export async function getAnalyticsSummary(
 }
 
 const AnalyticsAgentRowSchema = type({
-  agentId: 'string',
-  agentName: 'string | null',
-  turnCount: 'number',
-  failedTurnCount: 'number',
-  toolCallCount: 'number',
-  toolErrorCount: 'number',
-  inputTokens: 'number',
-  outputTokens: 'number',
-  cacheReadTokens: 'number',
-  cacheWriteTokens: 'number',
-  thinkingTokens: 'number',
+  agentId: "string",
+  agentName: "string | null",
+  turnCount: "number",
+  failedTurnCount: "number",
+  toolCallCount: "number",
+  toolErrorCount: "number",
+  inputTokens: "number",
+  outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  thinkingTokens: "number",
 });
 
 const AnalyticsByAgentResponseSchema = type({
-  tenantId: 'string',
+  tenantId: "string",
   agents: AnalyticsAgentRowSchema.array(),
 });
 
@@ -400,14 +457,14 @@ export type AnalyticsAgentRow = typeof AnalyticsAgentRowSchema.infer;
 
 export async function getAnalyticsSummaryByAgent(
   tenantId: string,
-  opts?: { startDate?: string; endDate?: string }
+  opts?: { startDate?: string; endDate?: string },
 ): Promise<AnalyticsAgentRow[]> {
   const params = new URLSearchParams();
-  if (opts?.startDate) params.set('startDate', opts.startDate);
-  if (opts?.endDate) params.set('endDate', opts.endDate);
+  if (opts?.startDate) params.set("startDate", opts.startDate);
+  if (opts?.endDate) params.set("endDate", opts.endDate);
   const qs = params.toString();
-  const path = `tenants/${encodeURIComponent(tenantId)}/analytics/summary/by-agent${qs ? `?${qs}` : ''}`;
-  const raw = await hubFetch<unknown>('GET', path);
+  const path = `tenants/${encodeURIComponent(tenantId)}/analytics/summary/by-agent${qs ? `?${qs}` : ""}`;
+  const raw = await hubFetch<unknown>("GET", path);
   const result = AnalyticsByAgentResponseSchema(raw);
   if (result instanceof type.errors) {
     throw new Error(`Invalid analytics by-agent response: ${result.summary}`);
@@ -416,52 +473,52 @@ export async function getAnalyticsSummaryByAgent(
 }
 
 const ActivityCountRowSchema = type({
-  key: 'string',
-  count: 'number',
+  key: "string",
+  count: "number",
 });
 
 const ActivityOverviewSchema = type({
-  tenantId: 'string',
+  tenantId: "string",
   range: {
-    'startDate?': 'string',
-    'endDate?': 'string',
+    "startDate?": "string",
+    "endDate?": "string",
   },
   artifacts: {
-    total: 'number',
-    createdInRange: 'number',
+    total: "number",
+    createdInRange: "number",
     byStatus: ActivityCountRowSchema.array(),
     byKind: ActivityCountRowSchema.array(),
   },
   workflowRuns: {
-    executionRecords: 'number',
-    executionsStartedInRange: 'number',
-    activeExecutions: 'number',
+    executionRecords: "number",
+    executionsStartedInRange: "number",
+    activeExecutions: "number",
     byStatus: ActivityCountRowSchema.array(),
     byKind: ActivityCountRowSchema.array(),
-    deploymentsIndexed: 'number',
+    deploymentsIndexed: "number",
   },
   agentInstances: {
-    active: 'number',
-    startedInRange: 'number',
-    endedInRange: 'number',
-    total: 'number',
+    active: "number",
+    startedInRange: "number",
+    endedInRange: "number",
+    total: "number",
   },
   inference: {
     summary: AnalyticsSummarySchema,
     byAgent: AnalyticsAgentRowSchema.array(),
     byInstance: type({
-      instanceId: 'string',
-      agentId: 'string',
-      agentName: 'string | null',
-      turnCount: 'number',
-      failedTurnCount: 'number',
-      toolCallCount: 'number',
-      toolErrorCount: 'number',
-      inputTokens: 'number',
-      outputTokens: 'number',
-      cacheReadTokens: 'number',
-      cacheWriteTokens: 'number',
-      thinkingTokens: 'number',
+      instanceId: "string",
+      agentId: "string",
+      agentName: "string | null",
+      turnCount: "number",
+      failedTurnCount: "number",
+      toolCallCount: "number",
+      toolErrorCount: "number",
+      inputTokens: "number",
+      outputTokens: "number",
+      cacheReadTokens: "number",
+      cacheWriteTokens: "number",
+      thinkingTokens: "number",
     }).array(),
   },
 });
@@ -470,14 +527,14 @@ export type ActivityOverview = typeof ActivityOverviewSchema.infer;
 
 export async function getActivityOverview(
   tenantId: string,
-  opts?: { startDate?: string; endDate?: string }
+  opts?: { startDate?: string; endDate?: string },
 ): Promise<ActivityOverview> {
   const params = new URLSearchParams();
-  if (opts?.startDate) params.set('startDate', opts.startDate);
-  if (opts?.endDate) params.set('endDate', opts.endDate);
+  if (opts?.startDate) params.set("startDate", opts.startDate);
+  if (opts?.endDate) params.set("endDate", opts.endDate);
   const qs = params.toString();
-  const path = `tenants/${encodeURIComponent(tenantId)}/activity/overview${qs ? `?${qs}` : ''}`;
-  const raw = await hubFetch<unknown>('GET', path);
+  const path = `tenants/${encodeURIComponent(tenantId)}/activity/overview${qs ? `?${qs}` : ""}`;
+  const raw = await hubFetch<unknown>("GET", path);
   const result = ActivityOverviewSchema(raw);
   if (result instanceof type.errors) {
     throw new Error(`Invalid activity overview response: ${result.summary}`);

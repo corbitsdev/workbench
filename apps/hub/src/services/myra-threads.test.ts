@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { describe, expect, it, mock } from "bun:test";
 
 // --- Module-boundary mocks for the title-generation inference path ---
 
@@ -8,26 +8,26 @@ let lastCreateEventCollectorConfig: {
   sessionId: string;
 } | null = null;
 let collectorEvents: { type: string }[] = [];
-let agentReply = 'Pricing Deep Dive';
+let agentReply = "Pricing Deep Dive";
 let agentShouldThrow = false;
 let lastIsogitDir: string | null = null;
 
 function resetTitleMocks() {
   lastCreateEventCollectorConfig = null;
   collectorEvents = [];
-  agentReply = 'Pricing Deep Dive';
+  agentReply = "Pricing Deep Dive";
   agentShouldThrow = false;
   lastIsogitDir = null;
 }
 
-mock.module('@workbench/storage-isogit', () => ({
+mock.module("@workbench/storage-isogit", () => ({
   createIsogitStore: mock((dir: string) => {
     lastIsogitDir = dir;
     return Promise.resolve({});
   }),
 }));
 
-mock.module('@workbench/event-collector', () => ({
+mock.module("@workbench/event-collector", () => ({
   createEventCollector: mock(
     (config: {
       instanceId: string;
@@ -43,44 +43,48 @@ mock.module('@workbench/event-collector', () => ({
       return {
         onEvent: mock((event: { type: string }) => {
           collectorEvents.push(event);
-          if (event.type === 'inference.done' && config.onTurnFinalized) {
-            config.onTurnFinalized({ turnId: 't1', status: 'completed', text: agentReply });
+          if (event.type === "inference.done" && config.onTurnFinalized) {
+            config.onTurnFinalized({
+              turnId: "t1",
+              status: "completed",
+              text: agentReply,
+            });
           }
           return Promise.resolve();
         }),
         abandon: mock(() => Promise.resolve()),
         getAccumulatedText: () => agentReply,
         getCurrentTurnId: () => null,
-        getLastTurnId: () => 't1',
+        getLastTurnId: () => "t1",
       };
-    }
+    },
   ),
 }));
 
-mock.module('@intx/agent', () => ({
+mock.module("@intx/agent", () => ({
   defineAgent: mock((def: unknown) => def),
   createDefaultDirectorRegistry: mock(() => ({})),
   createAgent: mock(() =>
     Promise.resolve({
-      // eslint-disable-next-line require-yield
       async *stream() {
-        yield { type: 'inference.start', data: { model: 'm' } };
-        yield { type: 'inference.done', data: { turn: { content: [] } } };
-        yield { type: 'message.received', data: {} };
+        yield { type: "inference.start", data: { model: "m" } };
+        yield { type: "inference.done", data: { turn: { content: [] } } };
+        yield { type: "message.received", data: {} };
       },
       send: mock(() => {
-        if (agentShouldThrow) return Promise.reject(new Error('inference boom'));
+        if (agentShouldThrow)
+          return Promise.reject(new Error("inference boom"));
         return Promise.resolve({ reply: agentReply });
       }),
       close: mock(() => Promise.resolve()),
-    })
+    }),
   ),
 }));
 
 const resolveCredentialRequirementMock = mock(() => Promise.resolve(null));
-mock.module('@intx/db', () => ({
+mock.module("@intx/db", () => ({
   schema: {
-    agent: { tenantId: 'agent.tenantId', name: 'agent.name' },
+    agent: { tenantId: "agent.tenantId", name: "agent.name" },
     agentInstance: {},
     principal: {},
     grant: {},
@@ -88,29 +92,31 @@ mock.module('@intx/db', () => ({
   resolveCredentialRequirement: resolveCredentialRequirementMock,
 }));
 
-mock.module('../config', () => ({
+mock.module("../config", () => ({
   getConfig: () => ({
-    hub: { dataDir: '/tmp/myra-title-test' },
-    globalTenant: { slug: 'global', domain: 'global.test' },
+    hub: { dataDir: "/tmp/myra-title-test" },
+    globalTenant: { slug: "global", domain: "global.test" },
   }),
 }));
 
-mock.module('./agent-provisioning', () => ({
+mock.module("./agent-provisioning", () => ({
   resolveInstanceSourcesFromDefinition: mock(() =>
     Promise.resolve({
       ok: true,
       sources: [
         {
-          id: 'ofr_1',
-          provider: 'openai-compatible',
-          baseURL: 'https://llm.example/v1',
-          apiKey: 'sk-myra',
-          model: 'gpt-4o',
+          id: "ofr_1",
+          provider: "openai-compatible",
+          baseURL: "https://llm.example/v1",
+          apiKey: "sk-myra",
+          model: "gpt-4o",
         },
       ],
-    })
+    }),
   ),
-  launchAgentSession: mock(() => Promise.resolve({ address: 'a', sessionId: 's' })),
+  launchAgentSession: mock(() =>
+    Promise.resolve({ address: "a", sessionId: "s" }),
+  ),
 }));
 
 import {
@@ -118,33 +124,50 @@ import {
   generateMyraThreadTitle,
   listMyraThreads,
   renameMyraThread,
-} from './myra-threads';
+} from "./myra-threads";
 
-describe('generateMyraThreadTitle', () => {
+describe("generateMyraThreadTitle", () => {
   function buildTitleDb(opts: {
-    mappingRow: { id: string; instanceId: string; label: string | null } | undefined;
-    renamed?: { id: string; instanceId: string; label: string; createdAt: Date };
+    mappingRow:
+      | { id: string; instanceId: string; label: string | null }
+      | undefined;
+    renamed?: {
+      id: string;
+      instanceId: string;
+      label: string;
+      createdAt: Date;
+    };
   }) {
-    const updateReturning = mock(() => Promise.resolve(opts.renamed ? [opts.renamed] : []));
+    const updateReturning = mock(() =>
+      Promise.resolve(opts.renamed ? [opts.renamed] : []),
+    );
     return {
       query: {
-        memberAgentInstance: { findFirst: mock(() => Promise.resolve(opts.mappingRow)) },
-        agent: { findFirst: mock(() => Promise.resolve({ id: 'agt', modelRequirements: null })) },
+        memberAgentInstance: {
+          findFirst: mock(() => Promise.resolve(opts.mappingRow)),
+        },
+        agent: {
+          findFirst: mock(() =>
+            Promise.resolve({ id: "agt", modelRequirements: null }),
+          ),
+        },
         provider: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
-      update: mock(() => ({ set: () => ({ where: () => ({ returning: updateReturning }) }) })),
+      update: mock(() => ({
+        set: () => ({ where: () => ({ returning: updateReturning }) }),
+      })),
     };
   }
 
-  it('titles a default-labelled thread and records the turn under its instance', async () => {
+  it("titles a default-labelled thread and records the turn under its instance", async () => {
     resetTitleMocks();
     const db = buildTitleDb({
-      mappingRow: { id: 'map-1', instanceId: 'inst-1', label: 'Chat' },
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
       renamed: {
-        id: 'map-1',
-        instanceId: 'inst-1',
-        label: 'Pricing Deep Dive',
-        createdAt: new Date('2026-01-01T00:00:00Z'),
+        id: "map-1",
+        instanceId: "inst-1",
+        label: "Pricing Deep Dive",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
       },
     });
 
@@ -153,30 +176,37 @@ describe('generateMyraThreadTitle', () => {
       db as any,
       {},
       {
-        tenantId: 'tn-global',
-        memberPrincipalId: 'prn-member',
-        threadId: 'map-1',
-        firstMessage: 'How should we price the enterprise tier?',
-      }
+        tenantId: "tn-global",
+        memberPrincipalId: "prn-member",
+        threadId: "map-1",
+        firstMessage: "How should we price the enterprise tier?",
+      },
     );
 
     expect(result).toEqual({
-      id: 'map-1',
-      instanceId: 'inst-1',
-      label: 'Pricing Deep Dive',
-      createdAt: '2026-01-01T00:00:00.000Z',
+      id: "map-1",
+      instanceId: "inst-1",
+      label: "Pricing Deep Dive",
+      createdAt: "2026-01-01T00:00:00.000Z",
     });
     // The turn was recorded under the thread's instance + tenant.
-    expect(lastCreateEventCollectorConfig?.instanceId).toBe('inst-1');
-    expect(lastCreateEventCollectorConfig?.tenantId).toBe('tn-global');
+    expect(lastCreateEventCollectorConfig?.instanceId).toBe("inst-1");
+    expect(lastCreateEventCollectorConfig?.tenantId).toBe("tn-global");
     // Events were actually pumped into the collector (and message.received filtered).
-    expect(collectorEvents.map((e) => e.type)).toEqual(['inference.start', 'inference.done']);
+    expect(collectorEvents.map((e) => e.type)).toEqual([
+      "inference.start",
+      "inference.done",
+    ]);
   });
 
-  it('no-ops on a custom (non-default) label without running inference', async () => {
+  it("no-ops on a custom (non-default) label without running inference", async () => {
     resetTitleMocks();
     const db = buildTitleDb({
-      mappingRow: { id: 'map-1', instanceId: 'inst-1', label: 'Existing Title' },
+      mappingRow: {
+        id: "map-1",
+        instanceId: "inst-1",
+        label: "Existing Title",
+      },
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
@@ -184,18 +214,18 @@ describe('generateMyraThreadTitle', () => {
       db as any,
       {},
       {
-        tenantId: 'tn-global',
-        memberPrincipalId: 'prn-member',
-        threadId: 'map-1',
-        firstMessage: 'Hello',
-      }
+        tenantId: "tn-global",
+        memberPrincipalId: "prn-member",
+        threadId: "map-1",
+        firstMessage: "Hello",
+      },
     );
 
     expect(result).toBeNull();
     expect(lastCreateEventCollectorConfig).toBeNull();
   });
 
-  it('returns null when the mapping is not found', async () => {
+  it("returns null when the mapping is not found", async () => {
     resetTitleMocks();
     const db = buildTitleDb({ mappingRow: undefined });
 
@@ -204,21 +234,21 @@ describe('generateMyraThreadTitle', () => {
       db as any,
       {},
       {
-        tenantId: 'tn-global',
-        memberPrincipalId: 'prn-member',
-        threadId: 'missing',
-        firstMessage: 'Hello',
-      }
+        tenantId: "tn-global",
+        memberPrincipalId: "prn-member",
+        threadId: "missing",
+        firstMessage: "Hello",
+      },
     );
 
     expect(result).toBeNull();
   });
 
-  it('does not throw and returns null when inference fails', async () => {
+  it("does not throw and returns null when inference fails", async () => {
     resetTitleMocks();
     agentShouldThrow = true;
     const db = buildTitleDb({
-      mappingRow: { id: 'map-1', instanceId: 'inst-1', label: 'Chat 2' },
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat 2" },
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
@@ -226,27 +256,27 @@ describe('generateMyraThreadTitle', () => {
       db as any,
       {},
       {
-        tenantId: 'tn-global',
-        memberPrincipalId: 'prn-member',
-        threadId: 'map-1',
-        firstMessage: 'Hello',
-      }
+        tenantId: "tn-global",
+        memberPrincipalId: "prn-member",
+        threadId: "map-1",
+        firstMessage: "Hello",
+      },
     );
 
     expect(result).toBeNull();
   });
 
-  it('sanitizes the model output before persisting it', async () => {
+  it("sanitizes the model output before persisting it", async () => {
     resetTitleMocks();
     agentReply = '  "Pricing  Strategy."  \n';
-    let persistedLabel = '';
+    let persistedLabel = "";
     const db = buildTitleDb({
-      mappingRow: { id: 'map-1', instanceId: 'inst-1', label: '' },
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "" },
       renamed: {
-        id: 'map-1',
-        instanceId: 'inst-1',
-        label: 'Pricing Strategy',
-        createdAt: new Date('2026-01-01T00:00:00Z'),
+        id: "map-1",
+        instanceId: "inst-1",
+        label: "Pricing Strategy",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
       },
     });
     // Capture the label handed to update().set().
@@ -258,10 +288,10 @@ describe('generateMyraThreadTitle', () => {
             returning: () =>
               Promise.resolve([
                 {
-                  id: 'map-1',
-                  instanceId: 'inst-1',
+                  id: "map-1",
+                  instanceId: "inst-1",
                   label: vals.label,
-                  createdAt: new Date('2026-01-01T00:00:00Z'),
+                  createdAt: new Date("2026-01-01T00:00:00Z"),
                 },
               ]),
           }),
@@ -274,20 +304,22 @@ describe('generateMyraThreadTitle', () => {
       db as any,
       {},
       {
-        tenantId: 'tn-global',
-        memberPrincipalId: 'prn-member',
-        threadId: 'map-1',
-        firstMessage: 'pricing?',
-      }
+        tenantId: "tn-global",
+        memberPrincipalId: "prn-member",
+        threadId: "map-1",
+        firstMessage: "pricing?",
+      },
     );
 
-    expect(persistedLabel).toBe('Pricing Strategy');
-    expect(result?.label).toBe('Pricing Strategy');
+    expect(persistedLabel).toBe("Pricing Strategy");
+    expect(result?.label).toBe("Pricing Strategy");
     // Durable audit repo lives under the hub dataDir, keyed per (tenant, principal).
-    expect(lastIsogitDir).toBe('/tmp/myra-title-test/myra-title/tn-global/prn-member');
+    expect(lastIsogitDir).toBe(
+      "/tmp/myra-title-test/myra-title/tn-global/prn-member",
+    );
   });
 
-  it('returns null when firstMessage is blank without touching the db', async () => {
+  it("returns null when firstMessage is blank without touching the db", async () => {
     resetTitleMocks();
     const findFirst = mock(() => Promise.resolve(undefined));
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
@@ -297,11 +329,11 @@ describe('generateMyraThreadTitle', () => {
       db,
       {},
       {
-        tenantId: 'tn-global',
-        memberPrincipalId: 'prn-member',
-        threadId: 'map-1',
-        firstMessage: '   ',
-      }
+        tenantId: "tn-global",
+        memberPrincipalId: "prn-member",
+        threadId: "map-1",
+        firstMessage: "   ",
+      },
     );
 
     expect(result).toBeNull();
@@ -309,62 +341,74 @@ describe('generateMyraThreadTitle', () => {
   });
 });
 
-describe('listMyraThreads', () => {
-  it('maps rows and falls back to default labels by position', async () => {
+describe("listMyraThreads", () => {
+  it("maps rows and falls back to default labels by position", async () => {
     const rows = [
       {
-        id: 'map-1',
-        instanceId: 'inst-1',
+        id: "map-1",
+        instanceId: "inst-1",
         label: null,
-        createdAt: new Date('2026-01-01T00:00:00Z'),
+        createdAt: new Date("2026-01-01T00:00:00Z"),
       },
       {
-        id: 'map-2',
-        instanceId: 'inst-2',
-        label: '  ',
-        createdAt: new Date('2026-01-02T00:00:00Z'),
+        id: "map-2",
+        instanceId: "inst-2",
+        label: "  ",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
       },
       {
-        id: 'map-3',
-        instanceId: 'inst-3',
-        label: 'Pricing deep dive',
-        createdAt: new Date('2026-01-03T00:00:00Z'),
+        id: "map-3",
+        instanceId: "inst-3",
+        label: "Pricing deep dive",
+        createdAt: new Date("2026-01-03T00:00:00Z"),
       },
     ];
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
     const db: any = {
-      query: { memberAgentInstance: { findMany: mock(() => Promise.resolve(rows)) } },
+      query: {
+        memberAgentInstance: { findMany: mock(() => Promise.resolve(rows)) },
+      },
     };
 
     const threads = await listMyraThreads(db, {
-      tenantId: 'tn-global',
-      memberPrincipalId: 'prn-member',
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
     });
 
     expect(threads).toEqual([
-      { id: 'map-1', instanceId: 'inst-1', label: 'Chat', createdAt: '2026-01-01T00:00:00.000Z' },
-      { id: 'map-2', instanceId: 'inst-2', label: 'Chat 2', createdAt: '2026-01-02T00:00:00.000Z' },
       {
-        id: 'map-3',
-        instanceId: 'inst-3',
-        label: 'Pricing deep dive',
-        createdAt: '2026-01-03T00:00:00.000Z',
+        id: "map-1",
+        instanceId: "inst-1",
+        label: "Chat",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "map-2",
+        instanceId: "inst-2",
+        label: "Chat 2",
+        createdAt: "2026-01-02T00:00:00.000Z",
+      },
+      {
+        id: "map-3",
+        instanceId: "inst-3",
+        label: "Pricing deep dive",
+        createdAt: "2026-01-03T00:00:00.000Z",
       },
     ]);
   });
 });
 
-describe('renameMyraThread', () => {
-  it('returns the mapped row when a row is updated', async () => {
+describe("renameMyraThread", () => {
+  it("returns the mapped row when a row is updated", async () => {
     const returning = mock(() =>
       Promise.resolve([
         {
-          id: 'map-1',
-          instanceId: 'inst-1',
-          label: 'New label',
-          createdAt: new Date('2026-01-01T00:00:00Z'),
+          id: "map-1",
+          instanceId: "inst-1",
+          label: "New label",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
         },
-      ])
+      ]),
     );
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
     const db: any = {
@@ -372,40 +416,42 @@ describe('renameMyraThread', () => {
     };
 
     const result = await renameMyraThread(db, {
-      tenantId: 'tn-global',
-      memberPrincipalId: 'prn-member',
-      threadId: 'map-1',
-      label: '  New label  ',
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      label: "  New label  ",
     });
 
     expect(result).toEqual({
-      id: 'map-1',
-      instanceId: 'inst-1',
-      label: 'New label',
-      createdAt: '2026-01-01T00:00:00.000Z',
+      id: "map-1",
+      instanceId: "inst-1",
+      label: "New label",
+      createdAt: "2026-01-01T00:00:00.000Z",
     });
     expect(returning).toHaveBeenCalled();
   });
 
-  it('returns null when no row matched', async () => {
+  it("returns null when no row matched", async () => {
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
     const db: any = {
       update: mock(() => ({
-        set: () => ({ where: () => ({ returning: () => Promise.resolve([]) }) }),
+        set: () => ({
+          where: () => ({ returning: () => Promise.resolve([]) }),
+        }),
       })),
     };
 
     const result = await renameMyraThread(db, {
-      tenantId: 'tn-global',
-      memberPrincipalId: 'prn-member',
-      threadId: 'map-x',
-      label: 'New label',
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-x",
+      label: "New label",
     });
 
     expect(result).toBeNull();
   });
 
-  it('returns null without touching the db when the label is empty', async () => {
+  it("returns null without touching the db when the label is empty", async () => {
     const update = mock(() => ({
       set: () => ({ where: () => ({ returning: () => Promise.resolve([]) }) }),
     }));
@@ -413,10 +459,10 @@ describe('renameMyraThread', () => {
     const db: any = { update };
 
     const result = await renameMyraThread(db, {
-      tenantId: 'tn-global',
-      memberPrincipalId: 'prn-member',
-      threadId: 'map-1',
-      label: '   ',
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      label: "   ",
     });
 
     expect(result).toBeNull();
@@ -424,11 +470,17 @@ describe('renameMyraThread', () => {
   });
 });
 
-describe('deleteMyraThread', () => {
-  function buildDeleteDb(mappingRow: unknown, instanceRow: unknown, deleteSpy: () => void) {
+describe("deleteMyraThread", () => {
+  function buildDeleteDb(
+    mappingRow: unknown,
+    instanceRow: unknown,
+    deleteSpy: () => void,
+  ) {
     return {
       query: {
-        memberAgentInstance: { findFirst: mock(() => Promise.resolve(mappingRow)) },
+        memberAgentInstance: {
+          findFirst: mock(() => Promise.resolve(mappingRow)),
+        },
         agentInstance: { findFirst: mock(() => Promise.resolve(instanceRow)) },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
@@ -442,14 +494,14 @@ describe('deleteMyraThread', () => {
     };
   }
 
-  it('ends the session, deletes the rows, and returns true', async () => {
+  it("ends the session, deletes the rows, and returns true", async () => {
     let deletes = 0;
     const db = buildDeleteDb(
-      { id: 'map-1', instanceId: 'inst-1' },
-      { id: 'inst-1', address: 'inst-1@myra.test' },
+      { id: "map-1", instanceId: "inst-1" },
+      { id: "inst-1", address: "inst-1@myra.test" },
       () => {
         deletes += 1;
-      }
+      },
     );
     const endSession = mock(() => Promise.resolve());
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
@@ -457,17 +509,20 @@ describe('deleteMyraThread', () => {
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
     const result = await deleteMyraThread(db as any, deps, {
-      tenantId: 'tn-global',
-      memberPrincipalId: 'prn-member',
-      threadId: 'map-1',
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
     });
 
     expect(result).toBe(true);
-    expect(endSession).toHaveBeenCalledWith('inst-1@myra.test', 'myra_thread_deleted');
+    expect(endSession).toHaveBeenCalledWith(
+      "inst-1@myra.test",
+      "myra_thread_deleted",
+    );
     expect(deletes).toBe(4);
   });
 
-  it('returns false and skips teardown when the mapping is not found', async () => {
+  it("returns false and skips teardown when the mapping is not found", async () => {
     const db = buildDeleteDb(undefined, undefined, () => {});
     const endSession = mock(() => Promise.resolve());
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
@@ -475,9 +530,9 @@ describe('deleteMyraThread', () => {
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
     const result = await deleteMyraThread(db as any, deps, {
-      tenantId: 'tn-global',
-      memberPrincipalId: 'prn-member',
-      threadId: 'map-x',
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-x",
     });
 
     expect(result).toBe(false);

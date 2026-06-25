@@ -1,4 +1,4 @@
-import type { RunPhase, RunState, StepPhase, StepState } from '@intx/workflow';
+import type { RunPhase, RunState, StepPhase, StepState } from "@intx/workflow";
 
 // Thin-executor run record (CL-2240) as returned by the hub
 // /workflow-exec/records endpoints. `outputs` is the stepId -> output envelope
@@ -8,7 +8,7 @@ import type { RunPhase, RunState, StepPhase, StepState } from '@intx/workflow';
 export interface RunRecord {
   runId: string;
   kind: string;
-  status: 'running' | 'awaiting' | 'completed' | 'failed';
+  status: "running" | "awaiting" | "completed" | "failed";
   currentStepId: string | null;
   outputs: Record<string, unknown>;
   error?: string;
@@ -18,18 +18,18 @@ export interface RunRecord {
   deploymentId?: string;
 }
 
-const RECORD_TO_RUN_PHASE: Record<RunRecord['status'], RunPhase> = {
-  running: 'running',
-  awaiting: 'running',
-  completed: 'completed',
-  failed: 'failed',
+const RECORD_TO_RUN_PHASE: Record<RunRecord["status"], RunPhase> = {
+  running: "running",
+  awaiting: "running",
+  completed: "completed",
+  failed: "failed",
 };
 
 // True once the run can no longer advance on its own — the caller stops polling
 // and gates signal/resume actions. `awaiting` is NOT terminal: the run is parked
 // on a human-input gate and resumes when the panel posts a signal.
-export function isRecordTerminal(status: RunRecord['status']): boolean {
-  return status === 'completed' || status === 'failed';
+export function isRecordTerminal(status: RunRecord["status"]): boolean {
+  return status === "completed" || status === "failed";
 }
 
 // Synthesize the @intx/workflow RunState the panels read. Every stepId present
@@ -49,7 +49,7 @@ export function runStateFromRecord(record: RunRecord): RunState {
   for (const stepId of Object.keys(record.outputs)) {
     steps.set(stepId, {
       stepId,
-      phase: 'completed',
+      phase: "completed",
       currentAttempt: 1,
       outputRef: `record:${stepId}`,
     });
@@ -57,9 +57,9 @@ export function runStateFromRecord(record: RunRecord): RunState {
 
   const activeId = record.currentStepId;
   if (activeId !== null && !steps.has(activeId)) {
-    let phase: StepPhase = 'in-flight';
-    if (record.status === 'awaiting') phase = 'awaiting-signal';
-    if (record.status === 'failed') phase = 'failed';
+    let phase: StepPhase = "in-flight";
+    if (record.status === "awaiting") phase = "awaiting-signal";
+    if (record.status === "failed") phase = "failed";
     const step: StepState = {
       stepId: activeId,
       phase,
@@ -68,8 +68,12 @@ export function runStateFromRecord(record: RunRecord): RunState {
       // generic RunConsole fallback uses the stepId as its best guess. Custom
       // panels (every shipped kind has one) hardcode the correct signal name and
       // never read this field — RunConsole is the only consumer.
-      ...(phase === 'awaiting-signal' ? { awaitingSignal: { name: activeId } } : {}),
-      ...(record.error !== undefined ? { lastError: { message: record.error } } : {}),
+      ...(phase === "awaiting-signal"
+        ? { awaitingSignal: { name: activeId } }
+        : {}),
+      ...(record.error !== undefined
+        ? { lastError: { message: record.error } }
+        : {}),
     };
     steps.set(activeId, step);
   }

@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion } from "framer-motion";
 
 export interface TypingIndicatorProps {
   /** Optional label, e.g. "Ada is typing". */
@@ -8,7 +8,11 @@ export interface TypingIndicatorProps {
 /** Three pulsing dots shown while the agent composes a reply. */
 export function TypingIndicator({ label }: TypingIndicatorProps) {
   return (
-    <div data-testid="typing-indicator" className="flex items-center gap-2" aria-live="polite">
+    <div
+      data-testid="typing-indicator"
+      className="flex items-center gap-2"
+      aria-live="polite"
+    >
       <div className="flex items-center gap-1 rounded-lg bg-surface-2 px-3 py-2">
         {[0, 1, 2].map((i) => (
           <motion.span
@@ -19,7 +23,9 @@ export function TypingIndicator({ label }: TypingIndicatorProps) {
           />
         ))}
       </div>
-      {label !== undefined && <span className="text-xs text-text-3">{label}</span>}
+      {label !== undefined && (
+        <span className="text-xs text-text-3">{label}</span>
+      )}
     </div>
   );
 }

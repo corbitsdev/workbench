@@ -8,41 +8,44 @@ import {
   Plus,
   Files,
   Wrench,
-} from 'lucide-react';
-import { NavLink, Link, useNavigate } from 'react-router';
-import { useAuth } from '../AuthProvider';
-import { useCreateMyraThread, writeLastActiveThreadId } from '../../hooks/use-myra-threads';
-import { ThreadList } from './ThreadList';
-import { WorkbenchSelector } from './WorkbenchSelector';
-import { branding } from '../../lib/app-env';
+} from "lucide-react";
+import { NavLink, Link, useNavigate } from "react-router";
+import { useAuth } from "../AuthProvider";
+import {
+  useCreateMyraThread,
+  writeLastActiveThreadId,
+} from "../../hooks/use-myra-threads";
+import { ThreadList } from "./ThreadList";
+import { WorkbenchSelector } from "./WorkbenchSelector";
+import { branding } from "../../lib/app-env";
 
 const NAV_ITEMS = [
-  { to: '/chats', label: 'Chats', icon: Home, end: false },
-  { to: '/artifacts', label: 'Artifacts', icon: Files, end: false },
-  { to: '/workflows', label: 'Workflows', icon: Workflow, end: false },
-  { to: '/skills', label: 'Skills', icon: BookOpen, end: false },
-  { to: '/tools', label: 'Tools', icon: Wrench, end: false },
-  { to: '/insights', label: 'Insights', icon: BarChart2, end: false },
+  { to: "/chats", label: "Chats", icon: Home, end: false },
+  { to: "/artifacts", label: "Artifacts", icon: Files, end: false },
+  { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
+  { to: "/skills", label: "Skills", icon: BookOpen, end: false },
+  { to: "/tools", label: "Tools", icon: Wrench, end: false },
+  { to: "/insights", label: "Insights", icon: BarChart2, end: false },
 ] as const;
 
 export function AppSidebar() {
   const { session, signOut } = useAuth();
   const navigate = useNavigate();
   const createThread = useCreateMyraThread();
-  const name = session.status === 'authenticated' ? session.user.name : '';
+  const name = session.status === "authenticated" ? session.user.name : "";
   const initials =
     name
-      .split(' ')
+      .split(" ")
       .map((p) => p[0])
-      .join('')
+      .join("")
       .slice(0, 2)
-      .toUpperCase() || '··';
+      .toUpperCase() || "··";
 
   const navItemClass = (isActive: boolean) =>
     `flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm transition-colors duration-150 ${
       isActive
-        ? 'bg-orange/10 font-medium text-orange'
-        : 'text-text-2 hover:bg-page hover:text-text'
+        ? "bg-orange/10 font-medium text-orange"
+        : "text-text-2 hover:bg-page hover:text-text"
     }`;
 
   const newChat = () => {
@@ -57,7 +60,11 @@ export function AppSidebar() {
   return (
     <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-border bg-surface">
       <div className="flex items-center gap-2 px-4 py-4">
-        <Link to="/" className="group grid h-[34px] w-[34px] place-items-center" aria-label="Home">
+        <Link
+          to="/"
+          className="group grid h-[34px] w-[34px] place-items-center"
+          aria-label="Home"
+        >
           {/* ring (not shadow) on purpose: the favicon is a black mark on a
               near-black sidebar surface in dark themes, where a drop shadow adds
               no separation — the border ring is what keeps the mark legible. */}
@@ -85,13 +92,21 @@ export function AppSidebar() {
           className="flex w-full items-center gap-2 rounded-[10px] border border-border px-2.5 py-2 text-sm font-medium text-text transition-colors hover:bg-page disabled:opacity-50"
         >
           <Plus size={16} className="text-orange" />
-          {createThread.isPending ? 'Creating…' : 'New Chat'}
+          {createThread.isPending ? "Creating…" : "New Chat"}
         </button>
       </div>
 
-      <nav className="mt-3 flex flex-col gap-0.5 px-3" aria-label="Main navigation">
+      <nav
+        className="mt-3 flex flex-col gap-0.5 px-3"
+        aria-label="Main navigation"
+      >
         {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
-          <NavLink key={to} to={to} end={end} className={({ isActive }) => navItemClass(isActive)}>
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            className={({ isActive }) => navItemClass(isActive)}
+          >
             <Icon size={17} />
             {label}
           </NavLink>
@@ -117,7 +132,9 @@ export function AppSidebar() {
           >
             {initials}
           </div>
-          <span className="max-w-[110px] truncate text-xs text-text-2">{name}</span>
+          <span className="max-w-[110px] truncate text-xs text-text-2">
+            {name}
+          </span>
         </div>
         <div className="flex items-center gap-1">
           <Link

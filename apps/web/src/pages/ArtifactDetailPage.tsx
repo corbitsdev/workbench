@@ -1,27 +1,37 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Link, useNavigate, useParams } from 'react-router';
-import { ArrowLeft, ChevronDown, Loader2, Maximize2, PanelBottom, Send } from 'lucide-react';
-import { useArtifacts } from '@workbench/client/react';
-import type { ArtifactWithSession } from '@workbench/artifact';
-import { clientOptions } from '../lib/client-options';
-import ArtifactBody from '../components/ArtifactBody';
-import { ErrorBoundary } from '../components/ErrorBoundary';
-import { MyraChatSurface } from '../components/MyraChatSurface';
-import { resolveKindLabel } from '../lib/resolve-kind-label';
-import { buildArtifactMessage } from '../components/layout/ArtifactGallery';
-import { useActiveWorkbench } from '../lib/active-workbench-context';
-import { useChatLauncher } from '../lib/chat-launcher-context';
-import { useMyraSession } from '../hooks/use-myra-session';
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { Link, useNavigate, useParams } from "react-router";
+import {
+  ArrowLeft,
+  ChevronDown,
+  Loader2,
+  Maximize2,
+  PanelBottom,
+  Send,
+} from "lucide-react";
+import { useArtifacts } from "@workbench/client/react";
+import type { ArtifactWithSession } from "@workbench/artifact";
+import { clientOptions } from "../lib/client-options";
+import ArtifactBody from "../components/ArtifactBody";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { MyraChatSurface } from "../components/MyraChatSurface";
+import { resolveKindLabel } from "../lib/resolve-kind-label";
+import { buildArtifactMessage } from "../components/layout/ArtifactGallery";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
+import { useChatLauncher } from "../lib/chat-launcher-context";
+import { useMyraSession } from "../hooks/use-myra-session";
 import {
   isDefaultThreadLabel,
   useCreateMyraThread,
   useGenerateMyraThreadTitle,
   writeLastActiveThreadId,
-} from '../hooks/use-myra-threads';
-import type { MyraThread } from '../lib/hub-api';
-import { setPendingFirstMessage, takePendingFirstMessage } from '../lib/pending-first-message';
+} from "../hooks/use-myra-threads";
+import type { MyraThread } from "../lib/hub-api";
+import {
+  setPendingFirstMessage,
+  takePendingFirstMessage,
+} from "../lib/pending-first-message";
 
 // Shared easing (matches the --ease design token) so the in-pane motion reads
 // like the same family as FloatingChat / DockedChatBar.
@@ -42,7 +52,13 @@ function CenteredNotice({ children }: { children: React.ReactNode }) {
  */
 type MenuAnchor = { top: number; right: number };
 
-function OpenInMenu({ onFullScreen, onDock }: { onFullScreen: () => void; onDock: () => void }) {
+function OpenInMenu({
+  onFullScreen,
+  onDock,
+}: {
+  onFullScreen: () => void;
+  onDock: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
   const reduceMotion = useReducedMotion();
@@ -52,12 +68,18 @@ function OpenInMenu({ onFullScreen, onDock }: { onFullScreen: () => void; onDock
   // Focus the first item when the menu opens so it is keyboard-operable.
   useEffect(() => {
     if (!open) return;
-    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    menuRef.current
+      ?.querySelector<HTMLButtonElement>('[role="menuitem"]')
+      ?.focus();
   }, [open]);
 
   const openMenu = () => {
     const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) setAnchor({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    if (rect)
+      setAnchor({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
     setOpen(true);
   };
 
@@ -67,24 +89,26 @@ function OpenInMenu({ onFullScreen, onDock }: { onFullScreen: () => void; onDock
   };
 
   const onMenuKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    if (e.key === "Escape") {
       e.preventDefault();
       close();
       return;
     }
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     e.preventDefault();
     const items = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []
+      menuRef.current?.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitem"]',
+      ) ?? [],
     );
     if (items.length === 0) return;
     const idx = items.indexOf(document.activeElement as HTMLButtonElement);
-    const next = e.key === 'ArrowDown' ? idx + 1 : idx - 1;
+    const next = e.key === "ArrowDown" ? idx + 1 : idx - 1;
     items[(next + items.length) % items.length]?.focus();
   };
 
   const itemClass =
-    'flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text outline-none transition-colors hover:bg-page focus-visible:bg-page';
+    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text outline-none transition-colors hover:bg-page focus-visible:bg-page";
 
   return (
     <div className="relative">
@@ -97,7 +121,10 @@ function OpenInMenu({ onFullScreen, onDock }: { onFullScreen: () => void; onDock
         className="flex items-center gap-1 rounded-sm px-2 py-1 text-xs text-text-2 outline-none transition-[color,background-color,transform] hover:bg-page hover:text-text focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
       >
         Open in
-        <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          size={14}
+          className={`transition-transform ${open ? "rotate-180" : ""}`}
+        />
       </button>
       {createPortal(
         <AnimatePresence>
@@ -116,9 +143,15 @@ function OpenInMenu({ onFullScreen, onDock }: { onFullScreen: () => void; onDock
                 onKeyDown={onMenuKeyDown}
                 initial={reduceMotion ? false : { opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+                exit={
+                  reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }
+                }
                 transition={{ duration: 0.15, ease: EASE }}
-                style={{ top: anchor.top, right: anchor.right, transformOrigin: 'top right' }}
+                style={{
+                  top: anchor.top,
+                  right: anchor.right,
+                  transformOrigin: "top right",
+                }}
                 className="fixed z-[61] w-44 overflow-hidden rounded-lg border border-border bg-surface shadow-lg"
               >
                 <button
@@ -149,7 +182,7 @@ function OpenInMenu({ onFullScreen, onDock }: { onFullScreen: () => void; onDock
             </>
           )}
         </AnimatePresence>,
-        document.body
+        document.body,
       )}
     </div>
   );
@@ -170,7 +203,7 @@ export function ArtifactDetailPage() {
   const { openThreadInDock } = useChatLauncher();
   const createThread = useCreateMyraThread();
   const generateTitle = useGenerateMyraThreadTitle();
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState("");
   const [thread, setThread] = useState<MyraThread | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -192,7 +225,7 @@ export function ArtifactDetailPage() {
   useLayoutEffect(() => {
     const el = composerRef.current;
     if (el === null) return;
-    el.style.height = 'auto';
+    el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
   }, [draft]);
 
@@ -200,7 +233,7 @@ export function ArtifactDetailPage() {
   // is ready. Mirrors ChatThreadPage's deliver-once handoff.
   const deliveredRef = useRef<string | null>(null);
   useEffect(() => {
-    if (session.state.phase !== 'ready' || !thread) return;
+    if (session.state.phase !== "ready" || !thread) return;
     if (deliveredRef.current === thread.id) return;
     const pending = takePendingFirstMessage(thread.id);
     if (pending) {
@@ -208,7 +241,6 @@ export function ArtifactDetailPage() {
       session.send(pending);
     }
     // session.send is recreated each render; gate on phase + thread id instead.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.state.phase, thread]);
 
   const startThread = () => {
@@ -222,7 +254,7 @@ export function ArtifactDetailPage() {
         if (isDefaultThreadLabel(created.label)) {
           generateTitle.mutate({ id: created.id, firstMessage: text });
         }
-        setDraft('');
+        setDraft("");
         setThread(created);
       },
     });
@@ -273,15 +305,19 @@ export function ArtifactDetailPage() {
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
           <button
             type="button"
-            onClick={() => navigate('/artifacts')}
+            onClick={() => navigate("/artifacts")}
             aria-label="Back to artifacts"
             className="grid h-8 w-8 place-items-center rounded-sm text-text-2 outline-none transition-[color,background-color,transform] hover:bg-page hover:text-text focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
           >
             <ArrowLeft size={18} />
           </button>
           <div className="min-w-0">
-            <h1 className="truncate text-sm font-semibold text-text">{artifact.title}</h1>
-            <p className="text-xs text-text-3">{resolveKindLabel(artifact.kind)}</p>
+            <h1 className="truncate text-sm font-semibold text-text">
+              {artifact.title}
+            </h1>
+            <p className="text-xs text-text-3">
+              {resolveKindLabel(artifact.kind)}
+            </p>
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
@@ -294,7 +330,11 @@ export function ArtifactDetailPage() {
       <div className="flex shrink-0 flex-col overflow-hidden border-t border-border lg:w-[360px] lg:border-l lg:border-t-0">
         <AnimatePresence mode="wait" initial={false}>
           {thread ? (
-            <motion.div key="chat" {...fade} className="flex min-h-0 flex-1 flex-col">
+            <motion.div
+              key="chat"
+              {...fade}
+              className="flex min-h-0 flex-1 flex-col"
+            >
               {/* Slim action bar — Myra's identity comes from the chat header
                   below, so this carries only the "Open in" affordance. */}
               <div className="flex shrink-0 items-center justify-end px-2 py-1">
@@ -302,15 +342,26 @@ export function ArtifactDetailPage() {
               </div>
               <div className="min-h-0 flex-1">
                 <ErrorBoundary>
-                  <MyraChatSurface session={session} threadLabel={thread.label} />
+                  <MyraChatSurface
+                    session={session}
+                    threadLabel={thread.label}
+                  />
                 </ErrorBoundary>
               </div>
             </motion.div>
           ) : (
-            <motion.div key="composer" {...fade} className="flex min-h-0 flex-1 flex-col">
+            <motion.div
+              key="composer"
+              {...fade}
+              className="flex min-h-0 flex-1 flex-col"
+            >
               <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-semibold text-text">Ask about this artifact</h2>
-                <p className="text-xs text-text-3">Start a chat with this artifact as context.</p>
+                <h2 className="text-sm font-semibold text-text">
+                  Ask about this artifact
+                </h2>
+                <p className="text-xs text-text-3">
+                  Start a chat with this artifact as context.
+                </p>
               </div>
               <div className="min-h-0 flex-1" />
               <div className="border-t border-border p-3">
@@ -322,7 +373,7 @@ export function ArtifactDetailPage() {
                     disabled={createThread.isPending}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
+                      if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         startThread();
                       }
@@ -335,8 +386,10 @@ export function ArtifactDetailPage() {
                   <button
                     type="button"
                     onClick={startThread}
-                    disabled={draft.trim() === '' || createThread.isPending}
-                    aria-label={createThread.isPending ? 'Starting chat' : 'Start chat'}
+                    disabled={draft.trim() === "" || createThread.isPending}
+                    aria-label={
+                      createThread.isPending ? "Starting chat" : "Start chat"
+                    }
                     className="grid h-8 w-8 shrink-0 place-items-center rounded-sm bg-orange text-white outline-none transition-[opacity,transform] hover:opacity-90 focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.94] disabled:opacity-40"
                   >
                     {createThread.isPending ? (

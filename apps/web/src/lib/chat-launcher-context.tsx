@@ -1,4 +1,10 @@
-import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useRef,
+  useState,
+} from "react";
 
 interface ChatLauncherContextValue {
   hidden: boolean;
@@ -35,10 +41,16 @@ export const ChatLauncherContext = createContext<ChatLauncherContextValue>({
   clearPendingDockThread: () => {},
 });
 
-export function ChatLauncherProvider({ children }: { children: React.ReactNode }) {
+export function ChatLauncherProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [hidden, setHidden] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
-  const [pendingDockThreadId, setPendingDockThreadId] = useState<string | null>(null);
+  const [pendingDockThreadId, setPendingDockThreadId] = useState<string | null>(
+    null,
+  );
   const reconnectRef = useRef<(() => void) | null>(null);
 
   const registerReconnect = useCallback((fn: () => void) => {

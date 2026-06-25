@@ -1,4 +1,4 @@
-import type { Transport } from '@intx/hub-client';
+import type { Transport } from "@intx/hub-client";
 
 /**
  * Tracks the live text of the turn the agent is currently streaming.
@@ -26,7 +26,7 @@ export interface LiveTextTracker {
 }
 
 interface TextDeltaEvent {
-  type: 'inference.text.delta';
+  type: "inference.text.delta";
   data: { partial: { text: string } };
 }
 
@@ -34,51 +34,51 @@ interface TextDeltaEvent {
 // reactor/inference errors are the failure paths that would otherwise leave the
 // last streamed text in place after a mid-turn failure (CL-1660 review).
 const TURN_END_EVENTS = new Set([
-  'turn.committed',
-  'reactor.abort',
-  'reactor.error',
-  'inference.error',
+  "turn.committed",
+  "reactor.abort",
+  "reactor.error",
+  "inference.error",
 ]);
 
 interface TextReplayEvent {
-  type: 'inference.text.replay';
+  type: "inference.text.replay";
   data: { text: string };
 }
 
 function parseTextDeltaEvent(raw: unknown): TextDeltaEvent | null {
-  if (typeof raw !== 'object' || raw === null) return null;
+  if (typeof raw !== "object" || raw === null) return null;
   const { type, data } = raw as { type?: unknown; data?: unknown };
-  if (type !== 'inference.text.delta') return null;
-  if (typeof data !== 'object' || data === null) return null;
+  if (type !== "inference.text.delta") return null;
+  if (typeof data !== "object" || data === null) return null;
   const { partial } = data as { partial?: unknown };
-  if (typeof partial !== 'object' || partial === null) return null;
+  if (typeof partial !== "object" || partial === null) return null;
   const { text } = partial as { text?: unknown };
-  if (typeof text !== 'string') return null;
+  if (typeof text !== "string") return null;
   return { type, data: { partial: { text } } };
 }
 
 function isTurnEndEvent(raw: unknown): boolean {
-  if (typeof raw !== 'object' || raw === null) return false;
+  if (typeof raw !== "object" || raw === null) return false;
   const { type } = raw as { type?: unknown };
-  return typeof type === 'string' && TURN_END_EVENTS.has(type);
+  return typeof type === "string" && TURN_END_EVENTS.has(type);
 }
 
 function parseTextReplayEvent(raw: unknown): TextReplayEvent | null {
-  if (typeof raw !== 'object' || raw === null) return null;
+  if (typeof raw !== "object" || raw === null) return null;
   const { type, data } = raw as { type?: unknown; data?: unknown };
-  if (type !== 'inference.text.replay') return null;
-  if (typeof data !== 'object' || data === null) return null;
+  if (type !== "inference.text.replay") return null;
+  if (typeof data !== "object" || data === null) return null;
   const { text } = data as { text?: unknown };
-  if (typeof text !== 'string') return null;
+  if (typeof text !== "string") return null;
   return { type, data: { text } };
 }
 
 export function createLiveTextTracker(
   transport: Transport,
   params: { tenantId: string; instanceId: string },
-  onUpdate?: () => void
+  onUpdate?: () => void,
 ): LiveTextTracker {
-  let text = '';
+  let text = "";
   const path = `/api/tenants/${params.tenantId}/agents/instances/${params.instanceId}/events`;
 
   const stop = transport.subscribe(
@@ -93,19 +93,19 @@ export function createLiveTextTracker(
       }
 
       if (isTurnEndEvent(raw)) {
-        if (text === '') return;
-        text = '';
+        if (text === "") return;
+        text = "";
         onUpdate?.();
         return;
       }
 
       const replay = parseTextReplayEvent(raw);
-      if (replay !== null && text === '') {
+      if (replay !== null && text === "") {
         text = replay.data.text;
         onUpdate?.();
       }
     },
-    { eventName: 'agent.event' }
+    { eventName: "agent.event" },
   );
 
   return {

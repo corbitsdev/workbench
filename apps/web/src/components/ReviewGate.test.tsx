@@ -1,16 +1,22 @@
 /// <reference types="bun" />
-import '../test-setup';
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import React from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Approval } from '../lib/approvals-api';
+import "../test-setup";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { Approval } from "../lib/approvals-api";
 
 const mockListApprovals = mock<() => Promise<Approval[]>>();
 const mockApproveRequest = mock<() => Promise<Approval>>();
 const mockRejectRequest = mock<() => Promise<Approval>>();
 
-mock.module('../lib/approvals-api', () => ({
+mock.module("../lib/approvals-api", () => ({
   listApprovals: mockListApprovals,
   approveRequest: mockApproveRequest,
   rejectRequest: mockRejectRequest,
@@ -18,30 +24,33 @@ mock.module('../lib/approvals-api', () => ({
 
 function makeApproval(overrides: Partial<Approval> = {}): Approval {
   return {
-    id: 'appr-1',
-    tenantId: 'tenant-1',
-    principalId: 'principal-1',
-    agentId: 'agent-1',
-    sessionId: 'session-1',
-    resource: 'email://send',
-    action: 'Send an email to acme@example.com',
+    id: "appr-1",
+    tenantId: "tenant-1",
+    principalId: "principal-1",
+    agentId: "agent-1",
+    sessionId: "session-1",
+    resource: "email://send",
+    action: "Send an email to acme@example.com",
     context: null,
-    status: 'pending',
+    status: "pending",
     createdAt: new Date().toISOString(),
     resolvedAt: null,
     ...overrides,
   };
 }
 
-function renderGate(tenantId = 'tenant-1', sessionId?: string) {
-  const { ReviewGate } = require('./ReviewGate') as typeof import('./ReviewGate');
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderGate(tenantId = "tenant-1", sessionId?: string) {
+  const { ReviewGate } =
+    require("./ReviewGate") as typeof import("./ReviewGate");
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
     React.createElement(
       QueryClientProvider,
       { client },
-      React.createElement(ReviewGate, { tenantId, sessionId })
-    )
+      React.createElement(ReviewGate, { tenantId, sessionId }),
+    ),
   );
 }
 
@@ -52,38 +61,38 @@ afterEach(() => {
   mockRejectRequest.mockClear();
 });
 
-describe('ReviewGate — empty state', () => {
+describe("ReviewGate — empty state", () => {
   beforeEach(() => {
     mockListApprovals.mockResolvedValue([]);
   });
 
-  it('renders nothing when there are no pending approvals', async () => {
+  it("renders nothing when there are no pending approvals", async () => {
     renderGate();
     // Allow the first poll to settle.
     await waitFor(() => {
       expect(mockListApprovals).toHaveBeenCalledTimes(1);
     });
-    expect(screen.queryByTestId('review-gate')).toBeNull();
+    expect(screen.queryByTestId("review-gate")).toBeNull();
   });
 });
 
-describe('ReviewGate — pending approvals', () => {
+describe("ReviewGate — pending approvals", () => {
   const pending = makeApproval();
 
   beforeEach(() => {
     mockListApprovals.mockResolvedValue([pending]);
   });
 
-  it('renders a pending approval with action description and resource', async () => {
+  it("renders a pending approval with action description and resource", async () => {
     renderGate();
     await waitFor(() => {
-      expect(screen.getByTestId('review-gate')).toBeDefined();
+      expect(screen.getByTestId("review-gate")).toBeDefined();
     });
     expect(screen.getByText(pending.action)).toBeDefined();
     expect(screen.getByText(pending.resource)).toBeDefined();
   });
 
-  it('renders an Approve button and a Reject button', async () => {
+  it("renders an Approve button and a Reject button", async () => {
     renderGate();
     await waitFor(() => {
       expect(screen.getByTestId(`approve-${pending.id}`)).toBeDefined();
@@ -92,9 +101,12 @@ describe('ReviewGate — pending approvals', () => {
   });
 });
 
-describe('ReviewGate — approve action', () => {
+describe("ReviewGate — approve action", () => {
   const pending = makeApproval();
-  const approved = makeApproval({ status: 'approved', resolvedAt: new Date().toISOString() });
+  const approved = makeApproval({
+    status: "approved",
+    resolvedAt: new Date().toISOString(),
+  });
 
   beforeEach(() => {
     mockListApprovals.mockImplementation(async () => [pending]);
@@ -104,8 +116,8 @@ describe('ReviewGate — approve action', () => {
     });
   });
 
-  it('calls approveRequest with correct tenantId, approvalId and scope once', async () => {
-    renderGate('tenant-1');
+  it("calls approveRequest with correct tenantId, approvalId and scope once", async () => {
+    renderGate("tenant-1");
     await waitFor(() => {
       expect(screen.getByTestId(`approve-${pending.id}`)).toBeDefined();
     });
@@ -113,11 +125,15 @@ describe('ReviewGate — approve action', () => {
     fireEvent.click(screen.getByTestId(`approve-${pending.id}`));
 
     await waitFor(() => {
-      expect(mockApproveRequest).toHaveBeenCalledWith('tenant-1', pending.id, 'once');
+      expect(mockApproveRequest).toHaveBeenCalledWith(
+        "tenant-1",
+        pending.id,
+        "once",
+      );
     });
   });
 
-  it('shows the approved status badge after a successful approval', async () => {
+  it("shows the approved status badge after a successful approval", async () => {
     renderGate();
     await waitFor(() => {
       expect(screen.getByTestId(`approve-${pending.id}`)).toBeDefined();
@@ -126,14 +142,17 @@ describe('ReviewGate — approve action', () => {
     fireEvent.click(screen.getByTestId(`approve-${pending.id}`));
 
     await waitFor(() => {
-      expect(screen.getByText('approved')).toBeDefined();
+      expect(screen.getByText("approved")).toBeDefined();
     });
   });
 });
 
-describe('ReviewGate — reject action', () => {
+describe("ReviewGate — reject action", () => {
   const pending = makeApproval();
-  const rejected = makeApproval({ status: 'rejected', resolvedAt: new Date().toISOString() });
+  const rejected = makeApproval({
+    status: "rejected",
+    resolvedAt: new Date().toISOString(),
+  });
 
   beforeEach(() => {
     mockListApprovals.mockImplementation(async () => [pending]);
@@ -143,8 +162,8 @@ describe('ReviewGate — reject action', () => {
     });
   });
 
-  it('calls rejectRequest with correct tenantId and approvalId', async () => {
-    renderGate('tenant-1');
+  it("calls rejectRequest with correct tenantId and approvalId", async () => {
+    renderGate("tenant-1");
     await waitFor(() => {
       expect(screen.getByTestId(`reject-${pending.id}`)).toBeDefined();
     });
@@ -152,11 +171,11 @@ describe('ReviewGate — reject action', () => {
     fireEvent.click(screen.getByTestId(`reject-${pending.id}`));
 
     await waitFor(() => {
-      expect(mockRejectRequest).toHaveBeenCalledWith('tenant-1', pending.id);
+      expect(mockRejectRequest).toHaveBeenCalledWith("tenant-1", pending.id);
     });
   });
 
-  it('shows the rejected status badge after a successful rejection', async () => {
+  it("shows the rejected status badge after a successful rejection", async () => {
     renderGate();
     await waitFor(() => {
       expect(screen.getByTestId(`reject-${pending.id}`)).toBeDefined();
@@ -165,41 +184,50 @@ describe('ReviewGate — reject action', () => {
     fireEvent.click(screen.getByTestId(`reject-${pending.id}`));
 
     await waitFor(() => {
-      expect(screen.getByText('rejected')).toBeDefined();
+      expect(screen.getByText("rejected")).toBeDefined();
     });
   });
 });
 
-describe('ReviewGate — sessionId filter', () => {
-  const matchingSession = makeApproval({ id: 'appr-match', sessionId: 'sess-target' });
-  const otherSession = makeApproval({ id: 'appr-other', sessionId: 'sess-other' });
+describe("ReviewGate — sessionId filter", () => {
+  const matchingSession = makeApproval({
+    id: "appr-match",
+    sessionId: "sess-target",
+  });
+  const otherSession = makeApproval({
+    id: "appr-other",
+    sessionId: "sess-other",
+  });
 
   beforeEach(() => {
     mockListApprovals.mockResolvedValue([matchingSession, otherSession]);
   });
 
-  it('shows only approvals matching the given sessionId', async () => {
-    renderGate('tenant-1', 'sess-target');
+  it("shows only approvals matching the given sessionId", async () => {
+    renderGate("tenant-1", "sess-target");
     await waitFor(() => {
       expect(screen.getByTestId(`approval-appr-match`)).toBeDefined();
     });
-    expect(screen.queryByTestId('approval-appr-other')).toBeNull();
+    expect(screen.queryByTestId("approval-appr-other")).toBeNull();
   });
 });
 
-describe('ReviewGate — resolved items reduced opacity', () => {
-  const resolved = makeApproval({ status: 'approved', resolvedAt: new Date().toISOString() });
+describe("ReviewGate — resolved items reduced opacity", () => {
+  const resolved = makeApproval({
+    status: "approved",
+    resolvedAt: new Date().toISOString(),
+  });
 
   beforeEach(() => {
     mockListApprovals.mockResolvedValue([resolved]);
   });
 
-  it('renders resolved approvals with reduced opacity class', async () => {
+  it("renders resolved approvals with reduced opacity class", async () => {
     renderGate();
     await waitFor(() => {
       expect(screen.getByTestId(`approval-${resolved.id}`)).toBeDefined();
     });
     const el = screen.getByTestId(`approval-${resolved.id}`);
-    expect(el.className).toContain('opacity-50');
+    expect(el.className).toContain("opacity-50");
   });
 });

@@ -15,28 +15,29 @@
 //   - multi-step: the subprocess spawner throws synchronously so
 //     `supervisor.spawn` rejects.
 
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join as pathJoin } from 'node:path';
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as pathJoin } from "node:path";
 
-import { describe, test, expect } from 'bun:test';
-import { createInMemoryTransport } from '@intx/mail-memory';
-import type { AgentDeployFrame } from '@intx/types/sidecar';
-import type { SubprocessSpawner } from '@intx/workflow-host';
+import { describe, test, expect } from "bun:test";
+import { createInMemoryTransport } from "@intx/mail-memory";
+import type { AgentDeployFrame } from "@intx/types/sidecar";
+import type { SubprocessSpawner } from "@intx/workflow-host";
 
 import {
   createDeploymentAddressRegistry,
   createMultistepDrainRouter,
   createMultistepMailRouter,
   createMultistepSignalRouter,
-} from './workflow-run-pack-client';
-import { createSidecarDeployRouter } from './workflow-host-wiring';
+} from "./workflow-run-pack-client";
+import { createSidecarDeployRouter } from "./workflow-host-wiring";
 
-function stubKeyStore(): Parameters<typeof createSidecarDeployRouter>[0]['keyStore'] {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub
+function stubKeyStore(): Parameters<
+  typeof createSidecarDeployRouter
+>[0]["keyStore"] {
   return {
     async loadOrGenerateKey() {
-      throw new Error('not used in this test');
+      throw new Error("not used in this test");
     },
     async scanKeys() {
       return [];
@@ -53,16 +54,17 @@ function stubKeyStore(): Parameters<typeof createSidecarDeployRouter>[0]['keySto
     forgetAgent() {
       /* no-op */
     },
-  } as unknown as Parameters<typeof createSidecarDeployRouter>[0]['keyStore'];
+  } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["keyStore"];
 }
 
-function stubFailingSessions(): Parameters<typeof createSidecarDeployRouter>[0]['sessions'] {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub
+function stubFailingSessions(): Parameters<
+  typeof createSidecarDeployRouter
+>[0]["sessions"] {
   return {
     async provisionAgent() {
-      throw new Error('provisionAgent forced failure');
+      throw new Error("provisionAgent forced failure");
     },
-  } as unknown as Parameters<typeof createSidecarDeployRouter>[0]['sessions'];
+  } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["sessions"];
 }
 
 function makeRouterDeps() {
@@ -74,9 +76,10 @@ function makeRouterDeps() {
   return { registry, mailRouter, signalRouter, drainRouter, transport };
 }
 
-describe('deploy-failure registry leak', () => {
-  test('trivial deploy: provisionAgent throws and registry stays clean', async () => {
-    const { registry, mailRouter, signalRouter, drainRouter, transport } = makeRouterDeps();
+describe("deploy-failure registry leak", () => {
+  test("trivial deploy: provisionAgent throws and registry stays clean", async () => {
+    const { registry, mailRouter, signalRouter, drainRouter, transport } =
+      makeRouterDeps();
 
     const sessions = stubFailingSessions();
     const keyStore = stubKeyStore();
@@ -86,8 +89,10 @@ describe('deploy-failure registry leak', () => {
       keyStore,
       onAgentEvent: () => () => undefined,
       transport,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- trivial branch reaches provisionAgent before any repoStore usage
-      repoStore: {} as Parameters<typeof createSidecarDeployRouter>[0]['repoStore'],
+
+      repoStore: {} as Parameters<
+        typeof createSidecarDeployRouter
+      >[0]["repoStore"],
       signingKeySeed: new Uint8Array(32),
       registerDeployment: ({ deploymentId, agentAddress }) => {
         registry.record(deploymentId, agentAddress);
@@ -101,19 +106,19 @@ describe('deploy-failure registry leak', () => {
     });
 
     const frame: AgentDeployFrame = {
-      type: 'agent.deploy',
-      agentAddress: 'agent-fail@x.example',
-      agentId: 'agent-fail',
-      hubPublicKey: '00'.repeat(32),
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- trivialLaunch surfaces config to the failing provisionAgent stub
+      type: "agent.deploy",
+      agentAddress: "agent-fail@x.example",
+      agentId: "agent-fail",
+      hubPublicKey: "00".repeat(32),
+
       config: {
-        agentAddress: 'agent-fail@x.example',
-        agentId: 'agent-fail',
-        sessionId: 'session-fail',
+        agentAddress: "agent-fail@x.example",
+        agentId: "agent-fail",
+        sessionId: "session-fail",
         sources: [],
-        defaultSource: 'primary',
+        defaultSource: "primary",
         grants: [],
-      } as unknown as AgentDeployFrame['config'],
+      } as unknown as AgentDeployFrame["config"],
     };
 
     let threw = false;
@@ -126,28 +131,31 @@ describe('deploy-failure registry leak', () => {
 
     // `deriveTrivialDeploymentId` replaces every char outside
     // `[a-zA-Z0-9_-]` with `-`, so `@` and `.` both become `-`.
-    const slug = 'agent-fail-x-example';
+    const slug = "agent-fail-x-example";
     expect(registry.resolve(slug)).toBeNull();
   });
 
-  test('multi-step deploy: spawn-time failure leaves registry clean', async () => {
-    const { registry, mailRouter, signalRouter, drainRouter, transport } = makeRouterDeps();
+  test("multi-step deploy: spawn-time failure leaves registry clean", async () => {
+    const { registry, mailRouter, signalRouter, drainRouter, transport } =
+      makeRouterDeps();
     const sessions = stubFailingSessions();
     const keyStore = stubKeyStore();
 
     const failingSpawner: SubprocessSpawner = () => {
-      throw new Error('spawner forced failure');
+      throw new Error("spawner forced failure");
     };
 
-    const tmpDir = mkdtempSync(pathJoin(tmpdir(), 'h-a1-deploy-failure-'));
+    const tmpDir = mkdtempSync(pathJoin(tmpdir(), "h-a1-deploy-failure-"));
 
     const router = createSidecarDeployRouter({
       sessions,
       keyStore,
       onAgentEvent: () => () => undefined,
       transport,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- repoStore is consulted lazily by the supervisor; the spawn-time failure short-circuits the test
-      repoStore: {} as Parameters<typeof createSidecarDeployRouter>[0]['repoStore'],
+
+      repoStore: {} as Parameters<
+        typeof createSidecarDeployRouter
+      >[0]["repoStore"],
       signingKeySeed: new Uint8Array(32),
       registerDeployment: ({ deploymentId, agentAddress }) => {
         registry.record(deploymentId, agentAddress);
@@ -160,46 +168,46 @@ describe('deploy-failure registry leak', () => {
       multistepDrainRouter: drainRouter,
       multistepSubstrateEnv: {
         SIDECAR_DATA_DIR: tmpDir,
-        SIDECAR_SIGNING_PUBLIC_KEY: '00'.repeat(32),
-        SIDECAR_SIGNING_PRIVATE_KEY: '00'.repeat(32),
-        HUB_WS_URL: 'ws://test',
-        SIDECAR_ID: 'sc',
-        SIDECAR_TOKEN: 'tok',
-        PATH: '/usr/bin',
+        SIDECAR_SIGNING_PUBLIC_KEY: "00".repeat(32),
+        SIDECAR_SIGNING_PRIVATE_KEY: "00".repeat(32),
+        HUB_WS_URL: "ws://test",
+        SIDECAR_ID: "sc",
+        SIDECAR_TOKEN: "tok",
+        PATH: "/usr/bin",
       },
       multistepSubprocessSpawner: failingSpawner,
     });
 
     const frame: AgentDeployFrame = {
-      type: 'agent.deploy',
-      agentAddress: 'mstep@x.example',
+      type: "agent.deploy",
+      agentAddress: "mstep@x.example",
       // `ins_<rawDeploymentId>` so the raw-id recovery succeeds and the
       // test reaches the spawn-time failure it is asserting on.
-      agentId: 'ins_ses_mstep',
-      hubPublicKey: '00'.repeat(32),
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- multi-step branch does not consult config before failing
+      agentId: "ins_ses_mstep",
+      hubPublicKey: "00".repeat(32),
+
       config: {
-        agentAddress: 'mstep@x.example',
-        agentId: 'ins_ses_mstep',
-        sessionId: 's',
+        agentAddress: "mstep@x.example",
+        agentId: "ins_ses_mstep",
+        sessionId: "s",
         sources: [],
-        defaultSource: 'primary',
+        defaultSource: "primary",
         grants: [],
-      } as unknown as AgentDeployFrame['config'],
+      } as unknown as AgentDeployFrame["config"],
       workflow: {
         definition: {
-          id: 'wf-1',
-          triggers: [{ type: 'manual' }],
-          stepOrder: ['s1'],
-          steps: { s1: { kind: 'step' } },
+          id: "wf-1",
+          triggers: [{ type: "manual" }],
+          stepOrder: ["s1"],
+          steps: { s1: { kind: "step" } },
         },
         sources: {
           s1: {
-            id: 'primary',
-            provider: 'anthropic',
-            baseURL: 'https://api.anthropic.com',
-            apiKey: 'sk-x',
-            model: 'claude-3-5',
+            id: "primary",
+            provider: "anthropic",
+            baseURL: "https://api.anthropic.com",
+            apiKey: "sk-x",
+            model: "claude-3-5",
           },
         },
       },
@@ -213,7 +221,7 @@ describe('deploy-failure registry leak', () => {
     }
     expect(threw).toBe(true);
 
-    const slug = 'mstep-x-example';
+    const slug = "mstep-x-example";
     expect(registry.resolve(slug)).toBeNull();
   });
 });

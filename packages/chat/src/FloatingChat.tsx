@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { cn } from '@workbench/ui';
+import { useEffect } from "react";
+import { motion } from "framer-motion";
+import { cn } from "@workbench/ui";
 
 export interface FloatingChatProps {
   /** Render the panel only when open. */
@@ -16,8 +16,8 @@ export interface FloatingChatProps {
 }
 
 const POPUP_CLASS =
-  'bottom-24 right-6 h-[32rem] max-h-[80vh] w-96 max-w-[calc(100vw-3rem)] rounded-panel border border-border shadow-xl';
-const EXPANDED_CLASS = 'inset-4 rounded-panel border border-border shadow-2xl';
+  "bottom-24 right-6 h-[32rem] max-h-[80vh] w-96 max-w-[calc(100vw-3rem)] rounded-panel border border-border shadow-xl";
+const EXPANDED_CLASS = "inset-4 rounded-panel border border-border shadow-2xl";
 
 /**
  * Floating container for the chat panel. Defaults to a small bottom-right popup;
@@ -25,14 +25,20 @@ const EXPANDED_CLASS = 'inset-4 rounded-panel border border-border shadow-2xl';
  * edge-to-edge). Sits at z-40 so app modals (z-50+) still layer above it.
  * Animates in/out; open/closed and expanded are owned by the host.
  */
-export function FloatingChat({ open, expanded, children, onClose, className }: FloatingChatProps) {
+export function FloatingChat({
+  open,
+  expanded,
+  children,
+  onClose,
+  className,
+}: FloatingChatProps) {
   useEffect(() => {
     if (!open || onClose === undefined) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === "Escape") onClose();
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
   if (!open) return null;
@@ -45,9 +51,9 @@ export function FloatingChat({ open, expanded, children, onClose, className }: F
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.18 }}
       className={cn(
-        'fixed z-40 flex flex-col overflow-hidden bg-surface',
+        "fixed z-40 flex flex-col overflow-hidden bg-surface",
         expanded === true ? EXPANDED_CLASS : POPUP_CLASS,
-        className
+        className,
       )}
     >
       {children}

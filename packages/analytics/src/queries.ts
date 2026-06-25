@@ -1,9 +1,9 @@
-import { and, eq, gte, lte, sql, type AnyColumn } from 'drizzle-orm';
+import { and, eq, gte, lte, sql, type AnyColumn } from "drizzle-orm";
 
-import type { DB } from '@intx/db';
-import { schema as intxSchema } from '@intx/db';
+import type { DB } from "@intx/db";
+import { schema as intxSchema } from "@intx/db";
 
-import { analyticsRollupDaily } from './schema';
+import { analyticsRollupDaily } from "./schema";
 
 export type AnalyticsDateRange = {
   startDate?: string;
@@ -60,7 +60,7 @@ export type AnalyticsAgentRow = {
 };
 
 export async function getAnalyticsSummary(
-  args: { db: DB['db'] } & AnalyticsSummaryFilter
+  args: { db: DB["db"] } & AnalyticsSummaryFilter,
 ): Promise<AnalyticsSummary> {
   const { db, tenantId, agentId, instanceId, range } = args;
   const rows = await db
@@ -79,15 +79,19 @@ export async function getAnalyticsSummary(
     .where(
       and(
         eq(analyticsRollupDaily.tenantId, tenantId),
-        agentId !== undefined ? eq(analyticsRollupDaily.agentId, agentId) : undefined,
-        instanceId !== undefined ? eq(analyticsRollupDaily.instanceId, instanceId) : undefined,
+        agentId !== undefined
+          ? eq(analyticsRollupDaily.agentId, agentId)
+          : undefined,
+        instanceId !== undefined
+          ? eq(analyticsRollupDaily.instanceId, instanceId)
+          : undefined,
         range?.startDate !== undefined
           ? gte(analyticsRollupDaily.bucketDate, range.startDate)
           : undefined,
         range?.endDate !== undefined
           ? lte(analyticsRollupDaily.bucketDate, range.endDate)
-          : undefined
-      )
+          : undefined,
+      ),
     );
 
   const row = rows[0];
@@ -106,7 +110,7 @@ export async function getAnalyticsSummary(
 }
 
 export async function getAnalyticsSummaryByAgent(
-  args: { db: DB['db'] } & AnalyticsSummaryFilter
+  args: { db: DB["db"] } & AnalyticsSummaryFilter,
 ): Promise<AnalyticsAgentRow[]> {
   const { db, tenantId, agentId, instanceId, range } = args;
   const rows = await db
@@ -124,24 +128,33 @@ export async function getAnalyticsSummaryByAgent(
       thinkingTokens: sumInteger(analyticsRollupDaily.thinkingTokens),
     })
     .from(analyticsRollupDaily)
-    .leftJoin(intxSchema.agent, eq(analyticsRollupDaily.agentId, intxSchema.agent.id))
+    .leftJoin(
+      intxSchema.agent,
+      eq(analyticsRollupDaily.agentId, intxSchema.agent.id),
+    )
     .where(
       and(
         eq(analyticsRollupDaily.tenantId, tenantId),
-        agentId !== undefined ? eq(analyticsRollupDaily.agentId, agentId) : undefined,
-        instanceId !== undefined ? eq(analyticsRollupDaily.instanceId, instanceId) : undefined,
+        agentId !== undefined
+          ? eq(analyticsRollupDaily.agentId, agentId)
+          : undefined,
+        instanceId !== undefined
+          ? eq(analyticsRollupDaily.instanceId, instanceId)
+          : undefined,
         range?.startDate !== undefined
           ? gte(analyticsRollupDaily.bucketDate, range.startDate)
           : undefined,
         range?.endDate !== undefined
           ? lte(analyticsRollupDaily.bucketDate, range.endDate)
-          : undefined
-      )
+          : undefined,
+      ),
     )
     .groupBy(analyticsRollupDaily.agentId, intxSchema.agent.name);
 
   return rows
-    .filter((row): row is typeof row & { agentId: string } => row.agentId !== null)
+    .filter(
+      (row): row is typeof row & { agentId: string } => row.agentId !== null,
+    )
     .map((row) => ({
       agentId: row.agentId,
       agentName: row.agentName ?? null,
@@ -155,11 +168,14 @@ export async function getAnalyticsSummaryByAgent(
       cacheWriteTokens: row.cacheWriteTokens,
       thinkingTokens: row.thinkingTokens,
     }))
-    .sort((a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens));
+    .sort(
+      (a, b) =>
+        b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
+    );
 }
 
 export async function getAnalyticsSummaryByInstance(
-  args: { db: DB['db'] } & AnalyticsSummaryFilter
+  args: { db: DB["db"] } & AnalyticsSummaryFilter,
 ): Promise<AnalyticsInstanceRow[]> {
   const { db, tenantId, agentId, instanceId, range } = args;
   const rows = await db
@@ -178,26 +194,37 @@ export async function getAnalyticsSummaryByInstance(
       thinkingTokens: sumInteger(analyticsRollupDaily.thinkingTokens),
     })
     .from(analyticsRollupDaily)
-    .leftJoin(intxSchema.agent, eq(analyticsRollupDaily.agentId, intxSchema.agent.id))
+    .leftJoin(
+      intxSchema.agent,
+      eq(analyticsRollupDaily.agentId, intxSchema.agent.id),
+    )
     .where(
       and(
         eq(analyticsRollupDaily.tenantId, tenantId),
-        agentId !== undefined ? eq(analyticsRollupDaily.agentId, agentId) : undefined,
-        instanceId !== undefined ? eq(analyticsRollupDaily.instanceId, instanceId) : undefined,
+        agentId !== undefined
+          ? eq(analyticsRollupDaily.agentId, agentId)
+          : undefined,
+        instanceId !== undefined
+          ? eq(analyticsRollupDaily.instanceId, instanceId)
+          : undefined,
         range?.startDate !== undefined
           ? gte(analyticsRollupDaily.bucketDate, range.startDate)
           : undefined,
         range?.endDate !== undefined
           ? lte(analyticsRollupDaily.bucketDate, range.endDate)
-          : undefined
-      )
+          : undefined,
+      ),
     )
-    .groupBy(analyticsRollupDaily.instanceId, analyticsRollupDaily.agentId, intxSchema.agent.name);
+    .groupBy(
+      analyticsRollupDaily.instanceId,
+      analyticsRollupDaily.agentId,
+      intxSchema.agent.name,
+    );
 
   return rows
     .filter(
       (row): row is typeof row & { instanceId: string; agentId: string } =>
-        row.instanceId !== null && row.agentId !== null
+        row.instanceId !== null && row.agentId !== null,
     )
     .map((row) => ({
       instanceId: row.instanceId,
@@ -213,7 +240,10 @@ export async function getAnalyticsSummaryByInstance(
       cacheWriteTokens: row.cacheWriteTokens,
       thinkingTokens: row.thinkingTokens,
     }))
-    .sort((a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens));
+    .sort(
+      (a, b) =>
+        b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
+    );
 }
 
 function sumInteger(column: AnyColumn) {

@@ -22,12 +22,6 @@ interface DBConfig {
   ssl: boolean;
 }
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
-}
-
 function parseDatabaseUrl(url: string): DBConfig {
   let parsed: URL;
   try {
@@ -36,44 +30,45 @@ function parseDatabaseUrl(url: string): DBConfig {
     throw new Error(`Invalid DATABASE_URL: could not parse as URL`);
   }
 
-  if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
+  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
     throw new Error(
-      `Invalid DATABASE_URL: expected postgres:// or postgresql:// scheme, got ${parsed.protocol}`
+      `Invalid DATABASE_URL: expected postgres:// or postgresql:// scheme, got ${parsed.protocol}`,
     );
   }
 
-  const host = parsed.hostname || 'localhost';
+  const host = parsed.hostname || "localhost";
   const port = Number(parsed.port || 5432);
-  const user = decodeURIComponent(parsed.username || '');
-  const password = decodeURIComponent(parsed.password || '');
-  const database = parsed.pathname.replace(/^\//, '');
+  const user = decodeURIComponent(parsed.username || "");
+  const password = decodeURIComponent(parsed.password || "");
+  const database = parsed.pathname.replace(/^\//, "");
 
   if (!user) throw new Error(`Invalid DATABASE_URL: username is missing`);
   if (!password) throw new Error(`Invalid DATABASE_URL: password is missing`);
-  if (!database) throw new Error(`Invalid DATABASE_URL: database name is missing`);
+  if (!database)
+    throw new Error(`Invalid DATABASE_URL: database name is missing`);
 
   const ssl =
-    parsed.searchParams.get('sslmode') === 'require' ||
-    parsed.searchParams.get('sslmode') === 'prefer' ||
-    parsed.searchParams.get('ssl') === 'true' ||
-    process.env['DB_SSL'] === 'true';
+    parsed.searchParams.get("sslmode") === "require" ||
+    parsed.searchParams.get("sslmode") === "prefer" ||
+    parsed.searchParams.get("ssl") === "true" ||
+    process.env["DB_SSL"] === "true";
 
   return { host, port, user, password, database, ssl };
 }
 
 function resolveDBConfig(): DBConfig {
-  const databaseUrl = process.env['DATABASE_URL'];
+  const databaseUrl = process.env["DATABASE_URL"];
 
   if (!databaseUrl) {
     throw new Error(
-      'Missing required environment variable: DATABASE_URL. ' +
-        'Example: postgres://workbench:workbench-dev-password@localhost:5433/workbench'
+      "Missing required environment variable: DATABASE_URL. " +
+        "Example: postgres://workbench:workbench-dev-password@localhost:5433/workbench",
     );
   }
 
   const config = parseDatabaseUrl(databaseUrl);
   console.log(
-    `[db-config] Using DATABASE_URL (host=${config.host}, port=${config.port}, db=${config.database})`
+    `[db-config] Using DATABASE_URL (host=${config.host}, port=${config.port}, db=${config.database})`,
   );
   return config;
 }
@@ -81,9 +76,11 @@ function resolveDBConfig(): DBConfig {
 const DB = resolveDBConfig();
 
 async function waitForPostgres(maxRetries = 10, delayMs = 1000): Promise<void> {
-  const postgres = await import('postgres');
+  const postgres = await import("postgres");
 
-  console.log(`Waiting for Postgres at ${DB.host}:${DB.port} (user: ${DB.user})...`);
+  console.log(
+    `Waiting for Postgres at ${DB.host}:${DB.port} (user: ${DB.user})...`,
+  );
 
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -92,42 +89,43 @@ async function waitForPostgres(maxRetries = 10, delayMs = 1000): Promise<void> {
         port: DB.port,
         user: DB.user,
         password: DB.password,
-        database: 'postgres',
+        database: "postgres",
         ssl: DB.ssl,
         max: 1,
         connect_timeout: 2,
       });
       await sql`SELECT 1`;
       await sql.end();
-      console.log('Postgres is ready.');
+      console.log("Postgres is ready.");
       return;
     } catch {
       if (i < maxRetries - 1) {
-        process.stdout.write('.');
+        process.stdout.write(".");
         await new Promise((r) => setTimeout(r, delayMs));
       }
     }
   }
 
   throw new Error(
-    `Could not connect to Postgres at ${DB.host}:${DB.port} after ${maxRetries} attempts. Is the container running and the port mapped?`
+    `Could not connect to Postgres at ${DB.host}:${DB.port} after ${maxRetries} attempts. Is the container running and the port mapped?`,
   );
 }
 
 async function checkDatabase(): Promise<void> {
-  const postgres = await import('postgres');
+  const postgres = await import("postgres");
   const sql = postgres.default({
     host: DB.host,
     port: DB.port,
     user: DB.user,
     password: DB.password,
-    database: 'postgres',
+    database: "postgres",
     ssl: DB.ssl,
     max: 1,
   });
 
   try {
-    const rows = await sql`SELECT 1 FROM pg_database WHERE datname = ${DB.database}`;
+    const rows =
+      await sql`SELECT 1 FROM pg_database WHERE datname = ${DB.database}`;
     if (rows.length === 0) {
       console.log(`Creating database "${DB.database}"...`);
       await sql.unsafe(`CREATE DATABASE "${DB.database.replace(/"/g, '""')}"`);
@@ -140,16 +138,18 @@ async function checkDatabase(): Promise<void> {
   }
 }
 
-async function runInterchangeMigrations(client: import('postgres').Sql<{}>): Promise<void> {
-  const { drizzle } = await import('drizzle-orm/postgres-js');
-  const { migrate } = await import('drizzle-orm/postgres-js/migrator');
+async function runInterchangeMigrations(
+  client: import("postgres").Sql<{}>,
+): Promise<void> {
+  const { drizzle } = await import("drizzle-orm/postgres-js");
+  const { migrate } = await import("drizzle-orm/postgres-js/migrator");
 
   const db = drizzle(client);
 
-  console.log('\n  → Applying Interchange migrations...');
+  console.log("\n  → Applying Interchange migrations...");
   const start = Date.now();
   await migrate(db, {
-    migrationsFolder: 'interchange/packages/db/migrations',
+    migrationsFolder: "interchange/packages/db/migrations",
   });
   console.log(`  ✅ Interchange migrations applied in ${Date.now() - start}ms`);
 }
@@ -159,13 +159,15 @@ async function runInterchangeMigrations(client: import('postgres').Sql<{}>): Pro
  * migration file that has been applied successfully, so each file runs exactly
  * once across repeated `db:setup` invocations.
  */
-const MIGRATIONS_LEDGER_TABLE = '_workbench_migrations';
+const MIGRATIONS_LEDGER_TABLE = "_workbench_migrations";
 
 /**
  * Ensure the applied-migrations ledger exists. Idempotent (CREATE TABLE IF NOT
  * EXISTS), so it is safe to call on every run, including pre-ledger dev DBs.
  */
-async function ensureMigrationsLedger(client: import('postgres').Sql<{}>): Promise<void> {
+async function ensureMigrationsLedger(
+  client: import("postgres").Sql<{}>,
+): Promise<void> {
   await client.unsafe(`
     CREATE TABLE IF NOT EXISTS "${MIGRATIONS_LEDGER_TABLE}" (
       "filename" text PRIMARY KEY,
@@ -190,24 +192,26 @@ async function ensureMigrationsLedger(client: import('postgres').Sql<{}>): Promi
  *     This guards the bootstrap run on a dev DB that predates the ledger: every
  *     file re-runs once as a no-op, then gets recorded.
  */
-async function runCustomMigrations(client: import('postgres').Sql<{}>): Promise<void> {
-  const fs = await import('node:fs');
-  const path = await import('node:path');
+async function runCustomMigrations(
+  client: import("postgres").Sql<{}>,
+): Promise<void> {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
 
-  const migrationsDir = 'apps/hub/migrations';
+  const migrationsDir = "apps/hub/migrations";
 
   if (!fs.existsSync(migrationsDir)) {
-    console.log('\n  → No custom migrations found.');
+    console.log("\n  → No custom migrations found.");
     return;
   }
 
   const files = fs
     .readdirSync(migrationsDir)
-    .filter((f) => f.endsWith('.sql'))
+    .filter((f) => f.endsWith(".sql"))
     .sort();
 
   if (files.length === 0) {
-    console.log('\n  → No custom migrations found.');
+    console.log("\n  → No custom migrations found.");
     return;
   }
 
@@ -221,19 +225,21 @@ async function runCustomMigrations(client: import('postgres').Sql<{}>): Promise<
   const pending = files.filter((f) => !applied.has(f));
 
   if (pending.length === 0) {
-    console.log(`\n  → All ${files.length} custom migration(s) already applied. No-op.`);
+    console.log(
+      `\n  → All ${files.length} custom migration(s) already applied. No-op.`,
+    );
     return;
   }
 
   console.log(
-    `\n  → Applying ${pending.length} pending custom migration(s) (${applied.size} already applied)...`
+    `\n  → Applying ${pending.length} pending custom migration(s) (${applied.size} already applied)...`,
   );
   const start = Date.now();
 
   for (const file of pending) {
-    const raw = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
+    const raw = fs.readFileSync(path.join(migrationsDir, file), "utf-8");
     const statements = raw
-      .split('--> statement-breakpoint')
+      .split("--> statement-breakpoint")
       .map((s) => s.trim())
       .filter(Boolean);
 
@@ -256,7 +262,7 @@ async function runCustomMigrations(client: import('postgres').Sql<{}>): Promise<
 }
 
 async function runMigrations(): Promise<void> {
-  const postgres = await import('postgres');
+  const postgres = await import("postgres");
 
   const client = postgres.default({
     host: DB.host,
@@ -268,7 +274,7 @@ async function runMigrations(): Promise<void> {
     max: 1,
   });
 
-  console.log('Running forward-only migrations...');
+  console.log("Running forward-only migrations...");
 
   await runInterchangeMigrations(client);
   await runCustomMigrations(client);
@@ -277,15 +283,15 @@ async function runMigrations(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  console.log('=== GTM Workbench DB Setup ===');
+  console.log("=== GTM Workbench DB Setup ===");
 
   try {
     await waitForPostgres();
     await checkDatabase();
     await runMigrations();
-    console.log('\n✅ DB setup complete.');
+    console.log("\n✅ DB setup complete.");
   } catch (err) {
-    console.error('\n❌ DB setup failed:');
+    console.error("\n❌ DB setup failed:");
     if (err instanceof Error) {
       console.error(err.message);
     } else {

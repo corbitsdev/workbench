@@ -36,12 +36,12 @@ provider there breaks sidecar launch with `Source provider "X" is not registered
 
 ```ts
 // src/interchange-tools.ts
-import { defineCredentialedToolPackage } from '@workbench/tool-credentials/factory';
-import { MY_HUB_TOOLS } from './index';
+import { defineCredentialedToolPackage } from "@workbench/tool-credentials/factory";
+import { MY_HUB_TOOLS } from "./index";
 
 export const myTools = defineCredentialedToolPackage({
-  id: '@workbench/tools-<name>/<name>',
-  provider: 'my-provider',
+  id: "@workbench/tools-<name>/<name>",
+  provider: "my-provider",
   entries: MY_HUB_TOOLS, // each entry's createTools({ apiKey, baseURL }) is reused
 });
 ```

@@ -1,8 +1,14 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { useWorkbenches } from '../hooks/use-workbenches';
-import type { WorkbenchEntry } from './hub-api';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
+import { useWorkbenches } from "../hooks/use-workbenches";
+import type { WorkbenchEntry } from "./hub-api";
 
-const STORAGE_KEY = 'active-workbench-id';
+const STORAGE_KEY = "active-workbench-id";
 
 interface ActiveWorkbenchContextValue {
   workbenches: WorkbenchEntry[];
@@ -36,7 +42,11 @@ function readStoredId(): string | null {
  * re-scopes when the selection changes. Defaults to the first workbench and
  * remembers the last selection across reloads.
  */
-export function ActiveWorkbenchProvider({ children }: { children: React.ReactNode }) {
+export function ActiveWorkbenchProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const { data, isLoading } = useWorkbenches();
   const workbenches = useMemo(() => data ?? [], [data]);
   const [selectedId, setSelectedId] = useState<string | null>(readStoredId);
@@ -52,7 +62,9 @@ export function ActiveWorkbenchProvider({ children }: { children: React.ReactNod
 
   const activeWorkbench = useMemo(() => {
     if (workbenches.length === 0) return null;
-    return workbenches.find((w) => w.id === selectedId) ?? workbenches[0] ?? null;
+    return (
+      workbenches.find((w) => w.id === selectedId) ?? workbenches[0] ?? null
+    );
   }, [workbenches, selectedId]);
 
   const value = useMemo<ActiveWorkbenchContextValue>(
@@ -63,10 +75,12 @@ export function ActiveWorkbenchProvider({ children }: { children: React.ReactNod
       activeTenantId: activeWorkbench?.tenantId ?? null,
       setActiveWorkbench,
     }),
-    [workbenches, isLoading, activeWorkbench, setActiveWorkbench]
+    [workbenches, isLoading, activeWorkbench, setActiveWorkbench],
   );
 
-  return <ActiveWorkbenchContext value={value}>{children}</ActiveWorkbenchContext>;
+  return (
+    <ActiveWorkbenchContext value={value}>{children}</ActiveWorkbenchContext>
+  );
 }
 
 export function useActiveWorkbench(): ActiveWorkbenchContextValue {

@@ -14,17 +14,26 @@
 // agent apply strictly in order. Per-address keying preserves cross-agent
 // concurrency. If this proves out it can be upstreamed into interchange.
 
-import type { DB } from '@intx/db';
-import type { InferenceEvent } from '@intx/types/runtime';
-import type { SessionStatus } from '@intx/types';
-import { getLogger } from '@intx/log';
+import type { DB } from "@intx/db";
+import type { InferenceEvent } from "@intx/types/runtime";
+import type { SessionStatus } from "@intx/types";
+import { getLogger } from "@intx/log";
 
-import { createEventCollector, type EventCollector, type TurnFinalized } from './event-collector';
+import {
+  createEventCollector,
+  type EventCollector,
+  type TurnFinalized,
+} from "./event-collector";
 
-const log = getLogger(['hub', 'event-collector-registry']);
+const log = getLogger(["hub", "event-collector-registry"]);
 
 export type EventCollectorRegistry = {
-  create(agentAddress: string, tenantId: string, sessionId: string, instanceId: string): void;
+  create(
+    agentAddress: string,
+    tenantId: string,
+    sessionId: string,
+    instanceId: string,
+  ): void;
   dispatch(agentAddress: string, event: InferenceEvent): void;
   abandon(agentAddress: string): void;
   has(agentAddress: string): boolean;
@@ -35,25 +44,26 @@ export type EventCollectorRegistry = {
 };
 
 export type EventCollectorRegistryConfig = {
-  db: DB['db'];
+  db: DB["db"];
   onTurnFinalized?: (agentAddress: string, turn: TurnFinalized) => void;
 };
 
 export function deriveStatus(event: InferenceEvent): SessionStatus | null {
   switch (event.type) {
-    case 'inference.start':
-      return { status: 'busy' };
-    case 'connector.reply':
-      return { status: 'idle' };
-    case 'reactor.gate.blocked':
-      if (event.data.reason === 'approval') return { status: 'waiting_approval' };
+    case "inference.start":
+      return { status: "busy" };
+    case "connector.reply":
+      return { status: "idle" };
+    case "reactor.gate.blocked":
+      if (event.data.reason === "approval")
+        return { status: "waiting_approval" };
       return null;
-    case 'reactor.gate.cleared':
-      return { status: 'busy' };
-    case 'reactor.done':
-      return { status: 'idle' };
-    case 'reactor.error':
-      if (event.data.fatal) return { status: 'idle' };
+    case "reactor.gate.cleared":
+      return { status: "busy" };
+    case "reactor.done":
+      return { status: "idle" };
+    case "reactor.error":
+      if (event.data.fatal) return { status: "idle" };
       return null;
     default:
       return null;
@@ -61,7 +71,7 @@ export function deriveStatus(event: InferenceEvent): SessionStatus | null {
 }
 
 export function createEventCollectorRegistry(
-  config: EventCollectorRegistryConfig
+  config: EventCollectorRegistryConfig,
 ): EventCollectorRegistry {
   const { db, onTurnFinalized } = config;
   const collectors = new Map<string, EventCollector>();
@@ -88,7 +98,7 @@ export function createEventCollectorRegistry(
     agentAddress: string,
     tenantId: string,
     sessionId: string,
-    instanceId: string
+    instanceId: string,
   ): void {
     if (collectors.has(agentAddress)) {
       log.warn`Collector already exists for ${agentAddress}, replacing`;
@@ -102,12 +112,13 @@ export function createEventCollectorRegistry(
       tenantId,
       ...(onTurnFinalized
         ? {
-            onTurnFinalized: (turn: TurnFinalized) => onTurnFinalized(agentAddress, turn),
+            onTurnFinalized: (turn: TurnFinalized) =>
+              onTurnFinalized(agentAddress, turn),
           }
         : {}),
     });
     collectors.set(agentAddress, collector);
-    statuses.set(agentAddress, { status: 'idle' });
+    statuses.set(agentAddress, { status: "idle" });
   }
 
   function removeCollector(agentAddress: string): void {
@@ -127,7 +138,8 @@ export function createEventCollectorRegistry(
     }
 
     const isTerminal =
-      event.type === 'reactor.done' || (event.type === 'reactor.error' && event.data.fatal);
+      event.type === "reactor.done" ||
+      (event.type === "reactor.error" && event.data.fatal);
 
     enqueue(agentAddress, async () => {
       try {

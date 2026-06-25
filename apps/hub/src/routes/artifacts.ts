@@ -1,17 +1,30 @@
-import { Hono } from 'hono';
-import { and, asc, desc, eq, gt, ilike, inArray, lt, ne, or } from 'drizzle-orm';
-import { getLogger } from '@intx/log';
-import { schema as intxSchema } from '@intx/db';
-import type { HubDb } from '../db';
-import { artifact, artifactStatus } from '../db/schema';
-import { getRequestedUserContext } from '../lib/user-context';
+import { Hono } from "hono";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  lt,
+  ne,
+  or,
+} from "drizzle-orm";
+import { getLogger } from "@intx/log";
+import { schema as intxSchema } from "@intx/db";
+import type { HubDb } from "../db";
+import { artifact, artifactStatus } from "../db/schema";
+import { getRequestedUserContext } from "../lib/user-context";
 
-const log = getLogger(['api', 'artifacts']);
+const log = getLogger(["api", "artifacts"]);
 
 // Kinds whose content is a downloadable file (served by GET /artifacts/:id/download).
 // Mirrors the pre-M6 DOWNLOADABLE_ARTIFACT_KINDS; the SEO-enrichment CSV export is
 // the only file-shaped artifact today.
-const DOWNLOADABLE_ARTIFACT_KINDS: ReadonlySet<string> = new Set(['csv-export']);
+const DOWNLOADABLE_ARTIFACT_KINDS: ReadonlySet<string> = new Set([
+  "csv-export",
+]);
 
 type ArtifactRow = typeof artifact.$inferSelect;
 
@@ -38,10 +51,10 @@ function serializeArtifact(a: ArtifactRow) {
 
 function csvDownloadFilename(title: string): string {
   const cleaned = title
-    .replace(/[\r\n"\\]/g, '')
-    .replace(/\.csv$/i, '')
+    .replace(/[\r\n"\\]/g, "")
+    .replace(/\.csv$/i, "")
     .trim();
-  return `${cleaned.length > 0 ? cleaned : 'export'}.csv`;
+  return `${cleaned.length > 0 ? cleaned : "export"}.csv`;
 }
 
 /**
@@ -55,23 +68,25 @@ function csvDownloadFilename(title: string): string {
  * display enrichment depended on the deleted workflow registry and is not part of
  * restoring the gallery.
  */
-export function createArtifactsRouter(db: HubDb): Hono<{ Variables: { userId: string } }> {
+export function createArtifactsRouter(
+  db: HubDb,
+): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
   // List the caller's tenant artifacts for the gallery, newest-first by default.
-  router.get('/artifacts', async (c) => {
-    const userId = c.get('userId');
+  router.get("/artifacts", async (c) => {
+    const userId = c.get("userId");
 
-    const requestedTenantId = c.req.query('tenantId');
-    const searchQuery = (c.req.query('query')?.trim() ?? '')
+    const requestedTenantId = c.req.query("tenantId");
+    const searchQuery = (c.req.query("query")?.trim() ?? "")
       .slice(0, 200)
-      .replace(/[%_\\]/g, '\\$&');
-    const sortParam = c.req.query('sort');
-    const kindParam = c.req.query('kind');
-    const statusParam = c.req.query('status');
-    const ownerPrincipalIdParam = c.req.query('ownerPrincipalId');
-    const cursorParam = c.req.query('cursor');
-    const limitParam = c.req.query('limit');
+      .replace(/[%_\\]/g, "\\$&");
+    const sortParam = c.req.query("sort");
+    const kindParam = c.req.query("kind");
+    const statusParam = c.req.query("status");
+    const ownerPrincipalIdParam = c.req.query("ownerPrincipalId");
+    const cursorParam = c.req.query("cursor");
+    const limitParam = c.req.query("limit");
 
     type ArtifactStatusValue = (typeof artifactStatus)[number];
     const isArtifactStatus = (value: string): value is ArtifactStatusValue =>
@@ -80,24 +95,27 @@ export function createArtifactsRouter(db: HubDb): Hono<{ Variables: { userId: st
     let statusFilter: ArtifactStatusValue | undefined;
     if (statusParam !== undefined) {
       if (!isArtifactStatus(statusParam)) {
-        return c.json({ error: 'Invalid status filter' }, 400);
+        return c.json({ error: "Invalid status filter" }, 400);
       }
       statusFilter = statusParam;
     }
 
-    const pageLimit = Math.min(Math.max(1, Number(limitParam ?? 20) || 20), 100);
+    const pageLimit = Math.min(
+      Math.max(1, Number(limitParam ?? 20) || 20),
+      100,
+    );
 
     const { context: userContext, forbidden } = await getRequestedUserContext(
       db,
       userId,
-      requestedTenantId
+      requestedTenantId,
     );
     if (forbidden) {
-      log.warn('User requested artifacts for inaccessible tenant', {
+      log.warn("User requested artifacts for inaccessible tenant", {
         userId,
         requestedTenantId,
       });
-      return c.json({ error: 'Tenant not accessible' }, 403);
+      return c.json({ error: "Tenant not accessible" }, 403);
     }
     if (!userContext) {
       return c.json({ artifacts: [], nextCursor: null });
@@ -105,12 +123,17 @@ export function createArtifactsRouter(db: HubDb): Hono<{ Variables: { userId: st
 
     const tenantWhere = eq(artifact.tenantId, userContext.tenantId);
     const searchWhere = searchQuery
-      ? or(ilike(artifact.title, `%${searchQuery}%`), ilike(artifact.content, `%${searchQuery}%`))
+      ? or(
+          ilike(artifact.title, `%${searchQuery}%`),
+          ilike(artifact.content, `%${searchQuery}%`),
+        )
       : undefined;
     // Hide rejected by default; an explicit status filter overrides that.
     const hideRejectedWhere =
-      statusFilter === undefined ? ne(artifact.status, 'rejected') : undefined;
-    const statusWhere = statusFilter ? eq(artifact.status, statusFilter) : undefined;
+      statusFilter === undefined ? ne(artifact.status, "rejected") : undefined;
+    const statusWhere = statusFilter
+      ? eq(artifact.status, statusFilter)
+      : undefined;
     const kindWhere = kindParam ? eq(artifact.kind, kindParam) : undefined;
     const ownerWhere = ownerPrincipalIdParam
       ? eq(artifact.ownerPrincipalId, ownerPrincipalIdParam)
@@ -118,21 +141,31 @@ export function createArtifactsRouter(db: HubDb): Hono<{ Variables: { userId: st
 
     let cursorWhere: ReturnType<typeof or> | undefined;
     if (cursorParam !== undefined) {
-      const separatorIndex = cursorParam.lastIndexOf('__');
+      const separatorIndex = cursorParam.lastIndexOf("__");
       const cursorDate = new Date(cursorParam.slice(0, separatorIndex));
       const cursorId = cursorParam.slice(separatorIndex + 2);
-      if (separatorIndex === -1 || Number.isNaN(cursorDate.getTime()) || cursorId.length === 0) {
-        return c.json({ error: 'Invalid cursor' }, 400);
+      if (
+        separatorIndex === -1 ||
+        Number.isNaN(cursorDate.getTime()) ||
+        cursorId.length === 0
+      ) {
+        return c.json({ error: "Invalid cursor" }, 400);
       }
       cursorWhere =
-        sortParam === 'oldest'
+        sortParam === "oldest"
           ? or(
               gt(artifact.updatedAt, cursorDate),
-              and(eq(artifact.updatedAt, cursorDate), gt(artifact.id, cursorId))
+              and(
+                eq(artifact.updatedAt, cursorDate),
+                gt(artifact.id, cursorId),
+              ),
             )
           : or(
               lt(artifact.updatedAt, cursorDate),
-              and(eq(artifact.updatedAt, cursorDate), lt(artifact.id, cursorId))
+              and(
+                eq(artifact.updatedAt, cursorDate),
+                lt(artifact.id, cursorId),
+              ),
             );
     }
 
@@ -147,7 +180,7 @@ export function createArtifactsRouter(db: HubDb): Hono<{ Variables: { userId: st
     ].filter((cond): cond is NonNullable<typeof cond> => cond != null);
 
     const orderBy =
-      sortParam === 'oldest'
+      sortParam === "oldest"
         ? [asc(artifact.updatedAt), asc(artifact.id)]
         : [desc(artifact.updatedAt), desc(artifact.id)];
 
@@ -174,7 +207,11 @@ export function createArtifactsRouter(db: HubDb): Hono<{ Variables: { userId: st
 
     // Resolve owner display names for the page (drives the gallery owner filter).
     const ownerIds = [
-      ...new Set(rows.map((r) => r.ownerPrincipalId).filter((id): id is string => id !== null)),
+      ...new Set(
+        rows
+          .map((r) => r.ownerPrincipalId)
+          .filter((id): id is string => id !== null),
+      ),
     ];
     if (ownerIds.length > 0) {
       const ownerPrincipals = await db
@@ -194,7 +231,7 @@ export function createArtifactsRouter(db: HubDb): Hono<{ Variables: { userId: st
           : [];
       const nameByRefId = new Map(users.map((u) => [u.id, u.name]));
       const nameByPrincipalId = new Map(
-        ownerPrincipals.map((p) => [p.id, nameByRefId.get(p.refId) ?? null])
+        ownerPrincipals.map((p) => [p.id, nameByRefId.get(p.refId) ?? null]),
       );
       for (const r of rows) {
         if (r.ownerPrincipalId !== null) {
@@ -207,30 +244,36 @@ export function createArtifactsRouter(db: HubDb): Hono<{ Variables: { userId: st
   });
 
   // Download a file-shaped artifact's content (CSV export). Tenant-scoped.
-  router.get('/artifacts/:id/download', async (c) => {
-    const id = c.req.param('id');
-    const userId = c.get('userId');
+  router.get("/artifacts/:id/download", async (c) => {
+    const id = c.req.param("id");
+    const userId = c.get("userId");
 
     const art = await db.query.artifact.findFirst({
       where: eq(artifact.id, id),
     });
-    if (!art) return c.json({ error: 'Artifact not found' }, 404);
+    if (!art) return c.json({ error: "Artifact not found" }, 404);
 
     const { context: userContext, forbidden } = await getRequestedUserContext(
       db,
       userId,
-      art.tenantId
+      art.tenantId,
     );
     if (forbidden || !userContext || art.tenantId !== userContext.tenantId) {
-      return c.json({ error: 'Forbidden' }, 403);
+      return c.json({ error: "Forbidden" }, 403);
     }
 
     if (!DOWNLOADABLE_ARTIFACT_KINDS.has(art.kind)) {
-      return c.json({ error: `Artifact kind "${art.kind}" is not downloadable` }, 400);
+      return c.json(
+        { error: `Artifact kind "${art.kind}" is not downloadable` },
+        400,
+      );
     }
 
-    c.header('Content-Type', 'text/csv; charset=utf-8');
-    c.header('Content-Disposition', `attachment; filename="${csvDownloadFilename(art.title)}"`);
+    c.header("Content-Type", "text/csv; charset=utf-8");
+    c.header(
+      "Content-Disposition",
+      `attachment; filename="${csvDownloadFilename(art.title)}"`,
+    );
     return c.body(art.content);
   });
 

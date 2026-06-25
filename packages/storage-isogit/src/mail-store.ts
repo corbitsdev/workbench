@@ -1,15 +1,15 @@
-import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
-import git from 'isomorphic-git';
-import { parseHeaderSection } from '@intx/mime';
-import { AUTHOR } from './init';
-import type { CommitSigner } from './signer';
-import { buildSigningArgs } from './commit-helpers';
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import git from "isomorphic-git";
+import { parseHeaderSection } from "@intx/mime";
+import { AUTHOR } from "./init";
+import type { CommitSigner } from "./signer";
+import { buildSigningArgs } from "./commit-helpers";
 
-const MAIL_DIR = 'state/mail';
+const MAIL_DIR = "state/mail";
 
-export type MailDirection = 'in' | 'out';
+export type MailDirection = "in" | "out";
 
 export type MailCommitResult = {
   threadId: string;
@@ -34,7 +34,7 @@ export type MailAuditStore = {
   commitMail(
     rawMessage: Uint8Array,
     direction: MailDirection,
-    options?: MailCommitOptions
+    options?: MailCommitOptions,
   ): Promise<MailCommitResult | null>;
 };
 
@@ -43,11 +43,11 @@ type ThreadState = {
 };
 
 function generateThreadId(): string {
-  return crypto.randomBytes(4).toString('hex');
+  return crypto.randomBytes(4).toString("hex");
 }
 
 function formatOrdinal(n: number): string {
-  return String(n).padStart(4, '0');
+  return String(n).padStart(4, "0");
 }
 
 function parseThreadingHeaders(raw: Uint8Array): {
@@ -56,19 +56,19 @@ function parseThreadingHeaders(raw: Uint8Array): {
   references: string[];
 } {
   const { headers } = parseHeaderSection(raw);
-  const messageId = headers.get('message-id');
-  if (messageId === undefined || messageId.trim() === '') {
-    throw new Error('Message-ID header is missing or empty');
+  const messageId = headers.get("message-id");
+  if (messageId === undefined || messageId.trim() === "") {
+    throw new Error("Message-ID header is missing or empty");
   }
-  const inReplyTo = headers.get('in-reply-to');
-  const refsRaw = headers.get('references');
+  const inReplyTo = headers.get("in-reply-to");
+  const refsRaw = headers.get("references");
   const references = refsRaw ? refsRaw.split(/\s+/).filter(Boolean) : [];
   return { messageId, inReplyTo, references };
 }
 
 export async function createMailAuditStore(
   dir: string,
-  signer?: CommitSigner
+  signer?: CommitSigner,
 ): Promise<MailAuditStore> {
   const signingArgs = buildSigningArgs(signer);
 
@@ -79,7 +79,10 @@ export async function createMailAuditStore(
 
   await rebuildIndex(dir, messageIndex, threads);
 
-  function resolveThread(inReplyTo: string | undefined, references: string[]): string {
+  function resolveThread(
+    inReplyTo: string | undefined,
+    references: string[],
+  ): string {
     if (inReplyTo !== undefined) {
       const threadId = messageIndex.get(inReplyTo);
       if (threadId !== undefined) return threadId;
@@ -110,9 +113,10 @@ export async function createMailAuditStore(
   async function commitMail(
     rawMessage: Uint8Array,
     direction: MailDirection,
-    options?: MailCommitOptions
+    options?: MailCommitOptions,
   ): Promise<MailCommitResult | null> {
-    const { messageId, inReplyTo, references } = parseThreadingHeaders(rawMessage);
+    const { messageId, inReplyTo, references } =
+      parseThreadingHeaders(rawMessage);
 
     if (messageIndex.has(messageId)) {
       if (options?.ignoreDuplicate === true) return null;
@@ -131,7 +135,7 @@ export async function createMailAuditStore(
     await fs.promises.writeFile(fullPath, rawMessage);
     await git.add({ fs, dir, filepath });
 
-    const label = direction === 'in' ? 'inbound' : 'outbound';
+    const label = direction === "in" ? "inbound" : "outbound";
     const subject = `Record ${label} mail ${messageId}`;
     const message =
       options?.checkpointHash !== undefined
@@ -157,8 +161,8 @@ function parseFilename(filename: string): {
   ordinal: number;
   direction: MailDirection;
 } {
-  const stem = filename.replace(/\.eml$/, '');
-  const dashIndex = stem.indexOf('-');
+  const stem = filename.replace(/\.eml$/, "");
+  const dashIndex = stem.indexOf("-");
   if (dashIndex === -1) {
     throw new Error(`Malformed mail filename: ${filename}`);
   }
@@ -170,8 +174,10 @@ function parseFilename(filename: string): {
   }
 
   const directionStr = stem.slice(dashIndex + 1);
-  if (directionStr !== 'in' && directionStr !== 'out') {
-    throw new Error(`Invalid mail direction '${directionStr}' in filename: ${filename}`);
+  if (directionStr !== "in" && directionStr !== "out") {
+    throw new Error(
+      `Invalid mail direction '${directionStr}' in filename: ${filename}`,
+    );
   }
 
   return { ordinal, direction: directionStr };
@@ -184,7 +190,7 @@ async function scanMail(dir: string): Promise<MailEntry[]> {
   try {
     threadDirs = await fs.promises.readdir(mailDir);
   } catch (e: unknown) {
-    if (e instanceof Error && 'code' in e && e.code === 'ENOENT') {
+    if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return [];
     }
     throw e;
@@ -200,7 +206,7 @@ async function scanMail(dir: string): Promise<MailEntry[]> {
     if (!stat.isDirectory()) continue;
 
     const files = await fs.promises.readdir(threadPath);
-    const emlFiles = files.filter((f) => f.endsWith('.eml')).sort();
+    const emlFiles = files.filter((f) => f.endsWith(".eml")).sort();
 
     for (const file of emlFiles) {
       const { ordinal, direction } = parseFilename(file);
@@ -222,7 +228,7 @@ export async function listMail(dir: string): Promise<MailEntry[]> {
 async function rebuildIndex(
   dir: string,
   messageIndex: Map<string, string>,
-  threads: Map<string, ThreadState>
+  threads: Map<string, ThreadState>,
 ): Promise<void> {
   const entries = await scanMail(dir);
 

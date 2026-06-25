@@ -1,42 +1,48 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type } from 'arktype';
-import { api } from '../lib/api';
-import { isRecordTerminal, runStateFromRecord, type RunRecord } from '../lib/run-state-adapter';
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type } from "arktype";
+import { api } from "../lib/api";
+import {
+  isRecordTerminal,
+  runStateFromRecord,
+  type RunRecord,
+} from "../lib/run-state-adapter";
 
 // Appends the active workbench tenantId so the hub resolves visibility against
 // that workbench (walking ancestors to the global tenant). Omitted when no
 // workbench is active, leaving the request scoped to the global tenant.
 function withTenant(path: string, tenantId?: string | null): string {
   if (!tenantId) return path;
-  const sep = path.includes('?') ? '&' : '?';
+  const sep = path.includes("?") ? "&" : "?";
   return `${path}${sep}tenantId=${encodeURIComponent(tenantId)}`;
 }
 
 // Thin-executor run record (CL-2240). State lives in a single row read from the
 // hub; there is no SSE event log to reduce. Parse every response at the boundary.
 const runRecordSchema = type({
-  runId: 'string',
-  kind: 'string',
+  runId: "string",
+  kind: "string",
   status: "'running'|'awaiting'|'completed'|'failed'",
-  currentStepId: 'string|null',
-  outputs: type({ '[string]': 'unknown' }),
-  'error?': 'string',
-  'deploymentId?': 'string',
+  currentStepId: "string|null",
+  outputs: type({ "[string]": "unknown" }),
+  "error?": "string",
+  "deploymentId?": "string",
 });
 
 function parseRunRecord(raw: unknown): RunRecord {
   const parsed = runRecordSchema(raw);
   if (parsed instanceof type.errors) {
-    throw new Error(`Unexpected workflow run-record response: ${parsed.summary}`);
+    throw new Error(
+      `Unexpected workflow run-record response: ${parsed.summary}`,
+    );
   }
   return parsed;
 }
 
 const workflowRunSchema = type({
-  runId: 'string',
-  kind: 'string',
-  status: 'string',
-  createdAt: 'string',
+  runId: "string",
+  kind: "string",
+  status: "string",
+  createdAt: "string",
 });
 export type WorkflowRun = typeof workflowRunSchema.infer;
 const workflowRunListSchema = workflowRunSchema.array();
@@ -44,18 +50,18 @@ const workflowRunListSchema = workflowRunSchema.array();
 // Mirror of apps/hub/src/lib/workflow-meta.ts (separate build graphs make a
 // literal import non-trivial). `deployedAt` is an ISO string at the source.
 const workflowMetaSchema = type({
-  version: 'string',
-  sha: 'string',
-  deployedAt: 'string.date.iso',
+  version: "string",
+  sha: "string",
+  deployedAt: "string.date.iso",
 });
 export type WorkflowMeta = typeof workflowMetaSchema.infer;
 
 const workflowDeploymentSchema = type({
-  deploymentId: 'string',
-  kind: 'string',
-  status: 'string',
-  createdAt: 'string',
-  'meta?': workflowMetaSchema.or('null'),
+  deploymentId: "string",
+  kind: "string",
+  status: "string",
+  createdAt: "string",
+  "meta?": workflowMetaSchema.or("null"),
 });
 export type WorkflowDeployment = typeof workflowDeploymentSchema.infer;
 const workflowDeploymentListSchema = workflowDeploymentSchema.array();
@@ -64,22 +70,27 @@ const workflowDeploymentListSchema = workflowDeploymentSchema.array();
 // run only appears via a mutation that invalidates the query. Poll only while
 // something is still advancing so the app frame stops hitting the endpoint every
 // 5s forever when nothing is running.
-export function runListIsActive(runs: ReadonlyArray<{ status: string }>): boolean {
-  return runs.some((r) => !isRecordTerminal(r.status as RunRecord['status']));
+export function runListIsActive(runs: readonly { status: string }[]): boolean {
+  return runs.some((r) => !isRecordTerminal(r.status as RunRecord["status"]));
 }
 
 export function useWorkflowRuns(tenantId?: string | null) {
   return useQuery<WorkflowRun[]>({
-    queryKey: ['workflow-runs', tenantId ?? null],
+    queryKey: ["workflow-runs", tenantId ?? null],
     refetchInterval: (query) => {
       const runs = query.state.data;
       return runs && runListIsActive(runs) ? 5000 : false;
     },
     queryFn: async () => {
-      const raw = await api<unknown>('GET', withTenant('/workflow-exec/records', tenantId));
+      const raw = await api<unknown>(
+        "GET",
+        withTenant("/workflow-exec/records", tenantId),
+      );
       const parsed = workflowRunListSchema(raw);
       if (parsed instanceof type.errors) {
-        throw new Error(`Unexpected workflow-records response: ${parsed.summary}`);
+        throw new Error(
+          `Unexpected workflow-records response: ${parsed.summary}`,
+        );
       }
       return parsed;
     },
@@ -88,10 +99,13 @@ export function useWorkflowRuns(tenantId?: string | null) {
 
 export function useWorkflowDeployments(tenantId?: string | null) {
   return useQuery<WorkflowDeployment[]>({
-    queryKey: ['workflow-deployments', tenantId ?? null],
+    queryKey: ["workflow-deployments", tenantId ?? null],
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const raw = await api<unknown>('GET', withTenant('/workflow-runs', tenantId));
+      const raw = await api<unknown>(
+        "GET",
+        withTenant("/workflow-runs", tenantId),
+      );
       const parsed = workflowDeploymentListSchema(raw);
       if (parsed instanceof type.errors) {
         throw new Error(`Unexpected workflow-runs response: ${parsed.summary}`);
@@ -109,19 +123,23 @@ export { isRecordTerminal };
 // the moment the run goes quiescent — parked on a gate (`awaiting`) or terminal
 // (`completed`/`failed`) — mirroring the old auto-stop-at-quiescent behavior.
 // staleTime 0 so a resume's fresh state is never served stale.
-export function useWorkflowRecord(runId: string | null, tenantId?: string | null) {
+export function useWorkflowRecord(
+  runId: string | null,
+  tenantId?: string | null,
+) {
   return useQuery<RunRecord>({
-    queryKey: ['workflow-record', runId, tenantId ?? null],
+    queryKey: ["workflow-record", runId, tenantId ?? null],
     enabled: !!runId,
     staleTime: 0,
     // A forbidden/missing record is not transient — don't retry it on the poll
     // cadence (that turned a single 403 into a steady stream against one record).
     retry: false,
-    refetchInterval: (query) => (query.state.data?.status === 'running' ? 2000 : false),
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" ? 2000 : false,
     queryFn: async () => {
       const raw = await api<unknown>(
-        'GET',
-        withTenant(`/workflow-exec/records/${runId as string}`, tenantId)
+        "GET",
+        withTenant(`/workflow-exec/records/${runId as string}`, tenantId),
       );
       return parseRunRecord(raw);
     },
@@ -133,14 +151,17 @@ export function useStartWorkflow(tenantId?: string | null) {
   return useMutation({
     mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
       const raw = await api<unknown>(
-        'POST',
-        withTenant(`/workflow-exec/${encodeURIComponent(kind)}/start`, tenantId),
-        { input }
+        "POST",
+        withTenant(
+          `/workflow-exec/${encodeURIComponent(kind)}/start`,
+          tenantId,
+        ),
+        { input },
       );
       return parseRunRecord(raw);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['workflow-runs'] });
+      void queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
     },
   });
 }
@@ -158,21 +179,33 @@ export function useStartWorkflow(tenantId?: string | null) {
 // the fresh record so the panel advances without waiting for the next poll.
 export function useResumeWorkflow(runId: string, tenantId?: string | null) {
   const queryClient = useQueryClient();
-  const queryKey = ['workflow-record', runId, tenantId ?? null] as const;
+  const queryKey = ["workflow-record", runId, tenantId ?? null] as const;
   return useMutation({
-    mutationFn: async ({ signalName, payload }: { signalName: string; payload?: unknown }) => {
+    mutationFn: async ({
+      signalName,
+      payload,
+    }: {
+      signalName: string;
+      payload?: unknown;
+    }) => {
       const raw = await api<unknown>(
-        'POST',
-        withTenant(`/workflow-exec/records/${encodeURIComponent(runId)}/resume`, tenantId),
-        { signalName, payload }
+        "POST",
+        withTenant(
+          `/workflow-exec/records/${encodeURIComponent(runId)}/resume`,
+          tenantId,
+        ),
+        { signalName, payload },
       );
       return parseRunRecord(raw);
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey });
       const previous = queryClient.getQueryData<RunRecord>(queryKey);
-      if (previous?.status === 'awaiting') {
-        queryClient.setQueryData<RunRecord>(queryKey, { ...previous, status: 'running' });
+      if (previous?.status === "awaiting") {
+        queryClient.setQueryData<RunRecord>(queryKey, {
+          ...previous,
+          status: "running",
+        });
       }
       return { previous };
     },
@@ -194,12 +227,12 @@ export function useDeleteWorkflow(tenantId?: string | null) {
   return useMutation({
     mutationFn: async (deploymentId: string) =>
       api<unknown>(
-        'DELETE',
-        withTenant(`/workflows/${encodeURIComponent(deploymentId)}`, tenantId)
+        "DELETE",
+        withTenant(`/workflows/${encodeURIComponent(deploymentId)}`, tenantId),
       ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['workflow-runs'] });
-      void queryClient.invalidateQueries({ queryKey: ['workflows'] });
+      void queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["workflows"] });
     },
   });
 }
@@ -207,23 +240,28 @@ export function useDeleteWorkflow(tenantId?: string | null) {
 export { runStateFromRecord };
 
 const workflowCredentialSchema = type({
-  id: 'string',
-  name: 'string',
-  providerName: 'string',
-  providerPlugin: 'string',
-  'model?': 'string',
+  id: "string",
+  name: "string",
+  providerName: "string",
+  providerPlugin: "string",
+  "model?": "string",
 });
 export type WorkflowCredential = typeof workflowCredentialSchema.infer;
 
 export function useWorkflowCredentials(tenantId?: string | null) {
   return useQuery<WorkflowCredential[]>({
-    queryKey: ['workflow-credentials', tenantId ?? null],
+    queryKey: ["workflow-credentials", tenantId ?? null],
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const raw = await api<unknown>('GET', withTenant('/workflow-exec/credentials', tenantId));
+      const raw = await api<unknown>(
+        "GET",
+        withTenant("/workflow-exec/credentials", tenantId),
+      );
       const parsed = workflowCredentialSchema.array()(raw);
       if (parsed instanceof type.errors) {
-        throw new Error(`Unexpected workflow-credentials response: ${parsed.summary}`);
+        throw new Error(
+          `Unexpected workflow-credentials response: ${parsed.summary}`,
+        );
       }
       return parsed;
     },

@@ -1,9 +1,9 @@
 /// <reference types="bun" />
-import '../test-setup';
-import { afterEach, describe, expect, it } from 'bun:test';
-import { act, cleanup, renderHook } from '@testing-library/react';
-import React from 'react';
-import { ChatLauncherProvider, useChatLauncher } from './chat-launcher-context';
+import "../test-setup";
+import { afterEach, describe, expect, it } from "bun:test";
+import { act, cleanup, renderHook } from "@testing-library/react";
+import React from "react";
+import { ChatLauncherProvider, useChatLauncher } from "./chat-launcher-context";
 
 afterEach(cleanup);
 
@@ -11,8 +11,8 @@ function wrapper({ children }: { children: React.ReactNode }) {
   return React.createElement(ChatLauncherProvider, null, children);
 }
 
-describe('useChatLauncher', () => {
-  it('defaults to not hidden and toggles hidden via setHidden', () => {
+describe("useChatLauncher", () => {
+  it("defaults to not hidden and toggles hidden via setHidden", () => {
     const { result } = renderHook(() => useChatLauncher(), { wrapper });
 
     expect(result.current.hidden).toBe(false);
@@ -24,7 +24,7 @@ describe('useChatLauncher', () => {
     expect(result.current.hidden).toBe(false);
   });
 
-  it('invokes the registered reconnect callback when notifyProvisioned is called', () => {
+  it("invokes the registered reconnect callback when notifyProvisioned is called", () => {
     const { result } = renderHook(() => useChatLauncher(), { wrapper });
     let reconnectCount = 0;
 
@@ -34,37 +34,37 @@ describe('useChatLauncher', () => {
     expect(reconnectCount).toBe(1);
   });
 
-  it('does nothing when notifyProvisioned is called before a reconnect is registered', () => {
+  it("does nothing when notifyProvisioned is called before a reconnect is registered", () => {
     const { result } = renderHook(() => useChatLauncher(), { wrapper });
 
     expect(() => act(() => result.current.notifyProvisioned())).not.toThrow();
   });
 
-  it('uses the most recently registered reconnect callback', () => {
+  it("uses the most recently registered reconnect callback", () => {
     const { result } = renderHook(() => useChatLauncher(), { wrapper });
     const fired: string[] = [];
 
-    act(() => result.current.registerReconnect(() => fired.push('first')));
-    act(() => result.current.registerReconnect(() => fired.push('second')));
+    act(() => result.current.registerReconnect(() => fired.push("first")));
+    act(() => result.current.registerReconnect(() => fired.push("second")));
     act(() => result.current.notifyProvisioned());
 
-    expect(fired).toEqual(['second']);
+    expect(fired).toEqual(["second"]);
   });
 
-  it('openWithMessage stores the pending message and reveals the launcher', () => {
+  it("openWithMessage stores the pending message and reveals the launcher", () => {
     const { result } = renderHook(() => useChatLauncher(), { wrapper });
 
     act(() => result.current.setHidden(true));
-    act(() => result.current.openWithMessage('Work on artifact X'));
+    act(() => result.current.openWithMessage("Work on artifact X"));
 
-    expect(result.current.pendingMessage).toBe('Work on artifact X');
+    expect(result.current.pendingMessage).toBe("Work on artifact X");
     expect(result.current.hidden).toBe(false);
   });
 
-  it('clearPendingMessage resets the pending message so it is consumed once', () => {
+  it("clearPendingMessage resets the pending message so it is consumed once", () => {
     const { result } = renderHook(() => useChatLauncher(), { wrapper });
 
-    act(() => result.current.openWithMessage('Work on artifact X'));
+    act(() => result.current.openWithMessage("Work on artifact X"));
     act(() => result.current.clearPendingMessage());
 
     expect(result.current.pendingMessage).toBeNull();

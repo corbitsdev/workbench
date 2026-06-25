@@ -1,4 +1,4 @@
-import type { Transport } from '@intx/hub-client';
+import type { Transport } from "@intx/hub-client";
 
 /**
  * Tracks the live reasoning ("thinking") text of the turn the agent is
@@ -23,7 +23,7 @@ export interface ReasoningTracker {
 }
 
 interface ThinkingDeltaEvent {
-  type: 'inference.thinking.delta';
+  type: "inference.thinking.delta";
   data: { partial: { thinking: string } };
 }
 
@@ -32,36 +32,36 @@ interface ThinkingDeltaEvent {
 // last reasoning text in place and render a stale "thinking" bubble forever
 // (CL-1660 review).
 const TURN_END_EVENTS = new Set([
-  'turn.committed',
-  'reactor.abort',
-  'reactor.error',
-  'inference.error',
+  "turn.committed",
+  "reactor.abort",
+  "reactor.error",
+  "inference.error",
 ]);
 
 function parseThinkingDeltaEvent(raw: unknown): ThinkingDeltaEvent | null {
-  if (typeof raw !== 'object' || raw === null) return null;
+  if (typeof raw !== "object" || raw === null) return null;
   const { type, data } = raw as { type?: unknown; data?: unknown };
-  if (type !== 'inference.thinking.delta') return null;
-  if (typeof data !== 'object' || data === null) return null;
+  if (type !== "inference.thinking.delta") return null;
+  if (typeof data !== "object" || data === null) return null;
   const { partial } = data as { partial?: unknown };
-  if (typeof partial !== 'object' || partial === null) return null;
+  if (typeof partial !== "object" || partial === null) return null;
   const { thinking } = partial as { thinking?: unknown };
-  if (typeof thinking !== 'string') return null;
+  if (typeof thinking !== "string") return null;
   return { type, data: { partial: { thinking } } };
 }
 
 function isTurnEndEvent(raw: unknown): boolean {
-  if (typeof raw !== 'object' || raw === null) return false;
+  if (typeof raw !== "object" || raw === null) return false;
   const { type } = raw as { type?: unknown };
-  return typeof type === 'string' && TURN_END_EVENTS.has(type);
+  return typeof type === "string" && TURN_END_EVENTS.has(type);
 }
 
 export function createReasoningTracker(
   transport: Transport,
   params: { tenantId: string; instanceId: string },
-  onUpdate?: () => void
+  onUpdate?: () => void,
 ): ReasoningTracker {
-  let text = '';
+  let text = "";
   const path = `/api/tenants/${params.tenantId}/agents/instances/${params.instanceId}/events`;
 
   const stop = transport.subscribe(
@@ -76,12 +76,12 @@ export function createReasoningTracker(
       }
 
       if (isTurnEndEvent(raw)) {
-        if (text === '') return;
-        text = '';
+        if (text === "") return;
+        text = "";
         onUpdate?.();
       }
     },
-    { eventName: 'agent.event' }
+    { eventName: "agent.event" },
   );
 
   return {

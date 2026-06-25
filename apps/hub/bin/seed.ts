@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-/* eslint-disable no-console */
-
 /**
  * GTM Workbench seed script for local dev.
  *
@@ -14,7 +12,7 @@
  * For production use, run seed-prod.ts instead.
  */
 
-import postgres from 'postgres';
+import postgres from "postgres";
 
 function env(name: string, fallback: string): string {
   return process.env[name] ?? fallback;
@@ -29,10 +27,10 @@ function requireEnv(name: string): string {
   return value;
 }
 
-const BASE = env('HUB_URL', 'http://localhost:4000');
-const EMAIL = env('SUPERADMIN_EMAIL', 'alice@example.com');
-const NAME = env('SUPERADMIN_NAME', 'Alice Admin');
-const PASSWORD = env('SUPERADMIN_PASS', 'password123');
+const BASE = env("HUB_URL", "http://localhost:4000");
+const EMAIL = env("SUPERADMIN_EMAIL", "alice@example.com");
+const NAME = env("SUPERADMIN_NAME", "Alice Admin");
+const PASSWORD = env("SUPERADMIN_PASS", "password123");
 
 type CookieJar = string[];
 
@@ -40,22 +38,24 @@ async function api(
   method: string,
   path: string,
   body?: unknown,
-  cookies: CookieJar = []
+  cookies: CookieJar = [],
 ): Promise<{ status: number; data: unknown; cookies: CookieJar }> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (cookies.length > 0) headers['Cookie'] = cookies.join('; ');
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (cookies.length > 0) headers["Cookie"] = cookies.join("; ");
 
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
-    redirect: 'manual',
+    redirect: "manual",
   });
 
   const nextCookies = [...cookies];
   for (const sc of res.headers.getSetCookie()) {
-    const name = sc.split('=')[0];
-    const value = sc.split(';')[0];
+    const name = sc.split("=")[0];
+    const value = sc.split(";")[0];
     if (!name || !value) continue;
     const idx = nextCookies.findIndex((c) => c.startsWith(`${name}=`));
     if (idx >= 0) nextCookies[idx] = value;
@@ -63,7 +63,8 @@ async function api(
   }
 
   let data: unknown = null;
-  if ((res.headers.get('content-type') ?? '').includes('json')) data = await res.json();
+  if ((res.headers.get("content-type") ?? "").includes("json"))
+    data = await res.json();
   return { status: res.status, data, cookies: nextCookies };
 }
 
@@ -79,7 +80,7 @@ function fail(label: string, status: number, data: unknown): never {
 
 log(`Authenticating ${EMAIL}...`);
 
-const signUp = await api('POST', '/api/auth/sign-up/email', {
+const signUp = await api("POST", "/api/auth/sign-up/email", {
   name: NAME,
   email: EMAIL,
   password: PASSWORD,
@@ -89,38 +90,43 @@ let cookies = signUp.cookies;
 let authData = signUp.data;
 
 if (cookies.length === 0) {
-  const signIn = await api('POST', '/api/auth/sign-in/email', { email: EMAIL, password: PASSWORD });
-  if (signIn.cookies.length === 0) fail('sign in', signIn.status, signIn.data);
+  const signIn = await api("POST", "/api/auth/sign-in/email", {
+    email: EMAIL,
+    password: PASSWORD,
+  });
+  if (signIn.cookies.length === 0) fail("sign in", signIn.status, signIn.data);
   cookies = signIn.cookies;
   authData = signIn.data;
-  log('  Signed in existing user');
+  log("  Signed in existing user");
 } else {
-  log('  Created user');
+  log("  Created user");
 }
 
-const userId = ((authData as Record<string, unknown>)?.user as { id?: string } | undefined)?.id;
+const userId = (
+  (authData as Record<string, unknown>)?.user as { id?: string } | undefined
+)?.id;
 if (!userId) {
-  console.error('[seed] Auth response did not include user.id');
+  console.error("[seed] Auth response did not include user.id");
   process.exit(1);
 }
 log(`  User ID: ${userId}`);
 
 // This route triggers existing repair/provisioning. Agent definitions are
 // already Interchange agent rows seeded at hub boot by seedAgentTemplates(db).
-const me = await api('POST', '/api/v1/me', {}, cookies);
-if (me.status !== 200) fail('/api/v1/me', me.status, me.data);
+const me = await api("POST", "/api/v1/me", {}, cookies);
+if (me.status !== 200) fail("/api/v1/me", me.status, me.data);
 
 const body = me.data as Record<string, unknown>;
-const tenantId = String(body.personalTenantId ?? '');
+const tenantId = String(body.personalTenantId ?? "");
 if (!tenantId) {
-  console.error('[seed] /api/v1/me did not return personalTenantId');
+  console.error("[seed] /api/v1/me did not return personalTenantId");
   process.exit(1);
 }
 log(`  Tenant ID: ${tenantId}`);
-log(`  Myra instance ID: ${String(body.paInstanceId ?? '(none)')}`);
+log(`  Myra instance ID: ${String(body.paInstanceId ?? "(none)")}`);
 
-log('Promoting user principal to Interchange owner role...');
-const sql = postgres(requireEnv('DATABASE_URL'), { max: 1 });
+log("Promoting user principal to Interchange owner role...");
+const sql = postgres(requireEnv("DATABASE_URL"), { max: 1 });
 try {
   const [principal] = await sql<{ id: string }[]>`
     select id from principal
@@ -130,7 +136,7 @@ try {
     limit 1
   `;
   if (!principal) {
-    console.error('[seed] Could not find global user principal');
+    console.error("[seed] Could not find global user principal");
     process.exit(1);
   }
 
@@ -141,7 +147,7 @@ try {
     limit 1
   `;
   if (!ownerRole) {
-    console.error('[seed] Could not find global owner role');
+    console.error("[seed] Could not find global owner role");
     process.exit(1);
   }
 
@@ -155,6 +161,6 @@ try {
   await sql.end();
 }
 
-log('Seed completed successfully.');
+log("Seed completed successfully.");
 log(`\n  Email:    ${EMAIL}`);
 log(`  Password: ${PASSWORD}`);

@@ -1,5 +1,5 @@
-import type { Transport } from '@intx/hub-client';
-import { deriveAgentPhase, type AgentPhase } from './agent-phase';
+import type { Transport } from "@intx/hub-client";
+import { deriveAgentPhase, type AgentPhase } from "./agent-phase";
 
 /**
  * Tracks an agent's coarse activity phase (idle / thinking / typing) from its
@@ -23,43 +23,43 @@ export interface AgentPhaseTracker {
 }
 
 const RESET_EVENTS = new Set([
-  'turn.committed',
-  'reactor.abort',
-  'reactor.error',
-  'inference.error',
+  "turn.committed",
+  "reactor.abort",
+  "reactor.error",
+  "inference.error",
 ]);
 
 function eventType(raw: unknown): string | null {
-  if (typeof raw !== 'object' || raw === null) return null;
+  if (typeof raw !== "object" || raw === null) return null;
   const { type } = raw as { type?: unknown };
-  return typeof type === 'string' ? type : null;
+  return typeof type === "string" ? type : null;
 }
 
-function partialField(raw: unknown, field: 'text' | 'thinking'): string | null {
-  if (typeof raw !== 'object' || raw === null) return null;
+function partialField(raw: unknown, field: "text" | "thinking"): string | null {
+  if (typeof raw !== "object" || raw === null) return null;
   const { data } = raw as { data?: unknown };
-  if (typeof data !== 'object' || data === null) return null;
+  if (typeof data !== "object" || data === null) return null;
   const { partial } = data as { partial?: unknown };
-  if (typeof partial !== 'object' || partial === null) return null;
+  if (typeof partial !== "object" || partial === null) return null;
   const value = (partial as Record<string, unknown>)[field];
-  return typeof value === 'string' ? value : null;
+  return typeof value === "string" ? value : null;
 }
 
 export function createAgentPhaseTracker(
   transport: Transport,
   params: { tenantId: string; instanceId: string },
-  onUpdate?: () => void
+  onUpdate?: () => void,
 ): AgentPhaseTracker {
-  let streamingText = '';
-  let reasoningText = '';
+  let streamingText = "";
+  let reasoningText = "";
   let active = false;
-  let phase: AgentPhase = 'idle';
+  let phase: AgentPhase = "idle";
 
   const path = `/api/tenants/${params.tenantId}/agents/instances/${params.instanceId}/events`;
 
   function recompute() {
     const next = deriveAgentPhase({
-      activity: active ? { type: 'inferring' } : null,
+      activity: active ? { type: "inferring" } : null,
       streamingText,
       reasoningText,
     });
@@ -75,21 +75,21 @@ export function createAgentPhaseTracker(
       if (type === null) return;
 
       if (RESET_EVENTS.has(type)) {
-        streamingText = '';
-        reasoningText = '';
+        streamingText = "";
+        reasoningText = "";
         active = false;
         recompute();
         return;
       }
 
-      if (type === 'inference.start') {
+      if (type === "inference.start") {
         active = true;
         recompute();
         return;
       }
 
-      if (type === 'inference.text.delta') {
-        const text = partialField(raw, 'text');
+      if (type === "inference.text.delta") {
+        const text = partialField(raw, "text");
         if (text !== null) {
           streamingText = text;
           active = true;
@@ -98,8 +98,8 @@ export function createAgentPhaseTracker(
         return;
       }
 
-      if (type === 'inference.thinking.delta') {
-        const thinking = partialField(raw, 'thinking');
+      if (type === "inference.thinking.delta") {
+        const thinking = partialField(raw, "thinking");
         if (thinking !== null) {
           reasoningText = thinking;
           active = true;
@@ -107,7 +107,7 @@ export function createAgentPhaseTracker(
         }
       }
     },
-    { eventName: 'agent.event' }
+    { eventName: "agent.event" },
   );
 
   return {

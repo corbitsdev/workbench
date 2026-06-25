@@ -9,7 +9,10 @@ const BARE_IMAGE_URL_RE =
  *
  * Only called on settled (non-streaming) agent messages.
  */
-export function extractImageURLs(text: string): { cleanedText: string; urls: string[] } {
+export function extractImageURLs(text: string): {
+  cleanedText: string;
+  urls: string[];
+} {
   const seen = new Set<string>();
   const urls: string[] = [];
 
@@ -22,15 +25,15 @@ export function extractImageURLs(text: string): { cleanedText: string; urls: str
 
   let cleaned = text.replace(MD_IMAGE_RE, (_match, url: string) => {
     pushUnique(url);
-    return '';
+    return "";
   });
 
   cleaned = cleaned.replace(BARE_IMAGE_URL_RE, (_match, url: string) => {
     pushUnique(url);
-    return '';
+    return "";
   });
 
-  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n").trim();
 
   return { cleanedText: cleaned, urls };
 }

@@ -1,16 +1,16 @@
-import { useState } from 'react';
-import { Button } from '@workbench/ui';
-import { ErrorBoundary } from '../components/ErrorBoundary';
-import { UnifiedCatalogModal } from '../components/layout/UnifiedCatalogModal';
-import { WorkflowRunPane } from '../components/WorkflowRunPane';
-import { useActiveWorkbench } from '../lib/active-workbench-context';
-import { useWorkflowRuns, type WorkflowRun } from '../hooks/use-workflow';
+import { useState } from "react";
+import { Button } from "@workbench/ui";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { UnifiedCatalogModal } from "../components/layout/UnifiedCatalogModal";
+import { WorkflowRunPane } from "../components/WorkflowRunPane";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
+import { useWorkflowRuns, type WorkflowRun } from "../hooks/use-workflow";
 
 function statusClass(status: string): string {
-  if (status === 'completed') return 'text-green-600';
-  if (status === 'failed') return 'text-red-500';
-  if (status === 'awaiting') return 'text-orange';
-  return 'text-text-2';
+  if (status === "completed") return "text-green-600";
+  if (status === "failed") return "text-red-500";
+  if (status === "awaiting") return "text-orange";
+  return "text-text-2";
 }
 
 function formatWhen(iso: string): string {
@@ -33,12 +33,16 @@ function RunRow({
       type="button"
       onClick={onSelect}
       className={`flex w-full flex-col gap-0.5 border-b border-border px-4 py-3 text-left transition-colors hover:bg-page ${
-        selected ? 'bg-page' : ''
+        selected ? "bg-page" : ""
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium text-text">{run.kind}</span>
-        <span className={`shrink-0 text-xs font-medium capitalize ${statusClass(run.status)}`}>
+        <span className="truncate text-sm font-medium text-text">
+          {run.kind}
+        </span>
+        <span
+          className={`shrink-0 text-xs font-medium capitalize ${statusClass(run.status)}`}
+        >
           {run.status}
         </span>
       </div>
@@ -54,7 +58,12 @@ function RunRow({
  */
 export function WorkflowsPage() {
   const { activeTenantId } = useActiveWorkbench();
-  const { data: runs, isLoading, isError, refetch } = useWorkflowRuns(activeTenantId);
+  const {
+    data: runs,
+    isLoading,
+    isError,
+    refetch,
+  } = useWorkflowRuns(activeTenantId);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
 
@@ -64,14 +73,18 @@ export function WorkflowsPage() {
         <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
           <div>
             <h1 className="text-sm font-semibold text-text">Workflow runs</h1>
-            <p className="text-xs text-text-3">Your workflow execution history</p>
+            <p className="text-xs text-text-3">
+              Your workflow execution history
+            </p>
           </div>
           <Button size="sm" onClick={() => setCatalogOpen(true)}>
             New run
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
-          {isLoading && <div className="px-4 py-6 text-sm text-text-2">Loading runs…</div>}
+          {isLoading && (
+            <div className="px-4 py-6 text-sm text-text-2">Loading runs…</div>
+          )}
           {isError && (
             <div className="flex flex-col items-start gap-2 px-4 py-6 text-sm text-text-2">
               <span>Couldn't load workflow runs.</span>
@@ -85,7 +98,9 @@ export function WorkflowsPage() {
             </div>
           )}
           {!isLoading && !isError && (runs?.length ?? 0) === 0 && (
-            <div className="px-4 py-6 text-sm text-text-2">No workflow runs yet.</div>
+            <div className="px-4 py-6 text-sm text-text-2">
+              No workflow runs yet.
+            </div>
           )}
           {(runs ?? []).map((run) => (
             <RunRow

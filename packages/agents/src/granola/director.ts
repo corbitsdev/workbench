@@ -1,4 +1,4 @@
-import { createDefaultDirector } from '@intx/inference';
+import { createDefaultDirector } from "@intx/inference";
 import type {
   ReactorDirector,
   ReactorInboundEvent,
@@ -6,7 +6,7 @@ import type {
   ReactorCapabilities,
   ReactorAction,
   ToolDefinition,
-} from '@intx/types/runtime';
+} from "@intx/types/runtime";
 
 /**
  * Create a custom director for the Granola agent.
@@ -25,7 +25,7 @@ import type {
 export function createGranolaDirector(
   systemPrompt: string,
   toolDefinitions: ToolDefinition[],
-  allowedSenders: string[]
+  allowedSenders: string[],
 ): ReactorDirector {
   const base = createDefaultDirector(systemPrompt, toolDefinitions);
 
@@ -33,12 +33,12 @@ export function createGranolaDirector(
     async decide(
       event: ReactorInboundEvent,
       state: ReactorState,
-      capabilities: ReactorCapabilities
+      capabilities: ReactorCapabilities,
     ): Promise<ReactorAction | ReactorAction[]> {
-      if (event.type === 'message.received') {
+      if (event.type === "message.received") {
         const sender = event.message.headers.from;
         if (!allowedSenders.includes(sender)) {
-          return [capabilities.reply('Not authorised'), capabilities.wait()];
+          return [capabilities.reply("Not authorised"), capabilities.wait()];
         }
       }
       return base.decide(event, state, capabilities);

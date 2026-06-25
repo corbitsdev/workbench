@@ -1,4 +1,4 @@
-import { createDefaultDirector } from '@intx/inference';
+import { createDefaultDirector } from "@intx/inference";
 import type {
   ReactorDirector,
   ReactorInboundEvent,
@@ -6,7 +6,7 @@ import type {
   ReactorCapabilities,
   ReactorAction,
   ToolDefinition,
-} from '@intx/types/runtime';
+} from "@intx/types/runtime";
 
 /**
  * Create a custom director for the personal agent.
@@ -27,7 +27,7 @@ import type {
 export function createPersonalAgentDirector(
   systemPrompt: string,
   toolDefinitions: ToolDefinition[],
-  allowedSenders: string[]
+  allowedSenders: string[],
 ): ReactorDirector {
   const base = createDefaultDirector(systemPrompt, toolDefinitions);
 
@@ -35,12 +35,12 @@ export function createPersonalAgentDirector(
     async decide(
       event: ReactorInboundEvent,
       state: ReactorState,
-      capabilities: ReactorCapabilities
+      capabilities: ReactorCapabilities,
     ): Promise<ReactorAction | ReactorAction[]> {
-      if (event.type === 'message.received' && allowedSenders.length > 0) {
+      if (event.type === "message.received" && allowedSenders.length > 0) {
         const sender = event.message.headers.from;
         if (!allowedSenders.includes(sender)) {
-          return [capabilities.reply('Not authorised'), capabilities.wait()];
+          return [capabilities.reply("Not authorised"), capabilities.wait()];
         }
       }
       return base.decide(event, state, capabilities);

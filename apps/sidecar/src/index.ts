@@ -1,32 +1,32 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { sign as nodeSign } from 'node:crypto';
-import { setupObservability } from '@workbench/sentry';
-import { createInMemoryTransport } from '@intx/mail-memory';
+import fs from "node:fs/promises";
+import path from "node:path";
+import { sign as nodeSign } from "node:crypto";
+import { setupObservability } from "@workbench/sentry";
+import { createInMemoryTransport } from "@intx/mail-memory";
 import {
   createNodeCrypto,
   generateKeyPair,
   importPrivateKeyBytes,
   verifySSHSignature,
-} from '@intx/crypto-node';
-import { createSidecarOrchestrator, type HubLink } from '@workbench/hub-agent';
-import type { InferenceEvent } from '@intx/types/runtime';
-import { createAgentRepoStore } from '@intx/hub-sessions';
-import { installGeminiThoughtSignaturePatch } from './gemini-thought-signature-patch';
-import { createDefaultHarnessBuilder, wsUrlToHttp } from './default-harness';
+} from "@intx/crypto-node";
+import { createSidecarOrchestrator, type HubLink } from "@workbench/hub-agent";
+import type { InferenceEvent } from "@intx/types/runtime";
+import { createAgentRepoStore } from "@intx/hub-sessions";
+import { installGeminiThoughtSignaturePatch } from "./gemini-thought-signature-patch";
+import { createDefaultHarnessBuilder, wsUrlToHttp } from "./default-harness";
 import {
   resolveSidecarHeartbeat,
   resolveSidecarHubLinkQueue,
   resolveToolPackageCache,
-} from './config';
+} from "./config";
 // Workflow-host wiring: `createSidecarDeployRouter` is the production
 // deploy routing the orchestrator hands to the link's `agent.deploy`
 // handler. Every inbound frame flows through a freshly-constructed
 // workflow-host supervisor whose trivial branch calls back into the
 // sidecar's existing single-agent provisioning surface.
-import { createSidecarDeployRouter } from './workflow-host-wiring';
-import { reconcileOrphanedDeploymentDirs } from './boot-reconciler';
-import { getLogger } from '@intx/log';
+import { createSidecarDeployRouter } from "./workflow-host-wiring";
+import { reconcileOrphanedDeploymentDirs } from "./boot-reconciler";
+import { getLogger } from "@intx/log";
 import {
   createDeploymentAddressRegistry,
   createMultistepDrainRouter,
@@ -34,9 +34,9 @@ import {
   createMultistepSignalRouter,
   createWorkflowRunPackClient,
   createWorkflowRunPackPushingRepoStore,
-} from './workflow-run-pack-client';
+} from "./workflow-run-pack-client";
 
-await setupObservability({ dev: process.env.NODE_ENV !== 'production' });
+await setupObservability({ dev: process.env.NODE_ENV !== "production" });
 
 // Install the google-genai thoughtSignature workaround before any inference
 // happens. This wraps the registered adapter to strip orphan
@@ -55,21 +55,27 @@ function requireEnv(name: string): string {
 
 const heartbeat = resolveSidecarHeartbeat(process.env);
 const hubLinkQueue = resolveSidecarHubLinkQueue(process.env);
-const dataDir = requireEnv('SIDECAR_DATA_DIR');
+const dataDir = requireEnv("SIDECAR_DATA_DIR");
 const toolPackageCache = resolveToolPackageCache(process.env, dataDir);
 
-const hubWsUrl = requireEnv('HUB_WS_URL');
-const sidecarId = requireEnv('SIDECAR_ID');
-const sidecarToken = requireEnv('SIDECAR_TOKEN');
+const hubWsUrl = requireEnv("HUB_WS_URL");
+const sidecarId = requireEnv("SIDECAR_ID");
+const sidecarToken = requireEnv("SIDECAR_TOKEN");
 
 // Load or mint the sidecar's local Ed25519 keypair. The supervisor
 // principal signs every workflow-run commit with this key; the
 // substrate's signing callback signs every SSH-signed commit with it;
 // the workflow-host child re-uses it via the `SIDECAR_SIGNING_*`
 // spawn-time env vars. One key, one identity for the sidecar process.
-const SIDECAR_SIGNING_DIR = path.join(dataDir, '.sidecar-signing');
-const SIDECAR_PRIVATE_KEY_PATH = path.join(SIDECAR_SIGNING_DIR, 'ed25519.private');
-const SIDECAR_PUBLIC_KEY_PATH = path.join(SIDECAR_SIGNING_DIR, 'ed25519.public');
+const SIDECAR_SIGNING_DIR = path.join(dataDir, ".sidecar-signing");
+const SIDECAR_PRIVATE_KEY_PATH = path.join(
+  SIDECAR_SIGNING_DIR,
+  "ed25519.private",
+);
+const SIDECAR_PUBLIC_KEY_PATH = path.join(
+  SIDECAR_SIGNING_DIR,
+  "ed25519.public",
+);
 
 async function loadOrMintSidecarKeypair(): Promise<{
   publicKey: Uint8Array;
@@ -91,7 +97,7 @@ async function loadOrMintSidecarKeypair(): Promise<{
   }
   if (havePriv !== havePub) {
     throw new Error(
-      `sidecar signing keypair under ${SIDECAR_SIGNING_DIR} is partial: privateKey=${String(havePriv)} publicKey=${String(havePub)}; remove the directory to reset`
+      `sidecar signing keypair under ${SIDECAR_SIGNING_DIR} is partial: privateKey=${String(havePriv)} publicKey=${String(havePub)}; remove the directory to reset`,
     );
   }
   if (havePriv && havePub) {
@@ -148,7 +154,7 @@ const workflowRunPackClient = createWorkflowRunPackClient({
     pushWorkflowRunPack(opts) {
       if (resolvedHubLink === null) {
         throw new Error(
-          'sidecar boot: workflow-run pack push attempted before hub link was constructed'
+          "sidecar boot: workflow-run pack push attempted before hub link was constructed",
         );
       }
       return resolvedHubLink.pushWorkflowRunPack(opts);
@@ -172,25 +178,33 @@ const wrappedRepoStore = createWorkflowRunPackPushingRepoStore({
 // `bun`, agent code can find a writable home, and tmp-file APIs land on
 // the same temp root the host uses.
 const workflowInferencePublisher: {
-  send?: (agentAddress: string, sessionId: string, event: InferenceEvent) => void;
+  send?: (
+    agentAddress: string,
+    sessionId: string,
+    event: InferenceEvent,
+  ) => void;
 } = {};
 
 const multistepSubstrateEnv: Record<string, string> = {
   SIDECAR_DATA_DIR: dataDir,
-  SIDECAR_SIGNING_PUBLIC_KEY: Buffer.from(sidecarSigningKey.publicKey).toString('hex'),
-  SIDECAR_SIGNING_PRIVATE_KEY: Buffer.from(sidecarSigningKey.privateKey).toString('hex'),
+  SIDECAR_SIGNING_PUBLIC_KEY: Buffer.from(sidecarSigningKey.publicKey).toString(
+    "hex",
+  ),
+  SIDECAR_SIGNING_PRIVATE_KEY: Buffer.from(
+    sidecarSigningKey.privateKey,
+  ).toString("hex"),
   HUB_WS_URL: hubWsUrl,
   SIDECAR_ID: sidecarId,
   SIDECAR_TOKEN: sidecarToken,
-  PATH: requireEnv('PATH'),
+  PATH: requireEnv("PATH"),
 };
-const hostHome = process.env['HOME'];
+const hostHome = process.env["HOME"];
 if (hostHome !== undefined) {
-  multistepSubstrateEnv['HOME'] = hostHome;
+  multistepSubstrateEnv["HOME"] = hostHome;
 }
-const hostTmpdir = process.env['TMPDIR'];
+const hostTmpdir = process.env["TMPDIR"];
 if (hostTmpdir !== undefined) {
-  multistepSubstrateEnv['TMPDIR'] = hostTmpdir;
+  multistepSubstrateEnv["TMPDIR"] = hostTmpdir;
 }
 
 const orchestrator = createSidecarOrchestrator({
@@ -240,7 +254,11 @@ const orchestrator = createSidecarOrchestrator({
       multistepDrainRouter,
       multistepSubstrateEnv,
       publishWorkflowInferenceEvent: (agentAddress, sessionId, event) => {
-        workflowInferencePublisher.send?.(agentAddress, sessionId, event as InferenceEvent);
+        workflowInferencePublisher.send?.(
+          agentAddress,
+          sessionId,
+          event as InferenceEvent,
+        );
       },
     }),
 });
@@ -263,9 +281,12 @@ try {
 } catch (err) {
   // Defensive: the reconciler swallows its own failures, but a thrown error
   // (e.g. an unexpected logger fault) must not gate boot.
-  getLogger(['sidecar', 'boot']).error('boot reconciler threw; continuing sidecar start: {msg}', {
-    msg: err instanceof Error ? err.message : String(err),
-  });
+  getLogger(["sidecar", "boot"]).error(
+    "boot reconciler threw; continuing sidecar start: {msg}",
+    {
+      msg: err instanceof Error ? err.message : String(err),
+    },
+  );
 }
 
 orchestrator.start();

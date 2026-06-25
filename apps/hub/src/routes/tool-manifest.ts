@@ -1,16 +1,22 @@
-import { Hono } from 'hono';
-import { type } from 'arktype';
-import { eq } from 'drizzle-orm';
-import { schema as intxSchema, listAssetsForTenant } from '@intx/db';
-import type { DB } from '@intx/db';
-import { getLogger } from '@intx/log';
-import { createClosureResolver } from '@intx/tool-packaging';
-import { WORKSPACE_BUILTINS_REGISTRY, type AssetService } from '@intx/hub-sessions';
-import { ToolPackagePin } from '@intx/types/tool-packages';
-import { ToolManifestRequest, type ToolManifestTarball } from '@workbench/tool-credentials';
-import { buildTenantRegistryMap } from '../lib/tenant-registry-map';
+import { Hono } from "hono";
+import { type } from "arktype";
+import { eq } from "drizzle-orm";
+import { schema as intxSchema, listAssetsForTenant } from "@intx/db";
+import type { DB } from "@intx/db";
+import { getLogger } from "@intx/log";
+import { createClosureResolver } from "@intx/tool-packaging";
+import {
+  WORKSPACE_BUILTINS_REGISTRY,
+  type AssetService,
+} from "@intx/hub-sessions";
+import { ToolPackagePin } from "@intx/types/tool-packages";
+import {
+  ToolManifestRequest,
+  type ToolManifestTarball,
+} from "@workbench/tool-credentials";
+import { buildTenantRegistryMap } from "../lib/tenant-registry-map";
 
-const log = getLogger(['api', 'tool-manifest']);
+const log = getLogger(["api", "tool-manifest"]);
 
 const ToolPackagePins = ToolPackagePin.array();
 
@@ -41,30 +47,30 @@ const MAX_TOTAL_TARBALL_BYTES = 256 * 1024 * 1024;
  * resolve, so a sidecar-token holder cannot resolve arbitrary closures.
  */
 export function createToolManifestRouter(
-  db: DB['db'],
+  db: DB["db"],
   sidecarToken: string,
   assetService: AssetService,
   // Injected for testability, mirroring `createToolCredentialsRouter`'s
   // `resolveCredential` seam. Production uses the real `@intx/db` listing and
   // `@intx/tool-packaging` resolver.
   listAssets: typeof listAssetsForTenant = listAssetsForTenant,
-  createResolver: typeof createClosureResolver = createClosureResolver
+  createResolver: typeof createClosureResolver = createClosureResolver,
 ): Hono {
   const router = new Hono();
 
-  router.use('*', async (c, next) => {
-    if (c.req.header('Authorization') !== `Bearer ${sidecarToken}`) {
-      return c.json({ error: 'Unauthorized' }, 401);
+  router.use("*", async (c, next) => {
+    if (c.req.header("Authorization") !== `Bearer ${sidecarToken}`) {
+      return c.json({ error: "Unauthorized" }, 401);
     }
     return next();
   });
 
-  router.post('/tools/manifest', async (c) => {
+  router.post("/tools/manifest", async (c) => {
     let body: unknown;
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: 'Invalid JSON' }, 400);
+      return c.json({ error: "Invalid JSON" }, 400);
     }
     const parsed = ToolManifestRequest(body);
     if (parsed instanceof type.errors) {
@@ -79,25 +85,35 @@ export function createToolManifestRouter(
     }
     const pins = ToolPackagePins(agentRow.toolPackages);
     if (pins instanceof type.errors) {
-      return c.json({ error: `Agent ${parsed.agentId} has malformed tool packages` }, 422);
+      return c.json(
+        { error: `Agent ${parsed.agentId} has malformed tool packages` },
+        422,
+      );
     }
     if (pins.length === 0) {
       return c.json({
-        manifest: { schemaVersion: '1', topLevel: [], entries: [] },
+        manifest: { schemaVersion: "1", topLevel: [], entries: [] },
         tarballs: [],
       });
     }
 
     // `assetNameById` carries the winning asset's name per assetId so the
     // materialized tarball's mount path is derived without a second DB hit.
-    const visibleAssets = await listAssets(db, parsed.tenantId, 'package-registry');
-    const { registryMap, assetNameById } = buildTenantRegistryMap(visibleAssets, assetService);
+    const visibleAssets = await listAssets(
+      db,
+      parsed.tenantId,
+      "package-registry",
+    );
+    const { registryMap, assetNameById } = buildTenantRegistryMap(
+      visibleAssets,
+      assetService,
+    );
     if (!registryMap.has(WORKSPACE_BUILTINS_REGISTRY)) {
       return c.json(
         {
           error: `Tenant ${parsed.tenantId} has no "${WORKSPACE_BUILTINS_REGISTRY}" package-registry asset`,
         },
-        422
+        422,
       );
     }
 
@@ -110,12 +126,12 @@ export function createToolManifestRouter(
     try {
       manifest = await resolver.resolveClosure(pins);
     } catch (err) {
-      log.error('Tool-package closure resolution failed', {
+      log.error("Tool-package closure resolution failed", {
         tenantId: parsed.tenantId,
         agentId: parsed.agentId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return c.json({ error: 'Tool-package closure resolution failed' }, 500);
+      return c.json({ error: "Tool-package closure resolution failed" }, 500);
     }
 
     // Read the raw bytes of every asset-sourced tarball the manifest
@@ -126,14 +142,14 @@ export function createToolManifestRouter(
     const tarballs: ToolManifestTarball[] = [];
     let totalTarballBytes = 0;
     for (const entry of manifest.entries) {
-      if (entry.source.kind !== 'asset') continue;
+      if (entry.source.kind !== "asset") continue;
       const assetName = assetNameById.get(entry.source.assetId);
       if (assetName === undefined) {
         return c.json(
           {
             error: `Manifest references asset ${entry.source.assetId} not visible to tenant`,
           },
-          422
+          422,
         );
       }
       let bytes: Uint8Array;
@@ -143,15 +159,18 @@ export function createToolManifestRouter(
           path: entry.source.path,
         });
       } catch (err) {
-        log.error('Tarball read failed', {
+        log.error("Tarball read failed", {
           assetId: entry.source.assetId,
           path: entry.source.path,
           error: err instanceof Error ? err.message : String(err),
         });
-        return c.json({ error: `Tarball read failed for ${entry.name}@${entry.version}` }, 500);
+        return c.json(
+          { error: `Tarball read failed for ${entry.name}@${entry.version}` },
+          500,
+        );
       }
       if (bytes.byteLength > MAX_TARBALL_BYTES) {
-        log.error('Tarball exceeds per-tarball byte cap', {
+        log.error("Tarball exceeds per-tarball byte cap", {
           assetId: entry.source.assetId,
           path: entry.source.path,
           bytes: bytes.byteLength,
@@ -161,12 +180,12 @@ export function createToolManifestRouter(
           {
             error: `Tarball ${entry.name}@${entry.version} exceeds the ${String(MAX_TARBALL_BYTES)}-byte per-tarball limit`,
           },
-          413
+          413,
         );
       }
       totalTarballBytes += bytes.byteLength;
       if (totalTarballBytes > MAX_TOTAL_TARBALL_BYTES) {
-        log.error('Manifest tarballs exceed total byte cap', {
+        log.error("Manifest tarballs exceed total byte cap", {
           tenantId: parsed.tenantId,
           agentId: parsed.agentId,
           total: totalTarballBytes,
@@ -176,14 +195,14 @@ export function createToolManifestRouter(
           {
             error: `Resolved tarballs exceed the ${String(MAX_TOTAL_TARBALL_BYTES)}-byte total limit`,
           },
-          413
+          413,
         );
       }
       tarballs.push({
         assetId: entry.source.assetId,
         mount: `package-registries/${assetName}/`,
         path: entry.source.path,
-        bytesBase64: Buffer.from(bytes).toString('base64'),
+        bytesBase64: Buffer.from(bytes).toString("base64"),
       });
     }
 

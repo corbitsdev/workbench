@@ -13,14 +13,18 @@
 // shape the supervisor uses for `writeTreePreservingPrefix`; the
 // transferId is minted inside `HubLink.pushWorkflowRunPack`.
 
-import fs from 'node:fs';
-import git from 'isomorphic-git';
-import { getLogger } from '@intx/log';
-import type { RepoId, RepoStore } from '@intx/hub-sessions';
-import { collectReachableObjects } from '@workbench/storage-isogit';
-import type { HubLink } from '@workbench/hub-agent';
+import fs from "node:fs";
+import git from "isomorphic-git";
+import { getLogger } from "@intx/log";
+import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import { collectReachableObjects } from "@workbench/storage-isogit";
+import type { HubLink } from "@workbench/hub-agent";
 
-const logger = getLogger(['interchange', 'sidecar', 'workflow-run-pack-client']);
+const logger = getLogger([
+  "interchange",
+  "sidecar",
+  "workflow-run-pack-client",
+]);
 
 // Build a packfile carrying EVERY object reachable from the ref tip back to
 // the root commit, walking the full first-parent chain. Workflow-run repos are
@@ -41,7 +45,7 @@ const logger = getLogger(['interchange', 'sidecar', 'workflow-run-pack-client'])
 // dedupes, so a warm hub only applies genuinely-new commits (CL-2230).
 async function buildFullChainPack(
   dir: string,
-  ref: string
+  ref: string,
 ): Promise<{ pack: Uint8Array; commitSha: string }> {
   const commitSha = await git.resolveRef({ fs, dir, ref });
   const seen = new Set<string>();
@@ -54,9 +58,16 @@ async function buildFullChainPack(
     const parent = commit.parent[0];
     current = parent ?? null;
   }
-  const result = await git.packObjects({ fs, dir, oids: [...seen], write: false });
+  const result = await git.packObjects({
+    fs,
+    dir,
+    oids: [...seen],
+    write: false,
+  });
   if (result.packfile === undefined) {
-    throw new Error(`packObjects returned no packfile for ref "${ref}" (${commitSha})`);
+    throw new Error(
+      `packObjects returned no packfile for ref "${ref}" (${commitSha})`,
+    );
   }
   return { pack: result.packfile, commitSha };
 }
@@ -70,26 +81,33 @@ export type WorkflowRunPackClient = {
    * failure shape is intentionally loud per the project's
    * defensive-coding rule.
    */
-  push(opts: { agentAddress: string; repoId: RepoId; ref: string }): Promise<void>;
+  push(opts: {
+    agentAddress: string;
+    repoId: RepoId;
+    ref: string;
+  }): Promise<void>;
 };
 
 export type CreateWorkflowRunPackClientOpts = {
   substrate: RepoStore;
-  hubLink: Pick<HubLink, 'pushWorkflowRunPack'>;
+  hubLink: Pick<HubLink, "pushWorkflowRunPack">;
 };
 
 export function createWorkflowRunPackClient(
-  opts: CreateWorkflowRunPackClientOpts
+  opts: CreateWorkflowRunPackClientOpts,
 ): WorkflowRunPackClient {
   const { substrate, hubLink } = opts;
   return {
     async push({ agentAddress, repoId, ref }) {
-      if (repoId.kind !== 'workflow-run') {
+      if (repoId.kind !== "workflow-run") {
         throw new Error(
-          `workflow-run pack client: repoId.kind must be "workflow-run", got ${JSON.stringify(repoId.kind)}`
+          `workflow-run pack client: repoId.kind must be "workflow-run", got ${JSON.stringify(repoId.kind)}`,
         );
       }
-      const { pack, commitSha } = await buildFullChainPack(substrate.getRepoDir(repoId), ref);
+      const { pack, commitSha } = await buildFullChainPack(
+        substrate.getRepoDir(repoId),
+        ref,
+      );
       await hubLink.pushWorkflowRunPack({
         agentAddress,
         repoId,
@@ -215,7 +233,7 @@ export type MultistepSignalRouter = {
   register(address: string, handler: MultistepSignalHandler): void;
   unregister(address: string): void;
   tryRoute(frame: {
-    type: 'signal.deliver';
+    type: "signal.deliver";
     agentAddress: string;
     runId: string;
     signalName: string;
@@ -258,7 +276,9 @@ export function createMultistepSignalRouter(): MultistepSignalRouter {
  * commits a signed `CancelRequested{origin: "supervisor-drain"}`
  * against the workflow-run repo when the deadline expires.
  */
-export type MultistepDrainHandler = (args: { deadlineMs: number }) => Promise<void>;
+export type MultistepDrainHandler = (args: {
+  deadlineMs: number;
+}) => Promise<void>;
 
 /**
  * Per-deployment-address drain handler registry the sidecar hub-link
@@ -279,7 +299,7 @@ export type MultistepDrainRouter = {
   register(address: string, handler: MultistepDrainHandler): void;
   unregister(address: string): void;
   tryRoute(frame: {
-    type: 'drain.deliver';
+    type: "drain.deliver";
     agentAddress: string;
     deadlineMs: number;
   }): Promise<boolean>;
@@ -380,7 +400,7 @@ export type WorkflowRunPackPushingRepoStore = RepoStore & {
 };
 
 export function createWorkflowRunPackPushingRepoStore(
-  opts: WorkflowRunPackPushingRepoStoreOpts
+  opts: WorkflowRunPackPushingRepoStoreOpts,
 ): WorkflowRunPackPushingRepoStore {
   const { underlying, packClient, registry } = opts;
 
@@ -417,7 +437,8 @@ export function createWorkflowRunPackPushingRepoStore(
         } catch (cause) {
           const msg = cause instanceof Error ? cause.message : String(cause);
           logger.warn`workflow-run pack push failed for deployment ${repoId.id} (${slot.agentAddress}): ${msg}`;
-          slot.lastError = cause instanceof Error ? cause : new Error(String(cause));
+          slot.lastError =
+            cause instanceof Error ? cause : new Error(String(cause));
         }
       }
       slot.inFlight = null;
@@ -425,7 +446,11 @@ export function createWorkflowRunPackPushingRepoStore(
     })();
   }
 
-  function schedulePush(agentAddress: string, repoId: RepoId, ref: string): void {
+  function schedulePush(
+    agentAddress: string,
+    repoId: RepoId,
+    ref: string,
+  ): void {
     const key = slotKey(repoId, ref);
     let slot = slots.get(key);
     if (slot === undefined) {
@@ -457,7 +482,10 @@ export function createWorkflowRunPackPushingRepoStore(
     return err;
   }
 
-  async function flushWorkflowRunPushes(repoId: RepoId, ref: string): Promise<void> {
+  async function flushWorkflowRunPushes(
+    repoId: RepoId,
+    ref: string,
+  ): Promise<void> {
     const slot = slots.get(slotKey(repoId, ref));
     if (slot === undefined) return;
     if (slot.inFlight === null && !slot.dirty) {
@@ -490,20 +518,25 @@ export function createWorkflowRunPackPushingRepoStore(
     subscribe: underlying.subscribe.bind(underlying),
     flushWorkflowRunPushes,
     async writeTreePreservingPrefix(principal, repoId, ref, args) {
-      if (repoId.kind === 'workflow-run') {
+      if (repoId.kind === "workflow-run") {
         const latched = takeLatchedError(repoId, ref);
         if (latched !== null) {
           throw latched;
         }
       }
-      const result = await underlying.writeTreePreservingPrefix(principal, repoId, ref, args);
-      if (repoId.kind !== 'workflow-run') {
+      const result = await underlying.writeTreePreservingPrefix(
+        principal,
+        repoId,
+        ref,
+        args,
+      );
+      if (repoId.kind !== "workflow-run") {
         return result;
       }
       const agentAddress = registry.resolve(repoId.id);
       if (agentAddress === null) {
         throw new Error(
-          `workflow-run pack push: no agent address registered for deployment ${repoId.id}; the deploy router must record the mapping before the supervisor commits run events`
+          `workflow-run pack push: no agent address registered for deployment ${repoId.id}; the deploy router must record the mapping before the supervisor commits run events`,
         );
       }
       schedulePush(agentAddress, repoId, ref);

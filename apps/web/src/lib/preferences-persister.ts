@@ -1,5 +1,5 @@
-import { serverPatchForRawChange } from '@workbench/ui';
-import { patchMePreferences } from './hub-api';
+import { serverPatchForRawChange } from "@workbench/ui";
+import { patchMePreferences } from "./hub-api";
 
 const DEBOUNCE_MS = 400;
 

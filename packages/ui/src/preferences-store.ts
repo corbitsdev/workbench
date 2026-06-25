@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from "react";
 
 /**
  * A tiny reactive store for per-user UI preferences, backed by localStorage so
@@ -14,9 +14,9 @@ import { useSyncExternalStore } from 'react';
 
 /** localStorage keys for the known preferences (also the store's cache keys). */
 export const PREFERENCE_KEYS = {
-  theme: 'cw-theme',
-  compactToolActivity: 'cw-compact-tools',
-  toolSummaryStyle: 'cw-tool-summary-style',
+  theme: "cw-theme",
+  compactToolActivity: "cw-compact-tools",
+  toolSummaryStyle: "cw-tool-summary-style",
 } as const;
 
 type Persister = (key: string, value: string) => void;
@@ -72,7 +72,7 @@ export function usePreferenceRaw(key: string): string | null {
   return useSyncExternalStore(
     (listener) => subscribe(key, listener),
     () => readRaw(key),
-    () => null
+    () => null,
   );
 }
 
@@ -108,11 +108,15 @@ export interface ServerPreferences {
 
 /** Reconcile the server's persisted preferences into the store after bootstrap. */
 export function hydrateServerPreferences(prefs: ServerPreferences): void {
-  if (typeof prefs.theme === 'string') hydratePreference(PREFERENCE_KEYS.theme, prefs.theme);
-  if (typeof prefs.compactToolActivity === 'boolean') {
-    hydratePreference(PREFERENCE_KEYS.compactToolActivity, String(prefs.compactToolActivity));
+  if (typeof prefs.theme === "string")
+    hydratePreference(PREFERENCE_KEYS.theme, prefs.theme);
+  if (typeof prefs.compactToolActivity === "boolean") {
+    hydratePreference(
+      PREFERENCE_KEYS.compactToolActivity,
+      String(prefs.compactToolActivity),
+    );
   }
-  if (typeof prefs.toolSummaryStyle === 'string') {
+  if (typeof prefs.toolSummaryStyle === "string") {
     hydratePreference(PREFERENCE_KEYS.toolSummaryStyle, prefs.toolSummaryStyle);
   }
 }
@@ -124,12 +128,13 @@ export function hydrateServerPreferences(prefs: ServerPreferences): void {
  */
 export function serverPatchForRawChange(
   key: string,
-  value: string
+  value: string,
 ): Record<string, unknown> | null {
   if (key === PREFERENCE_KEYS.theme) return { theme: value };
   if (key === PREFERENCE_KEYS.compactToolActivity) {
-    return { compactToolActivity: value === 'true' };
+    return { compactToolActivity: value === "true" };
   }
-  if (key === PREFERENCE_KEYS.toolSummaryStyle) return { toolSummaryStyle: value };
+  if (key === PREFERENCE_KEYS.toolSummaryStyle)
+    return { toolSummaryStyle: value };
   return null;
 }

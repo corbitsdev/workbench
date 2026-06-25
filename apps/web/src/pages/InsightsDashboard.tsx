@@ -1,17 +1,21 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { BarChart2 } from 'lucide-react';
-import { useActiveWorkbench } from '../lib/active-workbench-context';
-import { describeHubApiFailure, getActivityOverview } from '../lib/hub-api';
-import type { ActivityOverview, AnalyticsAgentRow, AnalyticsSummary } from '../lib/hub-api';
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { BarChart2 } from "lucide-react";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
+import { describeHubApiFailure, getActivityOverview } from "../lib/hub-api";
+import type {
+  ActivityOverview,
+  AnalyticsAgentRow,
+  AnalyticsSummary,
+} from "../lib/hub-api";
 
-type Preset = '7d' | '30d' | '90d' | 'all';
+type Preset = "7d" | "30d" | "90d" | "all";
 
 const PRESETS: { label: string; value: Preset }[] = [
-  { label: '7 days', value: '7d' },
-  { label: '30 days', value: '30d' },
-  { label: '90 days', value: '90d' },
-  { label: 'All time', value: 'all' },
+  { label: "7 days", value: "7d" },
+  { label: "30 days", value: "30d" },
+  { label: "90 days", value: "90d" },
+  { label: "All time", value: "all" },
 ];
 
 function daysAgoISO(days: number): string {
@@ -20,9 +24,12 @@ function daysAgoISO(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function presetToDates(preset: Preset): { startDate?: string; endDate?: string } {
-  if (preset === 'all') return {};
-  const days = preset === '7d' ? 7 : preset === '30d' ? 30 : 90;
+function presetToDates(preset: Preset): {
+  startDate?: string;
+  endDate?: string;
+} {
+  if (preset === "all") return {};
+  const days = preset === "7d" ? 7 : preset === "30d" ? 30 : 90;
   return { startDate: daysAgoISO(days) };
 }
 
@@ -44,7 +51,9 @@ function KPICard({
   return (
     <div className="flex flex-col gap-1 rounded-[12px] border border-border bg-surface p-4">
       <span className="text-[12px] font-medium text-text-3">{label}</span>
-      <span className={`text-[24px] font-bold ${accent ? 'text-orange' : 'text-text'}`}>
+      <span
+        className={`text-[24px] font-bold ${accent ? "text-orange" : "text-text"}`}
+      >
         {value}
       </span>
       {sub && <span className="text-[12px] text-text-3">{sub}</span>}
@@ -56,7 +65,9 @@ function TokenRow({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex items-center justify-between py-2">
       <span className="text-[13px] text-text-2">{label}</span>
-      <span className="text-[13px] font-medium text-text">{formatNumber(value)}</span>
+      <span className="text-[13px] font-medium text-text">
+        {formatNumber(value)}
+      </span>
     </div>
   );
 }
@@ -69,7 +80,8 @@ function SummaryContent({ data }: { data: AnalyticsSummary }) {
     data.cacheWriteTokens +
     data.thinkingTokens;
 
-  const allZero = data.turnCount === 0 && data.toolCallCount === 0 && totalTokens === 0;
+  const allZero =
+    data.turnCount === 0 && data.toolCallCount === 0 && totalTokens === 0;
 
   if (allZero) {
     return (
@@ -115,8 +127,12 @@ function SummaryContent({ data }: { data: AnalyticsSummary }) {
 
       <div className="rounded-[12px] border border-border bg-surface p-4">
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-[13px] font-semibold text-text">Token usage</span>
-          <span className="text-[13px] font-bold text-text">{formatNumber(totalTokens)} total</span>
+          <span className="text-[13px] font-semibold text-text">
+            Token usage
+          </span>
+          <span className="text-[13px] font-bold text-text">
+            {formatNumber(totalTokens)} total
+          </span>
         </div>
         <div className="divide-y divide-border">
           <TokenRow label="Input" value={data.inputTokens} />
@@ -131,7 +147,9 @@ function SummaryContent({ data }: { data: AnalyticsSummary }) {
 }
 
 function SkeletonCard() {
-  return <div className="h-[92px] animate-pulse rounded-[12px] border border-border bg-surface" />;
+  return (
+    <div className="h-[92px] animate-pulse rounded-[12px] border border-border bg-surface" />
+  );
 }
 
 function SkeletonGrid() {
@@ -145,7 +163,13 @@ function SkeletonGrid() {
   );
 }
 
-function CountTable({ title, rows }: { title: string; rows: { key: string; count: number }[] }) {
+function CountTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { key: string; count: number }[];
+}) {
   if (rows.length === 0) {
     return (
       <div className="rounded-[12px] border border-border bg-surface p-4">
@@ -169,7 +193,9 @@ function CountTable({ title, rows }: { title: string; rows: { key: string; count
           {rows.map((row) => (
             <tr key={row.key}>
               <td className="py-1.5 text-text-2">{row.key}</td>
-              <td className="py-1.5 text-right font-medium text-text">{formatNumber(row.count)}</td>
+              <td className="py-1.5 text-right font-medium text-text">
+                {formatNumber(row.count)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -181,10 +207,18 @@ function CountTable({ title, rows }: { title: string; rows: { key: string; count
 function OperationalLedger({ data }: { data: ActivityOverview }) {
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-[14px] font-semibold text-text">Operational ledger</h2>
+      <h2 className="text-[14px] font-semibold text-text">
+        Operational ledger
+      </h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KPICard label="Artifacts (total)" value={formatNumber(data.artifacts.total)} />
-        <KPICard label="Artifacts (in range)" value={formatNumber(data.artifacts.createdInRange)} />
+        <KPICard
+          label="Artifacts (total)"
+          value={formatNumber(data.artifacts.total)}
+        />
+        <KPICard
+          label="Artifacts (in range)"
+          value={formatNumber(data.artifacts.createdInRange)}
+        />
         <KPICard
           label="Workflow executions"
           value={formatNumber(data.workflowRuns.executionRecords)}
@@ -197,7 +231,10 @@ function OperationalLedger({ data }: { data: ActivityOverview }) {
           label="Agent instances (active)"
           value={formatNumber(data.agentInstances.active)}
         />
-        <KPICard label="Agent instances (total)" value={formatNumber(data.agentInstances.total)} />
+        <KPICard
+          label="Agent instances (total)"
+          value={formatNumber(data.agentInstances.total)}
+        />
         <KPICard
           label="Instances started (range)"
           value={formatNumber(data.agentInstances.startedInRange)}
@@ -208,10 +245,19 @@ function OperationalLedger({ data }: { data: ActivityOverview }) {
         />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <CountTable title="Artifacts by status" rows={data.artifacts.byStatus} />
+        <CountTable
+          title="Artifacts by status"
+          rows={data.artifacts.byStatus}
+        />
         <CountTable title="Artifacts by kind" rows={data.artifacts.byKind} />
-        <CountTable title="Workflow runs by status" rows={data.workflowRuns.byStatus} />
-        <CountTable title="Workflow runs by kind" rows={data.workflowRuns.byKind} />
+        <CountTable
+          title="Workflow runs by status"
+          rows={data.workflowRuns.byStatus}
+        />
+        <CountTable
+          title="Workflow runs by kind"
+          rows={data.workflowRuns.byKind}
+        />
       </div>
     </div>
   );
@@ -230,14 +276,20 @@ function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
               <th className="px-4 py-2 font-medium">Agent</th>
               <th className="px-4 py-2 font-medium text-right">Turns</th>
               <th className="px-4 py-2 font-medium text-right">Tool calls</th>
-              <th className="px-4 py-2 font-medium text-right">Tokens (in+out)</th>
+              <th className="px-4 py-2 font-medium text-right">
+                Tokens (in+out)
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-bg">
             {agents.map((row) => (
               <tr key={row.agentId}>
-                <td className="px-4 py-2 text-text">{row.agentName ?? row.agentId}</td>
-                <td className="px-4 py-2 text-right text-text-2">{formatNumber(row.turnCount)}</td>
+                <td className="px-4 py-2 text-text">
+                  {row.agentName ?? row.agentId}
+                </td>
+                <td className="px-4 py-2 text-right text-text-2">
+                  {formatNumber(row.turnCount)}
+                </td>
                 <td className="px-4 py-2 text-right text-text-2">
                   {formatNumber(row.toolCallCount)}
                 </td>
@@ -256,7 +308,7 @@ function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
 function InstanceBreakdown({
   instances,
 }: {
-  instances: ActivityOverview['inference']['byInstance'];
+  instances: ActivityOverview["inference"]["byInstance"];
 }) {
   if (instances.length === 0) return null;
 
@@ -271,15 +323,23 @@ function InstanceBreakdown({
               <th className="px-4 py-2 font-medium">Agent</th>
               <th className="px-4 py-2 font-medium text-right">Turns</th>
               <th className="px-4 py-2 font-medium text-right">Tool calls</th>
-              <th className="px-4 py-2 font-medium text-right">Tokens (in+out)</th>
+              <th className="px-4 py-2 font-medium text-right">
+                Tokens (in+out)
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-bg">
             {instances.map((row) => (
               <tr key={row.instanceId}>
-                <td className="px-4 py-2 font-mono text-[12px] text-text-2">{row.instanceId}</td>
-                <td className="px-4 py-2 text-text">{row.agentName ?? row.agentId}</td>
-                <td className="px-4 py-2 text-right text-text-2">{formatNumber(row.turnCount)}</td>
+                <td className="px-4 py-2 font-mono text-[12px] text-text-2">
+                  {row.instanceId}
+                </td>
+                <td className="px-4 py-2 text-text">
+                  {row.agentName ?? row.agentId}
+                </td>
+                <td className="px-4 py-2 text-right text-text-2">
+                  {formatNumber(row.turnCount)}
+                </td>
                 <td className="px-4 py-2 text-right text-text-2">
                   {formatNumber(row.toolCallCount)}
                 </td>
@@ -296,19 +356,20 @@ function InstanceBreakdown({
 }
 
 export function InsightsDashboard() {
-  const [preset, setPreset] = useState<Preset>('30d');
+  const [preset, setPreset] = useState<Preset>("30d");
   const { activeTenantId, activeWorkbench, loading } = useActiveWorkbench();
 
   const dates = presetToDates(preset);
 
   const overviewQuery = useQuery({
-    queryKey: ['activity-overview', activeTenantId, preset],
+    queryKey: ["activity-overview", activeTenantId, preset],
     queryFn: () => getActivityOverview(activeTenantId!, dates),
     enabled: !!activeTenantId,
     staleTime: 5 * 60_000,
   });
 
-  const showSummaryLoading = loading || (!!activeTenantId && overviewQuery.isLoading);
+  const showSummaryLoading =
+    loading || (!!activeTenantId && overviewQuery.isLoading);
 
   return (
     <div className="flex h-full overflow-hidden bg-bg">
@@ -317,10 +378,14 @@ export function InsightsDashboard() {
           <div className="flex min-w-0 flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <BarChart2 className="h-4 w-4 shrink-0 text-text-3" />
-              <p className="text-[14px] font-semibold text-text">Data &amp; Insights</p>
+              <p className="text-[14px] font-semibold text-text">
+                Data &amp; Insights
+              </p>
             </div>
             {activeWorkbench && (
-              <p className="truncate pl-6 text-[12px] text-text-3">{activeWorkbench.tenantName}</p>
+              <p className="truncate pl-6 text-[12px] text-text-3">
+                {activeWorkbench.tenantName}
+              </p>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -332,8 +397,8 @@ export function InsightsDashboard() {
                   onClick={() => setPreset(p.value)}
                   className={`rounded-[8px] px-3 py-1 text-[12px] font-medium transition-colors ${
                     preset === p.value
-                      ? 'bg-orange/10 text-orange'
-                      : 'text-text-3 hover:bg-[var(--row-hover)] hover:text-text'
+                      ? "bg-orange/10 text-orange"
+                      : "text-text-3 hover:bg-[var(--row-hover)] hover:text-text"
                   }`}
                 >
                   {p.label}
@@ -362,10 +427,14 @@ export function InsightsDashboard() {
             <div className="flex flex-col gap-10">
               <OperationalLedger data={overviewQuery.data} />
               <div className="flex flex-col gap-4">
-                <h2 className="text-[14px] font-semibold text-text">Inference &amp; tool usage</h2>
+                <h2 className="text-[14px] font-semibold text-text">
+                  Inference &amp; tool usage
+                </h2>
                 <SummaryContent data={overviewQuery.data.inference.summary} />
                 <AgentBreakdown agents={overviewQuery.data.inference.byAgent} />
-                <InstanceBreakdown instances={overviewQuery.data.inference.byInstance} />
+                <InstanceBreakdown
+                  instances={overviewQuery.data.inference.byInstance}
+                />
               </div>
             </div>
           )}

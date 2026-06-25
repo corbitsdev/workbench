@@ -565,31 +565,32 @@ All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agen
 1. Create an `InferenceSource` from environment variables:
 
    ```typescript
-   import type { InferenceSource } from '@intx/types/runtime';
+   import type { InferenceSource } from "@intx/types/runtime";
 
    const source: InferenceSource = {
      id: `my-task-${id}`,
-     provider: 'openai',
-     baseURL: process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1',
+     provider: "openai",
+     baseURL:
+       process.env.OPENAI_COMPATIBLE_BASE_URL || "https://api.openai.com/v1",
      apiKey: process.env.OPENAI_COMPATIBLE_API_KEY,
-     model: process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini',
+     model: process.env.OPENAI_COMPATIBLE_MODEL || "gpt-4o-mini",
    };
    ```
 
 2. Create a temporary agent with an ephemeral context directory:
 
    ```typescript
-   import { createAgent } from '@intx/agent';
-   import { tmpdir } from 'node:os';
-   import { join } from 'node:path';
-   import { randomUUID } from 'node:crypto';
+   import { createAgent } from "@intx/agent";
+   import { tmpdir } from "node:os";
+   import { join } from "node:path";
+   import { randomUUID } from "node:crypto";
 
    const contextDir = join(tmpdir(), `task-${randomUUID()}`);
    const agent = await createAgent({
      contextDir,
      sources: [source],
      defaultSource: source.id,
-     systemPrompt: 'Your system instructions...',
+     systemPrompt: "Your system instructions...",
      tools: [],
      closeTimeoutMs: 1000,
    });

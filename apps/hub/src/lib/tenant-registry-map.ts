@@ -1,5 +1,5 @@
-import { AssetRegistrySource, type RegistrySource } from '@intx/tool-packaging';
-import type { AssetService } from '@intx/hub-sessions';
+import { AssetRegistrySource, type RegistrySource } from "@intx/tool-packaging";
+import type { AssetService } from "@intx/hub-sessions";
 
 /** A tenant-visible package-registry asset row: the minimum the map needs. */
 export interface RegistryAssetRow {
@@ -20,8 +20,11 @@ export interface RegistryAssetRow {
  */
 export function buildTenantRegistryMap(
   assetRows: readonly RegistryAssetRow[],
-  assetService: AssetService
-): { registryMap: Map<string, RegistrySource>; assetNameById: Map<string, string> } {
+  assetService: AssetService,
+): {
+  registryMap: Map<string, RegistrySource>;
+  assetNameById: Map<string, string>;
+} {
   const registryMap = new Map<string, RegistrySource>();
   const assetNameById = new Map<string, string>();
   for (const row of assetRows) {
@@ -32,9 +35,11 @@ export function buildTenantRegistryMap(
       new AssetRegistrySource({
         name: row.name,
         assetId: row.id,
-        readBlob: (path) => assetService.readAssetBlob({ assetId: row.id, path }),
-        listBlobs: (dir) => assetService.listAssetBlobs({ assetId: row.id, dir }),
-      })
+        readBlob: (path) =>
+          assetService.readAssetBlob({ assetId: row.id, path }),
+        listBlobs: (dir) =>
+          assetService.listAssetBlobs({ assetId: row.id, dir }),
+      }),
     );
   }
   return { registryMap, assetNameById };

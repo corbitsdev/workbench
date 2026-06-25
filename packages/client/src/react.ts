@@ -2,15 +2,19 @@
 // functions. React and @tanstack/react-query are peer dependencies; the host
 // app provides the QueryClientProvider.
 
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import type { ArtifactStatus, ArtifactWithSession, WorkflowSummary } from '@workbench/shared';
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import type {
+  ArtifactStatus,
+  ArtifactWithSession,
+  WorkflowSummary,
+} from "@workbench/shared";
 import {
   listArtifacts,
   listWorkflows,
   listMembers,
   type ClientOptions,
   type TenantMember,
-} from './index';
+} from "./index";
 
 export type { TenantMember };
 
@@ -21,10 +25,10 @@ export interface UseTenantMembersParams {
 /** Query the list of user principals in the tenant for owner-filter dropdowns. */
 export function useTenantMembers(
   options: ClientOptions = {},
-  params: UseTenantMembersParams = {}
+  params: UseTenantMembersParams = {},
 ): UseQueryResult<TenantMember[]> {
   return useQuery({
-    queryKey: ['members', params.tenantId ?? null],
+    queryKey: ["members", params.tenantId ?? null],
     queryFn: () => listMembers(options, params),
     enabled: params.tenantId != null,
     staleTime: 5 * 60_000,
@@ -38,10 +42,10 @@ export interface UseLibraryResourcesParams {
 /** Query the current user's jobs for the library rail. */
 export function useLibraryResources(
   options: ClientOptions = {},
-  params: UseLibraryResourcesParams = {}
+  params: UseLibraryResourcesParams = {},
 ): UseQueryResult<WorkflowSummary[]> {
   return useQuery({
-    queryKey: ['workflows', params.tenantId ?? null],
+    queryKey: ["workflows", params.tenantId ?? null],
     queryFn: () => listWorkflows(options, params),
     enabled: params.tenantId != null,
     refetchInterval: 5000,
@@ -51,7 +55,7 @@ export function useLibraryResources(
 export interface UseArtifactsParams {
   tenantId?: string | null;
   query?: string;
-  sort?: 'newest' | 'oldest';
+  sort?: "newest" | "oldest";
   kind?: string;
   status?: ArtifactStatus;
   ownerPrincipalId?: string;
@@ -61,19 +65,20 @@ export interface UseArtifactsParams {
 /** Query the current user's artifacts across all jobs for the gallery. */
 export function useArtifacts(
   options: ClientOptions = {},
-  params: UseArtifactsParams = {}
+  params: UseArtifactsParams = {},
 ): UseQueryResult<ArtifactWithSession[]> {
   return useQuery({
     queryKey: [
-      'artifacts',
+      "artifacts",
       params.tenantId ?? null,
-      params.query ?? '',
-      params.sort ?? 'newest',
-      params.kind ?? '',
-      params.status ?? '',
-      params.ownerPrincipalId ?? '',
+      params.query ?? "",
+      params.sort ?? "newest",
+      params.kind ?? "",
+      params.status ?? "",
+      params.ownerPrincipalId ?? "",
     ],
-    queryFn: () => listArtifacts(options, params).then((page) => page.artifacts),
+    queryFn: () =>
+      listArtifacts(options, params).then((page) => page.artifacts),
     enabled: params.tenantId != null && (params.enabled ?? true),
   });
 }

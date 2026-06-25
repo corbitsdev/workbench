@@ -1,13 +1,13 @@
-import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router';
-import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { useState } from "react";
+import { useLocation, useNavigate } from "react-router";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import {
   useDeleteMyraThread,
   useMyraThreads,
   useRenameMyraThread,
   writeLastActiveThreadId,
-} from '../../hooks/use-myra-threads';
-import type { MyraThread } from '../../lib/hub-api';
+} from "../../hooks/use-myra-threads";
+import type { MyraThread } from "../../lib/hub-api";
 
 function useActiveThreadId(): string | null {
   const location = useLocation();
@@ -39,7 +39,10 @@ function ThreadRow({
       setDraft(thread.label);
       return;
     }
-    rename.mutate({ id: thread.id, label }, { onError: () => setDraft(thread.label) });
+    rename.mutate(
+      { id: thread.id, label },
+      { onError: () => setDraft(thread.label) },
+    );
   };
 
   const confirmDelete = () => {
@@ -48,7 +51,7 @@ function ThreadRow({
       onSuccess: () => {
         if (active) {
           const next = threads.find((t) => t.id !== thread.id);
-          navigate(next ? `/chats/${next.id}` : '/chats', { replace: true });
+          navigate(next ? `/chats/${next.id}` : "/chats", { replace: true });
         }
       },
     });
@@ -63,8 +66,8 @@ function ThreadRow({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commitRename}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') commitRename();
-          if (e.key === 'Escape') {
+          if (e.key === "Enter") commitRename();
+          if (e.key === "Escape") {
             setDraft(thread.label);
             setEditing(false);
           }
@@ -81,8 +84,8 @@ function ThreadRow({
         onClick={() => onOpen(thread)}
         className={`flex-1 truncate rounded-[8px] px-2 py-1.5 text-left text-sm transition-colors ${
           active
-            ? 'bg-orange/10 font-medium text-orange'
-            : 'text-text-2 hover:bg-page hover:text-text'
+            ? "bg-orange/10 font-medium text-orange"
+            : "text-text-2 hover:bg-page hover:text-text"
         }`}
       >
         {thread.label}
@@ -147,7 +150,9 @@ export function ThreadList() {
   }
 
   if (isError) {
-    return <div className="px-2 py-1 text-xs text-text-3">Couldn't load chats</div>;
+    return (
+      <div className="px-2 py-1 text-xs text-text-3">Couldn't load chats</div>
+    );
   }
 
   if ((threads?.length ?? 0) === 0) {

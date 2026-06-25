@@ -4,10 +4,10 @@
 // Kept off `credentialRequirements` (which is inference-only).
 // See docs/CREATING_AGENTS_AND_TOOLS.md.
 
-import { type } from 'arktype';
+import { type } from "arktype";
 
 /** Env-key prefix for an injected tool credential, namespaced by provider. */
-export const TOOL_CREDENTIAL_ENV_PREFIX = 'workbench.cred.';
+export const TOOL_CREDENTIAL_ENV_PREFIX = "workbench.cred.";
 
 /** Build the env key / `requires` entry for a provider's credential. */
 export function toolCredentialEnvKey(providerName: string): string {
@@ -23,22 +23,22 @@ export function providerFromEnvKey(key: string): string | undefined {
 
 /** A resolved provider credential delivered to an in-sidecar tool. */
 export const ToolCredential = type({
-  apiKey: 'string',
-  baseURL: 'string',
+  apiKey: "string",
+  baseURL: "string",
 });
 export type ToolCredential = typeof ToolCredential.infer;
 
 /** Request body for the hub's tool-credential resolution endpoint. */
 export const ToolCredentialsRequest = type({
-  tenantId: 'string',
-  agentId: 'string',
-  providerNames: 'string[]',
+  tenantId: "string",
+  agentId: "string",
+  providerNames: "string[]",
 });
 export type ToolCredentialsRequest = typeof ToolCredentialsRequest.infer;
 
 /** Response body: resolved credentials keyed by provider name. */
 export const ToolCredentialsResponse = type({
-  credentials: type.Record('string', ToolCredential),
+  credentials: type.Record("string", ToolCredential),
 });
 export type ToolCredentialsResponse = typeof ToolCredentialsResponse.infer;
 
@@ -54,20 +54,20 @@ export type ToolCredentialsResponse = typeof ToolCredentialsResponse.infer;
 
 /** Request body for the hub's tool-package manifest+tarball resolution. */
 export const ToolManifestRequest = type({
-  tenantId: 'string',
-  agentId: 'string',
+  tenantId: "string",
+  agentId: "string",
 });
 export type ToolManifestRequest = typeof ToolManifestRequest.infer;
 
 /** One materialized tarball: the asset mount + asset-relative path + bytes. */
 export const ToolManifestTarball = type({
-  assetId: 'string',
+  assetId: "string",
   /** assetRoot-relative mount dir, e.g. `package-registries/<name>/`. */
-  mount: 'string',
+  mount: "string",
   /** mount-relative tarball path, e.g. `tarballs/<file>.tgz`. */
-  path: 'string',
+  path: "string",
   /** Base64-encoded tarball bytes. */
-  bytesBase64: 'string',
+  bytesBase64: "string",
 });
 export type ToolManifestTarball = typeof ToolManifestTarball.infer;
 
@@ -79,7 +79,7 @@ export type ToolManifestTarball = typeof ToolManifestTarball.infer;
  * map can be reconstructed.
  */
 export const ToolManifestResponse = type({
-  manifest: 'unknown',
+  manifest: "unknown",
   tarballs: ToolManifestTarball.array(),
 });
 export type ToolManifestResponse = typeof ToolManifestResponse.infer;
@@ -92,13 +92,13 @@ export type ToolManifestResponse = typeof ToolManifestResponse.infer;
  */
 export function getToolCredential(
   env: Record<string, unknown>,
-  providerName: string
+  providerName: string,
 ): ToolCredential {
   const value = env[toolCredentialEnvKey(providerName)];
   const parsed = ToolCredential(value);
   if (parsed instanceof type.errors) {
     throw new Error(
-      `tool credential for provider "${providerName}" was not injected into env: ${parsed.summary}`
+      `tool credential for provider "${providerName}" was not injected into env: ${parsed.summary}`,
     );
   }
   return parsed;
@@ -128,13 +128,13 @@ export function getToolCredential(
  * diagnostics (they are the `agent` row ids, not dir names).
  */
 export const LiveDeployment = type({
-  deploymentId: 'string',
-  supervisorAddress: 'string',
-  supervisorAgentId: 'string',
-  workflowRunSlug: 'string',
-  stepAgentIds: 'string[]',
-  stepAddresses: 'string[]',
-  agentStateRepoIds: 'string[]',
+  deploymentId: "string",
+  supervisorAddress: "string",
+  supervisorAgentId: "string",
+  workflowRunSlug: "string",
+  stepAgentIds: "string[]",
+  stepAddresses: "string[]",
+  agentStateRepoIds: "string[]",
 });
 export type LiveDeployment = typeof LiveDeployment.infer;
 
@@ -146,11 +146,11 @@ export const LiveDeploymentsResponse = type({
   // The boot reconciler prunes dirs for any live deployment NOT in this set
   // (its runs are all terminal), so step session dirs of restart-failed runs
   // are removed and restoreSessions() can't re-provision the dead session.
-  activeRunDeploymentIds: 'string[]',
+  activeRunDeploymentIds: "string[]",
   // CL-2264: every agentInstance.address where endedAt IS NULL. The boot
   // reconciler uses this to reap on-disk agent dirs whose hub row is gone,
   // rather than letting them restore + crash-loop on every boot.
-  liveAgentAddresses: 'string[]',
+  liveAgentAddresses: "string[]",
 });
 export type LiveDeploymentsResponse = typeof LiveDeploymentsResponse.infer;
 
@@ -164,15 +164,15 @@ export type LiveDeploymentsResponse = typeof LiveDeploymentsResponse.infer;
 // under `HUB_RPC_ENV_KEY`; a hub-backed package declares it via `requires`.
 
 /** Env key carrying the hub-RPC context for hub-backed tool packages. */
-export const HUB_RPC_ENV_KEY = 'workbench.hubRpc';
+export const HUB_RPC_ENV_KEY = "workbench.hubRpc";
 
 export const HubRpcContext = type({
-  baseURL: 'string',
-  token: 'string',
-  tenantId: 'string',
-  agentId: 'string',
-  principalId: 'string',
-  sessionId: 'string',
+  baseURL: "string",
+  token: "string",
+  tenantId: "string",
+  agentId: "string",
+  principalId: "string",
+  sessionId: "string",
 });
 export type HubRpcContext = typeof HubRpcContext.infer;
 
@@ -180,7 +180,9 @@ export type HubRpcContext = typeof HubRpcContext.infer;
 export function getHubRpc(env: Record<string, unknown>): HubRpcContext {
   const parsed = HubRpcContext(env[HUB_RPC_ENV_KEY]);
   if (parsed instanceof type.errors) {
-    throw new Error(`hub-RPC context was not injected into env: ${parsed.summary}`);
+    throw new Error(
+      `hub-RPC context was not injected into env: ${parsed.summary}`,
+    );
   }
   return parsed;
 }

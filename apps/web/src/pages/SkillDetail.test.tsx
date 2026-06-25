@@ -33,7 +33,7 @@ mock.module("react-router", () => ({
 import { SkillDetail } from "./SkillDetail";
 
 const originalFetch = globalThis.fetch;
-let calls: Array<{ url: string; method: string; json?: unknown }> = [];
+let calls: { url: string; method: string; json?: unknown }[] = [];
 
 function jsonResponse(body: unknown): Response {
   return {

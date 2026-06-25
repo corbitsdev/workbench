@@ -7,7 +7,7 @@
 // tunables with safe defaults — overridable via env when an environment
 // needs different timing.
 
-import path from 'node:path';
+import path from "node:path";
 
 const DEFAULT_PING_INTERVAL_MS = 5_000;
 const DEFAULT_RECONNECT_DELAY_MS = 1_000;
@@ -29,7 +29,11 @@ export type SidecarHubLinkQueue = {
 
 const DEFAULT_MAX_OUTBOUND_QUEUE = 4096;
 
-function parsePositiveInt(name: string, raw: string | undefined, fallback: number): number {
+function parsePositiveInt(
+  name: string,
+  raw: string | undefined,
+  fallback: number,
+): number {
   if (raw === undefined) {
     return fallback;
   }
@@ -48,47 +52,50 @@ export type ToolPackageCache = {
 
 export function resolveToolPackageCache(
   env: Record<string, string | undefined>,
-  dataDir: string
+  dataDir: string,
 ): ToolPackageCache {
-  const cacheRoot = env.SIDECAR_TOOL_CACHE_DIR ?? path.join(dataDir, 'cache', 'tool-packages');
+  const cacheRoot =
+    env.SIDECAR_TOOL_CACHE_DIR ?? path.join(dataDir, "cache", "tool-packages");
   return {
     cacheRoot,
     cacheMaxBytes: parsePositiveInt(
-      'SIDECAR_TOOL_CACHE_MAX_BYTES',
+      "SIDECAR_TOOL_CACHE_MAX_BYTES",
       env.SIDECAR_TOOL_CACHE_MAX_BYTES,
-      DEFAULT_TOOL_CACHE_MAX_BYTES
+      DEFAULT_TOOL_CACHE_MAX_BYTES,
     ),
     registryMaxTarballBytes: parsePositiveInt(
-      'SIDECAR_REGISTRY_MAX_TARBALL_BYTES',
+      "SIDECAR_REGISTRY_MAX_TARBALL_BYTES",
       env.SIDECAR_REGISTRY_MAX_TARBALL_BYTES,
-      DEFAULT_REGISTRY_MAX_TARBALL_BYTES
+      DEFAULT_REGISTRY_MAX_TARBALL_BYTES,
     ),
   };
 }
 
-export function resolveSidecarHeartbeat(env: Record<string, string | undefined>): SidecarHeartbeat {
+export function resolveSidecarHeartbeat(
+  env: Record<string, string | undefined>,
+): SidecarHeartbeat {
   return {
     pingIntervalMs: parsePositiveInt(
-      'SIDECAR_PING_INTERVAL_MS',
+      "SIDECAR_PING_INTERVAL_MS",
       env.SIDECAR_PING_INTERVAL_MS,
-      DEFAULT_PING_INTERVAL_MS
+      DEFAULT_PING_INTERVAL_MS,
     ),
     reconnectDelayMs: parsePositiveInt(
-      'SIDECAR_RECONNECT_DELAY_MS',
+      "SIDECAR_RECONNECT_DELAY_MS",
       env.SIDECAR_RECONNECT_DELAY_MS,
-      DEFAULT_RECONNECT_DELAY_MS
+      DEFAULT_RECONNECT_DELAY_MS,
     ),
   };
 }
 
 export function resolveSidecarHubLinkQueue(
-  env: Record<string, string | undefined>
+  env: Record<string, string | undefined>,
 ): SidecarHubLinkQueue {
   return {
     maxOutboundQueue: parsePositiveInt(
-      'SIDECAR_HUB_LINK_MAX_OUTBOUND_QUEUE',
+      "SIDECAR_HUB_LINK_MAX_OUTBOUND_QUEUE",
       env.SIDECAR_HUB_LINK_MAX_OUTBOUND_QUEUE,
-      DEFAULT_MAX_OUTBOUND_QUEUE
+      DEFAULT_MAX_OUTBOUND_QUEUE,
     ),
   };
 }
