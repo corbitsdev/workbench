@@ -5,6 +5,7 @@ import {
   buildReport,
   entityExtract,
   ResearchItem,
+  type SkippedSource,
 } from "@workbench/last30days-core";
 
 export const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
@@ -161,20 +162,68 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseJsonString(value: string, label: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(`${label} is not valid JSON: ${reason}`);
-  }
+type SourceParse =
+  | { ok: true; items: unknown[] }
+  | { ok: false; reason: string };
+
+// A failed source's content can be a multi-KB error body (HTML page, stack
+// trace). The reason is persisted in the brief and fed to the writer LLM, so
+// cap it to keep the payload and prompt bounded.
+const MAX_REASON_DETAIL = 200;
+function truncateDetail(detail: string): string {
+  return detail.length > MAX_REASON_DETAIL
+    ? `${detail.slice(0, MAX_REASON_DETAIL)}… (${detail.length} chars)`
+    : detail;
 }
 
-function readToolContent(output: unknown, label: string): unknown {
-  if (!isRecord(output)) return [];
+/**
+ * A source step's result is an `{ output: { content, isError? } }` envelope.
+ * A failed source (rate-limit/auth/network) arrives as a plain-text `isError`
+ * envelope, not JSON — so parsing must degrade to a recorded skip, never throw.
+ * One failed source must not poison the brief for the others.
+ */
+function parseSourceStep(step: unknown): SourceParse {
+  const output = isRecord(step) ? step.output : undefined;
+  if (!isRecord(output)) return { ok: true, items: [] };
   const content = output.content;
-  if (typeof content !== "string" || content.trim().length === 0) return [];
-  return parseJsonString(content, label);
+  if (output.isError === true) {
+    const detail =
+      typeof content === "string" && content.trim().length > 0
+        ? truncateDetail(content)
+        : "tool reported an error";
+    return { ok: false, reason: `source errored: ${detail}` };
+  }
+  // Every source today is a string tool returning JSON.stringify(...), so
+  // non-string content means "nothing to read" (a `full` tool returning object
+  // content would land here — revisit if one is ever added).
+  if (typeof content !== "string" || content.trim().length === 0) {
+    return { ok: true, items: [] };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    return { ok: false, reason: `non-JSON content: ${reason}` };
+  }
+  return { ok: true, items: collectItems(parsed) };
+}
+
+function collectValidItems(raw: unknown[]): {
+  items: (typeof ResearchItem.infer)[];
+  invalidCount: number;
+} {
+  const items: (typeof ResearchItem.infer)[] = [];
+  let invalidCount = 0;
+  for (const candidate of raw) {
+    const validated = ResearchItem(candidate);
+    if (validated instanceof type.errors) {
+      invalidCount += 1;
+      continue;
+    }
+    items.push(validated);
+  }
+  return { items, invalidCount };
 }
 
 function collectItems(value: unknown): unknown[] {
@@ -218,17 +267,37 @@ function createWorkflowBriefTool(): AgentTool {
         typeof intake.days === "number" && Number.isFinite(intake.days)
           ? intake.days
           : 30;
-      const rawInputs: unknown[] = [];
+      const rawItems: (typeof ResearchItem.infer)[] = [];
+      const skippedSources: SkippedSource[] = [];
       for (const stepId of SOURCE_STEP_IDS) {
-        const step = steps[stepId];
-        const output = isRecord(step) ? step.output : undefined;
-        const parsed = readToolContent(output, `${stepId}.output.content`);
-        rawInputs.push(...collectItems(parsed));
+        const result = parseSourceStep(steps[stepId]);
+        if (!result.ok) {
+          skippedSources.push({
+            source: stepId,
+            kind: "source-error",
+            reason: result.reason,
+          });
+          continue;
+        }
+        const { items, invalidCount } = collectValidItems(result.items);
+        rawItems.push(...items);
+        if (invalidCount > 0) {
+          skippedSources.push({
+            source: stepId,
+            kind: "invalid-items",
+            reason: `${invalidCount} item(s) failed schema validation`,
+          });
+        }
       }
-      const rawItems = readRawItems(rawInputs);
       const nowIso = new Date().toISOString();
       return JSON.stringify(
-        buildReport(rawItems, { topic, days, topK: 20, nowIso }),
+        buildReport(rawItems, {
+          topic,
+          days,
+          topK: 20,
+          nowIso,
+          skippedSources,
+        }),
       );
     },
   };

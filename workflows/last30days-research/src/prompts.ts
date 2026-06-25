@@ -13,5 +13,6 @@ Writing rules:
 - Integrate 2-3 strong bestTakes when available.
 - End with: "*Research by last30days via GTM Workbench*".
 - Avoid em dashes.
-- If the brief is sparse, say what was and was not found instead of padding.`;
+- If the brief is sparse, say what was and was not found instead of padding.
+- If brief.skippedSources is non-empty, note which sources were unavailable (e.g. rate-limited) so the reader knows coverage was partial. Never describe this as the brief tool failing.`;
 }

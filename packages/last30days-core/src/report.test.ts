@@ -260,6 +260,47 @@ describe("buildReport", () => {
     expect(quotes.filter((q) => q === "same killer line")).toHaveLength(1);
   });
 
+  test("records skippedSources when sources are passed in", () => {
+    const report = buildReport(FIXTURE, {
+      topic: "test",
+      days: 30,
+      topK: 5,
+      nowIso: NOW_ISO,
+      skippedSources: [
+        {
+          source: "x",
+          kind: "source-error",
+          reason: "source errored: rate limited",
+        },
+      ],
+    });
+    expect(report.skippedSources).toEqual([
+      {
+        source: "x",
+        kind: "source-error",
+        reason: "source errored: rate limited",
+      },
+    ]);
+  });
+
+  test("omits skippedSources when none are passed or the list is empty", () => {
+    const withoutArg = buildReport(FIXTURE, {
+      topic: "test",
+      days: 30,
+      topK: 5,
+      nowIso: NOW_ISO,
+    });
+    expect(withoutArg.skippedSources).toBeUndefined();
+    const withEmpty = buildReport(FIXTURE, {
+      topic: "test",
+      days: 30,
+      topK: 5,
+      nowIso: NOW_ISO,
+      skippedSources: [],
+    });
+    expect(withEmpty.skippedSources).toBeUndefined();
+  });
+
   test("omits dateRange when there are no items", () => {
     const report = buildReport([], {
       topic: "empty",

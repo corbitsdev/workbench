@@ -78,6 +78,13 @@ export const BestTake = type({
 });
 export type BestTake = typeof BestTake.infer;
 
+export const SkippedSource = type({
+  source: "string",
+  kind: '"source-error" | "invalid-items"',
+  reason: "string",
+});
+export type SkippedSource = typeof SkippedSource.infer;
+
 export const Report = type({
   topic: "string",
   days: "number",
@@ -88,6 +95,7 @@ export const Report = type({
   bestTakes: BestTake.array(),
   items: ResearchItem.array(),
   citations: Citation.array(),
+  "skippedSources?": SkippedSource.array(),
   generatedAt: "string",
 });
 export type Report = typeof Report.infer;
