@@ -15,12 +15,14 @@
 //   - multi-step: the subprocess spawner throws synchronously so
 //     `supervisor.spawn` rejects.
 
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join as pathJoin } from "node:path";
+import { dirname, join as pathJoin } from "node:path";
 
 import { describe, test, expect } from "bun:test";
 import { createInMemoryTransport } from "@intx/mail-memory";
+import { createNodeCrypto, generateKeyPair } from "@intx/crypto-node";
+import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
 import type { SubprocessSpawner } from "@intx/workflow-host";
 
@@ -37,7 +39,12 @@ function stubKeyStore(): Parameters<
 >[0]["keyStore"] {
   return {
     async loadOrGenerateKey() {
-      throw new Error("not used in this test");
+      // The single-step multi-step branch registers the agent's signing
+      // key on the host transport before `spawn()` (OUTBOUND half of
+      // mailbox ownership). Return a real keypair so that registration
+      // succeeds and the SPAWNER failure remains the failure this test
+      // exercises.
+      return { keyPair: await generateKeyPair(), isNew: false };
     },
     async scanKeys() {
       return [];
@@ -94,6 +101,7 @@ describe("deploy-failure registry leak", () => {
         typeof createSidecarDeployRouter
       >[0]["repoStore"],
       signingKeySeed: new Uint8Array(32),
+      createAgentCrypto: createNodeCrypto,
       registerDeployment: ({ deploymentId, agentAddress }) => {
         registry.record(deploymentId, agentAddress);
       },
@@ -147,16 +155,34 @@ describe("deploy-failure registry leak", () => {
 
     const tmpDir = mkdtempSync(pathJoin(tmpdir(), "h-a1-deploy-failure-"));
 
+    // The grants bridge writes `state/grants.json` to each step's
+    // agent-state repo before `spawn()`; supply a minimal RepoStore that
+    // honors `getRepoDir` + `writeTree` so the bridge succeeds and the
+    // SPAWNER failure is the one this test exercises.
+    const repoStoreStub: Partial<RepoStore> = {
+      getRepoDir(repoId: RepoId): string {
+        return pathJoin(tmpDir, repoId.kind, repoId.id);
+      },
+      writeTree(_p, repoId, _ref, content) {
+        const dir = pathJoin(tmpDir, repoId.kind, repoId.id);
+        for (const [relPath, contents] of Object.entries(content.files)) {
+          const full = pathJoin(dir, relPath);
+          mkdirSync(dirname(full), { recursive: true });
+          writeFileSync(full, contents);
+        }
+        return Promise.resolve({ commitSha: "stub-sha" });
+      },
+    };
+
     const router = createSidecarDeployRouter({
       sessions,
       keyStore,
       onAgentEvent: () => () => undefined,
       transport,
 
-      repoStore: {} as Parameters<
-        typeof createSidecarDeployRouter
-      >[0]["repoStore"],
+      repoStore: repoStoreStub as RepoStore,
       signingKeySeed: new Uint8Array(32),
+      createAgentCrypto: createNodeCrypto,
       registerDeployment: ({ deploymentId, agentAddress }) => {
         registry.record(deploymentId, agentAddress);
       },
@@ -180,15 +206,16 @@ describe("deploy-failure registry leak", () => {
 
     const frame: AgentDeployFrame = {
       type: "agent.deploy",
-      agentAddress: "mstep@x.example",
-      // `ins_<rawDeploymentId>` so the raw-id recovery succeeds and the
-      // test reaches the spawn-time failure it is asserting on.
-      agentId: "ins_ses_mstep",
+      // Single-step projection: the deploy router parses the frame
+      // address into the legacy agent-state repo id, so it must carry the
+      // canonical `ins_<id>@<domain>` shape.
+      agentAddress: "ins_mstep@x.example",
+      agentId: "mstep",
       hubPublicKey: "00".repeat(32),
 
       config: {
-        agentAddress: "mstep@x.example",
-        agentId: "ins_ses_mstep",
+        agentAddress: "ins_mstep@x.example",
+        agentId: "mstep",
         sessionId: "s",
         sources: [],
         defaultSource: "primary",
@@ -221,7 +248,7 @@ describe("deploy-failure registry leak", () => {
     }
     expect(threw).toBe(true);
 
-    const slug = "mstep-x-example";
+    const slug = "ins_mstep-x-example";
     expect(registry.resolve(slug)).toBeNull();
   });
 });

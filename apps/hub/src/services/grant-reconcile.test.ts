@@ -1,5 +1,7 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import type { AgentTemplate } from "@workbench/agents";
+import type { SidecarRouter } from "@intx/hub-sessions";
+import type { GrantRule } from "@intx/types/authz";
 
 mock.module("../config", () => ({
   getConfig: () => ({
@@ -40,6 +42,34 @@ const {
 } = await import("./grant-reconcile");
 
 const CANONICAL_TOOL = "@workbench/tools-granola/granola:granola_list_notes";
+
+function makeGrantRule(resource: string, action: string): GrantRule {
+  return {
+    id: `grant-${resource}-${action}`,
+    resource,
+    action,
+    effect: "allow",
+    origin: "system",
+    conditions: null,
+    expiresAt: null,
+    roleId: null,
+    principalId: null,
+  };
+}
+
+function makeSidecarRouter(
+  used: Pick<SidecarRouter, "getRoutableAddresses" | "sendGrantsUpdate">,
+): SidecarRouter {
+  const unused = (): never => {
+    throw new Error("SidecarRouter method not stubbed for this test");
+  };
+  return new Proxy(used as SidecarRouter, {
+    get(target, prop, receiver) {
+      if (prop in used) return Reflect.get(target, prop, receiver);
+      return unused;
+    },
+  });
+}
 
 const MYRA: AgentTemplate = {
   key: "myra",
@@ -282,7 +312,7 @@ describe("refreshInstanceGrantsFromDefinition", () => {
   it("pushes grants when live and routable", async () => {
     const sendGrantsUpdate = mock(async () => {});
     const collectGrants = mock(async () => [
-      { resource: "tool:attio_query_records", action: "invoke" },
+      makeGrantRule("tool:attio_query_records", "invoke"),
     ]);
     const update = mock(async () => {});
     const db = {
@@ -307,10 +337,10 @@ describe("refreshInstanceGrantsFromDefinition", () => {
         address: "live@global.example.com",
       },
       {
-        sidecarRouter: {
+        sidecarRouter: makeSidecarRouter({
           getRoutableAddresses: () => ["live@global.example.com"],
           sendGrantsUpdate,
-        },
+        }),
         grantStore: { collectGrants },
       },
     );
@@ -343,8 +373,13 @@ describe("refreshInstanceGrantsFromDefinition", () => {
         address: "down@global.example.com",
       },
       {
-        sidecarRouter: { getRoutableAddresses: () => [], sendGrantsUpdate },
-        grantStore: { collectGrants: mock(async () => []) },
+        sidecarRouter: makeSidecarRouter({
+          getRoutableAddresses: () => [],
+          sendGrantsUpdate,
+        }),
+        grantStore: {
+          collectGrants: mock(async (): Promise<GrantRule[]> => []),
+        },
       },
     );
 

@@ -107,8 +107,8 @@ describe("analytics subscriber integration (hub seam)", () => {
       type: "inference.error",
       seq: 13,
       data: {
-        error: { category: "provider", message: "boom" },
-        source: { sourceId: "s", provider: "openai-compatible", model: "m" },
+        error: { category: "fatal", message: "boom" },
+        partial: { text: "" },
       },
     };
 

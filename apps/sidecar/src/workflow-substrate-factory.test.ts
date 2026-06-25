@@ -18,18 +18,27 @@ type SendTurn = Awaited<ReturnType<Agent["send"]>>["turn"];
 import { createDefaultDirectorRegistry } from "@intx/agent";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { GrantEvaluator } from "@intx/workflow-host";
+import { createWarmAgentCache } from "@intx/workflow-host";
+import type { ChildOutboundMailBridge } from "@intx/workflow-host";
 import type { StepInvokeRequest } from "@intx/workflow";
+import type { OutboundMessage, SendReceipt } from "@intx/types/runtime";
 
 import {
   createSidecarStepInvoker,
   createStepInferenceSourceResolver,
   createStepToolContextResolver,
 } from "./workflow-substrate-factory";
-import type { RepoStore } from "@intx/hub-sessions";
+import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
 import {
   STEP_TOOL_CONTEXT_KEY,
   type StepToolContext,
 } from "./step-tool-harness";
+import {
+  createDurableConversationRegistry,
+  createDurableConversationStore,
+  type DurableConversationRegistry,
+  type DurableConversationStore,
+} from "./conversation-state";
 
 const tmpDirs: string[] = [];
 const realFetch = globalThis.fetch;
@@ -819,5 +828,450 @@ describe("createStepToolContextResolver", () => {
 
     expect(ctx.stepAgentId).toBe("ins_ins_ses_abc-abklabs-com-intake");
     expect(ctx.stepAgentId).not.toBe("ins_ses_abc-intake");
+  });
+});
+
+// A stub agent whose send() count + last-content are observable, used to
+// prove the warm cache reuses ONE built agent across messages.
+function makeCountingAgent(log: { sends: string[]; closed: boolean }): Agent {
+  return {
+    send: async (content: Parameters<Agent["send"]>[0]) => {
+      const text =
+        typeof content === "string" ? content : (content.content ?? "");
+      log.sends.push(text);
+      return {
+        reply: `reply-${log.sends.length}`,
+        turn: {
+          role: "assistant",
+          content: `reply-${log.sends.length}`,
+        } as unknown as SendTurn,
+      };
+    },
+    stream: () => ({
+      [Symbol.asyncIterator]: () => ({
+        next: () => Promise.resolve({ value: undefined, done: true }),
+      }),
+    }),
+    deliver: () => {},
+    close: async () => {
+      log.closed = true;
+    },
+    setSource: () => {},
+    setSources: () => {},
+  } as unknown as Agent;
+}
+
+describe("warm-keep single-step durability", () => {
+  test("reuses one built agent across two messages and fires the run-boundary mirror per message", async () => {
+    const dataDir = await makeDataDir();
+    let buildCount = 0;
+    const agentLog = { sends: [] as string[], closed: false };
+    const agent = makeCountingAgent(agentLog);
+
+    const warmCache = createWarmAgentCache();
+    const mirroredKeys: string[] = [];
+
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      warmCache,
+      onRunBoundary: async (key: string) => {
+        mirroredKeys.push(key);
+      },
+      agentFactory: async () => {
+        buildCount += 1;
+        return agent;
+      },
+    });
+
+    const first = await invoke(makeRequest());
+    const second = await invoke(makeRequest());
+
+    // ONE build across two messages: the warm cache reused the cached agent
+    // rather than instantiate-send-teardown per message.
+    expect(buildCount).toBe(1);
+    expect(agentLog.sends).toHaveLength(2);
+    // The agent was NOT closed between messages (warm agents span messages).
+    expect(agentLog.closed).toBe(false);
+    expect(first.output).toEqual({
+      reply: "reply-1",
+      turn: { role: "assistant", content: "reply-1" } as unknown as SendTurn,
+    });
+    expect(second.output).toEqual({
+      reply: "reply-2",
+      turn: { role: "assistant", content: "reply-2" } as unknown as SendTurn,
+    });
+    // The run-boundary durability flush fired once per message, keyed by the
+    // step id (the warm cache key).
+    expect(mirroredKeys).toEqual([STEP_ID, STEP_ID]);
+  });
+
+  test("cold path (no warmCache) rebuilds and tears down the agent per message", async () => {
+    const dataDir = await makeDataDir();
+    let buildCount = 0;
+    let closeCount = 0;
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      agentFactory: async () => {
+        buildCount += 1;
+        const log = { sends: [] as string[], closed: false };
+        const agent = makeCountingAgent(log);
+        return {
+          ...agent,
+          send: agent.send.bind(agent),
+          close: async () => {
+            closeCount += 1;
+          },
+        } as unknown as Agent;
+      },
+    });
+
+    await invoke(makeRequest());
+    await invoke(makeRequest());
+
+    expect(buildCount).toBe(2);
+    expect(closeCount).toBe(2);
+  });
+});
+
+describe("supervisor-backed outbound transport wiring", () => {
+  test("the step env carries a transport whose send routes to the outbound bridge", async () => {
+    const dataDir = await makeDataDir();
+    const submitted: { sender: string; message: OutboundMessage }[] = [];
+    const bridge: ChildOutboundMailBridge = {
+      submit: async (
+        sender: string,
+        message: OutboundMessage,
+      ): Promise<SendReceipt> => {
+        submitted.push({ sender, message });
+        return { messageId: "mid-1", status: "delivered" };
+      },
+      handleResult: () => {},
+      cancelAll: () => {},
+      pendingCount: 0,
+    };
+
+    let capturedEnv:
+      | (BaseEnv & { transport?: unknown; address?: unknown })
+      | undefined;
+    const stubAgent: Agent = {
+      send: async () => ({
+        reply: "ok",
+        turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
+      }),
+      stream: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ value: undefined, done: true }),
+        }),
+      }),
+      deliver: () => {},
+      close: async () => {},
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
+
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      outboundMailBridge: bridge,
+      mailboxAddress: "ins_ses_warm@example.com",
+      agentFactory: async (_def, env) => {
+        capturedEnv = env as BaseEnv & {
+          transport?: unknown;
+          address?: unknown;
+        };
+        return stubAgent;
+      },
+    });
+
+    await invoke(makeRequest());
+
+    expect(capturedEnv).toBeDefined();
+    const env = capturedEnv as BaseEnv & {
+      transport: { send: (m: OutboundMessage) => Promise<SendReceipt> };
+      address: string;
+    };
+    expect(env.address).toBe("ins_ses_warm@example.com");
+    // The transport's send routes through the bridge to the supervisor for
+    // the actual signed send (the step agent never holds the key). A missing
+    // bridge would leave env.transport undefined and a mail tool's send()
+    // would throw, not hang.
+    const outbound: OutboundMessage = {
+      to: "someone@example.com",
+      subject: "s",
+      type: "conversation.message" as unknown as OutboundMessage["type"],
+      content: "b",
+    };
+    const receipt = await env.transport.send(outbound);
+    expect(receipt).toEqual({ messageId: "mid-1", status: "delivered" });
+    expect(submitted).toEqual([
+      { sender: "ins_ses_warm@example.com", message: outbound },
+    ]);
+  });
+
+  test("no transport is wired when the outbound bridge is absent", async () => {
+    const dataDir = await makeDataDir();
+    let capturedEnv: (BaseEnv & { transport?: unknown }) | undefined;
+    const stubAgent: Agent = {
+      send: async () => ({
+        reply: "ok",
+        turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
+      }),
+      stream: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ value: undefined, done: true }),
+        }),
+      }),
+      deliver: () => {},
+      close: async () => {},
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
+
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      agentFactory: async (_def, env) => {
+        capturedEnv = env as BaseEnv & { transport?: unknown };
+        return stubAgent;
+      },
+    });
+
+    await invoke(makeRequest());
+    expect(capturedEnv).toBeDefined();
+    expect(
+      (capturedEnv as BaseEnv & { transport?: unknown }).transport,
+    ).toBeUndefined();
+  });
+});
+
+// C3 (greybeard review of #364): the durable-conversation store is NOT inert
+// today. For EVERY single-step deploy (warmKeep === stepOrder.length === 1 —
+// true for single-step DETERMINISTIC and INLINE-INFERENCE workflows, not only
+// future warm reasoning agents) `createSidecarSubstrateFactory` builds a real
+// `durableConversation` registry and the per-step env build runs
+// `acquire(stepId)` -> `restoreFromSubstrate()` on the live path. It is a clean
+// no-op on a first-ever run (restore returns false; the only writer is the warm
+// inference send path the deterministic/inline branches never reach), but that
+// exact production combination — a real durable registry wired into a
+// non-inference dispatch — was untested. This exercises it end-to-end against a
+// real registry + on-disk substrate and asserts startup neither throws nor
+// blocks: acquire runs, restoreFromSubstrate returns false, the warm store
+// backs the env (warm keying, not the per-run isogit store), and the
+// deterministic tool actually runs.
+function createOnDiskSubstrate(repoDir: string): RepoStore {
+  async function readDirectChildren(
+    prefixAbs: string,
+  ): Promise<Map<string, Uint8Array>> {
+    const out = new Map<string, Uint8Array>();
+    let entries: string[];
+    try {
+      entries = await fs.readdir(prefixAbs);
+    } catch {
+      return out;
+    }
+    for (const entry of entries) {
+      const full = path.join(prefixAbs, entry);
+      const stat = await fs.stat(full);
+      if (stat.isFile()) {
+        const rel = path.relative(repoDir, full).split(path.sep).join("/");
+        out.set(rel, await fs.readFile(full));
+      }
+    }
+    return out;
+  }
+
+  const stub: Partial<RepoStore> = {
+    getRepoDir(_repoId: RepoId): string {
+      return repoDir;
+    },
+    async writeTreePreservingPrefix(_p, _id, _ref, args) {
+      const prefixAbs = path.join(repoDir, args.preservePrefix);
+      const existing = await readDirectChildren(prefixAbs);
+      const merged = await args.merge(existing);
+      await fs.rm(prefixAbs, { recursive: true, force: true });
+      for (const [rel, bytes] of Object.entries(merged)) {
+        const dest = path.join(repoDir, rel);
+        await fs.mkdir(path.dirname(dest), { recursive: true });
+        await fs.writeFile(dest, Buffer.from(bytes));
+      }
+      return { commitSha: "on-disk-sha" };
+    },
+  };
+
+  return new Proxy(stub as RepoStore, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (value !== undefined) return value;
+      return () => {
+        throw new Error(`test substrate: ${String(prop)} not implemented`);
+      };
+    },
+  });
+}
+
+describe("live durable-conversation seam on a single-step (warmKeep) deploy", () => {
+  test("a deterministic dispatch runs acquire + restoreFromSubstrate (returning false) cleanly without throwing or blocking startup", async () => {
+    stubHubFetch();
+    const dataDir = await makeDataDir();
+    const repoDir = await makeDataDir();
+    const repoId: RepoId = { kind: "workflow-run", id: "wfr-warm-c3" };
+    const principal: Principal = {
+      kind: "workflow-process",
+      deploymentId: "ses_warm_c3",
+    } as unknown as Principal;
+
+    const substrate = createOnDiskSubstrate(repoDir);
+
+    // Half 1 — the no-op-clean contract, observed directly: a freshly-built
+    // durable store over a substrate with no prior snapshot returns false from
+    // restoreFromSubstrate and neither throws nor hangs. This is exactly what
+    // the registry runs inside acquire(); asserting the boolean here proves the
+    // first-ever-run path the deterministic/inline branches hit is a clean
+    // no-op, not a silent failure.
+    const probeStore: DurableConversationStore =
+      await createDurableConversationStore({
+        localStoreDir: path.join(dataDir, "probe-store"),
+        signer: async () => "sig",
+        substrate,
+        workflowRunRepoId: repoId,
+        workflowRunRef: "refs/heads/main",
+        principal,
+        agentKey: STEP_ID,
+      });
+    const probeRestore = await probeStore.restoreFromSubstrate();
+    expect(probeRestore).toBe(false);
+
+    // The exact production object: the real registry the factory builds when
+    // env.spawn.warmKeep is true, backed by the same real on-disk substrate.
+    const realRegistry = createDurableConversationRegistry({
+      dataDir,
+      workflowRunRepoId: repoId,
+      workflowRunRef: "refs/heads/main",
+      substrate,
+      principal,
+      signer: async () => "sig",
+    });
+
+    // Spy only on acquire so we confirm the LIVE buildEnv path fires the seam
+    // (acquire runs restoreFromSubstrate internally). We do NOT stub anything —
+    // acquire and its internal restore run for real against the substrate.
+    let acquireKey: string | undefined;
+    let acquireCount = 0;
+    const registry: DurableConversationRegistry = {
+      get: (key) => realRegistry.get(key),
+      acquire: async (key) => {
+        acquireKey = key;
+        acquireCount += 1;
+        return realRegistry.acquire(key);
+      },
+    };
+
+    let factoryCalled = false;
+    let capturedStorage: unknown;
+    const resolveStepToolContext = async (
+      req: StepInvokeRequest,
+    ): Promise<StepToolContext> => {
+      const stepId = req.authzContext.stepId ?? "step";
+      return {
+        hubHttpUrl: "http://hub.invalid",
+        sidecarToken: "tok",
+        tenantId: "ten_1",
+        stepAgentId: `ins_dep-${stepId}`,
+        stepAddress: `ins_dep-${stepId}`,
+        principalId: `ins_dep-${stepId}`,
+        grants: [],
+        cacheRoot: path.join(dataDir, "cache"),
+        cacheMaxBytes: 1024 * 1024,
+        registryMaxTarballBytes: 1024 * 1024,
+      };
+    };
+
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      workflowRunRepoId: repoId,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      evaluateGrants: allowAll,
+      resolveStepToolContext,
+      // Wiring a real durableConversation is what selects the warm-path env
+      // keying and triggers the acquire/restore seam in buildEnv.
+      durableConversation: registry,
+      agentFactory: async (_def, env) => {
+        // The deterministic branch must NOT reach the inference factory; if it
+        // ever does, capture the storage to prove the durable store backed it.
+        factoryCalled = true;
+        capturedStorage = (env as unknown as Record<string, unknown>).storage;
+        throw new Error(
+          "inference factory must not run for a deterministic step",
+        );
+      },
+    });
+
+    const detAgent: AgentDefinition<BaseEnv> = {
+      ...makeAgentDefinition("deterministic-write_file"),
+      tags: {
+        "workbench.stepKind": "deterministic-tool",
+        "workbench.tool": "write_file",
+      },
+    };
+
+    const result = await invoke({
+      agent: detAgent,
+      input: { path: "c3.txt", content: "durable-seam-ok" },
+      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
+      signal: new AbortController().signal,
+    });
+
+    // Startup did not block or throw: the deterministic tool ran to completion.
+    const output = result.output as Record<string, unknown>;
+    expect(output).toHaveProperty("callId");
+    expect(output.isError).not.toBe(true);
+    // The durable seam fired on the live path: buildEnv acquired the store
+    // (which runs restoreFromSubstrate internally) keyed by the stepId, exactly
+    // once, for this non-inference dispatch.
+    expect(acquireKey).toBe(STEP_ID);
+    expect(acquireCount).toBe(1);
+    // The deterministic branch never reached the inference agent factory.
+    expect(factoryCalled).toBe(false);
+    expect(capturedStorage).toBeUndefined();
+    // The live acquire materialized the durable per-agent store on disk under
+    // the conversation-state root keyed by the stepId — proof the warm/durable
+    // env path (not the cold per-run isogit store) backed this dispatch. This
+    // root survives the deterministic step's per-call scratch cleanup, so a
+    // re-deploy would resume from it.
+    const durableRoot = path.join(
+      dataDir,
+      "agent-conversation-state",
+      repoId.id,
+      STEP_ID,
+    );
+    expect((await fs.stat(durableRoot)).isDirectory()).toBe(true);
+    // The warm keying was used, NOT the cold per-run layout: the per-run
+    // `runs/<runId>/` subtree was never created (the deterministic step keyed
+    // its scratch under the stable `warm/<stepId>/` sub-root and reclaimed it
+    // on completion, leaving no per-run tree behind).
+    const runRoot = path.join(
+      dataDir,
+      "workflow-step-state",
+      repoId.id,
+      "runs",
+      RUN_ID,
+    );
+    await expect(fs.stat(runRoot)).rejects.toThrow();
   });
 });

@@ -197,6 +197,10 @@ const multistepSubstrateEnv: Record<string, string> = {
   SIDECAR_ID: sidecarId,
   SIDECAR_TOKEN: sidecarToken,
   PATH: requireEnv("PATH"),
+  SIDECAR_CACHE_MAX_BYTES: String(toolPackageCache.cacheMaxBytes),
+  SIDECAR_REGISTRY_MAX_TARBALL_BYTES: String(
+    toolPackageCache.registryMaxTarballBytes,
+  ),
 };
 const hostHome = process.env["HOME"];
 if (hostHome !== undefined) {
@@ -243,6 +247,7 @@ const orchestrator = createSidecarOrchestrator({
       transport,
       repoStore: wrappedRepoStore,
       signingKeySeed: sidecarSigningKey.privateKey,
+      createAgentCrypto: createNodeCrypto,
       registerDeployment: ({ deploymentId, agentAddress }) => {
         deploymentAddressRegistry.record(deploymentId, agentAddress);
       },
@@ -253,12 +258,9 @@ const orchestrator = createSidecarOrchestrator({
       multistepSignalRouter,
       multistepDrainRouter,
       multistepSubstrateEnv,
-      publishWorkflowInferenceEvent: (agentAddress, sessionId, event) => {
-        workflowInferencePublisher.send?.(
-          agentAddress,
-          sessionId,
-          event as InferenceEvent,
-        );
+      publishWorkflowInferenceEvent: (agentAddress, event, sessionId) => {
+        if (sessionId === undefined) return;
+        workflowInferencePublisher.send?.(agentAddress, sessionId, event);
       },
     }),
 });

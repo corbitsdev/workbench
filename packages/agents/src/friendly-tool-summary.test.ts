@@ -4,7 +4,7 @@ import {
   summarizeToolCalls,
   toolOperationKey,
 } from "./friendly-tool-summary";
-import type { ToolCall } from "@workbench/chat";
+import type { ToolCall } from "@workbench/chat/types";
 
 function call(name: string, args?: Record<string, unknown>): ToolCall {
   return {

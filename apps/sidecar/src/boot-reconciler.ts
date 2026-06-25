@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
 import { LiveDeploymentsResponse } from "@workbench/tool-credentials";
-import { sanitizeAgentAddress } from "./workflow-host-wiring";
+import { sanitizeAddress } from "@workbench/hub-agent";
 
 const defaultLogger = getLogger(["sidecar", "boot-reconciler"]);
 
@@ -241,7 +241,7 @@ export async function reconcileOrphanedDeploymentDirs(
   // does, so the dir-name comparison is deterministic and unambiguous (we
   // go address→dirName, never the lossy dirName→address direction).
   const liveAgentDirNames = new Set<string>(
-    parsed.liveAgentAddresses.map((addr) => sanitizeAgentAddress(addr)),
+    parsed.liveAgentAddresses.map((addr) => sanitizeAddress(addr)),
   );
 
   // 5) Delete orphans, best-effort per-dir (one failure never aborts the rest).

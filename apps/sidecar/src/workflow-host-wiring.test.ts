@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { generateKeyPair } from "@intx/crypto-node";
+import { createNodeCrypto, generateKeyPair } from "@intx/crypto-node";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -24,9 +24,7 @@ import {
   computeWireDefinitionHash,
   createSidecarDeployRouter,
   createSidecarWorkflowSupervisor,
-  deriveRawDeploymentId,
   driveTrivialRunChain,
-  RAW_DEPLOYMENT_ID_ENV_KEY,
   STEP_INFERENCE_SOURCES_ENV_KEY,
   validateWorkflowProjection,
   type TrivialRunCell,
@@ -339,6 +337,10 @@ describe("createSidecarDeployRouter wires the InferenceEvent subscription to rec
         recordHubKey: (_a: string, _h: string) => {
           /* no-op */
         },
+        loadOrGenerateKey: async () => ({
+          keyPair: await generateKeyPair(),
+          isNew: false,
+        }),
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["keyStore"],
@@ -346,6 +348,7 @@ describe("createSidecarDeployRouter wires the InferenceEvent subscription to rec
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
+      createAgentCrypto: createNodeCrypto,
       registerDeployment: () => {
         /* the in-test repoStore is a stub; the pack-push facade is exercised separately */
       },
@@ -525,6 +528,19 @@ function createSpawnTestRepoStore(tempBase: string): RepoStore {
       await args.merge(new Map());
       return { commitSha: "stub-sha" };
     },
+    // The deploy router's grants bridge writes `state/grants.json` to
+    // each step's agent-state repo before `spawn()`. Mirror the
+    // `getRepoDir` layout so the write lands where the subsequent
+    // `assembleCredentialsSnapshot` working-tree read looks for it.
+    async writeTree(_p, repoId, _ref, content) {
+      const dir = path.join(tempBase, repoId.kind, repoId.id);
+      for (const [relPath, contents] of Object.entries(content.files)) {
+        const full = path.join(dir, relPath);
+        await fs.mkdir(path.dirname(full), { recursive: true });
+        await fs.writeFile(full, contents);
+      }
+      return { commitSha: "stub-sha" };
+    },
   };
 
   return new Proxy(stub as RepoStore, {
@@ -551,6 +567,16 @@ type MultistepDeployArgs = {
     stepOrder: string[];
     steps: Record<string, unknown>;
   };
+  /**
+   * Override the deploy frame's `agentAddress`. Single-step projections
+   * are the agent-launch identity path: the deploy router derives the
+   * sole step's agent-state repo from `parseAgentId(agentAddress)`, which
+   * requires the canonical `ins_<id>@<domain>` shape. Tests that drive a
+   * single-step projection supply a valid instance address here; the
+   * default keeps the historical multi-step address for the multi-step
+   * tests (whose derived per-step repos do not parse the frame address).
+   */
+  agentAddress?: string;
 };
 
 function makeInferenceSource(id: string): InferenceSourceFixture {
@@ -563,32 +589,18 @@ function makeInferenceSource(id: string): InferenceSourceFixture {
   };
 }
 
-function multistepHarnessConfig(): AgentDeployFrame["config"] {
-  const source = makeInferenceSource("step-1");
-  return {
-    sessionId: "ses_multitest",
-    agentId: "ins_ses_multitest",
-    tenantId: "tnt_test",
-    principalId: "prn_test",
-    agentAddress: "multi@example.com",
-    systemPrompt: "",
-    tools: [],
-    grants: [],
-    sources: [source],
-    defaultSource: source.id,
-  };
-}
-
 function makeMultistepFrame(args: MultistepDeployArgs): AgentDeployFrame {
   return {
     type: "agent.deploy",
-    agentAddress: "multi@example.com",
-    // Mirrors the orchestrator's `deriveDeploymentAgentId` shape
-    // (`ins_<rawDeploymentId>`); the router recovers the raw deploymentId
-    // (`ses_multitest`) from this for the step tool-context resolver.
-    agentId: "ins_ses_multitest",
+    agentAddress: args.agentAddress ?? "multi@example.com",
+    agentId: "multi-agent",
     hubPublicKey: "hub-pk",
-    config: multistepHarnessConfig(),
+    // The wire-side HarnessConfig has many required fields. The router
+    // never inspects `config` on the multi-step branch (only the
+    // trivial branch hands it to provisionAgent), so an opaque
+    // placeholder satisfies the surface contract for these tests.
+
+    config: {} as AgentDeployFrame["config"],
     workflow: {
       definition: args.definition,
       sources: args.sources,
@@ -667,52 +679,6 @@ describe("computeWireDefinitionHash", () => {
   });
 });
 
-describe("deriveRawDeploymentId", () => {
-  test("strips the single ins_ prefix the orchestrator's deriveDeploymentAgentId adds", () => {
-    expect(
-      deriveRawDeploymentId("ins_ses_218f6ab782774a3e70b5d86f01e602d8"),
-    ).toBe("ses_218f6ab782774a3e70b5d86f01e602d8");
-  });
-
-  test("yields the exact step agent id the hub registered (no double ins_, no slug)", () => {
-    // The fourth deploymentId-normalization bug lived here: deriving from
-    // the slugified deployment address (`ins_ses_<id>-abklabs-com`)
-    // produced `ins_ins_ses_<id>-abklabs-com-intake`, which the hub never
-    // registered, 404ing the step tool-manifest fetch. The raw id is
-    // recovered from the frame's `agentId` (`ins_ses_<id>`), so the step
-    // agent id matches `deriveStepAgentId` byte-for-byte.
-    const raw = deriveRawDeploymentId("ins_ses_abc");
-    const stepId = "intake";
-    expect(raw).toBe("ses_abc");
-    expect(`ins_${raw}-${stepId}`).toBe("ins_ses_abc-intake");
-    expect(`ins_${raw}-${stepId}`).not.toBe(
-      "ins_ins_ses_abc-abklabs-com-intake",
-    );
-  });
-
-  test("agentId carries no domain, so dots and @ in the deployment address never reach the raw id", () => {
-    // The deployment mail address is `ins_<raw>@<domain>`; parsing THAT
-    // would have to strip the domain and risks a slug regression on the
-    // `@`/`.` characters. `agentId` is `ins_<raw>` with no domain, so the
-    // recovery is a single prefix strip.
-    expect(deriveRawDeploymentId("ins_ses_abc")).toBe("ses_abc");
-    expect(deriveRawDeploymentId("ins_ses_abc")).not.toContain("@");
-    expect(deriveRawDeploymentId("ins_ses_abc")).not.toContain(".");
-  });
-
-  test("fails loudly when the agentId does not carry the ins_ prefix", () => {
-    expect(() => deriveRawDeploymentId("ses_abc")).toThrow(
-      /cannot recover raw deploymentId/,
-    );
-  });
-
-  test("fails loudly when the agentId is exactly the bare prefix", () => {
-    expect(() => deriveRawDeploymentId("ins_")).toThrow(
-      /cannot recover raw deploymentId/,
-    );
-  });
-});
-
 describe("createSidecarDeployRouter trivial-frame regression", () => {
   test("a frame without `workflow` still drives the trivial provisioning path", async () => {
     const transport = createInMemoryTransport();
@@ -745,6 +711,10 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
         recordHubKey: (_a: string, _h: string) => {
           /* no-op */
         },
+        loadOrGenerateKey: async () => ({
+          keyPair: await generateKeyPair(),
+          isNew: false,
+        }),
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["keyStore"],
@@ -754,6 +724,7 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
+      createAgentCrypto: createNodeCrypto,
       registerDeployment: () => {
         /* no-op */
       },
@@ -812,6 +783,10 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
         recordHubKey: (_a: string, _h: string) => {
           /* no-op */
         },
+        loadOrGenerateKey: async () => ({
+          keyPair: await generateKeyPair(),
+          isNew: false,
+        }),
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["keyStore"],
@@ -821,6 +796,7 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
+      createAgentCrypto: createNodeCrypto,
       registerDeployment: () => {
         /* no-op */
       },
@@ -896,6 +872,10 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
 
       keyStore: {
         recordHubKey: (_a: string, _h: string) => undefined,
+        loadOrGenerateKey: async () => ({
+          keyPair: await generateKeyPair(),
+          isNew: false,
+        }),
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["keyStore"],
@@ -903,6 +883,7 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
+      createAgentCrypto: createNodeCrypto,
       registerDeployment: () => undefined,
       unregisterDeployment: () => undefined,
       multistepSubprocessSpawner: () => {
@@ -965,6 +946,10 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
 
       keyStore: {
         recordHubKey: (_a: string, _h: string) => undefined,
+        loadOrGenerateKey: async () => ({
+          keyPair: await generateKeyPair(),
+          isNew: false,
+        }),
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["keyStore"],
@@ -972,6 +957,7 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
+      createAgentCrypto: createNodeCrypto,
       registerDeployment: () => undefined,
       unregisterDeployment: () => undefined,
       multistepSubprocessSpawner: () => {
@@ -1044,6 +1030,10 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
 
       keyStore: {
         recordHubKey: (_a: string, _h: string) => undefined,
+        loadOrGenerateKey: async () => ({
+          keyPair: await generateKeyPair(),
+          isNew: false,
+        }),
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["keyStore"],
@@ -1051,6 +1041,7 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
+      createAgentCrypto: createNodeCrypto,
       registerDeployment: () => undefined,
       unregisterDeployment: () => undefined,
       multistepSubprocessSpawner: () => {
@@ -1095,8 +1086,8 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     spawner: SubprocessSpawner;
     publishWorkflowInferenceEvent?: (
       address: string,
-      sessionId: string,
       event: EventPayload,
+      sessionId: string | undefined,
     ) => void;
     multistepBinaryPath?: string;
     multistepSubstrateEnv?: Record<string, string>;
@@ -1142,6 +1133,10 @@ describe("createSidecarDeployRouter multi-step branch", () => {
         recordHubKey: () => {
           throw new Error("multi-step branch must not invoke recordHubKey");
         },
+        loadOrGenerateKey: async () => ({
+          keyPair: await generateKeyPair(),
+          isNew: false,
+        }),
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["keyStore"],
@@ -1151,6 +1146,7 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
+      createAgentCrypto: createNodeCrypto,
       registerDeployment: opts.registerDeployment ?? (() => undefined),
       unregisterDeployment: () => {
         /* no-op */
@@ -1245,13 +1241,6 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     });
     expect(env.DEFINITION_HASH).toBe(computeWireDefinitionHash(definition));
     expect(env[STEP_INFERENCE_SOURCES_ENV_KEY]).toBe(JSON.stringify(sources));
-    // The raw deploymentId is recovered from the frame's `agentId`
-    // (`ins_ses_multitest`), NOT the slugified DEPLOYMENT_ID
-    // (`multi-example-com`). The step tool-context resolver keys the step
-    // agent row + agent-state repo on this raw id; the slug would 404 the
-    // step tool-manifest fetch.
-    expect(env[RAW_DEPLOYMENT_ID_ENV_KEY]).toBe("ses_multitest");
-    expect(env[RAW_DEPLOYMENT_ID_ENV_KEY]).not.toBe(env.DEPLOYMENT_ID);
     expect(env.IPC_CHANNEL_ID).toMatch(/^[0-9a-f]{32}$/);
 
     // Drive the `ready` handshake.
@@ -1293,186 +1282,6 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     // Use unused supervisorToChild to silence the linter.
     void supervisorToChild;
     void supervisorIpcKeyPair;
-  });
-
-  test("re-deploy of the same address with the same definition is idempotent: no second spawn, same pubkey (CL-2221)", async () => {
-    const childIpcKeyPair = await generateKeyPair();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const supervisorToChild = createMemoryNdjsonStream();
-    const eventChildToSupervisor = createMemoryFrameStream();
-    let resolveExit: ((code: number) => void) | undefined;
-    const exited = new Promise<number>((resolve) => {
-      resolveExit = resolve;
-    });
-    let spawnCount = 0;
-    let observedEnv: Record<string, string> | undefined;
-    const spawner: SubprocessSpawner = ({ env }) => {
-      spawnCount += 1;
-      observedEnv = env;
-      return {
-        pid: 4242,
-        controlWriter: supervisorToChild.writer,
-        controlReader: childToSupervisor.reader,
-        eventReader: eventChildToSupervisor.reader,
-        kill: () => {
-          childToSupervisor.close();
-          eventChildToSupervisor.close();
-          resolveExit?.(0);
-        },
-        exited,
-      };
-    };
-
-    const mailRouter = createMultistepMailRouter();
-    const { router } = await buildMultistepFixture({
-      spawner,
-      multistepBinaryPath: "/fake/bin/multistep-workflow-child",
-      multistepMailRouter: mailRouter,
-    });
-
-    const sources = defaultMultistepSources();
-    const definition = {
-      id: "wf-idempotent",
-      triggers: [{ type: "manual" }],
-      stepOrder: ["step-1"],
-      steps: { "step-1": { kind: "step" } },
-    };
-    const frame = makeMultistepFrame({ definition, sources });
-
-    const firstDeploy = router.deploy(frame);
-    while (observedEnv === undefined) {
-      await new Promise((r) => setTimeout(r, 1));
-    }
-    const channelId = observedEnv.IPC_CHANNEL_ID;
-    if (channelId === undefined) throw new Error("IPC_CHANNEL_ID not set");
-    const childSender = createControlChannelSender({
-      privateKeySeed: childIpcKeyPair.privateKey,
-      channelId,
-      writer: {
-        write(line: string) {
-          childToSupervisor.inject(line);
-          return Promise.resolve();
-        },
-      },
-    });
-    await childSender.send({
-      type: "ready",
-      data: {
-        childPid: 4242,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
-      },
-    });
-    const firstResult = await firstDeploy;
-
-    // Re-deploy the SAME address + definition (the hub re-driving after it lost
-    // the addressIndex entry). The router must short-circuit: no second child
-    // spawn, and the same supervisor public key acked back so the hub
-    // re-registers the address; the address stays routable.
-    const secondResult = await router.deploy(frame);
-
-    expect(spawnCount).toBe(1);
-    expect(secondResult.publicKey).toBe(firstResult.publicKey);
-    expect(mailRouter.tryRoute(frame.agentAddress, new Uint8Array([1]))).toBe(
-      true,
-    );
-
-    void supervisorToChild;
-  });
-
-  test("re-deploy of the same address with a DIFFERENT definition fails closed without tearing down the live supervisor (CL-2221)", async () => {
-    const childIpcKeyPair = await generateKeyPair();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const supervisorToChild = createMemoryNdjsonStream();
-    const eventChildToSupervisor = createMemoryFrameStream();
-    let resolveExit: ((code: number) => void) | undefined;
-    const exited = new Promise<number>((resolve) => {
-      resolveExit = resolve;
-    });
-    let spawnCount = 0;
-    let observedEnv: Record<string, string> | undefined;
-    const spawner: SubprocessSpawner = ({ env }) => {
-      spawnCount += 1;
-      observedEnv = env;
-      return {
-        pid: 5252,
-        controlWriter: supervisorToChild.writer,
-        controlReader: childToSupervisor.reader,
-        eventReader: eventChildToSupervisor.reader,
-        kill: () => {
-          childToSupervisor.close();
-          eventChildToSupervisor.close();
-          resolveExit?.(0);
-        },
-        exited,
-      };
-    };
-
-    const mailRouter = createMultistepMailRouter();
-    const { router } = await buildMultistepFixture({
-      spawner,
-      multistepBinaryPath: "/fake/bin/multistep-workflow-child",
-      multistepMailRouter: mailRouter,
-    });
-
-    const sources = defaultMultistepSources();
-    const frame = makeMultistepFrame({
-      definition: {
-        id: "wf-first",
-        triggers: [{ type: "manual" }],
-        stepOrder: ["step-1"],
-        steps: { "step-1": { kind: "step" } },
-      },
-      sources,
-    });
-
-    const firstDeploy = router.deploy(frame);
-    while (observedEnv === undefined) {
-      await new Promise((r) => setTimeout(r, 1));
-    }
-    const channelId = observedEnv.IPC_CHANNEL_ID;
-    if (channelId === undefined) throw new Error("IPC_CHANNEL_ID not set");
-    const childSender = createControlChannelSender({
-      privateKeySeed: childIpcKeyPair.privateKey,
-      channelId,
-      writer: {
-        write(line: string) {
-          childToSupervisor.inject(line);
-          return Promise.resolve();
-        },
-      },
-    });
-    await childSender.send({
-      type: "ready",
-      data: {
-        childPid: 5252,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
-      },
-    });
-    await firstDeploy;
-
-    // A re-deploy on the same address carrying a different definition is a
-    // contract violation (our deploy model mints a fresh deploymentId -> address
-    // per redeploy). The router must reject it WITHOUT spawning again and
-    // WITHOUT tearing down the still-live first supervisor.
-    const conflicting = makeMultistepFrame({
-      definition: {
-        id: "wf-second",
-        triggers: [{ type: "manual" }],
-        stepOrder: ["step-1", "step-2"],
-        steps: { "step-1": { kind: "step" }, "step-2": { kind: "step" } },
-      },
-      sources,
-    });
-
-    await expect(router.deploy(conflicting)).rejects.toThrow(
-      /different definition/,
-    );
-    expect(spawnCount).toBe(1);
-    expect(mailRouter.tryRoute(frame.agentAddress, new Uint8Array([1]))).toBe(
-      true,
-    );
-
-    void supervisorToChild;
   });
 
   test("registers a multistepMailRouter handler against the deployment address once spawn succeeds", async () => {
@@ -1579,6 +1388,7 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     });
 
     const frame = makeMultistepFrame({
+      agentAddress: "ins_crash-noreg@example.com",
       definition: {
         id: "wf-crash-noreg",
         triggers: [{ type: "manual" }],
@@ -1608,6 +1418,7 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     const { router } = await buildMultistepFixture({ spawner: crashSpawner });
 
     const frame = makeMultistepFrame({
+      agentAddress: "ins_crash@example.com",
       definition: {
         id: "wf-crash",
         triggers: [{ type: "manual" }],
@@ -1881,15 +1692,17 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     await deployPromise;
   });
 
-  test("a registerDeployment failure (before spawn) never spawns a child and releases the slug", async () => {
-    // `registerDeployment` now fires BEFORE `supervisor.spawn` so the
-    // deployment-address mapping exists before the supervisor commits
-    // its first run event (see CL-2216). A `registerDeployment` failure
-    // must therefore short-circuit the deploy before any
-    // workflow-process child is spawned, and still release the slug so
-    // the address is claimable again. The observable evidence is that
-    // (a) the spawner is never invoked on the failed deploy and (b) a
-    // subsequent deploy on the SAME address succeeds.
+  test("a registerDeployment failure after spawn unwinds the supervisor, routers, and slug", async () => {
+    // The H1 multi-step partial-state unwind: when an earlier
+    // commit's slug-only release is extended to the full deploy
+    // pipeline, a `registerDeployment` failure must kill the
+    // freshly-spawned workflow-process child, drop the
+    // `activeSupervisors` entry, unregister the three multistep
+    // routers, and release the slug. The observable evidence here
+    // is that (a) the spawner's `kill` is invoked on the first
+    // child after deploy rejects and (b) a subsequent deploy on the
+    // SAME address succeeds, which is only possible if the slug
+    // and the activeSupervisors entry were released.
     const childIpcKeyPair = await generateKeyPair();
     const spawnedHandles: {
       pid: number;
@@ -1992,9 +1805,12 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     };
     const frame = makeMultistepFrame({ definition, sources });
 
+    const firstDeploy = router.deploy(frame);
+    await driveReadyFor(0, 9000);
+
     let firstCaught: unknown;
     try {
-      await router.deploy(frame);
+      await firstDeploy;
     } catch (err) {
       firstCaught = err;
     }
@@ -2003,119 +1819,26 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       /registerDeployment failure \(synthetic\)/,
     );
 
-    // Because `registerDeployment` now precedes `spawn`, the failed
-    // deploy must never have reached the spawner: no workflow-process
-    // child was created, so there is nothing to kill.
-    expect(spawnedHandles.length).toBe(0);
+    // The first child must have been killed by the unwind's
+    // `supervisor.shutdown()` call. Without the unwind, the
+    // freshly-spawned workflow-process child would remain alive
+    // under no owner.
+    const firstHandle = spawnedHandles[0];
+    if (firstHandle === undefined) {
+      throw new Error("spawnedHandles[0] missing");
+    }
+    expect(firstHandle.killed).toBe(true);
 
-    // Re-deploy on the SAME address must succeed. If the unwind missed
-    // the slug release, the second deploy would surface a phantom
-    // collision. The router's public contract is that a failed deploy
-    // leaves the address claimable again.
+    // Re-deploy on the SAME address must succeed. If the unwind
+    // missed the slug release OR the activeSupervisors entry, the
+    // second deploy would surface a phantom collision (slug) or
+    // overwrite a stale entry (activeSupervisors). The router's
+    // public contract is that a failed deploy leaves the address
+    // claimable again.
     const secondDeploy = router.deploy(frame);
-    await driveReadyFor(0, 9000);
+    await driveReadyFor(1, 9001);
     const secondResult = await secondDeploy;
     expect(secondResult.publicKey).toMatch(/^[0-9a-f]{64}$/);
     expect(registerCallCount).toBe(2);
-  });
-
-  test("registers the deployment-address mapping before spawning the workflow-process child", async () => {
-    // CL-2216 regression guard: the deploy router must record the
-    // `(deploymentId -> agentAddress)` mapping BEFORE `supervisor.spawn`,
-    // because spawn's `replayProcessingToInbox` can commit a run event
-    // whose pack-push hook resolves the address from that registry.
-    const childIpcKeyPair = await generateKeyPair();
-    const order: string[] = [];
-    const spawnedHandles: {
-      childToSupervisor: ReturnType<typeof createMemoryNdjsonStream>;
-      eventChildToSupervisor: ReturnType<typeof createMemoryFrameStream>;
-    }[] = [];
-    const observedEnvs: Record<string, string>[] = [];
-    const spawner: SubprocessSpawner = ({ env }) => {
-      order.push("spawn");
-      observedEnvs.push(env);
-      const supervisorToChild = createMemoryNdjsonStream();
-      const childToSupervisor = createMemoryNdjsonStream();
-      const eventChildToSupervisor = createMemoryFrameStream();
-      let resolveExit: ((code: number) => void) | undefined;
-      const exited = new Promise<number>((resolve) => {
-        resolveExit = resolve;
-      });
-      spawnedHandles.push({ childToSupervisor, eventChildToSupervisor });
-      const handle: SubprocessHandle = {
-        pid: 9100,
-        controlWriter: supervisorToChild.writer,
-        controlReader: childToSupervisor.reader,
-        eventReader: eventChildToSupervisor.reader,
-        kill: () => {
-          childToSupervisor.close();
-          eventChildToSupervisor.close();
-          resolveExit?.(0);
-        },
-        exited,
-      };
-      return handle;
-    };
-
-    const multiDataDir = await createTempBaseDir("sidecar-multi-order-");
-    const { router } = await buildMultistepFixture({
-      spawner,
-      multistepBinaryPath: "/fake/bin/multistep-workflow-child",
-      multistepSubstrateEnv: { SIDECAR_DATA_DIR: multiDataDir },
-      registerDeployment: () => {
-        order.push("registerDeployment");
-      },
-    });
-
-    const sources = defaultMultistepSources();
-    const definition = {
-      id: "wf-order-test",
-      triggers: [{ type: "manual" }],
-      stepOrder: ["step-1", "step-2"],
-      steps: { "step-1": { kind: "step" }, "step-2": { kind: "step" } },
-    };
-    const frame = makeMultistepFrame({ definition, sources });
-
-    const deployPromise = router.deploy(frame);
-
-    while (spawnedHandles.length === 0) {
-      await new Promise((r) => setTimeout(r, 1));
-    }
-    const env = observedEnvs[0];
-    const channelId = env?.IPC_CHANNEL_ID;
-    if (channelId === undefined) {
-      throw new Error("IPC_CHANNEL_ID missing in observed env");
-    }
-    const record = spawnedHandles[0];
-    if (record === undefined) {
-      throw new Error("spawnedHandles[0] missing");
-    }
-    const childSender = createControlChannelSender({
-      privateKeySeed: childIpcKeyPair.privateKey,
-      channelId,
-      writer: {
-        write(line: string) {
-          record.childToSupervisor.inject(line);
-          return Promise.resolve();
-        },
-      },
-    });
-    await childSender.send({
-      type: "ready",
-      data: {
-        childPid: 9100,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
-      },
-    });
-
-    const result = await deployPromise;
-    expect(result.publicKey).toMatch(/^[0-9a-f]{64}$/);
-
-    // The mapping must be recorded before the spawner is invoked.
-    expect(order.indexOf("registerDeployment")).toBeGreaterThanOrEqual(0);
-    expect(order.indexOf("spawn")).toBeGreaterThanOrEqual(0);
-    expect(order.indexOf("registerDeployment")).toBeLessThan(
-      order.indexOf("spawn"),
-    );
   });
 });

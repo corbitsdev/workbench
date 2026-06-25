@@ -24,6 +24,7 @@
     "@intx/tools-posix": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
+    "@intx/workflow-deploy": "workspace:*",
     "@intx/workflow-host": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/approvals": "workspace:*",

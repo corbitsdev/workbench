@@ -69,9 +69,9 @@ describe("polymarket_odds tool", () => {
     );
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    const calledUrl = new URL(
-      (fetcher as ReturnType<typeof mock>).mock.calls[0][0] as string,
-    );
+    const firstCall = (fetcher as ReturnType<typeof mock>).mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const calledUrl = new URL(firstCall![0] as string);
     expect(calledUrl.searchParams.get("limit")).toBe("10");
   });
 
@@ -88,9 +88,9 @@ describe("polymarket_odds tool", () => {
       new AbortController().signal,
     );
 
-    const calledUrl = new URL(
-      (fetcher as ReturnType<typeof mock>).mock.calls[0][0] as string,
-    );
+    const firstCall = (fetcher as ReturnType<typeof mock>).mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const calledUrl = new URL(firstCall![0] as string);
     expect(calledUrl.searchParams.get("limit")).toBe("5");
   });
 
@@ -107,9 +107,9 @@ describe("polymarket_odds tool", () => {
       new AbortController().signal,
     );
 
-    const calledUrl = new URL(
-      (fetcher as ReturnType<typeof mock>).mock.calls[0][0] as string,
-    );
+    const firstCall = (fetcher as ReturnType<typeof mock>).mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const calledUrl = new URL(firstCall![0] as string);
     expect(calledUrl.searchParams.get("limit")).toBe("50");
   });
 

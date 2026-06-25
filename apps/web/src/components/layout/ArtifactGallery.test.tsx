@@ -25,6 +25,9 @@ const mockContextValue: React.ComponentProps<
   pendingMessage: null,
   openWithMessage: mockOpenWithMessage,
   clearPendingMessage: () => {},
+  pendingDockThreadId: null,
+  openThreadInDock: () => {},
+  clearPendingDockThread: () => {},
 };
 
 import { ArtifactGallery, buildArtifactMessage } from "./ArtifactGallery";

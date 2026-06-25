@@ -1,5 +1,5 @@
 import type { InstanceEvent } from "@intx/hub-client";
-import type { ChatMessage, ChatImage } from "@workbench/chat";
+import type { ChatMessage, ChatImage } from "@workbench/chat/types";
 import { convertInstanceEvents } from "./adapter";
 
 export const STREAMING_BUBBLE_ID = "streaming-synthetic";

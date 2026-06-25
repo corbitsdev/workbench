@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LiveDeployment } from "@workbench/tool-credentials";
-import { sanitizeAgentAddress } from "./workflow-host-wiring";
+import { sanitizeAddress as sanitizeAgentAddress } from "@workbench/hub-agent";
 import { reconcileOrphanedDeploymentDirs } from "./boot-reconciler";
 
 const DOMAIN = "abklabs.com";

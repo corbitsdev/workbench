@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import { toHumanLabel } from "@workbench/ui";
 import type { ToolSummaryStyle } from "@workbench/ui";
-import type { ToolCall } from "@workbench/chat";
+import type { ToolCall } from "@workbench/chat/types";
 
 // `ToolSummaryStyle` is owned by @workbench/ui (the foundation both this package
 // and the preference hook depend on); re-exported here so callers can keep

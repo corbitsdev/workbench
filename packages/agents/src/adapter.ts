@@ -1,5 +1,5 @@
 import type { InstanceEvent } from "@intx/hub-client";
-import type { ChatMessage, ToolCall } from "@workbench/chat";
+import type { ChatMessage, ToolCall } from "@workbench/chat/types";
 
 function stripContextBlock(content: string): string {
   return content.replace(/^<context>[\s\S]*?<\/context>\n*/u, "");
