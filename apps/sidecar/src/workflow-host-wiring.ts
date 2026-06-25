@@ -526,6 +526,29 @@ const TRIVIAL_STEP_ID = "trivial";
  */
 export const STEP_INFERENCE_SOURCES_ENV_KEY = "STEP_INFERENCE_SOURCES";
 
+// WORKBENCH-LOCAL (CL-2199): the raw hub deploymentId (`ses_<id>`). The step
+// tool-context resolver derives the step agent row id (`ins_<raw>-<step>`) and
+// agent-state repo id (`<raw>-<step>`) from this, NOT from the slugified
+// workflow-run repo id. `SubstrateConfig` in workflow-substrate-factory.ts
+// REQUIRES this key and the workflow-child's `filterSubstrateConfig` throws
+// without it, so an upstream re-sync that drops it breaks every workflow-child
+// spawn at runtime with a green build (this happened in #364 — see CL-2361).
+// MUST be preserved across interchange pin-bump re-syncs of this file.
+export const RAW_DEPLOYMENT_ID_ENV_KEY = "WORKFLOW_RAW_DEPLOYMENT_ID";
+
+// WORKBENCH-LOCAL (CL-2199): recover the raw deploymentId (`ses_<id>`) from the
+// deploy frame's `agentId`, which the orchestrator mints as `ins_<deploymentId>`
+// (deriveDeploymentAgentId). Fails loudly on an unexpected shape.
+export function deriveRawDeploymentId(agentId: string): string {
+  const prefix = "ins_";
+  if (!agentId.startsWith(prefix) || agentId.length === prefix.length) {
+    throw new Error(
+      `sidecar deploy router: cannot recover raw deploymentId from agentId ${JSON.stringify(agentId)}; expected the orchestrator's deriveDeploymentAgentId shape "ins_<deploymentId>"`,
+    );
+  }
+  return agentId.slice(prefix.length);
+}
+
 /**
  * Validate the wire-projected workflow definition at the deploy-router
  * boundary. The arktype `AgentDeployFrame` validator enforces the
@@ -1021,6 +1044,10 @@ export function createSidecarDeployRouter(deps: {
         // (not compile time — the hand-off is duck-typed). MUST be preserved
         // across interchange pin-bump re-syncs of this file.
         TENANT_ID: frame.config.tenantId,
+        // WORKBENCH-LOCAL (CL-2199): raw hub deploymentId for the step
+        // tool-context resolver (see RAW_DEPLOYMENT_ID_ENV_KEY). Also dropped
+        // by the #364 re-sync; required by the child's filterSubstrateConfig.
+        [RAW_DEPLOYMENT_ID_ENV_KEY]: deriveRawDeploymentId(frame.agentId),
         [STEP_INFERENCE_SOURCES_ENV_KEY]: JSON.stringify(projection.sources),
       };
 
