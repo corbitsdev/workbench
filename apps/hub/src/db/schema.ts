@@ -62,6 +62,11 @@ export const workflowRun = pgTable('workflow_run', {
   status: text('status').notNull(),
   input: jsonb('input').$type<Record<string, unknown>>(),
   output: jsonb('output').$type<Record<string, unknown>>(),
+  // Deploy-time provenance captured at deploy (CL-2321): the workflow package
+  // version + short git sha + the deploy clock's timestamp. Null for older
+  // deployments that predate version capture. The UI surfaces it in the "?"
+  // tooltip; the projection bridge names it in the run-failed log.
+  meta: jsonb('meta').$type<{ version: string; sha: string; deployedAt: string }>(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at')
     .notNull()

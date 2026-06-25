@@ -12,6 +12,10 @@ export interface RunRecord {
   currentStepId: string | null;
   outputs: Record<string, unknown>;
   error?: string;
+  // The deployment that produced this run (CL-2321) — used to resolve the exact
+  // deployed version, not the newest deployment of the kind. Absent on runs
+  // created before the record began persisting it.
+  deploymentId?: string;
 }
 
 const RECORD_TO_RUN_PHASE: Record<RunRecord['status'], RunPhase> = {

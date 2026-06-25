@@ -5,10 +5,14 @@
 // docs/DEPLOYING_WORKFLOWS.md.
 
 import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { type, type Type } from 'arktype';
+import { WorkflowMeta } from '../src/lib/workflow-meta';
+
+export type DeployWorkflowMeta = typeof WorkflowMeta.infer;
 
 const DeployResult = type({ kind: "'multi-step'", publicKey: 'string' }).or({
   kind: "'trivial'",
@@ -99,6 +103,53 @@ function repoRoot(): string {
   return dirname(dirname(dirname(binDir)));
 }
 
+// Read the workflow package version from a manifest path. Falls back to '0.0.0'
+// when the file is absent, unparseable, or carries no non-empty `version` field.
+// Path-injected so the fallback branches are exercisable in tests.
+export function readWorkflowVersion(manifestPath: string): string {
+  if (!existsSync(manifestPath)) return '0.0.0';
+  try {
+    const pkg = JSON.parse(readFileSync(manifestPath, 'utf8')) as { version?: string };
+    if (typeof pkg.version === 'string' && pkg.version !== '') {
+      return pkg.version;
+    }
+  } catch {
+    // unparseable manifest → default
+  }
+  return '0.0.0';
+}
+
+// Resolve the repo's git short SHA via the injected runner. Falls back to
+// 'unknown' when git is unavailable (non-zero status or no stdout). The runner
+// is injected so a test can simulate git failure without a real broken repo.
+export type GitShaRunner = () => { status: number | null; stdout: string | null };
+
+export function resolveGitSha(run: GitShaRunner): string {
+  const result = run();
+  if (result.status === 0 && typeof result.stdout === 'string') {
+    const sha = result.stdout.trim();
+    if (sha !== '') return sha;
+  }
+  return 'unknown';
+}
+
+function gitShaRunner(): { status: number | null; stdout: string | null } {
+  const result = spawnSync('git', ['rev-parse', '--short', 'HEAD'], {
+    encoding: 'utf8',
+    cwd: repoRoot(),
+  });
+  return { status: result.status, stdout: result.stdout ?? null };
+}
+
+export function readWorkflowMeta(kind: string): DeployWorkflowMeta {
+  const manifestPath = join(repoRoot(), 'workflows', kind, 'package.json');
+  return {
+    version: readWorkflowVersion(manifestPath),
+    sha: resolveGitSha(gitShaRunner),
+    deployedAt: new Date().toISOString(),
+  };
+}
+
 // Resolve a workflow kind to its package entry file on disk. The workflow
 // packages (`@workbench/workflow-<kind>`) are orphan workspace members — nothing
 // in the hub's dependency graph imports them, so bun never links them into
@@ -140,10 +191,13 @@ async function loadWorkflowDefinition(kind: string): Promise<unknown> {
 
 export async function deployWorkflow(opts: DeployWorkflowOptions): Promise<void> {
   const definition = await loadWorkflowDefinition(opts.kind);
-  const query =
+  const meta = readWorkflowMeta(opts.kind);
+  let query =
     opts.tenantSlug !== undefined && opts.tenantSlug !== ''
       ? `?tenant=${encodeURIComponent(opts.tenantSlug)}`
       : '';
+  const metaParam = `meta=${encodeURIComponent(JSON.stringify(meta))}`;
+  query = query === '' ? `?${metaParam}` : `${query}&${metaParam}`;
   const { url, headers } = buildDeployRequest(opts.hubURL, query, opts.auth);
   const res = await fetch(url, {
     method: 'POST',

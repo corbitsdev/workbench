@@ -21,6 +21,7 @@ const runRecordSchema = type({
   currentStepId: 'string|null',
   outputs: type({ '[string]': 'unknown' }),
   'error?': 'string',
+  'deploymentId?': 'string',
 });
 
 function parseRunRecord(raw: unknown): RunRecord {
@@ -40,11 +41,21 @@ const workflowRunSchema = type({
 export type WorkflowRun = typeof workflowRunSchema.infer;
 const workflowRunListSchema = workflowRunSchema.array();
 
+// Mirror of apps/hub/src/lib/workflow-meta.ts (separate build graphs make a
+// literal import non-trivial). `deployedAt` is an ISO string at the source.
+const workflowMetaSchema = type({
+  version: 'string',
+  sha: 'string',
+  deployedAt: 'string.date.iso',
+});
+export type WorkflowMeta = typeof workflowMetaSchema.infer;
+
 const workflowDeploymentSchema = type({
   deploymentId: 'string',
   kind: 'string',
   status: 'string',
   createdAt: 'string',
+  'meta?': workflowMetaSchema.or('null'),
 });
 export type WorkflowDeployment = typeof workflowDeploymentSchema.infer;
 const workflowDeploymentListSchema = workflowDeploymentSchema.array();

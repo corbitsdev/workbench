@@ -33,6 +33,7 @@ const RunStateResponse = type({
   currentStepId: 'string|null',
   outputs: 'object',
   'error?': 'string',
+  'deploymentId?': 'string',
 });
 
 const ErrorResponse = type({ error: 'string' });
@@ -103,6 +104,7 @@ function stateResponse(state: {
   currentStepId: string | null;
   outputs: Record<string, unknown>;
   error?: string;
+  deploymentId?: string;
 }): {
   runId: string;
   kind: string;
@@ -110,6 +112,7 @@ function stateResponse(state: {
   currentStepId: string | null;
   outputs: Record<string, unknown>;
   error?: string;
+  deploymentId?: string;
 } {
   return {
     runId: state.runId,
@@ -118,6 +121,7 @@ function stateResponse(state: {
     currentStepId: state.currentStepId,
     outputs: state.outputs,
     ...(state.error !== undefined ? { error: state.error } : {}),
+    ...(state.deploymentId !== undefined ? { deploymentId: state.deploymentId } : {}),
   };
 }
 

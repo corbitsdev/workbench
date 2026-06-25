@@ -17,6 +17,7 @@ import { ensureGlobalMember } from '../lib/tenant-provisioning';
 import type { WorkflowDeployService } from '../services/workflow-deploy';
 import { resolveWorkflowDeployConfig } from '../services/workflow-deploy-config';
 import { requestBodySchema } from '../lib/openapi';
+import { WorkflowMeta } from '../lib/workflow-meta';
 
 const log = getLogger(['api', 'workflow-deploy']);
 
@@ -279,6 +280,21 @@ export function deployWorkflowHandler(
         hubPublicKey: deps.hubPublicKey,
       });
 
+      // Parse optional deploy-time meta (version, sha, deployedAt) from the
+      // query param the deploy-workflow CLI sends. Absent or malformed → null.
+      let deployMeta: typeof WorkflowMeta.infer | null = null;
+      const rawMeta = c.req.query('meta');
+      if (rawMeta !== undefined && rawMeta !== '') {
+        try {
+          const parsed = WorkflowMeta(JSON.parse(rawMeta));
+          if (!(parsed instanceof type.errors)) {
+            deployMeta = parsed;
+          }
+        } catch {
+          // ignore — old callers won't send meta
+        }
+      }
+
       // Index the deployment so the user-facing /workflow-runs routes can list it
       // by tenant without re-walking the workflow-run repos.
       await deps.db.insert(workflowRun).values({
@@ -287,6 +303,7 @@ export function deployWorkflowHandler(
         principalId: owner.id,
         kind: definition.id,
         status: 'running',
+        ...(deployMeta !== null ? { meta: deployMeta } : {}),
       });
 
       // Redeploy supersedes: the newest deploy of a (kind, tenant) is the only

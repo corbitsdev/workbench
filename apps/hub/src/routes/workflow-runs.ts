@@ -21,6 +21,7 @@ import type { HubDb } from '../db';
 import { workflowRun } from '../db/schema';
 import { getRequestedUserContext } from '../lib/user-context';
 import { requestBodySchema } from '../lib/openapi';
+import { WorkflowMeta } from '../lib/workflow-meta';
 
 // User-facing read/control surface over natively-deployed workflows.
 // The hub indexes each deployment in `workflow_run` at deploy time; these
@@ -112,6 +113,8 @@ const WorkflowRunSummary = type({
   kind: 'string',
   status: 'string',
   createdAt: 'unknown',
+  // Deploy-time provenance (CL-2321); null for deployments that predate capture.
+  'meta?': WorkflowMeta.or('null'),
 });
 const WorkflowRunList = WorkflowRunSummary.array();
 const StepOutputResponse = type({ stepId: 'string', output: 'unknown' });
@@ -255,6 +258,7 @@ export function createWorkflowRunsRouter(deps: {
           kind: workflowRun.kind,
           status: workflowRun.status,
           createdAt: workflowRun.createdAt,
+          meta: workflowRun.meta,
         })
         .from(workflowRun)
         .where(

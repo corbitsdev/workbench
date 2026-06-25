@@ -224,6 +224,9 @@ describe('workflow runs on the sidecar (records router)', () => {
     expect(json.currentStepId).toBeNull();
     expect(json.outputs).toEqual({});
     expect(typeof json.runId).toBe('string');
+    // The response surfaces the producing deployment so the UI can resolve the
+    // exact deployed version that ran (CL-2321), not the newest of the kind.
+    expect(json.deploymentId).toBe('ses_dep1');
 
     // The linchpin of the projection bridge: the trigger mail's messageId IS the
     // run record id, so the supervisor-derived runId on every emitted event
@@ -301,6 +304,8 @@ describe('workflow runs on the sidecar (records router)', () => {
     expect(read.status).toBe(200);
     expect(read.json.runId).toBe(start.json.runId);
     expect(read.json.status).toBe('running');
+    // deploymentId persisted at start round-trips through the read DTO.
+    expect(read.json.deploymentId).toBe('ses_dep1');
   });
 
   test('GET /records lists only the callers own runs (per-user private)', async () => {

@@ -1,10 +1,13 @@
 import { type } from 'arktype';
+import { eq } from 'drizzle-orm';
 import { getLogger } from '@intx/log';
 import { subscribeKind } from '@intx/hub-sessions';
 import type { AgentRepoStore, Principal, RepoId, RepoStore } from '@intx/hub-sessions';
 import { createWorkflowRunBlobSubstrate } from '@intx/workflow-host';
 import type { HubDb } from '../db';
+import { workflowRun } from '../db/schema';
 import { createRunStore, loadRunRecord } from './run-store';
+import { WorkflowMeta } from '../lib/workflow-meta';
 
 // Projection bridge (CL-2243). Workflows execute on the sidecar supervisor and
 // commit their run events to a workflow-run git repo; the sidecar packs those
@@ -71,7 +74,13 @@ export function isNewWorkflowRunFailure(
 export function logNewWorkflowRunFailureIfNeeded(
   previousStatus: RunRecordStatus,
   projected: ProjectedRun,
-  context: { runId: string; kind: string; deploymentId: string | null }
+  context: {
+    runId: string;
+    kind: string;
+    deploymentId: string | null;
+    version?: string;
+    sha?: string;
+  }
 ): void {
   if (!isNewWorkflowRunFailure(previousStatus, projected.status)) return;
   const detail = projected.error ?? 'workflow run failed';
@@ -79,6 +88,8 @@ export function logNewWorkflowRunFailureIfNeeded(
     runId: context.runId,
     kind: context.kind,
     ...(context.deploymentId !== null ? { deploymentId: context.deploymentId } : {}),
+    ...(context.version !== undefined ? { version: context.version } : {}),
+    ...(context.sha !== undefined ? { sha: context.sha } : {}),
     error: new Error(detail),
   });
 }
@@ -266,10 +277,26 @@ export async function projectWorkflowRunRepo(
       ...(projected.error !== undefined ? { error: projected.error } : {}),
     });
 
+    const deployMeta: { version?: string; sha?: string } = {};
+    if (isNewWorkflowRunFailure(existing.status, projected.status) && existing.deploymentId) {
+      const deployment = await db.query.workflowRun.findFirst({
+        where: eq(workflowRun.deploymentId, existing.deploymentId),
+        columns: { meta: true },
+      });
+      // Parsed at the DB read boundary so a malformed/absent meta degrades to
+      // "no version in log", never throws inside the projection.
+      const parsed = WorkflowMeta(deployment?.meta);
+      if (!(parsed instanceof type.errors)) {
+        deployMeta.version = parsed.version;
+        deployMeta.sha = parsed.sha;
+      }
+    }
+
     logNewWorkflowRunFailureIfNeeded(existing.status, projected, {
       runId,
       kind: existing.kind,
       deploymentId: existing.deploymentId ?? null,
+      ...deployMeta,
     });
   }
 }

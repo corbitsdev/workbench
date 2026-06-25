@@ -3,6 +3,8 @@ import {
   createCoalescingScheduler,
   foldRunEvents,
   isNewWorkflowRunFailure,
+  logNewWorkflowRunFailureIfNeeded,
+  type ProjectedRun,
   type RunEventEntry,
 } from './projection-bridge';
 
@@ -164,5 +166,47 @@ describe('createCoalescingScheduler', () => {
     scheduler.schedule('k');
     await scheduler.idle();
     expect(calls).toBe(2);
+  });
+});
+
+describe('logNewWorkflowRunFailureIfNeeded', () => {
+  function failedProjected(error = 'something broke'): ProjectedRun {
+    return { status: 'failed', currentStepId: null, completedRefs: [], error };
+  }
+
+  test('does not throw when version and sha are provided', () => {
+    expect(() =>
+      logNewWorkflowRunFailureIfNeeded('running', failedProjected(), {
+        runId: 'wfr_1',
+        kind: 'pain-point-collateral',
+        deploymentId: 'ses_dep1',
+        version: '1.2.3',
+        sha: 'abc1234',
+      })
+    ).not.toThrow();
+  });
+
+  test('does not throw when version and sha are absent (old deploy path)', () => {
+    expect(() =>
+      logNewWorkflowRunFailureIfNeeded('running', failedProjected(), {
+        runId: 'wfr_2',
+        kind: 'pain-point-collateral',
+        deploymentId: null,
+      })
+    ).not.toThrow();
+  });
+
+  test('does not log when the run was already failed (no transition)', () => {
+    // If previousStatus is already 'failed', isNewWorkflowRunFailure returns false
+    // and the function is a no-op — no throw, no side effect.
+    expect(() =>
+      logNewWorkflowRunFailureIfNeeded('failed', failedProjected(), {
+        runId: 'wfr_3',
+        kind: 'ab-compare',
+        deploymentId: 'ses_dep2',
+        version: '0.1.0',
+        sha: 'def5678',
+      })
+    ).not.toThrow();
   });
 });

@@ -190,3 +190,20 @@ describe('0029 creates output_feedback (CL-1993)', () => {
     expect(sql).toMatch(/"subject_kind", "subject_id"/i);
   });
 });
+
+describe('0031 adds meta to workflow_run (CL-2321)', () => {
+  const sql = readFileSync(
+    join(import.meta.dir, '../../migrations/0031_workflow_run_meta.sql'),
+    'utf-8'
+  );
+
+  it('adds a nullable meta column', () => {
+    expect(sql).toMatch(/ALTER TABLE "workflow_run"/i);
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "meta" jsonb/i);
+  });
+
+  it('keeps the column nullable (no NOT NULL, no default)', () => {
+    expect(sql).not.toMatch(/NOT NULL/i);
+    expect(sql).not.toMatch(/DEFAULT/i);
+  });
+});
