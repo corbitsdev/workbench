@@ -8,6 +8,15 @@
 @source '.';
 
 /*
+ * Gate hover-driven effects (notably `group-hover`, which Tailwind does not
+ * media-guard on its own) behind devices with a fine pointer that supports
+ * hover, so a tap on touch — including hybrid devices (touchscreen laptops)
+ * that report `hover: hover` with a coarse pointer — does not leave an
+ * animation stuck mid-transform.
+ */
+@custom-variant hover-hover (@media (hover: hover) and (pointer: fine));
+
+/*
  * Brand tokens as first-class Tailwind v4 theme tokens. Colors are declared
  * `inline` so the generated utilities reference the runtime CSS variables
  * (defined in :root below and swapped by html[data-theme='<name>'] selectors),

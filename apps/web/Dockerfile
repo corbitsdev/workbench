@@ -65,6 +65,11 @@ COPY . .
 ARG VITE_API_BASE_URL
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
+# Per-environment branding (title + nav badge). Unset = neutral "Workbench"
+# with no environment decoration. Set per Railway service: production | staging | spike.
+ARG VITE_APP_ENV
+ENV VITE_APP_ENV=$VITE_APP_ENV
+
 WORKDIR /app/apps/web
 RUN bunx vite build
 

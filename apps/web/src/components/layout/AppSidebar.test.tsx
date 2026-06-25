@@ -34,6 +34,10 @@ mock.module('../../lib/active-workbench-context', () => ({
   }),
 }));
 
+mock.module('../../lib/app-env', () => ({
+  branding: { env: null, label: null, title: 'Workbench' },
+}));
+
 const { AppSidebar } = require('./AppSidebar');
 
 afterEach(() => {
@@ -49,16 +53,31 @@ function renderSidebar(path = '/') {
 describe('AppSidebar', () => {
   it('renders the primary nav and Settings link', () => {
     renderSidebar();
-    expect(screen.getByRole('link', { name: /workflows/i })).toBeDefined();
-    expect(screen.getByRole('link', { name: /skills/i })).toBeDefined();
-    expect(screen.getByRole('link', { name: /insights/i })).toBeDefined();
-    const settingsLink = screen.getByRole('link', { name: /settings/i });
-    expect((settingsLink as HTMLAnchorElement).getAttribute('href')).toBe('/settings');
+    expect(
+      (screen.getByRole('link', { name: /workflows/i }) as HTMLAnchorElement).getAttribute('href')
+    ).toBe('/workflows');
+    expect(
+      (screen.getByRole('link', { name: /skills/i }) as HTMLAnchorElement).getAttribute('href')
+    ).toBe('/skills');
+    expect(
+      (screen.getByRole('link', { name: /insights/i }) as HTMLAnchorElement).getAttribute('href')
+    ).toBe('/insights');
+    expect(
+      (screen.getByRole('link', { name: /settings/i }) as HTMLAnchorElement).getAttribute('href')
+    ).toBe('/settings');
   });
 
   it('renders the New Chat action and the thread list', () => {
     renderSidebar();
-    expect(screen.getByRole('button', { name: /new chat/i })).toBeDefined();
-    expect(screen.getByText('First chat')).toBeDefined();
+    const newChat = screen.getByRole('button', { name: /new chat/i });
+    expect((newChat as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText('First chat').textContent).toBe('First chat');
+  });
+
+  it('omits the environment badge when no environment is configured', () => {
+    renderSidebar();
+    expect(screen.getByText('Workbench').textContent).toBe('Workbench');
+    expect(screen.queryByText('Staging')).toBeNull();
+    expect(screen.queryByText('Spike')).toBeNull();
   });
 });
