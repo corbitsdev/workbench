@@ -89,6 +89,29 @@ describe("parseSeedMarker (CL-1952)", () => {
     expect(resolved.map((f) => f.path)).toEqual(["MEMORY.md"]);
   });
 
+  // Regression: CONTACTS/ERRORS/HUMAN/PENDING were folded into MEMORY.md but
+  // not retired, so prod Myra sessions deployed with the old prompt failed
+  // restore with "no stub content is registered". Each must now be skipped,
+  // leaving only the still-seeded MEMORY.md, without throwing.
+  it.each(["CONTACTS.md", "ERRORS.md", "HUMAN.md", "PENDING.md"])(
+    "skips the folded-and-retired %s without throwing",
+    (retired) => {
+      const legacy = `<!-- workbench:memory-seed=MEMORY.md,${retired} -->`;
+      let resolved: ReturnType<typeof parseSeedMarker> = [];
+      expect(() => {
+        resolved = parseSeedMarker(`prelude\n\n${legacy}`);
+      }).not.toThrow();
+      expect(resolved.map((f) => f.path)).toEqual(["MEMORY.md"]);
+    },
+  );
+
+  it("skips a marker listing every retired basename at once and seeds only MEMORY.md", () => {
+    const legacy =
+      "<!-- workbench:memory-seed=MEMORY.md,CONTACTS.md,ERRORS.md,HUMAN.md,PENDING.md,SCRATCHPAD.md -->";
+    const resolved = parseSeedMarker(`prelude\n\n${legacy}`);
+    expect(resolved.map((f) => f.path)).toEqual(["MEMORY.md"]);
+  });
+
   it("throws when the marker names a file with no registered stub", () => {
     const rogue = buildSeedMarker([
       { path: "UNKNOWN.md", content: "# Unknown\n" },

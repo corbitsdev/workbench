@@ -84,7 +84,16 @@ const seedFileByPath = new Map(
  * but are no longer seeded. Skipped on parse so sidecar session restore survives
  * prompt/schema drift without re-launching every instance (CL-1952).
  */
-const RETIRED_SEED_BASENAMES = new Set<string>(["SCRATCHPAD.md"]);
+const RETIRED_SEED_BASENAMES = new Set<string>([
+  "SCRATCHPAD.md",
+  // Folded into MEMORY.md's sections; prompts deployed before the fold still
+  // list these in their seed marker, so a sidecar restart must not fail their
+  // session restore (CL-1952 drift-survival).
+  "CONTACTS.md",
+  "ERRORS.md",
+  "HUMAN.md",
+  "PENDING.md",
+]);
 
 /**
  * Whether a system prompt carries a seed marker at all. Lets the harness tell a
