@@ -48,6 +48,7 @@ export {
   buildSeedMarker,
   parseSeedMarker,
   type SeedWorkspaceFile,
+  type SeedMarkerParse,
 } from "./personal-agent/seed-files";
 
 // Loop agent

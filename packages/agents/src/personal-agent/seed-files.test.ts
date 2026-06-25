@@ -31,14 +31,13 @@ describe("PERSONAL_AGENT_SEED_FILES (CL-1952)", () => {
   });
 });
 
-describe("parseSeedMarker (CL-1952)", () => {
+describe("parseSeedMarker (CL-1952, CL-2364)", () => {
   it("returns the declared files with their stub content for the base deploy prompt", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", { xml: true });
-    const resolved = parseSeedMarker(prompt);
-    expect(resolved.map((f) => f.path).sort()).toEqual(
-      [...EXPECTED_FILES].sort(),
-    );
-    for (const file of resolved) {
+    const { files, skipped } = parseSeedMarker(prompt);
+    expect(files.map((f) => f.path).sort()).toEqual([...EXPECTED_FILES].sort());
+    expect(skipped).toEqual([]);
+    for (const file of files) {
       expect(file.content.startsWith("# ")).toBe(true);
     }
   });
@@ -57,10 +56,8 @@ describe("parseSeedMarker (CL-1952)", () => {
     );
     expect(personalized).toContain("<operator>");
 
-    const resolved = parseSeedMarker(personalized);
-    expect(resolved.map((f) => f.path).sort()).toEqual(
-      [...EXPECTED_FILES].sort(),
-    );
+    const { files } = parseSeedMarker(personalized);
+    expect(files.map((f) => f.path).sort()).toEqual([...EXPECTED_FILES].sort());
   });
 
   it("mirrors the harness flow: parse off the base prompt, then strip before the model prompt is built", () => {
@@ -68,63 +65,90 @@ describe("parseSeedMarker (CL-1952)", () => {
     // marker, THEN appends active context. The marker and active-context block
     // never coexist in the prompt the model sees, so this models that ordering.
     const base = buildPersonalAgentSystemPrompt("Myra", { xml: false });
-    const resolved = parseSeedMarker(base);
-    expect(resolved.map((f) => f.path).sort()).toEqual(
-      [...EXPECTED_FILES].sort(),
-    );
+    const { files } = parseSeedMarker(base);
+    expect(files.map((f) => f.path).sort()).toEqual([...EXPECTED_FILES].sort());
 
     const modelPrompt = `${stripSeedMarker(base)}\n\n## Active Context\nCurrent date: 15/06/2026`;
     expect(modelPrompt).not.toContain("workbench:memory-seed");
   });
 
   it("returns no files for a prompt with no marker (non-personal agent)", () => {
-    expect(parseSeedMarker("some other agent prompt with no marker")).toEqual(
-      [],
-    );
+    expect(parseSeedMarker("some other agent prompt with no marker")).toEqual({
+      files: [],
+      skipped: [],
+    });
   });
 
-  it("ignores retired seed basenames still present in legacy deployed prompts", () => {
-    const legacy = "<!-- workbench:memory-seed=MEMORY.md,SCRATCHPAD.md -->";
-    const resolved = parseSeedMarker(`prelude\n\n${legacy}`);
-    expect(resolved.map((f) => f.path)).toEqual(["MEMORY.md"]);
-  });
-
-  // Regression: CONTACTS/ERRORS/HUMAN/PENDING were folded into MEMORY.md but
-  // not retired, so prod Myra sessions deployed with the old prompt failed
-  // restore with "no stub content is registered". Each must now be skipped,
-  // leaving only the still-seeded MEMORY.md, without throwing.
-  it.each(["CONTACTS.md", "ERRORS.md", "HUMAN.md", "PENDING.md"])(
-    "skips the folded-and-retired %s without throwing",
-    (retired) => {
-      const legacy = `<!-- workbench:memory-seed=MEMORY.md,${retired} -->`;
-      let resolved: ReturnType<typeof parseSeedMarker> = [];
-      expect(() => {
-        resolved = parseSeedMarker(`prelude\n\n${legacy}`);
-      }).not.toThrow();
-      expect(resolved.map((f) => f.path)).toEqual(["MEMORY.md"]);
-    },
-  );
-
-  it("skips a marker listing every retired basename at once and seeds only MEMORY.md", () => {
+  // CL-2364: a since-folded seed file named in an OLD persisted prompt must be
+  // skipped-and-reported, never thrown — otherwise a sidecar restart that
+  // restores from the stale prompt wedges the whole live session.
+  it("skips an unregistered basename and reports it, seeding only the known files", () => {
     const legacy =
-      "<!-- workbench:memory-seed=MEMORY.md,CONTACTS.md,ERRORS.md,HUMAN.md,PENDING.md,SCRATCHPAD.md -->";
-    const resolved = parseSeedMarker(`prelude\n\n${legacy}`);
-    expect(resolved.map((f) => f.path)).toEqual(["MEMORY.md"]);
+      "<!-- workbench:memory-seed=MEMORY.md,CONTACTS.md,GONE.md -->";
+    let result: ReturnType<typeof parseSeedMarker> | undefined;
+    expect(() => {
+      result = parseSeedMarker(`prelude\n\n${legacy}`);
+    }).not.toThrow();
+    expect(result?.files.map((f) => f.path)).toEqual(["MEMORY.md"]);
+    expect(result?.skipped.sort()).toEqual(["CONTACTS.md", "GONE.md"]);
   });
 
-  it("throws when the marker names a file with no registered stub", () => {
+  it.each([
+    "CONTACTS.md",
+    "ERRORS.md",
+    "HUMAN.md",
+    "PENDING.md",
+    "SCRATCHPAD.md",
+  ])("skips the folded-away %s without throwing and reports it", (folded) => {
+    const legacy = `<!-- workbench:memory-seed=MEMORY.md,${folded} -->`;
+    let result: ReturnType<typeof parseSeedMarker> | undefined;
+    expect(() => {
+      result = parseSeedMarker(`prelude\n\n${legacy}`);
+    }).not.toThrow();
+    expect(result?.files.map((f) => f.path)).toEqual(["MEMORY.md"]);
+    expect(result?.skipped).toEqual([folded]);
+  });
+
+  it("does not throw on a rogue marker naming a file with no registered stub", () => {
     const rogue = buildSeedMarker([
       { path: "UNKNOWN.md", content: "# Unknown\n" },
     ]);
-    expect(() => parseSeedMarker(`prelude\n\n${rogue}`)).toThrow("UNKNOWN.md");
+    let result: ReturnType<typeof parseSeedMarker> | undefined;
+    expect(() => {
+      result = parseSeedMarker(`prelude\n\n${rogue}`);
+    }).not.toThrow();
+    expect(result?.files).toEqual([]);
+    expect(result?.skipped).toEqual(["UNKNOWN.md"]);
   });
 
-  it("rejects a marker entry that is not a plain basename (path traversal)", () => {
+  it("skips a non-basename entry (path traversal) instead of throwing", () => {
     const rogue = buildSeedMarker([{ path: "../../etc/passwd", content: "x" }]);
-    expect(() => parseSeedMarker(`prelude\n\n${rogue}`)).toThrow(
-      "plain basename",
-    );
+    let result: ReturnType<typeof parseSeedMarker> | undefined;
+    expect(() => {
+      result = parseSeedMarker(`prelude\n\n${rogue}`);
+    }).not.toThrow();
+    expect(result?.files).toEqual([]);
+    expect(result?.skipped).toEqual(["../../etc/passwd"]);
   });
+});
+
+// CL-2364: the hard "marker matches table" contract moves here, to BUILD TIME.
+// The live personal-agent prompt's marker must name only registered basenames,
+// so genuine prompt/table drift fails in CI — not on a prod session restore.
+describe("seed-marker drift contract (CL-2364)", () => {
+  const registered = new Set(PERSONAL_AGENT_SEED_FILES.map((f) => f.path));
+
+  it.each([true, false])(
+    "the live prompt marker names only registered basenames (xml=%s)",
+    (xml) => {
+      const prompt = buildPersonalAgentSystemPrompt("Myra", { xml });
+      const { files, skipped } = parseSeedMarker(prompt);
+      expect(skipped).toEqual([]);
+      for (const file of files) {
+        expect(registered.has(file.path)).toBe(true);
+      }
+    },
+  );
 });
 
 describe("stripSeedMarker (CL-1952)", () => {
@@ -133,7 +157,7 @@ describe("stripSeedMarker (CL-1952)", () => {
     // The base prompt carries the marker; parsing must still resolve all files.
     expect(
       parseSeedMarker(prompt)
-        .map((f) => f.path)
+        .files.map((f) => f.path)
         .sort(),
     ).toEqual([...EXPECTED_FILES].sort());
 
@@ -161,7 +185,7 @@ describe("stripSeedMarker (CL-1952)", () => {
     const prompt = `${body}\n\n${marker}`;
     expect(
       parseSeedMarker(prompt)
-        .map((f) => f.path)
+        .files.map((f) => f.path)
         .sort(),
     ).toEqual([...EXPECTED_FILES].sort());
     expect(stripSeedMarker(prompt)).toBe(body);
@@ -179,7 +203,7 @@ describe("hasSeedMarker (CL-1952)", () => {
   it("reports an empty marker present even though it resolves zero files", () => {
     const empty = "<!-- workbench:memory-seed= -->";
     expect(hasSeedMarker(empty)).toBe(true);
-    expect(parseSeedMarker(empty)).toEqual([]);
+    expect(parseSeedMarker(empty)).toEqual({ files: [], skipped: [] });
   });
 });
 

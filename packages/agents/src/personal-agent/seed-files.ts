@@ -48,19 +48,17 @@ const SEED_MARKER_PATTERN_GLOBAL =
 
 /**
  * A seed-file name is always a plain basename. Anything with a path separator or
- * `..` segment is rejected so a crafted marker cannot direct the harness to
- * write outside the workspace (defence in depth alongside the harness-side
- * containment check) — CL-1952.
+ * `..` segment is unsafe: a crafted marker could direct the harness to write
+ * outside the workspace (defence in depth alongside the harness-side containment
+ * check) — CL-1952.
  */
-function assertPlainBasename(name: string): void {
-  if (
+function isPlainBasename(name: string): boolean {
+  return !(
     name.includes("/") ||
     name.includes("\\") ||
     name === ".." ||
     name.includes("..")
-  ) {
-    throw new Error(`Seed marker entry "${name}" is not a plain basename`);
-  }
+  );
 }
 
 /**
@@ -80,22 +78,6 @@ const seedFileByPath = new Map(
 );
 
 /**
- * Basenames that older deployed prompts may still list in the memory-seed marker
- * but are no longer seeded. Skipped on parse so sidecar session restore survives
- * prompt/schema drift without re-launching every instance (CL-1952).
- */
-const RETIRED_SEED_BASENAMES = new Set<string>([
-  "SCRATCHPAD.md",
-  // Folded into MEMORY.md's sections; prompts deployed before the fold still
-  // list these in their seed marker, so a sidecar restart must not fail their
-  // session restore (CL-1952 drift-survival).
-  "CONTACTS.md",
-  "ERRORS.md",
-  "HUMAN.md",
-  "PENDING.md",
-]);
-
-/**
  * Whether a system prompt carries a seed marker at all. Lets the harness tell a
  * present-but-empty (malformed) marker apart from no marker: the former is a
  * contract break worth a warning, the latter is a normal non-seeding agent.
@@ -105,42 +87,54 @@ export function hasSeedMarker(systemPrompt: string): boolean {
 }
 
 /**
- * Parse the seed marker out of an effective system prompt and return the full
- * {path, content}[] to seed. The marker carries only filenames; stub content is
- * resolved here from the package-owned `PERSONAL_AGENT_SEED_FILES`, so the
- * harness stays generic and never hardcodes Myra's filenames. A prompt with no
- * marker (any non-personal agent) yields an empty list.
- *
- * A marker naming a file with no known stub is a contract break between the
- * prompt builder and this table — fail loudly rather than silently seed less,
- * except for basenames in `RETIRED_SEED_BASENAMES` (dropped from the table but
- * still listed on prompts persisted before a sidecar restart).
+ * Result of parsing a seed marker: the resolvable {path, content}[] to seed and
+ * the declared basenames that could not be resolved (unknown to the table, or
+ * unsafe non-basenames). Skips are surfaced, never thrown — a since-folded seed
+ * file named in an OLD persisted prompt must not wedge a live session on sidecar
+ * restore (CL-2364). The build-time drift test guards against the table and the
+ * live prompt's marker diverging, so genuine drift fails in CI, not in prod.
  */
-export function parseSeedMarker(systemPrompt: string): SeedWorkspaceFile[] {
+export interface SeedMarkerParse {
+  files: SeedWorkspaceFile[];
+  skipped: string[];
+}
+
+/**
+ * Parse the seed marker out of an effective system prompt. The marker carries
+ * only filenames; stub content is resolved here from the package-owned
+ * `PERSONAL_AGENT_SEED_FILES`, so the harness stays generic and never hardcodes
+ * Myra's filenames. A prompt with no marker (any non-personal agent) yields an
+ * empty result.
+ *
+ * A declared basename with no known stub — or an unsafe non-basename — is
+ * SKIPPED and collected in `skipped` rather than thrown, so restoring from an
+ * old persisted prompt that still lists a since-folded file cannot abort the
+ * harness build (CL-2364).
+ */
+export function parseSeedMarker(systemPrompt: string): SeedMarkerParse {
   const match = SEED_MARKER_PATTERN.exec(systemPrompt);
-  if (!match || match[1] === undefined) return [];
+  if (!match || match[1] === undefined) return { files: [], skipped: [] };
 
   const declared = match[1]
     .split(",")
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
 
-  const resolved: SeedWorkspaceFile[] = [];
+  const files: SeedWorkspaceFile[] = [];
+  const skipped: string[] = [];
   for (const name of declared) {
-    assertPlainBasename(name);
+    if (!isPlainBasename(name)) {
+      skipped.push(name);
+      continue;
+    }
     const file = seedFileByPath.get(name);
     if (file) {
-      resolved.push(file);
+      files.push(file);
       continue;
     }
-    if (RETIRED_SEED_BASENAMES.has(name)) {
-      continue;
-    }
-    throw new Error(
-      `Seed marker declares "${name}" but no stub content is registered for it`,
-    );
+    skipped.push(name);
   }
-  return resolved;
+  return { files, skipped };
 }
 
 /**

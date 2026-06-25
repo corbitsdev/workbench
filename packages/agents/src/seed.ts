@@ -9,4 +9,5 @@ export {
   stripSeedMarker,
   hasSeedMarker,
   type SeedWorkspaceFile,
+  type SeedMarkerParse,
 } from "./personal-agent/seed-files";

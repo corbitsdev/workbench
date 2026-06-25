@@ -141,7 +141,8 @@ export function createDefaultHarnessBuilder({
       // control-plane sentinel for the harness; the live model must never see
       // its own seed instructions (it would surface as raw text the agent could
       // echo or be confused by) — CL-1952.
-      const declaredSeedFiles = parseSeedMarker(basePrompt);
+      const { files: declaredSeedFiles, skipped: skippedSeedFiles } =
+        parseSeedMarker(basePrompt);
       const cleanedPrompt = stripSeedMarker(basePrompt);
 
       // Append the unified active-context block at launch so every agent shares
@@ -177,6 +178,18 @@ export function createDefaultHarnessBuilder({
           "Seed marker for {address} resolved zero files (malformed)",
           {
             address: agentAddress,
+          },
+        );
+      }
+      if (skippedSeedFiles.length > 0) {
+        // An OLD persisted prompt may name a since-folded seed file. Skip it and
+        // warn rather than abort the harness build — a stale marker must never
+        // wedge a live session on restore (CL-2364).
+        logger.warn(
+          "Seed marker for {address} named unresolvable file(s); skipping: {skipped}",
+          {
+            address: agentAddress,
+            skipped: skippedSeedFiles.join(", "),
           },
         );
       }
