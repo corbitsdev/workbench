@@ -1,11 +1,10 @@
-export interface PromptSection {
-  tag: string;
-  content: string;
-}
+import { type } from "arktype";
 
-export interface PromptFormat {
-  xml: boolean;
-}
+export const PromptSection = type({ tag: "string", content: "string" });
+export type PromptSection = typeof PromptSection.infer;
+
+export const PromptFormat = type({ xml: "boolean" });
+export type PromptFormat = typeof PromptFormat.infer;
 
 export const HUMANIZER_SECTION: PromptSection = {
   tag: "output",
@@ -51,18 +50,16 @@ export function buildContextBlock(
   return formatSection({ tag: "context", content }, format);
 }
 
-// Runtime context shared by every agent so behaviour is unified: who the agent
-// is acting for, the live calendar date, and any other locally-relevant facts.
-// Fields are optional except the date — render only what is present so shared
-// agents (no single user) and personal agents use the same block.
-export interface ActiveContext {
+// ActiveContext contains a Date field which is not JSON-expressible, so it
+// cannot be represented as an arktype schema. Left as a plain type.
+export type ActiveContext = {
   now: Date;
   userName?: string;
   // Additional labelled facts (e.g. workbench, timezone). Rendered verbatim in
   // insertion order beneath the standard fields. Keys must be non-numeric
   // labels (object key order is only guaranteed for string keys).
   extra?: Record<string, string>;
-}
+};
 
 // Format a date as DD/MM/YYYY in UTC for a deterministic, server-side calendar
 // date. Pass the current Date at call time — never bind a module-level
@@ -98,6 +95,8 @@ export function withActiveContext(
   return `${systemPrompt}\n\n${buildActiveContext(context)}`;
 }
 
+// XmlValue and XmlNode are mutually recursive and include undefined/null/array
+// branches that cannot be expressed as an arktype schema. Left as plain types.
 export type XmlValue =
   | string
   | number
@@ -107,11 +106,11 @@ export type XmlValue =
   | XmlNode
   | XmlValue[];
 
-export interface XmlNode {
+export type XmlNode = {
   tag: string;
   attrs?: Record<string, string | number | boolean | null | undefined>;
   children?: XmlValue;
-}
+};
 
 function escapeXml(value: string): string {
   return value
@@ -157,11 +156,13 @@ export function renderXml(value: XmlValue): string {
   return `<${value.tag}${attrs}>\n${body}\n</${value.tag}>`;
 }
 
-export interface StructuredPromptSection {
+// StructuredPromptSection contains XmlValue which is not JSON-expressible.
+// Left as a plain type.
+export type StructuredPromptSection = {
   tag: string;
   content: XmlValue;
   attrs?: Record<string, string | number | boolean | null | undefined>;
-}
+};
 
 export function structuredSection(
   tag: string,
