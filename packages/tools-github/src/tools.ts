@@ -1,22 +1,36 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import { normalizeGitHubIssueOrPR, normalizeGitHubRepo } from "./normalize";
-import type { GitHubIssueOrPR, GitHubRepo } from "./types";
+import {
+  GitHubIssueOrPR,
+  GitHubRepo,
+  GitHubSearchIssuesResponse,
+  GitHubSearchReposResponse,
+} from "./types";
 
 const GITHUB_API_BASE = "https://api.github.com";
 const DEFAULT_DAYS = 30;
 const DEFAULT_PER_LIST = 5;
 const MAX_PER_LIST = 25;
 
+// GitHubFetch is a function type — not expressible as an arktype schema; kept as plain type.
 export type GitHubFetch = (
   url: string,
   init?: RequestInit,
 ) => Promise<Response>;
 
+// GitHubToolsConfig contains a function field (fetcher) — kept as plain type.
 export type GitHubToolsConfig = {
   apiKey: string;
   fetcher?: GitHubFetch;
 };
+
+const GithubActivityArgs = type({
+  query: "string > 0",
+  "days?": "number",
+  "limit?": "number",
+});
 
 export const GITHUB_ACTIVITY_DEFINITION: ToolDefinition = {
   name: "github_activity",
@@ -43,48 +57,6 @@ export const GITHUB_ACTIVITY_DEFINITION: ToolDefinition = {
     required: ["query"],
   },
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function parseGitHubRepo(value: unknown): GitHubRepo {
-  if (!isRecord(value)) {
-    throw new Error("GitHub repo item is not an object");
-  }
-  return {
-    full_name: typeof value.full_name === "string" ? value.full_name : "",
-    html_url: typeof value.html_url === "string" ? value.html_url : "",
-    description:
-      typeof value.description === "string" ? value.description : undefined,
-    stargazers_count:
-      typeof value.stargazers_count === "number" ? value.stargazers_count : 0,
-    pushed_at:
-      typeof value.pushed_at === "string"
-        ? value.pushed_at
-        : new Date().toISOString(),
-  };
-}
-
-function parseGitHubIssueOrPR(value: unknown): GitHubIssueOrPR {
-  if (!isRecord(value)) {
-    throw new Error("GitHub issue/PR item is not an object");
-  }
-  const reactions = isRecord(value.reactions) ? value.reactions : {};
-  return {
-    html_url: typeof value.html_url === "string" ? value.html_url : "",
-    title: typeof value.title === "string" ? value.title : "",
-    comments: typeof value.comments === "number" ? value.comments : 0,
-    reactions: {
-      total_count:
-        typeof reactions.total_count === "number" ? reactions.total_count : 0,
-    },
-    updated_at:
-      typeof value.updated_at === "string"
-        ? value.updated_at
-        : new Date().toISOString(),
-  };
-}
 
 function buildHeaders(apiKey: string): Record<string, string> {
   const headers: Record<string, string> = {
@@ -124,27 +96,51 @@ async function fetchGitHubJSON(
   return response.json();
 }
 
+function parseReposResponse(raw: unknown): GitHubRepo[] {
+  const parsed = GitHubSearchReposResponse(raw);
+  if (parsed instanceof type.errors) {
+    return [];
+  }
+  return parsed.items;
+}
+
+function parseIssuesResponse(raw: unknown): GitHubIssueOrPR[] {
+  const parsed = GitHubSearchIssuesResponse(raw);
+  if (parsed instanceof type.errors) {
+    return [];
+  }
+  return parsed.items;
+}
+
 async function searchGitHub(
   config: GitHubToolsConfig,
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = GithubActivityArgs(args);
+  if (parsed instanceof type.errors) {
+    const hasQuery =
+      "query" in args && typeof args.query === "string" && args.query.length > 0;
+    if (!hasQuery) {
+      throw new Error("query is required");
+    }
+    throw new Error(`github_activity: ${parsed.summary}`);
   }
+
+  const { query, days: rawDays, limit: rawLimit } = parsed;
+
   const days =
-    typeof args.days === "number" && args.days > 0
-      ? Math.floor(args.days)
+    typeof rawDays === "number" && rawDays > 0
+      ? Math.floor(rawDays)
       : DEFAULT_DAYS;
   const cutoff = new Date(Date.now() - days * 86400 * 1000);
   const cutoffDate = cutoff.toISOString().slice(0, 10);
 
   const perList =
-    typeof args.limit === "number" &&
-    Number.isInteger(args.limit) &&
-    args.limit > 0
-      ? Math.min(args.limit, MAX_PER_LIST)
+    typeof rawLimit === "number" &&
+    Number.isInteger(rawLimit) &&
+    rawLimit > 0
+      ? Math.min(rawLimit, MAX_PER_LIST)
       : DEFAULT_PER_LIST;
   const perPage = String(perList);
 
@@ -169,20 +165,9 @@ async function searchGitHub(
     fetchGitHubJSON(prsUrl, config, signal),
   ]);
 
-  const repoItems: GitHubRepo[] =
-    isRecord(reposRaw) && Array.isArray(reposRaw.items)
-      ? reposRaw.items.map(parseGitHubRepo)
-      : [];
-
-  const issueItems: GitHubIssueOrPR[] =
-    isRecord(issuesRaw) && Array.isArray(issuesRaw.items)
-      ? issuesRaw.items.map(parseGitHubIssueOrPR)
-      : [];
-
-  const prItems: GitHubIssueOrPR[] =
-    isRecord(prsRaw) && Array.isArray(prsRaw.items)
-      ? prsRaw.items.map(parseGitHubIssueOrPR)
-      : [];
+  const repoItems = parseReposResponse(reposRaw);
+  const issueItems = parseIssuesResponse(issuesRaw);
+  const prItems = parseIssuesResponse(prsRaw);
 
   const allItems = [
     ...repoItems.map(normalizeGitHubRepo),

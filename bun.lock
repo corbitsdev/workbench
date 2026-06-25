@@ -918,6 +918,7 @@
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
