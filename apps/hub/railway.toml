@@ -2,7 +2,12 @@
 builder = "dockerfile"
 # Path is relative to the repo root (the build context), not to this file.
 dockerfilePath = "apps/hub/Dockerfile"
-watchPatterns = ["apps/hub/**", "packages/**", "scripts/**", "package.json", "bun.lock"]
+# Hub and sidecar MUST deploy in lockstep — a build skew breaks new-agent
+# deploys ("No sidecar connected") and ships stale workflow tools. Railway has
+# no "follow another service" primitive, so both services keep an IDENTICAL
+# watch set (covering both apps, shared packages, scripts, and workflow defs).
+# Keep this list in sync with apps/sidecar/railway.toml.
+watchPatterns = ["apps/hub/**", "apps/sidecar/**", "packages/**", "scripts/**", "workflows/**", "package.json", "bun.lock"]
 
 [deploy]
 preDeployCommand = "bun run scripts/db-setup.ts && bun run apps/hub/bin/seed-startup.ts"
