@@ -5,7 +5,7 @@ import type { GrantRule } from "@intx/types/authz";
 
 mock.module("../config", () => ({
   getConfig: () => ({
-    globalTenant: {
+    rootTenant: {
       slug: "global-org",
       name: "Global Org",
       domain: "global.example.com",
@@ -107,9 +107,9 @@ beforeEach(() => {
 });
 
 describe("reconcileMemberInstanceGrants", () => {
-  it("returns nothing and writes no grants when the global tenant is missing", async () => {
-    const db = fakeDb({ tenant: undefined });
-    const results = await reconcileMemberInstanceGrants(db, [MYRA]);
+  it("returns nothing and writes no grants when the definition is missing", async () => {
+    const db = fakeDb({ tenant: { id: "ten-1" }, def: undefined });
+    const results = await reconcileMemberInstanceGrants(db, "ten-1", [MYRA]);
     expect(results).toEqual([]);
     expect(toolGrantCalls).toHaveLength(0);
   });
@@ -124,7 +124,7 @@ describe("reconcileMemberInstanceGrants", () => {
       },
       mappings: [],
     });
-    const results = await reconcileMemberInstanceGrants(db, [MYRA]);
+    const results = await reconcileMemberInstanceGrants(db, "ten-1", [MYRA]);
     expect(results).toEqual([]);
     expect(toolGrantCalls).toHaveLength(0);
   });
@@ -176,7 +176,7 @@ describe("reconcileMemberInstanceGrants", () => {
     } as unknown as Parameters<typeof reconcileMemberInstanceGrants>[0];
     const resolved = new Set<string>();
 
-    const results = await reconcileMemberInstanceGrants(db, [MYRA]);
+    const results = await reconcileMemberInstanceGrants(db, "ten-1", [MYRA]);
 
     expect(results).toEqual([
       { templateKey: "myra", reconciled: 2, pushed: 0, skipped: 0 },
@@ -211,7 +211,7 @@ describe("reconcileMemberInstanceGrants", () => {
       },
     } as unknown as Parameters<typeof reconcileMemberInstanceGrants>[0];
 
-    const results = await reconcileMemberInstanceGrants(db, [MYRA]);
+    const results = await reconcileMemberInstanceGrants(db, "ten-1", [MYRA]);
     expect(results).toEqual([
       { templateKey: "myra", reconciled: 0, pushed: 0, skipped: 1 },
     ]);
@@ -255,7 +255,12 @@ describe("reconcileMemberInstanceGrants", () => {
       grantStore: { collectGrants },
     } as never;
 
-    const [result] = await reconcileMemberInstanceGrants(db, [MYRA], live);
+    const [result] = await reconcileMemberInstanceGrants(
+      db,
+      "ten-1",
+      [MYRA],
+      live,
+    );
     expect(result).toEqual({
       templateKey: "myra",
       reconciled: 1,
@@ -297,7 +302,12 @@ describe("reconcileMemberInstanceGrants", () => {
       grantStore: { collectGrants },
     } as never;
 
-    const [result] = await reconcileMemberInstanceGrants(db, [MYRA], live);
+    const [result] = await reconcileMemberInstanceGrants(
+      db,
+      "ten-1",
+      [MYRA],
+      live,
+    );
     expect(result).toEqual({
       templateKey: "myra",
       reconciled: 1,

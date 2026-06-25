@@ -26,11 +26,20 @@ mock.module("../workflow-executor/run-store", () => ({
   createRunStore,
 }));
 
-const ensureGlobalMember = mock(async () => ({
+const ensureMember = mock(async () => ({
   tenantId: "tenant_global",
   principalId: "caller_principal",
 }));
-mock.module("../lib/tenant-provisioning", () => ({ ensureGlobalMember }));
+const getRootTenantId = mock(async () => "tenant_global");
+const lookupMember = mock(async () => ({
+  tenantId: "tenant_global",
+  principalId: "caller_principal",
+}));
+mock.module("../lib/tenant-provisioning", () => ({
+  ensureMember,
+  getRootTenantId,
+  lookupMember,
+}));
 
 const {
   abortRunHandler,
@@ -194,7 +203,7 @@ describe("operator gate on abort routes", () => {
     const guard = createWorkflowDeployGrantGuard({
       db: {} as Parameters<typeof createWorkflowDeployGrantGuard>[0]["db"],
       grantStore,
-      globalTenantId: "tenant_global",
+      rootTenantId: "tenant_global",
     });
     const db = makeDb(["wfr_run"]);
     const app = new Hono<{ Variables: { userId: string } }>();

@@ -96,8 +96,8 @@ import { loadSigningKeyRegistry } from "./lib/signing-keys";
 import {
   seedGlobalTenant,
   seedAgentTemplates,
-  ensureGlobalMember,
-  lookupGlobalMember,
+  ensureMember,
+  lookupMember,
   provisionMemberInstances,
   getMyraInstanceId,
 } from "./lib/tenant-provisioning";
@@ -127,24 +127,25 @@ const db = drizzle(sql, { schema });
 await sql`SELECT 1`;
 log.info("Database connection established");
 
-// ─── Global org tenant bootstrap ───────────────────────────────────
+// ─── Root tenant bootstrap ─────────────────────────────────────────
 //
-// Seed the single shared org tenant (name/slug/domain from env). Idempotent and
-// race-safe across replicas — creates it on first boot, returns the existing id
-// thereafter. Fail-loud: if the org tenant cannot be seeded the hub must not
-// start, because every same-domain user joins it as a principal.
-const { tenantId: globalTenantId } = await seedGlobalTenant(db);
-log.info("Global org tenant ready", { globalTenantId });
+// Seed the deployment's root tenant — the default home (name/slug/domain from
+// env). Idempotent and race-safe across replicas — creates it on first boot,
+// returns the existing id thereafter. Fail-loud: if the root tenant cannot be
+// seeded the hub must not start, because every same-domain user joins it as a
+// principal.
+const { tenantId: rootTenantId } = await seedGlobalTenant(db);
+log.info("Root tenant ready", { rootTenantId });
 
-// Re-seed agent templates (Myra, Oat, …) into the global tenant on every boot
+// Re-seed agent templates (Myra, Oat, …) into the root tenant on every boot
 // so a deploy that changes a template's prompt, tool-package pins, or
 // capabilities actually reaches the agent rows. seedGlobalTenant returns early
 // when the tenant already exists, so without this the rows stay frozen at
 // whatever an earlier manual seed wrote (CL-1530's "seeded at hub boot"
 // contract was never wired). Idempotent upsert; fail-loud to surface a
 // malformed template at deploy rather than silently shipping stale agents.
-await seedAgentTemplates(db);
-log.info("Agent templates seeded", { globalTenantId });
+await seedAgentTemplates(db, rootTenantId);
+log.info("Agent templates seeded", { rootTenantId });
 
 // seedAgentTemplates updates the org agent rows, but existing member instances
 // keep the tool grants synthesized at their last launch — provisionMemberInstances
@@ -153,9 +154,13 @@ log.info("Agent templates seeded", { globalTenantId });
 // "No matching grants for tool:…/invoke". Reconcile every member instance's grants
 // to the freshly-seeded definitions here. DB-only: sidecars reconnect after the
 // hub starts and the orchestrator pushes the current DB grants on reconnect.
-const reconciled = await reconcileMemberInstanceGrants(db, AGENT_TEMPLATES);
+const reconciled = await reconcileMemberInstanceGrants(
+  db,
+  rootTenantId,
+  AGENT_TEMPLATES,
+);
 log.info("Member instance grants reconciled", {
-  globalTenantId,
+  rootTenantId,
   results: reconciled,
 });
 
@@ -211,23 +216,22 @@ const auth = betterAuth({
         },
         after: async (user) => {
           try {
-            const { principalId: globalPrincipalId } = await ensureGlobalMember(
-              db,
-              {
-                userId: user.id,
-              },
-            );
-            await provisionMemberInstances(db, {
+            const { principalId: rootPrincipalId } = await ensureMember(db, {
+              tenantId: rootTenantId,
               userId: user.id,
-              memberPrincipalId: globalPrincipalId,
             });
-            log.info("User joined global tenant", {
+            await provisionMemberInstances(db, {
+              tenantId: rootTenantId,
               userId: user.id,
-              globalTenantId,
-              globalPrincipalId,
+              memberPrincipalId: rootPrincipalId,
+            });
+            log.info("User joined root tenant", {
+              userId: user.id,
+              rootTenantId,
+              rootPrincipalId,
             });
           } catch (err) {
-            log.error("Global-tenant membership failed for new user", {
+            log.error("Root-tenant membership failed for new user", {
               userId: user.id,
               error: err instanceof Error ? err : new Error(String(err)),
             });
@@ -238,12 +242,14 @@ const auth = betterAuth({
     session: {
       create: {
         after: async (session) => {
-          // Repair path: ensure global-tenant membership on login in case signup hook failed.
+          // Repair path: ensure root-tenant membership on login in case signup hook failed.
           try {
-            const { principalId } = await ensureGlobalMember(db, {
+            const { principalId } = await ensureMember(db, {
+              tenantId: rootTenantId,
               userId: session.userId,
             });
             await provisionMemberInstances(db, {
+              tenantId: rootTenantId,
               userId: session.userId,
               memberPrincipalId: principalId,
             });
@@ -596,7 +602,10 @@ async function syncPersonalAgentForUser(
   let workingTenantId: string | null = null;
   let memberPrincipalId: string | null = null;
   try {
-    const { tenantId, principalId } = await ensureGlobalMember(db, { userId });
+    const { tenantId, principalId } = await ensureMember(db, {
+      tenantId: rootTenantId,
+      userId,
+    });
     workingTenantId = tenantId;
     memberPrincipalId = principalId;
   } catch (err) {
@@ -627,6 +636,7 @@ async function syncPersonalAgentForUser(
     if (!paInstanceId) {
       try {
         const instances = await provisionMemberInstances(db, {
+          tenantId: rootTenantId,
           userId,
           memberPrincipalId,
         });
@@ -720,7 +730,10 @@ v1.get("/me", async (c) => {
   const userId = c.get("userId");
   const userName = c.get("userName");
 
-  const membership = await lookupGlobalMember(db, { userId });
+  const membership = await lookupMember(db, {
+    tenantId: rootTenantId,
+    userId,
+  });
   const workingTenantId = membership?.tenantId ?? null;
   const memberPrincipalId = membership?.principalId ?? null;
 
@@ -974,7 +987,7 @@ const hubPublicKeyHex = hexEncode(registry.active.publicKey);
 const ensureDeploymentRoutable: EnsureDeploymentRoutableFn = (args) =>
   workflowDeployService.ensureDeploymentRoutable({
     ...args,
-    deploymentDomain: config.globalTenant.domain,
+    deploymentDomain: config.rootTenant.domain,
   });
 
 v1.route(
@@ -985,7 +998,7 @@ v1.route(
     sidecarRouter,
     sessionService,
     cryptoProvider: createNodeCrypto(registry.active),
-    deploymentDomain: config.globalTenant.domain,
+    deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
   }),
 );
@@ -1001,7 +1014,7 @@ v1.route(
     sidecarRouter,
     sessionService,
     cryptoProvider: createNodeCrypto(registry.active),
-    deploymentDomain: config.globalTenant.domain,
+    deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
   }),
 );
@@ -1015,7 +1028,7 @@ const workflowReconciler = createWorkflowReconciler({
   events: sidecarRouter.events,
   ensureDeploymentRoutable,
   getRoutableAddresses: sidecarRouter.getRoutableAddresses,
-  deploymentDomain: config.globalTenant.domain,
+  deploymentDomain: config.rootTenant.domain,
 });
 workflowReconciler.start();
 // CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
@@ -1043,13 +1056,13 @@ const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
   workflowDeployService,
   sessionService,
   hubPublicKey: hubPublicKeyHex,
-  deploymentDomain: config.globalTenant.domain,
-  globalTenantId,
+  deploymentDomain: config.rootTenant.domain,
+  rootTenantId,
 };
 
 v1.post(
   "/workflows/deploy",
-  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  createWorkflowDeployGrantGuard({ db, grantStore, rootTenantId }),
   deployWorkflowHandler(workflowDeployCoreDeps),
 );
 
@@ -1089,7 +1102,7 @@ v1.delete(
       404: { description: "Workflow deployment not found" },
     },
   }),
-  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  createWorkflowDeployGrantGuard({ db, grantStore, rootTenantId }),
   deleteWorkflowHandler(workflowDeployCoreDeps),
 );
 
@@ -1102,13 +1115,13 @@ v1.delete(
 v1.post(
   "/workflow-exec/records/abort-active",
   abortActiveRunsRouteDescription,
-  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  createWorkflowDeployGrantGuard({ db, grantStore, rootTenantId }),
   abortActiveRunsHandler({ db }),
 );
 v1.delete(
   "/workflow-exec/records/:runId",
   abortRunRouteDescription,
-  createWorkflowDeployGrantGuard({ db, grantStore, globalTenantId }),
+  createWorkflowDeployGrantGuard({ db, grantStore, rootTenantId }),
   abortRunHandler({ db }),
 );
 
@@ -1152,7 +1165,7 @@ app.route(
     db,
     config.sidecarToken,
     repoStore,
-    config.globalTenant.domain,
+    config.rootTenant.domain,
   ),
 );
 app.route(

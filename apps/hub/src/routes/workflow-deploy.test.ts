@@ -16,11 +16,11 @@ mock.module("../services/workflow-deploy-config", () => ({
   resolveWorkflowDeployConfig,
 }));
 
-const ensureGlobalMember = mock(async () => ({
+const ensureMember = mock(async () => ({
   tenantId: "tenant_global",
   principalId: "caller_principal",
 }));
-mock.module("../lib/tenant-provisioning", () => ({ ensureGlobalMember }));
+mock.module("../lib/tenant-provisioning", () => ({ ensureMember }));
 
 const getRequestedUserContext = mock(
   async (): Promise<{
@@ -116,7 +116,7 @@ function makeDeps(opts: {
     sessionService,
     hubPublicKey: "pk",
     deploymentDomain: "local",
-    globalTenantId: GLOBAL,
+    rootTenantId: GLOBAL,
     serviceToken: SERVICE_TOKEN,
   };
 }
@@ -250,7 +250,7 @@ describe("createWorkflowDeployGrantGuard", () => {
     const guard = createWorkflowDeployGrantGuard({
       db: {} as Parameters<typeof createWorkflowDeployGrantGuard>[0]["db"],
       grantStore,
-      globalTenantId: GLOBAL,
+      rootTenantId: GLOBAL,
     });
     const app = new Hono<{ Variables: { userId: string } }>();
     app.use("*", async (c, next) => {

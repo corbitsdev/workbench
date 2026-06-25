@@ -10,7 +10,8 @@ let member: { tenantId: string; principalId: string } | null = {
   principalId: "pri-1",
 };
 mock.module("../lib/tenant-provisioning", () => ({
-  lookupGlobalMember: mock(async () => member),
+  getRootTenantId: mock(async () => "ten-1"),
+  lookupMember: mock(async () => member),
 }));
 
 const mergeMemberPreferences = mock(

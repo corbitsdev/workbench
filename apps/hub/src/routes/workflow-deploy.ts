@@ -13,7 +13,7 @@ import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { getRequestedUserContext } from "../lib/user-context";
-import { ensureGlobalMember } from "../lib/tenant-provisioning";
+import { ensureMember } from "../lib/tenant-provisioning";
 import type { WorkflowDeployService } from "../services/workflow-deploy";
 import { resolveWorkflowDeployConfig } from "../services/workflow-deploy-config";
 import { requestBodySchema } from "../lib/openapi";
@@ -40,7 +40,7 @@ export interface WorkflowDeployCoreDeps {
   sessionService: SessionService;
   hubPublicKey: string;
   deploymentDomain: string;
-  globalTenantId: string;
+  rootTenantId: string;
 }
 
 // Tear down a workflow deployment's runtime: undeploy the sidecar supervisor
@@ -178,15 +178,18 @@ const ErrorResponse = type({ error: "string" });
 export function createWorkflowDeployGrantGuard(deps: {
   db: HubDb;
   grantStore: GrantStore;
-  globalTenantId: string;
+  rootTenantId: string;
 }): MiddlewareHandler<{ Variables: { userId: string } }> {
   return async (c, next) => {
     const userId = c.get("userId");
-    const { principalId } = await ensureGlobalMember(deps.db, { userId });
+    const { principalId } = await ensureMember(deps.db, {
+      tenantId: deps.rootTenantId,
+      userId,
+    });
     const result = await authorize(
       deps.grantStore,
       principalId,
-      deps.globalTenantId,
+      deps.rootTenantId,
       WORKFLOW_DEPLOY_RESOURCE,
       WORKFLOW_DEPLOY_ACTION,
     );
@@ -232,7 +235,7 @@ export function deployWorkflowHandler(
     // of it — Interchange resolves catalog/credentials down the hierarchy, so a
     // sub-tenant deploy lands collateral scoped to that workbench only.
     const targetSlug = c.req.query("tenant");
-    let targetTenantId = deps.globalTenantId;
+    let targetTenantId = deps.rootTenantId;
     if (targetSlug !== undefined && targetSlug !== "") {
       const targetTenant = await deps.db.query.tenant.findFirst({
         where: eq(intxSchema.tenant.slug, targetSlug),
@@ -242,7 +245,7 @@ export function deployWorkflowHandler(
         return c.json({ error: `unknown target tenant: ${targetSlug}` }, 404);
       }
       const ancestors = await getAncestorChain(deps.db, targetTenant.id);
-      if (!ancestors.includes(deps.globalTenantId)) {
+      if (!ancestors.includes(deps.rootTenantId)) {
         return c.json(
           {
             error: `target tenant ${targetSlug} is not the global tenant or a descendant`,

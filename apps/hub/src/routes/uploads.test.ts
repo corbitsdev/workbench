@@ -5,7 +5,7 @@ import type { HubDb } from "../db";
 
 mock.module("../config", () => ({
   getConfig: mock(() => ({
-    globalTenant: {
+    rootTenant: {
       slug: "global-org",
       name: "Global Org",
       domain: "global.example.com",

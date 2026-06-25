@@ -22,11 +22,11 @@ import {
   type LaunchErrorDescription,
 } from "../services/agent-provisioning";
 import { requestBodySchema } from "../lib/openapi";
-import { getConfig } from "../config";
 import {
   reconcileMemberInstanceGrants,
   refreshInstanceGrantsFromDefinition,
 } from "../services/grant-reconcile";
+import { getRootTenantId, lookupMember } from "../lib/tenant-provisioning";
 
 const log = getLogger(["api", "agents"]);
 
@@ -882,29 +882,22 @@ export function createAgentProvisioningRouter(
         return c.json({ error: `Unknown template key: ${templateKey}` }, 404);
       }
 
-      const { slug } = getConfig().globalTenant;
-      const globalTenant = await db.query.tenant.findFirst({
-        where: eq(tenant.slug, slug),
-      });
-      if (!globalTenant) {
-        return c.json({ error: "Global tenant not seeded" }, 403);
+      const rootTenantId = await getRootTenantId(db);
+      if (!rootTenantId) {
+        return c.json({ error: "Root tenant not seeded" }, 403);
       }
 
-      const callerPrincipal = await db.query.principal.findFirst({
-        where: and(
-          eq(principal.tenantId, globalTenant.id),
-          eq(principal.kind, "user"),
-          eq(principal.refId, userId),
-        ),
-      });
-      if (!callerPrincipal) {
+      const member = await lookupMember(db, { tenantId: rootTenantId, userId });
+      if (!member) {
         return c.json({ error: "Forbidden" }, 403);
       }
 
-      const [result] = await reconcileMemberInstanceGrants(db, [template], {
-        sidecarRouter,
-        grantStore,
-      });
+      const [result] = await reconcileMemberInstanceGrants(
+        db,
+        rootTenantId,
+        [template],
+        { sidecarRouter, grantStore },
+      );
       return c.json(
         result ?? { templateKey, reconciled: 0, pushed: 0, skipped: 0 },
       );

@@ -7,7 +7,6 @@ import type { GrantStore } from "@intx/types/authz";
 import { type AgentTemplate, toLlmToolName } from "@workbench/agents";
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
-import { getConfig } from "../config";
 import { getToolNamesFromCapabilities } from "../lib/tool-registry";
 import { TOOL_GRANT_RESOURCE_PREFIX } from "../lib/tool-grants";
 import {
@@ -16,7 +15,7 @@ import {
   type GrantRequirementRow,
 } from "./agent-provisioning";
 
-const { agent, agentInstance, grant, tenant } = intxSchema;
+const { agent, agentInstance, grant } = intxSchema;
 const log = getLogger("grant-reconcile");
 
 export interface TemplateReconcileResult {
@@ -126,20 +125,10 @@ export async function refreshInstanceGrantsFromDefinition(
  */
 export async function reconcileMemberInstanceGrants(
   db: DB["db"],
+  tenantId: string,
   templates: AgentTemplate[],
   live?: LiveReconcileDeps,
 ): Promise<TemplateReconcileResult[]> {
-  const { slug } = getConfig().globalTenant;
-  const globalTenant = await db.query.tenant.findFirst({
-    where: eq(tenant.slug, slug),
-  });
-  if (!globalTenant) {
-    log.warn("Global tenant not seeded — skipping grant reconciliation", {
-      slug,
-    });
-    return [];
-  }
-  const tenantId = globalTenant.id;
   const hubDb = db as unknown as HubDb;
   const results: TemplateReconcileResult[] = [];
 

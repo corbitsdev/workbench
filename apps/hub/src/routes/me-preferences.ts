@@ -2,7 +2,7 @@ import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { MemberPreferences } from "@workbench/shared";
-import { lookupGlobalMember } from "../lib/tenant-provisioning";
+import { lookupMember, getRootTenantId } from "../lib/tenant-provisioning";
 import {
   readMemberPreferences,
   mergeMemberPreferences,
@@ -37,7 +37,10 @@ export function createMePreferencesRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const member = await lookupGlobalMember(db, { userId });
+      const rootTenantId = await getRootTenantId(db);
+      const member = rootTenantId
+        ? await lookupMember(db, { tenantId: rootTenantId, userId })
+        : null;
       if (!member) return c.json({});
       const prefs = await readMemberPreferences(
         db,
@@ -86,7 +89,10 @@ export function createMePreferencesRouter(
         return c.json({ error: patch.summary }, 400);
       }
 
-      const member = await lookupGlobalMember(db, { userId });
+      const rootTenantId = await getRootTenantId(db);
+      const member = rootTenantId
+        ? await lookupMember(db, { tenantId: rootTenantId, userId })
+        : null;
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }

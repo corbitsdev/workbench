@@ -24,7 +24,7 @@ import {
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
 import { getConfig } from "../config";
-import { lookupGlobalMember } from "../lib/tenant-provisioning";
+import { lookupMember, getRootTenantId } from "../lib/tenant-provisioning";
 import {
   describeLaunchError,
   launchAgentSession,
@@ -677,8 +677,11 @@ export async function resolveMyraThreadContext(
   tenantDomain: string;
   memberPrincipalId: string;
 } | null> {
-  const { domain } = getConfig().globalTenant;
-  const member = await lookupGlobalMember(db as never, { userId });
+  const { domain } = getConfig().rootTenant;
+  const rootTenantId = await getRootTenantId(db as never);
+  const member = rootTenantId
+    ? await lookupMember(db as never, { tenantId: rootTenantId, userId })
+    : null;
   if (!member) return null;
   return {
     tenantId: member.tenantId,

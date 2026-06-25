@@ -77,13 +77,19 @@ export function loadConfig() {
       dataDir: requireEnv("HUB_DATA_DIR"),
       signingKeys: requireEnv("HUB_SIGNING_KEYS"),
     },
-    // The single shared org tenant. Name/slug/domain are deployment-specific and
-    // never hardcoded — a different deployment produces a different org from the
-    // same code. See CL-1446.
-    globalTenant: {
+    // The deployment's root tenant — the default home every user lands in.
+    // Name/slug/domain are deployment-specific and never hardcoded; a different
+    // deployment produces a different org from the same code. See CL-1446. The
+    // env var KEYS stay GLOBAL_TENANT_* (renaming them would break the deploy at
+    // boot); only the internal property is `rootTenant`. `globalTenant` is kept
+    // as a back-compat alias for the one-off global-tenant migration.
+    rootTenant: {
       slug: requireEnv("GLOBAL_TENANT_SLUG"),
       name: requireEnv("GLOBAL_TENANT_NAME"),
       domain: requireEnv("GLOBAL_TENANT_DOMAIN"),
+    },
+    get globalTenant() {
+      return this.rootTenant;
     },
     // Build SHA injected by Railway at image build time via RAILWAY_GIT_COMMIT_SHA.
     // Absent in local dev — null is the correct value there.

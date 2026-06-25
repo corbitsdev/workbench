@@ -98,7 +98,7 @@ mock.module("@intx/db", () => ({
 mock.module("../config", () => ({
   getConfig: () => ({
     hub: { dataDir: "/tmp/myra-title-test" },
-    globalTenant: { slug: "global", domain: "global.test" },
+    rootTenant: { slug: "global", domain: "global.test" },
   }),
 }));
 
