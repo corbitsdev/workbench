@@ -8,10 +8,10 @@
 // The definition lives on its own module (no hub-session imports) so the
 // packed sidecar tarball stays self-contained.
 
-import { defineHubBackedToolPackage } from '@workbench/tool-credentials/factory';
-import { DISPATCH_AGENT_DEFINITION } from './definition';
+import { defineHubBackedToolPackage } from "@workbench/tool-credentials/factory";
+import { DISPATCH_AGENT_DEFINITION } from "./definition";
 
 export const dispatch = defineHubBackedToolPackage({
-  id: '@workbench/tools-dispatch/dispatch',
+  id: "@workbench/tools-dispatch/dispatch",
   definitions: [DISPATCH_AGENT_DEFINITION],
 });

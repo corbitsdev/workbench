@@ -1,16 +1,16 @@
-import { useState } from 'react';
-import { AuthLayout } from './AuthLayout';
-import { GoogleIcon } from './GoogleIcon';
+import { useState } from "react";
+import { AuthLayout } from "./AuthLayout";
+import { GoogleIcon } from "./GoogleIcon";
 import {
   type EmailPasswordCredentials,
   type LoginFormState,
   type OAuthProviderDescriptor,
   type OAuthProviderId,
-} from './types';
+} from "./types";
 
 /** Default set of providers shown on the login surface. */
 export const DEFAULT_OAUTH_PROVIDERS: readonly OAuthProviderDescriptor[] = [
-  { id: 'google', label: 'Continue with Google' },
+  { id: "google", label: "Continue with Google" },
 ];
 
 export interface LoginViewProps {
@@ -35,8 +35,8 @@ export function LoginView({
   providers = DEFAULT_OAUTH_PROVIDERS,
   onEmailPassword,
 }: LoginViewProps) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   return (
     <AuthLayout>
@@ -67,7 +67,9 @@ export function LoginView({
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-bold text-text">Sign in</h1>
           <p className="text-sm text-text-2">
-            {onEmailPassword ? 'Sign in to continue.' : 'Use your Google account to continue.'}
+            {onEmailPassword
+              ? "Sign in to continue."
+              : "Use your Google account to continue."}
           </p>
         </div>
 
@@ -86,7 +88,7 @@ export function LoginView({
             className="flex w-full items-center justify-center gap-3 rounded-md border border-border bg-surface-2 px-4 py-2 text-sm font-medium text-text hover:bg-surface disabled:opacity-50"
           >
             <GoogleIcon className="h-4 w-4" />
-            {state.loading ? 'Redirecting…' : provider.label}
+            {state.loading ? "Redirecting…" : provider.label}
           </button>
         ))}
 
@@ -129,7 +131,7 @@ export function LoginView({
                 disabled={state.loading}
                 className="w-full rounded-md bg-orange px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
-                {state.loading ? 'Signing in…' : 'Sign in'}
+                {state.loading ? "Signing in…" : "Sign in"}
               </button>
             </form>
           </>

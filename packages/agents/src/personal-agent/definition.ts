@@ -1,36 +1,37 @@
-import { GrantRequirement, CredentialRequirement } from '@intx/types';
-import { canonicalizeToolNames } from '../tool-names';
-import { buildPersonalAgentSystemPrompt } from './prompt';
-import { LLM_CREDENTIAL_NAME } from '../constants';
+import { GrantRequirement, CredentialRequirement } from "@intx/types";
+import { canonicalizeToolNames } from "../tool-names";
+import { buildPersonalAgentSystemPrompt } from "./prompt";
+import { LLM_CREDENTIAL_NAME } from "../constants";
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
 export function buildPersonalAgentGrantRequirements(
-  _workbenchTenantId: string
+  _workbenchTenantId: string,
 ): GrantRequirementType[] {
   return [];
 }
 
-export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
-  {
-    providerName: 'openai-compatible',
-    source: 'tenant',
-    name: LLM_CREDENTIAL_NAME,
-  },
-];
+export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] =
+  [
+    {
+      providerName: "openai-compatible",
+      source: "tenant",
+      name: LLM_CREDENTIAL_NAME,
+    },
+  ];
 
-export const PERSONAL_AGENT_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;
+export const PERSONAL_AGENT_MODEL_CONFIG = {
+  defaultModel: "kimi-k2.6",
+} as const;
 
 /** Display name of the personal agent; also the per-tenant seed idempotency key. */
-export const PERSONAL_AGENT_NAME = 'Myra';
+export const PERSONAL_AGENT_NAME = "Myra";
 
-export const PERSONAL_AGENT_DEPLOY_PROMPT: string = buildPersonalAgentSystemPrompt(
-  PERSONAL_AGENT_NAME,
-  {
+export const PERSONAL_AGENT_DEPLOY_PROMPT: string =
+  buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, {
     xml: true,
-  }
-);
+  });
 
 /**
  * Base toolset every Myra instance starts with. Single source of truth for the
@@ -41,15 +42,31 @@ export const PERSONAL_AGENT_DEPLOY_PROMPT: string = buildPersonalAgentSystemProm
  * (persistInstanceToolGrants), so listing a tool here is what authorizes it.
  */
 export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
-  'read_file',
-  'write_file',
-  'edit_file',
-  'search_files',
-  'exa_search',
-  'artifact_create',
-  'artifact_read',
-  'artifact_write',
-  'artifact_list',
-  'list_agents',
-  'list_principals',
+  "read_file",
+  "write_file",
+  "edit_file",
+  "search_files",
+  "exa_search",
+  "web_search",
+  "linear_list_issues",
+  "linear_get_issue",
+  "linear_list_teams",
+  "linear_list_users",
+  "attio_list_objects",
+  "attio_query_records",
+  "attio_search_records",
+  "attio_get_record",
+  "attio_list_workspace_members",
+  "granola_list_notes",
+  "granola_get_note",
+  "granola_list_folders",
+  "artifact_create",
+  "artifact_read",
+  "artifact_write",
+  "artifact_list",
+  "list_agents",
+  "list_principals",
+  "list_skills",
+  "search_skills",
+  "load_skill",
 ]);

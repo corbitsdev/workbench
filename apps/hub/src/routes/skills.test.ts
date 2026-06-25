@@ -1,82 +1,89 @@
-import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
-import { Hono } from 'hono';
-import * as realUserContext from '../lib/user-context';
-import * as realSkillLibrary from '../services/skill-library';
+import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
+import { Hono } from "hono";
+import * as realUserContext from "../lib/user-context";
+import * as realSkillLibrary from "../services/skill-library";
 
 // Register module mocks only for this suite, then restore the real modules
 // afterwards: mock.module is process-global, so leaving them mocked pollutes
 // sibling suites (uploads.test, skill-library.test) that exercise real behavior
 const mockedUserContext = {
   getRequestedUserContext: mock(() =>
-    Promise.resolve({ context: { tenantId: 'tenant-1', principalId: 'prn-1' }, forbidden: false })
+    Promise.resolve({
+      context: { tenantId: "tenant-1", principalId: "prn-1" },
+      forbidden: false,
+    }),
   ),
-  getUserContext: mock(() => Promise.resolve({ tenantId: 'tenant-1', principalId: 'prn-1' })),
+  getUserContext: mock(() =>
+    Promise.resolve({ tenantId: "tenant-1", principalId: "prn-1" }),
+  ),
 };
 const realUserContextModule = { ...realUserContext };
 const realSkillLibraryModule = { ...realSkillLibrary };
 
 const mockCreateSkill = mock((..._args: unknown[]) =>
   Promise.resolve({
-    id: 'ast-1',
-    name: 'test-skill',
-    displayName: 'Test Skill',
-    createdAt: '2026-06-17T00:00:00.000Z',
-    updatedAt: '2026-06-17T00:00:00.000Z',
-  })
+    id: "ast-1",
+    name: "test-skill",
+    displayName: "Test Skill",
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T00:00:00.000Z",
+  }),
 );
 
 const mockUpdateSkill = mock(() =>
   Promise.resolve({
-    id: 'ast-1',
-    name: 'test-skill',
-    displayName: 'Test Skill',
-    createdAt: '2026-06-17T00:00:00.000Z',
-    updatedAt: '2026-06-17T01:00:00.000Z',
-  })
+    id: "ast-1",
+    name: "test-skill",
+    displayName: "Test Skill",
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T01:00:00.000Z",
+  }),
 );
 
 const mockListSkills = mock(() =>
   Promise.resolve([
     {
-      id: 'ast-1',
-      name: 'test-skill',
-      displayName: 'Test Skill',
-      createdAt: '2026-06-17T00:00:00.000Z',
-      updatedAt: '2026-06-17T00:00:00.000Z',
+      id: "ast-1",
+      name: "test-skill",
+      displayName: "Test Skill",
+      createdAt: "2026-06-17T00:00:00.000Z",
+      updatedAt: "2026-06-17T00:00:00.000Z",
     },
-  ])
+  ]),
 );
 
 const mockGetSkillAsset = mock((): Promise<unknown> => Promise.resolve(null));
-const mockGetSkillContent = mock(() => Promise.resolve([{ path: 'SKILL.md', content: '# Hi' }]));
+const mockGetSkillContent = mock(() =>
+  Promise.resolve([{ path: "SKILL.md", content: "# Hi" }]),
+);
 
 const mockListSkillVersions = mock(() =>
   Promise.resolve({
     versions: [
       {
-        sha: 'abc1234def',
-        shortSha: 'abc1234',
+        sha: "abc1234def",
+        shortSha: "abc1234",
         version: 2,
-        message: 'Edit',
-        authorName: 'Mae',
-        createdAt: '2026-06-17T00:00:00.000Z',
+        message: "Edit",
+        authorName: "Mae",
+        createdAt: "2026-06-17T00:00:00.000Z",
       },
     ],
     total: 2,
-  })
+  }),
 );
 
 const mockRestoreSkillVersion = mock(() =>
   Promise.resolve({
-    id: 'ast-1',
-    name: 'test-skill',
-    displayName: 'Test Skill',
-    createdAt: '2026-06-17T00:00:00.000Z',
-    updatedAt: '2026-06-17T02:00:00.000Z',
-    scope: 'tenant',
-    accessTenantId: 'tenant-1',
-    ownerUserId: 'user-1',
-  })
+    id: "ast-1",
+    name: "test-skill",
+    displayName: "Test Skill",
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T02:00:00.000Z",
+    scope: "tenant",
+    accessTenantId: "tenant-1",
+    ownerUserId: "user-1",
+  }),
 );
 
 const mockedSkillLibrary = {
@@ -89,9 +96,9 @@ const mockedSkillLibrary = {
   restoreSkillVersion: mockRestoreSkillVersion,
   listShareTargets: mock(() =>
     Promise.resolve([
-      { tenantId: 'tenant-1', name: 'Acme Org' },
-      { tenantId: 'root-1', name: 'Acme Root' },
-    ])
+      { tenantId: "tenant-1", name: "Acme Org" },
+      { tenantId: "root-1", name: "Acme Root" },
+    ]),
   ),
   filesFromZip: mock(() => Promise.resolve([])),
   SkillLibraryError: class SkillLibraryError extends Error {
@@ -104,16 +111,16 @@ const mockedSkillLibrary = {
 };
 
 beforeAll(() => {
-  mock.module('../lib/user-context', () => mockedUserContext);
-  mock.module('../services/skill-library', () => mockedSkillLibrary);
+  mock.module("../lib/user-context", () => mockedUserContext);
+  mock.module("../services/skill-library", () => mockedSkillLibrary);
 });
 
 afterAll(() => {
-  mock.module('../lib/user-context', () => realUserContextModule);
-  mock.module('../services/skill-library', () => realSkillLibraryModule);
+  mock.module("../lib/user-context", () => realUserContextModule);
+  mock.module("../services/skill-library", () => realSkillLibraryModule);
 });
 
-import { createSkillsRouter } from './skills';
+import { createSkillsRouter } from "./skills";
 
 // biome-ignore lint/suspicious/noExplicitAny: test mock
 function makeMockDb(overrides: Record<string, any> = {}): any {
@@ -134,15 +141,15 @@ function makeMockDb(overrides: Record<string, any> = {}): any {
 // biome-ignore lint/suspicious/noExplicitAny: test mock
 function makeAssetService(overrides: Partial<Record<string, any>> = {}) {
   return {
-    createAsset: mock(() => Promise.reject(new Error('not implemented'))),
-    populateAsset: mock(() => Promise.reject(new Error('not implemented'))),
+    createAsset: mock(() => Promise.reject(new Error("not implemented"))),
+    populateAsset: mock(() => Promise.reject(new Error("not implemented"))),
     attachAsset: mock(() =>
       Promise.resolve({
-        id: 'aa-1',
-        agentId: 'agent-1',
-        assetId: 'ast-1',
-        ref: 'refs/heads/main',
-      })
+        id: "aa-1",
+        agentId: "agent-1",
+        assetId: "ast-1",
+        ref: "refs/heads/main",
+      }),
     ),
     listAgentAssets: mock(() => Promise.resolve([])),
     ...overrides,
@@ -150,21 +157,25 @@ function makeAssetService(overrides: Partial<Record<string, any>> = {}) {
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: test mock
-function buildApp(db: any, assetService: any, userId = 'user-1') {
-  const parent = new Hono<{ Variables: { userId: string; userName: string } }>();
-  parent.use('*', async (c, next) => {
-    c.set('userId', userId);
-    c.set('userName', 'Test User');
+function buildApp(db: any, assetService: any, userId = "user-1") {
+  const parent = new Hono<{
+    Variables: { userId: string; userName: string };
+  }>();
+  parent.use("*", async (c, next) => {
+    c.set("userId", userId);
+    c.set("userName", "Test User");
     await next();
   });
-  parent.route('/', createSkillsRouter(db, assetService, {} as never));
+  parent.route("/", createSkillsRouter(db, assetService, {} as never));
   return parent;
 }
 
-describe('GET /skills', () => {
-  it('returns the skill list', async () => {
+describe("GET /skills", () => {
+  it("returns the skill list", async () => {
     const app = buildApp(makeMockDb(), makeAssetService());
-    const res = await app.fetch(new Request('http://localhost/skills?tenantId=tenant-1'));
+    const res = await app.fetch(
+      new Request("http://localhost/skills?tenantId=tenant-1"),
+    );
     expect(res.status).toBe(200);
     const json = (await res.json()) as { skills: unknown[] };
     expect(Array.isArray(json.skills)).toBe(true);
@@ -172,186 +183,204 @@ describe('GET /skills', () => {
   });
 });
 
-describe('GET /skills/share-targets', () => {
-  it('returns the shareable tenants for the caller', async () => {
+describe("GET /skills/share-targets", () => {
+  it("returns the shareable tenants for the caller", async () => {
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/skills/share-targets?tenantId=tenant-1')
+      new Request("http://localhost/skills/share-targets?tenantId=tenant-1"),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { targets: { tenantId: string; name: string }[] };
-    expect(json.targets.map((t) => t.tenantId)).toEqual(['tenant-1', 'root-1']);
+    const json = (await res.json()) as {
+      targets: { tenantId: string; name: string }[];
+    };
+    expect(json.targets.map((t) => t.tenantId)).toEqual(["tenant-1", "root-1"]);
   });
 });
 
-describe('GET /skills/:assetId', () => {
-  it('returns 404 when skill is not found', async () => {
+describe("GET /skills/:assetId", () => {
+  it("returns 404 when skill is not found", async () => {
     mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/skills/ast-missing?tenantId=tenant-1')
+      new Request("http://localhost/skills/ast-missing?tenantId=tenant-1"),
     );
     expect(res.status).toBe(404);
   });
 
-  it('returns skill and files when found', async () => {
+  it("returns skill and files when found", async () => {
     mockGetSkillAsset.mockImplementation(() =>
       Promise.resolve({
-        id: 'ast-1',
-        name: 'test-skill',
-        displayName: 'Test Skill',
-        createdAt: '2026-06-17T00:00:00.000Z',
-        updatedAt: '2026-06-17T00:00:00.000Z',
-      })
+        id: "ast-1",
+        name: "test-skill",
+        displayName: "Test Skill",
+        createdAt: "2026-06-17T00:00:00.000Z",
+        updatedAt: "2026-06-17T00:00:00.000Z",
+      }),
     );
     const app = buildApp(makeMockDb(), makeAssetService());
-    const res = await app.fetch(new Request('http://localhost/skills/ast-1?tenantId=tenant-1'));
+    const res = await app.fetch(
+      new Request("http://localhost/skills/ast-1?tenantId=tenant-1"),
+    );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { skill: { id: string }; files: unknown[] };
-    expect(json.skill.id).toBe('ast-1');
+    const json = (await res.json()) as {
+      skill: { id: string };
+      files: unknown[];
+    };
+    expect(json.skill.id).toBe("ast-1");
     expect(Array.isArray(json.files)).toBe(true);
     // restore
     mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
   });
 });
 
-describe('POST /skills (JSON create)', () => {
-  it('returns 201 with the created skill', async () => {
+describe("POST /skills (JSON create)", () => {
+  it("returns 201 with the created skill", async () => {
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/skills?tenantId=tenant-1', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Test Skill', text: '# My skill' }),
-      })
+      new Request("http://localhost/skills?tenantId=tenant-1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Test Skill", text: "# My skill" }),
+      }),
     );
     expect(res.status).toBe(201);
     const json = (await res.json()) as { skill: { id: string } };
-    expect(json.skill.id).toBe('ast-1');
+    expect(json.skill.id).toBe("ast-1");
     expect(mockCreateSkill).toHaveBeenCalledTimes(1);
   });
 
-  it('forwards the chosen access scope and owning user to createSkill', async () => {
+  it("forwards the chosen access scope and owning user to createSkill", async () => {
     mockCreateSkill.mockClear();
     const app = buildApp(makeMockDb(), makeAssetService());
     await app.fetch(
-      new Request('http://localhost/skills?tenantId=tenant-1', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Private Skill', text: '# secret', scope: 'private' }),
-      })
+      new Request("http://localhost/skills?tenantId=tenant-1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "Private Skill",
+          text: "# secret",
+          scope: "private",
+        }),
+      }),
     );
-    const arg = mockCreateSkill.mock.calls[0]?.[3] as { scope: string; ownerUserId: string };
-    expect(arg.scope).toBe('private');
-    expect(arg.ownerUserId).toBe('user-1');
+    const arg = mockCreateSkill.mock.calls[0]?.[3] as {
+      scope: string;
+      ownerUserId: string;
+    };
+    expect(arg.scope).toBe("private");
+    expect(arg.ownerUserId).toBe("user-1");
   });
 
-  it('defaults an unknown scope to tenant-wide', async () => {
+  it("defaults an unknown scope to tenant-wide", async () => {
     mockCreateSkill.mockClear();
     const app = buildApp(makeMockDb(), makeAssetService());
     await app.fetch(
-      new Request('http://localhost/skills?tenantId=tenant-1', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Open Skill', text: '# open', scope: 'nonsense' }),
-      })
+      new Request("http://localhost/skills?tenantId=tenant-1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "Open Skill",
+          text: "# open",
+          scope: "nonsense",
+        }),
+      }),
     );
     const arg = mockCreateSkill.mock.calls[0]?.[3] as { scope: string };
-    expect(arg.scope).toBe('tenant');
+    expect(arg.scope).toBe("tenant");
   });
 });
 
-describe('GET /skills/:assetId/versions', () => {
-  it('returns version history for a visible skill', async () => {
+describe("GET /skills/:assetId/versions", () => {
+  it("returns version history for a visible skill", async () => {
     mockGetSkillAsset.mockImplementation(() =>
       Promise.resolve({
-        id: 'ast-1',
-        name: 'test-skill',
-        displayName: 'Test Skill',
-        createdAt: '2026-06-17T00:00:00.000Z',
-        updatedAt: '2026-06-17T00:00:00.000Z',
-      })
+        id: "ast-1",
+        name: "test-skill",
+        displayName: "Test Skill",
+        createdAt: "2026-06-17T00:00:00.000Z",
+        updatedAt: "2026-06-17T00:00:00.000Z",
+      }),
     );
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/skills/ast-1/versions?tenantId=tenant-1')
+      new Request("http://localhost/skills/ast-1/versions?tenantId=tenant-1"),
     );
     expect(res.status).toBe(200);
     const json = (await res.json()) as { versions: { shortSha: string }[] };
-    expect(json.versions[0]?.shortSha).toBe('abc1234');
+    expect(json.versions[0]?.shortSha).toBe("abc1234");
     mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
   });
 
-  it('returns 404 when the skill is not visible', async () => {
+  it("returns 404 when the skill is not visible", async () => {
     mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/skills/ast-x/versions?tenantId=tenant-1')
+      new Request("http://localhost/skills/ast-x/versions?tenantId=tenant-1"),
     );
     expect(res.status).toBe(404);
   });
 });
 
-describe('POST /skills/:assetId/restore', () => {
-  it('restores a version and returns the refreshed skill', async () => {
+describe("POST /skills/:assetId/restore", () => {
+  it("restores a version and returns the refreshed skill", async () => {
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/skills/ast-1/restore?tenantId=tenant-1', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sha: 'abc1234def' }),
-      })
+      new Request("http://localhost/skills/ast-1/restore?tenantId=tenant-1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sha: "abc1234def" }),
+      }),
     );
     expect(res.status).toBe(200);
     expect(mockRestoreSkillVersion).toHaveBeenCalledTimes(1);
   });
 
-  it('returns 400 when sha is missing', async () => {
+  it("returns 400 when sha is missing", async () => {
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/skills/ast-1/restore?tenantId=tenant-1', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+      new Request("http://localhost/skills/ast-1/restore?tenantId=tenant-1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({}),
-      })
+      }),
     );
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when name is missing', async () => {
+  it("returns 400 when name is missing", async () => {
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/skills?tenantId=tenant-1', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: '# My skill' }),
-      })
+      new Request("http://localhost/skills?tenantId=tenant-1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "# My skill" }),
+      }),
     );
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when text is missing', async () => {
+  it("returns 400 when text is missing", async () => {
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/skills?tenantId=tenant-1', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'My Skill' }),
-      })
+      new Request("http://localhost/skills?tenantId=tenant-1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "My Skill" }),
+      }),
     );
     expect(res.status).toBe(400);
   });
 });
 
-describe('POST /skills (JSON update)', () => {
-  it('calls updateSkill and returns 200 when assetId is present', async () => {
+describe("POST /skills (JSON update)", () => {
+  it("calls updateSkill and returns 200 when assetId is present", async () => {
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/skills?tenantId=tenant-1', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ assetId: 'ast-1', text: '# Updated' }),
-      })
+      new Request("http://localhost/skills?tenantId=tenant-1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ assetId: "ast-1", text: "# Updated" }),
+      }),
     );
     expect(res.status).toBe(200);
     expect(mockUpdateSkill).toHaveBeenCalledTimes(1);
@@ -359,88 +388,102 @@ describe('POST /skills (JSON update)', () => {
 });
 
 const visibleSkill = {
-  id: 'ast-1',
-  name: 'test-skill',
-  displayName: 'Test Skill',
-  createdAt: '2026-06-17T00:00:00.000Z',
-  updatedAt: '2026-06-17T00:00:00.000Z',
-  scope: 'tenant',
-  accessTenantId: 'tenant-1',
-  ownerUserId: 'user-1',
-  ownerName: 'Test User',
+  id: "ast-1",
+  name: "test-skill",
+  displayName: "Test Skill",
+  createdAt: "2026-06-17T00:00:00.000Z",
+  updatedAt: "2026-06-17T00:00:00.000Z",
+  scope: "tenant",
+  accessTenantId: "tenant-1",
+  ownerUserId: "user-1",
+  ownerName: "Test User",
 };
 
-describe('POST /agents/:agentId/skills/:assetId', () => {
-  it('returns 404 when the skill is not visible to the caller', async () => {
+describe("POST /agents/:agentId/skills/:assetId", () => {
+  it("returns 404 when the skill is not visible to the caller", async () => {
     mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/agents/agent-1/skills/ast-missing?tenantId=tenant-1', {
-        method: 'POST',
-      })
+      new Request(
+        "http://localhost/agents/agent-1/skills/ast-missing?tenantId=tenant-1",
+        {
+          method: "POST",
+        },
+      ),
     );
     expect(res.status).toBe(404);
     const json = (await res.json()) as { error: string };
     expect(json.error).toBeTruthy();
   });
 
-  it('calls assetService.attachAsset and returns 201 when skill is visible', async () => {
+  it("calls assetService.attachAsset and returns 201 when skill is visible", async () => {
     mockGetSkillAsset.mockImplementation(() => Promise.resolve(visibleSkill));
     const db = makeMockDb();
     const assetService = makeAssetService();
     const app = buildApp(db, assetService);
     const res = await app.fetch(
-      new Request('http://localhost/agents/agent-1/skills/ast-1?tenantId=tenant-1', {
-        method: 'POST',
-      })
+      new Request(
+        "http://localhost/agents/agent-1/skills/ast-1?tenantId=tenant-1",
+        {
+          method: "POST",
+        },
+      ),
     );
     expect(res.status).toBe(201);
     expect(assetService.attachAsset).toHaveBeenCalledTimes(1);
-    const [callArgs] = (assetService.attachAsset as ReturnType<typeof mock>).mock.calls[0] as [
-      { agentId: string; assetId: string; ref: string },
-    ];
-    expect(callArgs.agentId).toBe('agent-1');
-    expect(callArgs.assetId).toBe('ast-1');
+    const [callArgs] = (assetService.attachAsset as ReturnType<typeof mock>)
+      .mock.calls[0] as [{ agentId: string; assetId: string; ref: string }];
+    expect(callArgs.agentId).toBe("agent-1");
+    expect(callArgs.assetId).toBe("ast-1");
   });
 });
 
-describe('DELETE /agents/:agentId/skills/:assetId', () => {
-  it('returns 404 when the skill is not visible to the caller', async () => {
+describe("DELETE /agents/:agentId/skills/:assetId", () => {
+  it("returns 404 when the skill is not visible to the caller", async () => {
     mockGetSkillAsset.mockImplementation(() => Promise.resolve(null));
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/agents/agent-1/skills/ast-missing?tenantId=tenant-1', {
-        method: 'DELETE',
-      })
+      new Request(
+        "http://localhost/agents/agent-1/skills/ast-missing?tenantId=tenant-1",
+        {
+          method: "DELETE",
+        },
+      ),
     );
     expect(res.status).toBe(404);
   });
 
-  it('returns 404 when skill is not attached to the agent', async () => {
+  it("returns 404 when skill is not attached to the agent", async () => {
     mockGetSkillAsset.mockImplementation(() => Promise.resolve(visibleSkill));
     const db = makeMockDb();
     const returning = mock(() => Promise.resolve([]));
     db.delete = mock(() => ({ where: mock(() => ({ returning })) }));
     const app = buildApp(db, makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/agents/agent-1/skills/ast-1?tenantId=tenant-1', {
-        method: 'DELETE',
-      })
+      new Request(
+        "http://localhost/agents/agent-1/skills/ast-1?tenantId=tenant-1",
+        {
+          method: "DELETE",
+        },
+      ),
     );
     expect(res.status).toBe(404);
   });
 
-  it('deletes from agentAsset and returns 200 when skill is attached', async () => {
+  it("deletes from agentAsset and returns 200 when skill is attached", async () => {
     mockGetSkillAsset.mockImplementation(() => Promise.resolve(visibleSkill));
     const db = makeMockDb();
-    const returning = mock(() => Promise.resolve([{ id: 'aa-1' }]));
+    const returning = mock(() => Promise.resolve([{ id: "aa-1" }]));
     const deleteWhere = mock(() => ({ returning }));
     db.delete = mock(() => ({ where: deleteWhere }));
     const app = buildApp(db, makeAssetService());
     const res = await app.fetch(
-      new Request('http://localhost/agents/agent-1/skills/ast-1?tenantId=tenant-1', {
-        method: 'DELETE',
-      })
+      new Request(
+        "http://localhost/agents/agent-1/skills/ast-1?tenantId=tenant-1",
+        {
+          method: "DELETE",
+        },
+      ),
     );
     expect(res.status).toBe(200);
     expect(db.delete).toHaveBeenCalledTimes(1);

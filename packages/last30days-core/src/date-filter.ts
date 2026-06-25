@@ -1,6 +1,6 @@
 export function dateFilter<T extends { publishedAt: string }>(
   items: T[],
-  { days, nowIso }: { days: number; nowIso: string }
+  { days, nowIso }: { days: number; nowIso: string },
 ): T[] {
   const cutoff = new Date(nowIso);
   cutoff.setUTCDate(cutoff.getUTCDate() - days);

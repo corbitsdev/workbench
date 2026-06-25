@@ -1,5 +1,3 @@
-/* eslint-disable no-console */
-
 /**
  * Shared utilities for hub admin scripts.
  */

@@ -7,9 +7,9 @@ Error reporting and observability wiring for the hub and sidecar.
 Call once at application startup, replacing separate `initSentry()` + `@intx/log` `setup()` calls:
 
 ```ts
-import { setupObservability } from '@workbench/sentry';
+import { setupObservability } from "@workbench/sentry";
 
-await setupObservability({ dev: process.env.NODE_ENV !== 'production' });
+await setupObservability({ dev: process.env.NODE_ENV !== "production" });
 ```
 
 ## How it works

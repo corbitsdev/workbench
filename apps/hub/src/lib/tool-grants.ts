@@ -1,7 +1,6 @@
-import { schema as intxSchema } from '@intx/db';
-import { generateId } from '@intx/hub-common';
-
-const { grant } = intxSchema;
+import { schema as intxSchema } from "@intx/db";
+import { generateId } from "@intx/hub-common";
+import { toLlmToolName } from "@workbench/agents";
 
 /**
  * A persisted `grant` row authorizing an instance principal to invoke a tool.
@@ -18,31 +17,35 @@ const { grant } = intxSchema;
  * the DB, so in-memory tool grants are dropped on every sidecar reconnect (the
  * cause of CL-1398's "No matching grants for tool:..." failures).
  */
-export type ToolGrantRow = typeof grant.$inferInsert;
+export type ToolGrantRow = typeof intxSchema.grant.$inferInsert;
 
 /** The resource-string prefix every tool grant uses. */
-export const TOOL_GRANT_RESOURCE_PREFIX = 'tool:';
+export const TOOL_GRANT_RESOURCE_PREFIX = "tool:";
 
 /**
  * Build the persisted grant rows for an instance principal's tool set. Tool
- * names are de-duplicated; an empty list yields no rows.
+ * names are mapped to their LLM-safe form (`toLlmToolName`) so the grant
+ * resource matches what the model actually invokes (the sidecar presents the
+ * same safe name and the authz `beforeTool` check keys on `call.name`); the
+ * canonical `:` name never round-trips through the model (CL-2306). Names are
+ * de-duplicated after mapping; an empty list yields no rows.
  */
 export function buildToolGrantRows(
   toolNames: string[],
   scope: { tenantId: string; principalId: string },
-  now: Date
+  now: Date,
 ): ToolGrantRow[] {
-  const unique = [...new Set(toolNames)];
+  const unique = [...new Set(toolNames.map(toLlmToolName))];
   return unique.map((name) => ({
-    id: generateId('grant'),
+    id: generateId("grant"),
     tenantId: scope.tenantId,
     principalId: scope.principalId,
     roleId: null,
     resource: `${TOOL_GRANT_RESOURCE_PREFIX}${name}`,
-    action: 'invoke',
-    effect: 'allow',
+    action: "invoke",
+    effect: "allow",
     conditions: null,
-    origin: 'system',
+    origin: "system",
     expiresAt: null,
     createdAt: now,
     updatedAt: now,

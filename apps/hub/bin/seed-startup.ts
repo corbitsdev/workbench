@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-/* eslint-disable no-console */
-
 /**
  * Runs as part of the Railway preDeployCommand, after db-setup.ts.
  *
@@ -13,27 +11,27 @@
  * no match → insert. Safe to run on every deploy.
  */
 
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
-import { eq, and, isNull } from 'drizzle-orm';
-import { schema as intxSchema } from '@intx/db';
-import { generateId } from '@intx/hub-common';
-import { buildEntries } from './seed-credentials';
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { eq, and, isNull } from "drizzle-orm";
+import { schema as intxSchema } from "@intx/db";
+import { generateId } from "@intx/hub-common";
+import { buildEntries } from "./seed-credentials";
 
-if (process.env['SEED_CREDENTIALS_ON_STARTUP'] !== 'true') {
-  console.log('[seed-startup] SEED_CREDENTIALS_ON_STARTUP not set — skipping');
+if (process.env["SEED_CREDENTIALS_ON_STARTUP"] !== "true") {
+  console.log("[seed-startup] SEED_CREDENTIALS_ON_STARTUP not set — skipping");
   process.exit(0);
 }
 
-const databaseUrl = process.env['DATABASE_URL'];
+const databaseUrl = process.env["DATABASE_URL"];
 if (!databaseUrl) {
-  console.error('[seed-startup] DATABASE_URL is required');
+  console.error("[seed-startup] DATABASE_URL is required");
   process.exit(1);
 }
 
-const tenantSlug = process.env['GLOBAL_TENANT_SLUG'];
+const tenantSlug = process.env["GLOBAL_TENANT_SLUG"];
 if (!tenantSlug) {
-  console.error('[seed-startup] GLOBAL_TENANT_SLUG is required');
+  console.error("[seed-startup] GLOBAL_TENANT_SLUG is required");
   process.exit(1);
 }
 
@@ -45,7 +43,9 @@ const tenant = await db.query.tenant.findFirst({
 });
 
 if (!tenant) {
-  console.error(`[seed-startup] Tenant not found: ${tenantSlug} — run db-setup.ts first`);
+  console.error(
+    `[seed-startup] Tenant not found: ${tenantSlug} — run db-setup.ts first`,
+  );
   await sql.end();
   process.exit(1);
 }
@@ -55,7 +55,7 @@ console.log(`[seed-startup] Tenant: ${tenantSlug} (${tenantId})`);
 
 const entries = buildEntries();
 if (entries.length === 0) {
-  console.log('[seed-startup] No credentials configured — nothing to seed');
+  console.log("[seed-startup] No credentials configured — nothing to seed");
   await sql.end();
   process.exit(0);
 }
@@ -68,7 +68,7 @@ try {
       const existingProvider = await db.query.provider.findFirst({
         where: and(
           eq(intxSchema.provider.tenantId, tenantId),
-          eq(intxSchema.provider.name, entry.providerName)
+          eq(intxSchema.provider.name, entry.providerName),
         ),
       });
 
@@ -77,20 +77,25 @@ try {
       if (existingProvider) {
         if (entry.metadata) {
           const merged = {
-            ...((existingProvider.metadata as Record<string, unknown> | null) ?? {}),
+            ...((existingProvider.metadata as Record<string, unknown> | null) ??
+              {}),
             ...entry.metadata,
           };
           await db
             .update(intxSchema.provider)
             .set({ metadata: merged, updatedAt: now })
             .where(eq(intxSchema.provider.id, existingProvider.id));
-          console.log(`[seed-startup]   Provider ${entry.providerName}: updated`);
+          console.log(
+            `[seed-startup]   Provider ${entry.providerName}: updated`,
+          );
         } else {
-          console.log(`[seed-startup]   Provider ${entry.providerName}: unchanged`);
+          console.log(
+            `[seed-startup]   Provider ${entry.providerName}: unchanged`,
+          );
         }
         providerId = existingProvider.id;
       } else {
-        providerId = generateId('provider');
+        providerId = generateId("provider");
         await db.insert(intxSchema.provider).values({
           id: providerId,
           tenantId,
@@ -111,7 +116,7 @@ try {
         where: and(
           eq(intxSchema.credential.tenantId, tenantId),
           eq(intxSchema.credential.name, entry.credentialName),
-          isNull(intxSchema.credential.principalId)
+          isNull(intxSchema.credential.principalId),
         ),
       });
 
@@ -124,16 +129,18 @@ try {
             updatedAt: now,
           })
           .where(eq(intxSchema.credential.id, existingCredential.id));
-        console.log(`[seed-startup]   Credential ${entry.credentialName}: updated`);
+        console.log(
+          `[seed-startup]   Credential ${entry.credentialName}: updated`,
+        );
       } else {
         await db.insert(intxSchema.credential).values({
-          id: generateId('credential'),
+          id: generateId("credential"),
           tenantId,
           providerId,
           principalId: null,
           oauthClientId: null,
           name: entry.credentialName,
-          type: 'api_key',
+          type: "api_key",
           description: null,
           secret: entry.secret,
           refreshSecret: null,
@@ -143,14 +150,19 @@ try {
           createdAt: now,
           updatedAt: now,
         });
-        console.log(`[seed-startup]   Credential ${entry.credentialName}: created`);
+        console.log(
+          `[seed-startup]   Credential ${entry.credentialName}: created`,
+        );
       }
     } catch (err) {
-      console.error(`[seed-startup]   Error seeding ${entry.credentialName}:`, err);
+      console.error(
+        `[seed-startup]   Error seeding ${entry.credentialName}:`,
+        err,
+      );
     }
   }
 
-  console.log('[seed-startup] Done.');
+  console.log("[seed-startup] Done.");
 } finally {
   await sql.end();
 }

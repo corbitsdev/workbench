@@ -1,53 +1,65 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
-import { BookOpen, FileArchive, Upload } from 'lucide-react';
-import { useCreateSkill, useSkillShareTargets } from '../hooks/use-skills';
-import { getMe } from '../lib/hub-api';
+import { useState } from "react";
+import { useNavigate } from "react-router";
+import { useQuery } from "@tanstack/react-query";
+import { BookOpen, FileArchive, Upload } from "lucide-react";
+import { useCreateSkill, useSkillShareTargets } from "../hooks/use-skills";
+import { getMe } from "../lib/hub-api";
 
 type FileWithRelativePath = File & { webkitRelativePath?: string };
 
 export function SkillsNew() {
   const navigate = useNavigate();
-  const meQuery = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: 5 * 60_000 });
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    staleTime: 5 * 60_000,
+  });
   const tenantId = meQuery.data?.personalTenantId ?? null;
   const shareTargetsQuery = useSkillShareTargets(tenantId);
   const shareTargets = shareTargetsQuery.data ?? [];
-  const [name, setName] = useState('');
-  const [text, setText] = useState('');
-  const [error, setError] = useState('');
+  const [name, setName] = useState("");
+  const [text, setText] = useState("");
+  const [error, setError] = useState("");
   const [accessChoice, setAccessChoice] = useState<string | null>(null);
   const createSkill = useCreateSkill();
 
   // Default to the closest shareable tenant; only surface a chooser when the
   // user actually has more than one. Falls back to the working tenant before
   // share targets have loaded.
-  const selectedTenantId = accessChoice ?? shareTargets[0]?.tenantId ?? tenantId;
+  const selectedTenantId =
+    accessChoice ?? shareTargets[0]?.tenantId ?? tenantId;
   const showAccessChooser = shareTargets.length >= 2;
 
   const savePastedSkill = () => {
-    setError('');
+    setError("");
     createSkill.mutate(
-      { tenantId: selectedTenantId, scope: 'tenant', name: name.trim(), text: text.trim() },
       {
-        onSuccess: () => navigate('/skills'),
-        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save skill'),
-      }
+        tenantId: selectedTenantId,
+        scope: "tenant",
+        name: name.trim(),
+        text: text.trim(),
+      },
+      {
+        onSuccess: () => navigate("/skills"),
+        onError: (err) =>
+          setError(err instanceof Error ? err.message : "Failed to save skill"),
+      },
     );
   };
 
   const saveFiles = (files: FileList | null, folder: boolean) => {
-    setError('');
+    setError("");
     const selectedFiles = Array.from(files ?? []) as FileWithRelativePath[];
     if (selectedFiles.length === 0) return;
     const first = selectedFiles[0];
     const inferredName = folder
-      ? (first.webkitRelativePath?.split('/')[0] ?? first.name.replace(/\.[^.]+$/, ''))
-      : first.name.replace(/\.[^.]+$/, '');
+      ? (first.webkitRelativePath?.split("/")[0] ??
+        first.name.replace(/\.[^.]+$/, ""))
+      : first.name.replace(/\.[^.]+$/, "");
     createSkill.mutate(
       {
         tenantId: selectedTenantId,
-        scope: 'tenant',
+        scope: "tenant",
         name: name.trim() || inferredName,
         files: selectedFiles.map((file) => ({
           file,
@@ -55,9 +67,10 @@ export function SkillsNew() {
         })),
       },
       {
-        onSuccess: () => navigate('/skills'),
-        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save skill'),
-      }
+        onSuccess: () => navigate("/skills"),
+        onError: (err) =>
+          setError(err instanceof Error ? err.message : "Failed to save skill"),
+      },
     );
   };
 
@@ -71,7 +84,7 @@ export function SkillsNew() {
           </div>
           <button
             type="button"
-            onClick={() => navigate('/skills')}
+            onClick={() => navigate("/skills")}
             className="text-[12px] text-text-3 hover:text-text"
           >
             Cancel
@@ -82,8 +95,8 @@ export function SkillsNew() {
           <div className="mx-auto max-w-2xl space-y-4">
             <div>
               <p className="text-[13px] text-text-3">
-                Paste markdown, upload one file, upload a folder, or import a zip. Code and assets
-                are stored but never executed.
+                Paste markdown, upload one file, upload a folder, or import a
+                zip. Code and assets are stored but never executed.
               </p>
             </div>
             <input
@@ -136,7 +149,9 @@ export function SkillsNew() {
                 <input
                   type="file"
                   className="hidden"
-                  onChange={(event) => saveFiles(event.currentTarget.files, false)}
+                  onChange={(event) =>
+                    saveFiles(event.currentTarget.files, false)
+                  }
                 />
               </label>
               <label className="cursor-pointer rounded-[9px] border border-border px-3 py-2 text-[13px] font-medium text-text-2 hover:text-text">
@@ -147,7 +162,9 @@ export function SkillsNew() {
                   // @ts-expect-error webkitdirectory is required for browser folder selection.
                   webkitdirectory=""
                   className="hidden"
-                  onChange={(event) => saveFiles(event.currentTarget.files, true)}
+                  onChange={(event) =>
+                    saveFiles(event.currentTarget.files, true)
+                  }
                 />
               </label>
               <label className="cursor-pointer rounded-[9px] border border-border px-3 py-2 text-[13px] font-medium text-text-2 hover:text-text">
@@ -156,7 +173,9 @@ export function SkillsNew() {
                   type="file"
                   accept=".zip,application/zip"
                   className="hidden"
-                  onChange={(event) => saveFiles(event.currentTarget.files, false)}
+                  onChange={(event) =>
+                    saveFiles(event.currentTarget.files, false)
+                  }
                 />
               </label>
             </div>
@@ -166,10 +185,15 @@ export function SkillsNew() {
               <p className="text-[13px] font-medium text-text">Safety model</p>
               <ul className="space-y-1 text-[12px] text-text-3">
                 <li>Immutable versions keep old workflow runs reproducible.</li>
-                <li>Non-text files are stored as assets and not prompt-injected.</li>
-                <li>Code-like files are allowed as inert bundle contents only.</li>
                 <li>
-                  Unsafe paths, symlinks, traversal, and empty bundles are rejected server-side.
+                  Non-text files are stored as assets and not prompt-injected.
+                </li>
+                <li>
+                  Code-like files are allowed as inert bundle contents only.
+                </li>
+                <li>
+                  Unsafe paths, symlinks, traversal, and empty bundles are
+                  rejected server-side.
                 </li>
               </ul>
             </div>

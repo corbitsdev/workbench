@@ -1,7 +1,10 @@
-import type { AgentTool } from '@intx/agent';
-import type { DB } from '@intx/db';
-import type { ToolDefinition } from '@intx/types/runtime';
-import { createPrincipalsTools, LIST_PRINCIPALS_DEFINITION } from './principals';
+import type { AgentTool } from "@intx/agent";
+import type { DB } from "@intx/db";
+import type { ToolDefinition } from "@intx/types/runtime";
+import {
+  createPrincipalsTools,
+  LIST_PRINCIPALS_DEFINITION,
+} from "./principals";
 
 export type { ToolDefinition };
 export {
@@ -9,20 +12,20 @@ export {
   LIST_PRINCIPALS_DEFINITION,
   resolvePrincipalKind,
   resolvePrincipalStatusFilter,
-} from './principals';
-export type { ListPrincipalsContext } from './principals';
+} from "./principals";
+export type { ListPrincipalsContext } from "./principals";
 
 export const AGENT_INSTANCE_STATUSES = [
-  'deployed',
-  'running',
-  'updating',
-  'error',
-  'stopped',
+  "deployed",
+  "running",
+  "updating",
+  "error",
+  "stopped",
 ] as const;
 export type AgentInstanceStatus = (typeof AGENT_INSTANCE_STATUSES)[number];
 
-const DEFAULT_STATUS: AgentInstanceStatus = 'running';
-const ALL_STATUSES = 'all';
+const DEFAULT_STATUS: AgentInstanceStatus = "running";
+const ALL_STATUSES = "all";
 const STATUS_VALUES = [...AGENT_INSTANCE_STATUSES, ALL_STATUSES] as const;
 
 const DEFAULT_LIMIT = 50;
@@ -33,14 +36,16 @@ const MAX_LIMIT = 200;
  * reachable right now); `all` removes the filter; anything else must be one of
  * the known instance statuses.
  */
-export function resolveStatusFilter(value: unknown): AgentInstanceStatus | undefined {
+export function resolveStatusFilter(
+  value: unknown,
+): AgentInstanceStatus | undefined {
   if (value === undefined) return DEFAULT_STATUS;
-  if (typeof value !== 'string') {
-    throw new Error('status must be a string');
+  if (typeof value !== "string") {
+    throw new Error("status must be a string");
   }
   if (value === ALL_STATUSES) return undefined;
   if (!AGENT_INSTANCE_STATUSES.includes(value as AgentInstanceStatus)) {
-    throw new Error(`status must be one of: ${STATUS_VALUES.join(', ')}`);
+    throw new Error(`status must be one of: ${STATUS_VALUES.join(", ")}`);
   }
   return value as AgentInstanceStatus;
 }
@@ -52,19 +57,20 @@ export function resolveStatusFilter(value: unknown): AgentInstanceStatus | undef
 export function parsePrincipalIds(value: unknown): string[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) {
-    throw new Error('principals must be an array of principal ids');
+    throw new Error("principals must be an array of principal ids");
   }
   if (value.length === 0) {
-    throw new Error('principals must be a non-empty array of principal ids');
+    throw new Error("principals must be a non-empty array of principal ids");
   }
-  if (!value.every((id) => typeof id === 'string')) {
-    throw new Error('principals must contain only strings');
+  if (!value.every((id) => typeof id === "string")) {
+    throw new Error("principals must contain only strings");
   }
   return value as string[];
 }
 
 export function parseListLimit(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_LIMIT;
+  if (typeof value !== "number" || !Number.isFinite(value))
+    return DEFAULT_LIMIT;
   return Math.min(Math.max(1, Math.floor(value)), MAX_LIMIT);
 }
 
@@ -76,26 +82,26 @@ export function parseListLimit(value: unknown): number {
  * reuses.
  */
 export const LIST_AGENTS_DEFINITION: ToolDefinition = {
-  name: 'list_agents',
+  name: "list_agents",
   description:
-    'List the agents you can address. Returns each agent instance with its name, description (what the agent is for — use it to pick the right specialist), mail address, status, definition id, and instance id. Use the address with mail_send to message an agent. By default returns your own operator\'s running agents — the agents owned by the same user you act for. Pass a status to filter (or "all" for every status), and a principals array of member principal ids (from list_principals) to list another operator\'s agents instead.',
+    "List the agents you can address. Returns each agent instance with its name, description (what the agent is for — use it to pick the right specialist), mail address, status, definition id, and instance id. Use the address with mail_send to message an agent. By default returns your own operator's running agents — the agents owned by the same user you act for. Pass a status to filter (or \"all\" for every status), and a principals array of member principal ids (from list_principals) to list another operator's agents instead.",
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
       status: {
-        type: 'string',
+        type: "string",
         description:
-          'Status filter: deployed, running, updating, error, stopped, or all. Defaults to running (agents reachable right now). Use all to return every status.',
+          "Status filter: deployed, running, updating, error, stopped, or all. Defaults to running (agents reachable right now). Use all to return every status.",
       },
       principals: {
-        type: 'array',
-        items: { type: 'string' },
+        type: "array",
+        items: { type: "string" },
         description:
           "Member (user) principal ids whose agents to list. Defaults to your own operator. Get ids from list_principals to address another operator's agents.",
       },
       limit: {
-        type: 'number',
-        description: 'Maximum number of agents to return (1-200, default 50).',
+        type: "number",
+        description: "Maximum number of agents to return (1-200, default 50).",
       },
     },
     required: [],
@@ -105,7 +111,7 @@ export const LIST_AGENTS_DEFINITION: ToolDefinition = {
 export const AGENTS_HUB_TOOLS = {
   list_principals: {
     definition: LIST_PRINCIPALS_DEFINITION,
-    createTools: (context: { db: DB['db']; tenantId: string }): AgentTool[] =>
+    createTools: (context: { db: DB["db"]; tenantId: string }): AgentTool[] =>
       createPrincipalsTools(context),
   },
 };

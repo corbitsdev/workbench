@@ -194,11 +194,11 @@ describe("writeStepAgentRows", () => {
 
     const call = values.mock.calls.at(0);
     if (!call) throw new Error("insert().values was not called");
-    const rows = call[0] as Array<{
+    const rows = call[0] as {
       id: string;
       toolPackages: unknown;
       capabilities: unknown;
-    }>;
+    }[];
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.id)).toEqual([
       "ins_dep1-intake",
@@ -243,14 +243,14 @@ describe("writeStepInstanceRows", () => {
 
     const call = values.mock.calls.at(0);
     if (!call) throw new Error("insert().values was not called");
-    const rows = call[0] as Array<{
+    const rows = call[0] as {
       id: string;
       agentId: string;
       tenantId: string;
       principalId: string;
       address: string;
       status: string;
-    }>;
+    }[];
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.id)).toEqual([
       "ins_dep1-intake",
@@ -314,10 +314,49 @@ describe("writeDeploymentAgentRow", () => {
   });
 });
 
+function insertWithHarnessSession(
+  onInstanceValues: (rows: unknown) => void | Promise<void>,
+): ReturnType<typeof mock> {
+  return mock((table: unknown) => {
+    if (table === intxSchema.agentSession) {
+      return {
+        values: () => ({
+          onConflictDoNothing: mock(async () => undefined),
+        }),
+      };
+    }
+    return { values: onInstanceValues };
+  });
+}
+
+function deployWorkflowInsertMock(
+  insertedRows: {
+    table: "agent" | "agentInstance";
+    rows: { id: string }[];
+  }[],
+): ReturnType<typeof mock> {
+  return mock((table: unknown) => {
+    if (table === intxSchema.agentSession) {
+      return {
+        values: () => ({
+          onConflictDoNothing: mock(async () => undefined),
+        }),
+      };
+    }
+    return {
+      values: async (rows: unknown) => {
+        const table2 = table === intxSchema.agent ? "agent" : "agentInstance";
+        const arr = Array.isArray(rows) ? rows : [rows];
+        insertedRows.push({ table: table2, rows: arr as { id: string }[] });
+      },
+    };
+  });
+}
+
 describe("writeDeploymentInstanceRow", () => {
   test("inserts an active supervisor instance row at ins_<deploymentId>@<domain>", async () => {
     const values = mock(async (_rows: unknown) => undefined);
-    const insert = mock(() => ({ values }));
+    const insert = insertWithHarnessSession(values);
     const db = { insert } as unknown as HubDb;
 
     await writeDeploymentInstanceRow({
@@ -326,6 +365,7 @@ describe("writeDeploymentInstanceRow", () => {
       deploymentDomain: "gtm.localhost",
       tenantId: "t1",
       creatorPrincipalId: "p1",
+      harnessSessionId: "ses_supervisor",
     });
 
     const call = values.mock.calls.at(0);
@@ -337,6 +377,7 @@ describe("writeDeploymentInstanceRow", () => {
       principalId: string;
       address: string;
       status: string;
+      sessionId?: string;
       endedAt?: unknown;
     };
     expect(row.id).toBe("ins_dep1");
@@ -346,6 +387,7 @@ describe("writeDeploymentInstanceRow", () => {
     expect(row.principalId).toBe("p1");
     expect(row.status).toBe("deployed");
     expect(row.endedAt).toBeUndefined();
+    expect(row.sessionId).toBe("ses_supervisor");
   });
 });
 
@@ -802,15 +844,9 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
       table: "agent" | "agentInstance";
       rows: { id: string }[];
     }[] = [];
-    const insert = mock((table: unknown) => ({
-      values: async (rows: unknown) => {
-        const table2 = table === intxSchema.agent ? "agent" : "agentInstance";
-        const arr = Array.isArray(rows) ? rows : [rows];
-        insertedRows.push({ table: table2, rows: arr as { id: string }[] });
-        return undefined;
-      },
-    }));
-    const db = { insert } as unknown as HubDb;
+    const db = {
+      insert: deployWorkflowInsertMock(insertedRows),
+    } as unknown as HubDb;
 
     const launched: { agentId: string }[] = [];
     const launchSession = mock(async (params: { agentId: string }) => {
@@ -965,15 +1001,9 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
       table: "agent" | "agentInstance";
       rows: { id: string }[];
     }[] = [];
-    const insert = mock((table: unknown) => ({
-      values: async (rows: unknown) => {
-        const table2 = table === intxSchema.agent ? "agent" : "agentInstance";
-        const arr = Array.isArray(rows) ? rows : [rows];
-        insertedRows.push({ table: table2, rows: arr as { id: string }[] });
-        return undefined;
-      },
-    }));
-    const db = { insert } as unknown as HubDb;
+    const db = {
+      insert: deployWorkflowInsertMock(insertedRows),
+    } as unknown as HubDb;
 
     const launched: { agentId: string }[] = [];
     const launchSession = mock(async (params: { agentId: string }) => {
@@ -1106,8 +1136,18 @@ describe("deployWorkflow approves the catalog inference chain", () => {
   function makeService(sendAgentDeploy: SidecarRouter["sendAgentDeploy"]) {
     const writeTree = mock(async () => ({ commitSha: "sha" }));
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
-    const insert = mock(() => ({ values: async () => undefined }));
-    const db = { insert } as unknown as HubDb;
+    const db = {
+      insert: mock((table: unknown) => {
+        if (table === intxSchema.agentSession) {
+          return {
+            values: () => ({
+              onConflictDoNothing: mock(async () => undefined),
+            }),
+          };
+        }
+        return { values: async () => undefined };
+      }),
+    } as unknown as HubDb;
     const sessionService = {
       launchSession: mock(async () => undefined),
     } as unknown as SessionService;

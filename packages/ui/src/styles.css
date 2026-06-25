@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 /*
  * Scan this package's own source so Tailwind v4 generates the utilities used
@@ -6,6 +6,15 @@
  * their own Vite root; their own files do not need to be listed here.
  */
 @source '.';
+
+/*
+ * Gate hover-driven effects (notably `group-hover`, which Tailwind does not
+ * media-guard on its own) behind devices with a fine pointer that supports
+ * hover, so a tap on touch — including hybrid devices (touchscreen laptops)
+ * that report `hover: hover` with a coarse pointer — does not leave an
+ * animation stuck mid-transform.
+ */
+@custom-variant hover-hover (@media (hover: hover) and (pointer: fine));
 
 /*
  * Brand tokens as first-class Tailwind v4 theme tokens. Colors are declared
@@ -60,8 +69,8 @@
   --radius-xl: 24px;
   --radius-panel: 28px;
 
-  --font-body: 'Red Hat Display', 'Open Sans', Roboto, Arial, sans-serif;
-  --font-mono: 'Space Mono', 'Fira Code', Monaco, Consolas, monospace;
+  --font-body: "Red Hat Display", "Open Sans", Roboto, Arial, sans-serif;
+  --font-mono: "Space Mono", "Fira Code", Monaco, Consolas, monospace;
 
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -116,7 +125,7 @@
   --sidebar-ring: var(--accent);
 }
 
-html[data-theme='corbits-dark'] {
+html[data-theme="corbits-dark"] {
   --page: #000000;
   --bg: #0a0908;
   --surface: #141211;
@@ -140,7 +149,7 @@ html[data-theme='corbits-dark'] {
   --sidebar-ring: var(--accent);
 }
 
-html[data-theme='corbits-light'] {
+html[data-theme="corbits-light"] {
   --page: #ffffff;
   --bg: #f2f4f5;
   --surface: #ffffff;
@@ -164,7 +173,7 @@ html[data-theme='corbits-light'] {
   --sidebar-ring: var(--accent);
 }
 
-html[data-theme='tkww'] {
+html[data-theme="tkww"] {
   --page: #f7faf6;
   --bg: #f0f4ee;
   --surface: #ffffff;
@@ -188,7 +197,7 @@ html[data-theme='tkww'] {
   --sidebar-ring: #2e7d50;
 }
 
-html[data-theme='notion'] {
+html[data-theme="notion"] {
   --page: #ffffff;
   --bg: #ffffff;
   --surface: #ffffff;

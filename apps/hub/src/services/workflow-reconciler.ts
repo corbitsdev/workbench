@@ -1,13 +1,13 @@
-import { and, inArray, isNotNull, isNull } from 'drizzle-orm';
-import { deriveDeploymentAddress } from '@intx/workflow-deploy';
-import { getLogger } from '@intx/log';
-import type { SidecarRouter } from '@intx/hub-sessions';
-import type { HubDb } from '../db';
-import { workflowRun, workflowRunRecord } from '../db/schema';
-import { createRunStore, loadRunRecord } from '../workflow-executor/run-store';
-import type { EnsureDeploymentRoutableFn } from '../routes/workflow-runs';
+import { and, inArray, isNotNull, isNull } from "drizzle-orm";
+import { deriveDeploymentAddress } from "@intx/workflow-deploy";
+import { getLogger } from "@intx/log";
+import type { SidecarRouter } from "@intx/hub-sessions";
+import type { HubDb } from "../db";
+import { workflowRun, workflowRunRecord } from "../db/schema";
+import { createRunStore, loadRunRecord } from "../workflow-executor/run-store";
+import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 
-const log = getLogger(['services', 'workflow-reconciler']);
+const log = getLogger(["services", "workflow-reconciler"]);
 
 // Hub-as-control-plane reconciliation of workflow supervisor deployments.
 //
@@ -53,9 +53,9 @@ export interface WorkflowReconciler {
 
 export function createWorkflowReconciler(deps: {
   db: HubDb;
-  events: SidecarRouter['events'];
+  events: SidecarRouter["events"];
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
-  getRoutableAddresses: SidecarRouter['getRoutableAddresses'];
+  getRoutableAddresses: SidecarRouter["getRoutableAddresses"];
   deploymentDomain: string;
 }): WorkflowReconciler {
   // Single-flight guard. A sidecar restart fires one agent.reconnected per
@@ -81,9 +81,9 @@ export function createWorkflowReconciler(deps: {
       .from(workflowRunRecord)
       .where(
         and(
-          inArray(workflowRunRecord.status, ['running', 'awaiting']),
-          isNull(workflowRunRecord.deletedAt)
-        )
+          inArray(workflowRunRecord.status, ["running", "awaiting"]),
+          isNull(workflowRunRecord.deletedAt),
+        ),
       );
 
     if (stuckRuns.length === 0) return;
@@ -100,17 +100,18 @@ export function createWorkflowReconciler(deps: {
               deploymentId: run.deploymentId,
               deploymentDomain: deps.deploymentDomain,
             });
-      if (supervisorAddress !== null && routable.has(supervisorAddress)) continue;
+      if (supervisorAddress !== null && routable.has(supervisorAddress))
+        continue;
 
       try {
         const state = await loadRunRecord(deps.db, run.id);
         if (state === null) continue;
-        state.status = 'failed';
-        state.error = 'interrupted by restart';
+        state.status = "failed";
+        state.error = "interrupted by restart";
         await runStore.save(state);
         failed += 1;
       } catch (err) {
-        log.warn('failOrphanedRuns: failed to mark run failed', {
+        log.warn("failOrphanedRuns: failed to mark run failed", {
           runId: run.id,
           error: err instanceof Error ? err.message : String(err),
         });
@@ -118,7 +119,7 @@ export function createWorkflowReconciler(deps: {
     }
 
     if (failed > 0) {
-      log.info('failOrphanedRuns: marked interrupted runs failed', {
+      log.info("failOrphanedRuns: marked interrupted runs failed", {
         candidates: stuckRuns.length,
         failed,
       });
@@ -137,7 +138,12 @@ export function createWorkflowReconciler(deps: {
           principalId: workflowRun.principalId,
         })
         .from(workflowRun)
-        .where(and(isNotNull(workflowRun.deploymentId), isNull(workflowRun.deletedAt)));
+        .where(
+          and(
+            isNotNull(workflowRun.deploymentId),
+            isNull(workflowRun.deletedAt),
+          ),
+        );
 
       let reestablished = 0;
       for (const row of rows) {
@@ -151,7 +157,7 @@ export function createWorkflowReconciler(deps: {
           });
           if (result.reestablished) reestablished += 1;
         } catch (err) {
-          log.warn('workflow reconcile: re-establish failed for deployment', {
+          log.warn("workflow reconcile: re-establish failed for deployment", {
             deploymentId: row.deploymentId,
             kind: row.kind,
             error: err instanceof Error ? err.message : String(err),
@@ -159,7 +165,7 @@ export function createWorkflowReconciler(deps: {
         }
       }
       if (reestablished > 0) {
-        log.info('workflow reconcile pass complete', {
+        log.info("workflow reconcile pass complete", {
           active: rows.length,
           reestablished,
         });
@@ -176,9 +182,9 @@ export function createWorkflowReconciler(deps: {
       // The handler is awaited by the sidecar-handler's reconnect flow; it must
       // never throw, or it would fail the address's reconnection. reconcileAll is
       // self-guarded; fire-and-forget with an internal catch keeps this safe.
-      return deps.events.on('agent.reconnected', () => {
+      return deps.events.on("agent.reconnected", () => {
         void reconcileAll().catch((err) => {
-          log.warn('workflow reconcile pass failed', {
+          log.warn("workflow reconcile pass failed", {
             error: err instanceof Error ? err.message : String(err),
           });
         });

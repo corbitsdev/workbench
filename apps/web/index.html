@@ -4,30 +4,39 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Set the theme before first paint to avoid a flash of the wrong theme.
-         Must stay in sync with use-theme.ts (key "cw-theme", default "corbits-dark"). -->
+         Must stay in sync with use-theme.ts (key "cw-theme", default "corbits-light"). -->
     <script>
       function initTheme() {
-        const THEMES = new Set(['corbits-dark', 'corbits-light', 'tkww', 'notion']);
-        const LEGACY = new Map([
-          ['dark', 'corbits-dark'],
-          ['light', 'corbits-light'],
+        const THEMES = new Set([
+          "corbits-dark",
+          "corbits-light",
+          "tkww",
+          "notion",
         ]);
+        const LEGACY = new Map([
+          ["dark", "corbits-dark"],
+          ["light", "corbits-light"],
+        ]);
+        const DEFAULT_THEME = "corbits-light";
         try {
-          let t = localStorage.getItem('cw-theme');
+          let t = localStorage.getItem("cw-theme");
           if (t !== null) {
             t = LEGACY.get(t) ?? t;
-            document.documentElement.setAttribute('data-theme', THEMES.has(t) ? t : 'corbits-dark');
+            document.documentElement.setAttribute(
+              "data-theme",
+              THEMES.has(t) ? t : DEFAULT_THEME,
+            );
           } else {
-            document.documentElement.setAttribute('data-theme', 'corbits-dark');
+            document.documentElement.setAttribute("data-theme", DEFAULT_THEME);
           }
         } catch (e) {
-          document.documentElement.setAttribute('data-theme', 'corbits-dark');
+          document.documentElement.setAttribute("data-theme", DEFAULT_THEME);
         }
       }
       initTheme();
     </script>
-    <title>Workbench | Corbits Interchange</title>
-    <link rel="icon" type="image/svg+xml" href="/corbits-favicon.svg" />
+    <title>Workbench | Corbits</title>
+    <link rel="icon" type="image/svg+xml" href="/corbits-favicon-mono.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

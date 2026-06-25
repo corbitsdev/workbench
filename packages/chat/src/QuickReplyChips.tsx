@@ -1,5 +1,5 @@
-import { cn } from '@workbench/ui';
-import { type QuickReply } from './types';
+import { cn } from "@workbench/ui";
+import { type QuickReply } from "./types";
 
 export interface QuickReplyChipsProps {
   replies: QuickReply[];
@@ -9,11 +9,15 @@ export interface QuickReplyChipsProps {
 }
 
 /** A horizontal set of tappable suggested-reply chips. */
-export function QuickReplyChips({ replies, onSelect, className }: QuickReplyChipsProps) {
+export function QuickReplyChips({
+  replies,
+  onSelect,
+  className,
+}: QuickReplyChipsProps) {
   if (replies.length === 0) return null;
 
   return (
-    <div className={cn('flex flex-wrap gap-2', className)}>
+    <div className={cn("flex flex-wrap gap-2", className)}>
       {replies.map((reply) => (
         <button
           key={reply.id}

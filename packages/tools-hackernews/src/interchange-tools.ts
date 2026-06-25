@@ -8,10 +8,10 @@
 // HackerNews is keyless (public Algolia API), so the factory touches no
 // env keys beyond BaseEnv and declares no `requires`.
 
-import { createToolRunner, defineTool } from '@intx/agent';
-import { createHackerNewsTools } from './tools';
+import { createToolRunner, defineTool } from "@intx/agent";
+import { createHackerNewsTools } from "./tools";
 
 export const hackernews = defineTool({
-  id: '@workbench/tools-hackernews/hackernews',
+  id: "@workbench/tools-hackernews/hackernews",
   factory: () => createToolRunner(createHackerNewsTools()),
 });

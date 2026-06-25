@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
 import {
   formatSummary,
@@ -6,7 +6,7 @@ import {
   parseLcov,
   shouldExclude,
   summarize,
-} from './coverage-merge.ts';
+} from "./coverage-merge.ts";
 
 const LCOV_A = `TN:
 SF:src/index.ts
@@ -41,12 +41,12 @@ DA:2,0
 end_of_record
 `;
 
-describe('parseLcov', () => {
-  test('extracts per-file DA line/count pairs', () => {
+describe("parseLcov", () => {
+  test("extracts per-file DA line/count pairs", () => {
     const files = parseLcov(LCOV_A);
     expect(files).toEqual([
       {
-        file: 'src/index.ts',
+        file: "src/index.ts",
         lines: [
           [1, 5],
           [2, 5],
@@ -56,54 +56,58 @@ describe('parseLcov', () => {
     ]);
   });
 
-  test('parses multiple records', () => {
+  test("parses multiple records", () => {
     expect(parseLcov(LCOV_B)).toHaveLength(2);
   });
 
-  test('ignores empty input', () => {
-    expect(parseLcov('')).toEqual([]);
+  test("ignores empty input", () => {
+    expect(parseLcov("")).toEqual([]);
   });
 });
 
-describe('shouldExclude', () => {
-  test('excludes interchange, node_modules, and test files', () => {
-    expect(shouldExclude('/repo/interchange/packages/types/src/runtime.ts')).toBe(true);
-    expect(shouldExclude('/repo/node_modules/foo/index.js')).toBe(true);
-    expect(shouldExclude('/repo/packages/a/src/index.test.ts')).toBe(true);
-    expect(shouldExclude('/repo/packages/a/src/index.spec.ts')).toBe(true);
+describe("shouldExclude", () => {
+  test("excludes interchange, node_modules, and test files", () => {
+    expect(
+      shouldExclude("/repo/interchange/packages/types/src/runtime.ts"),
+    ).toBe(true);
+    expect(shouldExclude("/repo/node_modules/foo/index.js")).toBe(true);
+    expect(shouldExclude("/repo/packages/a/src/index.test.ts")).toBe(true);
+    expect(shouldExclude("/repo/packages/a/src/index.spec.ts")).toBe(true);
   });
 
-  test('keeps first-party source files', () => {
-    expect(shouldExclude('/repo/packages/a/src/index.ts')).toBe(false);
+  test("keeps first-party source files", () => {
+    expect(shouldExclude("/repo/packages/a/src/index.ts")).toBe(false);
   });
 });
 
-describe('mergeCoverage', () => {
-  test('unions line hits for the same file across workspaces', () => {
+describe("mergeCoverage", () => {
+  test("unions line hits for the same file across workspaces", () => {
     const merged = mergeCoverage([
-      { baseDir: '/repo/packages/a', content: LCOV_A },
-      { baseDir: '/repo/packages/b', content: LCOV_B },
+      { baseDir: "/repo/packages/a", content: LCOV_A },
+      { baseDir: "/repo/packages/b", content: LCOV_B },
     ]);
     // ../a/src/index.ts from baseDir /repo/packages/b resolves to the same
     // absolute path as src/index.ts from /repo/packages/a — one entry.
-    const idx = merged.get('/repo/packages/a/src/index.ts');
+    const idx = merged.get("/repo/packages/a/src/index.ts");
     expect(idx).toBeDefined();
     // Line 3 was 0 in A and 4 in B -> covered.
     expect(idx?.get(3)).toBe(4);
-    expect(merged.has('/repo/packages/b/src/local.ts')).toBe(true);
+    expect(merged.has("/repo/packages/b/src/local.ts")).toBe(true);
   });
 
-  test('drops vendored and excluded files', () => {
-    const merged = mergeCoverage([{ baseDir: '/repo/apps/hub', content: LCOV_VENDOR }]);
+  test("drops vendored and excluded files", () => {
+    const merged = mergeCoverage([
+      { baseDir: "/repo/apps/hub", content: LCOV_VENDOR },
+    ]);
     expect(merged.size).toBe(0);
   });
 });
 
-describe('summarize', () => {
-  test('counts distinct instrumented lines and union hits', () => {
+describe("summarize", () => {
+  test("counts distinct instrumented lines and union hits", () => {
     const merged = mergeCoverage([
-      { baseDir: '/repo/packages/a', content: LCOV_A },
-      { baseDir: '/repo/packages/b', content: LCOV_B },
+      { baseDir: "/repo/packages/a", content: LCOV_A },
+      { baseDir: "/repo/packages/b", content: LCOV_B },
     ]);
     const summary = summarize(merged);
     // index.ts: 3 lines, all covered via union. local.ts: 2 lines, 0 covered.
@@ -112,18 +116,20 @@ describe('summarize', () => {
     expect(summary.linePct).toBeCloseTo(60, 5);
   });
 
-  test('reports 100% when nothing is instrumented', () => {
+  test("reports 100% when nothing is instrumented", () => {
     const summary = summarize(new Map());
     expect(summary.linePct).toBe(100);
     expect(summary.linesFound).toBe(0);
   });
 });
 
-describe('formatSummary', () => {
-  test('renders the line percentage and counts', () => {
-    const summary = summarize(mergeCoverage([{ baseDir: '/repo/packages/a', content: LCOV_A }]));
+describe("formatSummary", () => {
+  test("renders the line percentage and counts", () => {
+    const summary = summarize(
+      mergeCoverage([{ baseDir: "/repo/packages/a", content: LCOV_A }]),
+    );
     const out = formatSummary(summary);
-    expect(out).toContain('66.67%');
-    expect(out).toContain('2/3');
+    expect(out).toContain("66.67%");
+    expect(out).toContain("2/3");
   });
 });

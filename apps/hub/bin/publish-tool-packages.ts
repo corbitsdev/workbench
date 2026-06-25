@@ -297,7 +297,8 @@ async function runCLI(): Promise<void> {
 
   const hubURL = requireEnv("HUB_URL");
   // Prefer a session cookie; fall back to admin email + password.
-  const sessionCookie = process.env.HUB_SESSION_COOKIE;
+  const sessionCookie =
+    process.env.HUB_SESSION_COOKIE ?? process.env.SESSION_TOKEN;
   const useSession = sessionCookie !== undefined && sessionCookie !== "";
   const adminEmail = useSession ? undefined : requireEnv("HUB_ADMIN_EMAIL");
   const adminPassword = useSession

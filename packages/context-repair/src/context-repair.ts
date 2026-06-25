@@ -1,4 +1,4 @@
-import type { ConversationTurn } from '@intx/types/runtime';
+import type { ConversationTurn } from "@intx/types/runtime";
 
 /**
  * True for an assistant turn that the OpenAI-compatible adapter would marshal
@@ -18,8 +18,10 @@ import type { ConversationTurn } from '@intx/types/runtime';
  * would corrupt the conversation, so the adapter is left to surface it.
  */
 function isUnsendableAssistantTurn(turn: ConversationTurn): boolean {
-  if (turn.role !== 'assistant') return false;
-  return !turn.content.some((block) => block.type === 'text' || block.type === 'tool_call');
+  if (turn.role !== "assistant") return false;
+  return !turn.content.some(
+    (block) => block.type === "text" || block.type === "tool_call",
+  );
 }
 
 export interface ContextRepairResult {
@@ -32,7 +34,9 @@ export interface ContextRepairResult {
  * Returns the original array reference untouched when there is nothing to
  * remove, so callers can cheaply skip the commit in the common case.
  */
-export function stripUnsendableAssistantTurns(turns: ConversationTurn[]): ContextRepairResult {
+export function stripUnsendableAssistantTurns(
+  turns: ConversationTurn[],
+): ContextRepairResult {
   const kept = turns.filter((turn) => !isUnsendableAssistantTurn(turn));
   if (kept.length === turns.length) {
     return { turns, removedCount: 0 };
@@ -40,8 +44,8 @@ export function stripUnsendableAssistantTurns(turns: ConversationTurn[]): Contex
   return { turns: kept, removedCount: turns.length - kept.length };
 }
 
-type ContentBlock = ConversationTurn['content'][number];
-type ToolCallBlock = Extract<ContentBlock, { type: 'tool_call' }>;
+type ContentBlock = ConversationTurn["content"][number];
+type ToolCallBlock = Extract<ContentBlock, { type: "tool_call" }>;
 
 /**
  * Body of the placeholder result we synthesize for an interrupted tool call.
@@ -50,20 +54,23 @@ type ToolCallBlock = Extract<ContentBlock, { type: 'tool_call' }>;
  * vanishing from history.
  */
 const INTERRUPTED_TOOL_RESULT_TEXT =
-  'Tool call interrupted — the session ended before a result was recorded. No result is available; retry the call or continue without it.';
+  "Tool call interrupted — the session ended before a result was recorded. No result is available; retry the call or continue without it.";
 
 function isToolCall(block: ContentBlock): block is ToolCallBlock {
-  return block.type === 'tool_call';
+  return block.type === "tool_call";
 }
 
-function synthesizeResultTurn(calls: ToolCallBlock[], timestamp: number): ConversationTurn {
+function synthesizeResultTurn(
+  calls: ToolCallBlock[],
+  timestamp: number,
+): ConversationTurn {
   return {
-    role: 'user',
+    role: "user",
     timestamp,
     content: calls.map((call) => ({
-      type: 'tool_result' as const,
+      type: "tool_result" as const,
       callId: call.id,
-      content: [{ type: 'text' as const, text: INTERRUPTED_TOOL_RESULT_TEXT }],
+      content: [{ type: "text" as const, text: INTERRUPTED_TOOL_RESULT_TEXT }],
       isError: true,
     })),
   };
@@ -92,13 +99,15 @@ export interface ToolPairingRepairResult {
  * dropped (their call is gone, so nothing can legitimately answer them).
  * Returns the original array reference when pairing is already sound.
  */
-export function repairToolCallPairing(turns: ConversationTurn[]): ToolPairingRepairResult {
+export function repairToolCallPairing(
+  turns: ConversationTurn[],
+): ToolPairingRepairResult {
   const answeredCallIds = new Set<string>();
   const presentCallIds = new Set<string>();
   for (const turn of turns) {
     for (const block of turn.content) {
-      if (block.type === 'tool_result') answeredCallIds.add(block.callId);
-      else if (block.type === 'tool_call') presentCallIds.add(block.id);
+      if (block.type === "tool_result") answeredCallIds.add(block.callId);
+      else if (block.type === "tool_call") presentCallIds.add(block.id);
     }
   }
 
@@ -108,7 +117,8 @@ export function repairToolCallPairing(turns: ConversationTurn[]): ToolPairingRep
 
   for (const turn of turns) {
     const dangling = turn.content.filter(
-      (block) => block.type === 'tool_result' && !presentCallIds.has(block.callId)
+      (block) =>
+        block.type === "tool_result" && !presentCallIds.has(block.callId),
     );
 
     let content = turn.content;
@@ -125,8 +135,10 @@ export function repairToolCallPairing(turns: ConversationTurn[]): ToolPairingRep
 
     // Synthesize for unanswered calls even on a turn we just cleaned of a
     // dangling result — the two repairs are independent and must both apply.
-    if (cleaned.role !== 'assistant') continue;
-    const unanswered = content.filter(isToolCall).filter((call) => !answeredCallIds.has(call.id));
+    if (cleaned.role !== "assistant") continue;
+    const unanswered = content
+      .filter(isToolCall)
+      .filter((call) => !answeredCallIds.has(call.id));
     if (unanswered.length > 0) {
       repaired.push(synthesizeResultTurn(unanswered, turn.timestamp));
       synthesizedResults += unanswered.length;
@@ -157,7 +169,9 @@ export function healTurns(turns: ConversationTurn[]): ContextHealResult {
   const stripped = stripUnsendableAssistantTurns(turns);
   const repaired = repairToolCallPairing(stripped.turns);
   const changed =
-    stripped.removedCount > 0 || repaired.synthesizedResults > 0 || repaired.droppedResults > 0;
+    stripped.removedCount > 0 ||
+    repaired.synthesizedResults > 0 ||
+    repaired.droppedResults > 0;
   return {
     turns: changed ? repaired.turns : turns,
     changed,

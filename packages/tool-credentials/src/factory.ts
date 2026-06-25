@@ -7,18 +7,18 @@ import {
   type AnnotatedToolFactory,
   createToolRunner,
   defineTool,
-} from '@intx/agent';
-import type { ToolDefinition, ToolResult } from '@intx/types/runtime';
-import { type } from 'arktype';
+} from "@intx/agent";
+import type { ToolDefinition, ToolResult } from "@intx/types/runtime";
+import { type } from "arktype";
 import {
   HUB_RPC_ENV_KEY,
   type ToolCredential,
   getHubRpc,
   getToolCredential,
   toolCredentialEnvKey,
-} from './index';
+} from "./index";
 
-const HubToolRunResponse = type({ result: 'string', isError: 'boolean' });
+const HubToolRunResponse = type({ result: "string", isError: "boolean" });
 
 /** A `*_HUB_TOOLS`-style entry whose tools are built from a credential. */
 export type CredentialedToolEntry = {
@@ -42,12 +42,13 @@ export function defineCredentialedToolPackage(opts: {
     factory: (env) => {
       const credential = getToolCredential(
         env as unknown as Record<string, unknown>,
-        opts.provider
+        opts.provider,
       );
       const byName = new Map<string, AgentTool>();
       for (const entry of Object.values(opts.entries)) {
         for (const tool of entry.createTools(credential)) {
-          if (!byName.has(tool.definition.name)) byName.set(tool.definition.name, tool);
+          if (!byName.has(tool.definition.name))
+            byName.set(tool.definition.name, tool);
         }
       }
       return createToolRunner([...byName.values()]);
@@ -75,22 +76,25 @@ export function defineHubBackedToolPackage(opts: {
         definitions: opts.definitions,
         async run(call, signal): Promise<ToolResult> {
           try {
-            const res = await fetch(`${ctx.baseURL}/api/internal/hub-tools/run`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${ctx.token}`,
+            const res = await fetch(
+              `${ctx.baseURL}/api/internal/hub-tools/run`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${ctx.token}`,
+                },
+                body: JSON.stringify({
+                  tenantId: ctx.tenantId,
+                  agentId: ctx.agentId,
+                  principalId: ctx.principalId,
+                  sessionId: ctx.sessionId,
+                  toolName: call.name,
+                  args: call.arguments,
+                }),
+                signal,
               },
-              body: JSON.stringify({
-                tenantId: ctx.tenantId,
-                agentId: ctx.agentId,
-                principalId: ctx.principalId,
-                sessionId: ctx.sessionId,
-                toolName: call.name,
-                args: call.arguments,
-              }),
-              signal,
-            });
+            );
             if (!res.ok) {
               const text = await res.text();
               return {
@@ -107,7 +111,11 @@ export function defineHubBackedToolPackage(opts: {
                 isError: true,
               };
             }
-            return { callId: call.id, content: parsed.result, isError: parsed.isError };
+            return {
+              callId: call.id,
+              content: parsed.result,
+              isError: parsed.isError,
+            };
           } catch (err) {
             return {
               callId: call.id,

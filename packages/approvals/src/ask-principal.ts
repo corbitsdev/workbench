@@ -10,10 +10,10 @@
 // the ReviewGate UI calls. This tool uses the internal route authenticated
 // with the sidecar token.
 
-import { tool } from '@intx/agent';
-import type { AgentTool } from '@intx/agent';
+import { tool } from "@intx/agent";
+import type { AgentTool } from "@intx/agent";
 
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type ApprovalStatus = "pending" | "approved" | "rejected";
 
 type ApprovalRecord = {
   id: string;
@@ -33,7 +33,7 @@ export type AskPrincipalToolOpts = {
 class HubRequestError extends Error {
   constructor(
     public readonly status: number,
-    message: string
+    message: string,
   ) {
     super(message);
   }
@@ -44,51 +44,63 @@ async function fetchHub<T>(
   sidecarToken: string,
   method: string,
   path: string,
-  body?: unknown
+  body?: unknown,
 ): Promise<T> {
-  const url = `${hubHttpUrl.replace(/\/$/, '')}${path}`;
+  const url = `${hubHttpUrl.replace(/\/$/, "")}${path}`;
   const res = await fetch(url, {
     method,
     headers: {
       Authorization: `Bearer ${sidecarToken}`,
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new HubRequestError(res.status, `Hub request failed: ${res.status} ${text}`);
+    const text = await res.text().catch(() => "");
+    throw new HubRequestError(
+      res.status,
+      `Hub request failed: ${res.status} ${text}`,
+    );
   }
   return res.json() as Promise<T>;
 }
 
 export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
-  const { hubHttpUrl, sidecarToken, tenantId, agentId, principalId, pollIntervalMs = 3000 } = opts;
+  const {
+    hubHttpUrl,
+    sidecarToken,
+    tenantId,
+    agentId,
+    principalId,
+    pollIntervalMs = 3000,
+  } = opts;
 
   return tool({
     definition: {
-      name: 'ask_principal',
+      name: "ask_principal",
       description:
-        'Pause and ask the tenant principal (human or agent) whether to proceed with an action. The agent waits until the principal approves or rejects before continuing.',
+        "Pause and ask the tenant principal (human or agent) whether to proceed with an action. The agent waits until the principal approves or rejects before continuing.",
       inputSchema: {
-        type: 'object',
+        type: "object",
         properties: {
           action: {
-            type: 'string',
-            description: 'Plain-language description of the action you want to take.',
+            type: "string",
+            description:
+              "Plain-language description of the action you want to take.",
           },
           resource: {
-            type: 'string',
+            type: "string",
             description:
               'The resource the action targets (e.g. "email://send", "artifact://publish").',
           },
           context: {
-            type: 'object',
-            description: 'Optional structured context that helps the principal decide.',
+            type: "object",
+            description:
+              "Optional structured context that helps the principal decide.",
             additionalProperties: true,
           },
         },
-        required: ['action', 'resource'],
+        required: ["action", "resource"],
       },
     },
     handler: async (call, signal) => {
@@ -103,8 +115,8 @@ export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
         approval = await fetchHub<ApprovalRecord>(
           hubHttpUrl,
           sidecarToken,
-          'POST',
-          '/api/internal/approvals',
+          "POST",
+          "/api/internal/approvals",
           {
             tenantId,
             agentId,
@@ -112,12 +124,15 @@ export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
             action: args.action,
             resource: args.resource,
             context: args.context ?? null,
-          }
+          },
         );
       } catch (err) {
         return {
           callId: call.id,
-          content: err instanceof Error ? err.message : 'Failed to create approval request.',
+          content:
+            err instanceof Error
+              ? err.message
+              : "Failed to create approval request.",
           isError: true,
         };
       }
@@ -126,7 +141,7 @@ export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
       while (!signal.aborted) {
         await new Promise<void>((resolve) => {
           const t = setTimeout(resolve, pollIntervalMs);
-          signal.addEventListener('abort', () => {
+          signal.addEventListener("abort", () => {
             clearTimeout(t);
             resolve();
           });
@@ -138,18 +153,22 @@ export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
           const current = await fetchHub<ApprovalRecord>(
             hubHttpUrl,
             sidecarToken,
-            'GET',
-            `/api/internal/approvals/${approval.id}?tenantId=${encodeURIComponent(tenantId)}`
+            "GET",
+            `/api/internal/approvals/${approval.id}?tenantId=${encodeURIComponent(tenantId)}`,
           );
 
-          if (current.status !== 'pending') {
-            const verdict = current.status === 'approved' ? 'Approved' : 'Rejected';
-            const detail = current.message ? `: ${current.message}` : '.';
+          if (current.status !== "pending") {
+            const verdict =
+              current.status === "approved" ? "Approved" : "Rejected";
+            const detail = current.message ? `: ${current.message}` : ".";
             return { callId: call.id, content: `${verdict}${detail}` };
           }
         } catch (err) {
           // Permanent errors (404 = record gone, 401/403 = auth failure) — abort immediately.
-          if (err instanceof HubRequestError && (err.status === 404 || err.status < 500)) {
+          if (
+            err instanceof HubRequestError &&
+            (err.status === 404 || err.status < 500)
+          ) {
             return {
               callId: call.id,
               content: `Approval poll failed permanently: ${err.message}`,
@@ -160,7 +179,11 @@ export function createAskPrincipalTool(opts: AskPrincipalToolOpts): AgentTool {
         }
       }
 
-      return { callId: call.id, content: 'Approval request cancelled.', isError: true };
+      return {
+        callId: call.id,
+        content: "Approval request cancelled.",
+        isError: true,
+      };
     },
   });
 }

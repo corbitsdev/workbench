@@ -1,4 +1,4 @@
-import { scope } from "arktype"
+import { scope } from "arktype";
 
 // Arktype validators for the OpenAPI 3.1 spec structure (post-dereference).
 // We only model the parts we consume — not the full spec.
@@ -83,19 +83,19 @@ const oasScope = scope({
     "paths?": "Record<string, pathItem>",
     "components?": "components",
   },
-})
+});
 
-export const oasTypes = oasScope.export()
+export const oasTypes = oasScope.export();
 
-export type OASSpec = typeof oasTypes.openApiSpec.infer
-export type OASPathItem = typeof oasTypes.pathItem.infer
-export type OASOperation = typeof oasTypes.operation.infer
-export type OASParameter = typeof oasTypes.parameter.infer
-export type OASRequestBody = typeof oasTypes.requestBody.infer
-export type OASResponse = typeof oasTypes.response.infer
-export type OASMediaType = typeof oasTypes.mediaType.infer
-export type OASInfo = typeof oasTypes.info.infer
-export type OASServer = typeof oasTypes.server.infer
-export type OASComponents = typeof oasTypes.components.infer
-export type OASHeader = typeof oasTypes.header.infer
-export type JSONSchema = typeof oasTypes.jsonSchema.infer
+export type OASSpec = typeof oasTypes.openApiSpec.infer;
+export type OASPathItem = typeof oasTypes.pathItem.infer;
+export type OASOperation = typeof oasTypes.operation.infer;
+export type OASParameter = typeof oasTypes.parameter.infer;
+export type OASRequestBody = typeof oasTypes.requestBody.infer;
+export type OASResponse = typeof oasTypes.response.infer;
+export type OASMediaType = typeof oasTypes.mediaType.infer;
+export type OASInfo = typeof oasTypes.info.infer;
+export type OASServer = typeof oasTypes.server.infer;
+export type OASComponents = typeof oasTypes.components.infer;
+export type OASHeader = typeof oasTypes.header.infer;
+export type JSONSchema = typeof oasTypes.jsonSchema.infer;

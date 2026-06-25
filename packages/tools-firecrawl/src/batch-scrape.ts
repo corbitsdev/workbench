@@ -5,8 +5,8 @@
  * its status, inspect errors, or cancel it. These four tools wrap Firecrawl's
  * `/batch/scrape` endpoints and pass parsed JSON straight through.
  */
-import type { AgentTool } from '@intx/agent';
-import type { ToolDefinition } from '@intx/types/runtime';
+import type { AgentTool } from "@intx/agent";
+import type { ToolDefinition } from "@intx/types/runtime";
 import {
   type FirecrawlToolsConfig,
   type ResolvedFirecrawlConfig,
@@ -16,74 +16,77 @@ import {
   requiredStringArray,
   resolveConfig,
   stringTool,
-} from './shared';
+} from "./shared";
 
 export const FIRECRAWL_BATCH_SCRAPE_START_DEFINITION: ToolDefinition = {
-  name: 'firecrawl_batch_scrape_start',
+  name: "firecrawl_batch_scrape_start",
   description:
-    'Start a batch scrape job for a list of URLs. Returns a job id you can use to poll status, fetch errors, or cancel. Use this to scrape many pages at once.',
+    "Start a batch scrape job for a list of URLs. Returns a job id you can use to poll status, fetch errors, or cancel. Use this to scrape many pages at once.",
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
       urls: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'The list of URLs to scrape.',
+        type: "array",
+        items: { type: "string" },
+        description: "The list of URLs to scrape.",
       },
       scrapeOptions: {
-        type: 'object',
+        type: "object",
         description:
-          'Optional Firecrawl scrape options applied to every URL (formats, onlyMainContent, includeTags, excludeTags, waitFor, timeout, etc.).',
+          "Optional Firecrawl scrape options applied to every URL (formats, onlyMainContent, includeTags, excludeTags, waitFor, timeout, etc.).",
       },
     },
-    required: ['urls'],
+    required: ["urls"],
   },
 };
 
 export const FIRECRAWL_BATCH_SCRAPE_STATUS_DEFINITION: ToolDefinition = {
-  name: 'firecrawl_batch_scrape_status',
+  name: "firecrawl_batch_scrape_status",
   description:
-    'Get the status and results of a batch scrape job by its id. Returns job state, progress counts, credits used, and scraped page data.',
+    "Get the status and results of a batch scrape job by its id. Returns job state, progress counts, credits used, and scraped page data.",
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
       id: {
-        type: 'string',
-        description: 'The batch scrape job id returned by firecrawl_batch_scrape_start.',
+        type: "string",
+        description:
+          "The batch scrape job id returned by firecrawl_batch_scrape_start.",
       },
     },
-    required: ['id'],
+    required: ["id"],
   },
 };
 
 export const FIRECRAWL_BATCH_SCRAPE_ERRORS_DEFINITION: ToolDefinition = {
-  name: 'firecrawl_batch_scrape_errors',
+  name: "firecrawl_batch_scrape_errors",
   description:
-    'Get the errors for a batch scrape job by its id. Returns failed scrape attempts and URLs blocked by robots.txt.',
+    "Get the errors for a batch scrape job by its id. Returns failed scrape attempts and URLs blocked by robots.txt.",
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
       id: {
-        type: 'string',
-        description: 'The batch scrape job id returned by firecrawl_batch_scrape_start.',
+        type: "string",
+        description:
+          "The batch scrape job id returned by firecrawl_batch_scrape_start.",
       },
     },
-    required: ['id'],
+    required: ["id"],
   },
 };
 
 export const FIRECRAWL_BATCH_SCRAPE_CANCEL_DEFINITION: ToolDefinition = {
-  name: 'firecrawl_batch_scrape_cancel',
-  description: 'Cancel a running batch scrape job by its id.',
+  name: "firecrawl_batch_scrape_cancel",
+  description: "Cancel a running batch scrape job by its id.",
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
       id: {
-        type: 'string',
-        description: 'The batch scrape job id returned by firecrawl_batch_scrape_start.',
+        type: "string",
+        description:
+          "The batch scrape job id returned by firecrawl_batch_scrape_start.",
       },
     },
-    required: ['id'],
+    required: ["id"],
   },
 };
 
@@ -97,9 +100,9 @@ export const BATCH_SCRAPE_DEFINITIONS: ToolDefinition[] = [
 async function startBatchScrape(
   config: ResolvedFirecrawlConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const urls = requiredStringArray(args, 'urls');
+  const urls = requiredStringArray(args, "urls");
   const scrapeOptions = optionalRecord(args.scrapeOptions);
 
   const body: Record<string, unknown> = {
@@ -107,63 +110,69 @@ async function startBatchScrape(
     ...(scrapeOptions !== null ? scrapeOptions : {}),
   };
 
-  return firecrawlFetchJSON(config, { method: 'POST', path: '/batch/scrape', body }, signal);
+  return firecrawlFetchJSON(
+    config,
+    { method: "POST", path: "/batch/scrape", body },
+    signal,
+  );
 }
 
 async function batchScrapeStatus(
   config: ResolvedFirecrawlConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, 'id');
+  const id = requiredString(args, "id");
   return firecrawlFetchJSON(
     config,
-    { method: 'GET', path: `/batch/scrape/${encodeURIComponent(id)}` },
-    signal
+    { method: "GET", path: `/batch/scrape/${encodeURIComponent(id)}` },
+    signal,
   );
 }
 
 async function batchScrapeErrors(
   config: ResolvedFirecrawlConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, 'id');
+  const id = requiredString(args, "id");
   return firecrawlFetchJSON(
     config,
-    { method: 'GET', path: `/batch/scrape/${encodeURIComponent(id)}/errors` },
-    signal
+    { method: "GET", path: `/batch/scrape/${encodeURIComponent(id)}/errors` },
+    signal,
   );
 }
 
 async function cancelBatchScrape(
   config: ResolvedFirecrawlConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, 'id');
+  const id = requiredString(args, "id");
   return firecrawlFetchJSON(
     config,
-    { method: 'DELETE', path: `/batch/scrape/${encodeURIComponent(id)}` },
-    signal
+    { method: "DELETE", path: `/batch/scrape/${encodeURIComponent(id)}` },
+    signal,
   );
 }
 
-export function createBatchScrapeTools(config: FirecrawlToolsConfig): AgentTool[] {
+export function createBatchScrapeTools(
+  config: FirecrawlToolsConfig,
+): AgentTool[] {
   const resolved = resolveConfig(config);
 
   return [
     stringTool(FIRECRAWL_BATCH_SCRAPE_START_DEFINITION, (args, signal) =>
-      startBatchScrape(resolved, args, signal)
+      startBatchScrape(resolved, args, signal),
     ),
     stringTool(FIRECRAWL_BATCH_SCRAPE_STATUS_DEFINITION, (args, signal) =>
-      batchScrapeStatus(resolved, args, signal)
+      batchScrapeStatus(resolved, args, signal),
     ),
     stringTool(FIRECRAWL_BATCH_SCRAPE_ERRORS_DEFINITION, (args, signal) =>
-      batchScrapeErrors(resolved, args, signal)
+      batchScrapeErrors(resolved, args, signal),
     ),
     stringTool(FIRECRAWL_BATCH_SCRAPE_CANCEL_DEFINITION, (args, signal) =>
-      cancelBatchScrape(resolved, args, signal)
+      cancelBatchScrape(resolved, args, signal),
     ),
   ];
 }

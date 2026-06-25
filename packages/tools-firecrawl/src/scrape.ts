@@ -1,5 +1,5 @@
-import type { AgentTool } from '@intx/agent';
-import type { ToolDefinition } from '@intx/types/runtime';
+import type { AgentTool } from "@intx/agent";
+import type { ToolDefinition } from "@intx/types/runtime";
 import {
   firecrawlFetchJSON,
   optionalBoolean,
@@ -11,7 +11,7 @@ import {
   stringTool,
   type FirecrawlToolsConfig,
   type ResolvedFirecrawlConfig,
-} from './shared';
+} from "./shared";
 
 const MAX_WAIT_FOR_MS = 60_000;
 const MAX_TIMEOUT_MS = 300_000;
@@ -19,9 +19,9 @@ const MAX_TIMEOUT_MS = 300_000;
 async function scrape(
   config: ResolvedFirecrawlConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const url = requiredString(args, 'url');
+  const url = requiredString(args, "url");
   const formats = optionalStringArray(args.formats);
   const onlyMainContent = optionalBoolean(args.onlyMainContent);
   const includeTags = optionalStringArray(args.includeTags);
@@ -41,65 +41,74 @@ async function scrape(
     ...(jsonOptions !== null ? { jsonOptions } : {}),
   };
 
-  return firecrawlFetchJSON(config, { method: 'POST', path: '/scrape', body }, signal);
+  return firecrawlFetchJSON(
+    config,
+    { method: "POST", path: "/scrape", body },
+    signal,
+  );
 }
 
 export const FIRECRAWL_SCRAPE_DEFINITION: ToolDefinition = {
-  name: 'firecrawl_scrape',
+  name: "firecrawl_scrape",
   description:
-    'Scrape a single web page with Firecrawl and return its content. Use this to fetch the readable contents of a known URL as markdown, HTML, links, a screenshot, or structured JSON.',
+    "Scrape a single web page with Firecrawl and return its content. Use this to fetch the readable contents of a known URL as markdown, HTML, links, a screenshot, or structured JSON.",
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
       url: {
-        type: 'string',
-        description: 'The URL of the page to scrape.',
+        type: "string",
+        description: "The URL of the page to scrape.",
       },
       formats: {
-        type: 'array',
-        items: { type: 'string' },
+        type: "array",
+        items: { type: "string" },
         description:
-          'Output formats to return, e.g. markdown, html, rawHtml, links, screenshot, json. Defaults to markdown.',
+          "Output formats to return, e.g. markdown, html, rawHtml, links, screenshot, json. Defaults to markdown.",
       },
       onlyMainContent: {
-        type: 'boolean',
+        type: "boolean",
         description:
-          'When true, return only the main content of the page, excluding headers, navs, and footers.',
+          "When true, return only the main content of the page, excluding headers, navs, and footers.",
       },
       includeTags: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'HTML tags or selectors to include in the output.',
+        type: "array",
+        items: { type: "string" },
+        description: "HTML tags or selectors to include in the output.",
       },
       excludeTags: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'HTML tags or selectors to exclude from the output.',
+        type: "array",
+        items: { type: "string" },
+        description: "HTML tags or selectors to exclude from the output.",
       },
       waitFor: {
-        type: 'number',
-        description: 'Milliseconds to wait before scraping, for pages that load content late.',
+        type: "number",
+        description:
+          "Milliseconds to wait before scraping, for pages that load content late.",
       },
       timeout: {
-        type: 'number',
-        description: 'Request timeout in milliseconds (1000-300000).',
+        type: "number",
+        description: "Request timeout in milliseconds (1000-300000).",
       },
       jsonOptions: {
-        type: 'object',
+        type: "object",
         description:
-          'Options for structured JSON extraction, such as a schema or prompt. Used when the json format is requested.',
+          "Options for structured JSON extraction, such as a schema or prompt. Used when the json format is requested.",
       },
     },
-    required: ['url'],
+    required: ["url"],
   },
 };
 
-export const SCRAPE_DEFINITIONS: ToolDefinition[] = [FIRECRAWL_SCRAPE_DEFINITION];
+export const SCRAPE_DEFINITIONS: ToolDefinition[] = [
+  FIRECRAWL_SCRAPE_DEFINITION,
+];
 
 export function createScrapeTools(config: FirecrawlToolsConfig): AgentTool[] {
   const resolved = resolveConfig(config);
 
   return [
-    stringTool(FIRECRAWL_SCRAPE_DEFINITION, (args, signal) => scrape(resolved, args, signal)),
+    stringTool(FIRECRAWL_SCRAPE_DEFINITION, (args, signal) =>
+      scrape(resolved, args, signal),
+    ),
   ];
 }

@@ -1,13 +1,13 @@
-import { and, eq } from 'drizzle-orm';
-import { schema as intxSchema } from '@intx/db';
-import type { DB } from '@intx/db';
+import { and, eq } from "drizzle-orm";
+import { schema as intxSchema } from "@intx/db";
+import type { DB } from "@intx/db";
 import {
   AGENT_TEMPLATES,
   buildPersonalAgentSystemPrompt,
   PERSONAL_AGENT_NAME,
   type PromptFormat,
-} from '@workbench/agents';
-import { memberAgentInstance } from '../db/schema';
+} from "@workbench/agents";
+import { memberAgentInstance } from "../db/schema";
 
 /**
  * Template keys that are personal agents (kind 'personal') — the structural
@@ -15,7 +15,7 @@ import { memberAgentInstance } from '../db/schema';
  * display name.
  */
 const PERSONAL_TEMPLATE_KEYS = new Set(
-  AGENT_TEMPLATES.filter((t) => t.kind === 'personal').map((t) => t.key)
+  AGENT_TEMPLATES.filter((t) => t.kind === "personal").map((t) => t.key),
 );
 
 /**
@@ -24,12 +24,15 @@ const PERSONAL_TEMPLATE_KEYS = new Set(
  * DeepSeek) does better with Markdown headings.
  */
 export function promptFormatForProvider(provider: string): PromptFormat {
-  return { xml: provider === 'anthropic' };
+  return { xml: provider === "anthropic" };
 }
 
-/** Terse standing brief naming the operator and pointing Myra at HUMAN.md. */
-export function buildOperatorProfile(user: { name: string; email: string }): string {
-  return `You work for ${user.name} (${user.email}). Keep HUMAN.md as your standing brief on them — preferences, priorities, open todos — and update it as you learn.`;
+/** Terse standing brief naming the operator and pointing Myra at MEMORY.md. */
+export function buildOperatorProfile(user: {
+  name: string;
+  email: string;
+}): string {
+  return `You work for ${user.name} (${user.email}). Keep your standing brief on them — preferences, priorities, open todos — under the "The Person" heading in MEMORY.md, and update it as you learn.`;
 }
 
 /**
@@ -44,21 +47,26 @@ export function personalAgentPromptForLaunch(opts: {
 }): string {
   const format = promptFormatForProvider(opts.provider);
   const options =
-    opts.operatorProfile !== undefined ? { operatorProfile: opts.operatorProfile } : {};
+    opts.operatorProfile !== undefined
+      ? { operatorProfile: opts.operatorProfile }
+      : {};
   return buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, format, options);
 }
 
 /** Render the operator profile for a member principal (principal → user). */
 async function resolveOperatorForMember(
-  db: DB['db'],
-  memberPrincipalId: string
+  db: DB["db"],
+  memberPrincipalId: string,
 ): Promise<string | null> {
   const [principal] = await db
-    .select({ kind: intxSchema.principal.kind, refId: intxSchema.principal.refId })
+    .select({
+      kind: intxSchema.principal.kind,
+      refId: intxSchema.principal.refId,
+    })
     .from(intxSchema.principal)
     .where(eq(intxSchema.principal.id, memberPrincipalId))
     .limit(1);
-  if (!principal || principal.kind !== 'user') return null;
+  if (!principal || principal.kind !== "user") return null;
 
   const [userRow] = await db
     .select({ name: intxSchema.user.name, email: intxSchema.user.email })
@@ -78,8 +86,8 @@ async function resolveOperatorForMember(
  * yields both the personal-template check and the owning member.
  */
 export async function composePersonalAgentPromptForInstance(
-  db: DB['db'],
-  opts: { tenantId: string; instanceId: string; provider: string }
+  db: DB["db"],
+  opts: { tenantId: string; instanceId: string; provider: string },
 ): Promise<string | null> {
   const [mapping] = await db
     .select({
@@ -90,13 +98,16 @@ export async function composePersonalAgentPromptForInstance(
     .where(
       and(
         eq(memberAgentInstance.tenantId, opts.tenantId),
-        eq(memberAgentInstance.instanceId, opts.instanceId)
-      )
+        eq(memberAgentInstance.instanceId, opts.instanceId),
+      ),
     )
     .limit(1);
   if (!mapping || !PERSONAL_TEMPLATE_KEYS.has(mapping.templateKey)) return null;
 
-  const operatorProfile = await resolveOperatorForMember(db, mapping.memberPrincipalId);
+  const operatorProfile = await resolveOperatorForMember(
+    db,
+    mapping.memberPrincipalId,
+  );
   return personalAgentPromptForLaunch({
     provider: opts.provider,
     ...(operatorProfile !== null ? { operatorProfile } : {}),

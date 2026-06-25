@@ -6,4 +6,4 @@ export const FORMAT_MAP: Record<string, string> = {
   uuid: "string.uuid",
   ipv4: "string.ip.v4",
   ipv6: "string.ip.v6",
-}
+};

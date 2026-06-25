@@ -18,7 +18,7 @@ function matchPattern(pattern: string, value: string): boolean {
 }
 mock.module("@intx/authz", () => ({
   evaluateGrants: async (
-    grants: Array<{ resource: string; action: string; effect: string }>,
+    grants: { resource: string; action: string; effect: string }[],
     resource: string,
     action: string,
   ) => {

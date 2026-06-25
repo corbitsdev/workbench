@@ -1,75 +1,75 @@
-import { type } from 'arktype';
+import { type } from "arktype";
 
-export type Severity = 'low' | 'medium' | 'high' | 'critical';
+export type Severity = "low" | "medium" | "high" | "critical";
 
 // 'pending' = created, analysis not yet started.
 // 'ready' = analysis complete, awaiting the user's generate selection.
 // 'generating' = collateral generation actively running.
 export type SessionStatus =
-  | 'pending'
-  | 'analyzing'
-  | 'ready'
-  | 'generating'
-  | 'reviewing'
-  | 'done'
-  | 'failed';
+  | "pending"
+  | "analyzing"
+  | "ready"
+  | "generating"
+  | "reviewing"
+  | "done"
+  | "failed";
 
 // The subset of artifact kinds the UI knows how to render exhaustively.
 // The DB `kind` column is free-form text; this union stays closed for the
 // CollateralBody renderer switch.
 export type ArtifactKind =
-  | 'email'
-  | 'linkedin-post'
-  | 'twitter-post'
-  | 'blog'
-  | 'founder-pov-post'
-  | 'one-pager'
-  | 'case-study'
-  | 'objection-handling'
-  | 'customer-quotes'
-  | 'battlecard'
-  | 'pain-points'
-  | 'call-transcript'
-  | 'presentation';
+  | "email"
+  | "linkedin-post"
+  | "twitter-post"
+  | "blog"
+  | "founder-pov-post"
+  | "one-pager"
+  | "case-study"
+  | "objection-handling"
+  | "customer-quotes"
+  | "battlecard"
+  | "pain-points"
+  | "call-transcript"
+  | "presentation";
 
-export type ArtifactStatus = 'draft' | 'approved' | 'rejected';
+export type ArtifactStatus = "draft" | "approved" | "rejected";
 
 export const PainPoint = type({
-  id: 'string',
-  workflowId: 'string',
+  id: "string",
+  workflowId: "string",
   severity: "'low' | 'medium' | 'high' | 'critical'",
-  context: 'string',
-  quote: 'string',
-  selected: 'boolean',
-  createdAt: 'string',
+  context: "string",
+  quote: "string",
+  selected: "boolean",
+  createdAt: "string",
 });
 export type PainPoint = typeof PainPoint.infer;
 
 export const Artifact = type({
-  id: 'string',
-  sessionId: 'string | null',
-  parentId: 'string | null',
-  painPointId: 'string | null',
-  kind: 'string',
-  title: 'string',
-  content: 'string',
+  id: "string",
+  sessionId: "string | null",
+  parentId: "string | null",
+  painPointId: "string | null",
+  kind: "string",
+  title: "string",
+  content: "string",
   status: "'draft' | 'approved' | 'rejected'",
-  version: 'number',
-  ownerPrincipalId: 'string | null',
-  createdAt: 'string',
-  updatedAt: 'string',
-  'source?': 'Record<string, unknown> | null',
+  version: "number",
+  ownerPrincipalId: "string | null",
+  createdAt: "string",
+  updatedAt: "string",
+  "source?": "Record<string, unknown> | null",
 });
 export type Artifact = typeof Artifact.infer;
 
 export const ArtifactVersion = type({
-  id: 'string',
-  artifactId: 'string',
-  version: 'number',
-  title: 'string',
-  content: 'string',
-  authorId: 'string',
-  createdAt: 'string',
+  id: "string",
+  artifactId: "string",
+  version: "number",
+  title: "string",
+  content: "string",
+  authorId: "string",
+  createdAt: "string",
 });
 export type ArtifactVersion = typeof ArtifactVersion.infer;
 
@@ -101,7 +101,7 @@ export interface WorkflowSummary {
 
 export interface TranscriptInput {
   transcript: string;
-  source?: 'paste' | 'granola';
+  source?: "paste" | "granola";
 }
 
 export interface WorkbenchSession {
@@ -156,3 +156,63 @@ export interface ImproveResponse {
   artifact: Artifact;
   status: SessionStatus;
 }
+
+// Output-feedback (thumbs up/down). One canonical definition shared by the hub
+// route, the web boundary parser, and the chat component.
+//
+// `workflow_step` is forward plumbing: the workflow-step rating surface is not
+// wired into a UI yet, but the kind, schema, route handling, and DB column all
+// carry it so adding that surface is purely additive.
+//
+// `feedbackSubjectKinds` is the readonly tuple the Drizzle `text` enum column
+// needs; `FeedbackSubjectKindSchema` is the arktype validator. They are kept in
+// lockstep so the DB enum and the wire schema can never drift.
+export const feedbackSubjectKinds = ["turn_part", "workflow_step"] as const;
+
+export const FeedbackSubjectKindSchema = type("'turn_part' | 'workflow_step'");
+export type FeedbackSubjectKind = typeof FeedbackSubjectKindSchema.infer;
+
+export const FeedbackRatingSchema = type("1 | -1");
+export type FeedbackRating = typeof FeedbackRatingSchema.infer;
+
+export const FeedbackRequest = type({
+  subjectId: "string",
+  subjectKind: FeedbackSubjectKindSchema,
+  rating: FeedbackRatingSchema,
+});
+export type FeedbackRequest = typeof FeedbackRequest.infer;
+
+export const SavedRating = type({
+  subjectId: "string",
+  subjectKind: FeedbackSubjectKindSchema,
+  rating: FeedbackRatingSchema,
+});
+export type SavedRating = typeof SavedRating.infer;
+
+export const FeedbackListResponse = type({ ratings: SavedRating.array() });
+export type FeedbackListResponse = typeof FeedbackListResponse.infer;
+
+// Per-member UI preferences, persisted server-side and shared by the hub route,
+// the web boundary parser, and the Settings UI. Known keys are validated; the
+// `[string]` index keeps the map open so a new preference needs no schema or DB
+// migration (it just rides along in the jsonb blob). Every key is optional — a
+// PATCH carries only what changed and is merged into the stored blob.
+export const ToolSummaryStyleSchema = type(
+  "'symbols' | 'natural' | 'detail' | 'varied' | 'mixed'",
+);
+export type ToolSummaryStyle = typeof ToolSummaryStyleSchema.infer;
+
+// Kept in sync with the `Theme` union in `@workbench/ui`'s use-theme.ts (that
+// package stays dependency-free, so the union is mirrored there, not imported).
+export const ThemeSchema = type(
+  "'corbits-dark' | 'corbits-light' | 'tkww' | 'notion'",
+);
+export type Theme = typeof ThemeSchema.infer;
+
+export const MemberPreferences = type({
+  "theme?": ThemeSchema,
+  "compactToolActivity?": "boolean",
+  "toolSummaryStyle?": ToolSummaryStyleSchema,
+  "[string]": "unknown",
+});
+export type MemberPreferences = typeof MemberPreferences.infer;

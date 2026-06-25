@@ -1,44 +1,69 @@
-import type { AgentTool } from '@intx/agent';
-import type { DB } from '@intx/db';
-import { WRITE_ARTIFACT_DEFINITION } from '@workbench/tools-artifact';
-import { and, eq, max } from 'drizzle-orm';
-import { artifact, artifactVersion } from '../db/schema';
-import type { ContextToolEntry } from '../lib/tool-registry';
+import type { AgentTool } from "@intx/agent";
+import type { DB } from "@intx/db";
+import { parseReport } from "@workbench/last30days-core";
+import { WRITE_ARTIFACT_DEFINITION } from "@workbench/tools-artifact";
+import { and, eq, max } from "drizzle-orm";
+import { artifact, artifactVersion } from "../db/schema";
+import type { ContextToolEntry } from "../lib/tool-registry";
 
 export { WRITE_ARTIFACT_DEFINITION };
 
 type WriteArtifactContext = {
-  db: DB['db'];
+  db: DB["db"];
   tenantId: string;
   principalId: string;
 };
 
 function requireString(args: Record<string, unknown>, key: string): string {
   const value = args[key];
-  if (typeof value !== 'string' || value.trim().length === 0) {
+  if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`${key} is required`);
   }
   return value.trim();
 }
 
-export function createWriteArtifactTool(context: WriteArtifactContext): AgentTool[] {
+export function createWriteArtifactTool(
+  context: WriteArtifactContext,
+): AgentTool[] {
   return [
     {
-      kind: 'string',
+      kind: "string",
       definition: WRITE_ARTIFACT_DEFINITION,
       handler: async (args, _signal) => {
-        const title = requireString(args, 'title');
-        const body = requireString(args, 'body');
-        const kind = requireString(args, 'kind');
+        const title = requireString(args, "title");
+        const body = requireString(args, "body");
+        const kind = requireString(args, "kind");
 
-        const rawCitations = args.citations;
-        const citations = Array.isArray(rawCitations) ? rawCitations : [];
+        let citations = Array.isArray(args.citations) ? args.citations : [];
 
+        let brief: Record<string, unknown> | undefined;
         const rawData = args.data;
-        const brief =
-          typeof rawData === 'object' && rawData !== null && !Array.isArray(rawData)
-            ? (rawData as Record<string, unknown>)
-            : undefined;
+        if (
+          typeof rawData === "object" &&
+          rawData !== null &&
+          !Array.isArray(rawData)
+        ) {
+          brief = rawData as Record<string, unknown>;
+        }
+
+        const rawBriefContent = args.content;
+        if (
+          typeof rawBriefContent === "string" &&
+          rawBriefContent.trim().length > 0
+        ) {
+          try {
+            const parsedBrief = parseReport(JSON.parse(rawBriefContent));
+            if (parsedBrief !== null) {
+              brief = parsedBrief as unknown as Record<string, unknown>;
+              if (citations.length === 0) {
+                citations = parsedBrief.citations;
+              }
+            }
+          } catch {
+            // Non-JSON brief content is ignored; explicit citations/data still apply.
+          }
+        }
+
         const source: Record<string, unknown> =
           brief === undefined ? { citations } : { citations, brief };
 
@@ -52,15 +77,16 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
               and(
                 eq(artifact.principalId, context.principalId),
                 eq(artifact.title, title),
-                eq(artifact.kind, kind)
-              )
+                eq(artifact.kind, kind),
+              ),
             )
             .limit(1)
             // Lock the matched row so two concurrent writes (e.g. a synthesis
             // retry) cannot both read the same max version and insert dupes.
-            .for('update');
+            .for("update");
 
-          const existingId = existingRows.length > 0 ? existingRows[0]?.id : undefined;
+          const existingId =
+            existingRows.length > 0 ? existingRows[0]?.id : undefined;
           const now = new Date();
           let artifactId: string;
 
@@ -77,7 +103,7 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
                 title,
                 content: body,
                 source,
-                status: 'draft',
+                status: "draft",
                 version: 1,
                 createdAt: now,
                 updatedAt: now,
@@ -85,7 +111,7 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
               .returning({ id: artifact.id });
 
             if (!created) {
-              throw new Error('Failed to create artifact row');
+              throw new Error("Failed to create artifact row");
             }
             artifactId = created.id;
           }
@@ -113,14 +139,23 @@ export function createWriteArtifactTool(context: WriteArtifactContext): AgentToo
           if (existingId !== undefined) {
             await tx
               .update(artifact)
-              .set({ content: body, source, version: nextVersion, updatedAt: now })
+              .set({
+                content: body,
+                source,
+                version: nextVersion,
+                updatedAt: now,
+              })
               .where(eq(artifact.id, artifactId));
           }
 
           return { artifactId, version: nextVersion };
         });
 
-        return JSON.stringify({ artifactId: result.artifactId, version: result.version, title });
+        return JSON.stringify({
+          artifactId: result.artifactId,
+          version: result.version,
+          title,
+        });
       },
     },
   ];

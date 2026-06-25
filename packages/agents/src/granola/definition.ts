@@ -1,8 +1,8 @@
-import type { GrantRequirement, CredentialRequirement } from '@intx/types';
-import { canonicalizeToolNames } from '../tool-names';
-import { buildGranolaSystemPrompt } from './prompt';
-import type { AgentDeployDescriptor } from '../deploy-descriptor';
-import { LLM_CREDENTIAL_NAME } from '../constants';
+import type { GrantRequirement, CredentialRequirement } from "@intx/types";
+import { canonicalizeToolNames } from "../tool-names";
+import { buildGranolaSystemPrompt } from "./prompt";
+import type { AgentDeployDescriptor } from "../deploy-descriptor";
+import { LLM_CREDENTIAL_NAME } from "../constants";
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -18,8 +18,8 @@ export const GRANOLA_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
  */
 export const GRANOLA_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
   {
-    providerName: 'openai-compatible',
-    source: 'tenant',
+    providerName: "openai-compatible",
+    source: "tenant",
     name: LLM_CREDENTIAL_NAME,
   },
 ];
@@ -27,7 +27,7 @@ export const GRANOLA_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] = [
 /**
  * Static deploy prompt for the Granola agent definition.
  */
-export const GRANOLA_DEPLOY_PROMPT: string = buildGranolaSystemPrompt('Oat', {
+export const GRANOLA_DEPLOY_PROMPT: string = buildGranolaSystemPrompt("Oat", {
   xml: true,
 });
 
@@ -37,20 +37,22 @@ export const GRANOLA_DEPLOY_PROMPT: string = buildGranolaSystemPrompt('Oat', {
  */
 export const GRANOLA_CAPABILITIES = {
   tools: canonicalizeToolNames([
-    'granola_list_notes',
-    'granola_get_note',
-    'granola_list_folders',
+    "granola_list_notes",
+    "granola_get_note",
+    "granola_list_folders",
   ]),
 } as const;
 
-export const GRANOLA_MODEL_CONFIG = { defaultModel: 'deepseek-v4-flash' } as const;
+export const GRANOLA_MODEL_CONFIG = {
+  defaultModel: "deepseek-v4-flash",
+} as const;
 
 export const GRANOLA_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
-  label: 'Oat — Call Intelligence',
-  name: 'Oat',
+  label: "Oat — Call Intelligence",
+  name: "Oat",
   modelConfig: GRANOLA_MODEL_CONFIG,
   systemPrompt: GRANOLA_DEPLOY_PROMPT,
-  credentialProviderNames: ['openai-compatible', 'granola'],
+  credentialProviderNames: ["openai-compatible", "granola"],
   defaultTools: [...GRANOLA_CAPABILITIES.tools],
   requiredTools: [...GRANOLA_CAPABILITIES.tools],
 };

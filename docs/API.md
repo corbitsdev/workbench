@@ -124,6 +124,27 @@ approval gate (`awaitSignal`) is resolved. The hub forwards it to the sidecar vi
 
 ---
 
+## Myra Threads API
+
+Multi-thread chat over per-member Myra instances (CL-2309). Each thread is a
+`member_agent_instance` row (`templateKey: 'myra'`); the thread `id` is the
+mapping id. All routes resolve the caller's global-org membership and 503 if the
+member is not provisioned.
+
+```
+GET    /v1/me/myra/threads            # list the caller's threads
+POST   /v1/me/myra/threads            # { label? } → creates an instance + session
+PATCH  /v1/me/myra/threads/:id        # { label } → rename (404 if not found)
+DELETE /v1/me/myra/threads/:id        # ends the session, removes the thread (404 if not found)
+```
+
+**Thread shape:** `{ id, instanceId, label, createdAt }`. Labels fall back to
+`Chat`, `Chat 2`, … by position when unset. List responses are
+`{ threads: [...] }`; create responds `201 { thread, created: true }`; rename
+responds `{ thread }`; delete responds `{ deleted: true }`.
+
+---
+
 ## Recent Calls API
 
 ```

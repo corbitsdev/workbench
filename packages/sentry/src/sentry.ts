@@ -1,13 +1,13 @@
 export async function initSentry() {
   const dsn = process.env.SENTRY_DSN;
-  const environment = process.env.SENTRY_ENVIRONMENT ?? 'production';
+  const environment = process.env.SENTRY_ENVIRONMENT ?? "production";
 
   if (!dsn) {
     return null;
   }
 
   try {
-    const sentry = await import('@sentry/bun');
+    const sentry = await import("@sentry/bun");
     sentry.init({
       dsn,
       environment,
@@ -15,8 +15,7 @@ export async function initSentry() {
     });
     return sentry;
   } catch (error) {
-    // oxlint-disable-next-line no-console
-    console.warn('Failed to initialize Sentry', error);
+    console.warn("Failed to initialize Sentry", error);
     return null;
   }
 }

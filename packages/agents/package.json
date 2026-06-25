@@ -22,18 +22,19 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint .",
     "test": "bun test src",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
     "@intx/hub-client": "workspace:*",
-    "@intx/workflow": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
+    "@intx/workflow": "workspace:*",
+    "@workbench/catalog": "workspace:*",
     "@workbench/chat": "workspace:*",
-    "@workbench/prompts": "workspace:*"
+    "@workbench/prompts": "workspace:*",
+    "@workbench/ui": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

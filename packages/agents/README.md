@@ -12,13 +12,17 @@ Use this Workbench split for tool-backed premade agents:
 
 ```ts
 export const AGENT_CREDENTIAL_REQUIREMENTS = [
-  { providerName: 'openai-compatible', source: 'tenant', name: LLM_CREDENTIAL_NAME },
+  {
+    providerName: "openai-compatible",
+    source: "tenant",
+    name: LLM_CREDENTIAL_NAME,
+  },
 ];
 
 export const AGENT_DEPLOY_DESCRIPTOR = {
-  credentialProviderNames: ['openai-compatible', 'firecrawl'],
-  defaultTools: ['firecrawl_scrape'],
-  requiredTools: ['firecrawl_scrape'],
+  credentialProviderNames: ["openai-compatible", "firecrawl"],
+  defaultTools: ["firecrawl_scrape"],
+  requiredTools: ["firecrawl_scrape"],
 };
 ```
 

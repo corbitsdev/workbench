@@ -180,7 +180,7 @@ function readStepToolContext(env: Record<string, unknown>): StepToolContext {
   }
   // Internal value the env builder constructed in-process this same run; it
   // never crosses a trust boundary, so a plain narrowing cast is sound.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- in-process value, not untrusted input
+
   return raw as StepToolContext;
 }
 
@@ -199,7 +199,7 @@ async function buildStepTools(args: {
 }): Promise<{
   runner: DefinedRunner;
   loadedToolNames: Set<string>;
-  disposers: Array<() => Promise<void>>;
+  disposers: (() => Promise<void>)[];
 }> {
   const { ctx } = args;
   const storeDir = path.dirname(args.workdir);
@@ -263,7 +263,7 @@ async function buildStepTools(args: {
   };
 
   const loadedRunners: DefinedRunner[] = [];
-  const disposers: Array<() => Promise<void>> = [() => posixTools.dispose()];
+  const disposers: (() => Promise<void>)[] = [() => posixTools.dispose()];
   const loadedToolNames = new Set<string>();
   for (const pkg of loadedPackages) {
     for (const factory of pkg.factories) {
@@ -347,7 +347,7 @@ function verbatimToolArguments(
       `step-tool-harness: deterministic step "${toolName}" requires an object (or no) input to use as tool arguments; got ${typeof input}`,
     );
   }
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed to a non-null, non-array object above; ToolCall.arguments is Record<string, unknown>
+
   return input as Record<string, unknown>;
 }
 
@@ -380,8 +380,7 @@ function reshapeWithArgMap(
   }
   const inputRecord =
     input !== null && typeof input === "object" && !Array.isArray(input)
-      ? // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed to a non-null, non-array object; field lookups below
-        (input as Record<string, unknown>)
+      ? (input as Record<string, unknown>)
       : undefined;
   const toolArguments: Record<string, unknown> = {};
   for (const [argName, spec] of Object.entries(argMap)) {

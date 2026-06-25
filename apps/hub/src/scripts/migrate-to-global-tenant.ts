@@ -12,18 +12,18 @@
  *
  * The global tenant must already be seeded (it is, on every hub boot — CL-1446).
  */
-import postgres from 'postgres';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { getLogger } from '@intx/log';
-import { loadConfig } from '../config';
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { getLogger } from "@intx/log";
+import { loadConfig } from "../config";
 
-import { schema, type HubDb } from '../db';
-import { migrateAllUsersToGlobalTenant } from '../lib/migrate-to-global-tenant';
+import { schema, type HubDb } from "../db";
+import { migrateAllUsersToGlobalTenant } from "../lib/migrate-to-global-tenant";
 
-const log = getLogger(['migrate', 'cli']);
+const log = getLogger(["migrate", "cli"]);
 
 async function main(): Promise<void> {
-  const live = process.argv.includes('--live');
+  const live = process.argv.includes("--live");
   const dryRun = !live;
 
   // loadConfig validates the env (incl. GLOBAL_TENANT_*) and fails loud if missing.
@@ -33,11 +33,15 @@ async function main(): Promise<void> {
   const db = drizzle(sql, { schema }) as unknown as HubDb;
 
   try {
-    log.info(dryRun ? 'Starting migration DRY RUN (no writes)' : 'Starting LIVE migration');
+    log.info(
+      dryRun
+        ? "Starting migration DRY RUN (no writes)"
+        : "Starting LIVE migration",
+    );
     const summary = await migrateAllUsersToGlobalTenant(db, { dryRun });
 
     for (const u of summary.users) {
-      log.info('user', {
+      log.info("user", {
         userId: u.userId,
         workbenchesReparented: u.workbenchesReparented,
         workflowRunsReKeyed: u.workflowRunsReKeyed,
@@ -46,14 +50,14 @@ async function main(): Promise<void> {
         oldMyraInstancesStopped: u.oldMyraInstancesStopped,
       });
     }
-    log.info('Summary', {
+    log.info("Summary", {
       dryRun: summary.dryRun,
       globalTenantId: summary.globalTenantId,
       migrated: summary.users.length,
       failures: summary.failures.length,
     });
     if (summary.failures.length > 0) {
-      log.error('Some users failed to migrate', {
+      log.error("Some users failed to migrate", {
         failures: summary.failures,
         error: new Error(`${summary.failures.length} user(s) failed`),
       });

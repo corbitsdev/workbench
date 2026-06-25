@@ -43,8 +43,17 @@ loader**. There is no hub round-trip at call time.
 Keep the tool implementation as before — a factory returning `AgentTool[]`:
 
 ```ts
-export function createMyTools(config: { apiKey: string; baseURL: string }): AgentTool[] {
-  return [{ kind: 'string', definition: MY_DEFINITION, handler: async (args) => '...' }];
+export function createMyTools(config: {
+  apiKey: string;
+  baseURL: string;
+}): AgentTool[] {
+  return [
+    {
+      kind: "string",
+      definition: MY_DEFINITION,
+      handler: async (args) => "...",
+    },
+  ];
 }
 ```
 
@@ -66,11 +75,11 @@ tarballs) and the entry path:
 Create `src/interchange-tools.ts`. **Keyless** tools:
 
 ```ts
-import { createToolRunner, defineTool } from '@intx/agent';
-import { createMyTools } from './tools';
+import { createToolRunner, defineTool } from "@intx/agent";
+import { createMyTools } from "./tools";
 
 export const myTools = defineTool({
-  id: '@workbench/tools-<name>/<name>',
+  id: "@workbench/tools-<name>/<name>",
   factory: () => createToolRunner(createMyTools()),
 });
 ```
@@ -80,12 +89,12 @@ the key from env (delivered separately from inference sources, never via
 `credentialRequirements`):
 
 ```ts
-import { defineCredentialedToolPackage } from '@workbench/tool-credentials';
-import { MY_HUB_TOOLS } from './index';
+import { defineCredentialedToolPackage } from "@workbench/tool-credentials";
+import { MY_HUB_TOOLS } from "./index";
 
 export const myTools = defineCredentialedToolPackage({
-  id: '@workbench/tools-<name>/<name>',
-  provider: 'my-provider', // tenant credential provider name
+  id: "@workbench/tools-<name>/<name>",
+  provider: "my-provider", // tenant credential provider name
   entries: MY_HUB_TOOLS, // entries' createTools({ apiKey, baseURL }) are reused
 });
 ```
@@ -171,13 +180,13 @@ credential rail — not an execution registry, and not in any workflow path
 ## Creating an Agent Package
 
 Copy an existing agent as a starting point. Agents live as subdirectories of the
-`@workbench/agents` package (`packages/agents/src/<name>`) — `packages/agents/src/larry`
-is a good minimal example of an agent that uses tools.
+`@workbench/agents` package (`packages/agents/src/<name>`) — copy a small existing
+agent that matches the tool/inference shape you need.
 
 ### 1. Scaffold
 
 ```bash
-cp -r packages/agents/src/larry packages/agents/src/<name>
+cp -r packages/agents/src/walter packages/agents/src/<name>
 ```
 
 Rename the exported identifiers and strip the copied agent's prompt/tools down to
@@ -186,16 +195,19 @@ your own; `seedAgentTemplates` picks the definition up on the next hub boot.
 ### 2. Write the system prompt (`src/prompt.ts`)
 
 ```ts
-import { buildSystemPrompt, formatFromModel } from '@workbench/agents';
+import { buildSystemPrompt, formatFromModel } from "@workbench/agents";
 
 export function buildMyAgentPrompt(model: string): string {
   return buildSystemPrompt(
     [
-      { title: 'Role', content: 'You are...' },
-      { title: 'Pipeline', content: 'Follow these steps in order: ...' },
-      { title: 'Output discipline', content: 'Never produce structured data in chat...' },
+      { title: "Role", content: "You are..." },
+      { title: "Pipeline", content: "Follow these steps in order: ..." },
+      {
+        title: "Output discipline",
+        content: "Never produce structured data in chat...",
+      },
     ],
-    formatFromModel(model)
+    formatFromModel(model),
   );
 }
 ```
@@ -205,20 +217,24 @@ export function buildMyAgentPrompt(model: string): string {
 ### 3. Define the agent (`src/definition.ts`)
 
 ```ts
-import type { AgentDefinition } from '@intx/types';
+import type { AgentDefinition } from "@intx/types";
 
 export const myAgentDefinition: AgentDefinition = {
-  name: 'My Agent',
+  name: "My Agent",
   credentialRequirements: [
     // Inference — required for every agent
-    { providerName: 'openai-compatible', source: 'tenant', name: 'My Agent LLM' },
+    {
+      providerName: "openai-compatible",
+      source: "tenant",
+      name: "My Agent LLM",
+    },
     // External services — declare each one the agent needs
-    { providerName: 'exa', source: 'tenant' },
+    { providerName: "exa", source: "tenant" },
   ],
   capabilities: {
     // List every tool name this agent is allowed to call.
     // Tools not in this list are invisible to the agent at runtime.
-    tools: ['exa_search', 'my_tool'],
+    tools: ["exa_search", "my_tool"],
   },
   modelConfig: {
     temperature: 0.3,
@@ -235,8 +251,8 @@ export const myAgentDefinition: AgentDefinition = {
 Most agents need a custom director to filter inbound senders:
 
 ```ts
-import { createDefaultDirector } from '@intx/agent';
-import type { DirectorFactory } from '@intx/types';
+import { createDefaultDirector } from "@intx/agent";
+import type { DirectorFactory } from "@intx/types";
 
 export const createMyAgentDirector: DirectorFactory = (config) => {
   const base = createDefaultDirector(config);
@@ -256,6 +272,31 @@ Add the agent to `apps/hub/src/lib/tenant-provisioning.ts`. This is where agents
 
 ---
 
+## Rolling out agent changes (how an edit reaches existing users)
+
+Editing a template in `@workbench/agents` (prompt, `toolPackages` pins, capabilities, model) does **not** reach running agents by itself. Two facts drive the rollout:
+
+- **Definitions are shared, not per-user.** Every user's Myra instance points at a _single_ `agent` row in the global tenant (one row per template). Instances are thin pointers — they store status/principal, not the prompt/pins. So one upsert updates everyone.
+- **The shared row is (re)written by `seedAgentTemplates(db)`, which runs on every hub boot** (`apps/hub/src/index.ts`, right after `seedGlobalTenant`). It is an idempotent upsert over `AGENT_TEMPLATES`. **This is the only thing that writes template changes to the DB** — `seedGlobalTenant` returns early when the tenant already exists and does not touch agent rows. (Before this call existed, every template edit was silently ignored on already-seeded environments — agents stayed frozen at the first manual seed.)
+- **Instances adopt the new definition on their next launch.** `launchSession` reads `agentRow.toolPackages` + `systemPrompt` fresh each time. Running sessions are auto-relaunched when the hub reboots on deploy; stopped/idle instances relaunch on the user's next app load. No per-instance migration or backfill is needed.
+- **Tool grants are reconciled on boot, not just at launch.** A member's instance principal carries `tool:<name>/invoke` grant rows synthesized at launch. Because `provisionMemberInstances` skips members who already have an instance, a _newly added_ tool (e.g. Granola on Myra) would otherwise never reach existing members until each relaunched — surfacing as `No matching grants for tool:…/invoke` at invoke time. To close this, `reconcileMemberInstanceGrants` (`apps/hub/src/services/grant-reconcile.ts`) runs right after `seedAgentTemplates` on every boot: it rewrites every member instance's tool + requirement grants to the freshly-seeded definition. It is DB-only at boot (sidecars push the updated grants when they reconnect after the hub starts) and idempotent. To fix members **without** a redeploy, an operator can `POST /admin/templates/:templateKey/reconcile-grants` (admin CLI → `Agents` → "Reconcile member instance grants for a template"), which also pushes fresh grants to any live sidecar with no restart.
+
+### Production rollout order
+
+Do the tenant-side seeding **before** deploying the hub, so that when instances relaunch with new pins the packages actually resolve (otherwise launches partially load — the package that isn't published is silently dropped):
+
+1. **Build + Publish tool packages to the prod GLOBAL tenant** (`admin:production` → Build, then Publish → global org) — required whenever a pinned package is added or bumped.
+2. **Seed the prod global tenant**: LLM credential, model catalog, and tool credentials (`admin:production`). See [ADMIN_CLI.md](./ADMIN_CLI.md).
+3. **Deploy the hub.** Boot runs `seedAgentTemplates` → the shared rows update → relaunches inherit the new definition.
+4. **(Optional) Force an immediate refresh:** restart the **sidecar** service so all running sessions relaunch at once. This is the safe hammer — no history loss.
+
+### Do NOT
+
+- **Mass-delete instances** (`cleanup-instances`) to "force an update" — instances are pointers and re-provision automatically, and bulk deletion churns the sidecar volume (corrupt-pack / `ENOENT` storage errors). Use a sidecar restart instead if you need an instant refresh.
+- Assume a code push alone updates agents — it only updates the DB once the **hub boots** the new code (and the registry/catalog/credentials are in place).
+
+---
+
 ## Creating a Workflow
 
 Workflows are **native `@intx/workflow` definitions**, not hub code. Each kind is its own package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` and `workflow`. The hub imports no workflow code — adding a workflow needs no hub change. Full guide: [DEPLOYING_WORKFLOWS.md](./DEPLOYING_WORKFLOWS.md).
@@ -264,17 +305,22 @@ Workflows are **native `@intx/workflow` definitions**, not hub code. Each kind i
 
 ```ts
 // workflows/my-workflow/src/index.ts
-import { defineWorkflow, defineAgent, step, awaitSignal } from '@intx/workflow';
+import { defineWorkflow, defineAgent, step, awaitSignal } from "@intx/workflow";
 
-export const kind = 'my-workflow';
+export const kind = "my-workflow";
 
 export const workflow = defineWorkflow({
-  id: 'my-workflow',
-  trigger: { type: 'manual' },
+  id: "my-workflow",
+  trigger: { type: "manual" },
   steps: {
-    intake: step({ agent: defineAgent({ id: 'intake' /* prompt, tools, inference */ }) }),
-    generate: step({ agent: defineAgent({ id: 'generate' /* … */ }), after: ['intake'] }),
-    approval: awaitSignal({ name: 'artifact-approval', after: ['generate'] }), // HITL gate
+    intake: step({
+      agent: defineAgent({ id: "intake" /* prompt, tools, inference */ }),
+    }),
+    generate: step({
+      agent: defineAgent({ id: "generate" /* … */ }),
+      after: ["intake"],
+    }),
+    approval: awaitSignal({ name: "artifact-approval", after: ["generate"] }), // HITL gate
   },
 });
 ```
@@ -311,7 +357,7 @@ This is the key property: the tool package and the agent's `toolPackages` pin ar
 
 > **Removed.** The per-instance agent scheduler (`@workbench/agent-scheduler`, `startInstanceScheduler`, `getSchedulerIntervalMs`, and the `schedulerIntervalMs` capability) has been deleted. There is no longer a host loop that sends a periodic `"sync"` message to an agent session.
 
-All agents are now uniform: interactive and recover-on-open. They respond to inbound mail and are brought back when needed (Myra auto-relaunches via `GET /v1/me`; other agents recover on the next open). No agent runs on a host-driven timer.
+All agents are now uniform: interactive and recover-on-open. They respond to inbound mail and are brought back when needed (Myra auto-relaunches via `POST /v1/me`; other agents recover on the next open). No agent runs on a host-driven timer.
 
 Recurring work is moving to **workflows**, which will provide native scheduling. Do not reintroduce a per-agent timer in the hub — model recurring work as a workflow when that capability lands.
 
@@ -333,10 +379,11 @@ A director may still allow a system sender address (e.g. `scheduler@system`) for
 
 ## Checklist: Shipping a New Agent
 
-- [ ] `packages/agents/src/<name>/` created from an existing agent (e.g. `larry`), builds cleanly
+- [ ] `packages/agents/src/<name>/` created from an existing agent, builds cleanly
 - [ ] `credentialRequirements` declared for inference + any external services
 - [ ] `capabilities.tools` lists every tool the agent is allowed to call
 - [ ] System prompt written via `buildSystemPrompt` + `formatFromModel`
 - [ ] Director filters inbound senders
 - [ ] Provisioning wired in `tenant-provisioning.ts`
 - [ ] Credential provider entries exist for every requirement
+- [ ] Rollout understood — a template edit only reaches users after the hub boots (`seedAgentTemplates`) and instances relaunch; seed the global tenant + publish tool packages **before** deploy. See [Rolling out agent changes](#rolling-out-agent-changes-how-an-edit-reaches-existing-users).

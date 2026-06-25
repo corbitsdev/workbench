@@ -1,19 +1,23 @@
-import type { AgentTool } from '@intx/agent';
-import type { ToolDefinition } from '@intx/types/runtime';
-import { normalizeRedditPost } from './normalize';
-import type { RedditPost, RedditTopComment } from './types';
+import type { AgentTool } from "@intx/agent";
+import type { ToolDefinition } from "@intx/types/runtime";
+import { normalizeRedditPost } from "./normalize";
+import type { RedditPost, RedditTopComment } from "./types";
 
 // Reddit is fetched through ScrapeCreators rather than Reddit's own API: the
 // public JSON endpoints get IP-blocked from datacenter hosts and the authenticated
 // API needs an OAuth flow we don't run server-side. Endpoints verified against
 // https://docs.scrapecreators.com and the reference last30days skill
 // (mvanhorn/last30days-skill). Update if the API changes.
-export const SCRAPECREATORS_DEFAULT_BASE_URL = 'https://api.scrapecreators.com';
+export const SCRAPECREATORS_DEFAULT_BASE_URL = "https://api.scrapecreators.com";
 
 const MAX_ERROR_BODY_LENGTH = 500;
-const DEFAULT_LIMIT = 25;
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 100;
 
-export type RedditFetch = (url: string, init?: RequestInit) => Promise<Response>;
+export type RedditFetch = (
+  url: string,
+  init?: RequestInit,
+) => Promise<Response>;
 
 export type RedditToolsConfig = {
   apiKey: string;
@@ -22,13 +26,13 @@ export type RedditToolsConfig = {
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function resolvedBaseURL(config: RedditToolsConfig): string {
   const url = config.baseURL?.trim();
   if (url && url.length > 0) {
-    return url.replace(/\/$/, '');
+    return url.replace(/\/$/, "");
   }
   return SCRAPECREATORS_DEFAULT_BASE_URL;
 }
@@ -36,17 +40,20 @@ function resolvedBaseURL(config: RedditToolsConfig): string {
 async function fetchJSON(
   config: RedditToolsConfig,
   url: URL,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
   const fetcher = config.fetcher ?? fetch;
   const response = await fetcher(url.toString(), {
-    headers: { 'x-api-key': config.apiKey },
+    headers: { "x-api-key": config.apiKey },
     signal,
   });
   if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    const detail = body.length > 0 ? `: ${body.slice(0, MAX_ERROR_BODY_LENGTH)}` : '';
-    throw new Error(`ScrapeCreators API error: ${response.status} ${response.statusText}${detail}`);
+    const body = await response.text().catch(() => "");
+    const detail =
+      body.length > 0 ? `: ${body.slice(0, MAX_ERROR_BODY_LENGTH)}` : "";
+    throw new Error(
+      `ScrapeCreators API error: ${response.status} ${response.statusText}${detail}`,
+    );
   }
   return response.json();
 }
@@ -54,20 +61,20 @@ async function fetchJSON(
 function stringField(rec: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const value = rec[key];
-    if (typeof value === 'string' && value.length > 0) {
+    if (typeof value === "string" && value.length > 0) {
       return value;
     }
   }
-  return '';
+  return "";
 }
 
 function numberField(rec: Record<string, unknown>, keys: string[]): number {
   for (const key of keys) {
     const value = rec[key];
-    if (typeof value === 'number') {
+    if (typeof value === "number") {
       return value;
     }
-    if (typeof value === 'string' && /^\d+$/.test(value)) {
+    if (typeof value === "string" && /^\d+$/.test(value)) {
       return Number(value);
     }
   }
@@ -81,9 +88,9 @@ function extractPosts(data: unknown): unknown[] {
     return data;
   }
   if (!isRecord(data)) {
-    throw new Error('ScrapeCreators reddit response is not an object');
+    throw new Error("ScrapeCreators reddit response is not an object");
   }
-  for (const key of ['posts', 'data', 'results']) {
+  for (const key of ["posts", "data", "results"]) {
     const value = data[key];
     if (Array.isArray(value)) {
       return value;
@@ -95,12 +102,12 @@ function extractPosts(data: unknown): unknown[] {
 // /v1/reddit/search returns epoch seconds (created_utc/created); the subreddit
 // search endpoint returns an ISO string (created_at). Resolve both to epoch seconds.
 function resolveCreatedUtc(rec: Record<string, unknown>): number {
-  const epoch = numberField(rec, ['created_utc', 'created']);
+  const epoch = numberField(rec, ["created_utc", "created"]);
   if (epoch > 0) {
     return epoch;
   }
-  const iso = rec['created_at'];
-  if (typeof iso === 'string' && iso.length > 0) {
+  const iso = rec["created_at"];
+  if (typeof iso === "string" && iso.length > 0) {
     const parsed = Date.parse(iso);
     if (!Number.isNaN(parsed)) {
       return Math.floor(parsed / 1000);
@@ -110,14 +117,14 @@ function resolveCreatedUtc(rec: Record<string, unknown>): number {
 }
 
 function resolveSubreddit(rec: Record<string, unknown>): string {
-  const direct = rec['subreddit'];
-  if (typeof direct === 'string' && direct.length > 0) {
+  const direct = rec["subreddit"];
+  if (typeof direct === "string" && direct.length > 0) {
     return direct;
   }
   if (isRecord(direct)) {
-    return stringField(direct, ['name', 'display_name', 'subreddit']);
+    return stringField(direct, ["name", "display_name", "subreddit"]);
   }
-  return stringField(rec, ['subreddit_name_prefixed']).replace(/^r\//, '');
+  return stringField(rec, ["subreddit_name_prefixed"]).replace(/^r\//, "");
 }
 
 // ScrapeCreators sometimes attaches the thread's top comment(s) on the post
@@ -125,17 +132,17 @@ function resolveSubreddit(rec: Record<string, unknown>): string {
 // the strongest community signal, so pass them through; when absent the post is
 // still emitted without them.
 function extractTopComments(rec: Record<string, unknown>): RedditTopComment[] {
-  const raw = rec['top_comments'] ?? rec['comments'] ?? rec['top_comment'];
+  const raw = rec["top_comments"] ?? rec["comments"] ?? rec["top_comment"];
   const list = Array.isArray(raw) ? raw : raw === undefined ? [] : [raw];
   const comments: RedditTopComment[] = [];
   for (const entry of list) {
     if (!isRecord(entry)) continue;
-    const text = stringField(entry, ['body', 'text', 'comment']);
+    const text = stringField(entry, ["body", "text", "comment"]);
     if (text.length === 0) continue;
-    const author = stringField(entry, ['author', 'username']);
+    const author = stringField(entry, ["author", "username"]);
     const comment: RedditTopComment = {
       text,
-      score: Math.floor(numberField(entry, ['ups', 'score', 'votes'])),
+      score: Math.floor(numberField(entry, ["ups", "score", "votes"])),
     };
     if (author.length > 0) comment.author = author;
     comments.push(comment);
@@ -151,20 +158,22 @@ function parseRedditPost(value: unknown): RedditPost | null {
   if (!isRecord(value)) {
     return null;
   }
-  const permalink = stringField(value, ['permalink']);
+  const permalink = stringField(value, ["permalink"]);
   const created_utc = resolveCreatedUtc(value);
   if (permalink.length === 0 || created_utc === 0) {
     return null;
   }
   const topComments = extractTopComments(value);
   const post: RedditPost = {
-    id: stringField(value, ['id', 'name']),
-    title: stringField(value, ['title']),
-    url: stringField(value, ['url']),
+    id: stringField(value, ["id", "name"]),
+    title: stringField(value, ["title"]),
+    url: stringField(value, ["url"]),
     permalink,
     created_utc,
-    ups: Math.floor(numberField(value, ['ups', 'score', 'votes'])),
-    num_comments: Math.floor(numberField(value, ['num_comments', 'comment_count'])),
+    ups: Math.floor(numberField(value, ["ups", "score", "votes"])),
+    num_comments: Math.floor(
+      numberField(value, ["num_comments", "comment_count"]),
+    ),
     subreddit: resolveSubreddit(value),
   };
   if (topComments.length > 0) {
@@ -174,85 +183,94 @@ function parseRedditPost(value: unknown): RedditPost | null {
 }
 
 function resolveLimit(args: Record<string, unknown>): number {
-  if (typeof args.limit === 'number' && args.limit > 0) {
-    return Math.floor(args.limit);
+  if (typeof args.limit === "number" && args.limit > 0) {
+    return Math.min(Math.floor(args.limit), MAX_LIMIT);
   }
   return DEFAULT_LIMIT;
 }
 
 function applyCommonParams(url: URL, args: Record<string, unknown>): void {
-  const sort = typeof args.sort === 'string' && args.sort.length > 0 ? args.sort : 'relevance';
-  url.searchParams.set('sort', sort);
+  const sort =
+    typeof args.sort === "string" && args.sort.length > 0
+      ? args.sort
+      : "relevance";
+  url.searchParams.set("sort", sort);
   const timeframe =
-    typeof args.timeframe === 'string' && args.timeframe.length > 0 ? args.timeframe : 'month';
-  url.searchParams.set('timeframe', timeframe);
+    typeof args.timeframe === "string" && args.timeframe.length > 0
+      ? args.timeframe
+      : "month";
+  url.searchParams.set("timeframe", timeframe);
 }
 
 const REDDIT_SEARCH_DEFINITION: ToolDefinition = {
-  name: 'reddit_search',
+  name: "reddit_search",
   description:
-    'Search Reddit posts across all subreddits via ScrapeCreators. Returns normalized research items with upvote and comment counts.',
+    'Search Reddit posts across all subreddits via ScrapeCreators. Scope the search with a focused query and timeframe rather than pulling everything; returns 10 results by default. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "reddit", author ("r/<subreddit>"), engagement: { upvotes, comments } }`, sometimes with a `topComments` array.',
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
-      query: { type: 'string', description: 'The search query string.' },
+      query: { type: "string", description: "The search query string." },
       sort: {
-        type: 'string',
-        description: 'Sort order: relevance, new, top, or comment_count (default relevance).',
+        type: "string",
+        description:
+          "Sort order: relevance, new, top, or comment_count (default relevance).",
       },
       timeframe: {
-        type: 'string',
-        description: 'Time filter: all, day, week, month, or year (default month).',
+        type: "string",
+        description:
+          "Time filter: all, day, week, month, or year (default month).",
       },
       limit: {
-        type: 'number',
-        description: 'Maximum number of results to return (default 25).',
+        type: "number",
+        description: "Maximum number of results to return (1-100, default 10).",
       },
     },
-    required: ['query'],
+    required: ["query"],
   },
 };
 
 const REDDIT_SUBREDDIT_SEARCH_DEFINITION: ToolDefinition = {
-  name: 'reddit_subreddit_search',
+  name: "reddit_subreddit_search",
   description:
-    'Search Reddit posts within a specific subreddit via ScrapeCreators. Returns normalized research items with upvote and comment counts.',
+    'Search Reddit posts within a specific subreddit via ScrapeCreators. Scope the search with a focused query, subreddit, and timeframe rather than pulling everything; returns 10 results by default. Returns a JSON array of research items — each `{ url, title, publishedAt (ISO 8601), source: "reddit", author ("r/<subreddit>"), engagement: { upvotes, comments } }`, sometimes with a `topComments` array.',
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
       subreddit: {
-        type: 'string',
-        description: 'The subreddit name (without the r/ prefix).',
+        type: "string",
+        description: "The subreddit name (without the r/ prefix).",
       },
-      query: { type: 'string', description: 'The search query string.' },
+      query: { type: "string", description: "The search query string." },
       sort: {
-        type: 'string',
-        description: 'Sort order: relevance, hot, top, new, or comments (default relevance).',
+        type: "string",
+        description:
+          "Sort order: relevance, hot, top, new, or comments (default relevance).",
       },
       timeframe: {
-        type: 'string',
-        description: 'Time filter: all, day, week, month, or year (default month).',
+        type: "string",
+        description:
+          "Time filter: all, day, week, month, or year (default month).",
       },
       limit: {
-        type: 'number',
-        description: 'Maximum number of results to return (default 25).',
+        type: "number",
+        description: "Maximum number of results to return (1-100, default 10).",
       },
     },
-    required: ['subreddit', 'query'],
+    required: ["subreddit", "query"],
   },
 };
 
 async function searchReddit(
   config: RedditToolsConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<string> {
-  const query = typeof args.query === 'string' ? args.query : '';
+  const query = typeof args.query === "string" ? args.query : "";
   if (query.length === 0) {
-    throw new Error('query is required');
+    throw new Error("query is required");
   }
   const url = new URL(`${resolvedBaseURL(config)}/v1/reddit/search`);
-  url.searchParams.set('query', query);
+  url.searchParams.set("query", query);
   applyCommonParams(url, args);
 
   const data = await fetchJSON(config, url, signal);
@@ -266,19 +284,19 @@ async function searchReddit(
 async function searchSubreddit(
   config: RedditToolsConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<string> {
-  const subreddit = typeof args.subreddit === 'string' ? args.subreddit : '';
+  const subreddit = typeof args.subreddit === "string" ? args.subreddit : "";
   if (subreddit.length === 0) {
-    throw new Error('subreddit is required');
+    throw new Error("subreddit is required");
   }
-  const query = typeof args.query === 'string' ? args.query : '';
+  const query = typeof args.query === "string" ? args.query : "";
   if (query.length === 0) {
-    throw new Error('query is required');
+    throw new Error("query is required");
   }
   const url = new URL(`${resolvedBaseURL(config)}/v1/reddit/subreddit/search`);
-  url.searchParams.set('subreddit', subreddit);
-  url.searchParams.set('query', query);
+  url.searchParams.set("subreddit", subreddit);
+  url.searchParams.set("query", query);
   applyCommonParams(url, args);
 
   const data = await fetchJSON(config, url, signal);
@@ -292,12 +310,12 @@ async function searchSubreddit(
 export function createRedditTools(config: RedditToolsConfig): AgentTool[] {
   return [
     {
-      kind: 'string',
+      kind: "string",
       definition: REDDIT_SEARCH_DEFINITION,
       handler: (args, signal) => searchReddit(config, args, signal),
     },
     {
-      kind: 'string',
+      kind: "string",
       definition: REDDIT_SUBREDDIT_SEARCH_DEFINITION,
       handler: (args, signal) => searchSubreddit(config, args, signal),
     },
@@ -307,12 +325,14 @@ export function createRedditTools(config: RedditToolsConfig): AgentTool[] {
 export const REDDIT_HUB_TOOLS = {
   reddit_search: {
     definition: REDDIT_SEARCH_DEFINITION,
-    providerName: 'scrapecreators' as const,
-    createTools: (config: { apiKey: string; baseURL?: string }) => createRedditTools(config),
+    providerName: "scrapecreators" as const,
+    createTools: (config: { apiKey: string; baseURL?: string }) =>
+      createRedditTools(config),
   },
   reddit_subreddit_search: {
     definition: REDDIT_SUBREDDIT_SEARCH_DEFINITION,
-    providerName: 'scrapecreators' as const,
-    createTools: (config: { apiKey: string; baseURL?: string }) => createRedditTools(config),
+    providerName: "scrapecreators" as const,
+    createTools: (config: { apiKey: string; baseURL?: string }) =>
+      createRedditTools(config),
   },
 };

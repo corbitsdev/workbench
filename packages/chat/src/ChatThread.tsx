@@ -1,22 +1,26 @@
-import { useEffect, useRef } from 'react';
-import { cn, toHumanLabel } from '@workbench/ui';
-import { type ChatMessage, type ChatActivity } from './types';
-import { MessageBubble } from './MessageBubble';
-import { ToolNarrative, type ToolNarrativeProps } from './ToolNarrative';
-import { TypingIndicator } from './TypingIndicator';
-import type { UIBlock, UIResponse } from './ui-block';
-import { extractImageURLs } from './url-image';
-import { UrlImageCard } from './UrlImageCard';
+import { useEffect, useRef } from "react";
+import { cn, toHumanLabel } from "@workbench/ui";
+import { type ChatMessage, type ChatActivity, type ToolCall } from "./types";
+import { MessageBubble } from "./MessageBubble";
+import { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
+import { TypingIndicator } from "./TypingIndicator";
+import type { UIBlock, UIResponse } from "./ui-block";
+import type { FeedbackSubjectKind } from "./feedback-types";
+import { extractImageURLs } from "./url-image";
+import { UrlImageCard } from "./UrlImageCard";
 
-function formatActivityLabel(activity: ChatActivity, agentName: string): string {
+function formatActivityLabel(
+  activity: ChatActivity,
+  agentName: string,
+): string {
   switch (activity.type) {
-    case 'thinking':
+    case "thinking":
       return `${agentName} is thinking`;
-    case 'tool_call':
+    case "tool_call":
       return `${agentName} is calling ${toHumanLabel(activity.name)}`;
-    case 'tool_running':
+    case "tool_running":
       return `${agentName} is running ${toHumanLabel(activity.name)}`;
-    case 'rate_limited':
+    case "rate_limited":
       return `${agentName} is rate-limited, retrying in ${Math.ceil(activity.retryAfterMs / 1000)}s`;
   }
 }
@@ -36,11 +40,35 @@ export interface ChatThreadProps {
    * Optional formatter passed through to ToolNarrative. Supply this to turn
    * raw tool names and results into readable summary lines.
    */
-  formatToolSummary?: ToolNarrativeProps['formatSummary'];
+  formatToolSummary?: ToolNarrativeProps["formatSummary"];
+  /** When true, completed turns with many tool calls collapse to a summary line. */
+  compactToolActivity?: ToolNarrativeProps["compact"];
+  /** Rolls a turn's tool calls into one summary line for the collapsed view. */
+  summarizeToolCalls?: ToolNarrativeProps["summarizeCalls"];
+  /**
+   * Predicate to hide individual tool calls from the narrative (the call still
+   * runs; it is just not rendered). Used to abstract an agent's private
+   * self-management — e.g. reads/writes of its own memory files.
+   */
+  hideToolCall?: (call: ToolCall) => boolean;
   /** Wired to send an interactive UI block's response back to the agent. */
   onRespond?: (response: UIResponse) => void;
   /** Wired to document UI block actions (copy / download / save-artifact). */
-  onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
+  onAction?: (
+    action: "copy" | "download" | "save-artifact",
+    block: UIBlock,
+  ) => void;
+  /** When provided, thumbs up/down buttons appear below settled agent messages. */
+  onRate?: (
+    subjectId: string,
+    subjectKind: FeedbackSubjectKind,
+    rating: 1 | -1,
+  ) => Promise<void>;
+  /** Returns the server-fetched rating for a subject. Passed to MessageBubble → MessageFeedback. */
+  getRating?: (
+    subjectId: string,
+    subjectKind: FeedbackSubjectKind,
+  ) => 1 | -1 | null | undefined;
   className?: string;
 }
 
@@ -53,8 +81,13 @@ export function ChatThread({
   typingLabel,
   emptyState,
   formatToolSummary,
+  compactToolActivity,
+  summarizeToolCalls,
+  hideToolCall,
   onRespond,
   onAction,
+  onRate,
+  getRating,
   className,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -74,26 +107,34 @@ export function ChatThread({
       ref={scrollRef}
       onScroll={(e) => {
         const el = e.currentTarget;
-        pinnedRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
+        pinnedRef.current =
+          el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
       }}
       role="log"
       aria-label="Chat messages"
-      className={cn('flex flex-1 flex-col gap-3 overflow-y-auto p-4', className)}
+      className={cn(
+        "flex flex-1 flex-col gap-3 overflow-y-auto p-4",
+        className,
+      )}
     >
       {messages.length === 0 &&
         typing !== true &&
         !hasActivity &&
         (emptyState ?? (
           <div className="flex flex-1 items-center justify-center">
-            <p className="text-sm text-text-3">Send a message to get started.</p>
+            <p className="text-sm text-text-3">
+              Send a message to get started.
+            </p>
           </div>
         ))}
       {messages.map((message) => {
-        const isSettledAgent = message.role === 'agent' && message.status !== 'sending';
+        const isSettledAgent =
+          message.role === "agent" && message.status !== "sending";
         const { cleanedText, urls } = isSettledAgent
           ? extractImageURLs(message.content)
           : { cleanedText: message.content, urls: [] };
-        const displayMessage = urls.length > 0 ? { ...message, content: cleanedText } : message;
+        const displayMessage =
+          urls.length > 0 ? { ...message, content: cleanedText } : message;
 
         return (
           <div key={message.id} className="flex flex-col gap-1.5">
@@ -101,21 +142,41 @@ export function ChatThread({
               message={displayMessage}
               {...(onRespond !== undefined ? { onRespond } : {})}
               {...(onAction !== undefined ? { onAction } : {})}
+              {...(onRate !== undefined ? { onRate } : {})}
+              {...(getRating !== undefined ? { getRating } : {})}
             />
             {urls.map((url) => (
               <UrlImageCard key={url} url={url} />
             ))}
-            {message.role === 'agent' &&
-              message.toolCalls !== undefined &&
-              message.toolCalls.length > 0 && (
-                <ToolNarrative
-                  toolCalls={message.toolCalls}
-                  {...(formatToolSummary !== undefined ? { formatSummary: formatToolSummary } : {})}
-                  {...(onRespond !== undefined ? { onRespond } : {})}
-                  {...(onAction !== undefined ? { onAction } : {})}
-                  className="pl-1"
-                />
-              )}
+            {message.role === "agent" &&
+              (() => {
+                const visibleToolCalls =
+                  hideToolCall === undefined
+                    ? message.toolCalls
+                    : message.toolCalls?.filter((c) => !hideToolCall(c));
+                if (
+                  visibleToolCalls === undefined ||
+                  visibleToolCalls.length === 0
+                )
+                  return null;
+                return (
+                  <ToolNarrative
+                    toolCalls={visibleToolCalls}
+                    {...(formatToolSummary !== undefined
+                      ? { formatSummary: formatToolSummary }
+                      : {})}
+                    {...(compactToolActivity !== undefined
+                      ? { compact: compactToolActivity }
+                      : {})}
+                    {...(summarizeToolCalls !== undefined
+                      ? { summarizeCalls: summarizeToolCalls }
+                      : {})}
+                    {...(onRespond !== undefined ? { onRespond } : {})}
+                    {...(onAction !== undefined ? { onAction } : {})}
+                    className="pl-1"
+                  />
+                );
+              })()}
           </div>
         );
       })}
@@ -128,7 +189,9 @@ export function ChatThread({
         </div>
       )}
       {typing === true && !hasActivity && (
-        <TypingIndicator {...(typingLabel !== undefined ? { label: typingLabel } : {})} />
+        <TypingIndicator
+          {...(typingLabel !== undefined ? { label: typingLabel } : {})}
+        />
       )}
     </div>
   );

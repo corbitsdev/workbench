@@ -6,17 +6,20 @@
  * file is stable: config types, a generic HTTP helper that covers every
  * Firecrawl endpoint, and argument/response parsing utilities.
  */
-import type { AgentTool } from '@intx/agent';
-import type { ToolDefinition } from '@intx/types/runtime';
+import type { AgentTool } from "@intx/agent";
+import type { ToolDefinition } from "@intx/types/runtime";
 
-export type FirecrawlFetch = (input: string, init: RequestInit) => Promise<Response>;
+export type FirecrawlFetch = (
+  input: string,
+  init: RequestInit,
+) => Promise<Response>;
 
 /**
  * Firecrawl's API base URL (v2). Owned by the tool package so callers only need
  * to supply an API key — the base URL is pulled in here rather than stored per
  * credential. Override is still possible via `baseUrl`.
  */
-export const FIRECRAWL_DEFAULT_BASE_URL = 'https://api.firecrawl.dev/v2';
+export const FIRECRAWL_DEFAULT_BASE_URL = "https://api.firecrawl.dev/v2";
 
 export type FirecrawlToolsConfig = {
   apiKey: string;
@@ -37,7 +40,9 @@ export type ResolvedFirecrawlConfig = {
  * validate it. Every `create<Area>Tools` factory calls this first so each
  * module is independently usable and testable.
  */
-export function resolveConfig(config: FirecrawlToolsConfig): ResolvedFirecrawlConfig {
+export function resolveConfig(
+  config: FirecrawlToolsConfig,
+): ResolvedFirecrawlConfig {
   const resolved: ResolvedFirecrawlConfig = {
     apiKey: config.apiKey,
     baseUrl: config.baseUrl?.trim() || FIRECRAWL_DEFAULT_BASE_URL,
@@ -49,19 +54,19 @@ export function resolveConfig(config: FirecrawlToolsConfig): ResolvedFirecrawlCo
 
 function validateConfig(config: ResolvedFirecrawlConfig): void {
   if (config.apiKey.length === 0) {
-    throw new Error('Firecrawl apiKey is required');
+    throw new Error("Firecrawl apiKey is required");
   }
   try {
     new URL(config.baseUrl);
   } catch {
-    throw new Error('Firecrawl baseUrl must be a valid URL');
+    throw new Error("Firecrawl baseUrl must be a valid URL");
   }
 }
 
 function firecrawlHeaders(apiKey: string): Record<string, string> {
   return {
     Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   };
 }
 
@@ -73,20 +78,23 @@ export function jsonResult(value: unknown): string {
 /** Build an AgentTool whose handler returns the JSON-stringified call result. */
 export function stringTool(
   definition: ToolDefinition,
-  call: (args: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>
+  call: (
+    args: Record<string, unknown>,
+    signal: AbortSignal,
+  ) => Promise<unknown>,
 ): AgentTool {
   return {
-    kind: 'string',
+    kind: "string",
     definition,
     handler: async (args, signal) => jsonResult(await call(args, signal)),
   };
 }
 
 export function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/$/, '');
+  return baseUrl.replace(/\/$/, "");
 }
 
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type FirecrawlRequest = {
   method: HttpMethod;
@@ -107,7 +115,7 @@ export type FirecrawlRequest = {
 export async function firecrawlFetchJSON(
   config: ResolvedFirecrawlConfig,
   request: FirecrawlRequest,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
   const url = new URL(`${normalizeBaseUrl(config.baseUrl)}${request.path}`);
   if (request.query !== undefined) {
@@ -123,13 +131,15 @@ export async function firecrawlFetchJSON(
     method: request.method,
     headers: firecrawlHeaders(config.apiKey),
     signal,
-    ...(request.body !== undefined ? { body: JSON.stringify(request.body) } : {}),
+    ...(request.body !== undefined
+      ? { body: JSON.stringify(request.body) }
+      : {}),
   } satisfies RequestInit);
 
   if (!response.ok) {
-    const body = errorMessageFromBody(await response.text().catch(() => ''));
+    const body = errorMessageFromBody(await response.text().catch(() => ""));
     const detail = response.statusText || body;
-    throw new Error(`Firecrawl API error: ${response.status} ${detail ?? ''}`);
+    throw new Error(`Firecrawl API error: ${response.status} ${detail ?? ""}`);
   }
 
   return (await response.json()) as unknown;
@@ -142,10 +152,10 @@ export function errorMessageFromBody(text: string): string | null {
   try {
     const parsed: unknown = JSON.parse(text);
     if (isRecord(parsed)) {
-      if (typeof parsed.error === 'string') {
+      if (typeof parsed.error === "string") {
         return parsed.error;
       }
-      if (typeof parsed.message === 'string') {
+      if (typeof parsed.message === "string") {
         return parsed.message;
       }
     }
@@ -158,30 +168,37 @@ export function errorMessageFromBody(text: string): string | null {
 // --- Argument / response parsing helpers ------------------------------------
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function optionalString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 export function optionalBoolean(value: unknown): boolean | null {
-  return typeof value === 'boolean' ? value : null;
+  return typeof value === "boolean" ? value : null;
 }
 
 export function optionalNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-export function optionalPositiveInteger(value: unknown, fallback: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+export function optionalPositiveInteger(
+  value: unknown,
+  fallback: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
     return fallback;
   }
   return Math.min(value, max);
 }
 
 export function optionalStringArray(value: unknown): string[] | null {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+  if (
+    !Array.isArray(value) ||
+    !value.every((item) => typeof item === "string")
+  ) {
     return null;
   }
   return value;
@@ -192,18 +209,26 @@ export function optionalRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
 }
 
-export function requiredString(args: Record<string, unknown>, key: string): string {
+export function requiredString(
+  args: Record<string, unknown>,
+  key: string,
+): string {
   const value = args[key];
-  if (typeof value !== 'string' || value.length === 0) {
+  if (typeof value !== "string" || value.length === 0) {
     throw new Error(`${key} is required`);
   }
   return value;
 }
 
-export function requiredStringArray(args: Record<string, unknown>, key: string): string[] {
+export function requiredStringArray(
+  args: Record<string, unknown>,
+  key: string,
+): string[] {
   const value = optionalStringArray(args[key]);
   if (value === null || value.length === 0) {
-    throw new Error(`${key} is required and must be a non-empty array of strings`);
+    throw new Error(
+      `${key} is required and must be a non-empty array of strings`,
+    );
   }
   return value;
 }

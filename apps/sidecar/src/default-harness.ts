@@ -2,7 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { evaluateGrants } from "@intx/authz";
 import { createToolRunner, defineTool } from "@intx/agent";
-import { createWorkbenchDirectorRegistry } from "@workbench/agents";
+import {
+  createWorkbenchDirectorRegistry,
+  toLlmToolName,
+} from "@workbench/agents";
 import {
   HUB_RPC_ENV_KEY,
   providerFromEnvKey,
@@ -16,15 +19,18 @@ import {
   type DefinedRunner,
 } from "./agent-tools";
 import { createHarness, createHarnessRuntimeCapabilities } from "@intx/harness";
-import { readDeployTree } from "@intx/hub-agent";
+import { readDeployTree } from "@workbench/hub-agent";
 import { hasProvider } from "@intx/inference";
 import { getLogger } from "@intx/log";
-import { createIsogitStore, createMailAuditStore } from "@intx/storage-isogit";
+import {
+  createIsogitStore,
+  createMailAuditStore,
+} from "@workbench/storage-isogit";
 import { createMailTools } from "@intx/tools-mail";
 import { createPosixTools } from "@intx/tools-posix";
 import { createBlobReader } from "@intx/types/runtime";
 import type { InferenceSource } from "@intx/types/runtime";
-import type { HarnessBuilder, HarnessBundle } from "@intx/hub-agent";
+import type { HarnessBuilder, HarnessBundle } from "@workbench/hub-agent";
 import {
   hasSeedMarker,
   parseSeedMarker,
@@ -80,11 +86,7 @@ export {
 };
 
 export function resolveMailOutboundLimit(systemPrompt: string): number {
-  if (
-    systemPrompt.includes(
-      `${PERSONAL_AGENT_NAME} is a Chief of Staff and Executive Assistant`,
-    )
-  ) {
+  if (systemPrompt.includes(`You are ${PERSONAL_AGENT_NAME}, Chief of Staff`)) {
     return PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN;
   }
   return DEFAULT_MAIL_OUTBOUND_PER_TURN;
@@ -276,7 +278,7 @@ export function createDefaultHarnessBuilder({
       };
 
       const loadedRunners: DefinedRunner[] = [];
-      const loadedDisposers: Array<() => Promise<void>> = [];
+      const loadedDisposers: (() => Promise<void>)[] = [];
       const loadedToolNames = new Set<string>();
       for (const pkg of loadedPackages) {
         for (const factory of pkg.factories) {
@@ -300,11 +302,28 @@ export function createDefaultHarnessBuilder({
             );
             continue;
           }
-          loadedRunners.push({
-            definitions: [...bundle.definitions],
-            run: (call, signal) => bundle.run(call, signal),
+          // The loader prefixes every tool with `<factoryId>:<name>`
+          // (e.g. `@workbench/tools-exa/exa:exa_search`). That string carries
+          // `@`, `/`, and `:`, which violate LLM function-name constraints and do
+          // not round-trip (kimi truncates at the `:`), so the model's tool call
+          // never matches its grant or the loader's dispatch entry. Present an
+          // LLM-safe alias to the model and translate it back to the canonical
+          // name before delegating to the bundle's run() (CL-2306).
+          const aliasToCanonical = new Map<string, string>();
+          const safeDefinitions = bundle.definitions.map((def) => {
+            const safe = toLlmToolName(def.name);
+            aliasToCanonical.set(safe, def.name);
+            return { ...def, name: safe };
           });
-          for (const def of bundle.definitions) loadedToolNames.add(def.name);
+          loadedRunners.push({
+            definitions: safeDefinitions,
+            run: (call, signal) =>
+              bundle.run(
+                { ...call, name: aliasToCanonical.get(call.name) ?? call.name },
+                signal,
+              ),
+          });
+          for (const def of safeDefinitions) loadedToolNames.add(def.name);
           if (bundle.dispose !== undefined) {
             loadedDisposers.push(async () => {
               await bundle.dispose?.();

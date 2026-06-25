@@ -1,5 +1,8 @@
-export { TranscriptPanel, type TranscriptPanelProps } from './TranscriptPanel';
-export { TranscriptReview, type TranscriptReviewProps } from './TranscriptReview';
+export { TranscriptPanel, type TranscriptPanelProps } from "./TranscriptPanel";
+export {
+  TranscriptReview,
+  type TranscriptReviewProps,
+} from "./TranscriptReview";
 export {
   type SelectedPainPointContext,
   type SpeakerRole,
@@ -8,4 +11,4 @@ export {
   type TranscriptSource,
   type TranscriptSpeaker,
   type TranscriptTurn,
-} from './types';
+} from "./types";

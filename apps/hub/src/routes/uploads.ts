@@ -1,10 +1,10 @@
-import { Hono } from 'hono';
-import { getLogger } from '@intx/log';
-import type { HubDb } from '../db';
-import { upload } from '../db/schema';
-import { getRequestedUserContext } from '../lib/user-context';
+import { Hono } from "hono";
+import { getLogger } from "@intx/log";
+import type { HubDb } from "../db";
+import { upload } from "../db/schema";
+import { getRequestedUserContext } from "../lib/user-context";
 
-const log = getLogger(['api', 'uploads']);
+const log = getLogger(["api", "uploads"]);
 
 // Files arrive before the workflow run that consumes them, so they are stored in
 // the upload table (BYTEA) rather than as artifacts. 10MB comfortably covers a
@@ -15,39 +15,51 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 // the xlsx parser) so a PDF/ZIP/HTML payload is rejected with a clear message
 // instead of an opaque ExcelJS error — and a crafted content-type can't slip
 // past on its own. Accept the canonical xlsx MIME or the .xlsx extension.
-const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const XLSX_MIME =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 function isAcceptedUpload(file: File): boolean {
   if (file.type === XLSX_MIME) return true;
-  return file.name.toLowerCase().endsWith('.xlsx');
+  return file.name.toLowerCase().endsWith(".xlsx");
 }
 
-export function createUploadsRouter(db: HubDb): Hono<{ Variables: { userId: string } }> {
+export function createUploadsRouter(
+  db: HubDb,
+): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
-  router.post('/uploads', async (c) => {
-    const userId = c.get('userId');
-    const requestedTenantId = c.req.query('tenantId');
+  router.post("/uploads", async (c) => {
+    const userId = c.get("userId");
+    const requestedTenantId = c.req.query("tenantId");
 
     const { context: userContext, forbidden } = await getRequestedUserContext(
       db,
       userId,
-      requestedTenantId
+      requestedTenantId,
     );
-    if (forbidden) return c.json({ error: 'Tenant not accessible' }, 403);
-    if (!userContext) return c.json({ error: 'User context not found' }, 403);
+    if (forbidden) return c.json({ error: "Tenant not accessible" }, 403);
+    if (!userContext) return c.json({ error: "User context not found" }, 403);
 
     const body = await c.req.parseBody();
-    const file = body['file'];
+    const file = body["file"];
     if (!(file instanceof File)) {
-      return c.json({ error: 'Expected a single file field named "file"' }, 400);
+      return c.json(
+        { error: 'Expected a single file field named "file"' },
+        400,
+      );
     }
 
     if (file.size > MAX_UPLOAD_BYTES) {
-      return c.json({ error: `File exceeds the ${MAX_UPLOAD_BYTES} byte limit` }, 413);
+      return c.json(
+        { error: `File exceeds the ${MAX_UPLOAD_BYTES} byte limit` },
+        413,
+      );
     }
 
     if (!isAcceptedUpload(file)) {
-      return c.json({ error: 'Only .xlsx spreadsheet uploads are supported' }, 415);
+      return c.json(
+        { error: "Only .xlsx spreadsheet uploads are supported" },
+        415,
+      );
     }
 
     const content = Buffer.from(await file.arrayBuffer());
@@ -65,13 +77,18 @@ export function createUploadsRouter(db: HubDb): Hono<{ Variables: { userId: stri
       .returning();
 
     if (!row) {
-      log.error('Upload insert returned no row', { userId });
-      return c.json({ error: 'Failed to store upload' }, 500);
+      log.error("Upload insert returned no row", { userId });
+      return c.json({ error: "Failed to store upload" }, 500);
     }
 
     return c.json(
-      { uploadId: row.id, filename: file.name, mimeType: file.type, size: file.size },
-      201
+      {
+        uploadId: row.id,
+        filename: file.name,
+        mimeType: file.type,
+        size: file.size,
+      },
+      201,
     );
   });
 

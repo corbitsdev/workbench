@@ -4,7 +4,7 @@ import { describe, it, expect, mock } from "bun:test";
 // build() touches isogit and posix tools — all real filesystem/process
 // operations. We mock at the module boundary to keep the tests fast and hermetic.
 
-mock.module("@intx/storage-isogit", () => ({
+mock.module("@workbench/storage-isogit", () => ({
   createIsogitStore: mock(async () => ({
     type: "isogit",
     load: mock(async () => ({
@@ -26,7 +26,7 @@ mock.module("@intx/storage-isogit", () => ({
 // must return an async-iterable stream that closes immediately.
 const createHarnessMock = mock(async () => ({
   type: "harness",
-  // eslint-disable-next-line @typescript-eslint/require-await
+
   async *stream() {
     // Empty stream: closes immediately so the builder's forwarding
     // drain settles without emitting any event.
@@ -44,7 +44,7 @@ mock.module("@intx/harness", () => ({
 const readDeployTreeMock = mock(async () => ({
   systemPrompt: undefined as string | undefined,
 }));
-mock.module("@intx/hub-agent", () => ({
+mock.module("@workbench/hub-agent", () => ({
   readDeployTree: readDeployTreeMock,
 }));
 
@@ -292,22 +292,13 @@ describe("createDefaultHarnessBuilder", () => {
         expect(modelPrompt).not.toContain("workbench:memory-seed");
         expect(modelPrompt).not.toContain("<!--");
         // But the substantive prompt body survives.
-        expect(modelPrompt).toContain("Chief of Staff and Executive Assistant");
+        expect(modelPrompt).toContain("You are Myra, Chief of Staff");
 
-        // And the workspace was seeded with the documented memory files.
+        // And the workspace was seeded with the documented memory file.
         const seeded = await fs.promises.readdir(
           path.join(storeDir, "workspace"),
         );
-        expect(seeded.sort()).toEqual(
-          [
-            "CONTACTS.md",
-            "ERRORS.md",
-            "HUMAN.md",
-            "MEMORY.md",
-            "PENDING.md",
-            "SCRATCHPAD.md",
-          ].sort(),
-        );
+        expect(seeded.sort()).toEqual(["MEMORY.md"].sort());
       } finally {
         await fs.promises.rm(storeDir, { recursive: true, force: true });
       }
@@ -319,7 +310,7 @@ describe("createDefaultHarnessBuilder", () => {
       // message.received is reactor-internal and not an InferenceEvent.
       createHarnessMock.mockImplementationOnce((async () => ({
         type: "harness",
-        // eslint-disable-next-line @typescript-eslint/require-await
+
         async *stream() {
           yield { type: "inference.start", seq: 0, data: { model: "gpt-4o" } };
           yield { type: "message.received", seq: 1, data: { message: {} } };

@@ -1,22 +1,30 @@
-import { generateId } from '@intx/hub-common';
-import { getLogger } from '@intx/log';
-import { schema as intxSchema, resolveInstanceModelSources, createGrantStore } from '@intx/db';
-import type { DB } from '@intx/db';
-import { generateKeyPair, createNodeCrypto } from '@intx/crypto-node';
-import type { SessionService, EventCollectorRegistry, SidecarRouter } from '@intx/hub-sessions';
-import type { AgentTool } from '@intx/agent';
-import type { ToolDefinition } from '@intx/types/runtime';
+import { generateId } from "@intx/hub-common";
+import { getLogger } from "@intx/log";
+import {
+  schema as intxSchema,
+  resolveInstanceModelSources,
+  createGrantStore,
+} from "@intx/db";
+import type { DB } from "@intx/db";
+import { generateKeyPair, createNodeCrypto } from "@intx/crypto-node";
+import type {
+  SessionService,
+  EventCollectorRegistry,
+  SidecarRouter,
+} from "@intx/hub-sessions";
+import type { AgentTool } from "@intx/agent";
+import type { ToolDefinition } from "@intx/types/runtime";
 
 export type { ToolDefinition };
-import { and, eq } from 'drizzle-orm';
-import { DISPATCH_AGENT_DEFINITION } from './definition';
+import { and, eq } from "drizzle-orm";
+import { DISPATCH_AGENT_DEFINITION } from "./definition";
 
 export { DISPATCH_AGENT_DEFINITION };
 
-const log = getLogger(['tools', 'dispatch']);
+const log = getLogger(["tools", "dispatch"]);
 
 export type DispatchContext = {
-  db: DB['db'];
+  db: DB["db"];
   tenantId: string;
   principalId: string;
   agentId: string;
@@ -32,24 +40,24 @@ export type DispatchContext = {
  * Copied from apps/hub/src/lib/tool-grants.ts to keep the package self-contained.
  */
 function persistToolGrants(
-  db: DB['db'],
+  db: DB["db"],
   toolNames: string[],
   scope: { tenantId: string; principalId: string },
-  now: Date
+  now: Date,
 ): Promise<void> {
   const unique = [...new Set(toolNames)];
   if (unique.length === 0) return Promise.resolve();
 
   const rows = unique.map((name) => ({
-    id: generateId('grant'),
+    id: generateId("grant"),
     tenantId: scope.tenantId,
     principalId: scope.principalId,
     roleId: null as string | null,
     resource: `tool:${name}`,
-    action: 'invoke',
-    effect: 'allow' as const,
+    action: "invoke",
+    effect: "allow" as const,
     conditions: null as Record<string, unknown> | null,
-    origin: 'system' as const,
+    origin: "system" as const,
     expiresAt: null as Date | null,
     createdAt: now,
     updatedAt: now,
@@ -61,23 +69,23 @@ function persistToolGrants(
       .where(
         and(
           eq(intxSchema.grant.principalId, scope.principalId),
-          eq(intxSchema.grant.origin, 'system')
-        )
+          eq(intxSchema.grant.origin, "system"),
+        ),
       );
     await tx.insert(intxSchema.grant).values(rows);
   });
 }
 
 function getToolNamesFromCapabilities(capabilities: unknown): string[] {
-  if (typeof capabilities !== 'object' || capabilities === null) return [];
-  const tools = (capabilities as Record<string, unknown>)['tools'];
+  if (typeof capabilities !== "object" || capabilities === null) return [];
+  const tools = (capabilities as Record<string, unknown>)["tools"];
   if (!Array.isArray(tools)) return [];
-  return tools.filter((t): t is string => typeof t === 'string');
+  return tools.filter((t): t is string => typeof t === "string");
 }
 
 async function launchAgentInstance(
   context: DispatchContext,
-  agentRow: typeof intxSchema.agent.$inferSelect
+  agentRow: typeof intxSchema.agent.$inferSelect,
 ): Promise<{ instanceId: string; address: string; sessionId: string }> {
   const { db, tenantId, sessionService, eventCollectors } = context;
   const agentDefinitionId = agentRow.id;
@@ -87,21 +95,21 @@ async function launchAgentInstance(
     where: eq(intxSchema.tenant.id, tenantId),
   });
   if (!tenantRow?.domain) {
-    throw new Error('Tenant has no domain configured');
+    throw new Error("Tenant has no domain configured");
   }
 
   const now = new Date();
-  const instancePrincipalId = generateId('principal');
-  const instanceId = generateId('instance');
+  const instancePrincipalId = generateId("principal");
+  const instanceId = generateId("instance");
   const address = `${instanceId}@${tenantRow.domain}`;
 
   await db.transaction(async (tx) => {
     await tx.insert(intxSchema.principal).values({
       id: instancePrincipalId,
       tenantId,
-      kind: 'agent',
+      kind: "agent",
       refId: agentDefinitionId,
-      status: 'active',
+      status: "active",
       createdAt: now,
       updatedAt: now,
     });
@@ -112,7 +120,7 @@ async function launchAgentInstance(
       tenantId,
       principalId: instancePrincipalId,
       address,
-      status: 'deployed',
+      status: "deployed",
       createdAt: now,
       updatedAt: now,
     });
@@ -126,7 +134,8 @@ async function launchAgentInstance(
   });
   if (!resolution.ok) {
     throw new Error(
-      'No resolvable inference sources for agent credential requirements: ' + resolution.reason
+      "No resolvable inference sources for agent credential requirements: " +
+        resolution.reason,
     );
   }
 
@@ -135,18 +144,23 @@ async function launchAgentInstance(
 
   const toolNames = getToolNamesFromCapabilities(agentRow.capabilities ?? null);
   const tools = context.buildToolDefinitions(toolNames);
-  await persistToolGrants(db, toolNames, { tenantId, principalId: instancePrincipalId }, now);
+  await persistToolGrants(
+    db,
+    toolNames,
+    { tenantId, principalId: instancePrincipalId },
+    now,
+  );
 
   const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
 
-  const sessionId = generateId('session');
+  const sessionId = generateId("session");
   await db.transaction(async (tx) => {
     await tx.insert(intxSchema.agentSession).values({
       id: sessionId,
       tenantId,
       agentId: agentDefinitionId,
       principalId: instancePrincipalId,
-      status: 'active',
+      status: "active",
       createdAt: now,
       updatedAt: now,
     });
@@ -179,11 +193,11 @@ async function launchAgentInstance(
     // Mark session ended and instance failed so the orchestrator doesn't retry.
     await db
       .update(intxSchema.agentSession)
-      .set({ status: 'ended', updatedAt: new Date() })
+      .set({ status: "ended", updatedAt: new Date() })
       .where(eq(intxSchema.agentSession.id, sessionId));
     await db
       .update(intxSchema.agentInstance)
-      .set({ status: 'error', updatedAt: new Date() })
+      .set({ status: "error", updatedAt: new Date() })
       .where(eq(intxSchema.agentInstance.id, instanceId));
     throw err;
   }
@@ -192,7 +206,7 @@ async function launchAgentInstance(
 
   await db
     .update(intxSchema.agentInstance)
-    .set({ status: 'running', updatedAt: new Date() })
+    .set({ status: "running", updatedAt: new Date() })
     .where(eq(intxSchema.agentInstance.id, instanceId));
 
   return { instanceId, address, sessionId };
@@ -201,59 +215,64 @@ async function launchAgentInstance(
 export function createDispatchTools(context: DispatchContext): AgentTool[] {
   return [
     {
-      kind: 'string',
+      kind: "string",
       definition: DISPATCH_AGENT_DEFINITION,
       handler: async (args, signal) => {
         if (signal.aborted) {
-          throw new Error('dispatch_agent aborted before starting');
+          throw new Error("dispatch_agent aborted before starting");
         }
 
         const agentDefinitionId =
-          typeof args.agentDefinitionId === 'string' ? args.agentDefinitionId : '';
-        const task = typeof args.task === 'string' ? args.task : '';
-        if (!agentDefinitionId) throw new Error('agentDefinitionId is required');
-        if (!task) throw new Error('task is required');
+          typeof args.agentDefinitionId === "string"
+            ? args.agentDefinitionId
+            : "";
+        const task = typeof args.task === "string" ? args.task : "";
+        if (!agentDefinitionId)
+          throw new Error("agentDefinitionId is required");
+        if (!task) throw new Error("task is required");
 
         const { db, tenantId, sessionService } = context;
 
         const agentRow = await db.query.agent.findFirst({
           where: and(
             eq(intxSchema.agent.id, agentDefinitionId),
-            eq(intxSchema.agent.tenantId, tenantId)
+            eq(intxSchema.agent.tenantId, tenantId),
           ),
         });
         if (!agentRow) {
           throw new Error(`Agent definition not found: ${agentDefinitionId}`);
         }
-        if (agentRow.status !== 'deployed') {
-          throw new Error(`Agent definition is not deployable (status: ${agentRow.status})`);
+        if (agentRow.status !== "deployed") {
+          throw new Error(
+            `Agent definition is not deployable (status: ${agentRow.status})`,
+          );
         }
         if (!agentRow.systemPrompt) {
-          throw new Error('Agent definition has no system prompt');
+          throw new Error("Agent definition has no system prompt");
         }
 
         if (signal.aborted) {
-          throw new Error('dispatch_agent aborted before launch');
+          throw new Error("dispatch_agent aborted before launch");
         }
 
         const launched = await launchAgentInstance(context, agentRow);
 
         if (signal.aborted) {
-          throw new Error('dispatch_agent aborted before send');
+          throw new Error("dispatch_agent aborted before send");
         }
 
         // Resolve caller address for proper reply threading.
         const callerInstance = await db.query.agentInstance.findFirst({
           where: and(
             eq(intxSchema.agentInstance.principalId, context.principalId),
-            eq(intxSchema.agentInstance.tenantId, tenantId)
+            eq(intxSchema.agentInstance.tenantId, tenantId),
           ),
         });
-        const fromAddress = callerInstance?.address ?? 'dispatcher@system';
+        const fromAddress = callerInstance?.address ?? "dispatcher@system";
 
         const kp = await generateKeyPair();
         const cryptoProvider = createNodeCrypto(kp);
-        const mailId = generateId('sessionMail');
+        const mailId = generateId("sessionMail");
 
         await sessionService.sendUserMessage({
           agentAddress: launched.address,
@@ -266,7 +285,7 @@ export function createDispatchTools(context: DispatchContext): AgentTool[] {
           cryptoProvider,
         });
 
-        log.info('Agent dispatched', {
+        log.info("Agent dispatched", {
           agentDefinitionId,
           instanceId: launched.instanceId,
           address: launched.address,
@@ -278,10 +297,10 @@ export function createDispatchTools(context: DispatchContext): AgentTool[] {
             instanceId: launched.instanceId,
             address: launched.address,
             sessionId: launched.sessionId,
-            status: 'running',
+            status: "running",
           },
           null,
-          2
+          2,
         );
       },
     },
@@ -297,7 +316,7 @@ export function createDispatchTools(context: DispatchContext): AgentTool[] {
  */
 type DispatchHostContext = Pick<
   DispatchContext,
-  'db' | 'tenantId' | 'principalId' | 'agentId' | 'sessionId'
+  "db" | "tenantId" | "principalId" | "agentId" | "sessionId"
 > & {
   sessionService?: SessionService;
   eventCollectors?: EventCollectorRegistry;
@@ -315,7 +334,9 @@ export const DISPATCH_HUB_TOOLS = {
         !context.sidecarRouter ||
         !context.buildToolDefinitions
       ) {
-        throw new Error('dispatch_agent requires full session context (orchestration unavailable)');
+        throw new Error(
+          "dispatch_agent requires full session context (orchestration unavailable)",
+        );
       }
       return createDispatchTools(context as DispatchContext);
     },

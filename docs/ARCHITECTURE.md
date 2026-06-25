@@ -62,14 +62,13 @@ Every same-domain user **auto-joins the global tenant as a `member` principal** 
 
 **Agent templates** (`@workbench/agents`) are materialized as first-class Interchange agent definitions in the global tenant at hub boot via `seedAgentTemplates(db)`. This is idempotent — re-boot is a no-op. Definitions become visible and editable in admin-ui automatically.
 
-| Template   | Role                                                                                                                             |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Myra**   | Personal Chief of Staff / Executive Assistant for each user                                                                      |
-| **Oat**    | Processes Granola calls into call document artifacts when prompted                                                               |
-| **Freddy** | Firecrawl-backed web research agent                                                                                              |
-| **Larry**  | last30days research agent — mines HN/GitHub/Reddit/X/YouTube/Bluesky/web for recent signal and emits a structured research brief |
-| **Walter** | Content writer — turns briefs and research into polished GTM collateral                                                          |
-| **Loop**   | Iterative refinement agent                                                                                                       |
+| Template   | Role                                                                    |
+| ---------- | ----------------------------------------------------------------------- |
+| **Myra**   | Personal Chief of Staff / Executive Assistant for each user             |
+| **Oat**    | Processes Granola calls into call document artifacts when prompted      |
+| **Freddy** | Firecrawl-backed web research agent                                     |
+| **Walter** | Content writer — turns briefs and research into polished GTM collateral |
+| **Loop**   | Iterative refinement agent                                              |
 
 The enabled-template set (which definitions members auto-get on join) defaults to `['myra']` in code. No runtime config.
 
@@ -80,11 +79,13 @@ The enabled-template set (which definitions members auto-get on join) defaults t
 
 Instance creation uses Interchange-native instance APIs; no bespoke per-user agent creation. The org-level credential is inherited at launch time from the global tenant's ancestor chain via `resolveCredentialRequirement` — no per-user credential entry.
 
-Myra instances are keyed on `(definitionId, memberPrincipalId)` — **not** `(tenantId, name)`: in a shared tenant every member's instance is named "Myra," so name-based lookup would hand one user's instance to everyone.
+Myra instances are owned per member via the hub-owned `member_agent_instance` mapping (`memberPrincipalId → instanceId`, `templateKey: 'myra'`) — **not** `(tenantId, name)`: in a shared tenant every member's instance is named "Myra," so name-based lookup would hand one user's instance to everyone. The join-time provisioner creates exactly one Myra mapping; `POST /v1/me` keys auto-relaunch off it.
+
+**Multi-thread Myra (CL-2309).** Multiple chat "threads" are simply multiple `member_agent_instance` rows for the same member with `templateKey: 'myra'` — each a normal `agent_instance` + sidecar harness (tools, skills, mail, tracing), the same stack as every other agent. There is **no separate Myra runtime**; the feature is a chat shell over ordinary instances. The hub exposes thread CRUD at `GET/POST/PATCH/DELETE /v1/me/myra/threads` (mapping `id` is the thread id; create launches a new instance + session, delete ends the session and removes the mapping/instance/grants). The first thread is the join-provisioned instance; `GET /v1/me`'s `paInstanceId` (a `findFirst`) remains that instance and is the web client's default-thread fallback.
 
 Both Myra and Oat use custom directors wrapping `createDefaultDirector` to filter inbound senders before inference.
 
-**Uniform agent lifecycle.** There is no host-driven per-instance scheduler. Every agent is interactive and recover-on-open: it acts on inbound mail and is relaunched when needed, rather than on a timer. Myra is the only auto-relaunched agent (via `GET /v1/me`); other agents recover on the next open. Recurring work (e.g. periodic Granola ingestion) is moving to **workflows**, which will own native scheduling. See the Session Liveness and Relaunch section in IMPLEMENTATION.md for the disconnect reconciler that keeps a sidecar restart from wedging an instance.
+**Uniform agent lifecycle.** There is no host-driven per-instance scheduler. Every agent is interactive and recover-on-open: it acts on inbound mail and is relaunched when needed, rather than on a timer. Myra is the only auto-relaunched agent (via `POST /v1/me`); other agents recover on the next open. Recurring work (e.g. periodic Granola ingestion) is moving to **workflows**, which will own native scheduling. See the Session Liveness and Relaunch section in IMPLEMENTATION.md for the disconnect reconciler that keeps a sidecar restart from wedging an instance.
 
 ### Credential and Grant Model
 

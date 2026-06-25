@@ -1,4 +1,4 @@
-import type { Transport } from '@intx/hub-client';
+import type { Transport } from "@intx/hub-client";
 
 /**
  * Captures tool names from the live agent event stream, keyed by callId.
@@ -19,26 +19,29 @@ export interface ToolNameTracker {
 }
 
 interface ToolCallNameEvent {
-  type: 'inference.tool_call.start' | 'inference.tool_call.end';
+  type: "inference.tool_call.start" | "inference.tool_call.end";
   data: { callId: string; name: string };
 }
 
 function parseToolCallNameEvent(raw: unknown): ToolCallNameEvent | null {
-  if (typeof raw !== 'object' || raw === null) return null;
+  if (typeof raw !== "object" || raw === null) return null;
   const { type, data } = raw as { type?: unknown; data?: unknown };
-  if (type !== 'inference.tool_call.start' && type !== 'inference.tool_call.end') {
+  if (
+    type !== "inference.tool_call.start" &&
+    type !== "inference.tool_call.end"
+  ) {
     return null;
   }
-  if (typeof data !== 'object' || data === null) return null;
+  if (typeof data !== "object" || data === null) return null;
   const { callId, name } = data as { callId?: unknown; name?: unknown };
-  if (typeof callId !== 'string' || typeof name !== 'string') return null;
+  if (typeof callId !== "string" || typeof name !== "string") return null;
   return { type, data: { callId, name } };
 }
 
 export function createToolNameTracker(
   transport: Transport,
   params: { tenantId: string; instanceId: string },
-  onUpdate?: () => void
+  onUpdate?: () => void,
 ): ToolNameTracker {
   const names = new Map<string, string>();
   const path = `/api/tenants/${params.tenantId}/agents/instances/${params.instanceId}/events`;
@@ -52,7 +55,7 @@ export function createToolNameTracker(
       names.set(event.data.callId, event.data.name);
       onUpdate?.();
     },
-    { eventName: 'agent.event' }
+    { eventName: "agent.event" },
   );
 
   return { names, stop };

@@ -1,4 +1,4 @@
-import type { Transport } from '@intx/hub-client';
+import type { Transport } from "@intx/hub-client";
 
 /** A captured inline image from the agent's response stream. */
 export interface CapturedImage {
@@ -14,21 +14,21 @@ export interface ImageTracker {
 }
 
 const TURN_END_EVENTS = new Set([
-  'turn.committed',
-  'reactor.abort',
-  'reactor.error',
-  'inference.error',
+  "turn.committed",
+  "reactor.abort",
+  "reactor.error",
+  "inference.error",
 ]);
 
 function parseImageOutputEvent(raw: unknown): CapturedImage | null {
-  if (typeof raw !== 'object' || raw === null) return null;
+  if (typeof raw !== "object" || raw === null) return null;
   const { type, data } = raw as { type?: unknown; data?: unknown };
-  if (type !== 'inference.image_output') return null;
-  if (typeof data !== 'object' || data === null) return null;
+  if (type !== "inference.image_output") return null;
+  if (typeof data !== "object" || data === null) return null;
   const { image } = data as { image?: unknown };
-  if (typeof image !== 'object' || image === null) return null;
+  if (typeof image !== "object" || image === null) return null;
   const { source } = image as { source?: unknown };
-  if (typeof source !== 'object' || source === null) return null;
+  if (typeof source !== "object" || source === null) return null;
   const {
     kind,
     mimeType,
@@ -38,22 +38,22 @@ function parseImageOutputEvent(raw: unknown): CapturedImage | null {
     mimeType?: unknown;
     data?: unknown;
   };
-  if (kind !== 'base64') return null;
-  if (typeof mimeType !== 'string') return null;
-  if (typeof imgData !== 'string') return null;
+  if (kind !== "base64") return null;
+  if (typeof mimeType !== "string") return null;
+  if (typeof imgData !== "string") return null;
   return { mimeType, data: imgData };
 }
 
 function isTurnEndEvent(raw: unknown): boolean {
-  if (typeof raw !== 'object' || raw === null) return false;
+  if (typeof raw !== "object" || raw === null) return false;
   const { type } = raw as { type?: unknown };
-  return typeof type === 'string' && TURN_END_EVENTS.has(type);
+  return typeof type === "string" && TURN_END_EVENTS.has(type);
 }
 
 export function createImageTracker(
   transport: Transport,
   params: { tenantId: string; instanceId: string },
-  onUpdate?: () => void
+  onUpdate?: () => void,
 ): ImageTracker {
   let images: CapturedImage[] = [];
   const path = `/api/tenants/${params.tenantId}/agents/instances/${params.instanceId}/events`;
@@ -73,7 +73,7 @@ export function createImageTracker(
         onUpdate?.();
       }
     },
-    { eventName: 'agent.event' }
+    { eventName: "agent.event" },
   );
 
   return {

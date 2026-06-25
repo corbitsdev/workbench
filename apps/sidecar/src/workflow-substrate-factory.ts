@@ -22,58 +22,77 @@
 // as part of the supervisor's normal write path -- the child does
 // not open its own pack-push pipeline.
 
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
-import { type } from 'arktype';
+import { type } from "arktype";
 
-import { InferenceSource } from '@intx/types/runtime';
-import { evaluateGrants } from '@intx/authz';
-import type { GrantRule } from '@intx/authz';
-import { getLogger } from '@intx/log';
+import { InferenceSource } from "@intx/types/runtime";
+import type { InferenceEvent } from "@intx/types/runtime";
+import { evaluateGrants } from "@intx/authz";
+import type { GrantRule } from "@intx/authz";
+import { getLogger } from "@intx/log";
 import {
   createStepAgentFactory,
   runDeterministicToolStep,
   STEP_TOOL_CONTEXT_KEY,
   type StepToolContext,
-} from './step-tool-harness';
+} from "./step-tool-harness";
 import {
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
   STEP_ARGMAP_TAG,
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
-} from '@workbench/agents';
-import { wsUrlToHttp } from './agent-tools';
-import { DEFAULT_REGISTRY_MAX_TARBALL_BYTES, DEFAULT_TOOL_CACHE_MAX_BYTES } from './config';
-import type { Agent, AgentDefinition, AuthorizeFn, BaseEnv, DirectorRegistry } from '@intx/agent';
-import { createAgent, createDefaultDirectorRegistry } from '@intx/agent';
-import { createSSHSignature } from '@intx/crypto-node';
-import { createIsogitStore, type CommitSigner } from '@intx/storage-isogit';
-import { createWorkbenchDirectorRegistry } from '@workbench/agents';
+  EPHEMERAL_CHAT_TAG,
+  compactEphemeralChatInput,
+} from "@workbench/agents";
+import { wsUrlToHttp } from "./agent-tools";
+import type {
+  Agent,
+  AgentDefinition,
+  AuthorizeFn,
+  BaseEnv,
+  DirectorRegistry,
+} from "@intx/agent";
+import { createAgent, createDefaultDirectorRegistry } from "@intx/agent";
+import { createSSHSignature } from "@intx/crypto-node";
+import {
+  createIsogitStore,
+  type CommitSigner,
+} from "@workbench/storage-isogit";
+import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import {
   createAgentRepoStore,
   type Principal,
   type RepoId,
   type RepoStore,
   type WorkflowRunWorkflowProcessPrincipal,
-} from '@intx/hub-sessions';
+} from "@intx/hub-sessions";
 import {
   adaptHostScheduler,
   createProxyWorkflowRunRepoStore,
+  createSupervisorBackedTransport,
   createWorkflowHostScheduler,
   createWorkflowRunBlobSubstrate,
   createWorkflowRunRepoStore,
   createWorkflowHostSignalChannel,
   createWorkflowSpawnChild,
   createWorkflowStepInvoker,
+  type ChildOutboundMailBridge,
   type GrantEvaluator,
   type RunChildWorkflow,
   type RunWorkflowChildBindings,
   type StepEnvBase,
   type SubstrateFactory,
   type SubstrateFactoryEnv,
-} from '@intx/workflow-host';
+  type WarmAgentCache,
+} from "@intx/workflow-host";
+import {
+  createDurableConversationRegistry,
+  type DurableConversationRegistry,
+} from "./conversation-state";
+import type { MessageTransport } from "@intx/types/runtime";
 import {
   createNoopDrainController,
   emptyState,
@@ -83,7 +102,7 @@ import {
   type StepInvoker,
   type WorkflowAuthorizeFn,
   type WorkflowRuntimeEnv,
-} from '@intx/workflow';
+} from "@intx/workflow";
 
 // The child does not construct a workflow-run pack-push pipeline of
 // its own. The supervisor owns the workflow-run repo's write
@@ -108,22 +127,27 @@ import {
  * from the boot edge's own env reads.
  */
 export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
-  'SIDECAR_DATA_DIR',
-  'WORKFLOW_DEFINITION_REPO_ID',
-  'WORKFLOW_DEFINITION_REF',
-  'WORKFLOW_RUN_REPO_ID',
-  'WORKFLOW_RUN_REF',
-  'SIDECAR_SIGNING_PUBLIC_KEY',
-  'SIDECAR_SIGNING_PRIVATE_KEY',
-  'HUB_WS_URL',
-  'SIDECAR_ID',
-  'SIDECAR_TOKEN',
-  'STEP_INFERENCE_SOURCES',
+  "SIDECAR_DATA_DIR",
+  "WORKFLOW_DEFINITION_REPO_ID",
+  "WORKFLOW_DEFINITION_REF",
+  "WORKFLOW_RUN_REPO_ID",
+  "WORKFLOW_RUN_REF",
+  "SIDECAR_SIGNING_PUBLIC_KEY",
+  "SIDECAR_SIGNING_PRIVATE_KEY",
+  "HUB_WS_URL",
+  "SIDECAR_ID",
+  "SIDECAR_TOKEN",
+  "STEP_INFERENCE_SOURCES",
+  // Upstream-added per-step tool-loader caps. The boot edge resolves these via
+  // `config.ts` and threads them through `substrateEnv`; the child re-validates
+  // them at its boundary. Adopted in the CL-2335 pin bump.
+  "SIDECAR_CACHE_MAX_BYTES",
+  "SIDECAR_REGISTRY_MAX_TARBALL_BYTES",
   // INTENTIONAL DIVERGENCE FROM UPSTREAM: the reference sidecar's substrate
   // config carries no TENANT_ID. GTM Workbench threads it so the per-step
   // tool-context resolver can scope hub manifest/credential lookups to the
   // deploying tenant. Pin-bump re-diffs: this key is ours; keep it.
-  'TENANT_ID',
+  "TENANT_ID",
   // INTENTIONAL DIVERGENCE FROM UPSTREAM: the raw hub deploymentId
   // (`ses_<id>`). The step tool-context resolver derives the step agent
   // row id (`ins_<raw>-<step>`) and agent-state repo id (`<raw>-<step>`)
@@ -131,24 +155,47 @@ export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   // `env.spawn.deploymentId`. The deploy router recovers it from the
   // frame's `agentId` and threads it here. Pin-bump re-diffs: this key is
   // ours; keep it.
-  'WORKFLOW_RAW_DEPLOYMENT_ID',
+  "WORKFLOW_RAW_DEPLOYMENT_ID",
 ] as const;
 
 const SubstrateConfig = type({
-  SIDECAR_DATA_DIR: 'string > 0',
-  WORKFLOW_DEFINITION_REPO_ID: 'string > 0',
-  WORKFLOW_DEFINITION_REF: 'string > 0',
-  WORKFLOW_RUN_REPO_ID: 'string > 0',
-  WORKFLOW_RUN_REF: 'string > 0',
-  SIDECAR_SIGNING_PUBLIC_KEY: 'string > 0',
-  SIDECAR_SIGNING_PRIVATE_KEY: 'string > 0',
-  HUB_WS_URL: 'string > 0',
-  SIDECAR_ID: 'string > 0',
-  SIDECAR_TOKEN: 'string > 0',
-  STEP_INFERENCE_SOURCES: 'string > 0',
-  TENANT_ID: 'string > 0',
-  WORKFLOW_RAW_DEPLOYMENT_ID: 'string > 0',
-}).onUndeclaredKey('ignore');
+  SIDECAR_DATA_DIR: "string > 0",
+  WORKFLOW_DEFINITION_REPO_ID: "string > 0",
+  WORKFLOW_DEFINITION_REF: "string > 0",
+  WORKFLOW_RUN_REPO_ID: "string > 0",
+  WORKFLOW_RUN_REF: "string > 0",
+  SIDECAR_SIGNING_PUBLIC_KEY: "string > 0",
+  SIDECAR_SIGNING_PRIVATE_KEY: "string > 0",
+  HUB_WS_URL: "string > 0",
+  SIDECAR_ID: "string > 0",
+  SIDECAR_TOKEN: "string > 0",
+  STEP_INFERENCE_SOURCES: "string > 0",
+  // Per-step tool-loader caps. Validated as non-empty strings here; the
+  // numeric positive-finite contract is enforced by `parseByteCap` below.
+  SIDECAR_CACHE_MAX_BYTES: "string > 0",
+  SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "string > 0",
+  TENANT_ID: "string > 0",
+  WORKFLOW_RAW_DEPLOYMENT_ID: "string > 0",
+}).onUndeclaredKey("ignore");
+
+/**
+ * Parse a substrate-config cap entry (`SIDECAR_CACHE_MAX_BYTES` /
+ * `SIDECAR_REGISTRY_MAX_TARBALL_BYTES`) into a positive finite number.
+ * The boot edge already validated these via the `config.ts` readers
+ * before serializing them into `substrateEnv`; this re-parse at the
+ * child boundary keeps the typed-config contract honest rather than
+ * trusting the wire blindly. Non-finite, zero, or negative inputs are
+ * rejected loudly.
+ */
+export function parseByteCap(raw: string, name: string): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(
+      `sidecar workflow-child substrate config: ${name} must be a positive finite number; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return n;
+}
 
 /**
  * Per-step `InferenceSource` table parsed from the spawn-time
@@ -159,7 +206,7 @@ const SubstrateConfig = type({
  * and pins it for `buildEnv` lookups.
  */
 const StepInferenceSourceTable = type({
-  '[string]': InferenceSource,
+  "[string]": InferenceSource,
 });
 type StepInferenceSourceTable = typeof StepInferenceSourceTable.infer;
 
@@ -178,13 +225,13 @@ function parseStepInferenceSources(raw: string): StepInferenceSourceTable {
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     throw new Error(
-      `sidecar workflow-child substrate config: STEP_INFERENCE_SOURCES is not valid JSON: ${reason}`
+      `sidecar workflow-child substrate config: STEP_INFERENCE_SOURCES is not valid JSON: ${reason}`,
     );
   }
   const validated = StepInferenceSourceTable(parsed);
   if (validated instanceof type.errors) {
     throw new Error(
-      `sidecar workflow-child substrate config: STEP_INFERENCE_SOURCES failed validation: ${validated.summary}`
+      `sidecar workflow-child substrate config: STEP_INFERENCE_SOURCES failed validation: ${validated.summary}`,
     );
   }
   return validated;
@@ -199,7 +246,7 @@ function parseStepInferenceSources(raw: string): StepInferenceSourceTable {
  * named.
  */
 export function createStepInferenceSourceResolver(
-  table: StepInferenceSourceTable
+  table: StepInferenceSourceTable,
 ): (stepId: string) => InferenceSource {
   return (stepId: string): InferenceSource => {
     const direct = table[stepId];
@@ -218,14 +265,16 @@ export function createStepInferenceSourceResolver(
       if (baseSource !== undefined) return baseSource;
     }
     throw new Error(
-      `sidecar workflow-child step invoker buildEnv: no InferenceSource pinned for stepId ${JSON.stringify(stepId)}; the supervisor must populate frame.workflow.sources for every stepOrder entry`
+      `sidecar workflow-child step invoker buildEnv: no InferenceSource pinned for stepId ${JSON.stringify(stepId)}; the supervisor must populate frame.workflow.sources for every stepOrder entry`,
     );
   };
 }
 
 function hexDecode(hex: string, name: string): Uint8Array {
   if (hex.length % 2 !== 0) {
-    throw new Error(`${name} must be even-length hex; got ${String(hex.length)} chars`);
+    throw new Error(
+      `${name} must be even-length hex; got ${String(hex.length)} chars`,
+    );
   }
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i += 1) {
@@ -270,7 +319,7 @@ interface SidecarSubstrateFactoryDeps {
    */
   agentFactory?: <EnvReq extends BaseEnv>(
     def: AgentDefinition<EnvReq>,
-    env: EnvReq
+    env: EnvReq,
   ) => Promise<Agent>;
 }
 
@@ -291,6 +340,91 @@ export function createSidecarCommitSigner(signingKey: {
 }
 
 /**
+ * Root directory for a single step invocation's agent-state storage and
+ * workspace, derived from the sidecar data dir and the run/step/attempt
+ * coordinates the workflow runtime owns. Cold (multi-step) path:
+ * `<dataDir>/workflow-step-state/<repoId>/runs/<runId>/steps/<stepId>/attempt-<N>/`.
+ *
+ * The per-step agent storage is a distinct isogit repo, rooted OUTSIDE
+ * the workflow-run repo's working tree (whose single writer is the
+ * supervisor, carrying the run-event log under `runs/<runId>/events/...`).
+ * Rooting the per-step store under a dedicated `workflow-step-state/`
+ * sibling subtree keyed by the workflow-run repo id keeps every step's
+ * storage isolated per run and per step while never touching the
+ * run-event tree. Adopted from upstream in the CL-2335 pin bump (replaces
+ * the prior flat `workflow-steps/<runId>/<stepId>-attempt-<N>/` layout).
+ */
+export function stepStorageRoot(args: {
+  dataDir: string;
+  workflowRunRepoId: RepoId;
+  runId: string;
+  stepId: string;
+  attempt: number;
+}): string {
+  return path.join(
+    args.dataDir,
+    "workflow-step-state",
+    sanitizePathSegment(args.workflowRunRepoId.id),
+    "runs",
+    sanitizePathSegment(args.runId),
+    "steps",
+    sanitizePathSegment(args.stepId),
+    `attempt-${String(args.attempt)}`,
+  );
+}
+
+/**
+ * Root directory for a single workflow-run subtree's per-step scratch:
+ * `<dataDir>/workflow-step-state/<repoId>/runs/<runId>/`. The cold path's
+ * per-step `stepStorageRoot` nests under this, so reclaiming this subtree
+ * on run completion drops every step/attempt the run produced in one
+ * `rm -rf`. Kept distinct from `stepStorageRoot` so the deletion
+ * granularity (a whole run, not a single step/attempt) is expressed at
+ * the call site that owns run-completion cleanup.
+ */
+export function runStepStorageRoot(args: {
+  dataDir: string;
+  workflowRunRepoId: RepoId;
+  runId: string;
+}): string {
+  return path.join(
+    args.dataDir,
+    "workflow-step-state",
+    sanitizePathSegment(args.workflowRunRepoId.id),
+    "runs",
+    sanitizePathSegment(args.runId),
+  );
+}
+
+/**
+ * Stable per-agent scratch root for the WARM single-step agent's workspace
+ * (upstream design §3b/§4). Keyed by the step identity, NOT by the
+ * arbitrary first-message runId: the cached agent reuses ONE workspace
+ * across every message in the child's lifetime, and that same workspace is
+ * re-derived (and so survives) across a child respawn instead of stranding
+ * a fresh per-runId subtree each time. Rooted under a `warm/` sibling of
+ * the cold `runs/` subtree so the undeploy sweep of
+ * `workflow-step-state/<repoId>/` (see `workflow-host-wiring.ts`) reclaims
+ * both with one removal and the two keyings never collide. The durable
+ * conversation mirror lives under a different root
+ * (`agent-conversation-state/`, see `conversation-state.ts`) that the
+ * undeploy sweep deliberately does not touch, so a re-deploy resumes it.
+ */
+export function warmStepStorageRoot(args: {
+  dataDir: string;
+  workflowRunRepoId: RepoId;
+  stepId: string;
+}): string {
+  return path.join(
+    args.dataDir,
+    "workflow-step-state",
+    sanitizePathSegment(args.workflowRunRepoId.id),
+    "warm",
+    sanitizePathSegment(args.stepId),
+  );
+}
+
+/**
  * Per-step agent-harness env slots the sidecar's substrate factory
  * allocates. Pulled out of `createSidecarSubstrateFactory` so the
  * env-construction is observable in isolation; the closure pins the
@@ -307,9 +441,17 @@ export function createSidecarCommitSigner(signingKey: {
  * store, audit sink, workspace, and director registry a chat agent does.
  * Future pin-bump re-diffs: this block is ours, not upstream's stub.
  */
-function createSidecarStepBuildEnv(args: {
+interface SidecarStepBuildEnvDeps {
   table: StepInferenceSourceTable;
   dataDir: string;
+  /**
+   * Workflow-run repo identity. Roots the per-step storage subtree under
+   * `workflow-step-state/<repoId>/...` (upstream's cold-path layout) so a
+   * run-completion sweep of one run never touches another deployment's
+   * tree. Optional so the isolated `createSidecarStepInvoker` test seam
+   * can omit it; defaults to a stable placeholder repo id.
+   */
+  workflowRunRepoId?: RepoId;
   signer: CommitSigner;
   directors: DirectorRegistry;
   /**
@@ -318,50 +460,114 @@ function createSidecarStepBuildEnv(args: {
    * connection + grants the tool-capable agentFactory reads back.
    */
   resolveStepToolContext?: (req: StepInvokeRequest) => Promise<StepToolContext>;
-}): (req: StepInvokeRequest) => Promise<StepEnvBase> {
-  const resolveStepInferenceSource = createStepInferenceSourceResolver(args.table);
+  /**
+   * Durable-conversation registry for the warm single-step agent (upstream
+   * §3c). When present (a warm-kept single-step deploy), the env builder
+   * roots the per-step scratch STABLY under `warm/<stepId>/` and swaps the
+   * per-run isogit `ContextStore` for the per-agent durable store whose
+   * conversation is mirrored to the workflow-run substrate, restoring the
+   * prior conversation before the env is returned so the agent's reactor
+   * `load()` (and the warm cache's lazy build / respawn rebuild) sees the
+   * restored turns. Absent for a multi-step deploy, whose per-step agents
+   * are not warm/long-lived and need no cross-run conversation durability.
+   */
+  durableConversation?: DurableConversationRegistry;
+  /**
+   * Child-side outbound-mail bridge over the control channel (OUTBOUND half
+   * of mailbox ownership, §3a). When present alongside `mailboxAddress`, the
+   * env builder wraps it in a supervisor-backed `MessageTransport` it
+   * supplies as the step agent's `env.transport`; the agent's mail tools
+   * call `transport.send`, which routes through the bridge to the supervisor
+   * for the actual signed send. The step agent never holds the signing key.
+   */
+  outboundMailBridge?: ChildOutboundMailBridge;
+  /**
+   * Deployment mailbox address the supervisor threaded into the child
+   * (`MAILBOX_ADDRESS`). Used as the step agent's outbound mail `address`
+   * (the identity the host registered its `CryptoProvider` against). Wired
+   * together with `outboundMailBridge`.
+   */
+  mailboxAddress?: string;
+}
+
+function createSidecarStepBuildEnv(
+  deps: SidecarStepBuildEnvDeps,
+): (req: StepInvokeRequest) => Promise<StepEnvBase> {
+  const resolveStepInferenceSource = createStepInferenceSourceResolver(
+    deps.table,
+  );
+  const workflowRunRepoId: RepoId = deps.workflowRunRepoId ?? {
+    kind: "workflow-run",
+    id: "unscoped",
+  };
   return async (req: StepInvokeRequest): Promise<StepEnvBase> => {
     const stepId = req.authzContext.stepId;
     if (stepId === undefined) {
       throw new Error(
-        'sidecar workflow-child step invoker buildEnv: AuthorizeContext.stepId is required for per-step InferenceSource resolution; the workflow runtime must populate stepId on every step-originated invocation'
+        "sidecar workflow-child step invoker buildEnv: AuthorizeContext.stepId is required for per-step InferenceSource resolution; the workflow runtime must populate stepId on every step-originated invocation",
       );
     }
     const source = resolveStepInferenceSource(stepId);
 
     // Per-run/per-step storage root under SIDECAR_DATA_DIR, keyed by
-    // runId + stepId so concurrent steps never share an isogit lock
-    // boundary. The runId comes from the workflow runtime's
-    // AuthorizeContext; a step-originated invocation always carries it.
+    // repoId + runId + stepId + attempt so concurrent steps never share
+    // an isogit lock boundary. The runId comes from the workflow
+    // runtime's AuthorizeContext; a step-originated invocation always
+    // carries it.
     const runId = req.authzContext.runId;
     if (runId === undefined) {
       throw new Error(
-        'sidecar workflow-child step invoker buildEnv: AuthorizeContext.runId is required to allocate a per-run step storage root; the workflow runtime must populate runId on every step-originated invocation'
+        "sidecar workflow-child step invoker buildEnv: AuthorizeContext.runId is required to allocate a per-run step storage root; the workflow runtime must populate runId on every step-originated invocation",
       );
     }
     const attempt = req.authzContext.attempt ?? 1;
-    const storeDir = path.join(
-      args.dataDir,
-      'workflow-steps',
-      sanitizePathSegment(runId),
-      `${sanitizePathSegment(stepId)}-attempt-${String(attempt)}`
-    );
+    // The cold (multi-step) path keys scratch per run/step/attempt: each run
+    // rebuilds the agent and its scratch, and the run's whole `runs/<runId>/`
+    // subtree is reclaimed on run completion. The warm single-step path
+    // (`durableConversation` present) keys it STABLY per agent under the
+    // disjoint `warm/<stepId>/` sub-root so the cached agent reuses one
+    // workspace across every message and that workspace survives child
+    // respawn; the subtree is reclaimed on undeploy with the rest of
+    // `workflow-step-state/<repoId>/`. The two keyings never collide.
+    const storeDir =
+      deps.durableConversation !== undefined
+        ? warmStepStorageRoot({
+            dataDir: deps.dataDir,
+            workflowRunRepoId,
+            stepId,
+          })
+        : stepStorageRoot({
+            dataDir: deps.dataDir,
+            workflowRunRepoId,
+            runId,
+            stepId,
+            attempt,
+          });
     await fs.promises.mkdir(storeDir, { recursive: true });
 
-    // `storage`: per-step isogit context store. Mirrors default-harness
+    // `storage`: For the warm single-step agent the conversation must survive
+    // child respawn, so it is backed by the per-agent durable store whose
+    // content is mirrored to the workflow-run substrate (upstream §3c);
+    // `acquire` restores the prior conversation before the agent's reactor
+    // loads. A multi-step deploy (no durable registry) keeps the per-run
+    // isogit store: its per-step agents are not warm/long-lived and have no
+    // cross-run conversation to carry. Mirrors default-harness
     // `const storage = await createIsogitStore(storeDir, signer)`.
-    const storage = await createIsogitStore(storeDir, args.signer);
+    const storage =
+      deps.durableConversation !== undefined
+        ? (await deps.durableConversation.acquire(stepId)).storage
+        : await createIsogitStore(storeDir, deps.signer);
     // `audit`: default-harness uses the isogit store as the agent's
     // ContextStore AND a separate mail-audit store (`createMailAuditStore`).
     // The agent harness's BaseEnv.audit is the AuditStore; default-harness
     // passes `audit: storage` in its env literal, so we match that and
-    // route the agent's audit records into the same per-step isogit store.
+    // route the agent's audit records into the same per-step store.
     const audit = storage;
 
     // `workdir`: per-step workspace dir, mkdir'd recursively. Mirrors
     // default-harness `const workDir = path.join(storeDir, 'workspace');
     // await fs.promises.mkdir(workDir, { recursive: true })`.
-    const workdir = path.join(storeDir, 'workspace');
+    const workdir = path.join(storeDir, "workspace");
     await fs.promises.mkdir(workdir, { recursive: true });
 
     const env: StepEnvBase & Record<string, unknown> = {
@@ -371,15 +577,36 @@ function createSidecarStepBuildEnv(args: {
       workdir,
       audit,
       // `directors`: default-harness uses `createWorkbenchDirectorRegistry()`.
-      directors: args.directors,
+      directors: deps.directors,
     };
+
+    // Supervisor-backed transport for the step agent's mail tools (OUTBOUND
+    // half of mailbox ownership, §3a). Inbound is inert -- the supervisor
+    // delivers the step input, not through the agent's own mailbox -- and
+    // outbound (`send`) routes over the control IPC to the supervisor, which
+    // performs the actual signed send as `address`. Without it a
+    // mail-sending step agent's `send()` would hang (no transport). Both keys
+    // are the env surface `@intx/tools-mail`'s sidecar bundle declares in its
+    // `requires`. Wired only when the bridge + address are present (the
+    // production path); pure-inference test seams omit them.
+    if (
+      deps.outboundMailBridge !== undefined &&
+      deps.mailboxAddress !== undefined
+    ) {
+      const transport: MessageTransport = createSupervisorBackedTransport(
+        deps.outboundMailBridge,
+        deps.mailboxAddress,
+      );
+      env.transport = transport;
+      env.address = deps.mailboxAddress;
+    }
 
     // Stash the per-step tool context so the tool-capable agentFactory can
     // materialize the step's pinned tool packages + credentials + grants.
     // Pure-inference tests omit the resolver; the agentFactory they pair
     // never reads the key.
-    if (args.resolveStepToolContext !== undefined) {
-      env[STEP_TOOL_CONTEXT_KEY] = await args.resolveStepToolContext(req);
+    if (deps.resolveStepToolContext !== undefined) {
+      env[STEP_TOOL_CONTEXT_KEY] = await deps.resolveStepToolContext(req);
     }
 
     return env;
@@ -391,15 +618,15 @@ function createSidecarStepBuildEnv(args: {
  * or runId carrying a separator cannot escape the per-run subtree.
  */
 function sanitizePathSegment(id: string): string {
-  return id.replace(/[^a-zA-Z0-9._-]/g, '_');
+  return id.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-const logger = getLogger(['sidecar', 'workflow-substrate-factory']);
+const logger = getLogger(["sidecar", "workflow-substrate-factory"]);
 
 /** Grants-file path inside a step's agent-state repo working tree. */
-const STEP_GRANTS_PATH = 'state/grants.json';
+const STEP_GRANTS_PATH = "state/grants.json";
 
-const StepGrantsFile = type({ grants: 'unknown[]' });
+const StepGrantsFile = type({ grants: "unknown[]" });
 
 /**
  * Read one step's grants from its agent-state repo working tree, mirroring
@@ -419,19 +646,19 @@ async function readStepGrants(args: {
   stepId: string;
 }): Promise<GrantRule[]> {
   const repoId: RepoId = {
-    kind: 'agent-state',
+    kind: "agent-state",
     id: `${args.deploymentId}-${args.stepId}`,
   };
   const dir = args.bareStore.getRepoDir(repoId);
   const filePath = path.join(dir, STEP_GRANTS_PATH);
   let raw: string;
   try {
-    raw = await fs.promises.readFile(filePath, 'utf8');
+    raw = await fs.promises.readFile(filePath, "utf8");
   } catch (cause) {
     if (
       cause instanceof Error &&
-      'code' in cause &&
-      (cause as { code: unknown }).code === 'ENOENT'
+      "code" in cause &&
+      (cause as { code: unknown }).code === "ENOENT"
     ) {
       return [];
     }
@@ -443,20 +670,20 @@ async function readStepGrants(args: {
   } catch (cause) {
     throw new Error(
       `sidecar step grants: ${repoId.kind}/${repoId.id}:${STEP_GRANTS_PATH} is not valid JSON`,
-      { cause }
+      { cause },
     );
   }
   const validated = StepGrantsFile(parsed);
   if (validated instanceof type.errors) {
     throw new Error(
-      `sidecar step grants: ${repoId.kind}/${repoId.id}:${STEP_GRANTS_PATH} failed validation: ${validated.summary}`
+      `sidecar step grants: ${repoId.kind}/${repoId.id}:${STEP_GRANTS_PATH} failed validation: ${validated.summary}`,
     );
   }
   // The grants file holds the sidecar's GrantRule grammar; the on-disk
   // shape is validated as `unknown[]` and narrowed here at the boundary
   // where the typed grammar is known, matching the parent factory's
   // credentialsSnapshot cast.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- grants.json holds the sidecar's GrantRule grammar, validated as unknown[] at the boundary
+
   return validated.grants as GrantRule[];
 }
 
@@ -489,13 +716,13 @@ export interface StepToolContextResolverArgs {
  * anchors the tool-capable agentFactory needs.
  */
 export function createStepToolContextResolver(
-  args: StepToolContextResolverArgs
+  args: StepToolContextResolverArgs,
 ): (req: StepInvokeRequest) => Promise<StepToolContext> {
   return async (req: StepInvokeRequest): Promise<StepToolContext> => {
     const stepId = req.authzContext.stepId;
     if (stepId === undefined) {
       throw new Error(
-        "sidecar step tool-context: AuthorizeContext.stepId is required to resolve a step's pinned tool packages"
+        "sidecar step tool-context: AuthorizeContext.stepId is required to resolve a step's pinned tool packages",
       );
     }
     // `map` fan-out expands a static stepOrder entry `<base>` into per-item
@@ -556,12 +783,14 @@ export function createStepToolContextResolver(
  * tool-credential resolution for tool-using step agents is NOT wired
  * here; inference is.
  */
-function createSidecarStepWorkflowAuthorize(evaluate: GrantEvaluator): WorkflowAuthorizeFn {
+function createSidecarStepWorkflowAuthorize(
+  evaluate: GrantEvaluator,
+): WorkflowAuthorizeFn {
   return async (resource, action, ctx) =>
     evaluate({
       resource,
       action,
-      stepId: ctx?.stepId ?? '',
+      stepId: ctx?.stepId ?? "",
       attempt: ctx?.attempt,
       runId: ctx?.runId,
       grants: [],
@@ -579,6 +808,8 @@ function createSidecarStepWorkflowAuthorize(evaluate: GrantEvaluator): WorkflowA
 export function createSidecarStepInvoker(args: {
   table: StepInferenceSourceTable;
   dataDir: string;
+  /** Workflow-run repo identity; roots the per-step storage subtree. */
+  workflowRunRepoId?: RepoId;
   signer: CommitSigner;
   directors: DirectorRegistry;
   evaluateGrants: GrantEvaluator;
@@ -591,21 +822,69 @@ export function createSidecarStepInvoker(args: {
   resolveStepToolContext?: (req: StepInvokeRequest) => Promise<StepToolContext>;
   agentFactory?: <EnvReq extends BaseEnv>(
     def: AgentDefinition<EnvReq>,
-    env: EnvReq
+    env: EnvReq,
   ) => Promise<Agent>;
+  /**
+   * Per-step workflow-typed authorize. Upstream's `ChildStepInvoker` now
+   * hands the runtime's credentials-backed authorize closure per
+   * invocation; the factory's `invokeStep` binding threads it here so the
+   * real inference path gates each tool call against the step's grant
+   * snapshot. Absent (the isolated test seam) it falls back to the
+   * grant-evaluator-derived deny-on-empty authorize.
+   */
+  workflowAuthorize?: WorkflowAuthorizeFn;
+  /** Per-step inference event sink (upstream `onEvent`). */
+  onEvent?: (event: InferenceEvent) => void;
+  /**
+   * Warm single-step agent cache (upstream §3b), supplied by the run-loop
+   * for a warm-kept single-step deployment. When present the inference
+   * invoker builds the agent once and reuses it across messages instead of
+   * instantiate-send-teardown per message. Absent for the cold path.
+   */
+  warmCache?: WarmAgentCache;
+  /**
+   * Run-boundary durability flush (upstream §3c). Invoked with the warm
+   * cache key (the stepId) after each message's `send` settles so the warm
+   * agent's conversation snapshot is mirrored to the substrate before the
+   * next message. Wired only alongside `warmCache`.
+   */
+  onRunBoundary?: (key: string) => Promise<void>;
+  /**
+   * Durable-conversation registry for the warm path. Threaded into the env
+   * builder so the warm agent's `storage` is the durable per-agent store.
+   */
+  durableConversation?: DurableConversationRegistry;
+  /** Outbound-mail bridge for the step agent's supervisor-backed transport. */
+  outboundMailBridge?: ChildOutboundMailBridge;
+  /** Deployment mailbox address; the step agent's outbound `address`. */
+  mailboxAddress?: string;
 }): StepInvoker {
   const buildEnv = createSidecarStepBuildEnv({
     table: args.table,
     dataDir: args.dataDir,
     signer: args.signer,
     directors: args.directors,
+    ...(args.workflowRunRepoId !== undefined
+      ? { workflowRunRepoId: args.workflowRunRepoId }
+      : {}),
     ...(args.resolveStepToolContext !== undefined
       ? { resolveStepToolContext: args.resolveStepToolContext }
+      : {}),
+    ...(args.durableConversation !== undefined
+      ? { durableConversation: args.durableConversation }
+      : {}),
+    ...(args.outboundMailBridge !== undefined
+      ? { outboundMailBridge: args.outboundMailBridge }
+      : {}),
+    ...(args.mailboxAddress !== undefined
+      ? { mailboxAddress: args.mailboxAddress }
       : {}),
   });
 
   const inferenceInvoker = createWorkflowStepInvoker({
-    workflowAuthorize: createSidecarStepWorkflowAuthorize(args.evaluateGrants),
+    workflowAuthorize:
+      args.workflowAuthorize ??
+      createSidecarStepWorkflowAuthorize(args.evaluateGrants),
     buildEnv,
     // The step's `req.agent.toolFactories` are walk-only stubs; the
     // tool-capable factory ignores them and builds the real runner from the
@@ -613,7 +892,19 @@ export function createSidecarStepInvoker(args: {
     // verbatim instead.
     agentFactory:
       args.agentFactory ??
-      (args.resolveStepToolContext !== undefined ? createStepAgentFactory() : createAgent),
+      (args.resolveStepToolContext !== undefined
+        ? createStepAgentFactory()
+        : createAgent),
+    ...(args.onEvent !== undefined ? { onEvent: args.onEvent } : {}),
+    // Warm-keep wiring (upstream §3b/§3c): forward the run-loop's per-
+    // deployment warm cache and the run-boundary durability flush so the
+    // inference invoker reuses one cached agent across messages and mirrors
+    // its conversation to the substrate after each send. Absent for the cold
+    // path (every step is instantiate-send-teardown).
+    ...(args.warmCache !== undefined ? { warmCache: args.warmCache } : {}),
+    ...(args.onRunBoundary !== undefined
+      ? { onRunBoundary: args.onRunBoundary }
+      : {}),
   });
 
   // Deterministic-tool dispatch (CL-2202). A step whose placeholder agent
@@ -639,7 +930,10 @@ export function createSidecarStepInvoker(args: {
   return async (req) => {
     const tags = req.agent.tags;
     const toolName = tags?.[STEP_TOOL_TAG];
-    if (tags?.[STEP_KIND_TAG] === DETERMINISTIC_TOOL_KIND && toolName !== undefined) {
+    if (
+      tags?.[STEP_KIND_TAG] === DETERMINISTIC_TOOL_KIND &&
+      toolName !== undefined
+    ) {
       const env = await buildEnv(req);
       const argMapJson = tags?.[STEP_ARGMAP_TAG];
       return runDeterministicToolStep({
@@ -651,7 +945,11 @@ export function createSidecarStepInvoker(args: {
       });
     }
     if (tags?.[STEP_KIND_TAG] === INLINE_INFERENCE_KIND) {
-      return runInlineInferenceStep({ req, buildEnv, agentFactory: inlineAgentFactory });
+      return runInlineInferenceStep({
+        req,
+        buildEnv,
+        agentFactory: inlineAgentFactory,
+      });
     }
     return inferenceInvoker(req);
   };
@@ -660,7 +958,7 @@ export function createSidecarStepInvoker(args: {
 /** Deny-all authorize for inline steps: they declare no tools, so any tool
  * authz must fail closed. */
 const inlineDenyAllAuthorize: AuthorizeFn = async () => ({
-  effect: 'deny',
+  effect: "deny",
   matchingGrants: [],
   resolvedBy: null,
 });
@@ -673,54 +971,70 @@ const inlineDenyAllAuthorize: AuthorizeFn = async () => ({
  * rather than sending the literal string "undefined".
  */
 function synthesizeStepInput(input: unknown): string {
-  if (typeof input === 'string') return input;
+  if (typeof input === "string") return input;
   const encoded = JSON.stringify(input);
   if (encoded === undefined) {
     throw new Error(
-      `inline inference step: input of typeof ${typeof input} is not JSON-serializable; the step's input selector must resolve to a serializable value`
+      `inline inference step: input of typeof ${typeof input} is not JSON-serializable; the step's input selector must resolve to a serializable value`,
     );
   }
   return encoded;
 }
 
 function selectedSkillIds(input: unknown): string[] {
-  if (typeof input !== 'object' || input === null || !('skillIds' in input)) return [];
+  if (typeof input !== "object" || input === null || !("skillIds" in input))
+    return [];
   const value = (input as { skillIds?: unknown }).skillIds;
   if (!Array.isArray(value)) return [];
-  return value.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return value.filter(
+    (id): id is string => typeof id === "string" && id.length > 0,
+  );
 }
 
 function stepToolContext(env: StepEnvBase): StepToolContext {
   const context = (env as Record<string, unknown>)[STEP_TOOL_CONTEXT_KEY];
-  if (typeof context !== 'object' || context === null) {
-    throw new Error('inline inference step: selected skills require step tool context');
+  if (typeof context !== "object" || context === null) {
+    throw new Error(
+      "inline inference step: selected skills require step tool context",
+    );
   }
   return context as StepToolContext;
 }
 
-async function resolveInputSkills(input: unknown, env: StepEnvBase, runId: string): Promise<unknown> {
+async function resolveInputSkills(
+  input: unknown,
+  env: StepEnvBase,
+  runId: string,
+): Promise<unknown> {
   const skillIds = selectedSkillIds(input);
   if (skillIds.length === 0) return input;
 
   const context = stepToolContext(env);
-  const response = await fetch(`${context.hubHttpUrl}/api/internal/workflow-skills/resolve`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${context.sidecarToken}`,
+  const response = await fetch(
+    `${context.hubHttpUrl}/api/internal/workflow-skills/resolve`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${context.sidecarToken}`,
+      },
+      body: JSON.stringify({
+        tenantId: context.tenantId,
+        runId,
+        skillIds,
+      }),
     },
-    body: JSON.stringify({
-      tenantId: context.tenantId,
-      runId,
-      skillIds,
-    }),
-  });
+  );
   if (!response.ok) {
-    throw new Error(`inline inference step: failed to resolve selected skills (${response.status})`);
+    throw new Error(
+      `inline inference step: failed to resolve selected skills (${response.status})`,
+    );
   }
   const body = (await response.json()) as { skills?: unknown };
   if (!Array.isArray(body.skills)) {
-    throw new Error('inline inference step: skill resolver returned an invalid payload');
+    throw new Error(
+      "inline inference step: skill resolver returned an invalid payload",
+    );
   }
   return { ...(input as Record<string, unknown>), skills: body.skills };
 }
@@ -737,18 +1051,24 @@ async function runInlineInferenceStep(args: {
   buildEnv: (req: StepInvokeRequest) => Promise<StepEnvBase>;
   agentFactory: <EnvReq extends BaseEnv>(
     def: AgentDefinition<EnvReq>,
-    env: EnvReq
+    env: EnvReq,
   ) => Promise<Agent>;
 }): Promise<{ output: { reply: string; turn: unknown } }> {
   if (args.req.signal.aborted) {
-    throw new DOMException('aborted', 'AbortError');
+    throw new DOMException("aborted", "AbortError");
   }
   const envBase = await args.buildEnv(args.req);
   const runId = args.req.authzContext.runId;
   if (runId === undefined) {
-    throw new Error('inline inference step: AuthorizeContext.runId is required to resolve selected skills');
+    throw new Error(
+      "inline inference step: AuthorizeContext.runId is required to resolve selected skills",
+    );
   }
-  const resolvedInput = await resolveInputSkills(args.req.input, envBase, runId);
+  const resolvedInput = await resolveInputSkills(
+    args.req.input,
+    envBase,
+    runId,
+  );
   const env: BaseEnv = { ...envBase, authorize: inlineDenyAllAuthorize };
   const agent = await args.agentFactory(args.req.agent, env);
   // Attach a draining stream() consumer BEFORE send() so the agent's
@@ -775,7 +1095,16 @@ async function runInlineInferenceStep(args: {
   };
   const draining = drainStream();
   try {
-    const sendResult = await agent.send(synthesizeStepInput(resolvedInput));
+    let inputForSend = resolvedInput;
+    const ephemeralChat = args.req.agent.tags?.[EPHEMERAL_CHAT_TAG];
+    if (ephemeralChat === "v1") {
+      const compacted = compactEphemeralChatInput(
+        resolvedInput,
+        args.req.agent.systemPrompt,
+      );
+      inputForSend = compacted.payload;
+    }
+    const sendResult = await agent.send(synthesizeStepInput(inputForSend));
     return { output: { reply: sendResult.reply, turn: sendResult.turn } };
   } finally {
     await agent.close();
@@ -883,7 +1212,9 @@ interface SidecarRunChildDeps {
  * either per-call (no handle to dispose) or shared with the parent
  * (the scheduler).
  */
-export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkflow {
+export function createSidecarRunChild(
+  deps: SidecarRunChildDeps,
+): RunChildWorkflow {
   const directors = deps.directors ?? createDefaultDirectorRegistry();
   const clock = deps.clock ?? defaultClock;
   const newId = deps.newId ?? defaultNewId;
@@ -903,7 +1234,12 @@ export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkfl
   // because `childRunId` flows verbatim into the per-rung
   // `blobs`/`signalChannel`/`runtimeRun` calls, keeping every rung's
   // events under `runs/<runId>/...` of the parent's workflow-run repo.
-  const runChild: RunChildWorkflow = async ({ definition, childRunId, input, signal }) => {
+  const runChild: RunChildWorkflow = async ({
+    definition,
+    childRunId,
+    input,
+    signal,
+  }) => {
     const blobs = createWorkflowRunBlobSubstrate({
       substrate: deps.substrate,
       repoId: deps.workflowRunRepoId,
@@ -918,7 +1254,7 @@ export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkfl
       ref: deps.workflowRunRef,
       runId: childRunId,
       readState: () => emptyState(childRunId),
-      newId: () => newId('sig'),
+      newId: () => newId("sig"),
       clock,
     });
     // The child's `env.authorize` slot is the workflow-typed authorize
@@ -935,7 +1271,7 @@ export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkfl
       // observable to tests that wire an `invokeStep` bypassing
       // authorize.
       throw new Error(
-        'sidecar runChild authorize: per-step credentials snapshot is not threaded through the spawn-child seam; the child runtime cannot resolve a workflow-typed authorize call'
+        "sidecar runChild authorize: per-step credentials snapshot is not threaded through the spawn-child seam; the child runtime cannot resolve a workflow-typed authorize call",
       );
     };
     const drain = createNoopDrainController(definition);
@@ -970,18 +1306,18 @@ export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkfl
         triggerPayload: input,
       });
       const cancelOnAbort = (): void => {
-        void handle.cancel('supervisor-operator', 'parent cancelled');
+        void handle.cancel("supervisor-operator", "parent cancelled");
       };
       if (signal.aborted) {
         cancelOnAbort();
       } else {
-        signal.addEventListener('abort', cancelOnAbort, { once: true });
+        signal.addEventListener("abort", cancelOnAbort, { once: true });
       }
       try {
         const result = await handle.complete;
         return { terminalStatus: result.terminalStatus };
       } finally {
-        signal.removeEventListener('abort', cancelOnAbort);
+        signal.removeEventListener("abort", cancelOnAbort);
       }
     } finally {
       await signalChannel.stop();
@@ -1028,25 +1364,45 @@ function defaultNewId(prefix: string): string {
  *      consumes, with the proxy store in the `substrate` slot.
  */
 export function createSidecarSubstrateFactory(
-  deps: SidecarSubstrateFactoryDeps = {}
+  deps: SidecarSubstrateFactoryDeps = {},
 ): SubstrateFactory {
   const createBareRepoStore =
     deps.createBareRepoStore ??
-    (({ dataDir, signingKey }) => createAgentRepoStore({ dataDir, signingKey }).repoStore);
+    (({ dataDir, signingKey }) =>
+      createAgentRepoStore({ dataDir, signingKey }).repoStore);
 
   return async (env: SubstrateFactoryEnv) => {
     const validated = SubstrateConfig(env.substrateConfig);
     if (validated instanceof type.errors) {
       throw new Error(
-        `sidecar workflow-child substrate config failed validation: ${validated.summary}`
+        `sidecar workflow-child substrate config failed validation: ${validated.summary}`,
       );
     }
 
-    const stepInferenceSources = parseStepInferenceSources(validated.STEP_INFERENCE_SOURCES);
+    const stepInferenceSources = parseStepInferenceSources(
+      validated.STEP_INFERENCE_SOURCES,
+    );
+
+    // Per-step tool-loader caps the boot edge resolved and threaded through
+    // `substrateEnv`; re-validated at the child boundary (upstream CL-2335).
+    const cacheMaxBytes = parseByteCap(
+      validated.SIDECAR_CACHE_MAX_BYTES,
+      "SIDECAR_CACHE_MAX_BYTES",
+    );
+    const registryMaxTarballBytes = parseByteCap(
+      validated.SIDECAR_REGISTRY_MAX_TARBALL_BYTES,
+      "SIDECAR_REGISTRY_MAX_TARBALL_BYTES",
+    );
 
     const signingKey = {
-      publicKey: hexDecode(validated.SIDECAR_SIGNING_PUBLIC_KEY, 'SIDECAR_SIGNING_PUBLIC_KEY'),
-      privateKey: hexDecode(validated.SIDECAR_SIGNING_PRIVATE_KEY, 'SIDECAR_SIGNING_PRIVATE_KEY'),
+      publicKey: hexDecode(
+        validated.SIDECAR_SIGNING_PUBLIC_KEY,
+        "SIDECAR_SIGNING_PUBLIC_KEY",
+      ),
+      privateKey: hexDecode(
+        validated.SIDECAR_SIGNING_PRIVATE_KEY,
+        "SIDECAR_SIGNING_PRIVATE_KEY",
+      ),
     };
 
     const bareStore: RepoStore = createBareRepoStore({
@@ -1055,15 +1411,15 @@ export function createSidecarSubstrateFactory(
     });
 
     const workflowRunRepoId = {
-      kind: 'workflow-run' as const,
+      kind: "workflow-run" as const,
       id: validated.WORKFLOW_RUN_REPO_ID,
     };
     const workflowDefinitionRepoId = {
-      kind: 'workflow' as const,
+      kind: "workflow" as const,
       id: validated.WORKFLOW_DEFINITION_REPO_ID,
     };
     const principal: WorkflowRunWorkflowProcessPrincipal = {
-      kind: 'workflow-process',
+      kind: "workflow-process",
       deploymentId: env.spawn.deploymentId,
     };
 
@@ -1088,17 +1444,21 @@ export function createSidecarSubstrateFactory(
     await hostScheduler.start();
     const scheduler = adaptHostScheduler(hostScheduler);
 
-    const evaluateGrantsAdapter: GrantEvaluator = async ({ resource, action, grants }) => {
+    const evaluateGrantsAdapter: GrantEvaluator = async ({
+      resource,
+      action,
+      grants,
+    }) => {
       const result = await evaluateGrants(
         // The credentialsSnapshot's grants are typed as
         // `readonly unknown[]` so the workflow-host package does not
         // depend on the sidecar's grant-rule grammar. The sidecar owns
         // that grammar; the cast surfaces here at the boundary where
         // the typed grant shape is known.
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- credentialsSnapshot.steps[*].grants is typed unknown[] at the workflow-host boundary; the sidecar owns the GrantRule grammar
+
         [...(grants as readonly GrantRule[])],
         resource,
-        action
+        action,
       );
       return {
         effect: result.effect,
@@ -1137,24 +1497,81 @@ export function createSidecarSubstrateFactory(
       tenantId: validated.TENANT_ID,
       hubHttpUrl: wsUrlToHttp(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
-      cacheRoot: path.join(validated.SIDECAR_DATA_DIR, 'cache', 'tool-packages'),
-      cacheMaxBytes: DEFAULT_TOOL_CACHE_MAX_BYTES,
-      registryMaxTarballBytes: DEFAULT_REGISTRY_MAX_TARBALL_BYTES,
+      cacheRoot: path.join(
+        validated.SIDECAR_DATA_DIR,
+        "cache",
+        "tool-packages",
+      ),
+      cacheMaxBytes,
+      registryMaxTarballBytes,
     });
 
-    const baseInvokeStep: StepInvoker = createSidecarStepInvoker({
-      table: stepInferenceSources,
-      dataDir: validated.SIDECAR_DATA_DIR,
-      signer: createSidecarCommitSigner(signingKey),
-      directors: createWorkbenchDirectorRegistry(),
-      evaluateGrants: evaluateGrantsAdapter,
-      // A test-injected agentFactory takes precedence (pure-inference path);
-      // otherwise the production tool-capable factory is wired from the
-      // tool-context resolver inside createSidecarStepInvoker.
-      ...(deps.agentFactory !== undefined
-        ? { agentFactory: deps.agentFactory }
-        : { resolveStepToolContext }),
-    });
+    // Durable-conversation registry for the warm single-step agent (upstream
+    // §3c). Built only when the deployment is warm-kept: the sole long-lived
+    // agent's conversation must survive child respawn, so it is mirrored to
+    // the workflow-run substrate at a per-agent path. A multi-step deploy
+    // leaves this `undefined` -- its per-step agents are not warm/long-lived
+    // (§3b), so they carry no cross-run conversation and keep the per-run
+    // isogit store. The registry lives for the child's lifetime; on respawn
+    // the child rebuilds it empty and each store restores its prior snapshot
+    // from the substrate on first acquire.
+    const conversationSigner = createSidecarCommitSigner(signingKey);
+    const durableConversation: DurableConversationRegistry | undefined = env
+      .spawn.warmKeep
+      ? createDurableConversationRegistry({
+          dataDir: validated.SIDECAR_DATA_DIR,
+          workflowRunRepoId,
+          workflowRunRef: validated.WORKFLOW_RUN_REF,
+          substrate,
+          principal,
+          signer: conversationSigner,
+        })
+      : undefined;
+
+    // Run-boundary durability flush (upstream §3c). When warm-kept, mirror the
+    // warm agent's conversation snapshot to the substrate after each message's
+    // send settles. The key is the step identity, the same key the env builder
+    // filed the durable store under and the warm cache keys by. Absent for a
+    // multi-step deploy.
+    const onRunBoundary: ((key: string) => Promise<void>) | undefined =
+      durableConversation !== undefined
+        ? async (key: string) => {
+            await durableConversation.get(key).mirrorToSubstrate();
+          }
+        : undefined;
+
+    // Build the per-step invoker per invocation so each step's inference
+    // path is wired against THIS step's host-supplied `authorize`,
+    // `onEvent`, and `warmCache`. The deterministic (CL-2202) and inline
+    // (CL-2251) dispatch branches live inside `createSidecarStepInvoker` and
+    // are preserved; upstream's `createWorkflowStepInvoker` (warm/cold path)
+    // layers under the inference branch only.
+    const buildStepInvoker = (
+      workflowAuthorize: WorkflowAuthorizeFn,
+      onEvent: (event: InferenceEvent) => void,
+      warmCache: WarmAgentCache | undefined,
+    ): StepInvoker =>
+      createSidecarStepInvoker({
+        table: stepInferenceSources,
+        dataDir: validated.SIDECAR_DATA_DIR,
+        workflowRunRepoId,
+        signer: conversationSigner,
+        directors: createWorkbenchDirectorRegistry(),
+        evaluateGrants: evaluateGrantsAdapter,
+        workflowAuthorize,
+        onEvent,
+        outboundMailBridge: env.outboundMailBridge,
+        mailboxAddress: env.spawn.mailboxAddress,
+        ...(warmCache !== undefined ? { warmCache } : {}),
+        ...(durableConversation !== undefined ? { durableConversation } : {}),
+        ...(onRunBoundary !== undefined ? { onRunBoundary } : {}),
+        // A test-injected agentFactory takes precedence (pure-inference path);
+        // otherwise the production tool-capable factory is wired from the
+        // tool-context resolver inside createSidecarStepInvoker.
+        ...(deps.agentFactory !== undefined
+          ? { agentFactory: deps.agentFactory }
+          : { resolveStepToolContext }),
+      });
 
     // Child-runtime step invoker. The in-process `runChild` (see
     // `createSidecarRunChild` below) runs a separate WorkflowDefinition
@@ -1173,16 +1590,27 @@ export function createSidecarSubstrateFactory(
       Promise.resolve({ output: { reply: req.agent.id, turn: null } });
 
     // Adapt the workflow-runtime `StepInvoker` shape onto the host's
-    // `ChildStepInvoker` shape. The wrapper today drops `onEvent` --
-    // the production step-invoker adapter does not yet thread an
-    // event firehose through the harness's send path; the event
-    // funnel inside the adapter lands when the harness's emit hook is
-    // wired. Holding the parameter at this boundary keeps the seam
-    // explicit so the wire-up is a single point of edit.
-    const invokeStep: RunWorkflowChildBindings['invokeStep'] = async (req, onEvent) => {
-      void onEvent;
-      return baseInvokeStep(req);
-    };
+    // `ChildStepInvoker` (4-arg) shape. `onEvent` is the per-step
+    // inference event sink and `authorize` is the runtime's
+    // credentials-backed authorize closure; both are threaded into the
+    // per-step invoker built for THIS invocation so the inference path
+    // gates each tool call against the step's grant snapshot and forwards
+    // its events.
+    //
+    // `warmCache` (upstream §3b) is the run-loop's per-deployment warm-agent
+    // cache, present only for the warm-kept single-step deployment. Threaded
+    // into the per-step invoker so the inference branch builds the agent once
+    // and reuses it across messages (with the run-boundary durability flush
+    // mirroring its conversation to the substrate after each send); absent it
+    // keeps instantiate-send-teardown per step. The deterministic (CL-2202)
+    // and inline (CL-2251) branches never warm-keep -- they are pure
+    // tool/single-turn dispatch with no reactor to keep alive.
+    const invokeStep: RunWorkflowChildBindings["invokeStep"] = async (
+      req,
+      onEvent,
+      authorize,
+      warmCache,
+    ) => buildStepInvoker(authorize, onEvent, warmCache)(req);
 
     const runChild = createSidecarRunChild({
       substrate,
@@ -1201,6 +1629,37 @@ export function createSidecarSubstrateFactory(
       runChild,
     });
 
+    // Per-run scratch reclamation for the cold (multi-step) path. The
+    // run-loop fires this once each run reaches its terminal status; it
+    // drops the run's whole `workflow-step-state/<repoId>/runs/<runId>/`
+    // subtree (every step/attempt the run produced) via `runStepStorageRoot`.
+    // `rm -rf` semantics (recursive + force) so a run that never wrote
+    // scratch is a no-op rather than an ENOENT throw.
+    //
+    // The warm single-step path keys its agent scratch STABLY under the
+    // disjoint `warm/<stepId>/` sub-root (see `warmStepStorageRoot`), reused
+    // across every message and NOT reclaimed per run -- the cached agent is
+    // long-lived. Its whole subtree is reclaimed on undeploy by the
+    // workflow-host-wiring undeploy hook, which removes the entire
+    // `workflow-step-state/<deploymentId>/` tree (both `runs/` and `warm/`)
+    // once the supervisor + child are torn down. So the warm branch leaves
+    // `cleanupRunStorage` undefined here -- the per-run sweep must not touch
+    // the stable warm workspace, and the undeploy hook owns its reclamation.
+    // The durable conversation under `agent-conversation-state/` is a
+    // different root neither sweep touches, so a re-deploy resumes it.
+    const cleanupRunStorage: ((runId: string) => Promise<void>) | undefined =
+      env.spawn.warmKeep
+        ? undefined
+        : (runId: string) =>
+            fs.promises.rm(
+              runStepStorageRoot({
+                dataDir: validated.SIDECAR_DATA_DIR,
+                workflowRunRepoId,
+                runId,
+              }),
+              { recursive: true, force: true },
+            );
+
     const bindings: RunWorkflowChildBindings = {
       substrate,
       workflowRunRepoId,
@@ -1212,6 +1671,7 @@ export function createSidecarSubstrateFactory(
       spawnChild,
       scheduler,
       evaluateGrants: evaluateGrantsAdapter,
+      ...(cleanupRunStorage !== undefined ? { cleanupRunStorage } : {}),
     };
     return bindings;
   };
@@ -1227,4 +1687,5 @@ export function createSidecarSubstrateFactory(
  * hub sink (tests, alternate hosts) construct their own via
  * `createSidecarSubstrateFactory`.
  */
-export const createSubstrate: SubstrateFactory = createSidecarSubstrateFactory();
+export const createSubstrate: SubstrateFactory =
+  createSidecarSubstrateFactory();

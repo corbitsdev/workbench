@@ -8,7 +8,7 @@
  */
 export function resolveCorsAllowOrigin(
   requestOrigin: string | null | undefined,
-  allowedOrigins: readonly string[]
+  allowedOrigins: readonly string[],
 ): string | undefined {
   if (!requestOrigin) return undefined;
   return allowedOrigins.includes(requestOrigin) ? requestOrigin : undefined;

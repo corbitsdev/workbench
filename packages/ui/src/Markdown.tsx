@@ -1,35 +1,56 @@
-import type { ReactNode } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
-import { cn } from './utils';
+import type { ReactNode } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import { cn } from "./utils";
 
 // Token-only component overrides so rendered markdown inherits the workbench
 // palette (text / text-2 / text-3) rather than react-markdown's bare defaults.
 // Kept module-level so the object identity is stable across renders.
 const components: Components = {
   h1: ({ children }) => (
-    <h2 className="mb-2 mt-4 text-[15px] font-semibold text-text">{children}</h2>
+    <h2 className="mb-2 mt-4 text-[15px] font-semibold text-text">
+      {children}
+    </h2>
   ),
   h2: ({ children }) => (
-    <h3 className="mb-2 mt-4 text-[14px] font-semibold text-text">{children}</h3>
+    <h3 className="mb-2 mt-4 text-[14px] font-semibold text-text">
+      {children}
+    </h3>
   ),
   h3: ({ children }) => (
-    <h4 className="mb-1.5 mt-3 text-[13px] font-semibold text-text">{children}</h4>
+    <h4 className="mb-1.5 mt-3 text-[13px] font-semibold text-text">
+      {children}
+    </h4>
   ),
   h4: ({ children }) => (
-    <h5 className="mb-1.5 mt-3 text-[13px] font-semibold text-text-2">{children}</h5>
+    <h5 className="mb-1.5 mt-3 text-[13px] font-semibold text-text-2">
+      {children}
+    </h5>
   ),
-  p: ({ children }) => <p className="mb-3 text-[13px] leading-relaxed text-text-2">{children}</p>,
+  p: ({ children }) => (
+    <p className="mb-3 text-[13px] leading-relaxed text-text-2">{children}</p>
+  ),
   ul: ({ children }) => (
-    <ul className="mb-3 list-disc space-y-1 pl-5 text-[13px] text-text-2">{children}</ul>
+    <ul className="mb-3 list-disc space-y-1 pl-5 text-[13px] text-text-2">
+      {children}
+    </ul>
   ),
   ol: ({ children }) => (
-    <ol className="mb-3 list-decimal space-y-1 pl-5 text-[13px] text-text-2">{children}</ol>
+    <ol className="mb-3 list-decimal space-y-1 pl-5 text-[13px] text-text-2">
+      {children}
+    </ol>
   ),
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  strong: ({ children }) => <strong className="font-semibold text-text">{children}</strong>,
+  strong: ({ children }) => (
+    <strong className="font-semibold text-text">{children}</strong>
+  ),
   em: ({ children }) => <em className="italic">{children}</em>,
   a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="text-orange hover:underline">
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-orange hover:underline"
+    >
       {children}
     </a>
   ),
@@ -59,7 +80,7 @@ export function Markdown({
   className?: string;
 }): ReactNode {
   return (
-    <div className={cn('break-words', className)}>
+    <div className={cn("break-words", className)}>
       <ReactMarkdown components={components}>{children}</ReactMarkdown>
     </div>
   );

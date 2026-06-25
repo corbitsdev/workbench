@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import { LoginView } from '../components/auth/LoginView';
-import { type EmailPasswordCredentials, type OAuthProviderId } from '../components/auth/types';
-import { authClient } from '../lib/auth-client';
+import { useState } from "react";
+import { LoginView } from "../components/auth/LoginView";
+import {
+  type EmailPasswordCredentials,
+  type OAuthProviderId,
+} from "../components/auth/types";
+import { authClient } from "../lib/auth-client";
 
 export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
@@ -16,12 +19,15 @@ export function LoginPage() {
         callbackURL: window.location.origin,
       });
     } catch {
-      setError('Failed to sign in with Google. Please try again.');
+      setError("Failed to sign in with Google. Please try again.");
       setLoading(false);
     }
   };
 
-  const handleEmailPassword = async ({ email, password }: EmailPasswordCredentials) => {
+  const handleEmailPassword = async ({
+    email,
+    password,
+  }: EmailPasswordCredentials) => {
     setLoading(true);
     setError(null);
     try {
@@ -31,11 +37,11 @@ export function LoginPage() {
         callbackURL: window.location.origin,
       });
       if (result.error) {
-        setError(result.error.message ?? 'Invalid email or password.');
+        setError(result.error.message ?? "Invalid email or password.");
         setLoading(false);
       }
     } catch {
-      setError('Sign in failed. Please try again.');
+      setError("Sign in failed. Please try again.");
       setLoading(false);
     }
   };

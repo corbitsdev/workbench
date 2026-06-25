@@ -7,7 +7,6 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-    "lint": "oxlint .",
     "test": "bun test --path-ignore-patterns='**/use-workflow.test.tsx' src && bun test src/hooks/use-workflow.test.tsx",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text --path-ignore-patterns='**/use-workflow.test.tsx' src && bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src/hooks/use-workflow.test.tsx"
   },
@@ -29,6 +28,7 @@
     "@workbench/ui": "workspace:*",
     "@workbench/workflow-ab-compare": "workspace:*",
     "@workbench/workflow-gamma-presentation-creator": "workspace:*",
+    "@workbench/workflow-last30days-research": "workspace:*",
     "@workbench/workflow-pain-point-collateral": "workspace:*",
     "@workbench/workflow-reddit-opportunity-scanner": "workspace:*",
     "@workbench/workflow-seo-enrichment-from-image": "workspace:*",
@@ -42,6 +42,8 @@
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "react-router": "^7.16.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {

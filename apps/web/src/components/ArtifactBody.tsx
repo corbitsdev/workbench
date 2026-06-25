@@ -1,7 +1,7 @@
-import { usesSocialPostPreview } from '@workbench/artifact';
-import PresentationBody from './PresentationBody';
-import ResearchBody, { parseResearchBrief } from './ResearchBody';
-import { buildApiUrl } from '../lib/api';
+import { usesSocialPostPreview } from "@workbench/artifact";
+import PresentationBody from "./PresentationBody";
+import ResearchBody, { parseResearchBrief } from "./ResearchBody";
+import { buildApiUrl } from "../lib/api";
 
 interface ArtifactBodyArtifact {
   content: string;
@@ -20,20 +20,22 @@ interface ArtifactBodyProps {
 // The structured brief lives at source.brief; source is an opaque jsonb bag, so
 // pull the brief out defensively rather than asserting its shape here.
 function extractBrief(source: unknown): unknown {
-  if (typeof source === 'object' && source !== null && 'brief' in source) {
+  if (typeof source === "object" && source !== null && "brief" in source) {
     return (source as Record<string, unknown>).brief;
   }
   return undefined;
 }
 
-function parseMarkdownTable(text: string): { headers: string[]; rows: string[][] } | null {
-  const lines = text.trim().split('\n');
-  const tableLines = lines.filter((l) => l.trim().startsWith('|'));
+function parseMarkdownTable(
+  text: string,
+): { headers: string[]; rows: string[][] } | null {
+  const lines = text.trim().split("\n");
+  const tableLines = lines.filter((l) => l.trim().startsWith("|"));
   if (tableLines.length < 2) return null;
 
   const parseRow = (line: string) =>
     line
-      .split('|')
+      .split("|")
       .slice(1, -1)
       .map((c) => c.trim());
 
@@ -47,54 +49,57 @@ function parseMarkdownTable(text: string): { headers: string[]; rows: string[][]
 }
 
 export function MarkdownBlock({ text }: { text: string }) {
-  const lines = text.split('\n');
+  const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
   let i = 0;
 
   const renderInline = (str: string) => {
     const parts = str.split(/(\*\*[^*]+\*\*)/g);
     return parts.map((p, idx) =>
-      p.startsWith('**') && p.endsWith('**') ? (
+      p.startsWith("**") && p.endsWith("**") ? (
         <strong key={idx}>{p.slice(2, -2)}</strong>
       ) : (
         <span key={idx}>{p}</span>
-      )
+      ),
     );
   };
 
   while (i < lines.length) {
     const line = lines[i];
 
-    if (line.startsWith('### ')) {
+    if (line.startsWith("### ")) {
       elements.push(
         <h4 key={i} className="text-sm font-bold text-text mt-4 mb-1.5">
           {line.slice(4)}
-        </h4>
+        </h4>,
       );
-    } else if (line.startsWith('## ')) {
+    } else if (line.startsWith("## ")) {
       elements.push(
         <h3 key={i} className="text-base font-bold text-text mt-5 mb-2">
           {line.slice(3)}
-        </h3>
+        </h3>,
       );
-    } else if (line.startsWith('# ')) {
+    } else if (line.startsWith("# ")) {
       elements.push(
         <h2 key={i} className="text-lg font-bold text-text mt-4 mb-2">
           {line.slice(2)}
-        </h2>
+        </h2>,
       );
-    } else if (line.startsWith('> ')) {
+    } else if (line.startsWith("> ")) {
       elements.push(
         <blockquote
           key={i}
           className="border-l-2 border-border pl-3 italic text-text-3 text-sm my-2"
         >
           {renderInline(line.slice(2))}
-        </blockquote>
+        </blockquote>,
       );
-    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+    } else if (line.startsWith("- ") || line.startsWith("* ")) {
       const items: string[] = [];
-      while (i < lines.length && (lines[i].startsWith('- ') || lines[i].startsWith('* '))) {
+      while (
+        i < lines.length &&
+        (lines[i].startsWith("- ") || lines[i].startsWith("* "))
+      ) {
         items.push(lines[i].slice(2));
         i++;
       }
@@ -105,16 +110,16 @@ export function MarkdownBlock({ text }: { text: string }) {
               {renderInline(item)}
             </li>
           ))}
-        </ul>
+        </ul>,
       );
       continue;
-    } else if (line.trim() === '') {
+    } else if (line.trim() === "") {
       // skip blank lines between blocks
     } else {
       elements.push(
         <p key={i} className="text-text-2 text-sm leading-relaxed mb-3">
           {renderInline(line)}
-        </p>
+        </p>,
       );
     }
     i++;
@@ -143,7 +148,9 @@ function LinkedInBody({ body }: { body: string }) {
           <div className="text-xs text-text-3">Your Title · 1st</div>
         </div>
       </div>
-      <p className="text-sm text-text-2 leading-relaxed whitespace-pre-wrap">{body}</p>
+      <p className="text-sm text-text-2 leading-relaxed whitespace-pre-wrap">
+        {body}
+      </p>
     </div>
   );
 }
@@ -200,7 +207,13 @@ function BattlecardBody({ body }: { body: string }) {
   return <p className="text-sm text-text-2 whitespace-pre-wrap">{body}</p>;
 }
 
-function CsvExportBody({ body, artifactId }: { body: string; artifactId: string }) {
+function CsvExportBody({
+  body,
+  artifactId,
+}: {
+  body: string;
+  artifactId: string;
+}) {
   // Same-origin download route; the session cookie authorizes it. A plain anchor
   // is sufficient — no JS fetch needed.
   return (
@@ -230,51 +243,55 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
 
   switch (type) {
     // downloadable export
-    case 'csv-export': {
+    case "csv-export": {
       if (!artifact.id) {
-        return <pre className="overflow-x-auto p-3 text-xs text-text-2">{body}</pre>;
+        return (
+          <pre className="overflow-x-auto p-3 text-xs text-text-2">{body}</pre>
+        );
       }
       return <CsvExportBody body={body} artifactId={artifact.id} />;
     }
     // email
-    case 'email':
-    case 'follow-up-email':
+    case "email":
+    case "follow-up-email":
       return <EmailBody body={body} />;
     // documents
-    case 'one-pager':
-    case 'sales-one-pager':
-    case 'blog':
-    case 'pain-points-blog':
-    case 'case-study':
-    case 'case-study-draft':
-    case 'objection-handling':
-    case 'objection-handling-doc':
-    case 'customer-quotes':
-    case 'customer-quote-pulls':
-    case 'pain-points':
-    case 'call-transcript':
+    case "one-pager":
+    case "sales-one-pager":
+    case "blog":
+    case "pain-points-blog":
+    case "case-study":
+    case "case-study-draft":
+    case "objection-handling":
+    case "objection-handling-doc":
+    case "customer-quotes":
+    case "customer-quote-pulls":
+    case "pain-points":
+    case "call-transcript":
       return <OnePagerBody body={body} />;
     // battlecard
-    case 'battlecard':
+    case "battlecard":
       return <BattlecardBody body={body} />;
     // presentation
-    case 'presentation': {
+    case "presentation": {
       let isValidUrl = false;
       try {
         const parsed = new URL(body);
-        isValidUrl = parsed.protocol === 'https:';
+        isValidUrl = parsed.protocol === "https:";
       } catch {
         isValidUrl = false;
       }
       if (!isValidUrl) {
         return (
-          <p className="text-sm text-text-3 p-4">Presentation URL is invalid or unavailable.</p>
+          <p className="text-sm text-text-3 p-4">
+            Presentation URL is invalid or unavailable.
+          </p>
         );
       }
       return <PresentationBody url={body} />;
     }
     // research
-    case 'research': {
+    case "research": {
       const parsedBrief = parseResearchBrief(brief);
       if (parsedBrief !== null) {
         return <ResearchBody brief={parsedBrief} />;

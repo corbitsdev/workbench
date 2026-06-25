@@ -1,5 +1,3 @@
-/* eslint-disable no-console */
-
 // GTM Workbench admin CLI — one menu-driven entrypoint for operators.
 //
 //   auth → tenant select → resource → action → inputs → execute

@@ -1,10 +1,14 @@
-import { createAgent, createDefaultDirectorRegistry, defineAgent } from '@intx/agent';
-import type { AuthorizeFn } from '@intx/agent';
-import { createIsogitStore } from '@intx/storage-isogit';
-import type { InferenceSource } from '@intx/types/runtime';
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import {
+  createAgent,
+  createDefaultDirectorRegistry,
+  defineAgent,
+} from "@intx/agent";
+import type { AuthorizeFn } from "@intx/agent";
+import { createIsogitStore } from "@workbench/storage-isogit";
+import type { InferenceSource } from "@intx/types/runtime";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Single-turn, tool-less inference for a reasoning step. Ported from the
 // pre-substrate fast path (`apps/hub/src/lib/inference.ts` @ b3cad9e8): an
@@ -24,7 +28,13 @@ export async function runReasoningStep(args: {
   const contextDir = join(tmpdir(), `wf-step-${randomUUID()}`);
   const effectiveSource: InferenceSource =
     args.maxOutputTokens !== undefined
-      ? { ...args.source, defaults: { ...args.source.defaults, maxTokens: args.maxOutputTokens } }
+      ? {
+          ...args.source,
+          defaults: {
+            ...args.source.defaults,
+            maxTokens: args.maxOutputTokens,
+          },
+        }
       : args.source;
 
   const store = await createIsogitStore(contextDir);
@@ -35,7 +45,9 @@ export async function runReasoningStep(args: {
     tools: [],
     capabilities: [],
     inference: {
-      sources: [{ provider: effectiveSource.provider, model: effectiveSource.model }],
+      sources: [
+        { provider: effectiveSource.provider, model: effectiveSource.model },
+      ],
     },
   });
 

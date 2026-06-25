@@ -1,10 +1,15 @@
-import { getLogger } from '@intx/log';
-import type { ToolCall, ToolResult, ToolDefinition, ToolRunner } from '@intx/types/runtime';
+import { getLogger } from "@intx/log";
+import type {
+  ToolCall,
+  ToolResult,
+  ToolDefinition,
+  ToolRunner,
+} from "@intx/types/runtime";
 
-const logger = getLogger(['sidecar', 'mail-guard']);
+const logger = getLogger(["sidecar", "mail-guard"]);
 
 /** Mail tools that emit outbound messages and so can run away in a loop. */
-const MAIL_WRITE_TOOLS = new Set(['mail_send', 'mail_reply']);
+const MAIL_WRITE_TOOLS = new Set(["mail_send", "mail_reply"]);
 
 /**
  * How many times the same exact body may be sent. The first send goes through;
@@ -34,7 +39,7 @@ function blocked(call: ToolCall, message: string): ToolResult {
 
 function bodyOf(call: ToolCall): string {
   const content = call.arguments.content;
-  return typeof content === 'string' ? content.trim() : '';
+  return typeof content === "string" ? content.trim() : "";
 }
 
 /**
@@ -44,8 +49,8 @@ function bodyOf(call: ToolCall): string {
  */
 function recipientOf(call: ToolCall): string {
   const to = call.arguments.to;
-  if (typeof to === 'string') return to;
-  return JSON.stringify(call.arguments.ref ?? '');
+  if (typeof to === "string") return to;
+  return JSON.stringify(call.arguments.ref ?? "");
 }
 
 /**
@@ -63,9 +68,10 @@ function recipientOf(call: ToolCall): string {
  */
 export function createGuardedMailRunner(
   inner: DefinedRunner,
-  options: GuardedMailRunnerOptions = {}
+  options: GuardedMailRunnerOptions = {},
 ): GuardedMailRunner {
-  const maxOutboundPerTurn = options.maxOutboundPerTurn ?? MAX_OUTBOUND_PER_TURN;
+  const maxOutboundPerTurn =
+    options.maxOutboundPerTurn ?? MAX_OUTBOUND_PER_TURN;
   let outboundCount = 0;
   const sentKeys = new Map<string, number>();
 
@@ -81,13 +87,13 @@ export function createGuardedMailRunner(
       }
 
       if (outboundCount >= maxOutboundPerTurn) {
-        logger.warn('Outbound mail cap reached for {tool}: {count} sent', {
+        logger.warn("Outbound mail cap reached for {tool}: {count} sent", {
           tool: call.name,
           count: outboundCount,
         });
         return blocked(
           call,
-          `Outbound mail cap reached (${maxOutboundPerTurn} this turn). Stop sending — your turn is done.`
+          `Outbound mail cap reached (${maxOutboundPerTurn} this turn). Stop sending — your turn is done.`,
         );
       }
 
@@ -95,10 +101,12 @@ export function createGuardedMailRunner(
       const key = `${recipientOf(call)}\u001f${body}`;
       const alreadySent = sentKeys.get(key) ?? 0;
       if (body.length > 0 && alreadySent >= MAX_IDENTICAL_OUTBOUND) {
-        logger.warn('Suppressed duplicate outbound mail for {tool}', { tool: call.name });
+        logger.warn("Suppressed duplicate outbound mail for {tool}", {
+          tool: call.name,
+        });
         return blocked(
           call,
-          'Duplicate outbound mail suppressed — you already sent this exact message to this recipient. Do not resend; your turn is done.'
+          "Duplicate outbound mail suppressed — you already sent this exact message to this recipient. Do not resend; your turn is done.",
         );
       }
 

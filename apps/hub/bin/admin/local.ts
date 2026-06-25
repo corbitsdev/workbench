@@ -1,9 +1,8 @@
-/* eslint-disable no-console */
-
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AGENT_TEMPLATES } from "@workbench/agents";
 
 // "Local actions" — operator tasks the spec-driven HTTP menu can't express
 // because they run locally rather than as a single hub request: bootstrap
@@ -34,6 +33,9 @@ export interface LocalAction {
   // Bootstrap actions run before/independent of auth (e.g. first superadmin).
   bootstrap?: boolean;
 }
+
+const BIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+const REPO_ROOT = dirname(dirname(dirname(BIN_DIR)));
 
 export const SETUP_GROUP = "Local actions (build, seed)";
 export const WORKFLOWS_GROUP = "Workflows";
@@ -70,6 +72,13 @@ export const LOCAL_ACTIONS: LocalAction[] = [
     tenantAware: true,
   },
   {
+    label: "Backfill supervisor session IDs (analytics)",
+    group: SETUP_GROUP,
+    script: "backfill-analytics-sessions.ts",
+    tenantAware: true,
+    baseArgs: ["--yes"],
+  },
+  {
     label: "Build tool packages",
     group: SETUP_GROUP,
     script: "build-tool-packages.ts",
@@ -78,7 +87,9 @@ export const LOCAL_ACTIONS: LocalAction[] = [
     label: "Publish tool packages",
     group: SETUP_GROUP,
     script: "publish-tool-packages.ts",
-    baseArgs: ["--from", "dist/tool-packages"],
+    get baseArgs() {
+      return ["--from", join(REPO_ROOT, "dist/tool-packages")];
+    },
     tenantAware: true,
   },
   {
@@ -91,6 +102,29 @@ export const LOCAL_ACTIONS: LocalAction[] = [
       flag: "--kind",
       discover: discoverWorkflowKinds,
     },
+  },
+  {
+    label: "Deploy an agent definition",
+    group: WORKFLOWS_GROUP,
+    script: "deploy-agent.ts",
+    tenantAware: true,
+    choices: {
+      text: "Agent template",
+      flag: "--template",
+      discover: discoverAgentTemplates,
+    },
+  },
+  {
+    label: "Purge all credentials + providers from a tenant",
+    group: SETUP_GROUP,
+    script: "purge-credentials.ts",
+    tenantAware: true,
+  },
+  {
+    label: "Delete a tenant (IRREVERSIBLE — requires DATABASE_URL)",
+    group: SETUP_GROUP,
+    script: "delete-tenant.ts",
+    tenantAware: true,
   },
 ];
 
@@ -153,6 +187,10 @@ export function discoverWorkflowKinds(): string[] {
   return kinds.sort((a, b) => a.localeCompare(b));
 }
 
+export function discoverAgentTemplates(): string[] {
+  return AGENT_TEMPLATES.map((t) => t.key).sort((a, b) => a.localeCompare(b));
+}
+
 // Build the argv to spawn for a local action. Pure so it can be unit-tested
 // without spawning. `binDir` is apps/hub/bin; extraArgs are operator-supplied.
 export function buildLocalCommand(
@@ -167,8 +205,6 @@ export function buildLocalCommand(
   if (action.tenantAware) argv.push("--tenant", tenantSlug);
   return argv;
 }
-
-const BIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export async function runLocalAction(
   action: LocalAction,

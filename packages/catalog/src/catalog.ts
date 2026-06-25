@@ -1,0 +1,120 @@
+import { type } from "arktype";
+import type { ModelRequirement } from "@intx/types";
+import { CATALOG_PROVIDERS } from "./providers";
+import { CATALOG_MODELS } from "./models";
+import { CATALOG_OFFERINGS } from "./offerings";
+
+const MODEL_PLUGINS = [
+  "anthropic",
+  "openai",
+  "openai-compatible",
+  "google-genai",
+] as const;
+export type ModelPlugin = (typeof MODEL_PLUGINS)[number];
+
+export type CatalogProviderSpec = {
+  name: string;
+  plugin: ModelPlugin;
+  credentialName: string;
+};
+
+export type CatalogModelSpec = { canonicalName: string };
+
+export type CatalogOfferingSpec = { model: string; provider: string };
+
+export type AgentCatalogSpec = {
+  providers: CatalogProviderSpec[];
+  models: CatalogModelSpec[];
+  offerings: CatalogOfferingSpec[];
+};
+
+export type AgentTemplateInput = {
+  key: string;
+  name?: string | undefined;
+  description?: string | undefined;
+  systemPrompt?: string | undefined;
+  credentialRequirements: readonly {
+    source: string;
+    providerName: string;
+    name?: string | undefined;
+    [key: string]: unknown;
+  }[];
+  grantRequirements?: readonly unknown[] | undefined;
+  capabilities?: { tools: string[] } | undefined;
+  modelConfig?: Record<string, unknown> | undefined;
+  deployable?: boolean | undefined;
+  kind?: string | undefined;
+  toolPackages?: readonly unknown[] | undefined;
+};
+
+const ModelConfigShape = type({ defaultModel: "string" });
+
+export function templateModelName(template: AgentTemplateInput): string {
+  const parsed = ModelConfigShape(template.modelConfig ?? {});
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `agent template "${template.key}" must declare modelConfig.defaultModel: ${parsed.summary}`,
+    );
+  }
+  return parsed.defaultModel;
+}
+
+export function templateModelRequirements(
+  template: AgentTemplateInput,
+): ModelRequirement[] {
+  return [{ model: templateModelName(template) }];
+}
+
+function inferenceCredential(template: AgentTemplateInput): {
+  plugin: ModelPlugin;
+  credentialName: string;
+} {
+  const req = template.credentialRequirements.find(
+    (r) =>
+      r.source === "tenant" &&
+      (MODEL_PLUGINS as readonly string[]).includes(r.providerName) &&
+      typeof r.name === "string",
+  );
+  if (req === undefined || typeof req.name !== "string") {
+    throw new Error(
+      `agent template "${template.key}" has no tenant inference credential requirement`,
+    );
+  }
+  return { plugin: req.providerName as ModelPlugin, credentialName: req.name };
+}
+
+const OFFERING_KEY_SEPARATOR = " ";
+
+export function buildAgentCatalog(
+  templates: readonly AgentTemplateInput[],
+): AgentCatalogSpec {
+  const providers = new Map<string, CatalogProviderSpec>();
+  const models = new Map<string, CatalogModelSpec>();
+  const offerings = new Map<string, CatalogOfferingSpec>();
+  for (const template of templates) {
+    const model = templateModelName(template);
+    const cred = inferenceCredential(template);
+    const providerName = cred.credentialName;
+    providers.set(providerName, {
+      name: providerName,
+      plugin: cred.plugin,
+      credentialName: cred.credentialName,
+    });
+    models.set(model, { canonicalName: model });
+    offerings.set(`${model}${OFFERING_KEY_SEPARATOR}${providerName}`, {
+      model,
+      provider: providerName,
+    });
+  }
+  return {
+    providers: [...providers.values()],
+    models: [...models.values()],
+    offerings: [...offerings.values()],
+  };
+}
+
+export const FULL_CATALOG: AgentCatalogSpec = {
+  providers: CATALOG_PROVIDERS,
+  models: CATALOG_MODELS,
+  offerings: CATALOG_OFFERINGS,
+};

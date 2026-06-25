@@ -25,7 +25,9 @@ typechecks unmodified. Consumers still get fully-typed exports.
 ```ts
 import { createClient } from "@workbench/openapi-arktype";
 
-const client = await createClient({ url: "https://hub.example.com/openapi.json" });
+const client = await createClient({
+  url: "https://hub.example.com/openapi.json",
+});
 
 // Discover operations
 const op = client.operation("post", "/api/v1/workflows/deploy");

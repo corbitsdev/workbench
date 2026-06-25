@@ -1,16 +1,17 @@
-import { type } from 'arktype';
-import { defineAgent } from '@intx/agent';
-import { step } from '@intx/workflow';
-import type { StepPrimitive, Selector } from '@intx/workflow';
-import { canonicalizeToolNames } from './tool-names';
+import { type } from "arktype";
+import { defineAgent } from "@intx/agent";
+import { step } from "@intx/workflow";
+import type { StepPrimitive, Selector } from "@intx/workflow";
+import { canonicalizeToolNames } from "./tool-names";
+import { EPHEMERAL_CHAT_TAG } from "./ephemeral-chat/payload";
 
 /**
  * Marker tags the sidecar's step invoker reads to dispatch a step as a
  * deterministic tool call instead of an inference turn.
  */
-export const STEP_KIND_TAG = 'workbench.stepKind';
-export const STEP_TOOL_TAG = 'workbench.tool';
-export const DETERMINISTIC_TOOL_KIND = 'deterministic-tool';
+export const STEP_KIND_TAG = "workbench.stepKind";
+export const STEP_TOOL_TAG = "workbench.tool";
+export const DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 
 /**
  * Marker the sidecar's step invoker reads to dispatch a step as an
@@ -21,7 +22,7 @@ export const DETERMINISTIC_TOOL_KIND = 'deterministic-tool';
  * `launchSession` for it. The sidecar runs it with a bare `createAgent`
  * against the step's pinned `InferenceSource` and a deny-all `authorize`.
  */
-export const INLINE_INFERENCE_KIND = 'inline-inference';
+export const INLINE_INFERENCE_KIND = "inline-inference";
 
 /**
  * Tag carrying the JSON-serialized `argMap` (a controlled producer/consumer
@@ -29,7 +30,7 @@ export const INLINE_INFERENCE_KIND = 'inline-inference';
  * `runDeterministicToolStep` reads + re-validates it). Tags are
  * `Record<string,string>`, so the map is stringified.
  */
-export const STEP_ARGMAP_TAG = 'workbench.argMap';
+export const STEP_ARGMAP_TAG = "workbench.argMap";
 
 /**
  * Per-tool-argument reshape spec. Maps a TOOL argument name to either a
@@ -38,10 +39,10 @@ export const STEP_ARGMAP_TAG = 'workbench.argMap';
  * JSON-serializable: the workflow definition is JSON-deployed, so no
  * functions.
  */
-export const ArgMapSpec = type({ from: 'string' }).or({ literal: 'unknown' });
+export const ArgMapSpec = type({ from: "string" }).or({ literal: "unknown" });
 export type ArgMapSpec = typeof ArgMapSpec.infer;
 
-export const ArgMap = type({ '[string]': ArgMapSpec });
+export const ArgMap = type({ "[string]": ArgMapSpec });
 export type ArgMap = typeof ArgMap.infer;
 
 export interface DeterministicToolStepOpts {
@@ -74,22 +75,28 @@ export interface DeterministicToolStepOpts {
  * materialize it. The sidecar's step invoker detects the marker tags and
  * dispatches the tool directly against the step's loaded runner.
  */
-export function deterministicToolStep(opts: DeterministicToolStepOpts): StepPrimitive {
+export function deterministicToolStep(
+  opts: DeterministicToolStepOpts,
+): StepPrimitive {
   const [canonicalTool] = canonicalizeToolNames([opts.tool]);
   if (canonicalTool === undefined) {
-    throw new Error(`deterministicToolStep: tool name "${opts.tool}" canonicalized to nothing`);
+    throw new Error(
+      `deterministicToolStep: tool name "${opts.tool}" canonicalized to nothing`,
+    );
   }
   const agent = defineAgent({
     id: opts.id,
     description: `Deterministic tool call: ${canonicalTool}`,
-    systemPrompt: '',
+    systemPrompt: "",
     tools: [],
     capabilities: [canonicalTool],
     inference: { sources: [] },
     tags: {
       [STEP_KIND_TAG]: DETERMINISTIC_TOOL_KIND,
       [STEP_TOOL_TAG]: canonicalTool,
-      ...(opts.argMap !== undefined ? { [STEP_ARGMAP_TAG]: JSON.stringify(opts.argMap) } : {}),
+      ...(opts.argMap !== undefined
+        ? { [STEP_ARGMAP_TAG]: JSON.stringify(opts.argMap) }
+        : {}),
     },
   });
   return step({
@@ -112,6 +119,11 @@ export interface InlineInferenceStepOpts {
   input?: Selector;
   /** Step ids this step depends on. */
   after?: readonly string[];
+  /**
+   * When set, the sidecar compacts `{ message, history }` step input to the v1
+   * ephemeral token budget before the model turn (CL-2308).
+   */
+  ephemeralChat?: "v1";
 }
 
 /**
@@ -129,7 +141,9 @@ export interface InlineInferenceStepOpts {
  * Only valid for no-tool reasoning steps. A step that invokes a tool must use
  * a deployed `step({ agent })` (tool-capable harness) or `deterministicToolStep`.
  */
-export function inlineInferenceStep(opts: InlineInferenceStepOpts): StepPrimitive {
+export function inlineInferenceStep(
+  opts: InlineInferenceStepOpts,
+): StepPrimitive {
   const agent = defineAgent({
     id: opts.id,
     description: `Inline single-turn inference: ${opts.id}`,
@@ -139,6 +153,9 @@ export function inlineInferenceStep(opts: InlineInferenceStepOpts): StepPrimitiv
     inference: { sources: [] },
     tags: {
       [STEP_KIND_TAG]: INLINE_INFERENCE_KIND,
+      ...(opts.ephemeralChat !== undefined
+        ? { [EPHEMERAL_CHAT_TAG]: opts.ephemeralChat }
+        : {}),
     },
   });
   return step({

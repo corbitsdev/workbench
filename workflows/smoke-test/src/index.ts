@@ -9,7 +9,8 @@ import { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from "@workbench/agents";
 // (e.g. granola) or credential resolution.
 const emitAgent = defineAgent({
   id: "smoke-test-emit",
-  description: "Emits a fixed line to prove the workflow runtime dispatches a step.",
+  description:
+    "Emits a fixed line to prove the workflow runtime dispatches a step.",
   systemPrompt: "Reply with exactly: SMOKE_TEST_OK. Output nothing else.",
   tools: [],
   capabilities: [],

@@ -1,26 +1,26 @@
-import { Hono } from 'hono';
-import { describeRoute, resolver } from 'hono-openapi';
-import { and, inArray, isNotNull, isNull } from 'drizzle-orm';
-import { getLogger } from '@intx/log';
-import { type } from 'arktype';
+import { Hono } from "hono";
+import { describeRoute, resolver } from "hono-openapi";
+import { and, inArray, isNotNull, isNull } from "drizzle-orm";
+import { getLogger } from "@intx/log";
+import { type } from "arktype";
 import {
   deriveDeploymentAddress,
   deriveStepAddress,
   deriveStepAgentId,
-} from '@intx/workflow-deploy';
-import type { AgentRepoStore } from '@intx/hub-sessions';
-import { schema as intxSchema } from '@intx/db';
-import { LiveDeploymentsResponse } from '@workbench/tool-credentials';
-import type { HubDb } from '../db';
-import { workflowRun, workflowRunRecord } from '../db/schema';
-import { readWorkflowDefinition } from '../services/workflow-deploy';
-import { deriveWorkflowRunRepoId } from './workflow-runs';
+} from "@intx/workflow-deploy";
+import type { AgentRepoStore } from "@intx/hub-sessions";
+import { schema as intxSchema } from "@intx/db";
+import { LiveDeploymentsResponse } from "@workbench/tool-credentials";
+import type { HubDb } from "../db";
+import { workflowRun, workflowRunRecord } from "../db/schema";
+import { readWorkflowDefinition } from "../services/workflow-deploy";
+import { deriveWorkflowRunRepoId } from "./workflow-runs";
 
-const log = getLogger(['api', 'internal-deployments']);
+const log = getLogger(["api", "internal-deployments"]);
 
 // Response shape for the OpenAPI spec; documents (does not replace) the
 // arktype-validated body the handler returns.
-const ErrorResponse = type({ error: 'string' });
+const ErrorResponse = type({ error: "string" });
 
 // The deployment-level (supervisor) agent id the orchestrator derives:
 // `ins_<deploymentId>`. `@intx/workflow-deploy` does not export the helper
@@ -54,38 +54,38 @@ export function createInternalDeploymentsRouter(
   sidecarToken: string,
   repoStore: AgentRepoStore,
   deploymentDomain: string,
-  readDefinition: typeof readWorkflowDefinition = readWorkflowDefinition
+  readDefinition: typeof readWorkflowDefinition = readWorkflowDefinition,
 ): Hono {
   const router = new Hono();
 
-  router.use('*', async (c, next) => {
-    if (c.req.header('Authorization') !== `Bearer ${sidecarToken}`) {
-      return c.json({ error: 'Unauthorized' }, 401);
+  router.use("*", async (c, next) => {
+    if (c.req.header("Authorization") !== `Bearer ${sidecarToken}`) {
+      return c.json({ error: "Unauthorized" }, 401);
     }
     return next();
   });
 
   router.get(
-    '/deployments/live',
+    "/deployments/live",
     describeRoute({
-      tags: ['Deployments'],
-      summary: 'List live workflow deployments',
+      tags: ["Deployments"],
+      summary: "List live workflow deployments",
       description:
-        'Sidecar-gated (sidecar token). Returns the positively-confirmed live deployment set — every workflow_run with a non-null deploymentId and deletedAt IS NULL — with the supervisor + step mail addresses, the workflow-run repo slug, the step agent ids, and the step agent-state repo ids. The sidecar boot reconciler reads this to prune on-disk dirs for deployments the hub has soft-deleted/superseded. Read-only: it never mutates hub state.',
+        "Sidecar-gated (sidecar token). Returns the positively-confirmed live deployment set — every workflow_run with a non-null deploymentId and deletedAt IS NULL — with the supervisor + step mail addresses, the workflow-run repo slug, the step agent ids, and the step agent-state repo ids. The sidecar boot reconciler reads this to prune on-disk dirs for deployments the hub has soft-deleted/superseded. Read-only: it never mutates hub state.",
       responses: {
         200: {
-          description: 'The live deployment set',
+          description: "The live deployment set",
           content: {
-            'application/json': { schema: resolver(LiveDeploymentsResponse) },
+            "application/json": { schema: resolver(LiveDeploymentsResponse) },
           },
         },
         401: {
-          description: 'Missing or invalid sidecar token',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "Missing or invalid sidecar token",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         500: {
-          description: 'Failed to read a persisted workflow definition',
-          content: { 'application/json': { schema: resolver(ErrorResponse) } },
+          description: "Failed to read a persisted workflow definition",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
     }),
@@ -96,9 +96,14 @@ export function createInternalDeploymentsRouter(
           kind: workflowRun.kind,
         })
         .from(workflowRun)
-        .where(and(isNotNull(workflowRun.deploymentId), isNull(workflowRun.deletedAt)));
+        .where(
+          and(
+            isNotNull(workflowRun.deploymentId),
+            isNull(workflowRun.deletedAt),
+          ),
+        );
 
-      const deployments: LiveDeploymentsResponse['deployments'] = [];
+      const deployments: LiveDeploymentsResponse["deployments"] = [];
       // Memoize per workflow kind: the definition is keyed by `kind`, so N live
       // deployments of the same workflow would otherwise re-read the identical
       // file N times. One read per distinct kind also shrinks the blast radius
@@ -124,12 +129,18 @@ export function createInternalDeploymentsRouter(
           // set or delete nothing, so fail the whole response loudly rather
           // than return a partial set that would orphan this deployment's
           // dirs to deletion.
-          log.error('live deployments: failed to read persisted workflow definition', {
-            deploymentId,
-            kind: row.kind,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          return c.json({ error: `failed to read workflow definition for ${deploymentId}` }, 500);
+          log.error(
+            "live deployments: failed to read persisted workflow definition",
+            {
+              deploymentId,
+              kind: row.kind,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+          return c.json(
+            { error: `failed to read workflow definition for ${deploymentId}` },
+            500,
+          );
         }
 
         const supervisorAddress = deriveDeploymentAddress({
@@ -145,7 +156,9 @@ export function createInternalDeploymentsRouter(
         const agentStateRepoIds: string[] = [];
         for (const stepId of definition.stepOrder) {
           stepAgentIds.push(deriveStepAgentId({ deploymentId, stepId }));
-          stepAddresses.push(deriveStepAddress({ deploymentId, stepId, deploymentDomain }));
+          stepAddresses.push(
+            deriveStepAddress({ deploymentId, stepId, deploymentDomain }),
+          );
           // The sidecar keys a step's agent-state repo by `<rawDeploymentId>-<stepId>`
           // (no `ins_` prefix) — see the ownedDirs derivation in
           // apps/sidecar/src/workflow-host-wiring.ts. Mirror that exactly.
@@ -174,12 +187,14 @@ export function createInternalDeploymentsRouter(
           and(
             isNotNull(workflowRunRecord.deploymentId),
             isNull(workflowRunRecord.deletedAt),
-            inArray(workflowRunRecord.status, ['running', 'awaiting'])
-          )
+            inArray(workflowRunRecord.status, ["running", "awaiting"]),
+          ),
         );
       const activeRunDeploymentIds = [
         ...new Set(
-          activeRunRows.map((r) => r.deploymentId).filter((id): id is string => id !== null)
+          activeRunRows
+            .map((r) => r.deploymentId)
+            .filter((id): id is string => id !== null),
         ),
       ];
 
@@ -192,8 +207,12 @@ export function createInternalDeploymentsRouter(
         .where(isNull(intxSchema.agentInstance.endedAt));
       const liveAgentAddresses = agentInstanceRows.map((r) => r.address);
 
-      return c.json({ deployments, activeRunDeploymentIds, liveAgentAddresses });
-    }
+      return c.json({
+        deployments,
+        activeRunDeploymentIds,
+        liveAgentAddresses,
+      });
+    },
   );
 
   return router;

@@ -79,12 +79,12 @@ describe("GET /artifacts", () => {
     const res = await app.request("/artifacts?tenantId=tn-1");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      artifacts: Array<{
+      artifacts: {
         id: string;
         title: string;
         createdAt: string;
         sessionName: null;
-      }>;
+      }[];
       nextCursor: string | null;
     };
     expect(body.nextCursor).toBeNull();

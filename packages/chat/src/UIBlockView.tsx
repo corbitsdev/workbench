@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Streamdown } from 'streamdown';
-import { cn } from '@workbench/ui';
-import type { UIBlock, UIResponse } from './ui-block';
+import { useState } from "react";
+import { Streamdown } from "streamdown";
+import { cn } from "@workbench/ui";
+import type { UIBlock, UIResponse } from "./ui-block";
 
 /**
  * The generative-UI registry: the single switch that turns a typed UIBlock into
@@ -14,26 +14,43 @@ export interface UIBlockViewProps {
   /** Invoked when an interactive block produces a response to send to the agent. */
   onRespond?: (response: UIResponse) => void;
   /** Invoked for document actions (copy / download / save-artifact). */
-  onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
+  onAction?: (
+    action: "copy" | "download" | "save-artifact",
+    block: UIBlock,
+  ) => void;
 }
 
 export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
   switch (block.kind) {
-    case 'text':
-      return <p className="whitespace-pre-wrap break-words text-sm text-text-2">{block.text}</p>;
-    case 'markdown':
+    case "text":
+      return (
+        <p className="whitespace-pre-wrap break-words text-sm text-text-2">
+          {block.text}
+        </p>
+      );
+    case "markdown":
       return <MarkdownBlock block={block} />;
-    case 'document':
-      return <DocumentBlock block={block} {...(onAction !== undefined ? { onAction } : {})} />;
-    case 'table':
+    case "document":
+      return (
+        <DocumentBlock
+          block={block}
+          {...(onAction !== undefined ? { onAction } : {})}
+        />
+      );
+    case "table":
       return <TableBlock block={block} />;
-    case 'link':
+    case "link":
       return <LinkBlock block={block} />;
-    case 'error':
+    case "error":
       return <ErrorBlock block={block} />;
-    case 'choice':
-      return <ChoiceBlock block={block} {...(onRespond !== undefined ? { onRespond } : {})} />;
-    case 'canvas':
+    case "choice":
+      return (
+        <ChoiceBlock
+          block={block}
+          {...(onRespond !== undefined ? { onRespond } : {})}
+        />
+      );
+    case "canvas":
       return (
         <div className="space-y-3" data-testid="ui-canvas">
           {block.title !== undefined && (
@@ -52,13 +69,27 @@ export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
   }
 }
 
-function Surface({ children, className }: { children: React.ReactNode; className?: string }) {
+function Surface({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={cn('rounded-lg border border-border bg-surface-2', className)}>{children}</div>
+    <div
+      className={cn("rounded-lg border border-border bg-surface-2", className)}
+    >
+      {children}
+    </div>
   );
 }
 
-function MarkdownBlock({ block }: { block: Extract<UIBlock, { kind: 'markdown' }> }) {
+function MarkdownBlock({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: "markdown" }>;
+}) {
   const [open, setOpen] = useState(!(block.collapsible ?? false));
   return (
     <Surface className="overflow-hidden">
@@ -69,7 +100,9 @@ function MarkdownBlock({ block }: { block: Extract<UIBlock, { kind: 'markdown' }
           className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-text-2"
         >
           {block.title}
-          {block.collapsible === true && <span className="text-text-3">{open ? '−' : '+'}</span>}
+          {block.collapsible === true && (
+            <span className="text-text-3">{open ? "−" : "+"}</span>
+          )}
         </button>
       )}
       {open && (
@@ -85,16 +118,23 @@ function DocumentBlock({
   block,
   onAction,
 }: {
-  block: Extract<UIBlock, { kind: 'document' }>;
-  onAction?: (action: 'copy' | 'download' | 'save-artifact', block: UIBlock) => void;
+  block: Extract<UIBlock, { kind: "document" }>;
+  onAction?: (
+    action: "copy" | "download" | "save-artifact",
+    block: UIBlock,
+  ) => void;
 }) {
   const [open, setOpen] = useState(false);
   const actions = block.actions ?? { copy: true };
-  const actionList: Array<{ key: 'copy' | 'download' | 'save-artifact'; label: string }> = [];
-  if (actions.copy === true) actionList.push({ key: 'copy', label: 'Copy' });
-  if (actions.download === true) actionList.push({ key: 'download', label: 'Download' });
+  const actionList: {
+    key: "copy" | "download" | "save-artifact";
+    label: string;
+  }[] = [];
+  if (actions.copy === true) actionList.push({ key: "copy", label: "Copy" });
+  if (actions.download === true)
+    actionList.push({ key: "download", label: "Download" });
   if (actions.saveArtifact === true)
-    actionList.push({ key: 'save-artifact', label: 'Save to artifacts' });
+    actionList.push({ key: "save-artifact", label: "Save to artifacts" });
 
   return (
     <Surface>
@@ -104,16 +144,28 @@ function DocumentBlock({
         className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
         aria-expanded={open}
       >
-        <span className={cn('text-text-3 transition-transform', open && 'rotate-90')} aria-hidden>
+        <span
+          className={cn(
+            "text-text-3 transition-transform",
+            open && "rotate-90",
+          )}
+          aria-hidden
+        >
           ▸
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-text">{block.title}</span>
+          <span className="block truncate text-sm font-semibold text-text">
+            {block.title}
+          </span>
           {block.subtitle !== undefined && (
-            <span className="block truncate text-xs text-text-3">{block.subtitle}</span>
+            <span className="block truncate text-xs text-text-3">
+              {block.subtitle}
+            </span>
           )}
         </span>
-        <span className="shrink-0 text-xs text-text-3">{open ? 'Hide' : 'Open'}</span>
+        <span className="shrink-0 text-xs text-text-3">
+          {open ? "Hide" : "Open"}
+        </span>
       </button>
       {open && (
         <div className="border-t border-border">
@@ -140,11 +192,13 @@ function DocumentBlock({
   );
 }
 
-function TableBlock({ block }: { block: Extract<UIBlock, { kind: 'table' }> }) {
+function TableBlock({ block }: { block: Extract<UIBlock, { kind: "table" }> }) {
   return (
     <Surface className="overflow-hidden">
       {block.title !== undefined && (
-        <div className="px-3 py-2 text-sm font-medium text-text-2">{block.title}</div>
+        <div className="px-3 py-2 text-sm font-medium text-text-2">
+          {block.title}
+        </div>
       )}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -177,7 +231,7 @@ function TableBlock({ block }: { block: Extract<UIBlock, { kind: 'table' }> }) {
   );
 }
 
-function LinkBlock({ block }: { block: Extract<UIBlock, { kind: 'link' }> }) {
+function LinkBlock({ block }: { block: Extract<UIBlock, { kind: "link" }> }) {
   return (
     <a
       href={block.url}
@@ -190,14 +244,16 @@ function LinkBlock({ block }: { block: Extract<UIBlock, { kind: 'link' }> }) {
           {block.title ?? block.url}
         </span>
         {block.description !== undefined && (
-          <span className="block truncate text-xs text-text-3">{block.description}</span>
+          <span className="block truncate text-xs text-text-3">
+            {block.description}
+          </span>
         )}
       </span>
     </a>
   );
 }
 
-function ErrorBlock({ block }: { block: Extract<UIBlock, { kind: 'error' }> }) {
+function ErrorBlock({ block }: { block: Extract<UIBlock, { kind: "error" }> }) {
   return (
     <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-500">
       <span className="font-medium">{block.message}</span>
@@ -214,7 +270,7 @@ function ChoiceBlock({
   block,
   onRespond,
 }: {
-  block: Extract<UIBlock, { kind: 'choice' }>;
+  block: Extract<UIBlock, { kind: "choice" }>;
   onRespond?: (response: UIResponse) => void;
 }) {
   const [answered, setAnswered] = useState<string | null>(null);
@@ -223,7 +279,9 @@ function ChoiceBlock({
   }
   return (
     <div className="space-y-2">
-      {block.prompt !== undefined && <p className="text-sm text-text-2">{block.prompt}</p>}
+      {block.prompt !== undefined && (
+        <p className="text-sm text-text-2">{block.prompt}</p>
+      )}
       <div className="flex flex-wrap gap-2">
         {block.options.map((option) => (
           <button
@@ -231,7 +289,10 @@ function ChoiceBlock({
             type="button"
             onClick={() => {
               setAnswered(option.label);
-              onRespond?.({ blockKind: 'choice', value: option.value ?? option.label });
+              onRespond?.({
+                blockKind: "choice",
+                value: option.value ?? option.label,
+              });
             }}
             className="rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange"
           >

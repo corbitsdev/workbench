@@ -4,10 +4,10 @@ export {
   type EventCollectorConfig,
   type TurnFinalized,
   type TurnToolCall,
-} from './event-collector';
+} from "./event-collector";
 export {
   createEventCollectorRegistry,
   deriveStatus,
   type EventCollectorRegistry,
   type EventCollectorRegistryConfig,
-} from './event-collector-registry';
+} from "./event-collector-registry";

@@ -4,11 +4,7 @@ import { eq } from "drizzle-orm";
 import { schema as intxSchema, listAssetsForTenant } from "@intx/db";
 import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
-import {
-  AssetRegistrySource,
-  createClosureResolver,
-  type RegistrySource,
-} from "@intx/tool-packaging";
+import { createClosureResolver } from "@intx/tool-packaging";
 import {
   WORKSPACE_BUILTINS_REGISTRY,
   type AssetService,
@@ -18,6 +14,7 @@ import {
   ToolManifestRequest,
   type ToolManifestTarball,
 } from "@workbench/tool-credentials";
+import { buildTenantRegistryMap } from "../lib/tenant-registry-map";
 
 const log = getLogger(["api", "tool-manifest"]);
 
@@ -100,33 +97,17 @@ export function createToolManifestRouter(
       });
     }
 
-    // Build one AssetRegistrySource per tenant-visible package-registry
-    // asset, replaying the session service's `(kind, name)` shadowing:
-    // the first occurrence of a name wins (child shadows parent). The
-    // `assetIndex` keeps the asset name per assetId so the materialized
-    // tarball's mount path can be derived without a second DB hit.
+    // `assetNameById` carries the winning asset's name per assetId so the
+    // materialized tarball's mount path is derived without a second DB hit.
     const visibleAssets = await listAssets(
       db,
       parsed.tenantId,
       "package-registry",
     );
-    const registryMap = new Map<string, RegistrySource>();
-    const assetNameById = new Map<string, string>();
-    for (const row of visibleAssets) {
-      if (registryMap.has(row.name)) continue;
-      assetNameById.set(row.id, row.name);
-      registryMap.set(
-        row.name,
-        new AssetRegistrySource({
-          name: row.name,
-          assetId: row.id,
-          readBlob: (path) =>
-            assetService.readAssetBlob({ assetId: row.id, path }),
-          listBlobs: (dir) =>
-            assetService.listAssetBlobs({ assetId: row.id, dir }),
-        }),
-      );
-    }
+    const { registryMap, assetNameById } = buildTenantRegistryMap(
+      visibleAssets,
+      assetService,
+    );
     if (!registryMap.has(WORKSPACE_BUILTINS_REGISTRY)) {
       return c.json(
         {

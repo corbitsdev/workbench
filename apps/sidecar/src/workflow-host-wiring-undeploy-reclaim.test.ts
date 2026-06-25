@@ -19,7 +19,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { generateKeyPair } from "@intx/crypto-node";
+import { createNodeCrypto, generateKeyPair } from "@intx/crypto-node";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -152,8 +152,14 @@ function createReclaimTestRepoStore(dataDir: string): RepoStore {
       await args.merge(new Map());
       return { commitSha: "stub-sha" };
     },
+    // The deploy router's grants bridge writes `state/grants.json` to each
+    // step's agent-state repo before `spawn()`. The reclaim path does not
+    // read these back, so a no-op write that lands a commit is sufficient.
+    async writeTree() {
+      return { commitSha: "stub-sha" };
+    },
   };
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub
+
   return new Proxy(stub as RepoStore, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
@@ -232,7 +238,6 @@ async function standUpDeployment(
   const repoStore = createReclaimTestRepoStore(dataDir);
 
   const router = createSidecarDeployRouter({
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- multi-step branch never invokes sessions
     sessions: {
       provisionAgent: async () => {
         throw new Error("multi-step branch must not invoke provisionAgent");
@@ -243,11 +248,12 @@ async function standUpDeployment(
         );
       },
     } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["sessions"],
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- multi-step branch never invokes keyStore
+
     keyStore: {
       recordHubKey: () => {
         throw new Error("multi-step branch must not invoke recordHubKey");
       },
+      loadOrGenerateKey: async () => ({ keyPair, isNew: false }),
     } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["keyStore"],
     onAgentEvent: () => () => {
       /* unused */
@@ -255,6 +261,7 @@ async function standUpDeployment(
     transport,
     repoStore,
     signingKeySeed: keyPair.privateKey,
+    createAgentCrypto: createNodeCrypto,
     registerDeployment: () => {
       /* no-op */
     },
@@ -288,7 +295,7 @@ async function standUpDeployment(
     agentAddress,
     agentId: `ins_${rawDeploymentId}`,
     hubPublicKey: "hub-pk",
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the multi-step branch does not read config
+
     config: {} as AgentDeployFrame["config"],
     workflow: {
       definition: {
@@ -297,10 +304,8 @@ async function standUpDeployment(
         stepOrder: [...stepIds],
         steps,
       },
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test source shape
-      sources: sources as NonNullable<
-        AgentDeployFrame["workflow"]
-      >["sources"],
+
+      sources: sources as NonNullable<AgentDeployFrame["workflow"]>["sources"],
     },
   };
 
@@ -336,13 +341,14 @@ async function standUpDeployment(
   await deployPromise;
 
   const deploymentId = slugDeploymentId(agentAddress);
+  // The supervisor (and so the reclaim sweep) keys each step's agent-state
+  // repo and mail address by the SLUG deploymentId via `deriveStepRepoId` /
+  // `deriveStepAddress` -- `<slug>-<stepId>` for a derived multi-step deploy.
   const ownedDirs: string[] = [
     path.join(dataDir, "workflow-runs", deploymentId),
   ];
   for (const stepId of stepIds) {
-    ownedDirs.push(
-      path.join(dataDir, "agents", `${rawDeploymentId}-${stepId}`),
-    );
+    ownedDirs.push(path.join(dataDir, "agents", `${deploymentId}-${stepId}`));
     const stepAddress = `${deploymentId}-${stepId}`;
     ownedDirs.push(path.join(dataDir, sanitizeAgentAddress(stepAddress)));
   }
@@ -419,7 +425,7 @@ describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footpri
     const harness = await standUpDeployment(
       "reclaim-b@example.com",
       "ses_reclaimB",
-      ["step-1"],
+      ["step-1", "step-2"],
     );
     // Deliberately do NOT materialize the owned dirs.
     for (const dir of harness.ownedDirs) {

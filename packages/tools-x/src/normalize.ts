@@ -1,4 +1,4 @@
-import type { XSearchResult } from './types';
+import type { XSearchResult } from "./types";
 
 export function normalizeXResult(item: XSearchResult, query: string) {
   const url =
@@ -11,12 +11,12 @@ export function normalizeXResult(item: XSearchResult, query: string) {
     title: item.title,
     summary: item.summary,
     publishedAt: item.publishedAt ?? new Date().toISOString(),
-    source: 'x' as const,
+    source: "x" as const,
     engagement: {
       upvotes: 0,
       comments: 0,
     },
-    provenance: 'degraded' as const,
-    author: 'x-grok',
+    provenance: "degraded" as const,
+    author: "x-grok",
   };
 }

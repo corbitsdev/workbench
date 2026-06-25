@@ -1,16 +1,16 @@
-import { type Severity } from '@workbench/shared';
+import { type Severity } from "@workbench/shared";
 
 /**
  * Where a transcript originated. Mirrors the intake paths the workbench
  * supports: a pasted blob or a Granola import.
  */
-export type TranscriptSource = 'paste' | 'granola';
+export type TranscriptSource = "paste" | "granola";
 
 /**
  * The role a speaker plays in a call. `rep` is the internal sales rep,
  * `prospect` is the customer, and `unknown` covers diarization gaps.
  */
-export type SpeakerRole = 'rep' | 'prospect' | 'unknown';
+export type SpeakerRole = "rep" | "prospect" | "unknown";
 
 /**
  * A single participant in the call. Identity is stable across the turns

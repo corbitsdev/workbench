@@ -10,5 +10,16 @@ Native Interchange tool package for the stateless last30days core tools:
 - The hub's `LAST30DAYS_CORE_HUB_TOOLS` (proxy fallback during coexistence)
   re-exports these tools rather than carrying its own copy.
 
-Pinned on Larry. See `docs/CREATING_AGENTS_AND_TOOLS.md` for the tool-package
-model and the build/push flow.
+Pinned by the `last30days-research` workflow (`last30days_workflow_brief` folds
+source step outputs into a `buildReport` brief). Intake sends a single `query`
+string (focus or topic) from the UI — no separate normalize step.
+
+After changing this package or `workflows/last30days-research`, ship to staging:
+
+1. Deploy hub + sidecar images that include the commit (normal release pipeline).
+2. From repo root: `bun run admin:staging` → sign in → select tenant → **Workflows**
+   → **Push (deploy)** → `last30days-research`. That rewrites `workflow.json`,
+   refreshes tool pins on step agents, and re-establishes the supervisor.
+3. Start a **new** run in the UI (in-flight runs keep the old definition).
+
+See `docs/DEPLOYING_WORKFLOWS.md` for the workflow deploy model.

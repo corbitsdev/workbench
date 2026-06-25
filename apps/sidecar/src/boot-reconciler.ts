@@ -17,14 +17,14 @@
 // failure, or an empty/absent set while the scan finds orphan-looking dirs —
 // it logs a warning and deletes NOTHING.
 
-import { readdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { type } from 'arktype';
-import { getLogger } from '@intx/log';
-import { LiveDeploymentsResponse } from '@workbench/tool-credentials';
-import { sanitizeAgentAddress } from './workflow-host-wiring';
+import { readdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { type } from "arktype";
+import { getLogger } from "@intx/log";
+import { LiveDeploymentsResponse } from "@workbench/tool-credentials";
+import { sanitizeAddress } from "@workbench/hub-agent";
 
-const defaultLogger = getLogger(['sidecar', 'boot-reconciler']);
+const defaultLogger = getLogger(["sidecar", "boot-reconciler"]);
 
 // Canonical deployment-id token. A workflow `deploymentId` is
 // `generateId("session")` = the `ses_` prefix + 32 lowercase hex chars
@@ -60,23 +60,23 @@ function extractDeploymentIdToken(dirName: string): string | null {
 // are the documented non-deployment dirs; `agents` and `workflow-runs` are
 // the repo-store prefixes scanned separately, not agent dirs themselves.
 const RESERVED_TOP_LEVEL = new Set([
-  'cache',
-  'assets',
-  '.sidecar-signing',
-  'agents',
-  'workflow-runs',
+  "cache",
+  "assets",
+  ".sidecar-signing",
+  "agents",
+  "workflow-runs",
 ]);
 
 // Subdir names of `<dataDir>` the repo-store keys deployment repos under.
-const AGENT_STATE_DIR = 'agents';
-const WORKFLOW_RUN_DIR = 'workflow-runs';
+const AGENT_STATE_DIR = "agents";
+const WORKFLOW_RUN_DIR = "workflow-runs";
 
 // A deployment AGENT dir (supervisor or step) is the sanitized mail address,
 // which always begins `ins_` (every workflow address is `ins_<...>@<...>`).
 // The reconciler only ever classifies a top-level dir as a deployment orphan
 // when it matches this prefix AND is not reserved — so a stray non-deployment
 // dir is never touched.
-const DEPLOYMENT_AGENT_DIR_PREFIX = 'ins_';
+const DEPLOYMENT_AGENT_DIR_PREFIX = "ins_";
 
 // Minimal structural logger the reconciler needs. `@intx/log`'s logger
 // satisfies this (its `info`/`warn`/`error` accept `(message, properties)`),
@@ -103,7 +103,11 @@ async function listSubdirNames(dir: string): Promise<string[]> {
   try {
     dirents = await readdir(dir, { withFileTypes: true });
   } catch (err) {
-    if (err instanceof Error && 'code' in err && (err as { code: unknown }).code === 'ENOENT') {
+    if (
+      err instanceof Error &&
+      "code" in err &&
+      (err as { code: unknown }).code === "ENOENT"
+    ) {
       return [];
     }
     throw err;
@@ -126,13 +130,13 @@ async function scanCandidates(dataDir: string): Promise<{
     .filter((name) => name.startsWith(DEPLOYMENT_AGENT_DIR_PREFIX))
     .map((name) => join(dataDir, name));
 
-  const workflowRuns = (await listSubdirNames(join(dataDir, WORKFLOW_RUN_DIR))).map((name) =>
-    join(dataDir, WORKFLOW_RUN_DIR, name)
-  );
+  const workflowRuns = (
+    await listSubdirNames(join(dataDir, WORKFLOW_RUN_DIR))
+  ).map((name) => join(dataDir, WORKFLOW_RUN_DIR, name));
 
-  const agentStates = (await listSubdirNames(join(dataDir, AGENT_STATE_DIR))).map((name) =>
-    join(dataDir, AGENT_STATE_DIR, name)
-  );
+  const agentStates = (
+    await listSubdirNames(join(dataDir, AGENT_STATE_DIR))
+  ).map((name) => join(dataDir, AGENT_STATE_DIR, name));
 
   return { topLevelAgents, workflowRuns, agentStates };
 }
@@ -141,7 +145,9 @@ async function scanCandidates(dataDir: string): Promise<{
  * Prune on-disk dirs that belong to deployments the hub no longer has live,
  * fail-safely. Runs before the orchestrator connects.
  */
-export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Promise<void> {
+export async function reconcileOrphanedDeploymentDirs(
+  args: ReconcileArgs,
+): Promise<void> {
   const logger = args.logger ?? defaultLogger;
   const fetchFn = args.fetchFn ?? fetch;
 
@@ -149,20 +155,29 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
   //    "delete nothing".
   let response: Response;
   try {
-    response = await fetchFn(`${args.hubHttpUrl}/api/internal/deployments/live`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${args.sidecarToken}` },
-    });
+    response = await fetchFn(
+      `${args.hubHttpUrl}/api/internal/deployments/live`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${args.sidecarToken}` },
+      },
+    );
   } catch (err) {
-    logger.warn('boot reconciler: live-deployments fetch failed; deleting nothing: {msg}', {
-      msg: err instanceof Error ? err.message : String(err),
-    });
+    logger.warn(
+      "boot reconciler: live-deployments fetch failed; deleting nothing: {msg}",
+      {
+        msg: err instanceof Error ? err.message : String(err),
+      },
+    );
     return;
   }
   if (!response.ok) {
-    logger.warn('boot reconciler: live-deployments fetch returned {status}; deleting nothing', {
-      status: response.status,
-    });
+    logger.warn(
+      "boot reconciler: live-deployments fetch returned {status}; deleting nothing",
+      {
+        status: response.status,
+      },
+    );
     return;
   }
 
@@ -171,20 +186,20 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
     payload = await response.json();
   } catch (err) {
     logger.warn(
-      'boot reconciler: live-deployments response was not JSON; deleting nothing: {msg}',
+      "boot reconciler: live-deployments response was not JSON; deleting nothing: {msg}",
       {
         msg: err instanceof Error ? err.message : String(err),
-      }
+      },
     );
     return;
   }
   const parsed = LiveDeploymentsResponse(payload);
   if (parsed instanceof type.errors) {
     logger.warn(
-      'boot reconciler: live-deployments response failed validation; deleting nothing: {summary}',
+      "boot reconciler: live-deployments response failed validation; deleting nothing: {summary}",
       {
         summary: parsed.summary,
-      }
+      },
     );
     return;
   }
@@ -194,9 +209,12 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
   try {
     candidates = await scanCandidates(args.dataDir);
   } catch (err) {
-    logger.warn('boot reconciler: data-dir scan failed; deleting nothing: {msg}', {
-      msg: err instanceof Error ? err.message : String(err),
-    });
+    logger.warn(
+      "boot reconciler: data-dir scan failed; deleting nothing: {msg}",
+      {
+        msg: err instanceof Error ? err.message : String(err),
+      },
+    );
     return;
   }
 
@@ -207,7 +225,9 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
   //    ids) stays useful for diagnostics but is no longer used for
   //    matching, so the token comparison is immune to the naming-form
   //    differences between subsystems.
-  const liveDeploymentIds = new Set<string>(parsed.deployments.map((d) => d.deploymentId));
+  const liveDeploymentIds = new Set<string>(
+    parsed.deployments.map((d) => d.deploymentId),
+  );
 
   // CL-2248: deployment ids that still have an in-flight run. A SUBSET of
   // `liveDeploymentIds`. A deployment that is live but absent here has only
@@ -221,7 +241,7 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
   // does, so the dir-name comparison is deterministic and unambiguous (we
   // go address→dirName, never the lossy dirName→address direction).
   const liveAgentDirNames = new Set<string>(
-    parsed.liveAgentAddresses.map((addr) => sanitizeAgentAddress(addr))
+    parsed.liveAgentAddresses.map((addr) => sanitizeAddress(addr)),
   );
 
   // 5) Delete orphans, best-effort per-dir (one failure never aborts the rest).
@@ -235,7 +255,7 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
       removed += 1;
     } catch (err) {
       failed += 1;
-      logger.warn('boot reconciler: failed to remove orphan dir {dir}: {msg}', {
+      logger.warn("boot reconciler: failed to remove orphan dir {dir}: {msg}", {
         dir: absPath,
         msg: err instanceof Error ? err.message : String(err),
       });
@@ -254,11 +274,12 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
     ...candidates.agentStates,
   ].filter((abs) => extractDeploymentIdToken(basename(abs)) !== null).length;
 
-  const skipWorkflowReaping = parsed.deployments.length === 0 && tokenizedCandidateCount > 0;
+  const skipWorkflowReaping =
+    parsed.deployments.length === 0 && tokenizedCandidateCount > 0;
   if (skipWorkflowReaping) {
     logger.warn(
-      'boot reconciler: live deployment set is empty but {count} deployment-dir(s) exist; treating as untrusted and skipping workflow-dir reaping',
-      { count: tokenizedCandidateCount }
+      "boot reconciler: live deployment set is empty but {count} deployment-dir(s) exist; treating as untrusted and skipping workflow-dir reaping",
+      { count: tokenizedCandidateCount },
     );
   }
 
@@ -301,22 +322,24 @@ export async function reconcileOrphanedDeploymentDirs(args: ReconcileArgs): Prom
     await reconcileDeploymentCandidate(abs);
     await reconcileAgentDir(abs);
   }
-  for (const abs of candidates.workflowRuns) await reconcileDeploymentCandidate(abs);
-  for (const abs of candidates.agentStates) await reconcileDeploymentCandidate(abs);
+  for (const abs of candidates.workflowRuns)
+    await reconcileDeploymentCandidate(abs);
+  for (const abs of candidates.agentStates)
+    await reconcileDeploymentCandidate(abs);
 
   logger.info(
-    'boot reconciler: pruned {removed} orphan dir(s) ({removedTerminal} of them live-but-terminal-run, {failed} failures, {keptNoToken} kept with no deployment-id token) across {live} live deployment(s)',
+    "boot reconciler: pruned {removed} orphan dir(s) ({removedTerminal} of them live-but-terminal-run, {failed} failures, {keptNoToken} kept with no deployment-id token) across {live} live deployment(s)",
     {
       removed,
       removedTerminal,
       failed,
       keptNoToken,
       live: parsed.deployments.length,
-    }
+    },
   );
 }
 
 function basename(absPath: string): string {
-  const parts = absPath.split('/');
+  const parts = absPath.split("/");
   return parts[parts.length - 1] ?? absPath;
 }

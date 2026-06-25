@@ -16,11 +16,11 @@ mock.module("../services/workflow-deploy-config", () => ({
   resolveWorkflowDeployConfig,
 }));
 
-const ensureGlobalMember = mock(async () => ({
+const ensureMember = mock(async () => ({
   tenantId: "tenant_global",
   principalId: "caller_principal",
 }));
-mock.module("../lib/tenant-provisioning", () => ({ ensureGlobalMember }));
+mock.module("../lib/tenant-provisioning", () => ({ ensureMember }));
 
 const getRequestedUserContext = mock(
   async (): Promise<{
@@ -54,7 +54,12 @@ const validDefinition = {
   stepOrder: [],
 };
 
-type InsertedRow = { tenantId: string; deploymentId: string; kind: string };
+type InsertedRow = {
+  tenantId: string;
+  deploymentId: string;
+  kind: string;
+  meta?: unknown;
+};
 
 function makeDeps(opts: {
   tenantsBySlug: Record<string, { id: string } | undefined>;
@@ -111,7 +116,7 @@ function makeDeps(opts: {
     sessionService,
     hubPublicKey: "pk",
     deploymentDomain: "local",
-    globalTenantId: GLOBAL,
+    rootTenantId: GLOBAL,
     serviceToken: SERVICE_TOKEN,
   };
 }
@@ -245,7 +250,7 @@ describe("createWorkflowDeployGrantGuard", () => {
     const guard = createWorkflowDeployGrantGuard({
       db: {} as Parameters<typeof createWorkflowDeployGrantGuard>[0]["db"],
       grantStore,
-      globalTenantId: GLOBAL,
+      rootTenantId: GLOBAL,
     });
     const app = new Hono<{ Variables: { userId: string } }>();
     app.use("*", async (c, next) => {
@@ -437,6 +442,81 @@ describe("deleteWorkflowHandler", () => {
     const res = await del(deleteApp(rec), "ses_1");
     expect(res.status).toBe(204);
     expect(rec.runUpdates).toHaveLength(1);
+  });
+});
+
+describe("deployWorkflowHandler meta storage", () => {
+  beforeEach(() => {
+    lastPrincipalTenant = GLOBAL;
+    ancestorChain = ["tenant_global"];
+  });
+
+  test("stores parsed meta in the workflow_run row when ?meta= is valid", async () => {
+    const inserted: InsertedRow[] = [];
+    const router = createWorkflowDeployRouter(
+      makeDeps({
+        tenantsBySlug: {},
+        ownerByTenant: { [GLOBAL]: { id: "owner_global" } },
+        inserted,
+      }),
+    );
+    const meta = {
+      version: "1.2.3",
+      sha: "abc1234",
+      deployedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const query = `?meta=${encodeURIComponent(JSON.stringify(meta))}`;
+    const res = await post(router, query);
+    expect(res.status).toBe(200);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.meta).toEqual(meta);
+  });
+
+  test("omits meta on the inserted row when ?meta= is absent", async () => {
+    const inserted: InsertedRow[] = [];
+    const router = createWorkflowDeployRouter(
+      makeDeps({
+        tenantsBySlug: {},
+        ownerByTenant: { [GLOBAL]: { id: "owner_global" } },
+        inserted,
+      }),
+    );
+    const res = await post(router, "");
+    expect(res.status).toBe(200);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.meta).toBeUndefined();
+  });
+
+  test("ignores a malformed (non-JSON) ?meta= and still deploys successfully", async () => {
+    const inserted: InsertedRow[] = [];
+    const router = createWorkflowDeployRouter(
+      makeDeps({
+        tenantsBySlug: {},
+        ownerByTenant: { [GLOBAL]: { id: "owner_global" } },
+        inserted,
+      }),
+    );
+    const res = await post(router, "?meta=not-valid-json");
+    expect(res.status).toBe(200);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.meta).toBeUndefined();
+  });
+
+  test("rejects a ?meta= that is valid JSON but the wrong shape (arktype boundary)", async () => {
+    const inserted: InsertedRow[] = [];
+    const router = createWorkflowDeployRouter(
+      makeDeps({
+        tenantsBySlug: {},
+        ownerByTenant: { [GLOBAL]: { id: "owner_global" } },
+        inserted,
+      }),
+    );
+    // Missing `sha` + `deployedAt`: well-formed JSON, but not a WorkflowMeta.
+    const query = `?meta=${encodeURIComponent(JSON.stringify({ version: "1.0.0" }))}`;
+    const res = await post(router, query);
+    expect(res.status).toBe(200);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.meta).toBeUndefined();
   });
 });
 

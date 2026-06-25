@@ -5,10 +5,10 @@
 // the factory carries the tool definitions and forwards each call to the
 // hub's scoped `/api/internal/hub-tools/run` endpoint.
 
-import { defineHubBackedToolPackage } from '@workbench/tool-credentials/factory';
-import { LIST_AGENTS_DEFINITION, LIST_PRINCIPALS_DEFINITION } from './index';
+import { defineHubBackedToolPackage } from "@workbench/tool-credentials/factory";
+import { LIST_AGENTS_DEFINITION, LIST_PRINCIPALS_DEFINITION } from "./index";
 
 export const agents = defineHubBackedToolPackage({
-  id: '@workbench/tools-agents/agents',
+  id: "@workbench/tools-agents/agents",
   definitions: [LIST_PRINCIPALS_DEFINITION, LIST_AGENTS_DEFINITION],
 });

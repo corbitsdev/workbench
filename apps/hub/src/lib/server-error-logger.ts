@@ -1,11 +1,11 @@
-import type { MiddlewareHandler } from 'hono';
-import { getLogger } from '@intx/log';
+import type { MiddlewareHandler } from "hono";
+import { getLogger } from "@intx/log";
 
-const log = getLogger(['api', 'server-error']);
+const log = getLogger(["api", "server-error"]);
 
 // Context flag set by app.onError after it logs a thrown error, so the reporter
 // below does not double-report the same failure.
-export const SERVER_ERROR_LOGGED = 'serverErrorLogged' as const;
+export const SERVER_ERROR_LOGGED = "serverErrorLogged" as const;
 
 type ErrorLoggedVars = { Variables: { [SERVER_ERROR_LOGGED]?: boolean } };
 
@@ -18,7 +18,7 @@ export function serverErrorReporter(): MiddlewareHandler<ErrorLoggedVars> {
   return async (c, next) => {
     await next();
     if (c.res.status >= 500 && !c.get(SERVER_ERROR_LOGGED)) {
-      log.error('Server error response', {
+      log.error("Server error response", {
         method: c.req.method,
         path: c.req.path,
         status: c.res.status,

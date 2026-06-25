@@ -1,4 +1,4 @@
-import type { ToolPackagePin } from '@intx/types/tool-packages';
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 
 /**
  * Describes everything the UI needs to render a premade agent option

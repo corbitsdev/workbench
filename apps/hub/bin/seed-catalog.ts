@@ -1,11 +1,9 @@
 #!/usr/bin/env bun
-/* eslint-disable no-console */
-
 /**
  * Idempotently seeds the Interchange model catalog (providers, models,
  * offerings) for a tenant by driving the native hub-api catalog routes.
  *
- * The catalog is derived from the agent definitions themselves (AGENT_CATALOG
+ * The catalog is derived from the agent definitions themselves (FULL_CATALOG
  * in @workbench/agents): every model an agent declares, the provider that
  * authenticates its inference credential, and the offering linking them. Run on
  * the GLOBAL tenant so descendant workbenches inherit the offerings via the
@@ -18,7 +16,7 @@
  * mid-run failure leaves a partial catalog — re-run (create-or-skip) to complete.
  */
 
-import { AGENT_CATALOG } from "@workbench/agents";
+import { FULL_CATALOG } from "@workbench/catalog";
 import { resolveTargetTenant } from "./_lib";
 
 function env(name: string, fallback?: string): string | undefined {
@@ -152,9 +150,20 @@ async function seedCatalog(
   for (const existing of listData<NamedRow>(provRes.data)) {
     providerIdByName.set(existing.name, existing.id);
   }
-  for (const provider of AGENT_CATALOG.providers) {
+  // Providers whose credential is not present in this tenant are skipped (and
+  // their offerings below) rather than failing the whole seed — a tenant need
+  // only carry credentials for the providers it actually uses.
+  const skippedProviders = new Set<string>();
+  for (const provider of FULL_CATALOG.providers) {
     if (providerIdByName.has(provider.name)) {
       log(`Provider exists: ${provider.name}`);
+      continue;
+    }
+    if (!credentials.some((c) => c.name === provider.credentialName)) {
+      skippedProviders.add(provider.name);
+      log(
+        `Skipping provider ${provider.name} — no '${provider.credentialName}' credential here`,
+      );
       continue;
     }
     const cred = resolveCredentialBinding(credentials, provider.credentialName);
@@ -190,7 +199,7 @@ async function seedCatalog(
   )) {
     modelIdByName.set(existing.canonicalName, existing.id);
   }
-  for (const model of AGENT_CATALOG.models) {
+  for (const model of FULL_CATALOG.models) {
     if (modelIdByName.has(model.canonicalName)) {
       log(`Model exists: ${model.canonicalName}`);
       continue;
@@ -221,7 +230,13 @@ async function seedCatalog(
       (o) => `${o.modelId} ${o.providerId}`,
     ),
   );
-  for (const offering of AGENT_CATALOG.offerings) {
+  for (const offering of FULL_CATALOG.offerings) {
+    if (skippedProviders.has(offering.provider)) {
+      log(
+        `Skipping offering ${offering.model} via ${offering.provider} — provider not seeded`,
+      );
+      continue;
+    }
     const modelId = modelIdByName.get(offering.model);
     const providerId = providerIdByName.get(offering.provider);
     if (!modelId || !providerId) {

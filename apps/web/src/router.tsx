@@ -1,42 +1,53 @@
-import { createBrowserRouter, Navigate, Outlet } from 'react-router';
-import { useAuth } from './components/AuthProvider';
-import { AppSidebar } from './components/layout/AppSidebar';
-import { PersonalAgentChat } from './components/PersonalAgentChat';
-import { ChatLauncherProvider } from './lib/chat-launcher-context';
-import { LoginPage } from './pages/LoginPage';
-import WorkbenchHome from './pages/WorkbenchHome';
-import Settings from './pages/Settings';
-import { SkillsLibrary } from './pages/SkillsLibrary';
-import { SkillsNew } from './pages/SkillsNew';
-import { SkillDetail } from './pages/SkillDetail';
+import { createBrowserRouter, Navigate, Outlet } from "react-router";
+import { useAuth } from "./components/AuthProvider";
+import { AppSidebar } from "./components/layout/AppSidebar";
+import { PersonalAgentChat } from "./components/PersonalAgentChat";
+import { ChatLauncherProvider } from "./lib/chat-launcher-context";
+import { ActiveWorkbenchProvider } from "./lib/active-workbench-context";
+import { LoginPage } from "./pages/LoginPage";
+import { ChatThreadPage } from "./pages/ChatThreadPage";
+import { ChatsListPage } from "./pages/ChatsListPage";
+import { ArtifactsPage } from "./pages/ArtifactsPage";
+import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
+import { WorkflowsPage } from "./pages/WorkflowsPage";
+import Settings from "./pages/Settings";
+import { SkillsLibrary } from "./pages/SkillsLibrary";
+import { SkillsNew } from "./pages/SkillsNew";
+import { SkillDetail } from "./pages/SkillDetail";
+import { ToolsLibrary } from "./pages/ToolsLibrary";
+import { ToolDetail } from "./pages/ToolDetail";
+import { InsightsDashboard } from "./pages/InsightsDashboard";
 
 function ProtectedLayout() {
   const { session } = useAuth();
 
-  if (session.status === 'unauthenticated') return <Navigate to="/login" replace />;
-  if (session.status === 'loading') return null;
+  if (session.status === "unauthenticated")
+    return <Navigate to="/login" replace />;
+  if (session.status === "loading") return null;
   return <Outlet />;
 }
 
 function AppShell() {
   return (
-    <ChatLauncherProvider>
-      <div className="flex h-screen flex-row bg-page">
-        <AppSidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <main className="flex-1 overflow-hidden">
-            <Outlet />
-          </main>
-          <PersonalAgentChat />
+    <ActiveWorkbenchProvider>
+      <ChatLauncherProvider>
+        <div className="flex h-screen flex-row bg-page">
+          <AppSidebar />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <main className="flex-1 overflow-hidden">
+              <Outlet />
+            </main>
+            <PersonalAgentChat />
+          </div>
         </div>
-      </div>
-    </ChatLauncherProvider>
+      </ChatLauncherProvider>
+    </ActiveWorkbenchProvider>
   );
 }
 
 export const router = createBrowserRouter([
   {
-    path: '/login',
+    path: "/login",
     element: <LoginPage />,
   },
   {
@@ -45,14 +56,27 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          { index: true, element: <WorkbenchHome /> },
-          { path: '/onboarding', element: <Navigate to="/" replace /> },
-          { path: '/dashboard', element: <Navigate to="/" replace /> },
-          { path: '/settings', element: <Settings /> },
-          { path: '/skills', element: <SkillsLibrary /> },
-          { path: '/skills/new', element: <SkillsNew /> },
-          { path: '/skills/:id', element: <SkillDetail /> },
-          { path: '/workbenches/:slug', element: <WorkbenchHome /> },
+          // Chat-first: the index redirects into the last-active conversation;
+          // /chats is the searchable list; /chats/:threadId is a conversation.
+          { index: true, element: <ChatThreadPage /> },
+          { path: "/chats", element: <ChatsListPage /> },
+          { path: "/chats/:threadId", element: <ChatThreadPage /> },
+          { path: "/onboarding", element: <Navigate to="/" replace /> },
+          { path: "/dashboard", element: <Navigate to="/" replace /> },
+          { path: "/artifacts", element: <ArtifactsPage /> },
+          { path: "/artifacts/:artifactId", element: <ArtifactDetailPage /> },
+          {
+            path: "/workbenches/:slug",
+            element: <Navigate to="/artifacts" replace />,
+          },
+          { path: "/workflows", element: <WorkflowsPage /> },
+          { path: "/settings", element: <Settings /> },
+          { path: "/skills", element: <SkillsLibrary /> },
+          { path: "/skills/new", element: <SkillsNew /> },
+          { path: "/skills/:id", element: <SkillDetail /> },
+          { path: "/tools", element: <ToolsLibrary /> },
+          { path: "/tools/:name", element: <ToolDetail /> },
+          { path: "/insights", element: <InsightsDashboard /> },
         ],
       },
     ],

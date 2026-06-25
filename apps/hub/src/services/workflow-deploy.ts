@@ -14,6 +14,7 @@ import {
 } from "@intx/workflow-deploy";
 import type { DirectorRegistry } from "@intx/agent";
 import { schema as intxSchema } from "@intx/db";
+import { eq } from "drizzle-orm";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { type } from "arktype";
@@ -257,6 +258,7 @@ export function createWorkflowDeployService(deps: {
         deploymentDomain: params.deploymentDomain,
         tenantId: params.tenantId,
         creatorPrincipalId: params.creatorPrincipalId,
+        harnessSessionId: params.config.sessionId,
       });
 
       // The orchestrator still walks every step (it pins each step's
@@ -359,12 +361,9 @@ async function reestablishSupervisor(deps: {
   // active instance found for address", which rejects `sendAgentDeploy` and
   // 500s the run-start (CL-2227). This ensure is idempotent: a no-op when the
   // row is already active, a revive when it was ended/reaped.
-  await ensureDeploymentInstanceActive({
-    db: deps.db,
-    deploymentId: args.deploymentId,
-    deploymentDomain: args.deploymentDomain,
-    tenantId: args.tenantId,
-    creatorPrincipalId: args.creatorPrincipalId,
+  const supervisorAgentId = deriveDeploymentAgentId(args.deploymentId);
+  const existingSupervisor = await deps.db.query.agentInstance.findFirst({
+    where: eq(intxSchema.agentInstance.id, supervisorAgentId),
   });
 
   const { address, config, workflow } = buildSupervisorDeployFrame({
@@ -374,6 +373,19 @@ async function reestablishSupervisor(deps: {
     creatorPrincipalId: args.creatorPrincipalId,
     definition,
     sources,
+    ...(typeof existingSupervisor?.sessionId === "string" &&
+    existingSupervisor.sessionId.length > 0
+      ? { harnessSessionId: existingSupervisor.sessionId }
+      : {}),
+  });
+
+  await ensureDeploymentInstanceActive({
+    db: deps.db,
+    deploymentId: args.deploymentId,
+    deploymentDomain: args.deploymentDomain,
+    tenantId: args.tenantId,
+    creatorPrincipalId: args.creatorPrincipalId,
+    harnessSessionId: config.sessionId,
   });
   await deps.sidecarRouter.sendAgentDeploy(address, config, workflow);
 
@@ -406,6 +418,7 @@ export function buildSupervisorDeployFrame(args: {
   creatorPrincipalId: string;
   definition: WorkflowDefinition;
   sources: InferenceSource[];
+  harnessSessionId?: string;
 }): {
   address: string;
   config: HarnessConfig;
@@ -429,6 +442,9 @@ export function buildSupervisorDeployFrame(args: {
     ...config,
     agentAddress: address,
     agentId: deriveDeploymentAgentId(args.deploymentId),
+    ...(args.harnessSessionId !== undefined
+      ? { sessionId: args.harnessSessionId }
+      : {}),
   };
   const [head] = args.sources;
   if (head === undefined) {
@@ -560,6 +576,28 @@ function deriveDeploymentAgentId(deploymentId: string): string {
   return `ins_${deploymentId}`;
 }
 
+async function ensureHarnessSessionRow(args: {
+  db: HubDb;
+  sessionId: string;
+  tenantId: string;
+  agentId: string;
+  principalId: string;
+}): Promise<void> {
+  const now = new Date();
+  await args.db
+    .insert(intxSchema.agentSession)
+    .values({
+      id: args.sessionId,
+      tenantId: args.tenantId,
+      agentId: args.agentId,
+      principalId: args.principalId,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: intxSchema.agentSession.id });
+}
+
 // Persist the deployment-level (supervisor) `agent` row. The instance row's
 // `agentId` has a notNull FK to `agent.id`, so this must exist before the
 // supervisor instance row is written. Mirrors `writeStepAgentRows`' field set
@@ -606,13 +644,23 @@ export async function writeDeploymentInstanceRow(args: {
   deploymentDomain: string;
   tenantId: string;
   creatorPrincipalId: string;
+  harnessSessionId: string;
 }): Promise<void> {
   const now = new Date();
+  const agentId = deriveDeploymentAgentId(args.deploymentId);
+  await ensureHarnessSessionRow({
+    db: args.db,
+    sessionId: args.harnessSessionId,
+    tenantId: args.tenantId,
+    agentId,
+    principalId: args.creatorPrincipalId,
+  });
   await args.db.insert(intxSchema.agentInstance).values({
-    id: deriveDeploymentAgentId(args.deploymentId),
-    agentId: deriveDeploymentAgentId(args.deploymentId),
+    id: agentId,
+    agentId,
     tenantId: args.tenantId,
     principalId: args.creatorPrincipalId,
+    sessionId: args.harnessSessionId,
     address: deriveDeploymentAddress({
       deploymentId: args.deploymentId,
       deploymentDomain: args.deploymentDomain,
@@ -641,9 +689,19 @@ export async function ensureDeploymentInstanceActive(args: {
   deploymentDomain: string;
   tenantId: string;
   creatorPrincipalId: string;
+  harnessSessionId?: string;
 }): Promise<void> {
   const now = new Date();
   const agentId = deriveDeploymentAgentId(args.deploymentId);
+  if (args.harnessSessionId !== undefined) {
+    await ensureHarnessSessionRow({
+      db: args.db,
+      sessionId: args.harnessSessionId,
+      tenantId: args.tenantId,
+      agentId,
+      principalId: args.creatorPrincipalId,
+    });
+  }
   await args.db
     .insert(intxSchema.agent)
     .values({
@@ -658,6 +716,16 @@ export async function ensureDeploymentInstanceActive(args: {
       updatedAt: now,
     })
     .onConflictDoNothing({ target: intxSchema.agent.id });
+  const instanceSet: {
+    status: "deployed";
+    endedAt: null;
+    updatedAt: Date;
+    sessionId?: string;
+  } = { status: "deployed" as const, endedAt: null, updatedAt: now };
+  if (args.harnessSessionId !== undefined) {
+    instanceSet.sessionId = args.harnessSessionId;
+  }
+
   await args.db
     .insert(intxSchema.agentInstance)
     .values({
@@ -665,6 +733,7 @@ export async function ensureDeploymentInstanceActive(args: {
       agentId,
       tenantId: args.tenantId,
       principalId: args.creatorPrincipalId,
+      sessionId: args.harnessSessionId ?? null,
       address: deriveDeploymentAddress({
         deploymentId: args.deploymentId,
         deploymentDomain: args.deploymentDomain,
@@ -675,7 +744,7 @@ export async function ensureDeploymentInstanceActive(args: {
     })
     .onConflictDoUpdate({
       target: intxSchema.agentInstance.id,
-      set: { status: "deployed" as const, endedAt: null, updatedAt: now },
+      set: instanceSet,
     });
 }
 

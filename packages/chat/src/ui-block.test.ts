@@ -1,112 +1,118 @@
 /// <reference types="bun" />
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from "bun:test";
 
-import { extractUIBlockFromText, isUIBlock, parseToolResult } from './ui-block';
+import { extractUIBlockFromText, isUIBlock, parseToolResult } from "./ui-block";
 
-describe('parseToolResult', () => {
-  it('parses a JSON object matching the UIBlock shape', () => {
-    const result = parseToolResult('{"kind":"document","title":"Call","source":"# Hi"}');
-    expect(result.kind).toBe('document');
-    if (result.kind === 'document') {
-      expect(result.title).toBe('Call');
-      expect(result.source).toBe('# Hi');
+describe("parseToolResult", () => {
+  it("parses a JSON object matching the UIBlock shape", () => {
+    const result = parseToolResult(
+      '{"kind":"document","title":"Call","source":"# Hi"}',
+    );
+    expect(result.kind).toBe("document");
+    if (result.kind === "document") {
+      expect(result.title).toBe("Call");
+      expect(result.source).toBe("# Hi");
     }
   });
 
-  it('degrades malformed JSON to a text block carrying the raw string', () => {
+  it("degrades malformed JSON to a text block carrying the raw string", () => {
     const raw = '{"kind":"document", oops not json';
     const result = parseToolResult(raw);
-    expect(result.kind).toBe('text');
-    if (result.kind === 'text') expect(result.text).toBe(raw);
+    expect(result.kind).toBe("text");
+    if (result.kind === "text") expect(result.text).toBe(raw);
   });
 
-  it('degrades valid JSON with an unknown kind to a text block', () => {
+  it("degrades valid JSON with an unknown kind to a text block", () => {
     const raw = '{"kind":"banana"}';
     const result = parseToolResult(raw);
-    expect(result.kind).toBe('text');
+    expect(result.kind).toBe("text");
   });
 
-  it('treats a plain string result as a text block (no regression)', () => {
-    const raw = '# Call: ABK\nDate: 2026-06-10';
+  it("treats a plain string result as a text block (no regression)", () => {
+    const raw = "# Call: ABK\nDate: 2026-06-10";
     const result = parseToolResult(raw);
-    expect(result.kind).toBe('text');
-    if (result.kind === 'text') expect(result.text).toBe(raw);
+    expect(result.kind).toBe("text");
+    if (result.kind === "text") expect(result.text).toBe(raw);
   });
 
-  it('rejects a JSON block missing required fields for its kind', () => {
+  it("rejects a JSON block missing required fields for its kind", () => {
     // document without a source is not renderable -> text fallback
     const result = parseToolResult('{"kind":"document","title":"x"}');
-    expect(result.kind).toBe('text');
+    expect(result.kind).toBe("text");
   });
 });
 
-describe('extractUIBlockFromText', () => {
-  it('extracts a fenced ui block and returns the surrounding prose', () => {
+describe("extractUIBlockFromText", () => {
+  it("extracts a fenced ui block and returns the surrounding prose", () => {
     const content = [
       "Here's your latest call.",
-      '```ui',
+      "```ui",
       '{"kind":"document","title":"ABK Demo","source":"# Call"}',
-      '```',
-      'Anything else?',
-    ].join('\n');
+      "```",
+      "Anything else?",
+    ].join("\n");
     const extracted = extractUIBlockFromText(content);
     expect(extracted).not.toBeNull();
-    expect(extracted?.block.kind).toBe('document');
+    expect(extracted?.block.kind).toBe("document");
     expect(extracted?.text).toBe("Here's your latest call.\n\nAnything else?");
   });
 
-  it('returns null when there is no ui fence', () => {
-    expect(extractUIBlockFromText('just a normal reply')).toBeNull();
+  it("returns null when there is no ui fence", () => {
+    expect(extractUIBlockFromText("just a normal reply")).toBeNull();
   });
 
-  it('returns null when the fenced content is not a valid block', () => {
+  it("returns null when the fenced content is not a valid block", () => {
     const content = '```ui\n{"kind":"nope"}\n```';
     expect(extractUIBlockFromText(content)).toBeNull();
   });
 });
 
-describe('isUIBlock', () => {
-  it('accepts a well-formed choice block', () => {
-    expect(isUIBlock({ kind: 'choice', options: [{ id: 'a', label: 'A' }] })).toBe(true);
+describe("isUIBlock", () => {
+  it("accepts a well-formed choice block", () => {
+    expect(
+      isUIBlock({ kind: "choice", options: [{ id: "a", label: "A" }] }),
+    ).toBe(true);
   });
 
-  it('rejects a choice block with no options', () => {
-    expect(isUIBlock({ kind: 'choice', options: [] })).toBe(false);
+  it("rejects a choice block with no options", () => {
+    expect(isUIBlock({ kind: "choice", options: [] })).toBe(false);
   });
 
-  it('rejects non-objects', () => {
-    expect(isUIBlock('string')).toBe(false);
+  it("rejects non-objects", () => {
+    expect(isUIBlock("string")).toBe(false);
     expect(isUIBlock(null)).toBe(false);
   });
 
-  it('rejects an object with no kind discriminant', () => {
-    expect(isUIBlock({ title: 'x' })).toBe(false);
+  it("rejects an object with no kind discriminant", () => {
+    expect(isUIBlock({ title: "x" })).toBe(false);
   });
 
-  it('accepts each well-formed variant', () => {
-    expect(isUIBlock({ kind: 'text', text: 'hi' })).toBe(true);
-    expect(isUIBlock({ kind: 'markdown', source: '# x' })).toBe(true);
-    expect(isUIBlock({ kind: 'table', columns: ['a'], rows: [['1']] })).toBe(true);
-    expect(isUIBlock({ kind: 'link', url: 'https://x.dev' })).toBe(true);
-    expect(isUIBlock({ kind: 'error', message: 'boom' })).toBe(true);
-    expect(isUIBlock({ kind: 'canvas', blocks: [] })).toBe(true);
+  it("accepts each well-formed variant", () => {
+    expect(isUIBlock({ kind: "text", text: "hi" })).toBe(true);
+    expect(isUIBlock({ kind: "markdown", source: "# x" })).toBe(true);
+    expect(isUIBlock({ kind: "table", columns: ["a"], rows: [["1"]] })).toBe(
+      true,
+    );
+    expect(isUIBlock({ kind: "link", url: "https://x.dev" })).toBe(true);
+    expect(isUIBlock({ kind: "error", message: "boom" })).toBe(true);
+    expect(isUIBlock({ kind: "canvas", blocks: [] })).toBe(true);
   });
 
-  it('rejects each variant when its required field is the wrong type', () => {
-    expect(isUIBlock({ kind: 'text', text: 5 })).toBe(false);
-    expect(isUIBlock({ kind: 'markdown', source: 5 })).toBe(false);
-    expect(isUIBlock({ kind: 'table', columns: 'a', rows: [] })).toBe(false);
-    expect(isUIBlock({ kind: 'link', url: 5 })).toBe(false);
-    expect(isUIBlock({ kind: 'error', message: 5 })).toBe(false);
-    expect(isUIBlock({ kind: 'canvas', blocks: 'x' })).toBe(false);
+  it("rejects each variant when its required field is the wrong type", () => {
+    expect(isUIBlock({ kind: "text", text: 5 })).toBe(false);
+    expect(isUIBlock({ kind: "markdown", source: 5 })).toBe(false);
+    expect(isUIBlock({ kind: "table", columns: "a", rows: [] })).toBe(false);
+    expect(isUIBlock({ kind: "link", url: 5 })).toBe(false);
+    expect(isUIBlock({ kind: "error", message: 5 })).toBe(false);
+    expect(isUIBlock({ kind: "canvas", blocks: "x" })).toBe(false);
   });
 });
 
-describe('parseToolResult array path', () => {
-  it('degrades a JSON array that is not a UIBlock to a text block', () => {
-    const raw = '[1, 2, 3]';
+describe("parseToolResult array path", () => {
+  it("degrades a JSON array that is not a UIBlock to a text block", () => {
+    const raw = "[1, 2, 3]";
     const result = parseToolResult(raw);
-    expect(result.kind).toBe('text');
-    if (result.kind === 'text') expect(result.text).toBe(raw);
+    expect(result.kind).toBe("text");
+    if (result.kind === "text") expect(result.text).toBe(raw);
   });
 });

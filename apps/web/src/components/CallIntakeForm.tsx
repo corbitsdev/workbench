@@ -1,33 +1,36 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { IntakeRequest } from '../types/intake';
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { IntakeRequest } from "../types/intake";
 
 interface CallIntakeFormProps {
   onSubmit: (data: IntakeRequest) => void;
   isLoading?: boolean;
 }
 
-export default function CallIntakeForm({ onSubmit, isLoading = false }: CallIntakeFormProps) {
-  const [transcript, setTranscript] = useState('');
-  const [error, setError] = useState('');
+export default function CallIntakeForm({
+  onSubmit,
+  isLoading = false,
+}: CallIntakeFormProps) {
+  const [transcript, setTranscript] = useState("");
+  const [error, setError] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     if (!transcript.trim()) {
-      setError('Please paste a transcript or notes from your call');
+      setError("Please paste a transcript or notes from your call");
       return;
     }
 
     if (transcript.trim().length < 10) {
-      setError('Transcript seems too short. Please add more content.');
+      setError("Transcript seems too short. Please add more content.");
       return;
     }
 
     onSubmit({
       transcript: transcript.trim(),
-      source: 'paste',
+      source: "paste",
     });
   };
 
@@ -40,7 +43,10 @@ export default function CallIntakeForm({ onSubmit, isLoading = false }: CallInta
       transition={{ duration: 0.3 }}
     >
       <div className="space-y-2">
-        <label htmlFor="transcript" className="block text-sm font-medium text-text">
+        <label
+          htmlFor="transcript"
+          className="block text-sm font-medium text-text"
+        >
           Paste your call transcript
         </label>
         <p className="text-xs text-text-2">
@@ -51,12 +57,12 @@ export default function CallIntakeForm({ onSubmit, isLoading = false }: CallInta
           value={transcript}
           onChange={(e) => {
             setTranscript(e.target.value);
-            setError('');
+            setError("");
           }}
           placeholder="Speaker 1: Hello, thanks for taking the call..."
           className="w-full h-48 px-4 py-3 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-orange focus:border-orange resize-none font-mono transition-colors disabled:bg-surface-2 disabled:text-text-3 disabled:cursor-not-allowed bg-surface text-text"
           disabled={isLoading}
-          aria-describedby={error ? 'transcript-error' : undefined}
+          aria-describedby={error ? "transcript-error" : undefined}
         />
       </div>
 
@@ -78,7 +84,7 @@ export default function CallIntakeForm({ onSubmit, isLoading = false }: CallInta
         disabled={isLoading || !transcript.trim()}
         className="btn-primary w-full !py-3"
       >
-        {isLoading ? 'Analyzing...' : 'Analyze Call'}
+        {isLoading ? "Analyzing..." : "Analyze Call"}
       </button>
     </motion.form>
   );

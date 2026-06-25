@@ -53,7 +53,7 @@ The merged `ToolRunner` is wrapped as an Interchange `toolFactory` via `defineTo
 
 ### `packages/agents` (`@workbench/agents`)
 
-Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter. This package is the source of truth for all template content. At hub boot, `seedAgentTemplates(db)` reads the templates from this package and idempotently upserts one Interchange agent definition per template (Myra, Oat, Freddy, Walter, Loop, Larry, …) into the global tenant — re-boot is a no-op.
+Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter. This package is the source of truth for all template content. At hub boot, `seedAgentTemplates(db)` reads the templates from this package and idempotently upserts one Interchange agent definition per template (Myra, Oat, Freddy, Walter, Loop, …) into the global tenant — re-boot is a no-op.
 
 ```
 src/
@@ -106,9 +106,9 @@ No tool package reads env vars or resolves credentials. Config (`apiKey`, `baseU
 
 **`packages/tools-firecrawl`** (`@workbench/tools-firecrawl`): Firecrawl v2 API. Exports `FIRECRAWL_HUB_TOOLS` with `firecrawl_scrape`, crawl start/status/active/errors/cancel/params-preview tools, batch scrape start/status/errors/cancel tools, `firecrawl_map`, `firecrawl_search`, extract start/status tools, `firecrawl_agent` (autonomous research via POST /agent), `firecrawl_parse` (document parsing), `firecrawl_interact`, `firecrawl_browser_sessions_list`, `firecrawl_browser_session_delete`, monitor CRUD (create/get/update/delete/list/run/check), `firecrawl_credit_usage`, `firecrawl_historical_credit_usage`, `firecrawl_token_usage`, `firecrawl_historical_token_usage`, and `firecrawl_activity` (providerName: `'firecrawl'`). Long-running endpoints return job IDs and require explicit polling tools.
 
-#### last30days research (Larry)
+#### last30days research workflow
 
-The `last30days` research capability is split into per-source fetch tools, a deterministic core, and a portable skill, all attachable to the **Larry** agent (`packages/agents/src/larry`).
+The `last30days` research capability is split into per-source fetch tools, a deterministic core, and the `last30days-research` workflow (`workflows/last30days-research`). Inline inference steps use the workflow runtime's `createAgent` path and do not deploy idling per-step agents.
 
 - **Source tools** each normalize their API into a shared `ResearchItem` (`{ url, title, publishedAt, source, engagement, author?, topComments? }`): `tools-hackernews`, `tools-github`, `tools-exa` (web), `tools-reddit` (`reddit_search`/`reddit_subreddit_search` via ScrapeCreators, passing through top comments when the payload carries them), `tools-x`, `tools-polymarket`, `tools-scrapecreators` (tiktok/instagram/threads/pinterest), `tools-youtube` (`youtube_search`, providerName `'youtube'`), and `tools-bluesky` (`bluesky_search`, unauthenticated public AppView — no credential).
 - **`packages/last30days-core`** (`@workbench/last30days-core`): pure pipeline — `entityExtract`, `dateFilter`, `dedupe`, `clusterMerge`, `rankScore` (engagement + freshness + source-breadth + a capped top-comment "fun" bonus, minus a degraded penalty), and `buildReport`, which returns a typed, ArkType-validated `ResearchBrief`: `{ topic, days, queryType?, stats: { sourceCount, itemCount, dateRange? }, leadInsight?, clusters[], bestTakes[], items[], citations[] }`. `parseReport(unknown)` is the canonical boundary parser consumers use instead of re-declaring the schema.
@@ -220,7 +220,7 @@ A deployment's sidecar footprint — the supervisor's working-copy `workflow-run
 - **Undeploy reclaim** (`apps/sidecar/src/workflow-host-wiring.ts`): at deploy the supervisor map entry records its `ownedDirs` (workflow-run repo + per-step agent-state/agent dirs, all from the sidecar's own `getRepoDir`/`SIDECAR_DATA_DIR`); the `undeploy` hook `fs.rm`s them after `supervisor.shutdown()`. Best-effort, idempotent, multi-step only, never throws. Covers the case where the supervisor is still in the in-memory map (live undeploy / supersede).
 - **Boot reconciler** (`apps/sidecar/src/boot-reconciler.ts`, wired in `apps/sidecar/src/index.ts` before `orchestrator.start()` so interchange's `restoreSessions` never re-establishes orphans): fetches the live set from the read-only hub endpoint `GET /api/internal/deployments/live` (`apps/hub/src/routes/internal-deployments.ts`, sidecar-token gated, mirrors the internal tools routes; shared schema in `packages/tool-credentials`), then prunes only dirs whose embedded `ses_<32hex>` deployment-id **token** is absent from the live set. Matching is on the token, not exact dir names, so every id form a live deployment produces (agent-state repo id, sanitized address, supervisor dir, workflow-run slug) is provably kept. **Fail-safe by construction**: any fetch error / non-200 / non-JSON / validation failure / empty-live-set-with-orphans deletes **nothing**; a dir with no extractable token is always kept; `cache`/`assets`/`.sidecar-signing` are never candidates.
 
-Residual: *live* step-agents still re-establish on boot and get `Reconnection rejected by governance` (interchange `restoreSessions` re-advertises them; bounded, benign — steps are re-provisioned per run). The real cure is removing per-step deployed agents — the **CL-2232** spike (inline `@intx/agent` inference).
+Residual: _live_ step-agents still re-establish on boot and get `Reconnection rejected by governance` (interchange `restoreSessions` re-advertises them; bounded, benign — steps are re-provisioned per run). The real cure is removing per-step deployed agents — the **CL-2232** spike (inline `@intx/agent` inference).
 
 **Vendored-file hazard:** the undeploy-reclaim logic lives in `apps/sidecar/src/workflow-host-wiring.ts`, which is re-synced verbatim from interchange's reference sidecar wiring on every interchange pin bump (see AGENTS.md § Dockerfile Maintenance → vendored workflow-host wiring). Re-apply the reclaim block (and its `sanitizeAgentAddress` helper) after each re-sync; the `*-undeploy-reclaim.test.ts` suite guards it.
 
@@ -411,7 +411,7 @@ An instance is reachable for mail only when its row `status` is `running` — In
 
 A hub or sidecar restart drops the in-memory agent — the sidecar re-registers "with 0 agents" — but leaves the DB rows behind: `agentInstance.status` stays `deployed` and the old `agentSession` row stays `active`. The session record is therefore **not** a reliable liveness signal across restarts.
 
-`relaunchInstanceIfNeeded` (`apps/hub/src/routes/agents.ts`, called from `GET /v1/me`) gates on the live instance status, not the stale session record: it returns early only when `instance.status === 'running'`, and otherwise relaunches (subject to the tenant having an active credential). This is what brings Myra back automatically after a deploy or crash — without it, every `/mail` POST kept 409ing on a restarted instance.
+`relaunchInstanceIfNeeded` (`apps/hub/src/routes/agents.ts`, called from `POST /v1/me`) gates on the live instance status, not the stale session record: it returns early only when `instance.status === 'running'`, and otherwise relaunches (subject to the tenant having an active credential). This is what brings Myra back automatically after a deploy or crash — without it, every `/mail` POST kept 409ing on a restarted instance.
 
 The Myra chat (`apps/web/src/components/PersonalAgentChat.tsx`) also self-heals at send time: if `sendMail` throws an `ApiError` with status `409`, it calls `launchInstanceSession(instanceId)` and retries the send once. This covers the window between a restart and the next `/v1/me` relaunch, so a send during that gap heals rather than throwing and dropping the message. A genuine failure surfaces the recoverable error notice instead of crashing the panel.
 
@@ -565,31 +565,32 @@ All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agen
 1. Create an `InferenceSource` from environment variables:
 
    ```typescript
-   import type { InferenceSource } from '@intx/types/runtime';
+   import type { InferenceSource } from "@intx/types/runtime";
 
    const source: InferenceSource = {
      id: `my-task-${id}`,
-     provider: 'openai',
-     baseURL: process.env.OPENAI_COMPATIBLE_BASE_URL || 'https://api.openai.com/v1',
+     provider: "openai",
+     baseURL:
+       process.env.OPENAI_COMPATIBLE_BASE_URL || "https://api.openai.com/v1",
      apiKey: process.env.OPENAI_COMPATIBLE_API_KEY,
-     model: process.env.OPENAI_COMPATIBLE_MODEL || 'gpt-4o-mini',
+     model: process.env.OPENAI_COMPATIBLE_MODEL || "gpt-4o-mini",
    };
    ```
 
 2. Create a temporary agent with an ephemeral context directory:
 
    ```typescript
-   import { createAgent } from '@intx/agent';
-   import { tmpdir } from 'node:os';
-   import { join } from 'node:path';
-   import { randomUUID } from 'node:crypto';
+   import { createAgent } from "@intx/agent";
+   import { tmpdir } from "node:os";
+   import { join } from "node:path";
+   import { randomUUID } from "node:crypto";
 
    const contextDir = join(tmpdir(), `task-${randomUUID()}`);
    const agent = await createAgent({
      contextDir,
      sources: [source],
      defaultSource: source.id,
-     systemPrompt: 'Your system instructions...',
+     systemPrompt: "Your system instructions...",
      tools: [],
      closeTimeoutMs: 1000,
    });

@@ -1,2 +1,2 @@
-export { createAskPrincipalTool } from './ask-principal';
-export type { AskPrincipalToolOpts, ApprovalStatus } from './ask-principal';
+export { createAskPrincipalTool } from "./ask-principal";
+export type { AskPrincipalToolOpts, ApprovalStatus } from "./ask-principal";

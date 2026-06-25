@@ -1,10 +1,10 @@
-import { type ChatMessage } from './types';
+import { type ChatMessage } from "./types";
 
 /**
  * A single visible message in the compacted view.
  */
 export interface MessageItem {
-  type: 'message';
+  type: "message";
   message: ChatMessage;
 }
 
@@ -12,7 +12,7 @@ export interface MessageItem {
  * A collapsed group of tool messages that can be expanded.
  */
 export interface CollapsedGroupItem {
-  type: 'collapsed_group';
+  type: "collapsed_group";
   /** Stable key derived from the first message ID in the group. */
   id: string;
   /** How many messages are in this group. */
@@ -29,11 +29,11 @@ export type CompactedItem = MessageItem | CollapsedGroupItem;
  */
 function isProtected(message: ChatMessage): boolean {
   // User messages are never collapsed.
-  if (message.role === 'user') return true;
+  if (message.role === "user") return true;
   // Error/failed messages are never collapsed.
-  if (message.status === 'failed') return true;
+  if (message.status === "failed") return true;
   // Artifact messages (final outputs) are never collapsed.
-  if (message.kind === 'artifact') return true;
+  if (message.kind === "artifact") return true;
   return false;
 }
 
@@ -42,7 +42,7 @@ function isProtected(message: ChatMessage): boolean {
  */
 function isCompactable(message: ChatMessage): boolean {
   if (isProtected(message)) return false;
-  return message.kind === 'tool';
+  return message.kind === "tool";
 }
 
 /**
@@ -63,10 +63,10 @@ function isCompactable(message: ChatMessage): boolean {
 export function compactMessages(
   messages: ChatMessage[],
   threshold = 10,
-  recentWindow = 5
+  recentWindow = 5,
 ): CompactedItem[] {
   if (threshold <= 0 || messages.length <= threshold) {
-    return messages.map((message) => ({ type: 'message', message }));
+    return messages.map((message) => ({ type: "message", message }));
   }
 
   // The tail is always shown in full.
@@ -83,10 +83,10 @@ export function compactMessages(
     if (groupBuffer.length === 0) return;
     if (groupBuffer.length === 1) {
       // Single-item groups don't add value; show the message directly.
-      result.push({ type: 'message', message: groupBuffer[0]! });
+      result.push({ type: "message", message: groupBuffer[0]! });
     } else {
       result.push({
-        type: 'collapsed_group',
+        type: "collapsed_group",
         id: groupBuffer[0]!.id,
         count: groupBuffer.length,
         messages: [...groupBuffer],
@@ -100,14 +100,14 @@ export function compactMessages(
       groupBuffer.push(message);
     } else {
       flushGroup();
-      result.push({ type: 'message', message });
+      result.push({ type: "message", message });
     }
   }
   flushGroup();
 
   // Append the tail fully.
   for (const message of tail) {
-    result.push({ type: 'message', message });
+    result.push({ type: "message", message });
   }
 
   return result;

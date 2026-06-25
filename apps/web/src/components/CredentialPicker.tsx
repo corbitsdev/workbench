@@ -1,4 +1,4 @@
-import type { Principal } from '../lib/hub-api';
+import type { Principal } from "../lib/hub-api";
 
 type CredentialPickerCredential = {
   id: string;
@@ -32,7 +32,10 @@ export function CredentialPicker({
 }: CredentialPickerProps) {
   if (isLoading) {
     return (
-      <p className="text-sm text-text-2" data-testid="credential-picker-loading">
+      <p
+        className="text-sm text-text-2"
+        data-testid="credential-picker-loading"
+      >
         Loading credentials...
       </p>
     );
@@ -70,7 +73,7 @@ export function CredentialPicker({
               <span>{label}</span>
             </label>
           );
-        })
+        }),
       )}
     </div>
   );

@@ -1,12 +1,12 @@
-import { clusterMerge } from './cluster-merge';
-import { dateFilter } from './date-filter';
-import { dedupe } from './dedupe';
-import { rankScore, type RankedCluster } from './rank-score';
-import type { BestTake, BriefCluster, Report, ResearchItem } from './schema';
+import { clusterMerge } from "./cluster-merge";
+import { dateFilter } from "./date-filter";
+import { dedupe } from "./dedupe";
+import { rankScore, type RankedCluster } from "./rank-score";
+import type { BestTake, BriefCluster, Report, ResearchItem } from "./schema";
 
 const MAX_BEST_TAKES = 5;
 
-function buildStats(items: ResearchItem[]): Report['stats'] {
+function buildStats(items: ResearchItem[]): Report["stats"] {
   const sourceCount = new Set(items.map((item) => item.source)).size;
   if (items.length === 0) {
     // No items means no real coverage window — omit dateRange rather than
@@ -58,12 +58,18 @@ function collectBestTakes(items: ResearchItem[]): BestTake[] {
 
 export function buildReport(
   rawItems: ResearchItem[],
-  opts: { topic: string; days: number; topK: number; nowIso: string }
+  opts: { topic: string; days: number; topK: number; nowIso: string },
 ): Report {
-  const windowed = dateFilter(rawItems, { days: opts.days, nowIso: opts.nowIso });
+  const windowed = dateFilter(rawItems, {
+    days: opts.days,
+    nowIso: opts.nowIso,
+  });
   const deduped = dedupe(windowed);
   const clusters = clusterMerge(deduped);
-  const ranked = rankScore(clusters, { topic: opts.topic, nowIso: opts.nowIso });
+  const ranked = rankScore(clusters, {
+    topic: opts.topic,
+    nowIso: opts.nowIso,
+  });
   const topClusters = ranked.slice(0, opts.topK);
   const topItems = topClusters.flatMap((cluster) => cluster.items);
   const briefClusters = topClusters.map(toBriefCluster);

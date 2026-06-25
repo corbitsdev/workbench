@@ -1,68 +1,68 @@
-import { type } from 'arktype';
-import { createHash } from 'node:crypto';
-import { normalize, sep } from 'node:path';
-import nodefs from 'node:fs';
-import git from 'isomorphic-git';
-import JSZip from 'jszip';
-import { and, asc, eq, inArray } from 'drizzle-orm';
-import { schema as intxSchema, getAncestorChain } from '@intx/db';
-import { getLogger } from '@intx/log';
-import type { HubDb } from '../db';
-import { skillAccess } from '../db/schema';
-import type { AssetService, RepoStore } from '@intx/hub-sessions';
-import { AssetServiceError } from '@intx/hub-sessions';
-import type { UserContext } from '../lib/user-context';
+import { type } from "arktype";
+import { createHash } from "node:crypto";
+import { normalize, sep } from "node:path";
+import nodefs from "node:fs";
+import git from "isomorphic-git";
+import JSZip from "jszip";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { schema as intxSchema, getAncestorChain } from "@intx/db";
+import { getLogger } from "@intx/log";
+import type { HubDb } from "../db";
+import { skillAccess } from "../db/schema";
+import type { AssetService, RepoStore } from "@intx/hub-sessions";
+import { AssetServiceError } from "@intx/hub-sessions";
+import type { UserContext } from "../lib/user-context";
 
-const log = getLogger(['skill-library']);
+const log = getLogger(["skill-library"]);
 
 export const MAX_SKILL_BUNDLE_BYTES = 20 * 1024 * 1024;
 export const MAX_SKILL_FILE_COUNT = 200;
 export const MAX_PROMPT_FILE_BYTES = 256 * 1024;
 
 const TEXT_EXTENSIONS = new Set([
-  '.md',
-  '.markdown',
-  '.txt',
-  '.json',
-  '.yaml',
-  '.yml',
-  '.csv',
-  '.ts',
-  '.tsx',
-  '.js',
-  '.jsx',
-  '.py',
-  '.rb',
-  '.go',
-  '.rs',
-  '.java',
-  '.css',
-  '.html',
+  ".md",
+  ".markdown",
+  ".txt",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".csv",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".py",
+  ".rb",
+  ".go",
+  ".rs",
+  ".java",
+  ".css",
+  ".html",
 ]);
 
 const CODE_EXTENSIONS = new Set([
-  '.ts',
-  '.tsx',
-  '.js',
-  '.jsx',
-  '.mjs',
-  '.cjs',
-  '.py',
-  '.rb',
-  '.go',
-  '.rs',
-  '.java',
-  '.sh',
-  '.bash',
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".py",
+  ".rb",
+  ".go",
+  ".rs",
+  ".java",
+  ".sh",
+  ".bash",
 ]);
 
-const JUNK_PATHS = new Set(['.DS_Store', 'Thumbs.db']);
+const JUNK_PATHS = new Set([".DS_Store", "Thumbs.db"]);
 
 type JSZipEntryWithMetadata = JSZip.JSZipObject & {
   _data?: { uncompressedSize?: number };
 };
 
-export type SkillCreateSource = 'paste' | 'file' | 'folder' | 'zip';
+export type SkillCreateSource = "paste" | "file" | "folder" | "zip";
 
 export type SkillBundleFileInput = {
   path: string;
@@ -90,15 +90,15 @@ export const skillAccessScopeSchema = type("'private' | 'tenant'");
 export type SkillAccessScope = typeof skillAccessScopeSchema.infer;
 
 export const skillItemSchema = type({
-  id: 'string',
-  name: 'string',
-  displayName: 'string | null',
-  createdAt: 'string',
-  updatedAt: 'string',
+  id: "string",
+  name: "string",
+  displayName: "string | null",
+  createdAt: "string",
+  updatedAt: "string",
   scope: skillAccessScopeSchema,
-  accessTenantId: 'string',
-  ownerUserId: 'string | null',
-  ownerName: 'string | null',
+  accessTenantId: "string",
+  ownerUserId: "string | null",
+  ownerName: "string | null",
 });
 export type SkillItem = typeof skillItemSchema.infer;
 
@@ -109,50 +109,67 @@ export type SkillItem = typeof skillItemSchema.infer;
  * a legacy row with no scope) or it is private and owned by the viewer.
  */
 export function isSkillVisible(
-  row: { assetTenantId: string; scope: SkillAccessScope | null; ownerUserId: string | null },
-  viewer: { ancestorTenantIds: string[]; userId: string }
+  row: {
+    assetTenantId: string;
+    scope: SkillAccessScope | null;
+    ownerUserId: string | null;
+  },
+  viewer: { ancestorTenantIds: string[]; userId: string },
 ): boolean {
   if (!viewer.ancestorTenantIds.includes(row.assetTenantId)) return false;
-  const scope = row.scope ?? 'tenant';
-  if (scope === 'tenant') return true;
+  const scope = row.scope ?? "tenant";
+  if (scope === "tenant") return true;
   return row.ownerUserId === viewer.userId;
 }
 
 export class SkillLibraryError extends Error {
   constructor(
     message: string,
-    public readonly status = 400
+    public readonly status = 400,
   ) {
     super(message);
-    this.name = 'SkillLibraryError';
+    this.name = "SkillLibraryError";
   }
 }
 
-const SKILL_BUNDLE_REF = 'refs/heads/main';
+const SKILL_BUNDLE_REF = "refs/heads/main";
 
 function extension(path: string): string {
-  const dot = path.lastIndexOf('.');
-  return dot >= 0 ? path.slice(dot).toLowerCase() : '';
+  const dot = path.lastIndexOf(".");
+  return dot >= 0 ? path.slice(dot).toLowerCase() : "";
 }
 
 function normalizeBundlePath(path: string): string | null {
-  const unixPath = path.replaceAll('\\', '/').replace(/^\/+/, '');
-  if (!unixPath || unixPath.includes('\0')) return null;
-  if (unixPath.startsWith('../') || unixPath.includes('/../') || unixPath === '..') return null;
-  const normalized = normalize(unixPath).replaceAll(sep, '/');
-  if (normalized.startsWith('../') || normalized.startsWith('/') || normalized === '..')
+  const unixPath = path.replaceAll("\\", "/").replace(/^\/+/, "");
+  if (!unixPath || unixPath.includes("\0")) return null;
+  if (
+    unixPath.startsWith("../") ||
+    unixPath.includes("/../") ||
+    unixPath === ".."
+  )
     return null;
-  const parts = normalized.split('/');
-  if (parts.some((part) => part === '..' || part === '')) return null;
-  if (parts[0] === '__MACOSX') return null;
-  if (JUNK_PATHS.has(parts.at(-1) ?? '')) return null;
+  const normalized = normalize(unixPath).replaceAll(sep, "/");
+  if (
+    normalized.startsWith("../") ||
+    normalized.startsWith("/") ||
+    normalized === ".."
+  )
+    return null;
+  const parts = normalized.split("/");
+  if (parts.some((part) => part === ".." || part === "")) return null;
+  if (parts[0] === "__MACOSX") return null;
+  if (JUNK_PATHS.has(parts.at(-1) ?? "")) return null;
   return normalized;
 }
 
-function isPromptReadable(path: string, mimeType: string, size: number): boolean {
+function isPromptReadable(
+  path: string,
+  mimeType: string,
+  size: number,
+): boolean {
   if (size > MAX_PROMPT_FILE_BYTES) return false;
-  if (mimeType.startsWith('text/')) return true;
-  if (mimeType === 'application/json') return true;
+  if (mimeType.startsWith("text/")) return true;
+  if (mimeType === "application/json") return true;
   return TEXT_EXTENSIONS.has(extension(path));
 }
 
@@ -161,25 +178,30 @@ function isExecutableLike(path: string): boolean {
 }
 
 function chooseEntrypoint(paths: string[]): string {
-  const exact = paths.find((path) => path === 'SKILL.md');
+  const exact = paths.find((path) => path === "SKILL.md");
   if (exact) return exact;
-  const nested = paths.find((path) => path.endsWith('/SKILL.md'));
+  const nested = paths.find((path) => path.endsWith("/SKILL.md"));
   if (nested) return nested;
-  const markdown = paths.find((path) => path.toLowerCase().endsWith('.md'));
+  const markdown = paths.find((path) => path.toLowerCase().endsWith(".md"));
   if (markdown) return markdown;
-  throw new SkillLibraryError('Skill bundle must include SKILL.md or at least one markdown file');
+  throw new SkillLibraryError(
+    "Skill bundle must include SKILL.md or at least one markdown file",
+  );
 }
 
 export type SkillBundle = {
   manifest: SkillBundleManifest;
-  files: Array<{ path: string; content: Buffer; mimeType: string }>;
+  files: { path: string; content: Buffer; mimeType: string }[];
 };
 
 export function buildSkillBundle(files: SkillBundleFileInput[]): SkillBundle {
   if (files.length === 0)
-    throw new SkillLibraryError('Skill bundle must include at least one file');
+    throw new SkillLibraryError("Skill bundle must include at least one file");
   if (files.length > MAX_SKILL_FILE_COUNT) {
-    throw new SkillLibraryError(`Skill bundle exceeds the ${MAX_SKILL_FILE_COUNT} file limit`, 413);
+    throw new SkillLibraryError(
+      `Skill bundle exceeds the ${MAX_SKILL_FILE_COUNT} file limit`,
+      413,
+    );
   }
 
   const normalizedFiles: SkillBundleFileInput[] = [];
@@ -188,58 +210,74 @@ export function buildSkillBundle(files: SkillBundleFileInput[]): SkillBundle {
 
   for (const file of files) {
     const normalizedPath = normalizeBundlePath(file.path);
-    if (!normalizedPath) throw new SkillLibraryError(`Unsafe skill bundle path: ${file.path}`);
+    if (!normalizedPath)
+      throw new SkillLibraryError(`Unsafe skill bundle path: ${file.path}`);
     if (seen.has(normalizedPath))
-      throw new SkillLibraryError(`Duplicate skill bundle path: ${normalizedPath}`);
+      throw new SkillLibraryError(
+        `Duplicate skill bundle path: ${normalizedPath}`,
+      );
     seen.add(normalizedPath);
     totalSize += file.content.byteLength;
     if (totalSize > MAX_SKILL_BUNDLE_BYTES) {
       throw new SkillLibraryError(
         `Skill bundle exceeds the ${MAX_SKILL_BUNDLE_BYTES} byte limit`,
-        413
+        413,
       );
     }
     if (file.content.byteLength === 0) continue;
     normalizedFiles.push({ ...file, path: normalizedPath });
   }
 
-  if (normalizedFiles.length === 0) throw new SkillLibraryError('Skill bundle files are empty');
+  if (normalizedFiles.length === 0)
+    throw new SkillLibraryError("Skill bundle files are empty");
 
-  const entrypointPath = chooseEntrypoint(normalizedFiles.map((file) => file.path));
+  const entrypointPath = chooseEntrypoint(
+    normalizedFiles.map((file) => file.path),
+  );
   const manifestFiles = normalizedFiles
     .map((file) => {
-      const mimeType = file.mimeType || 'application/octet-stream';
+      const mimeType = file.mimeType || "application/octet-stream";
       return {
         path: file.path,
         size: file.content.byteLength,
         mimeType,
-        sha256: createHash('sha256').update(file.content).digest('hex'),
-        promptReadable: isPromptReadable(file.path, mimeType, file.content.byteLength),
+        sha256: createHash("sha256").update(file.content).digest("hex"),
+        promptReadable: isPromptReadable(
+          file.path,
+          mimeType,
+          file.content.byteLength,
+        ),
         executableLike: isExecutableLike(file.path),
       } satisfies SkillBundleManifestFile;
     })
     .sort((a, b) => a.path.localeCompare(b.path));
 
-  const checksum = createHash('sha256')
-    .update(JSON.stringify(manifestFiles.map(({ path, sha256 }) => ({ path, sha256 }))))
-    .digest('hex');
+  const checksum = createHash("sha256")
+    .update(
+      JSON.stringify(
+        manifestFiles.map(({ path, sha256 }) => ({ path, sha256 })),
+      ),
+    )
+    .digest("hex");
 
   return {
     manifest: { files: manifestFiles, entrypointPath, totalSize, checksum },
     files: normalizedFiles.map((file) => ({
       path: file.path,
       content: Buffer.from(file.content),
-      mimeType: file.mimeType || 'application/octet-stream',
+      mimeType: file.mimeType || "application/octet-stream",
     })),
   };
 }
 
-export async function filesFromZip(content: Buffer): Promise<SkillBundleFileInput[]> {
+export async function filesFromZip(
+  content: Buffer,
+): Promise<SkillBundleFileInput[]> {
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(content);
   } catch {
-    throw new SkillLibraryError('Invalid zip archive');
+    throw new SkillLibraryError("Invalid zip archive");
   }
 
   const files: SkillBundleFileInput[] = [];
@@ -250,28 +288,31 @@ export async function filesFromZip(content: Buffer): Promise<SkillBundleFileInpu
     if (files.length >= MAX_SKILL_FILE_COUNT) {
       throw new SkillLibraryError(
         `Skill bundle exceeds the ${MAX_SKILL_FILE_COUNT} file limit`,
-        413
+        413,
       );
     }
     const declaredSize = entry._data?.uncompressedSize;
-    if (declaredSize !== undefined && totalSize + declaredSize > MAX_SKILL_BUNDLE_BYTES) {
+    if (
+      declaredSize !== undefined &&
+      totalSize + declaredSize > MAX_SKILL_BUNDLE_BYTES
+    ) {
       throw new SkillLibraryError(
         `Skill bundle exceeds the ${MAX_SKILL_BUNDLE_BYTES} byte limit`,
-        413
+        413,
       );
     }
-    const fileContent = Buffer.from(await entry.async('uint8array'));
+    const fileContent = Buffer.from(await entry.async("uint8array"));
     totalSize += fileContent.byteLength;
     if (totalSize > MAX_SKILL_BUNDLE_BYTES) {
       throw new SkillLibraryError(
         `Skill bundle exceeds the ${MAX_SKILL_BUNDLE_BYTES} byte limit`,
-        413
+        413,
       );
     }
     files.push({
       path: entry.name,
       content: fileContent,
-      mimeType: 'application/octet-stream',
+      mimeType: "application/octet-stream",
     });
   }
   return files;
@@ -285,19 +326,21 @@ export function toAssetName(displayName: string): string {
   return (
     displayName
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 64) || 'skill'
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64) || "skill"
   );
 }
 
 function bundlePrefixFromEntrypoint(entrypointPath: string): string {
-  const slashIdx = entrypointPath.lastIndexOf('/');
-  return slashIdx >= 0 ? entrypointPath.slice(0, slashIdx + 1) : '';
+  const slashIdx = entrypointPath.lastIndexOf("/");
+  return slashIdx >= 0 ? entrypointPath.slice(0, slashIdx + 1) : "";
 }
 
 function stripBundlePrefix(filePath: string, bundlePrefix: string): string {
-  return filePath.startsWith(bundlePrefix) ? filePath.slice(bundlePrefix.length) : filePath;
+  return filePath.startsWith(bundlePrefix)
+    ? filePath.slice(bundlePrefix.length)
+    : filePath;
 }
 
 /**
@@ -309,37 +352,47 @@ export function buildSkillTree(
   assetName: string,
   description: string | null | undefined,
   bundle: SkillBundleManifest,
-  fileContents: Map<string, Buffer>
+  fileContents: Map<string, Buffer>,
 ): Record<string, Uint8Array> {
   const bundlePrefix = bundlePrefixFromEntrypoint(bundle.entrypointPath);
 
   const files: Record<string, Uint8Array> = {};
   for (const file of bundle.files) {
     const content = fileContents.get(file.path);
-    if (!content) throw new Error(`Missing content for bundle file: ${file.path}`);
+    if (!content)
+      throw new Error(`Missing content for bundle file: ${file.path}`);
     const treePath = `${assetName}/${stripBundlePrefix(file.path, bundlePrefix)}`;
     files[treePath] = content;
   }
 
   const entrypointTreePath = `${assetName}/SKILL.md`;
   const originalEntrypointKey = `${assetName}/${stripBundlePrefix(bundle.entrypointPath, bundlePrefix)}`;
-  const existingContent = files[entrypointTreePath] ?? files[originalEntrypointKey];
+  const existingContent =
+    files[entrypointTreePath] ?? files[originalEntrypointKey];
   // Remove the original entrypoint file if it mapped to a different tree path
   // so we don't end up with both `assetName/docs/SKILL.md` and `assetName/SKILL.md`.
   if (originalEntrypointKey !== entrypointTreePath) {
     delete files[originalEntrypointKey];
   }
-  const bodyText = existingContent ? new TextDecoder().decode(existingContent) : '';
-  const strippedBody = bodyText.replace(/^---[\s\S]*?---\n?/, '');
-  const frontmatter = `---\nname: ${assetName}\ndescription: "${(description ?? 'Skill').replace(/"/g, '\\"')}"\n---\n`;
-  files[entrypointTreePath] = new TextEncoder().encode(frontmatter + strippedBody);
+  const bodyText = existingContent
+    ? new TextDecoder().decode(existingContent)
+    : "";
+  const strippedBody = bodyText.replace(/^---[\s\S]*?---\n?/, "");
+  const frontmatter = `---\nname: ${assetName}\ndescription: "${(description ?? "Skill").replace(/"/g, '\\"')}"\n---\n`;
+  files[entrypointTreePath] = new TextEncoder().encode(
+    frontmatter + strippedBody,
+  );
 
   return files;
 }
 
 // An actor managing a skill: the working tenant (for the visibility chain), the
 // stable user id (for ownership), and the per-tenant principal (legacy fallback).
-export type SkillActor = { tenantId: string; userId: string; principalId: string };
+export type SkillActor = {
+  tenantId: string;
+  userId: string;
+  principalId: string;
+};
 
 /**
  * Pure ownership rule for managing (delete/update/restore) a skill. New skills
@@ -350,10 +403,13 @@ export type SkillActor = { tenantId: string; userId: string; principalId: string
  */
 export function canManageSkill(
   row: { ownerUserId: string | null; creatorPrincipalId: string | null },
-  actor: { userId: string; principalId: string }
+  actor: { userId: string; principalId: string },
 ): boolean {
   if (row.ownerUserId !== null) return row.ownerUserId === actor.userId;
-  return row.creatorPrincipalId !== null && row.creatorPrincipalId === actor.principalId;
+  return (
+    row.creatorPrincipalId !== null &&
+    row.creatorPrincipalId === actor.principalId
+  );
 }
 
 type ManageableSkill = {
@@ -378,7 +434,7 @@ type ManageableSkill = {
 async function loadManageableSkill(
   db: HubDb,
   actor: SkillActor,
-  assetId: string
+  assetId: string,
 ): Promise<ManageableSkill> {
   const ancestorTenantIds = await getAncestorChain(db as never, actor.tenantId);
   const rows = await db
@@ -395,20 +451,29 @@ async function loadManageableSkill(
     })
     .from(intxSchema.asset)
     .leftJoin(skillAccess, eq(skillAccess.assetId, intxSchema.asset.id))
-    .where(and(eq(intxSchema.asset.id, assetId), eq(intxSchema.asset.kind, 'skill')))
+    .where(
+      and(eq(intxSchema.asset.id, assetId), eq(intxSchema.asset.kind, "skill")),
+    )
     .limit(1);
   const row = rows[0];
   if (
     !row ||
     !isSkillVisible(
-      { assetTenantId: row.tenantId, scope: row.scope, ownerUserId: row.ownerUserId },
-      { ancestorTenantIds, userId: actor.userId }
+      {
+        assetTenantId: row.tenantId,
+        scope: row.scope,
+        ownerUserId: row.ownerUserId,
+      },
+      { ancestorTenantIds, userId: actor.userId },
     )
   ) {
-    throw new SkillLibraryError('Skill not found', 404);
+    throw new SkillLibraryError("Skill not found", 404);
   }
   if (!canManageSkill(row, actor)) {
-    throw new SkillLibraryError('You do not have permission to modify this skill', 403);
+    throw new SkillLibraryError(
+      "You do not have permission to modify this skill",
+      403,
+    );
   }
   return row;
 }
@@ -417,7 +482,7 @@ export async function deleteSkill(
   db: HubDb,
   repoStore: RepoStore,
   actor: SkillActor,
-  assetId: string
+  assetId: string,
 ): Promise<void> {
   await loadManageableSkill(db, actor, assetId);
   // Delete DB row first — cascade removes agent_asset rows. Then remove the
@@ -426,14 +491,16 @@ export async function deleteSkill(
   await db.delete(intxSchema.asset).where(eq(intxSchema.asset.id, assetId));
   // skill_access has no FK to asset (asset is @intx-owned), so clear it here.
   await db.delete(skillAccess).where(eq(skillAccess.assetId, assetId));
-  const repoDir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
-  await nodefs.promises.rm(repoDir, { recursive: true, force: true }).catch((err) => {
-    log.error('Failed to remove skill git repo after delete', {
-      assetId,
-      repoDir,
-      error: String(err),
+  const repoDir = repoStore.getRepoDir({ kind: "skill", id: assetId });
+  await nodefs.promises
+    .rm(repoDir, { recursive: true, force: true })
+    .catch((err) => {
+      log.error("Failed to remove skill git repo after delete", {
+        assetId,
+        repoDir,
+        error: String(err),
+      });
     });
-  });
 }
 
 export type SkillViewer = { tenantId: string; userId: string };
@@ -457,7 +524,7 @@ function toSkillItem(row: SkillRow): SkillItem {
     displayName: row.displayName ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    scope: row.scope ?? 'tenant',
+    scope: row.scope ?? "tenant",
     accessTenantId: row.tenantId,
     ownerUserId: row.ownerUserId ?? null,
     ownerName: row.ownerName ?? null,
@@ -476,24 +543,37 @@ const skillRowColumns = {
   ownerName: intxSchema.user.name,
 };
 
-export async function listSkills(db: HubDb, viewer: SkillViewer): Promise<SkillItem[]> {
-  const ancestorTenantIds = await getAncestorChain(db as never, viewer.tenantId);
+export async function listSkills(
+  db: HubDb,
+  viewer: SkillViewer,
+): Promise<SkillItem[]> {
+  const ancestorTenantIds = await getAncestorChain(
+    db as never,
+    viewer.tenantId,
+  );
   const rows = await db
     .select(skillRowColumns)
     .from(intxSchema.asset)
     .leftJoin(skillAccess, eq(skillAccess.assetId, intxSchema.asset.id))
     .leftJoin(intxSchema.user, eq(intxSchema.user.id, skillAccess.ownerUserId))
     .where(
-      and(inArray(intxSchema.asset.tenantId, ancestorTenantIds), eq(intxSchema.asset.kind, 'skill'))
+      and(
+        inArray(intxSchema.asset.tenantId, ancestorTenantIds),
+        eq(intxSchema.asset.kind, "skill"),
+      ),
     )
     .orderBy(asc(intxSchema.asset.createdAt));
 
   return rows
     .filter((row) =>
       isSkillVisible(
-        { assetTenantId: row.tenantId, scope: row.scope, ownerUserId: row.ownerUserId },
-        { ancestorTenantIds, userId: viewer.userId }
-      )
+        {
+          assetTenantId: row.tenantId,
+          scope: row.scope,
+          ownerUserId: row.ownerUserId,
+        },
+        { ancestorTenantIds, userId: viewer.userId },
+      ),
     )
     .map(toSkillItem);
 }
@@ -508,20 +588,23 @@ export type SkillShareTarget = { tenantId: string; name: string };
 export async function listShareTargets(
   db: HubDb,
   userId: string,
-  tenantId: string
+  tenantId: string,
 ): Promise<SkillShareTarget[]> {
   const chain = await getAncestorChain(db as never, tenantId);
   const rows = await db
     .select({ id: intxSchema.tenant.id, name: intxSchema.tenant.name })
     .from(intxSchema.principal)
-    .innerJoin(intxSchema.tenant, eq(intxSchema.tenant.id, intxSchema.principal.tenantId))
+    .innerJoin(
+      intxSchema.tenant,
+      eq(intxSchema.tenant.id, intxSchema.principal.tenantId),
+    )
     .where(
       and(
         eq(intxSchema.principal.refId, userId),
-        eq(intxSchema.principal.kind, 'user'),
-        eq(intxSchema.principal.status, 'active'),
-        inArray(intxSchema.principal.tenantId, chain)
-      )
+        eq(intxSchema.principal.kind, "user"),
+        eq(intxSchema.principal.status, "active"),
+        inArray(intxSchema.principal.tenantId, chain),
+      ),
     );
   const byId = new Map(rows.map((row) => [row.id, row.name]));
   return chain
@@ -532,22 +615,31 @@ export async function listShareTargets(
 export async function getSkillAsset(
   db: HubDb,
   viewer: SkillViewer,
-  assetId: string
+  assetId: string,
 ): Promise<SkillItem | null> {
-  const ancestorTenantIds = await getAncestorChain(db as never, viewer.tenantId);
+  const ancestorTenantIds = await getAncestorChain(
+    db as never,
+    viewer.tenantId,
+  );
   const rows = await db
     .select(skillRowColumns)
     .from(intxSchema.asset)
     .leftJoin(skillAccess, eq(skillAccess.assetId, intxSchema.asset.id))
     .leftJoin(intxSchema.user, eq(intxSchema.user.id, skillAccess.ownerUserId))
-    .where(and(eq(intxSchema.asset.id, assetId), eq(intxSchema.asset.kind, 'skill')))
+    .where(
+      and(eq(intxSchema.asset.id, assetId), eq(intxSchema.asset.kind, "skill")),
+    )
     .limit(1);
   const row = rows[0];
   if (!row) return null;
   if (
     !isSkillVisible(
-      { assetTenantId: row.tenantId, scope: row.scope, ownerUserId: row.ownerUserId },
-      { ancestorTenantIds, userId: viewer.userId }
+      {
+        assetTenantId: row.tenantId,
+        scope: row.scope,
+        ownerUserId: row.ownerUserId,
+      },
+      { ancestorTenantIds, userId: viewer.userId },
     )
   ) {
     return null;
@@ -559,17 +651,27 @@ async function readAssetFile(
   repoStore: RepoStore,
   assetId: string,
   treePath: string,
-  fs: typeof nodefs = nodefs
+  fs: typeof nodefs = nodefs,
 ): Promise<Buffer | null> {
-  const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
+  const dir = repoStore.getRepoDir({ kind: "skill", id: assetId });
   try {
-    const { blob } = await git.readBlob({ fs, dir, oid: SKILL_BUNDLE_REF, filepath: treePath });
+    const { blob } = await git.readBlob({
+      fs,
+      dir,
+      oid: SKILL_BUNDLE_REF,
+      filepath: treePath,
+    });
     return Buffer.from(blob);
   } catch (err) {
     // Distinguish "file not in tree" (NotFoundError) from storage failures.
-    const name = err instanceof Error ? err.name : '';
-    if (name === 'NotFoundError' || name === 'TreeOrBlobNotFoundError') return null;
-    log.error('Unexpected error reading asset file', { assetId, treePath, error: String(err) });
+    const name = err instanceof Error ? err.name : "";
+    if (name === "NotFoundError" || name === "TreeOrBlobNotFoundError")
+      return null;
+    log.error("Unexpected error reading asset file", {
+      assetId,
+      treePath,
+      error: String(err),
+    });
     return null;
   }
 }
@@ -581,19 +683,23 @@ async function readAssetFile(
 export async function readSkillPrompt(
   repoStore: RepoStore,
   assetId: string,
-  assetName: string
+  assetName: string,
 ): Promise<string | null> {
-  const content = await readAssetFile(repoStore, assetId, `${assetName}/SKILL.md`);
-  return content ? content.toString('utf8') : null;
+  const content = await readAssetFile(
+    repoStore,
+    assetId,
+    `${assetName}/SKILL.md`,
+  );
+  return content ? content.toString("utf8") : null;
 }
 
 export async function getSkillContent(
   repoStore: RepoStore,
   assetId: string,
   assetName: string,
-  fs: typeof nodefs = nodefs
+  fs: typeof nodefs = nodefs,
 ): Promise<{ path: string; content?: string }[]> {
-  const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
+  const dir = repoStore.getRepoDir({ kind: "skill", id: assetId });
   const prefix = `${assetName}/`;
 
   try {
@@ -603,7 +709,7 @@ export async function getSkillContent(
       trees: [git.TREE({ ref: SKILL_BUNDLE_REF })],
       map: async (filepath, [entry]) => {
         if (!entry) return null;
-        if ((await entry.type()) !== 'blob') return undefined;
+        if ((await entry.type()) !== "blob") return undefined;
         if (!filepath.startsWith(prefix)) return undefined;
         const relativePath = filepath.slice(prefix.length);
         if (!relativePath) return null;
@@ -611,7 +717,7 @@ export async function getSkillContent(
         let content: string | undefined;
         if (blob) {
           try {
-            content = new TextDecoder('utf-8', { fatal: true }).decode(blob);
+            content = new TextDecoder("utf-8", { fatal: true }).decode(blob);
           } catch {
             // binary file — omit content
           }
@@ -619,31 +725,34 @@ export async function getSkillContent(
         // Strip the Interchange-injected YAML frontmatter from the entrypoint
         // file — it is an internal contract with the skillKindHandler, not user content.
         const displayContent =
-          relativePath === 'SKILL.md' && content
-            ? content.replace(/^---[\s\S]*?---\n?/, '')
+          relativePath === "SKILL.md" && content
+            ? content.replace(/^---[\s\S]*?---\n?/, "")
             : content;
         return { path: relativePath, content: displayContent };
       },
     });
-    return (entries.filter(Boolean) as { path: string; content?: string }[]).sort((a, b) =>
-      a.path.localeCompare(b.path)
-    );
+    return (
+      entries.filter(Boolean) as { path: string; content?: string }[]
+    ).sort((a, b) => a.path.localeCompare(b.path));
   } catch (err) {
-    const name = err instanceof Error ? err.name : '';
-    if (name !== 'NotFoundError' && name !== 'TreeOrBlobNotFoundError') {
-      log.error('Unexpected error reading skill content', { assetId, error: String(err) });
+    const name = err instanceof Error ? err.name : "";
+    if (name !== "NotFoundError" && name !== "TreeOrBlobNotFoundError") {
+      log.error("Unexpected error reading skill content", {
+        assetId,
+        error: String(err),
+      });
     }
     return [];
   }
 }
 
 export const skillVersionSchema = type({
-  sha: 'string',
-  shortSha: 'string',
-  version: 'number',
-  message: 'string',
-  authorName: 'string',
-  createdAt: 'string',
+  sha: "string",
+  shortSha: "string",
+  version: "number",
+  message: "string",
+  authorName: "string",
+  createdAt: "string",
 });
 export type SkillVersion = typeof skillVersionSchema.infer;
 
@@ -656,10 +765,12 @@ type RawCommit = {
 // (containing only .gitignore) when it inits an asset repo, before any content
 // is written. It's platform bookkeeping, not a skill version, so it's excluded
 // from history — otherwise every freshly created skill shows a spurious v1.
-const REPO_INIT_COMMIT_MESSAGE = 'Initialize repository';
+const REPO_INIT_COMMIT_MESSAGE = "Initialize repository";
 
 export function excludeRepoInitCommit(commits: RawCommit[]): RawCommit[] {
-  return commits.filter((entry) => entry.commit.message.trim() !== REPO_INIT_COMMIT_MESSAGE);
+  return commits.filter(
+    (entry) => entry.commit.message.trim() !== REPO_INIT_COMMIT_MESSAGE,
+  );
 }
 
 /**
@@ -688,16 +799,19 @@ export type SkillVersionPage = { versions: SkillVersion[]; total: number };
 async function readAllVersions(
   repoStore: RepoStore,
   assetId: string,
-  fs: typeof nodefs
+  fs: typeof nodefs,
 ): Promise<SkillVersion[]> {
-  const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
+  const dir = repoStore.getRepoDir({ kind: "skill", id: assetId });
   try {
     const commits = await git.log({ fs, dir, ref: SKILL_BUNDLE_REF });
     return toVersionEntries(excludeRepoInitCommit(commits as RawCommit[]));
   } catch (err) {
-    const name = err instanceof Error ? err.name : '';
-    if (name !== 'NotFoundError' && name !== 'TreeOrBlobNotFoundError') {
-      log.error('Unexpected error reading skill versions', { assetId, error: String(err) });
+    const name = err instanceof Error ? err.name : "";
+    if (name !== "NotFoundError" && name !== "TreeOrBlobNotFoundError") {
+      log.error("Unexpected error reading skill versions", {
+        assetId,
+        error: String(err),
+      });
     }
     return [];
   }
@@ -712,13 +826,13 @@ export async function listSkillVersions(
   repoStore: RepoStore,
   assetId: string,
   opts: { limit?: number; offset?: number } = {},
-  fs: typeof nodefs = nodefs
+  fs: typeof nodefs = nodefs,
 ): Promise<SkillVersionPage> {
   const all = await readAllVersions(repoStore, assetId, fs);
   const offset = Math.max(0, opts.offset ?? 0);
   const limit = Math.min(
     MAX_VERSION_PAGE_SIZE,
-    Math.max(1, opts.limit ?? DEFAULT_VERSION_PAGE_SIZE)
+    Math.max(1, opts.limit ?? DEFAULT_VERSION_PAGE_SIZE),
   );
   return { versions: all.slice(offset, offset + limit), total: all.length };
 }
@@ -734,7 +848,7 @@ export async function restoreSkillVersion(
   actor: SkillActor,
   assetId: string,
   sha: string,
-  fs: typeof nodefs = nodefs
+  fs: typeof nodefs = nodefs,
 ): Promise<SkillItem> {
   const existing = await loadManageableSkill(db, actor, assetId);
 
@@ -743,10 +857,10 @@ export async function restoreSkillVersion(
   // against the full history, not a single page.
   const history = await readAllVersions(repoStore, assetId, fs);
   if (!history.some((version) => version.sha === sha)) {
-    throw new SkillLibraryError('Version not found', 404);
+    throw new SkillLibraryError("Version not found", 404);
   }
 
-  const dir = repoStore.getRepoDir({ kind: 'skill', id: assetId });
+  const dir = repoStore.getRepoDir({ kind: "skill", id: assetId });
   const prefix = `${existing.name}/`;
   const files: Record<string, Uint8Array> = {};
   try {
@@ -756,7 +870,7 @@ export async function restoreSkillVersion(
       trees: [git.TREE({ ref: sha })],
       map: async (filepath, [entry]) => {
         if (!entry) return null;
-        if ((await entry.type()) !== 'blob') return undefined;
+        if ((await entry.type()) !== "blob") return undefined;
         if (!filepath.startsWith(prefix)) return undefined;
         const blob = await entry.content();
         if (blob) files[filepath] = blob;
@@ -764,27 +878,28 @@ export async function restoreSkillVersion(
       },
     });
   } catch (err) {
-    const name = err instanceof Error ? err.name : '';
-    if (name === 'NotFoundError' || name === 'TreeOrBlobNotFoundError') {
-      throw new SkillLibraryError('Version not found', 404);
+    const name = err instanceof Error ? err.name : "";
+    if (name === "NotFoundError" || name === "TreeOrBlobNotFoundError") {
+      throw new SkillLibraryError("Version not found", 404);
     }
     throw err;
   }
-  if (Object.keys(files).length === 0) throw new SkillLibraryError('Version not found', 404);
+  if (Object.keys(files).length === 0)
+    throw new SkillLibraryError("Version not found", 404);
 
   await assetService.populateAsset({
     assetId,
     ref: SKILL_BUNDLE_REF,
     tree: { files, clearPrefix: prefix, message: `Restore ${sha.slice(0, 7)}` },
-    principal: { kind: 'hub' },
+    principal: { kind: "hub" },
   });
 
   const refreshed = await getSkillAsset(
     db,
     { tenantId: actor.tenantId, userId: actor.userId },
-    assetId
+    assetId,
   );
-  if (!refreshed) throw new SkillLibraryError('Skill not found', 404);
+  if (!refreshed) throw new SkillLibraryError("Skill not found", 404);
   return refreshed;
 }
 
@@ -799,27 +914,37 @@ export async function createSkill(
     scope: SkillAccessScope;
     ownerUserId: string;
     ownerName: string;
-  }
+  },
 ): Promise<SkillItem> {
   const name = input.name.trim();
-  if (!name) throw new SkillLibraryError('Skill name is required');
+  if (!name) throw new SkillLibraryError("Skill name is required");
   const bundle = buildSkillBundle(input.files);
   const assetName = toAssetName(name);
-  const fileContents = new Map<string, Buffer>(bundle.files.map((f) => [f.path, f.content]));
-  const treeFiles = buildSkillTree(assetName, input.description, bundle.manifest, fileContents);
+  const fileContents = new Map<string, Buffer>(
+    bundle.files.map((f) => [f.path, f.content]),
+  );
+  const treeFiles = buildSkillTree(
+    assetName,
+    input.description,
+    bundle.manifest,
+    fileContents,
+  );
 
   let asset;
   try {
     asset = await assetService.createAsset({
       tenantId: userContext.tenantId,
-      kind: 'skill',
+      kind: "skill",
       name: assetName,
       displayName: name,
       creatorPrincipalId: userContext.principalId,
     });
   } catch (err) {
-    if (err instanceof AssetServiceError && err.reason === 'duplicate_asset') {
-      throw new SkillLibraryError(`A skill named "${name}" already exists`, 409);
+    if (err instanceof AssetServiceError && err.reason === "duplicate_asset") {
+      throw new SkillLibraryError(
+        `A skill named "${name}" already exists`,
+        409,
+      );
     }
     throw err;
   }
@@ -828,8 +953,12 @@ export async function createSkill(
     await assetService.populateAsset({
       assetId: asset.id,
       ref: SKILL_BUNDLE_REF,
-      tree: { files: treeFiles, clearPrefix: `${assetName}/`, message: `Add ${name}` },
-      principal: { kind: 'hub' },
+      tree: {
+        files: treeFiles,
+        clearPrefix: `${assetName}/`,
+        message: `Add ${name}`,
+      },
+      principal: { kind: "hub" },
     });
     // Write the access row in the same guarded scope: if it fails, the asset is
     // rolled back below rather than left as an implicit (org-wide) skill with no
@@ -847,7 +976,7 @@ export async function createSkill(
       .delete(intxSchema.asset)
       .where(eq(intxSchema.asset.id, asset.id))
       .catch((deleteErr) => {
-        log.error('Failed to clean up orphaned asset after create failure', {
+        log.error("Failed to clean up orphaned asset after create failure", {
           assetId: asset.id,
           error: String(deleteErr),
         });
@@ -880,18 +1009,20 @@ export async function updateSkill(
     assetId: string;
     description?: string | null;
     files: SkillBundleFileInput[];
-  }
+  },
 ): Promise<SkillItem> {
   const existing = await loadManageableSkill(db, actor, input.assetId);
 
   const assetName = existing.name;
   const bundle = buildSkillBundle(input.files);
-  const fileContents = new Map<string, Buffer>(bundle.files.map((f) => [f.path, f.content]));
+  const fileContents = new Map<string, Buffer>(
+    bundle.files.map((f) => [f.path, f.content]),
+  );
   const treeFiles = buildSkillTree(
     assetName,
     input.description ?? null,
     bundle.manifest,
-    fileContents
+    fileContents,
   );
 
   await assetService.populateAsset({
@@ -902,7 +1033,7 @@ export async function updateSkill(
       clearPrefix: `${assetName}/`,
       message: `Update ${existing.displayName ?? assetName}`,
     },
-    principal: { kind: 'hub' },
+    principal: { kind: "hub" },
   });
 
   // Re-resolve through the read path so the response carries the fresh updatedAt
@@ -910,8 +1041,8 @@ export async function updateSkill(
   const refreshed = await getSkillAsset(
     db,
     { tenantId: actor.tenantId, userId: actor.userId },
-    existing.id
+    existing.id,
   );
-  if (!refreshed) throw new SkillLibraryError('Skill not found', 404);
+  if (!refreshed) throw new SkillLibraryError("Skill not found", 404);
   return refreshed;
 }

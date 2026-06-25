@@ -13,6 +13,7 @@ here rather than duplicated — duplicated detail drifts.
 | Designing a change                                     | [`ARCHITECTURE.md`](ARCHITECTURE.md) — system design, the generic workflow-run + artifact model, Interchange boundary |
 | Implementing in the hub/sidecar                        | [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — technical details and conventions                                          |
 | Calling or extending the HTTP API                      | [`API.md`](API.md)                                                                                                    |
+| Insights / usage analytics                             | [`ANALYTICS.md`](ANALYTICS.md)                                                                                        |
 | Adding an agent or tool                                | [`CREATING_AGENTS_AND_TOOLS.md`](CREATING_AGENTS_AND_TOOLS.md)                                                        |
 | Working on the call-to-artifact pipeline               | [`SOURCE_TO_ARTIFACT.md`](SOURCE_TO_ARTIFACT.md)                                                                      |
 | Operating the hub (seeding, tenancy, tools, workflows) | [`ADMIN_CLI.md`](ADMIN_CLI.md) — the single operator entrypoint                                                       |

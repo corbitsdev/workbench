@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-/* eslint-disable no-console */
-
 /**
  * GTM Workbench production seed script.
  *
@@ -17,7 +15,7 @@
  * For local dev, run seed.ts instead.
  */
 
-import postgres from 'postgres';
+import postgres from "postgres";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -32,9 +30,9 @@ function log(message: string) {
   console.log(`[seed-prod] ${message}`);
 }
 
-const email = requireEnv('SUPERADMIN_EMAIL');
-const globalTenantSlug = requireEnv('GLOBAL_TENANT_SLUG');
-const sql = postgres(requireEnv('DATABASE_URL'), { max: 1 });
+const email = requireEnv("SUPERADMIN_EMAIL");
+const globalTenantSlug = requireEnv("GLOBAL_TENANT_SLUG");
+const sql = postgres(requireEnv("DATABASE_URL"), { max: 1 });
 
 try {
   log(`Looking up user: ${email}`);
@@ -45,7 +43,9 @@ try {
     limit 1
   `;
   if (!user) {
-    console.error(`[seed-prod] No user found with email ${email}. Sign in via OAuth first.`);
+    console.error(
+      `[seed-prod] No user found with email ${email}. Sign in via OAuth first.`,
+    );
     process.exit(1);
   }
   log(`  User ID: ${user.id}`);
@@ -62,7 +62,7 @@ try {
   `;
   if (!principal) {
     console.error(
-      `[seed-prod] Could not find principal for ${email} in tenant "${globalTenantSlug}". Has the user signed in yet?`
+      `[seed-prod] Could not find principal for ${email} in tenant "${globalTenantSlug}". Has the user signed in yet?`,
     );
     process.exit(1);
   }
@@ -76,7 +76,7 @@ try {
     limit 1
   `;
   if (!ownerRole) {
-    console.error('[seed-prod] Could not find owner role on tenant.');
+    console.error("[seed-prod] Could not find owner role on tenant.");
     process.exit(1);
   }
 
@@ -90,4 +90,4 @@ try {
   await sql.end();
 }
 
-log('Done.');
+log("Done.");

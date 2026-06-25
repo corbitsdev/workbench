@@ -1,5 +1,5 @@
-import type { AgentTool } from '@intx/agent';
-import type { ToolDefinition } from '@intx/types/runtime';
+import type { AgentTool } from "@intx/agent";
+import type { ToolDefinition } from "@intx/types/runtime";
 import {
   resolveConfig,
   stringTool,
@@ -9,14 +9,14 @@ import {
   normalizeBaseUrl,
   type FirecrawlToolsConfig,
   type ResolvedFirecrawlConfig,
-} from './shared';
+} from "./shared";
 
 async function parseDocument(
   config: ResolvedFirecrawlConfig,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const url = requiredString(args, 'url');
+  const url = requiredString(args, "url");
   const options = optionalRecord(args.options);
 
   const fetcher = config.fetcher ?? fetch;
@@ -24,52 +24,54 @@ async function parseDocument(
   // Download the document
   const fileResponse = await fetcher(url, { signal });
   if (!fileResponse.ok) {
-    throw new Error(`Failed to fetch document: ${fileResponse.status} ${fileResponse.statusText}`);
+    throw new Error(
+      `Failed to fetch document: ${fileResponse.status} ${fileResponse.statusText}`,
+    );
   }
   const blob = await fileResponse.blob();
 
   // Build multipart form
   const form = new FormData();
-  form.append('file', blob, 'document');
+  form.append("file", blob, "document");
   if (options !== null) {
-    form.append('options', JSON.stringify(options));
+    form.append("options", JSON.stringify(options));
   }
 
   // POST to /parse
   const parseUrl = new URL(`${normalizeBaseUrl(config.baseUrl)}/parse`);
   const response = await fetcher(parseUrl.toString(), {
-    method: 'POST',
+    method: "POST",
     headers: { Authorization: `Bearer ${config.apiKey}` },
     body: form,
     signal,
   });
 
   if (!response.ok) {
-    const body = errorMessageFromBody(await response.text().catch(() => ''));
-    throw new Error(`Firecrawl API error: ${response.status} ${body ?? ''}`);
+    const body = errorMessageFromBody(await response.text().catch(() => ""));
+    throw new Error(`Firecrawl API error: ${response.status} ${body ?? ""}`);
   }
 
   return (await response.json()) as unknown;
 }
 
 export const FIRECRAWL_PARSE_DEFINITION: ToolDefinition = {
-  name: 'firecrawl_parse',
+  name: "firecrawl_parse",
   description:
-    'Parse a document (PDF, DOCX, XLSX, HTML) with Firecrawl and return clean, LLM-ready content. Provide a URL to the document and optional parse options.',
+    "Parse a document (PDF, DOCX, XLSX, HTML) with Firecrawl and return clean, LLM-ready content. Provide a URL to the document and optional parse options.",
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
       url: {
-        type: 'string',
-        description: 'URL of the document to parse (PDF, DOCX, XLSX, HTML).',
+        type: "string",
+        description: "URL of the document to parse (PDF, DOCX, XLSX, HTML).",
       },
       options: {
-        type: 'object',
+        type: "object",
         description:
-          'Optional parse options, e.g. formats, onlyMainContent, includeTags, excludeTags, timeout, parsers.',
+          "Optional parse options, e.g. formats, onlyMainContent, includeTags, excludeTags, timeout, parsers.",
       },
     },
-    required: ['url'],
+    required: ["url"],
   },
 };
 
@@ -79,6 +81,8 @@ export function createParseTools(config: FirecrawlToolsConfig): AgentTool[] {
   const resolved = resolveConfig(config);
 
   return [
-    stringTool(FIRECRAWL_PARSE_DEFINITION, (args, signal) => parseDocument(resolved, args, signal)),
+    stringTool(FIRECRAWL_PARSE_DEFINITION, (args, signal) =>
+      parseDocument(resolved, args, signal),
+    ),
   ];
 }

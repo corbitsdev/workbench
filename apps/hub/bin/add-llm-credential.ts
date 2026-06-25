@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-/* eslint-disable no-console */
-
 /**
  * Add or update LLM credentials through standard Interchange API routes.
  *
@@ -193,8 +191,7 @@ async function upsertCredential(
     fail("list providers", providersRes.status, providersRes.data);
 
   let provider = (
-    (providersRes.data as { data?: Array<{ id: string; name: string }> })
-      .data ?? []
+    (providersRes.data as { data?: { id: string; name: string }[] }).data ?? []
   ).find((p) => p.name === providerName);
 
   if (!provider) {
@@ -224,8 +221,7 @@ async function upsertCredential(
         sessionCookies,
       );
       provider = (
-        (refreshed.data as { data?: Array<{ id: string; name: string }> })
-          .data ?? []
+        (refreshed.data as { data?: { id: string; name: string }[] }).data ?? []
       ).find((p) => p.name === providerName);
     }
   }
@@ -246,8 +242,8 @@ async function upsertCredential(
     fail("list credentials", listCredentials.status, listCredentials.data);
 
   const existingCredential = (
-    (listCredentials.data as { data?: Array<{ id: string; name: string }> })
-      .data ?? []
+    (listCredentials.data as { data?: { id: string; name: string }[] }).data ??
+    []
   ).find((c) => c.name === credentialName);
 
   log(`Credential name: "${credentialName}"`);

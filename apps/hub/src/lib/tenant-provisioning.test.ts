@@ -9,12 +9,19 @@ const GLOBAL_TENANT = {
 mock.module("../config", () => ({
   getConfig: () => ({
     exa: { apiKey: undefined },
-    globalTenant: GLOBAL_TENANT,
+    rootTenant: GLOBAL_TENANT,
   }),
   loadConfig: () => ({
     exa: { apiKey: undefined },
-    globalTenant: GLOBAL_TENANT,
+    rootTenant: GLOBAL_TENANT,
   }),
+}));
+
+const refreshInstanceGrantsMock = mock(() =>
+  Promise.resolve({ refreshed: true, pushed: false }),
+);
+mock.module("../services/grant-reconcile", () => ({
+  refreshInstanceGrantsFromDefinition: refreshInstanceGrantsMock,
 }));
 
 import {
@@ -23,7 +30,8 @@ import {
   seedGlobalTenant,
   seedAgentTemplates,
   ensureSystemPrincipal,
-  ensureGlobalMember,
+  ensureMember,
+  lookupMember,
   getEnabledTemplateKeys,
   type ProvisioningDB,
 } from "./tenant-provisioning";
@@ -34,7 +42,6 @@ import { AGENT_TEMPLATES } from "@workbench/agents";
 // biome-ignore lint/suspicious/noExplicitAny: test mock — overrides may omit
 // query keys (e.g. memberAgentInstance), which are merged in from the defaults.
 function makeMockDB(overrides: any = {}): ProvisioningDB {
-  // eslint-disable-next-line prefer-const
   let base: ProvisioningDB;
   // biome-ignore lint/suspicious/noExplicitAny: test mock
   const txMock = mock((fn: (tx: ProvisioningDB) => Promise<unknown>) =>
@@ -101,7 +108,7 @@ describe("provisionMemberInstances", () => {
     agentInstanceFind?: () => Promise<unknown>;
     insertThrows?: (row: Record<string, unknown>) => boolean;
   }) {
-    const inserted: Array<Record<string, unknown>> = [];
+    const inserted: Record<string, unknown>[] = [];
     const insertMock = mock(() => ({
       // biome-ignore lint/suspicious/noExplicitAny: test mock
       values: mock((row: any) => {
@@ -146,6 +153,7 @@ describe("provisionMemberInstances", () => {
     const { db, inserted } = makeCapturingDb({});
 
     const result = await provisionMemberInstances(db as never, {
+      tenantId: GLOBAL.id,
       userId: USER_ID,
       memberPrincipalId: MEMBER_PRINCIPAL,
     });
@@ -175,6 +183,7 @@ describe("provisionMemberInstances", () => {
     const { db, inserted } = makeCapturingDb({});
 
     await provisionMemberInstances(db as never, {
+      tenantId: GLOBAL.id,
       userId: USER_ID,
       memberPrincipalId: MEMBER_PRINCIPAL,
     });
@@ -204,6 +213,7 @@ describe("provisionMemberInstances", () => {
   });
 
   it("is idempotent — existing mapping + instance means no new insert", async () => {
+    refreshInstanceGrantsMock.mockClear();
     const { db, insertMock } = makeCapturingDb({
       mappingFind: () =>
         Promise.resolve({ id: "mai_1", instanceId: "ins_existing" }),
@@ -211,6 +221,7 @@ describe("provisionMemberInstances", () => {
     });
 
     const result = await provisionMemberInstances(db as never, {
+      tenantId: GLOBAL.id,
       userId: USER_ID,
       memberPrincipalId: MEMBER_PRINCIPAL,
     });
@@ -219,6 +230,7 @@ describe("provisionMemberInstances", () => {
       { templateKey: "myra", instanceId: "ins_existing" },
     ]);
     expect(insertMock).not.toHaveBeenCalled();
+    expect(refreshInstanceGrantsMock).toHaveBeenCalledTimes(1);
   });
 
   it("recreates the instance when the mapping exists but its instance is gone", async () => {
@@ -229,6 +241,7 @@ describe("provisionMemberInstances", () => {
     });
 
     const result = await provisionMemberInstances(db as never, {
+      tenantId: GLOBAL.id,
       userId: USER_ID,
       memberPrincipalId: MEMBER_PRINCIPAL,
     });
@@ -244,6 +257,7 @@ describe("provisionMemberInstances", () => {
     });
 
     const result = await provisionMemberInstances(db as never, {
+      tenantId: GLOBAL.id,
       userId: USER_ID,
       memberPrincipalId: MEMBER_PRINCIPAL,
     });
@@ -268,6 +282,7 @@ describe("provisionMemberInstances", () => {
     });
 
     const result = await provisionMemberInstances(db as never, {
+      tenantId: GLOBAL.id,
       userId: USER_ID,
       memberPrincipalId: MEMBER_PRINCIPAL,
     });
@@ -275,16 +290,23 @@ describe("provisionMemberInstances", () => {
     expect(result).toEqual([{ templateKey: "myra", instanceId: "ins_raced" }]);
   });
 
-  it("throws when the global tenant is not seeded", async () => {
-    const db = makeMockDB({
-      query: { tenant: { findFirst: mock(() => Promise.resolve(undefined)) } },
+  it("provisions instances into the GIVEN (non-root) tenant", async () => {
+    const CHILD = "tnt_child";
+    const { db, inserted } = makeCapturingDb({});
+
+    const result = await provisionMemberInstances(db as never, {
+      tenantId: CHILD,
+      userId: USER_ID,
+      memberPrincipalId: MEMBER_PRINCIPAL,
     });
-    await expect(
-      provisionMemberInstances(db as never, {
-        userId: USER_ID,
-        memberPrincipalId: MEMBER_PRINCIPAL,
-      }),
-    ).rejects.toThrow(/not seeded/);
+
+    expect(result.map((r) => r.templateKey)).toEqual(["myra"]);
+    const mappingRow = inserted.find((r) => r.memberPrincipalId !== undefined);
+    expect(mappingRow?.tenantId).toBe(CHILD);
+    const instanceRow = inserted.find(
+      (r) => r.agentId !== undefined && "address" in r,
+    );
+    expect(instanceRow?.tenantId).toBe(CHILD);
   });
 });
 
@@ -308,10 +330,10 @@ describe("getMyraInstanceId", () => {
 describe("seedGlobalTenant", () => {
   // Capture every inserted row so we can classify role and grant rows.
   function makeCapturingDB(opts: {
-    tenantFindResults: Array<{ id: string; slug: string } | undefined>;
+    tenantFindResults: ({ id: string; slug: string } | undefined)[];
     insertThrowsOnTenant?: boolean;
   }) {
-    const inserted: Array<Record<string, unknown>> = [];
+    const inserted: Record<string, unknown>[] = [];
     const tenantFindResults = [...opts.tenantFindResults];
     const tenantFind = mock(() => Promise.resolve(tenantFindResults.shift()));
 
@@ -364,7 +386,7 @@ describe("seedGlobalTenant", () => {
     };
   }
 
-  function classify(inserted: Array<Record<string, unknown>>) {
+  function classify(inserted: Record<string, unknown>[]) {
     const roles = inserted.filter((r) => r.isSystem !== undefined);
     const grants = inserted.filter(
       (r) => r.resource !== undefined && r.action !== undefined,
@@ -455,9 +477,10 @@ describe("seedGlobalTenant", () => {
   });
 });
 
-describe("ensureGlobalMember", () => {
-  const GLOBAL = { id: "tnt_global", slug: "acme" };
-  const MEMBER_ROLE = { id: "rol_member" };
+describe("ensureMember", () => {
+  // A NON-root tenant id, to prove the wrapper operates on whatever tenant it
+  // is given rather than the configured root.
+  const TENANT_ID = "tnt_child";
 
   it("is idempotent — returns the existing principal without inserting", async () => {
     const insertMock = mock(() => ({
@@ -468,28 +491,24 @@ describe("ensureGlobalMember", () => {
     }));
     const db = makeMockDB({
       query: {
-        tenant: { findFirst: mock(() => Promise.resolve(GLOBAL)) },
         principal: {
           findFirst: mock(() => Promise.resolve({ id: "prn_existing" })),
         },
-        role: { findFirst: mock(() => Promise.resolve(MEMBER_ROLE)) },
-        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
       insert: insertMock,
     });
 
-    const result = await ensureGlobalMember(db as never, {
+    const result = await ensureMember(db as never, {
+      tenantId: TENANT_ID,
       userId: "user-abc",
     });
-    expect(result.tenantId).toBe("tnt_global");
+    expect(result.tenantId).toBe(TENANT_ID);
     expect(result.principalId).toBe("prn_existing");
     expect(insertMock).not.toHaveBeenCalled();
   });
 
-  it("creates a user principal for a new user and assigns NO role", async () => {
-    const inserted: Array<Record<string, unknown>> = [];
+  it("creates a user principal in the GIVEN tenant and assigns NO role", async () => {
+    const inserted: Record<string, unknown>[] = [];
     const insertMock = mock(() => ({
       // biome-ignore lint/suspicious/noExplicitAny: test mock
       values: mock((row: any) => {
@@ -502,25 +521,21 @@ describe("ensureGlobalMember", () => {
     }));
     const db = makeMockDB({
       query: {
-        tenant: { findFirst: mock(() => Promise.resolve(GLOBAL)) },
         principal: { findFirst: mock(() => Promise.resolve(undefined)) },
-        role: { findFirst: mock(() => Promise.resolve(MEMBER_ROLE)) },
-        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
       insert: insertMock,
     });
 
-    const result = await ensureGlobalMember(db as never, {
+    const result = await ensureMember(db as never, {
+      tenantId: TENANT_ID,
       userId: "user-abc",
     });
-    expect(result.tenantId).toBe("tnt_global");
+    expect(result.tenantId).toBe(TENANT_ID);
 
-    // The principal is created as a user principal in the global tenant.
+    // The principal is created in the tenant we passed, not the configured root.
     const principalRow = inserted.find((r) => r.kind === "user");
     expect(principalRow?.refId).toBe("user-abc");
-    expect(principalRow?.tenantId).toBe("tnt_global");
+    expect(principalRow?.tenantId).toBe(TENANT_ID);
 
     // No role is assigned on join — membership is the principal row alone.
     const roleAssignment = inserted.find((r) => r.roleId !== undefined);
@@ -528,8 +543,6 @@ describe("ensureGlobalMember", () => {
   });
 
   it("is race-safe — reselects the principal when the insert hits a unique violation", async () => {
-    // First call (pre-check) finds nothing; second call (catch-block reselect)
-    // finds the row a concurrent signup created.
     let principalFindCalls = 0;
     const principalFind = mock(() => {
       principalFindCalls += 1;
@@ -555,37 +568,47 @@ describe("ensureGlobalMember", () => {
       }),
     }));
     const db = makeMockDB({
-      query: {
-        tenant: { findFirst: mock(() => Promise.resolve(GLOBAL)) },
-        principal: { findFirst: principalFind },
-        role: { findFirst: mock(() => Promise.resolve(MEMBER_ROLE)) },
-        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
-      },
+      query: { principal: { findFirst: principalFind } },
       insert: insertMock,
     });
 
-    const result = await ensureGlobalMember(db as never, {
+    const result = await ensureMember(db as never, {
+      tenantId: TENANT_ID,
       userId: "user-abc",
     });
     expect(result.principalId).toBe("prn_raced");
   });
+});
 
-  it("throws if the global tenant has not been seeded", async () => {
+describe("lookupMember", () => {
+  const TENANT_ID = "tnt_child";
+
+  it("returns membership in the given tenant when the principal exists", async () => {
     const db = makeMockDB({
       query: {
-        tenant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        principal: { findFirst: mock(() => Promise.resolve(undefined)) },
-        role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
+        principal: {
+          findFirst: mock(() => Promise.resolve({ id: "prn_found" })),
+        },
       },
     });
-    await expect(
-      ensureGlobalMember(db as never, { userId: "user-abc" }),
-    ).rejects.toThrow();
+    const result = await lookupMember(db as never, {
+      tenantId: TENANT_ID,
+      userId: "user-abc",
+    });
+    expect(result).toEqual({ tenantId: TENANT_ID, principalId: "prn_found" });
+  });
+
+  it("returns null when the user has no principal in the given tenant", async () => {
+    const db = makeMockDB({
+      query: {
+        principal: { findFirst: mock(() => Promise.resolve(undefined)) },
+      },
+    });
+    const result = await lookupMember(db as never, {
+      tenantId: TENANT_ID,
+      userId: "user-abc",
+    });
+    expect(result).toBeNull();
   });
 });
 
@@ -674,19 +697,39 @@ describe("ensureSystemPrincipal", () => {
 
 describe("seedAgentTemplates", () => {
   const GLOBAL = { id: "tnt_global", slug: "acme" };
+  // A NON-root tenant id, to prove the wrapper seeds wherever it is pointed.
+  const CHILD_TENANT = "tnt_child";
 
-  it("throws when the global tenant is not seeded", async () => {
+  it("seeds templates into the given (non-root) tenant", async () => {
+    const agentInserts: Record<string, unknown>[] = [];
     const db = makeMockDB({
       query: {
         tenant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        principal: { findFirst: mock(() => Promise.resolve(undefined)) },
-        role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agent: { findFirst: mock(() => Promise.resolve(undefined)) },
-        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
+        principal: {
+          findFirst: mock(() => Promise.resolve({ id: "prn_system" })),
+        },
+        agent: {
+          findFirst: mock(() => Promise.resolve(undefined)),
+          findMany: mock(() => Promise.resolve([])),
+        },
       },
+      insert: mock(() => ({
+        values: mock((vals: Record<string, unknown>) => {
+          if (!("version" in vals)) agentInserts.push(vals);
+          return {
+            returning: mock(() => Promise.resolve([{ id: vals["id"] }])),
+            onConflictDoNothing: mock(() => Promise.resolve([])),
+          };
+        }),
+      })),
     });
-    await expect(seedAgentTemplates(db as never)).rejects.toThrow();
+
+    await seedAgentTemplates(db as never, CHILD_TENANT);
+
+    expect(agentInserts.length).toBe(AGENT_TEMPLATES.length);
+    for (const row of agentInserts) {
+      expect(row["tenantId"]).toBe(CHILD_TENANT);
+    }
   });
 
   it("is idempotent — existing definitions are not re-inserted", async () => {
@@ -715,13 +758,13 @@ describe("seedAgentTemplates", () => {
       insert: insertMock,
     });
 
-    await seedAgentTemplates(db as never);
+    await seedAgentTemplates(db as never, GLOBAL.id);
     expect(insertMock).not.toHaveBeenCalled();
   });
 
   it("inserts one agent row per template, owned by the system principal", async () => {
-    const agentInserts: Array<Record<string, unknown>> = [];
-    const versionInserts: Array<Record<string, unknown>> = [];
+    const agentInserts: Record<string, unknown>[] = [];
+    const versionInserts: Record<string, unknown>[] = [];
     const insertMock = mock(() => ({
       values: mock((vals: Record<string, unknown>) => {
         if ("version" in vals) {
@@ -750,7 +793,7 @@ describe("seedAgentTemplates", () => {
       insert: insertMock,
     });
 
-    await seedAgentTemplates(db as never);
+    await seedAgentTemplates(db as never, GLOBAL.id);
 
     expect(agentInserts.length).toBe(AGENT_TEMPLATES.length);
     expect(versionInserts.length).toBe(AGENT_TEMPLATES.length);
@@ -780,7 +823,7 @@ describe("seedAgentTemplates", () => {
   });
 
   it("persists toolPackages on update for every agent template", async () => {
-    const updateCapture: Array<Record<string, unknown>> = [];
+    const updateCapture: Record<string, unknown>[] = [];
     const db = makeMockDB({
       query: {
         tenant: { findFirst: mock(() => Promise.resolve(GLOBAL)) },
@@ -810,7 +853,7 @@ describe("seedAgentTemplates", () => {
       })),
     });
 
-    await seedAgentTemplates(db as never);
+    await seedAgentTemplates(db as never, GLOBAL.id);
 
     // All templates trigger the update path (mock returns existing for every findFirst).
     // Updates fire in AGENT_TEMPLATES order, so index alignment is stable.
@@ -824,7 +867,7 @@ describe("seedAgentTemplates", () => {
   });
 
   it("writes modelRequirements derived from each template on insert", async () => {
-    const agentInserts: Array<Record<string, unknown>> = [];
+    const agentInserts: Record<string, unknown>[] = [];
     const db = makeMockDB({
       query: {
         tenant: { findFirst: mock(() => Promise.resolve(GLOBAL)) },
@@ -849,7 +892,7 @@ describe("seedAgentTemplates", () => {
       })),
     });
 
-    await seedAgentTemplates(db as never);
+    await seedAgentTemplates(db as never, GLOBAL.id);
 
     for (const template of AGENT_TEMPLATES) {
       const row = agentInserts.find((r) => r["name"] === template.name);
@@ -860,7 +903,7 @@ describe("seedAgentTemplates", () => {
   });
 
   it("writes modelRequirements derived from each template on update", async () => {
-    const updateCapture: Array<Record<string, unknown>> = [];
+    const updateCapture: Record<string, unknown>[] = [];
     const db = makeMockDB({
       query: {
         tenant: { findFirst: mock(() => Promise.resolve(GLOBAL)) },
@@ -889,7 +932,7 @@ describe("seedAgentTemplates", () => {
       })),
     });
 
-    await seedAgentTemplates(db as never);
+    await seedAgentTemplates(db as never, GLOBAL.id);
 
     expect(updateCapture).toHaveLength(AGENT_TEMPLATES.length);
     for (let i = 0; i < AGENT_TEMPLATES.length; i++) {
@@ -924,7 +967,7 @@ describe("getEnabledTemplateKeys", () => {
       config: null,
     });
 
-    const templates = await getEnabledTemplateKeys(db as never);
+    const templates = await getEnabledTemplateKeys(db as never, "tnt_global");
 
     expect(templates.map((t) => t.key)).toEqual(["myra"]);
   });
@@ -936,7 +979,7 @@ describe("getEnabledTemplateKeys", () => {
       config: { enabledAgentTemplates: [] },
     });
 
-    const templates = await getEnabledTemplateKeys(db as never);
+    const templates = await getEnabledTemplateKeys(db as never, "tnt_global");
 
     expect(templates.map((t) => t.key)).toEqual(["myra"]);
   });
@@ -948,7 +991,7 @@ describe("getEnabledTemplateKeys", () => {
       config: { enabledAgentTemplates: ["oat", "myra"] },
     });
 
-    const templates = await getEnabledTemplateKeys(db as never);
+    const templates = await getEnabledTemplateKeys(db as never, "tnt_global");
     const keys = templates.map((t) => t.key).sort();
 
     expect(keys).toEqual(["myra", "oat"]);
@@ -962,16 +1005,16 @@ describe("getEnabledTemplateKeys", () => {
       config: { enabledAgentTemplates: ["myra", "does-not-exist"] },
     });
 
-    const templates = await getEnabledTemplateKeys(db as never);
+    const templates = await getEnabledTemplateKeys(db as never, "tnt_global");
 
     expect(templates.map((t) => t.key)).toEqual(["myra"]);
   });
 
-  it("throws when the global tenant is not seeded", async () => {
+  it("throws when the tenant row is not found", async () => {
     const db = makeTenantQueryDB(undefined);
 
-    await expect(getEnabledTemplateKeys(db as never)).rejects.toThrow(
-      /not seeded/,
-    );
+    await expect(
+      getEnabledTemplateKeys(db as never, "tnt_global"),
+    ).rejects.toThrow(/not found/);
   });
 });

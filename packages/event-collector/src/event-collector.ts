@@ -12,16 +12,16 @@
 // proves out (CL-1656). Do not diverge the collector behavior here; the fix
 // lives entirely in the registry's dispatch ordering.
 
-import { eq } from 'drizzle-orm';
+import { eq } from "drizzle-orm";
 
-import { inferenceTurn, turnPart } from '@intx/db/schema';
-import { getLogger } from '@intx/log';
-import type { InferenceEvent, ContentBlock } from '@intx/types/runtime';
-import { type DB, parseTurnPartType } from '@intx/db';
+import { inferenceTurn, turnPart } from "@intx/db/schema";
+import { getLogger } from "@intx/log";
+import type { InferenceEvent, ContentBlock } from "@intx/types/runtime";
+import { type DB, parseTurnPartType } from "@intx/db";
 
-import { generateId } from '@intx/hub-common';
+import { generateId } from "@intx/hub-common";
 
-const log = getLogger(['hub', 'event-collector']);
+const log = getLogger(["hub", "event-collector"]);
 
 export type TurnToolCall = {
   name: string;
@@ -32,7 +32,7 @@ export type TurnToolCall = {
 
 export type TurnFinalized = {
   turnId: string;
-  status: 'completed' | 'failed';
+  status: "completed" | "failed";
   text: string;
   hadReply: boolean;
   hadError: boolean;
@@ -50,14 +50,16 @@ export type EventCollector = {
 };
 
 export type EventCollectorConfig = {
-  db: DB['db'];
+  db: DB["db"];
   sessionId: string;
   instanceId: string;
   tenantId: string;
   onTurnFinalized?: (turn: TurnFinalized) => void;
 };
 
-export function createEventCollector(config: EventCollectorConfig): EventCollector {
+export function createEventCollector(
+  config: EventCollectorConfig,
+): EventCollector {
   const { db, sessionId, instanceId, tenantId, onTurnFinalized } = config;
 
   // Current inference turn being accumulated. A new turn is created on each
@@ -77,10 +79,10 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
   // Accumulated visible text content for the current turn. Only text blocks
   // from inference.done (not thinking/reasoning) are included. Reset on each
   // new turn.
-  let accumulatedText = '';
+  let accumulatedText = "";
   // In-progress text from inference.text.delta events during the current
   // inference step. Reset on inference.done (when accumulatedText takes over).
-  let streamingText = '';
+  let streamingText = "";
   // Set when inference.error fires. Unlike pendingError (which resets on
   // connector.reply), this persists until finalization so the callback can
   // report whether an inference error occurred during the turn.
@@ -99,29 +101,29 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
 
   async function onEvent(event: InferenceEvent): Promise<void> {
     switch (event.type) {
-      case 'inference.start':
+      case "inference.start":
         await beginTurn(event.data.model);
-        await insertPart('step-start', null, { model: event.data.model });
+        await insertPart("step-start", null, { model: event.data.model });
         break;
-      case 'inference.text.delta':
+      case "inference.text.delta":
         streamingText += event.data.token;
         break;
-      case 'inference.done':
+      case "inference.done":
         await handleInferenceDone(event.data.turn.content);
-        streamingText = '';
+        streamingText = "";
         break;
-      case 'tool.done': {
+      case "tool.done": {
         const callId = event.data.result.callId;
         const isError = event.data.result.isError ?? false;
-        await insertPart('tool', null, {
-          kind: 'result',
+        await insertPart("tool", null, {
+          kind: "result",
           callId,
           content: event.data.result.content,
           isError,
         });
         const name = callNames.get(callId) ?? callId;
         const raw = event.data.result.content;
-        const content = typeof raw === 'string' ? raw : JSON.stringify(raw);
+        const content = typeof raw === "string" ? raw : JSON.stringify(raw);
         accumulatedToolCalls.push({
           name,
           arguments: callArgs.get(callId) ?? {},
@@ -133,10 +135,10 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
         }
         break;
       }
-      case 'inference.error':
+      case "inference.error":
         pendingError = true;
         turnHadError = true;
-        await insertPart('error', event.data.error.message, {
+        await insertPart("error", event.data.error.message, {
           category: event.data.error.category,
           ...(event.data.error.statusCode !== undefined
             ? { statusCode: event.data.error.statusCode }
@@ -147,49 +149,49 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
           message: event.data.error.message,
         });
         break;
-      case 'connector.reply':
+      case "connector.reply":
         if (finalized) break;
         // Only persist reply content when it originated from an error path.
         // On normal turns inference.done already persisted the text parts.
         if (pendingError) {
           accumulatedText += event.data.content;
-          await insertPart('text', event.data.content, null);
+          await insertPart("text", event.data.content, null);
           pendingError = false;
         }
-        await finalizeTurn(turnHadError ? 'failed' : 'completed', true, true);
+        await finalizeTurn(turnHadError ? "failed" : "completed", true, true);
         break;
-      case 'reactor.done':
-        await finalizeTurn('completed', true, false);
+      case "reactor.done":
+        await finalizeTurn("completed", true, false);
         break;
-      case 'reactor.error':
+      case "reactor.error":
         if (event.data.fatal && !finalized) {
           // The reactor failed before any inference started (e.g., context
           // store load failure), but the user needs to see why their agent
           // failed, and without a turn there is no container for the error.
           if (currentTurnId === null) {
-            await beginTurn('unknown');
+            await beginTurn("unknown");
           }
           turnHadError = true;
           // Push after beginTurn so the error survives the array reset.
           accumulatedErrors.push({
-            category: 'reactor_error',
+            category: "reactor_error",
             message: event.data.error,
           });
-          await insertPart('error', event.data.error, {
-            category: 'reactor_error',
+          await insertPart("error", event.data.error, {
+            category: "reactor_error",
           });
-          await finalizeTurn('failed', true, false);
+          await finalizeTurn("failed", true, false);
         } else if (!event.data.fatal && !finalized) {
           if (currentTurnId === null) {
-            await beginTurn('unknown');
+            await beginTurn("unknown");
           }
           turnHadError = true;
           accumulatedErrors.push({
-            category: 'reactor_error',
+            category: "reactor_error",
             message: event.data.error,
           });
-          await insertPart('error', event.data.error, {
-            category: 'reactor_error',
+          await insertPart("error", event.data.error, {
+            category: "reactor_error",
           });
         }
         break;
@@ -204,16 +206,16 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
     // A previous turn is still open — this is normal in multi-step tool-use
     // loops where inference.start fires again after tools return.
     if (currentTurnId !== null && !finalized) {
-      await finalizeTurn('completed', true, false);
+      await finalizeTurn("completed", true, false);
     }
 
-    currentTurnId = generateId('inferenceTurn');
+    currentTurnId = generateId("inferenceTurn");
     lastTurnId = currentTurnId;
     ordinal = 0;
     finalized = false;
     pendingError = false;
-    accumulatedText = '';
-    streamingText = '';
+    accumulatedText = "";
+    streamingText = "";
     turnHadError = false;
     accumulatedErrors = [];
     callNames.clear();
@@ -227,7 +229,7 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
       instanceId,
       tenantId,
       model,
-      status: 'running',
+      status: "running",
       startedAt: new Date(),
     });
   }
@@ -235,21 +237,21 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
   async function handleInferenceDone(content: ContentBlock[]): Promise<void> {
     for (const block of content) {
       switch (block.type) {
-        case 'text':
+        case "text":
           accumulatedText += block.text;
-          await insertPart('text', block.text, null);
+          await insertPart("text", block.text, null);
           break;
-        case 'thinking':
-          await insertPart('reasoning', block.thinking, null);
+        case "thinking":
+          await insertPart("reasoning", block.thinking, null);
           break;
-        case 'redacted_thinking':
+        case "redacted_thinking":
           // The opaque `data` blob is meaningless to humans and
           // must be preserved verbatim for echo-back on follow-up
           // turns; persisting it as a reasoning row would invite
           // truncation or display. Skip and let the adapter layer
           // own the round-trip.
           break;
-        case 'refusal':
+        case "refusal":
           // Refusal blocks carry human-readable text the model
           // emitted when it declined a structured-output request.
           // A dedicated `refusal` part kind keeps the signal
@@ -258,58 +260,58 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
           // call failed or the protocol mismatched). Session
           // readers can branch on the part type to render policy
           // declines differently from regular assistant output.
-          await insertPart('refusal', block.reason, null);
+          await insertPart("refusal", block.reason, null);
           break;
-        case 'tool_call':
+        case "tool_call":
           callNames.set(block.id, block.name);
           callArgs.set(block.id, block.arguments);
-          await insertPart('tool', null, {
-            kind: 'call',
+          await insertPart("tool", null, {
+            kind: "call",
             callId: block.id,
             name: block.name,
             arguments: block.arguments,
           });
           break;
-        case 'tool_result':
+        case "tool_result":
           // Tool results in the content block are echoes of earlier
           // tool.done events. Skip to avoid duplication.
           break;
-        case 'citation':
+        case "citation":
           // Citations annotate model output by reference (URI or
           // document index). Persistence semantics — whether the
           // cited source warrants an audit row of its own — are not
           // yet settled; skip until they are.
           break;
-        case 'code_execution_request':
-        case 'code_execution_result':
+        case "code_execution_request":
+        case "code_execution_result":
           // Server-side code execution requests and results.
           // Persistence semantics — whether the code and its output
           // warrant audit rows of their own, and how to relate the
           // pair through the requestId back-pointer — are not yet
           // settled; skip until they are.
           break;
-        case 'image':
-        case 'audio':
-        case 'video':
-        case 'document': {
+        case "image":
+        case "audio":
+        case "video":
+        case "document": {
           // All media block variants persist into the generic "file"
           // part bucket. The block's own `type` distinguishes the
           // semantic role; `mimeType` distinguishes the encoding; the
           // MediaSource discriminant distinguishes inline vs reference.
           const source = block.source;
-          if (source.kind === 'base64') {
-            await insertPart('file', null, {
-              kind: 'base64',
+          if (source.kind === "base64") {
+            await insertPart("file", null, {
+              kind: "base64",
               mimeType: source.mimeType,
               dataLength: source.data.length,
             });
-          } else if (source.kind === 'file-reference') {
-            await insertPart('file', null, {
-              kind: 'file-reference',
+          } else if (source.kind === "file-reference") {
+            await insertPart("file", null, {
+              kind: "file-reference",
               mimeType: source.mimeType,
               reference: source.reference,
             });
-          } else if (source.kind === 'url') {
+          } else if (source.kind === "url") {
             // The `url` MediaSource variant carries a self-contained
             // dereferenceable HTTP(S) URL (Gemini accepts these in
             // `fileData/fileUri`; other adapters route similarly).
@@ -322,8 +324,8 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
             // `kind` is the structural source of truth, and the
             // field-per-variant shape keeps naive substring queries
             // honest.
-            await insertPart('file', null, {
-              kind: 'url',
+            await insertPart("file", null, {
+              kind: "url",
               mimeType: source.mimeType,
               url: source.url,
             });
@@ -337,13 +339,13 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
     }
 
     // Mark the end of this inference step.
-    await insertPart('step-finish', null, null);
+    await insertPart("step-finish", null, null);
   }
 
   async function finalizeTurn(
-    status: 'completed' | 'failed',
+    status: "completed" | "failed",
     notify: boolean,
-    hadReply: boolean
+    hadReply: boolean,
   ): Promise<void> {
     if (currentTurnId === null || finalized) return;
     finalized = true;
@@ -376,13 +378,13 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
 
     log.warn`Abandoning running turn ${currentTurnId} for session ${sessionId}`;
 
-    await finalizeTurn('failed', false, false);
+    await finalizeTurn("failed", false, false);
   }
 
   async function insertPart(
     partType: string,
     content: string | null,
-    metadata: Record<string, unknown> | null
+    metadata: Record<string, unknown> | null,
   ): Promise<void> {
     if (currentTurnId === null) {
       log.warn`Dropping ${partType} part: no active turn for session ${sessionId}`;
@@ -390,7 +392,7 @@ export function createEventCollector(config: EventCollectorConfig): EventCollect
     }
 
     const values: typeof turnPart.$inferInsert = {
-      id: generateId('turnPart'),
+      id: generateId("turnPart"),
       turnId: currentTurnId,
       sessionId,
       type: parseTurnPartType(partType),

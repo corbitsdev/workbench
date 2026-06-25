@@ -1,6 +1,9 @@
-import { awaitSignal, defineWorkflow, map } from '@intx/workflow';
-import { deterministicToolStep, inlineInferenceStep } from '@workbench/agents';
-import { buildCollateralGenerationSystemPrompt, buildExtractionSystemPrompt } from './prompts';
+import { awaitSignal, defineWorkflow, map } from "@intx/workflow";
+import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
+import {
+  buildCollateralGenerationSystemPrompt,
+  buildExtractionSystemPrompt,
+} from "./prompts";
 
 // -------------------------------------------------------------------------
 // Agent definitions
@@ -17,10 +20,10 @@ import { buildCollateralGenerationSystemPrompt, buildExtractionSystemPrompt } fr
 // Workflow metadata
 // -------------------------------------------------------------------------
 
-export const label = 'Collateral Generation';
+export const label = "Collateral Generation";
 export const description =
-  'Analyze a call transcript for customer pain points and generate targeted sales collateral.';
-export const kind = 'pain-point-collateral';
+  "Analyze a call transcript for customer pain points and generate targeted sales collateral.";
+export const kind = "pain-point-collateral";
 
 // -------------------------------------------------------------------------
 // Workflow definition — 8-step guided flow
@@ -54,85 +57,94 @@ export const kind = 'pain-point-collateral';
 // -------------------------------------------------------------------------
 
 const generateStep = inlineInferenceStep({
-  id: 'pain-point-collateral-generate',
+  id: "pain-point-collateral-generate",
   systemPrompt: buildCollateralGenerationSystemPrompt(),
   // trigger.payload = one {format, painPointId, painPointTitle, painPointDetail, severity} item
   // The UI pre-computes the cartesian product (max 3 pain points × 3 formats = 9 items) and
   // embeds all LLM-needed data in each item — no merge needed.
-  input: { from: 'trigger.payload' },
+  input: { from: "trigger.payload" },
 });
 
 const persistStep = deterministicToolStep({
-  id: 'pain-point-collateral-persist',
-  tool: 'artifact_create',
+  id: "pain-point-collateral-persist",
+  tool: "artifact_create",
   // map passes each approved item as `trigger.payload` ({format, title,
   // content}); point the step input at it so the argMap fields resolve.
-  input: { from: 'trigger.payload' },
+  input: { from: "trigger.payload" },
   argMap: {
-    title: { from: 'title' },
-    kind: { from: 'format' },
-    content: { from: 'content' },
+    title: { from: "title" },
+    kind: { from: "format" },
+    content: { from: "content" },
   },
 });
 
 export const workflow = defineWorkflow({
   id: kind,
-  trigger: { type: 'manual' },
+  trigger: { type: "manual" },
   steps: {
     // 1. Fetch the Granola note list
     intake: deterministicToolStep({
-      id: 'pain-point-collateral-intake',
-      tool: 'granola_list_notes',
+      id: "pain-point-collateral-intake",
+      tool: "granola_list_notes",
       input: { literal: {} },
     }),
 
     // 2. Human selects a note
-    select: awaitSignal({ name: 'note-selection', after: ['intake'] }),
+    select: awaitSignal({ name: "note-selection", after: ["intake"] }),
 
     // 3. Fetch selected note transcript
     fetch: deterministicToolStep({
-      id: 'pain-point-collateral-fetch',
-      tool: 'granola_get_note',
-      input: { from: 'steps.select.output' },
-      after: ['select'],
+      id: "pain-point-collateral-fetch",
+      tool: "granola_get_note",
+      input: { from: "steps.select.output" },
+      after: ["select"],
     }),
 
     // 4. Human adds context
-    context: awaitSignal({ name: 'context', after: ['fetch'] }),
+    context: awaitSignal({ name: "context", after: ["fetch"] }),
 
     // 5. LLM extracts pain points (input = fetched transcript + user context merged).
     //    Inline single-turn inference (CL-2251): no tools, so no per-step session.
     analyze: inlineInferenceStep({
-      id: 'pain-point-collateral-analyze',
+      id: "pain-point-collateral-analyze",
       systemPrompt: buildExtractionSystemPrompt(),
       input: {
-        merge: [{ from: 'steps.fetch.output' }, { from: 'steps.context.output' }],
+        merge: [
+          { from: "steps.fetch.output" },
+          { from: "steps.context.output" },
+        ],
       },
-      after: ['context'],
+      after: ["context"],
     }),
 
     // 6. Human selects which pain points to address
-    ppSelection: awaitSignal({ name: 'pain-point-selection', after: ['analyze'] }),
+    ppSelection: awaitSignal({
+      name: "pain-point-selection",
+      after: ["analyze"],
+    }),
 
     // 7. Human selects output formats — payload: {formats: Array<{format: string}>}
-    fmtSelection: awaitSignal({ name: 'format-selection', after: ['ppSelection'] }),
+    fmtSelection: awaitSignal({
+      name: "format-selection",
+      after: ["ppSelection"],
+    }),
 
     // 8. Generate one collateral piece per (pain point × format) item, capped at 9
     generate: map({
-      over: { from: 'steps.fmtSelection.output.items' },
+      over: { from: "steps.fmtSelection.output.items" },
       step: generateStep,
-      after: ['fmtSelection'],
+      after: ["fmtSelection"],
     }),
 
     // 9. Human approves/denies each piece; panel sends all decisions plus
     //    approvedPieces for persistence.
-    review: awaitSignal({ name: 'review', after: ['generate'] }),
+    review: awaitSignal({ name: "review", after: ["generate"] }),
 
     // 10. Create one artifact per approved piece (sequential map)
     persist: map({
-      over: { from: 'steps.review.output.approvedPieces' },
+      over: { from: "steps.review.output.approvedPieces" },
       step: persistStep,
-      after: ['review'],
+      after: ["review"],
     }),
   },
 });

@@ -8,52 +8,43 @@ export interface SeedWorkspaceFile {
   content: string;
 }
 
-function stubFor(title: string, description: string): string {
-  return `# ${title}\n\n${description}\n`;
-}
-
 /**
  * Myra's documented memory files (see the personal-agent prompt `<notes>`
  * section). On first launch none of these exist, so reading them fails; the
  * harness seeds these stubs so the agent always has them to read and append to.
+ *
+ * One slot only: durable memory (MEMORY.md), organized into sections — folding
+ * the former CONTACTS/ERRORS/HUMAN files in (and dropping the transient
+ * SCRATCHPAD) keeps the agent from fanning reads and writes across
+ * near-identical files.
  */
 export const PERSONAL_AGENT_SEED_FILES: SeedWorkspaceFile[] = [
   {
-    path: 'MEMORY.md',
-    content: stubFor('Memory', 'Durable facts worth keeping across tasks.'),
-  },
-  {
-    path: 'SCRATCHPAD.md',
-    content: stubFor('Scratchpad', 'Transient notes for the current task.'),
-  },
-  {
-    path: 'CONTACTS.md',
-    content: stubFor(
-      'Contacts',
-      'Agents and people: who they are, what they are for, their addresses.'
-    ),
-  },
-  {
-    path: 'ERRORS.md',
-    content: stubFor('Errors', 'Failures hit, with enough detail to avoid them next time.'),
-  },
-  {
-    path: 'HUMAN.md',
-    content: stubFor(
-      'Human',
-      'Standing brief on the person you work for: preferences, priorities, open tasks and todos.'
-    ),
-  },
-  {
-    path: 'PENDING.md',
-    content: stubFor('Pending', 'Open delegations awaiting a reply.'),
+    path: "MEMORY.md",
+    content: `# Memory
+
+Durable memory worth keeping across tasks. Keep it organized under these headings; add to the right one rather than starting new files.
+
+## The Person
+Standing brief on the person you work for: preferences, priorities, open tasks and todos.
+
+## Facts
+Durable facts and decisions worth remembering.
+
+## Contacts
+Agents and people: who they are, what they are for, their addresses.
+
+## Errors
+Failures you hit, with enough detail to avoid them next time.
+`,
   },
 ];
 
-const SEED_MARKER_PREFIX = '<!-- workbench:memory-seed=';
-const SEED_MARKER_SUFFIX = ' -->';
+const SEED_MARKER_PREFIX = "<!-- workbench:memory-seed=";
+const SEED_MARKER_SUFFIX = " -->";
 const SEED_MARKER_PATTERN = /<!--\s*workbench:memory-seed=([^>]*?)\s*-->/;
-const SEED_MARKER_PATTERN_GLOBAL = /<!--\s*workbench:memory-seed=([^>]*?)\s*-->/g;
+const SEED_MARKER_PATTERN_GLOBAL =
+  /<!--\s*workbench:memory-seed=([^>]*?)\s*-->/g;
 
 /**
  * A seed-file name is always a plain basename. Anything with a path separator or
@@ -62,7 +53,12 @@ const SEED_MARKER_PATTERN_GLOBAL = /<!--\s*workbench:memory-seed=([^>]*?)\s*-->/
  * containment check) — CL-1952.
  */
 function assertPlainBasename(name: string): void {
-  if (name.includes('/') || name.includes('\\') || name === '..' || name.includes('..')) {
+  if (
+    name.includes("/") ||
+    name.includes("\\") ||
+    name === ".." ||
+    name.includes("..")
+  ) {
     throw new Error(`Seed marker entry "${name}" is not a plain basename`);
   }
 }
@@ -75,11 +71,20 @@ function assertPlainBasename(name: string): void {
  * the whole prompt, which the appended section defeats (CL-1952).
  */
 export function buildSeedMarker(files: SeedWorkspaceFile[]): string {
-  const names = files.map((f) => f.path).join(',');
+  const names = files.map((f) => f.path).join(",");
   return `${SEED_MARKER_PREFIX}${names}${SEED_MARKER_SUFFIX}`;
 }
 
-const seedFileByPath = new Map(PERSONAL_AGENT_SEED_FILES.map((file) => [file.path, file]));
+const seedFileByPath = new Map(
+  PERSONAL_AGENT_SEED_FILES.map((file) => [file.path, file]),
+);
+
+/**
+ * Basenames that older deployed prompts may still list in the memory-seed marker
+ * but are no longer seeded. Skipped on parse so sidecar session restore survives
+ * prompt/schema drift without re-launching every instance (CL-1952).
+ */
+const RETIRED_SEED_BASENAMES = new Set<string>(["SCRATCHPAD.md"]);
 
 /**
  * Whether a system prompt carries a seed marker at all. Lets the harness tell a
@@ -98,25 +103,35 @@ export function hasSeedMarker(systemPrompt: string): boolean {
  * marker (any non-personal agent) yields an empty list.
  *
  * A marker naming a file with no known stub is a contract break between the
- * prompt builder and this table — fail loudly rather than silently seed less.
+ * prompt builder and this table — fail loudly rather than silently seed less,
+ * except for basenames in `RETIRED_SEED_BASENAMES` (dropped from the table but
+ * still listed on prompts persisted before a sidecar restart).
  */
 export function parseSeedMarker(systemPrompt: string): SeedWorkspaceFile[] {
   const match = SEED_MARKER_PATTERN.exec(systemPrompt);
   if (!match || match[1] === undefined) return [];
 
   const declared = match[1]
-    .split(',')
+    .split(",")
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
 
-  return declared.map((name) => {
+  const resolved: SeedWorkspaceFile[] = [];
+  for (const name of declared) {
     assertPlainBasename(name);
     const file = seedFileByPath.get(name);
-    if (!file) {
-      throw new Error(`Seed marker declares "${name}" but no stub content is registered for it`);
+    if (file) {
+      resolved.push(file);
+      continue;
     }
-    return file;
-  });
+    if (RETIRED_SEED_BASENAMES.has(name)) {
+      continue;
+    }
+    throw new Error(
+      `Seed marker declares "${name}" but no stub content is registered for it`,
+    );
+  }
+  return resolved;
 }
 
 /**
@@ -129,7 +144,7 @@ export function parseSeedMarker(systemPrompt: string): SeedWorkspaceFile[] {
  */
 export function stripSeedMarker(systemPrompt: string): string {
   return systemPrompt
-    .replace(SEED_MARKER_PATTERN_GLOBAL, '')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(SEED_MARKER_PATTERN_GLOBAL, "")
+    .replace(/\n{3,}/g, "\n\n")
     .trimEnd();
 }

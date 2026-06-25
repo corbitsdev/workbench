@@ -300,7 +300,7 @@ export async function launchAgentSession(
   // Resolve the session to launch under. Reuse the instance's existing active
   // session (resume) rather than minting a new one on every call. Minting
   // unconditionally caused session churn (CL-1651): a transient sidecar
-  // disconnect made the instance briefly unroutable, so every GET /v1/me poll
+  // disconnect made the instance briefly unroutable, so every POST /v1/me sync poll
   // slipped past the routable guard in relaunchInstanceIfNeeded and created a
   // fresh session, orphaning the prior one and dropping in-flight live events
   // whose turns belonged to the superseded session.
@@ -414,7 +414,7 @@ export async function launchAgentSession(
 }
 
 // Relaunch a Myra instance's session if it has no active session but has credentials granted.
-// Called from GET /v1/me so existing users get Myra running automatically on login.
+// Called from POST /v1/me so existing users get Myra running automatically on login.
 export async function relaunchInstanceIfNeeded(
   db: DB["db"],
   sessionService: SessionService,
@@ -436,7 +436,7 @@ export async function relaunchInstanceIfNeeded(
   // address is routable on a connected sidecar the agent is live; and even while
   // momentarily unroutable during a sidecar reconnect, an instance that already
   // has an active session is restored by the sidecar (see the agent.reconnected
-  // path in hub-session-orchestrator). Relaunching from the poll-driven /v1/me
+  // path in hub-session-orchestrator). Relaunching from the poll-driven POST /v1/me
   // path in either case churns sessions and can evict the live agent ("Agent
   // already exists" → router eviction → 502). So relaunch only for a genuine cold
   // start: an instance with no active session yet. (CL-1651)
@@ -462,7 +462,7 @@ export async function relaunchInstanceIfNeeded(
   if (!agentRow?.systemPrompt) return;
 
   // Guard: do not attempt launch if the agent's model requirements cannot
-  // resolve against the tenant catalog. Without this, every GET /v1/me poll for
+  // resolve against the tenant catalog. Without this, every POST /v1/me sync for
   // a tenant whose catalog is not yet seeded fires a launch that always fails
   // with `no_requirements`. This is the same resolution launchAgentSession runs,
   // so the guard and the launch agree by construction.
@@ -489,6 +489,31 @@ export async function relaunchInstanceIfNeeded(
     if (isAgentAlreadyExistsError(err)) return;
     throw err;
   }
+}
+
+/**
+ * Structured description of a failed launch for the HTTP layer. `phase` is the
+ * SessionLaunchError phase ("write" | "provision" | "pack" | "start") when the
+ * failure carries one; `detail` is the underlying cause message (which the
+ * tool-package loader and harness already stamp with the offending package /
+ * provider name), so the response names the failing tool package wherever the
+ * sidecar surfaced it.
+ */
+export type LaunchErrorDescription = {
+  phase: string | null;
+  detail: string;
+};
+
+export function describeLaunchError(err: unknown): LaunchErrorDescription {
+  if (err instanceof SessionLaunchError) {
+    const cause = err.cause;
+    const detail = cause instanceof Error ? cause.message : err.message;
+    return { phase: err.phase, detail };
+  }
+  if (err instanceof Error) {
+    return { phase: null, detail: err.message };
+  }
+  return { phase: null, detail: String(err) };
 }
 
 /**

@@ -9,7 +9,7 @@ import type { HubDb } from "../db";
 // the chain → HarnessConfig wiring without a real catalog.
 let resolution: unknown = { ok: true, sources: [] };
 const resolveModelSources = mock(
-  async (_db: unknown, _tenantId: string, _requirements: unknown) => resolution
+  async (_db: unknown, _tenantId: string, _requirements: unknown) => resolution,
 );
 mock.module("@intx/db", () => ({ ...intxDb, resolveModelSources }));
 

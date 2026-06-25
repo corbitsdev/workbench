@@ -5,10 +5,10 @@
 // definitions and forwards every call to the hub's scoped
 // `/api/internal/hub-tools/run` endpoint via the injected hub-RPC context.
 
-import { defineHubBackedToolPackage } from '@workbench/tool-credentials/factory';
-import { ARTIFACT_TOOL_DEFINITIONS } from './definitions';
+import { defineHubBackedToolPackage } from "@workbench/tool-credentials/factory";
+import { ARTIFACT_TOOL_DEFINITIONS } from "./definitions";
 
 export const artifact = defineHubBackedToolPackage({
-  id: '@workbench/tools-artifact/artifact',
+  id: "@workbench/tools-artifact/artifact",
   definitions: ARTIFACT_TOOL_DEFINITIONS,
 });

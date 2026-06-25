@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type ReactNode } from "react";
 
 /**
  * Two-column auth shell: a brand panel on the left (hidden on small screens)

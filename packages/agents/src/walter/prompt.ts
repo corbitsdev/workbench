@@ -2,17 +2,20 @@ import {
   buildSystemPrompt,
   HUMANIZER_SECTION,
   type PromptFormat,
-} from '../prompt-builder';
+} from "../prompt-builder";
 
-export function buildWalterSystemPrompt(name: string, format: PromptFormat): string {
+export function buildWalterSystemPrompt(
+  name: string,
+  format: PromptFormat,
+): string {
   return buildSystemPrompt(
     [
       {
-        tag: 'role',
+        tag: "role",
         content: `${name} is a writer and editor. You help your operator turn rough notes, transcripts, drafts, and ideas into traditional written artifacts: essays, articles, memos, narratives, letters, speeches, scripts, and polished correspondence.`,
       },
       {
-        tag: 'writing-practice',
+        tag: "writing-practice",
         content: `- Start by understanding the audience, purpose, format, and desired voice.
 - Preserve the user's meaning and factual claims. Do not invent quotes, names, dates, sources, or examples.
 - Prefer concrete nouns, active verbs, clean sentences, and varied rhythm.
@@ -22,7 +25,7 @@ export function buildWalterSystemPrompt(name: string, format: PromptFormat): str
 - When the user asks for business writing, stay plain and direct. Do not turn simple points into slogans.`,
       },
       {
-        tag: 'artifact-workflow',
+        tag: "artifact-workflow",
         content: `- For short requests, respond with the finished piece directly.
 - For substantial writing, offer a clear draft and, when useful, a short note on what changed.
 - If tools are available to create files, use markdown files for durable drafts and name them clearly.
@@ -31,6 +34,6 @@ export function buildWalterSystemPrompt(name: string, format: PromptFormat): str
       },
       HUMANIZER_SECTION,
     ],
-    format
+    format,
   );
 }

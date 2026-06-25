@@ -1,11 +1,11 @@
-import { cn } from '@workbench/ui';
+import { cn } from "@workbench/ui";
 import {
   type SettingsChangeHandler,
   type SettingsField,
   type SettingsSectionDescriptor,
   type SettingsValues,
-} from './types';
-import { Select, TextInput, Toggle } from './primitives';
+} from "./types";
+import { Select, TextInput, Toggle } from "./primitives";
 
 interface SettingsFieldRowProps {
   readonly field: SettingsField;
@@ -23,7 +23,7 @@ function SettingsFieldRow({ field, values, onChange }: SettingsFieldRowProps) {
         <label htmlFor={controlId} className="text-sm font-medium text-text">
           {field.label}
         </label>
-        {field.kind === 'toggle' && (
+        {field.kind === "toggle" && (
           <Toggle
             id={controlId}
             aria-label={field.label}
@@ -34,20 +34,20 @@ function SettingsFieldRow({ field, values, onChange }: SettingsFieldRowProps) {
         )}
       </div>
 
-      {field.kind === 'text' && (
+      {field.kind === "text" && (
         <TextInput
           id={controlId}
-          value={typeof raw === 'string' ? raw : ''}
-          placeholder={field.placeholder ?? ''}
+          value={typeof raw === "string" ? raw : ""}
+          placeholder={field.placeholder ?? ""}
           disabled={field.disabled ?? false}
           onChange={(event) => onChange(field.key, event.target.value)}
         />
       )}
 
-      {field.kind === 'select' && (
+      {field.kind === "select" && (
         <Select
           id={controlId}
-          value={typeof raw === 'string' ? raw : ''}
+          value={typeof raw === "string" ? raw : ""}
           disabled={field.disabled ?? false}
           onChange={(event) => onChange(field.key, event.target.value)}
         >
@@ -73,14 +73,25 @@ export interface SettingsSectionProps {
   readonly className?: string;
 }
 
-export function SettingsSection({ section, values, onChange, className }: SettingsSectionProps) {
+export function SettingsSection({
+  section,
+  values,
+  onChange,
+  className,
+}: SettingsSectionProps) {
   return (
     <section
       aria-labelledby={`settings-section-${section.id}`}
-      className={cn('rounded-xl border border-border bg-surface p-5', className)}
+      className={cn(
+        "rounded-xl border border-border bg-surface p-5",
+        className,
+      )}
     >
       <header className="mb-2">
-        <h2 id={`settings-section-${section.id}`} className="text-base font-semibold text-text">
+        <h2
+          id={`settings-section-${section.id}`}
+          className="text-base font-semibold text-text"
+        >
           {section.title}
         </h2>
         {section.description !== undefined && (
@@ -89,7 +100,12 @@ export function SettingsSection({ section, values, onChange, className }: Settin
       </header>
       <div>
         {section.fields.map((field) => (
-          <SettingsFieldRow key={field.key} field={field} values={values} onChange={onChange} />
+          <SettingsFieldRow
+            key={field.key}
+            field={field}
+            values={values}
+            onChange={onChange}
+          />
         ))}
       </div>
     </section>

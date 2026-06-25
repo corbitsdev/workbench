@@ -1,9 +1,9 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { getLogger } from '@intx/log';
-import type { SeedWorkspaceFile } from '@workbench/agents/seed';
+import fs from "node:fs";
+import path from "node:path";
+import { getLogger } from "@intx/log";
+import type { SeedWorkspaceFile } from "@workbench/agents/seed";
 
-const logger = getLogger(['sidecar', 'seed-workspace-files']);
+const logger = getLogger(["sidecar", "seed-workspace-files"]);
 
 export interface SeedResult {
   created: number;
@@ -18,7 +18,7 @@ export interface SeedResult {
  */
 export async function seedWorkspaceFiles(
   workDir: string,
-  declaredFiles: SeedWorkspaceFile[]
+  declaredFiles: SeedWorkspaceFile[],
 ): Promise<SeedResult> {
   let created = 0;
   let skipped = 0;
@@ -28,19 +28,28 @@ export async function seedWorkspaceFiles(
     // basenames, resolve the absolute target and assert it stays inside the
     // workspace before any write, so a crafted entry can never escape workDir
     // (CL-1952). file.path must be a plain basename — reject separators / `..`.
-    if (file.path.includes('/') || file.path.includes('\\') || file.path.includes('..')) {
+    if (
+      file.path.includes("/") ||
+      file.path.includes("\\") ||
+      file.path.includes("..")
+    ) {
       throw new Error(`Seed file path "${file.path}" must be a plain basename`);
     }
     const target = path.resolve(workDir, file.path);
     if (!target.startsWith(workDirRoot + path.sep)) {
-      throw new Error(`Seed file path "${file.path}" resolves outside the workspace`);
+      throw new Error(
+        `Seed file path "${file.path}" resolves outside the workspace`,
+      );
     }
     try {
-      await fs.promises.writeFile(target, file.content, { flag: 'wx' });
+      await fs.promises.writeFile(target, file.content, { flag: "wx" });
       created += 1;
-      logger.info('Seeded workspace file {path}', { path: file.path });
+      logger.info("Seeded workspace file {path}", { path: file.path });
     } catch (err) {
-      if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'EEXIST') {
+      if (
+        err instanceof Error &&
+        (err as NodeJS.ErrnoException).code === "EEXIST"
+      ) {
         skipped += 1;
         continue;
       }

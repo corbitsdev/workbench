@@ -8,7 +8,7 @@ const TEST_API_KEY = "sk-test-key";
 
 mock.module("../config", () => ({
   getConfig: () => ({
-    globalTenant: {
+    rootTenant: {
       slug: "global-org",
       name: "Global Org",
       domain: "global.example.com",

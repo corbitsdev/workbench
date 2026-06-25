@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-/* eslint-disable no-console */
-
 /**
  * Idempotently seeds tenant credentials for all configured integrations.
  *
@@ -138,6 +136,23 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  // Optional cheap model dedicated to auto-titling Myra chat threads. When unset,
+  // title generation falls back to the standard 'Myra LLM' source — so this entry
+  // is purely an optimization (use a smaller/cheaper model for short titles).
+  const myraTitleKey = env("MYRA_TITLE_LLM_API_KEY");
+  if (myraTitleKey) {
+    entries.push({
+      providerName: "Myra Title LLM",
+      providerPlugin: "openai-compatible",
+      credentialName: "Myra Title LLM",
+      secret: myraTitleKey,
+      metadata: {
+        model: env("MYRA_TITLE_LLM_MODEL", "gpt-4o-mini"),
+        baseURL: env("MYRA_TITLE_LLM_BASE_URL", "https://api.openai.com/v1"),
+      },
+    });
+  }
+
   const openaiKey = env("OPENAI_API_KEY");
   if (openaiKey) {
     entries.push({
@@ -245,6 +260,28 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const linearKey = env("LINEAR_API_KEY");
+  if (linearKey) {
+    entries.push({
+      providerName: "linear",
+      providerPlugin: "linear",
+      credentialName: "Linear",
+      secret: linearKey,
+      metadata: { baseURL: "https://api.linear.app/graphql" },
+    });
+  }
+
+  const attioKey = env("ATTIO_API_KEY");
+  if (attioKey) {
+    entries.push({
+      providerName: "attio",
+      providerPlugin: "attio",
+      credentialName: "Attio",
+      secret: attioKey,
+      metadata: { baseURL: "https://api.attio.com" },
+    });
+  }
+
   const youtubeKey = env("YOUTUBE_API_KEY");
   if (youtubeKey) {
     entries.push({
@@ -301,11 +338,11 @@ async function resolveOrCreateProvider(
   const existing = (
     (
       listRes.data as {
-        data?: Array<{
+        data?: {
           id: string;
           name: string;
           metadata?: Record<string, unknown>;
-        }>;
+        }[];
       }
     ).data ?? []
   ).find((p) => p.name === entry.providerName);
@@ -362,8 +399,7 @@ async function resolveOrCreateProvider(
       cookies,
     );
     const found = (
-      (refreshed.data as { data?: Array<{ id: string; name: string }> }).data ??
-      []
+      (refreshed.data as { data?: { id: string; name: string }[] }).data ?? []
     ).find((p) => p.name === entry.providerName);
     if (!found)
       fail(
@@ -427,7 +463,7 @@ if (import.meta.main) {
   if (listRes.status !== 200)
     fail("list credentials", listRes.status, listRes.data);
   const existingCredentials =
-    (listRes.data as { data?: Array<{ id: string; name: string }> }).data ?? [];
+    (listRes.data as { data?: { id: string; name: string }[] }).data ?? [];
 
   for (const entry of entries) {
     const providerId = await resolveOrCreateProvider(tenantId, entry, cookies);

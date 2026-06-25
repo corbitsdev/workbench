@@ -119,13 +119,13 @@ describe("POST /tools/manifest", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      manifest: { entries: Array<{ name: string }> };
-      tarballs: Array<{
+      manifest: { entries: { name: string }[] };
+      tarballs: {
         assetId: string;
         mount: string;
         path: string;
         bytesBase64: string;
-      }>;
+      }[];
     };
     expect(body.manifest.entries.map((e) => e.name)).toEqual([
       "@workbench/tools-granola",
