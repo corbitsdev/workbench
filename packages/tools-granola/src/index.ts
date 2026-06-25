@@ -39,7 +39,7 @@ type ResolvedGranolaConfig = {
 
 const ListNotesArgs = type({
   "limit?": "number",
-  "cursor?": "string",
+  "cursor?": "string > 0",
   "createdAfter?": "string",
   "createdBefore?": "string",
   "updatedAfter?": "string",
@@ -50,7 +50,7 @@ const GetNoteArgs = type({ noteId: "string > 0" });
 
 const ListFoldersArgs = type({
   "limit?": "number",
-  "cursor?": "string",
+  "cursor?": "string > 0",
 });
 
 // --- External API response schemas ---
@@ -65,6 +65,12 @@ const GranolaTranscriptItem = type({
   text: "string",
 });
 
+// NOTE: the `transcript` field here is intentionally unreachable via the
+// GranolaTranscriptItem.array() path in practice.  parseNote pre-validates
+// each transcript item through parseTranscriptItem (which emits legacy-
+// compatible error messages) and passes already-parsed items to GranolaNote.
+// The .array() declaration preserves the correct static type; a future caller
+// that constructs a GranolaNote directly would hit it.
 const GranolaNote = type({
   id: "string",
   title: "string | null",
@@ -77,7 +83,7 @@ const GranolaNote = type({
 const GranolaListResponse = type({
   notes: GranolaNote.array(),
   hasMore: "boolean",
-  "cursor?": "string | null",
+  "cursor?": "string",
 });
 
 const GranolaFolder = type({
@@ -89,7 +95,7 @@ const GranolaFolder = type({
 const GranolaFolderListResponse = type({
   folders: GranolaFolder.array(),
   hasMore: "boolean",
-  "cursor?": "string | null",
+  "cursor?": "string",
 });
 
 export type GranolaNote = typeof GranolaNote.infer;
@@ -223,7 +229,12 @@ function parseListResponse(value: unknown): GranolaListResponse {
   }
 
   const notes = value.notes.map(parseNote);
-  const parsed = GranolaListResponse({ ...value, notes });
+  // Normalize cursor: null (API sentinel) → omit the key so callers checking
+  // `=== undefined` see consistent "no next page" behavior.
+  const { cursor: _rawCursor, ...rest } = value;
+  const cursorPart =
+    typeof value.cursor === "string" ? { cursor: value.cursor } : {};
+  const parsed = GranolaListResponse({ ...rest, notes, ...cursorPart });
   if (parsed instanceof type.errors) {
     throw new Error("Granola response contains an invalid notes list");
   }
@@ -252,7 +263,16 @@ function parseFolderListResponse(value: unknown): GranolaFolderListResponse {
   }
 
   const folders = value.folders.map(parseFolder);
-  const parsed = GranolaFolderListResponse({ ...value, folders });
+  // Normalize cursor: null (API sentinel) → omit the key so callers checking
+  // `=== undefined` see consistent "no next page" behavior.
+  const { cursor: _rawCursor, ...rest } = value;
+  const cursorPart =
+    typeof value.cursor === "string" ? { cursor: value.cursor } : {};
+  const parsed = GranolaFolderListResponse({
+    ...rest,
+    folders,
+    ...cursorPart,
+  });
   if (parsed instanceof type.errors) {
     throw new Error("Granola response contains an invalid folders list");
   }
@@ -333,7 +353,10 @@ async function getNote(
 ): Promise<GranolaNote> {
   const args = GetNoteArgs(rawArgs);
   if (args instanceof type.errors) {
-    throw new Error(`noteId is required`);
+    // Preserve the back-compat "noteId is required" message when the key is
+    // absent; surface the arktype summary for wrong-type inputs (e.g. a number).
+    const missing = !("noteId" in rawArgs) || rawArgs.noteId === undefined;
+    throw new Error(missing ? "noteId is required" : args.summary);
   }
 
   const url = new URL(
