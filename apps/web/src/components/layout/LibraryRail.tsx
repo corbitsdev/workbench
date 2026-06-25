@@ -300,20 +300,10 @@ export function CompletedWorkflowRow({
   item,
   isActive,
   onOpen,
-  onRemove,
-  removing,
-  confirmingRemove,
-  onConfirmRemove,
-  onCancelRemove,
 }: {
   item: WorkflowRailItem;
   isActive: boolean;
   onOpen?: () => void;
-  onRemove?: () => void;
-  removing?: boolean;
-  confirmingRemove?: boolean;
-  onConfirmRemove?: () => void;
-  onCancelRemove?: () => void;
 }) {
   const statusLabel =
     STATUS_LABELS[item.workflowStatus] ?? toHumanLabel(item.workflowStatus);
@@ -321,7 +311,7 @@ export function CompletedWorkflowRow({
     <div
       className={`group relative flex items-center gap-[11px] rounded-[12px] px-[11px] py-[10px] transition-colors ${onOpen ? "hover:bg-[var(--row-hover)]" : ""} ${isActive ? "bg-surface ring-1 ring-orange/60" : ""}`}
     >
-      {onOpen && !confirmingRemove ? (
+      {onOpen ? (
         <button
           type="button"
           aria-label={`Open workflow ${item.name}`}
@@ -355,49 +345,6 @@ export function CompletedWorkflowRow({
         >
           GA
         </div>
-        {onRemove ? (
-          confirmingRemove ? (
-            <div className="flex flex-none items-center gap-[5px]">
-              <button
-                type="button"
-                aria-label={`Confirm remove workflow ${item.name}`}
-                disabled={removing}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onConfirmRemove?.();
-                }}
-                className="flex-none rounded-[7px] border border-orange px-2 py-[3px] text-[11px] text-orange hover:bg-[rgba(233,132,40,0.12)] disabled:opacity-50"
-              >
-                {removing ? "…" : "Confirm"}
-              </button>
-              <button
-                type="button"
-                aria-label="Cancel remove"
-                disabled={removing}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCancelRemove?.();
-                }}
-                className="flex-none rounded-[7px] border border-border px-2 py-[3px] text-[11px] text-text-3 hover:border-orange hover:text-orange disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              aria-label={`Remove workflow ${item.name}`}
-              disabled={removing}
-              onClick={(e) => {
-                e.stopPropagation();
-                onRemove();
-              }}
-              className="flex-none rounded-[7px] border border-border px-2 py-[3px] text-[11px] text-text-3 opacity-0 transition-opacity hover:border-orange hover:text-orange disabled:opacity-50 group-hover:opacity-100"
-            >
-              Remove
-            </button>
-          )
-        ) : null}
       </div>
     </div>
   );
