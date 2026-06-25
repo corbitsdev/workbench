@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 
@@ -11,6 +12,9 @@ const MAX_LIST_LIMIT = 30;
  */
 export const GRANOLA_DEFAULT_BASE_URL = "https://public-api.granola.ai/v1";
 
+// GranolaFetch and GranolaToolsConfig are left as plain types: they contain
+// function fields (fetcher?: GranolaFetch) which are non-JSON-expressible and
+// cannot be represented as arktype schemas.
 export type GranolaFetch = (
   input: string,
   init: RequestInit,
@@ -23,47 +27,76 @@ export type GranolaToolsConfig = {
   fetcher?: GranolaFetch;
 };
 
-/** Internal config with the base URL resolved to a concrete value. */
+// ResolvedGranolaConfig is an internal/trusted shape with a function field —
+// left as a plain type for the same reason as GranolaToolsConfig.
 type ResolvedGranolaConfig = {
   apiKey: string;
   baseUrl: string;
   fetcher?: GranolaFetch;
 };
 
-type GranolaTranscriptItem = {
-  speaker: {
-    source: "microphone" | "speaker";
-    diarization_label?: string;
-  };
-  text: string;
-};
+// --- Arg schemas (handler input boundaries) ---
 
-type GranolaNote = {
-  id: string;
-  title: string | null;
-  created_at: string;
-  participants?: string[];
-  summary?: string;
-  transcript?: GranolaTranscriptItem[];
-};
+const ListNotesArgs = type({
+  "limit?": "number",
+  "cursor?": "string",
+  "createdAfter?": "string",
+  "createdBefore?": "string",
+  "updatedAfter?": "string",
+  "folderId?": "string",
+});
 
-type GranolaListResponse = {
-  notes: GranolaNote[];
-  hasMore: boolean;
-  cursor?: string;
-};
+const GetNoteArgs = type({ noteId: "string > 0" });
 
-type GranolaFolder = {
-  id: string;
-  name: string;
-  parent_folder_id: string | null;
-};
+const ListFoldersArgs = type({
+  "limit?": "number",
+  "cursor?": "string",
+});
 
-type GranolaFolderListResponse = {
-  folders: GranolaFolder[];
-  hasMore: boolean;
-  cursor?: string;
-};
+// --- External API response schemas ---
+
+const GranolaTranscriptSpeaker = type({
+  source: "'microphone' | 'speaker'",
+  "diarization_label?": "string",
+});
+
+const GranolaTranscriptItem = type({
+  speaker: GranolaTranscriptSpeaker,
+  text: "string",
+});
+
+const GranolaNote = type({
+  id: "string",
+  title: "string | null",
+  created_at: "string",
+  "participants?": "string[]",
+  "summary?": "string",
+  "transcript?": GranolaTranscriptItem.array(),
+});
+
+const GranolaListResponse = type({
+  notes: GranolaNote.array(),
+  hasMore: "boolean",
+  "cursor?": "string | null",
+});
+
+const GranolaFolder = type({
+  id: "string",
+  name: "string",
+  parent_folder_id: "string | null",
+});
+
+const GranolaFolderListResponse = type({
+  folders: GranolaFolder.array(),
+  hasMore: "boolean",
+  "cursor?": "string | null",
+});
+
+export type GranolaNote = typeof GranolaNote.infer;
+export type GranolaTranscriptItem = typeof GranolaTranscriptItem.infer;
+export type GranolaListResponse = typeof GranolaListResponse.infer;
+export type GranolaFolder = typeof GranolaFolder.infer;
+export type GranolaFolderListResponse = typeof GranolaFolderListResponse.infer;
 
 function granolaHeaders(apiKey: string) {
   return {
@@ -80,10 +113,6 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, "");
 }
 
-function optionalString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
 function optionalPositiveInteger(
   value: unknown,
   fallback: number,
@@ -93,137 +122,6 @@ function optionalPositiveInteger(
     return fallback;
   }
   return Math.min(value, max);
-}
-
-function requiredString(args: Record<string, unknown>, key: string): string {
-  const value = args[key];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`${key} is required`);
-  }
-  return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function requiredResponseString(
-  args: Record<string, unknown>,
-  key: string,
-): string {
-  const value = args[key];
-  if (typeof value !== "string") {
-    throw new Error(`Granola response missing ${key}`);
-  }
-  return value;
-}
-
-function optionalStringArray(value: unknown): string[] | null {
-  if (
-    !Array.isArray(value) ||
-    !value.every((item) => typeof item === "string")
-  ) {
-    return null;
-  }
-  return value;
-}
-
-function parseTranscriptItem(value: unknown): GranolaTranscriptItem {
-  if (
-    !isRecord(value) ||
-    !isRecord(value.speaker) ||
-    typeof value.text !== "string"
-  ) {
-    throw new Error("Granola response contains an invalid transcript item");
-  }
-
-  const source = value.speaker.source;
-  if (source !== "microphone" && source !== "speaker") {
-    throw new Error("Granola response contains an invalid transcript speaker");
-  }
-
-  const diarizationLabel = optionalString(value.speaker.diarization_label);
-
-  return {
-    speaker: {
-      source,
-      ...(diarizationLabel !== null
-        ? { diarization_label: diarizationLabel }
-        : {}),
-    },
-    text: value.text,
-  };
-}
-
-function parseNote(value: unknown): GranolaNote {
-  if (!isRecord(value)) {
-    throw new Error("Granola response contains an invalid note");
-  }
-
-  const participants = optionalStringArray(value.participants);
-  const summary = optionalString(value.summary);
-  const transcript = Array.isArray(value.transcript)
-    ? value.transcript.map(parseTranscriptItem)
-    : null;
-
-  return {
-    id: requiredResponseString(value, "id"),
-    title: optionalString(value.title),
-    created_at: requiredResponseString(value, "created_at"),
-    ...(participants !== null ? { participants } : {}),
-    ...(summary !== null ? { summary } : {}),
-    ...(transcript !== null ? { transcript } : {}),
-  };
-}
-
-function parseFolder(value: unknown): GranolaFolder {
-  if (!isRecord(value)) {
-    throw new Error("Granola response contains an invalid folder");
-  }
-
-  const parentFolderId = optionalString(value.parent_folder_id);
-
-  return {
-    id: requiredResponseString(value, "id"),
-    name: requiredResponseString(value, "name"),
-    parent_folder_id: parentFolderId,
-  };
-}
-
-function parseFolderListResponse(value: unknown): GranolaFolderListResponse {
-  if (
-    !isRecord(value) ||
-    !Array.isArray(value.folders) ||
-    typeof value.hasMore !== "boolean"
-  ) {
-    throw new Error("Granola response contains an invalid folders list");
-  }
-
-  const cursor = optionalString(value.cursor);
-
-  return {
-    folders: value.folders.map(parseFolder),
-    hasMore: value.hasMore,
-    ...(cursor !== null ? { cursor } : {}),
-  };
-}
-
-function parseListResponse(value: unknown): GranolaListResponse {
-  if (
-    !isRecord(value) ||
-    !Array.isArray(value.notes) ||
-    typeof value.hasMore !== "boolean"
-  ) {
-    throw new Error("Granola response contains an invalid notes list");
-  }
-
-  const cursor = optionalString(value.cursor);
-
-  return {
-    notes: value.notes.map(parseNote),
-    hasMore: value.hasMore,
-    ...(cursor !== null ? { cursor } : {}),
-  };
 }
 
 function validateConfig(config: ResolvedGranolaConfig): void {
@@ -236,6 +134,10 @@ function validateConfig(config: ResolvedGranolaConfig): void {
   } catch {
     throw new Error("Granola baseUrl must be a valid URL");
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function errorMessageFromBody(text: string): string | null {
@@ -276,21 +178,107 @@ async function fetchGranolaJSON(
   return data;
 }
 
+function parseTranscriptItem(value: unknown): GranolaTranscriptItem {
+  const parsed = GranolaTranscriptItem(value);
+  if (parsed instanceof type.errors) {
+    const path = parsed[0]?.path.join(".");
+    if (path?.startsWith("speaker.source")) {
+      throw new Error(
+        "Granola response contains an invalid transcript speaker",
+      );
+    }
+    throw new Error("Granola response contains an invalid transcript item");
+  }
+  return parsed;
+}
+
+function parseNote(value: unknown): GranolaNote {
+  if (!isRecord(value)) {
+    throw new Error("Granola response contains an invalid note");
+  }
+
+  if (typeof value.id !== "string") {
+    throw new Error("Granola response missing id");
+  }
+
+  const transcript = Array.isArray(value.transcript)
+    ? value.transcript.map(parseTranscriptItem)
+    : undefined;
+
+  const noteToValidate = { ...value, ...(transcript ? { transcript } : {}) };
+  const parsed = GranolaNote(noteToValidate);
+  if (parsed instanceof type.errors) {
+    throw new Error("Granola response contains an invalid note");
+  }
+  return parsed;
+}
+
+function parseListResponse(value: unknown): GranolaListResponse {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.notes) ||
+    typeof value.hasMore !== "boolean"
+  ) {
+    throw new Error("Granola response contains an invalid notes list");
+  }
+
+  const notes = value.notes.map(parseNote);
+  const parsed = GranolaListResponse({ ...value, notes });
+  if (parsed instanceof type.errors) {
+    throw new Error("Granola response contains an invalid notes list");
+  }
+  return parsed;
+}
+
+function parseFolder(value: unknown): GranolaFolder {
+  if (!isRecord(value)) {
+    throw new Error("Granola response contains an invalid folder");
+  }
+
+  const parsed = GranolaFolder(value);
+  if (parsed instanceof type.errors) {
+    throw new Error("Granola response contains an invalid folder");
+  }
+  return parsed;
+}
+
+function parseFolderListResponse(value: unknown): GranolaFolderListResponse {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.folders) ||
+    typeof value.hasMore !== "boolean"
+  ) {
+    throw new Error("Granola response contains an invalid folders list");
+  }
+
+  const folders = value.folders.map(parseFolder);
+  const parsed = GranolaFolderListResponse({ ...value, folders });
+  if (parsed instanceof type.errors) {
+    throw new Error("Granola response contains an invalid folders list");
+  }
+  return parsed;
+}
+
 async function listNotes(
   config: ResolvedGranolaConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
-) {
+): Promise<GranolaListResponse> {
+  const args = ListNotesArgs(rawArgs);
+  if (args instanceof type.errors) {
+    throw new Error(`granola_list_notes: ${args.summary}`);
+  }
+
   const limit = optionalPositiveInteger(
     args.limit,
     DEFAULT_LIST_LIMIT,
     MAX_LIST_LIMIT,
   );
-  const cursor = optionalString(args.cursor);
-  const createdAfter = optionalString(args.createdAfter);
-  const createdBefore = optionalString(args.createdBefore);
-  const updatedAfter = optionalString(args.updatedAfter);
-  const folderId = optionalString(args.folderId);
+  const cursor = args.cursor ?? null;
+  const createdAfter = args.createdAfter ?? null;
+  const createdBefore = args.createdBefore ?? null;
+  const updatedAfter = args.updatedAfter ?? null;
+  const folderId = args.folderId ?? null;
 
   const url = new URL(`${normalizeBaseUrl(config.baseUrl)}/notes`);
   url.searchParams.set("page_size", limit.toString());
@@ -315,15 +303,20 @@ async function listNotes(
 
 async function listFolders(
   config: ResolvedGranolaConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
-) {
+): Promise<GranolaFolderListResponse> {
+  const args = ListFoldersArgs(rawArgs);
+  if (args instanceof type.errors) {
+    throw new Error(`granola_list_folders: ${args.summary}`);
+  }
+
   const limit = optionalPositiveInteger(
     args.limit,
     DEFAULT_LIST_LIMIT,
     MAX_LIST_LIMIT,
   );
-  const cursor = optionalString(args.cursor);
+  const cursor = args.cursor ?? null;
   const url = new URL(`${normalizeBaseUrl(config.baseUrl)}/folders`);
   url.searchParams.set("page_size", limit.toString());
   if (cursor !== null) {
@@ -335,12 +328,16 @@ async function listFolders(
 
 async function getNote(
   config: ResolvedGranolaConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
-) {
-  const noteId = requiredString(args, "noteId");
+): Promise<GranolaNote> {
+  const args = GetNoteArgs(rawArgs);
+  if (args instanceof type.errors) {
+    throw new Error(`noteId is required`);
+  }
+
   const url = new URL(
-    `${normalizeBaseUrl(config.baseUrl)}/notes/${encodeURIComponent(noteId)}`,
+    `${normalizeBaseUrl(config.baseUrl)}/notes/${encodeURIComponent(args.noteId)}`,
   );
   url.searchParams.set("include", "transcript");
 
