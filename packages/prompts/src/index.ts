@@ -95,8 +95,10 @@ export function withActiveContext(
   return `${systemPrompt}\n\n${buildActiveContext(context)}`;
 }
 
-// XmlValue and XmlNode are mutually recursive and include undefined/null/array
-// branches that cannot be expressed as an arktype schema. Left as plain types.
+// XmlValue and XmlNode are an internal rendering tree — external callers never
+// pass raw XmlValue blobs in; they use the xml()/structuredSection() constructors.
+// Validating an internal render tree at runtime adds overhead with no boundary
+// safety benefit. Left as plain types.
 export type XmlValue =
   | string
   | number
@@ -156,8 +158,8 @@ export function renderXml(value: XmlValue): string {
   return `<${value.tag}${attrs}>\n${body}\n</${value.tag}>`;
 }
 
-// StructuredPromptSection contains XmlValue which is not JSON-expressible.
-// Left as a plain type.
+// StructuredPromptSection contains XmlValue, an internal render tree shape.
+// No external parse boundary — left as a plain type.
 export type StructuredPromptSection = {
   tag: string;
   content: XmlValue;
