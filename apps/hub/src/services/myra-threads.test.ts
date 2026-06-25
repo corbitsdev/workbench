@@ -403,6 +403,43 @@ describe("generateMyraThreadTitle", () => {
     expect(result).toBeNull();
   });
 
+  it("surfaces a genuine credential-resolution fault instead of silently falling back", async () => {
+    resetTitleMocks();
+    // A real fault (e.g. ambiguous credential match), not the optional title
+    // credential simply being absent.
+    resolveCredentialRequirementMock.mockImplementation(() =>
+      Promise.reject(new Error("Ambiguous credential match")),
+    );
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+    });
+
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+      const result = await generateMyraThreadTitle(
+        db as any,
+        {},
+        {
+          tenantId: "tn-global",
+          memberPrincipalId: "prn-member",
+          threadId: "map-1",
+          firstMessage: "Hello",
+        },
+      );
+
+      // Best-effort contract still holds (titling never breaks chat): null, no throw.
+      expect(result).toBeNull();
+      // But the fault short-circuits BEFORE any inference turn — proving it
+      // propagated to the logged handler rather than being swallowed and
+      // continuing on to the fallback source (which would have run a turn).
+      expect(lastCreateEventCollectorConfig).toBeNull();
+    } finally {
+      resolveCredentialRequirementMock.mockImplementation(() =>
+        Promise.resolve(null),
+      );
+    }
+  });
+
   it("does not throw and returns null when inference fails", async () => {
     resetTitleMocks();
     agentShouldThrow = true;

@@ -11,7 +11,11 @@ import type { InferenceSource } from "@intx/types/runtime";
 import { createIsogitStore } from "@workbench/storage-isogit";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { AGENT_TEMPLATES, PERSONAL_AGENT_NAME } from "@workbench/agents";
+import {
+  AGENT_TEMPLATES,
+  LLM_DEFAULT_MODEL,
+  PERSONAL_AGENT_NAME,
+} from "@workbench/agents";
 import type {
   SessionService,
   EventCollectorRegistry,
@@ -349,7 +353,8 @@ const TITLE_CREDENTIAL_NAME = "Myra Title LLM";
 // Cheap, fast model for titling. Served by the same openai-compatible gateway
 // (opencode-zen) the Myra LLM credential already points at, so titling works
 // with no extra credential — we just pin the flash model on the existing key.
-const TITLE_MODEL = "deepseek-v4-flash";
+// Shares the canonical id so the title model can't drift from the rest of the app.
+const TITLE_MODEL = LLM_DEFAULT_MODEL;
 const TITLE_SYSTEM_PROMPT =
   "Generate a concise 3-6 word title for a chat that begins with the user's message. Reply with ONLY the title — no quotes, no punctuation at the end.";
 
@@ -400,6 +405,10 @@ async function resolveTitleSource(
   db: HubDb,
   tenantId: string,
 ): Promise<InferenceSource | null> {
+  // Returns null when the optional 'Myra Title LLM' credential is absent (the
+  // common case — we then fall back to Myra's own source below). A thrown error
+  // means a real fault (ambiguous match, DB failure); let it propagate to the
+  // logged best-effort handler in generateMyraThreadTitle rather than swallow it.
   const resolved = await resolveCredentialRequirement(
     db,
     tenantId,
@@ -410,7 +419,7 @@ async function resolveTitleSource(
     },
     null,
     null,
-  ).catch(() => null);
+  );
 
   if (resolved) {
     const providerRow = await db.query.provider.findFirst({
@@ -457,6 +466,13 @@ async function resolveTitleSource(
   };
 }
 
+// Best-effort teardown: cleanup must not throw over the real result/error, but
+// the failure is logged rather than silently dropped.
+const logTeardownError = (op: string) => (err: unknown) =>
+  log.warn(`Myra title turn teardown failed: ${op}`, {
+    error: err instanceof Error ? err.message : String(err),
+  });
+
 // Serializes title turns per member principal. A member's title turns share one
 // durable working tree (their audit repo), so they must not run concurrently;
 // different principals run fully in parallel. The map holds one tail promise per
@@ -468,6 +484,9 @@ function runSerializedPerPrincipal<T>(
 ): Promise<T> {
   const prev = titleLocks.get(key) ?? Promise.resolve();
   const run = prev.then(fn, fn);
+  // The stored tail only keeps the chain alive without an unhandled rejection;
+  // the real error is surfaced to the caller via the returned `run` (and logged
+  // by generateMyraThreadTitle's handler), so discarding it here is not a swallow.
   titleLocks.set(
     key,
     run.catch(() => undefined),
@@ -553,15 +572,15 @@ async function runTitleTurn(
   try {
     const result = await agentInst.send(opts.firstMessage);
     await agentInst.close();
-    await pumpDone.catch(() => undefined);
+    await pumpDone.catch(logTeardownError("pump stream"));
     await collector.abandon();
     const text =
       finalizedText ?? collector.getAccumulatedText() ?? result.reply;
     return text;
   } catch (err) {
-    await agentInst.close().catch(() => undefined);
-    await pumpDone.catch(() => undefined);
-    await collector.abandon().catch(() => undefined);
+    await agentInst.close().catch(logTeardownError("close agent"));
+    await pumpDone.catch(logTeardownError("pump stream"));
+    await collector.abandon().catch(logTeardownError("abandon collector"));
     throw err;
   }
 }
