@@ -35,15 +35,12 @@ async function listThemes(
     return [];
   }
 
-  return (result["data"] as unknown[]).map((item: unknown) => {
-    if (!isRecord(item)) {
-      return item;
+  return (result["data"] as unknown[]).flatMap((item: unknown) => {
+    const parsed = GammaThemeSchema(item);
+    if (parsed instanceof type.errors) {
+      return [];
     }
-    return {
-      id: item["id"],
-      name: item["name"],
-      type: item["type"] ?? null,
-    };
+    return [parsed];
   });
 }
 

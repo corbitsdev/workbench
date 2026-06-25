@@ -4,9 +4,7 @@ import type { ToolDefinition } from "@intx/types/runtime";
 import {
   gammaFetchJSON,
   isRecord,
-  optionalString,
   pollGeneration,
-  requiredString,
   resolveConfig,
   stringTool,
   type GammaToolsConfig,
@@ -32,9 +30,13 @@ async function duplicatePresentation(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const gammaId = requiredString(args, "gammaId");
-  const title = optionalString(args["title"]);
-  const prompt = optionalString(args["prompt"]) ?? DUPLICATE_DEFAULT_PROMPT;
+  const parsedArgs = DuplicatePresentationArgsSchema(args);
+  if (parsedArgs instanceof type.errors) {
+    throw new Error(`Invalid duplicate presentation args: ${parsedArgs.summary}`);
+  }
+  const gammaId = parsedArgs.gammaId;
+  const title = parsedArgs.title ?? null;
+  const prompt = parsedArgs.prompt ?? DUPLICATE_DEFAULT_PROMPT;
 
   const body: Record<string, unknown> = {
     gammaId,

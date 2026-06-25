@@ -10,10 +10,11 @@ export type GammaFetch = (
 // https://developers.gamma.app — base URL verified against live API docs
 export const GAMMA_DEFAULT_BASE_URL = "https://public-api.gamma.app/v1.0";
 
+// fetcher is a runtime-injection concern (a function); it cannot be validated
+// by arktype at parse time and is not present in serialised config.
 const GammaToolsConfigSchema = type({
   apiKey: "string",
   "baseUrl?": "string",
-  "fetcher?": type.unit(undefined).or("unknown"),
 });
 
 export type GammaToolsConfig = {
@@ -200,6 +201,11 @@ export async function pollGeneration(
     }
 
     const status = result["status"];
+
+    const statusResult = GenerationStatusSchema(status);
+    if (statusResult instanceof type.errors) {
+      throw new Error(`Unknown generation status: ${String(status)}`);
+    }
 
     if (status === "completed") {
       const parsed = GenerationResultSchema(result);

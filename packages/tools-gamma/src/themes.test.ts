@@ -74,4 +74,27 @@ describe("gamma_list_themes", () => {
       tool.handler({}, new AbortController().signal),
     ).rejects.toThrow("Gamma API error: 403");
   });
+  it("filters out theme items that fail schema validation", async () => {
+    const tools = createThemeTools({
+      ...baseConfig,
+      fetcher: makeFetcher(200, {
+        data: [
+          { id: "th1", name: "Valid Theme", type: "custom" },
+          { notId: "bad", notName: "Bad" },
+          { id: "th3", name: "Another Valid", type: null },
+        ],
+        hasMore: false,
+      }),
+    });
+    const tool = tools.find((t) => t.definition.name === "gamma_list_themes");
+    if (!tool || tool.kind !== "string") throw new Error("tool not found");
+
+    const result = await tool.handler({}, new AbortController().signal);
+    const parsed: unknown = JSON.parse(result);
+    expect(Array.isArray(parsed)).toBe(true);
+    if (!Array.isArray(parsed)) return;
+    expect(parsed).toHaveLength(2);
+    expect((parsed[0] as Record<string, unknown>)["id"]).toBe("th1");
+    expect((parsed[1] as Record<string, unknown>)["id"]).toBe("th3");
+  });
 });
