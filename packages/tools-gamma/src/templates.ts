@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
@@ -66,14 +67,16 @@ async function createFromTemplate(
 }
 
 // Tenant-owned templates are stored in the hub DB and listed via the hub
-// ContextToolEntry (GAMMA_LIST_TEMPLATES_HUB_TOOL in apps/hub). This type
+// ContextToolEntry (GAMMA_LIST_TEMPLATES_HUB_TOOL in apps/hub). This schema
 // describes a single template as returned to the agent at runtime.
-export type GammaTemplate = {
-  id: string;
-  gammaId: string;
-  name: string;
-  systemPrompt: string;
-};
+const GammaTemplateSchema = type({
+  id: "string",
+  gammaId: "string",
+  name: "string",
+  systemPrompt: "string",
+});
+
+export type GammaTemplate = typeof GammaTemplateSchema.infer;
 
 export const GAMMA_LIST_TEMPLATES_DEFINITION: ToolDefinition = {
   name: "gamma_list_templates",

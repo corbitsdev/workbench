@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 
@@ -8,6 +9,12 @@ export type GammaFetch = (
 
 // https://developers.gamma.app — base URL verified against live API docs
 export const GAMMA_DEFAULT_BASE_URL = "https://public-api.gamma.app/v1.0";
+
+const GammaToolsConfigSchema = type({
+  apiKey: "string",
+  "baseUrl?": "string",
+  "fetcher?": type.unit(undefined).or("unknown"),
+});
 
 export type GammaToolsConfig = {
   apiKey: string;
@@ -20,6 +27,38 @@ export type ResolvedGammaConfig = {
   baseUrl: string;
   fetcher?: GammaFetch;
 };
+
+const GenerationResultSchema = type({
+  gammaUrl: "string",
+  gammaId: "string",
+});
+
+export type GenerationResult = typeof GenerationResultSchema.infer;
+
+export const GenerationStatusSchema = type(
+  "'pending' | 'completed' | 'failed'",
+);
+export type GenerationStatus = typeof GenerationStatusSchema.infer;
+
+const HttpMethodSchema = type(
+  "'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'",
+);
+export type HttpMethod = typeof HttpMethodSchema.infer;
+
+export type GammaRequest = {
+  method: HttpMethod;
+  path: string;
+  query?: Record<string, string | number | boolean | undefined> | undefined;
+  body?: unknown;
+};
+
+export function parseGammaToolsConfig(raw: unknown): GammaToolsConfig {
+  const parsed = GammaToolsConfigSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid Gamma config: ${parsed.summary}`);
+  }
+  return parsed as GammaToolsConfig;
+}
 
 export function resolveConfig(config: GammaToolsConfig): ResolvedGammaConfig {
   const resolved: ResolvedGammaConfig = {
@@ -75,15 +114,6 @@ export function stringTool(
 export function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, "");
 }
-
-export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-
-export type GammaRequest = {
-  method: HttpMethod;
-  path: string;
-  query?: Record<string, string | number | boolean | undefined> | undefined;
-  body?: unknown;
-};
 
 export async function gammaFetchJSON(
   config: ResolvedGammaConfig,
@@ -149,13 +179,6 @@ export function errorMessageFromBody(text: string): string | null {
 const POLL_INTERVAL_MS = 3_000;
 const POLL_MAX_ATTEMPTS = 100; // ~5 minutes
 
-export type GenerationStatus = "pending" | "completed" | "failed";
-
-export type GenerationResult = {
-  gammaUrl: string;
-  gammaId: string;
-};
-
 export async function pollGeneration(
   config: ResolvedGammaConfig,
   generationId: string,
@@ -176,17 +199,16 @@ export async function pollGeneration(
       throw new Error(`Unexpected generation status response`);
     }
 
-    const status = result["status"] as GenerationStatus | undefined;
+    const status = result["status"];
 
     if (status === "completed") {
-      const gammaUrl = result["gammaUrl"];
-      const gammaId = result["gammaId"];
-      if (typeof gammaUrl !== "string" || typeof gammaId !== "string") {
+      const parsed = GenerationResultSchema(result);
+      if (parsed instanceof type.errors) {
         throw new Error(
           "Generation completed but gammaUrl or gammaId is missing",
         );
       }
-      return { gammaUrl, gammaId };
+      return parsed;
     }
 
     if (status === "failed") {

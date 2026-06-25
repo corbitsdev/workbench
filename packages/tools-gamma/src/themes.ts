@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
@@ -8,6 +9,14 @@ import {
   type GammaToolsConfig,
   type ResolvedGammaConfig,
 } from "./shared";
+
+const GammaThemeSchema = type({
+  id: "string",
+  name: "string",
+  "type?": "string | null",
+});
+
+export type GammaTheme = typeof GammaThemeSchema.infer;
 
 // Direct HTTP to Gamma SaaS API — see AGENTS.md 'Third-party generation APIs' and packages/tools-gamma/README.md
 // Response shape: { data: Theme[], hasMore: boolean, nextCursor?: string }

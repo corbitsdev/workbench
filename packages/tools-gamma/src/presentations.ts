@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
@@ -11,6 +12,15 @@ import {
   type GammaToolsConfig,
   type ResolvedGammaConfig,
 } from "./shared";
+
+const DuplicatePresentationArgsSchema = type({
+  gammaId: "string > 0",
+  "title?": "string > 0",
+  "prompt?": "string > 0",
+});
+
+export type DuplicatePresentationArgs =
+  typeof DuplicatePresentationArgsSchema.infer;
 
 const DUPLICATE_DEFAULT_PROMPT =
   "Create an exact copy of this presentation, preserving all content, structure, and layout.";
