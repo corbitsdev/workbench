@@ -137,7 +137,7 @@ describe("scrapecreators_tiktok happy path", () => {
     const fetcher = mock(async () => new Response("{}", { status: 200 }));
     const result = await runTool("scrapecreators_tiktok", {}, fetcher);
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("query is required");
+    expect(result.content).toContain("query");
   });
 });
 

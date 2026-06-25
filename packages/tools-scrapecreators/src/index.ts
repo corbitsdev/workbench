@@ -1,6 +1,6 @@
 export * from "./normalize";
 export * from "./tools";
-export type {
+export {
   TikTokPost,
   InstagramPost,
   ThreadsPost,

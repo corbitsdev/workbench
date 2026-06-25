@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
@@ -12,6 +13,8 @@ import type {
   ThreadsPost,
   PinterestPin,
 } from "./types";
+
+const SearchArgs = type({ query: "string > 0", "limit?": "number" });
 
 // Endpoints verified against https://docs.scrapecreators.com/llms.txt and the reference
 // last30days skill (mvanhorn/last30days-skill). Update if the API changes.
@@ -386,10 +389,11 @@ async function searchTikTok(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = SearchArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`scrapecreators_tiktok: ${parsed.summary}`);
   }
+  const { query } = parsed;
   const limit = resolveLimit(args);
   const url = new URL(`${resolvedBaseURL(config)}/v1/tiktok/search/keyword`);
   url.searchParams.set("query", query);
@@ -411,10 +415,11 @@ async function searchInstagram(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = SearchArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`scrapecreators_instagram: ${parsed.summary}`);
   }
+  const { query } = parsed;
   const limit = resolveLimit(args);
   const url = new URL(`${resolvedBaseURL(config)}/v2/instagram/reels/search`);
   url.searchParams.set("query", query);
@@ -430,10 +435,11 @@ async function searchThreads(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = SearchArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`scrapecreators_threads: ${parsed.summary}`);
   }
+  const { query } = parsed;
   const limit = resolveLimit(args);
   const url = new URL(`${resolvedBaseURL(config)}/v1/threads/search`);
   url.searchParams.set("query", query);
@@ -455,10 +461,11 @@ async function searchPinterest(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = SearchArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`scrapecreators_pinterest: ${parsed.summary}`);
   }
+  const { query } = parsed;
   const limit = resolveLimit(args);
   const url = new URL(`${resolvedBaseURL(config)}/v1/pinterest/search`);
   url.searchParams.set("query", query);
